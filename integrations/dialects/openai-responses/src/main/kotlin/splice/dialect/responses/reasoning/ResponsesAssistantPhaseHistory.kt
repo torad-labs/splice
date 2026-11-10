@@ -12,6 +12,7 @@ internal class ResponsesAssistantPhaseHistory(
     messages: List<AnthropicMessage>,
     records: List<AssistantPhaseRecord>,
     proofs: Map<String, String?>,
+    private val memo: HistoryMemoWalk? = null,
 ) {
     private val explicit = explicitRanges(messages)
     private val verified = verified(messages, records, proofs)
@@ -32,7 +33,7 @@ internal class ResponsesAssistantPhaseHistory(
     ): List<AssistantPhaseRecord> {
         if (records.isEmpty()) return emptyList()
         val boundaries = records.flatMap { listOf(it.start, it.end) }.distinct().sorted()
-        val keys = PhaseHistoryKeyScan(boundaries, proofs).capture(messages)
+        val keys = PhaseHistoryKeyScan(boundaries, proofs, memo).capture(messages)
         val matching = records.distinct().filter { keys[it.start] == it.before && keys[it.end] == it.after }
         // An identical visible branch with contradictory upstream provenance proves neither phase.
         return matching.filter { candidate ->
@@ -68,16 +69,27 @@ internal class ResponsesAssistantPhaseHistory(
 private class PhaseHistoryKeyScan(
     private val boundaries: List<Long>,
     proofs: Map<String, String?>,
+    private val memo: HistoryMemoWalk?,
 ) {
     private val cursor = ResponsesHistoryCursor(proofs = proofs)
     private val result = mutableMapOf<Long, String>()
     private val wanted = boundaries.toSet()
     private var boundary = 0
 
+    /** Stops past the last boundary; a message with no boundary strictly inside it is stepped over whole. */
     fun capture(messages: List<AnthropicMessage>): Map<Long, String> {
         remember()
+        val last = boundaries.lastOrNull() ?: return result
         for (message in messages) {
-            for (block in message.content) append(message.role, block)
+            val start = cursor.history.offset
+            if (start > last) break
+            val end = start + cursor.visibleSize(message)
+            if (boundaries.none { it in start + 1 until end }) {
+                cursor.advance(message, memo)
+                remember()
+            } else {
+                for (block in message.content) append(message.role, block)
+            }
         }
         return result
     }

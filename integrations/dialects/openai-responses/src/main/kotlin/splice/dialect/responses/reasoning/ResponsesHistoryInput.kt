@@ -21,13 +21,14 @@ import splice.dialect.responses.request.ResponsesAssistantText
 internal class ResponsesHistoryInput(
     private val opts: BuildOptions,
     messages: List<AnthropicMessage> = emptyList(),
+    private val memo: HistoryMemoWalk? = null,
 ) {
     private val reasoningProofs = opts.handoff.resultProofs.reasoning()
     private val nativePhaseProofs = opts.handoff.resultProofs.nativePhase()
     val cursor = ResponsesHistoryCursor(opts.reasoningHistory, reasoningProofs)
     private val saved = opts.handoff.history()
     private val records = ResponsesAssistantPhaseRecords()
-    private val phases = ResponsesAssistantPhaseHistory(messages, records.read(saved), nativePhaseProofs)
+    private val phases = ResponsesAssistantPhaseHistory(messages, records.read(saved), nativePhaseProofs, memo)
     private val positions = records.reasoningOnly(saved).toMutableMap()
     private val offsets = (
         positions.keys.mapNotNull {
@@ -44,7 +45,7 @@ internal class ResponsesHistoryInput(
         val end = start + message.content.sumOf(::visibleSize)
         if (message.role == "assistant" && phases.affects(start, end)) return false
         if (!hasInteriorOffset(start, end)) {
-            message.content.forEach { cursor.append(message.role, it) }
+            cursor.advance(message, memo)
             return true
         }
         val probe = cursor.fork()

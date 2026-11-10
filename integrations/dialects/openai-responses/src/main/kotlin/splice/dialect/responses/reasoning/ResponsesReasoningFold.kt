@@ -92,6 +92,9 @@ internal class ResponsesReasoningFold(
         val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: 0
         val release = when {
             delta.isEmpty() -> null
+            // A completed item the late path rendered is that item's whole text. Its deltas arriving after
+            // output_item.done (openai/codex#16801) restate it, and rendering them opened a second block.
+            frames.reasoningKey(oi) in emittedReasoningKeys -> null
             // cutoff mode: summary deltas are NOISE (concurrent items interleave and restate; codex
             // `continue`s on ReasoningSummaryDelta). Raw reasoning_text deltas still stream live.
             ctx.summary.dedupeRepeatedParts && summary -> null
@@ -108,8 +111,11 @@ internal class ResponsesReasoningFold(
         val text = JsonScalars.str(evt, "text") ?: JsonScalars.str(evt["part"] as? JsonObject, "text") ?: return
         val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: 0
         if (!ctx.summary.dedupeRepeatedParts) {
-            // A completed copy may extend the streamed prefix; deliver only its proven missing tail.
-            render(oi, statusHeaders.done(oi, text, frames.intOr(evt["summary_index"])), sink)
+            // A completed copy may extend the streamed prefix; deliver only its proven missing tail. An item the late
+            // path already rendered whole has nothing left to deliver (see onThinkingDelta).
+            if (frames.reasoningKey(oi) !in emittedReasoningKeys) {
+                render(oi, statusHeaders.done(oi, text, frames.intOr(evt["summary_index"])), sink)
+            }
             return
         }
         if (!renderableSummaryDone(evt, text) || !statusHeaders.admitsLate(text)) return

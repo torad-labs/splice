@@ -20,12 +20,14 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.media.ImageFloor
 import splice.core.wire.AnthropicRequest
+import splice.core.wire.DocumentBlock
 import splice.core.wire.ImageBlock
 import splice.core.wire.MediaSource
 import splice.core.wire.TextBlock
 import splice.core.wire.ToolResultBlock
 import splice.core.wire.ToolUseBlock
 import splice.core.wire.UnknownBlock
+import splice.upstream.memory.FragmentContextKey
 import splice.upstream.memory.MessageFragments
 
 internal class ChatWireMapper(private val quirks: ChatQuirks) {
@@ -35,7 +37,11 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
     private val toolChanges = ChatToolChanges()
     private val fragments = MessageFragments()
 
-    fun messagesArray(system: String?, body: AnthropicRequest, context: String? = null): JsonArray = buildJsonArray {
+    fun messagesArray(
+        system: String?,
+        body: AnthropicRequest,
+        context: FragmentContextKey? = null,
+    ): JsonArray = buildJsonArray {
         // No system prompt, no system message — on every turn, compaction included.
         system?.let { sys ->
             addJsonObject {
@@ -153,8 +159,11 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
         val trailingImages = mutableListOf<Pair<String, List<JsonObject>>>()
         toolResults.forEach { tr ->
             // A nested block kind splice does not enumerate leaves its marker in the output, never an empty result.
+            // So does a nested document, which this wire cannot carry: the marker the message path writes for one,
+            // documents only, since the image drops are marked below with their own reasons.
             val texts = tr.content.filterIsInstance<TextBlock>().map { it.text }
-            val out = (texts + unknownBlockMarkers("tool", tr.content)).joinToString("\n")
+            val documents = quirks.omissionMarkers(tr.content.filterIsInstance<DocumentBlock>())
+            val out = (texts + documents + unknownBlockMarkers("tool", tr.content)).joinToString("\n")
             // DR-155: the same pre-split as the message path. A tool_result carrying a screenshot
             // AND a favicon-sized image is the realistic case, and it must say both things.
             val (undersized, mappable) = tr.content.filterIsInstance<ImageBlock>()

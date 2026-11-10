@@ -56,6 +56,7 @@ import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.wire.UnknownBlock
 import splice.upstream.ToolNameShortener
+import splice.upstream.memory.FragmentContextKey
 import splice.upstream.memory.MessageFragments
 import java.util.concurrent.ConcurrentHashMap
 
@@ -92,7 +93,7 @@ internal class PassthroughMessageScrubber(
     private val droppedLogged = ConcurrentHashMap.newKeySet<String>()
     private val fragments = MessageFragments()
 
-    fun scrubMessages(messages: JsonElement, context: String? = null): JsonArray {
+    fun scrubMessages(messages: JsonElement, context: FragmentContextKey? = null): JsonArray {
         val arr = messages as? JsonArray ?: return buildJsonArray { }
         return buildJsonArray {
             arr.forEach { msg ->

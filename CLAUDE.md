@@ -94,7 +94,7 @@ reviewed at 3828 and stopped at screen 2 ("What does note do?", cards that "all 
 
 Marcos's standing rulings for splice, one per line.
 
-- 0.4.0 ships everything on the branch, V4-444 included, once Marcos approves V4-444 by eye.
+- 0.4.0 ships from main. `feat/v0.4.0` merged into main (PR #247, 2026-10-31) and is deleted: no seat recreates it or any other release branch. Everything on main ships, V4-444 included, once Marcos approves V4-444 by eye.
 - Each section's "Resolved" block in `docs/specs/v0.4.0.md` is Marcos's decision and is that feature's spec.
 - Retry default is total: known errors get a specific plan; every other error gets a bounded generic retry and an honest message.
 - Idle is a probe, never an error: act only on a dead path, by re-anchoring; never reap a model thinking in silence.
@@ -120,5 +120,5 @@ Marcos's standing rulings for splice, one per line.
 - The push's pre-push is the only gradle run a change needs. No seat runs a separate proof, exact-tree check or duplicate suite before pushing (Marcos, 2026-10-12). Any seat pushes; there is no driver (Marcos, 2026-10-17).
 - Seats spend over 75% of their time building and under 25% on tests, as the Temple's "Where agents' time goes" counts it. A decided change deletes the tests that pinned the old behavior unless one checks what a user sees (Marcos, 2026-10-12).
 - Building is at least 25% of every seat's day in the Temple's "Where agents' time goes", where it read 9% on Oct 13 and reading read 72%. Reading and checking go to small helpers: a search, a map of code, more than two files read, a look at a page, or a check is one Agent call with model "haiku". That alias runs Haiku under Claude and gpt-6-luna under claudex. The seat reads the helper's answer and builds (Marcos: "if we need to check, read files its fine, but let's just have luna or haiku subagents do that, it's way more efficient and way faster"; 2026-10-13: "less time with useless tests, less time checking, use haiku for reading, and more building").
-- splice keeps its pre-push gate until PR #247 merges, and the global law's "checks at release time only" waits until then. After the merge, splice moves to the release train. Marcos answered this three times on 2026-10-13: no seat asks him again.
+- PR #247 merged on 2026-10-31. There is no release train and no long-lived dev branch: work goes on a short-lived branch off main, reaches main through a PR, and the branch is deleted when it merges. The pre-push gate stays.
 - splice has two fronts, each with a lead. splice-runtime-lead leads splice-platform and splice-sessions: the daemon, launch, sessions, release and the train. splice-console-lead leads splice-config and splice-usage: configuration, accounts, models, usage and the walker. A seat reports to its lead, and the leads report to splice-lead. A finding on the other front goes lead to lead. The roster is in the splice-roster skill (Marcos, 2026-10-13).

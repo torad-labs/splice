@@ -1,5 +1,6 @@
 // NEW (rig's finding, 2026-10-24): an interrupted NON-STREAM compaction must hold its collected
-// answer for the byte-identical retry instead of throwing the whole prefill away with the call.
+// answer for the byte-identical retry instead of throwing the whole prefill away with the call. Since
+// 2026-11-09 every non-stream turn with a session is held the same way, and its re-send is answered too.
 // Drives the REAL production path: HeadServer on an ephemeral port, a raw socket client that
 // hangs up mid-compaction (the Esc), and a held upstream whose release lets the detached drive
 // finish cleanly. The retry then arrives while the upstream is parked again: answered from the
@@ -58,6 +59,13 @@ class CollectCompactionRetryTest {
     private val body = """{"model":"claude-codex--gpt-5.6-sol","stream":false,"max_tokens":64,""" +
         """"system":"SCENARIO:hold You are tasked with summarizing conversations for another agent.",""" +
         """"messages":[{"role":"user","content":"compact"}]}"""
+
+    // An ordinary stream:false request, no compaction: a Claude Code subagent's on Nov 8-9, re-sent 228 times in 25
+    // hours because each re-send started the five-minute turn over. [scenario] picks how the held upstream ends.
+    private fun turnBody(scenario: String = "hold") =
+        """{"model":"claude-codex--gpt-5.6-sol","stream":false,"max_tokens":64,""" +
+            """"system":"SCENARIO:$scenario You are a subagent.",""" +
+            """"messages":[{"role":"user","content":"look into it"}]}"""
 
     // The SAME request with stream:true: Claude Code's first attempt streams, and when that attempt dies its
     // fallback re-sends these bytes as stream:false (rig's finding, hack-program on glml53, 2026-10-25 00:58 CT).
@@ -177,6 +185,81 @@ class CollectCompactionRetryTest {
             )
         } finally {
             held.mock.releaseHold() // never leave a parked upstream thread behind
+            held.head.stop()
+        }
+    }
+
+    /** The first attempt of an ordinary non-stream turn reaches upstream and holds its slot, then its client hangs up
+     *  (Claude Code's 360 s non-stream timeout) and the turn runs on detached. */
+    private suspend fun detachNonStreamTurn(held: HeldHead, json: String) {
+        val first = post(held.head.port, json)
+        assertTrue(
+            waitFor(20_000) { held.mock.upstreamBodies.size == 1 },
+            "precondition: the turn must reach upstream before the client leaves: ${held.lines.joinToString("")}",
+        )
+        assertTrue(waitFor(20_000) { held.gate.snapshot().inflight == 1 }, "the collect holds its slot")
+        first.close()
+        assertTrue(
+            waitFor(20_000) { held.lines.any { "non-stream turn's client left mid-turn" in it } },
+            "the turn must run on detached: ${held.lines.joinToString("")}",
+        )
+    }
+
+    /** The status line's code, off the raw HTTP response. */
+    private fun statusOf(answer: String): Int = answer.substringBefore("\r\n").split(" ")[1].toInt()
+
+    @Test
+    fun `a re-send of a running non-stream turn follows it and is answered with no second upstream turn`(
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        val held = startHeldHead(tmp)
+        try {
+            detachNonStreamTurn(held, turnBody())
+            assertEquals(1, held.gate.snapshot().inflight, "the slot travels with the detached turn")
+            // The re-send arrives while the first attempt is still parked upstream, as the 228 did.
+            val resend = post(held.head.port, turnBody())
+            assertTrue(
+                waitFor(20_000) {
+                    held.lines.any { "collect non-stream retry matches a detached one" in it } ||
+                        held.mock.upstreamBodies.size > 1
+                },
+                "the re-send must be prepared while the turn still runs: ${held.lines.joinToString("")}",
+            )
+            assertEquals(1, held.mock.upstreamBodies.size, "the re-send must not start the turn again")
+            assertEquals(1, held.gate.snapshot().inflight, "the re-send waits on the turn's slot, not one of its own")
+
+            held.mock.releaseHold()
+            val answer = readAnswer(resend)
+            assertEquals(200, statusOf(answer), answer)
+            assertStreamedAnswerCollected(answer)
+            assertEquals(1, held.mock.upstreamBodies.size, "one upstream turn served both attempts")
+            assertTrue(waitFor(20_000) { held.gate.snapshot().inflight == 0 }, "the slot comes back with the turn")
+        } finally {
+            held.mock.releaseHold()
+            held.head.stop()
+        }
+    }
+
+    @Test
+    fun `a re-send of a held non-stream turn that fails is told that failure, not a 200`(
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        val held = startHeldHead(tmp)
+        try {
+            detachNonStreamTurn(held, turnBody("holdoverflow"))
+            val resend = post(held.head.port, turnBody("holdoverflow"))
+            assertTrue(
+                waitFor(20_000) { held.lines.any { "collect non-stream retry matches a detached one" in it } },
+                "the re-send must follow the running turn: ${held.lines.joinToString("")}",
+            )
+            held.mock.releaseHold()
+            val answer = readAnswer(resend)
+            val message = messageOf(answer)
+            assertTrue(statusOf(answer) >= 400, "the held turn failed, so its re-send is told so: $answer")
+            assertEquals("error", message["type"]?.jsonPrimitive?.content, answer)
+            assertEquals(1, held.mock.upstreamBodies.size, "the failure was the held turn's own, not a second run")
+        } finally {
+            held.mock.releaseHold()
             held.head.stop()
         }
     }

@@ -29,6 +29,7 @@ import splice.core.util.JsonWire
 import splice.core.util.WallClock
 import splice.head.ClientWindowWitness
 import splice.head.admission.TurnQuota
+import splice.head.compaction.HeldReply
 import splice.head.hold.HandOverHeaders
 import splice.head.turn.delivery.CollectedReply
 import splice.head.turn.detached.DetachedCompaction
@@ -88,9 +89,9 @@ internal class CollectTurn(
         // HeadEngine remains the bootstrap; this file is the second head file that names Netty,
         // and only to READ closeFuture off the call's ChannelHandlerContext.
         driveCollected(call, inputs, terminal, channel)
-        // V4-99 item 3 held until the answer ledger existed: a compaction WITH a hold hands its slot to
-        // the detached drive exactly as the streaming one does (markHandedOff in the launcher); every
-        // other collect turn still ends with its call and returns no handoff.
+        // V4-99 item 3 held until the answer ledger existed: a collect turn WITH a hold hands its slot to
+        // the detached drive exactly as the streaming compaction does (markHandedOff in the launcher); a
+        // collect turn with no session ends with its call and returns no handoff.
         return false
     }
 
@@ -110,6 +111,16 @@ internal class CollectTurn(
                 terminal.responseBody().let(JsonWire::string),
             )
         }
+        // A non-stream turn records no frames: its hold is what a byte-identical retry follows
+        // (Preparation.Collected → LocalResponses), so it detaches like a streaming compaction instead of
+        // throwing its work away with the call. Every non-stream turn with a session is held since
+        // 2026-11-09, not only a compaction: Claude Code hangs up a stream:false request at about 360 s and
+        // sends it again, and on Nov 8-9 one subagent's request was sent 228 times in 25 hours, each send
+        // restarting five minutes of upstream work. Bounds: the compaction hold's own (HeldCollectAnswers:
+        // 32 holds, 2 hours, a settled hold evicted before a running one); a held drive keeps the one
+        // inflight permit it was admitted with until its upstream turn ends, and a retry that follows it
+        // takes none. A turn with no session cannot be tied to its re-send and runs attached as before.
+        val heldKey = detachOwner.replay.key(built.meta, built.requestBody)
         val drive = driveFactory.assembleDrive(inputs, terminal, channel, stream = false)
         drive.collectPerf.defer()
         coroutineScope {
@@ -119,15 +130,14 @@ internal class CollectTurn(
             } else {
                 launch {
                     ClientConnectionClose.await(call)
+                    // A held turn's reader is its hold from here on, so it is detached before the loss is visible:
+                    // the drive never reads a client gone with no reader (ClientChannel.readerGone) and an upstream
+                    // tear in between is carried on from, not taken for an abandoned turn.
+                    if (heldKey != null) channel.detached.set(true)
                     channel.connectionClosed(parent)
                 }
             }
             try {
-                // A non-stream compaction records no frames: its hold is what a byte-identical retry
-                // follows (Preparation.Collected → LocalResponses), so it detaches exactly like its
-                // streaming sibling instead of throwing the whole prefill away with the call. Every
-                // other collect turn runs attached as before.
-                val heldKey = if (built.meta.compact) detachOwner.replay.key(built.meta, built.requestBody) else null
                 if (heldKey == null) {
                     sealedDrive.driveSealingCancellation(drive, pingClient = false, seal = false)
                 } else {
@@ -141,7 +151,7 @@ internal class CollectTurn(
         }
     }
 
-    /** Runs [drive] under a detached compaction whose collected answer outlives this call's client:
+    /** Runs [drive] under a detached collect whose reply outlives this call's client:
      *  join returns on clean completion; the call's cancellation detaches the channel first, so the
      *  drive finishes on its own scope and the hold answers the retry (DetachOwner.scope). */
     private suspend fun runHeldCollect(
@@ -159,12 +169,14 @@ internal class CollectTurn(
             detachOwner.scope,
             detachOwner.context,
         )
+        // The reply the turn's own client would have read, a failure's status included: a re-send that waited on a
+        // failed turn is told that failure, never a 200 carrying an error body.
         val job = launcher.launchCollected(
             drive,
             inputs,
             key,
             detachOwner.replay.answers.begin(key),
-            HeldCollectAnswer { terminal.responseBody() },
+            HeldCollectAnswer { HeldReply(terminal.responseBody(), terminal.httpStatus(), terminal.answered) },
         )
         try {
             job.join()
@@ -173,10 +185,12 @@ internal class CollectTurn(
             // ClientChannel.detachIfRecording does for a recorded stream — [detached] is what
             // launchCollected's keep verdict reads, and these writes were inert anyway.
             withContext(NonCancellable) {
-                channel.clientGone.set(true)
+                // Detached first, so the drive never reads a client gone with no reader in between.
                 channel.detached.set(true)
+                channel.clientGone.set(true)
+                val what = if (drive.meta.compact) "a compaction's" else "a non-stream turn's"
                 detachOwner.log(
-                    "[${provider.key}] a compaction's client left mid-turn: it runs on detached, so a " +
+                    "[${provider.key}] $what client left mid-turn: it runs on detached, so a " +
                         "byte-identical retry can read its answer\n",
                 )
             }

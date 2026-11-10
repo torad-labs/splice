@@ -111,7 +111,14 @@ public class WsUpstream(
         // connection, which costs one reconnect instead of stranding the conversation.
         var handedOff = false
         return try {
-            val first = if (opener.sendFrame(conn, key, frameFor(conn))) opener.awaitFirstEvent(conn, key) else null
+            val frame = frameFor(conn)
+            if (frame == null) {
+                // Not sent, so the socket is as healthy as it was: back to the pool, not poisoned.
+                handedOff = true
+                pool.release(key, conn)
+                return null
+            }
+            val first = if (opener.sendFrame(conn, key, frame)) opener.awaitFirstEvent(conn, key) else null
             first?.let { stream.roundFlow(conn, key, it, isTerminal) }?.also { handedOff = true }
         } finally {
             if (!handedOff) pool.failRound(conn, key)

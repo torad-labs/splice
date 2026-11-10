@@ -35,7 +35,6 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.uri
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.serialization.json.JsonObject
 import splice.core.client.AGENT_HEADER
 import splice.core.client.SESSION_HEADER
 import splice.core.failure.Decline
@@ -58,6 +57,7 @@ import splice.head.ReceivedBody
 import splice.head.RequestBodyReader
 import splice.head.compact.CompactClassifier
 import splice.head.compaction.CompactionReplay
+import splice.head.compaction.HeldReply
 import splice.head.wire.ClientInbound
 import splice.head.wire.FrameRecording
 import splice.upstream.BuiltTurn
@@ -100,14 +100,16 @@ internal sealed class Preparation {
         val model: String,
     ) : Preparation()
 
-    /** The non-stream sibling of [Replay]: a collect retry follows the held answer of the compaction
-     *  that outlived its first client (CompactionReplay.beginAnswer) instead of prefilling again —
-     *  finished holds complete at once, still-driving ones settle when their detached drive ends. */
+    /** The non-stream sibling of [Replay]: a collect retry follows the held reply of the non-stream turn (a
+     *  compaction or not) that outlived its first client (HeldCollectAnswers) instead of starting it again —
+     *  finished holds complete at once, still-driving ones settle when their detached drive ends. [compaction]: what
+     *  the held turn was, which the line of a re-send whose turn never finished names. */
     data class Collected(
-        val hold: CompletableDeferred<JsonObject?>,
+        val hold: CompletableDeferred<HeldReply?>,
         val key: String,
         val sessionId: String?,
         val model: String,
+        val compaction: Boolean,
     ) : Preparation()
 
     /** Claude Code's stream:false fallback for a STREAMED compaction that lost its client: the same upstream
@@ -314,7 +316,9 @@ internal class TurnPreparation(
         // streaming retry replays the recording's frames; a collect retry follows a collect compaction's held
         // answer, or else collects a streamed one's recording, which is Claude Code's stream:false fallback
         // (rig's findings of 2026-10-24 and 2026-10-25: hack-program cold-prefilled on every interruption).
-        val replayed = if (built.meta.compact) compactionReplay(built, parsed.typed.stream) else null
+        // A non-stream turn of any kind is held the same way since 2026-11-09 (CollectTurn): a Claude Code subagent
+        // re-sent one stream:false request 228 times in 25 hours, each re-send restarting its five minutes from zero.
+        val replayed = heldFor(built, parsed.typed.stream)
         // V4-165: a replayed turn is never driven, so what its build holds ends here, not at a drive.
         replayed?.let { built.onEnd?.ended() }
         return replayed ?: Preparation.Ready(
@@ -327,8 +331,12 @@ internal class TurnPreparation(
         )
     }
 
-    private fun compactionReplay(built: BuiltTurn, stream: Boolean): Preparation? =
-        if (stream) replayFor(built) else collectedFor(built)
+    /** A streamed compaction's recording, or a non-stream turn's held reply (a compaction's or not). */
+    private fun heldFor(built: BuiltTurn, stream: Boolean): Preparation? = when {
+        !stream -> collectedFor(built)
+        built.meta.compact -> replayFor(built)
+        else -> null
+    }
 
     private fun replayFor(built: BuiltTurn): Preparation.Replay? {
         val key = replay.key(built.meta, built.requestBody) ?: return null
@@ -352,11 +360,12 @@ internal class TurnPreparation(
         return when {
             hold != null -> {
                 val state = if (hold.isCompleted) "held" else "still driving"
+                val what = if (built.meta.compact) "compaction" else "non-stream"
                 deps.log(
-                    "[${provider.key}] collect compaction retry matches a detached one ($state, " +
+                    "[${provider.key}] collect $what retry matches a detached one ($state, " +
                         "${who(session)}following its held answer, no upstream turn)\n",
                 )
-                Preparation.Collected(hold, key, session, model)
+                Preparation.Collected(hold, key, session, model, built.meta.compact)
             }
             recording != null -> {
                 val state = if (recording.isComplete) "finished" else "still running"

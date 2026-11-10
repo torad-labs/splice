@@ -1,4 +1,4 @@
-// NEW: the answer ledger behind non-stream compaction retries: what a hold keeps, when it is
+// NEW: the answer ledger behind non-stream retries: what a hold keeps, when it is
 // dropped, how a newer hold supersedes an older one, and how a retry waits on a still-driving one.
 package splice.head.compaction
 
@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 internal class HeldCollectAnswersTest {
-    private val body = Json.parseToJsonElement("""{"id":"msg_held","type":"message"}""") as JsonObject
+    private val body = HeldReply(Json.parseToJsonElement("""{"id":"msg_held","type":"message"}""") as JsonObject, 200)
 
     @Test
     fun `a collected answer completed after its client left is held for the identical retry`() =

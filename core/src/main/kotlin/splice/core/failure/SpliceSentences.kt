@@ -54,7 +54,9 @@ internal class SpliceSentences(private val spoken: Spoken) {
         is FailureCause.Splice.Internal ->
             Said("This turn failed because of a fault in splice", next = Next.Resend(SEND_AGAIN))
         FailureCause.Splice.CompactionUnfinished -> Said(
-            "The summary this request was waiting on did not finish on ${facts.head}",
+            // A held non-stream turn's re-send waits on an answer too (2026-11-09), and it was no summary.
+            "The ${if (facts.request.compaction) "summary" else "answer"} this request was waiting on " +
+                "did not finish on ${facts.head}",
             next = Next.Resend(SEND_AGAIN),
         )
         is FailureCause.Splice.NoLogin, is FailureCause.Splice.AtCapacity, is FailureCause.Splice.Declined,

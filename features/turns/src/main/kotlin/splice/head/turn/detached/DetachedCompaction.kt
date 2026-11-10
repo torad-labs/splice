@@ -8,11 +8,11 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonObject
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.head.compaction.CompactionReplay
+import splice.head.compaction.HeldReply
 import splice.head.turn.SealedDrive
 import splice.head.turn.TurnDrive
 import splice.head.turn.TurnInputs
@@ -23,12 +23,11 @@ import kotlin.coroutines.CoroutineContext
 // why: inspect bounded coroutine-recovery cause wrappers without following a cyclic Throwable chain forever.
 private const val CANCELLATION_CAUSE_DEPTH = 4
 
-/** What a collected compaction holds for its retry: the terminal's one JSON body. A named seam
+/** What a collected turn holds for its re-send: the terminal's one reply, its status included. A named seam
  *  rather than a lambda (HD-22, like [splice.head.wire.UsagePayloadBuilder]): any
- *  `(TurnDrive) -> JsonObject?` satisfied it under a name the call site can document. Null is a
- *  drive that ended without the clean terminal a hold may replay. */
+ *  `(TurnDrive) -> HeldReply?` satisfied it under a name the call site can document. */
 internal fun interface HeldCollectAnswer {
-    public suspend operator fun invoke(drive: TurnDrive): JsonObject?
+    public suspend operator fun invoke(drive: TurnDrive): HeldReply?
 }
 
 internal class DetachedCompaction(
@@ -94,17 +93,18 @@ internal class DetachedCompaction(
         }
     }
 
-    /** The non-stream sibling of [launch]: a collect turn has no frames to record, so a cleanly ended
-     *  drive whose client left settles its COLLECTED body into [hold] under [key]'s answer ledger
-     *  (CompactionReplay.beginAnswer); a delivered turn keeps nothing — its client has the answer.
-     *  The nesting mirrors [launch] exactly: the slot and the hold settle whichever way the drive ends,
-     *  an abandoned launch settles null, and a crash reports through the same safe handler. */
+    /** The non-stream sibling of [launch], for every collect turn with a session (a compaction or not): a collect turn
+     *  has no frames to record, so the drive settles its COLLECTED reply into [hold] under [key]'s answer ledger. A
+     *  cleanly ended drive whose client left keeps it for the re-send; a delivered or failed one is told only to the
+     *  re-sends already waiting, a failure with its own status. The nesting mirrors [launch] exactly: the slot and the
+     *  hold settle whichever way the drive ends, an abandoned launch or a cancelled drive settles null, and a crash
+     *  reports through the same safe handler. */
     @OptIn(DelicateCoroutinesApi::class)
     fun launchCollected(
         drive: TurnDrive,
         inputs: TurnInputs,
         key: String,
-        hold: CompletableDeferred<JsonObject?>,
+        hold: CompletableDeferred<HeldReply?>,
         held: HeldCollectAnswer,
     ): Job {
         var completed = false
@@ -119,7 +119,7 @@ internal class DetachedCompaction(
             }
         }) {
             inputs.slot.markHandedOff()
-            var answer: JsonObject? = null
+            var answer: HeldReply? = null
             val job = scope.launch(context, start = CoroutineStart.ATOMIC) {
                 if (!claimed.compareAndSet(false, true)) return@launch
                 try {
@@ -134,7 +134,7 @@ internal class DetachedCompaction(
                                 Cancellables.withCleanup({ drive.channel.flushQuietly() }) {
                                     Cancellables.withCleanup({ completed = true }) {
                                         sealedDrive.driveSealingCancellation(drive)
-                                        // Read once the seal settled the terminal: a failed one leaves null.
+                                        // Read once the seal settled the terminal: a thrown drive leaves null.
                                         answer = held(drive)
                                     }
                                 }
@@ -152,12 +152,13 @@ internal class DetachedCompaction(
 
     private fun finishLineCollected(drive: TurnDrive, kept: Boolean): String {
         val who = drive.sessionTag()?.let { "session $it" } ?: "no session"
+        val what = if (drive.meta.compact) "compaction" else "non-stream turn"
         return if (kept) {
-            "[$providerKey] detached compaction finished ($who): " +
+            "[$providerKey] detached $what finished ($who): " +
                 "its collected answer held for a byte-identical retry\n"
         } else {
-            "[$providerKey] detached compaction ended without a terminal frame ($who): " +
-                "nothing held; a retry runs upstream\n"
+            "[$providerKey] detached $what ended without a clean answer ($who): " +
+                "nothing held; a waiting retry is told how it ended, a later one runs upstream\n"
         }
     }
 

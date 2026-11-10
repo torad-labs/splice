@@ -267,7 +267,7 @@ internal class WsRoundDriver(
 private const val DECLINED = "the socket could not take the round; the [ws] line before this names why"
 
 // The detail of a round the socket path did not take; the [ws] line before it names why (no key, no credentials,
-// a prefill that did not finish).
+// a prefill that did not finish, a frame over the peer's limit, a frame the peer refused with 1007).
 private const val BYPASSED = "the socket path did not take the round; the [ws] line before this names why"
 
 // The detail of a frame the peer closed with 1009; a fresh socket would refuse the same frame.

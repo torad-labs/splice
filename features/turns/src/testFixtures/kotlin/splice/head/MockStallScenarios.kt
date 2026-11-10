@@ -27,11 +27,20 @@ internal class MockStallScenarios(private val wire: MockSseWire, private val lat
         when (scenario) {
             "idlepre" -> acknowledgeThenSilence()
             "idle" -> partialThenSilence()
-            "holdstart" -> heldBeforeFirstItem()
-            "hold" -> heldAfterFirstDelta()
-            "holdtool" -> heldBeforeAndAfterToolCall()
             "prefill" -> slowPrefill()
             "drip" -> drip()
+            else -> return held(scenario)
+        }
+        return true
+    }
+
+    /** The scenarios a test's latch holds open. */
+    private fun held(scenario: String): Boolean {
+        when (scenario) {
+            "holdstart" -> heldBeforeFirstItem()
+            "hold" -> heldAfterFirstDelta()
+            "holdoverflow" -> heldThenOverflow()
+            "holdtool" -> heldBeforeAndAfterToolCall()
             else -> return false
         }
         return true
@@ -72,6 +81,14 @@ internal class MockStallScenarios(private val wire: MockSseWire, private val lat
         latches.hold.await() // block until the test releases, then finish cleanly
         wire.sse(e.itemDone())
         wire.sse(e.completed("rhold", input = 1, output = 1))
+    }
+
+    // The "hold" opening, then a context overflow once released: a held turn that fails, which no retry can change.
+    private fun heldThenOverflow() {
+        wire.sse(e.messageAdded())
+        wire.sse(e.textDelta("held"))
+        latches.hold.await()
+        wire.sse(e.failed("invalid_request_error", "Your input exceeds the context window of this model."))
     }
 
     // Prose first, a hold, then a tool call that has opened and not finished, a second hold, then a clean end: the

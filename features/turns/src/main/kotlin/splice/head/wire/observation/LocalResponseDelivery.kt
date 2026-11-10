@@ -25,8 +25,9 @@ internal object LocalResponseDelivery {
         observations,
     )
 
-    fun body(body: JsonObject, perf: TurnPerf): CollectedReply =
-        CollectedReply(JsonWire.string(body), HttpStatusCode.fromValue(OK_STATUS), perf)
+    /** [status]: a held reply carries its own, a failure's included (HeldReply). */
+    fun body(body: JsonObject, perf: TurnPerf, status: Int = OK_STATUS): CollectedReply =
+        CollectedReply(JsonWire.string(body), HttpStatusCode.fromValue(status), perf)
 }
 
 /** Local and replayed frames become observations only after their client write and flush succeed. */

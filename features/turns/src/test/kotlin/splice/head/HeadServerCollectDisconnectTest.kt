@@ -12,6 +12,7 @@ package splice.head
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterAll
@@ -102,7 +103,7 @@ class HeadServerCollectDisconnectTest {
     /** Write the request head + body on a raw socket: a real client whose close() is a real FIN,
      *  with no HTTP-client connection pool or cancellation semantics in between. The two arms
      *  differ in exactly one byte-range — `stream` — so any difference in outcome is the path. */
-    private fun openTurn(stream: Boolean, scenario: String = "hold"): Socket {
+    private fun openTurn(stream: Boolean, scenario: String = "hold", session: Boolean = true): Socket {
         val body = """{"model":"claude-codex--gpt-5.6-sol","stream":$stream,"max_tokens":64,""" +
             """"system":"You are a test. SCENARIO:$scenario",""" +
             """"messages":[{"role":"user","content":"go"}]}"""
@@ -110,7 +111,7 @@ class HeadServerCollectDisconnectTest {
         val request = "POST /v1/messages HTTP/1.1\r\n" +
             "Host: 127.0.0.1:$port\r\n" +
             "Authorization: Bearer test-inference-token\r\n" +
-            "x-claude-code-session-id: synthetic-collect-$stream-$scenario\r\n" +
+            (if (session) "x-claude-code-session-id: synthetic-collect-$stream-$scenario\r\n" else "") +
             "Content-Type: application/json\r\n" +
             "Content-Length: ${body.toByteArray().size}\r\n" +
             "Connection: close\r\n\r\n" + body
@@ -133,10 +134,10 @@ class HeadServerCollectDisconnectTest {
 
     /** Drive one turn to the parked-upstream state and hang the client up there. Returns whether
      *  the gate slot came back within [observeMs] — the whole experiment in one number. */
-    private suspend fun abandonMidTurnAndPoll(stream: Boolean, observeMs: Long): Boolean {
+    private suspend fun abandonMidTurnAndPoll(stream: Boolean, observeMs: Long, session: Boolean = true): Boolean {
         mock.resetHold()
         val upstreamBefore = mock.upstreamBodies.size
-        val socket = openTurn(stream)
+        val socket = openTurn(stream, session = session)
         // Mid-turn means mid-turn: the slot is held AND the upstream leg is open and parked on the
         // hold latch. Asserting on the slot alone would also pass for a request that never reached
         // upstream at all.
@@ -153,12 +154,15 @@ class HeadServerCollectDisconnectTest {
         // Whatever the outcome, leave the gate empty for the next arm.
         assertTrue(waitFor(30_000) { gate.snapshot().inflight == 0 }, "the released turn must drain")
         assertTrue(AsyncFileIo.drain())
-        val row = Files.readAllLines(tmp.resolve("perf.jsonl"))
-            .map { Json.parseToJsonElement(it).jsonObject }
-            .single { it["session_id"]?.jsonPrimitive?.content == "synthetic-collect-$stream-hold" }
+        val row = rowOf(if (session) "synthetic-collect-$stream-hold" else null)
         assertEquals(OutcomeTag.CLIENT_ABORT.wire, row["outcome"]?.jsonPrimitive?.content)
         return freed
     }
+
+    /** The one perf row of [session]'s turn; null picks the one turn this class sends with no session. */
+    private fun rowOf(session: String?) = Files.readAllLines(tmp.resolve("perf.jsonl"))
+        .map { Json.parseToJsonElement(it).jsonObject }
+        .single { it["session_id"]?.jsonPrimitive?.contentOrNull == session }
 
     /** CONTROL ARM — proves the instrument. A stream whose first model frame arrived watches
      *  Netty's closeFuture as well as its keepalive pinger, so either can return the slot promptly.
@@ -191,20 +195,39 @@ class HeadServerCollectDisconnectTest {
         assertTrue(freed, "a pre-header hangup must not retain admission until the 120s status hold")
     }
 
-    /** INVERTED (HD-29). Same socket, same close(), same parked upstream as the control arm:
-     *  collect now observes hang-up via Netty closeFuture → ClientChannel.connectionClosed, so
-     *  the slot comes back without a pinger and without waiting for the 600s watchdog. Kept
-     *  (not deleted) so the characterisation cannot land silently as a removed test. */
+    /** INVERTED (HD-29). Same socket, same close(), same parked upstream as the control arm: collect observes
+     *  hang-up via Netty closeFuture → ClientChannel.connectionClosed, so the slot comes back without a pinger and
+     *  without waiting for the 600s watchdog. Since 2026-11-09 that holds for a collect with no session only: one with a
+     *  session is held for its re-send (the next test), and a turn with no session cannot be tied to one. */
     @Test
-    fun `a stream-false turn abandoned mid-collect gets its gate slot back via connection-closed`() = runBlocking {
-        assertTrue(
-            abandonMidTurnAndPoll(stream = false, observeMs = 20_000),
-            "the collect path must free its slot on a client hang-up: ${gate.snapshot()}",
-        )
-        assertTrue(AsyncFileIo.drain())
-        val row = Files.readAllLines(tmp.resolve("perf.jsonl"))
-            .map { Json.parseToJsonElement(it).jsonObject }
-            .single { it["session_id"]?.jsonPrimitive?.content == "synthetic-collect-false-hold" }
-        assertTrue(PerfKeys.ARRIVAL_TO_FIRST_CLIENT_BYTE_MS !in row, "an abandoned collect sent no reply")
-    }
+    fun `a stream-false turn with no session abandoned mid-collect gets its slot back via connection-closed`() =
+        runBlocking {
+            assertTrue(
+                abandonMidTurnAndPoll(stream = false, observeMs = 20_000, session = false),
+                "a collect with no session must free its slot on a client hang-up: ${gate.snapshot()}",
+            )
+            assertTrue(AsyncFileIo.drain())
+            assertTrue(PerfKeys.ARRIVAL_TO_FIRST_CLIENT_BYTE_MS !in rowOf(null), "an abandoned collect sent no reply")
+        }
+
+    /** Rewritten 2026-11-09 (it asserted the cancel above for every collect): Claude Code hangs up a stream:false
+     *  request at about 360 s and sends it again, and cancelling it threw five minutes of upstream work away per
+     *  send, 228 times for one subagent on Nov 8-9. A collect with a session now runs on detached on its own slot,
+     *  so the re-send can follow it (CollectCompactionRetryTest), and the slot comes back when the upstream ends. */
+    @Test
+    fun `a stream-false turn abandoned mid-collect runs on detached on its slot until the upstream ends`() =
+        runBlocking {
+            mock.resetHold()
+            val upstreamBefore = mock.upstreamBodies.size
+            val socket = openTurn(stream = false)
+            assertTrue(waitFor(15_000) { gate.snapshot().inflight == 1 }, "the turn must hold a gate slot")
+            assertTrue(waitFor(15_000) { mock.upstreamBodies.size > upstreamBefore }, "the turn must reach upstream")
+            socket.close()
+            // Long enough for the connection-closed path above to have freed the slot, had it cancelled the turn.
+            val freedEarly = waitFor(3_000) { gate.snapshot().inflight == 0 }
+            assertTrue(!freedEarly, "a held collect keeps its slot while its upstream runs: ${gate.snapshot()}")
+            assertEquals(1L, mock.holdRelease.count, "the upstream must still be parked")
+            mock.releaseHold()
+            assertTrue(waitFor(30_000) { gate.snapshot().inflight == 0 }, "the slot comes back when the upstream ends")
+        }
 }

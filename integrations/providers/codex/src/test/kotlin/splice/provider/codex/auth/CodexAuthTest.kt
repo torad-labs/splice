@@ -240,48 +240,49 @@ class CodexAuthTest {
             assertEquals(beforeContent, path.readText()) // no extra write
         }
 
-    // G1: the endpoint rejects R1, but disk shows a rotation to R2 landed underneath us — retry ONCE
-    // against R2, which succeeds. Exactly two POSTs, no more.
+    // G1 (rewritten Nov 10, 2026, a decided change): the endpoint rejects R1 because the codex CLI rotated
+    // auth.json to a fresh pair while our POST was in flight. The CLI's pair is adopted as it is, and its refresh
+    // token is never posted: posting it would spend the token the CLI was just issued and sign the CLI out.
     @Test
-    fun `refresh rejected once but the disk-fresh refresh token succeeds - one bounded retry`(@TempDir tmp: Path) =
+    fun `refresh rejected while a peer rotated the file - the peer's pair is adopted, one POST`(@TempDir tmp: Path) =
         runTest {
-            val seen = mutableListOf<String>()
+            val posted = mutableListOf<String>()
             val path = tmp.resolve(".codex/auth.json")
+            val peerPair = """{"tokens":{"access_token":"peer-access","refresh_token":"R2","account_id":"acct-1"}}"""
             val (auth, _) = provider(tmp, { 1_000L }) { token ->
-                seen.add(token)
-                if (token == "R1") {
-                    // another process's rotation lands on disk between our read and the POST.
-                    path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"R2"}}""")
-                    RefreshAttempt.Denied("codex rejected R1")
-                } else {
-                    RefreshAttempt.Granted(
-                        RefreshedTokens(accessToken = "tok-new", refreshToken = "R3", idToken = null),
-                    )
-                }
+                posted.add(token)
+                // the CLI's rotation lands on disk between our read and the POST.
+                path.writeText(peerPair)
+                RefreshAttempt.InvalidGrant("codex rejected R1")
             }
             Files.createDirectories(path.parent)
-            path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"R1"}}""")
-            assertEquals("tok-new", (auth.refresh() as Credentials.Bearer).token)
-            assertEquals(listOf("R1", "R2"), seen)
-            val onDisk = kotlinx.serialization.json.Json.parseToJsonElement(path.readText()).jsonObject
-            assertEquals("R3", onDisk["tokens"]!!.jsonObject["refresh_token"]?.jsonPrimitive?.content)
+            path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"R1","account_id":"acct-1"}}""")
+            val served = auth.refresh() as Credentials.Bearer
+            assertEquals("peer-access", served.token)
+            assertEquals("acct-1", served.accountId)
+            assertEquals(listOf("R1"), posted) // the CLI's R2 never left the machine
+            assertEquals(peerPair, path.readText()) // the CLI's file stands as it wrote it
+            assertEquals("peer-access", (auth.credentials() as Credentials.Bearer).token)
+            assertNull(auth.describe().fields["refresh_latched"], "an adopted pair is not a dead login")
         }
 
-    // G1: the retry is bounded even when the disk token keeps rotating and every POST is rejected —
-    // exactly two POSTs, then it gives up (the retry POSTs with allowRereadRetry=false, never loops).
+    // G1: a file whose refresh token changed but whose access token is still the one splice tried holds no
+    // fresh pair to adopt. The rejection stands and nothing more is posted.
     @Test
-    fun `refresh genuinely dead - bounded to two POSTs, no infinite retry`(@TempDir tmp: Path) = runTest {
-        val calls = AtomicInteger(0)
+    fun `refresh rejected and the file changed only its refresh token - one POST, nothing adopted`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val posted = mutableListOf<String>()
         val path = tmp.resolve(".codex/auth.json")
-        val (auth, _) = provider(tmp, { 1_000L }) {
-            val n = calls.incrementAndGet()
-            path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"R${n + 1}"}}""")
+        val (auth, _) = provider(tmp, { 1_000L }) { token ->
+            posted.add(token)
+            path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"R2"}}""")
             RefreshAttempt.Denied("test-denied")
         }
         Files.createDirectories(path.parent)
         path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"R1"}}""")
         assertNull(auth.refresh())
-        assertEquals(2, calls.get())
+        assertEquals(listOf("R1"), posted)
     }
 
     // G6: codex's access_token is itself a JWT, so proactive-expiry awareness comes from its own

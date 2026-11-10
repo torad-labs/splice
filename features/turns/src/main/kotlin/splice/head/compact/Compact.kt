@@ -74,8 +74,13 @@ public class CompactStats(
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    // One line per append-failure STREAK (UsageRingFile's latch): a full disk must not firehose the log, and an
+    // append that lands ends the streak so the next one is said again.
+    private val appendFailureLogged = java.util.concurrent.atomic.AtomicBoolean(false)
+
     // append is best-effort by design: the turn builds an immutable row and the bounded file lane
-    // owns filesystem latency.
+    // owns filesystem latency. A row the saturated lane refuses is counted and logged by the lane itself
+    // (AsyncFileIo's drop episode); a row whose append fails leaves its trace here.
     public fun record(fields: Map<String, Any?>) {
         val row = JsonWire.string(
             buildJsonObject {
@@ -95,7 +100,18 @@ public class CompactStats(
             Cancellables.runCatchingCancellable {
                 Files.createDirectories(file.parent)
                 JsonlSink.appendLine(file, row, force = JsonlSink.PAGE_CACHE_FORCE)
-            }
+            }.fold(
+                onSuccess = { appendFailureLogged.set(false) },
+                onFailure = { failure ->
+                    AsyncFileIo.reportWriteFailure()
+                    if (appendFailureLogged.compareAndSet(false, true)) {
+                        log(
+                            "[compact] $file append FAILED (${SafeFailureText.render(failure)}); compaction " +
+                                "outcomes are not recorded until a later append lands\n",
+                        )
+                    }
+                },
+            )
         }
     }
 

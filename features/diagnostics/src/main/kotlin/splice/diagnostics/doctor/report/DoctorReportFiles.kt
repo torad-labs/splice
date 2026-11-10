@@ -12,6 +12,7 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+import java.time.Instant
 
 /** What the tails yielded: their lines, or the reason a generation could not be read (absence is empty), and each
  *  generation apart, which the log tail judges one at a time (DoctorLogPayloads). */
@@ -35,7 +36,9 @@ internal class DoctorReportFiles(private val redaction: DoctorRedaction) {
      *  head-derived and never printed here). */
     fun tails(file: Path, maxBytes: Int): FileLines {
         val errors = mutableListOf<String>()
-        if (!AsyncFileIo.awaitFile(file)) errors += "pending file write did not settle"
+        val settle = AsyncFileIo.settleFile(file)
+        if (!settle.settled) errors += "pending file write did not settle"
+        settle.lostAtMs?.let { errors += "a write was lost (refused or failed), latest at ${Instant.ofEpochMilli(it)}" }
         val generations = listOf("rotated" to file.resolveSibling("${file.fileName}.1"), "active" to file)
         val tails = generations.map { (label, generation) ->
             Cancellables.runCatchingCancellable {

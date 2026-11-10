@@ -204,9 +204,13 @@ public class EconomicsStore(
         return snapshot
     }
 
-    /** Force the newest snapshot to stable storage (head stop and deterministic tests). */
+    /** Force the newest snapshot to stable storage (head stop and deterministic tests). Loads first, so a store
+     *  nothing has touched yet writes back the hours on disk rather than an empty list over them. */
     public fun flushNow() {
-        val (snapshot, v) = synchronized(lock) { buckets.values.sortedBy { it.hour } to version }
+        val (snapshot, v) = synchronized(lock) {
+            loadUnderLock()
+            buckets.values.sortedBy { it.hour } to version
+        }
         persist(snapshot, v)
     }
 
@@ -226,6 +230,8 @@ public class EconomicsStore(
     /** Guarded by [writeLock]: why the last write failed, or null when it landed. The flush retries itself,
      *  so only the first failure of a streak is logged, and a write that lands ends the streak. */
     private var lastWriteFailure: Throwable? = null
+
+    private val unreadable = UnreadableFile(file, clock, log)
 
     private fun loadUnderLock() {
         if (loaded) return
@@ -268,12 +274,18 @@ public class EconomicsStore(
     // V4-151 (DR-58/DR-60 class law): only PROVEN absence — NoSuch with no NOFOLLOW entry — is the
     // quiet first-run empty. The old exists() pre-gate read an inaccessible file as absent, and a
     // corrupt one collapsed to empty with no log at all; either way the next coalesced persist
-    // OVERWROTE the hourly history without a trace. The degrade is unchanged; it now says so.
+    // OVERWROTE the hourly history without a trace. It then said so and still overwrote it, so a sudo run
+    // that left the file root-owned would lose the whole window at the next turn (audit, Nov 9, 2026). Now
+    // the file is marked, and the first write sets it aside ([UnreadableFile]) before it writes a new one.
     // Cold path: loadUnderLock runs this once per instance.
     private fun readFromDisk(): List<EconomicsBucket> = Cancellables.runCatchingCancellable {
         val size = Files.size(file)
         if (size > MAX_FILE_BYTES) {
-            log("[economics] $file is ${size}B > ${MAX_FILE_BYTES}B cap; history treated as empty\n")
+            unreadable.found = true
+            log(
+                "[economics] $file is ${size}B > ${MAX_FILE_BYTES}B cap; history starts empty and the file is " +
+                    "set aside, not overwritten, at the next write\n",
+            )
             emptyList()
         } else {
             json.parseToJsonElement(Files.readString(file)).jsonArray
@@ -283,9 +295,10 @@ public class EconomicsStore(
         val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
             !Files.exists(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)
         if (!genuinelyAbsent) {
+            unreadable.found = true
             log(
-                "[economics] $file unreadable/corrupt (${SafeFailureText.render(failure)}); " +
-                    "history treated as empty and overwritten at the next persist\n",
+                "[economics] $file unreadable/corrupt (${SafeFailureText.render(failure)}); history starts " +
+                    "empty and the file is set aside, not overwritten, at the next write\n",
             )
         }
         emptyList()
@@ -304,7 +317,10 @@ public class EconomicsStore(
         synchronized(writeLock) {
             if (v <= persistedVersion) return
             val encoded = JsonWire.string(buildJsonArray { snapshot.forEach { add(hours.encode(it)) } }) + "\n"
-            Cancellables.runCatchingCancellable { SecureFile.writeAtomic0600(file, encoded) }.fold(
+            Cancellables.runCatchingCancellable {
+                unreadable.keepAside()
+                SecureFile.writeAtomic0600(file, encoded)
+            }.fold(
                 onSuccess = {
                     persistedVersion = v
                     lastWriteFailure = null
@@ -320,6 +336,32 @@ public class EconomicsStore(
                     lastWriteFailure = failure
                 },
             )
+        }
+    }
+
+    /**
+     * The file the load could not read (unreadable, corrupt or past the cap): history this store cannot see, so
+     * the first write moves it to a sibling rather than replacing it, ConfigService's rule for a file it cannot
+     * read (unknown state is not overwritten). Its own class for the same detekt ceiling as [HourReader].
+     */
+    private class UnreadableFile(private val file: Path, private val clock: WallClock, private val log: LogSink) {
+        /** Set by the load; cleared once the file is aside or gone. */
+        @Volatile
+        var found = false
+
+        /** Under the store's write lock, before a write. A move that fails throws, so the write it guards does not
+         *  happen; the hours stay in memory and the next flush tries both again. A file already gone has nothing
+         *  left to keep. */
+        fun keepAside() {
+            if (!found) return
+            val aside = file.resolveSibling("${file.fileName}.unreadable-${clock()}")
+            try {
+                Files.move(file, aside)
+                log("[economics] the unreadable $file is kept as $aside; a new file takes its place\n")
+            } catch (_: java.nio.file.NoSuchFileException) {
+                // Absent now: nothing to keep, and the write that follows creates the file.
+            }
+            found = false
         }
     }
 

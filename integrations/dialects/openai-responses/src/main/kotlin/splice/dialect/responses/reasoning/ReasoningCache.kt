@@ -132,7 +132,8 @@ internal class ReasoningCache(
     /** [replacesPosition]: [toolIds] is one history-position record, the first its turn stores at that position. What
      *  other turns left there goes first (2026-11-09): a turn reaches a position another turn already stored at only
      *  when the client re-sent a request whose earlier attempt it never kept, so that reasoning follows nothing in
-     *  the history. The re-sent request was built before this put and still carried it once; the next one does not. */
+     *  the history. A turn's records reach this put only once the client holds what they led into, or a round of the
+     *  turn reached its terminal (ResponsesTurnSeams), so an attempt cut before either stored nothing to replace. */
     fun put(
         conversationKey: String?,
         toolIds: List<String>,

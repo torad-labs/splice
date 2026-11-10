@@ -286,6 +286,9 @@ internal class ResponsesStreamTranslator(
      *  A compaction seeds nothing (its own reasoning is never stored); its Success ends the
      *  conversation's reasoning instead (V4-334). */
     private fun captureTurnReasoning(state: ResponsesTurnState, outcome: TurnOutcome) {
+        // The round reached its terminal, or the client holds prose or a call from it even though it failed after: the
+        // reasoning the turn holds is history. A round that ended with neither leaves its reasoning to no request.
+        if (outcome is TurnOutcome.Success || state.clientHolds) ctx.reasoningCapture.onTurn.kept()
         if (outcome !is TurnOutcome.Success) return
         when {
             ctx.compact -> ctx.reasoningCapture.onTurn.compacted()

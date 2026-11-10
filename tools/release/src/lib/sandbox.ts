@@ -104,12 +104,12 @@ export function fakeNetwork(): FakeNetwork {
   const dir = mkdtempSync(join(tmpdir(), "release-accept-net-"));
   writeStub(
     join(dir, "curl"),
-    // curl is called as `curl -fsSL <url> -o <dest>`: the url is $2 and the destination $4.
+    // install.sh's download() calls `curl <options> -o <dest> <url>`: the destination follows -o and the url is last.
     'import { appendFileSync, copyFileSync } from "node:fs";\n' +
       'import { basename, join } from "node:path";\n' +
       "const argv = process.argv.slice(2);\n" +
-      "const url = argv[1] ?? \"\";\n" +
-      "const dest = argv[3] ?? \"\";\n" +
+      "const url = argv[argv.length - 1] ?? \"\";\n" +
+      "const dest = argv[argv.indexOf(\"-o\") + 1] ?? \"\";\n" +
       'appendFileSync(process.env.SPLICE_FAKE_CURL_LOG, `${url}\\n`);\n' +
       "copyFileSync(join(process.env.SPLICE_FAKE_RELEASE_ASSETS, basename(url)), dest);\n",
   );

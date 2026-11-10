@@ -5,6 +5,7 @@
 // later, V4-217), then the candidate must answer `version` like a splice jar and run its own
 // doctor. Everything lands in a staging directory; a refusal at any step leaves nothing activated.
 // Oct 13: on Linux x86-64, the MCP hub's holder and front too, when the sums list both (UpgradeHub).
+// Nov 10: each asset streams into staging, hashed on the way, and lands only on its published sum (UpgradeTransfer).
 // Network and processes go through two seams so the command is tested without a socket or a gh.
 package splice.lifecycle.upgrade
 
@@ -15,7 +16,6 @@ import splice.core.terminal.YELLOW
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
-import java.security.MessageDigest
 
 internal const val SUMS_ASSET = "sha256sums.txt"
 
@@ -125,24 +125,21 @@ internal class UpgradeRelease(
     }
 
     private fun stageAsset(fetching: Fetching, asset: String): Upgraded<Unit> =
-        fetched(fetching.base, asset).then { bytes ->
-            verifySum(asset, bytes, fetching.sums).then {
-                val file = Files.write(fetching.staging.resolve(asset), bytes)
-                val attested = if (fetching.attests) {
-                    attest(file, asset)
-                } else {
-                    Upgraded.Ok(Unit)
+        downloaded(fetching, asset).then { file ->
+            val attested = if (fetching.attests) {
+                attest(file, asset)
+            } else {
+                Upgraded.Ok(Unit)
+            }
+            attested.then {
+                val how = when {
+                    !fetching.remote -> "sha256 ok (local release base, no attestation)"
+                    !fetching.attest -> "sha256 ok (auto-update checks the release sums only)"
+                    fetching.gap == null -> "sha256 ok, attestation ok"
+                    else -> "sha256 ok, provenance not checked (gh ${fetching.gap})"
                 }
-                attested.then {
-                    val how = when {
-                        !fetching.remote -> "sha256 ok (local release base, no attestation)"
-                        !fetching.attest -> "sha256 ok (auto-update checks the release sums only)"
-                        fetching.gap == null -> "sha256 ok, attestation ok"
-                        else -> "sha256 ok, provenance not checked (gh ${fetching.gap})"
-                    }
-                    output.line("  $GREEN✓$RESET ${asset.padEnd(UPGRADE_PAD)} $how")
-                    Upgraded.Ok(Unit)
-                }
+                output.line("  $GREEN✓$RESET ${asset.padEnd(UPGRADE_PAD)} $how")
+                Upgraded.Ok(Unit)
             }
         }
 
@@ -166,15 +163,22 @@ internal class UpgradeRelease(
         else -> "is not signed in"
     }
 
-    private fun verifySum(asset: String, bytes: ByteArray, sums: String): Upgraded<Unit> {
-        val expected = sums.lineSequence().map { it.trim() }.firstOrNull { it.endsWith(" $asset") }
+    /** The asset's published sum, then the asset in staging, hashed as it streamed in: bytes whose sha256 is not that
+     *  sum never land there. Absent and failed are different refusals, as for [fetched]. */
+    private fun downloaded(fetching: Fetching, asset: String): Upgraded<Path> {
+        val expected = fetching.sums.lineSequence().map { it.trim() }.firstOrNull { it.endsWith(" $asset") }
             ?.substringBefore(' ')
             ?: return Upgraded.Refused("no $asset entry in $SUMS_ASSET")
-        val actual = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
-        return if (expected.equals(actual, ignoreCase = true)) {
-            Upgraded.Ok(Unit)
-        } else {
-            Upgraded.Refused("sha256 verification FAILED for $asset (expected $expected, got $actual)")
+        val target = fetching.staging.resolve(asset)
+        return try {
+            when (val got = fetch.download("${fetching.base}/$asset", target, expected, ProgressLines(output, asset))) {
+                Downloaded.Landed -> Upgraded.Ok(target)
+                Downloaded.Absent -> Upgraded.Refused("no $asset at ${fetching.base}")
+                is Downloaded.Mismatch ->
+                    Upgraded.Refused("sha256 verification FAILED for $asset (expected $expected, got ${got.actual})")
+            }
+        } catch (failed: UpgradeFetchFailed) {
+            Upgraded.Refused("fetching $asset from ${fetching.base} failed: ${failed.why}")
         }
     }
 

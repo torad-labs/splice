@@ -409,7 +409,12 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "Files.writeString(" to 2,
     ),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeLock.kt" to mapOf("FileChannel.open(" to 1),
-    "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeRelease.kt" to mapOf("Files.write(" to 1),
+    // A release asset streamed into its `.part` sibling in the stage and renamed onto its own name once its sha256
+    // matches (2026-11-10, replacing UpgradeRelease's whole-file write), in the releases/.staging README row.
+    "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeDownloadFiles.kt" to mapOf(
+        "Files.move(" to 1,
+        "Files.newOutputStream(" to 1,
+    ),
     // Splice's own systemd user units, each staged in a temp file and moved into place, in the systemd/user README
     // row, and the record of the hub units earlier installs wrote, rewritten as they retire, in the
     // mcp-hub/units-written row.

@@ -71,30 +71,40 @@ fixtures — `npm run oracle:replay`). Do not weaken either.
 > `.mjs` file, treat the contract as authoritative and the filename as history — the 11 byte-exact
 > oracle fixtures pin the wire itself.
 
-Bearer-guarded (`Authorization: Bearer <key>`, the management key in the state root, which is
-install-dependent since V4-177),
-loopback-only, both proxies:
+There is NO `/mgmt` API any more. The Node proxies served `GET /mgmt/status`, `/mgmt/config` (and
+`PATCH`), `/mgmt/usage`, `/mgmt/compact`, `/mgmt/auth` (and `POST /mgmt/auth/refresh`), `/mgmt/logs` and
+`/mgmt/models` on every head; the Kotlin daemon registers none of them, so nothing answers them, and a tool or
+doctor check built on one fails. What they showed is the control plane's `/api/*` (next section), which reads the
+one JVM's state in process: `/api/status` and `/api/heads`, `/api/config`, `/api/usage`, `/api/compact`,
+`/api/auth` and `POST /api/auth/{head}/refresh`, `/api/logs` and `/api/logs/{head}?tail=N`, `/api/models`.
 
-| route | purpose |
-|---|---|
-| GET /mgmt/status | version, uptime, gate snapshot + live in-flight, mode/arm |
-| GET /mgmt/config | effective + all four layers + restart-required keys |
-| PATCH /mgmt/config | hot-apply runtime knobs; persists to state config.json |
-| GET /mgmt/usage | 5h output-token window + persisted ratelimit headers |
-| GET /mgmt/compact | compact outcomes + shadow-classifier tail |
-| GET /mgmt/auth, POST /mgmt/auth/refresh | token introspection (masked), refresh |
-| GET /mgmt/logs?tail=N | proxy log tail from the state root's `logs/` |
-| GET /mgmt/models | catalog, windows, pinned, discovery ids |
+A head is a loopback listener per `[heads.<key>]` and serves five routes (`features/turns/.../head/HeadEngine.kt`,
+`routes`; the doors are `Door` in `ClientAuth.kt`):
 
-Config layering: defaults ← `[defaults]` TOML ← `[heads.<key>.overrides]` TOML ←
-state/config.json ← env ← runtime PATCH. Env is the boot authority (the launcher
-writes it); PATCH wins until restart and persists to the file layer.
+| route | who may call | purpose |
+|---|---|---|
+| GET /health | anyone (open probe) | version and the head's state |
+| GET /v1/models | a caller who may run inference here | the head's model list |
+| GET /wire | the management key alone | the operator's view of what the head sent upstream; 404 naming the knob while capture is off |
+| POST /v1/messages | a caller, plus a credential to forward on a head that only forwards | a turn |
+| POST /v1/messages/count_tokens | a caller | a local token estimate |
+
+Config layering, lowest to highest (`core/.../config/ConfigService.kt`, `buildSnapshot`): defaults ←
+`[defaults]` and `[daemon]` TOML ← state/config.json ← env (each knob's own names) ← runtime PATCH ←
+`[heads.<key>.overrides]` TOML, which `getConfig(headKey)` folds in for that head. The per-head layer is the
+MOST specific and beats every shared layer, a runtime PATCH included: a console PATCH answers `applied` and moves
+the global `effective` view while a head whose overrides set the same key keeps its own value. A knob only the
+daemon-wide value reaches ignores a per-head value, and a global PATCH rejects a head-only knob. A PATCH beats
+every shared layer until restart, persists best-effort to state/config.json (the answer says `persisted`, or
+`not_persisted` with why), and that copy sits below env at the next boot. `PATCH /api/config?head=<key>` writes
+that head's overrides into splice.toml instead.
 
 Which keys need a restart is NOT a hand list here — a hand list is wrong the day a knob is added,
 and this one had been wrong for a long time (V4-109: it named four, while nearly every knob is
 snapshotted at `Daemon.start` and only the hot few apply live). Ask the machine instead:
 `restartRequiredKnobKeys` in `core/.../config/KnobKind.kt`, derived from the `Knob` enum's
-own flag, and the same list on the wire as `restart_required_keys` from `GET /mgmt/config`.
+own flag. On the wire each knob in `GET /api/config`'s `knobs` carries `disposition` (`restart` or
+`live`), and a PATCH answers `restart_required` with the applied keys that wait for a restart.
 Everything else hot-applies on the next request.
 
 All heads share ONE `ConfigService` (one JVM — unlike the Node lineage's
@@ -111,7 +121,7 @@ head (`[heads.<key>]` system_prompt / system_prompt_file / system_prompt_mode), 
 (`[projects."<root>".heads.<key>]`). The project is the deepest configured root containing the
 session's cwd (`SessionProject`). Appends stack as trailing blocks; a replace drops the client's
 field and every earlier layer. No projects table = V4-36's bytes. Resolver:
-`core/.../prompt/SystemPromptLayers.kt`; applied in `TurnPreparation.applySystemPrompt`.
+`core/.../prompt/SystemPromptLayers.kt`; applied in `TurnPrompts.applySystemPrompt`.
 
 ## Control plane (spliced)
 
@@ -119,18 +129,20 @@ field and every earlier layer. No projects table = V4-36's bytes. Resolver:
 > `app/src/main/kotlin/splice/app/control/ControlServer.kt`. The Node
 > `src/control-server.mjs` it replaced was deleted on 2026-08-10.
 
-The control plane is centralized. `spliced` (`src/control-server.mjs`, loopback
+The control plane is centralized. `spliced` (`ControlServer.kt`, loopback
 `:3096`, `controlPort`) hosts a bearer-guarded `/api/*` that AGGREGATES every head
 (same mgmt-key). The console returned on Oct 10, 2026 and is served only by this
-central control plane through `ConsoleMount`; heads still have no `/dashboard`.
-Console assets use the same authenticated `/api/*` surface. It reads file-based truth
-(auth, usage, compact) directly so a DOWN head is still visible, and talks to
-RUNNING heads over `/mgmt` for live status + config.
+central control plane through `ConsoleMount`; heads have no `/dashboard`.
+Console assets use the same authenticated `/api/*` surface. Every head runs inside the
+daemon's one JVM, so the control plane reads head state, config and file-based truth
+(auth, usage, compact) in process, and a DOWN head is still visible. The table lists the
+routes the old aggregate served; the full set is whatever the mounts under
+`app/src/main/kotlin/splice/app/control/mount/` register.
 
 | route | purpose |
 |---|---|
 | GET /api/heads · POST /api/heads/:head/{start,stop,restart} | live status + full lifecycle |
-| GET \| PATCH /api/config | effective + layers; PATCH fans out to running heads |
+| GET \| PATCH /api/config | effective + layers; PATCH goes to the one `ConfigService` (`?head=<key>` writes that head's overrides) |
 | GET /api/usage | per-head 5h usage + soft-warn (ok/warn/critical) |
 | GET /api/auth · POST /api/auth/:head/{refresh,login} | per-head auth; codex browser login |
 | GET /api/compact · GET /api/logs/:head | compact stats, per-head log tail |
@@ -138,12 +150,13 @@ RUNNING heads over `/mgmt` for live status + config.
 - **Head lifecycle is shared** (`launcher/heads.mjs`): the CLI launcher and spliced
   call the SAME registry + spawn/kill primitives (never forked). Control-side
   spawns strip `CONFIG_ENV_NAMES` so `config.json` wins over inherited env.
-- **Config PATCH fans out** to each running head's `/mgmt/config` (the runtime
-  layer, which beats the launcher's env pin); with no head up it writes the file.
-- **Soft-warn never blocks** (`usage/warn.mjs`, `usageWarnPct` / `usageWarnTokens5h`):
+- **Config PATCH needs no fan-out**: heads share the one `ConfigService`, so the PATCH
+  lands in its runtime layer once and persists to state/config.json. A head whose
+  `[heads.<key>.overrides]` sets the key keeps its own value (see "Config layering").
+- **Soft-warn never blocks** (`core/.../usage/UsageWarn.kt`, `usageWarnPct` / `usageWarnTokens5h`):
   drives the statusline `⚠`.
-- Heads keep `/mgmt` but no longer serve `/dashboard`; every head launch
-  best-effort-starts spliced.
+- Heads serve no `/mgmt` and no `/dashboard`; a launch cold-starts the daemon when it is
+  down (`splice-launch`).
 
 ## Gates
 

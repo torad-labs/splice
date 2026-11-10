@@ -12,6 +12,7 @@ import splice.core.failure.Recovery
 import splice.core.failure.WaitLine
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.head.transport.PlannedClose
 import splice.head.wire.BufferingWireSink
 import splice.upstream.FoldPolicy
 import splice.upstream.ReanchorPolicy
@@ -41,6 +42,12 @@ internal class FoldRounds(
     /** The fold re-anchor: round [attempt] (zero-based) died mid-stream and continues from its salvage. The journal
      *  names the attempt; the turn is told the failure, which a person reads as the episode's line (slice 2). */
     suspend fun noteReanchor(attempt: Int, failure: TurnOutcome.Failure) {
+        // A planned socket rotation is no failure the person needs to hear of (2026-11-10).
+        if (PlannedClose.isRotation(failure.cause)) {
+            val why = failure.evidence.message
+            log("[$key] fold socket rotation ${attempt + 1}: $why; continuing on a fresh socket\n")
+            return
+        }
         val type = ClientWire.ownType(failure.cause).wireName
         log("[$key] fold re-anchor ${attempt + 1}: $type mid-round; retrying\n")
         signals.recovering(WaitLine(failure.cause, Recovery.Resume))

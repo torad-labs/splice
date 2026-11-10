@@ -50,6 +50,11 @@ internal const val SERVER_FIRST_RESEND_MS: Long = 200L // why: the first of the 
  *  failed fold round: each continues from what arrived. The failed and truncated rows make 6 requests with it. */
 internal const val MAX_STREAM_RECOVERIES: Int = 5
 
+/** A provider's planned socket rotation (the Responses websocket's 60-minute connection limit) is continued on its own
+ *  count, never on [MAX_STREAM_RECOVERIES]: it is the socket's lifetime, not a failure, and a long answer meets one
+ *  every hour (2026-11-08: a 6.3-hour turn met six, each spent as a failure, and ended "stayed overloaded"). */
+internal const val MAX_SOCKET_ROTATIONS: Int = 12 // why: twelve hours of one answer; past it the turn ends honestly
+
 /** A stream that closed before any event, or a first byte that never came, is sent fresh twice. */
 internal const val MAX_FRESH_REISSUES: Int = 2
 

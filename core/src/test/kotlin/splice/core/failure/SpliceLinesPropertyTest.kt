@@ -178,10 +178,14 @@ private fun Random.providerVerdict(which: Int, said: ProviderWords?): FailureCau
     0 -> FailureCause.Provider.Rejected(nextBoolean(), said)
     1 -> FailureCause.Provider.ModelMissing(pick(MODELS), said)
     2 -> FailureCause.Provider.Refused(pick(RefusedBy.entries), said)
-    3 -> FailureCause.Provider.Empty(nextBoolean(), said)
+    3 -> FailureCause.Provider.Empty(nextBoolean(), said, loop().takeIf { nextBoolean() })
     4 -> FailureCause.Provider.ToolTear(nextBoolean(), nextBoolean(), said)
     else -> FailureCause.Provider.Unrecognized(nextBoolean(), said)
 }
+
+/** A run of empty reasoning splice ended: the bound's own size, a longer one, and the Nov 8 loop's 6.3 hours. */
+private fun Random.loop(): ReasoningLoop =
+    ReasoningLoop(pick(listOf(100, 140, 6_715)), pick(listOf(600_000L, 1_260_000L, 22_680_000L)))
 
 private fun Random.pathCause(): FailureCause.Path = when (nextInt(3)) {
     0 -> FailureCause.Path.Unreachable(pick(Unreach.entries), nextBoolean())
@@ -279,8 +283,9 @@ private fun Random.recovery(): Recovery = when (nextInt(4)) {
  *  slices 2 to 4 still answer that way (the interim lines). HoldOutlasted's line is the held cause's (slice 5). */
 private fun resendable(cause: FailureCause): Boolean? = when (cause) {
     is FailureCause.Provider.Limited -> resendableLimit(cause)
+    // A run of empty reasoning splice ended is the person's to send again, never the client's.
     is FailureCause.Provider ->
-        cause::class in RESENDABLE_PROVIDER ||
+        (cause::class in RESENDABLE_PROVIDER && (cause as? FailureCause.Provider.Empty)?.loop == null) ||
             (cause is FailureCause.Provider.Unrecognized && !cause.clientError)
     is FailureCause.Path -> true
     is FailureCause.Splice.HoldOutlasted -> null
@@ -371,6 +376,51 @@ class SpliceLinesPropertyTest {
         assertFalse(answer.clientResends, "an unstated billing-cycle limit is terminal")
         assertFalse(SAYS_RESEND in text, text)
         assertTrue(said.text in text, text)
+    }
+
+    /** Nov 8: a claudex turn streamed nothing but empty reasoning for 6.3 hours and ended "claudex stayed overloaded".
+     *  The line now says what the model did, for how long, and what the person can do. */
+    @Test
+    fun `a run of empty reasoning says what the model did and what to do`() {
+        val cause = FailureCause.Provider.Empty(reasoningOnly = true, loop = ReasoningLoop(140, 610_000L))
+        val at = Position(Moment.MID_CONTENT, streamBegan = true)
+        val facts = LineFacts(
+            head = "claudex",
+            loginCommand = "claudex login",
+            providerName = null,
+            local = false,
+            request = RequestFacts(compaction = false, firstExchange = false),
+            now = Instant.parse("2026-11-08T22:07:00Z"),
+        )
+        val text = SpliceLines(LocalTimeText(ZoneId.of("UTC")))
+            .ending(cause, at, ClientWire.answer(cause, at), facts).text
+
+        assertTrue(
+            "claudex's model returned 140 empty reasoning steps over 10 minutes with no text or tool call, " +
+                "so splice ended this turn" in text,
+            text,
+        )
+        assertTrue("Send the message again, or ask for a smaller step." in text, text)
+        assertFalse("overloaded" in text, text)
+    }
+
+    @Test
+    fun `a planned socket rotation past its count names the provider's hourly close, not an overload`() {
+        val cause = FailureCause.Path.Torn(Tear.ROTATED, toolOpen = false)
+        val at = Position(Moment.MID_CONTENT, streamBegan = true)
+        val facts = LineFacts(
+            head = "claudex",
+            loginCommand = null,
+            providerName = null,
+            local = false,
+            request = RequestFacts(compaction = false, firstExchange = false),
+            now = Instant.parse("2026-11-08T22:07:00Z"),
+        )
+        val text = SpliceLines(LocalTimeText(ZoneId.of("UTC")))
+            .ending(cause, at, ClientWire.answer(cause, at), facts).text
+
+        assertTrue("claudex's provider closed its connection at its hourly limit" in text, text)
+        assertFalse("overloaded" in text, text)
     }
 
     @Test

@@ -125,15 +125,14 @@ internal class SseRoundConsume(
             // An attempt that ended early has no outcome of its own to mark, classify or report.
             end.early()?.let { return it }
             streamEnded(drive, rawOutcome)
-            return StreamRead.Read(
-                zeroEvent.classify(
-                    drive,
-                    rawOutcome,
-                    capture.snippet.toString(),
-                    drive.perfCounter(PerfKeys.EVENTS_IN) - eventsBase,
-                    telemetry,
-                ),
+            val classified = zeroEvent.classify(
+                drive,
+                rawOutcome,
+                capture.snippet.toString(),
+                drive.perfCounter(PerfKeys.EVENTS_IN) - eventsBase,
+                telemetry,
             )
+            return StreamRead.Read(drive.emptyReasoning.ended(classified))
         } finally {
             poller.cancel()
             // Completes with no cause on every ordinary exit, so the handler above leaves a healthy

@@ -221,6 +221,11 @@ internal class ResponsesWsRunner(
     override fun isSocketFault(event: JsonObject): Boolean =
         isFailureTerminal(event) && faultCode(event) in SOCKET_FAULT_CODES
 
+    /** The 60-minute connection limit is the socket's planned lifetime, so an answer it closes mid-stream is
+     *  continued on a fresh socket without spending a failure's budget (2026-11-08). */
+    override fun isPlannedClose(event: JsonObject): Boolean =
+        isFailureTerminal(event) && faultCode(event) == CONNECTION_LIMIT_CODE
+
     /** The error code an `error` event carries at error.code and a `response.failed` at response.error.code. */
     private fun faultCode(event: JsonObject): String? {
         val error = event["error"] as? JsonObject ?: (event["response"] as? JsonObject)?.get("error") as? JsonObject
@@ -242,4 +247,6 @@ internal class ResponsesWsRunner(
 
 private const val FIELD_TYPE = "type"
 
-private val SOCKET_FAULT_CODES = setOf("websocket_connection_limit_reached", "previous_response_not_found")
+private const val CONNECTION_LIMIT_CODE = "websocket_connection_limit_reached"
+
+private val SOCKET_FAULT_CODES = setOf(CONNECTION_LIMIT_CODE, "previous_response_not_found")

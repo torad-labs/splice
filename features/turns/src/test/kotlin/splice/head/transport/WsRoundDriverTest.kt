@@ -285,6 +285,9 @@ private class ScriptedRunner(
     // The real runner's socket-fault codes are pinned in ResponsesWsSocketFaultTest; this reports the one sent here.
     override fun isSocketFault(event: JsonObject): Boolean = "websocket_connection_limit_reached" in event.toString()
 
+    // The real runner's planned close is pinned in ResponsesWsRunnerTest; the 60-minute limit is the one.
+    override fun isPlannedClose(event: JsonObject): Boolean = isSocketFault(event)
+
     override fun roundEnded(meta: TurnMeta, ok: Boolean) {
         if (ok) endedOk += 1 else endedNotOk += 1
     }
@@ -1089,6 +1092,27 @@ class WsRoundReserveTest {
             val row = ev(Files.readString(tmp.resolve("perf-$built.jsonl")).trim())
             assertEquals("1", row[PerfKeys.WS_FRESH_SOCKET_RETRIES]?.toString(), "the fresh-socket retry is counted")
             assertFalse(PerfKeys.WS_PRE_OUTPUT_FALLBACKS in row, "nothing fell back to HTTP")
+        } finally {
+            runBlocking { h.stop() }
+        }
+    }
+
+    // Nov 8: a 6.3-hour claudex answer met this close six times mid-answer; each was read as an overload, told to the
+    // person as one, and spent on the turn's recovery budget until the turn ended "claudex stayed overloaded".
+    @Test
+    fun `a connection limit mid-answer is a planned rotation, continued with no line to the person`() {
+        val lines = ConcurrentLinkedQueue<String>()
+        val runner = ScriptedRunner(TEXT_ROUND + CONNECTION_LIMIT, continuationEvents = WS_ANSWER)
+        val h = head(runner, log = { lines += it })
+        runBlocking { h.start() }
+        try {
+            val answer = turn(h.port)
+            assertTrue(answer.contains("event: message_stop"), "the turn completed: $answer")
+            assertFalse(answer.contains("[splice]"), "the person read no line about the rotation: $answer")
+            assertFalse(answer.contains("overloaded"), "nothing called it an overload: $answer")
+            assertEquals(2, runner.attempts, "the answer went on over a fresh socket")
+            assertTrue(lines.any { "socket rotation 1" in it }, "the journal names the rotation: $lines")
+            assertFalse(lines.any { "re-anchor 1:" in it }, "and records no failure's recovery: $lines")
         } finally {
             runBlocking { h.stop() }
         }

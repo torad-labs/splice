@@ -23,3 +23,11 @@ public enum class OwnerStep {
  * and the line names the head's account.
  */
 public data class AccountBlock(val step: OwnerStep, val where: String, val login: String? = null)
+
+/**
+ * A model that answered with nothing but empty reasoning, round after round: [items] completed reasoning items in a row
+ * carried no summary text and no reasoning, with no text and no tool call between them, over [forMs]. splice's head
+ * ends the turn on it (EmptyReasoningRun) instead of letting the provider stream it for hours (2026-11-08: one claudex
+ * turn ran 6.3 hours this way).
+ */
+public data class ReasoningLoop(val items: Int, val forMs: Long)

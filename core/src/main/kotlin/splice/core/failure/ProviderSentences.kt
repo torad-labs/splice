@@ -32,7 +32,7 @@ internal class ProviderSentences(private val spoken: Spoken) {
             is FailureCause.Provider.Refused -> Said(refused(cause.by, head), cause.said)
             is FailureCause.Provider.Unrecognized -> unrecognized(cause, head)
             is FailureCause.Provider.ModelMissing -> missing(cause.model, facts)
-            is FailureCause.Provider.Empty -> empty(cause.reasoningOnly, head)
+            is FailureCause.Provider.Empty -> empty(cause, head)
             // A cut round is continued without a line (section 8); were one ever said, it reads as a cut answer.
             is FailureCause.Provider.ReasoningCut ->
                 Said("$head's reasoning was cut short", next = Next.Resend(SEND_AGAIN))
@@ -164,8 +164,18 @@ internal class ProviderSentences(private val spoken: Spoken) {
         next = if (facts.local) Next.Then("Load it in the model server, then send the message again.") else Next.None,
     )
 
-    private fun empty(reasoningOnly: Boolean, head: String): Said = Said(
-        if (reasoningOnly) "$head finished thinking without an answer" else "$head finished without an answer",
-        next = Next.Resend(SEND_AGAIN),
-    )
+    /** A run of empty reasoning that splice ended says what the model did and for how long; the same request meets the
+     *  same model state, so the next step is the person's: send it again or ask for less. */
+    private fun empty(cause: FailureCause.Provider.Empty, head: String): Said {
+        val loop = cause.loop
+        if (loop != null) {
+            return Said(
+                "$head's model returned ${spoken.count(loop.items.toLong(), "empty reasoning step")} over " +
+                    "${spoken.span(loop.forMs)} with no text or tool call, so splice ended this turn",
+                next = Next.Then("Send the message again, or ask for a smaller step."),
+            )
+        }
+        val what = if (cause.reasoningOnly) "finished thinking without an answer" else "finished without an answer"
+        return Said("$head $what", next = Next.Resend(SEND_AGAIN))
+    }
 }

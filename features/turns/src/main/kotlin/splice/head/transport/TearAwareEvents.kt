@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.transformWhile
 import kotlinx.serialization.json.JsonObject
 import splice.core.perf.PerfKeys
 import splice.core.perf.observation.PerfEventKind
@@ -70,6 +71,10 @@ internal class TearAwareEvents(
             capture.sawEvent = true
             drive.perf.add(PerfKeys.EVENTS_IN, 1)
             drive.perf.upstream.observations?.observe(PerfEventKind.PROTOCOL_PROGRESS, mapOf("upstream_events" to 1.0))
+        }.transformWhile { event ->
+            // A run of empty reasoning long enough to end the turn stops the round here (EmptyReasoningRun).
+            emit(event)
+            !drive.emptyReasoning.observe(event)
         }.catch { e ->
             // Per-round (not per-turn) pre-frame test: a continuation round's early tear is as
             // safely reissuable as a first round's — its own body re-POSTs (code-review 2026-07-24).

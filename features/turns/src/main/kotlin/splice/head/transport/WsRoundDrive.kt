@@ -67,6 +67,8 @@ internal class WsRoundDrive(
         // (PreContentTear). Caught here, upstream of the translator, because the translator folds an
         // I/O failure into its honest terminal.
         val reserve = SseReserve(provider.replies, provider.auth.owner)
+        // The provider closed the socket at its planned lifetime mid-answer: the round's failure is a rotation.
+        var planned = false
         val instrumented = events
             .catch { torn -> if (!reserve.tear(torn, inputs)) throw torn }
             .transformWhile { evt ->
@@ -76,9 +78,11 @@ internal class WsRoundDrive(
                 if (!reserved) {
                     drive.perf.markOnce(PerfKeys.FIRST_BYTE)
                     drive.perf.add(PerfKeys.EVENTS_IN, 1)
+                    if (runner.isPlannedClose(evt)) planned = true
                     emit(evt)
                 }
-                !reserved
+                // A run of empty reasoning long enough to end the turn stops the round here (EmptyReasoningRun).
+                !reserved && !drive.emptyReasoning.observe(evt)
             }
         val signals = TurnSignals(
             watchdogFired = { drive.watchdog.fired },
@@ -103,7 +107,8 @@ internal class WsRoundDrive(
         // classifyZeroEvent returns early on the blank snippet this path always passes; the next
         // edit to it is what would make the gap real. The WsRoundNeedsSse path is unaffected: that
         // throw fires inside driveTurn's onEach, upstream of both statements either way.
-        val outcome = classifyZeroEvent(drive, raw, "", inputs.eventsBase)
+        val classified = classifyZeroEvent(drive, raw, "", inputs.eventsBase)
+        val outcome = drive.emptyReasoning.ended(if (planned) PlannedClose.ended(classified) else classified)
         // ok means "a clean, fully-consumed terminal" — WsRoundRunner.roundEnded's own words — and
         // this used to report it for ANY return, a FAILURE outcome included. A round that ended in
         // a failure terminal, or that the zero-event classifier reclassified into one, still

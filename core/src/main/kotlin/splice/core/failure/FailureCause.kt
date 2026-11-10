@@ -129,8 +129,14 @@ public sealed class FailureCause {
             override val permanent: Boolean get() = true
         }
 
-        /** The model finished with nothing the client can read. [reasoningOnly]: it reasoned and said nothing. */
-        public data class Empty(val reasoningOnly: Boolean, override val said: ProviderWords? = null) : Provider() {
+        /** The model finished with nothing the client can read. [reasoningOnly]: it reasoned and said nothing. [loop]:
+         *  it never finished, and splice ended a run of empty reasoning instead ([ReasoningLoop]); a re-send of the
+         *  same request meets the same model state, so the person decides what to send next. */
+        public data class Empty(
+            val reasoningOnly: Boolean,
+            override val said: ProviderWords? = null,
+            val loop: ReasoningLoop? = null,
+        ) : Provider() {
             override val persisted: PersistedCause get() = PersistedCause.UPSTREAM_REPORTED
         }
 

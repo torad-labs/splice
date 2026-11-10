@@ -8,8 +8,6 @@
 // turn's drive, read by the round drivers of both transports.
 package splice.head.transport
 
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.failure.FailureCause
 import splice.core.failure.ReasoningLoop
@@ -17,6 +15,7 @@ import splice.core.turn.TurnOutcome
 import splice.core.util.ElapsedClock
 import splice.core.util.JsonScalars
 import splice.core.util.MonoClock
+import java.util.concurrent.TimeUnit
 
 /** One turn's run of completed reasoning items that carried nothing, across its rounds and socket rotations. */
 internal class EmptyReasoningRun(private val clock: ElapsedClock = ElapsedClock { MonoClock.nowMs() }) {
@@ -52,7 +51,7 @@ internal class EmptyReasoningRun(private val clock: ElapsedClock = ElapsedClock 
             cause = FailureCause.Provider.Empty(reasoningOnly = true, loop = run),
             evidence = failure.evidence.copy(
                 message = "splice ended the turn after ${run.items} empty reasoning items in a row over " +
-                    "${run.forMs / MS_PER_SECOND}s with no text or tool call",
+                    "${TimeUnit.MILLISECONDS.toSeconds(run.forMs)}s with no text or tool call",
             ),
         )
     }
@@ -66,25 +65,23 @@ internal class EmptyReasoningRun(private val clock: ElapsedClock = ElapsedClock 
     }
 
     /** A completed reasoning item is empty or not by its own fields; any other event that carries text, reasoning or a
-     *  tool call ends the run; the rest (lifecycle events, pings, a socket's close) leaves it as it is. */
+     *  tool call ends the run; the rest (lifecycle events, pings, a socket's close) leaves it as it is. What an event
+     *  carries is [UpstreamEventKinds.hasContent], the one reading of it (summary text and reasoning text included), so
+     *  this holds no list of fields of its own. */
     private fun read(event: JsonObject): Carries {
-        val item = event[FIELD_ITEM] as? JsonObject
-        val reasoningDone = JsonScalars.str(event, FIELD_TYPE) == ITEM_DONE &&
-            JsonScalars.str(item, FIELD_TYPE) == REASONING
+        val item = event["item"] as? JsonObject
+        val carries = UpstreamEventKinds.hasContent(event, UpstreamEventKinds.kind(event))
+        val reasoningDone = JsonScalars.str(event, "type") == ITEM_DONE && JsonScalars.str(item, "type") == REASONING
+        val nothingMore = !carries && encryptedChars(item) <= EMPTY_REASONING_FLOOR_CHARS
         return when {
-            reasoningDone -> if (item != null && emptyReasoning(item)) Carries.NOTHING else Carries.SOMETHING
-            UpstreamEventKinds.hasContent(event, UpstreamEventKinds.kind(event)) -> Carries.SOMETHING
+            reasoningDone && nothingMore -> Carries.NOTHING
+            reasoningDone || carries -> Carries.SOMETHING
             else -> Carries.NEITHER
         }
     }
 
-    /** No summary text, no reasoning text, and no more encrypted reasoning than [EMPTY_REASONING_FLOOR_CHARS]. */
-    private fun emptyReasoning(item: JsonObject): Boolean =
-        blankTexts(item[FIELD_SUMMARY]) && blankTexts(item[FIELD_CONTENT]) &&
-            JsonScalars.strIfString(item[FIELD_ENCRYPTED]).length <= EMPTY_REASONING_FLOOR_CHARS
-
-    private fun blankTexts(parts: JsonElement?): Boolean =
-        (parts as? JsonArray).orEmpty().all { JsonScalars.strIfString((it as? JsonObject)?.get(FIELD_TEXT)).isBlank() }
+    /** The encrypted reasoning an item holds; a real step of thought holds more than [EMPTY_REASONING_FLOOR_CHARS]. */
+    private fun encryptedChars(item: JsonObject?): Int = JsonScalars.strIfString(item?.get("encrypted_content")).length
 }
 
 // why: the Nov 8 loop's items each carried 1,848 to 1,932 characters of encrypted reasoning and nothing else. Across
@@ -101,12 +98,5 @@ internal const val EMPTY_RUN_ITEMS = 100
 // hard step in short thoughts; at the loop's pace this bound, not the item count, is the one that trips.
 internal const val EMPTY_RUN_MS = 600_000L
 
-private const val MS_PER_SECOND = 1_000L
-private const val FIELD_TYPE = "type"
-private const val FIELD_ITEM = "item"
-private const val FIELD_SUMMARY = "summary"
-private const val FIELD_CONTENT = "content"
-private const val FIELD_TEXT = "text"
-private const val FIELD_ENCRYPTED = "encrypted_content"
 private const val ITEM_DONE = "response.output_item.done"
 private const val REASONING = "reasoning"

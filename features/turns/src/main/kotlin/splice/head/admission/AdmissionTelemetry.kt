@@ -97,7 +97,8 @@ internal object RequestObservation {
         var ending = OutcomeTag.UNEXPECTED.wire
         try {
             work()
-            ending = if ((call.response.status()?.value ?: 0) >= HttpStatusCode.BadRequest.value) "refused" else "?"
+            val refused = (call.response.status()?.value ?: 0) >= HttpStatusCode.BadRequest.value
+            ending = if (refused) OutcomeTag.REFUSED.wire else "?"
         } catch (cancelled: CancellationException) {
             ending = OutcomeTag.CANCELLED.wire
             throw cancelled
@@ -154,6 +155,17 @@ internal object RequestObservation {
                     local = false,
                 ),
                 it.links.copy(sessionId = meta.scope.sessionId),
+            )
+        }
+    }
+
+    /** A request refused while it was prepared names the model, session and transport it asked for, as a served one
+     *  does, so its row is not a bare `{head}` beside the probes. [model] is empty when its body did not parse. */
+    fun refused(perf: TurnPerf, model: String, session: String?, stream: Boolean) {
+        perf.observations?.let {
+            it.update(
+                it.scope.copy(model = model.ifEmpty { null }, streaming = stream, local = false),
+                it.links.copy(sessionId = session),
             )
         }
     }

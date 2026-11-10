@@ -10,9 +10,14 @@ import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import splice.core.auth.CredentialKey
 import splice.core.failure.EndingHeard
+import splice.core.failure.FailureCause
 import splice.core.failure.RequestFacts
+import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapLease
+import splice.core.perf.OutcomeTag
 import splice.core.turn.LiveWatchdogBudget
+import splice.core.util.Cancellables
+import splice.core.util.SafeFailureText
 import splice.head.HeadDeps
 import splice.head.hold.ClientWallHeader
 import splice.head.hold.ResendLedger
@@ -26,6 +31,7 @@ import splice.head.turn.TurnSlot
 import splice.head.wire.TurnTrace
 import splice.upstream.TurnEnd
 import splice.upstream.credentials.Selection
+import java.io.IOException
 
 internal class HeadAdmission(
     private val deps: HeadDeps,
@@ -51,8 +57,30 @@ internal class HeadAdmission(
 
     suspend fun handleMessages(call: ApplicationCall, arrivalAt: Long = arrivalTime()) {
         RequestObservation.run(call, deps, preparation.provider.key, arrivalAt) {
-            handleObserved(call, arrivalAt)
+            // The head's door is total, as the control plane's has been since 2026-09-23 (ControlGuard): the head
+            // installs no StatusPages and the daemon ships no SLF4J provider, so an exception out of here was Ktor's
+            // empty 500 with no line anywhere. Preparation and the drive have their own boundaries; this one catches
+            // what escapes between them. Cancellation and an Error still propagate.
+            Cancellables.runCatchingBestEffort { handleObserved(call, arrivalAt) }
+                .onFailure { failure -> answerFailure(call, failure) }
         }
+    }
+
+    /** A defect that escaped the request's own handling: its kind and the splice line it came from go to daemon.log
+     *  (never its message, which may quote the transcript), its request row ends unexpected, and a client that has
+     *  had no answer yet gets the head's retryable internal error. A body already on the wire cannot take a status,
+     *  and a client that left mid-body is not a defect. A full heap is not a defect either: HeapIngress answers it
+     *  with the retryable overload, as it always has. */
+    private suspend fun answerFailure(call: ApplicationCall, failure: Throwable) {
+        if (failure is HeapCapacityException) throw failure
+        val committed = call.response.isCommitted
+        if (committed && failure is IOException) return
+        val kind = failure::class.simpleName ?: "unnamed failure"
+        val site = SafeFailureText.site(failure)
+        deps.log("[${preparation.provider.key}] request failed: $kind: ${SafeFailureText.render(failure)}$site\n")
+        RequestObservation.of(call)?.finish(OutcomeTag.UNEXPECTED.wire)
+        if (committed) return
+        responses.respondRefusal(call, FailureCause.Splice.Internal(escaped = true), OutcomeTag.UNEXPECTED)
     }
 
     private suspend fun handleObserved(call: ApplicationCall, arrivalAt: Long) {
@@ -103,7 +131,7 @@ internal class HeadAdmission(
         // Only a Ready turn names a live row. settle already returned Local/Replay/Collected ownership,
         // including a borrowed handle whose row still belongs to its independent source.
         when (prepared) {
-            is Preparation.Rejected -> responses.respondRefusal(call, prepared.cause)
+            is Preparation.Rejected -> refusals.refusePrepared(call, prepared, admitted)
             is Preparation.Local -> driver.answerLocally(call, prepared, admitted.perf)
             is Preparation.Replay -> {
                 // settle returned this retry's candidate before it follows the independently held drive.
@@ -139,8 +167,9 @@ internal class HeadAdmission(
 
         // V4-134: turn.start fires HERE and nowhere earlier because this is the one path whose every
         // exit writes a perf row — the two local refusals below and the drive all go through
-        // TurnTelemetry's emitters, which fire turn.end. Rejected, Local and Replay write no row, so
-        // announcing them would leave the console a start with no end.
+        // TurnTelemetry's emitters, which fire turn.end. Local and Replay write no row, so announcing them
+        // would leave the console a start with no end; Rejected writes one and announces itself
+        // (PreDriveRefusals.refusePrepared).
         deps.seams.events.turnStarted(prepared.built.meta.scope.sessionId)
         // V4-174: the trace begins HERE, before the two local refusals, because a refused turn is a
         // request the head received and answered — a trace that skipped it would show a client

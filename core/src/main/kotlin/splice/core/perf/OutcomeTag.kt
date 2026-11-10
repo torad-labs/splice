@@ -49,6 +49,12 @@ public enum class OutcomeTag(public val wire: String) {
     /** V4-444: splice turned a request away because its inflight gate and queue were full. Its own tag, so the
      *  console can list splice's own refusals beside the requests it served instead of the client alone knowing. */
     AT_CAPACITY("error:at-capacity"),
+
+    /** splice answered a request with a refusal before any provider saw it: a model the head does not serve, a body
+     *  that did not parse or arrive, a control the dialect cannot carry, a stopped turn's re-send, a foreign host or a
+     *  bad local key. Its own tag, never the unnamed "?": on 2026-11-09 every claudex turn was refused for 67 minutes
+     *  and the request rows read "?", the same word as the liveness probes beside them. */
+    REFUSED("error:refused"),
     UNEXPECTED("error:unexpected"),
     RATE_LIMITED("error:rate-limited"),
 

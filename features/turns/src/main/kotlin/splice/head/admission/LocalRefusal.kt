@@ -4,11 +4,13 @@
 // One value instead of three more parameters on recordLocalRefusal (detekt's LongParameterList).
 //
 // [PreDriveRefusals] holds the refusals a Ready turn meets after its account is known and before it is driven: the
-// head's reached budget, the compaction preflight's size bound, and another machine's word with no login held for it.
+// head's reached budget, the compaction preflight's size bound, and another machine's word with no login held for it,
+// and (2026-11-09) the refusal of a request while it was prepared, which was answered and never recorded.
 // Each answers while the status line is still ours and records its row before responding. The first two moved here
 // from HeadAdmission (concentration, Oct 12).
 package splice.head.admission
 
+import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
 import splice.core.auth.AuthProvider
 import splice.core.failure.Decline
@@ -20,6 +22,8 @@ import splice.head.HeadDeps
 import splice.head.HeldLoginVerdict
 import splice.head.transport.CallerCredential
 import splice.head.turn.Preparation
+import splice.head.turn.RefusedRequest
+import splice.head.turn.SESSION_TAG_CHARS
 import splice.head.turn.TurnDriver
 import splice.head.wire.TurnTrace
 import splice.upstream.credentials.AccountPool
@@ -39,6 +43,41 @@ internal class PreDriveRefusals(
     private val driver: TurnDriver,
     private val loginCommand: String,
 ) {
+    /** A request refused while it was prepared ([Preparation.Rejected]): a model the head does not serve, a body that
+     *  did not parse, a control the dialect cannot carry, a stopped turn's re-send, or a defect in preparing it. It is
+     *  recorded as every other local refusal is, before the answer: one daemon.log line naming the head, the line the
+     *  client reads (the declined feature), the session and the client, a perf row, turn.start and turn.end, and the
+     *  trace when the head's is on. Until 2026-11-09 it was answered and nothing else: from 5:51 to 6:58 PM CT that
+     *  day the Responses dialect refused every claudex turn on Claude Code's new `diagnostics` field, and the log, the
+     *  perf file and the trace showed a quiet head. A defect is recorded as unexpected, every other cause as refused. */
+    suspend fun refusePrepared(call: ApplicationCall, rejected: Preparation.Rejected, admitted: AdmittedTurn) {
+        val cause = rejected.cause
+        val request = rejected.request
+        val meta = request.meta()
+        RequestObservation.refused(admitted.perf, request.model, request.sessionId, request.stream)
+        // A refusal writes a row, so it is announced like the turns that run: the console sees a start and its end.
+        deps.seams.events.turnStarted(request.sessionId)
+        val trace = request.inbound?.let { deps.stores.captures.trace?.begin(meta, it) }
+        RequestObservation.turn(admitted.perf, trace?.turnId)
+        val sentence = responses.lineOf(cause).sentence
+        trace?.failureSentence(sentence)
+        val defect = cause is FailureCause.Splice.Internal
+        val tag = if (defect) OutcomeTag.UNEXPECTED.wire else OutcomeTags.failure(cause)
+        val refusal = LocalRefusal(tag, said(call, request, sentence), trace)
+        driver.recordLocalRefusal(meta, admitted.perf, admitted.t0, refusal)
+        admitted.close()
+        responses.respondRefusal(call, cause, if (defect) OutcomeTag.UNEXPECTED else null)
+    }
+
+    /** The refusal's log detail: what splice saw, the line the client reads, and who sent it. The client's User-Agent
+     *  names its version, which is what tells a client update apart from a broken head. */
+    private fun said(call: ApplicationCall, request: RefusedRequest, sentence: String): String {
+        val session = request.sessionId?.let { "session ${it.take(SESSION_TAG_CHARS)}, " }.orEmpty()
+        val client = call.request.headers[HttpHeaders.UserAgent]?.take(CLIENT_AGENT_CHARS) ?: "no user-agent"
+        val seen = request.detail?.let { "$it: " }.orEmpty()
+        return "refused before any upstream turn: $seen$sentence ($session$client)"
+    }
+
     /** Selection can fail only because no credential is usable, or an owner action is already being probed.
      *  Provider limits select their earliest-reset login and are handled by that turn's retry engine. */
     suspend fun refuseNoLogin(
@@ -179,3 +218,6 @@ internal class PreDriveRefusals(
         return true
     }
 }
+
+// why: a User-Agent names the client and its version in a few dozen characters; one past this is cut, never quoted whole.
+private const val CLIENT_AGENT_CHARS = 96

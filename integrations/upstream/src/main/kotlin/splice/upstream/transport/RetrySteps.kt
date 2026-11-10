@@ -5,6 +5,8 @@
 // counts or plans a retry of its own: what a step spends is recorded in the ledger, which the engine reads.
 package splice.upstream.transport
 
+import splice.core.auth.Credentials
+import splice.core.auth.LoginAnswer
 import splice.core.auth.RefreshOutcome
 import splice.core.failure.FailureCause
 import splice.core.failure.FailureEvidence
@@ -202,15 +204,19 @@ internal class RetrySteps(
     }
 
     /** A login on file whose token expired and whose renewal failed before anything was sent (LoginAnswer.Unrenewed):
-     *  asked of the engine as splice's own login refused, its renewal begun and its one exchange ended as [outcome]. A
+     *  asked of the engine as splice's own login refused, its renewal begun and its one exchange ended as [answer]'s. A
      *  token endpoint that could not answer is asked again 2 s and then 4 s later; anything else moves the turn to
      *  another login or ends it as the refused login it is, never as "no login" (audit, Nov 9, 2026). */
-    suspend fun unrenewed(outcome: RefreshOutcome, ctx: PostContext, state: RetryState): LoopStep<Nothing> {
+    suspend fun unrenewed(answer: LoginAnswer.Unrenewed, ctx: PostContext, state: RetryState): LoopStep<Nothing> {
+        val outcome = answer.outcome
         val cause = FailureCause.Provider.AuthRejected(LoginOwner.SPLICE)
         val evidence =
             FailureEvidence("the login's token expired and could not be renewed (${outcome::class.simpleName})")
         val moment = if (ctx.recovery.clientFrameEmitted()) Moment.MID_CONTENT else Moment.BEFORE_COMMIT
         val asked = Asked(cause, Position(moment, streamBegan = false), RetryOutcome.Failed(cause, evidence))
+        // Nothing was sent: a later exchange is asked about the token the lookup failed to renew, never about one an
+        // earlier send of this post carried, nor the one the login served last, which another turn's renewal moves.
+        state.sentCredentials = answer.held
         state.ledger.took(RetryStep.Again(0L, How.REFRESH_LOGIN), cause)
         state.ledger.exchanged(exchange(ctx, asked.failed, outcome))
         return take(next(cause, asked.at, ctx, state), asked, ctx, state)
@@ -244,7 +250,7 @@ internal class RetrySteps(
     ): LoopStep<Nothing> {
         state.ledger.took(first, asked.cause)
         if (first.afterMs > 0L) ctx.timedBackoff { state.retry.waits.wait(first.afterMs, asked.cause, asked.at) }
-        val outcome = exchange(ctx, asked.failed)
+        val outcome = exchange(ctx, asked.failed, refused = state.sentCredentials)
         state.ledger.exchanged(outcome)
         if (outcome == Exchange.RENEWED) return LoopStep.Continue
         return take(next(asked.cause, asked.at, ctx, state), asked, ctx, state)
@@ -255,18 +261,21 @@ internal class RetrySteps(
      *  engine asks again 2 s and then 4 s later; any other failure refused the login. [known] is an exchange the login
      *  lookup already made ([unrenewed]), read the same way and never made twice. A provider whose exchange throws an
      *  I/O failure is read as a typed outcome here, never thrown to the turn, which would report a local credential
-     *  failure as the upstream resetting the connection (audit, Nov 9, 2026). */
+     *  failure as the upstream resetting the connection (audit, Nov 9, 2026). The exchange is asked about [refused], the
+     *  credential the refused send carried, so a second refusal of a token a first one already renewed adopts that
+     *  renewal instead of spending the next refresh token (Nov 10, 2026). */
     private suspend fun exchange(
         ctx: PostContext,
         failed: RetryOutcome.Failed?,
         known: RefreshOutcome? = null,
+        refused: Credentials? = null,
     ): Exchange {
         if (known == null && !ctx.auth.allowRefreshAfterFailure(failed?.deadCredential == true)) return Exchange.REFUSED
         val perf = ctx.observers.perf
         val outcome = known ?: run {
             perf?.add(PerfKeys.REFRESHES, 1)
             TurnPerfTiming.timedOr(perf, PerfKeys.REFRESH_MS) {
-                Cancellables.runCatchingCancellable { ctx.auth.exchange() }
+                Cancellables.runCatchingCancellable { ctx.auth.exchange(refused) }
                     .getOrElse { RefreshOutcome.TransportFailed(it) }
             }
         }

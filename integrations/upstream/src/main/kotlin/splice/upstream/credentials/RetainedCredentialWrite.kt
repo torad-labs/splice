@@ -17,6 +17,7 @@ import splice.core.util.SecureFile
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicReference
 
 /** The credential document as one login stands now, read where a provider used to read its file. */
 public fun interface CredentialText {
@@ -24,12 +25,25 @@ public fun interface CredentialText {
     public fun read(): String
 }
 
+/** How a credential file's state is read: its mtime, size and content digest. Throws as the file's own reads do. */
+public fun interface CredentialFileState {
+    public fun identity(path: Path): CredentialFileIdentity
+}
+
 /** A credential document whose write failed, kept and served in the file's place until it is written (codex, grok, kimi
- *  and Claude through [TokenRenewal]; Muse's minted key on its own). */
+ *  and Claude through [TokenRenewal]; Muse's minted key on its own). [state] reads the file's state; a seam so a test
+ *  can land a write between a reader's look at the waiting document and its judgment of it. */
 public class RetainedCredentialWrite(
     private val path: Path,
     private val tag: String,
     private val log: LogSink,
+    private val state: CredentialFileState = CredentialFileState { file ->
+        CredentialFileIdentity(
+            Files.getLastModifiedTime(file).toMillis(),
+            Files.size(file),
+            CredentialFileDigest.of(file),
+        )
+    },
 ) : CredentialText {
     /** The document a failed write was for, and the file as it stood then (null: unknown). A file that no longer
      *  stands so wins. */
@@ -38,8 +52,11 @@ public class RetainedCredentialWrite(
         override fun toString(): String = "Retained(document=<redacted>, stood=$stood)"
     }
 
-    @Volatile
-    private var retained: Retained? = null
+    /** Every change is a compare-and-set on the exact [Retained] it saw (Nov 10, 2026): a read that found the file
+     *  changed, or a write that landed, clears only the document it judged, never one a failed write kept meanwhile.
+     *  A plain field cleared unconditionally let a reader that judged an older document drop a renewed pair a
+     *  concurrent failed write had just kept, though the endpoint had already spent the refresh token before it. */
+    private val retained = AtomicReference<Retained?>(null)
 
     /** Whether a granted pair is waiting to be written. */
     public val waiting: Boolean get() = current() != null
@@ -47,23 +64,28 @@ public class RetainedCredentialWrite(
     override fun read(): String = current()?.document ?: Files.readString(path)
 
     /** Writes [document] owner-only and atomically. A failure keeps it for [read] and [flush]; the failure is returned
-     *  for the caller's line, never thrown. */
-    public fun write(document: String): Throwable? =
-        Cancellables.runCatchingCancellable { SecureFile.writeAtomic0600(path, document) }.fold(
+     *  for the caller's line, never thrown. A write that lands releases the document it wrote, and the one that waited
+     *  when it began, which it was built from or flushes; a document a failed write kept meanwhile still waits. */
+    public fun write(document: String): Throwable? {
+        val before = retained.get()
+        // The file as it stands before this write, which a failed write leaves it as: taken first, so a peer's write
+        // that lands between the failure and this read is never taken for the state the document stands over.
+        val stood = Cancellables.runCatchingCancellable { identity() }.fold(
+            onSuccess = { it },
+            // The file's state could not be read: unknown, so only its removal drops the document.
+            onFailure = { null },
+        )
+        return Cancellables.runCatchingCancellable { SecureFile.writeAtomic0600(path, document) }.fold(
             onSuccess = {
-                retained = null
+                retained.updateAndGet { now -> now.takeUnless { it === before || it?.document == document } }
                 null
             },
             onFailure = { failure ->
-                val stood = Cancellables.runCatchingCancellable { identity() }.fold(
-                    onSuccess = { it },
-                    // The file's state could not be read either: unknown, so only its removal drops the document.
-                    onFailure = { null },
-                )
-                retained = Retained(document, stood)
+                retained.set(Retained(document, stood))
                 failure
             },
         )
+    }
 
     /** Writes a waiting document again; quiet while the write keeps failing, one line when it lands. */
     public fun flush() {
@@ -80,22 +102,25 @@ public class RetainedCredentialWrite(
 
     /** The waiting document while the file still stands as it did when the write failed; otherwise none. */
     private fun current(): Retained? {
-        val waiting = retained ?: return null
-        val stands = Cancellables.runCatchingCancellable { identity() }.fold(
-            onSuccess = { waiting.stood == null || it == waiting.stood },
-            // A file that cannot be read now is no proof it changed, so the renewed pair is still served; a file that
-            // is gone was signed out.
-            onFailure = { it !is NoSuchFileException },
-        )
-        if (stands) return waiting
-        retained = null
-        log("[$tag] the credential file changed while a renewed credential waited to be written; its login stands")
-        return null
+        while (true) {
+            val waiting = retained.get() ?: return null
+            val stands = Cancellables.runCatchingCancellable { identity() }.fold(
+                onSuccess = { waiting.stood == null || it == waiting.stood },
+                // A file that cannot be read now is no proof it changed, so the renewed pair is still served; a file
+                // that is gone was signed out.
+                onFailure = { it !is NoSuchFileException },
+            )
+            if (stands) return waiting
+            // Only the document judged here is dropped: one a failed write kept since is judged on its own next pass.
+            if (retained.compareAndSet(waiting, null)) {
+                log(
+                    "[$tag] the credential file changed while a renewed credential waited to be written; " +
+                        "its login stands",
+                )
+                return null
+            }
+        }
     }
 
-    private fun identity(): CredentialFileIdentity = CredentialFileIdentity(
-        Files.getLastModifiedTime(path).toMillis(),
-        Files.size(path),
-        CredentialFileDigest.of(path),
-    )
+    private fun identity(): CredentialFileIdentity = state.identity(path)
 }

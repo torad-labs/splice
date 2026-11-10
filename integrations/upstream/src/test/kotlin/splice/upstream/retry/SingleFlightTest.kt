@@ -164,4 +164,22 @@ class SingleFlightTest {
         waiter.join()
         assertTrue(blockCancelled, "close() must cancel the in-flight refresh block")
     }
+
+    // Nov 10, 2026: a renewal asked about an older token adopts the token on file; a caller that was refused for that
+    // very token took the adoption as its answer and resent the refused token, spending the turn's one renewal on it.
+    @Test
+    fun `a caller never takes a wave started for another key, and still shares one started for its own`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val sf = SingleFlight<String>(UnconfinedTestDispatcher(testScheduler))
+            val gate = CompletableDeferred<Unit>()
+            val older = async { sf.run("token-1") { gate.await().let { "decided about token-1" } } }
+            // Both callers arrive while the token-1 wave is still in flight.
+            val refusedNewer = async { sf.run("token-2") { "decided about token-2" } }
+            val sameToken = async { sf.run("token-1") { "a second wave for token-1" } }
+            gate.complete(Unit)
+
+            assertEquals("decided about token-1", older.await())
+            assertEquals("decided about token-1", sameToken.await(), "a caller with the same key shares the wave")
+            assertEquals("decided about token-2", refusedNewer.await(), "a caller with another key runs its own")
+        }
 }

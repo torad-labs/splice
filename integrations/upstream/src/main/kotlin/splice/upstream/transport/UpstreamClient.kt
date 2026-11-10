@@ -216,7 +216,7 @@ public class UpstreamClient(
                 val evidence = FailureEvidence(LOGIN_REFUSED, said = answer.cause.said?.text)
                 LoopStep.Done(UpstreamPost.Ended(UpstreamFailed(answer.cause, evidence, state.ledger.attempts)))
             }
-            is LoginAnswer.Unrenewed -> steps.unrenewed(answer.outcome, ctx, state)
+            is LoginAnswer.Unrenewed -> steps.unrenewed(answer, ctx, state)
         }
     }
 

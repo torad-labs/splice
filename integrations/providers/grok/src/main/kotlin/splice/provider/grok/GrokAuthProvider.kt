@@ -150,7 +150,7 @@ public class GrokAuthProvider(
         return when {
             !backingOff -> renewal.answer(held, windows)
             clock() < expiresAt -> renewal.serve(held.credentials)
-            else -> LoginAnswer.Unrenewed(RefreshOutcome.Rejected(INEFFECTIVE_RENEWAL))
+            else -> LoginAnswer.Unrenewed(RefreshOutcome.Rejected(INEFFECTIVE_RENEWAL), held.credentials)
         }
     }
 
@@ -159,6 +159,8 @@ public class GrokAuthProvider(
     override suspend fun refresh(): Credentials? = (exchange() as? RefreshOutcome.Refreshed)?.credentials
 
     override suspend fun exchange(): RefreshOutcome = renewal.exchange()
+
+    override suspend fun exchange(refused: Credentials?): RefreshOutcome = renewal.exchange(refused)
 
     override fun observedCredentialKey(): String? = authJson.readSnapshot(0L)?.access?.let {
         CredentialKey.fromCredentials(Credentials.Bearer(it))

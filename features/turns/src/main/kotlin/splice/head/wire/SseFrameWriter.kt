@@ -72,7 +72,13 @@ internal class SseFrameWriter(private val write: FrameWrite, private val ending:
      * visibility model can narrow this below module-`internal`; the guard being a choke point one
      * level up, rather than copied per delta shape, is what keeps an unpaired delta off the wire.
      */
-    internal suspend fun writeDeltaFrame(index: WireBlockIndex, deltaType: String, field: String, value: String) {
+    internal suspend fun writeDeltaFrame(
+        index: WireBlockIndex,
+        deltaType: String,
+        field: String,
+        value: String,
+        visible: Boolean = false,
+    ) {
         // Assemble the WHOLE frame directly into the reused frameBuf — one toString() per token, no
         // throwaway builder/String (the old path built the payload in a fresh buildString THEN copied
         // it into frameBuf and toString()'d again — two Strings/token on the hottest path, defeating
@@ -89,6 +95,13 @@ internal class SseFrameWriter(private val write: FrameWrite, private val ending:
         // fluent chain breaks here. Same builder, same order, same bytes — only the call shape moved.
         escaper.appendJsonEscaped(frameBuf, value)
         frameBuf.append("\"}}\n\n")
-        write(frameBuf.toString())
+        // The frame's shape rides with it, so the client channel's pacer does not decode the frame to learn what
+        // this writer already knew (whether the client reads it as text or thinking, and whether it holds any).
+        val shape = when {
+            !visible -> DeltaShape.HIDDEN
+            value.isEmpty() -> DeltaShape.EMPTY
+            else -> DeltaShape.ARRIVING
+        }
+        write.delta(frameBuf.toString(), shape)
     }
 }

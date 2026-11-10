@@ -9,7 +9,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -19,6 +18,7 @@ import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 import splice.head.wire.ClientChannel
 import splice.head.wire.DeltaPacer
+import splice.head.wire.DeltaShape
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.LostClient
 import splice.upstream.Ticker
@@ -159,7 +159,7 @@ class PacedBurstTest {
         val counters = perf.snapshot().counters
         assertEquals(2L, counters[PerfKeys.ARRIVAL_BURSTS])
         assertEquals(2_000L, counters[PerfKeys.ARRIVAL_SILENCE_MAX_MS])
-        assertTrue(DeltaPacer().isVisibleDelta(native), "a native-ordered delta is a visible delta for the pacer")
+        assertEquals(DeltaShape.ARRIVING, DeltaPacer().shapeOf(native), "a native key order is visible to the pacer")
     }
 
     @Test
@@ -169,8 +169,8 @@ class PacedBurstTest {
             "\"delta\":{\"type\":\"text_delta\",\"text\":\"hello\"}}\n\n"
         val jsonBesideTextType = head + "\"opaque\":{\"type\":\"text_delta\"}," +
             "\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{}\"}}\n\n"
-        assertTrue(DeltaPacer().isArrivingDelta(textBesideEmptyField), "its own text counts")
-        assertFalse(DeltaPacer().isVisibleDelta(jsonBesideTextType), "a JSON delta is not visible")
+        assertEquals(DeltaShape.ARRIVING, DeltaPacer().shapeOf(textBesideEmptyField), "its own text counts")
+        assertEquals(DeltaShape.HIDDEN, DeltaPacer().shapeOf(jsonBesideTextType), "a JSON delta is not visible")
     }
 
     private fun freshChannel(sink: MutableList<String>) = ClientChannel(

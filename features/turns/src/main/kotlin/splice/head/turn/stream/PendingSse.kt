@@ -13,7 +13,9 @@ import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 import splice.head.hold.HandOverHeaders
 import splice.head.wire.ClientAnswer
+import splice.head.wire.DeltaShape
 import splice.head.wire.FrameRecording
+import splice.head.wire.FrameWrite
 import splice.head.wire.TurnTrace
 import java.io.Writer
 
@@ -52,6 +54,15 @@ internal class PendingSse(
         settle(frame, OverflowFrame.body(frame)?.let(::overflowAnswer))
     }
 
+    /** The emitter's model port: a hand-built delta's shape rides to the channel with its frame, so the pacer reads
+     *  it rather than decoding the frame. A delta is never structural and never an error frame, so it settles as the
+     *  stream at once. */
+    val modelWrite: FrameWrite = object : FrameWrite {
+        override suspend fun invoke(frame: String) = model(frame)
+
+        override suspend fun delta(frame: String, shape: DeltaShape) = settle(frame, null, shape)
+    }
+
     /** The emitter's error ending (failure-handling slice 2). [unsent] is what the failure is while the status is still
      *  splice's to choose, so a prompt that outgrew the window answers with its own status and [body] whatever its line
      *  says: a compaction's and a first message's lines leave out the words a client compacts on (final-design.md
@@ -64,14 +75,14 @@ internal class PendingSse(
     }
 
     /** Chooses the stream unless [overflow] answers first, and writes [frame] when the stream is the answer. */
-    private suspend fun settle(frame: String, overflow: Decision.Overflow?) {
+    private suspend fun settle(frame: String, overflow: Decision.Overflow?, shape: DeltaShape? = null) {
         if (overflow == null) {
             choice.complete(Decision.Stream)
         } else if (choice.complete(overflow)) {
             trace?.collectedAnswer { ClientAnswer(overflow.status, overflow.body) }
         }
         if (choice.await() !is Decision.Stream) return
-        output.writeModel(frame)
+        output.writeModel(frame, shape)
     }
 
     suspend fun progress(frame: String) {

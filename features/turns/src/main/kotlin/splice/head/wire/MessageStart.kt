@@ -9,6 +9,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import splice.core.turn.Usage
 import splice.core.wire.ANTHROPIC_ASSISTANT_ROLE
 
 private const val TYPE = "type"
@@ -46,8 +47,16 @@ internal class MessageStart(
     private var deferred = false
     private var nativeStart: JsonObject? = null
 
+    // The usage the backend's own opener reported (WireSink.openingUsage); null for an opener splice writes before
+    // the upstream answers, which can only report zeros.
+    private var nativeUsage: Usage? = null
+
     internal fun defer() {
         if (!started) deferred = true
+    }
+
+    internal fun acceptUsage(usage: Usage) {
+        if (!started) nativeUsage = usage
     }
 
     internal suspend fun openEarly() {
@@ -73,7 +82,7 @@ internal class MessageStart(
                 put("model", model)
                 put("stop_reason", null as String?)
                 put("stop_sequence", null as String?)
-                put("usage", usagePayload(null))
+                put("usage", usagePayload(nativeUsage))
             }
         }
         frames.frame("message_start", fields.merge(nativeStart, owned))

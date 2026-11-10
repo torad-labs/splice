@@ -6,6 +6,7 @@ package splice.upstream.sse
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.index.WireBlockIndex
+import splice.core.turn.Usage
 
 /** Source observation is independent of callback publication and carries no terminal verbs. */
 public interface SourceProgressSink {
@@ -23,6 +24,11 @@ public fun interface SourceFrameAction {
 public interface NativeResponseSink {
     /** Wait for the backend-authored opener rather than committing a generated opener early. */
     public fun deferMessageStart() {}
+
+    /** The usage the backend's own opener reported, read by the dialect from the message_start source frame it is
+     *  delivering. The deferred opener reports it, through the same payload builder as the final usage, instead of
+     *  the zeros an opener written before the upstream answers has to carry. */
+    public fun openingUsage(usage: Usage) {}
 
     /** Preserve opaque source fields on this frame's typed writes, never on later synthetic writes. */
     public suspend fun withSourceFrame(event: JsonObject, action: SourceFrameAction)

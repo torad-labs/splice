@@ -106,7 +106,9 @@ internal class CollectingTerminal(
             fail(FailureCause.Provider.ToolTear(runaway = true), usagePayload(usage))
             return
         }
-        val blocks = content.contentBlocks()
+        // An upstream that stopped on its own output cap cut whatever tool it was writing: that block is dropped
+        // and the body ends max_tokens, as the upstream said (SseEmitter.TerminalEnvelope.cutByUpstream).
+        val blocks = content.contentBlocks(cut = envelope.cutByUpstream(incomplete))
         if (content.malformedToolInput) {
             // HEAD-003: a tool_use whose input never parsed as JSON must not reach the client as
             // {} — a tool executing with the wrong (silently emptied) arguments is a wrong action

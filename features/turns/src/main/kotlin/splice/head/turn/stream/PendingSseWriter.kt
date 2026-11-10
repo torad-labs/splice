@@ -8,6 +8,7 @@ import kotlinx.coroutines.sync.withLock
 import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
 import splice.head.wire.ClientChannel
+import splice.head.wire.DeltaShape
 import splice.head.wire.FrameRecording
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.StatusGate
@@ -79,9 +80,10 @@ internal class PendingSseWriter(
         }
     }
 
-    suspend fun writeModel(frame: String) {
+    /** [shape] is the delta shape its writer handed over, or null for a frame the channel reads itself. */
+    suspend fun writeModel(frame: String, shape: DeltaShape? = null) {
         attached.await()
-        channel.writeMutex.withLock { channel.timedClientWrite(frame, perf, clock) }
+        channel.writeMutex.withLock { channel.timedClientWrite(frame, perf, clock, shape) }
     }
 
     suspend fun writeProgress(frame: String) {

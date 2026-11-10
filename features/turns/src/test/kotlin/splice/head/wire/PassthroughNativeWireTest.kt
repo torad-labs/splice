@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -214,5 +215,95 @@ class PassthroughNativeWireTest {
         second.addTextBlock("two")
         second.emitTerminal(false, false, Usage())
         assertFalse(second.responseBody().containsKey("private_turn_field"))
+    }
+
+    private fun inputEmitter(frames: MutableList<String>): SseEmitter = SseEmitterFactory().create(
+        write = { frames.add(it) },
+        model = "native",
+        usagePayload = { buildJsonObject { put("input_tokens", it?.inputTokens ?: 0) } },
+        streaming = StreamWiring(messageId = "fixed"),
+        voice = testVoice,
+    )
+
+    private fun endingDelta(writes: List<String>): JsonObject =
+        decoded(writes).last { kind(it) == "message_delta" }["delta"]!!.jsonObject
+
+    private fun argsDelta(index: Int, partialJson: String): String =
+        """{"type":"content_block_delta","index":$index,"delta":{"type":"input_json_delta","partial_json":""" +
+            JsonPrimitive(partialJson).toString() + "}}"
+
+    @Test
+    fun `a tool call cut by the upstream's max_tokens reaches the client as max_tokens, opened with its real usage`() =
+        runTest {
+            val writes = mutableListOf<String>()
+            val sink = inputEmitter(writes)
+            val outcome = drive(
+                sink,
+                """{"type":"message_start","message":{"usage":{"input_tokens":5,"cache_read_input_tokens":175000}}}""",
+                """{"type":"content_block_start","index":0,"content_block":""" +
+                    """{"type":"tool_use","id":"toolu_1","name":"Write","input":{}}}""",
+                argsDelta(0, "{\"pa"),
+                """{"type":"content_block_stop","index":0}""",
+                """{"type":"message_delta","delta":{"stop_reason":"max_tokens","stop_sequence":null}}""",
+                """{"type":"message_stop"}""",
+            ) as TurnOutcome.Success
+            sink.emitTerminal(outcome.hasToolUse, outcome.incomplete, outcome.usage)
+            assertEquals("max_tokens", endingDelta(writes)["stop_reason"]!!.jsonPrimitive.content)
+            val opener = decoded(writes).first { kind(it) == "message_start" }
+            val usage = opener["message"]!!.jsonObject["usage"]!!.jsonObject
+            assertEquals(175_005L, usage["input_tokens"]!!.jsonPrimitive.content.toLong())
+        }
+
+    @Test
+    fun `a stop sequence the upstream matched reaches the client with the sequence`() = runTest {
+        val writes = mutableListOf<String>()
+        val sink = emitter(writes)
+        val outcome = drive(
+            sink,
+            """{"type":"message_start","message":{}}""",
+            """{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}""",
+            """{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"done"}}""",
+            """{"type":"content_block_stop","index":0}""",
+            """{"type":"message_delta","delta":{"stop_reason":"stop_sequence","stop_sequence":"</answer>"}}""",
+            """{"type":"message_stop"}""",
+        ) as TurnOutcome.Success
+        sink.emitTerminal(outcome.hasToolUse, outcome.incomplete, outcome.usage)
+        val delta = endingDelta(writes)
+        assertEquals("stop_sequence", delta["stop_reason"]!!.jsonPrimitive.content)
+        assertEquals("</answer>", delta["stop_sequence"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `a collected body keeps server tool input and every citation, and ends a cut tool as max_tokens`() = runTest {
+        val sink = CollectingTerminal("native", { buildJsonObject {} }, voice = testVoice)
+        val outcome = drive(
+            sink,
+            """{"type":"message_start","message":{}}""",
+            """{"type":"content_block_start","index":0,"content_block":""" +
+                """{"type":"server_tool_use","id":"srvtoolu_1","name":"web_search","input":{}}}""",
+            argsDelta(0, "{\"query\":"),
+            argsDelta(0, "\"kotlin\"}"),
+            """{"type":"content_block_stop","index":0}""",
+            """{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}""",
+            """{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"cited"}}""",
+            """{"type":"content_block_delta","index":1,"delta":{"type":"citations_delta","citation":{"url":"u1"}}}""",
+            """{"type":"content_block_delta","index":1,"delta":{"type":"citations_delta","citation":{"url":"u2"}}}""",
+            """{"type":"content_block_stop","index":1}""",
+            """{"type":"content_block_start","index":2,"content_block":""" +
+                """{"type":"tool_use","id":"toolu_2","name":"Write","input":{}}}""",
+            argsDelta(2, "{\"pa"),
+            """{"type":"content_block_stop","index":2}""",
+            """{"type":"message_delta","delta":{"stop_reason":"max_tokens","stop_sequence":null}}""",
+            """{"type":"message_stop"}""",
+        ) as TurnOutcome.Success
+        sink.emitTerminal(outcome.hasToolUse, outcome.incomplete, outcome.usage)
+        assertEquals(200, sink.httpStatus())
+        val message = sink.responseBody()
+        assertEquals("max_tokens", message["stop_reason"]!!.jsonPrimitive.content)
+        val content = message["content"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(2, content.size)
+        assertEquals(event("""{"query":"kotlin"}"""), content[0]["input"])
+        assertEquals(Json.parseToJsonElement("""[{"url":"u1"},{"url":"u2"}]"""), content[1]["citations"])
+        assertFalse(content[1].containsKey("citation"))
     }
 }

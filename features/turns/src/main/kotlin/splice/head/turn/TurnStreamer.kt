@@ -87,7 +87,7 @@ internal class TurnStreamer(
         val meta = inputs.built.meta
         val perf = inputs.perf
         return emitters.create(
-            write = pending::model,
+            write = pending.modelWrite,
             streaming = StreamWiring(
                 pending::progress,
                 ContentReached { (perf.snapshot().counters[PerfKeys.CONTENT_FRAMES_OUT] ?: 0L) > 0 },

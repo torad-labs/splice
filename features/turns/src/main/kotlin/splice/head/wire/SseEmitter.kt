@@ -1,6 +1,7 @@
 // PORT-OF: server/src/anthropic/sse.mjs @ pre-public-port-baseline — invariants (L3, structural): this file is
 // the SOLE Anthropic wire emitter; a clean stop is reachable ONLY via emitTerminal (which owns
-// stop_reason derivation: tool_use > max_tokens(incomplete) > end_turn — no caller ever holds
+// stop_reason derivation: tool_use > max_tokens(incomplete) > end_turn, where an upstream's own
+// max_tokens outranks tool_use and its own stop_sequence replaces end_turn — no caller ever holds
 // the literal); failures ONLY via emitError (an SSE error event, so Claude Code retries
 // honestly); client-gone seals via abandon() with nothing on the wire. The non-stream terminal
 // message builder lives HERE too (its stop_reason literal), nested as [TerminalEnvelope] — the
@@ -43,6 +44,10 @@ private const val MESSAGE = "message"
 internal const val MESSAGE_DELTA: String = "message_delta"
 internal const val MESSAGE_STOP: String = "message_stop"
 internal const val END_TURN: String = "end_turn"
+private const val ENDING_REASON = "stop_reason"
+private const val ENDING_SEQUENCE = "stop_sequence"
+private const val CAP_ENDING = "max_tokens"
+private const val ENDING_DELTA = "delta"
 
 // Only the sole terminal owns the protocol event names; generic relays cannot write these frames.
 internal val nativeProtocolEvents: Set<String> = setOf(
@@ -302,18 +307,25 @@ internal class SseEmitter(
             futureFields = fields.merge(futureFields, fields.extensions(event, TYPE, "index"))
         }
 
-        internal fun deltaFrame(hasToolUse: Boolean, incomplete: Boolean, usage: JsonObject): JsonObject =
-            fields.merge(
+        internal fun deltaFrame(hasToolUse: Boolean, incomplete: Boolean, usage: JsonObject): JsonObject {
+            val ending = derive(hasToolUse, incomplete)
+            return fields.merge(
                 nativeDelta,
                 buildJsonObject {
                     put(TYPE, MESSAGE_DELTA)
-                    putJsonObject("delta") {
-                        put("stop_reason", deriveStopReason(hasToolUse, incomplete))
-                        put("stop_sequence", null as String?)
+                    putJsonObject(ENDING_DELTA) {
+                        put(ENDING_REASON, ending.reason)
+                        put(ENDING_SEQUENCE, ending.sequence)
                     }
                     put("usage", usage)
                 },
             )
+        }
+
+        /** True when the upstream itself ended this message on its output cap: its own message_delta said
+         *  max_tokens. A tool block that was open at that moment is cut, not a call, so the collect path drops
+         *  its unparsed arguments instead of failing the turn as a torn tool (a re-send meets the same cap). */
+        internal fun cutByUpstream(incomplete: Boolean): Boolean = incomplete && nativeReason() == CAP_ENDING
 
         internal fun stopFrame(): JsonObject = fields.merge(nativeStop, buildJsonObject { put(TYPE, MESSAGE_STOP) })
 
@@ -321,8 +333,8 @@ internal class SseEmitter(
             var result = fields.merge(nativeStart?.get(MESSAGE) as? JsonObject, futureFields)
             nativeStart?.let { result = fields.merge(result, fields.extensions(it, TYPE, MESSAGE)) }
             nativeDelta?.let {
-                result = fields.merge(result, it["delta"] as? JsonObject ?: JsonObject(emptyMap()))
-                result = fields.merge(result, fields.extensions(it, TYPE, "delta"))
+                result = fields.merge(result, it[ENDING_DELTA] as? JsonObject ?: JsonObject(emptyMap()))
+                result = fields.merge(result, fields.extensions(it, TYPE, ENDING_DELTA))
             }
             nativeStop?.let { result = fields.merge(result, fields.extensions(it, TYPE)) }
             return result
@@ -331,26 +343,44 @@ internal class SseEmitter(
         /** Non-stream terminal message (translateResponse envelope) — built HERE because the
          *  stop_reason derivation and its literals are walled to this file (L3). The envelope
          *  fields are grouped into [TerminalMessage] so the builder stays a single L3 argument. */
-        public fun terminalMessageJson(msg: TerminalMessage): JsonObject = fields.merge(
-            collectedFields(),
-            buildJsonObject {
-                put("id", msg.id)
-                put(TYPE, MESSAGE)
-                put("role", ANTHROPIC_ASSISTANT_ROLE)
-                put("content", buildJsonArray { msg.content.forEach { add(it) } })
-                put("model", msg.model)
-                put("stop_reason", deriveStopReason(msg.hasToolUse, msg.incomplete))
-                put("stop_sequence", null as String?)
-                put("usage", msg.usagePayload)
-            },
-        )
+        public fun terminalMessageJson(msg: TerminalMessage): JsonObject {
+            val ending = derive(msg.hasToolUse, msg.incomplete)
+            return fields.merge(
+                collectedFields(),
+                buildJsonObject {
+                    put("id", msg.id)
+                    put(TYPE, MESSAGE)
+                    put("role", ANTHROPIC_ASSISTANT_ROLE)
+                    put("content", buildJsonArray { msg.content.forEach { add(it) } })
+                    put("model", msg.model)
+                    put(ENDING_REASON, ending.reason)
+                    put(ENDING_SEQUENCE, ending.sequence)
+                    put("usage", msg.usagePayload)
+                },
+            )
+        }
 
-        // `internal`, not `private`: a Kotlin private member is CLASS-private, and SseEmitter
-        // (the enclosing class) must reach it — a second copy is what L3 forbids.
-        internal fun deriveStopReason(hasToolUse: Boolean, incomplete: Boolean): String = when {
-            hasToolUse -> "tool_use"
-            incomplete -> "max_tokens"
-            else -> END_TURN
+        /** A stop_reason and the stop sequence it matched, the pair every Anthropic ending carries. */
+        private data class Ending(val reason: String, val sequence: String? = null)
+
+        /** The stop_reason the upstream's own message_delta named, when a source frame carried one (the
+         *  passthrough dialect); empty for a translated dialect, whose upstream speaks another grammar. */
+        private fun nativeReason(): String = JsonScalars.strIfString(nativeEnding()?.get(ENDING_REASON))
+
+        private fun nativeEnding(): JsonObject? = nativeDelta?.get(ENDING_DELTA) as? JsonObject
+
+        // The ONE stop_reason derivation (L3): tool_use > max_tokens (incomplete) > end_turn, with two readings of
+        // the upstream's own ending where it wrote one in this grammar. Its max_tokens outranks a tool block: that
+        // block's arguments streamed live and were cut with the output, so calling it tool_use would hand the client
+        // a call whose input stops mid-string and hide the cap it hit. Its stop_sequence, which no splice flag
+        // outranks, rides through with the sequence it matched instead of reading as an end_turn.
+        private fun derive(hasToolUse: Boolean, incomplete: Boolean): Ending = when {
+            cutByUpstream(incomplete) -> Ending(CAP_ENDING)
+            hasToolUse -> Ending("tool_use")
+            incomplete -> Ending(CAP_ENDING)
+            nativeReason() == ENDING_SEQUENCE ->
+                Ending(ENDING_SEQUENCE, JsonScalars.strIfString(nativeEnding()?.get(ENDING_SEQUENCE)).ifEmpty { null })
+            else -> Ending(END_TURN)
         }
     }
 }

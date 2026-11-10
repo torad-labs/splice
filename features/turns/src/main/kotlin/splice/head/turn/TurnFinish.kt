@@ -28,15 +28,7 @@ internal class TurnFinish(
         val failure = outcome as? TurnOutcome.Failure
         markPermanence(drive, failure)
         val latencyMs = clock() - drive.t0
-        log(
-            telemetry.turnLine(
-                drive.meta,
-                drive.upstreamModel,
-                outcome,
-                latencyMs,
-                WatchdogVerdict(drive.watchdog.fired, drive.watchdog.held),
-            ),
-        )
+        log(telemetry.turnLine(drive, outcome, latencyMs))
         // DR-129: terminal frames still go FIRST (the header invariant — usage I/O must never sit
         // between the last delta and message_stop), but the stamps below must survive the
         // dead-client IOException emitTerminal rethrows after sealing: the outcome's usage is IN

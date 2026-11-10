@@ -18,6 +18,7 @@ import splice.core.failure.FailureCause
 import splice.core.failure.StoppedBy
 import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
+import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
 import splice.head.HeadHealthCounters
 import splice.upstream.Provider
@@ -80,7 +81,7 @@ internal class CancellationSeal(
             drive.emitter.hasEnded -> Unit
             drive.channel.clientGone.get() && !isRestart(cause) -> {
                 drive.emitter.abandon()
-                telemetry.recordPerf(drive, OutcomeTag.CLIENT_ABORT.wire)
+                recordClientAbort(drive)
             }
             // clientGone flips only on a FAILED write, but Ktor/Netty cancels on
             // channel-inactive with no write having failed — a user abort mid-lull reaches here
@@ -100,9 +101,17 @@ internal class CancellationSeal(
         }
     }
 
+    /** A client that left mid-turn: the turn line a finished abandonment writes (TurnFinish), then the row. This ending
+     *  wrote the row alone, so daemon.log showed the turn's send and nothing after it: on Nov 8-9, 2026 one subagent's
+     *  non-stream request came back 228 times, each cut by Claude Code at 360s, and not one attempt left a line. */
+    private suspend fun recordClientAbort(drive: TurnDrive) {
+        log(telemetry.turnLine(drive, TurnOutcome.ClientAbandoned()))
+        telemetry.recordPerf(drive, OutcomeTag.CLIENT_ABORT.wire)
+    }
+
     private suspend fun recordUnstreamed(drive: TurnDrive, cause: Throwable) {
         if (drive.channel.clientGone.get() && !isRestart(cause)) {
-            telemetry.recordPerf(drive, OutcomeTag.CLIENT_ABORT.wire)
+            recordClientAbort(drive)
         } else {
             val ending = endingOf(drive, cause)
             if (isRestart(cause) && !drive.channel.clientGone.get()) {

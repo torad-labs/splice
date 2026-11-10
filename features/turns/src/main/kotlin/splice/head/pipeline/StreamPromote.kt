@@ -6,6 +6,7 @@ package splice.head.pipeline
 import splice.core.failure.FailureCause
 import splice.core.perf.OutcomeTag
 import splice.core.turn.ModelTextPicker
+import splice.core.turn.RoundText
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
@@ -27,8 +28,9 @@ internal class StreamPromote(
         meta: TurnMeta,
         elapsedMs: Long,
     ): PromoteVerdict {
-        if (outcome.text.emittedText || outcome.hasToolUse) {
-            recordCompactShape(meta, outcome.text.emittedText, outcome.text.bodyText, elapsedMs)
+        val answered = answered(outcome.text)
+        if (answered || outcome.hasToolUse) {
+            recordCompactShape(meta, answered, outcome.text.bodyText, elapsedMs)
             return PromoteVerdict(null)
         }
         // No text AND no tools: promote model thinking to text (compact needs a text channel),
@@ -85,6 +87,11 @@ internal class StreamPromote(
             else -> PromoteVerdict(null)
         }
     }
+
+    /** Text counts once it holds something besides whitespace, the same trim [ModelTextPicker] reads with: a round
+     *  whose only text was "\n\n" reached the client as a block with nothing in it, and taking the emitted flag alone
+     *  let it skip promote and both empty gates (a compaction stored a blank summary). */
+    private fun answered(text: RoundText): Boolean = text.emittedText && text.bodyText.isNotBlank()
 
     /** A finished answer that holds nothing: the model closed an empty message, or the upstream stopped on max_tokens
      *  having produced as many tokens as the client allowed. The second is the answer to a request whose cap left room

@@ -5,9 +5,10 @@
 // upstream body per retry, while kimi in the same harness self-corrected on the first error.
 // The gateway delivers those errors faithfully — the model just doesn't act on them. The guard
 // walks the conversation the client already sends (stateless — no cache), counts failures of
-// the same (tool, canonical input) since the last success, and from the 3rd identical failure
-// rewrites that result's output with an escalating directive the model cannot miss. Success or
-// a changed argument resets the count; non-error results (polling, timeouts) never trigger.
+// the same (tool, canonical input) with the same error text since the last successful call of
+// any tool, and from the 3rd identical failure rewrites that result's output with an escalating
+// directive the model cannot miss. Any success, a changed argument or a different error resets
+// the count; non-error results (polling, timeouts) never trigger.
 package splice.dialect.responses.stream
 
 import kotlinx.serialization.json.JsonArray
@@ -49,10 +50,13 @@ internal object LoopGuard {
         return state.directives
     }
 
+    /** One call's run of identical failures: how many, and the error text they all returned. */
+    private data class Streak(val count: Int, val error: String)
+
     private class GuardState {
         val directives = HashMap<String, String>()
         private val calls = HashMap<String, Pair<String, String>>() // call id -> (name, canonical input)
-        private val failures = HashMap<String, Int>() // "name|input" -> consecutive failures
+        private val failures = HashMap<String, Streak>() // "name|input" -> its run of identical failures
 
         fun onBlock(block: splice.core.wire.ContentBlock) {
             when (block) {
@@ -79,13 +83,18 @@ internal object LoopGuard {
             // On drift: if Claude Code renames the marker, add the new spelling HERE, next to
             // the structured signal that keeps working regardless.
             if (block.isError ?: (ERROR_MARKER in text)) {
-                val n = (failures[key] ?: 0) + 1
-                failures[key] = n
+                // The directive tells the model the call failed N times WITH THE SAME ERROR, so only
+                // the same error extends the run: a test command that fails differently after each
+                // edit is the model making progress, and a new error starts a new run at one.
+                val n = failures[key]?.takeIf { it.error == text }?.count?.plus(1) ?: 1
+                failures[key] = Streak(n, text)
                 if (n >= TRIGGER) directives[block.toolUseId] = directive(name, n)
             } else {
-                // any unmarked result means the call worked — the retry was rational,
-                // so the streak resets (polling and flaky tools never arm the guard).
-                failures[key] = 0
+                // Any unmarked result means a call worked, and that ends every run, not only this
+                // call's: a success in between (an Edit, a Read, a write by Bash) may have changed
+                // what the failing call reads, so re-running it is rational, not a loop. Polling and
+                // flaky tools never arm the guard.
+                failures.clear()
             }
         }
     }

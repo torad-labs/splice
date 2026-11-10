@@ -309,6 +309,12 @@ internal class ClientChannel(
         return true
     }
 
+    /** Nobody reads this turn's answer any more: the client left and no recording stands in for it. [clientGone]
+     *  alone says only that the socket is lost, which a detached compaction also is while its recording still
+     *  reads every frame for the retry; a round that fails there is an upstream failure to carry on from, not a
+     *  client that abandoned the turn. */
+    val readerGone: Boolean get() = clientGone.get() && !detached.get()
+
     /** DR-93 (redo): the turn-finally flush, quiet BY CONTRACT. On a dead socket the flush itself
      *  throws (IOException from the engine write, IllegalStateException from a closed channel),
      *  and inside a finally that throw REPLACES the in-flight CancellationException or the turn's

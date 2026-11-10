@@ -27,7 +27,8 @@ internal class DriveSignals(
     fun make(watchdog: TurnWatchdog, channel: ClientChannel, perf: TurnPerf): RunnerSignals =
         RunnerSignals(
             watchdogFired = { watchdog.fired != null },
-            clientGone = { channel.clientGone.get() },
+            // A detached compaction's recording is its reader: its rounds carry on and its tears stay failures.
+            clientGone = { channel.readerGone },
             onRoundFailure = { f ->
                 // Absorbed round failures still count for the G20 health split (code-review 2026-07-24).
                 log(

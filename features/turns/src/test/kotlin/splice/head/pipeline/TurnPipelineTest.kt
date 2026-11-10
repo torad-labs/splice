@@ -289,6 +289,22 @@ class TurnPipelineTest {
         assertEquals(FailureCause.Provider.Empty(reasoningOnly = false), rec.errorCause)
     }
 
+    /** A compaction whose only text was whitespace: the client holds a block with nothing in it, so the summary it
+     *  would store is blank. It ends as the empty compact error, the same as a compaction with no text at all. */
+    @Test
+    fun `a compaction whose only text is whitespace ends as the empty error, not a blank summary`() = runTest {
+        val rec = RecTerminal()
+        val tag = pipeline().finishStream(
+            rec,
+            outcome(thinking = "").let { it.copy(text = it.text.copy(bodyText = "\n\n", emittedText = true)) },
+            meta("text", compact = true),
+            elapsedMs = 1,
+        )
+        assertEquals("error", rec.ending, "a blank summary must not end clean")
+        assertEquals(ErrorType.OVERLOADED, rec.errorType)
+        assertEquals("empty_compact", tag)
+    }
+
     @Test
     fun `the default pipeline keeps the reasoning mirror locked off`() = runTest {
         val rec = RecTerminal()

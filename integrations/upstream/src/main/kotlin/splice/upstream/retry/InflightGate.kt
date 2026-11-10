@@ -92,9 +92,14 @@ public class InflightGate(
         )
     }
 
-    /** Explicit periodic/config-change sample. Ordinary status reads never mutate observation state. */
+    /** Explicit periodic/config-change sample. Ordinary status reads never mutate observation state.
+     *
+     *  It also admits whoever the CURRENT limit now lets in. A live raise of maxInflight is a config change, and
+     *  nothing else wakes the queue for it: the waiters are each blocked on their own request and send nothing new,
+     *  so before this the raise waited for some other request on the head, or for a long stream to end. */
     public fun sampleObservations() {
-        synchronized(lock) { observations.record() }
+        val toResume = synchronized(lock) { drainAdmissibleLocked().also { observations.record() } }
+        GateResumptions.resume(toResume, this)
     }
 
     /** What [acquire] answers. The refusal is a VALUE, not a throw: a `RuntimeException` subclass

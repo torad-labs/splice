@@ -1,5 +1,6 @@
 // The two kept stores Settings > Your data counts and clears: code mode work and parked compaction summaries.
-// Each is counted, cleared and counted again, on files written the way their stores write them.
+// Each is counted, cleared and counted again, on files written the way their stores write them. The history cut that
+// reaches the files kept beside them (reasoning, assistant phases) is read here too, by what it leaves on the disk.
 package splice.app.control.kept
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -7,8 +8,11 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.control.mount.KeptHistoryStores
+import splice.core.config.ASSISTANT_PHASES_DIR
 import splice.core.config.CODE_MODE_DIR
 import splice.core.config.CODE_MODE_STATE_SUFFIX
+import splice.core.config.REASONING_DIR
 import splice.core.config.StatePaths
 import java.nio.file.Files
 import java.nio.file.Path
@@ -53,6 +57,30 @@ class KeptStoresTest {
         assertTrue(Files.exists(live), "a journal its head still appends to must survive the clear")
         assertTrue(Files.notExists(idle))
         assertEquals(StoreHeld(files = 1, bytes = 5, oldestMs = 2_000), store.held())
+    }
+
+    @Test
+    fun `a history cut removes the assistant phases it removes the reasoning of, and a clear leaves none`(
+        @TempDir tmp: Path,
+    ) {
+        val paths = StatePaths(baseOverride = tmp.resolve("state"))
+        val claudex = paths.headsDir.resolve("claudex")
+        val oldPhases = write(claudex.resolve(ASSISTANT_PHASES_DIR).resolve("splice-a.jsonl"), "12345", 1_000)
+        val oldLock = write(claudex.resolve(ASSISTANT_PHASES_DIR).resolve("splice-a.jsonl.lock"), "", 1_000)
+        val newPhases = write(claudex.resolve(ASSISTANT_PHASES_DIR).resolve("splice-b.jsonl"), "123", 9_000)
+        val oldReasoning = write(claudex.resolve(REASONING_DIR).resolve("splice-a.jsonl"), "12", 1_000)
+        val gone = paths.headsDir.resolve("gone-head").resolve(ASSISTANT_PHASES_DIR).resolve("c.jsonl")
+        val goneHead = write(gone, "1", 2_000)
+        val stores = KeptHistoryStores(paths)
+
+        assertNull(stores.trimBefore(5_000))
+        assertTrue(Files.notExists(oldPhases) && Files.notExists(oldLock), "phases last written before the cut go")
+        assertTrue(Files.notExists(goneHead), "a head no longer in splice.toml is cut too")
+        assertTrue(Files.notExists(oldReasoning))
+        assertTrue(Files.exists(newPhases), "phases written after the cut stay")
+
+        assertNull(stores.trimBefore(Long.MAX_VALUE))
+        assertTrue(Files.notExists(newPhases), "a clear leaves no phase file")
     }
 
     @Test

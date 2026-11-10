@@ -1,15 +1,23 @@
 // NEW: Oct 10, 2026 — the stores a history cut reaches that are not turn records: parked compaction summaries,
-// reasoning kept between turns, code mode work and the record of sessions seen, cleared by the same save that cuts
-// the records. Transcript copies are not among them: they keep their own days, transcriptCopyDays (the President,
-// Oct 12), and each new copy removes the ones past them.
+// reasoning kept between turns, the native message phases kept beside it (Nov 9, 2026), code mode work and the
+// record of sessions seen, cleared by the same save that cuts the records. Transcript copies are not among them:
+// they keep their own days, transcriptCopyDays (the President, Oct 12), and each new copy removes the ones past them.
 //
 // Every one is cut by its last activity, never by whether it could still be resumed (Marlin, Oct 10): nearly
 // everything is resumable while its file exists, so that exception would keep months of data after "Today only".
 // Each is aged by its files' last write.
+//
+// Code mode's files are the one store a running head's files are spared from (InUseFileStamp): its journal is appended
+// to from memory, and a restart fails on one that begins mid-history. The phase files are cut whether or not a head
+// holds them. A Responses head keeps every conversation it restored in memory until it compacts or is evicted, so
+// sparing those would spare them all and the cut would reach nothing; and a phase file that lost its early records
+// fails nothing, since a phase is used only when the transcript matches it (ResponsesAssistantPhaseHistory) and an
+// absent one reads as no phase. The head goes on serving the conversation from memory; its next record starts a file.
 package splice.app.control.mount
 
 import splice.app.control.kept.CodeModeFilesInUse
 import splice.app.control.kept.InUseFileStamp
+import splice.core.config.ASSISTANT_PHASES_DIR
 import splice.core.config.CODE_MODE_DIR
 import splice.core.config.REASONING_DIR
 import splice.core.config.StatePaths
@@ -61,6 +69,7 @@ internal class KeptHistoryStores(
     /** The stores of plain files, by the name the page owns the words for. */
     private fun filed(): Map<String, List<AgedFiles>> = mapOf(
         "reasoning" to headDirs(REASONING_DIR).map { AgedFiles(it) },
+        "assistant_phases" to headDirs(ASSISTANT_PHASES_DIR).map { AgedFiles(it) },
         "code_mode" to InUseFileStamp(inUse()).let { stamp -> headDirs(CODE_MODE_DIR).map { AgedFiles(it, stamp) } },
         // the record of sessions seen, each file dated by its session's last activity (SeenSessions)
         SEEN_SESSIONS_KEY to listOf(AgedFiles(paths.stateDir.resolve(SEEN_SESSIONS_DIR))),

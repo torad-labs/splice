@@ -2,6 +2,7 @@
 // Same-package; the provider keeps the SPI overrides and the WS lazy arm.
 package splice.dialect.responses.request
 
+import splice.core.config.ASSISTANT_PHASES_DIR
 import splice.core.config.REASONING_DIR
 import splice.core.util.LogSink
 import splice.dialect.responses.FailureReading
@@ -53,9 +54,11 @@ internal class ResponsesParts(
     private val reasoningWrites = ReasoningCacheWrites(reasoningFiles.takeIf { quirks.roundTrip.reasoningCache })
     private val reasoningCache = ReasoningCache(log = log, writes = reasoningWrites)
 
-    // Native phases remain meaningful when encrypted-reasoning replay is off.
+    // Native phases remain meaningful when encrypted-reasoning replay is off, so turning the cache off purges the
+    // reasoning files above and leaves these; a stale-reasoning rejection evicts only the reasoning cache, since a
+    // phase is a plain label checked against the transcript, never an encrypted item the provider can refuse.
     private val phaseWrites = ReasoningCacheWrites(
-        tuning.locations.stateDir?.let { ReasoningCacheFiles(it.resolve("assistant-phases"), log = log) },
+        tuning.locations.stateDir?.let { ReasoningCacheFiles(it.resolve(ASSISTANT_PHASES_DIR), log = log) },
     )
     private val phaseCache = ReasoningCache(log = log, writes = phaseWrites)
 

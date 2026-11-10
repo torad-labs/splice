@@ -964,6 +964,10 @@ function chartSlices() {
   });
 }
 const sumParts = (xs) => xs.reduce((a, [, v]) => a + v, 0);
+// WHERE THE CHART'S COUNT BEGINS (Nov 10): its columns are whole calendar days from midnight (or the 5 hours' quarter
+// hours), while Results by command counts the last 1, 24 or 168 hours to the minute; each says where it starts, so the
+// two request counts read as two windows, never as one figure counted twice
+const sinceWords = () => { const d = new Date(since()); return d.toDateString() === NOW.toDateString() ? clock(d) : `${DAY[d.getDay()]} ${clock(d)}`; };
 function chartHtml() {
   const money = ui.measure === "cost";
   const sw = DRAW.switcher([["tokens", "Tokens"], ["cost", "Cost"]], ui.measure, "measure", "Measure");
@@ -993,7 +997,7 @@ function chartHtml() {
   let lead;
   if (!money) {
     lead = `<div class="figline"><b class="fig-hero">${reqs && !noTokens(all) ? tok(tokensOf(all)) : DRAW.dash}</b>`
-      + (reqs ? `<a class="cap" href="${reqUrl()}"><span>tokens in <b>${n0(reqs)}</b> requests</span>${OPEN}</a>` : `<span class="cap">tokens</span>`)
+      + (reqs ? `<a class="cap" href="${reqUrl()}"><span>tokens in <b>${n0(reqs)}</b> requests since ${sinceWords()}</span>${OPEN}</a>` : `<span class="cap">tokens</span>`)
       + failPart + `</div>`;
   } else {
     const value = planValueOf(all), spent = spentOf(all);

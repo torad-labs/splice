@@ -86,13 +86,14 @@ test("Usage: the Performance measurements name a burst of failures only inside t
     await p.clock.install({ time: new Date(now) });
     await p.goto(`http://127.0.0.1:${server.port}/usage.html`);
     await p.locator("#band-perf [data-act=perffold]").click();
+    await p.locator("#band-perf .pc-deep > summary").click();
     await p.locator('#band-perf [name="window"]').selectOption("24h");
-    await p.getByRole("button", { name: "Apply cohort", exact: true }).click();
+    await p.getByRole("button", { name: "Measure", exact: true }).click();
     await p.locator('#band-perf [data-pc-command="plan"] > summary').click();
     await expect(p.locator("#band-perf .flag.failing")).toContainText("Failing", { timeout: 20_000 });
     await expect(p.locator("#band-perf .flag.failing")).toContainText("sampled records");
     await p.locator('#band-perf [name="window"]').selectOption("1h");
-    await p.getByRole("button", { name: "Apply cohort", exact: true }).click();
+    await p.getByRole("button", { name: "Measure", exact: true }).click();
     await expect(p.locator("#band-perf .pc-command-failure")).toContainText("No failures", { timeout: 20_000 });
     await expect(p.locator("#band-perf .flag")).toHaveCount(0);
     // A custom transport is not known by the page's sampled-row flag; positive returned failures cannot lend it a cohort.
@@ -100,7 +101,7 @@ test("Usage: the Performance measurements name a burst of failures only inside t
     await p.getByRole("button", { name: "All filters", exact: true }).click();
     await expect(p.locator('#band-perf [name="window"]')).toHaveValue("24h");
     await p.locator('#band-perf [name="transport"]').fill("http");
-    await p.getByRole("button", { name: "Apply cohort", exact: true }).click();
+    await p.getByRole("button", { name: "Measure", exact: true }).click();
     await expect(p.locator("#band-perf .pc-command-failure")).toContainText("3% failed");
     await expect(p.locator("#band-perf .flag")).toHaveCount(0);
   } finally {

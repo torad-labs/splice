@@ -19,6 +19,13 @@ const createPerfResults = (scope, helpers) => {
   const { API, document } = scope;
   const { render, providerOfHead, cmdOf, flagOf, flagHtml, hasFilter, ui, S, n0, secs, OPEN, OUTCOME_WORD, tagWord, isFailed, NOT_READ } = helpers;
   const WINDOWS = { "1h": "1 hour", "24h": "24 hours", "7d": "7 days" };
+  // WHERE THE TABLE'S COUNT BEGINS, in the words the chart above uses for its own (Nov 10): the fold counts the last 1, 24
+  // or 168 hours to the minute it was read, while the chart counts whole calendar days from midnight, so "1,289 failed of
+  // 177,208" here and "1,129 failed" over 154,980 requests there read as a contradiction until each says where it starts
+  const sinceWord = (win) => {
+    const d = new Date((st.readAt ?? Date.now()) - SPAN[win]), today = d.toDateString() === new Date().toDateString();
+    return d.toLocaleString("en-US", today ? { hour: "numeric", minute: "2-digit" } : { weekday: "short", hour: "numeric", minute: "2-digit" }).replace(",", "");
+  };
   // a compaction's ending, in words (StreamCompact's outcome); an outcome not named here reads as its own key
   const ENDED = {
     model_text: "Summarized", model_thinking: "Thought but wrote no summary", tooled_no_text: "Called a tool instead of summarizing",
@@ -58,7 +65,7 @@ const createPerfResults = (scope, helpers) => {
     // the compactions ledger beside the summary (TurnsMount /api/compact): its own counts by outcome, which perf rows lack
     const [r, c] = await Promise.all([API.get(`/api/perf/summary?window=${win}`), API.get("/api/compact")]);
     if (gen !== st.gen) return; // a newer window was asked for while this one was read
-    st.reading = false;
+    st.reading = false; st.readAt = Date.now();
     st.body = r.ok ? r.body : null;
     st.compact = c.ok ? c.body?.stats?.heads ?? null : null;
     st.error = r.ok ? null : WHY_NOT[r.status] ?? (r.status ? "splice did not send it" : "splice did not answer");
@@ -344,8 +351,8 @@ const createPerfResults = (scope, helpers) => {
     const all = used.reduce((a, h) => a + h.count, 0), bad = used.reduce((a, h) => a + failedOf(h), 0);
     const lead = used.length
       ? `<div class="ure-lead">${DRAW.hero(bad > 0
-        ? { figure: rate(bad / all) ?? "0%", level: level(bad / all), count: bad, word: "failed", of: `of ${n0(all)} requests`, href: `requests.html?${new URLSearchParams({ win, project: "", outcome: "fail" })}`, key: "perf-lead" }
-        : { figure: "0%", level: "ok", of: `No failures in ${n0(all)} requests`, key: "perf-lead" })}</div>` : "";
+        ? { figure: rate(bad / all) ?? "0%", level: level(bad / all), count: bad, word: "failed", of: `of ${n0(all)} requests since ${sinceWord(win)}`, href: `requests.html?${new URLSearchParams({ win, project: "", outcome: "fail" })}`, key: "perf-lead" }
+        : { figure: "0%", level: "ok", of: `No failures in ${n0(all)} requests since ${sinceWord(win)}`, key: "perf-lead" })}</div>` : "";
     // Every command keeps its row: the ones that answered in worst-first order, numbered, then the ones with no request,
     // each saying so once where its figures would be. A window nothing answered in is those rows alone.
     const rowsHtml = used.map((h, i) => item(h, ctx, i + 1)).join("") + idle.map(idleRow).join("");

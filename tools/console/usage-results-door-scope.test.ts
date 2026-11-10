@@ -200,6 +200,7 @@ test("Usage: with a project picked, the Results door says its figure is over all
 test("Usage: the folded Performance measurements open expandable diagnostics for a command", async () => {
   await open("", async (p) => {
     await fold(p).click();
+    await p.locator("#band-perf .pc-deep > summary").click();
     await p.getByRole("button", { name: "Profiles", exact: true }).click();
     await p.getByRole("button", { name: "Overview", exact: true }).click();
     await expect(p.getByRole("button", { name: "Overview", exact: true })).toHaveAttribute("aria-current", "page");
@@ -251,7 +252,7 @@ test("Usage: bounded Perf admission preserves startup views and pending profile 
     await expect(panel.locator(".pc-message")).toHaveText("Performance action pending…");
     for (const project of ["/work/old-a", "/work/old-b", "/work/website"]) {
       await panel.locator('[name="project"]').fill(project);
-      await panel.getByRole("button", { name: "Apply cohort", exact: true }).click();
+      await panel.getByRole("button", { name: "Measure", exact: true }).click();
     }
     await expect(panel.getByRole("button", { name: "Start capture", exact: true })).toBeDisabled();
     reads.forEach((hold) => hold.release());
@@ -293,7 +294,7 @@ test("Usage: bounded Perf admission preserves startup views and pending profile 
     const builder = panel.locator('[data-pc-form="add-objective"]');
     await builder.locator('[name="id"]').fill("builder-after-submit");
     await builder.getByRole("button", { name: "Add to draft", exact: true }).click();
-    await panel.getByRole("button", { name: "Apply cohort", exact: true }).click();
+    await panel.getByRole("button", { name: "Measure", exact: true }).click();
     await expect(panel.getByRole("button", { name: "Save objectives and rules", exact: true })).toBeDisabled();
     await expect(panel.getByRole("button", { name: "Discard edits and reload", exact: true })).toBeDisabled();
     save.release();
@@ -343,6 +344,7 @@ test("Usage: bounded Perf admission preserves startup views and pending profile 
 test("Usage: the page's window and the measurements' own keep exact 5-hour, 30-day and 1-hour intervals", async () => {
   await open("", async (p) => {
     await fold(p).click();
+    await p.locator("#band-perf .pc-deep > summary").click();
     const readFor = (duration: number) => p.waitForRequest((r) => {
       const u = new URL(r.url());
       return u.pathname === "/api/perf/summary" && u.searchParams.get("contract") === "1" && Number(u.searchParams.get("until")) - Number(u.searchParams.get("from")) === duration;
@@ -357,7 +359,7 @@ test("Usage: the page's window and the measurements' own keep exact 5-hour, 30-d
     await expect(p.locator('#band-perf [name="window"]')).toHaveValue("30d");
     const oneHour = readFor(3600000);
     await p.locator('#band-perf [name="window"]').selectOption("1h");
-    await p.getByRole("button", { name: "Apply cohort", exact: true }).click();
+    await p.getByRole("button", { name: "Measure", exact: true }).click();
     await oneHour;
   });
 }, 90_000);
@@ -365,6 +367,7 @@ test("Usage: the page's window and the measurements' own keep exact 5-hour, 30-d
 test("Usage: a selected project changes the measurements' population and survives request navigation", async () => {
   await open("?project=/work/website", async (p) => {
     await fold(p).click();
+    await p.locator("#band-perf .pc-deep > summary").click();
     await expect(p.locator('#band-perf [name="project"]')).toHaveValue("/work/website");
     await p.locator('#band-perf [data-pc-command="plan"] > summary').click();
     await expect(p.locator(".pc-command-failure")).toHaveText("5% failed");
@@ -392,7 +395,7 @@ test("Usage: a single query worker returns every view for the newest cohort and 
     // the newest cohort. Aborting its browser response does not release this fixture's worker.
     for (const project of ["/work/old-a", "/work/old-b", "/work/website"]) {
       await panel.locator('[name="project"]').fill(project);
-      await panel.getByRole("button", { name: "Apply cohort", exact: true }).click();
+      await panel.getByRole("button", { name: "Measure", exact: true }).click();
     }
     first.release();
     await expect(content).toHaveAttribute("aria-busy", "false");
@@ -447,7 +450,7 @@ test("Usage: an accepted capacity retry keeps query ownership until its held res
     await panel.locator('[data-pc-tab="timeline"]').click();
     await retry.ready;
     await panel.locator('[name="project"]').fill("/work/website");
-    await panel.getByRole("button", { name: "Apply cohort", exact: true }).click();
+    await panel.getByRole("button", { name: "Measure", exact: true }).click();
     // The new cohort waits behind the accepted retry's worker ownership, even though the old view is stale.
     expect(queryBusyResponses).toBe(0);
     retry.release();

@@ -174,6 +174,8 @@ test("Usage: a ref-less merged account pauses Performance until one exact ID nar
   try {
     const rows = p.locator(".brow", { hasText: "Primary" });
     await expect(rows.first().locator(".num").nth(1)).toContainText("1,234,574", { timeout: 20_000 });
+    // Performance is folded to its one line until it is opened.
+    await p.locator('#band-perf [data-act="perffold"]').click();
     await expect(p.locator('#band-perf [data-pc-command="plan"]')).toBeVisible();
     performanceReads.length = 0; askedAccounts.length = 0;
     await rows.first().click();
@@ -247,6 +249,7 @@ test("Usage: the No project pick reads only the requests with no project, as pro
     await expect(p.locator(".brow .num.open").first()).toHaveText("3", { timeout: 20_000 });
     expect(askedProjects).toContain("none");
     expect(askedProjects).not.toContain("-");
+    await p.locator('#band-perf [data-act="perffold"]').click();
     await expect(p.locator('#band-perf [data-pc-command="plan"] > summary > span').nth(1)).toHaveText(/^Requests\s*3$/);
     expect(performanceReads.length).toBeGreaterThan(0);
     expect(performanceReads.every((u) => u.searchParams.get("project") === "none")).toBe(true);

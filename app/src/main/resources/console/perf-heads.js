@@ -761,6 +761,17 @@ const PERF_CONSOLE = (() => {
   }
   return { create, params, address, fromAddress, snapshot, comparison };
 })();
+// THE MEASUREMENTS, ONE STEP AWAY. Usage leads with Results by command and Requests with its requests; the whole
+// performance console (its cohort, coverage and eight views) stands under one heading line that names what it holds,
+// folded until it is opened, and reads nothing while folded. A page opened from a performance link opens it.
+const PERF_FOLD = {
+  html(open, body) {
+    const head = `<button class="pc-fold-head" type="button" data-act="perffold" aria-expanded="${open}">`
+      + `<h2>Performance</h2><span class="pc-fold-says">Rates, latency, history, runtime, traces, baselines, profiles, objectives, alerts</span>`
+      + `<span class="pc-fold-go">${open ? "Hide" : "Show"}${DRAW.mpChev(open)}</span></button>`;
+    return `<section class="pc-fold${open ? " open" : ""}">${head}${open ? body() : ""}</section>`;
+  },
+};
 const createPerfHeads = (scope, helpers) => {
   let override = null, addressActive = true, lastNative = "";
   const canonicalAccount = (query) => {

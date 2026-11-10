@@ -1,6 +1,7 @@
-// Usage, Results by command: the open row's flag names a burst of failures only when the burst falls inside the window the
-// table reads. A burst of failures from an hour and a half ago is named under 24 hours and not under 1 hour, where the
-// table's own rate for that window reads no failures.
+// Usage, Results by command and the Performance measurements under it: an open row's flag names a burst of failures only
+// when the burst falls inside the window it reads. A burst of failures from an hour and a half ago is named under 24 hours
+// and not under 1 hour, where the window's own rate reads no failures. Results reads the daemon's fold by window
+// (window=1h|24h|7d); the measurements read the exact cohort (contract=1, from and until).
 import { afterAll, beforeAll, test } from "bun:test";
 import { chromium, expect, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -27,7 +28,8 @@ const server = Bun.serve({
     if (path === "/api/models") return Response.json({ heads: [{ head: "plan", provider: "anthropic", models: [] }] });
     if (path === "/api/status") return Response.json({ registry: [{ key: "plan", family: "anthropic", authKind: "claude-oauth" }] });
     if (path === "/api/perf/summary") {
-      const from = Number(url.searchParams.get("from")), until = Number(url.searchParams.get("until"));
+      const span = ({ "1h": 3_600_000, "24h": 86_400_000, "7d": 604_800_000 } as Record<string, number>)[url.searchParams.get("window") ?? ""];
+      const from = span ? now - span : Number(url.searchParams.get("from")), until = span ? now : Number(url.searchParams.get("until"));
       // under 1 hour the table reads no failures; under 24 hours and 7 days it reads the burst
       const bad = BURST >= from && BURST < until ? 3 : 0, count = 100;
       return Response.json(performanceSummary(url, { plan: { count, local_steps: 0, empty: false, read_status: "readable", metrics_complete: true, outcomes: bad ? { ok: count - bad, "error:overloaded": bad } : { ok: count }, failure_share: bad / count, failure_shares: bad ? { "error:overloaded": bad / count } : {}, models: {}, time_before_first_byte_ms: { count, p50: 100, p95: 200, max: 300 } } }));
@@ -66,6 +68,24 @@ test("Usage: Results names a burst of failures only inside the window its table 
   try {
     await p.clock.install({ time: new Date(now) });
     await p.goto(`http://127.0.0.1:${server.port}/usage.html`);
+    await p.locator("#band-results [data-act=perfwin][data-v='24h']").click();
+    await p.locator("#band-results [data-act=perfopen][data-k=plan]").click();
+    await expect(p.locator("#band-results .flag.failing")).toContainText("Failing", { timeout: 20_000 });
+    await p.locator("#band-results [data-act=perfwin][data-v='1h']").click();
+    await expect(p.locator("#band-results .pd-hero")).toContainText("No failures", { timeout: 20_000 });
+    await expect(p.locator("#band-results .flag")).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+}, 90_000);
+
+test("Usage: the Performance measurements name a burst of failures only inside the cohort window", async () => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1400 }, timezoneId: "UTC" });
+  const p = await context.newPage();
+  try {
+    await p.clock.install({ time: new Date(now) });
+    await p.goto(`http://127.0.0.1:${server.port}/usage.html`);
+    await p.locator("#band-perf [data-act=perffold]").click();
     await p.locator('#band-perf [name="window"]').selectOption("24h");
     await p.getByRole("button", { name: "Apply cohort", exact: true }).click();
     await p.locator('#band-perf [data-pc-command="plan"] > summary').click();

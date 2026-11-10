@@ -1394,13 +1394,22 @@ function readNote() {
 const PERF_HEADS = createPerfHeads(scope, { changed: renderDoors,
   selectAccount: (head, account) => { ui.f.account = `${head}|${account}`; ui.by = nextBy("account"); ui.shown = CUT; again(); },
   chip, providerOfHead, cmdOf, flagOf, flagHtml, hasFilter, ui, S, n0, secs, OPEN, OUTCOME_WORD, tagWord, isFailed, NOT_READ });
+// Results by command as Marcos approved it (perf-results.js), beside Where it went; the measurements above stay one
+// step away under it, folded, and read nothing until they are opened.
+const PERF_RESULTS = createPerfResults(scope, { render: () => { renderBand("results"); renderDoors(); },
+  providerOfHead, cmdOf, flagOf, flagHtml, hasFilter, ui, S, n0, secs, OPEN, OUTCOME_WORD, tagWord, isFailed, NOT_READ });
+// Performance stays one line until opened; a link that names a cohort (contract=1, as Requests' measurements link here)
+// lands with it open, on that cohort.
+const perfFold = { open: new URLSearchParams(location.search).get("contract") === "1" };
+const perfFoldHtml = () => PERF_FOLD.html(perfFold.open, () => PERF_HEADS.html());
 
 const BANDS = {
   money: { el: () => document.getElementById("band-money"), html: moneyHtml },
   chart: { el: () => document.getElementById("band-chart"), html: chartHtml },
   by: { el: () => document.getElementById("band-by"), html: byHtml },
   tok: { el: () => document.getElementById("band-tok"), html: tokensHtml },
-  perf: { el: () => document.getElementById("band-perf"), html: () => PERF_HEADS.html() },
+  results: { el: () => document.getElementById("band-results"), html: () => PERF_RESULTS.html() },
+  perf: { el: () => document.getElementById("band-perf"), html: perfFoldHtml },
 };
 /** A window change keeps every bar at the length it had, striped and with its figure left off, until the new window's read
  *  lands; then each bar moves to its new length. The columns wait too: the chart is not drawn for a window whose figures
@@ -1508,7 +1517,7 @@ function renderBand(name, grow = false) {
   if (before) flowRows(el, before);
   if (name === "chart" && was.size) glideColumns(el, was);
   if (name === "by") fitChips(el);
-  if (name === "by" || name === "tok" || name === "perf") settleLower();
+  if (name === "by" || name === "tok" || name === "results") settleLower();
 }
 /** An input bar's parts: one at least 3rem wide carries its figure inside; a narrower one is named after the bar's end by its
  *  swatch and figure, so every part of every bar is read where it is drawn. */
@@ -1576,12 +1585,14 @@ function renderDoors() {
       : `<b class="upl-df" data-tn="door-tok">${noTokens(tot) || !tot.requests ? DRAW.dash : tok(tokensOf(tot))}</b><span class="upl-dq">tokens</span>`;
   }
   out.push(door("by", "Where it went", by));
-  // A named command's returned failure share, never an invented overall aggregate. The panel uses this same cohort.
-  const lead = PERF_HEADS.lead();
-  const span = lead ? ` · ${lead.window}${lead.scoped ? " · selected cohort" : ""}` : "";
-  out.push(door("perf", "Results by command", !lead ? wait : lead.figure != null
-    ? `<b class="upl-df" data-tn="door-failed">${esc(lead.figure)}</b><span class="upl-dq">${esc(lead.name)} failed${esc(span)}</span>`
-    : `<span class="upl-dq">${lead.none ? "No requests" : "Failure rate unavailable"}${esc(span)}</span>`));
+  // The table's own answer: the share of every request in its window that failed, from the fold that counts them all.
+  // It reads every request over its own window, beside two doors on the page's window and pick, so the door says what
+  // its figure covers wherever the two differ, in the band's words: its window, and all requests under a pick.
+  const lead = PERF_RESULTS.lead();
+  const span = lead && lead.win !== ui.win ? ` in ${lead.word}` : "";
+  const every = ui.project != null || hasFilter() ? ", all requests" : "";
+  out.push(door("results", "Results by command", !lead ? wait : lead.none ? `<span class="upl-dq">No requests${span}</span>`
+    : `<b class="upl-df lv-${lead.level}" data-tn="door-failed">${lead.figure}</b><span class="upl-dq">failed${span}${every}</span>`));
   let tk = wait;
   if (read) {
     const all = [...w.byHead.values()], tin = all.reduce((a, x) => a + x.in, 0), tc = all.reduce((a, x) => a + x.cached, 0);
@@ -1611,11 +1622,13 @@ function render(grow = false) {
     root.innerHTML = `<section class="band money" id="band-money"></section><div class="scopeline" id="scope"></div><section class="band chart" id="band-chart"></section>`
       // the first two tables stand side by side where the page is wide, and Tokens by command takes the whole row under
       // them, so a Results row that opens or a list that grows never moves Tokens to another column
-      + `<div class="band perf" id="band-perf"></div><div class="lower mason" id="lower"><section class="band by" id="band-by"></section>`
-      + `<section class="band tokens" id="band-tok" data-cols="all" data-flip="usage-tok"></section></div>`;
+      + `<div class="lower mason" id="lower"><section class="band by" id="band-by"></section><div class="band perf" id="band-results"></div>`
+      + `<section class="band tokens" id="band-tok" data-cols="all" data-flip="usage-tok"></section></div>`
+      // the measurements behind Results, folded to their one heading line until opened
+      + `<div class="band perfmore" id="band-perf"></div>`;
   }
   renderScope();
-  for (const name of ["money", "chart", "by", "tok", "perf"]) renderBand(name, grow);
+  for (const name of ["money", "chart", "by", "tok", "results", "perf"]) renderBand(name, grow);
 }
 // the figures on screen belong to the window and filters they were read under: a new one reads again and says so, never
 // drawing the old figures under the new heading
@@ -1755,17 +1768,8 @@ document.addEventListener("click", (e) => {
     case "projmenu": ui.pmenu = !ui.pmenu; renderPick(); break;
     case "pickproj": ui.project = el.dataset.p || null; ui.pmenu = false; PICK.set(ui.project); ui.by = nextBy("project") === "project" ? "account" : ui.by; ui.shown = CUT; again(); break;
     case "win": if (v === ui.win) break; winChange(v); break;
-    case "door": {
-      if (v === "perf") PERF_HEADS.showResults();
-      const breakdown = document.getElementById("band-by");
-      const lower = document.getElementById("lower");
-      if (breakdown && lower) {
-        breakdown.dataset.cols = v === "perf" ? "all" : "1";
-        DRAW.lay(lower);
-      }
-      const target = v === "perf" ? document.querySelector("#band-perf .pc-results") : document.getElementById(`band-${v}`);
-      target?.scrollIntoView({ block: "start", behavior: "smooth" }); break;
-    }
+    case "door": document.getElementById(`band-${v}`)?.scrollIntoView({ block: "start", behavior: "smooth" }); break;
+    case "perffold": perfFold.open = !perfFold.open; renderBand("perf"); break;
     case "measure": if (v === ui.measure) break; ui.measure = v; renderBand("chart"); break;
     case "by": if (v === ui.by) break; ui.by = v; ui.shown = CUT; ui.find = ""; renderBand("by", true); break;
     case "rank": if (v === ui.rank) break; ui.rank = v; ui.shown = CUT; renderBand("by", true); break;

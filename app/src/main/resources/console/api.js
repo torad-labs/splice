@@ -130,7 +130,10 @@ const API = (() => {
         return;
       }
       pendingRead?.resolve(null);
-      if (!pendingRead && perfRunning >= PERF_ACTIVE && perfWaiting.size >= PERF_WAITING) {
+      // Requests' own reads wait their turn rather than be refused here: its project tiles alone ask one count per project
+      // and command at once (14 projects by 11 commands live on Nov 10), and every read past the 32nd came back as a
+      // local refusal that drew the tile as a dash. They still go four at a time, inside the daemon's admission.
+      if (!pendingRead && !key.startsWith("requests:") && perfRunning >= PERF_ACTIVE && perfWaiting.size >= PERF_WAITING) {
         resolve(localPerfBusy());
         return;
       }

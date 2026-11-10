@@ -297,3 +297,18 @@
   .pc-runtime-grid > .pc-section, .pc-comparisons > .pc-section { padding-inline: 0; }
 }
 .pc-runtime-grid:has(> :only-child), .pc-comparisons:has(> :only-child) { grid-template-columns: minmax(0, 1fr); }
+
+/* The fold: Performance as one heading line under Results (Usage) or above the request list (Requests), the views it holds
+   named once beside it, and one Show control at the line's end. The open console drops its own repeated title. */
+.pc-fold { margin-top: calc(4 * var(--u)); padding-top: calc(3 * var(--u)); border-top: 1px solid var(--hair); }
+.pc-fold-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(2 * var(--u)); width: 100%; min-height: var(--ctl-h); padding: 0; background: none; border: 0; color: inherit; text-align: left; cursor: pointer; }
+.pc-fold-head h2 { font: 400 1.4rem/1.1 var(--font-lead); letter-spacing: normal; margin: 0; }
+.pc-fold-says { min-width: 0; font: 500 .95rem/1.3 var(--font-name); color: var(--text-mute); }
+.pc-fold-go { margin-left: auto; display: inline-flex; align-items: center; gap: .4rem; padding: .45rem .8rem; border: 1px solid var(--hair); border-radius: var(--r-in); font: 500 .95rem/1.2 var(--font-name); color: var(--text); }
+.pc-fold-head:hover .pc-fold-go, .pc-fold-head:focus-visible .pc-fold-go { background: var(--obj); }
+.pc-fold-head:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+.pc-fold.open > .pc-fold-head { margin-bottom: calc(2 * var(--u)); }
+.pc-fold .perf-console .pc-heading h2 { display: none; }
+.pc-fold .perf-console .pc-heading { justify-content: flex-end; }
+#requests-performance:has(> .pc-fold:not(.open)) { margin: calc(2 * var(--u)) 0; padding-bottom: calc(2 * var(--u)); }
+#requests-performance > .pc-fold { margin-top: 0; padding-top: 0; border-top: 0; }

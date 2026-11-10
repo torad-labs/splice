@@ -95,14 +95,18 @@ const createKnobs = (scope) => {
   const LIST = [
     // the no-progress limit, the one wall that ends a turn: every model, tool or reasoning event renews it, so it bounds a
     // silence, never a turn's length (Watchdog.kt:6-7, :148-155, :390-398). The three tiers under it ask whether the
-    // provider is alive and never end a turn on their own (Knob.kt:237-300)
-    K("upstreamTimeoutMs", "Give up after", { k: "dur", opts: [10 * MIN, 15 * MIN, 20 * MIN, 30 * MIN, HR, 2 * HR], unit: "min" }, 15 * MIN, { cmd: true, home: "silent", also: "give up after no progress for timeout limit cut off long turn wedged stuck" }),
+    // provider is alive and never end a turn on their own (Knob.kt:237-300).
+    // ALL FOUR BELONG TO THE WHOLE DAEMON (0.4.0, CHANGELOG "Four timing settings belong to the whole daemon"): a value for
+    // one command refuses boot and the daemon refuses to save one (HeadOverrideWrite's DAEMON_WIDE), so no row offers the
+    // one-command slot. Give up after is 30 minutes and takes a restart (Knob.kt UPSTREAM_TIMEOUT_MS, restartRequired);
+    // the three tiers are read live per turn. The restart mark comes from the daemon's own disposition, never from here.
+    K("upstreamTimeoutMs", "Give up after", { k: "dur", opts: [10 * MIN, 15 * MIN, 20 * MIN, 30 * MIN, HR, 2 * HR], unit: "min" }, 30 * MIN, { home: "silent", also: "give up after no progress for timeout limit cut off long turn wedged stuck" }),
     K("firstByteTimeoutMs", "Check connection after", { k: "dur", opts: [30 * SEC, 60 * SEC, 90 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 90 * SEC,
-      { cmd: true, home: "silent", also: "check the connection after check the connection if no output arrives for ask if a silent start is alive after first word first byte" }),
-    K("streamIdleMs", "Check silence after", { k: "dur", opts: [30 * SEC, 60 * SEC, 90 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 90 * SEC, { cmd: true, home: "silent", also: "check a quiet answer after check a stalled answer is alive after silence idle hang" }),
+      { home: "silent", also: "check the connection after check the connection if no output arrives for ask if a silent start is alive after first word first byte" }),
+    K("streamIdleMs", "Check silence after", { k: "dur", opts: [30 * SEC, 60 * SEC, 90 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 90 * SEC, { home: "silent", also: "check a quiet answer after check a stalled answer is alive after silence idle hang" }),
     // arms only on a provider measured to resume from a prefill (HeadBuildInputs.kt:168-171)
     K("stallReanchorMs", "Resume after", { k: "dur", opts: [10 * SEC, 20 * SEC, 30 * SEC, 60 * SEC], unit: "s" }, 20 * SEC,
-      { cmd: true, home: "silent", also: "resume resume a stalled answer after", only: [] }),
+      { home: "silent", also: "resume resume a stalled answer after", only: [] }),
     // admission per command (Knob.kt:186-194); attempts, the first included
     K("maxInflight", "Requests at once", { k: "count", opts: [4, 8, 12, 16, 24, 32, 100, 0], none: "Unlimited" }, 12, { cmd: true, also: "concurrent parallel per command" }),
     K("maxQueued", "Waiting in line", { k: "count", opts: [128, 256, 512, 1024, 0], none: "Unlimited" }, 512, { cmd: true, also: "requests waiting in line queue full" }),

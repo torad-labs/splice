@@ -2120,9 +2120,12 @@ const bandEl = document.getElementById("band");
 let bandW = 0;
 new ResizeObserver(() => { if (bandEl.clientWidth !== bandW) { bandW = bandEl.clientWidth; rqbFit(bandEl); } }).observe(bandEl);
 let bandShown = "", paneWas = null;
+// The performance console stands folded to one line above the list; a page opened from a performance link (perf=1),
+// whose list that console drives, opens it.
+let perfOpen = Boolean(perfOverride);
 function render() {
   const perfHost = document.getElementById("requests-performance");
-  if (perfHost) perfHost.innerHTML = PERF_MONITOR.html();
+  if (perfHost) perfHost.innerHTML = PERF_FOLD.html(perfOpen, () => PERF_MONITOR.html());
   root.hidden = Boolean(perfOverride?.objective_id && !perfResolved);
   bandEl.hidden = root.hidden;
   // A request stays open through a filter that excludes it (paneHtml reads past the filter on purpose, and it stands
@@ -2269,6 +2272,7 @@ document.addEventListener("click", async (e) => {
   }
   switch (el.dataset.act) {
     case "theme": toggleTheme(); break;
+    case "perffold": perfOpen = !perfOpen; render(); break;
     case "menu": ui.menu = ui.menu === m ? null : m; render(); break;
     case "projmenu": ui.pmenu = !ui.pmenu; ui.menu = null; render(); break;
     // the same pick as Sessions and Teams: the list is read again for the project, from the newest

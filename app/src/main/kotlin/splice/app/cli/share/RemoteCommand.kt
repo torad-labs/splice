@@ -75,7 +75,7 @@ internal class RemoteCommand(
         val topology = file.loaded()?.takeIf { remote(it, command) } ?: return PeerExit.REFUSED
         install.uninstall(command, env)
         val wanted = topology.copy(remote = topology.remote - command)
-        if (!file.saved(wanted)) return PeerExit.REFUSED
+        if (!file.saved(wanted, topology)) return PeerExit.REFUSED
         out.line("$GREEN✓$RESET $command no longer runs on another machine here")
         return if (restart.followed(wanted)) PeerExit.DONE else PeerExit.REFUSED
     }

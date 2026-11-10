@@ -7,6 +7,7 @@ package splice.app.head
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -45,7 +46,7 @@ internal class HeadRemoval(
 
     /** What stays, and who is on the command now. */
     fun read(key: String): JsonReply {
-        val topology = stored() ?: return refusal(HttpStatusCode.ServiceUnavailable, "topology is not wired")
+        val topology = stored()?.topology ?: return refusal(HttpStatusCode.ServiceUnavailable, "topology is not wired")
         if (key !in topology.heads) return refusal(HttpStatusCode.NotFound, "unknown head: $key")
         return JsonReply(
             HttpStatusCode.OK,
@@ -72,12 +73,12 @@ internal class HeadRemoval(
     )
 
     fun remove(key: String): JsonReply {
-        val topology = stored()
+        val stored = stored()
         return when {
-            topology == null -> refusal(HttpStatusCode.ServiceUnavailable, "topology is not readable")
-            key !in topology.heads -> refusal(HttpStatusCode.NotFound, "unknown head: $key")
+            stored == null -> refusal(HttpStatusCode.ServiceUnavailable, "topology is not readable")
+            key !in stored.topology.heads -> refusal(HttpStatusCode.NotFound, "unknown head: $key")
             facts.liveOn(key).isNotEmpty() -> inUse(key)
-            else -> drop(key, topology)
+            else -> drop(key, stored)
         }
     }
 
@@ -89,11 +90,12 @@ internal class HeadRemoval(
         }.toString(),
     )
 
-    private fun drop(key: String, topology: Topology): JsonReply {
+    private fun drop(key: String, stored: Stored): JsonReply {
+        val topology = stored.topology
         val command = commandOf(key, topology)
         // The record comes first: a head gone from splice.toml with no record would lose its history's door.
         retired.retire(RetiredHead(key, command, facts.transcriptRoot(key)?.toString()))
-        val result = writer()?.write(without(topology, key))
+        val result = writer()?.write(without(topology, key), stored.tree)
         if (result is TopologyWriteResult.Refused) {
             retired.rejoin(key)
             return refused(key, result.findings)
@@ -123,10 +125,13 @@ internal class HeadRemoval(
         )
     }
 
-    private fun stored(): Topology? {
+    /** splice.toml as read: its tree, which a removal is written over or refused, and that tree decoded. */
+    private data class Stored(val tree: JsonObject, val topology: Topology)
+
+    private fun stored(): Stored? {
         val current = writer() ?: return null
         return Cancellables.runCatchingCancellable {
-            json.decodeFromJsonElement(Topology.serializer(), current.current())
+            current.current().let { tree -> Stored(tree, json.decodeFromJsonElement(Topology.serializer(), tree)) }
         }.fold(onSuccess = { it }, onFailure = { null })
     }
 

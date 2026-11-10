@@ -87,8 +87,10 @@ public class SpliceConfig internal constructor(
 
     /** The largest request body this gateway will decode; past it the client is answered 413. Read LIVE, per
      *  request, through a [RequestByteCap] — by the head path and by the ingress guard in front of it, which is why
-     *  the reader's type lives here in core rather than beside either of them. */
-    public val maxRequestBytes: Int get() = long(Knob.MAX_REQUEST_BYTES).toInt()
+     *  the reader's type lives here in core rather than beside either of them. Clamped before it narrows: a value
+     *  past Int.MAX_VALUE wrapped to a negative or zero cap that answered 413 to every request, the PATCH that would
+     *  fix it included. */
+    public val maxRequestBytes: Int get() = long(Knob.MAX_REQUEST_BYTES).coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
 
     /** The heap bytes one request's materialized tree may spend, 0 meaning "derive from spare JVM heap". Read LIVE,
      *  per admission, through a [MaterializationBudgetBytes]; the coercion floors a set budget at the materialized
@@ -106,7 +108,8 @@ public class SpliceConfig internal constructor(
     public val keepTranscriptCopies: Boolean get() = bool(Knob.KEEP_TRANSCRIPT_COPIES)
 
     /** How many days a transcript copy is kept, at least one; read each time a copy is made. */
-    public val transcriptCopyDays: Int get() = long(Knob.TRANSCRIPT_COPY_DAYS).toInt().coerceAtLeast(1)
+    public val transcriptCopyDays: Int
+        get() = long(Knob.TRANSCRIPT_COPY_DAYS).coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
 
     /** Whether a compaction's answer is parked for Claude Code's retry. Read LIVE, per save. */
     public val keepCompactionSummaries: Boolean get() = bool(Knob.KEEP_COMPACTION_SUMMARIES)
@@ -154,13 +157,14 @@ public class SpliceConfig internal constructor(
     public val quotaPollOff: Boolean get() = string(Knob.QUOTA_POLL) == "off"
 
     /** V4-173: how many upstream request bodies this head keeps in memory; 0 (the default) keeps none. */
-    public val wireTap: Int get() = long(Knob.WIRE_TAP).toInt().coerceAtLeast(0)
+    public val wireTap: Int get() = long(Knob.WIRE_TAP).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
 
     /** V4-174: whether this head writes its full request/response trace; off unless the head opted in. */
     public val trace: Boolean get() = bool(Knob.TRACE)
 
     /** V4-174: how many UTC days of trace files a traced head keeps; at least one. */
-    public val traceRetentionDays: Int get() = long(Knob.TRACE_RETENTION_DAYS).toInt().coerceAtLeast(1)
+    public val traceRetentionDays: Int
+        get() = long(Knob.TRACE_RETENTION_DAYS).coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
 
     /**
      * How far back this install keeps its history: the hourly totals AND the request records, as
@@ -200,7 +204,8 @@ public class SpliceConfig internal constructor(
             ?: (historyWindow.days ?: return Int.MAX_VALUE).coerceAtLeast(1)
 
     /** How many UTC days of message edges are kept, at least one; read at every write and sweep of the edge store. */
-    public val activityRetentionDays: Int get() = long(Knob.ACTIVITY_RETENTION_DAYS).toInt().coerceAtLeast(1)
+    public val activityRetentionDays: Int
+        get() = long(Knob.ACTIVITY_RETENTION_DAYS).coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
 
     /** Whether a new message edge is saved; read at every write. */
     public val messageEdges: Boolean get() = bool(Knob.MESSAGE_EDGES)

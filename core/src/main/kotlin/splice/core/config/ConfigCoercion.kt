@@ -142,7 +142,8 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         out[Knob.MCP_REQUEST_TIMEOUT_MS.key] = clampLong(out, Knob.MCP_REQUEST_TIMEOUT_MS, floor = 1_000L)
         out[Knob.MCP_INITIALIZE_TIMEOUT_MS.key] = clampLong(out, Knob.MCP_INITIALIZE_TIMEOUT_MS, floor = 1_000L)
         out[Knob.MCP_MAX_SERVERS.key] = clampLong(out, Knob.MCP_MAX_SERVERS, floor = 1L)
-        out[Knob.MAX_REQUEST_BYTES.key] = clampLong(out, Knob.MAX_REQUEST_BYTES, floor = 1L)
+        // The cap is an Int on the wire path; past MAX_INT the effective value would name a cap nothing enforces.
+        out[Knob.MAX_REQUEST_BYTES.key] = clampLong(out, Knob.MAX_REQUEST_BYTES, floor = 1L, ceiling = MAX_INT)
         out[Knob.REQUEST_READ_TIMEOUT_MS.key] = clampLong(out, Knob.REQUEST_READ_TIMEOUT_MS, floor = 1L)
         out[Knob.INGRESS_READ_IDLE_MS.key] = clampLong(out, Knob.INGRESS_READ_IDLE_MS, floor = 1L)
         val heapBytes = clampLong(out, Knob.MATERIALIZATION_HEAP_BYTES, floor = 0L)

@@ -77,7 +77,7 @@ internal class RemoteAdd(
         val fresh = offered.entries - refusals.keys
         val replacing = relays.replacing(topology, fresh.keys)
         val wanted = replacing.topology.let { it.copy(remote = it.remote + fresh) }
-        if (fresh.isEmpty() || !file.saved(wanted)) return null
+        if (fresh.isEmpty() || !file.saved(wanted, topology)) return null
         out.line("added to ${file.path}: ${fresh.keys.joinToString(", ")}")
         relays.replaced(topology, replacing)
         return RemoteAdded(wanted, fresh.keys.toList(), offered.machine, refusals.isEmpty())

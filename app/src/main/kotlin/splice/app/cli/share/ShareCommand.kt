@@ -55,7 +55,7 @@ internal class ShareCommand(
     private suspend fun switched(on: Boolean, port: Int?): Int {
         val current = file.loaded() ?: return PeerExit.REFUSED
         val wanted = current.copy(share = current.share.copy(enabled = on, port = port ?: current.share.port))
-        if (!saved(wanted)) return PeerExit.REFUSED
+        if (!saved(wanted, current)) return PeerExit.REFUSED
         out.line("$GREEN✓$RESET sharing ${if (on) "on, port ${wanted.share.port}" else "off"} in ${file.path}")
         return when {
             !restart.followed(wanted) -> PeerExit.REFUSED
@@ -107,8 +107,8 @@ internal class ShareCommand(
 
     /** [wanted] written to splice.toml, unless it shares on a port this machine can't open, said in the OS's words
      *  (held by another program, or below 1024 for a user on Linux). This machine's own share listener holds its port
-     *  while sharing is on, and answers there. */
-    private suspend fun saved(wanted: Topology): Boolean {
+     *  while sharing is on, and answers there. [current] is the read [wanted] was built from. */
+    private suspend fun saved(wanted: Topology, current: Topology): Boolean {
         val port = wanted.share.port
         val refusal = if (wanted.share.enabled) bindRefusal(port) else null
         if (refusal != null && directory.read("http://127.0.0.1:$port") !is ShareDirectoryRead.Read) {
@@ -116,7 +116,7 @@ internal class ShareCommand(
             err.line("$SHARE_VERB: port $port can't be opened here ($refusal); choose another with $another")
             return false
         }
-        return file.saved(wanted)
+        return file.saved(wanted, current)
     }
 
     /** Why [port] can't be bound on every address, as the share listener binds it, in the OS's words; null when it can,

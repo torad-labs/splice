@@ -25,6 +25,7 @@ import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.config.ConfigService
@@ -99,10 +100,12 @@ public class CaptureRoutes(
 
     private fun applyWrite(writer: TopologyWriter, found: TurnsHead, parsed: CaptureWrite): JsonReply {
         val key = found.key
-        val current = Cancellables.runCatchingCancellable { decode(writer) }.getOrElse { failure ->
-            val why = SafeFailureText.render(failure)
-            return refuse(HttpStatusCode.InternalServerError, "splice.toml does not parse: $why")
-        }
+        // The tree is kept beside its decoding: the write is refused when the file no longer holds it.
+        val (base, current) = Cancellables.runCatchingCancellable { writer.current().let { it to decode(it) } }
+            .getOrElse { failure ->
+                val why = SafeFailureText.render(failure)
+                return refuse(HttpStatusCode.InternalServerError, "splice.toml does not parse: $why")
+            }
         val head = current.heads[key] ?: return unknownHead(key)
         val overrides = head.overrides.toMutableMap()
         // Absence now inherits the on-by-default policy; Off must persist an explicit false.
@@ -110,7 +113,7 @@ public class CaptureRoutes(
         parsed.retentionDays?.let { overrides[Knob.TRACE_RETENTION_DAYS.key] = it.toString() }
         parsed.maxBodyChars?.let { overrides[Knob.TRACE_MAX_BODY_CHARS.key] = it.toString() }
         val requested = current.copy(heads = current.heads + (key to head.copy(overrides = overrides)))
-        return when (val result = writer.write(requested)) {
+        return when (val result = writer.write(requested, base)) {
             is TopologyWriteResult.Written -> {
                 // Persist first; refused writes change neither held config nor capture state.
                 config.headLayer.set(key, overrides)
@@ -133,8 +136,7 @@ public class CaptureRoutes(
             .joinToString("; ") { (path, text) -> "$path: $text" }
             .ifEmpty { "splice.toml write refused" }
 
-    private fun decode(writer: TopologyWriter): Topology =
-        json.decodeFromJsonElement(Topology.serializer(), writer.current())
+    private fun decode(tree: JsonObject): Topology = json.decodeFromJsonElement(Topology.serializer(), tree)
 
     private fun unknownHead(name: String) = refuse(HttpStatusCode.BadRequest, "unknown head: $name")
 

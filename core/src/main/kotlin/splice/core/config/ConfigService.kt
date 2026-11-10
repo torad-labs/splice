@@ -205,11 +205,22 @@ public class ConfigService(
                 effectiveChanges.publish(published)
             }
         }
-        generation.envRejected.keys.forEach { key ->
-            log("[config] ignoring invalid env value for $key: '${ConfigRedaction.values(environment)[key]}'")
+        // One line per environment that carries a rejected value, never one per read: this runs per ingress request and
+        // per body chunk while the process environment never changes, so an unlatched line buried daemon.log and queued
+        // a task on the one file-I/O lane at every read (config audit, Nov 2026). CAS like the config.json discard
+        // latch, so racing readers log it once; a changed environment (tests inject one) is new news, said again.
+        val seen = envRejectsLoggedFor.get()
+        val unsaid = generation.envRejected.isNotEmpty() && seen != environment
+        if (unsaid && envRejectsLoggedFor.compareAndSet(seen, environment)) {
+            val shown = ConfigRedaction.values(environment)
+            generation.envRejected.keys.forEach { key ->
+                log("[config] ignoring invalid env value for $key: '${shown[key]}'")
+            }
         }
         return generation.snapshot(headKey, FreshConfig { getConfig(headKey) })
     }
+
+    private val envRejectsLoggedFor = AtomicReference<Map<String, String>?>(null)
 
     private fun buildSnapshot(
         inputs: ConfigSnapshotCache.Inputs,

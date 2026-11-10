@@ -22,25 +22,29 @@ import kotlinx.serialization.Serializable
 /** The finite quirk surface of the openai dialects — everything a vendor varies without code. */
 @Serializable
 public data class QuirksConfig(
-    val store: Boolean = false,
+    /** store, cache_key, summary_field and tool_choice are NULLABLE overlays like every other quirk here: absent
+     *  keeps the provider's own profile. They were non-null with a literal default, which the overlay could not tell
+     *  from a written value, so a table that left them out replaced Grok's session-id cache key and Grok's and Muse's
+     *  tool_choice with the dialect's generic answer (config audit, Nov 2026). */
+    val store: Boolean? = null,
     /** ChatGPT-Account-ID on a ChatGPT sign-in head. Absent sends it, as codex-rs always does (fix 4 of the Oct 27
      *  Responses fixes: setup writes no quirks, so its heads went without it); `false` keeps it off. */
     @SerialName("account_id_header") val accountIdHeader: Boolean? = null,
-    @SerialName("cache_key") val cacheKey: String = "first-message-hash",
+    @SerialName("cache_key") val cacheKey: String? = null,
     /** RETIRED 2026-10-21: each Responses provider applies its verified model ceiling. This generic
      *  setting never reached that policy, in 0.3.2 or since, so no value of it changes a turn. It is
      *  still read, and ignored, because 0.3.2's published example config sets it: refusing it made
      *  every upgrade from that config roll back (Oct 22), and an upgrade keeps the operator's config
      *  as written (v0.4.0 spec §5). */
     @SerialName("effort_ceiling") val effortCeiling: String? = null,
-    @SerialName("summary_field") val summaryField: Boolean = true,
+    @SerialName("summary_field") val summaryField: Boolean? = null,
     /** RETIRED 2026-09-05 (operator law): a compaction is built exactly like a turn and inherits
      *  the session's model and effort — any pin moves the reasoning off the session's and the
      *  backend's prompt cache misses the whole transcript on the most expensive turn class there
      *  is. The key is still parsed so a config that sets it fails LOUDLY at load (init below)
      *  instead of being ignored in silence. */
     @SerialName("compact_effort") val compactEffort: String? = null,
-    @SerialName("tool_choice") val toolChoice: Boolean = false,
+    @SerialName("tool_choice") val toolChoice: Boolean? = null,
     /** openai-responses only: the gateway-held reasoning cache for tool round-trips (RC-5,
      *  2026-07-24). NULLABLE like every overlay knob — absent keeps the provider's own default
      *  (codex: on; grok: off — xai returns no envelopes), so the overlay can't stomp it. False
@@ -48,9 +52,8 @@ public data class QuirksConfig(
     @SerialName("reasoning_cache") val reasoningCache: Boolean? = null,
     /** openai-responses only: the VALUE sent for parallel_tool_calls on responses-lite turns (the
      *  field always rides; a lite request without it 400s). NULLABLE overlay like reasoning_cache —
-     *  absent keeps the provider's own default (false), so it can't stomp a provider default the
-     *  way the non-nullable summary_field above does. true was tried live on 2026-09-20 and the ChatGPT lite backend refused every turn with 400
-     *  "X-OpenAI-Internal-Codex-Responses-Lite requires `parallel_tool_calls` to be false"; leave it
+     *  absent keeps the provider's own default (false). true was tried live on 2026-09-20 and the ChatGPT
+     *  lite backend refused every turn with 400 "X-OpenAI-Internal-Codex-Responses-Lite requires `parallel_tool_calls` to be false"; leave it
      *  unset for that provider. Batching on lite turns comes from code mode (exec). */
     @SerialName("parallel_tool_calls") val parallelToolCalls: Boolean? = null,
     /** openai-responses only: serve rounds over the Responses WebSocket with previous_response_id

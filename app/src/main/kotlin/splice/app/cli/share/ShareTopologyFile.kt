@@ -40,11 +40,13 @@ internal class ShareTopologyFile(
         },
     )
 
-    /** True when [wanted] is what the file now says; a refusal is said finding by finding. */
-    fun saved(wanted: Topology): Boolean {
+    /** True when [wanted], built from [basedOn] (what [loaded] or [loadedOrStarter] answered), is what the file now
+     *  says; a refusal is said finding by finding, a file changed since that read among them. */
+    fun saved(wanted: Topology, basedOn: Topology): Boolean {
         val backups = StatePaths(envReader = env).configBackupsDir
         val writer = TopologyWriter(path, backups, TopologyParse(TopologyLoader::parse))
-        val result = Cancellables.runCatchingCancellable { writer.write(wanted) }.getOrElse { failure ->
+        val base = writer.tree(basedOn)
+        val result = Cancellables.runCatchingCancellable { writer.write(wanted, base) }.getOrElse { failure ->
             err.line("$verb: $path was not changed: ${SafeFailureText.render(failure)}")
             return false
         }

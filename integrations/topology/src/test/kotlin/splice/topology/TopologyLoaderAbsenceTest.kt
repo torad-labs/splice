@@ -80,4 +80,16 @@ class TopologyLoaderAbsenceTest {
             .digest(foreign.toByteArray()).joinToString("") { "%02x".format(it) }
         assertEquals(foreignDigest, loaded.digest, "the winner's bytes are what got loaded back")
     }
+
+    // Config audit, Nov 2026: set but empty, either variable named the working directory, so the daemon served a
+    // starter file wherever it started while the launch shim read the operator's.
+    @Test
+    fun `an empty SPLICE_CONFIG or XDG_CONFIG_HOME is unset, as the launch shim reads it`(@TempDir tmp: Path) {
+        val home = tmp.resolve("home").toString()
+        val env = mapOf("HOME" to home, "SPLICE_CONFIG" to "", "XDG_CONFIG_HOME" to "")
+        assertEquals(
+            Path.of(home, ".config", "splice", "splice.toml"),
+            TopologyLoader.configPath(splice.core.util.EnvReader { env[it] }),
+        )
+    }
 }

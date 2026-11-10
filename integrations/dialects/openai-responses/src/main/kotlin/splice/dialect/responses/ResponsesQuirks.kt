@@ -233,8 +233,7 @@ public data class ResponsesQuirks(
 
     /** parallel_tool_calls overlay (2026-07-31), chained like [withReasoningCacheToml] for the same
      *  reason. NULLABLE — absent TOML keeps the provider's own default, so the overlay can never stomp
-     *  it. (`summary_field` is non-nullable and DOES stomp `supportsSummary`, which is how that knob
-     *  became unreachable from a provider default; not repeating it here.) */
+     *  it. */
     public fun withParallelToolCallsToml(parallelToolCalls: Boolean?): ResponsesQuirks =
         copy(lite = lite.copy(liteParallelToolCalls = parallelToolCalls ?: lite.liteParallelToolCalls))
 
@@ -245,8 +244,7 @@ public data class ResponsesQuirks(
         copy(tools = tools.copy(toolSurface = policy))
 
     /** ws-transport WS-3 overlay, NULLABLE like its siblings — absent TOML keeps the provider default
-     *  (false). A non-nullable field would stomp the provider default; that is exactly how
-     *  supportsSummary became an unreachable dead lever. */
+     *  (false). */
     public fun withWebSocketToml(webSocket: Boolean?): ResponsesQuirks =
         copy(backend = backend.copy(webSocket = webSocket ?: backend.webSocket))
 

@@ -51,6 +51,9 @@ class TopologyWriterOwnerOnlyTest {
         return TopologyWriter(path, backupDir, TopologyParse(table::getValue), WallClock { now }, listing = listing)
     }
 
+    /** [requested], built from what the file holds when it is asked. */
+    private fun TopologyWriter.edit(requested: Topology): TopologyWriteResult = write(requested, current())
+
     private fun mode(path: Path): String = PosixFilePermissions.toString(Files.getPosixFilePermissions(path))
 
     /** What [dir] holds; a directory never made holds nothing, as when a save fails at its lock before a backup. */
@@ -65,7 +68,7 @@ class TopologyWriterOwnerOnlyTest {
         if (!Files.getFileStore(tmp).supportsFileAttributeView("posix")) return
         Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-r--r--"))
 
-        val result = writer(NOW).write(topology(8802))
+        val result = writer(NOW).edit(topology(8802))
 
         val backup = checkNotNull((result as TopologyWriteResult.Written).backup)
         assertEquals(EDITED, Files.readString(file))
@@ -77,7 +80,7 @@ class TopologyWriterOwnerOnlyTest {
     @Test
     fun `the newest ten backups are kept, and the oldest goes when a new one is taken - V4-275`() {
         repeat(12) { second ->
-            writer(NOW + second * 1_000L).write(topology(if (second % 2 == 0) 8802 else 8801))
+            writer(NOW + second * 1_000L).edit(topology(if (second % 2 == 0) 8802 else 8801))
         }
 
         val stamps = names(backupDir).map { it.removePrefix("splice.toml.bak-").substringBefore('-') }
@@ -94,7 +97,7 @@ class TopologyWriterOwnerOnlyTest {
         val link = Files.createDirectories(tmp.resolve("config")).resolve("splice.toml")
         Files.createSymbolicLink(link, target)
 
-        val result = writer(NOW, link).write(topology(8802))
+        val result = writer(NOW, link).edit(topology(8802))
 
         val backup = checkNotNull((result as TopologyWriteResult.Written).backup)
         assertTrue(Files.isSymbolicLink(link), "splice.toml is still the operator's link")
@@ -118,7 +121,7 @@ class TopologyWriterOwnerOnlyTest {
         val inside = Files.createDirectories(backupDir).resolve("splice.toml.bak-2026-09-01")
         Files.writeString(inside, FILE)
 
-        repeat(12) { second -> writer(NOW + second * 1_000L).write(topology(if (second % 2 == 0) 8802 else 8801)) }
+        repeat(12) { second -> writer(NOW + second * 1_000L).edit(topology(if (second % 2 == 0) 8802 else 8801)) }
 
         assertTrue(Files.exists(beside), "the operator's own copy is theirs, and splice never deletes it")
         assertTrue(Files.exists(inside), "a name outside the writer's shape is not splice's, wherever it is")
@@ -132,7 +135,7 @@ class TopologyWriterOwnerOnlyTest {
             Files.writeString(backupDir.resolve("splice.toml.bak-20260919T0000%02dZ-%012x".format(i, i)), FILE)
         }
 
-        val result = writer(NOW).write(topology(8802))
+        val result = writer(NOW).edit(topology(8802))
 
         val backup = checkNotNull((result as TopologyWriteResult.Written).backup)
         assertTrue(Files.exists(backup), "the write answered with $backup")
@@ -144,7 +147,7 @@ class TopologyWriterOwnerOnlyTest {
         Files.writeString(repo.resolve("splice.toml"), FILE)
         val config = Files.createSymbolicLink(tmp.resolve("config"), repo)
 
-        val _ = writer(NOW, config.resolve("splice.toml")).write(topology(8802))
+        val _ = writer(NOW, config.resolve("splice.toml")).edit(topology(8802))
 
         assertEquals(EDITED, Files.readString(repo.resolve("splice.toml")))
         assertEquals(
@@ -158,7 +161,7 @@ class TopologyWriterOwnerOnlyTest {
     fun `a backup listing that fails partway never turns a landed write into a failure - V4-284 (4)`() {
         val failing = DirectoryListing { throw UncheckedIOException(IOException("an entry vanished mid-read")) }
 
-        val result = writer(NOW, listing = failing).write(topology(8802))
+        val result = writer(NOW, listing = failing).edit(topology(8802))
 
         assertTrue(result is TopologyWriteResult.Written, "$result")
         assertEquals(EDITED, Files.readString(file))
@@ -175,7 +178,7 @@ class TopologyWriterOwnerOnlyTest {
         Files.setPosixFilePermissions(readOnly, PosixFilePermissions.fromString("r-x------"))
         val failed = try {
             (0 until 12).count { second ->
-                runCatching { writer(NOW + second * 1_000L, link).write(topology(8802)) }.isFailure
+                runCatching { writer(NOW + second * 1_000L, link).edit(topology(8802)) }.isFailure
             }
         } finally {
             Files.setPosixFilePermissions(readOnly, PosixFilePermissions.fromString("rwx------"))

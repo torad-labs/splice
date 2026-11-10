@@ -170,11 +170,11 @@ internal class DoctorReportShape(private val redaction: DoctorRedaction, private
     private fun quirks(p: ProviderConfig): JsonObject = buildJsonObject {
         val q = p.quirks
         put("code_mode", p.codeModeEnabled)
-        put("cache_key", names.token(q.cacheKey))
-        put("store", q.store)
-        put("tool_choice", q.toolChoice)
+        q.cacheKey?.let { put("cache_key", names.token(it)) }
         put("account_id_header", q.accountIdHeader)
         listOf(
+            "store" to q.store,
+            "tool_choice" to q.toolChoice,
             "websocket" to q.webSocket,
             "reasoning_cache" to q.reasoningCache,
             "parallel_tool_calls" to q.parallelToolCalls,

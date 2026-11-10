@@ -15,6 +15,7 @@ import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.model.ModelEntry
 import splice.core.topology.AuthConfig
+import splice.core.topology.DaemonConfig
 import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
@@ -68,7 +69,7 @@ class KnobOverrideChecksTest {
 
     private fun write(topology: Topology): TopologyWriteResult {
         requested = topology
-        return writer().write(topology)
+        return writer().let { it.write(topology, it.current()) }
     }
 
     /** What the daemon's own ConfigService says it would ignore for these layers. */
@@ -128,6 +129,15 @@ class KnobOverrideChecksTest {
         val findings = refusal(write(topology(defaults = mapOf(TIMEOUT to "soon"))))
         val why = boot(global = mapOf(TIMEOUT to "soon")).getValue(TIMEOUT)
         assertEquals(listOf(TopologyFinding("defaults.$TIMEOUT", why)), findings)
+    }
+
+    // Config audit, Nov 2026: [daemon] show_reasoning, summary and effort reach the same global layer, and a typo there
+    // kept the knob at its default with nothing refused.
+    @Test
+    fun `a word boot does not read in the daemon table is refused at its daemon line`() {
+        val daemon = DaemonConfig(showReasoning = "of", summary = "detialed", effort = "high")
+        val findings = refusal(write(topology().copy(daemon = daemon)))
+        assertEquals(listOf("daemon.show_reasoning", "daemon.summary"), findings.map { it.path })
     }
 
     @Test

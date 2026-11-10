@@ -15,7 +15,7 @@
 - **Deferred tool history stays attached to its callback.** Canonical history preserves generated declarations beside their relocated function calls, preventing a returned batch from abandoning its running script.
 - **Responses heads retain richer conversations.** Mixed tool results keep their ordered text, images and files. Assistant phases survive history resends. Deferred tool definitions and withdrawals retain their original boundaries. Public request controls and non-strict function schemas no longer depend on Codex mode. The JavaScript executor, authentication and internal Codex routing stay provider-owned.
 - **Optional WebSocket prefix preparation.** Explicitly enabled Responses WebSockets can prepare reusable instruction and function-tool prefixes without generating an answer. Codex retains its own negotiation and narrower prefix policy. Continuation state rejects stale responses. WebSockets remain off by default.
-- **Less code-mode registry bookkeeping.** Membership and expiry lookups use indexes, and journal appends reserve for their selected operation before a full checkpoint is encoded. Live response-time and memory effects remain to be measured.
+- **Less code-mode registry bookkeeping.** Membership and expiry lookups use indexes, and journal appends reserve for their selected operation before a full checkpoint is encoded. A conversation append admits its changed records first, which removes a whole-conversation reservation that had refused Claudex startup on a large journal; uncertain state, removed records and journal compaction still reserve a full checkpoint. Live response-time and memory effects remain to be measured.
 - **Sessions can run turns without the key that controls splice.** In 0.3.x, sessions other than
   `claude-splice` held that management key. Upgrade, rotate the key, then relaunch your sessions ([Security](#security), [Upgrading from 0.3.x](#upgrading-from-03x)).
 - **`splice rotate-key` replaces the management key while the daemon runs, and sessions carry on.** A session splice
@@ -33,6 +33,23 @@
   full usage reading are preferred, with pins or saved orders guiding selection among them. The
   default fallback prefers the soonest weekly reset, with the five-hour reset breaking ties. A full reading alone does not
   block a turn.
+- **A Use now pin survives a restart and lets go when its login runs out.** The command's pin and each session's pin are
+  saved, so a daemon restart no longer drops them. A pin lets go at the first limit its login reads that it did not read
+  when Use now was pressed: a plan window spent, the provider holding the account, or a usage reading at 100%. While a
+  pinned login cannot serve, its card says why and which login the turns use instead. A model's weekly cap holds that
+  model alone, so when one login hits its 5-hour limit, an Opus turn moves to a login whose only hold is Fable's weekly
+  cap.
+- **One engine decides every retry, and a failure reads as one plain sentence.** The retry count, the backoff curve and
+  the reasoning-fold settings are retired ([Upgrading from 0.3.x](#upgrading-from-03x)). Each turn's sends are counted
+  on one ledger, and a turn ends within 24 sends outside holds. A 429 that names no window moves the turn to another
+  pooled login before any answer reaches Claude Code, and otherwise waits 2, 4, 8, 16, 30, 30 and 30 seconds, a budget
+  the whole pool shares. A limit that states its reset holds the turn until it lifts, up to 7 days, with Claude Code
+  hearing only keepalives; a path that does not answer is waited on for about two minutes. What Claude Code prints is
+  `[splice] <what happened>. <what happens next>.`, never a provider's raw reply.
+- **Performance is measured and kept on your machine.** `splice perf` and the console's Performance panel read bounded
+  local history, request evidence, objectives and alerts, and say in every answer what a reading covered and what it
+  lost. Prometheus and OTLP export and bounded profiling are optional and stay off until you turn them on; a default
+  install needs no collector ([Added](#added), `docs/observability/README.md`).
 - **Local models are first-class** on the `openai-chat` dialect. splice asks the runtime what it
   serves and refuses a model Ollama, LM Studio or vLLM does not list. With `slot_affinity = true`,
   llama-server conversations keep their own slot. Local heads
@@ -56,14 +73,14 @@
 - **The MCP hub on Linux.** Every session splice launches gets its MCP servers from one hub that outlives the daemon,
   shared between sessions by default, so an upgrade or a crash of splice drops no session's tools ([Added](#added)).
 - **Restarts wait for compactions.** Unless you choose `--now`, `splice restart`, `splice upgrade`
-  and `POST /api/daemon/restart` wait for compactions in flight, up to 900 s, the default turn cap; a head whose cap is raised is still waited on for 900 s. A
-  finished answer whose client disconnected is kept on disk for its identical retry.
+  and `POST /api/daemon/restart` wait for compactions in flight, up to 30 minutes, the default turn cap; a daemon whose
+  cap is raised is still waited on for 30 minutes. A finished answer whose client disconnected is kept on disk for its
+  identical retry.
 - **Installing needs no GitHub account.** The downloaded release jar and launch shim are checked
   against the release's checksums, and build provenance is verified whenever `gh` is signed in.
 - **Releases are downloaded from splice.torad.ai/download.** `curl -fsSL https://splice.torad.ai/download/install.sh | bash` installs
   the newest stable release, and `splice upgrade` and the beta channel read the same site. The GitHub release keeps the
-  notes and carries no file. A machine on a 0.4.0 beta still looks on GitHub, so it upgrades once with the installer
-  above.
+  notes and carries no file.
 - **Installing and launching need no Node.** The launch shim is plain `sh` and `curl`, so a machine with Java and a
   natively installed Claude Code runs `claudex` with no Node on it. `install.sh` and `splice doctor` no longer ask for
   it, and the installer ends on one next step, `splice setup`.
@@ -110,6 +127,28 @@ curl -fsSL https://splice.torad.ai/download/v0.4.0/install.sh \
   dialect run code mode (`code_mode = false` in the provider's `quirks` turns it off). A Claude head shares its `projects`
   tree with `~/.claude`, merging by hard link on its first launch (list `share` without `projects`
   to keep it private). MCP hosting is on (`mcp_hosting = false` under `[daemon]` turns it off).
+- **Settings 0.4.0 retired refuse boot while any still sets one.** A `splice.toml`, splice's environment or the settings
+  splice saved in its state folder that still names a retired setting is a boot finding. splice does not start: it
+  lists every finding at once, with the line where the file has one and the reason, and quotes no value you wrote. From
+  a terminal, the command that met the refusal offers a fix session that removes the line, clears the saved value or
+  names the variable to unset. `splice check-config` prints the same list and exits 3 when this build would refuse
+  your file. A retired setting is refused wherever it sits: `[defaults]`, a head's `[heads.<key>.overrides]`, `[daemon]`
+  for the fold fields, the environment, or the saved settings.
+- **`upstreamRetries` and the three `retryBackoff*` settings are retired, with nothing to set in their place.**
+  `upstreamRetries` (`CLAUDEX_UPSTREAM_RETRIES`), `retryBackoffBaseMs` (`SPLICE_RETRY_BACKOFF_BASE_MS`),
+  `retryBackoffCapMs` (`SPLICE_RETRY_BACKOFF_CAP_MS`) and `retryBackoffJitterPct` (`SPLICE_RETRY_BACKOFF_JITTER_PCT`)
+  gave way to the retry engine, which decides how often and how soon a failed request is sent again from what failed.
+- **The four `fold*` settings are retired, with nothing to set in their place.** `foldReasoningModels`,
+  `foldMaxContinue`, `foldMarkerText` and `foldMaxTier` (`CLAUDEX_FOLD_REASONING_MODELS`, `CLAUDEX_FOLD_MAX_CONTINUE`,
+  `CLAUDEX_FOLD_MARKER_TEXT`, `CLAUDEX_FOLD_MAX_TIER`, and `fold_reasoning_models`, `fold_max_continue`,
+  `fold_marker_text` and `fold_max_tier` under `[daemon]`) gave way to splice continuing on its own a Codex answer whose
+  reasoning the backend cut short.
+- **`codexAuthPath` and `grokAuthPath` are retired; each provider's `auth.file` replaces them.** `CODEX_AUTH_PATH` and
+  `GROK_AUTH_PATH` no longer move a sign-in file, since the daemon, `splice login` and `splice status` now read every
+  sign-in file from the provider's `auth.file` under `[providers.<key>.auth]`, which is where `splice login` writes it.
+- **Four timing settings belong to the whole daemon.** `upstreamTimeoutMs`, `firstByteTimeoutMs`, `streamIdleMs` and
+  `stallReanchorMs` set under a head's `[heads.<key>.overrides]`, or saved for one command, are boot findings too: set
+  them under `[defaults]`. `upstreamTimeoutMs`, the whole-turn cap, is 30 minutes by default.
 - **`claudex -c` continues only sessions 0.4.0 began.** A session begun under 0.3.x is not in the
   head's `splice-sessions.json`, so a bare `-c` starts a new one. `claudex -r <id>` resumes it.
 - **The installer records 0.3.x as the previous release,** so `splice upgrade --rollback` has a
@@ -158,7 +197,8 @@ origin.
   and writes the head's log. The `desktop` alert flag is saved, but nothing turns it into a
   desktop notification yet.
 - **A rate limit after text has streamed can end the turn.** ChatGPT, Muse and other Responses
-  heads resume the answer, up to five times, unless the cut reply had already started a tool call; then the turn ends, so re-send it. Other heads resume only when measured to continue, such as Kimi or
+  heads wait out the limit and resume the answer, up to five times, unless the cut reply had already started a tool
+  call; then the turn ends, so re-send it. Other heads resume only when measured to continue, such as Kimi or
   a provider with `reanchor_prefill = true`; otherwise re-send the turn. Before any text,
   splice can retry the whole turn.
 - **A restart ends the turns in flight.** Each running turn that is not a compaction ends at once with "splice
@@ -171,10 +211,14 @@ origin.
   window it read, and with a project or filter picked its heading says "All requests". The header's door to it says
   the same, as in "3.0% failed in 24 hours, all requests". Results for one project, or for the page's own 5 hours or
   30 days, are not built yet.
+- **What performance collection costs has not been measured.** The benchmark receipts in `docs/benchmarks` are
+  calibration evidence. The acceptance run over 36 days of retained history stopped at its 20-minute exchange timeout,
+  and the proxy overhead and capacity matrix has not been run, so 0.4.0 makes no overhead, capacity or performance-target
+  claim for collection, retention or export.
 - **GPT-6.1 Sol's thinking often shows headings only on a ChatGPT subscription.** The subscription returns its
   reasoning summaries as headings without their paragraphs, in every request shape tried on 2026-10-30. Setting
   `summary = "concise"` under the head's `[heads.<name>.overrides]` brought the paragraphs back in some turns, not all.
-- **splice is tested against Claude Code 2.1.296.** When a session runs a newer one, doctor and
+- **splice is tested against Claude Code 2.1.322.** When a session runs a newer one, doctor and
   `splice status` report it; the status line warns once per session during the daemon's lifetime.
 - **Claude Code's header reads `API Usage Billing` on every head but `claude-splice`.** Claude Code
   only has names for Anthropic's plans and the clouds that sell Claude, so it prints that for any
@@ -203,6 +247,23 @@ origin.
   and receipt for a program to read. Each peer has its own key, which opens only its
   own routes, and the management key cannot send as a peer. A user who never registers one gets no process, socket
   or file. Guide: `docs/peers.md`.
+- **Anything can be a peer, and a retried send is safe.** A script, bot or harness registers with `splice peer
+  register`, again at every start: a repeat answers the peer it already made, with the same session id and key file,
+  where it was refused before. `--owner <pid>` binds a peer to any running process. `splice peer send --id <id>` makes
+  a retry harmless: the same text to the same target under an id already sent answers that send again and sends
+  nothing, an inbox journals a repeated message id once, and `--pid` refuses the send when another process now answers
+  to the target. A peer may send 20 messages at once and 60 a minute after that; `splice peer limit <name> <per-minute>
+  <burst>` gives it its own, up to 600 and 100. One `peer-host` process serves every peer, each under a small anchor
+  pid of its own, and it exits 10 s after the last peer.
+- **A Codex conversation can be a peer.** `splice peer codex attach` registers a native Codex thread as
+  `codex-<thread id>`, so every Claude Code session sees it in ListAgents and a message sent to it arrives in the
+  conversation as a turn. Delivery goes through the app-server that holds the thread. For a thread open in the ChatGPT
+  desktop app, splice finds the app through the Codex home's private socket, and the app takes the message into its own
+  conversation with its model, effort, permissions and workspace kept. `--peer-name <name>` gives a peer you already
+  registered automatic delivery into a thread, keeping its session id, key and inbox. Each hand-over is journaled
+  before it goes out and again with how it ended (`started`, `refused` or `unconfirmed`), so nothing is handed over
+  twice, and a refused message gets a `dropped` receipt. A thread no app-server holds is refused with the reason:
+  splice writes no Codex hook, and `splice setup` offers none.
 - **The splice manager can drive the console.** `splice console <action>` works on the console page the person has
   open, the way their own hands would: `snapshot` lists the page and every control with a ref, `read` prints its words,
   `tap`, `fill`, `select`, `press`, `hover` and `scroll` act, `goto` moves between pages, and `highlight` draws a ring,
@@ -254,11 +315,12 @@ origin.
   command that enables it, not answering, or off with the reason.
 - **`splice listeners`** prints the control port and each head's port as JSON, or the config findings when boot would
   refuse, so a service manager can hand the daemon its sockets.
-- **Settings changes reach the next request, with no restart.** The retry count and the generic retry
-  curve, the first-byte and re-send timeouts, the request body cap and read ceiling, the materialization budget,
-  the quota poll cadence, the MCP host's idle window, server ceiling, handshake and request budgets, the status
-  line's progress line, the reasoning summary, display and replay settings, and the reasoning-fold settings are read
-  when a request or wait needs them, so a PATCH governs the next one instead of the next restart. Reasoning effort
+- **Settings changes reach the next request, with no restart.** The first-byte and re-send timeouts, the request body
+  cap and read ceiling, the materialization budget, the quota poll cadence, the MCP host's idle window, server ceiling,
+  handshake and request budgets, the status line's progress line, and the reasoning summary, display and replay
+  settings are read when a request or wait needs them, so a PATCH governs the next one instead of the next restart.
+  The retry count, the retry curve and the reasoning-fold settings are not among them: they no longer exist
+  ([Upgrading from 0.3.x](#upgrading-from-03x)), and what a turn retries is decided by what failed. Reasoning effort
   stays restart-only on purpose: it is part of the prompt-cache key, so changing it per turn would void the cache.
 - **Settings is a page of what happened and what governs it.** Silent models and Many agents at once open on
   counts read from real requests: how many ended early or waited out this week, each command's peak today against its
@@ -540,7 +602,9 @@ origin.
   derived from the pid and the last update rather than the file's own status, and the copyable
   `SendMessage` line per live session. A live pid whose process started long after the
   registration is a reused pid and reads as gone. Read-only; headless `claude -p` runs never
-  register and the footer says so.
+  register and the footer says so. `splice sessions --json` prints the same registrations as one JSON line for a program
+  to read: each session's identity (id, name, pid, kernel start, socket and address), its state as Claude Code wrote it,
+  and how splice judged it (live, stale or gone, with its route and head).
   On Linux, when Claude Code records process identity, a pid from another container or a reused
   pid reads gone. Without that identity, a process started more than five minutes after its
   registration reads gone. A sessions directory that exists but cannot be listed (a permission failure,
@@ -561,6 +625,29 @@ origin.
   explicit permanent or retryable failure decision when one was observed, including when the
   client disconnects. Reads stream the files, never hold a generation whole, and a rotation during
   the read is read again. `splice perf` is read-only and refuses malformed flags.
+- **Performance history, request evidence and a Performance panel, kept locally.** Collection is on by default and
+  needs no monitoring service. It keeps minute and hour aggregates, per-head request evidence and a record of which
+  configuration was in force, each within a bound, and every answer says what it covered, what is missing and whether
+  it is partial, stale or busy, so a gap is never read as a fast interval. `splice perf` still prints its text table
+  from the retained files with the daemon stopped. `splice perf schema`, `summary`, `series`, `diagnose` and `export`,
+  and `--json` on the text form, answer the same queries for a program over one contract, and `splice perf profile
+  capabilities` says what this machine can capture. The console's Performance panel on Usage and Requests follows one
+  interval and cohort into latency distributions, queue history, request timelines and traces, and keeps saved
+  baselines in your browser with no request content in them. The control plane serves the same readings at
+  `/api/perf/schema`, `/summary?contract=1`, `/series`, `/turns?contract=1`, `/observations`, `/diagnose`, `/runtime`
+  and `/instrumentation/status`, and the older summary and turns shapes answer as before without `contract=1`.
+  `perf_collection_enabled = "false"` under `[defaults]` turns the new collection off at startup and keeps the older
+  performance rows and your local traces. Guide: `docs/observability/README.md`.
+- **Objectives, alerts, profiles and optional export.** An objective is a request-level threshold with its cohort, and
+  an alert is a sustained condition with a minimum count, coverage, hold and recovery rule (`GET` and `PUT
+  /api/perf/objectives`, `GET /api/perf/alerts`). A fresh install creates no rule and sends no notification. A profile
+  is an explicit, bounded JFR capture, or one from an installed native profiler, kept as an artifact for an hour and
+  downloaded with the control plane's bearer (`/api/perf/profiles`). Prometheus is `GET /api/perf/metrics`, behind the
+  same bearer and loopback guard, and OTLP sends metrics, traces and logs over `http/protobuf` or gRPC. Both are set
+  under `[telemetry.operator]` (`prometheus_enabled`, `otlp_endpoint`, `otlp_protocol`, `otlp_headers`,
+  `otlp_signals`) and apply on restart. With no endpoint, or no signal listed, no exporter is built and nothing leaves
+  the machine, and request and tool content, tool names and exception text never enter an exported signal. A request
+  never waits on a collector, and export failures are counted on their own at `/api/perf/export/status`.
 - **`/login` inside a head starts over, and can name an account.** A second `/login` while a
   sign-in was still waiting for its browser callback used to die silently on the callback port
   while the hook promised a browser; on Linux and macOS the waiting sign-in started by an earlier hook is cancelled first and the reply
@@ -639,11 +726,12 @@ origin.
   An older success cannot lift a hold set by a newer failure. A cancelled or failed trial
   frees the account for the next trial. Auth exclusion is separate from rate-limit state and is shown in
   `/api/auth`, `/api/accounts` and `splice doctor --json`.
-  A 429 is retried inside splice while retries remain, waiting `Retry-After` up to 15 s, or
-  15 s when absent. It gives up immediately on a spent plan window or when a pooled account
-  asks for more than 15 s. After retries run out, a bare 429 holds the account for 20 s without
-  inventing a provider reset. Transport probes stay capped at 120 s; real quota exhaustion
-  respects its reported reset.
+  A 429 that names no window or reset moves the turn to an available pooled account, and with none free is retried
+  after 2, 4, 8, 16, 30, 30 and 30 s, two minutes shared by the whole pool, before it ends as a retryable failure; it
+  holds no account for a reset the provider never stated. A reset stated at 15 s or less is waited out on the same
+  account in waits of 2, 4, 8 and 15 s, and a longer one hands the turn to another account or holds it to the stated
+  time, up to 7 days. A spent plan window hands the turn to a free account or ends it with the provider's words. Real
+  quota exhaustion respects its reported reset.
   Kimi automatic and explicit labels share cross-process login leases: a concurrent login to the
   same label is refused, a re-login may replace its credential, cancellation frees the lease, and
   validation precedes lock-directory creation; the login receipt names the label actually
@@ -773,8 +861,8 @@ origin.
 - **A pin can name one session.** `POST /api/auth/<head>/switch` takes `"session"` beside `"label"`: that
   session uses the account and the head's pin stays for every other session. `DELETE` with `?session=`
   drops that session's pin; without it, the head's. A session's pin outranks the head's for that session
-  only, a pin on an account that is out of quota falls back to the automatic rule and stays set, and a
-  restart clears every pin. Without a pin a session keeps its account until a limit, then moves to the
+  only, a pin on an account that is out of quota falls back to the automatic rule while it stays set, a pin lets
+  go when its account reads a new limit, and a restart keeps every pin. Without a pin a session keeps its account until a limit, then moves to the
   account whose weekly window resets soonest. `splice status`, `splice sessions` and `/api/sessions`
   show the pin: `pinned to <label>` on a head, and `account` plus `account_pin` per session.
 - **A key is its own account.** An API-key head's key appears on Accounts with its variable name, a
@@ -846,7 +934,7 @@ origin.
   Compare models, which sends one prompt to several models side by side, and Settings.
 - **A running session takes a note from the console.** `POST /api/sessions/{id}/message` writes the note to the
   session's inbox socket. It is proven on each Claude Code version `/api/sessions` names, from 2.1.282 up to the
-  tested 2.1.296, so a page can refuse before anyone types.
+  tested 2.1.322, so a page can refuse before anyone types.
   `GET /api/sessions/{id}/transcript` pages a transcript forward from its start with a cursor
   (`before=end` reads the newest first), governed by the live `transcriptView` knob.
 - **The operator can stop a live turn.** `POST /api/heads/{head}/turns/{id}/stop` ends it, and the client's
@@ -891,10 +979,14 @@ origin.
 - **A session splice did not launch joins the head its requests reach.** With no launch record, a session is placed on
   the head whose port its requests arrive on, and keeps that head across a restart. `unknown head` stays for a session
   splice still cannot place.
-- **The launch shim is POSIX `sh` plus `curl`** (marker `shim-21`). It sends each argument exactly as typed, whatever
+- **The launch shim is POSIX `sh` plus `curl`** (marker `shim-24`). It sends each argument exactly as typed, whatever
   it holds, and when `curl` is missing it says so: "splice needs curl to start Claude Code, and curl is not installed"
   with the install command for this machine. A cold start creates `daemon-boot.log` owner-only (0600), or tightens one
   already there, before the daemon writes to it.
+- **`SPLICE_JAVA` names the java splice runs on.** A machine whose `java` on PATH is older than 21 for its own work, an
+  Android toolchain pinned to 17 for one, can point the launcher at a JDK 21 without changing that default: every java
+  the launcher runs for splice (the CLI, `record-launch`, `check-config` and the daemon's cold start) uses it when it is
+  set. The Claude Code the launcher starts keeps the caller's PATH.
 - **Translated heads no longer show Claude Code's auto-mode notice.** A session on any head but `claude-splice` used to
   open with "this session isn't eligible… ask your gateway to implement", and an interactive auto-mode session held
   its first checked action until it was answered. The launch now tells Claude Code the server-side checks are not
@@ -1020,15 +1112,101 @@ origin.
   a compaction for this project and command, widest first, and Text and File say they replace the rule above.
 - **A second command on a provider asks which key it sends with,** the provider's own or a new one. On Accounts the
   command sits on the card of the key it sends with, and the keys a key replaced fold into one quiet line.
+- **A node's plain `claude` can run on the server's Claude logins.** `splice remote add <address>/claude-splice --as
+  claude` makes the wrapped `claude` launch on the server's Claude head, over the node's own `~/.claude`, so its
+  settings, instructions and sessions stay the person's and only the place its turns go changes. The server offers a
+  Claude head only once every login in its pool is one it holds itself, native sign-ins and added accounts, and never
+  while the caller's own sign-in is one of them. The node sends the word `splice-lan`, and the head's pool signs the
+  turn with a login the server holds, so no splice key or node word reaches Anthropic. A remote command's session is
+  recorded as that command's launch, so it starts without the ownership warning.
+- **A Use now pin outlives the daemon and lets go when its login runs out.** Each head's pins, the command's and each
+  session's, are saved in `account-pins.json` (0600, with one `.bak`), so a restart keeps a pin and an unpin alike. A
+  pin lets go the moment the login it names reads a limit it had not read when Use now was pressed: the provider naming
+  a plan window spent (the whole login's, or one model's week), the provider holding the account, or a usage reading at
+  100%. A limit the login already read at the press keeps the pin, since Use now on a login refused Fable alone still
+  serves Opus, and so does a short rate limit, which a turn waits out on the same login. What each login read is saved
+  with the pin, so a limit read just before a restart still lets it go at the first read after it. A pin or unpin whose
+  save the disk refuses is put back before the press is answered. While a pinned login cannot serve, the pin stays and
+  the pool says why: `GET /api/auth` and `GET /api/accounts` carry `pin_refusal`, which names a login held for every
+  model with its window and when it serves again, one held for one model's week with that model and until when, one
+  whose usage reads full with that window and its reset, one its provider refused (sign in to it again), and one
+  blocked until its owner accepts new terms (that step), and `pin_models_held`, the models a serving pin cannot serve
+  yet. The pinned card on Accounts draws that line every time the page loads. Use now on a login held for every model
+  answers 409 with the window and the time and pins nothing, and on a login held for one model it pins and says which
+  models stay off it until when.
+- **A held turn continues at its reset, and a held login can be tried now.** `POST /api/heads/<head>/holds/try-now`,
+  with `?login=<key>` for one login, makes the turn held longest on a login probe it at once; every turn held there
+  continues when the login serves, and the console lists a turn as held once try-now can reach it. A session whose turn
+  ended at a plan limit is told to continue when the limit's stated reset passes, as one is told when a new account is
+  added.
+- **A GPT script's opening Write streams into Claude Code's Write block.** When a code-mode script starts with
+  `tools.Write` and a literal path and content, Claude Code shows `Write(path)` as soon as the path has arrived and the
+  file fills in as GPT writes it, the way a native Write does. Before, nothing showed until the whole script had
+  streamed: 5.5 minutes for a 52 KB stylesheet on Nov 3. Claude Code writes exactly the file the script asks for. If the
+  script does not make that call as streamed, the block is closed with input Write refuses, so nothing is written, and
+  the script itself never reaches the client. It runs only when the client declares a `Write` tool.
+- **A session starts at its head's reasoning effort, and Claude Code's own pick rides on every head.** A launch hands
+  Claude Code the head's configured effort (`splice.toml`, or Settings, read at each launch, else `high`) as `--effort`
+  unless you gave one, and every adapter sends the effort Claude Code's request names. `none` and `minimal` reach the
+  wire: a head set to either launches with `CLAUDE_CODE_EFFORT_LEVEL=unset`. Chat heads send it on the rungs their
+  vendor takes. A Kimi turn sends it on Kimi's own rungs (low, high, max), never a fixed max, and each word lands on the
+  highest rung not above it. A request with thinking off is sent with the effort any other request gets on Responses and
+  chat heads, and Claude Code 2.1.310 never sends thinking disabled.
+- **A `verbosity` setting for every Responses head.** `low`, `medium` or `high`, in `[defaults]` or a head's
+  `[heads.<key>.overrides]` or on Settings, rides each turn as `text.verbosity`, as Codex sends `model_verbosity`. A
+  head with no setting sends what it sent before: `low` on a ChatGPT lite turn, nothing elsewhere. It is read when the
+  head is built, so a change takes a restart.
+- **A head on the OpenAI Responses dialect ships a standing prompt.** A head that sets neither `system_prompt` nor
+  `system_prompt_file` gets splice's instructions appended beside Claude Code's own prompt: carry a task to the end
+  instead of closing a turn on a plan or a promise, read only what the work needs, check in proportion to the change,
+  and do not poll what has not changed. A prompt the head sets replaces it, `system_prompt = ""` turns it off, and other
+  dialects ship none, so their requests are unchanged.
+- **A relaunch brings a session back as it was.** `splice sessions relaunch` starts a session again on the command it
+  was started with, read back from its own process, so a session started as plain `claude` stays in its own config
+  folder and signed in, with its agent and every other option it was given, never its first prompt, and on the model
+  its row reports. In tmux it comes back in the pane it ran in: the pane is held while the client leaves and the
+  session starts again in it, instead of in a new tmux session. A session that is running background shells or holds
+  an unsent feedback draft is left where it is, as a working one is.
+- **`splice trace --turn` prints each upstream attempt's whole body length and SHA-256.** A trace cuts a body past
+  `traceMaxBodyChars`, so three different 20 to 30 MB requests on Nov 8 read as byte-identical in the trace: they
+  differed only in the cut tail. Each attempt now records the length and SHA-256 of the whole body, taken before the cut.
+- **Perf rows show early request waits.** `pre_admission_ms` and `model_roster_wait_ms` record how long a request
+  waited before admission and for its head's model list, beside the stage clock that already ran from the same origin.
 
 ### Changed
-- **The daemon's memory follows its live data, with no fixed ceiling.** The 2 GB heap, which ran out of memory 20
-  times on Oct 2, is gone: the heap may grow to 75% of RAM, and G1 now gives memory back so that what it holds stays
-  within about 1.7 times the live data. It used to hold up to 3.3 times (10.5 GiB for 3 GiB live, measured Oct 19) and
-  grew to 24 to 28 GiB during each start. The JVM options live in one place, `SPLICE_JVM_OPTS` in `splice-launch`,
+- **The daemon's memory follows its live data, and its heap stops at 16 GiB.** The 2 GB heap, which ran out of memory 20
+  times on Oct 2, is gone: the heap may grow to 16 GiB, or to 75% of the memory the daemon may use where that is
+  less, and G1 now gives memory back so that what it holds stays within about 1.7 times the live data. It used to hold
+  up to 3.3 times (10.5 GiB for 3 GiB live, measured Oct 19) and grew to 24 to 28 GiB during each start, before the
+  16 GiB ceiling. The JVM options live in one place, `SPLICE_JVM_OPTS` in `splice-launch`,
   and every daemon start uses them: `splice restart` and `splice dashboard` now start the daemon through the launcher
   installed beside the jar, so that start also exits on running out of memory and leaves a heap dump. A user unit
   that runs `splice-launch daemon` counts as supervising the install for `splice upgrade`.
+- **One engine decides every retry, from what failed and how far the answer got.** Where 0.3.x re-sent every failure
+  up to a count with a backoff curve, each failure is now read as a cause and given its own budget: a burst limit is
+  waited 2, 4, 8 and 15 s, a throttle 2, 4, 8, 16, 30, 30 and 30 s, an overload 2, 4, 8, 15 and 30 s (a model still
+  loading is then asked every 60 s for up to 5 minutes), a path that does not answer 1, 2, 4, 8, 16, 30, 30 and 30 s,
+  and a server error before the stream began is re-sent after 200, 400 and 800 ms. An answer whose stream began is
+  continued from what arrived up to 5 times, a stream that closed before any event is sent fresh twice, an empty
+  answer is asked again once, stale reasoning is left out of the body once, and an unrecognized failure is tried once
+  more. A stated reset of 15 s or less is waited
+  out on the login; a longer one is held to its time, probed on a schedule and ended if the cause does not lift at
+  three of the times it stated. A held turn that outlasts what a session can wait is handed to Claude Code with the
+  reset it names.
+- **Claude Code is answered by the family of the failure.** A failure a re-send can heal reaches Claude Code as a 529
+  `overloaded_error`, which it sends again. splice's own refusal of a request, and a failure the same bytes would meet
+  again, reach it as a 400 `invalid_request_error` with `x-should-retry: false`, and a request too large keeps its 413.
+  A login splice holds that is refused or missing reaches it as a 403, and a limit no session can wait out as a 429
+  with the reset it names. A request whose identical predecessor already ended as a 529 within the hour is answered as
+  a refusal, so a failure no re-send can heal ends instead of looping. Every `[splice] ...` line Claude Code prints is
+  written in one place.
+- **A turn may take 30 minutes, and Claude Code's own timers wait for splice's.** `upstreamTimeoutMs`, the whole-turn
+  cap, is 30 minutes by default where it was 15, and it is daemon-wide, like `firstByteTimeoutMs`, `streamIdleMs` and
+  `stallReanchorMs`. Every launch now sets Claude Code's `API_TIMEOUT_MS` past that wall, so a held turn ends by
+  splice's wall, and turns off Claude Code's fixed 360 s cut of a request that writes nothing while it works
+  (`API_FORCE_IDLE_TIMEOUT=0`), caps its re-sends of a non-streaming request that timed out at 2
+  (`CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES`), and sets its stream-idle timer to the same wall, with its 300 s no-byte
+  check kept for a dead connection. Only sessions launched after the install get them.
 - **One model can fill several tiers.** `model_slots = { opus = "gpt-6.1-sol", sonnet = "gpt-6.1-sol" }` now loads and launches with both tiers set, and the picker still lists the model once. A `models` list still names each model once.
 - **splice works with the systemd unit that runs it.** `splice start`, `splice restart` and `splice console` go
   through `splice.service` whenever a unit serves this shell, even while it is down, instead of starting a second daemon
@@ -1069,9 +1247,9 @@ origin.
   their body text. A single-turn view still reads the stored bodies. Body literals and retained
   metadata keep their heap charges while held. The daemon bounds tracked heap use to half its maximum
   heap, with a separate share for trace reads. A capacity refusal is retryable.
-- **Build and runtime dependency pins are updated.** Kotlin 2.3.21, Ktor 3.6.0, coroutines 1.11.0,
-  serialization 1.11.0, GraalJS 25.4.4.1.1, Netty 4.2.17.Final and Jackson 2.22.3 match main's
-  dependency baseline. Trace compression adds zstd-jni 1.5.7-20.
+- **Build and runtime dependency pins are updated.** Kotlin 2.3.21, Ktor 3.6.1, coroutines 1.11.0,
+  serialization 1.11.0, GraalJS 25.4.4.1.1, Netty 4.2.19.Final, Jackson 2.22.4 and OpenTelemetry 1.67.0 match main's
+  dependency baseline. Trace compression adds zstd-jni 1.5.7-25.
 - **Batched text and thinking are paced on every head.** When visible text or thinking arrives
   together, splice's shared client write path spreads it over a one-second pacing window.
   Each 16 ms tick releases at least four queued deltas, or all that remain, without reordering
@@ -1137,7 +1315,7 @@ origin.
   `splice upgrade` and every restart the daemon takes on itself (`POST /api/daemon/restart`,
   an add's save) wait for compactions in flight before stopping. The daemon keeps serving during this wait and no head
   closes admission, so ordinary turns do not hold the compaction wait. Each compaction is waited
-  for until it reaches the daemon's own cap on a turn (`upstreamTimeoutMs`, 900 s by default), and the whole wait has
+  for until it reaches the daemon's own cap on a turn (`upstreamTimeoutMs`, 30 minutes by default), and the whole wait has
   the same cap, because Claude Code 2.1.296 waits longer than that on a large conversation; `--now` skips
   it, and an unreadable in-flight count is reported before restarting without the wait. A finished
   answer whose client disconnected is kept owner-only under `<state>/compactions/<head>/`. Its
@@ -1199,11 +1377,14 @@ origin.
   `KIMI_OAUTH_HOST`, `CLAUDE_OAUTH_USAGE_URL`). Those endpoints receive your token, so splice accepts one only
   when its host is `localhost`, `127.0.0.1` or `::1`; any other host is ignored, the vendor's address is
   used, and the daemon log names the variable once.
-- **A restart under socket activation no longer refuses the requests that arrive during its drain.** On a socket its
-  service manager handed it, a draining command stops accepting at the start of the drain, so a request that arrives then
-  waits in the kernel for the next daemon. A connection that was kept open and idle when the drain starts is closed, so
-  the client's next request opens a new one that waits too. On its own port, a draining command keeps listening and
-  answers a new turn 529 with outcome `error:restarted`, which Claude Code retries. `tools/probes/restart-drain-read.ts` reads how a drain went at any install.
+- **A request that reaches a stopping daemon meets a closed connection, never a 529.** Claude Code 2.1.312 moves a
+  session that has a fallback model onto it after three overloaded answers in a row, and the draining 529s of Oct 28 moved
+  Haiku and Sonnet sessions onto their Opus fallbacks. A stopping head now closes the connection without an answer, and
+  Claude Code retries a connection error on a new connection, which reaches the next daemon, with no fallback. On a
+  socket its service manager handed it, a draining command stops accepting at the start of the drain, so a request that
+  arrives then waits in the kernel for the next daemon, and a connection kept open and idle when the drain starts is
+  closed, so the client's next request opens a new one that waits too. `tools/probes/restart-drain-read.ts` reads how a
+  restart went at any install.
 - **Accounts and Usage open quickly after the daemon has been idle.** The economics read stays warm between opens and is
   ready after a head's own hourly totals are read, not after its whole request window, so the first open no longer
   queues behind every head. The turns route reads a week from an in-memory store, and the session history index
@@ -1225,8 +1406,8 @@ origin.
   reads "can't read the login file".
 - **GPT sessions no longer show the code-mode script as reasoning;** the reasoning summaries are unchanged (Marcos,
   Oct 12).
-- **Restart splice, pressed while requests are in flight, names the agents mid-request** and how long they get to finish
-  before it restarts.
+- **Restart splice, pressed while requests are in flight, names the agents mid-request** and says each ends at once with
+  the restart line, since the stop gives a running turn no time to finish. Compactions are still waited for first.
 - **The streaming-idle limit, the activity retention and message edges apply without a restart.**
 - **A team member stopped at Claude Code's folder trust question waits for you** instead of timing out (Marlin,
   Oct 12). The Locked state shows on every page, and Teams and the trust page read as walked.
@@ -1255,6 +1436,109 @@ origin.
 - **`splice login` names a Claude login by its label, never its email,** in every sentence it prints.
 
 ### Fixed
+- **A new field in Claude Code's request no longer takes a Responses head down, and a head that refuses every turn says
+  so.** Claude Code 2.1.321 sends a top-level `diagnostics` field, which refused every claudex turn from 5:51 to
+  6:58 PM CT on Nov 9 while daemon.log, the perf file and the trace held nothing. Every top-level field of a Responses
+  request is now a control the request carries or refuses, a field no model reads here (`diagnostics`,
+  `context_management`), which is dropped and logged once, or an unclassified field, which is refused and named in
+  daemon.log unless its name says it is the client's own record (`telemetry`, `metadata`, `trace`, `debug`), when it is
+  dropped. A request refused while it was prepared is recorded like any other: one log line with the client's line,
+  session and User-Agent, a perf row, the turn's start and end, and the trace when the head's is on, under the outcome
+  `error:refused`. A head that refuses five requests in a row for one cause before any upstream turn reads degraded: a
+  `HEAD DEGRADED` line in daemon.log, `refusingHeads` in `/health`, a `refusing` mark on the heads route and "refusing
+  every turn: ..." in `splice status`, until the next admitted turn clears it. `/health` `ok` is unchanged, and liveness
+  probes open no request row.
+- **A request Claude Code sends again no longer restarts the work.** On Nov 8 and 9 one subagent's non-streaming request
+  came back 228 times in 25 hours, each time cut by Claude Code at about 360 s, which is Bun's own fetch timeout, and
+  each re-send began five minutes of upstream work again. A non-streaming turn with a session now runs on when its client
+  hangs up, as a compaction does, and an identical re-send is answered from its hold while it runs, within 32 holds
+  and 2 hours; a held turn that fails tells its waiters that failure, never a 200 carrying an error. Launches set
+  `API_FORCE_IDLE_TIMEOUT=0` and `CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES=2`, so the head's deadline answers first and
+  the client re-sends a timed-out request twice at most. A client that hung up while splice was still driving the turn
+  now leaves its turn line in daemon.log.
+- **A held streaming turn outlives Claude Code's stall watchdog.** While a head held a turn for a limit days from its
+  reset, Claude Code counted thirty of its own pings, showed "response stalled" and sent the turn again: fourteen
+  pairs in 75 minutes on Nov 6. A session launched through splice now has the client's stream-idle timeout set to its
+  API timeout, which a hold already ends before, and keeps a 300 s check for a connection that sends no byte.
+- **The Responses WebSocket's hourly close is a rotation, and a turn that thinks only emptily ends.** On Nov 8 one GPT
+  turn ran 6.3 hours producing 6,715 near-empty reasoning items: the socket closes every 60 minutes, and each close was
+  read as an overload and spent the recovery budget until the turn ended as "stayed overloaded". A close at that limit
+  is now a rotation with its own count of 12 and no line to you. A run of at least 100 completed reasoning items with
+  no summary, no text and under 2,000 characters of encrypted reasoning, lasting at least 10 minutes, ends the turn with
+  a sentence that says so; silence adds nothing to the run, so a model thinking quietly is never cut. A round whose
+  frame would pass the peer's 32 MiB limit goes straight to HTTP, and so does a 1007 close before the first event, with
+  no fresh-socket re-upload.
+- **A re-sent request no longer carries every earlier attempt's reasoning, and one conversation cannot crowd out the
+  rest.** Each attempt of the Nov 9 request streamed about 190 reasoning items and ended unfinished, and the next
+  re-send carried them all: 6,715 records at one position from 37 attempts. A turn now holds its reasoning until the
+  client keeps what it led into or a round reaches its terminal, so a turn that ends before either leaves nothing a
+  later request carries, and a daemon restart replays none of it. The first record a turn stores at a position
+  replaces what another turn's attempt left there, unless the request ended on assistant output. The reasoning cache
+  gives each conversation a quarter of each bound, so one growing conversation no longer evicts its neighbours whole.
+  A refusal reads as stale reasoning only when it is a 400 or 422 for `invalid_encrypted_content` or for an item's
+  `encrypted_content`, not when a 401, a 429 or a refusal of the `include` value happens to name it.
+- **A GPT answer the backend cuts after a script step is carried on.** At 23:22 CT on Nov 9 a gpt-6-astra answer was
+  closed with 1012 after 776 frames of its final answer reached the client, which was told "Server error
+  mid-response". The continuation did not recognise the prose that followed a code-mode script step, so every answer
+  cut mid-prose after one since Oct 24 reached the client as an error. It is now carried on and ends clean.
+- **Code mode's history journals are bounded and swept.** At 08:00 CT on Nov 9 four claudex turns failed with
+  "authoritative history journal exceeds its byte bound" while 1,977 journals held 7 GB. A journal near three quarters
+  of its cap, or one an append would push past it, is rewritten as its newest posts within a quarter of the cap and
+  moved into place; only a single post set over the cap is refused. An hourly sweep, first run two minutes after the
+  daemon starts, removes journals idle past the records' time to live and orphan lock files, and spares conversations
+  held in memory. A Settings clear or history cut leaves the files a running head holds. A journal removed or cut
+  short under a running head is rewritten whole at the next write, and posts kept only in memory while journaling was
+  off are written to their journal once it is back, before an eviction can drop them. A script or callback that
+  already settled keeps its outcome, where a close a few milliseconds later could record it as cancelled, and a burst
+  of native callbacks is coalesced without losing ownership.
+- **claudex no longer reads "out of quota until Nov 12" while it serves turns.** A usage-limit hold written on Nov 5 was
+  keyed by that day's access token, the token was renewed that evening, and the hold's file was restored at every boot
+  with no send able to clear it. A head that holds a login of its own reads that login's hold alone.
+- **Every credential file is renewed by one ladder.** The codex, grok, kimi and Claude account files and Muse's key
+  had each their own copy of the renewal, and they had drifted. A renewed pair whose local write fails is kept in
+  memory, served, and written again at the next renewal or lookup, where it was dropped after the old refresh token was
+  already spent. An expired token whose renewal fails ends the turn as the refused login it is, and the retry engine
+  asks again when the endpoint was only unavailable, rather than reading "no login". A Claude account's token that is
+  still alive is served when its rotation fails, and a 401 always rotates. A device-code sign-in keeps polling through
+  a 5xx, a 429 or a failed poll. A credential lock or file this machine cannot use reads as a local failure, never as a
+  connection reset by the provider.
+- **Muse's usage poll backs off, and a key it minted is not lost.** A refused poll waits a minute, doubling with each
+  refusal in a row up to an hour and never less than the mint's `Retry-After`. A subscription the provider reports
+  inactive shows on the account with its renew page until a mint grants a key, and refuses no turn. A minted key whose
+  write failed is kept and written again, where every later turn minted again on the dead key.
+- **A compaction whose client left keeps running when Ktor cancels the response.** In the moment between Ktor
+  cancelling the response and the compaction detaching, a frame the compaction wrote ended it with no terminal, nothing
+  was held, and the retry paid for a second upstream compaction. That write now counts as the client leaving.
+- **The chat dialect fails an unknown finish reason honestly.** A `finish_reason` splice did not know
+  (`insufficient_system_resource`, `abort`, `error`) read as a clean end of turn. It now fails the turn as the
+  provider's own unrecognized failure. A finished empty answer ends clean instead of being re-sent as an overloaded
+  `empty_model`, the translator stops reading at the backend's last word instead of waiting for the connection to
+  close, a stream torn in the middle of a tool call's arguments reads as torn, and a new call that reuses an open
+  index gets its own tool block.
+- **A passthrough answer cut at its cap ends as `max_tokens`.** A tool call whose arguments were cut with the output
+  was ended as a tool use. The upstream's `max_tokens` now outranks the tool block, a matched stop sequence is kept
+  where it became `end_turn`, a server tool's input and a citation fold into their blocks, and `message_start` reports
+  the backend's real opening usage.
+- **A provider's quirk defaults and a large body cap are kept.** `store`, `cache_key`, `summary_field` and `tool_choice`
+  now overlay the provider's profile only when set, so Grok keeps its session-id cache key and Grok and Muse keep their
+  `tool_choice`. A `maxRequestBytes` past what a 32-bit count holds no longer wraps to a cap that answers every request
+  413. Words boot cannot read in `[daemon]` for `show_reasoning`, `summary` and `effort` are findings at their line, an
+  empty `SPLICE_CONFIG` or `XDG_CONFIG_HOME` is unset as the launch shim reads it, and a save of the topology is
+  refused when the file no longer holds what the edit was built from, so a concurrent save is not patched back out.
+- **The turns audit's findings are closed.** A round of only whitespace now reaches the empty-answer handling instead of
+  counting as text. The loop guard's "same error" is the same error text, and any success in between ends a run, so an
+  edit-and-rerun loop is not told to stop. A compaction whose upstream tears after its client left is re-anchored and
+  recorded as a failure, not as abandoned. A raise of `maxInflight` admits parked waiters at the next sample, and a
+  resumed held turn's cap does not run while it queues for its permit. A synthetic tool-call id carries a per-round
+  nonce, so a call without an id no longer shares one across turns and has its pair dropped.
+- **Telemetry tells a lost row from a pending one, and keeps an unreadable file.** A lost perf row is worded as lost,
+  with its time, only in the windows that can hold it, and doctor's tails say the same. An unreadable, corrupt or
+  oversize hourly-spend file is set aside as `.unreadable-<ms>` before the first write instead of being replaced, and a
+  compaction-statistics append that fails is logged once per streak and counted.
+- **Client delivery no longer waits for trace redaction.** A turn's outgoing frames are buffered under their own
+  monitor, so a slow request or response capture holds nothing the client is waiting for.
+- **A plain-text document counts by its text in the token estimate.** `count_tokens` charged every document the flat
+  media cost, so a 200 KB text document read as 1,600 tokens. Only base64 media takes the flat cost.
 - **A numbered list in Claude's last reply is no longer taken for a permission menu.** The console read any run of
   numbered lines on the captured screen as a live menu, refused to send what you typed, and drew buttons that typed a
   digit into an idle prompt. A numbered run with the input box below it is now a list you read, and the composer sends.
@@ -1306,8 +1590,8 @@ origin.
 - **A daemon that runs out of memory exits** and leaves a heap dump, `splice-oom.hprof` in the state folder, instead
   of running on half alive.
 - **A stop that the halt watchdog had to cut exits with status 70,** not 0, so systemd can tell it from a clean stop.
-- **A planned restart that waits out the 45 s drain now finishes as a clean stop.** Every planned restart on Oct 19
-  ended in status 70 at 57 s: after the drain, each head's server and then the control server waited up to 5 s more
+- **A planned restart now finishes as a clean stop.** Every planned restart on Oct 19
+  ended in status 70 at 57 s: after the then-45 s drain, each head's server and then the control server waited up to 5 s more
   for their open requests, a wait that ignored the stop's own limits. Those waits now take the stop's limits, 2 s for
   a head and 0.5 s for the control server, and the log says when the heads drained, closed and the control server
   closed.
@@ -1761,8 +2045,8 @@ origin.
 - **Hosted MCP servers can be reclaimed, and are capped when the host declares a place for them.** Each hosted child's `oom_score_adj` is set to -100 at spawn and read back. A hosted server used to inherit splice's own out-of-memory protection, so on a machine that shields splice from the out-of-memory killer, hosted servers were shielded too. splice sets no such protection on itself, and changes only the hosted server's value. Placement follows the same rule: a child runs inside the memory-capped slice when one is declared for it, and when none is (systemd will happily name a slice nobody defined, with no ceiling at all) splice says so once in the log instead of reporting containment it does not have.
 - **A hosted MCP server keeps working across a daemon restart, an idle reap and an eviction.** When splice did not recognise a client's `Mcp-Session-Id`, it answered 404 and the client's subsequent calls kept failing. An id it does not know is now adopted: the child is initialized under the id the client already holds, and the restart is invisible. A session the client explicitly ended still answers 404, and so does one whose notification stream overflowed, because that one must reinitialize to re-list what it missed. An adopted session accepts the protocol version the client negotiated before the restart, since refusing it would only trade the 404 for a 400.
 - **A connection that failed is named for what actually failed.** The JDK client wraps every connect failure in the same `ConnectException`, so a host that does not resolve and a host with no route were both told as `connection refused … nothing is listening there` and sent the operator to start a server; each is now named from the link that says what happened (`cannot resolve the host of …`, `could not connect to …: No route to host`), and only the client's real refusal is called one. A connect timeout's detail no longer carries the request's full URL, and the per-attempt retry lines in the log use the same words as the ending instead of an empty message. A 429 whose text mentions tokens (a per-minute token quota) is a rate limit again rather than an overflow: it takes the cooldown, and Claude Code is no longer told to compact a conversation that fits. On the OpenAI chat dialect, an in-band error's own numeric code is no longer read as an HTTP status, and an error the vendor typed or gave a status, which the same bytes reproduce, is no longer advertised to Claude Code as retryable; an in-band error with neither keeps the retryable wire it had.
-- **A local model server's errors say what happened, and an in-band chat error keeps its class.** llama-server's three failures reached Claude Code as the bare text it sent, and the banner printed "API error" over them: a 503 `Loading model` now reads as the local server still loading its weights; `exceed_context_size_error` becomes `prompt is too long: N tokens > M maximum`, rather than an unclassified server failure; and the mid-decode `Context size has been exceeded.` is named as the shared KV pool being full, retried, never reported as an overflow, because the request fits and the other conversations hold the pool. The OpenAI chat dialect's in-band `error` event now goes through the same classifier as every other path instead of being treated as a generic upstream error whatever it said, so overflow and rate-limit events keep their distinct classifications; an event with no recognisable shape keeps the wire it had. In offline tests with Claude Code 2.1.285 and 2.1.286, a `prompt is too long` HTTP 400 after a tool result triggered compaction; a first-exchange refusal and the plain in-band overflow control did not. splice sends that shape for its own early refusal (the measured GPT models on a ChatGPT sign-in, and an OpenAI Responses row that sets `compaction_reserve_tokens`) and for an overflow the provider reports before both the first model frame and splice's own visible progress line; an overflow after either has opened the stream stays in-band. A failed connection names what happened and where instead of `upstream connection failed (no detail)`: the JDK client's refused connect carries no message, so a local server that was simply not running read as nothing at all; it now reads `connection refused by 127.0.0.1:8099: nothing is listening there; the server is down or still starting`, and connect timeouts, DNS failures, read timeouts, TLS failures, resets and early closes are each named with the endpoint's host and port (never its path or query). A context overflow answered with a non-429 4xx is sent upstream once rather than retried: the same bytes overflow the same window, and every re-send only delayed the compaction (on the bonsai head, with retries raised to ten, one 1.4 MB request went out ten times over 43 s). The same offline clients also compacted when a post-tool overflow arrived after splice's visible thinking progress, before any model answer text: the streamed HTTP 200 carried an in-band `invalid_request_error` containing `prompt is too long`, and the next client request was the summary, not a non-stream retry. Both clients recovered even with the fake reporting only 100 input tokens and its token-count endpoint fixed at 100; neither called that endpoint. This recovery was triggered by the overflow, not the reported usage threshold.
-- **Only failures a retry can heal are advertised as retryable.** A failure arriving before any content now reaches Claude Code as the one in-band error it retries (`overloaded_error`) instead of a terminal `api_error` it reads as the end of the session. A failure that an identical re-send reproduces exactly (a model refusal, a content-filtered turn, a vendor `invalid_parameter`, an unparseable base URL) is exempt and keeps its real type: it is not a retry but a bill, up to 300 client re-sends, each spending splice's own upstream retries, four attempts by default. A buffered (`stream:false`) failure is untouched by the rule and keeps its real status: a 429 stays 429 with its rate-limit headers, an api_error stays 502.
+- **A local model server's errors say what happened, and an in-band chat error keeps its class.** llama-server's three failures reached Claude Code as the bare text it sent, and the banner printed "API error" over them: a 503 `Loading model` now reads as the local server still loading its weights; `exceed_context_size_error` becomes `prompt is too long: N tokens > M maximum`, rather than an unclassified server failure; and the mid-decode `Context size has been exceeded.` is named as the shared KV pool being full, retried, never reported as an overflow, because the request fits and the other conversations hold the pool. The OpenAI chat dialect's in-band `error` event now goes through the same classifier as every other path instead of being treated as a generic upstream error whatever it said, so overflow and rate-limit events keep their distinct classifications; an event with no recognisable shape keeps the wire it had. In offline tests with Claude Code 2.1.285 and 2.1.286, a `prompt is too long` HTTP 400 after a tool result triggered compaction; a first-exchange refusal and the plain in-band overflow control did not. splice sends that shape for its own early refusal (the measured GPT models on a ChatGPT sign-in, and an OpenAI Responses row that sets `compaction_reserve_tokens`) and for an overflow the provider reports before both the first model frame and splice's own visible progress line; an overflow after either has opened the stream stays in-band. A failed connection names what happened and where instead of `upstream connection failed (no detail)`: the JDK client's refused connect carries no message, so a local server that was simply not running read as nothing at all; it now reads `connection refused by 127.0.0.1:8099: nothing is listening there; the server is down or still starting`, and connect timeouts, DNS failures, read timeouts, TLS failures, resets and early closes are each named with the endpoint's host and port (never its path or query). A context overflow answered with a non-429 4xx is sent upstream once rather than retried: the same bytes overflow the same window, and every re-send only delayed the compaction (on the bonsai head, with the old retry setting raised to ten, one 1.4 MB request went out ten times over 43 s). The same offline clients also compacted when a post-tool overflow arrived after splice's visible thinking progress, before any model answer text: the streamed HTTP 200 carried an in-band `invalid_request_error` containing `prompt is too long`, and the next client request was the summary, not a non-stream retry. Both clients recovered even with the fake reporting only 100 input tokens and its token-count endpoint fixed at 100; neither called that endpoint. This recovery was triggered by the overflow, not the reported usage threshold.
+- **Only failures a retry can heal are advertised as retryable.** A failure arriving before any content now reaches Claude Code as the one in-band error it retries (`overloaded_error`) instead of a terminal `api_error` it reads as the end of the session. A failure that an identical re-send reproduces exactly (a model refusal, a content-filtered turn, a vendor `invalid_parameter`, an unparseable base URL) is exempt and keeps its real type: it is not a retry but a bill, up to 300 client re-sends, each spending splice's own upstream retries. A buffered (`stream:false`) failure is untouched by the rule and keeps its real status: a 429 stays 429 with its rate-limit headers, an api_error stays 502.
 - **A rate limit or spent account can be retried before answer content reaches the client.** A persistent 429 before that point reaches Claude Code as the one in-band error it retries (`overloaded_error`, rate-limit words kept) instead of a terminal `rate_limit_error`, except on a native Claude head, which hands Claude Code the provider's own 429 reply with its rate-limit headers once splice's own wait is spent; every launched client runs in persistent retry mode (`CLAUDE_CODE_RETRY_WATCHDOG=1`, native head included) and sleeps until the reset splice already sends; and a spent account (grok `spending-limit` 403, any 402) is a 429 to every layer, including cooldown, account pool, classifier and admission, rather than an `invalid_request_error`.
 - **An empty model turn is retried with backoff.** A turn that ends with nothing for the client,
   such as Muse reasoning its whole budget away, ends as `overloaded_error` with the explanation
@@ -1995,20 +2279,6 @@ origin.
 - **A full code-mode pool reclaims idle parked scripts of sessions nobody vouches for after 5 minutes, not 30:** subagents,
   headless clients and ended sessions are not in the Claude Code registry, and their parked scripts held 50 of 53
   engines while every new `exec` was refused. A session the registry lists as live is still never reclaimed.
-
-## splice v0.4.0-beta.2: reduce Claudex registry contention - 2026-10-14
-
-- **Less work under Claudex's shared code-mode lock.** Live record membership uses an identity index, expiry-marker comparisons use a set, and conversation queries limit expiry preparation to their own records. These changes address the bookkeeping bottleneck measured in the live JVM profile while preserving recovery, cancellation and request bytes.
-- **Recovery saves reserve for the selected journal operation.** A conversation append admits its changed records first and grows the reservation before a full checkpoint is encoded. This removes an unnecessary whole-conversation encoding reservation that refused Claudex startup on this machine; uncertain state, removed records and journal compaction still require a full checkpoint reservation.
-- **Qualified integration.** The registry fix passed the full gate and five independent code-review passes. Existing recovery and watchdog tests now await the state transitions their assertions require. Live response-time and memory improvements remain to be measured after installation.
-- **Local beta build.** This version is prepared from the reviewed `feat/v0.4.0` candidate for local installation. A public release is a separate promotion through the repository's main-only release path.
-
-## splice v0.4.0-beta.1: the first 0.4.0 prerelease, built locally while Actions is locked - 2026-10-13
-
-The first beta of 0.4.0 carries everything on feat/v0.4.0 so far, as the v0.4.0 section describes.
-
-- **Built on this machine, without attestation.** GitHub Actions is locked, so the jar and its bundle were built locally from the tagged commit by `bun tools/release beta 0.4.0-beta.1`. No Sigstore attestation exists for them. Each asset is bound to the release by sha256sums.txt alone, and PROVENANCE.md says so.
-- **Installing it.** install.sh checks attestation whenever gh is signed in, so it refuses this beta then. Install with gh signed out, or download splice.jar and splice-launch, check them against sha256sums.txt, and run `SPLICE_JAR=./splice.jar ./install.sh`.
 
 ## splice v0.3.2 — code mode keeps its workers and its evidence, and fails in words - 2026-09-07
 

@@ -19,13 +19,16 @@ the code wins and the line says so.
 | Retry is total | A known error gets its own plan. Every other error gets a bounded generic retry and an honest message. No failure ends a turn without one of the two. |
 | Idle is a probe | Silence from the model is a question, never a verdict. splice acts only on a dead path, by re-anchoring (resuming the stream). It never reaps a model that is thinking in silence. |
 
-Source: repo `CLAUDE.md` "Project laws"; `core/src/main/kotlin/splice/core/config/Knob.kt` lines 227-230 and
-271-281; `core/.../turn/FailureCause.kt` lines 96-99; `integrations/upstream/.../retry/RetryPolicy.kt` lines 207-218.
+Source: repo `CLAUDE.md` "Project laws"; `core/src/main/kotlin/splice/core/config/Knob.kt` (the note above
+`UPSTREAM_TIMEOUT_MS` on the retired retry knobs, and the `STREAM_IDLE_MS` entry); `core/.../failure/FailureCause.kt`
+lines 1-26 and 161 (`Provider.Unrecognized`); `integrations/upstream/.../retry/RetryEngine.kt` lines 46-64, 151-161
+and 237-243.
 
 Only a few verdicts are never retried, because the same bytes get the same answer: a credential rejected again
 after a refresh, a context overflow (Claude Code compacts instead), a content-policy refusal, a refusal the
 vendor module names, a spent plan window (the reset is the wait), an `encrypted_content` decrypt error.
-Source: `RetryPolicy.kt` lines 118-123, 148-182.
+Source: `RetryEngine.kt` lines 163-190 (`Rows.provider`, `Rows.verdict`) and 246-263 (`Logins`);
+`integrations/upstream/.../retry/limits/RetryLimits.kt` lines 80-89.
 
 ### 1.2 The layers, in order
 
@@ -38,9 +41,9 @@ Source: `RetryPolicy.kt` lines 118-123, 148-182.
 | Re-anchor | stream cut or stalled after content began | splice re-sends from what it delivered. ChatGPT, Muse and other Responses heads: up to 5 times unless a tool call had started. Other heads only where measured to continue (Kimi, or `reanchor_prefill = true`) |
 | Client retry | Claude Code receives `overloaded_error` | Claude Code re-sends. splice launches every client with `CLAUDE_CODE_RETRY_WATCHDOG=1` (persistent retry), so a rate-limit hold longer than the default retry budget does not end the session. It also plants `CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES=2`, because the client's limit for re-sending a timed-out non-streaming request is unlimited when that is unset |
 
-Source: `Knob.kt` 219-245; `RetryPolicy.kt` 125-146, 233, 248-274; `integrations/upstream/.../transport/UpstreamRetryLoop.kt`
-100-110; `integrations/upstream/.../transport/TransportFailures.kt` 170-236; `features/launch/.../recipe/LaunchService.kt`
-366-378; `CHANGELOG.md` 138-141.
+Source: `Knob.kt` (the note above `UPSTREAM_TIMEOUT_MS`); `RetryEngine.kt` 46-64 and 150-271;
+`integrations/upstream/.../retry/RetryBudgets.kt` 46-66; `features/launch/.../recipe/LaunchService.kt` 374-392;
+`CHANGELOG.md` 160-163.
 
 ### 1.3 Known errors and their plans
 
@@ -57,8 +60,9 @@ Source: `Knob.kt` 219-245; `RetryPolicy.kt` 125-146, 233, 248-274; `integrations
 | 5xx, 408, resets, timeouts, TLS | the generic curve. A `Retry-After` is obeyed up to 15 s |
 | 4xx other than the fixed verdicts above | still retried on the generic curve (about 1.5 s), because a 403 has been seen as overload |
 
-Source: `RetryPolicy.kt` 207-239, 290; `integrations/upstream/.../retry/RateLimitCooldown.kt` 392, 403;
-`integrations/upstream/.../retry/PlanHold.kt`; `UpstreamTransport.kt` 335-336; `CHANGELOG.md` 560-574 and 1625.
+Source: `integrations/upstream/.../retry/limits/RetryLimits.kt` 27-89; `RetryBudgets.kt` 19-43;
+`integrations/upstream/.../retry/RateLimitCooldown.kt` 284, 295; `integrations/upstream/.../retry/PlanHold.kt`;
+`RetryEngine.kt` 201-206; `CHANGELOG.md` 646-660 and 1770.
 
 ### 1.4 The idle probe: four timers
 
@@ -67,7 +71,7 @@ Source: `RetryPolicy.kt` 207-239, 290; `integrations/upstream/.../retry/RateLimi
 | `firstByteTimeoutMs` | 90000 | before Claude Code has seen any content: silence past it asks the path whether it is alive |
 | `streamIdleMs` | 90000 | after content began: the same question |
 | `stallReanchorMs` | 20000, armed only on heads measured to continue from a prefill | after content began: cancel the round and re-send from what was delivered. `0` turns it off for a head |
-| `upstreamTimeoutMs` | 900000 (15 min), restart to change | the whole-turn wall: no model, tool or reasoning event for this long ends the turn. Keepalive pings do not renew it |
+| `upstreamTimeoutMs` | 1800000 (30 min), restart to change | the whole-turn wall: no model, tool or reasoning event for this long ends the turn. Keepalive pings do not renew it |
 
 How the probe works: a round past a tier is asked whether its socket still answers. A path that answers is held and polled on. Only a path that has gone quiet too is reaped, and
 the re-anchor machinery then resumes it. A turn ended by the wall reads `splice progress timeout expired after
@@ -75,14 +79,14 @@ Nms without upstream progress; retry`, and the console says "Given up after no p
 Do not lower `streamIdleMs` to cure a slow model. It buys only how long the person waits before splice starts
 healing. A head that needs a longer wait names it in its own overrides, with a reason.
 
-Source: `Knob.kt` 253-305; `integrations/upstream/.../retry/Watchdog.kt` 1-9, 48-62, 140-160;
-`app/src/main/resources/console/kit.js` 140-160.
+Source: `Knob.kt` (the `UPSTREAM_TIMEOUT_MS`, `FIRST_BYTE_TIMEOUT_MS`, `STREAM_IDLE_MS` and `STALL_REANCHOR_MS` entries);
+`integrations/upstream/.../retry/Watchdog.kt` 1-9, 58-70, 179-199; `app/src/main/resources/console/kit.js` 237-259.
 
 ### 1.5 Error classes and what the person sees
 
 Claude Code sees one of seven Anthropic error types. splice chooses the type from the cause and from whether
 any content had already reached the client. A failure that reaches the transcript reads
-`[SPLICE-<TYPE>] <one sentence>`, for example `[SPLICE-OVERLOADED] ...`. The sentence is plain prose, never the
+`[splice] <one or two sentences>`. The sentence is plain prose, never the
 provider's raw JSON. The Requests page words (the "Requests word" column) come from the outcome tag.
 
 | situation | wire type | Requests word | what happens next |
@@ -103,10 +107,10 @@ provider's raw JSON. The Requests page words (the "Requests word" column) come f
 | code mode failure | `invalid_request_error` | a line `splice [code] reason` | 3.3 |
 | local 401, `invalid local gateway credentials` | HTTP 401 | n/a | the session's local key is not one this daemon accepts. Relaunch the session (cause unverified) |
 
-Source: `core/.../turn/WireType.kt` 31-90; `core/.../turn/TurnOutcome.kt` 14-22; `features/turns/.../pipeline/FailureText.kt`
-36-51; `core/.../usage/QuotaHeaders.kt` 113-116; `features/turns/.../admission/AdmissionGate.kt` 80-83 and
-`AdmissionResponses.kt` 141; `core/.../perf/OutcomeTag.kt`; `app/src/main/resources/console/kit.js` 98-160;
-`docs/specs/v0.4.0.md` line 584; `CHANGELOG.md` 1114-1116.
+Source: `core/.../failure/ClientWire.kt` 1-9 and 17-50; `core/.../failure/FailureCause.kt` 1-26; `core/.../turn/TurnOutcome.kt`
+17-25; `core/.../failure/SpliceLine.kt` 6-14 and `SpliceLines.kt` 1-4; `features/turns/.../admission/AdmissionGate.kt` 79-84 and
+`AdmissionResponses.kt` 77-117; `core/.../perf/OutcomeTag.kt`; `app/src/main/resources/console/kit.js` 195-259;
+`docs/specs/v0.4.0.md` line 584; `CHANGELOG.md` 1208-1210.
 
 ### 1.6 The knobs, and where they live in splice.toml
 
@@ -118,7 +122,7 @@ belongs under that head's `[heads.<key>.overrides]`. The field syntax is in `tom
 | key | default | change takes effect |
 |---|---|---|
 | `firstByteTimeoutMs`, `streamIdleMs`, `stallReanchorMs` | 90000, 90000, 20000 | next turn (hot) |
-| `upstreamTimeoutMs` | 900000 | restart |
+| `upstreamTimeoutMs` | 1800000 | restart |
 | `maxInflight`, `maxQueued` | 12, 512 (0 = unlimited) | next admission (hot) |
 | `progressLine` | true | next heartbeat (hot) |
 | `maxRequestBytes`, `requestReadTimeoutMs`, `ingressReadIdleMs` | 33554432, 30000, 30000 | hot |
@@ -134,11 +138,11 @@ daemon. An edit of `splice.toml` is read only at boot, so any key changed there 
 its marking. The exceptions are `context_window` edits, `[daemon] mcp_share`, `update_channel`, `auto_update`
 and the `[compaction]` tables, which the daemon re-reads from the file.
 
-The example file's comment at `splice.example.toml` line 825 shows `maxInflight = "0"`. That is stale. The code
+The example file's comment at `splice.example.toml` line 865 shows `maxInflight = "0"`. That is stale. The code
 default is 12. Reasoning effort is restart-only on purpose: it is part of the prompt-cache key.
 
-Source: `Knob.kt` 12-49, 192-200, 219-305; `app/src/main/resources/splice.example.toml` lines 3-7, 800-809, 841-892;
-`AGENTS.md` lines 87-104; `CHANGELOG.md` 189-194.
+Source: `Knob.kt` (the header comment on which knobs are live, and the `MAX_INFLIGHT` through `STALL_REANCHOR_MS` entries);
+`app/src/main/resources/splice.example.toml` lines 3-7, 830-839, 863-938; `AGENTS.md` lines 92-117; `CHANGELOG.md` 261-266.
 
 ### 1.7 What a restart cuts, and how sessions recover
 
@@ -163,8 +167,8 @@ Source: `Knob.kt` 12-49, 192-200, 219-305; `app/src/main/resources/splice.exampl
   work around it.
 
 Source: `features/lifecycle/.../restart/RestartCommand.kt` header; `features/lifecycle/.../restart/RestartAfterCompactions.kt`
-header; `features/lifecycle/.../start/DaemonLaunch.kt` line 152; `README.md` lines 334, 940-944; `CHANGELOG.md` 142-145,
-1114-1116; `docs/specs/mcp-hub.md` lines 61-65, 142-147.
+header; `features/lifecycle/.../start/DaemonLaunch.kt` line 157; `README.md` lines 374, 1018-1022; `CHANGELOG.md` 164-168,
+1208-1210; `docs/specs/mcp-hub.md` lines 61-65, 230-235.
 
 ## 2. MCP: the host and the hub
 
@@ -186,9 +190,9 @@ session starts its own MCP servers` and Claude Code runs its own.
 `docs/specs/mcp-hub.md` is the approved design plus desk proofs on Claude Code 2.1.296. Read it for the why.
 Where it says "will", trust the code and `CHANGELOG.md` 160-186. The hub port 3095 is a constant in the code.
 
-Source: `README.md` 734-757; `CHANGELOG.md` 160-186; `integrations/mcp/.../hub/McpHubGate.kt` 23-52;
-`app/.../McpHubWiring.kt` 92-103; `app/.../ControlLaunchWiring.kt` 42; `features/diagnostics/.../DoctorClientVersion.kt` 28-62;
-`integrations/claude-code/.../mcp/McpHubLaunch.kt` 36.
+Source: `README.md` 809-832; `CHANGELOG.md` 232-258; `integrations/mcp/.../hub/McpHubGate.kt` 23-52;
+`app/.../McpHubWiring.kt` 100-111; `app/.../ControlLaunchWiring.kt` 43; `features/diagnostics/.../DoctorClientVersion.kt` 28-62;
+`integrations/claude-code/.../mcp/McpHubLaunch.kt` 40.
 
 ### 2.2 How a tool server is attached, and how to add one
 
@@ -211,8 +215,8 @@ To add a server, the person runs Claude Code's own command (`claude mcp add`; it
 Scope `user` reaches every session. Then the server appears under Settings > MCP once a session starts.
 Never read `~/.claude.json` into the conversation: server entries often carry API keys in `env`.
 
-Source: `app/.../McpHostingWiring.kt` 51-84; `README.md` 740-757, 611; `core/.../topology/Topology.kt` 133-141;
-`app/.../control/mount/McpMount.kt` 30-48; `docs/specs/mcp-hub.md` lines 22-48.
+Source: `app/.../McpHostingWiring.kt` 53-94; `README.md` 815-832, 675; `core/.../topology/Topology.kt` 140-148;
+`app/.../control/mount/McpMount.kt` 32-77; `docs/specs/mcp-hub.md` lines 22-48.
 
 ### 2.3 The keys that govern hosting
 
@@ -226,8 +230,8 @@ Source: `app/.../McpHostingWiring.kt` 51-84; `README.md` 740-757, 611; `core/...
 | `[defaults] mcpRequestTimeoutMs`, `mcpInitializeTimeoutMs` | 1800000, 60000 | hot |
 | `[defaults] mcpSlice` | `app-mcp.slice` | the systemd slice servers spawn into. Restart |
 
-Source: `core/.../topology/Topology.kt` 133-141; `Knob.kt` 364-388, 462-467; `app/.../McpHostingWiring.kt` 35-47;
-`app/src/main/resources/splice.example.toml` lines 3-7, 28-41, 904-908; `README.md` 743-747, 772-777.
+Source: `core/.../topology/Topology.kt` 140-148; `Knob.kt` (the shared MCP hosting entries and `MCP_SLICE`); `app/.../McpHostingWiring.kt` 36-48;
+`app/src/main/resources/splice.example.toml` lines 3-7, 28-41, 949-953; `README.md` 818-822, 847-852.
 
 ### 2.4 The hub's files
 
@@ -242,8 +246,8 @@ Source: `core/.../topology/Topology.kt` 133-141; `Knob.kt` 364-388, 462-467; `ap
 `splice setup` with sharing on enables and starts `splice-mcp-front.socket`, but only over units splice itself
 wrote. Otherwise setup prints the command. Until the socket is on, each session starts its own servers.
 
-Source: `README.md` 599-601, 611-620, 668; `CHANGELOG.md` 132-134, 171-186; `app/.../InstallWiring.kt` 20-54;
-`install.sh` 480-486.
+Source: `README.md` 659-661, 675-688, 743; `CHANGELOG.md` 154-156, 243-258; `app/.../InstallWiring.kt` 28-111;
+`install.sh` 504-510.
 
 ### 2.5 See an MCP server's state
 
@@ -309,8 +313,8 @@ never reruns lost source. `keepCodeModeWork = "false"` keeps the journal in memo
 scripts. A script splice cannot match to the conversation falls back to the client's own history, with one
 `[code-mode]` log line.
 
-Source: `README.md` 836-882; `core/.../topology/QuirksConfig.kt` 60-79; `core/.../topology/Topology.kt` 215-240;
-`app/src/main/resources/splice.example.toml` 126-150; `Knob.kt` 217-218.
+Source: `README.md` 911-959; `core/.../topology/QuirksConfig.kt` 70-90; `core/.../topology/Topology.kt` 222-247;
+`app/src/main/resources/splice.example.toml` 144-168; `Knob.kt` (the `KEEP_CODE_MODE_WORK` entry).
 
 ## 4. Architecture brief
 
@@ -330,8 +334,8 @@ Source: `README.md` 836-882; `core/.../topology/QuirksConfig.kt` 60-79; `core/..
    failed or cut stream is never shown as a clean answer.
 7. Perf rows, the trace and usage are written to the state dir.
 
-Source: `app/src/main/dist/bin/splice-launch` header; `README.md` 920-938; `features/launch/.../recipe/LaunchService.kt`
-350-378; `features/turns/.../head/HeadServer.kt` 1-18; `AGENTS.md` lines 29-35 (honest failures).
+Source: `app/src/main/dist/bin/splice-launch` header; `README.md` 998-1016; `features/launch/.../recipe/LaunchService.kt`
+339-392 (`buildEnv`); `features/turns/.../head/HeadServer.kt` 1-18; `AGENTS.md` lines 29-35 (honest failures).
 
 ### 4.2 The processes
 
@@ -344,10 +348,10 @@ Source: `app/src/main/dist/bin/splice-launch` header; `README.md` 920-938; `feat
 | head wrappers | `~/.local/bin/<command>` symlinks to the shim. The command's name selects the head. `splice` itself is one |
 | hub front, holders | section 2 |
 
-AGENTS.md lines 118-126 contradict themselves: line 118 says the control plane is `ControlServer.kt`, line 120
-still names the deleted Node file `src/control-server.mjs`. The code is right: `app/src/main/kotlin/splice/app/control/ControlServer.kt`.
-AGENTS.md's `/mgmt/*` table is also stale: no Kotlin route serves `/mgmt`, and the live surface is `/api/*` on the
-control plane. Source: `ControlServer.kt` 1-8, 171-187, 254-276; `grep '"/mgmt'` finds no route.
+The control plane is `app/src/main/kotlin/splice/app/control/ControlServer.kt`. No Kotlin route serves `/mgmt`: the
+live surface is `/api/*` on the control plane, and a head serves only `/health`, `/v1/models`, `/wire`, `/v1/messages`
+and `/v1/messages/count_tokens`. AGENTS.md says the same (Management API and Control plane sections).
+Source: `ControlServer.kt` 1-8, 211-229, 305-336; `features/turns/.../head/HeadEngine.kt` 171-204; `AGENTS.md` lines 74-116, 126-159.
 
 ### 4.3 The modules
 
@@ -360,7 +364,7 @@ control plane. Source: `ControlServer.kt` 1-8, 171-187, 254-276; `grep '"/mgmt'`
   `splice.example.toml`.
 - `quality/`: architecture laws. The module graph is law (`gradle/module-law.txt`).
 
-Source: `README.md` 976-1003; `gradle/module-law.txt`; `settings.gradle.kts`.
+Source: `README.md` 1054-1081; `gradle/module-law.txt`; `settings.gradle.kts`.
 
 ### 4.4 Where state lives
 
@@ -375,13 +379,13 @@ Source: `README.md` 976-1003; `gradle/module-law.txt`; `settings.gradle.kts`.
 
 The manager reads nothing in the state dir by hand: it holds `mgmt-key` and `console-open.html`, which carries the management key. Use `splice logs`, `splice status` and `splice doctor` instead. The paths here are for explanation.
 
-Stale docs on this: `splice.example.toml` line 15 says the default `state_dir` is `~/.splice`; the code default is `~/.splice/state` (`StatePaths.kt` 193), and logs sit in the folder beside it. `README.md` says other keys are read only at boot, but the code re-reads `mcp_share`, `update_channel`, `auto_update` and the `[compaction]` tables live.
+Stale docs on this: `splice.example.toml` line 15 says the default `state_dir` is `~/.splice`; the code default is `~/.splice/state` (`StatePaths.kt` 202), and logs sit in the folder beside it. `README.md` says other keys are read only at boot, but the code re-reads `mcp_share`, `update_channel`, `auto_update` and the `[compaction]` tables live.
 
 On this machine the state dir is `~/.claude-codex/state`, so the logs are in `~/.claude-codex/logs`. Run
 `splice doctor`: it reports which root is live and warns about a root it could not read.
 
-Source: `core/.../config/StatePaths.kt` 45-55, 144-235; `core/.../topology/Topology.kt` 117;
-`app/src/main/resources/splice.example.toml` 13-16, 981-985; `README.md` 523-535, 657-665.
+Source: `core/.../config/StatePaths.kt` 45-55, 153-258; `core/.../topology/Topology.kt` 130;
+`app/src/main/resources/splice.example.toml` 13-16, 1039-1043; `README.md` 562-574, 732-740.
 
 ## 5. Install, upgrade, rollback
 
@@ -403,7 +407,7 @@ Source: `core/.../config/StatePaths.kt` 45-55, 144-235; `core/.../topology/Topol
 A daemon that is already running keeps the old build until `splice restart`. The installer does not restart it.
 Env: `SPLICE_SHARE_DIR`, `SPLICE_BIN_DIR`, `SPLICE_JAR`, `SPLICE_SHIM`, `SPLICE_VERSION`, `SPLICE_RELEASE_BASE_URL`.
 
-Source: `install.sh` lines 7-15, 92-146, 257-331, 373-393, 464-497, 543-566.
+Source: `install.sh` lines 7-16, 93-147, 273-352, 397-417, 488-521, 569-592.
 
 ### 5.2 `init`, `install --all`, `setup`, `doctor`
 
@@ -415,8 +419,8 @@ Source: `install.sh` lines 7-15, 92-146, 257-331, 373-393, 464-497, 543-566.
 | `splice doctor [--live] [--json [--with-logs] [--out FILE]]` | seven sections: prerequisites, installation, configuration, daemon, auth, accounts, runtime. Every failing check prints its fix. `--live` sends one tiny tool call per local-runtime row and nothing else. `--json` is a redacted, shareable report |
 | `splice check-config` | the boot findings pass, no daemon. Exit 0 clean, exit 3 on any finding, all listed |
 
-Source: `app/.../cli/CommandParser.kt` 72-170; `app/.../InstallWiring.kt` 40-54; `app/.../manager/ManagerHome.kt` 1-10; `features/diagnostics/.../doctor/DoctorCommand.kt`
-64-75, 239-251; `app/.../cli/ConfigPreflight.kt` 20-50; `README.md` 160, 314-320.
+Source: `app/.../cli/CommandParser.kt` 77-201; `app/.../InstallWiring.kt` 92-111; `app/.../manager/ManagerHome.kt` 1-10; `features/diagnostics/.../doctor/DoctorCommand.kt`
+64-75, 239-251; `app/.../cli/ConfigPreflight.kt` 21-51; `README.md` 160, 352-360.
 
 ### 5.3 Upgrade, auto-update and the beta channel
 
@@ -446,8 +450,8 @@ the first moment no turn is in flight, or after the bounded wait (30 min). It ac
 exists. One try per version per daemon. Any other value of `update_channel` is a config finding.
 
 Source: `features/lifecycle/.../upgrade/UpgradeArgs.kt` 10-60; `UpgradeAuto.kt` 1-70; `UpgradeLayout.kt` 28-62;
-`UpgradeCommand.kt` 44-48; `core/.../topology/Topology.kt` 139-141; `TopologyWriter.kt` 282-287; `README.md` 104-120,
-663-665; `app/src/main/resources/splice.example.toml` 36-41.
+`UpgradeCommand.kt` 44-48; `core/.../topology/Topology.kt` 146-148; `TopologyWriter.kt` 386-391; `README.md` 104-120,
+738-740; `app/src/main/resources/splice.example.toml` 36-41.
 
 ### 5.4 Backup and rollback
 
@@ -461,7 +465,7 @@ Source: `features/lifecycle/.../upgrade/UpgradeArgs.kt` 10-60; `UpgradeAuto.kt` 
 - `splice.toml` backups: console edits keep the ten newest in `<state>/config-backups/`. `splice add` keeps none.
   A hand copy beside the file is the manager's convention (`operations.md`).
 
-Source: `install.sh` 398-446, 505-543; `README.md` 114, 602-603; `UpgradeActivation.kt` 1-45.
+Source: `install.sh` 422-470, 529-569; `README.md` 114, 662-663; `UpgradeActivation.kt` 1-45.
 
 ### 5.5 Uninstall
 
@@ -493,8 +497,8 @@ Never run `splice logs --follow` (it never returns). `splice trace` and `splice 
 content: ask first. A log line can quote up to 200 characters of an upstream error body. Never paste a key you
 find in output.
 
-Source: `features/diagnostics/.../logs/LogsCommand.kt` 1-45, 163-169; `README.md` 553-554, 322-325;
-`app/.../cli/status/StatusCommand.kt` 41-70.
+Source: `features/diagnostics/.../logs/LogsCommand.kt` 1-45, 163-169; `README.md` 600-601, 362-365;
+`app/.../cli/status/StatusCommand.kt` 41-72.
 
 ### 6.2 What `splice status` says
 
@@ -502,7 +506,7 @@ First line: `daemon running on <port>`, or `daemon stopped (starts on first laun
 Per head, the last column reads `ready` (or `ready (your login)`); `splice install` (wrapper link missing);
 `<command> login` (no credential); `out of quota until <time>`; `runtime not answering on <endpoint>` (a local
 model server is down); or `not running: <reason>` (the daemon could not build or bind the head).
-Source: `StatusCommand.kt` 56-70; `StatusTable.kt` 109-156.
+Source: `StatusCommand.kt` 56-72; `StatusTable.kt` 110-171.
 
 ### 6.3 Playbook
 
@@ -526,10 +530,10 @@ their own terminal; you type nothing secret.
 | Tools vanish from a session | `splice doctor` MCP hub row, `systemctl --user status splice-mcp-front.socket` | 2.5. Without the hub, a daemon restart can need `/mcp` in the session |
 
 Source: `app/.../head/HeadBoot.kt` 28-60; `core/.../topology/TopologyMessages.kt` 32-38; `app/.../cli/ConfigFixOffer.kt` 1-3;
-`app/.../cli/auth/KeyCommand.kt` 1-6; `app/.../cli/status/ConsoleCommand.kt` 28-46; `app/src/main/resources/console/api.js` 12-29;
-`CHANGELOG.md` 152-153, 202-208, 1117-1118, 1807-1810; `app/.../daemon/TopologyWindows.kt` 1-22;
-`core/.../model/ModelCatalog.kt` 6-30, 218-290; `app/src/main/resources/splice.example.toml` 436-445, 488-499;
-`README.md` 172-185, 332-336, 946; `features/lifecycle/.../restart/RestartCommand.kt` 1-6.
+`app/.../cli/auth/KeyCommand.kt` 1-6; `app/.../cli/status/ConsoleCommand.kt` 49-72; `app/src/main/resources/console/api.js` 29-147;
+`CHANGELOG.md` 183-184, 274-280, 1211-1212, 1952-1955; `app/.../daemon/TopologyWindows.kt` 1-22;
+`core/.../model/ModelCatalog.kt` 6-30, 216-288; `app/src/main/resources/splice.example.toml` 459-468, 511-523;
+`README.md` 172-185, 372-376, 1024; `features/lifecycle/.../restart/RestartCommand.kt` 1-6.
 
 The example file's comment near `splice.example.toml` line 500 says a window edit needs `splice restart`. The
 header at lines 5-6, the README and `TopologyWindows.kt` say it does not. The code wins: no restart.

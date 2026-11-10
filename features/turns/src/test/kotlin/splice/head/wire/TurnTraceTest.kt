@@ -36,6 +36,8 @@ import splice.upstream.sse.WireRequest
 import splice.upstream.sse.WireResponse
 import java.nio.file.Files
 import java.nio.file.Path
+import java.security.MessageDigest
+import java.util.HexFormat
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -222,6 +224,8 @@ class TurnTraceTest {
 
         assertEquals("ws", attempt.str("transport"))
         assertEquals("""{"input":[]}""", attempt.at("request", "body"))
+        assertEquals("""{"input":[]}""".length.toString(), attempt.at("request", "bodyChars"))
+        assertEquals(sha256Hex("""{"input":[]}"""), attempt.at("request", "bodySha256"))
         assertEquals("""{"type":"response.created"}""" + "\n", attempt.at("response", "text"))
         assertEquals("1", turn.str("rounds"))
     }
@@ -299,4 +303,43 @@ class TurnTraceTest {
         assertEquals("frame", turn.at("answer", "body"))
         assertEquals("true", turn.at("answer", "truncated"))
     }
+
+    @Test
+    fun `two sends cut to the same text still differ - each record keeps its whole body's length and SHA-256`() {
+        val trace = store(maxBodyChars = 5).begin(meta, inbound)
+        trace.attempted(attempt(1, "abcde-first-send"))
+        trace.attempted(attempt(2, "abcde-second-send!"))
+        trace.attempted(attempt(3, "abc"))
+        trace.finish("ok", PerfSnapshot(emptyMap(), emptyMap()))
+
+        val (first, second, short) = lines()
+
+        assertEquals("abcde", first.at("request", "body"))
+        assertEquals("abcde", second.at("request", "body"), "the cut tail is the only difference")
+        assertEquals("16", first.at("request", "bodyChars"))
+        assertEquals("18", second.at("request", "bodyChars"))
+        assertEquals(sha256Hex("abcde-first-send"), first.at("request", "bodySha256"))
+        assertEquals(sha256Hex("abcde-second-send!"), second.at("request", "bodySha256"))
+        assertEquals("3", short.at("request", "bodyChars"), "a body kept whole carries them too")
+        assertEquals(sha256Hex("abc"), short.at("request", "bodySha256"))
+    }
+
+    @Test
+    fun `the digest is of the body's UTF-8 bytes, whole, whatever its characters and size`() {
+        // 30,000 UTF-8 bytes of 2-, 4- and 3-byte characters, shifted by one to three characters so that a surrogate
+        // pair falls on every alignment a fixed-size piece of the body could end at.
+        val bodies = (0..3).map { shift -> "x".repeat(shift) + "é😀世".repeat(3_000) }
+        val trace = store().begin(meta, inbound)
+        bodies.forEachIndexed { n, body -> trace.attempted(attempt(n + 1, body)) }
+        trace.finish("ok", PerfSnapshot(emptyMap(), emptyMap()))
+
+        val records = lines().take(bodies.size)
+
+        assertEquals(bodies.map { it.length.toString() }, records.map { it.at("request", "bodyChars") })
+        assertEquals(bodies.map { sha256Hex(it) }, records.map { it.at("request", "bodySha256") })
+        assertEquals(bodies, records.map { it.at("request", "body") })
+    }
+
+    private fun sha256Hex(text: String): String =
+        HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8)))
 }

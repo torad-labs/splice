@@ -155,6 +155,7 @@ class TraceCommandTest {
         assertTrue(out.contains("https://openrouter.ai/api/v1/chat/completions"), out)
         assertTrue(out.contains("  Authorization: [redacted]"), out)
         assertTrue(out.contains("""{"upstream":1}"""), out)
+        assertTrue(out.contains("request body (14 chars, sha256 "), "the whole body's length and digest: $out")
         assertTrue(out.contains("data: {\"n\":1}"), out)
         assertTrue(out.contains("client request") && out.contains("  POST /v1/messages"), out)
         assertTrue(out.contains("""{"client":1}"""), out)

@@ -10,9 +10,12 @@
 //     ending goes through): the client's inbound request, everything streamed back to it (every
 //     frame through ClientChannel, the pinger's included) or the collected JSON body, the outcome
 //     tag, the round and attempt counts, and the perf marks and counters.
-// Bodies past the store's maxBodyChars are cut and the record says `truncated: true`. A header a body or a stream
-// carries as a JSON member keeps its name and loses a secret value (HeaderRedaction.redactText), as the headers
-// themselves do: the ChatGPT backend's response.metadata event names its turn state, and a websocket frame echoes it.
+// Bodies past the store's maxBodyChars are cut and the record says `truncated: true`. An attempt's request also carries
+// `bodyChars` and `bodySha256`, the whole body's length and the SHA-256 of its UTF-8 bytes taken before any cut, so
+// two sends that differ only past the cut still differ in the record (Nov 8: three 20-30 MB bodies read identical).
+// A header a body or a stream carries as a JSON member keeps its name and loses a secret value
+// (HeaderRedaction.redactText), as the headers themselves do: the ChatGPT backend's response.metadata event names its
+// turn state, and a websocket frame echoes it.
 // The text that ended an attempt goes the same way, because a provider's refusal quotes the headers it refused.
 package splice.head.wire
 
@@ -33,6 +36,8 @@ import splice.core.util.WallClock
 import splice.upstream.sse.WireAttempt
 import splice.upstream.sse.WireObserver
 import splice.upstream.transport.HeaderRedaction
+import java.security.MessageDigest
+import java.util.HexFormat
 
 /** What a collect turn answered: the collect path registers it before driving, and the turn record
  *  reads it at the end, because the buffered JSON body exists only once the terminal has closed. */
@@ -98,7 +103,6 @@ public class TurnTrace internal constructor(
     public fun wsAttempt(body: String, headers: Map<String, String>, failure: String?) {
         val record = synchronized(lock) {
             val (text, truncated) = response.take()
-            val (requestBody, requestTruncated) = store.bounded(HeaderRedaction.redactText(body))
             buildJsonObject {
                 stamp(this, TraceKinds.ATTEMPT)
                 put("round", rounds)
@@ -106,8 +110,7 @@ public class TurnTrace internal constructor(
                 put("transport", "ws")
                 putJsonObject(REQUEST) {
                     headersOf(this, headers)
-                    put(BODY, requestBody)
-                    put(TRUNCATED, requestTruncated)
+                    requestBodyOf(this, HeaderRedaction.redactText(body))
                 }
                 putJsonObject(RESPONSE) {
                     put(RAW_TEXT, HeaderRedaction.redactText(text))
@@ -153,7 +156,6 @@ public class TurnTrace internal constructor(
     }
 
     private fun attemptRecord(attempt: WireAttempt, responseText: String, responseTruncated: Boolean): JsonObject {
-        val (requestBody, requestTruncated) = store.bounded(attempt.request.body)
         return buildJsonObject {
             stamp(this, TraceKinds.ATTEMPT)
             put("round", rounds)
@@ -164,8 +166,7 @@ public class TurnTrace internal constructor(
             putJsonObject(REQUEST) {
                 headersOf(this, attempt.request.headers)
                 attempt.request.encoding?.let { put("encoding", it) }
-                put(BODY, requestBody)
-                put(TRUNCATED, requestTruncated)
+                requestBodyOf(this, attempt.request.body)
             }
             attempt.response.status?.let { status ->
                 putJsonObject(RESPONSE) {
@@ -218,6 +219,17 @@ public class TurnTrace internal constructor(
     private fun headersOf(into: JsonObjectBuilder, headers: Map<String, String>) {
         into.putJsonObject("headers") { headers.forEach { (k, v) -> put(k, v) } }
     }
+
+    /** An attempt's request body as the record keeps it: the text cut to the store's limit and whether it was cut, and
+     *  the whole body's length and SHA-256, taken from [body] itself before the cut. The cut tail is gone from the
+     *  record, so these are what still tells two sends apart whose bodies differ only past it. */
+    private fun requestBodyOf(into: JsonObjectBuilder, body: String) {
+        val (kept, truncated) = store.bounded(body)
+        into.put(BODY, kept)
+        into.put(TRUNCATED, truncated)
+        into.put(BODY_CHARS, body.length)
+        into.put(BODY_SHA256, Utf8Digest.sha256(body))
+    }
 }
 
 /** A text buffer that stops growing at [max] and remembers that it did. */
@@ -262,8 +274,31 @@ private class BoundedText(private val max: Int, private val heap: HeapReservatio
     }
 }
 
+/** The SHA-256 of a text's UTF-8 bytes: what `sha256sum` prints for the bytes a body went out as. The text goes into
+ *  the digest one small piece at a time, so a body of tens of megabytes is never copied whole to be hashed. */
+private object Utf8Digest {
+    fun sha256(text: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        var start = 0
+        while (start < text.length) {
+            var end = minOf(start + DIGEST_PIECE_CHARS, text.length)
+            // A surrogate pair split between two pieces would encode as two replacement bytes, not its four.
+            if (end < text.length && text[end - 1].isHighSurrogate()) end += 1
+            digest.update(text.substring(start, end).toByteArray(Charsets.UTF_8))
+            start = end
+        }
+        return HexFormat.of().formatHex(digest.digest())
+    }
+}
+
+// why: measured on a 30 MB body, 8 Ki-character pieces hash it within milliseconds of one pass over a whole copy,
+// while holding a few tens of KiB of it at a time.
+private const val DIGEST_PIECE_CHARS = 8192
+
 private const val REQUEST = "request"
 private const val RESPONSE = "response"
 private const val BODY = "body"
 private const val RAW_TEXT = "text"
 private const val TRUNCATED = "truncated"
+private const val BODY_CHARS = "bodyChars"
+private const val BODY_SHA256 = "bodySha256"

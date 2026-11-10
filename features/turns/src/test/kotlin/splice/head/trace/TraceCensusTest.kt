@@ -55,8 +55,9 @@ private const val NEWEST = 3
 private const val BACKSLASH = '\\'
 
 // Today's listings of the store below, as SHA-256 over their records, on_disk and skipped lines: taken with
-// V4-338's reader (61af56339, installed at 9fcad1da8), which decoded every line whole.
-private const val TODAY_ALL = "af05e31ac84606910ede5b17c37b0be7373c0fa44dee46432648c5c01fc96f1c"
+// V4-338's reader (61af56339, installed at 9fcad1da8), which decoded every line whole. TODAY_ALL was taken again when
+// an attempt's request gained bodyChars and bodySha256 (Nov 10): the records it digests carry two more fields each.
+private const val TODAY_ALL = "7238ccaa53525441e1424535765639a421dd00130f65e5613bff98c48ff6f77d"
 private const val TODAY_NEWEST = "6a487613e7f1afd431200e0988de6db77bd6bdd6bdec846b06daf8d763d4ab9a"
 
 /** The fields today's reader decoded off every line, whole: a line is a record when this decodes. */

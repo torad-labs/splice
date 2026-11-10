@@ -47,7 +47,8 @@ read into the receipt yet:
 - the golden is `builderOutput` = the request the head's `RequestBuilder` produced for the upstream;
 - the head **does** record the bytes it sent upstream: a head's trace, on by default (the `trace` knob), writes one
   `attempt` record per upstream send with that send's request body (`TurnTrace.kt`), cut and flagged
-  `truncated` past `traceMaxBodyChars` (16,777,216 characters by default);
+  `truncated` past `traceMaxBodyChars` (16,777,216 characters by default), and with the whole body's length
+  (`request.bodyChars`) and the SHA-256 of its UTF-8 bytes (`request.bodySha256`), taken before any cut;
 - `e2e heads` reads only the client side of the probe, so it never picks those bytes up.
 
 **The one missing piece:** `e2e heads` reading the `200` attempt's request body from the head's trace for the
@@ -55,7 +56,9 @@ probe turn. Once it does, it fills `receipt.hash = sha256(upstream bytes)` and s
 `*ContractTest`s gain a check: *a changed golden must match a `contract_bound: true` receipt hash.*
 That is a localized change: the receipt file, its emission point, the goldens, the byte-identity
 assertions and the trace's per-send body all already exist; only the trace read and the two-line receipt-hash check
-remain. A body the trace cut at `traceMaxBodyChars` cannot be hashed, so that probe stays unbound.
+remain. A body the trace cut at `traceMaxBodyChars` cannot be hashed from the record's text, but its
+`request.bodySha256` is the hash of the whole body, so the receipt can take it from there; a record written before
+that field existed has no hash, and that probe stays unbound.
 
 Until then the offline byte-identity half stands on its own: it catches the incident **class**
 (any request-field drift) at unit-test time, which is where both production incidents would have been

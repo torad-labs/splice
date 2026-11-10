@@ -27,9 +27,11 @@ internal data class ResponsesWireRequestControls(
     val safetyIdentifier: String? = null,
 )
 
+// Claude Code's top-level `diagnostics` (sent since 2.1.321) is client telemetry, not a control over the answer: it is
+// admitted and, like `metadata`, never reaches the Responses body ([ResponsesRequestControls.wire] names every field
+// that does). Refusing it refused every claudex turn (2026-11-09).
 private val sourceOnlyControls = mapOf(
     SOURCE_REQUEST_CONTAINER to RequestFeature.CONTAINER,
-    SOURCE_REQUEST_DIAGNOSTICS to RequestFeature.DIAGNOSTICS,
     SOURCE_REQUEST_INFERENCE_GEO to RequestFeature.INFERENCE_GEO,
     SOURCE_REQUEST_USER_PROFILE_ID to RequestFeature.USER_PROFILE_ID,
     SOURCE_REQUEST_WORKSPACE_ID to RequestFeature.WORKSPACE_ID,
@@ -126,7 +128,6 @@ private const val SOURCE_REQUEST_STOP_SEQUENCES = "stop_sequences"
 private const val SOURCE_REQUEST_SERVICE_TIER = "service_tier"
 private const val SOURCE_REQUEST_SPEED = "speed"
 private const val SOURCE_REQUEST_CONTAINER = "container"
-private const val SOURCE_REQUEST_DIAGNOSTICS = "diagnostics"
 private const val SOURCE_REQUEST_INFERENCE_GEO = "inference_geo"
 private const val SOURCE_REQUEST_USER_PROFILE_ID = "user_profile_id"
 private const val SOURCE_REQUEST_WORKSPACE_ID = "workspace_id"

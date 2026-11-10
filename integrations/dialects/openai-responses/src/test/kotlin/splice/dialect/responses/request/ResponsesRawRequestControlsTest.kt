@@ -87,7 +87,6 @@ class ResponsesRawRequestControlsTest {
     fun `source root controls without a Responses equivalent are declined`() {
         listOf(
             ",\"container\":\"container_123\"" to "CONTAINER",
-            ",\"diagnostics\":{\"previous_message_id\":\"msg_123\"}" to "DIAGNOSTICS",
             ",\"inference_geo\":\"us\"" to "INFERENCE_GEO",
             ",\"user_profile_id\":\"profile_123\"" to "USER_PROFILE_ID",
             ",\"workspace_id\":\"workspace_123\"" to "WORKSPACE_ID",
@@ -110,6 +109,14 @@ class ResponsesRawRequestControlsTest {
             assertNull(request["prompt_cache_options"])
             assertNull(request["prompt_cache_breakpoint"])
         }
+    }
+
+    @Test
+    fun `client diagnostics are dropped and the turn is sent`() {
+        val fields = ""","diagnostics":{"previous_message_id":"msg_123"}"""
+
+        assertNull(declinedFeature(fields))
+        assertNull(build(fields)["diagnostics"])
     }
 
     @Test

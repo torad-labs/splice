@@ -307,7 +307,6 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeAccountFolders.kt" to mapOf("writeAtomic0600(" to 4),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeCredentialProfiles.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeLoginEdits.kt" to mapOf("writeAtomic0600(" to 1),
-    "app/src/main/kotlin/splice/app/auth/claude/ClaudeFolderAuth.kt" to mapOf("writeAtomic0600(" to 1),
     // The console launch page, 0600, documented in the console-open.html README row.
     "app/src/main/kotlin/splice/app/cli/status/ConsoleCommand.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/config/ConfigService.kt" to mapOf("writeAtomic0600(" to 1),
@@ -493,7 +492,10 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "core/src/main/kotlin/splice/core/storage/DayMutationLock.kt" to mapOf("FileChannel.open(" to 1),
     // V4-457: one content-addressed binary body pack accompanies both JSONL generations of a UTC trace day.
     "features/turns/src/main/kotlin/splice/head/trace/body/TraceBodyPack.kt" to mapOf("FileChannel.open(" to 1),
-    "features/turns/src/main/kotlin/splice/head/usage/EconomicsStore.kt" to mapOf("writeAtomic0600(" to 1),
+    // Nov 9, 2026: the move sets an unreadable hourly-spend file aside to `<file>.unreadable-<ms>` before the first
+    // write replaces it, in the economics row.
+    "features/turns/src/main/kotlin/splice/head/usage/EconomicsStore.kt" to
+        mapOf("Files.move(" to 1, "writeAtomic0600(" to 1),
     "features/turns/src/main/kotlin/splice/head/usage/QuotaTracker.kt" to mapOf("writeAtomic0600(" to 1),
     "features/turns/src/main/kotlin/splice/head/usage/CredentialQuotaFiles.kt" to mapOf("writeAtomic0600(" to 1),
     "features/turns/src/main/kotlin/splice/head/usage/RateLimitFile.kt" to mapOf("writeAtomic0600(" to 1),
@@ -591,9 +593,6 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // The first OAuth account's name, documented in the primary.name README row.
     "integrations/oauth/src/main/kotlin/splice/oauth/OAuthPrimaryAccount.kt" to mapOf("writeAtomic0600(" to 1),
     "integrations/oauth/src/main/kotlin/splice/oauth/OAuthLoginReservation.kt" to mapOf("FileChannel.open(" to 1),
-    "integrations/providers/codex/src/main/kotlin/splice/provider/codex/auth/CodexAuthProvider.kt" to mapOf(
-        "writeAtomic0600(" to 1,
-    ),
     // The same per-conversation file now has an atomic checkpoint plus forced cell-delta appends.
     // A torn tail is compacted to its last committed state before another append.
     "integrations/providers/codex/src/main/kotlin/splice/provider/codex/state/CodeModeStateJournal.kt" to mapOf(
@@ -611,18 +610,14 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
             "JsonlSink.appendLine(" to 1,
             "writeAtomic0600(" to 1,
         ),
-    // The forced migration journal atomically replaces its final history path before the legacy snapshot is removed.
+    // Nov 9, 2026: two moves, both a staging file over its final path. The forced migration journal replaces its final
+    // history path before the legacy snapshot is removed; the checkpoint rewrites a journal near its 256 MiB bound as
+    // its newest posts in a `.checkpoint` staging file and moves that over the journal. Both are in the history row.
     "integrations/providers/codex/src/main/kotlin/splice/provider/codex/history/durable/CodeModeHistoryStorage.kt" to
-        mapOf("Files.move(" to 1),
+        mapOf("Files.move(" to 2),
     // The checksum-verified executable is extracted into a private temporary directory and removed at runtime close.
     "integrations/codemode/src/main/kotlin/splice/codemode/nativehost/NativeHostArtifact.kt" to
         mapOf("Files.newOutputStream(" to 1),
-    "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt" to mapOf(
-        "writeAtomic0600(" to 1,
-    ),
-    "integrations/providers/kimi/src/main/kotlin/splice/provider/kimi/KimiAuthProvider.kt" to mapOf(
-        "writeAtomic0600(" to 1,
-    ),
     "integrations/providers/kimi/src/main/kotlin/splice/provider/kimi/KimiDeviceIdentity.kt" to mapOf(
         "writeAtomic0600(" to 1,
     ),
@@ -637,6 +632,10 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "integrations/upstream/src/main/kotlin/splice/upstream/credentials/CredentialLock.kt" to mapOf(
         "FileChannel.open(" to 1,
     ),
+    // Nov 9, 2026: every renewed credential file (codex, grok, kimi and the Claude accounts splice adds) is written here
+    // once, owner-only and atomic; a write that fails is held in memory, never on disk, in the credential rows.
+    "integrations/upstream/src/main/kotlin/splice/upstream/credentials/RetainedCredentialWrite.kt" to
+        mapOf("writeAtomic0600(" to 1),
     "integrations/upstream/src/main/kotlin/splice/upstream/retry/ProviderHoldStore.kt" to mapOf(
         "writeAtomic0600(" to 1,
     ),

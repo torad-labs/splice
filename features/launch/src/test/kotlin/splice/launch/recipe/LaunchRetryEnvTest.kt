@@ -1,4 +1,4 @@
-// NEW: the client-side retry limits and timeout settings a launch plants. Beside LaunchServiceTest's "is planted" tests, which sit at the
+// NEW: the client-side retry limits, timeout and stream watchdog settings a launch plants. Beside LaunchServiceTest's "is planted" tests, which sit at the
 // size wall (detekt LargeClass 400), so this one is its own class, as ClientPickedLaunchTest is.
 package splice.launch.recipe
 
@@ -62,6 +62,37 @@ class LaunchRetryEnvTest(@param:TempDir private val tmp: Path) {
         for (native in listOf(false, true)) {
             val env = service.launch(spec(native), emptyList(), dangerouslySkipPermissions = false).env
             assertEquals("0", env["API_FORCE_IDLE_TIMEOUT"], "forwardClientAuth=$native")
+        }
+    }
+
+    // Nov 6: a streaming turn held at its head for a usage limit showed "response stalled" and was re-sent, because the
+    // client's stream watchdog gives up about 300 s plus this value after the last model event while only keepalives
+    // arrive. The session's own client timeout is the wall a hold ends before, so the watchdog takes the same value.
+    // Planted for EVERY head, the native one (forwardClientAuth) included.
+    @Test
+    fun `CLAUDE_STREAM_IDLE_TIMEOUT_MS is the session's client timeout for a foreign and the native head`() {
+        for (native in listOf(false, true)) {
+            val env = service.launch(spec(native), emptyList(), dangerouslySkipPermissions = false).env
+            assertEquals(env["API_TIMEOUT_MS"], env["CLAUDE_STREAM_IDLE_TIMEOUT_MS"], "forwardClientAuth=$native")
+        }
+    }
+
+    // A client timeout past a signed 32-bit millisecond count would fire the client's idle timer at once.
+    @Test
+    fun `CLAUDE_STREAM_IDLE_TIMEOUT_MS stays within the client's timer range`() {
+        val base = spec(forwardClientAuth = false)
+        val long = base.copy(gateway = base.gateway.copy(apiTimeoutMs = 40L * 24 * 60 * 60 * 1000))
+        val env = service.launch(long, emptyList(), dangerouslySkipPermissions = false).env
+        assertEquals(Int.MAX_VALUE.toString(), env["CLAUDE_STREAM_IDLE_TIMEOUT_MS"])
+    }
+
+    // The stream idle value above would also stretch the client's byte-level watchdog, which catches a path that sends
+    // no byte at all, to 30 minutes. It keeps the 300 s a splice session had. Every head.
+    @Test
+    fun `CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS keeps 300 s for a foreign and the native head`() {
+        for (native in listOf(false, true)) {
+            val env = service.launch(spec(native), emptyList(), dangerouslySkipPermissions = false).env
+            assertEquals("300000", env["CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS"], "forwardClientAuth=$native")
         }
     }
 }

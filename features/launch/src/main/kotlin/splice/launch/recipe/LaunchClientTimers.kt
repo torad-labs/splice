@@ -1,10 +1,19 @@
 // NEW: Nov 10, 2026 — Claude Code's own timers and retry limits, which a launch plants so the head's wall decides every
 // turn, moved out of LaunchService.buildEnv when the Nov 8-9 non-streaming fix added two more of them (concentration).
-// All four are planted UNCONDITIONALLY, native included: no head wants a client timer deciding a turn the head's wall
+// All six are planted UNCONDITIONALLY, native included: no head wants a client timer deciding a turn the head's wall
 // already bounds, and every head wants its session to survive a hold.
 package splice.launch.recipe
 
 import splice.launch.LaunchSpec
+
+/** why: Claude Code arms its stream idle timer with setTimeout, which takes a signed 32-bit delay; a longer one fires at
+ *  once instead of late, so the planted idle timeout never exceeds it (about 24.8 days, past every head's wall). */
+private const val CLIENT_TIMER_MAX_MS: Long = Int.MAX_VALUE.toLong()
+
+/** why: the byte-level idle timeout a splice session ran with before the stream idle timeout was planted: Claude Code's
+ *  300 s floor, which it applies to a base URL that is not Anthropic's. splice writes a keepalive every 2 s, so 300 s of
+ *  no byte at all is a dead path, never a hold. */
+private const val CLIENT_BYTE_IDLE_MS: Long = 300_000L
 
 internal object LaunchClientTimers {
     fun of(spec: LaunchSpec): Map<String, String> = buildMap {
@@ -49,5 +58,21 @@ internal object LaunchClientTimers {
         // on Nov 8-9, and API_FORCE_IDLE_TIMEOUT above removes it. Every head's session wants the loop it does
         // count bounded.
         put("CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES", "2")
+        // Nov 6: while the ChatGPT account sat at its weekly limit, the claudex head held each streaming turn as it
+        // should, and Claude Code showed "response stalled" and re-sent it, 14 pairs in 75 minutes. Read in the
+        // 2.1.319 and 2.1.322 binaries: the SDK drops every SSE ping event, and the client's stream watchdog
+        // (CLAUDE_ENABLE_STREAM_WATCHDOG, on unless set false) instead turns bytes that arrive between events into a
+        // ping of its own every 10 s. It re-arms on only the first 30 in a row, about 300 s, then aborts this many ms
+        // after the last re-arm. Only message_start, content_block_* and message_delta/stop re-arm it for good, and a
+        // hold has none of those to send without inventing model output. Read as a plain integer, floored at 300 s, not
+        // capped from the environment. The head's wall bounds a hold (it ends WALL_MARGIN_MS before API_TIMEOUT_MS),
+        // so this timer takes the same value and never decides a turn the head is still keeping. Left on, not
+        // disabled: off, the client stops yielding those pings as progress and its async-agent stall timer falls to a
+        // fixed 600 s, which would end a held subagent's turn instead. That stall timer is this value plus 300 s.
+        put("CLAUDE_STREAM_IDLE_TIMEOUT_MS", minOf(spec.gateway.apiTimeoutMs, CLIENT_TIMER_MAX_MS).toString())
+        // The value above also becomes the client's byte-level idle timeout and its first-byte window (capped at 30
+        // min) unless this is set. Those catch a path that sends no byte at all, which a held turn never is (the
+        // keepalive), so they keep the 300 s they had.
+        put("CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS", CLIENT_BYTE_IDLE_MS.toString())
     }
 }

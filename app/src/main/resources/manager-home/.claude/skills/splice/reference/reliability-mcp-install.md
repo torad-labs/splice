@@ -39,7 +39,7 @@ Source: `RetryEngine.kt` lines 163-190 (`Rows.provider`, `Rows.verdict`) and 246
 | Stream re-issue | stream torn after a 2xx, before the client saw a byte | 2 re-issues per turn |
 | Body amendment | a 400 that a dialect knows how to repair | one amended re-send per turn |
 | Re-anchor | stream cut or stalled after content began | splice re-sends from what it delivered. ChatGPT, Muse and other Responses heads: up to 5 times unless a tool call had started. Other heads only where measured to continue (Kimi, or `reanchor_prefill = true`) |
-| Client retry | Claude Code receives `overloaded_error` | Claude Code re-sends. splice launches every client with `CLAUDE_CODE_RETRY_WATCHDOG=1` (persistent retry), so a rate-limit hold longer than the default retry budget does not end the session. It also plants `CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES=2`, because the client's limit for re-sending a non-streaming request whose own timer fired is unlimited when that is unset. That limit does not bound a cut by Bun's built-in fetch timeout at about 360 s, which the client does not count and which re-sent one request 228 times on Nov 8-9, so splice plants `API_FORCE_IDLE_TIMEOUT=0` too: the client then passes `timeout: false` to fetch and the head's own deadline answers a non-streaming request first |
+| Client retry | Claude Code receives `overloaded_error` | Claude Code re-sends. splice launches every client with `CLAUDE_CODE_RETRY_WATCHDOG=1` (persistent retry), so a rate-limit hold longer than the default retry budget does not end the session. It also plants `CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES=2`, because the client's limit for re-sending a non-streaming request whose own timer fired is unlimited when that is unset. That limit does not bound a cut by Bun's built-in fetch timeout at about 360 s, which the client does not count and which re-sent one request 228 times on Nov 8-9, so splice plants `API_FORCE_IDLE_TIMEOUT=0` too: the client then passes `timeout: false` to fetch and the head's own deadline answers a non-streaming request first. A held streaming turn sends the client only keepalives, and Claude Code's stream watchdog gives up about 300 s plus `CLAUDE_STREAM_IDLE_TIMEOUT_MS` after the last model event, shows "response stalled" and re-sends (14 pairs in 75 minutes on Nov 6). splice plants that variable as the session's `API_TIMEOUT_MS`, the wall every hold ends before, and plants `CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS=300000` so the client's no-byte watchdog keeps the 300 s it had |
 
 Source: `Knob.kt` (the note above `UPSTREAM_TIMEOUT_MS`); `RetryEngine.kt` 46-64 and 150-271;
 `integrations/upstream/.../retry/RetryBudgets.kt` 46-66; `features/launch/.../recipe/LaunchService.kt` 370-403;
@@ -374,7 +374,9 @@ Source: `README.md` 911-959; `core/.../topology/QuirksConfig.kt` 70-90; `core/..
 2. The shim checks the daemon's version, cold-starts the daemon if down, asks it for a launch recipe over
    loopback, and execs the real `claude` with the recipe's environment. That environment carries
    `ANTHROPIC_BASE_URL` (the head's port), a derived turn key, `CLAUDE_CONFIG_DIR=~/.claude-<head>`,
-   `API_TIMEOUT_MS`, `API_FORCE_IDLE_TIMEOUT=0`, `CLAUDE_CODE_RETRY_WATCHDOG=1`, `CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES=2` and the model window variables.
+   `API_TIMEOUT_MS`, `API_FORCE_IDLE_TIMEOUT=0`, `CLAUDE_CODE_RETRY_WATCHDOG=1`, `CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES=2`,
+   `CLAUDE_STREAM_IDLE_TIMEOUT_MS` (the same value as `API_TIMEOUT_MS`), `CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS=300000` and the model
+   window variables.
 3. Claude Code posts `POST /v1/messages` to the head's loopback port. The head checks the key, admits the turn
    (`maxInflight`, `maxQueued`) and applies the standing prompt layers.
 4. The provider module builds the request in the provider's dialect: `anthropic-passthrough`,

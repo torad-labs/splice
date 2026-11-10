@@ -610,11 +610,14 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
             "JsonlSink.appendLine(" to 1,
             "writeAtomic0600(" to 1,
         ),
-    // Nov 9, 2026: two moves, both a staging file over its final path. The forced migration journal replaces its final
-    // history path before the legacy snapshot is removed; the checkpoint rewrites a journal near its 256 MiB bound as
-    // its newest posts in a `.checkpoint` staging file and moves that over the journal. Both are in the history row.
+    // Nov 9, 2026: the checkpoint rewrites a journal near its 256 MiB bound as its newest posts in a `.checkpoint`
+    // staging file and moves that over the journal. In the history row.
     "integrations/providers/codex/src/main/kotlin/splice/provider/codex/history/durable/CodeModeHistoryStorage.kt" to
-        mapOf("Files.move(" to 2),
+        mapOf("Files.move(" to 1),
+    // The forced migration journal replaces its final history path before the legacy snapshot is removed. Moved out
+    // of CodeModeHistoryStorage.kt on Nov 10, 2026 (concentration), the same move; in the history row.
+    "integrations/providers/codex/src/main/kotlin/splice/provider/codex/history/durable/CodeModeHistoryMigration.kt" to
+        mapOf("Files.move(" to 1),
     // The checksum-verified executable is extracted into a private temporary directory and removed at runtime close.
     "integrations/codemode/src/main/kotlin/splice/codemode/nativehost/NativeHostArtifact.kt" to
         mapOf("Files.newOutputStream(" to 1),

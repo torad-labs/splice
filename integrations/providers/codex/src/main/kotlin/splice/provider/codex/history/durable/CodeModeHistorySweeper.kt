@@ -1,5 +1,6 @@
 package splice.provider.codex.history.durable
 
+import splice.core.util.JSONL_LOCK_SUFFIX
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import java.io.IOException
@@ -29,7 +30,7 @@ internal class CodeModeHistorySweeper(private val dir: Path, private val log: Lo
         val owned = Files.list(dir).use { it.toList() }.filter { file ->
             conversation(file).let { it != null && it !in held }
         }
-        val (locks, files) = owned.partition { it.fileName.toString().endsWith(LOCK_SUFFIX) }
+        val (locks, files) = owned.partition { it.fileName.toString().endsWith(JSONL_LOCK_SUFFIX) }
         val swept = journals(files, beforeMs)
         val stayed = swept.stayed + orphans(locks)
         if (stayed > 0) {
@@ -59,7 +60,7 @@ internal class CodeModeHistorySweeper(private val dir: Path, private val log: Lo
 
     /** Removes the lock files whose journal is gone; the count it could not remove. */
     private fun orphans(locks: List<Path>): Int = locks.count { lock ->
-        val journal = lock.resolveSibling(lock.fileName.toString().removeSuffix(LOCK_SUFFIX))
+        val journal = lock.resolveSibling(lock.fileName.toString().removeSuffix(JSONL_LOCK_SUFFIX))
         Files.notExists(journal) && removed(lock, Long.MAX_VALUE) == null
     }
 
@@ -84,16 +85,13 @@ internal class CodeModeHistorySweeper(private val dir: Path, private val log: Lo
     private fun conversation(file: Path): String? {
         val name = file.fileName.toString()
         val digest = name.substringBefore('.')
-        val hex = digest.length == DIGEST_CHARS && digest.all { it in '0'..'9' || it in 'a'..'f' }
-        return digest.takeIf { hex && name.length > DIGEST_CHARS }
+        val hex = digest.length == CONVERSATION_DIGEST_CHARS && digest.all { it in '0'..'9' || it in 'a'..'f' }
+        return digest.takeIf { hex && name.length > CONVERSATION_DIGEST_CHARS }
     }
 }
-
-// JsonlSink.appendLine's sibling lock file.
-private const val LOCK_SUFFIX = ".lock"
 
 // What [CodeModeHistorySweeper] reads as a file it left: newer than the cut, or already gone.
 private const val NOT_REMOVED = -1L
 
 // A history file is named by the SHA-256 hex digest of its conversation key.
-private const val DIGEST_CHARS = 64
+private const val CONVERSATION_DIGEST_CHARS = 64

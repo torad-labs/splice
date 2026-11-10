@@ -109,9 +109,13 @@ public object OutcomeTags {
      *  itself, which StreamPromote ends clean. */
     public fun isClean(tag: String): Boolean = tag == OutcomeTag.OK.wire || tag == OutcomeTag.EMPTY_MESSAGE.wire
 
+    /** The outcome of a row nothing attributes: a liveness probe, or an arrival that ended before anything named it.
+     *  The perf readers show it as unknown, never as a failure. */
+    public const val UNATTRIBUTED: String = "?"
+
     /** Unknown attribution is not failure; an unfamiliar recorded ending still is. */
     public fun isFailed(tag: String): Boolean =
-        !isClean(tag) && tag != "?" && !isStopped(tag)
+        !isClean(tag) && tag != UNATTRIBUTED && !isStopped(tag)
 
     /** A request that ended failed and reported no usage at all: it spent nothing the card could price, so it counts as
      *  failed, never as unpriced (Marlin's Accounts walk, Oct 12: "71 requests with no price" were failed DeepSeek

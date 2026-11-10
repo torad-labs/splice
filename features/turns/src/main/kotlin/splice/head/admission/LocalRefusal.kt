@@ -20,14 +20,15 @@ import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
 import splice.head.HeadDeps
 import splice.head.HeldLoginVerdict
+import splice.head.RefusedRequest
 import splice.head.transport.CallerCredential
 import splice.head.turn.Preparation
-import splice.head.turn.RefusedRequest
 import splice.head.turn.SESSION_TAG_CHARS
 import splice.head.turn.TurnDriver
 import splice.head.wire.TurnTrace
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.Selection
+import java.io.IOException
 
 internal data class LocalRefusal(
     val tag: String,
@@ -42,9 +43,41 @@ internal class PreDriveRefusals(
     private val responses: AdmissionResponses,
     private val driver: TurnDriver,
     private val loginCommand: String,
-    /** The head's run of refusals before any upstream turn (2026-11-09 audit): each prepared refusal counts. */
-    private val streak: RefusalStreak,
+    head: String,
 ) {
+    /** The head's run of refusals before any upstream turn (2026-11-09 audit), read degraded on /health: each refusal
+     *  here counts, and an admitted turn ends it. */
+    val streak = RefusalStreak(head, deps.log, deps.traffic.upstream.retryWall)
+
+    /** A defect that escaped the request's own handling (HeadAdmission's door): its kind and the splice line it came
+     *  from go to daemon.log (never its message, which may quote the transcript), its request row ends unexpected, and
+     *  a client that has had no answer yet gets the head's retryable internal error. A body already on the wire cannot
+     *  take a status, and a client that left mid-body is not a defect.
+     *
+     *  It writes a row in the head's perf file too, as unexpected, like a defect preparation catches (2026-11-09 audit:
+     *  until then only perf-evidence held it), and the turn line that row's write logs is the defect's one line. The
+     *  row names no model: the request may not have been read. It counts toward the head's refusal run. Moved here
+     *  from HeadAdmission on Nov 10 (concentration). */
+    suspend fun refuseEscaped(
+        call: ApplicationCall,
+        failure: Throwable,
+        telemetry: AdmissionTelemetry,
+        arrivalAt: Long,
+    ) {
+        val committed = call.response.isCommitted
+        if (committed && failure is IOException) return
+        val refused = RefusedRequest()
+        val detail = refused.escaped(failure)
+        RequestObservation.of(call)?.finish(OutcomeTag.UNEXPECTED.wire)
+        val cause = FailureCause.Splice.Internal(escaped = true)
+        streak.refused(responses.lineOf(cause).sentence, detail)
+        deps.seams.events.turnStarted(refused.sessionId)
+        val refusal = LocalRefusal(OutcomeTag.UNEXPECTED.wire, detail, trace = null)
+        driver.recordLocalRefusal(refused.meta(), telemetry.begin(arrivalAt), arrivalAt, refusal)
+        if (committed) return
+        responses.respondRefusal(call, cause, OutcomeTag.UNEXPECTED)
+    }
+
     /** A request refused while it was prepared ([Preparation.Rejected]): a model the head does not serve, a body that
      *  did not parse, a control the dialect cannot carry, a stopped turn's re-send, or a defect in preparing it. It is
      *  recorded as every other local refusal is, before the answer: one daemon.log line naming the head, the line the
@@ -98,11 +131,15 @@ internal class PreDriveRefusals(
             FailureCause.Provider.Forbidden(block = blocked)
         }
         val sentence = responses.lineOf(cause).sentence
+        // A head with no login records the tag the turn path writes for the same absence
+        // (TurnKnownEnd.emitAuthMissing), which the console reads as signed out: no credential was sent, so none was
+        // refused. A held login the provider forbade keeps its failure tag.
+        val tag = if (blocked == null) OutcomeTag.AUTH_MISSING.wire else OutcomeTags.failure(cause)
         driver.recordLocalRefusal(
             prepared.built.meta,
             admitted.perf,
             admitted.t0,
-            LocalRefusal(OutcomeTags.failure(cause), sentence, trace, blocked?.login),
+            LocalRefusal(tag, sentence, trace, blocked?.login),
         )
         admitted.close()
         responses.respondRefusal(call, cause)
@@ -143,9 +180,9 @@ internal class PreDriveRefusals(
      *  refusal sits in HeadAdmission: before a response is committed, while the status line is still ours.
      *  The head's budget ([HeadDeps.HeadQuota.budget]) decides; this only answers for it.
      *
-     *  403 permission_error, never 429: the refusal lasts until local midnight, and a 429 invites
-     *  the client to retry into the same refusal. Claude Code does not retry a 403 and shows its
-     *  message, so the budget's line (the head, its limit and when it resets) is what the
+     *  400 invalid_request_error with x-should-retry false (family P in ClientWire), never 429: the refusal lasts
+     *  until local midnight, and Claude Code re-sends a 429 even with x-should-retry false. It does not re-send this
+     *  400 and prints its message, so the budget's line (the head, its limit and when it resets) is what the
      *  operator reads. Recorded BEFORE responding, like every local refusal (V4-55). A budget that
      *  is not reached, or only warns, admits the turn and changes nothing on its path. */
     suspend fun refuseIfOverBudget(

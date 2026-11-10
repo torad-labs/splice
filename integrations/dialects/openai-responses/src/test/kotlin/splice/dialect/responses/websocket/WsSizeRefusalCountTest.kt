@@ -131,7 +131,7 @@ class WsSizeRefusalCountTest {
     fun `a frame over the peer's limit is never sent and takes no fresh socket`() = runTest {
         val perf = TurnPerf { 0L }
         val closing = Closing(INVALID_PAYLOAD)
-        closing.runner.maxFrameBytes = FRAME.length.toLong()
+        closing.runner.frameLimit.maxBytes = FRAME.length.toLong()
         assertNull(closing.attempt(perf))
         assertEquals(0, closing.sends, "the oversized frame never reaches the socket")
         assertNull(declines(perf))

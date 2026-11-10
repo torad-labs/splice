@@ -54,6 +54,7 @@ import splice.head.ClientAuth
 import splice.head.HeadDeps
 import splice.head.MessageEdges
 import splice.head.ReceivedBody
+import splice.head.RefusedRequest
 import splice.head.RequestBodyReader
 import splice.head.compact.CompactClassifier
 import splice.head.compaction.CompactionReplay

@@ -7,6 +7,9 @@ import splice.core.util.LoopbackOverride
 
 public object CodexOAuthEndpoints {
     public const val DEFAULT_CLIENT_ID: String = "app_EMoamEEZ73f0CkXaXp7hrann"
+
+    // why: the loopback port registered for this client id at OpenAI, the one Codex's own CLI listens on; the redirect
+    // URI below must name it, or the authorize step refuses the callback.
     public const val REDIRECT_PORT: Int = 1455
     public const val REDIRECT_URI: String = "http://localhost:1455/auth/callback"
     public const val SCOPE: String =

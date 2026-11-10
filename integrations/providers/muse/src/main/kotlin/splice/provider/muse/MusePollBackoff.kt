@@ -10,10 +10,10 @@ package splice.provider.muse
 import splice.core.auth.CredentialFileIdentity
 import splice.core.util.LogSink
 import splice.core.util.WallClock
+import java.time.Duration
 
 /** Doublings of [DEFAULT_RATE_HOLD_MS] before the wait reaches [MAX_MINT_HOLD_MS]: 1, 2, 4 ... 64 minutes, capped. */
 private const val MAX_POLL_DOUBLINGS = 6
-private const val MS_PER_S = 1_000L
 
 internal class MusePollBackoff(private val clock: WallClock, private val log: LogSink) {
     /** The poll's backoff for one credential revision: refused [refusals] times in a row, next asked at [untilMs]. */
@@ -70,7 +70,7 @@ internal class MusePollBackoff(private val clock: WallClock, private val log: Lo
         )
         log(
             "[muse-auth] usage poll mint answered ${attempt::class.simpleName}; the poll asks again in " +
-                "${waitMs / MS_PER_S}s, no turn is held and the stored key serves",
+                "${Duration.ofMillis(waitMs).toSeconds()}s, no turn is held and the stored key serves",
         )
     }
 

@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import splice.core.perf.LivenessProbe
+import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfTurnIds
 import splice.core.util.JsonScalars
 import splice.usage.perf.PerfRow
@@ -13,7 +14,6 @@ import splice.usage.perf.PerfTranscriptLink
 import splice.usage.perf.PerfTurnFacts
 
 private const val REPLACEMENT_CHAR = '\uFFFD'
-private const val UNATTRIBUTED = "?"
 
 // V4-127: the perf ROW HEADER keys — the writer's string-and-flag facts, spelled as PerfStats.record
 // writes them. NOT PerfKeys members, because PerfKeys is the catalogue of marks and counters and these
@@ -41,7 +41,7 @@ private const val PROVIDER_MESSAGE_KEY = "provider_message"
 /** What one parsed perf JSON object says about its turn, read by name. Split out of Scan. */
 internal class PerfRowShape {
     fun row(ts: Long, obj: JsonObject, fields: Map<String, Long>): PerfRow {
-        val outcome = JsonScalars.str(obj, "outcome")?.takeUnless { REPLACEMENT_CHAR in it } ?: UNATTRIBUTED
+        val outcome = JsonScalars.str(obj, "outcome")?.takeUnless { REPLACEMENT_CHAR in it } ?: OutcomeTags.UNATTRIBUTED
         // V4-127: the writer's string-and-flag facts, read BY NAME off the same parsed object the
         // numeric bag came from. Read by name, never by position, because four of the five are
         // nullable and two of the strings are adjacent — a positional read silently swaps them.

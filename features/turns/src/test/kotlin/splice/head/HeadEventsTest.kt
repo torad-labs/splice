@@ -39,9 +39,8 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
-import splice.core.perf.OutcomeTags
+import splice.core.perf.OutcomeTag
 import splice.core.session.ActivityAction
-import splice.core.turn.ErrorType
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.usage.QuotaSnapshot
@@ -146,9 +145,9 @@ class HeadEventsTest(@param:TempDir private val root: Path) {
             )
             val row = rig.perfRows(1).single()
             assertEquals(
-                OutcomeTags.failure(ErrorType.AUTHENTICATION),
+                OutcomeTag.AUTH_MISSING.wire,
                 row.second,
-                "a missing held login records its authentication cause before the admission wire maps it to permission",
+                "a head with no login records signed out, as the turn path does for the same absence",
             )
             assertEquals(listOf("start $SESSION", "end ${row.first} ${row.second} $SESSION"), rig.events.turnCalls())
             assertEquals(0, rig.upstreamCalls, "missing credentials refuse the turn before any provider request")

@@ -52,7 +52,7 @@ import splice.core.util.MonoClock
 
 internal class ReasoningCache(
     private val maxEntries: Int = MAX_ENTRIES,
-    private val maxTotalBytes: Long = MAX_TOTAL_BYTES,
+    private val maxTotalBytes: Long = REASONING_BOUND_BYTES,
     private val ttlMs: Long = TTL_MS,
     // Monotonic, not wall clock: the null-key sweep's takeWhile early-exit is sound only while
     // iteration order matches timestamp order — an NTP step backward would break that invariant
@@ -464,32 +464,14 @@ private const val TTL_MS: Long = 30 * 60 * 1000L
 // active conversations every few minutes). codex-rs itself retains every reasoning item until context
 // compaction.
 private const val MAX_TOTAL_MIB: Int = 64
-private const val MAX_TOTAL_BYTES: Long = MAX_TOTAL_MIB * 1024L * 1024L
+internal const val REASONING_BOUND_BYTES: Long = MAX_TOTAL_MIB * 1024L * 1024L
 
 // A round is one stored reasoning item (a positioned record) or one tool round, and its envelope alone is
 // about 1.9 KB even with no readable summary (2026-11-09: 6716 live rows, median 2915 B). The ROUND bound is
 // the byte bound over that floor, so bytes bind first for every real round and the count only stops a flood
 // of rounds smaller than any reasoning item. It was a fixed 8192, which bound at ~22 MB, a third of the bytes.
 private const val ROUND_BYTES_FLOOR: Int = 2048
-private const val MAX_ENTRIES: Int = MAX_TOTAL_MIB * 1024 * 1024 / ROUND_BYTES_FLOOR
-
-// One conversation may hold a quarter of each bound (16 MiB, 8192 rounds), several times the reasoning a
-// conversation can carry inside one context window before it compacts (the largest healthy record on
-// 2026-11-09 was 0.9 MB). A conversation past its share freezes alone; it never evicts a neighbor to grow.
-private const val CONVERSATION_SHARE: Int = 4
-
-/** One conversation's share of the head's reasoning bounds. Defaults to [CONVERSATION_SHARE] of the head's own. */
-internal data class ReasoningConversationBound(
-    val rounds: Int = MAX_ENTRIES / CONVERSATION_SHARE,
-    val bytes: Long = MAX_TOTAL_BYTES / CONVERSATION_SHARE,
-) {
-    /** Whether [convo] holds more than its share; no conversation (the null-key class, a restore) never does. */
-    fun exceeded(convo: ReasoningCacheConvo?): Boolean =
-        convo != null && (convo.rounds.size > rounds || convo.bytes > bytes)
-
-    /** Bytes an offered round may still take: what is left of the head's bound and of [convo]'s share. */
-    fun available(convo: ReasoningCacheConvo, headRemaining: Long): Long = minOf(headRemaining, bytes - convo.bytes)
-}
+internal const val MAX_ENTRIES: Int = MAX_TOTAL_MIB * 1024 * 1024 / ROUND_BYTES_FLOOR
 
 // The freeze log's reasons.
 private const val ALONE_OVER_BOUND = "alone over the bound"

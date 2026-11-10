@@ -28,6 +28,7 @@ import splice.core.failure.SpliceLine
 import splice.core.failure.StoppedBy
 import splice.core.failure.WireAnswer
 import splice.core.perf.OutcomeTag
+import splice.core.perf.OutcomeTags
 import splice.core.wire.ErrorEnvelope
 import splice.core.wire.HttpStatus
 import splice.head.turn.delivery.CollectedReply
@@ -91,7 +92,7 @@ internal class AdmissionResponses(private val voice: HeadVoice) {
      *  unattributed outcome it has always had; every other refusal is named. */
     private fun refusalOutcome(cause: FailureCause): String {
         val probe = (cause as? FailureCause.Splice.Declined)?.why == Decline.LivenessProbe
-        return if (probe) UNATTRIBUTED else OutcomeTag.REFUSED.wire
+        return if (probe) OutcomeTags.UNATTRIBUTED else OutcomeTag.REFUSED.wire
     }
 
     /** The reason phrases admission has always sent where Ktor's own differ or are missing. */
@@ -174,6 +175,3 @@ internal class AdmissionResponses(private val voice: HeadVoice) {
 
 /** The header Claude Code reads before re-sending a refused request. */
 private const val SHOULD_RETRY_HEADER = "x-should-retry"
-
-/** The request observation's outcome for an arrival nothing attributes (PerfDimensions reads it as unknown). */
-private const val UNATTRIBUTED = "?"

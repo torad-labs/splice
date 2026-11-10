@@ -2,7 +2,8 @@
 // perf row and a trace record (PreDriveRefusals.refusePrepared). From 5:51 to 6:58 PM CT that day a Responses dialect
 // refused every claudex turn on a field Claude Code 2.1.321 had started sending, and the log, the perf file and the
 // trace recorded nothing: Preparation.Rejected carried only its cause, so there was nothing to record it with.
-package splice.head.turn
+// It lives in splice.head (Nov 10), beside the request reader, so splice.head.turn keeps its 30 files (concentration).
+package splice.head
 
 import splice.core.failure.Decline
 import splice.core.failure.FailureCause
@@ -13,6 +14,7 @@ import splice.core.turn.TurnReasoning
 import splice.core.turn.TurnRoute
 import splice.core.turn.TurnScope
 import splice.core.util.SafeFailureText
+import splice.head.turn.Preparation
 import splice.head.wire.ClientInbound
 
 /** The model, session and transport the request named when its body parsed (empty, null and false when it did not),
@@ -43,6 +45,13 @@ internal data class RefusedRequest(
             FailureCause.Splice.Declined(Decline.BadBody(bytes.toLong(), declared.toLongOrNull())),
             copy(detail = "request rejected: invalid request body ($bytes bytes read, $declared declared, $why)"),
         )
+    }
+
+    /** The daemon.log detail of a defect that escaped a request's own handling (PreDriveRefusals.refuseEscaped): its
+     *  kind and the splice line it came from, never its message, which may quote the transcript (SafeFailureText). */
+    fun escaped(failure: Throwable): String {
+        val kind = failure::class.simpleName ?: "unnamed failure"
+        return "request failed: $kind: ${SafeFailureText.render(failure)}${SafeFailureText.site(failure)}"
     }
 
     /** A defect out of preparing a parsed request: its kind and the splice line it came from, never its message, which

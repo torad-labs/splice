@@ -10,19 +10,14 @@ import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import splice.core.auth.CredentialKey
 import splice.core.failure.EndingHeard
-import splice.core.failure.FailureCause
 import splice.core.failure.RequestFacts
 import splice.core.memory.HeapCapacityException
-import splice.core.memory.HeapLease
-import splice.core.perf.OutcomeTag
 import splice.core.turn.LiveWatchdogBudget
 import splice.core.util.Cancellables
-import splice.core.util.SafeFailureText
 import splice.head.HeadDeps
 import splice.head.hold.ClientWallHeader
 import splice.head.hold.ResendLedger
 import splice.head.turn.Preparation
-import splice.head.turn.RefusedRequest
 import splice.head.turn.SESSION_TAG_CHARS
 import splice.head.turn.TurnAccountQuota
 import splice.head.turn.TurnDriver
@@ -32,7 +27,6 @@ import splice.head.turn.TurnSlot
 import splice.head.wire.TurnTrace
 import splice.upstream.TurnEnd
 import splice.upstream.credentials.Selection
-import java.io.IOException
 
 internal class HeadAdmission(
     private val deps: HeadDeps,
@@ -44,16 +38,8 @@ internal class HeadAdmission(
 ) {
     private val keyAccounts = KeyAccount(preparation.provider.auth, deps.quotaBundle)
 
-    /** 2026-11-09 audit: the requests this head refuses in a row before any upstream turn, read degraded on /health. */
-    private val streak = RefusalStreak(preparation.provider.key, deps.log, deps.traffic.upstream.retryWall)
-    private val refusals = PreDriveRefusals(
-        deps,
-        admission,
-        responses,
-        driver,
-        preparation.provider.loginCommand,
-        streak,
-    )
+    private val refusals =
+        preparation.provider.let { PreDriveRefusals(deps, admission, responses, driver, it.loginCommand, it.key) }
 
     // Failure-handling slice 4: the requests whose turn ended with an answer Claude Code sends again, so the identical
     // request after one is told as its re-send (RequestFacts.repeated) and ends for good if it fails the same way.
@@ -62,7 +48,7 @@ internal class HeadAdmission(
     fun arrivalTime(): Long = telemetry.arrivalTime()
 
     /** The head's degraded reading while it refuses every request, null while it admits turns. */
-    fun refusing(): splice.core.head.RefusingReading? = streak.reading()
+    fun refusing(): splice.core.head.RefusingReading? = refusals.streak.reading()
 
     /** The listener observes arrivals before ingress can refuse their bodies without entering this handler. */
     fun observeRequests(application: Application) {
@@ -76,34 +62,13 @@ internal class HeadAdmission(
             // empty 500 with no line anywhere. Preparation and the drive have their own boundaries; this one catches
             // what escapes between them. Cancellation and an Error still propagate.
             Cancellables.runCatchingBestEffort { handleObserved(call, arrivalAt) }
-                .onFailure { failure -> answerFailure(call, failure, arrivalAt) }
+                .onFailure { failure ->
+                    // A full heap is not a defect: HeapIngress answers it with the retryable overload, as it
+                    // always has.
+                    if (failure is HeapCapacityException) throw failure
+                    refusals.refuseEscaped(call, failure, telemetry, arrivalAt)
+                }
         }
-    }
-
-    /** A defect that escaped the request's own handling: its kind and the splice line it came from go to daemon.log
-     *  (never its message, which may quote the transcript), its request row ends unexpected, and a client that has
-     *  had no answer yet gets the head's retryable internal error. A body already on the wire cannot take a status,
-     *  and a client that left mid-body is not a defect. A full heap is not a defect either: HeapIngress answers it
-     *  with the retryable overload, as it always has.
-     *
-     *  It writes a row in the head's perf file too, as unexpected, like a defect preparation catches (2026-11-09 audit:
-     *  until then only perf-evidence held it), and the turn line that row's write logs is the defect's one line. The
-     *  row names no model: the request may not have been read. It counts toward the head's refusal run. */
-    private suspend fun answerFailure(call: ApplicationCall, failure: Throwable, arrivalAt: Long) {
-        if (failure is HeapCapacityException) throw failure
-        val committed = call.response.isCommitted
-        if (committed && failure is IOException) return
-        val kind = failure::class.simpleName ?: "unnamed failure"
-        val detail = "request failed: $kind: ${SafeFailureText.render(failure)}${SafeFailureText.site(failure)}"
-        RequestObservation.of(call)?.finish(OutcomeTag.UNEXPECTED.wire)
-        val cause = FailureCause.Splice.Internal(escaped = true)
-        streak.refused(responses.lineOf(cause).sentence, detail)
-        val refused = RefusedRequest()
-        deps.seams.events.turnStarted(refused.sessionId)
-        val refusal = LocalRefusal(OutcomeTag.UNEXPECTED.wire, detail, trace = null)
-        driver.recordLocalRefusal(refused.meta(), telemetry.begin(arrivalAt), arrivalAt, refusal)
-        if (committed) return
-        responses.respondRefusal(call, cause, OutcomeTag.UNEXPECTED)
     }
 
     private suspend fun handleObserved(call: ApplicationCall, arrivalAt: Long) {
@@ -128,15 +93,7 @@ internal class HeadAdmission(
         try {
             // Prepared request trees survive decode and may belong to a detached compaction.
             // Their heap lease follows the same slot that already owns that drive's lifetime.
-            val owner = object : MaterializationOwner {
-                override fun onRelease(release: TurnEnd) {
-                    admitted.materializedEnd = release
-                }
-
-                override fun leased(lease: HeapLease) {
-                    admitted.heapLease = lease
-                }
-            }
+            val owner = admitted.materializationOwner()
             val leaseStart = telemetry.arrivalTime()
             val prepared = admission.materializeBodyOrRespond(
                 call,
@@ -173,7 +130,7 @@ internal class HeadAdmission(
     private suspend fun serveReady(call: ApplicationCall, prepared: Preparation.Ready, admitted: AdmittedTurn) {
         val meta = prepared.built.meta
         // A turn the dialect and the head admitted ends any run of refusals (2026-11-09 audit).
-        streak.admitted()
+        refusals.streak.admitted()
         RequestObservation.ready(admitted.perf, prepared)
         // Before describe: a compaction held for a restart is not yet one the restart's read waits for.
         if (meta.compact && !admission.compactionAdmittedOrRespond(call, TurnEnd(admitted::release))) return

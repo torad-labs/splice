@@ -117,7 +117,7 @@ public object JsonlSink {
         require(line.isNotEmpty() && line.last() == NEWLINE_BYTE) { "an encoded JSONL record ends in a newline" }
         val normalized = file.toAbsolutePath().normalize()
         synchronized(locks.computeIfAbsent(normalized) { Any() }) {
-            val lockPath = normalized.resolveSibling("${normalized.fileName}.lock")
+            val lockPath = normalized.resolveSibling("${normalized.fileName}$JSONL_LOCK_SUFFIX")
             val mode = SecureFile.CREATE_0600
             val opened = if (mode == null) {
                 FileChannel.open(lockPath, LOCK_OPTIONS)
@@ -413,3 +413,7 @@ private const val CARRIAGE_RETURN_BYTE = '\r'.code.toByte()
 // per thread with no size cap (sun/nio/ch/IOUtil.java read, Util.java bufferCache), so a 4 MiB read leaves a 4 MiB
 // direct buffer cached on the thread that made it. Reads of at most this size keep that buffer small.
 private const val READ_SLICE_BYTES = 64 * 1024
+
+/** The empty sibling an [JsonlSink.appendLine] file takes its cross-process lock on, `<file>.lock`. Named once here so
+ *  every store that removes its files removes the lock with them under the same name. */
+public const val JSONL_LOCK_SUFFIX: String = ".lock"

@@ -139,7 +139,6 @@
     "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt": 0,
     "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexQuotaHeaderFamily.kt": 2,
     "integrations/providers/codex/src/main/kotlin/splice/provider/codex/auth/CodexAuthDescribe.kt": 2,
-    "integrations/providers/codex/src/main/kotlin/splice/provider/codex/auth/CodexAuthFile.kt": 1,
     "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt": 2,
     "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt": 1,
     "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokEffortVocabulary.kt": 3,

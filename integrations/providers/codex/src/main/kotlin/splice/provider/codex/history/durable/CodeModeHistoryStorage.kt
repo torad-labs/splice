@@ -1,19 +1,14 @@
 package splice.provider.codex.history.durable
 
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.Transient
 import kotlinx.serialization.json.Json
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapReservations
-import splice.core.memory.HeapText
-import splice.core.perf.InputDigest
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodeModeStorageException
 import splice.provider.codex.CodeModeStorageOperation
-import splice.provider.codex.history.CodeModeLedgerEntry
 import splice.upstream.memory.JvmHeap
 import java.io.IOException
 import java.nio.channels.FileChannel
@@ -22,20 +17,6 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.util.concurrent.ConcurrentHashMap
-
-@Serializable
-internal data class CodeModeHistoryState(
-    val key: String,
-    val posts: List<CodeModeLedgerEntry>,
-    val nextId: Long,
-    val version: Int = 1,
-    val revision: Long = 0,
-    @Transient val memoryBytes: Long = 0,
-)
-
-/** What one conversation's journal held when this storage last read or wrote it. Replaced whole, never edited, so a
- *  writer that took it works from one consistent view even when [CodeModeHistoryStorage.forget] drops it meanwhile. */
-private data class CodeModeJournaled(val revision: Long, val bytes: Long, val digest: String?)
 
 /**
  * Exact history is a journal of shared-prefix deltas, independent of execution-record count and TTL.
@@ -58,6 +39,7 @@ internal class CodeModeHistoryStorage(
     private val dir = paths.directory
     private val journal = CodeModeHistoryJournal(json, heap, maxBytes, log)
     private val sweeper = CodeModeHistorySweeper(dir, log)
+    private val migration = CodeModeHistoryMigration(paths, json, journal, heap, log)
     private val journaled = ConcurrentHashMap<String, CodeModeJournaled>()
     val durableEnabled: Boolean get() = location.journaling.now()
 
@@ -72,7 +54,7 @@ internal class CodeModeHistoryStorage(
                     val state = replay.finish()
                     state to CodeModeJournaled(state.revision, replay.committedBytes, replay.lastDigest)
                 }
-                Files.exists(paths.legacy(key)) -> migrate(key)
+                Files.exists(paths.legacy(key)) -> migration.migrate(key)
                 else -> null to CodeModeJournaled(0L, 0L, null)
             }
             journaled[key] = loaded.second
@@ -115,14 +97,16 @@ internal class CodeModeHistoryStorage(
 
     /** The files of [keys]' conversations, as a Settings clear must leave them while this head holds them. */
     fun files(keys: Set<String>): Set<Path> = keys.flatMapTo(HashSet()) { key ->
-        listOf(path(key), paths.legacy(key)).flatMap { listOf(it, lockOf(it)) }.map { it.toAbsolutePath().normalize() }
+        listOf(path(key), paths.legacy(key))
+            .flatMap { listOf(it, paths.lock(it)) }
+            .map { it.toAbsolutePath().normalize() }
     }
 
     /** Removes the conversation files last written before [beforeMs], except [hot] conversations' (the sweeper says
      *  why), and forgets what it knew of the journals that went. */
     fun sweep(beforeMs: Long, hot: Set<String>): CodeModeHistorySwept =
-        sweeper.sweep(beforeMs, hot.mapTo(HashSet()) { InputDigest.hex(it) }).also { swept ->
-            journaled.keys.removeIf { InputDigest.hex(it) in swept.gone }
+        sweeper.sweep(beforeMs, hot.mapTo(HashSet(), paths::digest)).also { swept ->
+            journaled.keys.removeIf { paths.digest(it) in swept.gone }
         }
 
     private fun append(prepared: CodeModeHistoryPrepared, state: CodeModeHistoryState): CodeModeHistoryState {
@@ -183,7 +167,7 @@ internal class CodeModeHistoryStorage(
             live = true
         } finally {
             if (!live) Files.deleteIfExists(staging)
-            Files.deleteIfExists(lockOf(staging))
+            Files.deleteIfExists(paths.lock(staging))
         }
         // The rewrite is live: the memory must take its revisions now, so a failed directory force is said, not thrown.
         try {
@@ -205,61 +189,17 @@ internal class CodeModeHistoryStorage(
         )
     }
 
-    /** An intermediate full-snapshot authority is forced to a staging journal before its name becomes live. */
-    private fun migrate(key: String): Pair<CodeModeHistoryState, CodeModeJournaled> {
-        val old = paths.legacy(key)
-        val staging = path(key).resolveSibling("${path(key).fileName}.migrating")
-        val migrated = HeapText.Reader.read(old, heap).use { stage ->
-            val legacy = json.decodeFromString<CodeModeHistoryState>(stage.text)
-            CodeModeHistoryValidation.legacy(legacy, key)
-            migrateEntries(legacy, staging)
-        }
-        Files.move(staging, path(key), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-        FileChannel.open(dir, StandardOpenOption.READ).use { it.force(true) }
-        Files.deleteIfExists(old)
-        Files.deleteIfExists(lockOf(staging))
-        log("[code-mode] authoritative history migrated posts=${migrated.first.posts.size}")
-        return migrated
-    }
-
-    private fun migrateEntries(
-        old: CodeModeHistoryState,
-        staging: Path,
-    ): Pair<CodeModeHistoryState, CodeModeJournaled> {
-        Files.deleteIfExists(staging)
-        var state = CodeModeHistoryState(old.key, emptyList(), old.nextId)
-        var bytes = 0L
-        var digest: String? = null
-        old.posts.sortedBy { it.id }.forEach { entry ->
-            val next = state.copy(revision = state.revision + 1L)
-            val prepared = CodeModeHistoryDeltas.prepare(next, entry, state.posts.firstOrNull())
-            CodeModeHistoryDeltas.own(prepared, heap)
-            val committed = checkNotNull(journal.append(staging, prepared.delta, bytes)) {
-                "the history migration's staging file was removed while it was written"
-            }
-            bytes = committed.bytes
-            digest = committed.digest
-            state = next.copy(
-                posts = listOf(prepared.entry) + state.posts,
-                memoryBytes = state.memoryBytes + CodeModeHistoryDeltas.weight(prepared.delta),
-            )
-        }
-        return state to CodeModeJournaled(state.revision, bytes, digest)
-    }
-
-    private fun lockOf(file: Path): Path = file.resolveSibling("${file.fileName}$LOCK_SUFFIX")
     private fun path(key: String): Path = paths.journal(key)
 }
 
 // The journal is rewritten past three quarters of its bound, down to its newest posts within one quarter.
 private const val CHECKPOINT_QUARTERS = 4L
+
+// why: three of those quarters is the rewrite point, which leaves a quarter of the bound for the turns that follow it.
 private const val CHECKPOINT_AT = 3L
 
 // The staging name a checkpoint is forced to before it replaces the live journal.
 private const val CHECKPOINT_SUFFIX = ".checkpoint"
-
-// JsonlSink.appendLine's sibling lock file.
-private const val LOCK_SUFFIX = ".lock"
 
 // Limit diagnostic keys to a short non-content correlation prefix.
 private const val CHECKPOINT_LOG_KEY_CHARS = 8

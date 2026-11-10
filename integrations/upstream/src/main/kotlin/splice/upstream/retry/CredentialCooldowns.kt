@@ -38,6 +38,10 @@ internal class CredentialCooldowns(
     public val providerResetForMs: Long
         get() = cooldowns.values.maxOfOrNull(RateLimitCooldown::providerUnavailableForMs) ?: 0L
 
+    /** What the provider's reset holds for the one credential [key] names, and for no other: a login whose token was
+     *  renewed since leaves its old key's hold in this map and on disk, where no send can ever answer it again. */
+    public fun providerResetForMs(key: String): Long = cooldowns[key]?.providerUnavailableForMs() ?: 0L
+
     public val planHold: PlanLimit?
         get() = cooldowns.values.mapNotNull { it.planHold.live() }.maxByOrNull(PlanLimit::resetEpochSeconds)
 

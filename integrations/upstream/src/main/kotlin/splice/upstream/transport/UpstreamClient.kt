@@ -109,6 +109,11 @@ public class UpstreamClient(
     public val providerResetForMs: Long
         get() = maxOf(cooldown.providerUnavailableForMs(), credentialCooldowns.providerResetForMs)
 
+    /** [providerResetForMs] for a head that holds one login of its own: that login's hold, not those of every token it
+     *  ever sent under, whose files this client restored at boot and no send can answer again. */
+    public fun providerResetForMs(credentialKey: String): Long =
+        maxOf(cooldown.providerUnavailableForMs(), credentialCooldowns.providerResetForMs(credentialKey))
+
     /** V4-233: how long the upstream's named PLAN window stays spent (0 when none is held). */
     public val planHoldForMs: Long get() = maxOf(cooldown.planHold.forMs(), credentialCooldowns.planHoldForMs)
 

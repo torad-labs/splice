@@ -182,9 +182,13 @@ public class HeadServer(
     /** A Compare models send borrows this head's budget and stores, so it is weighed and recorded like a request. */
     public val compareSends: splice.head.usage.CompareSends = splice.head.usage.HeadCompareSends(deps)
 
-    /** The refusal this head holds (V4-398/V4-412), and nothing else: a full reading is [quotaFull] (V4-452). */
-    override fun providerResetForMs(): Long =
-        deps.quotaBundle.activePool?.providerResetForMs ?: deps.traffic.upstream.providerResetForMs
+    /** The refusal this head holds (V4-398/V4-412), and nothing else: a full reading is [quotaFull] (V4-452). A head
+     *  with a login of its own holds that login's refusal alone: the file of a token it renewed since (claudex, Nov 5)
+     *  is restored at every boot and no send can answer it, so counting it read out of quota for days of served turns.
+     *  A head that forwards its callers' logins has no login of its own, and reads every caller's. */
+    override fun providerResetForMs(): Long = deps.quotaBundle.activePool?.providerResetForMs
+        ?: provider.auth.observedCredentialKey()?.let { deps.traffic.upstream.providerResetForMs(it) }
+        ?: deps.traffic.upstream.providerResetForMs
 
     /** The provider's own current reading (V4-418, renamed V4-452). Reporting only: nothing here reaches
      *  admission, which still lets the first turn probe the upstream (V4-47). */

@@ -97,6 +97,8 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
         val positioned = meta.scope.sessionId?.takeIf { it.isNotEmpty() }?.let {
             deps.continuity.policy.conversationKey(it, meta.scope.reasoningStorageKey)
         }
+        // Ahead of the round's stream, while the cursor still stands where the client's request ended.
+        meta.scope.reasoningHistory?.let(turnPositions::open)
         return object : TurnReasoningSink {
             override fun invoke(toolIds: List<String>, envelopes: List<String>) {
                 if (conversation != null && retainsToolReasoning(meta)) {
@@ -124,7 +126,8 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
                 // Private cache index, not a synthetic upstream call id. The envelope digest makes retries
                 // idempotent while distinct reasoning-only rounds of ONE turn (fold, re-anchor) share the same
                 // visible boundary. A different turn at that boundary is the client re-sending a request whose
-                // earlier attempt it never kept, so this turn's first record there replaces what those left.
+                // earlier attempt it never kept, so this turn's first record there replaces what those left, unless
+                // its request ended on assistant output (TurnReasoningPositions.open).
                 val index = ReasoningPositionIndex().index(position, envelope, order)
                 val first = meta.scope.reasoningHistory?.let { turnPositions.first(it, position) } ?: false
                 deps.continuity.cache.put(positioned, listOf(index), listOf(envelope), replacesPosition = first)
@@ -176,10 +179,26 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
  *  goes when its turn does. 2026-11-09: one request re-sent across 37 attempts left 6,715 records at one position,
  *  each attempt's ids new, and every later attempt carried all of them upstream. */
 private class TurnReasoningPositions {
-    private val turns = WeakHashMap<ReasoningHistory, MutableSet<String>>()
+    private val turns = WeakHashMap<ReasoningHistory, TurnPositions>()
 
-    /** Whether [position] is the first place [turn] stores reasoning at; every later record there is its own. */
+    /** Registers [turn] before its first round streams; a later round of the same turn finds it registered. Its
+     *  request ended on the client's or a tool's words, or on nothing, when the cursor's last step is not the
+     *  assistant's: only then is another turn's reasoning at its positions that of an attempt the client never kept.
+     *  A request ending on assistant output stands where an earlier turn's kept output ends, and the reasoning that
+     *  turn stored there leads into what followed that output, which the client may still hold elsewhere. */
+    fun open(turn: ReasoningHistory) {
+        synchronized(turns) { turns.getOrPut(turn) { TurnPositions(replaces = turn.lastRole != ASSISTANT_ROLE) } }
+    }
+
+    /** Whether [turn] replaces what other turns left at [position]: the first place it stores reasoning at, when its
+     *  request did not end on assistant output. Every later record there is its own. */
     fun first(turn: ReasoningHistory, position: String): Boolean = synchronized(turns) {
-        turns.getOrPut(turn) { hashSetOf() }.add(position)
+        val positions = turns[turn] ?: return false
+        positions.replaces && positions.stored.add(position)
     }
 }
+
+private data class TurnPositions(val replaces: Boolean, val stored: MutableSet<String> = hashSetOf())
+
+// why: the role ReasoningHistory records for the model's own output, the role of an Anthropic assistant message.
+private const val ASSISTANT_ROLE = "assistant"

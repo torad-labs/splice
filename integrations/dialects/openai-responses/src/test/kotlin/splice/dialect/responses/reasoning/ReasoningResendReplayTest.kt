@@ -79,6 +79,45 @@ class ReasoningResendReplayTest(@param:TempDir private val state: Path) {
         }
     }
 
+    @Test
+    fun `a request ending on kept output leaves the reasoning that followed that output`() = runTest {
+        val provider = heads.start()
+        val built = provider.buildTurn(opening, false, "session")
+        val sink = DeliverySink()
+        val hello = DeliveryFrames.message("msg_hello", "Hello world")
+        val kept = DeliveryFrames.reasoning("rs_kept")
+        val done = DeliveryFrames.message("msg_done", " Done.")
+        provider.streamTranslator(built.meta, signals).driveTurn(
+            listOf(
+                DeliveryFrames.delta("Hello world"),
+                DeliveryFrames.done(hello),
+                DeliveryFrames.done(kept, 1),
+                DeliveryFrames.delta(" Done.", 2),
+                DeliveryFrames.done(done, 2),
+                DeliveryFrames.terminal(hello, kept, done),
+            ).asFlow(),
+            sink,
+        )
+        assertEquals("Hello world Done.", sink.text.toString())
+        // A request that ends on the first message of that output stands where rs_kept was stored.
+        val side = AnthropicParse.parseAnthropicBody(
+            """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":"Check the answer."},""" +
+                """{"role":"assistant","content":"Hello world"}]}""",
+        )
+        val sideBuilt = provider.buildTurn(side, false, "session")
+        provider.streamTranslator(sideBuilt.meta, signals)
+            .driveTurn(listOf(DeliveryFrames.done(DeliveryFrames.reasoning("rs_side"))).asFlow(), DeliverySink())
+        val followup = AnthropicParse.parseAnthropicBody(
+            """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":"Check the answer."},""" +
+                """{"role":"assistant","content":"Hello world Done."},{"role":"user","content":"Continue."}]}""",
+        )
+        for (view in heads.thenRestarted(provider)) {
+            val next = view.buildTurn(followup, false, "session").requestBody.getValue("input").jsonArray
+            // rs_side rides too: it was stored at the same position, which is how this request shows it got there.
+            assertEquals(setOf("rs_kept", "rs_side"), reasoningIds(next.map { it.jsonObject }).toSet())
+        }
+    }
+
     private fun reasoningIds(items: List<JsonObject>): List<String> =
         items.filter { JsonScalars.str(it, "type") == "reasoning" }.mapNotNull { JsonScalars.str(it, "id") }
 }

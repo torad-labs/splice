@@ -11,10 +11,10 @@ import splice.dialect.responses.reasoning.ResponsesReasoningFold
 import splice.dialect.responses.reasoning.ResponsesReasoningReplay
 import splice.dialect.responses.request.BlockState
 import splice.dialect.responses.tools.ResponsesToolSearchParse
+import splice.upstream.SyntheticToolIds
 import splice.upstream.ToolNameShortener
 import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
-import java.util.UUID
 
 /** Captures accumulated history immediately before a completed custom item can dispatch. */
 internal fun interface CompletedItemSnapshot {
@@ -36,10 +36,7 @@ internal class ResponsesItemFold(
     private val customCalls = ResponsesCustomCallParse(codeMode)
     private val harvest = ResponsesHarvest()
     private val messages = ResponsesMessageDelivery()
-    private var toolSynthCounter = 0
-
-    /** Makes this round's minted call ids unique within the conversation, as real upstream ids are. */
-    private val synthNonce by lazy { UUID.randomUUID().toString().replace("-", "") }
+    private val syntheticIds = SyntheticToolIds()
 
     suspend fun onItemAdded(evt: JsonObject, sink: WireSink) {
         val item = evt["item"] as? JsonObject ?: return
@@ -65,9 +62,9 @@ internal class ResponsesItemFold(
             // strOrEmpty keeps both filtered so the empty-fallback chain below still triggers
             // (review 2026-07-22 round 3).
             val rawId = JsonScalars.strOrEmpty(item["call_id"]).ifEmpty { JsonScalars.strOrEmpty(item["id"]) }
-            // The id rides back in every later request as this call's call_id, and call pairing keeps one call
-            // per id: a per-round counter alone repeated across turns and dropped the later call from the input.
-            val id = rawId.ifEmpty { "toolu_synth_${synthNonce}_${toolSynthCounter++}_$oi" }
+            // The id rides back in every later request as this call's call_id: SyntheticToolIds keeps it unique
+            // across turns, since call pairing keeps one call per id.
+            val id = rawId.ifEmpty { syntheticIds.mint() }
             if (rawId.isNotEmpty()) state.turnToolIds.add(rawId)
             val wireName = JsonScalars.strOrEmpty(item["name"])
             val idx = sink.openTool(id = id, name = names.restore(wireName))

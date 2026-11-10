@@ -10,6 +10,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.index.WireBlockIndex
 import splice.core.util.JsonScalars
+import splice.upstream.SyntheticToolIds
 import splice.upstream.transport.BufferCapacity
 
 private const val FIELD_TYPE = "type"
@@ -61,8 +62,8 @@ internal class CollectingBlocks {
     internal var malformedToolInput: Boolean = false
         private set
 
-    // HEAD-004: id fallback counter for a tool_use whose upstream id was blank.
-    private var toolSynthCounter = 0
+    // HEAD-004: ids for a tool_use whose upstream id was blank, unique across turns as the stream path's are.
+    private val syntheticIds = SyntheticToolIds()
 
     internal fun openText(): WireBlockIndex {
         blocks.add(Blk.Text(StringBuilder(source.initial(FIELD_TEXT))))
@@ -159,8 +160,8 @@ internal class CollectingBlocks {
         if (sig.isNotEmpty()) put("signature", sig.toString())
     }
 
-    // HEAD-004: a blank id is synthesized (opaque token, same idiom as
-    // ResponsesStreamTranslator's toolu_synth_ fallback) — a blank name has no safe stand-in, so
+    // HEAD-004: a blank id is synthesized by the minter every stream fold shares (SyntheticToolIds), so a
+    // non-stream turn's id never repeats an earlier turn's — a blank name has no safe stand-in, so
     // the block is dropped from content. REG-001: dropping it silently left stop_reason="tool_use"
     // (computed upstream from the raw event, before this filtering) disagreeing with an empty
     // content array — protocol-invalid. Reuse the malformedToolInput honest-failure path (HEAD-003)
@@ -180,7 +181,7 @@ internal class CollectingBlocks {
             if (!cut) malformedToolInput = true
             return null
         }
-        val id = tool.id.ifBlank { "toolu_synth_${toolSynthCounter++}" }
+        val id = tool.id.ifBlank { syntheticIds.mint() }
         return buildJsonObject {
             put(FIELD_TYPE, "tool_use")
             put("id", id)

@@ -22,7 +22,7 @@ import splice.upstream.sse.WireSink
  *      deltas streamed any tool call) — emit it, even when it carries no name (opened under the
  *      "tool" fallback, finding 5a), or it is silently lost while the turn reports tool_use.
  *  Two vendor shapes the match covers:
- *    • a call STREAMED without an id (synth "toolu_<n>" slot) but echoed WITH an id is matched back by its
+ *    • a call STREAMED without an id (a minted id) but echoed WITH an id is matched back by its
  *      position in the final array and its name, so the echo is not minted a second time (finding 4);
  *    • an echo whose arguments are longer than what was streamed, and extend it, sends the rest, so the
  *      client gets the complete input and not the truncated deltas (finding 5b). Arguments that are not an

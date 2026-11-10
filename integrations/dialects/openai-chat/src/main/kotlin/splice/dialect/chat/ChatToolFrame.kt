@@ -19,28 +19,55 @@ internal class ChatToolFrame {
     private var nextSynthToolIndex = SYNTH_INDEX_BASE
     private val toolIndexById = HashMap<String, Int>()
 
-    internal val indexCount: Int get() = toolIndexById.size
+    // An explicit index's current call: the id that holds it, and the slot its deltas go to once a
+    // new call has reused the index.
+    private val holderByIndex = HashMap<Int, String>()
+    private val slotByIndex = HashMap<Int, Int>()
+
+    internal val indexCount: Int get() = toolIndexById.size + holderByIndex.size + slotByIndex.size
 
     /** A delta-shape tool_calls[i] entry, already resolved to its index and pulled apart. */
     internal data class ParsedCall(val index: Int, val id: String, val name: String, val args: String)
 
     internal fun parse(tc: JsonObject): ParsedCall {
-        val index = resolveToolIndex(tc)
         val fn = tc["function"] as? JsonObject
+        val id = JsonScalars.strOrEmpty(tc["id"])
+        val name = JsonScalars.strOrEmpty(fn?.get("name"))
         return ParsedCall(
-            index = index,
-            id = JsonScalars.strOrEmpty(tc["id"]),
-            name = JsonScalars.strOrEmpty(fn?.get("name")),
+            index = resolveToolIndex(tc, id, name),
+            id = id,
+            name = name,
             args = JsonScalars.strOrEmpty(fn?.get("arguments")),
         )
     }
 
-    /** Explicit index wins (OpenAI streaming); otherwise each distinct id gets a synthesized
-     *  slot, and an id-less index-less call gets a fresh slot per event (complete-call shape). */
-    private fun resolveToolIndex(tc: JsonObject): Int {
-        (tc["index"] as? JsonPrimitive)?.content?.toIntOrNull()?.let { return it }
-        val id = JsonScalars.strOrEmpty(tc["id"])
+    /** Explicit index wins (OpenAI streaming), through [explicitSlot]; otherwise each distinct id
+     *  gets a synthesized slot, and an id-less index-less call gets a fresh slot per event
+     *  (complete-call shape). */
+    private fun resolveToolIndex(tc: JsonObject, id: String, name: String): Int {
+        (tc["index"] as? JsonPrimitive)?.content?.toIntOrNull()?.let { return explicitSlot(it, id, name) }
         if (id.isEmpty()) return nextSynthToolIndex++
         return toolIndexById.getOrPut(id) { nextSynthToolIndex++ }
+    }
+
+    /** The slot for a delta at explicit [index]. A delta naming a function under an id other than the
+     *  one holding the index is a NEW call reusing it (an endpoint that sends each parallel call
+     *  complete at index 0, Gemini's OpenAI-compatible one among them): it gets a slot of its own,
+     *  and the index's id-less deltas follow it from then on. Appended to the open block instead, its
+     *  name was dropped and its arguments concatenated onto the first call's, so every attempt ended
+     *  on malformed JSON. A different id with no name is the same call's continuation, as before. */
+    private fun explicitSlot(index: Int, id: String, name: String): Int {
+        val holder = holderByIndex[index]
+        val current = slotByIndex[index] ?: index
+        if (id.isEmpty() || id == holder) return current
+        if (holder == null || name.isEmpty()) {
+            holderByIndex.putIfAbsent(index, id)
+            toolIndexById.putIfAbsent(id, current)
+            return current
+        }
+        val slot = toolIndexById.getOrPut(id) { nextSynthToolIndex++ }
+        holderByIndex[index] = id
+        slotByIndex[index] = slot
+        return slot
     }
 }

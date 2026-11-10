@@ -4,7 +4,8 @@
 // reasoning_content field (DeepSeek-style) opens a thinking block; tool_calls stream by index
 // (delta.tool_calls[i].function.arguments). Same honesty gates as Responses: no clean end on a
 // failure, ClientAbandoned when the client is gone before any finish. finish_reason maps:
-// tool_calls→hasToolUse, length→incomplete, stop→end_turn.
+// tool_calls→hasToolUse, length→incomplete, stop→the model's closed message, and any value the
+// dialect does not know→an honest Failure (ChatTerminalState.onFinish).
 //
 // HD-24 decomposition (2026-08-17): the frame-shape knowledge, honesty state machine, tool-call
 // buffering and usage accounting now live on collaborators (ChatEventRouter, ChatTerminalState,
@@ -14,6 +15,7 @@
 package splice.dialect.chat
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.serialization.json.JsonObject
 import splice.core.failure.FailureCause
@@ -21,6 +23,7 @@ import splice.core.failure.FailureEvidence
 import splice.core.failure.Moment
 import splice.core.failure.Position
 import splice.core.failure.Tear
+import splice.core.turn.ResponseShape
 import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.upstream.StreamTranslator
@@ -67,7 +70,12 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
                     if (!withinCapacity) terminal.runawayGuard = RUNAWAY_GUARD_MESSAGE
                     withinCapacity
                 }
-                .collect { evt -> router.onEvent(evt, sink) }
+                .firstOrNull { evt ->
+                    router.onEvent(evt, sink)
+                    // The backend's last word (its finish with the bill, or an error chunk) ends the read, as the
+                    // Responses twin stops at its completed response, instead of waiting for the socket to close.
+                    terminal.ended(usage.billed)
+                }
         } catch (e: CancellationException) {
             // Only a watchdog fire may swallow cancellation; a real cancel propagates.
             if (ctx.watchdogFired() == null) throw e
@@ -95,8 +103,13 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         }
         toolCalls.flushPendingTools(sink)
         // CX-01: parse each opened tool's accumulated args at terminal; a corrupt/empty tool call
-        // becomes a Failure in terminalOutcome, never a Success with a malformed tool_use.
-        if (toolCalls.toolArgsInvalid == null) toolCalls.toolArgsInvalid = toolCalls.firstInvalidToolArgs()
+        // becomes a Failure in terminalOutcome, never a Success with a malformed tool_use. Only on a
+        // known finish: a stream that tore or stalled mid-arguments always holds incomplete JSON, and
+        // latching it here relabelled that tear as the provider's corrupt tool call (the Responses
+        // twin's gate, ResponsesStreamTranslator.latchSweptToolBlocks).
+        if (terminal.settled && toolCalls.toolArgsInvalid == null) {
+            toolCalls.toolArgsInvalid = toolCalls.firstInvalidToolArgs()
+        }
         sink.closeAll()
         return terminalOutcome()
     }
@@ -150,7 +163,12 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
                 cause = if (unexpected != null) {
                     FailureCause.Splice.Internal()
                 } else {
-                    FailureCause.Path.Torn(Tear.NO_TERMINAL, toolOpen = partial.toolTearOpen)
+                    // A tool call whose arguments do not parse was cut open by the tear; the
+                    // sentence says so, where the latch used to call it the backend's corrupt JSON.
+                    FailureCause.Path.Torn(
+                        Tear.NO_TERMINAL,
+                        toolOpen = partial.toolTearOpen || toolCalls.firstInvalidToolArgs() != null,
+                    )
                 },
                 at = Position(Moment.MID_CONTENT, streamBegan = true),
                 // An UNRECOGNISED throwable says so in its own words rather than borrowing the
@@ -207,5 +225,10 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
             emittedText = channels.emittedText,
             emittedThinking = channels.emittedThinking,
         ),
+        // A message the model closed itself (finish_reason stop) is its answer, empty or not, as the Responses twin
+        // reads a closed message item and the passthrough twin a message_stop after end_turn. Unset, a finished empty
+        // answer (Claude Code's prompt-suggestion request asks for silence) was graded empty_model and re-sent as an
+        // overloaded error. A stream with no finish, or one that stopped on length, stays the honest empty error.
+        shape = ResponseShape(messageClosed = terminal.finished && terminal.endedByModel),
     )
 }

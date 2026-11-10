@@ -17,7 +17,8 @@ import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.ReplyReader
 
 /** Reads Chat's failures: an HTTP status with OpenAI's error body, a chunk carrying an `error` object
- *  ([ERROR_CHUNK]), finish_reason content_filter ([FILTER_EVENT]) and a message's `refusal` ([REFUSAL_EVENT]). */
+ *  ([ERROR_CHUNK]), finish_reason content_filter ([FILTER_EVENT]), a finish_reason that names no finished answer
+ *  ([FINISH_EVENT]) and a message's `refusal` ([REFUSAL_EVENT]). */
 public object ChatReplies : ReplyReader {
     /** A chunk carrying an `error` object; its payload is the chunk as sent. */
     public const val ERROR_CHUNK: String = "error"
@@ -28,11 +29,20 @@ public object ChatReplies : ReplyReader {
     /** A message's `refusal`; its payload carries the refusal's text under `refusal`. */
     public const val REFUSAL_EVENT: String = "refusal"
 
+    /** A finish_reason that names no finished answer (DeepSeek's insufficient_system_resource, vLLM's abort,
+     *  OpenRouter's error): the backend stopped the generation for a reason of its own. Its payload carries the
+     *  reason under `finish_reason`. A re-send can change it, so it is read as a failure no table names. */
+    public const val FINISH_EVENT: String = "finish_reason"
+
     override fun http(reply: FailedReply): FailureCause.Provider = OpenAiReplies.http(reply)
 
     override fun event(event: FailedEvent): FailureCause.Provider = when (event.type) {
         FILTER_EVENT -> FailureCause.Provider.Refused(RefusedBy.FILTER)
         REFUSAL_EVENT -> FailureCause.Provider.Refused(RefusedBy.MODEL, ProviderWordsFilter.of(refusal(event.payload)))
+        FINISH_EVENT -> FailureCause.Provider.Unrecognized(
+            clientError = false,
+            said = ProviderWordsFilter.of(JsonScalars.str(event.payload, FINISH_EVENT)),
+        )
         else -> OpenAiReplies.inBand(OpenAiErrorEnvelope.of(event.payload), event.owner)
     }
 

@@ -13,7 +13,8 @@
 [daemon]
 control_port = 3096          # loopback-only control plane + dashboard
 # state_dir = "/mnt/fast/splice-state"   # where the daemon keeps its lock, per-head state and traces (default
-#                                        # ~/.splice); read at boot, so restart. A leading ~/ is your home
+#                                        # ~/.splice/state; an install older than 0.4 keeps ~/.claude-codex/state,
+#                                        # adopted in place); read at boot, so restart. A leading ~/ is your home
 
 # Reasoning display — edit here and restart the daemon, or PATCH the HOT keys and the next turn obeys. No code change.
 # Env aliases (CLAUDEX_SHOW_REASONING etc.) and runtime PATCH still override these.
@@ -828,11 +829,12 @@ command = "claude-splice"
 
 # ── KNOB REFERENCE: every key the config layers accept ──────────────────────────
 # A knob is settable in `[defaults]` (every head), in `[heads.<key>.overrides]` (that head), in the
-# daemon's state config.json, or at runtime through a /mgmt/config PATCH. Precedence is
-# env > TOML > default; the daemon snapshots nearly every knob at start, so a changed knob needs a
-# restart except where marked HOT. HOT means the RUNNING daemon re-reads it: a /mgmt/config PATCH or
-# an edit of the state config.json reaches it at the next use, and the marker says at what cadence it
-# is re-read. THIS file is not re-read — its layers are parsed once at start — so a knob changed HERE
+# daemon's state config.json, or at runtime through a PATCH to /api/config (the console's Settings page).
+# Precedence, lowest to highest: default, TOML, state config.json, env, a runtime PATCH, then a head's own
+# `[heads.<key>.overrides]`, which beats every shared layer. The daemon snapshots nearly every knob at start,
+# so a changed knob needs a restart except where marked HOT. HOT means the RUNNING daemon re-reads it: a
+# PATCH to /api/config or an edit of the state config.json reaches it at the next use, and the marker says at
+# what cadence it is re-read. THIS file is not re-read — its layers are parsed once at start — so a knob changed HERE
 # needs a restart whatever its marking, which is also why a `[heads.<key>.overrides]` example below
 # carries no marker even for a HOT knob. The marker is not a habit: KnobLivenessDocumentedLawTest
 # pairs every knob here against its restart flag in Knob.kt and fails on either mismatch, so

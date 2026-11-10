@@ -22,14 +22,25 @@ fixtures — `npm run oracle:replay`). Do not weaken either.
    project ruling in `CLAUDE.md`; L2 still pins the mirror's implementation and
    wire behavior when enabled. `prompt_cache_key` (keyed on the first user
    message) warms the INPUT cache independently of replay.
-2. **L2 — the mirror never regresses.** ONE `mirrorInto()` in
-   `reasoning/mirror.mjs`, called by the stream path (`codex/stream.mjs`) and
-   the non-stream path (`codex-proxy.mjs`). Thresholds are named there:
-   mirror ≥20, promote ≥40, honesty <20 chars.
-3. **L3 — honest failures.** `anthropic/sse.mjs` is the only module that can
-   emit `message_stop`; clean stops only via `emitTerminal(...)` (which owns
-   stop_reason derivation), failures only via `emitError(...)`. A failed or
-   truncated stream can never masquerade as a clean `end_turn`.
+2. **L2 — the mirror never regresses.** ONE `mirrorInto()`, a member of `Mirror` in
+   `features/turns/src/main/kotlin/splice/head/reasoning/Mirror.kt` (wall
+   `kt-l2-single-mirror-definition`; `kt-l2-mirror-delegates-to-predicate` makes it ask the one
+   `willMirror` predicate instead of re-deriving the gate). It has ONE call site,
+   `StreamHonesty.mirrorGated` in `.../head/pipeline/StreamHonesty.kt`, which `StreamFinish` runs for
+   every turn that ends clean, so the stream turn (`SseEmitter`) and the non-stream turn
+   (`CollectingTerminal`) reach the same mirror. Thresholds are named in
+   `core/src/main/kotlin/splice/core/turn/ReasoningThresholds.kt`: mirror ≥20, promote ≥40. The
+   empty-turn honesty check keeps no count of its own (CX-09): it asks `willMirror`, so its floor is
+   the mirror's 20.
+3. **L3 — honest failures.** `SseEmitter` (`features/turns/src/main/kotlin/splice/head/wire/SseEmitter.kt`)
+   is the sole owner of how a turn ends: the only code that can write `message_stop` or
+   `message_delta`, and the only file that may hold the `end_turn` literal (walls
+   `kt-l3-sole-wire-terminals`, `kt-l3-end-turn-literal`). A clean stop is reachable only via
+   `emitTerminal(...)` (which owns stop_reason derivation), a failure only via `emitError(...)` (an SSE
+   error event, so Claude Code retries), and a client that is gone seals via `abandon()` with nothing on
+   the wire. The non-stream `CollectingTerminal` builds its one JSON body from
+   `SseEmitter.TerminalEnvelope`, so it holds no stop_reason of its own. A failed or truncated stream can
+   never masquerade as a clean `end_turn`.
 4. **L4 — no fake summaries.** Empty in, empty out. Promote-to-text promotes
    MODEL content (the reasoning summary) only; the only fabricated literals
    anywhere are error strings and `[… omitted …]` markers.
@@ -147,9 +158,15 @@ routes the old aggregate served; the full set is whatever the mounts under
 | GET /api/auth · POST /api/auth/:head/{refresh,login} | per-head auth; codex browser login |
 | GET /api/compact · GET /api/logs/:head | compact stats, per-head log tail |
 
-- **Head lifecycle is shared** (`launcher/heads.mjs`): the CLI launcher and spliced
-  call the SAME registry + spawn/kill primitives (never forked). Control-side
-  spawns strip `CONFIG_ENV_NAMES` so `config.json` wins over inherited env.
+- **Head lifecycle is shared** (`HeadLifecycle`, `features/turns/src/main/kotlin/splice/head/lifecycle/`):
+  every head runs inside the daemon's one JVM, so start, drain, stop and restart exist once per head,
+  serialized under one mutex, behind the `Head` contract in `core/.../head/Head.kt`. The console's
+  `POST /api/heads/:head/{start,stop,restart}` (`FleetMount` → `HeadOperations`, `features/heads`) and
+  the daemon's own drain-and-stop reach that same object, never a forked copy. The CLI launcher holds no
+  head code: `app/src/main/dist/bin/splice-launch` cold-starts the daemon if it is down and POSTs
+  `/launch`, and `LaunchService` (`features/launch/.../recipe/`) returns the exec recipe. No head is
+  spawned as a child process, so there is no inherited environment to strip: a head reads config
+  through the one `ConfigService`, where env sits below a runtime PATCH (see "Config layering").
 - **Config PATCH needs no fan-out**: heads share the one `ConfigService`, so the PATCH
   lands in its runtime layer once and persists to state/config.json. A head whose
   `[heads.<key>.overrides]` sets the key keeps its own value (see "Config layering").

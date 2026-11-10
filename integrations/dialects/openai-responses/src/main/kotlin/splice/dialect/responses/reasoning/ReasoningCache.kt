@@ -5,7 +5,8 @@
 // tool calls, duplicated reasoning — operator report 2026-07-24). This cache holds each round's
 // envelopes keyed by its REAL function_call ids so the builder can reinject the plan in-position
 // when the tool results come back. Entries are READ, not consumed — a client-retried request
-// re-reads the same envelopes (grace by design). Losing a conversation (restart, eviction, idle
+// re-reads the same envelopes (grace by design), until the retry stores its own reasoning at that
+// history position, which replaces them (2026-11-09; ResponsesTurnSeams). Losing a conversation (restart, eviction, idle
 // TTL) degrades to the no-injection status quo, never to an error (NEVER-BELOW-STATUS-QUO law).
 //
 // REWORKED 2026-07-31 (review of #71, round 2): the CONVERSATION is the primary record, not the
@@ -88,7 +89,7 @@ internal class ReasoningCache(
     private val lock = Any()
     private val positions = ReasoningCachePositions()
     private val proofs = ReasoningCacheProofs()
-    private val persistence = ReasoningRoundPersistence(writes, positions, proofs)
+    private val persistence = ReasoningRoundPersistence(writes, positions, proofs, log)
 
     // What the last process left on disk, published once before any read or write sees the maps: a
     // restarted daemon's first request must find it. The directory is read under the lazy's own lock,
@@ -128,7 +129,16 @@ internal class ReasoningCache(
         writes.wake()
     }
 
-    fun put(conversationKey: String?, toolIds: List<String>, envelopes: List<String>) {
+    /** [replacesPosition]: [toolIds] is one history-position record, the first its turn stores at that position. What
+     *  other turns left there goes first (2026-11-09): a turn reaches a position another turn already stored at only
+     *  when the client re-sent a request whose earlier attempt it never kept, so that reasoning follows nothing in
+     *  the history. The re-sent request was built before this put and still carried it once; the next one does not. */
+    fun put(
+        conversationKey: String?,
+        toolIds: List<String>,
+        envelopes: List<String>,
+        replacesPosition: Boolean = false,
+    ) {
         if (toolIds.isEmpty() || envelopes.isEmpty()) return
         restored.value
         val bytes = envelopes.sumOf { it.length.toLong() } + toolIds.sumOf(positions::metadataBytes)
@@ -142,6 +152,14 @@ internal class ReasoningCache(
                 roundCount++
                 evictToBoundLocked(writing = null, writer = null, offered = null)
             } else {
+                // Ahead of the freeze: the replaced records sit where this turn's own history reached, so nothing
+                // before them moves in any request, and a conversation they froze stops sending them.
+                if (replacesPosition) {
+                    convos[conversationKey]?.let { persistence.replaceAt(conversationKey, it, toolIds) }?.let {
+                        totalBytes -= it.bytes
+                        roundCount -= it.records
+                    }
+                }
                 putConvoLocked(conversationKey, toolIds, envelopes, bytes)
             }
         }
@@ -390,6 +408,7 @@ private class ReasoningRoundPersistence(
     private val writes: ReasoningCacheWrites,
     private val positions: ReasoningCachePositions,
     private val proofs: ReasoningCacheProofs,
+    private val log: LogSink,
 ) {
     fun enqueue(key: String, conversation: ReasoningCacheConvo, round: ReasoningCacheRound) {
         val firstWithProofs = conversation.rounds.size == 1 && conversation.resultProofs.isNotEmpty()
@@ -408,6 +427,22 @@ private class ReasoningRoundPersistence(
         if (offeredBytes <= availableBytes) return 0L
         val released = positions.releaseMetadata(conversation)
         return released + if (released != 0L) rewrite(key, conversation) else 0L
+    }
+
+    /** Drop what other turns stored at [toolIds]' history position, file included, before it is admitted. This turn
+     *  reached that position through its own request or its own output, so the client kept nothing those turns
+     *  produced from there: their reasoning would ride upstream in front of history it never led to. The bytes
+     *  returned are what the cache's bound gets back, the rewrite's own change included. */
+    fun replaceAt(key: String, conversation: ReasoningCacheConvo, toolIds: List<String>): ReplacedRecords {
+        val index = toolIds.singleOrNull() ?: return ReplacedRecords(0, 0L)
+        val replaced = positions.replaceAt(conversation, index)
+        if (replaced.records == 0) return replaced
+        val rewritten = rewrite(key, conversation)
+        log(
+            "[reasoning-cache] conversation ${key.take(KEY_LOG_CHARS)}… re-sent at one history position: " +
+                "replaced ${replaced.records} records (${replaced.bytes}B) an earlier attempt left there",
+        )
+        return replaced.copy(bytes = replaced.bytes - rewritten)
     }
 
     fun rewrite(key: String, conversation: ReasoningCacheConvo): Long {

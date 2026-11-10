@@ -3,6 +3,7 @@
 // keeps identity, buildTurn, and the WS/failure surfaces.
 package splice.dialect.responses
 
+import splice.core.reasoning.ReasoningHistory
 import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.TurnMeta
 import splice.core.util.LogSink
@@ -18,6 +19,7 @@ import splice.upstream.FoldPolicy
 import splice.upstream.ReanchorPolicy
 import splice.upstream.StreamTranslator
 import splice.upstream.TurnSignals
+import java.util.WeakHashMap
 
 internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
     // The controller is stateless — one cached instance serves every turn (a per-call
@@ -38,6 +40,7 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
         )
     }
     private val liteShape = ResponsesLiteShape(deps.quirks)
+    private val turnPositions = TurnReasoningPositions()
 
     fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator =
         summaryOwner(meta).let { summaryOwner ->
@@ -119,9 +122,12 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
                 val storageEnabled = deps.quirks.roundTrip.reasoningCache || deps.turnOptions.replayOn()
                 if (!storageEnabled) return
                 // Private cache index, not a synthetic upstream call id. The envelope digest makes retries
-                // idempotent while distinct reasoning-only rounds may share the same visible boundary.
+                // idempotent while distinct reasoning-only rounds of ONE turn (fold, re-anchor) share the same
+                // visible boundary. A different turn at that boundary is the client re-sending a request whose
+                // earlier attempt it never kept, so this turn's first record there replaces what those left.
                 val index = ReasoningPositionIndex().index(position, envelope, order)
-                deps.continuity.cache.put(positioned, listOf(index), listOf(envelope))
+                val first = meta.scope.reasoningHistory?.let { turnPositions.first(it, position) } ?: false
+                deps.continuity.cache.put(positioned, listOf(index), listOf(envelope), replacesPosition = first)
             }
         }
     }
@@ -163,4 +169,17 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
     // ReanchorRunner (driveOneTurn routes fold first).
     fun reanchorPolicy(meta: TurnMeta): ReanchorPolicy =
         if (liteShape.isLiteModel(meta.route.upstreamModel)) liteReanchorPolicy else defaultReanchorPolicy
+}
+
+/** The history positions each live turn has stored reasoning at. A turn is known by its own history cursor: every
+ *  round of the turn shares it (continuation rounds reuse the turn's meta) and no other turn holds it, so an entry
+ *  goes when its turn does. 2026-11-09: one request re-sent across 37 attempts left 6,715 records at one position,
+ *  each attempt's ids new, and every later attempt carried all of them upstream. */
+private class TurnReasoningPositions {
+    private val turns = WeakHashMap<ReasoningHistory, MutableSet<String>>()
+
+    /** Whether [position] is the first place [turn] stores reasoning at; every later record there is its own. */
+    fun first(turn: ReasoningHistory, position: String): Boolean = synchronized(turns) {
+        turns.getOrPut(turn) { hashSetOf() }.add(position)
+    }
 }

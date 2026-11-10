@@ -8,6 +8,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import java.io.IOException
+import java.util.concurrent.ConcurrentLinkedQueue
 
 /** One cell owns the only delegate receiver. Foreground observation consumes prepared frames independently. */
 internal class NativeDelegatePump(
@@ -17,7 +18,10 @@ internal class NativeDelegatePump(
     private val cellId: String,
     private val callbacks: NativeCallbacks,
 ) : AutoCloseable {
-    val ready: Channel<JsonObject> = Channel(Channel.UNLIMITED)
+    // Observation may time out after receiving a wakeup. Frames remain owned by
+    // the cell until it synchronously consumes them, independently of that wakeup.
+    private val frames = ConcurrentLinkedQueue<JsonObject>()
+    val ready: Channel<Unit> = Channel(Channel.CONFLATED)
     private val incoming = connection.events.cell(sessionId, cellId)
     private val job = scope.launch(start = CoroutineStart.LAZY) {
         try {
@@ -26,7 +30,8 @@ internal class NativeDelegatePump(
                     if (callbacks.handlesNotification(frame)) {
                         launch(start = CoroutineStart.UNDISPATCHED) { callbacks.notify(frame) }
                     } else {
-                        ready.send(frame)
+                        frames.add(frame)
+                        ready.trySend(Unit)
                     }
                 }
             }
@@ -49,6 +54,8 @@ internal class NativeDelegatePump(
         job.start()
         if (job.isCompleted) connection.events.detach(sessionId, cellId, this)
     }
+
+    fun poll(): JsonObject? = frames.poll()
 
     fun fail(error: IOException) {
         ready.close(error)

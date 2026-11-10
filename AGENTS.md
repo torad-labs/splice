@@ -65,7 +65,8 @@ fixtures — `npm run oracle:replay`). Do not weaken either.
   guidance (2026-09-21: dropping `splice_exec` on compaction cost the whole
   transcript's cache on every compaction, `cached_tokens=0`).
 - Mirror wire format: `\n[reasoning summary]\n<text>\n` (`mirrorWireText`).
-- Legacy reasoning replay envelope (`reasoning/replay.mjs`): accept
+- Legacy reasoning replay envelope (`ReasoningReplay` in
+  `core/src/main/kotlin/splice/core/reasoning/Replay.kt`): accept
   `redacted_thinking` blocks tagged `splice-reasoning` v1; encode/decode stay
   paired (a tag/version bump strands in-flight transcripts). New Responses
   turns retain encrypted reasoning in ordered server-owned history and emit

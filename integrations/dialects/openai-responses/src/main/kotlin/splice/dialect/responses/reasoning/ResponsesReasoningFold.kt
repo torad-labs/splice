@@ -250,7 +250,10 @@ internal class ResponsesReasoningFold(
         // a distinct item whose text substring-matched an earlier one was dropped, audit 2026-07-18).
         val streamedByDeltas = existing != null && existing.sawDelta
         if (raw.isEmpty() || streamedByDeltas) return
-        if (!emittedReasoningKeys.add(frames.reasoningKey(outputIndex)) || !statusHeaders.admitsLate(raw)) return
+        // The item counts as emitted only once its text reaches the sink (below): a copy admitsLate turns away, or one
+        // the recap filter empties, showed nothing, so it must not mark the item shown.
+        val key = frames.reasoningKey(outputIndex)
+        if (key in emittedReasoningKeys || !statusHeaders.admitsLate(raw)) return
         // sequential_cutoff recap arrives through THIS path too (completed items restate prior
         // parts) — same ordered recap model as the delta path, at part granularity. MUST run AFTER
         // every early-return above: the backend can deliver item.done BEFORE the item's remaining
@@ -267,6 +270,7 @@ internal class ResponsesReasoningFold(
             raw
         }
         if (text.isEmpty()) return
+        emittedReasoningKeys.add(key)
         appendLateReasoning(existing, outputIndex, text, sink)
     }
 

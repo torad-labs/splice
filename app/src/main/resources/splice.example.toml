@@ -522,8 +522,9 @@ context_window = 1000000
 # with a boot-log explanation, never a substitute. An explicit `context_window` forces
 # one window onto every selected row; omit it when their real backend ceilings differ. A launch
 # plants the pinned row's window as CLAUDE_CODE_MAX_CONTEXT_TOKENS, and usage scaling makes every
-# other row compact at its own declared window — live through /model. A window edited here reaches
-# running sessions after `splice restart`, through the window each session reports.
+# other row compact at its own declared window — live through /model. A window edited here needs no
+# restart: the daemon re-reads the windows from this file while it runs, and running sessions compact
+# at the new window from their next request, through the usage splice reports to each.
 [claude]                       # global config-sharing policy for every wrapper
 # `sessions` shares the cross-session-messaging peer registry, so sessions on ANY head (and plain
 # `claude`) can see and message each other; drop it (or isolate it per head) to wall a head off.
@@ -864,7 +865,7 @@ command = "claude-splice"
 #                                                           #     not take it may refuse the request.
 # quotaPoll = "auto"                                        # "off" stops every plan-usage poller
 # quotaPollIntervalMs = "300000"                            # ms; how often a subscription head re-polls usage (HOT, per wait)
-# maxInflight = "0"                                         # requests; concurrent turns per head, 0 = unlimited (HOT, per admission)
+# maxInflight = "12"                                        # requests; concurrent turns per head, 0 = unlimited (HOT, per admission)
 # maxQueued = "512"                                         # requests; admission queue cap, 0 = unlimited (HOT, per admission)
 # transcriptView = "true"                                  # HOT, global: read Claude Code's already-written
 #                                                           #     redacted conversation. The console switch sets

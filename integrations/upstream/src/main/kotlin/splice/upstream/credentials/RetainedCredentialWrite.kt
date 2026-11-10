@@ -24,7 +24,9 @@ public fun interface CredentialText {
     public fun read(): String
 }
 
-internal class RetainedCredentialWrite(
+/** A credential document whose write failed, kept and served in the file's place until it is written (codex, grok, kimi
+ *  and Claude through [TokenRenewal]; Muse's minted key on its own). */
+public class RetainedCredentialWrite(
     private val path: Path,
     private val tag: String,
     private val log: LogSink,
@@ -40,13 +42,13 @@ internal class RetainedCredentialWrite(
     private var retained: Retained? = null
 
     /** Whether a granted pair is waiting to be written. */
-    val waiting: Boolean get() = current() != null
+    public val waiting: Boolean get() = current() != null
 
     override fun read(): String = current()?.document ?: Files.readString(path)
 
     /** Writes [document] owner-only and atomically. A failure keeps it for [read] and [flush]; the failure is returned
      *  for the caller's line, never thrown. */
-    fun write(document: String): Throwable? =
+    public fun write(document: String): Throwable? =
         Cancellables.runCatchingCancellable { SecureFile.writeAtomic0600(path, document) }.fold(
             onSuccess = {
                 retained = null
@@ -64,7 +66,7 @@ internal class RetainedCredentialWrite(
         )
 
     /** Writes a waiting document again; quiet while the write keeps failing, one line when it lands. */
-    fun flush() {
+    public fun flush() {
         val waiting = current() ?: return
         if (write(waiting.document) == null) {
             log("[$tag] the renewed credential that could not be written earlier is written now")
@@ -72,7 +74,7 @@ internal class RetainedCredentialWrite(
     }
 
     /** The line a failed write leaves: the renewed login is still served, from memory. */
-    fun failedLine(failure: Throwable): String =
+    public fun failedLine(failure: Throwable): String =
         "[$tag] token renewed but the credential write failed (${SafeFailureText.render(failure)}); " +
             "serving the renewed token from memory and writing it again at the next use"
 

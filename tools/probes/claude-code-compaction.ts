@@ -52,8 +52,12 @@ async function isolated(client: string, mode: Mode): Promise<Result> {
       return;
     }
     seen.push({ reply: 200, summary });
+    // A summary reply carries the <summary> block the client asked for: 2.1.312, 316, 318, 319, 321 and 322 ask once more
+    // for a reply without one (2.1.296, 309 and 310 do not; 2.1.311 was not installed to try), which this arm would
+    // count as a second compaction instead of the one reaction it proves.
     const content = mode === "prompt_too_long" && attempt === 3
-      ? "Local summary: previous greeting acknowledged." : attempt === 1 ? "READY" : "DONE";
+      ? "<analysis>Local fixture.</analysis>\n<summary>\n1. Primary Request and Intent: the user greeted and asked for READY.\n</summary>"
+      : attempt === 1 ? "READY" : "DONE";
     const usage = { input_tokens: 100, output_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
     const message = { type: "message", id: "msg_local_" + attempt, role: "assistant",
       model: body.model ?? "claude-sonnet-5", content: [{ type: "text", text: content }],
@@ -140,7 +144,9 @@ async function isolated(client: string, mode: Mode): Promise<Result> {
     pass = equals([200, 200, 200]) && results.length === 2 && final !== undefined
       && !final.isError && final.text.includes("DONE") && !compactBoundary && !summaryRequests.some(Boolean);
   } else {
-    pass = equals(mode === "first_exchange" ? [400] : [200, 400])
+    // The client sends an unrelated 400's turn once more (2.1.296 without thinking.display, 2.1.322 as it was), and that
+    // is an ordinary turn: the proof is that no summary is asked for and no compact boundary is written.
+    pass = equals(mode === "first_exchange" ? [400] : [200, 400, 200])
       && !compactBoundary && !summaryRequests.some(Boolean);
   }
   return { mode, pass, replies, summaryRequests, compactBoundary, clientExit: exit };

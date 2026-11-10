@@ -17,8 +17,10 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
-// why: proof (f) ran on this version by hand (Oct 12), so it holds before splice's own check has recorded it.
-private const val PROVEN_VERSION = "2.1.296"
+// why: proof (f) ran on this version by hand (Oct 12), so it holds before splice's own check has recorded it. It is the
+// one version that shortcut covers, and it stays here when the Claude Code version splice is tested on moves on:
+// a newer one holds only once the check has recorded it.
+public const val PLUGIN_FLAG_PROVEN_VERSION: String = "2.1.296"
 private const val VERSIONS_KEY = "versions"
 private const val HOLDS_KEY = "holds"
 private const val CHECKED_AT_KEY = "checked_at"
@@ -34,7 +36,7 @@ public class PluginFlagVerdicts(stateDir: Path, public val versionsDir: Path) {
     private val json = Json { prettyPrint = true }
 
     /** True when the launch may pass `--plugin-dir-no-mcp` to this version. Unreadable reads as no verdict. */
-    public fun holds(version: String): Boolean = version == PROVEN_VERSION || all()[version]?.holds == true
+    public fun holds(version: String): Boolean = version == PLUGIN_FLAG_PROVEN_VERSION || all()[version]?.holds == true
 
     /** Every recorded verdict by version; an absent or unreadable file is none. */
     public fun all(): Map<String, PluginFlagVerdict> {

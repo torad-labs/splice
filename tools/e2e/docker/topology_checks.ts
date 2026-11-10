@@ -32,7 +32,6 @@ function countTokens(): void {
 const RECIPE_KEYS = [
   "ANTHROPIC_BASE_URL",
   "API_TIMEOUT_MS",
-  "CLAUDE_CODE_MAX_RETRIES",
   "CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES",
   "CLAUDE_CODE_RETRY_WATCHDOG",
 ] as const;
@@ -48,6 +47,12 @@ function launchRecipe(port: string): void {
   // V4-72: without persistent retry the client stops after 10 attempts (~2-3 min) and a longer
   // rate-limit hold ends the session instead of resuming when the window reopens. Every head.
   check(env["CLAUDE_CODE_RETRY_WATCHDOG"] === "1", `persistent retry must be planted: ${env["CLAUDE_CODE_RETRY_WATCHDOG"]}`);
+  // Nov 9: with this unset the client re-sends a timed-out non-streaming request without limit (one subagent
+  // re-sent one request 228 times over 25 hours). Every head, like the watchdog.
+  check(
+    env["CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES"] === "2",
+    `non-streaming timeout retries must be bounded at 2: ${env["CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES"]}`,
+  );
   check(Array.isArray(r["argv"]) && r["argv"].length > 0, "empty argv");
 }
 

@@ -124,7 +124,7 @@ internal class SseRoundConsume(
             val rawOutcome = translator.driveTurn(events, end.gate(inputs.sink))
             // An attempt that ended early has no outcome of its own to mark, classify or report.
             end.early()?.let { return it }
-            streamEnded(drive, rawOutcome)
+            streamEnded(drive, resp, rawOutcome)
             val classified = zeroEvent.classify(
                 drive,
                 rawOutcome,
@@ -144,12 +144,21 @@ internal class SseRoundConsume(
     /** The stream ended with an outcome of its own. When the upstream said the last word on the request (the response
      *  completed, with the bill it reported, or the upstream reported why it failed), the request no longer runs there.
      *  Anything else (a client gone, a reaped round, a stream that stopped with no terminal) leaves it possibly still
-     *  running upstream. */
-    private fun streamEnded(drive: TurnDrive, outcome: TurnOutcome) {
+     *  running upstream.
+     *
+     *  A stream the upstream finished is also read to its end. The chat and Responses translators stop at the
+     *  upstream's last word and do not wait for the socket to close, which leaves the body's last bytes unread; read
+     *  them (a few bytes, for a few ms at most) so the connection returns to the pool and the next round does not
+     *  dial and handshake again. A stream the turn ended on purpose is not drained: what is still coming on it is not
+     *  a tail. */
+    private suspend fun streamEnded(drive: TurnDrive, resp: UpstreamResponse, outcome: TurnOutcome) {
         val bill = (outcome as? TurnOutcome.Success)?.usage
         val upstreamFinished = bill != null || (outcome as? TurnOutcome.Failure)?.cause?.providerReported == true
         if (upstreamFinished) drive.route?.finished(bill)
         drive.perf.mark(PerfKeys.STREAM_END)
+        if (upstreamFinished) {
+            val _ = resp.drainTail()
+        }
     }
 }
 

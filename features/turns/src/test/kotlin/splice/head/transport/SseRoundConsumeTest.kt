@@ -11,8 +11,10 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.utils.io.ByteChannel
 import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.InternalAPI
 import io.ktor.utils.io.writeStringUtf8
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
@@ -91,12 +93,22 @@ import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.TurnWatchdog
 import splice.upstream.sse.WireSink
+import splice.upstream.transport.BodyChannelSource
 import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamResponse
+import splice.upstream.transport.UpstreamTransport
+import java.io.InputStream
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.Socket
 import java.net.SocketException
 import java.nio.file.Path
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.thread
 import kotlin.time.Duration.Companion.seconds
 
 private class ConsumeFakeAuth : RefreshableAuthProvider {
@@ -133,7 +145,7 @@ class SseRoundConsumeTest {
         mock.stop()
     }
 
-    private fun provider(): Provider = TestResponsesProvider(
+    private fun provider(baseUrl: String = mock.baseUrl): Provider = TestResponsesProvider(
         tuning = ProviderTuning(
             name = ProviderName(key = "codex", label = "claudex"),
             catalog = ModelCatalog(
@@ -143,7 +155,7 @@ class SseRoundConsumeTest {
             ),
             pinnedModel = "gpt-5.6-sol",
             auth = ConsumeFakeAuth(),
-            locations = ProviderLocations(baseUrl = mock.baseUrl),
+            locations = ProviderLocations(baseUrl = baseUrl),
             watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             loginCommand = "claudex login",
         ),
@@ -388,6 +400,140 @@ class SseRoundConsumeTest {
         }
     }
 
+    // The whole path on the production transport and the real Responses translator: each round meets a refused reply
+    // first, whose retry needs the connection that reply rode on, then streams and stops at the completed response.
+    // Three such rounds make one connection. The upstream holds the stream's end back until the translator has closed
+    // the client's blocks, which is when it stops. This is the end-to-end check; it does not fail without the drain
+    // when the transport's own thread wins the race to the stream's end, which is why the arrangements that cannot
+    // be won, `a round the upstream finished reads ...` here and the held-tail posts in UpstreamTailDrainTest, hold
+    // the oracle.
+    @Test
+    fun `refused then retried rounds that stop at the completed response keep one connection`() = runBlocking {
+        val stream = client.post("${mock.baseUrl}/v1/responses") {
+            setBody("""{"instructions":"SCENARIO:hello"}""")
+        }.bodyAsText()
+        HeldTailUpstream(stream).use { upstream ->
+            val post = postOver(upstream)
+            val rounds = 3
+            val outcomes = List(rounds) {
+                val drive = drive()
+                val recording = RecordingSink2()
+                val sink = object : WireSink by recording {
+                    override suspend fun closeAll() {
+                        upstream.releaseTail()
+                        recording.closeAll()
+                    }
+                }
+                val inputs = WsRoundInputs(
+                    drive,
+                    RoundBody.Text("""{"instructions":"SCENARIO:hello"}"""),
+                    sink,
+                    this,
+                    Job(),
+                    ClientFrameEmitted { true },
+                    0,
+                )
+                try {
+                    (post.post(inputs) as RoundResult.Outcome).outcome
+                } finally {
+                    inputs.turnJob.cancel()
+                    drive.slot.release()
+                }
+            }
+
+            assertTrue(outcomes.all { it is TurnOutcome.Success }, "every round completed: $outcomes")
+            assertEquals(2 * rounds, upstream.requests.get(), "each round was refused once and sent again")
+            assertEquals(1, upstream.accepted.get(), "the retries and the rounds after them rode one connection")
+        }
+    }
+
+    /** The production post and consume of a Responses head, on the production transport, aimed at [upstream]. */
+    private fun postOver(upstream: HeldTailUpstream): SseRoundPost {
+        val timed = provider(upstream.baseUrl)
+        return SseRoundPost(
+            timed,
+            UpstreamClient(
+                totalTimeoutMs = 30_000,
+                client = UpstreamTransport().defaultClient(30_000),
+                pacing = RetryPacing(backoff = RetryBackoff { _, _ -> }),
+            ),
+            UsageStore(tmp.resolve("held-usage.json"), tmp.resolve("held-rate.json")),
+            TurnQuota(null, emptyMap(), null),
+            SseRoundConsume(
+                timed,
+                ZeroEventFailure(timed, {}),
+                TurnTelemetry("synthetic", PerfStats(tmp.resolve("held-perf.jsonl")), {}, ElapsedClock { 0L }),
+                TearAwareEvents(timed, {}),
+            ),
+            RetryNotice {},
+        )
+    }
+
+    /** A body that sends its [tail] and closes only when something waits on it for more, which a reader that stopped at
+     *  the stream's last word does only if it goes on to read the stream's end. Nothing sent before that is read. */
+    @OptIn(InternalAPI::class)
+    private class TailOnDemand(private val body: ByteChannel, private val tail: String) : ByteReadChannel by body {
+        override suspend fun awaitContent(min: Int): Boolean {
+            if (!body.isClosedForWrite) {
+                body.writeStringUtf8(tail)
+                body.close()
+            }
+            return body.awaitContent(min)
+        }
+    }
+
+    /** One consume over a stream that holds one event and a tail behind it, whose translator stops at that event and
+     *  ends as [ended] says. Whether the tail was read is whether the body then stands at its end. */
+    private fun streamLeftBehind(ended: TurnOutcome): Boolean = runBlocking {
+        val base = provider()
+        val translator = StreamTranslator { events, _ ->
+            val _ = events.first()
+            ended
+        }
+        val stopping = object : Provider by base {
+            override fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator = translator
+        }
+        val consume = SseRoundConsume(
+            stopping,
+            ZeroEventFailure(stopping, log = {}),
+            TurnTelemetry("codex", PerfStats(tmp.resolve("left-perf.jsonl")), log = {}, clock = ElapsedClock { 0L }),
+            TearAwareEvents(stopping, log = {}),
+        )
+        val body = ByteChannel(autoFlush = true)
+        body.writeStringUtf8("data: {\"type\":\"response.completed\"}\n\n")
+        val saved = client.post("${mock.baseUrl}/v1/responses") { setBody("""{"instructions":"SCENARIO:hello"}""") }
+        val drive = drive()
+        val inputs = WsRoundInputs(
+            drive = drive,
+            body = RoundBody.Text("{}"),
+            sink = RecordingSink2(),
+            scope = this,
+            turnJob = Job(),
+            frameEmittedThisRound = ClientFrameEmitted { true },
+            eventsBase = 0,
+        )
+        try {
+            val response = UpstreamResponse(saved, BodyChannelSource { TailOnDemand(body, "data: [DONE]\n\n") })
+            val _ = consume.read(inputs, response)
+            body.isClosedForRead
+        } finally {
+            inputs.turnJob.cancel()
+            drive.slot.release()
+        }
+    }
+
+    @Test
+    fun `a round the upstream finished reads what its stream left behind`() {
+        val finished = TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(reported = emptySet()))
+
+        assertTrue(streamLeftBehind(finished), "the stream's end was read, so its connection can be reused")
+    }
+
+    @Test
+    fun `a round the client abandoned leaves its stream alone`() {
+        assertFalse(streamLeftBehind(TurnOutcome.ClientAbandoned()), "a stream ended on purpose is not read on")
+    }
+
     @Test
     fun `each timing flow collection owns its reader stopwatch`() = runBlocking {
         var now = 0L
@@ -448,5 +594,79 @@ class SseRoundConsumeTest {
             inputs.turnJob.cancel()
             drive.slot.release()
         }
+    }
+}
+
+/** An upstream that refuses every other request with a small 503 and answers the rest with [stream], whole but for its
+ *  end: the chunked terminator is held until [releaseTail]. A thread per connection, so a second connection is accepted
+ *  at once and [accepted] counts every one a client dials. */
+private class HeldTailUpstream(private val stream: String) : AutoCloseable {
+    private val server = ServerSocket(0, 8, InetAddress.getLoopbackAddress())
+    private val connections = CopyOnWriteArrayList<Socket>()
+    private val tail = Semaphore(0)
+
+    val accepted = AtomicInteger()
+    val requests = AtomicInteger()
+    val baseUrl: String get() = "http://127.0.0.1:${server.localPort}"
+
+    init {
+        val _ = thread(isDaemon = true, name = "held-tail-upstream") {
+            while (!server.isClosed) {
+                val socket = runCatching { server.accept() }.getOrNull() ?: break
+                connections += socket
+                val _ = accepted.incrementAndGet()
+                val _ = thread(isDaemon = true) { val _ = runCatching { socket.use(::serveEach) } }
+            }
+        }
+    }
+
+    fun releaseTail() = tail.release()
+
+    private fun serveEach(socket: Socket) {
+        val input = socket.getInputStream().buffered()
+        val output = socket.getOutputStream()
+        while (true) {
+            val length = contentLength(input) ?: return
+            val _ = input.readNBytes(length)
+            if (requests.incrementAndGet() % 2 == 1) {
+                output.write(REFUSAL)
+            } else {
+                // A permit left by an earlier round's second close of its blocks is not this stream's release.
+                tail.drainPermits()
+                val body = stream.toByteArray()
+                output.write(STREAM_HEAD + "${body.size.toString(16)}\r\n".toByteArray() + body + "\r\n".toByteArray())
+                output.flush()
+                tail.acquire()
+                output.write(STREAM_END)
+            }
+            output.flush()
+        }
+    }
+
+    private fun contentLength(input: InputStream): Int? {
+        val head = StringBuilder()
+        while (!head.endsWith("\r\n\r\n")) {
+            val next = input.read()
+            if (next == -1) return null
+            head.append(next.toChar())
+        }
+        val header = head.lineSequence().firstOrNull { it.startsWith("Content-Length:", ignoreCase = true) }
+        return header?.substringAfter(':')?.trim()?.toInt() ?: 0
+    }
+
+    override fun close() {
+        server.close()
+        connections.forEach { val _ = runCatching { it.close() } }
+    }
+
+    private companion object {
+        const val REFUSAL_BODY = """{"error":{"message":"overloaded"}}"""
+        val REFUSAL = (
+            "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\n" +
+                "Content-Length: ${REFUSAL_BODY.length}\r\n\r\n$REFUSAL_BODY"
+            ).toByteArray()
+        val STREAM_HEAD = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n"
+            .toByteArray()
+        val STREAM_END = "0\r\n\r\n".toByteArray()
     }
 }

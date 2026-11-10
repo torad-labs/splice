@@ -1,4 +1,4 @@
-// NEW: the client-side retry limits a launch plants. Beside LaunchServiceTest's "is planted" tests, which sit at the
+// NEW: the client-side retry limits and timeout settings a launch plants. Beside LaunchServiceTest's "is planted" tests, which sit at the
 // size wall (detekt LargeClass 400), so this one is its own class, as ClientPickedLaunchTest is.
 package splice.launch.recipe
 
@@ -49,6 +49,19 @@ class LaunchRetryEnvTest(@param:TempDir private val tmp: Path) {
         for (native in listOf(false, true)) {
             val env = service.launch(spec(native), emptyList(), dangerouslySkipPermissions = false).env
             assertEquals("2", env["CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES"], "forwardClientAuth=$native")
+        }
+    }
+
+    // Nov 8-9: Claude Code cut every non-streaming request through splice at about 360 s, Bun's built-in fetch timeout
+    // (measured: Bun 1.4.3 against a server that sends nothing, TimeoutError after 360363 ms with default options and
+    // no timeout through 540 s with timeout: false), and re-sent it 228 times. The client passes timeout: false to
+    // fetch only when its body-idle watchdog is on or this variable is falsy, so "0" leaves the head's own deadline to
+    // answer a non-streaming request first. Planted for EVERY head, the native one (forwardClientAuth) included.
+    @Test
+    fun `API_FORCE_IDLE_TIMEOUT is planted as 0 for a foreign and the native head`() {
+        for (native in listOf(false, true)) {
+            val env = service.launch(spec(native), emptyList(), dangerouslySkipPermissions = false).env
+            assertEquals("0", env["API_FORCE_IDLE_TIMEOUT"], "forwardClientAuth=$native")
         }
     }
 }

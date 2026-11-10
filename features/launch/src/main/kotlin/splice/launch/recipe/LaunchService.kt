@@ -367,6 +367,15 @@ public class LaunchService(
             // the head's wall speaks first. CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK would only
             // delete a recovery path.
             put("API_TIMEOUT_MS", spec.gateway.apiTimeoutMs.toString())
+            // Nov 8-9: Claude Code cut every non-streaming request through splice at about 360 s and re-sent it 228
+            // times, so the deadline above never got to decide. The cut is Bun's own fetch timeout, not the client's
+            // (measured on Bun 1.4.3: a server that sends nothing is cut at 360363 ms with the default options, and
+            // not through 540 s with timeout: false), and the non-streaming path writes no byte until the whole
+            // answer is ready. The client passes timeout: false to fetch only when its body-idle watchdog is on or
+            // this variable is falsy, and "0" is falsy: planted, the head's own deadline answers a non-streaming
+            // request first, as the comment above intends. Planted UNCONDITIONALLY, native included, like
+            // API_TIMEOUT_MS: no head wants a built-in timer deciding a turn the head's wall already bounds.
+            put("API_FORCE_IDLE_TIMEOUT", "0")
             // Failure-handling slice 5: the same timeout, told to the head on every request, so a turn held for a reset
             // fits the session that sent it (a session launched before this reads as the 960 s every session had).
             // Merged with any custom headers the shell already names, which Claude Code reads one per line.
@@ -384,11 +393,13 @@ public class LaunchService(
             // cooldown lift. Planted UNCONDITIONALLY, native included: it is a client-side WAIT
             // policy, and every head wants its session to survive a hold.
             put("CLAUDE_CODE_RETRY_WATCHDOG", "1")
-            // Nov 9: a subagent re-sent ONE request 228 times over 25 hours through splice, because each non-streaming
-            // attempt hit the client's 360 s timeout. Claude Code's retry limit for a timed-out non-streaming request
-            // is unlimited while this is unset. 2 is the limit the client itself applies when its retry watchdog judges
-            // a failed stream outlasted the timeout. Planted UNCONDITIONALLY, native included, like the watchdog: it
-            // bounds a client-side retry loop, and every head's session wants the loop bounded.
+            // Claude Code's limit for re-sending a non-streaming request that timed out is unlimited while this is
+            // unset. 2 is the limit the client itself applies when its retry watchdog judges a failed stream
+            // outlasted the timeout. It bounds only the retries the client COUNTS, and the client counts one only
+            // when its own timer fired (API_TIMEOUT_MS). It does NOT bound a cut by Bun's built-in fetch timeout at
+            // about 360 s, which the client does not count: that is what re-sent one request 228 times over 25 hours
+            // on Nov 8-9, and API_FORCE_IDLE_TIMEOUT above removes it. Planted UNCONDITIONALLY, native included,
+            // like the watchdog: every head's session wants the loop it does count bounded.
             put("CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES", "2")
             // curl, which runs the statusline, reads the lowercase spelling first and ignores NO_PROXY once it is set.
             mergedNoProxy(spec).let { put("NO_PROXY", it); put("no_proxy", it) }

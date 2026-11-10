@@ -89,6 +89,8 @@ private const val TAIL_DRAIN_MAX_BYTES = 8 * 1024
 // ktor 3.6.0 left in force; a server holding its stream open past its last word costs a turn this long at most.
 private const val TAIL_DRAIN_MS = 100L
 
+// why: one read's worth of a tail that is a few hundred bytes at most; small enough that the byte bound above is
+// checked several times before it is reached, so a reply still being sent is given up on early.
 private const val TAIL_READ_BYTES = 1024
 
 /** Receives response headers with the request's private credential join key, never a wire-visible field. */

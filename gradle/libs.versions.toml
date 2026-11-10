@@ -3,7 +3,7 @@
 # index was stale — always check metadata <latest>, not search "latestVersion").
 [versions]
 kotlin = "2.3.21"
-ktor = "3.6.0"
+ktor = "3.6.1"
 coroutines = "1.11.0"
 # kotlinx-serialization 1.12.0's klibs carry ABI 2.4.0 (built by Kotlin 2.4.10), which the 2.3.21 compiler the MCP hub
 # links with cannot consume, and its JVM parser caps nesting at 400 (JsonLineShapeFuzzTest). Held until kotlin moves to
@@ -69,7 +69,7 @@ opentelemetry-sdk-logs = { module = "io.opentelemetry:opentelemetry-sdk-logs", v
 opentelemetry-exporter-otlp = { module = "io.opentelemetry:opentelemetry-exporter-otlp", version.ref = "opentelemetry" }
 graaljs-polyglot = { module = "org.graalvm.polyglot:polyglot", version.ref = "graaljs" }
 graaljs-community = { module = "org.graalvm.polyglot:js-community", version.ref = "graaljs" }
-zstd-jni = { module = "com.github.luben:zstd-jni", version = "1.5.7-24" }
+zstd-jni = { module = "com.github.luben:zstd-jni", version = "1.5.7-25" }
 slf4j-nop = { module = "org.slf4j:slf4j-nop", version.ref = "slf4j" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }

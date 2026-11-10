@@ -31,9 +31,9 @@ import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 
 /** The vendor's half of one renewal, run while the credential lock is held: read the file again ([TokenRenewal.text]),
- *  adopt a rotation that landed since [prior] was served (G1), else exchange the refresh token and
- *  [TokenRenewal.persist] what the endpoint granted. [prior] is the token this process last served, taken before the
- *  lock. */
+ *  adopt a rotation that landed since [prior] was read (G1), else exchange the refresh token and
+ *  [TokenRenewal.persist] what the endpoint granted. [prior] is the token the renewal was asked about, taken before the
+ *  lock: the one a lookup held when it saw a renewal was due, or, for a 401, the one this process last served. */
 public fun interface RenewalStage {
     public suspend fun renew(prior: String?): RefreshOutcome
 }
@@ -86,7 +86,8 @@ public class TokenRenewal(
         return when {
             left >= windows.proactiveMs -> serve(held.credentials)
             left >= windows.floorMs && background != null -> {
-                background.launch { (exchange() as? RefreshOutcome.Refreshed)?.credentials }
+                val seen = secretOf(held.credentials)
+                background.launch { (exchangeSeen(seen) as? RefreshOutcome.Refreshed)?.credentials }
                 serve(held.credentials)
             }
             else -> waited(held, expiresAt)
@@ -101,8 +102,14 @@ public class TokenRenewal(
 
     /** One token exchange, single-flight, logged once inside the flight (credentialsOrNull is the one logging
      *  flatten), and read whole by the turn's retry engine (failure-handling slice 4). */
-    public suspend fun exchange(): RefreshOutcome {
-        val outcome = flight.run { renewed().also { it.credentialsOrNull(tag, log) } }
+    public suspend fun exchange(): RefreshOutcome = exchangeSeen(lastServed)
+
+    /** One renewal for a caller that last saw [seen]: the token its lookup read (null: none), or for a 401 the one this
+     *  process last served. A caller that arrives after a renewal ended starts the next one, and that one must tell
+     *  from [seen] that the renewal it missed already replaced the token the caller holds. Callers that join a renewal
+     *  in flight share it, and with it the [seen] of the caller that started it. */
+    private suspend fun exchangeSeen(seen: String?): RefreshOutcome {
+        val outcome = flight.run { renewed(seen).also { it.credentialsOrNull(tag, log) } }
         if (outcome is RefreshOutcome.Refreshed) lastServed = secretOf(outcome.credentials)
         return outcome
     }
@@ -135,7 +142,10 @@ public class TokenRenewal(
     }.getOrNull()
 
     private suspend fun waited(held: HeldToken, expiresAtMs: Long): LoginAnswer {
-        val outcome = exchange()
+        // The renewal is asked about the token this lookup read, not the one last served: a renewal that landed after
+        // the read and before this call has already replaced it, and its grant is this lookup's answer, never a second
+        // rotation that spends the refresh token the first one just issued.
+        val outcome = exchangeSeen(secretOf(held.credentials))
         return when {
             outcome is RefreshOutcome.Refreshed -> LoginAnswer.Granted(outcome.credentials)
             clock() < expiresAtMs -> serve(held.credentials)
@@ -149,7 +159,7 @@ public class TokenRenewal(
     // vendor stage runs inside the cross-process lock. Audit, Nov 9, 2026: a lock that cannot be taken (a read-only
     // folder, a lock file another user owns, no file descriptors left) is a local read failure with its own line,
     // never a throw that the turn would report as the upstream resetting the connection.
-    private suspend fun renewed(): RefreshOutcome {
+    private suspend fun renewed(seen: String?): RefreshOutcome {
         val statFailure = Cancellables.runCatchingCancellable { Files.getLastModifiedTime(authPath) }.exceptionOrNull()
         if (statFailure != null) {
             val absent = statFailure is NoSuchFileException && !Files.exists(authPath, LinkOption.NOFOLLOW_LINKS)
@@ -157,12 +167,11 @@ public class TokenRenewal(
         }
         val identity = identity()
         if (latch.isLatched(identity)) return RefreshOutcome.Rejected(INVALID_GRANT_REASON)
-        val prior = lastServed
         val outcome = Cancellables.runCatchingCancellable {
             // AUTH-002: the daemon log hears the lock's contention and its bounded unlocked degrade.
             CredentialLock.withLock(authPath, log = log) {
                 retained.flush()
-                stage.renew(prior)
+                stage.renew(seen)
             }
         }.getOrElse { RefreshOutcome.ReadFailed(it) }
         if (outcome is RefreshOutcome.Rejected && outcome.reason == INVALID_GRANT_REASON) latch.latch(identity)

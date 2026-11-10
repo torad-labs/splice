@@ -124,7 +124,8 @@ internal class ClaudeFolderAuth(
     }
 
     /** The vendor half of one rotation, under the credential lock. The folder is read again first: when it already
-     *  holds a token other than [prior], the one this process served, a rotation landed since and is adopted. */
+     *  holds a token other than [prior], the one the caller read (a 401's: the one this process served), a rotation
+     *  landed since and is adopted, so two turns that read the same near-expiry token spend its refresh token once. */
     private suspend fun renew(prior: String?): RefreshOutcome {
         val held = readHeld().getOrElse { return RefreshOutcome.ReadFailed(it) } ?: return RefreshOutcome.NoRefreshToken
         val adopted = prior != null && held.accessToken != prior

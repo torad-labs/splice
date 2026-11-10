@@ -20,8 +20,9 @@ internal class NativeGrpcDelegate(
     @Synchronized
     fun cancel() {
         if (!cancelled.compareAndSet(false, true)) return
-        span?.outcome("cancelled")
-        span?.phase(mapOf("tool_cancelled" to 1.0))
+        // A callback whose answer already went out has its outcome. A cell that closes before the host acknowledges
+        // that answer does not make it a cancelled tool, so only an undecided callback counts as cancelled.
+        span?.let { if (it.outcomeIfUndecided("cancelled")) it.phase(mapOf("tool_cancelled" to 1.0)) }
         job?.cancel()
         if (job == null) span?.close()
     }

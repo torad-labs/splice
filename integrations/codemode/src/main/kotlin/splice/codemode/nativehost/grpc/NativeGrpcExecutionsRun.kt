@@ -47,7 +47,9 @@ internal class NativeGrpcExecutionsRun(
                     retire(run)
                 }
             }.invokeOnCompletion { error ->
-                if (error is kotlinx.coroutines.CancellationException) span.outcome("cancelled")
+                // The driver decides the outcome when the host answers or the stream fails. A close that cancels this
+                // job after that (a finished request, a closing runtime) finds it decided and leaves it.
+                if (error is kotlinx.coroutines.CancellationException) span.outcomeIfUndecided("cancelled")
                 span.close()
             }
         }

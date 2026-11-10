@@ -116,9 +116,11 @@ internal class NativeGrpcExecutionDriver(
     }
 
     fun fail(run: NativeGrpcExecutionRun, error: Throwable) {
-        run.span.outcome("bad")
         synchronized(run) {
+            // Only the call that ends the run decides how it ended. A session closing after the host's outcome
+            // arrived, or after an abandon, finds the run already finished and its outcome already decided.
             if (run.finish()) {
+                run.span.outcome("bad")
                 if (!run.accepted) {
                     executions.abandon(run.operation)?.let { abandoned ->
                         scope.launch { NativeGrpcAbandonedCells.terminate(channel, abandoned) }

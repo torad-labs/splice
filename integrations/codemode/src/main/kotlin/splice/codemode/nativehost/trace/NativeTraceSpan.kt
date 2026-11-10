@@ -9,6 +9,7 @@ import splice.core.perf.observation.PerfToolRecorder
 import splice.core.util.MonoClock
 import splice.upstream.codemode.CodeModeInvocationAction
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.CoroutineContext
 
 /** An owned span survives asynchronous delivery and ends once its real operation settles. */
@@ -22,7 +23,7 @@ internal class NativeTraceSpan(
     val context: Context = NativePerfContext.operation(parent.with(span), observations)
     private val startedAt = MonoClock.nowMs()
 
-    @Volatile private var outcome = "?"
+    private val outcome = AtomicReference(UNDECIDED_OUTCOME)
 
     @Volatile private var repliedAt: Long? = null
     private val closed = AtomicBoolean()
@@ -40,7 +41,14 @@ internal class NativeTraceSpan(
     suspend fun <T> run(action: CodeModeInvocationAction<T>): T =
         if (isActive) withContext(coroutineContext) { action.run() } else action.run()
 
-    fun outcome(value: String) { outcome = value }
+    /** The operation's own result or failure. */
+    fun outcome(value: String) { outcome.set(value) }
+
+    /** Records [value] unless the operation's outcome is already decided, and says whether it did. A cancellation or a
+     *  close settles an operation nothing has decided; a result or failure already recorded stands, because the
+     *  operation ended before the close reached it and the close does not get to rename what it did. */
+    fun outcomeIfUndecided(value: String): Boolean =
+        outcome.getAndUpdate { if (it == UNDECIDED_OUTCOME) value else it } == UNDECIDED_OUTCOME
 
     fun phase(values: Map<String, Double>) { observations?.observe(PerfEventKind.TOOL_PHASE, values) }
 
@@ -78,7 +86,7 @@ internal class NativeTraceSpan(
                 else -> "tool_execution_ms"
             }
             completion = observations?.prepareFinish(
-                outcome,
+                outcome.get(),
                 mapOf(metric to (MonoClock.nowMs() - (reply ?: startedAt)).coerceAtLeast(0).toDouble()),
             )
         } finally {
@@ -98,3 +106,6 @@ internal class NativeTraceSpan(
 internal fun interface NativeTraceHandoff<T> {
     fun run(): T
 }
+
+// The perf recorder's unattributed tag: what a span reports when nothing decided how its operation ended.
+private const val UNDECIDED_OUTCOME = "?"

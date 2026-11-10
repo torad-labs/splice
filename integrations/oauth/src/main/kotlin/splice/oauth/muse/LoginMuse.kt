@@ -170,6 +170,8 @@ public class LoginMuse(
                 output.line("splice: muse key mint rate limited; the first turn will retry")
             is MuseMintAttempt.Denied ->
                 output.line("splice: muse key mint failed: ${attempt.detail}")
+            is MuseMintAttempt.Unavailable ->
+                output.line("splice: muse key mint unavailable (${attempt.detail}); the first turn will retry")
         }
     }
 

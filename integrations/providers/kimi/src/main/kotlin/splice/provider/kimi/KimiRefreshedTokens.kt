@@ -16,6 +16,7 @@ import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
+import splice.upstream.credentials.CredentialText
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -43,8 +44,11 @@ internal class KimiAuthStore(
     private val log: LogSink,
     private val persist: PersistGranted,
     private val refreshCall: RefreshCall<KimiRefreshedTokens>,
-    private val oauth: KimiOAuth = KimiOAuth(),
+    // Audit, Nov 9, 2026: every read goes through the login's renewal (TokenRenewal.text).
+    private val text: CredentialText,
 ) {
+    private val oauth = KimiOAuth()
+
     internal fun interface SynthesizeExpiry {
         operator fun invoke(mtimeMs: Long): Long
     }
@@ -90,7 +94,7 @@ internal class KimiAuthStore(
             val sameFile = c.mtimeMs == mtime && c.sizeBytes == size
             if (sameFile && (now - c.loadedAt) < authCacheMs) return@runCatchingCancellable c.snapshot
         }
-        oauth.parseSnapshot(authPath, synthesizeExpiry)?.also { cache = Cache(it, mtime, now, size) }
+        oauth.parseSnapshot(authPath, synthesizeExpiry, text)?.also { cache = Cache(it, mtime, now, size) }
     }.getOrElse { failure ->
         // DR-59 (class law): only NoSuch with no NOFOLLOW entry is the quiet not-logged-in null;
         // an untraversable parent or dangling link is a PRESENT credential problem and logs.
@@ -135,7 +139,7 @@ internal class KimiAuthStore(
     }
 
     internal suspend fun refreshLocked(priorAccess: String?): RefreshOutcome {
-        val snap = Cancellables.runCatchingCancellable { oauth.parseSnapshot(authPath, synthesizeExpiry) }
+        val snap = Cancellables.runCatchingCancellable { oauth.parseSnapshot(authPath, synthesizeExpiry, text) }
             .getOrElse { return RefreshOutcome.ReadFailed(it) }
         peerRotation(priorAccess, snap)?.let { return it }
         val refreshToken = snap?.refresh
@@ -167,7 +171,7 @@ internal class KimiAuthStore(
         // FAILS, the rejection is unconfirmed: surface the read failure in the reason (codex twin
         // parity) — the composite string also keeps the invalid_grant latch from arming on it.
         val reread = Cancellables
-            .runCatchingCancellable { oauth.parseSnapshot(authPath, synthesizeExpiry)?.refresh }
+            .runCatchingCancellable { oauth.parseSnapshot(authPath, synthesizeExpiry, text)?.refresh }
         val rereadFailure = reread.exceptionOrNull()
         if (rereadFailure != null) {
             val detail = SafeFailureText.render(rereadFailure).take(REFRESH_ERROR_SNIPPET)
@@ -183,7 +187,7 @@ internal class KimiAuthStore(
 
     internal fun describe(identity: CredentialFileIdentity?, latch: InvalidGrantLatch): AuthDescription {
         val presentOutcome = Cancellables.runCatchingCancellable {
-            oauth.parseSnapshot(authPath, synthesizeExpiry) != null
+            oauth.parseSnapshot(authPath, synthesizeExpiry, text) != null
         }
         // A failed read is not "present"; its failure is consumed below via exceptionOrNull -> read_error.
         val present = presentOutcome.getOrElse { false }

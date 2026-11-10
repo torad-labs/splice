@@ -15,7 +15,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.terminal.TerminalOutput
+import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.core.util.SafeFailureText
 import splice.core.wire.HttpStatus
 import splice.oauth.LoginIo
 import splice.oauth.MS_PER_S
@@ -41,7 +43,9 @@ internal class CodexDeviceGrant(
     suspend fun tokens(client: HttpClient, spec: CodexDeviceSpec, code: UserCode, waiter: Waiter): String? =
         pollForGrant(client, spec, code, waiter)?.let { exchange(client, spec, it) }
 
-    /** 403 and 404 both mean "not approved yet"; anything else but 200 ends the login. Gives up after 15 minutes. */
+    /** 403 and 404 both mean "not approved yet"; so does an answer that says nothing about the code (a poll that never
+     *  reached the endpoint, a 429 or a 5xx), which keeps polling (audit, Nov 9, 2026: one transient failure ended a
+     *  login the person was approving). Anything else but 200 ends the login. Gives up after 15 minutes. */
     private suspend fun pollForGrant(
         client: HttpClient,
         spec: CodexDeviceSpec,
@@ -54,25 +58,42 @@ internal class CodexDeviceGrant(
             // then look at the clock again before asking.
             val left = deadline - System.currentTimeMillis()
             waiter.wait(minOf(code.intervalS.coerceAtLeast(0L) * MS_PER_S, left))
-            if (System.currentTimeMillis() < deadline) {
-                val resp = postJson(
-                    client,
-                    "${spec.issuer}/api/accounts/deviceauth/token",
-                    buildJsonObject {
-                        put("device_auth_id", code.deviceAuthId)
-                        put("user_code", code.userCode)
-                    },
-                )
-                val body = resp.bodyAsText()
-                if (resp.status.isSuccess()) return grantFrom(body)
-                if (resp.status.value != HttpStatus.FORBIDDEN && resp.status.value != HttpStatus.NOT_FOUND) {
-                    output.line(loginIo.refusal("login failed", resp.status.value, body))
-                    return null
-                }
+            val answer = if (System.currentTimeMillis() < deadline) ask(client, spec, code) else null
+            if (answer != null) {
+                val (status, body) = answer
+                if (status in HttpStatus.OK..HttpStatus.MAX_SUCCESS) return grantFrom(body)
+                if (!stillWaiting(status, body)) return null
             }
         }
         output.line("splice: the code expired after 15 minutes; try again.")
         return null
+    }
+
+    /** One poll's status and body, or null after saying why the poll never reached the endpoint. */
+    private suspend fun ask(client: HttpClient, spec: CodexDeviceSpec, code: UserCode): Pair<Int, String>? =
+        Cancellables.runCatchingBestEffort {
+            val resp = postJson(
+                client,
+                "${spec.issuer}/api/accounts/deviceauth/token",
+                buildJsonObject {
+                    put("device_auth_id", code.deviceAuthId)
+                    put("user_code", code.userCode)
+                },
+            )
+            resp.status.value to resp.bodyAsText()
+        }.fold({ it }) {
+            output.line("splice: login poll did not reach the token endpoint: ${SafeFailureText.render(it)}")
+            null
+        }
+
+    /** Whether a refused poll leaves the login waiting: not approved yet, or an answer that says nothing about the
+     *  code. Anything else ends the login, said once here. */
+    private fun stillWaiting(status: Int, body: String): Boolean {
+        val pending = status == HttpStatus.FORBIDDEN || status == HttpStatus.NOT_FOUND
+        val transient = status == HttpStatus.TOO_MANY_REQUESTS || status >= HttpStatus.INTERNAL_SERVER_ERROR
+        if (transient) output.line(loginIo.refusal("login poll unavailable, still waiting", status, body))
+        if (!pending && !transient) output.line(loginIo.refusal("login failed", status, body))
+        return pending || transient
     }
 
     private fun grantFrom(body: String): Grant? {

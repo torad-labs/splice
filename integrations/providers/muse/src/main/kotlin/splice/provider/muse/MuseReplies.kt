@@ -59,6 +59,8 @@ public object MuseReplies : ProviderDeviation {
             window = null,
         )
         is MuseMintAttempt.Denied -> FailureCause.Provider.Forbidden()
+        // No verdict on the login: nothing refuses it.
+        is MuseMintAttempt.Unavailable -> null
     }
 
     /** The reset the answer states, held softly: the body's own first, then its Retry-After, then none. */

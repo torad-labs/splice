@@ -5,6 +5,7 @@ package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
 import splice.core.config.StatePaths
+import splice.core.topology.AuthKind
 import splice.core.util.LogSink
 import splice.oauth.grok.GrokRefresh
 import splice.provider.grok.GrokProvider
@@ -35,7 +36,7 @@ internal class GrokResponsesArm(
         val watchdog = ctx.faultPlan.watchdog
         val cfg = ctx.cfg
         val primaryPath = Paths.get(
-            TopologyLoader.expandHome(providerCfg.auth.file ?: cfg.grokAuthPath),
+            TopologyLoader.expandHome(providerCfg.auth.loginFile ?: AuthKind.GrokOAuth.authFile),
         )
         val accounts = grokAccounts.accounts(ctx, primaryPath)
         val auth = WiredAccounts.providerAccount(accounts).auth

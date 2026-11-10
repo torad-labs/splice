@@ -29,8 +29,10 @@ package splice.upstream.transport
 
 import io.ktor.client.HttpClient
 import splice.core.auth.LoginAnswer
+import splice.core.auth.RefreshOutcome
 import splice.core.failure.FailureEvidence
 import splice.core.usage.PlanLimit
+import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 import splice.upstream.RoundBody
@@ -187,8 +189,13 @@ public class UpstreamClient(
         // Finite temporary holds still ask the provider on each turn. A terminal limit keeps its own words during the
         // credential's bounded cooldown, without another send or a wait (Nov 7). The login
         // lookup answers once per attempt: none is the head's NoLogin, and a provider's refusal to grant one ends the
-        // call with the refusal's own cause, as its reply would have (LoginAnswer, failure-handling slice 3).
-        return when (val answer = ctx.requireAuth()) {
+        // call with the refusal's own cause, as its reply would have (LoginAnswer, failure-handling slice 3). A login
+        // whose renewal failed is asked of the engine as a refused login, and a lookup that threw an I/O failure (a
+        // credential lock or file this machine could not use) is that login's local read failure, never a throw the
+        // turn would report as the upstream resetting the connection (audit, Nov 9, 2026).
+        val looked = Cancellables.runCatchingCancellable { ctx.requireAuth() }
+            .getOrElse { LoginAnswer.Unrenewed(RefreshOutcome.ReadFailed(it)) }
+        return when (val answer = looked) {
             is LoginAnswer.Granted -> {
                 val auth = state.credentials(ctx, answer.credentials, credentialCooldowns, cooldown)
                 val cause = state.cooldown.terminalLimit
@@ -204,6 +211,7 @@ public class UpstreamClient(
                 val evidence = FailureEvidence(LOGIN_REFUSED, said = answer.cause.said?.text)
                 LoopStep.Done(UpstreamPost.Ended(UpstreamFailed(answer.cause, evidence, state.ledger.attempts)))
             }
+            is LoginAnswer.Unrenewed -> steps.unrenewed(answer.outcome, ctx, state)
         }
     }
 

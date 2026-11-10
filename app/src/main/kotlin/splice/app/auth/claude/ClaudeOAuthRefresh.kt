@@ -24,10 +24,13 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import splice.core.auth.INVALID_GRANT_REASON
+import splice.core.auth.RefreshAttempt
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.util.WallClock
+import splice.core.wire.HttpStatus
 import splice.oauth.AuthHttpClientFactory
 import kotlin.time.Duration.Companion.seconds
 
@@ -53,26 +56,41 @@ internal class ClaudeOAuthRefresh(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    /** Rotates [refreshToken] and returns the new pair, or null on any refusal. Neither token is ever logged. */
-    suspend fun rotate(refreshToken: String): ClaudeRefreshedTokens? {
+    /** Rotates [refreshToken] and classifies the answer (audit, Nov 9, 2026: every failure was one null, so a busy
+     *  endpoint read like a dead login): a pair is granted; a 401, a 403 or an `invalid_grant` 400 is a dead refresh
+     *  token; a 429, a 5xx or a request that never reached the endpoint is no verdict, asked again later; anything
+     *  else is a refusal that says nothing about the token. Neither token is ever logged. */
+    suspend fun rotate(refreshToken: String): RefreshAttempt<ClaudeRefreshedTokens> {
         val answered = Cancellables.runCatchingBestEffort { post(refreshToken) }
         return answered.getOrElse { failure ->
             log("[claude-account] token refresh could not be made (${failure::class.simpleName})\n")
-            null
+            RefreshAttempt.Unavailable("token refresh could not be made (${failure::class.simpleName})")
         }
     }
 
-    private suspend fun post(refreshToken: String): ClaudeRefreshedTokens? = client.open().use { http ->
+    private suspend fun post(refreshToken: String): RefreshAttempt<ClaudeRefreshedTokens> = client.open().use { http ->
         val response = http.post(CLAUDE_TOKEN_URL) {
             contentType(ContentType.Application.Json)
             header("Accept", "application/json")
             setBody(body(refreshToken).toString())
         }
-        if (response.status != HttpStatusCode.OK) {
-            log("[claude-account] token refresh refused with ${response.status.value}\n")
-            return@use null
+        if (response.status == HttpStatusCode.OK) return@use tokens(response.bodyAsText())
+        log("[claude-account] token refresh refused with ${response.status.value}\n")
+        refused(response.status.value, response.bodyAsText())
+    }
+
+    /** What a refusal says about the refresh token: dead, no verdict, or a refusal that names neither. The body is read
+     *  only for the invalid_grant code and never repeated. */
+    private fun refused(status: Int, body: String): RefreshAttempt<Nothing> {
+        val detail = "token refresh refused with $status"
+        val dead = status == HttpStatus.UNAUTHORIZED || status == HttpStatus.FORBIDDEN ||
+            (status == HttpStatus.BAD_REQUEST && INVALID_GRANT_REASON in body)
+        return when {
+            dead -> RefreshAttempt.InvalidGrant(detail)
+            status == HttpStatus.TOO_MANY_REQUESTS || status >= HttpStatus.INTERNAL_SERVER_ERROR ->
+                RefreshAttempt.Unavailable(detail)
+            else -> RefreshAttempt.Denied(detail)
         }
-        tokens(response.bodyAsText())
     }
 
     private fun body(refreshToken: String): JsonObject = buildJsonObject {
@@ -82,17 +100,19 @@ internal class ClaudeOAuthRefresh(
         put("scope", CLAUDE_OAUTH_SCOPE)
     }
 
-    /** The rotated pair, or null when the answer does not carry one: an answer splice cannot read is a refusal,
+    /** The rotated pair, or a refusal when the answer does not carry one: an answer splice cannot read is a refusal,
      *  never a credential it half-believes. */
-    private fun tokens(text: String): ClaudeRefreshedTokens? = try {
-        rotated(json.parseToJsonElement(text).jsonObject)
-            ?: null.also { log("[claude-account] token refresh answered without a usable credential\n") }
-    } catch (_: SerializationException) {
-        log("[claude-account] token refresh answered with something that is not JSON\n")
-        null
-    } catch (_: IllegalArgumentException) {
-        log("[claude-account] token refresh answered with an unreadable credential\n")
-        null
+    private fun tokens(text: String): RefreshAttempt<ClaudeRefreshedTokens> {
+        val why = try {
+            rotated(json.parseToJsonElement(text).jsonObject)?.let { return RefreshAttempt.Granted(it) }
+            "token refresh answered without a usable credential"
+        } catch (_: SerializationException) {
+            "token refresh answered with something that is not JSON"
+        } catch (_: IllegalArgumentException) {
+            "token refresh answered with an unreadable credential"
+        }
+        log("[claude-account] $why\n")
+        return RefreshAttempt.Denied(why)
     }
 
     /** All three fields or nothing: a rotation missing any of them is not a credential. */

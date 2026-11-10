@@ -39,6 +39,7 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
+import splice.core.auth.RefreshAttempt
 import splice.core.util.WallClock
 import splice.upstream.codemode.ProcessDispatchers
 import java.nio.file.Files
@@ -194,7 +195,7 @@ class ClaudeAccountSignInTest {
         val folder = state.resolve("claude-accounts").resolve(HEAD).resolve(label)
         val described = ClaudeFolderAuth(
             folder,
-            refresh = { null },
+            refresh = { RefreshAttempt.Denied("not asked in this test") },
             profiles = ClaudeCredentialProfiles(state, {}),
         ).describe()
         val head = AccountHead(

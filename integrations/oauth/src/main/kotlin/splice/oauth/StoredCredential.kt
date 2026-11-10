@@ -51,7 +51,7 @@ public class StoredCredential(
     /** The credential file this provider's auth kind uses: what the operator named (an api-key head's key file), else
      *  the kind's own default. Null when nothing is named for a kind with no default (api-key, client). */
     public fun pathFor(provider: ProviderConfig): Path? =
-        (provider.auth.file ?: AuthKindRegistry.defaultAuthFileFor(provider.auth.kind))
+        provider.auth.loginFile
             ?.let { Paths.get(TopologyLoader.expandHome(it)) }
 
     /** The reader for one wire kind, or null when splice cannot judge that kind's file. */

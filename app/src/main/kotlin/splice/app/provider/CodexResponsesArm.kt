@@ -45,7 +45,7 @@ internal class CodexResponsesArm(
         val watchdog = ctx.faultPlan.watchdog
         val cfg = ctx.cfg
         val primaryPath = Paths.get(
-            TopologyLoader.expandHome(providerCfg.auth.file ?: cfg.codexAuthPath),
+            TopologyLoader.expandHome(providerCfg.auth.loginFile ?: AuthKind.ChatgptOAuth.authFile),
         )
         val accounts = codexAccounts(ctx, primaryPath)
         val auth = WiredAccounts.providerAccount(accounts).auth

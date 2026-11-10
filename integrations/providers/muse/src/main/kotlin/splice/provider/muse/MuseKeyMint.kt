@@ -36,6 +36,12 @@ public sealed class MuseMintAttempt {
     public data class Denied(
         public val detail: String,
     ) : MuseMintAttempt()
+
+    /** The mint could not answer now (a 5xx, or the request never reached it): no verdict on the account, so it earns
+     *  no hold and the stored key keeps serving (audit, Nov 9, 2026). */
+    public data class Unavailable(
+        public val detail: String,
+    ) : MuseMintAttempt()
 }
 
 /** A Muse inference key plus the response fields retained for credential persistence. */

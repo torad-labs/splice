@@ -3,9 +3,10 @@
 // port, pinnedModel, chatgptApiBase and codexAuthPath were the management API's names for THE codex head, and grokPort,
 // grokModel, xaiApiBase and grokAuthPath for THE grok head. They govern a head only while it is the sole head of its
 // sign-in kind (DR-80: TopologyKnobLayer.soleLegacyHeadKeys, which HeadBuildInputs gates on). On any other head a
-// command's own value for one of them was written, answered live or restart, and never read. The one exception is the
-// auth file: a head of the kind whose provider declares no auth file falls back to the knob through its own config
-// (CodexResponsesArm, GrokResponsesArm), so there it is read and stays.
+// command's own value for one of them was written, answered live or restart, and never read. The two auth-file knobs
+// reach no head at all since the audit of Nov 9, 2026: the daemon read the knob's file while `splice login` and status
+// wrote and read the provider's, so every reader now takes the provider's auth.file (AuthConfig.loginFile), and a value
+// for either knob is refused with the place that does move the file.
 package splice.configuration.knobs
 
 import splice.core.config.Knob
@@ -17,9 +18,11 @@ internal class LegacyKnobScope(private val topology: Topology) {
     fun refusal(head: String, knob: Knob): String? {
         val kind = KIND_OF[knob] ?: return null
         val sole = topology.heads.keys.singleOrNull { kindOf(it) == kind }
-        val readsOwnAuthFile = knob in AUTH_FILE_KNOBS && kindOf(head) == kind && authFileOf(head) == null
         return when {
-            sole == head || readsOwnAuthFile -> null
+            knob in AUTH_FILE_KNOBS ->
+                "no command reads this setting; the file a command signs in with is its provider's auth.file " +
+                    "in [providers.${providerOf(head) ?: "<key>"}.auth], which splice login and status read too"
+            sole == head -> null
             sole != null ->
                 "only $sole reads this setting, as the one command that signs in this way; " +
                     "set this command's own value in its [heads.$head] table"
@@ -29,11 +32,9 @@ internal class LegacyKnobScope(private val topology: Topology) {
         }
     }
 
-    private fun kindOf(head: String): String? =
-        topology.heads[head]?.provider?.let(topology.providers::get)?.auth?.kind
+    private fun kindOf(head: String): String? = providerOf(head)?.let(topology.providers::get)?.auth?.kind
 
-    private fun authFileOf(head: String): String? =
-        topology.heads[head]?.provider?.let(topology.providers::get)?.auth?.file
+    private fun providerOf(head: String): String? = topology.heads[head]?.provider
 }
 
 // why: each legacy knob and the sign-in kind of the one head it was named for.
@@ -48,5 +49,5 @@ private val KIND_OF: Map<Knob, String> = mapOf(
     Knob.GROK_AUTH_PATH to AuthKind.GrokOAuth.wire,
 )
 
-// why: the two a head of the kind with no declared auth file reads through its own config.
+// why: the two knobs that once named a credential file; no head reads them since Nov 9, 2026.
 private val AUTH_FILE_KNOBS = setOf(Knob.CODEX_AUTH_PATH, Knob.GROK_AUTH_PATH)

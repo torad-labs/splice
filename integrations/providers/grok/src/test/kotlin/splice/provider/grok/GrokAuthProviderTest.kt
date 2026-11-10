@@ -225,10 +225,11 @@ class GrokAuthProviderTest {
     }
 
     // BS-2: a filesystem hiccup during persistRotation's write (disk full, perms, NFS blip) must not
-    // throw through SingleFlight/credentials() — the endpoint already burned the old refresh_token
-    // (Granted), so a lost write must still serve the not-yet-expired CURRENT token, never an exception.
+    // throw through SingleFlight/credentials(). The endpoint already burned the old refresh_token
+    // (Granted), so since the audit of Nov 9, 2026 the granted pair is kept and served rather than
+    // dropped, and it lands once the folder takes the write.
     @Test
-    fun `write failure during persist serves the current not-yet-expired token, never throws`(
+    fun `write failure during persist serves the rotated token, never throws, and writes it later`(
         @TempDir dir: Path,
     ) = runTest {
         val now = 1_000_000L
@@ -249,10 +250,12 @@ class GrokAuthProviderTest {
             java.nio.file.attribute.PosixFilePermissions.fromString("r-xr-xr-x"),
         )
         try {
-            assertEquals("grok-access", bearerToken(auth.credentials()))
+            assertEquals("new-access", bearerToken(auth.credentials()))
         } finally {
             Files.setPosixFilePermissions(file.parent, writablePerms)
         }
+        assertEquals("new-access", bearerToken(auth.credentials()))
+        assertTrue(Files.readString(file).contains("new-refresh"), "the kept pair is written once it can be")
     }
 
     // G17: proves the prefetch tier is truly fire-and-forget on a real dispatcher — if credentials()

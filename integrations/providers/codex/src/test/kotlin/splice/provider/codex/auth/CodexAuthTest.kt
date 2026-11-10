@@ -28,8 +28,13 @@ import splice.core.auth.AccountRef
 import splice.core.auth.Credentials
 import splice.core.auth.InvalidGrantLatch
 import splice.core.auth.RefreshAttempt
+import splice.core.auth.RefreshOutcome
 import splice.core.auth.SYNTHETIC_EXPIRY_TTL_MS
+import splice.core.util.LogSink
+import splice.core.util.WallClock
 import splice.provider.codex.RefreshedTokens
+import splice.upstream.credentials.RenewalStage
+import splice.upstream.credentials.TokenRenewal
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
@@ -382,10 +387,11 @@ class CodexAuthTest {
     }
 
     // BS-2: a filesystem hiccup during persistRotation's write (disk full, perms, NFS blip) must not
-    // throw through SingleFlight/credentials() — the endpoint already burned the old refresh_token
-    // (Granted), so a lost write must still serve the not-yet-expired CURRENT token, never an exception.
+    // throw through SingleFlight/credentials(). The endpoint already burned the old refresh_token
+    // (Granted), so since the audit of Nov 9, 2026 the granted pair is kept and served rather than
+    // dropped, and it lands once the folder takes the write.
     @Test
-    fun `write failure during persist serves the current not-yet-expired token, never throws`(
+    fun `write failure during persist serves the rotated token, never throws, and writes it later`(
         @TempDir tmp: Path,
     ) = runTest {
         val now = 1_000_000L
@@ -404,10 +410,12 @@ class CodexAuthTest {
             java.nio.file.attribute.PosixFilePermissions.fromString("r-xr-xr-x"),
         )
         try {
-            assertEquals(access, (auth.credentials() as Credentials.Bearer).token)
+            assertEquals(newAccess, (auth.credentials() as Credentials.Bearer).token)
         } finally {
             Files.setPosixFilePermissions(path.parent, writablePerms)
         }
+        assertEquals(newAccess, (auth.credentials() as Credentials.Bearer).token)
+        assertTrue(path.readText().contains("new-refresh"), "the kept pair is written once it can be")
     }
 
     @Test
@@ -656,10 +664,13 @@ class CodexPeerRotationExpiryTest {
 // nanoseconds ext4 and xfs store, so two genuinely different credentials could not be told apart.
 // The fixture is the row's own scenario: rewrite the content, then RESTORE the original FileTime,
 // which is exactly what a same-tick re-login or a backup restore produces.
+private val NO_STAGE = RenewalStage { RefreshOutcome.NoRefreshToken }
+
 class CodexAuthIdentityTest {
 
+    // The identity is the shared renewal's since the audit of Nov 9, 2026; the provider reads it there.
     private fun identity(path: Path) =
-        CodexAuthFile().codexAuthIdentityOrNull(path) { }
+        TokenRenewal(path, "codex-auth", WallClock { 0L }, LogSink { }, null, NO_STAGE).identity()
 
     @Test
     fun `a rewritten credential with a restored FileTime is a DIFFERENT identity`(@TempDir tmp: Path) {

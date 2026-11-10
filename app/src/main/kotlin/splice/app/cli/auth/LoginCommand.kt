@@ -7,7 +7,6 @@ package splice.app.cli.auth
 
 import splice.core.auth.CLIENT_AUTH_KIND
 import splice.core.terminal.TerminalOutput
-import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.topology.RemoteAddressRead
 import splice.core.topology.RemoteAddresses
@@ -220,15 +219,15 @@ internal class LoginCommand(
         }
     }
 
-    /** The file a login writes: the provider's explicit auth.file, else the registry's splice-owned
-     *  default for its kind (AuthKind header, 2026-09-05). The native apps' files are never a
+    /** The file a login writes: [splice.core.topology.AuthConfig.loginFile], the one resolver the daemon, status and
+     *  login share (audit, Nov 9, 2026), so all three name the same file: the provider's explicit auth.file, else the
+     *  registry's splice-owned default for its kind (AuthKind header, 2026-09-05). The native apps' files are never a
      *  fallback here — an operator opts into one by naming it. Only reached for registered OAuth
      *  kinds, whose default is non-null by construction. */
     internal fun oauthAuthPath(provider: ProviderConfig): Path {
-        val file = provider.auth.file
-            ?: requireNotNull(AuthKindRegistry.defaultAuthFileFor(provider.auth.kind)) {
-                "no default credential file for auth kind '${provider.auth.kind}'"
-            }
+        val file = requireNotNull(provider.auth.loginFile) {
+            "no default credential file for auth kind '${provider.auth.kind}'"
+        }
         return Paths.get(TopologyLoader.expandHome(file))
     }
 

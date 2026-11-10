@@ -15,4 +15,11 @@ public sealed class LoginAnswer {
 
     /** The provider refused to grant a login, for [cause]: the turn ends with it, as on the provider's own reply. */
     public data class Refused(val cause: FailureCause.Provider) : LoginAnswer()
+
+    /** A login is on file, but its token has expired and the renewal this lookup waited for ended as [outcome]. Never
+     *  [Missing]: the person is signed in. The turn's retry engine reads [outcome] as it reads a renewal after a refused
+     *  login: a token endpoint that could not answer is asked again 2 s and then 4 s later, and anything else moves
+     *  the turn to another login or ends it as splice's own login refused (audit, Nov 9, 2026: a resume past the
+     *  token's expiry told a signed-in person to log in, with no retry, because the outcome was flattened to null). */
+    public data class Unrenewed(val outcome: RefreshOutcome) : LoginAnswer()
 }

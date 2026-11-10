@@ -60,7 +60,7 @@ internal class HeadBuildInputs(
 
     internal fun resolveProviderConfig(provider: ProviderConfig, cfg: SpliceConfig): ProviderConfig =
         when (provider.auth.kind) {
-            CHATGPT_OAUTH -> CodexLegacyKnobs().remapProvider(provider, cfg.chatgptApiBase, cfg.codexAuthPath)
+            CHATGPT_OAUTH -> CodexLegacyKnobs().remapProvider(provider, cfg.chatgptApiBase)
             GROK_OAUTH -> GrokLegacyKnobs().remapProvider(provider, cfg.xaiApiBase)
             else -> provider
         }

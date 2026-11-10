@@ -15,6 +15,7 @@ import splice.core.failure.Position
 import splice.core.failure.Tear
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerfTiming
+import splice.core.util.Cancellables
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.WallClock
 import splice.upstream.retry.Exchange
@@ -184,14 +185,36 @@ internal class RetrySteps(
                 LoopStep.Continue
             }
             HoldEnd.LOGIN_JOINED -> LoopStep.Done(UpstreamPost.Refused(endings.ended(asked.failed, null, state, ctx)))
-            HoldEnd.WALL -> endings.done(asked.failed, outlasted(Outlast.WALL, step, asked), state, ctx)
-            HoldEnd.MAX_HOLD -> endings.done(asked.failed, outlasted(Outlast.MAX_HOLD, step, asked), state, ctx)
+            HoldEnd.WALL -> endings.done(
+                asked.failed,
+                FailureCause.Splice.HoldOutlasted(Outlast.WALL, asked.cause, step.until),
+                state,
+                ctx,
+            )
+            HoldEnd.MAX_HOLD -> endings.done(
+                asked.failed,
+                FailureCause.Splice.HoldOutlasted(Outlast.MAX_HOLD, asked.cause, step.until),
+                state,
+                ctx,
+            )
             HoldEnd.UNSUPPORTED, HoldEnd.CLIENT_GONE -> endings.done(asked.failed, null, state, ctx)
         }
     }
 
-    private fun outlasted(why: Outlast, step: RetryStep.Hold, asked: Asked): FailureCause =
-        FailureCause.Splice.HoldOutlasted(why, asked.cause, step.until)
+    /** A login on file whose token expired and whose renewal failed before anything was sent (LoginAnswer.Unrenewed):
+     *  asked of the engine as splice's own login refused, its renewal begun and its one exchange ended as [outcome]. A
+     *  token endpoint that could not answer is asked again 2 s and then 4 s later; anything else moves the turn to
+     *  another login or ends it as the refused login it is, never as "no login" (audit, Nov 9, 2026). */
+    suspend fun unrenewed(outcome: RefreshOutcome, ctx: PostContext, state: RetryState): LoopStep<Nothing> {
+        val cause = FailureCause.Provider.AuthRejected(LoginOwner.SPLICE)
+        val evidence =
+            FailureEvidence("the login's token expired and could not be renewed (${outcome::class.simpleName})")
+        val moment = if (ctx.recovery.clientFrameEmitted()) Moment.MID_CONTENT else Moment.BEFORE_COMMIT
+        val asked = Asked(cause, Position(moment, streamBegan = false), RetryOutcome.Failed(cause, evidence))
+        state.ledger.took(RetryStep.Again(0L, How.REFRESH_LOGIN), cause)
+        state.ledger.exchanged(exchange(ctx, asked.failed, outcome))
+        return take(next(cause, asked.at, ctx, state), asked, ctx, state)
+    }
 
     /** The step's wait, through the turn's waits, then the same request again. A wait a limit or a spent account
      *  asks for is spent from the warm session's own allowance, so the engine reads what is left of it. */
@@ -229,12 +252,25 @@ internal class RetrySteps(
 
     /** A renewal with no answer behind it names no dead credential: only an answer the reader read can. One exchange
      *  per step: a token endpoint that could not answer (a 429, a 5xx or a send that threw) is unavailable, which the
-     *  engine asks again 2 s and then 4 s later; any other failure refused the login. */
-    private suspend fun exchange(ctx: PostContext, failed: RetryOutcome.Failed?): Exchange {
-        if (!ctx.auth.allowRefreshAfterFailure(failed?.deadCredential == true)) return Exchange.REFUSED
+     *  engine asks again 2 s and then 4 s later; any other failure refused the login. [known] is an exchange the login
+     *  lookup already made ([unrenewed]), read the same way and never made twice. A provider whose exchange throws an
+     *  I/O failure is read as a typed outcome here, never thrown to the turn, which would report a local credential
+     *  failure as the upstream resetting the connection (audit, Nov 9, 2026). */
+    private suspend fun exchange(
+        ctx: PostContext,
+        failed: RetryOutcome.Failed?,
+        known: RefreshOutcome? = null,
+    ): Exchange {
+        if (known == null && !ctx.auth.allowRefreshAfterFailure(failed?.deadCredential == true)) return Exchange.REFUSED
         val perf = ctx.observers.perf
-        perf?.add(PerfKeys.REFRESHES, 1)
-        return when (TurnPerfTiming.timedOr(perf, PerfKeys.REFRESH_MS) { ctx.auth.exchange() }) {
+        val outcome = known ?: run {
+            perf?.add(PerfKeys.REFRESHES, 1)
+            TurnPerfTiming.timedOr(perf, PerfKeys.REFRESH_MS) {
+                Cancellables.runCatchingCancellable { ctx.auth.exchange() }
+                    .getOrElse { RefreshOutcome.TransportFailed(it) }
+            }
+        }
+        return when (outcome) {
             is RefreshOutcome.Refreshed -> Exchange.RENEWED.also { ctx.observers.authRefreshObserver() }
             is RefreshOutcome.Unavailable, is RefreshOutcome.TransportFailed -> Exchange.UNAVAILABLE
             RefreshOutcome.NoCredentialsFile, RefreshOutcome.NoRefreshToken, is RefreshOutcome.Rejected,

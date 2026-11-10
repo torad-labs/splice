@@ -50,14 +50,14 @@ class KimiAuthPrefetchFailureTest {
             assertEquals(Credentials.ApiKey("synthetic-current", "x-api-key", ""), auth.credentials())
             assertEquals(1, scope.coroutineContext.job.children.count(), "refresh is queued, not awaited")
             // Removing auth before launch is typed absence. An unreadable sibling lock instead
-            // reaches FileChannel.open outside the typed refresh outcomes, deterministically.
+            // fails FileChannel.open: a local read failure in the shared renewal (audit, Nov 9, 2026).
             Files.createDirectory(file.resolveSibling("auth.json.lock"))
             while (scope.coroutineContext.job.children.any()) {
                 scheduler.runCurrent()
                 yield()
             }
             assertTrue(escaped.isEmpty(), "prefetch must not escape to CoroutineExceptionHandler: $escaped")
-            assertEquals(1, logs.count { it.startsWith("[kimi-auth] background refresh failed: ") })
+            assertEquals(1, logs.count { it.startsWith("[kimi-auth] credential file read failed") })
         } finally {
             scope.cancel()
             scheduler.runCurrent()

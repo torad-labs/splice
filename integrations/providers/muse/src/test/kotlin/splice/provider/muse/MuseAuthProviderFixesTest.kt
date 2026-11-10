@@ -22,6 +22,8 @@ import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.Credentials
+import splice.core.auth.LoginAnswer
+import splice.core.auth.RefreshOutcome
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.upstream.codemode.ProcessDispatchers
@@ -113,25 +115,27 @@ class MuseAuthProviderFixesTest {
         assertEquals(2, calls.get())
     }
 
+    // Audit, Nov 9, 2026: a mint the request never reached, or one that answered 5xx, is no verdict on the account.
+    // It holds nothing, the stored key keeps serving, and the turn's engine is told to ask again.
     @Test
-    fun `mint transport failure records the default hold`(@TempDir tempDir: Path) = runTest {
-        var nowMs = 0L
+    fun `a mint that could not answer holds nothing and the stored key keeps serving`(
+        @TempDir tempDir: Path,
+    ) = runTest {
         val file = authFile(tempDir)
         val before = Files.readString(file)
         val calls = AtomicInteger()
-        val auth = provider(file, clock = WallClock { nowMs }) { _, _ ->
-            calls.incrementAndGet()
-            throw java.io.IOException("connection reset")
+        val auth = provider(file, clock = WallClock { 0L }) { _, _ ->
+            if (calls.incrementAndGet() == 1) {
+                throw java.io.IOException("connection reset")
+            }
+            MuseMintAttempt.Unavailable("key mint unavailable (HTTP 503)")
         }
-        assertNull(auth.refresh())
-        assertEquals(1, calls.get())
+        assertTrue(auth.exchange() is RefreshOutcome.Unavailable, "the engine asks again")
         assertEquals(before, Files.readString(file))
-        nowMs = DEFAULT_RATE_HOLD_MS - 1L
-        assertNull(auth.refresh())
-        assertEquals(1, calls.get())
-        nowMs = DEFAULT_RATE_HOLD_MS
-        assertNull(auth.refresh())
+        assertEquals(LoginAnswer.Granted(Credentials.Bearer("persisted-key")), auth.answer())
+        assertTrue(auth.exchange() is RefreshOutcome.Unavailable, "no hold: the next renewal posts again")
         assertEquals(2, calls.get())
+        assertEquals(LoginAnswer.Granted(Credentials.Bearer("persisted-key")), auth.answer())
     }
 
     @Test
@@ -277,8 +281,11 @@ class MuseAuthProviderFixesTest {
         assertEquals(1, calls.get())
     }
 
+    // Audit, Nov 9, 2026: one refused or failed poll held every turn for up to an hour though the stored key worked.
     @Test
-    fun `usageFields 429 records the retry hold so refresh does not POST`(@TempDir tempDir: Path) = runTest {
+    fun `a poll's 429 holds no turn, so the stored key serves and a turn's renewal still posts`(
+        @TempDir tempDir: Path,
+    ) = runTest {
         val file = authFile(tempDir)
         val before = Files.readString(file)
         val calls = AtomicInteger()
@@ -289,27 +296,27 @@ class MuseAuthProviderFixesTest {
         assertNull(auth.usageFields())
         assertEquals(1, calls.get())
         assertEquals(before, Files.readString(file))
-        repeat(10) { assertNull(auth.refresh()) }
-        assertEquals(1, calls.get())
+        assertEquals(LoginAnswer.Granted(Credentials.Bearer("persisted-key")), auth.answer())
+        assertNull(auth.refresh())
+        assertEquals(2, calls.get(), "the turn whose key stopped working asks the mint itself")
     }
 
     @Test
-    fun `usageFields inactive records the hold without persisting`(@TempDir tempDir: Path) = runTest {
-        val file = authFile(tempDir)
-        val before = Files.readString(file)
-        val calls = AtomicInteger()
-        val auth = provider(file, clock = WallClock { 0L }) { _, _ ->
-            calls.incrementAndGet()
-            MuseMintAttempt.SubscriptionRequired("https://www.meta.ai/")
+    fun `a poll that finds the subscription inactive refuses no turn and persists nothing`(@TempDir tempDir: Path) =
+        runTest {
+            val file = authFile(tempDir)
+            val before = Files.readString(file)
+            val calls = AtomicInteger()
+            val auth = provider(file, clock = WallClock { 0L }) { _, _ ->
+                calls.incrementAndGet()
+                MuseMintAttempt.SubscriptionRequired("https://www.meta.ai/")
+            }
+            assertNull(auth.usageFields())
+            assertEquals(1, calls.get())
+            assertEquals(before, Files.readString(file))
+            assertEquals("persisted-key", (auth.credentials() as Credentials.Bearer).token)
+            assertEquals(LoginAnswer.Granted(Credentials.Bearer("persisted-key")), auth.answer())
         }
-        assertNull(auth.usageFields())
-        assertEquals(1, calls.get())
-        assertEquals(before, Files.readString(file))
-        assertNull(auth.credentials())
-        assertEquals("inactive", auth.describe().fields["subscription"])
-        repeat(10) { assertNull(auth.usageFields()) }
-        assertEquals(1, calls.get())
-    }
 
     @Timeout(HANG_BACKSTOP_S)
     @Test
@@ -394,7 +401,8 @@ class MuseAuthProviderFixesTest {
                 MuseMintAttempt.Granted(usageKey("must-not-unlock"))
             }
         }
-        assertNull(auth.usageFields())
+        // A turn's renewal records the verdict; the poll's own mint never does (audit, Nov 9, 2026).
+        assertNull(auth.refresh())
         assertEquals(1, calls.get())
         assertEquals("inactive", auth.describe().fields["subscription"])
         nowMs = MAX_MINT_HOLD_MS + 1

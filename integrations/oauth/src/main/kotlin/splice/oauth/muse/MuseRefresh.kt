@@ -61,6 +61,9 @@ public class MuseRefresh(private val clock: WallClock = WallClock(System::curren
                 )
             response.status == HttpStatusCode.Unauthorized -> MuseMintAttempt.InvalidAccountToken
             response.status.isSuccess() -> oauth.parseMuseKeyResponse(body)
+            // Audit, Nov 9, 2026: a mint that cannot answer now is no verdict on the account, so it holds nothing.
+            response.status.value >= HttpStatusCode.InternalServerError.value ->
+                MuseMintAttempt.Unavailable("key mint unavailable (HTTP ${response.status.value})")
             else -> MuseMintAttempt.Denied("key mint failed (HTTP ${response.status.value})")
         }
     }

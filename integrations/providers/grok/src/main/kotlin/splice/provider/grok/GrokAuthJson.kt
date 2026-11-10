@@ -17,6 +17,7 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
 import splice.core.util.WallClockIso
+import splice.upstream.credentials.CredentialText
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -33,6 +34,9 @@ internal class GrokAuthJson(
     private val nowIso: WallClockIso,
     private val clock: WallClock,
     private val synthesizeExpiry: SynthesizeExpiry,
+    // Audit, Nov 9, 2026: every read goes through the login's renewal (TokenRenewal.text), which serves a renewed
+    // document whose write failed in the file's place until it is written.
+    private val text: CredentialText,
 ) {
     internal fun interface SynthesizeExpiry {
         operator fun invoke(mtimeMs: Long, nowMs: Long): Long
@@ -66,7 +70,7 @@ internal class GrokAuthJson(
      *  the proactive refresh on every turn. */
     fun mergedAuthJson(access: String, refresh: String, expiresAtMs: Long?): JsonObject {
         val onDisk = Cancellables.runCatchingCancellable {
-            json.parseToJsonElement(Files.readString(authPath)).jsonObject
+            json.parseToJsonElement(text.read()).jsonObject
         }.onFailure {
             log(
                 "[grok-auth] re-read of $authPath for merge failed: ${SafeFailureText.render(it)}; " +
@@ -132,7 +136,7 @@ internal class GrokAuthJson(
         // DR-59: the read IS the absence probe (the old exists() pre-gate read an inaccessible
         // file as logged-out). Genuine absence returns null; anything else throws into the
         // caller's wrapper (readSnapshot's classified null, refreshLocked's ReadFailed).
-        val raw = Cancellables.runCatchingCancellable { Files.readString(authPath) }
+        val raw = Cancellables.runCatchingCancellable { text.read() }
             .getOrElse { failure ->
                 val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
                     !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
@@ -145,7 +149,7 @@ internal class GrokAuthJson(
     }
 
     internal fun tokensOf(): JsonObject? =
-        json.parseToJsonElement(Files.readString(authPath)).jsonObject[FIELD_TOKENS] as? JsonObject
+        json.parseToJsonElement(text.read()).jsonObject[FIELD_TOKENS] as? JsonObject
 
     internal fun peerRotation(priorAccess: String?, snap: Snapshot?): RefreshOutcome? {
         if (priorAccess == null || snap == null) return null

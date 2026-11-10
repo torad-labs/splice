@@ -12,7 +12,6 @@
 package splice.provider.codex.auth
 
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.serialization.json.JsonObject
 import splice.core.auth.AccountRef
 import splice.core.auth.AuthDescription
@@ -20,15 +19,12 @@ import splice.core.auth.CredentialExpiry
 import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
-import splice.core.auth.INVALID_GRANT_REASON
-import splice.core.auth.InvalidGrantLatch
+import splice.core.auth.LoginAnswer
 import splice.core.auth.RefreshCall
 import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
-import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
-import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import splice.core.util.WallClockIso
 import splice.provider.codex.RefreshedTokens
@@ -38,10 +34,10 @@ import splice.upstream.credentials.AccountCredentialIdentitySource
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialEvidence
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialFileEvidenceReader
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialPresence
-import splice.upstream.credentials.BackgroundCredentialRefresh
-import splice.upstream.credentials.CredentialLock
-import splice.upstream.retry.SingleFlight
-import java.nio.file.Files
+import splice.upstream.credentials.HeldToken
+import splice.upstream.credentials.RenewalStage
+import splice.upstream.credentials.RenewalWindows
+import splice.upstream.credentials.TokenRenewal
 import java.nio.file.Path
 import java.time.Instant
 
@@ -76,22 +72,28 @@ public class CodexAuthProvider(
     private val log: LogSink = LogSink(DaemonLog::write),
 ) : RefreshableAuthProvider, AccountCredentialIdentitySource {
 
-    private val singleFlight = SingleFlight<RefreshOutcome>()
-    private val backgroundRefresh = BackgroundCredentialRefresh(prefetchScope, LOG_TAG, log)
-    private val invalidGrantLatch = InvalidGrantLatch()
+    // Audit, Nov 9, 2026: the ladder (serve, prefetch, wait near expiry, stat, latch, lock, persist) is the shared
+    // TokenRenewal; what stays here is codex's own: auth.json's shape, the JWT `exp` it expires by, and the merge.
+    private val windows = RenewalWindows(PROACTIVE_WINDOW_MS, STALE_FLOOR_MS)
+    private val renewal: TokenRenewal = TokenRenewal(
+        authPath,
+        LOG_TAG,
+        clock,
+        log,
+        prefetchScope,
+        RenewalStage { prior ->
+            describeAuth.refreshLocked(
+                prior,
+                PersistRotation { raw, tokens, fresh, access -> persistRotation(raw, tokens, fresh, access) },
+            )
+        },
+    )
 
     // The JWT claim reader moved to CodexOAuth with the rest of the codex OAuth wire helpers
     // (HD-M5); this class reads `exp` and the account id through CodexAuthJson.
-    private val authFile = CodexAuthFile()
-    private val authJson = CodexAuthJson(nowIso, authPath, clock, SynthesizeExpiry { synthesizeExpiry(it) }, log)
-    private val describeAuth = CodexAuthDescribe(authPath, authJson, authFile, invalidGrantLatch, log, refreshCall)
-
-    init {
-        // Lifecycle ownership: when prefetchScope ends (Daemon.stop cancels probeScope), cancel the
-        // shared refresh so it cannot persist a token after shutdown. Per-request cancellation is
-        // unaffected — it only cancels that caller's await, never the SingleFlight scope.
-        prefetchScope.coroutineContext[Job]?.invokeOnCompletion { singleFlight.close() }
-    }
+    private val authJson =
+        CodexAuthJson(nowIso, authPath, clock, SynthesizeExpiry { synthesizeExpiry(it) }, log, renewal.text)
+    private val describeAuth = CodexAuthDescribe(authPath, authJson, renewal, refreshCall)
 
     // SH-01: one shape-drift log per distinct auth.json mtime, not one per cached read.
     @Volatile
@@ -110,74 +112,21 @@ public class CodexAuthProvider(
         return CredentialExpiry.synthesizedExpiryMs(mtimeMs, clock())
     }
 
-    // Three tiers by remaining time-to-expiry, same shape as GrokAuthProvider (G17): outside the
-    // proactive window serve as-is; above the stale floor prefetch in the background and serve the
-    // current token; below the floor block for a confirmed-fresh token exactly as before G17.
-    override suspend fun credentials(): Credentials? {
-        val snap = authJson.readSnapshot(authCacheMs) ?: return null
-        val current = Credentials.Bearer(snap.access, snap.accountId)
-        val expiresAt = snap.expiresAtMs
-        return if (expiresAt == null || expiresAt - clock() >= PROACTIVE_WINDOW_MS) {
-            current
-        } else if (expiresAt - clock() >= STALE_FLOOR_MS) {
-            // prefetch tier (G17): kick a single-flight refresh in the background, serve the CURRENT
-            // token now. singleFlight still dedups concurrent entrants to one network call.
-            backgroundRefresh.launch { refresh() }
-            current
-        } else {
-            // stale floor: too close to hard expiry to risk it — block for a confirmed-fresh token.
-            val refreshed = refresh()
-            refreshed ?: (if (clock() < expiresAt) current else null)
-        }
+    // Three tiers by remaining time-to-expiry (G17), run by the shared renewal: outside the proactive window serve
+    // as-is; above the stale floor prefetch in the background and serve the current token; below the floor wait for
+    // the renewal, still serving a token that has not expired, and answering an expired one with the renewal's own
+    // typed outcome rather than "no login".
+    override suspend fun answer(): LoginAnswer {
+        val snap = authJson.readSnapshot(authCacheMs)
+        val held = snap?.let { HeldToken(Credentials.Bearer(it.access, it.accountId), it.expiresAtMs) }
+        return renewal.answer(held, windows)
     }
+
+    override suspend fun credentials(): Credentials? = (answer() as? LoginAnswer.Granted)?.credentials
 
     override suspend fun refresh(): Credentials? = (exchange() as? RefreshOutcome.Refreshed)?.credentials
 
-    // One token exchange, single-flight: its outcome is logged once, inside the flight (credentialsOrNull is the one
-    // logging flatten), and the turn's retry engine reads it whole (failure-handling slice 4).
-    override suspend fun exchange(): RefreshOutcome =
-        singleFlight.run { doRefresh().also { it.credentialsOrNull(LOG_TAG, log) } }
-
-    // Sealed per-mode outcome (discipline L3): a dead refresh token, a transport blip, and a
-    // corrupt file are DIFFERENT stories; credentialsOrNull is the single logging flatten.
-    // Staged (read → exchange → persist), each stage owning its own failure branches.
-    // G1: capture what THIS process last served BEFORE the lock, then re-read authoritatively INSIDE
-    // it — so a peer's rotation (landed while we waited on the lock) is seen, not overwritten.
-    // G15: gate on a latched confirmed invalid_grant BEFORE any file-content read or network call —
-    // a dead token no longer gets re-POSTed every turn. The gate gives way the instant the file's
-    // mtime changes (re-login), so a genuinely stale latch never outlives the credentials it named.
-    private suspend fun doRefresh(): RefreshOutcome {
-        // DR-59 (class law): logged-out is PROVEN by the stat, never an exists() pre-gate —
-        // exists() reads false through an untraversable parent, so an operator with intact tokens
-        // was told "not logged in". Only NoSuch with no NOFOLLOW entry is a genuine first
-        // run/logout; everything else is ReadFailed, whose flatten line says NOT-logged-out.
-        val statFailure = Cancellables.runCatchingCancellable {
-            Files.getLastModifiedTime(authPath)
-        }.exceptionOrNull()
-        if (statFailure != null) {
-            val genuinelyAbsent = statFailure is java.nio.file.NoSuchFileException &&
-                !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
-            return if (genuinelyAbsent) RefreshOutcome.NoCredentialsFile else RefreshOutcome.ReadFailed(statFailure)
-        }
-        val identity = authFile.codexAuthIdentityOrNull(authPath, log)
-        if (invalidGrantLatch.isLatched(identity)) return RefreshOutcome.Rejected(INVALID_GRANT_REASON)
-        val priorAccess = authJson.cachedAccess()
-        // AUTH-002: wire the daemon log sink so the lock's proceed-unlocked fallback is observable
-        // (CredentialLock.withLock's `log` default is a silent no-op) instead of only greppable
-        // in a source comment.
-        val outcome = CredentialLock.withLock(authPath, log = log) {
-            describeAuth.refreshLocked(
-                priorAccess,
-                PersistRotation { raw, tokens, fresh, access ->
-                    persistRotation(raw, tokens, fresh, access)
-                },
-            )
-        }
-        if (outcome is RefreshOutcome.Rejected && outcome.reason == INVALID_GRANT_REASON) {
-            invalidGrantLatch.latch(identity)
-        }
-        return outcome
-    }
+    override suspend fun exchange(): RefreshOutcome = renewal.exchange()
 
     private fun persistRotation(
         raw: JsonObject,
@@ -185,16 +134,9 @@ public class CodexAuthProvider(
         fresh: RefreshedTokens,
         access: String,
     ): RefreshOutcome {
-        // The endpoint already consumed the old refresh_token (Granted) by the time we get here — a
-        // throwing write must degrade to a typed PersistFailed, never a raw throw through SingleFlight
-        // out of credentials()/refresh(), so the not-yet-expired current token still gets served.
-        Cancellables
-            .runCatchingCancellable {
-                writeSecure(authPath, authJson.mergedAuthJson(raw, tokens, fresh, access).toString())
-            }
-            // DR-151: the throwable travels WHOLE to the sink, which owns the render. No string
-            // is built here, so no call site can pre-render one raw.
-            .getOrElse { return RefreshOutcome.PersistFailed.Write(it) }
+        // The endpoint already consumed the old refresh_token (Granted) by the time we get here: a write that fails is
+        // kept by the renewal and served from memory until it lands, so the read-back below sees the renewed token.
+        renewal.persist(authJson.mergedAuthJson(raw, tokens, fresh, access).toString())
         authJson.clearCache()
         return authJson.readSnapshot(authCacheMs)
             ?.let { RefreshOutcome.Refreshed(Credentials.Bearer(it.access, it.accountId)) }
@@ -217,10 +159,4 @@ public class CodexAuthProvider(
 
     override fun credentialEvidence(): CredentialEvidence =
         CredentialFileEvidenceReader.read(authPath)
-
-    // Atomic 0600 credential write — routes to the shared primitive (was an inline temp→chmod→move).
-
-    private fun writeSecure(path: Path, content: String) {
-        SecureFile.writeAtomic0600(path, content)
-    }
 }

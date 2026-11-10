@@ -2,28 +2,23 @@
 // same pair of responsibilities CodexAuthDescribe.kt owns, under the same name (renamed from
 // GrokAuthFile, review 2026-08-28 PR 99: codex's *AuthFile is a single-method mtime probe, so one
 // name meant two different-sized responsibilities and a reader who had learned one provider's
-// collaborator shape could not predict the next). The mtime probe rides along here rather than in a
-// second type because :providers-grok sits at detekt's 14-function ceiling — the SHAPE difference is
-// the ceiling's consequence, only the NAME was drift. Was a file-private collaborator in
+// collaborator shape could not predict the next). The mtime probe that rode along here moved to the
+// shared TokenRenewal with the rest of the renewal ladder (audit, Nov 9, 2026). Was a file-private collaborator in
 // GrokAuthProvider.kt so that class stayed under TooManyFunctions; lifted to its own file so the
 // provider is not billed for a second type (concentration HIGH, 2026-08-19).
 package splice.provider.grok
 
 import splice.core.auth.AuthDescription
-import splice.core.auth.CredentialFileDigest
-import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.INVALID_GRANT_REASON
-import splice.core.auth.InvalidGrantLatch
 import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshCall
 import splice.core.auth.RefreshOutcome
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
-import splice.core.util.LogSink
 import splice.core.util.LoopbackOverride
 import splice.core.util.SafeFailureText
-import splice.core.util.StateMemory
+import splice.upstream.credentials.TokenRenewal
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -59,51 +54,22 @@ internal fun interface PersistRotation {
 internal class GrokAuthDescribe(
     private val authPath: Path,
     private val authJson: GrokAuthJson,
-    private val invalidGrantLatch: InvalidGrantLatch,
-    private val log: LogSink,
+    private val renewal: TokenRenewal,
     private val refreshCall: RefreshCall<GrokRefreshedTokens>,
 ) {
-    private val statFailures = StateMemory()
-
-    // DR-176: returns the file IDENTITY, not a bare mtime. Truncated milliseconds could not tell a
-    // freshly re-authenticated credential from the rejected one it replaced within the same tick.
-    fun grokAuthIdentityOrNull(authPath: Path, log: LogSink): CredentialFileIdentity? =
-        Cancellables.runCatchingCancellable {
-            CredentialFileIdentity(
-                Files.getLastModifiedTime(authPath).toMillis(),
-                Files.size(authPath),
-                // V4-70: metadata cannot see a same-length rewrite, so the CONTENT is part of
-                // the identity. A read failure throws into the catch below and becomes a null
-                // identity — unknown, which the latch treats as fail-open.
-                CredentialFileDigest.of(authPath),
-            )
-        }.onSuccess {
-            statFailures.clear()
-        }.onFailure {
-            // One line per change of state: a status poll re-reads the same missing file every few seconds.
-            val state = "${SafeFailureText.render(it)} link=${Files.isSymbolicLink(authPath)}"
-            if (statFailures.isNews(state)) {
-                log(
-                    "[grok-auth] failed to stat $authPath identity: ${SafeFailureText.render(it)}; " +
-                        "invalid_grant latch check skipped",
-                )
-            }
-        }.getOrNull()
-
     internal fun describe(): AuthDescription {
         val presentOutcome = Cancellables.runCatchingCancellable {
             authJson.tokensOf()?.get("access_token") != null
         }
         // A failed read is not "present"; its failure is consumed below via exceptionOrNull -> read_error.
         val present = presentOutcome.getOrElse { false }
-        val identity = grokAuthIdentityOrNull(authPath, log)
         return AuthDescription(
             present = present,
             kind = "grok-oauth",
             fields = buildMap {
                 put("auth_path", authPath.toString())
                 put("login", "browser")
-                if (invalidGrantLatch.isLatched(identity)) put("refresh_latched", INVALID_GRANT_REASON)
+                if (renewal.latch.isLatched(renewal.identity())) put("refresh_latched", INVALID_GRANT_REASON)
                 presentOutcome.exceptionOrNull()?.let { failure ->
                     // DR-59: indeterminate is not logged-out — name it in the description instead.
                     val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&

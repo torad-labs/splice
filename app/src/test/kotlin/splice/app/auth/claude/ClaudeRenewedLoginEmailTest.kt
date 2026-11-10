@@ -31,6 +31,7 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
+import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.config.StatePaths
 import splice.core.util.LogSink
@@ -56,7 +57,9 @@ class ClaudeRenewedLoginEmailTest {
 
     /** Anthropic's token endpoint renewing the login's refresh token. */
     private val renew = ClaudeTokenRefresh {
-        ClaudeRefreshedTokens("renewed", "refresh-renewed", System.currentTimeMillis() + 8 * HOUR_MS)
+        RefreshAttempt.Granted(
+            ClaudeRefreshedTokens("renewed", "refresh-renewed", System.currentTimeMillis() + 8 * HOUR_MS),
+        )
     }
 
     private val noRenewal = ClaudeTokenRefresh { error("a live token is not renewed") }
@@ -187,7 +190,7 @@ private class LoginWorld(private val test: TestScope, private val paths: StatePa
 
     private val renewal = ClaudeTokenRefresh { refresh ->
         val next = issue(accounts.getValue(refresh.removePrefix("refresh-")))
-        ClaudeRefreshedTokens(next, "refresh-$next", System.currentTimeMillis() + 8 * HOUR_MS)
+        RefreshAttempt.Granted(ClaudeRefreshedTokens(next, "refresh-$next", System.currentTimeMillis() + 8 * HOUR_MS))
     }
 
     private fun issue(account: ClaudeAccountIdentity): String = "token-${++issued}".also { accounts[it] = account }

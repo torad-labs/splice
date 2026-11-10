@@ -29,7 +29,13 @@ function countTokens(): void {
   console.log(JSON.stringify(d));
 }
 
-const RECIPE_KEYS = ["ANTHROPIC_BASE_URL", "API_TIMEOUT_MS", "CLAUDE_CODE_MAX_RETRIES", "CLAUDE_CODE_RETRY_WATCHDOG"] as const;
+const RECIPE_KEYS = [
+  "ANTHROPIC_BASE_URL",
+  "API_TIMEOUT_MS",
+  "CLAUDE_CODE_MAX_RETRIES",
+  "CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES",
+  "CLAUDE_CODE_RETRY_WATCHDOG",
+] as const;
 
 function launchRecipe(port: string): void {
   const r = stdinJson();

@@ -384,6 +384,12 @@ public class LaunchService(
             // cooldown lift. Planted UNCONDITIONALLY, native included: it is a client-side WAIT
             // policy, and every head wants its session to survive a hold.
             put("CLAUDE_CODE_RETRY_WATCHDOG", "1")
+            // Nov 9: a subagent re-sent ONE request 228 times over 25 hours through splice, because each non-streaming
+            // attempt hit the client's 360 s timeout. Claude Code's retry limit for a timed-out non-streaming request
+            // is unlimited while this is unset. 2 is the limit the client itself applies when its retry watchdog judges
+            // a failed stream outlasted the timeout. Planted UNCONDITIONALLY, native included, like the watchdog: it
+            // bounds a client-side retry loop, and every head's session wants the loop bounded.
+            put("CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES", "2")
             // curl, which runs the statusline, reads the lowercase spelling first and ignores NO_PROXY once it is set.
             mergedNoProxy(spec).let { put("NO_PROXY", it); put("no_proxy", it) }
             // Hide Claude Code's built-in Anthropic-account commands: in a gateway head, auth is the

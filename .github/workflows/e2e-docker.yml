@@ -1,36 +1,22 @@
 # The docker e2e in CI: a fresh machine (tools/e2e/docker/run.sh) and the upgrade rehearsal from the
-# newest published release (run.sh --upgrade-from), both offline inside the container against mock
-# upstreams, with the real Claude Code wrapper at the pinned version.
+# newest published release that still has its files on GitHub (run.sh --upgrade-from), both offline inside
+# the container against mock upstreams, with the real Claude Code wrapper at the pinned version.
 #
 # Why this job exists: the fresh-machine e2e was red from 2026-09-22 to 2026-09-24 (a `splice status`
 # format change its assertion never followed) and nobody saw it, because nothing ran it. It runs on
-# every PR into main (the promotion PR), and on feat/** pushes that change what a user installs: the
-# launch shim, install.sh, anything compiled into the jar, or the harness itself. The console is
-# built into the jar too, but no step here exercises it, so console-only pushes do not trigger it.
+# every PR into main, and on demand (workflow_dispatch). It has no push trigger: the feat/** branches it
+# once ran on no longer exist, and work reaches main through a pull request, which runs it.
 name: e2e-docker
 
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: ['feat/**']
-    paths:
-      - 'app/src/main/dist/bin/splice-launch'
-      - 'install.sh'
-      - '**/src/main/**'
-      - '**/*.gradle.kts'
-      - 'gradle/**'
-      - 'build-logic/**'
-      - 'tools/e2e/docker/**'
-      - '.github/workflows/e2e-docker.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# One run per branch. A feat/** branch with a pull request open into main fired this workflow twice per push, once for the
-# push and once for the pull request, under two refs and so two groups: every sha from 13a3525ef to 1972a34d6 ran it twice,
-# 4 to 10 runner-minutes each. Keyed on the branch's repository and name, the later run replaces the earlier one, and a
+# One run per branch: the later run replaces the earlier one. Keyed on the branch's repository and name, a
 # fork's branch that shares a name with one of ours stays in a group of its own.
 concurrency:
   group: e2e-docker-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
@@ -70,12 +56,19 @@ jobs:
       # The newest published release that is not this candidate's own version: before a bump the
       # candidate still says the last release's version, and an upgrade to the same version cannot
       # replace the daemon (run.sh refuses it), so the rehearsal starts from the release before.
+      # run.sh downloads the old release's files with `gh release download`, and since Oct 31, 2026 a
+      # release's files are on splice.torad.ai/download, not on its GitHub page (notes only), so the
+      # release picked must still carry a splice.jar asset.
       - name: upgrade rehearsal from the newest other release
         if: ${{ !cancelled() }}
         run: |
           candidate="$(sed -nE 's/^SPLICE_GATEWAY_VERSION="([^"]+)"$/\1/p' app/src/main/dist/bin/splice-launch)"
-          from="$(gh release list -R "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 20 \
-            --json tagName --jq '.[].tagName' | grep -vx "v$candidate" | head -1)"
+          from=""
+          for tag in $(gh release list -R "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 20 \
+            --json tagName --jq '.[].tagName' | grep -vx "v$candidate"); do
+            assets="$(gh release view "$tag" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+            if grep -qx splice.jar <<<"$assets"; then from="$tag"; break; fi
+          done
           if [ -z "$candidate" ] || [ -z "$from" ]; then
             echo "::error::no candidate version ($candidate) or release to upgrade from ($from)"
             exit 1

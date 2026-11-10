@@ -1,4 +1,4 @@
-Last read: 2026-10-15 against splice 0.4.0 (feat/v0.4.0)
+Last read: 2026-10-15 against splice 0.4.0, then the feat/v0.4.0 branch (merged to main 2026-10-31); section 5 (restart), section 9 (switching your head) and the manager folder rules re-read against main 2026-11-10
 
 # Operations: how the splice manager works safely
 
@@ -24,8 +24,8 @@ every daemon start write them from the running release. A file absent on disk is
 the bytes splice last wrote is refreshed when the release's copy differs. A file the person edited is left as
 it is and stops taking updates. The SHA-256 of each written file is kept in `<state dir>/manager-home/written.json`.
 
-Source: docs/specs/v0.4.0.md section 15; README.md, "The splice manager"; CHANGELOG.md 0.4.0 "Added". The code that
-writes these files was being built on 2026-10-15, so this follows the spec (unverified in code).
+Source: docs/specs/v0.4.0.md section 15; README.md, "The splice manager"; CHANGELOG.md 0.4.0 "Added";
+app/src/main/kotlin/splice/app/manager/ManagerHome.kt (`ensure`, `place`: read on 2026-11-10, it matches the rules above).
 
 **What else is in the settings folder, one level up.** Every path here is outside your folder, so Claude Code
 asks the person before any command or tool reaches it.
@@ -195,7 +195,7 @@ What `splice restart` does, in order:
 1. Reads splice.toml with boot's own check. On a finding it prints every finding, then
    `splice: nothing was stopped and <path> is unchanged`, and exits 1. The old daemon keeps serving. On a
    terminal it offers the fix session first; from your shell it does not.
-2. Without `--now`, waits for compactions in flight, up to the upstream timeout (900 s by default). It does not
+2. Without `--now`, waits for compactions in flight, up to the upstream timeout (30 minutes by default). It does not
    wait for ordinary turns. `--now` skips only this wait.
 3. Stops the old daemon. Each head stops taking new turns and ends the turns in flight at once. The stop polls
    for about 60 s, then sends SIGTERM, then SIGKILL.
@@ -333,8 +333,9 @@ What happens when they do:
   onto the new head's model. The original stays as the old head wrote it. The person reads one conversation
   before and after. Moved assistant rows lose their thinking blocks and name the new model; nothing else changes.
 - If you are not running, the new head is stored, and the next start resumes you on it.
-- The move is refused while you wait on an answer, when the head is the same and no other model is picked, or
-  when the new head's command cannot start. A failed move puts you back where you were.
+- The move is refused while you wait on an answer, when the head is the one you already run on (the manager's move
+  picks no other model), or when the new head's command is not linked or cannot start. Continue on's own refusals pass
+  through as they are, such as your prompt holding unsent words. A failed move puts you back where you were.
 
 What it means for you:
 
@@ -355,8 +356,8 @@ your next message, a model change can give you a different window (the context b
 this way is saved by Claude Code as the head's default, which splice's next launch of that head writes over.
 
 Source: features/sessions/src/main/kotlin/splice/sessions/http/SessionContinue.kt (lines 1-30, 56, 107, 130-131);
-TranscriptModelRewrite.kt (lines 14-20, 104); docs/specs/v0.4.0.md section 15. The manager's own head route (`POST /api/manager/head`) was being built on
-2026-10-15; the steps above follow its contract and the Continue on code (unverified against the finished route).
+TranscriptModelRewrite.kt (lines 14-20, 104); docs/specs/v0.4.0.md section 15; features/sessions/src/main/kotlin/splice/sessions/manager/ManagerMove.kt
+(the manager's own head route, `POST /api/manager/head`, read on 2026-11-10: the refusals and the keep-for-next-start path above).
 
 ## 10. When a session is stuck
 

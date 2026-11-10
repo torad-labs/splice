@@ -1,4 +1,4 @@
-Last read: 2026-10-15 against splice 0.4.0 (feat/v0.4.0)
+Last read: 2026-10-15 against splice 0.4.0, then the feat/v0.4.0 branch (merged to main 2026-10-31); retired knobs corrected 2026-11-09 and the [share] and [remote] tables added 2026-11-10; the rest was not re-read
 
 # splice.toml reference
 
@@ -90,6 +90,20 @@ core/src/main/kotlin/splice/core/config/ConfigService.kt (coerceRejects, lines 2
 | `[providers.<key>]` | map of provider tables | one upstream each |
 | `[heads.<key>]` | map of head tables | one loopback port each |
 | `[projects."<root>"]` | map of project tables | standing prompts by working directory |
+| `[share]` | table | LAN share, the server's side: offers this machine's heads on its LAN (below) |
+| `[remote.<command>]` | map of tables | LAN share, a node's side: a command that runs on another machine's head (below) |
+
+`[share]` and `[remote.<command>]` are written by `splice share` and `splice remote` (cli.md, "share and remote"), which also
+restart a running daemon; the daemon reads them only at its start.
+
+| table and field | type | default | effect |
+|---|---|---|---|
+| `[share]` `enabled` | bool | false | the share listener opens on this machine's LAN, with no login, token or encryption: any device there can run these heads |
+| `[share]` `port` | int | 3097 | the LAN port; `splice share on` refuses one another program holds |
+| `[share]` `hostnames` | array of strings | empty | names for this machine beyond its host name and `.lan`, `.local`, `.home` and `.internal`, such as one a router hands out under another domain |
+| `[remote.<command>]` `url` | string | none | the address `splice share status` prints on the server, `http://<server>/<head>`, optionally ending `?auth=<login>` (run on that login) and `?models=<id>,<id>` (show only those); nothing else is kept, no credential or model copy |
+
+Source: core/src/main/kotlin/splice/core/topology/LanShareConfig.kt; splice.example.toml ("LAN share"); docs/specs/lan-share.md.
 
 ## 3. [daemon]
 

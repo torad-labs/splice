@@ -105,10 +105,12 @@ curl -fsSL https://splice.torad.ai/download/v0.4.0/install.sh \
 version with `--to vX.Y.Z`), stages it beside the current one under
 `~/.local/share/splice/releases/`, waits up to 30 minutes for every head's in-flight turns to finish (`--now` skips
 the wait; a count it cannot read is waited out the same 30 minutes and then refused), repoints the live jar, restarts the daemon and runs doctor.
+A download has no time limit: a slow one runs as long as it keeps moving, a dropped connection resumes where it
+stopped, and one that brings no data for a minute, three tries in a row, ends the upgrade with where it stalled.
 Before anything stops, the new release's own `doctor` must answer and `check-config` must accept your
 config, so a release that refuses your config is never activated. Before the restart, a running compaction is waited
-on for up to 15 minutes, the daemon's own cap on a turn, so it is not cut (`--now` skips that too). A command whose
-`upstreamTimeoutMs` is raised past 15 minutes is still waited on for only 15. After it, `/health` must report the new version within 15 seconds. If the wait expires, the
+on for up to 30 minutes, the daemon's own cap on a turn, so it is not cut (`--now` skips that too). A command whose
+`upstreamTimeoutMs` is raised past 30 minutes is still waited on for only 30. After it, `/health` must report the new version within 15 seconds. If the wait expires, the
 release stays staged in `releases/<version>` and the command exits 1. A second upgrade while one runs is refused. The live launch shim is replaced to match the jar. An edit to a recorded
 release's shim is saved as `splice-launch.edited` beside that release, with its diff printed;
 a flat install's live launcher is kept as `splice-launch.edited`, because splice cannot tell whether it was edited. It is also recorded as the rollback copy. `splice upgrade --rollback` puts the previous release back, waits for in-flight turns the same way, and refuses when that release would refuse your config; it is kept
@@ -452,9 +454,12 @@ curl -X DELETE -H "Authorization: Bearer $KEY" \
 
 A session's pin outranks the head's pin for that session only. `DELETE` without `session` drops the
 head's pin and answers `{"ok":true}` on a head with an account pool; a head with no pool answers 400. A label the head does not hold (400), or an account with no
-credential file (409), is refused and nothing is pinned. A pin on an account that is out of quota falls
-back to the automatic rule and stays set. To see a pin: `GET /api/auth` shows a head's pin as `pinned_label`, and `splice sessions` and `GET /api/sessions` show each session's account and, when it has one, its pin (`account` and `account_pin`). The pin takes effect on the next turn, and a daemon
-restart clears every pin. Without any pin, a session keeps its account until a limit, then moves to
+credential file (409), is refused and nothing is pinned. Use now on a login held for every model answers 409 with the
+window and the time. A pin lets go at the first limit its login reads that it had not read when Use now was pressed (a plan
+window spent, the provider holding the account, or a usage reading at 100%); a limit the login already read at the press
+keeps the pin. While a pinned login cannot serve, the pin stays and its card says why and which login the turns use
+instead. To see a pin: `GET /api/auth` shows a head's pin as `pinned_label`, and `splice sessions` and `GET /api/sessions` show each session's account and, when it has one, its pin (`account` and `account_pin`). The pin takes effect on the next turn, and a daemon
+restart keeps it, since pins are saved in `account-pins.json` in the state folder (a pin that has let go stays gone). Without any pin, a session keeps its account until a limit, then moves to
 the next free login in your saved order, then the primary; with no saved order, to the login whose weekly window resets soonest.
 
 ### API keys on the Accounts page
@@ -730,8 +735,8 @@ These files hold settings and statistics. Custom compaction instructions and tea
 | `~/.local/share/splice/splice.jar` and `splice-launch` | The live daemon jar and launch shim; after an upgrade the jar links into the current release | The jar is 0644 and the launch shim 0755 | Replaced at install or upgrade | `UpgradeLayout.kt`, `UpgradeActivation.kt`, `install.sh` |
 | `~/.local/share/splice/managed-install` | One line naming what laid the install down: `install.sh`, or `splice upgrade` after an activation. The daemon's auto-update acts only where this marker exists, never on a jar copied into place by hand | Your umask | Kept; delete it to stop auto-update from replacing this install | `UpgradeLayout.kt`, `install.sh` |
 | `~/.splice/state/upgrade-rejected` | One release version per line: a release `splice upgrade` put back because it did not come up serving and ready or its doctor was red, and the release `--rollback` left. Auto-update skips them; a newer release and `splice upgrade --to` do not | Your umask, in the owner-only state directory | Kept; a `--to` that installs a listed version takes it off, and deleting the file clears the list | `UpgradeLayout.kt` |
-| `~/.local/share/splice/releases/<version>/splice.jar`, `splice-launch` and `splice-launch.edited`; `releases/current`, `releases/previous` and `releases/.upgrade.lock` | Installed release bytes, the current and previous links, an empty upgrade lock, and a changed launcher saved before replacement. A flat install's live launcher is kept as `splice-launch.edited`, because splice cannot tell whether it was edited. Its live bytes are also recorded as the release's rollback copy | A saved launcher keeps its original permissions; other release files use your umask | The current and previous release; older releases are deleted after each successful upgrade (a rollback deletes none). The empty lock remains | `UpgradeRelease.kt`, `UpgradeCommand.kt`, `UpgradeLayout.kt`, `UpgradeActivation.kt`, `UpgradeWrapper.kt`, `UpgradeLock.kt` |
-| `~/.local/share/splice/releases/.staging-<pid>/splice.jar` and `splice-launch` | Downloaded release bytes awaiting verification and activation | Your umask | Renamed to its release directory once verified, and kept there if the in-flight wait then expires; a failed upgrade removes its stage. An interrupted stage can remain until a later upgrade prunes it | `UpgradeRelease.kt`, `UpgradeLayout.kt` |
+| `~/.local/share/splice/releases/<version>/splice.jar`, `splice-launch` and `splice-launch.edited`; `releases/current`, `releases/previous` and `releases/.upgrade.lock` | Installed release bytes, the current and previous links, an empty upgrade lock, and a changed launcher saved before replacement. A flat install's live launcher is kept as `splice-launch.edited`, because splice cannot tell whether it was edited. Its live bytes are also recorded as the release's rollback copy | A saved launcher keeps its original permissions; other release files use your umask | The current and previous release; older releases are deleted after each successful upgrade (a rollback deletes none). The empty lock remains | `UpgradeDownloadFiles.kt`, `UpgradeCommand.kt`, `UpgradeLayout.kt`, `UpgradeActivation.kt`, `UpgradeWrapper.kt`, `UpgradeLock.kt` |
+| `~/.local/share/splice/releases/.staging-<pid>/splice.jar` and `splice-launch`, and while each downloads, its `.splice.jar.part` or `.splice-launch.part` beside it | Downloaded release bytes awaiting activation. Each file streams into its `.part` sibling, hashed as it arrives, and is renamed to its own name only when its sha256 matches the release's checksum list | Your umask | A `.part` file is renamed or removed when its download ends, whether it landed, failed its checksum or stopped. The stage is renamed to its release directory once validated, and kept there if the in-flight wait then expires; a failed upgrade removes its stage. An interrupted stage can remain until a later upgrade prunes it | `UpgradeDownloadFiles.kt`, `UpgradeLayout.kt` |
 | `~/.local/share/splice/upgrade-runs/<run>/run.json`, `output.log`, `pid` and `exit` (briefly `exit.tmp`) | An upgrade started with `POST /api/upgrade`: its arguments, output, process id and exit code | Your umask | The newest 5 runs | `UpgradeRuns.kt`, `SystemdUpgradeLauncher.kt` |
 | `~/.local/share/splice/splice-mcp-holder` and `splice-mcp-front`, and the release folder's copies of them | The hub's two programs, which `splice upgrade` swaps in with the jar. The live copy is kept in the release being left, and the new copy replaces it. Each copy is written to a temporary sibling, then renamed over its target | The source's permissions, copied with the file | Replaced at each upgrade; the temporary sibling is removed after each swap | `UpgradeHub.kt` |
 | The file you name in `splice doctor --json --out <file>` | The doctor report, redacted; with `--with-logs`, a tail of `daemon.log` | Only you (0600) | Yours | `DoctorJsonReport.kt` |
@@ -982,7 +987,7 @@ Not a contract: log wording, the format of files under the state directory,
 and the Kotlin module API (splice publishes no library).
 
 **Claude Code.** Each release is tested against one Claude Code version in a fresh-machine e2e
-(0.4.0: 2.1.296). When a session runs a newer version, `splice doctor`, `splice status` and
+(0.4.0: 2.1.322). When a session runs a newer version, `splice doctor`, `splice status` and
 the status line say so.
 
 **Security fixes** land on the latest release only. Report a vulnerability privately, as

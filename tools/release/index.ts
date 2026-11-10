@@ -14,7 +14,6 @@ import { hub, usage as hubUsage } from "./src/commands/hub.ts";
 import { notes, usage as notesUsage } from "./src/commands/notes.ts";
 import { promote, usage as promoteUsage } from "./src/commands/promote.ts";
 import { publishCommand, usage as publishUsage } from "./src/commands/publish.ts";
-import { train, usage as trainUsage } from "./src/commands/train.ts";
 import { verify, usage as verifyUsage } from "./src/commands/verify.ts";
 
 const { repoRoot } = layout();
@@ -26,7 +25,6 @@ const VERBS = {
   notes: { usage: notesUsage, exec: (argv: string[]) => notes(argv, repoRoot) },
   promote: { usage: promoteUsage, exec: (argv: string[]) => promote(argv, repoRoot) },
   publish: { usage: publishUsage, exec: (argv: string[]) => publishCommand(argv, repoRoot) },
-  train: { usage: trainUsage, exec: (argv: string[]) => train(argv, repoRoot) },
   verify: { usage: verifyUsage, exec: (argv: string[]) => verify(argv, repoRoot) },
 } satisfies Record<string, { usage: string; exec: (argv: string[]) => number | Promise<number> }>;
 

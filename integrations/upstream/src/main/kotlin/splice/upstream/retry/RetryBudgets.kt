@@ -121,8 +121,10 @@ public const val WALL_MARGIN_MS: Long = 30_000L
  *  outlasts every hold within 7 days. */
 public const val CLIENT_WALL_GRACE_MS: Long = 60_000L
 
-/** A request without the wall header has the client timeout every session had before slice 5: the 900 s budget plus
- *  60 s (LaunchServiceTest's API_TIMEOUT_MS row). */
+/** A request without the wall header comes from a session launched before slice 5 (Oct 27, 2026), which has the client
+ *  timeout every session had then: the whole-turn budget of that day, 900 s, plus 60 s. The budget's default is 1,800 s
+ *  since that commit, and a launch since then names its own timeout in the header, so this figure is no one's current
+ *  budget. */
 public const val OLD_CLIENT_WALL_MS: Long = 960_000L
 
 /** Claude Code aborts a compaction on its own timer, 1.5 ms per token of the conversation, from 600 s to 1 h

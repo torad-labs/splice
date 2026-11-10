@@ -1,5 +1,18 @@
 # Splice request performance and retention
 
+> **Closed history, marked 2026-11-10. Do not act from this page.** It is the status note of 2026-10-17, kept as the
+> record of that day. Where it says what is open, it is out of date:
+>
+> - PR #247 merged into `main` on 2026-10-31, so "keep pre-push until PR #247 merges" and "beta-only release from main"
+>   no longer describe the process: work reaches `main` through a pull request and releases follow "Releasing" in
+>   `.github/CONTRIBUTING.md`. There is no release train.
+> - V4-444 was approved by Marcos by eye on 2026-10-29 (`docs/releases/v0.4.0-readiness.md`, row 5).
+> - The management key can be replaced while the daemon runs: `splice rotate-key` (2026-10-26), and a session launched
+>   with the key helper recovers on its own head; `splice sessions relaunch` relaunches the ones launched before it.
+>   The "candidate remedy" in the last paragraph was built, not left open.
+> - Whether the performance sequence in the paragraphs below finished is not recorded on this page; its own record is
+>   `docs/architecture/request-performance.md`.
+
 Authoritative plan: docs/architecture/request-performance.md.
 
 Marcos authorized optimizing all identified request operations and concurrency paths for 50-70 sessions, with full functionality preserved, and instrumenting unnecessarily retained heavy objects. Required Chinese-source research is complete. Do not ask again whether to implement.

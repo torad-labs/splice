@@ -1,4 +1,5 @@
-Last read: 2026-11-09 against splice 0.4.0 (feat/v0.4.0)
+Last read: 2026-11-09 against splice 0.4.0 on main (the feat/v0.4.0 branch merged 2026-10-31); the systemd unit
+rows and the beta attestation line corrected 2026-11-10
 
 # Reliability, MCP, code mode, install and troubleshooting
 
@@ -198,7 +199,7 @@ Source: `Knob.kt` (the header comment on which knobs are live, and the `MAX_INFL
 
 - There is one daemon JVM. `splice restart` cuts the turns in flight on every head and every session on the
   machine, the manager's own included.
-- `splice restart` first waits for running compactions, up to 900 s, unless `--now`. Then the daemon ends every
+- `splice restart` first waits for running compactions, up to 30 minutes, unless `--now`. Then the daemon ends every
   ordinary turn still running at once, each with the line "splice restarted during this turn.", and the next
   daemon takes over.
 - systemd holds splice's ports (`splice-control.socket`, `splice-head-<key>.socket`, laid by `splice restart`), so a
@@ -288,7 +289,7 @@ Source: `core/.../topology/Topology.kt` 140-148; `Knob.kt` (the shared MCP hosti
 | file | what it is |
 |---|---|
 | `~/.local/share/splice/splice-mcp-front`, `splice-mcp-holder` | the two programs, beside `splice.jar`. `install.sh` and `splice upgrade` swap them in with the jar. A running front reloads (`systemctl --user reload splice-mcp-front.service`), never restarts |
-| `~/.config/systemd/user/app-mcp.slice`, `splice-mcp-front.socket`, `splice-mcp-front.service` | the units. `splice install --all` writes each only where no unit of that name exists. It enables and starts nothing |
+| `~/.local/share/systemd/user/app-mcp.slice`, `splice-mcp-front.socket`, `splice-mcp-front.service` | the units (`$XDG_DATA_HOME/systemd/user`). `splice install --all` lays them there, rewriting one whose bytes differ from splice's, and leaves a file of the same name in `~/.config/systemd/user`, which overrides splice's, untouched. It enables and starts nothing. Before Oct 25, 2026 splice wrote them into `~/.config/systemd/user`, create-only; such a copy that still holds the recorded bytes is removed |
 | `~/.config/splice/mcp-front.env` | where the hub keeps state and the control port. `splice init` writes it (Linux) |
 | `<state>/mcp-hub/` | `front.json`, `access-key` (the MCP-only bearer, derived from the management key), `launch-<pid>.json`, `units-written` (SHA-256 of the units splice wrote), `plugin-flag.json`, one `<key>.json` and `.sock` per holder |
 | `<state>/mcp-listings/`, `<state>/mcp-roots-bound` | the last tool list each server gave, so a session lists tools without starting the server; the servers that asked for roots |
@@ -466,7 +467,7 @@ Source: `install.sh` lines 7-16, 93-147, 273-352, 397-417, 488-521, 569-592.
 | verb | does |
 |---|---|
 | `splice init` | writes the starter `splice.toml` only if absent, on Linux writes `mcp-front.env`, and places the manager's folder (`CLAUDE.md`, `.claude/settings.json`, the skill) in `manager/` beside `splice.toml`. A file the person edited is kept as they left it. The daemon does the same at every start, because auto-update swaps the jar and never reruns init |
-| `splice install [<head>\|--all]` | links the wrapper symlinks in `~/.local/bin`, and on Linux writes the hub units where none exist. Never prunes a link |
+| `splice install [<head>\|--all]` | links the wrapper symlinks in `~/.local/bin`, and with `--all` or no word on Linux lays splice's systemd user units in `~/.local/share/systemd/user`: `splice.service` (the daemon) and the hub's units when the hub front is installed. Enables and starts nothing. Never prunes a link |
 | `splice setup` | guided, needs a terminal: first provider, which commands, plain `claude` or `claude-splice`, MCP sharing. Writes nothing until confirmed |
 | `splice doctor [--live] [--json [--with-logs] [--out FILE]]` | seven sections: prerequisites, installation, configuration, daemon, auth, accounts, runtime. Every failing check prints its fix. `--live` sends one tiny tool call per local-runtime row and nothing else. `--json` is a redacted, shareable report |
 | `splice check-config` | the boot findings pass, no daemon. Exit 0 clean, exit 3 on any finding, all listed |
@@ -497,7 +498,7 @@ auto_update = true        # absent reads as off
 ```
 
 The first check is 10 min after daemon start, then hourly. It runs the same upgrade with `--auto`: assets are
-checked against `sha256sums.txt` only (a beta built while CI is locked has no attestation), and it restarts at
+checked against `sha256sums.txt` only (a beta is built on the maintainer's machine, outside `release.yml`, and has no attestation), and it restarts at
 the first moment no turn is in flight, or after the bounded wait (30 min). It acts only where `managed-install`
 exists. One try per version per daemon. Any other value of `update_channel` is a config finding.
 

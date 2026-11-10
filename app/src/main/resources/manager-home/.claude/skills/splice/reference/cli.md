@@ -1,4 +1,6 @@
-Last read: 2026-10-15 against splice 0.4.0 (feat/v0.4.0)
+Last read: 2026-11-10 against splice 0.4.0 on main, for the verb table, `sessions`, `doctor`, `install`, `uninstall`,
+`rotate-key`, `share`, `remote`, `peer`, `mcp` and `console`'s grammar; the other sections were last read 2026-10-15,
+when 0.4.0 was still the feat/v0.4.0 branch (merged to main 2026-10-31). `CommandParser.kt` is the verb table.
 
 # The splice command line
 
@@ -7,7 +9,7 @@ usage and runs nothing (V4-309: help never reaches the verb). A verb you mistype
 exits 2.
 
 Source: `app/src/main/kotlin/splice/app/cli/CommandParser.kt` (the verb table), `Cli.kt` (usage, exit 2),
-`Command.kt` (what each verb calls), `app/src/main/kotlin/splice/app/Main.kt:59-62` (`daemon`, `start`).
+`Command.kt` (what each verb calls), `app/src/main/kotlin/splice/app/Main.kt` (`daemon`, `start`).
 
 ## Read this first
 
@@ -36,8 +38,8 @@ You: `free` (run it), `ask` (person's yes first), `person` (the person runs it i
 |---|---|---|---|---|---|
 | `status` | Daemon up or down, one row per head (signed in, key present, runtime answering), accounts, config and jar paths | none | no (adds account rows when up) | optional | free |
 | `logs` | Prints the tail of `daemon.log` | `--head <key>`, `--tail N` (default 50), `--follow` or `-f` | no | no | free (no `--follow`) |
-| `sessions` | Claude Code sessions on this machine, joined to their head, LIVE/STALE/gone, the SendMessage line | none | no (adds account and model columns when up) | optional | free |
-| `doctor` | Five-section health check; every failing check prints its fix command | `--live`, `--json`, `--with-logs`, `--out FILE` | no | optional | free (ask for `--out`) |
+| `sessions` | Claude Code sessions on this machine, joined to their head, LIVE/STALE/gone, the SendMessage line. `--json` prints the same registry as one JSON document for a program. `relaunch` ends and resumes each session holding a stranded key (after `rotate-key`) | `--json` or `relaunch`, one at most | no (adds account and model columns when up; `relaunch` needs it) | optional (`relaunch`: yes) | free (plain and `--json`); `relaunch`: ask |
+| `doctor` | Seven-section health check; every failing check prints its fix command | `--live`, `--json`, `--with-logs`, `--out FILE` | no | optional | free (ask for `--out`) |
 | `check-config` | Runs the boot findings pass on `splice.toml` and nothing else | none | no | no | free |
 | `models` | Compares each provider's published model list with the rows in `splice.toml` | `[provider]`, `--all` | no | no | free |
 | `version` | Prints `splice <version>` | none | no | no | free |
@@ -52,14 +54,17 @@ You: `free` (run it), `ask` (person's yes first), `person` (the person runs it i
 | `console` | Bare: starts the daemon if needed and opens the console in the person's browser, unlocked. With an action: drives the console the person has open | `<action> [words]`, `--note TEXT`, `--clear`, `--json` | yes (with an action) | yes | bare: person. Actions: free to look and point, ask before an act |
 | `login` | Signs in to a head (browser or device flow, or a masked key prompt) | `<head>`, `--label <name>`, `--discard` | no | no | person |
 | `key` | The API-key store (`keys.toml`) | `set <ENV_NAME> [--value V \| --stdin]`, `list`, `unset <ENV_NAME>` | no | no | person |
+| `rotate-key` | Replaces the management key while the daemon runs (starts the daemon if none answers) | none | yes (starts it) | yes (the CLI reads it, never you) | ask; the person runs it |
 | `add` | Adds a provider and a head without editing TOML; writes `splice.toml` | `<profile>`, `--name`, `--base-url`, `--model`, `--command`, `--key provider\|new`, `--live`, `--yes`, `-y` | optional | yes | person |
 | `add-model` | Picks OpenRouter catalog rows through a prompt and writes them | none | no | no | person |
 | `setup` | Guided first-run flow; writes TOML, installs commands, may restart | none | no | yes | person, never you |
 | `init` | Writes the starter `splice.toml` if absent, and the MCP hub env file on Linux | none | no | no | ask |
-| `mcp install temple` | Persists Temple's local MCP service and refreshes Claude/native Codex entries | `--script FILE`, `--url URL`, `--command COMMAND`, `--codex-home DIR` | optional | optional | ask |
-| `peer` | Named peers every Claude Code session can message: register, list, revoke, rotate, webhooks, send and read as one | `register <name>`, `list`, `revoke <name>`, `rotate <name>`, `webhook set\|clear\|test`, `send --as`, `inbox --as`, `status --as` | yes | yes (`--as` verbs use the peer's own key file) | `list`: free. Every other verb: ask |
-| `install` | Links head wrapper commands into `~/.local/bin` | `[<head>\|--all]` | no | no | ask |
-| `uninstall` | Removes head wrapper links (never the jar, never config) | `[<head>\|--all]` | no | no | ask |
+| `mcp install temple` | Persists Temple's local MCP service and refreshes Claude/native Codex entries | `--script FILE` (with optional `--command COMMAND`) or `--launch-file FILE`, `--url URL`, `--codex-home DIR` | optional | optional | ask |
+| `peer` | Named peers every Claude Code session can message: register, list, revoke, rotate, webhooks, per-peer send limits, send and read as one, and a Codex thread's hooks | `register <name>`, `list`, `revoke <name>`, `rotate <name>`, `webhook set\|clear\|test`, `limit <name> <per-minute> <burst>\|--default`, `send --as`, `inbox --as`, `status --as`, `codex attach\|detach` | yes | yes (`--as` verbs use the peer's own key file) | `list`: free. Every other verb: ask |
+| `share` | LAN share, the server's side: offers this machine's heads to the person's other machines. `on` and `off` write `[share]` in `splice.toml` and restart a running daemon; `status` prints each command's address | `on [--port N]`, `off`, `status` (no word is `status`) | no (`status` asks the running daemon; a running daemon is restarted) | no | `on`, `off`: ask (they restart); `status`: ask (read-only) |
+| `remote` | LAN share, a node's side: commands this machine runs on another machine's heads. `add` writes one `[remote.<command>]` line and links the command, `remove` takes both out, each restarting a running daemon; the bare verb lists them and whether each server answers | `[list]`, `add <address> [--as <command>]`, `remove <command>` | no (a running daemon is restarted) | no | `add`, `remove`: ask (they restart); `list`: ask (read-only) |
+| `install` | Links head wrapper commands into `~/.local/bin`; with no head or `--all` on Linux it also lays splice's systemd user units | `[<head>\|--all]` | no | no | ask |
+| `uninstall` | Removes head wrapper links (never the jar, never config); with no head or `--all` on Linux it also stops, disables and removes the systemd user units splice laid | `[<head>\|--all]` | no | no | ask |
 | `daemon` | Runs the daemon in the foreground (default with no verb) | none | is the daemon | no | never |
 | `start` | Starts the daemon through its systemd unit, else in the foreground | none | is the daemon | no | never |
 | `record-launch`, `pending-login` | Internal: the launch shim and sign-in hooks call them | internal | no | no | never |
@@ -72,6 +77,9 @@ Source: the verb table in `CommandParser.kt`; flags are each verb's own parser:
 `app/.../cli/auth/KeyCommand.kt`. The "Daemon" and "Key" columns are read from each verb's code; `add`'s
 daemon use is the restart and probe it offers at the end (`AddCommand.kt`). `start` and `daemon` are in
 `Main.kt`, not in the verb table, so `splice start --help` is not a documented form (unverified beyond Main.kt).
+`app/.../cli/share/ShareCommand.kt` and `RemoteCommand.kt` (share, remote), `app/.../cli/auth/RotateKeyCommand.kt`,
+`app/.../cli/sessions/SessionsRelaunchCommand.kt`, `features/sessions/.../list/SessionsJson.kt`, `app/.../cli/peer/PeerArgs.kt`
+(`PEER_USAGE`), `app/.../cli/mcp/McpServiceCommand.kt` (`MCP_SERVICE_USAGE`).
 
 ## Exit codes
 
@@ -129,6 +137,8 @@ is empty output; the code prints the bracketed line (the code wins).
 
 ```
 splice sessions
+splice sessions --json
+splice sessions relaunch
 ```
 
 Lists the Claude Code sessions registered in `~/.claude/sessions`, one line each: name, head, model, status,
@@ -137,9 +147,22 @@ process, `stale` is a live process with no registry update for 30 minutes, `gone
 `direct` in the head column means the session never went through splice. `unknown head` means splice cannot
 place it. Headless `claude -p` runs never register and never appear.
 
+`--json` prints the same registry as one JSON document on one line (`sessions` and `error`), each session with its
+id, name, pid, status, availability, route and head, for a program to read; registry text is passed through as
+written. It exits 1 when the registry could not be listed, and the `error` field says why.
+
+`relaunch` belongs after `splice rotate-key`. A session launched before the key helper holds its turn key in its
+environment, which a rotated key strands. The daemon relaunches each such session still running on a splice head, one
+at a time: ended in its terminal and resumed by its own id on the same command and model. It leaves a session that is
+working, waiting on an answer, holding words the person has not sent or holding an unsent feedback draft, and it
+does not relaunch the session it runs in; each one left is named with why, and the verb exits 1 while any is left, so
+it is run again until it passes. It cuts those sessions, so ask first, and run it from the person's terminal, not your
+own pane. Claude Code's permission fence for this folder allows any `splice sessions` command without a prompt, so
+for `relaunch` the asking is yours: say what it will do in plain text and wait for the yes.
+
 Source: `features/sessions/.../list/SessionsCommand.kt:60-110`, `.../registry/SessionRegistry.kt:23,243`
-(`STALE_AFTER_MS` = 30 minutes). The console's Sessions page uses "ended" for what this verb calls `gone`
-(see accounts-sessions-console.md).
+(`STALE_AFTER_MS` = 30 minutes), `.../list/SessionsJson.kt`, `app/.../cli/sessions/SessionsRelaunchCommand.kt`.
+The console's Sessions page uses "ended" for what this verb calls `gone` (see accounts-sessions-console.md).
 
 ### doctor
 
@@ -150,8 +173,9 @@ splice doctor --json
 splice doctor --json --with-logs --out /tmp/splice-report.json
 ```
 
-The "why is it not working" command. Five sections: prerequisites, installation, configuration, daemon, auth.
-A pass is one dim line. A failure prints a glyph, the check name and the exact fix command on its own line.
+The "why is it not working" command. Seven sections: prerequisites, installation, configuration, daemon, auth,
+accounts (which account each pooled head is on, and when every one is out) and runtime (what actually happened:
+the daemon's health counters and the tail of the perf outcomes). A pass is one dim line. A failure prints a glyph, the check name and the exact fix command on its own line.
 Secrets are reported by presence only.
 
 | Flag | Effect |
@@ -165,7 +189,7 @@ Secrets are reported by presence only.
 Anything else, or `--with-logs`/`--out` without `--json`, prints usage and writes nothing. Doctor also reports
 `splice.toml` as stale after an edit that needs a restart.
 
-Source: `features/diagnostics/.../doctor/DoctorCommand.kt:50-110` (flags, verdict),
+Source: `features/diagnostics/.../doctor/DoctorCommand.kt` (`collect` lists the seven sections; flags, verdict),
 `.../report/DoctorReportOptions.kt` (strict flag grammar, `DOCTOR_USAGE`), `.../report/DoctorJsonReport.kt:1-8`
 (allowlist, nothing uploaded). `--live` scope: `DoctorCommand.kt` header comment and README "Local models".
 
@@ -223,7 +247,7 @@ splice restart --now
 
 Stops the daemon (every head with it) and cold-starts it from the CLI's shell. Say plainly before you ask:
 **a restart cuts every turn in flight in every session on this machine, including yours.** Sessions retry on
-their own and come back. Without `--now` it first waits for running compactions, up to 15 minutes. `--now`
+their own and come back. Without `--now` it first waits for running compactions, up to 30 minutes. `--now`
 skips that wait. A systemd user unit that runs the daemon restarts through the unit instead.
 
 The new daemon reads its API-key environment variables from the shell that ran `restart` (or the unit's
@@ -281,6 +305,26 @@ command and the variable name from `splice.toml` (`auth.env`, or `<KEY>_API_KEY`
 
 Source: `app/.../cli/auth/KeyCommand.kt:60-170`, `README.md` "API-key starter".
 
+### rotate-key
+
+```
+splice rotate-key
+splice sessions relaunch
+```
+
+Replaces the management key in one command while the daemon runs, starting the daemon first when none answers. The
+CLI asks the running daemon, with the key on disk; the daemon replaces the key, the turn key made from it, the
+turn-key header file every launched session reads, the MCP access key bound to it and the console pages an older
+splice left. It prints what changed in words and paths and never a key. The old key and the old turn key are refused
+from then on. Sessions splice launched
+with the key helper read the new turn key at their next request and carry on; a session launched before the helper
+holds the old turn key in its environment and must be relaunched, which `splice sessions relaunch` does (see
+"sessions"). A daemon older than the CLI, or one that refuses the key on disk, answers with `splice restart` as the
+fix; then run `splice rotate-key` again. You never run it yourself: it changes a credential and strands sessions, so
+the person decides and types it in their own terminal.
+
+Source: `app/.../cli/auth/RotateKeyCommand.kt`.
+
 ### add (an api-key or OAuth provider)
 
 ```
@@ -316,11 +360,23 @@ splice uninstall claudex
 
 `install` links one wrapper symlink per head (named by the head's `command`) into `~/.local/bin`, pointing at
 the shared launch shim, plus the `splice` command itself. It refuses a name that a foreign file already holds
-and says which. With `--all` on Linux it also creates the MCP hub's systemd user units where none exist.
-`uninstall` removes only those symlinks; it never removes the jar, the shim, `splice.toml` or credentials.
-Both accept a head key or its command, or `--all` (the default with no word). Neither restarts anything.
+and says which. With `--all`, or no word, on Linux it also lays splice's own systemd user units in
+`$XDG_DATA_HOME/systemd/user` (`~/.local/share/systemd/user` by default): `splice.service`, the daemon's unit, which
+runs the `splice` link this install made on the JDK it ran on (when the JDK or link path holds a character a unit
+cannot carry, no unit is laid and the verb says why), and the MCP hub's units when the hub front is installed beside
+the jar. It enables, starts and restarts nothing. A file of the same name in `~/.config/systemd/user` overrides
+splice's and wins until its owner removes it; splice never writes there.
+`uninstall` removes those symlinks and never removes the jar, the shim, `splice.toml` or credentials. With `--all`, or
+no word, on Linux it also stops, disables and removes the systemd user units splice laid (sockets first), so neither
+the daemon nor the MCP hub starts again from the jar left on disk, and it names any override of the user's own that it
+leaves running. Uninstalling one head's command leaves the units, since `splice.toml` still names that head.
+Both accept a head key or its command, or `--all` (the default with no word). Neither restarts anything, but
+`uninstall --all` stops the daemon when systemd is running it from `splice.service`, which cuts every turn in flight
+in every session, yours included.
 
-Source: `features/launch/.../install/InstallLinker.kt:44-70`, `UninstallCommand.kt:19-45`, `Command.kt:56-75`.
+Source: `features/launch/.../install/InstallLinker.kt:44-70`, `UninstallCommand.kt:19-45`, `Command.kt:56-75`,
+`app/src/main/kotlin/splice/app/InstallWiring.kt` (`layUnits`, `retireUnits`), `features/lifecycle/.../units/SpliceUnits.kt`,
+`UninstallUnits.kt`, `DaemonUnit.kt`.
 
 ### upgrade
 
@@ -412,11 +468,13 @@ Source: `app/.../cli/status/ConsolePilotCommand.kt` (the words), `app/.../contro
 
 ```sh
 splice mcp install temple --script /absolute/temple/slices/screen/bin/tools-server.ts --url http://127.0.0.1:7741
+splice mcp install temple --launch-file /absolute/path/to/launch-descriptor --url http://127.0.0.1:7741
 ```
 
 Temple normally runs this during its own provisioning. It persists the resolved local MCP entry so Splice
-can start it after reboot before Temple's app opens. `--command` selects the Bun executable and
-`--codex-home` selects the native Codex home. An omitted native home retains a previously registered one,
+can start it after reboot before Temple's app opens. The entry is named by exactly one of `--script` (a script
+that `bun` runs; `--command` selects another executable) and `--launch-file` (a descriptor holding the command,
+args, cwd and env; `--command` is not allowed with it). `--codex-home` selects the native Codex home. An omitted native home retains a previously registered one,
 then follows `TEMPLE_CODEX_HOME` or `CODEX_HOME`. No head's permissions change.
 
 A running daemon refreshes the service and native client entry immediately. With the daemon stopped,
@@ -432,13 +490,16 @@ Source: `app/.../cli/mcp/McpServiceCommand.kt`, `app/.../mcp/TempleMcpStartup.kt
 ### peer
 
 ```sh
-splice peer register gary [--cwd DIR] [--send-to walk-a,walk-b]
+splice peer register gary [--cwd DIR] [--send-to walk-a,walk-b] [--owner PID]
 splice peer list [--json]
 splice peer send --as gary walk-a "the text"
 splice peer inbox --as gary [--after N] [--limit N] [--ack] [--json]
 splice peer status --as gary <msgId>
 splice peer webhook set gary https://example.com/hook [--bearer-file F]
 splice peer webhook test gary
+splice peer limit gary 60 10           # per-minute and burst (1-600 a minute, 1-100 burst); --default restores the default
+splice peer codex attach [<thread>] [--cwd DIR] [--codex-home DIR] [--peer-name NAME] [--hook]
+splice peer codex detach [<thread>] [--purge] [--hook]
 splice peer rotate gary
 splice peer revoke gary [--purge]
 ```
@@ -450,12 +511,39 @@ recipient reports back only when it holds, expires or drops a message, so `statu
 reported`. The person's guide is `docs/peers.md` in the splice repo.
 
 `list` is free. Ask before every other verb: `register` writes into `~/.claude/sessions`, `revoke` and
-`rotate` end a key someone may be using, and `send` speaks to a session in the peer's name. Never read a peer's
-`peer.key`, `webhook.secret` or `webhook.bearer`; the `--as` verbs read the key for you, and `--follow` never
-exits, so do not run it in your pane.
+`rotate` end a key someone may be using, `limit` changes how fast a peer may send, `codex attach` and `detach` register
+and revoke the peer a Codex thread's hooks speak as, and `send` speaks to a session in the peer's name. Never read a
+peer's `peer.key`, `webhook.secret` or `webhook.bearer`; the `--as` verbs read the key for you, and `inbox --follow`
+never exits, so do not run it in your pane.
 
-Source: `app/.../cli/peer/PeerCommand.kt`, `app/.../control/mount/PeersMount.kt`,
-`docs/specs/peer-messaging.md`.
+Source: `app/.../cli/peer/PeerCommand.kt`, `PeerArgs.kt` (`PEER_USAGE`), `app/.../control/mount/PeersMount.kt`,
+`docs/specs/peer-messaging.md`, `docs/peers.md`.
+
+### share and remote (LAN share)
+
+```
+splice share on [--port N]       # on the machine that holds the logins
+splice share status
+splice share off
+splice remote add http://devbox.lan:3097/claudex [--as <command>]   # on the machine that runs them
+splice remote
+splice remote remove claudex
+```
+
+`splice share on` writes `[share] enabled = true` (and `port`, default 3097) into `splice.toml`, restarts a running daemon so
+its LAN listener opens, and prints, for each command this machine offers, the address another machine adds it by.
+Anyone on that LAN can then run those heads with no login, token or encryption, so it is the person's decision, and it
+refuses a port another program holds before it changes the file. `splice share off` turns it off the same way;
+`splice share status` asks the running daemon what it offers. On the other machine, `splice remote add <address>` checks
+the address against the server, writes one `[remote.<command>] url = "..."` line (the address may end in
+`?auth=<login>` to run on that login and `?models=<id>,<id>` to show only those models), links the command like any
+head's and restarts a running daemon. A remote command holds the address and nothing else: no credential, no token,
+no copy of the server's models. `splice remote` lists them, each with whether its server answers now;
+`remove <command>` takes the line and the link out. All of these edit `splice.toml` and restart the daemon, which cuts
+turns in flight, so ask first and say so.
+
+Source: `app/.../cli/share/ShareCommand.kt`, `RemoteCommand.kt`, `ShareRestart.kt`, `core/.../topology/LanShareConfig.kt`,
+`docs/specs/lan-share.md`, `app/src/main/resources/splice.example.toml` ("LAN share").
 
 ### init
 
@@ -471,13 +559,14 @@ every install and upgrade, and every daemon start refreshes the manager's files 
 kept as they left it. The record of what splice wrote is `<state>/manager-home/written.json`. It never refuses
 boot or init (best effort).
 
-Source: `app/src/main/kotlin/splice/app/InstallWiring.kt` (`init`), `app/src/main/kotlin/splice/app/manager/ManagerHome.kt:1-50`
-(both were uncommitted in the shared checkout when read), `docs/specs/v0.4.0.md` section 15.
+Source: `app/src/main/kotlin/splice/app/InstallWiring.kt` (`init`), `app/src/main/kotlin/splice/app/manager/ManagerHome.kt`,
+`docs/specs/v0.4.0.md` section 15.
 
 ### uninstall of splice itself
 
-There is no verb that removes splice. `splice uninstall --all` removes wrapper links only. Removing the jar,
-`~/.local/share/splice`, state and config is manual and is the person's decision.
+There is no verb that removes splice. `splice uninstall --all` removes the wrapper links and, on Linux, the systemd
+user units splice laid. Removing the jar, `~/.local/share/splice`, state and config is manual and is the person's
+decision.
 
 ## Never run these yourself
 
@@ -487,6 +576,7 @@ There is no verb that removes splice. `splice uninstall --all` removes wrapper l
 | `splice setup` | With no terminal it takes every default and writes, installs commands, may restart and may wrap plain `claude`. A pane you drive is not a safe terminal for it |
 | `splice add ... --yes` | Skips every question and restarts the running daemon, which cuts turns in flight |
 | `splice restart`, `splice upgrade` without the person's yes | Cuts turns in flight, yours included |
+| `splice rotate-key`, `splice sessions relaunch`, `splice share on\|off`, `splice remote add\|remove`, `splice uninstall --all` | They replace a credential, end and resume sessions, open the LAN or restart or stop the daemon. Say what happens and wait for the person's yes; they run it in their own terminal |
 | `splice logs --follow` | Never exits; blocks your pane |
 | `splice daemon`, `splice start` | Runs or starts the daemon in your shell; a second daemon is refused, and a foreground one ties up the pane |
 | `splice trace --purge` | Deletes a head's trace files; not undoable |

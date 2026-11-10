@@ -329,6 +329,80 @@ internal class ScriptedGpt {
         )
     }
 
+    /** The Nov 9 23:22 CT shape: reasoning whose [summaries] stream as parts, then the final answer, one delta per
+     *  piece of [pieces], then the backend closes the websocket with [code] before the answer completes, as its 1012
+     *  (service restart) close did 51 s into an answer. On HTTP the answer ends there with no terminal. */
+    fun closeMidAnswer(pieces: List<String>, code: Int, summaries: List<String> = emptyList()): GptAnswer {
+        val n = ++serial
+        val id = "resp_synthetic_$n"
+        val summary = buildJsonArray {
+            summaries.forEach { text ->
+                addJsonObject {
+                    put("type", "summary_text")
+                    put("text", text)
+                }
+            }
+        }
+        val reasoning = JsonObject(reasoning(n) + ("summary" to summary))
+        val opened = JsonObject(reasoning - "encrypted_content" - "summary")
+        outputs[id] = listOf(reasoning)
+        val messageId = "msg_synthetic_$n"
+        val delivery = GptDelivery(pieces.joinToString(""))
+        return GptAnswer(
+            reply {
+                event(created(id))
+                event(itemEvent("response.output_item.added", 0, opened))
+                summaries.forEachIndexed { part, text -> summaryPart(this, n, part, text) }
+                event(itemEvent("response.output_item.done", 0, reasoning))
+                val begun = buildJsonObject {
+                    put("type", "message")
+                    put("id", messageId)
+                    put("role", "assistant")
+                    put("status", "in_progress")
+                    put("phase", "final_answer")
+                    putJsonArray("content") {}
+                }
+                event(itemEvent("response.output_item.added", 1, begun))
+                pieces.forEach { piece ->
+                    event(
+                        buildJsonObject {
+                            put("type", "response.output_text.delta")
+                            put("output_index", 1)
+                            put("content_index", 0)
+                            put("item_id", messageId)
+                            put("delta", piece)
+                        }.toString(),
+                    )
+                }
+                awaitSignal(delivery.observed)
+                close(code)
+            },
+            id,
+            delivery,
+        )
+    }
+
+    /** One reasoning summary part as the backend streams it: added empty, its text in one delta, then done. */
+    private fun summaryPart(script: ReplyScript, n: Int, part: Int, text: String) {
+        fun summaryEvent(type: String, fields: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit) = script.event(
+            buildJsonObject {
+                put("type", type)
+                put("item_id", "rs_synthetic_$n")
+                put("output_index", 0)
+                put("summary_index", part)
+                fields()
+            }.toString(),
+        )
+        fun summaryText(text: String) = buildJsonObject {
+            put("type", "summary_text")
+            put("text", text)
+        }
+        summaryEvent("response.reasoning_summary_part.added") { put("part", summaryText("")) }
+        summaryEvent("response.reasoning_summary_text.delta") { put("delta", text) }
+        summaryEvent("response.reasoning_summary_text.done") { put("text", text) }
+        summaryEvent("response.reasoning_summary_part.done") { put("part", summaryText(text)) }
+    }
+
     private fun respond(items: (Int) -> List<JsonObject>): GptAnswer {
         val n = ++serial
         val id = "resp_synthetic_$n"
@@ -717,7 +791,7 @@ internal class CodeModeRig(val head: ScriptedHead, private val ledger: BackendLe
                     ),
                 )
                 val quirks = CodexQuirks().defaultQuirks().let {
-                    if (webSocket) it.withWebSocketToml(true).withWebSocketPrefillToml(false) else it
+                    if (webSocket) it.withWebSocketToml(true).withWebSocketPrefillToml(head.prefill) else it
                 }
                 val catalog = ModelCatalog(
                     tuning.catalog.discoveryPrefix,
@@ -730,7 +804,7 @@ internal class CodeModeRig(val head: ScriptedHead, private val ledger: BackendLe
                         pinnedModel = model,
                         locations = tuning.locations.copy(stateDir = tmp.resolve("state-$kind")),
                     ),
-                    ReasoningSettings(ReasoningDisplay.OFF, true, "high", "detailed"),
+                    ReasoningSettings(head.display, true, "high", "detailed"),
                     quirks,
                     log = log,
                     codeMode = CodexCodeModeWiring(bridge, listOf(model)),
@@ -746,6 +820,10 @@ internal data class CodeModeRigHead(
     val webSocket: Boolean,
     val model: String = CODE_MODE_MODEL,
     val runtime: () -> NativeCodeModeLifecycle = { ScriptedCodeModeRuntime() },
+    /** How the head shows GPT's reasoning; this machine's claudex shows it as thinking. */
+    val display: ReasoningDisplay = ReasoningDisplay.OFF,
+    /** Whether a websocket round is prefilled before its full send, as this machine's claudex does. */
+    val prefill: Boolean = false,
 )
 
 /** The code-mode runtime: a script's source names its cell, and says whether it yields before it asks the client to

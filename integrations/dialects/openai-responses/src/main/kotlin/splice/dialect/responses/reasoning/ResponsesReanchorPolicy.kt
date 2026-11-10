@@ -105,7 +105,7 @@ internal class ResponsesReanchorPolicy(
         var offset = 0
         val items = buildList {
             for (item in prefix) {
-                if (JsonScalars.str(item, "type") == "message") {
+                if (isMessage(item)) {
                     val model = messageText(item)
                     val text = deliveredPrefix(model, delivered, offset)
                     offset += text.length
@@ -127,6 +127,17 @@ internal class ResponsesReanchorPolicy(
             length++
         }
         return model.substring(0, length)
+    }
+
+    /** An assistant message of the prefix, in either shape it reaches this rule in: the backend's own item
+     *  (`type: message`), or [ResponsesAssistantText]'s easy-input item (`role`, `phase`, `content`, no `type`), which is
+     *  how code mode carries a turn's prose across its hidden script steps. Read only by `type`, the second shape fell
+     *  through as an opaque item, its prose was never matched against what the client saw, and an answer cut after a
+     *  script step was handed to the client as an error instead of carried on (Nov 9 2026, 23:22 CT). */
+    private fun isMessage(item: JsonObject): Boolean = when (JsonScalars.str(item, "type")) {
+        "message" -> true
+        null -> JsonScalars.str(item, "role") == "assistant"
+        else -> false
     }
 
     private fun messageText(item: JsonObject): String = ResponsesMessageText.text(item)

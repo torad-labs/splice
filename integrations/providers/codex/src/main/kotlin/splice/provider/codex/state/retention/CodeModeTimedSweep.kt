@@ -25,11 +25,11 @@ internal object CodeModeSweeps {
         }
     }.apply { removeOnCancelPolicy = true }
 
-    /** Runs [sweep] every [interval] until the returned future is cancelled. [sweep] must not throw:
-     *  an exception ends a periodic task in silence. */
-    fun every(interval: Duration, sweep: Runnable): ScheduledFuture<*> {
+    /** Runs [sweep] after [first], then every [interval], until the returned future is cancelled. [sweep] must not
+     *  throw: an exception ends a periodic task in silence. */
+    fun every(interval: Duration, first: Duration = interval, sweep: Runnable): ScheduledFuture<*> {
         val ms = interval.inWholeMilliseconds
-        return timer.scheduleWithFixedDelay(sweep, ms, ms, TimeUnit.MILLISECONDS)
+        return timer.scheduleWithFixedDelay(sweep, first.inWholeMilliseconds, ms, TimeUnit.MILLISECONDS)
     }
 }
 

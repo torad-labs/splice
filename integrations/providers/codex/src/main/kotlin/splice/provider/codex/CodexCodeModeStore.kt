@@ -32,6 +32,7 @@ import splice.upstream.memory.JvmHeap
 import java.io.IOException
 import java.nio.channels.FileChannel
 import java.nio.file.Files
+import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -103,6 +104,14 @@ internal class CodexCodeModeStore(
 
     /** Failed keys outlive their last record, so TTL purges keep retrying until disk agrees. */
     val pendingKeys: Set<String> get() = failedKeys.toSet()
+
+    /** The files of every conversation this store holds a snapshot of or restores from its journal, with their lock
+     *  files: what must stay on the disk while this head runs. A conversation with no snapshot has written none. */
+    val keptFiles: Set<Path>
+        get() = (kept.keys + cold.keys).flatMapTo(HashSet()) { key ->
+            listOf(files.path(key), files.lockPath(key), files.olderPath(key), files.olderLockPath(key))
+                .map { it.toAbsolutePath().normalize() }
+        }
 
     /** Terminal disposal may drop hot snapshots only after every write and failed purge settles. While the journal is
      *  off, a write it owes does not hold disposal: nothing is kept then, and the owed marks wait for it to come back. */

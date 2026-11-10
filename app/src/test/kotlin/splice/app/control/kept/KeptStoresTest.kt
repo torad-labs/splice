@@ -42,6 +42,20 @@ class KeptStoresTest {
     }
 
     @Test
+    fun `clearing code mode work leaves the journals a running head holds`(@TempDir tmp: Path) {
+        val paths = StatePaths(baseOverride = tmp.resolve("state"))
+        val history = paths.headsDir.resolve("claudex").resolve(CODE_MODE_DIR).resolve("history")
+        val live = write(history.resolve("live.jsonl"), "12345", 2_000)
+        val idle = write(history.resolve("idle.jsonl"), "123", 2_000)
+        val store = CodeModeKept(paths) { setOf(live.toAbsolutePath().normalize()) }
+
+        assertNull(store.clear())
+        assertTrue(Files.exists(live), "a journal its head still appends to must survive the clear")
+        assertTrue(Files.notExists(idle))
+        assertEquals(StoreHeld(files = 1, bytes = 5, oldestMs = 2_000), store.held())
+    }
+
+    @Test
     fun `a install that never used code mode holds nothing and clears without a failure`(@TempDir tmp: Path) {
         val store = CodeModeKept(StatePaths(baseOverride = tmp.resolve("state")))
 

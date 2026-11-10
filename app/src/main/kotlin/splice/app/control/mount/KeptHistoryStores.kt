@@ -8,6 +8,8 @@
 // Each is aged by its files' last write.
 package splice.app.control.mount
 
+import splice.app.control.kept.CodeModeFilesInUse
+import splice.app.control.kept.InUseFileStamp
 import splice.core.config.CODE_MODE_DIR
 import splice.core.config.REASONING_DIR
 import splice.core.config.StatePaths
@@ -21,7 +23,11 @@ import java.nio.file.Path
 
 private const val COMPACTION_SUMMARIES = "compaction_summaries"
 
-internal class KeptHistoryStores(private val paths: StatePaths) {
+internal class KeptHistoryStores(
+    private val paths: StatePaths,
+    /** The code-mode files the running heads hold now, which no cut removes (InUseFileStamp says why). */
+    private val inUse: CodeModeFilesInUse = CodeModeFilesInUse { emptySet() },
+) {
 
     /** Clears what the cut reaches, every store whatever an earlier one did, and names the first that could not be. */
     fun trimBefore(momentMs: Long): String? =
@@ -55,7 +61,7 @@ internal class KeptHistoryStores(private val paths: StatePaths) {
     /** The stores of plain files, by the name the page owns the words for. */
     private fun filed(): Map<String, List<AgedFiles>> = mapOf(
         "reasoning" to headDirs(REASONING_DIR).map { AgedFiles(it) },
-        "code_mode" to headDirs(CODE_MODE_DIR).map { AgedFiles(it) },
+        "code_mode" to InUseFileStamp(inUse()).let { stamp -> headDirs(CODE_MODE_DIR).map { AgedFiles(it, stamp) } },
         // the record of sessions seen, each file dated by its session's last activity (SeenSessions)
         SEEN_SESSIONS_KEY to listOf(AgedFiles(paths.stateDir.resolve(SEEN_SESSIONS_DIR))),
     )

@@ -1,6 +1,7 @@
 package splice.app.provider.codex
 
 import splice.provider.codex.CodexCodeModeBridge
+import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 
 /** The actual bridge assembled for each head, read by explicit conversation controls at request time. */
@@ -16,4 +17,7 @@ internal class HeadCodeModeControls {
     }
 
     internal fun bridge(head: String): CodexCodeModeBridge? = bridges[head]
+
+    /** Every running head's code-mode files in use now, which a Settings clear or a history cut leaves. */
+    internal fun inUse(): Set<Path> = bridges.values.flatMapTo(HashSet()) { it.keptInUse() }
 }

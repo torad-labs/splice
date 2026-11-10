@@ -156,6 +156,9 @@ internal class CodexCodeModeRegistry(
 
     fun recordsFor(key: String): List<CodeModeRecord> = queries.recordsFor(key)
 
+    /** The record journals of every conversation this registry holds or restores from the disk, with their locks. */
+    val keptInUse: Set<java.nio.file.Path> get() = store.keptFiles
+
     fun completed(key: String, conversationId: String? = null): List<CodeModeRecord> =
         cache.withConversation(key, conversationId) { queries.completed(key, conversationId) }
 

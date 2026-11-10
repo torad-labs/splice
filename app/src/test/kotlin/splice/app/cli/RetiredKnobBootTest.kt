@@ -138,6 +138,24 @@ class RetiredKnobBootTest {
         assertEquals(setOf("one"), started.loaded.topology.heads.keys, "with the aliases unset, splice starts")
     }
 
+    /** Audit, Nov 9, 2026: the two sign-in file variables no head reads any more refuse boot together, each pointing to
+     *  the provider's auth.file, instead of being ignored in silence. */
+    @Test
+    fun `a retired sign-in file variable refuses boot and names the provider's auth file`() {
+        val live = CONFIG.removePrefix("[daemon]\nfold_max_tier = 5917\n\n").lines()
+            .filterNot { "retryBackoffCapMs" in it || "upstreamRetries" in it }
+        Files.writeString(config, live.joinToString("\n"))
+        val set = mapOf("CODEX_AUTH_PATH" to "/planted/codex.json", "GROK_AUTH_PATH" to "/planted/grok.json")
+
+        val refusal = assertThrows<TopologyRefusal> { DaemonProcess().prepare(env(set)) }
+
+        val shown = refusal.message.orEmpty()
+        assertEquals(2, refusal.findings.size, "one finding for each variable, listed at once: $shown")
+        set.keys.forEach { name -> assertEquals(1, refusal.findings.count { name in it.text() }, "$name: $shown") }
+        refusal.findings.forEach { assertTrue("auth.file" in it.message, "it names auth.file: ${it.text()}") }
+        set.values.forEach { value -> assertFalse(value in shown, "no value reaches the refusal: $value in $shown") }
+    }
+
     /** A file the decode accepts reaches the knob check, which names a retired key in the same words and line. */
     @Test
     fun `a retired key in a splice toml that decodes is named as retired, with its line and how to fix it`() {

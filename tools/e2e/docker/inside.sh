@@ -343,10 +343,10 @@ step "splice upgrade to the installed release changes nothing" upgrade_noop_step
 # daemon holds a credential for. The pin goes through the route the console uses, with the management key the suite reads.
 pin_step() {
   local pool url out
-  pool="$(dirname "$CODEX_AUTH_PATH")/chatgpt-oauth/$(basename "$CODEX_AUTH_PATH")"
+  pool="$(dirname "$CODEX_MOCK_AUTH_FILE")/chatgpt-oauth/$(basename "$CODEX_MOCK_AUTH_FILE")"
   url="http://127.0.0.1:$CONTROL_PORT/api/auth/claudex/switch"
   mkdir -p "$pool" || return 1
-  bun -e 'const a = JSON.parse(await Bun.file(process.argv[1]).text()); a.splice_auth_kind = "chatgpt-oauth"; a.splice_account_label = "work"; await Bun.write(process.argv[2], JSON.stringify(a))' "$CODEX_AUTH_PATH" "$pool/work.json" || return 1
+  bun -e 'const a = JSON.parse(await Bun.file(process.argv[1]).text()); a.splice_auth_kind = "chatgpt-oauth"; a.splice_account_label = "work"; await Bun.write(process.argv[2], JSON.stringify(a))' "$CODEX_MOCK_AUTH_FILE" "$pool/work.json" || return 1
   chmod 600 "$pool/work.json"
   splice restart </dev/null >/dev/null 2>&1 || return 1
   wait_health 60 >/dev/null || return 1

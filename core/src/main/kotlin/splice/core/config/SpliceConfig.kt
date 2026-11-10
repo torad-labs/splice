@@ -64,7 +64,6 @@ public class SpliceConfig internal constructor(
 
     public val port: Int get() = long(Knob.PORT).toInt()
     public val chatgptApiBase: String get() = string(Knob.CHATGPT_API_BASE).orEmpty()
-    public val codexAuthPath: String get() = string(Knob.CODEX_AUTH_PATH).orEmpty()
     public val pinnedModel: String get() = string(Knob.PINNED_MODEL).orEmpty()
     public val effort: String? get() = string(Knob.EFFORT)
     public val verbosity: String? get() = string(Knob.VERBOSITY)
@@ -149,7 +148,6 @@ public class SpliceConfig internal constructor(
     public val grokPort: Int get() = long(Knob.GROK_PORT).toInt()
     public val grokModel: String get() = string(Knob.GROK_MODEL).orEmpty()
     public val xaiApiBase: String get() = string(Knob.XAI_API_BASE).orEmpty()
-    public val grokAuthPath: String get() = string(Knob.GROK_AUTH_PATH).orEmpty()
     public val controlPort: Int get() = long(Knob.CONTROL_PORT).toInt()
     public val usageWarnPct: Int get() = long(Knob.USAGE_WARN_PCT).toInt()
     public val usageWarnTokens5h: Long get() = long(Knob.USAGE_WARN_TOKENS_5H)

@@ -54,11 +54,13 @@ class TopologyConfigOverridesTest {
         assertEquals("4101", layer["port"])
         assertEquals("toml-codex", layer["pinnedModel"])
         assertEquals("https://toml.example/codex", layer["chatgptApiBase"])
-        assertEquals("~/custom/codex.json", layer["codexAuthPath"])
+        // The sign-in files are not seeded: codexAuthPath and grokAuthPath retired on Nov 9, 2026, and a head signs in with
+        // its provider's auth.file, so a seeded key would only be a knob nothing reads.
+        assertFalse("codexAuthPath" in layer)
         assertEquals("4102", layer["grokPort"])
         assertEquals("toml-grok", layer["grokModel"])
         assertEquals("https://toml.example/grok", layer["xaiApiBase"])
-        assertEquals("~/custom/grok.json", layer["grokAuthPath"])
+        assertFalse("grokAuthPath" in layer)
     }
 
     @Test

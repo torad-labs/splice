@@ -843,7 +843,9 @@ command = "claude-splice"
 # today's behaviour.
 #
 # chatgptApiBase = "https://chatgpt.com/backend-api/codex"  # base URL of the ChatGPT/Codex backend
-# codexAuthPath = "~/.codex/auth.json"                      # where the Codex OAuth credential file lives
+# retired: codexAuthPath and grokAuthPath — since 0.4.0 a command signs in with its provider's auth.file in
+#     [providers.<key>.auth], where splice login writes it; boot refuses these keys, their CODEX_AUTH_PATH and
+#     GROK_AUTH_PATH variables and a saved value of either
 # progressLine = "true"                                     # bool; splice's own status line on a quiet wire (HOT, per heartbeat)
 # retired: foldReasoningModels, foldMaxContinue, foldMarkerText and foldMaxTier — since 0.4.0 splice continues on its
 #     own a codex answer whose reasoning the backend cut short, on the models that cut it; boot refuses these keys,
@@ -940,7 +942,6 @@ command = "claude-splice"
 # grokPort = "3100"                                         # TCP port; the grok head's listener
 # grokModel = "grok-4.6"                                    # the grok model id the head pins
 # xaiApiBase = "https://api.x.ai/v1"                        # base URL of the xAI backend
-# grokAuthPath = "~/.grok/auth.json"                        # where the grok OAuth credential file lives
 # usageWarnPct = "80"                                       # percent; plan-window usage that triggers the warning (HOT, per ask)
 # usageWarnTokens5h = "0"                                   # tokens; absolute 5h threshold, 0 disables the warning (HOT, per ask)
 # statuslineGitRoots = ""                                   # extra git roots the status line inspects (HOT, per ask)
@@ -989,7 +990,7 @@ command = "claude-splice"
 # reads (paths, OAuth endpoints, install locations) with no TOML spelling of their own.
 #
 # Knob aliases, with the key each one sets in the trailing column:
-#   CHATGPT_API_BASE chatgptApiBase          CODEX_AUTH_PATH codexAuthPath
+#   CHATGPT_API_BASE chatgptApiBase
 #   CLAUDEX_PROGRESS_LINE / SPLICE_PROGRESS_LINE progressLine
 #   CLAUDEX_TOOL_SURFACE toolSurface         CLAUDEX_QUOTA_POLL quotaPoll
 #   CLAUDEX_MAX_INFLIGHT maxInflight         CLAUDEX_MAX_QUEUED maxQueued
@@ -1001,12 +1002,14 @@ command = "claude-splice"
 # retired: CLAUDEX_UPSTREAM_RETRIES, SPLICE_RETRY_BACKOFF_BASE_MS, SPLICE_RETRY_BACKOFF_CAP_MS,
 #     SPLICE_RETRY_BACKOFF_JITTER_PCT and the four CLAUDEX_FOLD_* variables — their knobs retired in 0.4.0, and
 #     splice refuses to start while any of them is set
+# retired: CODEX_AUTH_PATH and GROK_AUTH_PATH — the sign-in file is the provider's auth.file, and splice refuses to
+#     start while either is set
 #   CLAUDEX_FIRST_BYTE_TIMEOUT_MS firstByteTimeoutMs    CLAUDEX_STREAM_IDLE_MS streamIdleMs
 #   CLAUDEX_STALL_REANCHOR_MS stallReanchorMs
 #   SPLICE_WS_IDLE_CLOSE_MS wsIdleCloseMs    SPLICE_WS_MAX_AGE_MS wsMaxAgeMs
 #   CLAUDEX_AUTH_CACHE_MS authCacheMs        CLAUDEX_DEBUG / CODEX_PROXY_DEBUG debug
 #   CODEX_PROXY_PORT port                    CONTROL_PROXY_PORT / SPLICE_CONTROL_PORT controlPort
-#   GROK_PROXY_PORT grokPort                 XAI_API_BASE xaiApiBase   GROK_AUTH_PATH grokAuthPath
+#   GROK_PROXY_PORT grokPort                 XAI_API_BASE xaiApiBase
 #   CLAUDEX_MODEL / CLAUDEX_PINNED_MODEL model           CLAUDE_GROK_MODEL / CLAUDE_GROK_PINNED_MODEL model
 #   CODEX_MODEL_CONTEXT_WINDOW contextWindowOverride     CLAUDEX_STATUSLINE_GIT_ROOTS statuslineGitRoots
 #   SPLICE_USAGE_WARN_PCT usageWarnPct                   SPLICE_PROJECTS_FOLDERS projectsFolders

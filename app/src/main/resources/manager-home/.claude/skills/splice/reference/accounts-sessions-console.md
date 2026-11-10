@@ -157,7 +157,7 @@ Source: `models.js:13-14,139-187,270-330,429-466,654-707,768-916,1096`, `setting
 | API key | `claude-openrouter`, `claude-deepseek`, others | `api-key` | `splice key set <ENV_NAME>` or `<command> login` (masked) | `~/.config/splice/keys.toml`, or the environment |
 
 - Sign-in happens on the vendor's page. Splice keeps its own token copy and does not read the vendor CLI's file unless
-  `auth.file`, `CODEX_AUTH_PATH` or `GROK_AUTH_PATH` names it. Doctor warns when a head still names one.
+  `auth.file` names it (`CODEX_AUTH_PATH` and `GROK_AUTH_PATH` are retired, and boot refuses them). Doctor warns when a head still names one.
 - API-key lookup: the daemon's environment variable (`<KEY>_API_KEY` or `auth.env`), then `auth.file`, then `keys.toml`. The
   environment wins. `keys.toml` is re-read per request, so a saved key needs no restart. A variable exported AFTER the daemon
   started is invisible to it until `splice restart`.

@@ -56,7 +56,7 @@ public class TopologyKnobLayer(private val topology: Topology) {
      */
     private fun putLegacyProviderOverrides(out: MutableMap<String, String>) {
         // DR-80: singleOrNull, never firstOrNull — these knobs live in the SHARED layer, so
-        // seeding the first of two same-kind heads handed its port/model/base/auth file to every
+        // seeding the first of two same-kind heads handed its port/model/base to every
         // sibling at resolve time (declared-only portCollisions never fires; the collision is
         // created here). Two-plus heads: the per-head TOML governs, nothing is seeded.
         val codex = topology.heads.entries.singleOrNull { (_, head) ->
@@ -69,7 +69,6 @@ public class TopologyKnobLayer(private val topology: Topology) {
             // value for the knob and was logged as ignored on every read of the config
             head.pinnedModel.takeIf { it.isNotEmpty() }?.let { out["pinnedModel"] = it }
             out["chatgptApiBase"] = provider.baseUrl
-            provider.auth.file?.let { out["codexAuthPath"] = it }
         }
 
         val grok = topology.heads.entries.singleOrNull { (_, head) ->
@@ -80,7 +79,6 @@ public class TopologyKnobLayer(private val topology: Topology) {
             out["grokPort"] = head.port.toString()
             out["grokModel"] = head.pinnedModel
             out["xaiApiBase"] = provider.baseUrl
-            provider.auth.file?.let { out["grokAuthPath"] = it }
         }
     }
 }

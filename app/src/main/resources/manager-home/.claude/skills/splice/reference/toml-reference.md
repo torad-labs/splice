@@ -179,9 +179,10 @@ renews the cap, and a live connection is held to the session's client timeout.
 decides how often and how soon a failed request is sent again from what failed. Boot refuses them while splice.toml,
 an environment variable or a saved setting still sets one.
 
-Legacy single-head knobs (`port`, `pinnedModel`, `chatgptApiBase`, `codexAuthPath`, `grokPort`, `grokModel`,
-`xaiApiBase`, `grokAuthPath`) are seeded from the TOML only when exactly one ChatGPT or Grok head exists. Set
-the head's own fields instead.
+Legacy single-head knobs (`port`, `pinnedModel`, `chatgptApiBase`, `grokPort`, `grokModel`, `xaiApiBase`) are
+seeded from the TOML only when exactly one ChatGPT or Grok head exists. Set the head's own fields instead.
+`codexAuthPath` and `grokAuthPath` (and `CODEX_AUTH_PATH`, `GROK_AUTH_PATH`) are retired: the sign-in file is the
+provider's `auth.file`, and boot refuses either while it is set.
 
 Source: core/src/main/kotlin/splice/core/config/Knob.kt (defaults and restartRequired, for example lines 191-200,
 246-251); TopologyKnobLayer.kt (lines 53-96); splice.example.toml (lines 644-662, 799-932).

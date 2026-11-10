@@ -1,5 +1,6 @@
 // NEW: 2026-09-05 — splice owns its credential: every OAuth kind's default file is splice's own
-// under ~/.config/splice/auth/, never the native app's, and the legacy knobs agree with it.
+// under ~/.config/splice/auth/, never the native app's. (The legacy codexAuthPath and grokAuthPath knobs that
+// had to agree with it retired on Nov 9, 2026, so that pin went with them.)
 package splice.core.topology
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -7,7 +8,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.config.Knob
 
 class AuthKindDefaultsTest {
 
@@ -44,12 +44,6 @@ class AuthKindDefaultsTest {
         assertEquals("~/.config/muse/auth.json", oauth.nativeAppFile)
         assertEquals("Muse Code", oauth.nativeApp)
         assertTrue(oauth.isOAuth)
-    }
-
-    @Test
-    fun `the legacy codex and grok knobs default to the registry's splice-owned files`() {
-        assertEquals(AuthKind.ChatgptOAuth.authFile, Knob.CODEX_AUTH_PATH.text())
-        assertEquals(AuthKind.GrokOAuth.authFile, Knob.GROK_AUTH_PATH.text())
     }
 
     @Test

@@ -52,7 +52,7 @@ RECEIPT="$OUT/receipt.json"
 STEPS_FILE="$(mktemp)"
 FAILED=0
 CODEX_MOCK_PORT=""
-CODEX_AUTH_PATH=""
+CODEX_MOCK_AUTH_FILE=""
 CHAT_MOCK_PORT=""
 TESTED_CLAUDE_CODE="${SPLICE_TESTED_CLAUDE_CODE:-}"
 CLAUDE_CODE_ACTUAL="$(claude --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
@@ -174,9 +174,9 @@ read_mock_ports() { # in the MAIN shell, after start_mocks
   step "mock ports readable" mock_values codex mock_codex.out port codex mock_codex.out auth_path chat mock_chat.out port
   stop_if_failed
   CODEX_MOCK_PORT="$(mock_field mock_codex.out port)"
-  CODEX_AUTH_PATH="$(mock_field mock_codex.out auth_path)"
+  CODEX_MOCK_AUTH_FILE="$(mock_field mock_codex.out auth_path)"
   CHAT_MOCK_PORT="$(mock_field mock_chat.out port)"
-  echo "  codex mock :$CODEX_MOCK_PORT auth=$CODEX_AUTH_PATH; chat mock :$CHAT_MOCK_PORT"
+  echo "  codex mock :$CODEX_MOCK_PORT auth=$CODEX_MOCK_AUTH_FILE; chat mock :$CHAT_MOCK_PORT"
 }
 
 # ── topology: two heads, two dialects, every upstream a mock ──────────────────────────────────
@@ -192,7 +192,7 @@ control_port = $CONTROL_PORT
 [providers.codex]
 dialect = "openai-responses"
 base_url = "http://127.0.0.1:$CODEX_MOCK_PORT"
-auth = { kind = "chatgpt-oauth", file = "$CODEX_AUTH_PATH" }
+auth = { kind = "chatgpt-oauth", file = "$CODEX_MOCK_AUTH_FILE" }
 quirks = { store = false, account_id_header = true, cache_key = "first-message-hash", summary_field = true }
 
 [[providers.codex.models]]

@@ -27,6 +27,11 @@ public enum class RetiredKnob(
     FOLD_MAX_CONTINUE("foldMaxContinue", listOf("CLAUDEX_FOLD_MAX_CONTINUE"), "fold_max_continue", CODEX_FOLD),
     FOLD_MARKER_TEXT("foldMarkerText", listOf("CLAUDEX_FOLD_MARKER_TEXT"), "fold_marker_text", CODEX_FOLD),
     FOLD_MAX_TIER("foldMaxTier", listOf("CLAUDEX_FOLD_MAX_TIER"), "fold_max_tier", CODEX_FOLD),
+
+    // Audit, Nov 9, 2026: the daemon read these two files while `splice login`, status and doctor read the provider's
+    // auth.file, so a login landed where the head never looked. Every reader takes AuthConfig.loginFile now.
+    CODEX_AUTH_PATH("codexAuthPath", listOf("CODEX_AUTH_PATH"), null, PROVIDER_AUTH_FILE),
+    GROK_AUTH_PATH("grokAuthPath", listOf("GROK_AUTH_PATH"), null, PROVIDER_AUTH_FILE),
     ;
 
     /** Why the setting no longer does anything, as a finding says it. It never quotes a value. */
@@ -35,6 +40,8 @@ public enum class RetiredKnob(
 
 private const val RETRY_ENGINE = "decides how often and how soon a failed request is sent again from what failed"
 private const val CODEX_FOLD = "continues on its own a codex answer whose reasoning the backend cut short"
+private const val PROVIDER_AUTH_FILE =
+    "reads every sign-in file from its provider's auth.file in [providers.<key>.auth], where splice login writes it"
 
 /** Each retired knob by the key splice.toml's knob tables, a PATCH and the saved settings spell it with. */
 public val retiredKnobsByKey: Map<String, RetiredKnob> = RetiredKnob.entries.associateBy { it.key }

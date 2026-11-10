@@ -193,7 +193,12 @@ internal class TurnStreamer(
                 )
             }
             is PendingSse.Decision.Overflow -> {
-                running.await()
+                // The drive's END is waited for here and its outcome is not read: the answer is already chosen, and
+                // an outcome that is a cancellation is how the operator's stop ends the drive. await() rethrew it
+                // before any response existed, the throw left the route, and Ktor answered 500 with the
+                // cancellation's own message as the body (a stop before the first frame, CI run 42871163142).
+                // The stop's 400 and x-should-retry false go out first; stream() reads the outcome after them.
+                running.join()
                 choice.headers.forEach { (name, value) -> call.response.header(name, value) }
                 choice.shouldRetry?.let { call.response.header("x-should-retry", it.toString()) }
                 call.respond(CollectedReply(choice.body, HttpStatusCode.fromValue(choice.status), drive.perf))

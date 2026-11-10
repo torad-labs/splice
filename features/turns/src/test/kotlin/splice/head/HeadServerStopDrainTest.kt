@@ -17,13 +17,18 @@ import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
+import io.ktor.utils.io.readLine
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -85,6 +90,10 @@ private const val DRAINING_SETTLE_MS = 500L
 
 // why 10s: a closed connection ends the read at once; this only bounds a head that answered nothing and kept it open.
 private const val RAW_READ_TIMEOUT_MS = 10_000
+
+// why 10s: the hold scenario streams its first delta the moment the upstream answers; this only bounds a head that
+// never delivers it, so a failure reads as one instead of hanging.
+private const val CONTENT_WAIT_MS = 10_000L
 
 // why 600: a burst this size is paced over the head's whole one-second window, not written in one go.
 private const val BURST_DELTAS = 600
@@ -207,11 +216,36 @@ class HeadServerStopDrainTest {
         suspend fun heldTurn(stream: Boolean = true): HttpResponse =
             client.post("http://127.0.0.1:$port/v1/messages") {
                 header("Content-Type", "application/json")
-                setBody(
-                    """{"model":"claude-codex--gpt-5.6-sol","stream":$stream,"max_tokens":64,
-                        "system":"You are a test. SCENARIO:hold",
-                        "messages":[{"role":"user","content":"go"}]}""",
-                )
+                setBody(heldBody(stream))
+            }
+
+        private fun heldBody(stream: Boolean) =
+            """{"model":"claude-codex--gpt-5.6-sol","stream":$stream,"max_tokens":64,
+                "system":"You are a test. SCENARIO:hold",
+                "messages":[{"role":"user","content":"go"}]}"""
+
+        /** The held turn read to its END as its status and body: a streamed one through [heldStream], a buffered one
+         *  through [heldTurn]. */
+        suspend fun heldRead(stream: Boolean, reached: CompletableDeferred<Unit>): Pair<Int, String> =
+            if (stream) heldStream(reached) else heldTurn(false).let { it.status.value to it.bodyAsText() }
+
+        /** The held turn as a client reads a stream, to its END like [heldTurn]: [reached] completes when the first
+         *  content delta arrives, so a test that cuts the turn cuts one whose content the client holds. A slot held
+         *  says only that the turn was admitted: the line a cut writes names where the stream stood (content reached
+         *  or not), and the upstream's first delta may still be on its way when the slot is first seen taken. */
+        suspend fun heldStream(reached: CompletableDeferred<Unit>): Pair<Int, String> =
+            client.preparePost("http://127.0.0.1:$port/v1/messages") {
+                header("Content-Type", "application/json")
+                setBody(heldBody(stream = true))
+            }.execute { response ->
+                val channel = response.bodyAsChannel()
+                val body = StringBuilder()
+                while (true) {
+                    val line = channel.readLine() ?: break
+                    body.append(line).append('\n')
+                    if (line.startsWith("event: content_block_delta")) reached.complete(Unit)
+                }
+                response.status.value to body.toString()
             }
 
         suspend fun awaitUpstreamAsked(asked: AtomicBoolean): Boolean {
@@ -248,11 +282,12 @@ class HeadServerStopDrainTest {
         val rig = Rig(tmp, WatchdogBudget(600.seconds, 600.seconds, 900.seconds), stopDrainMs = SHORT_DRAIN_MS)
         rig.start()
         try {
-            val turn = async(Dispatchers.IO) {
-                val response = rig.heldTurn(stream)
-                response.status.value to response.bodyAsText()
-            }
+            val reached = CompletableDeferred<Unit>()
+            val turn = async(Dispatchers.IO) { rig.heldRead(stream, reached) }
             assertTrue(rig.awaitInflight(), "precondition: a real client still holds this request")
+            // The streamed turn is cut after its deltas reached the client (RESTART_SAID's notes above), so the cut
+            // waits for the first one: a held slot only says the turn was admitted.
+            if (stream) withTimeout(CONTENT_WAIT_MS) { reached.await() }
             val began = System.nanoTime()
             val stopping = async(Dispatchers.IO) { rig.head.stop() }
             val (status, body) = turn.await()
@@ -361,8 +396,12 @@ class HeadServerStopDrainTest {
         val rig = Rig(tmp)
         rig.start()
         try {
-            val turn = async(Dispatchers.IO) { rig.heldTurn().bodyAsText() }
+            val reached = CompletableDeferred<Unit>()
+            val turn = async(Dispatchers.IO) { rig.heldStream(reached).second }
             assertTrue(rig.awaitInflight(), "precondition: the turn must be holding a slot")
+            // The restart line names where the stream stood, and this one is cut after content reached the client:
+            // the slot alone says only that the turn was admitted.
+            withTimeout(CONTENT_WAIT_MS) { reached.await() }
 
             val began = System.nanoTime()
             val stopping = async(Dispatchers.IO) { rig.head.stop() }

@@ -68,6 +68,22 @@ class CodeModeHistoryBoundTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
+    fun `history kept while journaling was off survives an eviction before its own next turn`() {
+        var journaling = false
+        val location = stateLocation().copy(journaling = CodeModeJournaling { journaling })
+        val ledger = CodeModeUpstreamLedger(capacity = 1, storage = CodeModeHistoryStorage(location, json, BOUND_BYTES))
+        val kept = listOf(user("begin"), user("two"))
+        ledger.record("quiet", CodeModeLedgerEntry(kept, kept, emptyList()))
+        journaling = true
+        // Another conversation's turns fill the one-conversation cache past the quiet one.
+        repeat(2) { turn ->
+            val other = listOf(user("other-$turn"))
+            ledger.record("busy", CodeModeLedgerEntry(other, other, emptyList()))
+        }
+        assertEquals(kept, ledger().entries("quiet").first().sent)
+    }
+
+    @Test
     fun `a conversation kept only in memory keeps its newest history within the memory budget`() {
         val location = stateLocation().copy(journaling = CodeModeJournaling { false })
         val ledger = CodeModeUpstreamLedger(

@@ -30,6 +30,10 @@ internal data class CodeModeLedgerEntry(
  * past half the budget keeps its newest posts within a quarter of it ([CodeModeHistoryCheckpoint]), and the least
  * recently used conversations go once the whole map is past it. What goes is what a restart loses in that mode: its
  * next request is folded from the client's history, as a new conversation's is.
+ *
+ * Once journaling is back, the posts a conversation kept only in memory are written whole to its journal after the next
+ * post of any conversation, and no eviction drops that conversation before then: until Nov 9, 2026 they reached the
+ * disk only at that conversation's own next post, and an eviction in between lost them.
  */
 internal class CodeModeUpstreamLedger(
     private val capacity: Int = LEDGER_CONVERSATIONS,
@@ -39,6 +43,9 @@ internal class CodeModeUpstreamLedger(
     // Striped, so the locks stay bounded however many conversations the head has seen.
     private val keyLocks = Array(LEDGER_LOCK_STRIPES) { Any() }
     private val entries = LinkedHashMap<String, CodeModeHistoryState>(LEDGER_INITIAL, LEDGER_LOAD, true)
+
+    // The conversations in [entries] whose newest posts were kept while journaling was off, so their journal is behind.
+    private val memoryOnly = HashSet<String>()
 
     private fun lock(key: String): Any = keyLocks[Math.floorMod(key.hashCode(), LEDGER_LOCK_STRIPES)]
 
@@ -65,7 +72,7 @@ internal class CodeModeUpstreamLedger(
             val posts = listOf(prepared.entry) + prior?.posts.orEmpty()
             publish(state.copy(posts = posts), prepared, prior?.memoryBytes ?: 0L)
             id
-        }
+        }.also { journalMemoryOnly() }
 
     fun output(key: String, id: Long, output: List<JsonElement>, echoes: List<JsonElement>) =
         synchronized(lock(key)) {
@@ -77,7 +84,7 @@ internal class CodeModeUpstreamLedger(
             val prepared = CodeModeHistoryDeltas.prepare(state, next, base)
             val posts = prior.posts.map { if (it.id == id) prepared.entry else it }
             publish(state.copy(posts = posts), prepared, prior.memoryBytes)
-        }
+        }.also { journalMemoryOnly() }
 
     /** Accepted asynchronous input extends this exact branch without finishing or replacing its model response. */
     fun inject(key: String, id: Long, record: CodeModeRecord) =
@@ -94,12 +101,32 @@ internal class CodeModeUpstreamLedger(
             val prepared = CodeModeHistoryDeltas.prepare(state, next, base)
             val posts = prior.posts.map { if (it.id == id) prepared.entry else it }
             publish(state.copy(posts = posts), prepared, prior.memoryBytes)
-        }
+        }.also { journalMemoryOnly() }
 
     /** Exceptional requests release hot owners without erasing accepted model history. */
     @Synchronized
     fun forget(key: String) {
         entries.remove(key)
+        memoryOnly.remove(key)
+    }
+
+    /** With journaling on, writes each conversation kept only in memory whole to its journal, under that conversation's
+     *  own lock and never inside another's. One that cannot be written yet stays in memory and is tried again after the
+     *  next post. */
+    private fun journalMemoryOnly() {
+        val store = storage ?: return
+        if (!store.durableEnabled) return
+        val keys = synchronized(this) { memoryOnly.toList() }
+        keys.forEach { key ->
+            synchronized(lock(key)) {
+                val kept = synchronized(this) { entries[key] }
+                val saved = if (kept == null) null else store.journal(kept) ?: return@synchronized
+                synchronized(this) {
+                    if (saved != null && entries[key] === kept) entries[key] = saved
+                    memoryOnly.remove(key)
+                }
+            }
+        }
     }
 
     private fun state(key: String): CodeModeHistoryState? = synchronized(this) { entries[key] }
@@ -116,11 +143,14 @@ internal class CodeModeUpstreamLedger(
     private fun cache(state: CodeModeHistoryState, written: Long? = null) {
         val durable = storage != null && storage.durableEnabled
         entries[state.key] = if (durable || written == null) state else bounded(state, written)
+        val journalBehind = storage != null && !durable
+        if (journalBehind && written != null) memoryOnly.add(state.key)
         evict(durable, state.key)
     }
 
     /** Lets the least recently used conversations go until the cache fits: by count and bytes when journals hold
-     *  them, by bytes alone in memory, where [current] (the only copy of its newest posts, already bounded) stays. */
+     *  them, by bytes alone in memory, where [current] (the only copy of its newest posts, already bounded) stays.
+     *  With journals on, a conversation still kept only in memory stays until [journalMemoryOnly] has written it. */
     private fun evict(durable: Boolean, current: String) {
         var bytes = entries.values.sumOf { it.memoryBytes }
         val oldest = entries.entries.iterator()
@@ -128,9 +158,10 @@ internal class CodeModeUpstreamLedger(
         var fits = entries.size <= count && bytes <= cacheBytes
         while (!fits && oldest.hasNext()) {
             val evicted = oldest.next()
-            if (durable || evicted.key != current) {
+            if (if (durable) evicted.key !in memoryOnly else evicted.key != current) {
                 bytes -= evicted.value.memoryBytes
                 oldest.remove()
+                memoryOnly.remove(evicted.key)
                 storage?.forget(evicted.key)
             }
             fits = entries.size <= count && bytes <= cacheBytes

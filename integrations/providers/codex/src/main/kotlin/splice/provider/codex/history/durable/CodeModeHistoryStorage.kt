@@ -3,11 +3,13 @@ package splice.provider.codex.history.durable
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.Json
+import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapReservations
 import splice.core.memory.HeapText
 import splice.core.perf.InputDigest
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodeModeStorageException
 import splice.provider.codex.CodeModeStorageOperation
@@ -70,7 +72,7 @@ internal class CodeModeHistoryStorage(
                     val state = replay.finish()
                     state to CodeModeJournaled(state.revision, replay.committedBytes, replay.lastDigest)
                 }
-                Files.exists(legacy(key)) -> migrate(key)
+                Files.exists(paths.legacy(key)) -> migrate(key)
                 else -> null to CodeModeJournaled(0L, 0L, null)
             }
             journaled[key] = loaded.second
@@ -86,6 +88,26 @@ internal class CodeModeHistoryStorage(
             if (durableEnabled) append(prepared, state) else state
         }
 
+    /** Writes [state], which the ledger kept in memory while journaling was off, whole to its journal when the disk is
+     *  behind it, and returns the state the ledger holds from now on. Null, said in the log, when it is not written
+     *  (journaling is off again, or the disk refused), so the ledger keeps it and tries again. */
+    fun journal(state: CodeModeHistoryState): CodeModeHistoryState? {
+        val newest = state.posts.firstOrNull() ?: return state
+        if (!durableEnabled) return null
+        return try {
+            CodeModeHistoryValidation.guarded(CodeModeStorageOperation.SAVE) {
+                val known = journaled[state.key] ?: load(state.key).second
+                if (state.revision > known.revision) checkpoint(state, newest.id) else state
+            }
+        } catch (failure: CodeModePersistenceException) {
+            log("[code-mode] history kept in memory not journaled yet (${SafeFailureText.render(failure)})")
+            null
+        } catch (failure: HeapCapacityException) {
+            log("[code-mode] history kept in memory not journaled yet (${SafeFailureText.render(failure)})")
+            null
+        }
+    }
+
     /** Drops what this storage knew of [key]'s journal; the next write reads it again. */
     fun forget(key: String) {
         journaled.remove(key)
@@ -93,7 +115,7 @@ internal class CodeModeHistoryStorage(
 
     /** The files of [keys]' conversations, as a Settings clear must leave them while this head holds them. */
     fun files(keys: Set<String>): Set<Path> = keys.flatMapTo(HashSet()) { key ->
-        listOf(path(key), legacy(key)).flatMap { listOf(it, lockOf(it)) }.map { it.toAbsolutePath().normalize() }
+        listOf(path(key), paths.legacy(key)).flatMap { listOf(it, lockOf(it)) }.map { it.toAbsolutePath().normalize() }
     }
 
     /** Removes the conversation files last written before [beforeMs], except [hot] conversations' (the sweeper says
@@ -185,7 +207,7 @@ internal class CodeModeHistoryStorage(
 
     /** An intermediate full-snapshot authority is forced to a staging journal before its name becomes live. */
     private fun migrate(key: String): Pair<CodeModeHistoryState, CodeModeJournaled> {
-        val old = legacy(key)
+        val old = paths.legacy(key)
         val staging = path(key).resolveSibling("${path(key).fileName}.migrating")
         val migrated = HeapText.Reader.read(old, heap).use { stage ->
             val legacy = json.decodeFromString<CodeModeHistoryState>(stage.text)
@@ -227,7 +249,6 @@ internal class CodeModeHistoryStorage(
 
     private fun lockOf(file: Path): Path = file.resolveSibling("${file.fileName}$LOCK_SUFFIX")
     private fun path(key: String): Path = paths.journal(key)
-    private fun legacy(key: String): Path = paths.legacy(key)
 }
 
 // The journal is rewritten past three quarters of its bound, down to its newest posts within one quarter.

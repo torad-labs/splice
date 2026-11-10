@@ -59,6 +59,13 @@ public data class AuthConfig(
      *  `<KEY>_API_KEY` default the daemon synthesizes. One source for daemon wiring AND the CLI so a
      *  head on the derived default never reads as "not signed in" while the daemon serves it fine. */
     public fun effectiveApiKeyEnv(key: String): String = env ?: "${key.uppercase()}_API_KEY"
+
+    /** The credential file this login lives in, unexpanded: the declared [file], else the registered kind's
+     *  splice-owned default; null for a kind with neither. The ONE answer for the daemon's arms, `splice login`,
+     *  status, doctor and the console (audit, Nov 9, 2026: the daemon let the legacy codexAuthPath knob, an env var
+     *  or a console PATCH move the codex head's file while login and status kept the declared one, so a login
+     *  landed in a file the head never read). */
+    public val loginFile: String? get() = file ?: AuthKindRegistry.defaultAuthFileFor(kind)
 }
 
 /** Per-head Claude Code wrapper policy: command name, config dir, share/isolate per item. */

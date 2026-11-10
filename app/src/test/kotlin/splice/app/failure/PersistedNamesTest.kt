@@ -407,11 +407,27 @@ class PersistedNamesTest {
     }
 
     @Test
-    fun `an answer with nothing in it writes no cause`(@TempDir tmp: Path) = runTest {
+    fun `a finished answer with nothing in it ends clean and writes no cause`(@TempDir tmp: Path) = runTest {
         withScriptedHeads(tmp) {
-            // EmptyAnswerRetry posts the empty round once more, then StreamPromote ends it as empty_model with no
-            // cause.
+            // finish_reason stop closes the model's message (ChatTerminalState.endedByModel), so EmptyAnswerRetry never
+            // re-sends it and StreamPromote ends it clean as empty_message with no cause.
             provider.script(reply { event(ROLE_ONLY_CHUNK); chatEnd() })
+            val head = chat()
+            head.client.send()
+
+            val ended = HeadRecords(head).ended()
+            assertEquals(OutcomeTag.EMPTY_MESSAGE.wire, ended.outcome)
+            assertNull(ended.cause)
+        }
+    }
+
+    @Test
+    fun `an answer cut at its cap with nothing in it writes empty_model and no cause`(@TempDir tmp: Path) = runTest {
+        withScriptedHeads(tmp) {
+            // finish_reason length closes no message (ChatTerminalState.onFinish reads it as incomplete), so the empty
+            // round is the model's empty output: EmptyAnswerRetry posts it once more, then StreamPromote ends it as
+            // empty_model with no cause.
+            provider.script(reply { event(ROLE_ONLY_CHUNK); chatEnd("length") })
             val head = chat()
             head.client.send()
 

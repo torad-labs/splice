@@ -239,9 +239,11 @@ private class SubstitutingSerializationProvider(
         }
 }
 
+// The nesting rides in `diagnostics`, a field Claude Code really sends and the Responses path drops as its own record
+// (ResponsesSourceFields): an unclassified made-up field is refused before upstream since 8bd5f1a0d.
 private fun nestedRequest(depth: Int): String =
     """{"model":"synthetic-synthetic","stream":false,"max_tokens":64,""" +
-        """"messages":[{"role":"user","content":"hello"}],"extra":""" +
+        """"messages":[{"role":"user","content":"hello"}],"diagnostics":""" +
         "[".repeat(depth - 1) + "0" + "]".repeat(depth - 1) + "}"
 
 private fun serializationRequest(): JsonObject = buildJsonObject {

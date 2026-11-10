@@ -55,17 +55,17 @@ internal class MuseMintHolds(private val clock: WallClock) {
 
     fun suppresses(snapshot: MuseCredentialSnapshot): Boolean {
         val current = hold ?: return false
-        return revisionMatches(current.identity, current.accessToken, snapshot) && clock() < current.untilMs
+        return snapshot.isRevision(current.identity, current.accessToken) && clock() < current.untilMs
     }
 
     fun blocksCredentials(snapshot: MuseCredentialSnapshot): Boolean {
         val current = inactive ?: return false
-        return revisionMatches(current.identity, current.accessToken, snapshot)
+        return snapshot.isRevision(current.identity, current.accessToken)
     }
 
     fun description(snapshot: MuseCredentialSnapshot): Map<String, String> {
         val verdict = inactive?.takeIf {
-            revisionMatches(it.identity, it.accessToken, snapshot)
+            snapshot.isRevision(it.identity, it.accessToken)
         } ?: return emptyMap()
         return buildMap {
             put("subscription", "inactive")
@@ -76,7 +76,7 @@ internal class MuseMintHolds(private val clock: WallClock) {
     /** The cause a login lookup is refused with now, or null when no verdict of this account's holds the login:
      *  either its subscription is inactive, which blocks the credential outright, or its retry hold still stands. */
     fun refusal(snapshot: MuseCredentialSnapshot): FailureCause.Provider? = refusal
-        ?.takeIf { revisionMatches(it.identity, it.accessToken, snapshot) }
+        ?.takeIf { snapshot.isRevision(it.identity, it.accessToken) }
         ?.takeIf { blocksCredentials(snapshot) || suppresses(snapshot) }
         ?.cause
 
@@ -97,15 +97,5 @@ internal class MuseMintHolds(private val clock: WallClock) {
         hold = null
         inactive = null
         refusal = null
-    }
-
-    private fun revisionMatches(
-        identity: CredentialFileIdentity?,
-        accessToken: String?,
-        snapshot: MuseCredentialSnapshot,
-    ): Boolean = if (identity != null && snapshot.identity != null) {
-        identity == snapshot.identity
-    } else {
-        accessToken == snapshot.accessToken
     }
 }

@@ -27,6 +27,26 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls, private v
     internal var incomplete = false
     internal var contentFiltered = false
 
+    /** The model ended its answer itself (finish_reason stop or a synonym): its finished message, empty or not, as
+     *  the passthrough twin's endedByModel and the Responses twin's closed message item read it. */
+    internal var endedByModel = false
+        private set
+
+    /** The first finish_reason this dialect reads as no finished answer. Every value is read by name: an unknown one
+     *  used to fall through to a clean end_turn, so a generation the backend aborted (DeepSeek's
+     *  insufficient_system_resource, vLLM's abort, OpenRouter's error) reached Claude Code as a complete answer. */
+    private var unknownFinish: String? = null
+
+    /** A finish_reason arrived and it is one this dialect knows: the backend said its last word about the answer.
+     *  CX-01's tool-argument latch runs only here; with no known terminal the stream is the tear path, as in the
+     *  Responses twin (a stream with no completed response is torn, not a corrupt tool call). */
+    internal val settled: Boolean get() = finished && unknownFinish == null
+
+    /** Whether the stream has said all it will: an error chunk, or a finish whose bill has arrived ([billed]). The
+     *  translator stops reading there instead of waiting for the socket to close, as the Responses twin stops at its
+     *  completed response. A finish with no bill yet keeps reading, since include_usage sends the bill after it. */
+    internal fun ended(billed: Boolean): Boolean = failure != null || (finished && billed)
+
     /** The backend's error chunk as the head's reader read it, and the provider's own words for the log. */
     private var failure: FailureCause.Provider? = null
     private var failureMessage: String = ""
@@ -68,14 +88,20 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls, private v
         runawayGuard == null && toolCalls.toolArgsInvalid == null &&
             failure is FailureCause.Provider.Unrecognized && failureCoded
 
+    /** Known values are accepted by name and every other value fails honestly (L3): a cut-off answer must never reach
+     *  the client as a clean stop. */
     internal fun onFinish(reason: String) {
         finished = true
         when (reason) {
-            "tool_calls" -> toolCalls.hasToolUse = true
-            // OpenAI standard is "length"; several OpenAI-compat vendors also emit "max_tokens".
-            "length", "max_tokens" -> incomplete = true
+            // function_call is the legacy spelling of the same ending.
+            "tool_calls", "function_call" -> toolCalls.hasToolUse = true
+            // OpenAI standard is "length"; several OpenAI-compat vendors also emit "max_tokens", and Mistral
+            // "model_length" when the model's own context ran out.
+            "length", "max_tokens", "model_length" -> incomplete = true
             "content_filter" -> contentFiltered = true
-            else -> Unit // stop / others -> end_turn
+            // OpenAI's stop, and the natural endings OpenAI-compatible servers write in their own words.
+            "stop", "stop_sequence", "eos", "eos_token" -> endedByModel = true
+            else -> if (unknownFinish == null) unknownFinish = reason
         }
     }
 
@@ -117,6 +143,15 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls, private v
             contentFiltered -> failed(
                 read(ChatReplies.FILTER_EVENT, JsonObject(emptyMap())),
                 "chat backend: generation stopped by content filter",
+            )
+            // A finish_reason that names no finished answer: the backend ended the generation for a reason of its
+            // own, so the turn fails with that reason instead of grading the cut-off text a clean end_turn.
+            unknownFinish != null -> failed(
+                read(
+                    ChatReplies.FINISH_EVENT,
+                    JsonObject(mapOf(ChatReplies.FINISH_EVENT to JsonPrimitive(unknownFinish))),
+                ),
+                "chat backend: generation ended on finish_reason \"$unknownFinish\", not a finished answer; retry",
             )
             else -> null
         }

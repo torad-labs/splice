@@ -34,7 +34,7 @@ internal object MessageFragmentStore {
     }
 
     fun save(key: FragmentKey, input: MessageFragmentInput, output: JsonElement): JsonElement {
-        val bytes = HeapJson.add(HeapJson.text(key.context), HeapJson.add(input.bytes, HeapJson.bytes(output)))
+        val bytes = HeapJson.add(HeapJson.text(key.context.digest), HeapJson.add(input.bytes, HeapJson.bytes(output)))
         val weight = HeapJson.add(FRAGMENT_OWNER_BYTES, bytes)
         if (weight > FRAGMENT_MAX_ENTRY_BYTES) return output
         val charge = synchronized(lock) { admitted(key, weight) } ?: return output

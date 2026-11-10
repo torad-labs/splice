@@ -195,4 +195,7 @@ public class HeadServer(
         .mapNotNull { it.state as? TurnState.Held }
         .sortedBy { it.since }
         .map { HeldTurnReading(it.until?.epochSecond, it.login, it.cause, it.heapBytes) }
+
+    /** Degraded while it refuses every request before any upstream turn (2026-11-09 audit), null while it admits. */
+    override fun refusing(): splice.core.head.RefusingReading? = admission.refusing()
 }

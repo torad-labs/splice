@@ -18,7 +18,7 @@ internal class NativeTraceInvocations : AutoCloseable {
             }
         }
         if (!accepted) {
-            span.outcome("cancelled")
+            span.outcomeIfUndecided("cancelled")
             span.close()
         }
     }

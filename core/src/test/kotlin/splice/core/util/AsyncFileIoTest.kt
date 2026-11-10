@@ -31,9 +31,13 @@ class AsyncFileIoTest {
         assertTrue(!AsyncFileIo.awaitFile(file), "a failed append cannot certify read-your-writes")
         assertTrue(AsyncFileIo.submitFor(file) {})
         assertTrue(!AsyncFileIo.awaitFile(file), "a later append cannot erase the missing row")
+        val settle = AsyncFileIo.settleFile(file)
+        assertTrue(settle.settled, "nothing is pending once both appends ran, the lost one included")
+        assertTrue(settle.lostAtMs != null, "the lost row is still reported, apart from pending writes")
         val clean = Path.of("perf-append-healthy.jsonl")
         assertTrue(AsyncFileIo.submitFor(clean) {})
         assertTrue(AsyncFileIo.awaitFile(clean), "a different path is unaffected")
+        assertEquals(AsyncFileIo.FileSettle(settled = true, lostAtMs = null), AsyncFileIo.settleFile(clean))
     }
 
     @Test

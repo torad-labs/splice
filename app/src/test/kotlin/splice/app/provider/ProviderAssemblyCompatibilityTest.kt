@@ -341,19 +341,10 @@ class ProviderAssemblyCompatibilityTest {
         assertEquals(0, fixture.museMintCalls)
     }
 
+    // Audit, Nov 9, 2026: the knob moved the daemon's file while `splice login` and status kept the declared one, so a
+    // login landed in a file the head never read. Every reader now takes the provider's declared file.
     @Test
-    fun `ChatGPT assembly retains default auth path when provider file is absent`(@TempDir tmp: Path) = runTest {
-        val fixture = Fixture(tmp, backgroundScope)
-        val ctx = fixture.context(AuthKind.ChatgptOAuth.wire, Dialect.OPENAI_RESPONSES)
-        Files.writeString(Path.of(ctx.cfg.codexAuthPath), """{"tokens":{"access_token":"synthetic-default"}}""")
-        val wired = fixture.assembly.buildProvider(
-            ctx.copy(providerCfg = ctx.providerCfg.copy(auth = ctx.providerCfg.auth.copy(file = null))),
-        )
-        assertEquals(Credentials.Bearer("synthetic-default"), wired.auth.credentials())
-    }
-
-    @Test
-    fun `legacy auth resolution preserves environment and runtime overrides`(@TempDir tmp: Path) = runTest {
+    fun `legacy auth knobs never move the declared auth file`(@TempDir tmp: Path) = runTest {
         val fixture = Fixture(tmp, backgroundScope)
         val declared = fixture.context(AuthKind.ChatgptOAuth.wire, Dialect.OPENAI_RESPONSES)
         val environmentPath = tmp.resolve("environment.json").toString()
@@ -366,9 +357,9 @@ class ProviderAssemblyCompatibilityTest {
         val inputs = HeadBuildInputs(config, SignInPlanner())
         fun resolved() = inputs.resolveProviderConfig(declared.providerCfg, config.getConfig(declared.key)).auth.file
 
-        assertEquals(environmentPath, resolved())
+        assertEquals(declared.providerCfg.auth.file, resolved())
         config.patch(mapOf("codexAuthPath" to runtimePath))
-        assertEquals(runtimePath, resolved())
+        assertEquals(declared.providerCfg.auth.file, resolved())
     }
 
     @Test

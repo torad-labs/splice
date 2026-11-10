@@ -1,7 +1,8 @@
 // NEW: LoopGuard — the identical-failed-call circuit breaker. The measured pathology (claudex
 // 2026-07-26): the same Edit re-issued 89-101x against the harness staleness guard. Pinned: the
-// directive arms at the 3rd identical failure, escalates at the 5th, resets on success or changed
-// arguments, treats key order as irrelevant, and never arms on unmarked (polling/flaky) results.
+// directive arms at the 3rd identical failure, escalates at the 5th, resets on any success, changed
+// arguments or a different error, treats key order as irrelevant, and never arms on unmarked
+// (polling/flaky) results.
 package splice.dialect.responses.stream
 
 import kotlinx.serialization.json.JsonElement
@@ -111,6 +112,32 @@ class LoopGuardTest {
             """{"role":"user","content":[{"type":"tool_result","tool_use_id":"ok1","content":"The file has been """ +
             """updated successfully."}]},""" +
             conversation(2)
+        assertTrue(analyze(body(tail)).isEmpty())
+    }
+
+    /** One `bun test` run that failed with [error], as Claude Code sends it back. */
+    private fun testRun(id: String, error: String): String =
+        """{"role":"assistant","content":[{"type":"tool_use","id":"$id","name":"Bash",""" +
+            """"input":{"command":"bun test"}}]},""" +
+            """{"role":"user","content":[{"type":"tool_result","tool_use_id":"$id",""" +
+            """"content":"$error","is_error":true}]}"""
+
+    /** One successful Edit, the model changing a file between runs. */
+    private fun edit(id: String): String =
+        """{"role":"assistant","content":[{"type":"tool_use","id":"$id","name":"Edit",""" +
+            """"input":{"file_path":"/src/a.ts"}}]},""" +
+            """{"role":"user","content":[{"type":"tool_result","tool_use_id":"$id",""" +
+            """"content":"The file has been updated successfully."}]}"""
+
+    @Test
+    fun `a re-run that fails with a different error each time never arms`() {
+        val tail = (1..5).joinToString(",") { testRun("t$it", "1 fail: expected $it") }
+        assertTrue(analyze(body(tail)).isEmpty())
+    }
+
+    @Test
+    fun `an edit between identical failures of the same command resets the streak`() {
+        val tail = (1..5).joinToString(",") { testRun("t$it", "1 fail: expected 2") + "," + edit("e$it") }
         assertTrue(analyze(body(tail)).isEmpty())
     }
 

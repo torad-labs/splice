@@ -57,6 +57,9 @@ internal class ResponsesWsRunner(
     private val log: LogSink = LogSink {},
 ) : WsRoundRunner {
 
+    /** The largest request frame the peer takes (WsFrameLimit). */
+    internal val frameLimit = WsFrameLimit(log)
+
     private val identity = ResponsesWsIdentity(session, log)
     private val requestMetadata = ResponsesWsRequestMetadata()
     private val prefiller = ResponsesWsPrefiller(
@@ -142,6 +145,8 @@ internal class ResponsesWsRunner(
         var pathPulse = WsPathPulse { NEVER_PINGED_MS }
         // The connection's vital signs, for the line a failed or incomplete round leaves (observeEnding).
         var pulse: WsPulse? = null
+        // A frame over the peer's limit is never sent: the peer would close on it and a fresh socket would too.
+        var oversized = false
         val flow = transport.round(
             key = seed.key,
             handshake = WsHandshake(wssUrl, seed.headers),
@@ -162,16 +167,15 @@ internal class ResponsesWsRunner(
             val metadata = requestMetadata.forTurn(seed.request, turnHeaders, seed.meta.upstreamHeaders.snapshot())
             val built = session.frameAndEpoch(seed.chain, seed.request, conn.generation, metadata, seed.meta.compact)
             pending = ResponsesWsIdentity.PendingCommit(built.committed ?: seed.request, conn.generation, built.epoch)
-            logFrame(conn.label, built)
-            built.frame.json
+            oversized = frameLimit.over(conn.label, built.frame.json)
+            if (oversized) null else built.frame.json.also { logFrame(conn.label, built) }
         }
         // No clear here: the transport declining (busy / connect failure) is a BYPASS, and the head
         // calls roundBypassed for exactly that. Clearing in both places bumped the epoch twice for
         // one logical event and, on the busy path, threw away a concurrent round's valid state
         // before its terminal could even be observed (review of #72).
         if (flow == null) {
-            // Counted on the turn so the head can tell a socket that failed this round from one never offered it.
-            seed.perf?.add(PerfKeys.WS_TRANSPORT_DECLINES, 1)
+            declined(seed.perf, pulse, oversized)
             return null
         }
         // Terminal observation lives HERE, not in the caller: the runner is the only party that
@@ -187,6 +191,16 @@ internal class ResponsesWsRunner(
             abort = abort,
             pathPulse = pathPulse,
         )
+    }
+
+    /** A round the socket did not take. Counted on the turn so the head can tell a socket that failed this round from
+     *  one never offered it. A frame never sent ([oversized]), or one the peer refused for what it carried, is no
+     *  socket fault: the head then takes no fresh socket, which would only carry the same bytes to the same refusal,
+     *  and HTTP serves the round. */
+    private fun declined(perf: TurnPerf?, pulse: WsPulse?, oversized: Boolean) {
+        val refused = pulse?.takeIf(WsPulse::refusedPayload)
+        refused?.let { log("[ws] ${it.label} the peer refused the request frame (1007); HTTP serves the round\n") }
+        if (!oversized && refused == null) perf?.add(PerfKeys.WS_TRANSPORT_DECLINES, 1)
     }
 
     /** Says whether [built] chained, and when it sent its whole input, why, on the socket [label] names. */
@@ -227,4 +241,5 @@ internal class ResponsesWsRunner(
 }
 
 private const val FIELD_TYPE = "type"
+
 private val SOCKET_FAULT_CODES = setOf("websocket_connection_limit_reached", "previous_response_not_found")

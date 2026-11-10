@@ -42,7 +42,7 @@ read_mock_ports
 
 # The installer and the CLI read these; the mock stands in for OpenAI's backend and sign-in.
 export CHATGPT_API_BASE="http://127.0.0.1:$CODEX_MOCK_PORT"
-export CODEX_AUTH_PATH CODEX_OAUTH_TOKEN_URL="http://127.0.0.1:$CODEX_MOCK_PORT/oauth/token"
+export CODEX_OAUTH_TOKEN_URL="http://127.0.0.1:$CODEX_MOCK_PORT/oauth/token"
 
 # Offset-based: the text a step printed is the transcript from where it began.
 mark() { wc -c < "$TRANSCRIPT"; }

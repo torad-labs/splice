@@ -10,6 +10,7 @@ import splice.app.control.ManagedHead
 import splice.app.control.RuntimeNotAnswering
 import splice.app.control.RuntimeUnread
 import splice.core.head.HeldTurnReading
+import splice.core.head.RefusingReading
 import splice.core.usage.QuotaFull
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionSource
@@ -53,6 +54,19 @@ internal class HeadSignals(
         heads.filterValues { it.head.healthSnapshot().running }
             .mapValues { (_, managed) -> managed.head.heldTurns() }
             .filterValues { it.isNotEmpty() }
+
+    /** 2026-11-09 audit: each running head that has refused requests in a row for one cause and admitted none since,
+     *  with that reading. A head that admits a turn drops out on the next read. */
+    fun refusing(): Map<String, RefusingReading> =
+        heads.filterValues { it.head.healthSnapshot().running }
+            .mapNotNull { (key, managed) -> managed.head.refusing()?.let { key to it } }.toMap()
+
+    /** One head's refusal run as the wire carries it, on /health and on the heads route alike. */
+    fun refusingJson(reading: RefusingReading): JsonObject = buildJsonObject {
+        put("reason", reading.reason)
+        put("refusedInRow", reading.inRow)
+        put("sinceEpochMillis", reading.sinceEpochMs)
+    }
 
     /** One head's full reading as the wire carries it, on /health and on the heads route alike. */
     fun quotaFullJson(reading: QuotaFull): JsonObject = buildJsonObject {

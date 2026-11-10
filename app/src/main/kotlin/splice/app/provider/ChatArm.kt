@@ -42,7 +42,7 @@ internal class ChatArm(
         val providerCfg = ctx.providerCfg
         val accounts = if (providerCfg.auth.kind == GROK_OAUTH) {
             val primaryPath = Paths.get(
-                TopologyLoader.expandHome(providerCfg.auth.file ?: AuthKind.GrokOAuth.authFile),
+                TopologyLoader.expandHome(providerCfg.auth.loginFile ?: AuthKind.GrokOAuth.authFile),
             )
             grokAccounts.accounts(ctx, primaryPath)
         } else {

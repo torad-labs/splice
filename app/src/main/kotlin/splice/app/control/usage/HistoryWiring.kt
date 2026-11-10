@@ -19,6 +19,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
+import splice.app.control.kept.CodeModeFilesInUse
 import splice.app.control.kept.CodeModeKept
 import splice.app.control.kept.CompactionSummariesKept
 import splice.app.control.kept.StoreKeptRoutes
@@ -74,7 +75,10 @@ internal class HistoryWiring(
         (managed.sources.perf as? PerfStatsSource)?.sessionTotals?.let { key to it }
     }.toMap()
 
-    private fun kept(): KeptHistoryStores? = ports.turnStatistics?.let { KeptHistoryStores(it) }
+    private fun kept(): KeptHistoryStores? = ports.turnStatistics?.let { KeptHistoryStores(it, codeModeInUse) }
+
+    /** The code-mode files the running heads hold now, read at each cut or clear (InUseFileStamp says why). */
+    private val codeModeInUse = CodeModeFilesInUse { ports.turns.codeMode?.inUse().orEmpty() }
 
     private fun economics(): List<EconomicsStore> =
         heads.values.mapNotNull { (it.sources.economics as? EconomicsStoreSource)?.store }
@@ -153,7 +157,7 @@ internal class HistoryWiring(
             mapOf(
                 "transcript_copies" to TranscriptCopiesKept(state),
                 "compaction_summaries" to CompactionSummariesKept(state),
-                "code_mode" to CodeModeKept(state),
+                "code_mode" to CodeModeKept(state, codeModeInUse),
             ),
         )
     }

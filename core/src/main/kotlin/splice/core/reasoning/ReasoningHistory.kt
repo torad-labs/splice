@@ -21,6 +21,10 @@ public class ReasoningHistory {
 
     public val offset: Long get() = characters
 
+    /** Who the last visible step at this position came from; empty before any. A request that ends on "assistant"
+     *  stands where some turn's kept output ends, not where a request of its own ended. */
+    public val lastRole: String get() = role
+
     public val key: String
         get() = "$HISTORY_POSITION_PREFIX$offset:${HexFormat.of().formatHex(snapshot().digest())}"
 

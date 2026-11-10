@@ -40,6 +40,12 @@ internal class ReasoningPositionIndex {
 
     fun identity(index: String): String? = record(index)?.identity
 
+    /** The visible-history position [index] is stored beside; null for an index that names no position. */
+    fun position(index: String): String? = record(index)?.position
+
+    /** The digest of the upstream round [index] was observed in; an unordered legacy index is its own round. */
+    fun round(index: String): String? = record(index)?.round
+
     /** Live positions include real streamed prose; terminal observations only add order evidence there. */
     fun preferredIndex(first: String, second: String): String {
         val previous = record(first) ?: return first

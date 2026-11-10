@@ -73,17 +73,19 @@ then a runtime PATCH. Three hot-apply without a restart: `maxInflight`, `maxQueu
 `statuslineGitRoots`. The other 30 apply on restart. The console reads the disposition from
 each knob's entry in `/api/config`'s knobs block, never from a hand list.
 
-Keys: `port`, `chatgptApiBase`, `codexAuthPath`, `pinnedModel`, `effort`, `summary`,
+Keys: `port`, `chatgptApiBase`, `pinnedModel`, `effort`, `summary`,
 `showReasoning`, `replayReasoning`, `mirrorReasoning`, `progressLine`, `toolSurface`, `quotaPoll`,
 `maxInflight`, `maxQueued`, `upstreamTimeoutMs`, `firstByteTimeoutMs`, `streamIdleMs`,
 `authCacheMs`, `debug`, `contextWindowOverride`, `grokPort`, `grokModel`, `xaiApiBase`,
-`grokAuthPath`, `controlPort`, `usageWarnPct`, `usageWarnTokens5h`, `statuslineGitRoots`.
+`controlPort`, `usageWarnPct`, `usageWarnTokens5h`, `statuslineGitRoots`.
 
 Some look like legacy single-head knobs (`grokPort`, `grokModel`, `xaiApiBase`, `chatgptApiBase`,
-and `port`, `pinnedModel`, `codexAuthPath` beside them), but they are live: `HeadBuildInputs` copies
+and `port`, `pinnedModel` beside them), but they are live: `HeadBuildInputs` copies
 them OVER the port, pinned model and base URL the topology declares for every ChatGPT-login and
 Grok-login head (`CodexLegacyKnobs`, `GrokLegacyKnobs`). The console edits them like any other
 knob and says so on the row (corrected 2026-09-24, settings copy pass).
+`codexAuthPath` and `grokAuthPath` retired on 2026-11-09: a head signs in with its provider's `auth.file`, and
+a value still set for either refuses boot (`RetiredKnob`).
 
 ### 2.3 Topology (`~/.config/splice/splice.toml`, boot-only)
 

@@ -168,7 +168,7 @@ class MuseRefreshTest {
 
     @Test
     fun `other failed statuses are denied in one call with status-only detail`() = runTest {
-        for (status in listOf(HttpStatusCode.BadRequest, HttpStatusCode.ServiceUnavailable)) {
+        for (status in listOf(HttpStatusCode.BadRequest, HttpStatusCode.Forbidden)) {
             var calls = 0
             val engine = MockEngine {
                 calls += 1
@@ -178,6 +178,26 @@ class MuseRefreshTest {
                 val result = MuseRefresh().refresh(endpoint, "account-token", MuseMintMode.REFRESH, client)
                 assertTrue(result is MuseMintAttempt.Denied)
                 val detail = (result as MuseMintAttempt.Denied).detail
+                assertTrue(detail.contains(status.value.toString()))
+                assertFalse(detail.contains("private-response"))
+                assertFalse(detail.contains("account-token"))
+            }
+            assertEquals(1, calls)
+        }
+    }
+
+    // Audit, Nov 9, 2026: a 5xx is the mint unable to answer, never a denial that holds the login for an hour.
+    @Test
+    fun `a 5xx is unavailable in one call with status-only detail`() = runTest {
+        for (status in listOf(HttpStatusCode.InternalServerError, HttpStatusCode.ServiceUnavailable)) {
+            var calls = 0
+            val engine = MockEngine {
+                calls += 1
+                respond("private-response", status)
+            }
+            HttpClient(engine).use { client ->
+                val result = MuseRefresh().refresh(endpoint, "account-token", MuseMintMode.REFRESH, client)
+                val detail = (result as MuseMintAttempt.Unavailable).detail
                 assertTrue(detail.contains(status.value.toString()))
                 assertFalse(detail.contains("private-response"))
                 assertFalse(detail.contains("account-token"))

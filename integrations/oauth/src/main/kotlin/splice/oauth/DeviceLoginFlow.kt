@@ -3,8 +3,10 @@
 // the user_code + verification URL, open the browser → poll the token endpoint until the user
 // approves. State machine per the verified kimi contract: authorization_pending keeps polling;
 // slow_down bumps the interval PERMANENTLY (+5s); expired_token restarts the WHOLE flow (bounded
-// to 2 restarts); access_denied / >=500 abort; the device_authorization expires_in is the overall
-// deadline. Credentials persist through the shared atomic-0600 writeCredentialFile. Its lines go
+// to 2 restarts); access_denied aborts; a 5xx, a 429 without an RFC code, or a poll that never
+// reached the endpoint keeps polling (audit, Nov 9, 2026: one transient 5xx ended a login the
+// person was approving); the device_authorization expires_in is the overall deadline. Credentials
+// persist through the shared atomic-0600 writeCredentialFile. Its lines go
 // out through the caller's TerminalOutput; the bounded runBlocking bridge lives in the CLI.
 package splice.oauth
 
@@ -163,8 +165,9 @@ public class DeviceLoginFlow(
         val deadline = CredentialExpiry.expiryFromNowMs(System.currentTimeMillis(), auth.expiresInS)
         while (System.currentTimeMillis() < deadline) {
             waiter.wait(intervalS.coerceIn(0L, MAX_POLL_INTERVAL_S) * MS_PER_S)
+            // The body is read inside the guard too: a connection cut mid-body is as transient as one cut before it.
             val resp = Cancellables.runCatchingBestEffort {
-                postToken(client, spec, auth.deviceCode, loginIo)
+                postToken(client, spec, auth.deviceCode, loginIo).let { it.status.value to it.bodyAsText() }
             }.onFailure {
                 output.line("splice: login poll did not reach the token endpoint: ${SafeFailureText.render(it)}")
             }.getOrNull()
@@ -179,18 +182,19 @@ public class DeviceLoginFlow(
 
     // authorization_pending keeps the interval; slow_down bumps it permanently; the rest are terminal.
     private suspend fun classifyPoll(
-        resp: HttpResponse,
+        resp: Pair<Int, String>,
         spec: DeviceLoginSpec,
         intervalS: Long,
         loginIo: LoginIo,
     ): PollStep {
-        val body = resp.bodyAsText()
-        if (resp.status.isSuccess()) return persistPollSuccess(spec, body, loginIo)
-        if (resp.status.value >= HttpStatus.INTERNAL_SERVER_ERROR) {
-            output.line(loginIo.refusal("login failed", resp.status.value, body))
-            return PollStep.Stop(Outcome.ABORT)
+        val (status, body) = resp
+        if (status in HttpStatus.OK..HttpStatus.MAX_SUCCESS) return persistPollSuccess(spec, body, loginIo)
+        // A server that cannot answer now has said nothing about the code: keep polling until it expires.
+        if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+            output.line(loginIo.refusal("login poll unavailable, still waiting", status, body))
+            return PollStep.Wait(intervalS)
         }
-        return classifyPollError(resp.status.value, body, intervalS, loginIo)
+        return classifyPollError(status, body, intervalS, loginIo)
     }
 
     private suspend fun persistPollSuccess(spec: DeviceLoginSpec, body: String, loginIo: LoginIo): PollStep {
@@ -210,7 +214,10 @@ public class DeviceLoginFlow(
                 output.line("splice: login was declined.")
                 PollStep.Stop(Outcome.ABORT)
             }
-            else -> {
+            // A 429 that names no RFC 8628 code is a plain rate limit: slow down as slow_down would.
+            else -> if (status == HttpStatus.TOO_MANY_REQUESTS) {
+                PollStep.Wait(intervalS + SLOW_DOWN_INCREMENT_S)
+            } else {
                 output.line(loginIo.refusal("login failed", status, body))
                 PollStep.Stop(Outcome.ABORT)
             }

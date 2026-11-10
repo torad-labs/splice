@@ -69,6 +69,12 @@ public const val CODE_MODE_DIR: String = "code-mode"
  *  `heads/<key>/`. One spelling for the dialect that writes it and Your data, which counts and clears it. */
 public const val REASONING_DIR: String = "reasoning"
 
+/** The Responses dialect keeps each conversation's native message phases (which of an assistant message's two parts
+ *  the provider named it) in this directory of the head's own `heads/<key>/`, beside [REASONING_DIR] and written
+ *  whether or not the head runs the reasoning cache. One spelling for the dialect that writes it and Your data,
+ *  which clears it with a history cut. */
+public const val ASSISTANT_PHASES_DIR: String = "assistant-phases"
+
 /** The page `splice console` writes in the state folder and opens (ConsoleCommand). Until Oct 26, 2026 its address
  *  carried the management key, so a key rotation deletes it too (KeyRotation). One spelling for both. */
 public const val CONSOLE_LAUNCH_PAGE: String = "console-open.html"

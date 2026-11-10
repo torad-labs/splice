@@ -82,12 +82,14 @@ internal class HeadResolver(
      *  The console reads the first as down and the second as out of quota. A local head the watch holds no
      *  reading for (before its first probe, or after it died) carries `runtimeUnread`, read as checking, never
      *  as ready. A provider reading that names a
-     *  window fully used rides apart as `quotaFull` (V4-452): a reading, beside a head that stays ready. */
+     *  window fully used rides apart as `quotaFull` (V4-452): a reading, beside a head that stays ready. A head that
+     *  refuses every request before any upstream turn carries `refusing` (2026-11-09 audit), as /health does. */
     fun headStatuses(nowEpochMillis: Long = System.currentTimeMillis()): List<JsonObject> {
         val silent = signals.silentRuntimes()
         val unread = signals.unreadRuntimes()
         val quotaResets = signals.quotaResets(nowEpochMillis)
         val quotaFull = signals.quotaFull()
+        val refusing = signals.refusing()
         val pids = signals.clientPids()
         return heads.values.map { managed ->
             val key = managed.head.key
@@ -96,6 +98,7 @@ internal class HeadResolver(
                 if (key in unread) "runtimeUnread" to JsonPrimitive(true) else null,
                 quotaResets[key]?.let { "quotaResetAtEpochSeconds" to JsonPrimitive(it) },
                 quotaFull[key]?.let { "quotaFull" to signals.quotaFullJson(it) },
+                refusing[key]?.let { "refusing" to signals.refusingJson(it) },
             )
             val status = HeadStatus.json(
                 managed.head,

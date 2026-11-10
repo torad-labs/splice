@@ -41,6 +41,8 @@ internal class ResponsesReasoningReplay(
 
     /** Completed native messages already contain this suffix; only their delivered cursor advances. */
     fun messageTextDelivered(text: String, index: Int? = null) {
+        // The client holds this prose, so the reasoning that led into it is the conversation's from here on.
+        ctx.reasoningCapture.onTurn.kept()
         cursor?.text("assistant", text)
         index?.let {
             state.nativePrefix?.ownership?.representedSuffix(it, text.length)
@@ -59,7 +61,11 @@ internal class ResponsesReasoningReplay(
         if (JsonScalars.str(item, "type") == NATIVE_MESSAGE_TYPE && suffix == null) messageUndelivered()
         val position = cursor.takeIf { positionsProven && state.nativePrefix?.delivered?.callId == null }
         collectAt(item, position, outputIndex = index, terminal = false)
-        if (JsonScalars.str(item, "type") == NATIVE_FUNCTION_CALL_TYPE) state.nativePrefix?.delivered?.item(item, index)
+        val call = JsonScalars.str(item, "type") == NATIVE_FUNCTION_CALL_TYPE
+        if (call) state.nativePrefix?.delivered?.item(item, index)
+        // A completed call went out (a client tool, or a code-mode script, which ItemFold records before this): the
+        // reasoning that chose it is history before any request answering it can arrive.
+        if (call || state.customCalls.isNotEmpty()) ctx.reasoningCapture.onTurn.kept()
         streamedItems++
         return suffix?.let { IndexedValue(index, it) }
     }

@@ -112,14 +112,28 @@ class PerfRowsFileSourceTest {
             releaseWorker.countDown()
         }
         assertEquals(listOf(stamped), read.get(10, TimeUnit.SECONDS).rows.map { it.ts })
+    }
+
+    @Test
+    fun `a lost perf row is reported as lost, not pending, and only in windows that can hold it`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        val perf = TurnPerf { 0L }.apply { setCount(PerfKeys.IN_TOKENS, 7) }
+        val stats = PerfStats(file, clock = { 1_000L })
+        val stamped = stats.record(PerfRowMeta("m", "ok", compact = false), perf.snapshot())
         assertTrue(AsyncFileIo.submitFor(file) { throw IllegalStateException("synthetic append failure") })
         val failed = PerfRowsFileSource(file).window(0)
         assertEquals(listOf(stamped), failed.rows.map { it.ts })
-        assertTrue(failed.readError?.contains("pending perf write did not settle") == true, "${failed.readError}")
+        val error = failed.readError.orEmpty()
+        assertTrue(error.contains("a perf row was lost"), error)
+        assertFalse(error.contains("pending"), "a settled lost row is not a write in flight: $error")
         stats.record(PerfRowMeta("m", "ok", compact = false), perf.snapshot())
         val later = PerfRowsFileSource(file).window(0)
         assertEquals(2, later.rows.size)
         assertTrue(later.readError != null, "the prior lost row cannot be concealed by a later success")
+        assertNull(
+            PerfRowsFileSource(file).window(System.currentTimeMillis() + 1).readError,
+            "a window that starts after the loss cannot hold the lost row",
+        )
     }
 
     @Test

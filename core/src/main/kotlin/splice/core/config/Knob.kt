@@ -61,14 +61,6 @@ public enum class Knob(
         KnobDefault.Text("https://chatgpt.com/backend-api/codex"),
         restartRequired = true,
     ),
-    CODEX_AUTH_PATH(
-        "codexAuthPath",
-        listOf("CODEX_AUTH_PATH"),
-        // The registry's splice-owned default (AuthKind header, 2026-09-05) — referenced, not copied,
-        // so the knob and the file `splice login` writes cannot drift apart (the DR-79 class).
-        KnobDefault.ChatgptLoginFile,
-        restartRequired = true,
-    ),
     PINNED_MODEL(
         "pinnedModel",
         listOf("CLAUDEX_PINNED_MODEL", "CLAUDEX_MODEL"),
@@ -351,16 +343,9 @@ public enum class Knob(
         KnobDefault.Text("https://api.x.ai/v1"),
         restartRequired = true,
     ),
-    GROK_AUTH_PATH(
-        "grokAuthPath",
-        listOf("GROK_AUTH_PATH"),
-        // DR-79: must agree with AuthKind.GrokOAuth's registry default — login writes there, the
-        // arm reads here, and the spike-era ~/.local/share/claude-grok path made a head omitting
-        // auth.file 401 forever while doctor said signed-in (pinned by the registry-agreement arm).
-        // Since 2026-09-05 the value IS the registry's, and it is splice's own file, not ~/.grok's.
-        KnobDefault.GrokLoginFile,
-        restartRequired = true,
-    ),
+
+    // (GROK_AUTH_PATH and CODEX_AUTH_PATH retired Nov 9, 2026: no head read them once every reader took the provider's
+    //  auth.file, AuthConfig.loginFile. RetiredKnob keeps their names so a value still set refuses boot.)
     CONTROL_PORT(
         "controlPort",
         listOf("SPLICE_CONTROL_PORT", "CONTROL_PROXY_PORT"),

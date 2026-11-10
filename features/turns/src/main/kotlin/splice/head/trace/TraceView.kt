@@ -122,7 +122,7 @@ internal class TraceView(private val output: TerminalOutput) {
         )
         output.line("${DIM}request headers$RESET")
         printHeaders(request)
-        output.line("${DIM}request body${encoding(request)}$RESET")
+        output.line("${DIM}request body${encoding(request)}${wholeBody(request)}$RESET")
         printBody(request, "body")
         if (response != null) {
             output.line("${DIM}response headers$RESET")
@@ -134,6 +134,14 @@ internal class TraceView(private val output: TerminalOutput) {
 
     private fun encoding(request: JsonObject?): String =
         request?.let { JsonScalars.str(it, "encoding") }?.let { " (sent $it-encoded)" }.orEmpty()
+
+    /** The whole body's length and digest, when the record carries them: a body cut at traceMaxBodyChars still says
+     *  which send it was. A record written before they existed prints nothing here. */
+    private fun wholeBody(request: JsonObject?): String {
+        val chars = request?.let { JsonScalars.str(it, "bodyChars") } ?: return ""
+        val sha256 = JsonScalars.str(request, "bodySha256") ?: return ""
+        return " ($chars chars, sha256 $sha256)"
+    }
 
     private fun printHeaders(record: JsonObject?) {
         record?.get("headers")?.jsonObject?.forEach { (name, value) ->

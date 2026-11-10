@@ -10,6 +10,7 @@ import splice.core.perf.PerfKeys
 import splice.core.turn.CONN_RESET_KIND
 import splice.core.turn.CONN_RESET_OUTCOME
 import splice.core.turn.CodeModeDivergenceMarker
+import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
 import splice.core.util.LoopbackOverride
 import splice.head.HeadHealthCounters
@@ -43,6 +44,8 @@ internal class TurnConnEnd(
         if (e !is IOException) return false
         if (drive.channel.clientGone.get()) {
             drive.emitter.abandon()
+            // The line a finished abandonment writes, so this ending is in the log and not only in its row.
+            log(telemetry.turnLine(drive, TurnOutcome.ClientAbandoned()))
             telemetry.recordPerf(drive, OutcomeTag.CLIENT_ABORT.wire)
         } else {
             emitConn(drive, e)

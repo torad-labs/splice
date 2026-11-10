@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.topology.Topology
 import splice.core.topology.TopologyParse
 import splice.core.topology.TopologyWriteResult
 import splice.core.topology.TopologyWriter
@@ -67,9 +68,12 @@ class TopologyWriterRoundTripTest {
         TopologyWriter(file, backupDir, TopologyParse(TopologyLoader::parse), WallClock { NOW })
     }
 
+    /** [requested], built from what the file holds when it is asked. */
+    private fun TopologyWriter.edit(requested: Topology): TopologyWriteResult = write(requested, current())
+
     /** Writes the topology [expected] declares and asserts the file became exactly [expected]. */
     private fun lands(expected: String) {
-        val result = writer.write(TopologyLoader.parse(expected))
+        val result = writer.edit(TopologyLoader.parse(expected))
         assertTrue(result is TopologyWriteResult.Written, "refused: $result")
         assertEquals(expected, Files.readString(file))
         val backup = (result as TopologyWriteResult.Written).backup
@@ -95,7 +99,7 @@ class TopologyWriterRoundTripTest {
         val spaced = BASE.replace("port = 8801\n", "port = 8801   # the head's port\n")
         Files.writeString(file, spaced)
         val expected = spaced.replace("port = 8801 ", "port = 8802 ")
-        assertTrue(writer.write(TopologyLoader.parse(expected)) is TopologyWriteResult.Written)
+        assertTrue(writer.edit(TopologyLoader.parse(expected)) is TopologyWriteResult.Written)
         assertEquals(expected, Files.readString(file))
     }
 
@@ -142,16 +146,18 @@ class TopologyWriterRoundTripTest {
         val dotted = BASE.replace("auth = {", "quirks.store = true\nauth = {")
         Files.writeString(file, dotted)
         val expected = dotted.replace("quirks.store = true\n", "quirks.store = true\nquirks.tool_choice = true\n")
-        assertTrue(writer.write(TopologyLoader.parse(expected)) is TopologyWriteResult.Written)
+        assertTrue(writer.edit(TopologyLoader.parse(expected)) is TopologyWriteResult.Written)
         assertEquals(expected, Files.readString(file))
     }
 
     @Test
     fun `a table the file spells with only default values is written into, not appended twice`() {
-        val spelled = BASE + "\n[providers.ex.quirks]\nstore = false\n"
+        // store and tool_choice are absent-means-the-provider's (config audit, Nov 2026), so a written false is a value
+        // now; forward_client_identity still has a default of false.
+        val spelled = BASE + "\n[providers.ex.quirks]\nforward_client_identity = false\n"
         Files.writeString(file, spelled)
         val expected = spelled + "tool_choice = true\n"
-        assertTrue(writer.write(TopologyLoader.parse(expected)) is TopologyWriteResult.Written)
+        assertTrue(writer.edit(TopologyLoader.parse(expected)) is TopologyWriteResult.Written)
         assertEquals(expected, Files.readString(file))
     }
 
@@ -163,7 +169,7 @@ class TopologyWriterRoundTripTest {
         )
         Files.writeString(file, tricky)
         val expected = tricky.replace("[\n  \"a]b\", # ] not the end\n  \"c\",\n]", "[\"z\"]")
-        assertTrue(writer.write(TopologyLoader.parse(expected)) is TopologyWriteResult.Written)
+        assertTrue(writer.edit(TopologyLoader.parse(expected)) is TopologyWriteResult.Written)
         assertEquals(expected, Files.readString(file))
     }
 
@@ -186,7 +192,7 @@ class TopologyWriterRoundTripTest {
 
     @Test
     fun `a request equal to the file writes nothing and takes no backup`() {
-        assertEquals(TopologyWriteResult.Written(null), writer.write(TopologyLoader.parse(BASE)))
+        assertEquals(TopologyWriteResult.Written(null), writer.edit(TopologyLoader.parse(BASE)))
         assertEquals(BASE, Files.readString(file))
         assertEquals(emptyList<String>(), backups())
     }
@@ -194,7 +200,7 @@ class TopologyWriterRoundTripTest {
     @Test
     fun `a refused write leaves the file byte-identical and takes no backup`() {
         val clash = TopologyLoader.parse(BASE + head("ex2", 8801))
-        val result = writer.write(clash)
+        val result = writer.edit(clash)
         assertTrue(result is TopologyWriteResult.Refused, "a shared port is refused: $result")
         assertEquals(BASE, Files.readString(file))
         assertEquals(emptyList<String>(), backups())
@@ -204,7 +210,7 @@ class TopologyWriterRoundTripTest {
     fun `the backup is named for the second and the old bytes, and a second write keeps both`() {
         lands(BASE.replace("\"high\"", "\"low\""))
         val next = Files.readString(file).replace("\"low\"", "\"medium\"")
-        writer.write(TopologyLoader.parse(next))
+        writer.edit(TopologyLoader.parse(next))
         val names = backups().sorted()
         assertEquals(2, names.size, "two writes, two backups: $names")
         names.forEach { assertTrue(it.startsWith("splice.toml.bak-20260918T120000Z-"), it) }

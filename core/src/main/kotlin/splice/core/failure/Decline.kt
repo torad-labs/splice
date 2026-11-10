@@ -71,7 +71,10 @@ public enum class RequestFeature {
     SERVICE_TIER,
     SPEED,
     CONTAINER,
-    DIAGNOSTICS,
+
+    /** A top-level request field the head's dialect has not classified (2026-11-09 audit): it may be a control over
+     *  the answer, and a dropped control answers a different question than the one asked, so it is refused. */
+    UNKNOWN_FIELD,
     INFERENCE_GEO,
     USER_PROFILE_ID,
     WORKSPACE_ID,

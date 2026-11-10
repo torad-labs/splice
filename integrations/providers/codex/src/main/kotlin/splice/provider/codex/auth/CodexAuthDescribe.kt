@@ -9,15 +9,14 @@ import splice.core.auth.ACCOUNT_REF_FIELD
 import splice.core.auth.AccountRef
 import splice.core.auth.AuthDescription
 import splice.core.auth.INVALID_GRANT_REASON
-import splice.core.auth.InvalidGrantLatch
 import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshCall
 import splice.core.auth.RefreshOutcome
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
-import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.provider.codex.RefreshedTokens
+import splice.upstream.credentials.TokenRenewal
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -42,9 +41,7 @@ internal fun interface PersistRotation {
 internal class CodexAuthDescribe(
     private val authPath: Path,
     private val authJson: CodexAuthJson,
-    private val authFile: CodexAuthFile,
-    private val invalidGrantLatch: InvalidGrantLatch,
-    private val log: LogSink,
+    private val renewal: TokenRenewal,
     private val refreshCall: RefreshCall<RefreshedTokens>,
 ) {
     private val oauth = CodexOAuth()
@@ -67,8 +64,7 @@ internal class CodexAuthDescribe(
                 !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
             if (!genuinelyAbsent) out["read_error"] = SafeFailureText.render(failure)
         }
-        val identity = authFile.codexAuthIdentityOrNull(authPath, log)
-        if (invalidGrantLatch.isLatched(identity)) out["refresh_latched"] = INVALID_GRANT_REASON
+        if (renewal.latch.isLatched(renewal.identity())) out["refresh_latched"] = INVALID_GRANT_REASON
         return AuthDescription(present = present, kind = KIND, fields = out)
     }
 

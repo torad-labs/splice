@@ -112,7 +112,8 @@ public class TopologyRoutes(private val source: TopologyWriterSource, private va
             onFailure = { true },
         )
         return if (unreadable.isEmpty()) {
-            Attempt(writer.write(topology), restart)
+            // [stored] unmasked the secrets and decided the restart, so it is the base the write must still find.
+            Attempt(writer.write(topology, stored), restart)
         } else {
             Attempt(TopologyWriteResult.Refused(unreadable))
         }

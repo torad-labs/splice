@@ -44,6 +44,7 @@ import splice.usage.perf.history.PerfCursorRequest
 import splice.usage.perf.history.PerfCursorSource
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+import java.time.Instant
 
 // why: a row held for a streaming round is appended after newer ones with the time its turn ended (PerfStats.record);
 // an hour covers that lag, so a torn line's own row is not older than the newest row ahead of it less this, nor newer
@@ -88,12 +89,14 @@ public class PerfRowsFileSource internal constructor(
     @Synchronized
     override fun window(sinceMs: Long): PerfRowsWindow = settledRead(sinceMs, PerfSelection.WORK).window()
 
-    /** Full session identity, never the shortened cost tag. Unchanged reads reuse a bounded latest-known index. */
+    /** Full session identity, never the shortened cost tag. Unchanged reads reuse a bounded latest-known index.
+     *  It waits for writes still pending, not for rows lost earlier: a lost row names no session here, and the
+     *  rows that landed still name theirs. */
     @Synchronized
     internal fun sessionAccounts(sessions: Set<String>): PerfSessionAccountIndex.Snapshot {
         val scan = Scan(0L, PerfSelection.WORK, cache)
         val archives = files.archived(scan.errors).map { it.first }
-        if (scan.errors.isNotEmpty() || !AsyncFileIo.awaitFile(file)) {
+        if (scan.errors.isNotEmpty() || !AsyncFileIo.settleFile(file).settled) {
             return PerfSessionAccountIndex.Snapshot(emptyMap())
         }
         return sessionAccounts.accounts(sessions, archives, generations, PerfLineDecode(scan::decode))
@@ -165,7 +168,7 @@ public class PerfRowsFileSource internal constructor(
     private fun settledRead(sinceMs: Long, selection: PerfSelection, rowsCache: PerfRowsCache = cache): Scan {
         if (rowsCache.since?.let { sinceMs < it } == true) rowsCache.clear()
         rowsCache.since = minOf(rowsCache.since ?: sinceMs, sinceMs)
-        val settled = AsyncFileIo.awaitFile(file)
+        val settle = AsyncFileIo.settleFile(file)
         var keys = files.keys()
         var read = readAll(sinceMs, selection, rowsCache)
         var again = files.keys()
@@ -174,9 +177,13 @@ public class PerfRowsFileSource internal constructor(
             read = readAll(sinceMs, selection, rowsCache)
             again = files.keys()
         }
-        val incomplete = if (settled) null else "${file.fileName}: pending perf write did not settle"
+        val pending = if (settle.settled) null else "${file.fileName}: pending perf write did not settle"
+        // A lost row's own time is no later than its loss, so a window that starts after the latest loss holds none.
+        val lost = settle.lostAtMs?.takeIf { it >= sinceMs }?.let {
+            "${file.fileName}: a perf row was lost (write refused or failed), latest at ${Instant.ofEpochMilli(it)}"
+        }
         val rotated = if (again == keys) null else "${file.fileName}: rotated during the read"
-        read.errors += listOfNotNull(incomplete, rotated)
+        read.errors += listOfNotNull(pending, lost, rotated)
         return read
     }
 

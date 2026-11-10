@@ -118,12 +118,11 @@ function advRows(id, keys) {
   groups.push(["Other", [...left]]);
   return groups.filter(([, xs]) => xs.length).map(([word, xs]) => `<div class="advg"><h4 class="advk">${esc(word)}</h4>${advShapes(groupRows(xs), word)}</div>`).join("");
 }
-// WHAT A SETTING HOLDS IS SAID IN WORDS, AND THE RAW VALUE IS ONE PRESS AWAY: an address is its host, a sign-in file is
-// "Sign-in file", the service is its name, and the full text opens in place under its own field, which edits and saves as
+// WHAT A SETTING HOLDS IS SAID IN WORDS, AND THE RAW VALUE IS ONE PRESS AWAY: an address is its host, the service is its
+// name, and the full text opens in place under its own field, which edits and saves as
 // before. A group named once over its rows does not repeat itself in each row's name.
 const ADV_VIEW = {
   chatgptApiBase: (v) => ({ glyph: "web", word: hostOf(v), host: true }), xaiApiBase: (v) => ({ glyph: "web", word: hostOf(v), host: true }),
-  codexAuthPath: () => ({ glyph: "file", word: "Sign-in file" }), grokAuthPath: () => ({ glyph: "file", word: "Sign-in file" }),
   supervisorUnit: (v) => ({ glyph: "svc", word: `${String(v).replace(/\.service$/, "")} service` }),
 };
 const hostOf = (v) => { try { return new URL(String(v)).hostname || String(v); } catch { return String(v); } };

@@ -17,10 +17,12 @@ import splice.core.turn.UsageField
 import splice.head.HeadDeps
 import splice.head.compaction.CompactionReplay
 import splice.head.compaction.RecordedAnswer
+import splice.head.hold.HandOverHeaders
 import splice.head.turn.Preparation
 import splice.head.turn.SESSION_TAG_CHARS
 import splice.head.wire.CollectingTerminal
 import splice.head.wire.FrameWrite
+import splice.head.wire.OK_STATUS
 import splice.head.wire.SseEmitterFactory
 import splice.head.wire.TurnTerminal
 import splice.head.wire.TurnWiring
@@ -100,26 +102,34 @@ internal class LocalResponses(
         )
     }
 
-    /** The non-stream sibling of [replay]: wait out the held answer exactly as a stream follower waits
-     *  on its recording's frames, then serve the ONE body this shape reads. A delivered body consumes
-     *  the hold; a drive that ended without its terminal answers the honest overload error the follower
-     *  is sealed with, and the next attempt runs upstream ([CompactionReplay] already dropped it). */
+    /** The non-stream sibling of [replay]: wait out the held reply exactly as a stream follower waits
+     *  on its recording's frames, then serve the ONE body this shape reads, with the status the turn's own
+     *  client would have read. A delivered answer consumes the hold. A turn that failed answers with its own
+     *  failure, and one that never reached its terminal (cancelled) with the honest error the follower is
+     *  sealed with; either way the next attempt runs upstream (HeldCollectAnswers already dropped it). */
     suspend fun replayCollected(call: ApplicationCall, collected: Preparation.Collected, perf: TurnPerf) {
         RequestObservation.local(perf, collected.model, collected.sessionId, false)
-        quotaHeaders(call, collected.sessionId)
         val who = collected.sessionId?.let { "session ${it.take(SESSION_TAG_CHARS)}" } ?: "no session"
-        val body = collected.hold.await()
-        if (body == null) {
-            respondUnfinished(call, collected.model, collected.sessionId)
+        val what = if (collected.compaction) "compaction" else "non-stream turn"
+        val reply = collected.hold.await()
+        if (reply == null) {
+            quotaHeaders(call, collected.sessionId)
+            respondUnfinished(call, collected.model, collected.sessionId, collected.compaction)
             deps.log(
-                "[${provider.key}] collect compaction retry followed a compaction that did not finish ($who; " +
+                "[${provider.key}] collect retry followed a $what that did not finish ($who; " +
                     "sealed with an error, the next retry runs upstream)\n",
             )
             return
         }
-        call.respond(LocalResponseDelivery.body(body, perf))
+        // A limit handed to the client names its reset in the headers Claude Code sleeps on, as CollectTurn's own
+        // answer does; every other answer carries the quota windows.
+        val handedOver = reply.answered?.let { HandOverHeaders.of(it, deps.traffic.upstream.retryWall()) }.orEmpty()
+        if (handedOver.isEmpty()) quotaHeaders(call, collected.sessionId)
+        handedOver.forEach { (name, value) -> call.response.header(name, value) }
+        call.respond(LocalResponseDelivery.body(reply.body, perf, reply.status))
+        val served = if (reply.status == OK_STATUS) "answer" else "failure (HTTP ${reply.status})"
         deps.log(
-            "[${provider.key}] collect compaction answer served from its hold ($who; the retry cost no " +
+            "[${provider.key}] collect $what $served served from its hold ($who; the retry cost no " +
                 "upstream turn)\n",
         )
         replay.answers.consumed(collected.key, collected.hold)
@@ -154,11 +164,16 @@ internal class LocalResponses(
 
     // The honest overload error a collect follower answers when the compaction it followed did not finish,
     // which Claude Code retries: the collect shape of the frame sealFollower writes for a streamed one.
-    private suspend fun respondUnfinished(call: ApplicationCall, model: String, sessionId: String?) {
+    private suspend fun respondUnfinished(
+        call: ApplicationCall,
+        model: String,
+        sessionId: String?,
+        compaction: Boolean = true,
+    ) {
         val terminal = CollectingTerminal(
             model,
             wiring.usagePayloadBuilderFor(provider.catalog, model, deps.stores.clientWindows.windowFor(sessionId)),
-            voice = compactionVoice,
+            voice = if (compaction) compactionVoice else voice.anyTurn,
         )
         terminal.emitError(FailureCause.Splice.CompactionUnfinished)
         call.respond(LocalResponseDelivery.terminal(terminal, observations = RequestObservation.of(call)))

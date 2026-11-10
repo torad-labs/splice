@@ -315,13 +315,17 @@ internal class TurnTelemetry(
     fun errTurn(kind: String, drive: TurnDrive, detail: String): String =
         "[$headKey] turn ERROR $kind compact=${drive.meta.compact} latency=${clock() - drive.t0}ms $detail\n"
 
-    fun turnLine(
-        meta: TurnMeta,
-        model: String,
-        outcome: TurnOutcome,
-        latencyMs: Long,
-        watchdog: WatchdogVerdict = WatchdogVerdict(),
-    ): String = line.render(meta, model, outcome, latencyMs, watchdog)
+    /** The turn line for [drive] ending on [outcome], with the watchdog's verdict on it. [latencyMs] defaults to the
+     *  drive's own elapsed time, the reading its perf row's total takes, for an ending with no finish clock of its own:
+     *  a client that left mid-turn writes this line as a finished abandonment does. */
+    fun turnLine(drive: TurnDrive, outcome: TurnOutcome, latencyMs: Long = drive.perf.elapsedMs()): String =
+        line.render(
+            drive.meta,
+            drive.upstreamModel,
+            outcome,
+            latencyMs,
+            WatchdogVerdict(drive.watchdog.fired, drive.watchdog.held),
+        )
 
     /** MOVED out of finishTurn (HD-24): a log line is telemetry, and moving it here is what lets
      *  TurnFinish drop its dependency on UsageHud. [model] is the drive's upstream model; [headKey]

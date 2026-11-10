@@ -60,6 +60,10 @@ internal class NativeGrpcDelegateCompletions(
         }
         try {
             val message = NativeGrpcRequests.toolResult(delegate.session.id, delegate.id, result)
+            // What the client answered is how the tool ended, decided as the answer goes out. The host finishes its
+            // cell on this answer, and the cell's closing can reach us before the acknowledgement does; that closing
+            // cancels only a callback nothing has decided.
+            delegate.span?.outcomeIfUndecided(answerOutcome(result))
             NativeGrpcDeadlines.startup("tool invocation completion") {
                 channel.unary(NativeGrpcRequest("CompleteToolCall", message, delegate.session.route, null))
             }
@@ -76,11 +80,14 @@ internal class NativeGrpcDelegateCompletions(
 
     private fun answered(id: String, delegate: NativeGrpcDelegate, result: JsonObject) {
         if (pending.remove(id, delegate)) {
-            delegate.span?.outcome(if (JsonScalars.str(result, "status") == "error") "bad" else "good")
+            delegate.span?.outcome(answerOutcome(result))
             sink.settled(delegate.session, delegate.cell, delegate.id)
             releaseTrace(id, delegate)
         }
     }
+
+    private fun answerOutcome(result: JsonObject): String =
+        if (JsonScalars.str(result, "status") == "error") "bad" else "good"
 
     fun releaseTrace(id: String, delegate: NativeGrpcDelegate) {
         if (!completions.containsKey(delegate)) tracing.invocations.remove(id, delegate.span)

@@ -18,6 +18,7 @@ import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
 import splice.core.util.WallClockIso
 import splice.provider.codex.RefreshedTokens
+import splice.upstream.credentials.CredentialText
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -39,9 +40,13 @@ internal class CodexAuthJson(
     private val clock: WallClock,
     private val synthesizeExpiry: SynthesizeExpiry,
     private val log: LogSink,
-    private val json: Json = Json { ignoreUnknownKeys = true },
-    private val oauth: CodexOAuth = CodexOAuth(),
+    // Audit, Nov 9, 2026: every read goes through the login's renewal (TokenRenewal.text), which serves a renewed
+    // document whose write failed in the file's place until it is written.
+    private val text: CredentialText,
 ) {
+    private val json = Json { ignoreUnknownKeys = true }
+    private val oauth = CodexOAuth()
+
     @Volatile
     private var cache: Cache? = null
 
@@ -84,7 +89,7 @@ internal class CodexAuthJson(
                 return@runCatchingCancellable c.snapshot
             }
         }
-        val tokens = json.parseToJsonElement(Files.readString(authPath)).jsonObject[FIELD_TOKENS] as? JsonObject
+        val tokens = json.parseToJsonElement(text.read()).jsonObject[FIELD_TOKENS] as? JsonObject
         JsonScalars.str(tokens, FIELD_ACCESS_TOKEN)?.let { access ->
             val accountId = JsonScalars.str(tokens, FIELD_ACCOUNT_ID)
             // SH-01 (G18's codex twin): a token with no decodable exp was cached FOREVER — no
@@ -123,7 +128,7 @@ internal class CodexAuthJson(
         cache = null
     }
 
-    internal fun parseObject(): JsonObject = json.parseToJsonElement(Files.readString(authPath)).jsonObject
+    internal fun parseObject(): JsonObject = json.parseToJsonElement(text.read()).jsonObject
 
     // A peer (another process, or the official codex CLI) may have rotated the token while we waited
     // on the lock: if the freshly-read access token differs from what THIS process last served, adopt

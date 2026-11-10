@@ -28,6 +28,7 @@ import splice.core.failure.SpliceLine
 import splice.core.failure.StoppedBy
 import splice.core.failure.WireAnswer
 import splice.core.perf.OutcomeTag
+import splice.core.perf.OutcomeTags
 import splice.core.wire.ErrorEnvelope
 import splice.core.wire.HttpStatus
 import splice.head.turn.delivery.CollectedReply
@@ -40,7 +41,8 @@ public class AdmissionErrorBody(private val voice: HeadVoice) : IngressErrorBody
 
     override fun content(call: ApplicationCall, type: String, why: Decline, status: HttpStatusCode): OutgoingContent {
         val observation = RequestObservation.of(call) ?: return super<IngressErrorBody>.content(call, type, why, status)
-        val reply = CollectedReply(render(type, why), status, observations = observation, outcome = "refused")
+        val reply =
+            CollectedReply(render(type, why), status, observations = observation, outcome = OutcomeTag.REFUSED.wire)
         // Keep ingress's original application/json header. CollectedReply owns UTF-8 bytes and successful flush.
         return object : OutgoingContent.WriteChannelContent() {
             override val contentType = ContentType.Application.Json
@@ -71,7 +73,8 @@ internal class AdmissionResponses(private val voice: HeadVoice) {
     /** The one shape every refusal before a turn takes: [cause] decides the status, the error type and
      *  x-should-retry (ClientWire at ADMISSION), and the head's voice says the line the client reads. Every admission
      *  path answers IDENTICALLY per cause because client retry logic keys on the shape (three hand-built
-     *  copies of the 529 drifted; review 2026-07-22 round 3). [outcome] names only a known observation cause. */
+     *  copies of the 529 drifted; review 2026-07-22 round 3). [outcome] names a more specific observation cause;
+     *  without one the request is recorded as [OutcomeTag.REFUSED]. */
     suspend fun respondRefusal(call: ApplicationCall, cause: FailureCause, outcome: OutcomeTag? = null) {
         val answer = ClientWire.answer(cause, AT_ADMISSION)
         answer.shouldRetry?.let { call.response.header(SHOULD_RETRY_HEADER, it.toString()) }
@@ -80,9 +83,16 @@ internal class AdmissionResponses(private val voice: HeadVoice) {
                 bodies.envelope(answer.type.wireName, cause, answer),
                 statusLine(checkNotNull(answer.status) { "an admission answer is an HTTP status" }),
                 observations = RequestObservation.of(call),
-                outcome = outcome?.wire ?: "refused",
+                outcome = outcome?.wire ?: refusalOutcome(cause),
             ),
         )
+    }
+
+    /** The daemon's own liveness probe is refused by design and is not a refusal of anyone's work, so it keeps the
+     *  unattributed outcome it has always had; every other refusal is named. */
+    private fun refusalOutcome(cause: FailureCause): String {
+        val probe = (cause as? FailureCause.Splice.Declined)?.why == Decline.LivenessProbe
+        return if (probe) OutcomeTags.UNATTRIBUTED else OutcomeTag.REFUSED.wire
     }
 
     /** The reason phrases admission has always sent where Ktor's own differ or are missing. */

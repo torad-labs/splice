@@ -36,9 +36,10 @@ public object ResponsesReplies : ReplyReader {
      * Two rows before OpenAI's. A 4xx after the websocket closed the same body with 1009 (message too big) is that
      * refusal again: on Oct 4 all 42 such rounds drew HTTP 400 `{"detail":"Bad Request"}` over SSE, a body that names
      * nothing, so it reads as too long, which Claude Code compacts on; its words were about a request the provider could
-     * not read, so it quotes none, and a provider that named its own overflow keeps its reading. Then a 4xx naming
-     * encrypted_content is the encrypted-reasoning contract (Grok Build and the ChatGPT backend reject a replayed
-     * reasoning item they cannot decrypt), which the stale-reasoning amend serves (ResponsesFailureAmend).
+     * not read, so it quotes none, and a provider that named its own overflow keeps its reading. Then a 400 or 422
+     * refusing a reasoning item's encrypted_content ([refusesStaleReasoning]) is the encrypted-reasoning contract (Grok
+     * Build and the ChatGPT backend reject a replayed reasoning item they cannot decrypt), which the stale-reasoning
+     * amend serves (ResponsesFailureAmend).
      */
     override fun http(reply: FailedReply): FailureCause.Provider {
         val standard = OpenAiReplies.http(reply)
@@ -47,18 +48,36 @@ public object ResponsesReplies : ReplyReader {
         return when {
             sizeRefusal && standard !is FailureCause.Provider.TooLong ->
                 FailureCause.Provider.TooLong(limitTokens = null, whileAnswering = false)
-            refusesStaleReasoning(reply.status, reply.body) ->
+            // Only a generic reading gives way: a reply OpenAI's rows already named (too long, a limit, a login, a
+            // missing model) keeps that reading, whatever its words mention.
+            generic(standard) && refusesStaleReasoning(reply.status, reply.body) ->
                 FailureCause.Provider.Rejected(staleReasoning = true, standard.said)
             else -> standard
         }
     }
 
-    /** Whether a reply refuses reasoning this conversation can no longer send: a 4xx naming encrypted_content. The one
-     *  predicate this reading and the stale-reasoning amend both key off (ResponsesFailureAmend), so the amend can
-     *  never miss a reply this reader names, which a narrower match on the amend side once did (review 2026-07-24). */
-    public fun refusesStaleReasoning(status: Int, body: String): Boolean =
-        status in HttpStatus.BAD_REQUEST until HttpStatus.INTERNAL_SERVER_ERROR &&
-            body.contains(ENCRYPTED_CONTENT, ignoreCase = true)
+    /** Whether a reply refuses reasoning this conversation can no longer send. The one predicate this reading and the
+     *  stale-reasoning amend both key off (ResponsesFailureAmend), so the amend can never miss a reply this reader
+     *  names, which a narrower match on the amend side once did (review 2026-07-24).
+     *
+     *  Narrowed 2026-11-09 (audit): it was any 4xx whose raw body held the word, so a 401 or 429 that named the field,
+     *  a validation error echoing the request, or a backend refusing the `include` value itself read as stale
+     *  reasoning, which ends the turn for good and evicts the conversation's reasoning. Now it is a 400 or 422 whose
+     *  error is `invalid_encrypted_content`, or whose message names a reasoning item's encrypted_content (as in
+     *  "provided without its required 'encrypted_content'"), and never the `include` value
+     *  `reasoning.encrypted_content`, which is a request this head shaped, not reasoning it carried. A body that is no
+     *  JSON object is read as its own message. */
+    public fun refusesStaleReasoning(status: Int, body: String): Boolean {
+        if (status != HttpStatus.BAD_REQUEST && status != HttpStatus.UNPROCESSABLE_ENTITY) return false
+        val error = OpenAiErrorEnvelope.of(body)
+        if (error?.names(INVALID_ENCRYPTED_CONTENT) == true) return true
+        val words = if (error == null) body else error.message.orEmpty()
+        return words.contains(ENCRYPTED_CONTENT, ignoreCase = true) &&
+            !words.contains(INCLUDE_ENCRYPTED_CONTENT, ignoreCase = true)
+    }
+
+    private fun generic(reading: FailureCause.Provider): Boolean =
+        reading is FailureCause.Provider.Rejected || reading is FailureCause.Provider.Unrecognized
 
     override fun event(event: FailedEvent): FailureCause.Provider = when (event.type) {
         INCOMPLETE_EVENT ->
@@ -89,4 +108,6 @@ public object ResponsesReplies : ReplyReader {
 }
 
 private const val ENCRYPTED_CONTENT = "encrypted_content"
+private const val INVALID_ENCRYPTED_CONTENT = "invalid_encrypted_content"
+private const val INCLUDE_ENCRYPTED_CONTENT = "reasoning.encrypted_content"
 private const val CONTENT_FILTER = "content_filter"

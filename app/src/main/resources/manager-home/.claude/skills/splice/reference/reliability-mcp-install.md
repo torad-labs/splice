@@ -1,4 +1,4 @@
-Last read: 2026-10-15 against splice 0.4.0 (feat/v0.4.0)
+Last read: 2026-11-09 against splice 0.4.0 (feat/v0.4.0)
 
 # Reliability, MCP, code mode, install and troubleshooting
 
@@ -19,13 +19,16 @@ the code wins and the line says so.
 | Retry is total | A known error gets its own plan. Every other error gets a bounded generic retry and an honest message. No failure ends a turn without one of the two. |
 | Idle is a probe | Silence from the model is a question, never a verdict. splice acts only on a dead path, by re-anchoring (resuming the stream). It never reaps a model that is thinking in silence. |
 
-Source: repo `CLAUDE.md` "Project laws"; `core/src/main/kotlin/splice/core/config/Knob.kt` lines 227-230 and
-271-281; `core/.../turn/FailureCause.kt` lines 96-99; `integrations/upstream/.../retry/RetryPolicy.kt` lines 207-218.
+Source: repo `CLAUDE.md` "Project laws"; `core/src/main/kotlin/splice/core/config/Knob.kt` (the note above
+`UPSTREAM_TIMEOUT_MS` on the retired retry knobs, and the `STREAM_IDLE_MS` entry); `core/.../failure/FailureCause.kt`
+lines 1-26 and 161 (`Provider.Unrecognized`); `integrations/upstream/.../retry/RetryEngine.kt` lines 46-64, 151-161
+and 237-243.
 
 Only a few verdicts are never retried, because the same bytes get the same answer: a credential rejected again
 after a refresh, a context overflow (Claude Code compacts instead), a content-policy refusal, a refusal the
 vendor module names, a spent plan window (the reset is the wait), an `encrypted_content` decrypt error.
-Source: `RetryPolicy.kt` lines 118-123, 148-182.
+Source: `RetryEngine.kt` lines 163-190 (`Rows.provider`, `Rows.verdict`) and 246-263 (`Logins`);
+`integrations/upstream/.../retry/limits/RetryLimits.kt` lines 80-89.
 
 ### 1.2 The layers, in order
 
@@ -36,11 +39,11 @@ Source: `RetryPolicy.kt` lines 118-123, 148-182.
 | Stream re-issue | stream torn after a 2xx, before the client saw a byte | 2 re-issues per turn |
 | Body amendment | a 400 that a dialect knows how to repair | one amended re-send per turn |
 | Re-anchor | stream cut or stalled after content began | splice re-sends from what it delivered. ChatGPT, Muse and other Responses heads: up to 5 times unless a tool call had started. Other heads only where measured to continue (Kimi, or `reanchor_prefill = true`) |
-| Client retry | Claude Code receives `overloaded_error` | Claude Code re-sends. splice launches every client with `CLAUDE_CODE_RETRY_WATCHDOG=1` (persistent retry), so a rate-limit hold longer than the default retry budget does not end the session |
+| Client retry | Claude Code receives `overloaded_error` | Claude Code re-sends. splice launches every client with `CLAUDE_CODE_RETRY_WATCHDOG=1` (persistent retry), so a rate-limit hold longer than the default retry budget does not end the session. It also plants `CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES=2`, because the client's limit for re-sending a non-streaming request whose own timer fired is unlimited when that is unset. That limit does not bound a cut by Bun's built-in fetch timeout at about 360 s, which the client does not count and which re-sent one request 228 times on Nov 8-9, so splice plants `API_FORCE_IDLE_TIMEOUT=0` too: the client then passes `timeout: false` to fetch and the head's own deadline answers a non-streaming request first. A held streaming turn sends the client only keepalives, and Claude Code's stream watchdog gives up about 300 s plus `CLAUDE_STREAM_IDLE_TIMEOUT_MS` after the last model event, shows "response stalled" and re-sends (14 pairs in 75 minutes on Nov 6). splice plants that variable as the session's `API_TIMEOUT_MS`, the wall every hold ends before, and plants `CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS=300000` so the client's no-byte watchdog keeps the 300 s it had |
 
-Source: `Knob.kt` 219-245; `RetryPolicy.kt` 125-146, 233, 248-274; `integrations/upstream/.../transport/UpstreamRetryLoop.kt`
-100-110; `integrations/upstream/.../transport/TransportFailures.kt` 170-236; `features/launch/.../recipe/LaunchService.kt`
-366-378; `CHANGELOG.md` 138-141.
+Source: `Knob.kt` (the note above `UPSTREAM_TIMEOUT_MS`); `RetryEngine.kt` 46-64 and 150-271;
+`integrations/upstream/.../retry/RetryBudgets.kt` 46-66; `features/launch/.../recipe/LaunchService.kt` 370-403;
+`CHANGELOG.md` 160-163.
 
 ### 1.3 Known errors and their plans
 
@@ -53,12 +56,19 @@ Source: `Knob.kt` 219-245; `RetryPolicy.kt` 125-146, 233, 248-274; `integrations
 | bare 429 after retries run out | the account is held 20 s without inventing a reset. The shared hold never exceeds 120 s |
 | grok spending-limit 403, any 402 | treated as a 429 by every layer |
 | every account of a head exhausted | refused at admission, zero upstream calls, with the earliest reset when known |
-| DNS failure | its own schedule: 1 s, 2 s, 4 s |
-| 5xx, 408, resets, timeouts, TLS | the generic curve. A `Retry-After` is obeyed up to 15 s |
-| 4xx other than the fixed verdicts above | still retried on the generic curve (about 1.5 s), because a 403 has been seen as overload |
+| a path that gives no answer: a name that does not resolve (DNS), a refused connection, a failed TLS handshake, a reset, close or timeout before any reply | waited out at 1, 2, 4, 8, 16, 30, 30 and 30 s (about two minutes in all, enough to outlast a local model server's restart), then the turn ends |
+| 503, 529 or a code that spells an overload | waits of 2, 4, 8, 15 and 30 s (about a minute). A stated `Retry-After` sets the least a wait may be, so one of 15 s or less is waited out; a longer one follows the stated-reset rows above. A local model that is still loading is then asked every 60 s, up to 5 minutes in all. Then the turn ends |
+| 500, 502, 504 | while the provider's stream has not begun, re-sent three times, after 200, 400 and 800 ms. Once it has begun, continued from what arrived where the head can continue (1.2) |
+| 403 | another pooled login takes the turn before content, if one is free; otherwise it ends. It is not re-sent on the same login |
+| 400 the provider rejected, 404 that names a model, 413 | end at once. A 400 over reasoning the provider cannot use is first re-sent once without it (1.2) |
+| a status the provider's reader does not name: 408, 409, 422, a 404 that names no model, an unusual 5xx | sent once more at once, then the turn ends |
 
-Source: `RetryPolicy.kt` 207-239, 290; `integrations/upstream/.../retry/RateLimitCooldown.kt` 392, 403;
-`integrations/upstream/.../retry/PlanHold.kt`; `UpstreamTransport.kt` 335-336; `CHANGELOG.md` 560-574 and 1625.
+Source: `integrations/upstream/.../retry/limits/RetryLimits.kt` 26-89; `RetryBudgets.kt` 17-47 and 68-69;
+`integrations/upstream/.../retry/RateLimitCooldown.kt` 284, 295; `integrations/upstream/.../retry/PlanHold.kt`;
+`RetryEngine.kt` 152-206 (`Rows`) and 217-244 (`Streams`); which status becomes which cause is read in
+`integrations/dialects/anthropic/.../failure/AnthropicReplies.kt` 69-143 and
+`integrations/upstream/.../failure/OpenAiReplies.kt` 62-119, and which transport failure is an unreachable path in
+`integrations/upstream/.../transport/TransportFaults.kt` 43-52; `CHANGELOG.md` 646-660 and 1770.
 
 ### 1.4 The idle probe: four timers
 
@@ -67,46 +77,90 @@ Source: `RetryPolicy.kt` 207-239, 290; `integrations/upstream/.../retry/RateLimi
 | `firstByteTimeoutMs` | 90000 | before Claude Code has seen any content: silence past it asks the path whether it is alive |
 | `streamIdleMs` | 90000 | after content began: the same question |
 | `stallReanchorMs` | 20000, armed only on heads measured to continue from a prefill | after content began: cancel the round and re-send from what was delivered. `0` turns it off for a head |
-| `upstreamTimeoutMs` | 900000 (15 min), restart to change | the whole-turn wall: no model, tool or reasoning event for this long ends the turn. Keepalive pings do not renew it |
+| `upstreamTimeoutMs` | 1800000 (30 min), restart to change | the whole-turn wall: no model, tool or reasoning event for this long ends the turn. Keepalive pings do not renew it |
 
 How the probe works: a round past a tier is asked whether its socket still answers. A path that answers is held and polled on. Only a path that has gone quiet too is reaped, and
-the re-anchor machinery then resumes it. A turn ended by the wall reads `splice progress timeout expired after
-Nms without upstream progress; retry`, and the console says "Given up after no progress".
+the re-anchor machinery then resumes it. A turn ended by the wall reads `[splice] <head> made no progress for 30
+minutes.` (the figure is the turn's budget) and then `Claude Code sends this turn again.`, and the console says "Given
+up after no progress". A turn that never got to start reads `<head> could not start this turn within 30 minutes.`, and
+one held to the session's own time limit reads `<head> made no progress before this session's time limit.`
 Do not lower `streamIdleMs` to cure a slow model. It buys only how long the person waits before splice starts
 healing. A head that needs a longer wait names it in its own overrides, with a reason.
 
-Source: `Knob.kt` 253-305; `integrations/upstream/.../retry/Watchdog.kt` 1-9, 48-62, 140-160;
-`app/src/main/resources/console/kit.js` 140-160.
+Source: `Knob.kt` (the `UPSTREAM_TIMEOUT_MS`, `FIRST_BYTE_TIMEOUT_MS`, `STREAM_IDLE_MS` and `STALL_REANCHOR_MS` entries);
+`integrations/upstream/.../retry/Watchdog.kt` 1-9, 58-70, 179-199; `app/src/main/resources/console/kit.js` 237-259.
 
 ### 1.5 Error classes and what the person sees
 
-Claude Code sees one of seven Anthropic error types. splice chooses the type from the cause and from whether
-any content had already reached the client. A failure that reaches the transcript reads
-`[SPLICE-<TYPE>] <one sentence>`, for example `[SPLICE-OVERLOADED] ...`. The sentence is plain prose, never the
-provider's raw JSON. The Requests page words (the "Requests word" column) come from the outcome tag.
+Claude Code sees one of seven Anthropic error types. splice chooses the type, the HTTP status and the
+`x-should-retry` header from the cause and from how far the turn had got (`ClientWire`), and writes the line from the
+cause alone (`SpliceLines`). A failure that reaches the transcript reads `[splice] <what happened>. <what happens
+next>.`: one or two sentences of at most 240 characters. The first names the head by its launch command (`<head>`
+below, for example `claudex`). The second is `Claude Code sends this turn again.` where the answer is one Claude
+Code re-sends, and otherwise says what the person does. A provider's own short words follow a colon on a refusal, a
+rejected request, a spent account or a failure splice does not recognize, and nowhere else. Its raw JSON never
+reaches a line. Times read in the machine's zone, as `Nov 10, 1:05 AM CST`. Once model content has reached the client
+the type is the cause's own and Claude Code sends nothing again, so the second sentence is the person's. When the
+identical request already ended in an answer Claude Code re-sends, the next such ending is told as a stop: the first
+sentence adds `after Claude Code sent this turn again, so this turn stopped`, and the type is `invalid_request_error`,
+so the loop ends.
 
-| situation | wire type | Requests word | what happens next |
+| situation | wire type before content | Requests word | the line the person reads, and what happens next |
 |---|---|---|---|
-| provider overloaded, 5xx, reset, stall before content | `overloaded_error` | Overloaded, Network error, Given up after no progress | splice retries (1.2), then Claude Code re-sends |
-| stream cut after content began | `overloaded_error` | Cut off | splice re-anchors (1.2). If a tool call had started the turn ends: the person re-sends |
-| plan window spent | `rate_limit_error` | no word (the window shows its lock and reset time) | text: `Rate limit exceeded: the upstream reports this plan's <window> window is used up until <time>. The session waits and resumes after the reset.` Claude Code waits and resumes. Sessions page: At limit |
-| burst 429 | `rate_limit_error` | Rate limited | 1.3. Persistent Claude Code sleeps until the reset |
-| every login of a head spent | `rate_limit_error` | No quota | refused locally until a reset or a new login |
-| splice holds no credential | `authentication_error` | Signed out | nothing to retry. The person signs in (6.3) |
-| provider rejected the credential after a refresh | `authentication_error` | Credentials refused | the person re-logs in (6.3) |
-| 403 from the provider | `permission_error` | No access | not retried |
-| refusal, content filter, context overflow, bad request | `invalid_request_error` | Invalid request | not retried. An overflow before the answer makes Claude Code compact |
-| over a daily budget set to block | HTTP 403, outcome `error:budget-blocked` | Over budget | answered 403 so Claude Code does not retry. Raise the budget or wait |
-| head queue full | HTTP 529 `gateway at capacity` | Too many at once | `maxInflight` (12) turns run, `maxQueued` (512) wait. Claude Code retries |
+| provider overloaded: 503, 529 or a code that spells an overload | `overloaded_error` | Provider error. Overloaded when the provider sent it inside the stream | `<head> stayed overloaded.` A local model that is still loading reads `<head> is still loading its model.` Then `Claude Code sends this turn again.` The line comes after splice's own waits (1.2, 1.3) |
+| provider server error: 500, 502, 504 | `overloaded_error`. After content, `api_error` | Provider error | `<head> kept failing with a server error.` A 504 reads `<head> timed out before answering.` After content they read `<head> kept failing mid-answer with a server error.` and `<head> timed out mid-answer.` A 401 whose body names a key this login never sent is the provider's own fault: `<head>'s provider rejected a key this login never sent, a fault on its side.` Then `Claude Code sends this turn again.`, or `Send the message again.` after content |
+| no answer from the provider: the name does not resolve, the connection is refused, the TLS handshake fails, or it closes, resets or times out before any reply | `overloaded_error` | Network error | `<head> could not reach its provider because the address did not resolve.` / `<head> could not open a secure connection to its provider.` / `<head>'s provider refused the connection.` / `<head>'s provider closed the connection before answering.` / `<head> stopped reading the request while splice was sending it.` A model server on this machine reads `<head>'s model server is not running.` or `<head>'s model server closed the connection before answering.` Then `Claude Code sends this turn again.` The line comes after the waits of 1.3 |
+| stream cut after content began | after content, `overloaded_error`. An event too large to read: `api_error` | Cut off. Stream error for the too-large event | `<head>'s answer kept getting cut off.` with ` inside a tool call` added when one was open. The too-large event reads `<head> sent a stream event larger than splice accepts.` Then `Send the message again.` splice re-anchors first (1.2). If a tool call had started the turn ends: the person re-sends |
+| silence: no first byte in time, or quiet mid-answer, past the idle probe (1.4) | `overloaded_error` | Given up after no progress | `<head> did not start answering in time.` Once content showed, `<head> went silent mid-answer and did not recover.` Then `Claude Code sends this turn again.`, or `Send the message again.` after content |
+| the whole-turn wall spent (`upstreamTimeoutMs`, 1.4) | `overloaded_error` | Given up after no progress | `<head> made no progress for 30 minutes.`, `<head> could not start this turn within 30 minutes.` when it never began, or `<head> made no progress before this session's time limit.` when a hold ran to the session's own time limit. Then `Claude Code sends this turn again.` |
+| a limit with a stated reset (a spent plan window) that the session can wait out | none: the turn waits | none while it waits | While it waits the turn shows `<head> reached its 5-hour limit. This turn continues in 12 minutes.`, or past an hour `<head> reached its 5-hour limit. This turn waits until Nov 10, 1:05 AM CST and continues then.` Where a probe may find the limit lifted sooner: `<head> reached its 5-hour limit, which resets Nov 10, 1:05 AM CST. This turn waits and continues then, or sooner if the limit lifts.` A limit that names no window says `<head> is at its usage limit` in place of the window. Sessions page: At limit |
+| the same limit, when the session's own time limit cannot hold the wait | HTTP 429 `rate_limit_error`, no `x-should-retry` | Plan limit, with the window's lock and reset time. Rate limited when the provider named no plan window | `<head> reached its 5-hour limit, which resets Nov 10, 1:05 AM CST. Claude Code retries at that time.` Claude Code sleeps until the time and sends the turn again. On a head with another login: `Every <head> login is at its usage limit, the first until Nov 10, 1:05 AM CST. Claude Code checks again in 30 seconds and continues on the first login that frees.` |
+| a held limit that ended without the turn going on | `invalid_request_error`, `x-should-retry: false`. A held overload ends as `overloaded_error` | Plan limit, or Rate limited | After 7 days: `<head> is still at its usage limit after 7 days, so this turn stopped.` A limit that did not lift at three of the times it stated: `<head>'s usage limit did not lift at the times it stated, so this turn stopped. Its next stated reset is Nov 10, 1:05 AM CST.` A reset more than 7 days away: `<head> reached its weekly limit, which resets Nov 20, 1:05 AM CST. That is longer than a turn can wait, so send the message again then.` |
+| burst 429: no reset and no window named | `overloaded_error`. HTTP 429 `rate_limit_error` at admission or without streaming | Rate limited | Between waits, only for a wait of 10 s or more: `<head> is limiting requests for a moment. This turn tries again in 16 seconds.` When the waits (1.3) are spent: `<head> is still limiting requests.` and `Claude Code sends this turn again.` A 429 the head relays as the provider sent it reads Rate limited too |
+| a window named spent with no reset, or a billing-cycle limit | `invalid_request_error`, `x-should-retry: false` | Rate limited | `<head> reached its weekly limit and did not say when it resets: <the provider's words>.` Another pooled login takes the turn first (1.3) |
+| spent account: any 402, or a 429 naming insufficient quota | held as a limit is; handed over as HTTP 429 `rate_limit_error` | Rate limited | While held: `<head>'s xAI account cannot pay for this turn: <the provider's words>. Add credit with xAI and this turn continues by itself.` A subscription reads `<head>'s xAI subscription is not active. Renew it with xAI and this turn continues by itself.` Handed to Claude Code, the first sentence stays and the second is `Claude Code sends this turn again.` A head with no provider to name reads `<head>'s account cannot pay for this turn` |
+| splice holds no credential | HTTP 403 `permission_error`, `x-should-retry: false` | Signed out. A turn refused at admission for it reads Credentials refused | `<head> has no login yet.` `Run <the head's login command>, then send the message again.` (`Sign <head> in, then send the message again.` where the head has no login command.) Nothing to retry. The person signs in (6.3) |
+| the provider rejected a login splice holds, after a refresh | HTTP 403 `permission_error`, `x-should-retry: false` | Provider error. Credentials refused when it arrived inside the stream | `<head>'s login expired and could not be renewed.` `Run <the head's login command>, then send the message again.` splice renewed it once first (2 s and 4 s apart while the token endpoint could not answer), then moved the turn to another login if one was free. The person re-logs in (6.3) |
+| the provider rejected the login Claude Code forwarded | HTTP 401 `authentication_error`, `x-should-retry: false` | as the row above | `<provider or head> did not accept this session's login.` `Run /login, then send the message again.` splice never renews a login it only forwards |
+| the provider refuses this request: a 403, a rejected 400, a refusal, a content filter, a model it does not serve | HTTP 400 `invalid_request_error`, `x-should-retry: false` | Provider error. Invalid request when the verdict arrived inside the stream | `<head>'s account may not use this model: <the provider's words>.` / `<head> rejected the request as sent: <the provider's words>.` / `<head> could not use the earlier reasoning in this conversation: <the provider's words>.` / `The model on <head> declined to answer: <the provider's words>.` / `<head> declined this request under its usage policy: <the provider's words>.` / `<head>'s content filter stopped this answer: <the provider's words>.` / `<head> does not serve <model>.` A model server on this machine adds `Load it in the model server, then send the message again.` A login its provider blocked until its owner accepts new terms reads `<head>'s login <label> is blocked until its owner accepts updated terms.` `Accept them in <where> with that account, then send the message again.` Claude Code sends none of them again |
+| context overflow | HTTP 400 `invalid_request_error`, `x-should-retry: false` | Provider error. A request the size preflight refused reads off its tag, for example Compaction preflight compactable | `This prompt is too long for <head>.` and, where the window is known, `Its model holds 262,144 tokens.` That wording makes Claude Code compact. A compaction that is itself too long reads `This conversation is too long for <head> to summarize`, a first message, which cannot be compacted, `This first message is too long for <head>`, and an answer that filled the window `The answer filled <head>'s context window before it finished, so the prompt is too long to continue` |
+| a failure no table names | a 4xx the provider answered: HTTP 400 `invalid_request_error`. Any other: `overloaded_error` | Provider error | `<head> refused this turn in a way splice does not recognize: <the provider's words>.` for the 4xx, not re-sent. `<head> failed in a way splice does not recognize: <the provider's words>.` and `Claude Code sends this turn again.` for the rest. splice sent it once more first (1.3) |
+| the model finished with nothing, or its tool call broke off | `overloaded_error`. A tool call that broke off: `api_error` after content | read off the tag (unverified) | `<head> finished without an answer.` or `<head> finished thinking without an answer.` splice asks again once first. A broken tool call reads `<head>'s answer broke off inside a tool call.` or `<head>'s answer grew larger than splice can hold.` Then `Claude Code sends this turn again.` |
+| over a daily budget set to block | HTTP 400 `invalid_request_error`, `x-should-retry: false` | Over budget | `<head> reached its daily budget of $2.00, which resets Oct 27, 12:00 AM CDT.` `Send the message again after that time.` Raise the budget or wait |
+| head queue full | HTTP 529 `overloaded_error`, reason phrase `Gateway At Capacity` | Too many at once | `<head> is already running 12 turns, its limit.` `Claude Code sends this turn again.` The figure is the head's `maxInflight` (12 by default). `maxQueued` (512) turns wait before this |
+| splice refuses the request before sending it | HTTP 400 `invalid_request_error`, `x-should-retry: false`. A body over the limit: HTTP 413 | Invalid request or Refused (unverified which) | `This request is 40 MB, more than the 32 MB splice accepts.` / `This request reached splice incomplete.` / `splice could not parse this request.` / `<head> does not serve <model>.` / `<head> cannot carry the output format this request asks for, so the turn was not sent.` The last has one wording for each control a head's provider cannot carry (structured output, tool choice, top_k, stop sequences, service tier, cache-control breakpoints, strict tool calling, a request field it does not recognize, and the rest). `This request needs more memory than splice can give one request.` is final. `splice is short of memory right now.` (HTTP 529) and `This request took too long to reach splice.` (HTTP 408) are re-sent |
 | daemon restarting | no answer: the request waits for the next daemon | none | the next daemon answers it (1.7) |
-| cause splice cannot name | `overloaded_error` | Internal error | offered to Claude Code as retryable. Read `splice logs` |
-| code mode failure | `invalid_request_error` | a line `splice [code] reason` | 3.3 |
-| local 401, `invalid local gateway credentials` | HTTP 401 | n/a | the session's local key is not one this daemon accepts. Relaunch the session (cause unverified) |
+| a turn running when the daemon restarts, or when its head stops | `overloaded_error` | splice restarted | `splice restarted during this turn.` or `<head> is shutting down.` Then `Claude Code sends this turn again.` Stopped from the console: `This turn was stopped from the splice console.`, `invalid_request_error`, not re-sent |
+| a compaction, or a held non-stream turn, whose answer never finished | `overloaded_error` | read off the tag (unverified) | `The summary this request was waiting on did not finish on <head>.` For a held turn that is no compaction, `The answer this request was waiting on did not finish on <head>.` Then `Claude Code sends this turn again.` |
+| cause splice cannot name | `overloaded_error`. An exception that escaped the turn's own handling: `api_error` | Internal error | `This turn failed because of a fault in splice.` Then `Claude Code sends this turn again.` Read `splice logs` |
+| code mode failure | `invalid_request_error`, except a runtime that did not start, which is re-sent | read off the tag (unverified) | `<head>'s code-mode runtime did not start.` / `<head>'s code-mode run lost its state, so this turn stopped.` / `<head> sent something splice cannot translate, so this turn stopped.` State that cannot be saved or read says why: `<head>'s code-mode history reached its storage limit, so this turn stopped.`, or the history is invalid, the state directory is not safely accessible, storage I/O failed, the state disk is full, or memory was unavailable. 3.3 |
+| local 401: the session's splice key is wrong, or the head serves its logins only to sessions splice started | HTTP 401 `authentication_error` | read off the tag (unverified) | `This session's splice key is not valid.` `Start the session again from splice.` Or `<head> serves the logins it holds only to sessions splice started, and this session was started another way.` `Start this session again with the head's own command, such as <head> --resume.` Or, for splice's own key sent where the login belongs, `This session sent splice's own key where your own login belongs.` `Unset <the variables> in the shell that launched it, then start the session again.` In every case relaunch the session |
 
-Source: `core/.../turn/WireType.kt` 31-90; `core/.../turn/TurnOutcome.kt` 14-22; `features/turns/.../pipeline/FailureText.kt`
-36-51; `core/.../usage/QuotaHeaders.kt` 113-116; `features/turns/.../admission/AdmissionGate.kt` 80-83 and
-`AdmissionResponses.kt` 141; `core/.../perf/OutcomeTag.kt`; `app/src/main/resources/console/kit.js` 98-160;
-`docs/specs/v0.4.0.md` line 584; `CHANGELOG.md` 1114-1116.
+The Requests word is read off the outcome tag (`kit.js` `OUTCOME_WORD`), not off the line. `error:upstream-failed` (the
+retry loop gave up on an answer the provider sent) reads Provider error. `error:rate-limited` and `error:rate-limit-relayed`
+read Rate limited, `error:plan-limit` Plan limit, `error:conn-reset` Network error, `error:turn-cap` and a stalled
+stream Given up after no progress, a cut stream Cut off, `error:upstream-frame-too-large` Stream error,
+`error:at-capacity` Too many at once, `error:budget-blocked` Over budget, `error:auth-missing` Signed out,
+`error:restarted` splice restarted, `error:unexpected` Internal error and `empty_model` Empty answer. A turn that ended
+on a type inside the stream is tagged `failure:<type>` and reads Overloaded, Rate limited, Invalid request,
+Credentials refused, No access, Not found or Provider error. A tag with no word is read off its name.
+
+`error:all-accounts-exhausted` still has a word, No quota, but I found no Kotlin code that writes it. A head whose logins
+are all spent selects the login that resets first, and its turn is held or handed over as the rows above say
+(unverified: `LocalRefusal.refuseNoLogin` says selection fails only for an unusable credential or an owner action
+being probed). The row 1.3 gives for "every account of a head exhausted" may be stale for the same reason.
+
+Source: `core/.../failure/ClientWire.kt` 18-104 (`WireAnswer`, `answer`), 177-237 (`Kept`) and 243-305 (`OwnTypes`);
+`core/.../failure/policy/FailureFamilies.kt` 12-72; `core/.../failure/FailureCause.kt` 15-266; `core/.../turn/TurnOutcome.kt`
+17-25; `core/.../failure/SpliceLine.kt` 6-14 and `SpliceLines.kt` 65-163 (`ending`, `waiting`, `fit`); the sentences in
+`ProviderSentences.kt` 11-171, `PathSentences.kt` 11-68, `SpliceSentences.kt` 11-272, `HoldSentences.kt` 21-169,
+`AccountSentences.kt` 9-20 and `CodeModeStorageSentences.kt` 5-31, all under `core/.../failure/`; the time and size
+wording in `Spoken.kt` 30-104; which waits are told in `features/turns/.../hold/TurnWaitsAtHead.kt` 36-39 and
+`RetryBudgets.kt` 13-15; `features/turns/.../admission/AdmissionResponses.kt` 77-117 and `AdmissionGate.kt` 79-86;
+`HeadBudgetTest.kt` 83-118 (the budget line, status and tag); `features/turns/.../turn/TurnKnownEnd.kt` 83-107 and
+`features/turns/.../pipeline/TurnPipeline.kt` 47-70 (which tag an ending writes); `core/.../perf/OutcomeTag.kt`;
+`app/src/main/resources/console/kit.js` 191-262 and `requests.js` 63-77 (the words); `docs/specs/v0.4.0.md` line 584;
+`CHANGELOG.md` 1208-1210.
 
 ### 1.6 The knobs, and where they live in splice.toml
 
@@ -118,7 +172,7 @@ belongs under that head's `[heads.<key>.overrides]`. The field syntax is in `tom
 | key | default | change takes effect |
 |---|---|---|
 | `firstByteTimeoutMs`, `streamIdleMs`, `stallReanchorMs` | 90000, 90000, 20000 | next turn (hot) |
-| `upstreamTimeoutMs` | 900000 | restart |
+| `upstreamTimeoutMs` | 1800000 | restart |
 | `maxInflight`, `maxQueued` | 12, 512 (0 = unlimited) | next admission (hot) |
 | `progressLine` | true | next heartbeat (hot) |
 | `maxRequestBytes`, `requestReadTimeoutMs`, `ingressReadIdleMs` | 33554432, 30000, 30000 | hot |
@@ -134,11 +188,11 @@ daemon. An edit of `splice.toml` is read only at boot, so any key changed there 
 its marking. The exceptions are `context_window` edits, `[daemon] mcp_share`, `update_channel`, `auto_update`
 and the `[compaction]` tables, which the daemon re-reads from the file.
 
-The example file's comment at `splice.example.toml` line 825 shows `maxInflight = "0"`. That is stale. The code
+The example file's comment at `splice.example.toml` line 867 shows `maxInflight = "0"`. That is stale. The code
 default is 12. Reasoning effort is restart-only on purpose: it is part of the prompt-cache key.
 
-Source: `Knob.kt` 12-49, 192-200, 219-305; `app/src/main/resources/splice.example.toml` lines 3-7, 800-809, 841-892;
-`AGENTS.md` lines 87-104; `CHANGELOG.md` 189-194.
+Source: `Knob.kt` (the header comment on which knobs are live, and the `MAX_INFLIGHT` through `STALL_REANCHOR_MS` entries);
+`app/src/main/resources/splice.example.toml` lines 3-7, 831-841, 865-940; `AGENTS.md` lines 103-127; `CHANGELOG.md` 261-266.
 
 ### 1.7 What a restart cuts, and how sessions recover
 
@@ -163,8 +217,8 @@ Source: `Knob.kt` 12-49, 192-200, 219-305; `app/src/main/resources/splice.exampl
   work around it.
 
 Source: `features/lifecycle/.../restart/RestartCommand.kt` header; `features/lifecycle/.../restart/RestartAfterCompactions.kt`
-header; `features/lifecycle/.../start/DaemonLaunch.kt` line 152; `README.md` lines 334, 940-944; `CHANGELOG.md` 142-145,
-1114-1116; `docs/specs/mcp-hub.md` lines 61-65, 142-147.
+header; `features/lifecycle/.../start/DaemonLaunch.kt` line 157; `README.md` lines 374, 1018-1022; `CHANGELOG.md` 164-168,
+1208-1210; `docs/specs/mcp-hub.md` lines 61-65, 230-235.
 
 ## 2. MCP: the host and the hub
 
@@ -186,9 +240,9 @@ session starts its own MCP servers` and Claude Code runs its own.
 `docs/specs/mcp-hub.md` is the approved design plus desk proofs on Claude Code 2.1.296. Read it for the why.
 Where it says "will", trust the code and `CHANGELOG.md` 160-186. The hub port 3095 is a constant in the code.
 
-Source: `README.md` 734-757; `CHANGELOG.md` 160-186; `integrations/mcp/.../hub/McpHubGate.kt` 23-52;
-`app/.../McpHubWiring.kt` 92-103; `app/.../ControlLaunchWiring.kt` 42; `features/diagnostics/.../DoctorClientVersion.kt` 28-62;
-`integrations/claude-code/.../mcp/McpHubLaunch.kt` 36.
+Source: `README.md` 809-832; `CHANGELOG.md` 232-258; `integrations/mcp/.../hub/McpHubGate.kt` 23-52;
+`app/.../McpHubWiring.kt` 100-111; `app/.../ControlLaunchWiring.kt` 43; `features/diagnostics/.../DoctorClientVersion.kt` 28-62;
+`integrations/claude-code/.../mcp/McpHubLaunch.kt` 40.
 
 ### 2.2 How a tool server is attached, and how to add one
 
@@ -211,8 +265,8 @@ To add a server, the person runs Claude Code's own command (`claude mcp add`; it
 Scope `user` reaches every session. Then the server appears under Settings > MCP once a session starts.
 Never read `~/.claude.json` into the conversation: server entries often carry API keys in `env`.
 
-Source: `app/.../McpHostingWiring.kt` 51-84; `README.md` 740-757, 611; `core/.../topology/Topology.kt` 133-141;
-`app/.../control/mount/McpMount.kt` 30-48; `docs/specs/mcp-hub.md` lines 22-48.
+Source: `app/.../McpHostingWiring.kt` 53-94; `README.md` 815-832, 675; `core/.../topology/Topology.kt` 140-148;
+`app/.../control/mount/McpMount.kt` 32-77; `docs/specs/mcp-hub.md` lines 22-48.
 
 ### 2.3 The keys that govern hosting
 
@@ -226,8 +280,8 @@ Source: `app/.../McpHostingWiring.kt` 51-84; `README.md` 740-757, 611; `core/...
 | `[defaults] mcpRequestTimeoutMs`, `mcpInitializeTimeoutMs` | 1800000, 60000 | hot |
 | `[defaults] mcpSlice` | `app-mcp.slice` | the systemd slice servers spawn into. Restart |
 
-Source: `core/.../topology/Topology.kt` 133-141; `Knob.kt` 364-388, 462-467; `app/.../McpHostingWiring.kt` 35-47;
-`app/src/main/resources/splice.example.toml` lines 3-7, 28-41, 904-908; `README.md` 743-747, 772-777.
+Source: `core/.../topology/Topology.kt` 140-148; `Knob.kt` (the shared MCP hosting entries and `MCP_SLICE`); `app/.../McpHostingWiring.kt` 36-48;
+`app/src/main/resources/splice.example.toml` lines 3-7, 29-42, 951-955; `README.md` 818-822, 847-852.
 
 ### 2.4 The hub's files
 
@@ -242,8 +296,8 @@ Source: `core/.../topology/Topology.kt` 133-141; `Knob.kt` 364-388, 462-467; `ap
 `splice setup` with sharing on enables and starts `splice-mcp-front.socket`, but only over units splice itself
 wrote. Otherwise setup prints the command. Until the socket is on, each session starts its own servers.
 
-Source: `README.md` 599-601, 611-620, 668; `CHANGELOG.md` 132-134, 171-186; `app/.../InstallWiring.kt` 20-54;
-`install.sh` 480-486.
+Source: `README.md` 659-661, 675-688, 743; `CHANGELOG.md` 154-156, 243-258; `app/.../InstallWiring.kt` 28-111;
+`install.sh` 504-510.
 
 ### 2.5 See an MCP server's state
 
@@ -309,8 +363,8 @@ never reruns lost source. `keepCodeModeWork = "false"` keeps the journal in memo
 scripts. A script splice cannot match to the conversation falls back to the client's own history, with one
 `[code-mode]` log line.
 
-Source: `README.md` 836-882; `core/.../topology/QuirksConfig.kt` 60-79; `core/.../topology/Topology.kt` 215-240;
-`app/src/main/resources/splice.example.toml` 126-150; `Knob.kt` 217-218.
+Source: `README.md` 911-959; `core/.../topology/QuirksConfig.kt` 70-90; `core/.../topology/Topology.kt` 222-247;
+`app/src/main/resources/splice.example.toml` 145-169; `Knob.kt` (the `KEEP_CODE_MODE_WORK` entry).
 
 ## 4. Architecture brief
 
@@ -320,7 +374,9 @@ Source: `README.md` 836-882; `core/.../topology/QuirksConfig.kt` 60-79; `core/..
 2. The shim checks the daemon's version, cold-starts the daemon if down, asks it for a launch recipe over
    loopback, and execs the real `claude` with the recipe's environment. That environment carries
    `ANTHROPIC_BASE_URL` (the head's port), a derived turn key, `CLAUDE_CONFIG_DIR=~/.claude-<head>`,
-   `API_TIMEOUT_MS`, `CLAUDE_CODE_RETRY_WATCHDOG=1` and the model window variables.
+   `API_TIMEOUT_MS`, `API_FORCE_IDLE_TIMEOUT=0`, `CLAUDE_CODE_RETRY_WATCHDOG=1`, `CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES=2`,
+   `CLAUDE_STREAM_IDLE_TIMEOUT_MS` (the same value as `API_TIMEOUT_MS`), `CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS=300000` and the model
+   window variables.
 3. Claude Code posts `POST /v1/messages` to the head's loopback port. The head checks the key, admits the turn
    (`maxInflight`, `maxQueued`) and applies the standing prompt layers.
 4. The provider module builds the request in the provider's dialect: `anthropic-passthrough`,
@@ -330,8 +386,8 @@ Source: `README.md` 836-882; `core/.../topology/QuirksConfig.kt` 60-79; `core/..
    failed or cut stream is never shown as a clean answer.
 7. Perf rows, the trace and usage are written to the state dir.
 
-Source: `app/src/main/dist/bin/splice-launch` header; `README.md` 920-938; `features/launch/.../recipe/LaunchService.kt`
-350-378; `features/turns/.../head/HeadServer.kt` 1-18; `AGENTS.md` lines 29-35 (honest failures).
+Source: `app/src/main/dist/bin/splice-launch` header; `README.md` 998-1016; `features/launch/.../recipe/LaunchService.kt`
+339-392 (`buildEnv`); `features/turns/.../head/HeadServer.kt` 1-18; `AGENTS.md` lines 35-43 (honest failures).
 
 ### 4.2 The processes
 
@@ -344,10 +400,10 @@ Source: `app/src/main/dist/bin/splice-launch` header; `README.md` 920-938; `feat
 | head wrappers | `~/.local/bin/<command>` symlinks to the shim. The command's name selects the head. `splice` itself is one |
 | hub front, holders | section 2 |
 
-AGENTS.md lines 118-126 contradict themselves: line 118 says the control plane is `ControlServer.kt`, line 120
-still names the deleted Node file `src/control-server.mjs`. The code is right: `app/src/main/kotlin/splice/app/control/ControlServer.kt`.
-AGENTS.md's `/mgmt/*` table is also stale: no Kotlin route serves `/mgmt`, and the live surface is `/api/*` on the
-control plane. Source: `ControlServer.kt` 1-8, 171-187, 254-276; `grep '"/mgmt'` finds no route.
+The control plane is `app/src/main/kotlin/splice/app/control/ControlServer.kt`. No Kotlin route serves `/mgmt`: the
+live surface is `/api/*` on the control plane, and a head serves only `/health`, `/v1/models`, `/wire`, `/v1/messages`
+and `/v1/messages/count_tokens`. AGENTS.md says the same (Management API and Control plane sections).
+Source: `ControlServer.kt` 1-8, 211-229, 305-336; `features/turns/.../head/HeadEngine.kt` 171-204; `AGENTS.md` lines 85-127, 137-176.
 
 ### 4.3 The modules
 
@@ -360,7 +416,7 @@ control plane. Source: `ControlServer.kt` 1-8, 171-187, 254-276; `grep '"/mgmt'`
   `splice.example.toml`.
 - `quality/`: architecture laws. The module graph is law (`gradle/module-law.txt`).
 
-Source: `README.md` 976-1003; `gradle/module-law.txt`; `settings.gradle.kts`.
+Source: `README.md` 1054-1081; `gradle/module-law.txt`; `settings.gradle.kts`.
 
 ### 4.4 Where state lives
 
@@ -375,13 +431,13 @@ Source: `README.md` 976-1003; `gradle/module-law.txt`; `settings.gradle.kts`.
 
 The manager reads nothing in the state dir by hand: it holds `mgmt-key` and `console-open.html`, which carries the management key. Use `splice logs`, `splice status` and `splice doctor` instead. The paths here are for explanation.
 
-Stale docs on this: `splice.example.toml` line 15 says the default `state_dir` is `~/.splice`; the code default is `~/.splice/state` (`StatePaths.kt` 193), and logs sit in the folder beside it. `README.md` says other keys are read only at boot, but the code re-reads `mcp_share`, `update_channel`, `auto_update` and the `[compaction]` tables live.
+The example file's `state_dir` comment (lines 15-17) now says the same default, `~/.splice/state` (`StatePaths.kt` 202); logs sit in the folder beside it. Stale docs on this: `README.md` says other keys are read only at boot, but the code re-reads `mcp_share`, `update_channel`, `auto_update` and the `[compaction]` tables live.
 
 On this machine the state dir is `~/.claude-codex/state`, so the logs are in `~/.claude-codex/logs`. Run
 `splice doctor`: it reports which root is live and warns about a root it could not read.
 
-Source: `core/.../config/StatePaths.kt` 45-55, 144-235; `core/.../topology/Topology.kt` 117;
-`app/src/main/resources/splice.example.toml` 13-16, 981-985; `README.md` 523-535, 657-665.
+Source: `core/.../config/StatePaths.kt` 45-55, 153-258; `core/.../topology/Topology.kt` 130;
+`app/src/main/resources/splice.example.toml` 13-17, 1041-1045; `README.md` 562-574, 732-740.
 
 ## 5. Install, upgrade, rollback
 
@@ -403,7 +459,7 @@ Source: `core/.../config/StatePaths.kt` 45-55, 144-235; `core/.../topology/Topol
 A daemon that is already running keeps the old build until `splice restart`. The installer does not restart it.
 Env: `SPLICE_SHARE_DIR`, `SPLICE_BIN_DIR`, `SPLICE_JAR`, `SPLICE_SHIM`, `SPLICE_VERSION`, `SPLICE_RELEASE_BASE_URL`.
 
-Source: `install.sh` lines 7-15, 92-146, 257-331, 373-393, 464-497, 543-566.
+Source: `install.sh` lines 7-16, 93-147, 273-352, 397-417, 488-521, 569-592.
 
 ### 5.2 `init`, `install --all`, `setup`, `doctor`
 
@@ -415,8 +471,8 @@ Source: `install.sh` lines 7-15, 92-146, 257-331, 373-393, 464-497, 543-566.
 | `splice doctor [--live] [--json [--with-logs] [--out FILE]]` | seven sections: prerequisites, installation, configuration, daemon, auth, accounts, runtime. Every failing check prints its fix. `--live` sends one tiny tool call per local-runtime row and nothing else. `--json` is a redacted, shareable report |
 | `splice check-config` | the boot findings pass, no daemon. Exit 0 clean, exit 3 on any finding, all listed |
 
-Source: `app/.../cli/CommandParser.kt` 72-170; `app/.../InstallWiring.kt` 40-54; `app/.../manager/ManagerHome.kt` 1-10; `features/diagnostics/.../doctor/DoctorCommand.kt`
-64-75, 239-251; `app/.../cli/ConfigPreflight.kt` 20-50; `README.md` 160, 314-320.
+Source: `app/.../cli/CommandParser.kt` 77-201; `app/.../InstallWiring.kt` 92-111; `app/.../manager/ManagerHome.kt` 1-10; `features/diagnostics/.../doctor/DoctorCommand.kt`
+64-75, 239-251; `app/.../cli/ConfigPreflight.kt` 21-51; `README.md` 160, 352-360.
 
 ### 5.3 Upgrade, auto-update and the beta channel
 
@@ -446,8 +502,8 @@ the first moment no turn is in flight, or after the bounded wait (30 min). It ac
 exists. One try per version per daemon. Any other value of `update_channel` is a config finding.
 
 Source: `features/lifecycle/.../upgrade/UpgradeArgs.kt` 10-60; `UpgradeAuto.kt` 1-70; `UpgradeLayout.kt` 28-62;
-`UpgradeCommand.kt` 44-48; `core/.../topology/Topology.kt` 139-141; `TopologyWriter.kt` 282-287; `README.md` 104-120,
-663-665; `app/src/main/resources/splice.example.toml` 36-41.
+`UpgradeCommand.kt` 44-48; `core/.../topology/Topology.kt` 146-148; `TopologyWriter.kt` 386-391; `README.md` 104-120,
+738-740; `app/src/main/resources/splice.example.toml` 37-42.
 
 ### 5.4 Backup and rollback
 
@@ -461,7 +517,7 @@ Source: `features/lifecycle/.../upgrade/UpgradeArgs.kt` 10-60; `UpgradeAuto.kt` 
 - `splice.toml` backups: console edits keep the ten newest in `<state>/config-backups/`. `splice add` keeps none.
   A hand copy beside the file is the manager's convention (`operations.md`).
 
-Source: `install.sh` 398-446, 505-543; `README.md` 114, 602-603; `UpgradeActivation.kt` 1-45.
+Source: `install.sh` 422-470, 529-569; `README.md` 114, 662-663; `UpgradeActivation.kt` 1-45.
 
 ### 5.5 Uninstall
 
@@ -493,8 +549,8 @@ Never run `splice logs --follow` (it never returns). `splice trace` and `splice 
 content: ask first. A log line can quote up to 200 characters of an upstream error body. Never paste a key you
 find in output.
 
-Source: `features/diagnostics/.../logs/LogsCommand.kt` 1-45, 163-169; `README.md` 553-554, 322-325;
-`app/.../cli/status/StatusCommand.kt` 41-70.
+Source: `features/diagnostics/.../logs/LogsCommand.kt` 1-45, 163-169; `README.md` 600-601, 362-365;
+`app/.../cli/status/StatusCommand.kt` 41-72.
 
 ### 6.2 What `splice status` says
 
@@ -502,7 +558,7 @@ First line: `daemon running on <port>`, or `daemon stopped (starts on first laun
 Per head, the last column reads `ready` (or `ready (your login)`); `splice install` (wrapper link missing);
 `<command> login` (no credential); `out of quota until <time>`; `runtime not answering on <endpoint>` (a local
 model server is down); or `not running: <reason>` (the daemon could not build or bind the head).
-Source: `StatusCommand.kt` 56-70; `StatusTable.kt` 109-156.
+Source: `StatusCommand.kt` 56-72; `StatusTable.kt` 110-171.
 
 ### 6.3 Playbook
 
@@ -513,7 +569,7 @@ their own terminal; you type nothing secret.
 |---|---|---|
 | A head will not boot, or the whole daemon refuses to start | `splice check-config`: exit 3 lists every finding. Then `splice status` for `not running: <reason>`, then `splice logs --tail 100` for `[<key>][boot] SKIPPED` | Whole-file findings refuse boot; a single head that fails to build is skipped with its reason. Ask, back up, edit `splice.toml`, rerun `splice check-config` until exit 0, then the person restarts. In a terminal, a `splice` verb that hits a refusal offers an interactive fix session. Outside a terminal it only prints the list |
 | Port in use | `splice status` reasons: `port N is claimed by A and B; give each head its own port`, or `head 'k' has an invalid port N`. Another program: `ss -ltnp` (Linux) or `lsof -iTCP:<port> -sTCP:LISTEN` shows the holder. `splice listeners` prints the ports splice wants | Give each head a unique `port` in `[heads.<key>]`. For the control port set `[daemon] control_port` (or `SPLICE_CONTROL_PORT`). Port 3095 is the hub's and is fixed. Ask, edit, `splice check-config`, restart |
-| 401 from a provider | Requests word: Signed out (splice holds nothing) or Credentials refused (provider rejected it). `splice doctor` auth section | OAuth head: person types `splice login <head>` (add `--label <name>` for another account). API-key head: person types `splice key set <ENV_NAME>` or `<command> login`; a saved key applies on the next request, no restart. `splice key list` shows names only. If the text is `invalid local gateway credentials`, relaunch that Claude Code session |
+| 401 from a provider | Requests word: Signed out (splice holds nothing) or Credentials refused (provider rejected it). `splice doctor` auth section | OAuth head: person types `splice login <head>` (add `--label <name>` for another account). API-key head: person types `splice key set <ENV_NAME>` or `<command> login`; a saved key applies on the next request, no restart. `splice key list` shows names only. If the line is `This session's splice key is not valid.`, relaunch that Claude Code session (1.5) |
 | Quota exhausted on an account | Status row `out of quota until <time>`; Requests shows the window's lock and reset; Sessions card says At limit; `splice doctor` accounts section | It clears at the reset by itself. A head with an account pool moves to a free login. Options for the person: add an account (`splice login <head> --label <name>`), use Continue on to move the session to another head on the Sessions page, or wait |
 | Over budget | Requests word Over budget (`error:budget-blocked`) | Budgets are set in the console. The person raises or clears it |
 | A session does not come back after a restart | `splice sessions` (live or stale), `splice logs --head <key>`, the session card on Sessions (Stalled, Resumes in, Won't resume, At limit, Signed out) | Claude Code retries by itself. If the turn was cut after text began, the person re-sends. `claude-<head> -r <id>` resumes the transcript. A session that never recovers is a bug: report the log lines |
@@ -526,12 +582,12 @@ their own terminal; you type nothing secret.
 | Tools vanish from a session | `splice doctor` MCP hub row, `systemctl --user status splice-mcp-front.socket` | 2.5. Without the hub, a daemon restart can need `/mcp` in the session |
 
 Source: `app/.../head/HeadBoot.kt` 28-60; `core/.../topology/TopologyMessages.kt` 32-38; `app/.../cli/ConfigFixOffer.kt` 1-3;
-`app/.../cli/auth/KeyCommand.kt` 1-6; `app/.../cli/status/ConsoleCommand.kt` 28-46; `app/src/main/resources/console/api.js` 12-29;
-`CHANGELOG.md` 152-153, 202-208, 1117-1118, 1807-1810; `app/.../daemon/TopologyWindows.kt` 1-22;
-`core/.../model/ModelCatalog.kt` 6-30, 218-290; `app/src/main/resources/splice.example.toml` 436-445, 488-499;
-`README.md` 172-185, 332-336, 946; `features/lifecycle/.../restart/RestartCommand.kt` 1-6.
+`app/.../cli/auth/KeyCommand.kt` 1-6; `app/.../cli/status/ConsoleCommand.kt` 49-72; `app/src/main/resources/console/api.js` 29-147;
+`CHANGELOG.md` 183-184, 274-280, 1211-1212, 1952-1955; `app/.../daemon/TopologyWindows.kt` 1-22;
+`core/.../model/ModelCatalog.kt` 6-30, 216-288; `app/src/main/resources/splice.example.toml` 460-469, 512-524;
+`README.md` 172-185, 372-376, 1024; `features/lifecycle/.../restart/RestartCommand.kt` 1-6.
 
-The example file's comment near `splice.example.toml` line 500 says a window edit needs `splice restart`. The
+The example file's comment near `splice.example.toml` line 525 says a window edit needs `splice restart`. The
 header at lines 5-6, the README and `TopologyWindows.kt` say it does not. The code wins: no restart.
 
 ### 6.4 When the table does not answer

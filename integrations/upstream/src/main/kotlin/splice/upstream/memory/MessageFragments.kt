@@ -22,7 +22,7 @@ public class MessageFragments {
     private val namespace = FragmentNamespace()
 
     public fun message(
-        context: String,
+        context: FragmentContextKey,
         input: splice.core.wire.AnthropicMessage,
         build: MessageFragmentBuild,
     ): JsonArray {
@@ -32,7 +32,7 @@ public class MessageFragments {
         return MessageFragmentStore.save(key, source, build()) as JsonArray
     }
 
-    public fun rawMessage(context: String, input: JsonObject, build: RawMessageFragmentBuild): JsonObject {
+    public fun rawMessage(context: FragmentContextKey, input: JsonObject, build: RawMessageFragmentBuild): JsonObject {
         val source = RawFragmentInput(input)
         val key = FragmentKey(namespace, context, source.fingerprint)
         MessageFragmentStore.find(key, source)?.let { return it as JsonObject }
@@ -41,4 +41,4 @@ public class MessageFragments {
 }
 
 internal class FragmentNamespace
-internal data class FragmentKey(val namespace: FragmentNamespace, val context: String, val fingerprint: Int)
+internal data class FragmentKey(val namespace: FragmentNamespace, val context: FragmentContextKey, val fingerprint: Int)

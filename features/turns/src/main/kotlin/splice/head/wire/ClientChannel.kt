@@ -144,8 +144,8 @@ internal class ClientChannel(
      *  A failed write flips [clientGone] BEFORE rethrowing — the translator's terminal decision
      *  reads it to classify the ending as ClientAbandoned instead of upstream truncation. The
      *  caller holds [writeMutex] around this call; it does not lock itself. */
-    fun timedClientWrite(frame: String, perf: TurnPerf, clock: ElapsedClock) {
-        write(frame, perf, clock, modelOutput = true)
+    fun timedClientWrite(frame: String, perf: TurnPerf, clock: ElapsedClock, shape: DeltaShape? = null) {
+        write(frame, perf, clock, modelOutput = true, shape)
     }
 
     /** The KEEPALIVE PINGER's write: the heartbeat ping and splice's status line on a quiet wire.
@@ -165,12 +165,21 @@ internal class ClientChannel(
     /** V4-456: a frame the [pacer] holds is COMMITTED — it leaves before anything written after it — so
      *  its model accounting happens here, at the hold. CONTENT_FRAMES_OUT is what forbids a pre-content
      *  reissue (SseRoundDriver), and a reissue behind a held delta would put two answers on one wire. */
-    private fun write(frame: String, perf: TurnPerf, clock: ElapsedClock, modelOutput: Boolean) {
+    private fun write(
+        frame: String,
+        perf: TurnPerf,
+        clock: ElapsedClock,
+        modelOutput: Boolean,
+        shape: DeltaShape? = null,
+    ) {
         recording?.append(frame)
         trace?.clientFrame(frame)
         if (detached.get()) return
-        if (modelOutput && pacer.isArrivingDelta(frame)) bursts.arrived(perf, clock())
-        if (pacer.hold(frame, perf, modelOutput, clock())) {
+        // Read once, from the writer's own [shape] when it handed one over: burst accounting and the pacer's hold
+        // used to decode the same frame twice, under the write mutex, for every delta.
+        val read = pacer.shapeOf(frame, modelOutput, shape)
+        if (read == DeltaShape.ARRIVING) bursts.arrived(perf, clock())
+        if (pacer.hold(frame, perf, modelOutput, clock(), read)) {
             if (modelOutput) ModelAccounting.count(frame, perf)
             return
         }
@@ -308,6 +317,12 @@ internal class ClientChannel(
         lost.complete(Unit)
         return true
     }
+
+    /** Nobody reads this turn's answer any more: the client left and no recording stands in for it. [clientGone]
+     *  alone says only that the socket is lost, which a detached compaction also is while its recording still
+     *  reads every frame for the retry; a round that fails there is an upstream failure to carry on from, not a
+     *  client that abandoned the turn. */
+    val readerGone: Boolean get() = clientGone.get() && !detached.get()
 
     /** DR-93 (redo): the turn-finally flush, quiet BY CONTRACT. On a dead socket the flush itself
      *  throws (IOException from the engine write, IllegalStateException from a closed channel),

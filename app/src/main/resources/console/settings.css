@@ -1109,17 +1109,16 @@ a.nsess:hover { color: var(--text); text-decoration: underline; }
 .rsn-r:not([aria-checked="true"]) .rsn-pv { opacity: .7; }
 @media (prefers-reduced-motion: reduce) { .rsn-r, .rsn-ring { transition: none; } }
 
-/* Advanced values drawn as what they are: an address a host chip, a file a file chip, a model a model chip, a port a socket.
+/* Advanced values drawn as what they are: an address a host chip, a model a model chip, a port a socket.
    Each stays the console's own field, so it edits and saves as before; only its shape and the glyph before it change. */
-.advg .krow[data-key="chatgptApiBase"], .advg .krow[data-key="codexAuthPath"], .advg .krow[data-key="pinnedModel"] { --pc: var(--gpt); }
-.advg .krow[data-key="xaiApiBase"], .advg .krow[data-key="grokAuthPath"], .advg .krow[data-key="grokModel"] { --pc: var(--grok); }
+.advg .krow[data-key="chatgptApiBase"], .advg .krow[data-key="pinnedModel"] { --pc: var(--gpt); }
+.advg .krow[data-key="xaiApiBase"], .advg .krow[data-key="grokModel"] { --pc: var(--grok); }
 .advg .krow:is([data-key="port"], [data-key="controlPort"], [data-key="grokPort"], [data-key="supervisorUnit"]) { --pc: var(--text-mute); }
-.advg .krow:is([data-key$="ApiBase"], [data-key$="AuthPath"], [data-key="pinnedModel"], [data-key="grokModel"], [data-key="supervisorUnit"], [data-key$="Port"], [data-key="port"]) .custom { position: relative; }
-.advg .krow:is([data-key$="ApiBase"], [data-key$="AuthPath"], [data-key="pinnedModel"], [data-key="grokModel"], [data-key="supervisorUnit"]) .custom .field { padding-left: 2.7rem; box-shadow: inset .25rem 0 0 var(--pc), inset 0 0 0 .08rem var(--track-line); font-size: .92rem; }
-.advg .krow:is([data-key$="ApiBase"], [data-key$="AuthPath"], [data-key="supervisorUnit"]) .custom::before { content: ""; position: absolute; left: 1rem; top: 50%; width: 1.05rem; height: 1.05rem; transform: translateY(-50%); background: var(--pc); pointer-events: none;
+.advg .krow:is([data-key$="ApiBase"], [data-key="pinnedModel"], [data-key="grokModel"], [data-key="supervisorUnit"], [data-key$="Port"], [data-key="port"]) .custom { position: relative; }
+.advg .krow:is([data-key$="ApiBase"], [data-key="pinnedModel"], [data-key="grokModel"], [data-key="supervisorUnit"]) .custom .field { padding-left: 2.7rem; box-shadow: inset .25rem 0 0 var(--pc), inset 0 0 0 .08rem var(--track-line); font-size: .92rem; }
+.advg .krow:is([data-key$="ApiBase"], [data-key="supervisorUnit"]) .custom::before { content: ""; position: absolute; left: 1rem; top: 50%; width: 1.05rem; height: 1.05rem; transform: translateY(-50%); background: var(--pc); pointer-events: none;
   -webkit-mask: var(--glyph) center / contain no-repeat; mask: var(--glyph) center / contain no-repeat; }
 .advg .krow[data-key$="ApiBase"] .custom { --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18'/%3E%3C/svg%3E"); }
-.advg .krow[data-key$="AuthPath"] .custom { --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z'/%3E%3Cpath d='M14 3v5h5'/%3E%3C/svg%3E"); }
 .advg .krow[data-key="supervisorUnit"] .custom { --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='5' width='16' height='6' rx='1'/%3E%3Crect x='4' y='13' width='16' height='6' rx='1'/%3E%3C/svg%3E"); }
 .advg .krow:is([data-key="pinnedModel"], [data-key="grokModel"]) .custom::before { content: ""; position: absolute; left: 1.1rem; top: 50%; width: .6rem; height: .6rem; transform: translateY(-50%); border-radius: 50%; background: var(--pc); box-shadow: 0 0 0 .12rem var(--obj-sunk); pointer-events: none; }
 /* a port is a socket: a round plug at the pill's end, then the number */

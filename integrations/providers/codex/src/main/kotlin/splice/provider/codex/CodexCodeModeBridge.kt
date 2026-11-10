@@ -5,6 +5,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.GatewayCustomCall
 import splice.provider.codex.catalog.CodeModeTurnCatalog
+import splice.provider.codex.history.CodeModeHistorySweep
 import splice.provider.codex.history.CodeModeUpstreamHistory
 import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.state.diagnostics.CodeModeNativeRetirement
@@ -14,6 +15,7 @@ import splice.upstream.RoundInterceptor
 import splice.upstream.codemode.CodeModeManual
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.availability.CodeModeAvailabilityPlan
+import java.nio.file.Path
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
@@ -60,6 +62,8 @@ public class CodexCodeModeBridge(
     private val validation = CodexCodeModeValidation(config)
     internal val mcpSearch = config.state.mcpSearch
     internal val machine = CodexCodeModeMachine(config, registry, validation)
+    private val history = CodeModeUpstreamHistory(json, config.state, config.log, config.retention.bytes)
+    private val historySweep = CodeModeHistorySweep(history.kept, config)
     internal val driver =
         CodexCodeModeDriver(
             config,
@@ -68,7 +72,7 @@ public class CodexCodeModeBridge(
             wire,
             validation,
             machine,
-            CodeModeUpstreamHistory(json, config.state, config.log, config.retention.bytes),
+            history,
         )
     internal val resume = CodexCodeModeResume(registry, wire, validation, machine, driver)
     internal val controller = CodexCodeModeTurn(registry, wire, driver, resume, machine, validation, config)
@@ -85,7 +89,13 @@ public class CodexCodeModeBridge(
         require(config.bounds.maxOutputChars > 0) { "code-mode maxOutputChars must be positive" }
         require(config.bounds.maxCalls?.let { it > 0 } != false) { "code-mode maxCalls must be positive" }
         require(config.bounds.maxRounds?.let { it > 0 } != false) { "code-mode maxRounds must be positive" }
+        historySweep.start()
     }
+
+    /** The files of the conversations this head holds in memory now: their history journals and their records'
+     *  journals, with the lock files beside them. A Settings clear or a history cut leaves these on the disk, since
+     *  removing them under a running head would leave the next save a journal without its earlier revisions. */
+    public fun keptInUse(): Set<Path> = history.kept.inUse() + registry.keptInUse
 
     public fun interceptor(
         turn: Turn,
@@ -127,6 +137,7 @@ public class CodexCodeModeBridge(
 
     /** Ends daemon ownership, unlike a reusable head stop. Unsaved evidence retains its retry owner. */
     public fun onProviderStop() {
+        historySweep.stop()
         registry.timed.finish { onHeadStop() }
     }
 }

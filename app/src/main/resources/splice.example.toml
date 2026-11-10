@@ -13,7 +13,8 @@
 [daemon]
 control_port = 3096          # loopback-only control plane + dashboard
 # state_dir = "/mnt/fast/splice-state"   # where the daemon keeps its lock, per-head state and traces (default
-#                                        # ~/.splice); read at boot, so restart. A leading ~/ is your home
+#                                        # ~/.splice/state; an install older than 0.4 keeps ~/.claude-codex/state,
+#                                        # adopted in place); read at boot, so restart. A leading ~/ is your home
 
 # Reasoning display — edit here and restart the daemon, or PATCH the HOT keys and the next turn obeys. No code change.
 # Env aliases (CLAUDEX_SHOW_REASONING etc.) and runtime PATCH still override these.
@@ -521,8 +522,9 @@ context_window = 1000000
 # with a boot-log explanation, never a substitute. An explicit `context_window` forces
 # one window onto every selected row; omit it when their real backend ceilings differ. A launch
 # plants the pinned row's window as CLAUDE_CODE_MAX_CONTEXT_TOKENS, and usage scaling makes every
-# other row compact at its own declared window — live through /model. A window edited here reaches
-# running sessions after `splice restart`, through the window each session reports.
+# other row compact at its own declared window — live through /model. A window edited here needs no
+# restart: the daemon re-reads the windows from this file while it runs, and running sessions compact
+# at the new window from their next request, through the usage splice reports to each.
 [claude]                       # global config-sharing policy for every wrapper
 # `sessions` shares the cross-session-messaging peer registry, so sessions on ANY head (and plain
 # `claude`) can see and message each other; drop it (or isolate it per head) to wall a head off.
@@ -828,11 +830,12 @@ command = "claude-splice"
 
 # ── KNOB REFERENCE: every key the config layers accept ──────────────────────────
 # A knob is settable in `[defaults]` (every head), in `[heads.<key>.overrides]` (that head), in the
-# daemon's state config.json, or at runtime through a /mgmt/config PATCH. Precedence is
-# env > TOML > default; the daemon snapshots nearly every knob at start, so a changed knob needs a
-# restart except where marked HOT. HOT means the RUNNING daemon re-reads it: a /mgmt/config PATCH or
-# an edit of the state config.json reaches it at the next use, and the marker says at what cadence it
-# is re-read. THIS file is not re-read — its layers are parsed once at start — so a knob changed HERE
+# daemon's state config.json, or at runtime through a PATCH to /api/config (the console's Settings page).
+# Precedence, lowest to highest: default, TOML, state config.json, env, a runtime PATCH, then a head's own
+# `[heads.<key>.overrides]`, which beats every shared layer. The daemon snapshots nearly every knob at start,
+# so a changed knob needs a restart except where marked HOT. HOT means the RUNNING daemon re-reads it: a
+# PATCH to /api/config or an edit of the state config.json reaches it at the next use, and the marker says at
+# what cadence it is re-read. THIS file is not re-read — its layers are parsed once at start — so a knob changed HERE
 # needs a restart whatever its marking, which is also why a `[heads.<key>.overrides]` example below
 # carries no marker even for a HOT knob. The marker is not a habit: KnobLivenessDocumentedLawTest
 # pairs every knob here against its restart flag in Knob.kt and fails on either mismatch, so
@@ -843,7 +846,9 @@ command = "claude-splice"
 # today's behaviour.
 #
 # chatgptApiBase = "https://chatgpt.com/backend-api/codex"  # base URL of the ChatGPT/Codex backend
-# codexAuthPath = "~/.codex/auth.json"                      # where the Codex OAuth credential file lives
+# retired: codexAuthPath and grokAuthPath — since 0.4.0 a command signs in with its provider's auth.file in
+#     [providers.<key>.auth], where splice login writes it; boot refuses these keys, their CODEX_AUTH_PATH and
+#     GROK_AUTH_PATH variables and a saved value of either
 # progressLine = "true"                                     # bool; splice's own status line on a quiet wire (HOT, per heartbeat)
 # retired: foldReasoningModels, foldMaxContinue, foldMarkerText and foldMaxTier — since 0.4.0 splice continues on its
 #     own a codex answer whose reasoning the backend cut short, on the models that cut it; boot refuses these keys,
@@ -860,7 +865,7 @@ command = "claude-splice"
 #                                                           #     not take it may refuse the request.
 # quotaPoll = "auto"                                        # "off" stops every plan-usage poller
 # quotaPollIntervalMs = "300000"                            # ms; how often a subscription head re-polls usage (HOT, per wait)
-# maxInflight = "0"                                         # requests; concurrent turns per head, 0 = unlimited (HOT, per admission)
+# maxInflight = "12"                                        # requests; concurrent turns per head, 0 = unlimited (HOT, per admission)
 # maxQueued = "512"                                         # requests; admission queue cap, 0 = unlimited (HOT, per admission)
 # transcriptView = "true"                                  # HOT, global: read Claude Code's already-written
 #                                                           #     redacted conversation. The console switch sets
@@ -940,7 +945,6 @@ command = "claude-splice"
 # grokPort = "3100"                                         # TCP port; the grok head's listener
 # grokModel = "grok-4.6"                                    # the grok model id the head pins
 # xaiApiBase = "https://api.x.ai/v1"                        # base URL of the xAI backend
-# grokAuthPath = "~/.grok/auth.json"                        # where the grok OAuth credential file lives
 # usageWarnPct = "80"                                       # percent; plan-window usage that triggers the warning (HOT, per ask)
 # usageWarnTokens5h = "0"                                   # tokens; absolute 5h threshold, 0 disables the warning (HOT, per ask)
 # statuslineGitRoots = ""                                   # extra git roots the status line inspects (HOT, per ask)
@@ -989,7 +993,7 @@ command = "claude-splice"
 # reads (paths, OAuth endpoints, install locations) with no TOML spelling of their own.
 #
 # Knob aliases, with the key each one sets in the trailing column:
-#   CHATGPT_API_BASE chatgptApiBase          CODEX_AUTH_PATH codexAuthPath
+#   CHATGPT_API_BASE chatgptApiBase
 #   CLAUDEX_PROGRESS_LINE / SPLICE_PROGRESS_LINE progressLine
 #   CLAUDEX_TOOL_SURFACE toolSurface         CLAUDEX_QUOTA_POLL quotaPoll
 #   CLAUDEX_MAX_INFLIGHT maxInflight         CLAUDEX_MAX_QUEUED maxQueued
@@ -1001,12 +1005,14 @@ command = "claude-splice"
 # retired: CLAUDEX_UPSTREAM_RETRIES, SPLICE_RETRY_BACKOFF_BASE_MS, SPLICE_RETRY_BACKOFF_CAP_MS,
 #     SPLICE_RETRY_BACKOFF_JITTER_PCT and the four CLAUDEX_FOLD_* variables — their knobs retired in 0.4.0, and
 #     splice refuses to start while any of them is set
+# retired: CODEX_AUTH_PATH and GROK_AUTH_PATH — the sign-in file is the provider's auth.file, and splice refuses to
+#     start while either is set
 #   CLAUDEX_FIRST_BYTE_TIMEOUT_MS firstByteTimeoutMs    CLAUDEX_STREAM_IDLE_MS streamIdleMs
 #   CLAUDEX_STALL_REANCHOR_MS stallReanchorMs
 #   SPLICE_WS_IDLE_CLOSE_MS wsIdleCloseMs    SPLICE_WS_MAX_AGE_MS wsMaxAgeMs
 #   CLAUDEX_AUTH_CACHE_MS authCacheMs        CLAUDEX_DEBUG / CODEX_PROXY_DEBUG debug
 #   CODEX_PROXY_PORT port                    CONTROL_PROXY_PORT / SPLICE_CONTROL_PORT controlPort
-#   GROK_PROXY_PORT grokPort                 XAI_API_BASE xaiApiBase   GROK_AUTH_PATH grokAuthPath
+#   GROK_PROXY_PORT grokPort                 XAI_API_BASE xaiApiBase
 #   CLAUDEX_MODEL / CLAUDEX_PINNED_MODEL model           CLAUDE_GROK_MODEL / CLAUDE_GROK_PINNED_MODEL model
 #   CODEX_MODEL_CONTEXT_WINDOW contextWindowOverride     CLAUDEX_STATUSLINE_GIT_ROOTS statuslineGitRoots
 #   SPLICE_USAGE_WARN_PCT usageWarnPct                   SPLICE_PROJECTS_FOLDERS projectsFolders

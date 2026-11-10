@@ -43,6 +43,31 @@ internal class ReasoningCachePositions {
         }
     }
 
+    /** Remove every record held at [incoming]'s history position from another upstream round. The incoming round's
+     *  own records stay: a re-send that brings the same round back re-observes it. Tool rounds, keyed by real call ids,
+     *  have no position and stay. Returns what left, for the cache's bounds. */
+    fun replaceAt(conversation: ReasoningCacheConvo, incoming: String): ReplacedRecords {
+        val position = indexes.position(incoming) ?: return ReplacedRecords(0, 0L)
+        val upstreamRound = indexes.round(incoming)
+        val keys = conversation.rounds.filterValues { round ->
+            val index = round.toolIds.singleOrNull()
+            index != null && indexes.position(index) == position && indexes.round(index) != upstreamRound
+        }.keys.toList()
+        val bytes = keys.sumOf { remove(conversation, it) }
+        conversation.bytes -= bytes
+        return ReplacedRecords(keys.size, bytes)
+    }
+
+    private fun remove(conversation: ReasoningCacheConvo, key: String): Long {
+        val round = conversation.rounds.remove(key) ?: return 0L
+        round.toolIds.forEach { index ->
+            conversation.byToolId.remove(index)
+            val identity = indexes.identity(index)
+            if (identity != null && conversation.positioned[identity] == key) conversation.positioned.remove(identity)
+        }
+        return round.bytes
+    }
+
     /** Reclaim only optional ordering metadata, preserving the complete cohort's accepted native order. */
     fun releaseMetadata(conversation: ReasoningCacheConvo): Long = applyAliases(
         conversation,
@@ -112,3 +137,5 @@ internal class ReasoningCachePositions {
 }
 
 internal data class ReasoningPositionUpdate(val changed: Boolean, val bytes: Long)
+
+internal data class ReplacedRecords(val records: Int, val bytes: Long)

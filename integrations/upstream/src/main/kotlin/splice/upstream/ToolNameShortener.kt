@@ -24,6 +24,7 @@ package splice.upstream
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
 import java.security.MessageDigest
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -122,3 +123,23 @@ private const val MIN_CAP = DIGEST_CHARS + 2
 
 // why: bound the name fragment in collision logs; tools can carry untrusted long names.
 private const val LOG_CHARS = 64
+
+// 2026-11-09: the one minter of the tool-call ids splice makes up when an upstream call carries none, beside the tool
+// names splice authors on the same wire (moved here from its own file on Nov 10, concentration). Every dialect's stream
+// fold and the non-stream body share it, so the next fix to the id's shape lands once.
+
+/**
+ * Ids for tool calls an upstream sent without one, one instance per round.
+ *
+ * A minted id rides back in every later request as that call's id, and call pairing keeps one call per id. A
+ * counter alone restarts each round, so two turns named their first call alike and pairing dropped the later
+ * one; the round's random part makes each id unique within the conversation, as a real upstream id is.
+ */
+public class SyntheticToolIds {
+
+    private val round by lazy { UUID.randomUUID().toString().replace("-", "") }
+    private var next = 0
+
+    /** A fresh id, never repeated in this round or, by its random part, in any other. */
+    public fun mint(): String = "toolu_synth_${round}_${next++}"
+}

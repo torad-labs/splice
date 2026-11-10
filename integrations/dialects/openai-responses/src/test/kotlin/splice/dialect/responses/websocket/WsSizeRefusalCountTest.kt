@@ -22,6 +22,7 @@ import java.util.concurrent.CompletableFuture
 
 private const val MESSAGE_TOO_BIG = 1009
 private const val INTERNAL_ERROR = 1011
+private const val INVALID_PAYLOAD = 1007
 private const val FRAME = """{"model":"gpt-6.1-sol","input":[{"role":"user","content":"hi"}]}"""
 private const val CREATED = """{"type":"response.created","response":{"id":"resp_1"}}"""
 
@@ -37,6 +38,9 @@ class WsSizeRefusalCountTest {
         private val eventsFirst: List<String> = emptyList(),
         private val failSend: Boolean = false,
     ) {
+        /** Every frame the socket was handed, whatever the peer then did with it. */
+        var sends = 0
+
         val runner = ResponsesWsRunner(
             transport = WsUpstream(connector = { _, _, listener -> socket(listener) }),
             session = ResponsesWsSession(),
@@ -46,6 +50,7 @@ class WsSizeRefusalCountTest {
 
         private fun socket(listener: WebSocket.Listener): WebSocket = object : WebSocket {
             override fun sendText(data: CharSequence, last: Boolean): CompletableFuture<WebSocket> {
+                sends += 1
                 eventsFirst.forEach { listener.onText(this, it, true) }
                 listener.onClose(this, code, "")
                 return if (failSend) CompletableFuture.failedFuture(IOException("Output closed")) else done()
@@ -86,6 +91,8 @@ class WsSizeRefusalCountTest {
 
     private fun refusals(perf: TurnPerf): Long? = perf.snapshot().counters[PerfKeys.WS_REFUSED_TOO_LARGE]
 
+    private fun declines(perf: TurnPerf): Long? = perf.snapshot().counters[PerfKeys.WS_TRANSPORT_DECLINES]
+
     @Test
     fun `a 1009 before the first event refuses the frame and the round rides SSE`() = runTest {
         val perf = TurnPerf { 0L }
@@ -104,6 +111,30 @@ class WsSizeRefusalCountTest {
     fun `any other close before the first event says nothing about the frame's size`() = runTest {
         val perf = TurnPerf { 0L }
         assertNull(Closing(INTERNAL_ERROR).attempt(perf))
+        assertNull(refusals(perf))
+        assertEquals(1L, declines(perf), "a socket fault: the head sends the round again on a fresh socket")
+    }
+
+    /** Nov 2026: the peer closes 1007 on a frame over 32 MiB, and the head used to upload the same frame again on a
+     *  fresh socket before HTTP. A 1007 is about the bytes, so no socket takes them: no decline, no size refusal. */
+    @Test
+    fun `a 1007 before the first event goes to HTTP with no fresh socket and no size refusal`() = runTest {
+        for (failSend in listOf(false, true)) {
+            val perf = TurnPerf { 0L }
+            assertNull(Closing(INVALID_PAYLOAD, failSend = failSend).attempt(perf))
+            assertNull(declines(perf), "no socket fault, so no fresh socket (failSend=$failSend)")
+            assertNull(refusals(perf), "HTTP reads its own 4xx as before (failSend=$failSend)")
+        }
+    }
+
+    @Test
+    fun `a frame over the peer's limit is never sent and takes no fresh socket`() = runTest {
+        val perf = TurnPerf { 0L }
+        val closing = Closing(INVALID_PAYLOAD)
+        closing.runner.frameLimit.maxBytes = FRAME.length.toLong()
+        assertNull(closing.attempt(perf))
+        assertEquals(0, closing.sends, "the oversized frame never reaches the socket")
+        assertNull(declines(perf))
         assertNull(refusals(perf))
     }
 

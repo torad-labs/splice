@@ -32,6 +32,7 @@ internal data class WsRoundInputs(
      *  HTTP 4xx is that refusal again (WsSizeRefusal). */
     fun refusedAsTooLarge(): Boolean = drive.perfCounter(PerfKeys.WS_REFUSED_TOO_LARGE) > sizeRefusalsBefore
 
-    /** The source reader has no first-client dependency. Real cancellation still aborts its job/body. */
-    fun clientGone(): Boolean = sink !is IndependentRoundSink && drive.channel.clientGone.get()
+    /** The source reader has no first-client dependency. Real cancellation still aborts its job/body. A detached
+     *  compaction still has a reader, its recording, so an upstream tear there is a failure, not the client's doing. */
+    fun clientGone(): Boolean = sink !is IndependentRoundSink && drive.channel.readerGone
 }

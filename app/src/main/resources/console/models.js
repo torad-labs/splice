@@ -1442,10 +1442,10 @@ const TOPIC_NAME = { silent: "Stalled answers", busy: "Many agents at once", rea
   mcp: "MCP servers", projects: "Projects", data: "Your data", version: "Version" };
 const BUSY_KEYS = new Set(["maxInflight", "maxQueued"]);
 const topicOfKnob = (k) => k?.home || k?.adv || (BUSY_KEYS.has(k?.key) ? "busy" : "other");
-// A provider's own plumbing, which no command on another provider reads: Grok's port, model, address and sign-in file
-// belong to the provider splice calls xai, ChatGPT's address and sign-in file to codex. Every other command's list
+// A provider's own plumbing, which no command on another provider reads: Grok's port, model and address belong to the
+// provider splice calls xai, ChatGPT's address to codex. Every other command's list
 // leaves them out, so a command never reads as running on another provider's settings.
-const PLUMBING = { grokPort: "xai", grokModel: "xai", grokAuthPath: "xai", xaiApiBase: "xai", chatgptApiBase: "codex", codexAuthPath: "codex" };
+const PLUMBING = { grokPort: "xai", grokModel: "xai", xaiApiBase: "xai", chatgptApiBase: "codex" };
 // Retired in 0.4.0: splice decides when to send a failed request again and when to continue a cut answer from what
 // happened, so these have nothing to set. A daemon from before 0.4.0 still reports them; the pane draws no row for them.
 // The list is the settings kit's (KNOBS.RETIRED), so a setting is retired in one place.

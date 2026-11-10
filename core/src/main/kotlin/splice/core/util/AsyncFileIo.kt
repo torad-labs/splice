@@ -125,7 +125,10 @@ public object AsyncFileIo {
     private val pathLock = Any()
     private val latestByPath = HashMap<Path, CompletableFuture<Boolean>>()
     private val pendingByPath = HashMap<Path, Int>()
-    private val failedPaths = HashSet<Path>()
+
+    /** Each path that has lost a write (refused by the lane or failed while running), with the wall time of its latest
+     *  loss. Never cleared: a later write that lands does not bring the lost row back. */
+    private val failedPaths = HashMap<Path, Long>()
 
     // Threads come from the platform factory, never from an ad-hoc `Thread(...)`: the factory owns
     // thread group and priority, and this lane only overrides the two properties that are its own
@@ -186,8 +189,9 @@ public object AsyncFileIo {
         }
     }
 
-    /** An accepted file task and its read barrier share one path and one lane position. A refusal
-     * remains visible until a later accepted task for that path replaces it. */
+    /** An accepted file task and its read barrier share one path and one lane position. A refused or failed task
+     * marks the path as having lost a write for the rest of the process: [awaitFile] then answers false, and
+     * [settleFile] reports when the latest loss happened, apart from whether a write is still pending. */
     public fun submitFor(file: Path, task: FileIoTask): Boolean = synchronized(pathLock) {
         val key = file.toAbsolutePath().normalize()
         val settled = CompletableFuture<Boolean>()
@@ -198,7 +202,7 @@ public object AsyncFileIo {
                 written = true
             } finally {
                 synchronized(pathLock) {
-                    if (!written) failedPaths.add(key)
+                    if (!written) failedPaths[key] = System.currentTimeMillis()
                     val remaining = checkNotNull(pendingByPath[key]) - 1
                     if (remaining == 0) pendingByPath.remove(key) else pendingByPath[key] = remaining
                 }
@@ -208,7 +212,7 @@ public object AsyncFileIo {
         if (accepted) {
             pendingByPath[key] = (pendingByPath[key] ?: 0) + 1
         } else {
-            failedPaths.add(key)
+            failedPaths[key] = System.currentTimeMillis()
             settled.complete(false)
         }
         latestByPath[key] = settled
@@ -219,11 +223,23 @@ public object AsyncFileIo {
     public fun submitFor(file: Path, sink: FileIoSink, task: FileIoWrite): Boolean = sink.submit(file, task)
 
     /** Wait only for writes submitted before this read for [file], not all other heads' writes.
-     * False means an enqueue was dropped or the bounded wait expired; no missing row is claimed. */
-    public fun awaitFile(file: Path, timeoutMs: Long = DEFAULT_DRAIN_TIMEOUT_MS): Boolean {
+     * False means a write to it was ever refused or failed, or the bounded wait expired: the coverage answer, for a
+     * reader that must not certify a file complete. A read-your-writes reader asks [settleFile] instead. */
+    public fun awaitFile(file: Path, timeoutMs: Long = DEFAULT_DRAIN_TIMEOUT_MS): Boolean =
+        settleFile(file, timeoutMs).let { it.settled && it.lostAtMs == null }
+
+    /** What a read-your-writes reader learns about one file: whether every write submitted before the read has run
+     *  ([settled], false only when the bounded wait expired), and the wall time of the latest write to it that was
+     *  lost, refused or failed ([lostAtMs], null when none ever was). The two are separate facts: a row lost hours
+     *  ago is not a write still in flight, and a row that landed after it does not bring it back. */
+    public data class FileSettle(public val settled: Boolean, public val lostAtMs: Long?)
+
+    /** Wait for the writes submitted before this read for [file], whatever their outcome, and say which was lost. */
+    public fun settleFile(file: Path, timeoutMs: Long = DEFAULT_DRAIN_TIMEOUT_MS): FileSettle {
         val key = file.toAbsolutePath().normalize()
         val captured = synchronized(pathLock) { latestByPath[key] }
-        return awaitSettled(captured, timeoutMs) && synchronized(pathLock) { key !in failedPaths }
+        val ran = awaitSettled(captured, timeoutMs)
+        return FileSettle(ran, synchronized(pathLock) { failedPaths[key] })
     }
 
     /** A directory inventory needs all already-submitted live-file writes before it lists files. */
@@ -235,8 +251,11 @@ public object AsyncFileIo {
         }
     }
 
+    /** True once [write] has completed, written or not; false when the bounded wait expired or was interrupted. A
+     *  write that did not land is in [failedPaths] before its future completes, so callers read the loss there. */
     private fun awaitSettled(write: CompletableFuture<Boolean>?, timeoutMs: Long): Boolean = try {
-        write?.get(timeoutMs, TimeUnit.MILLISECONDS) ?: true
+        write?.get(timeoutMs, TimeUnit.MILLISECONDS)
+        true
     } catch (_: TimeoutException) {
         false
     } catch (_: InterruptedException) {

@@ -32,7 +32,6 @@ import splice.core.config.Knob
 import splice.core.config.daemonWideKnobs
 import splice.core.config.knobsByKey
 import splice.core.config.restartRequiredKnobKeys
-import splice.core.topology.HeadConfig
 import splice.core.topology.Topology
 import splice.core.topology.TopologyFinding
 import splice.core.topology.TopologyWriteResult
@@ -74,16 +73,18 @@ internal class HeadOverrideWrite(
     }
 
     private fun writeWith(writer: TopologyWriter, head: String, partial: JsonObject): JsonReply {
-        val current = Cancellables.runCatchingCancellable { decode(writer) }.getOrElse { failure ->
-            val why = SafeFailureText.render(failure)
-            return refuse(HttpStatusCode.InternalServerError, "splice.toml does not parse: $why")
-        }
-        val held = current.heads[head] ?: return refuse(HttpStatusCode.BadRequest, "unknown head: $head")
+        // The tree is kept beside its decoding: the write is refused when the file no longer holds it.
+        val (base, current) = Cancellables.runCatchingCancellable { writer.current().let { it to decode(it) } }
+            .getOrElse { failure ->
+                val why = SafeFailureText.render(failure)
+                return refuse(HttpStatusCode.InternalServerError, "splice.toml does not parse: $why")
+            }
+        if (head !in current.heads) return refuse(HttpStatusCode.BadRequest, "unknown head: $head")
         val ask = ask(partial, head, LegacyKnobScope(current))
         return if (ask.rejected.isNotEmpty()) {
             refused(head, ask.rejected, emptyList())
         } else {
-            land(writer, current, head, held, ask)
+            land(writer, base, current, head, ask)
         }
     }
 
@@ -103,11 +104,12 @@ internal class HeadOverrideWrite(
         return Ask(wanted, rejected)
     }
 
-    private fun land(writer: TopologyWriter, current: Topology, head: String, held: HeadConfig, ask: Ask): JsonReply {
+    private fun land(writer: TopologyWriter, base: JsonObject, current: Topology, head: String, ask: Ask): JsonReply {
+        val held = current.heads.getValue(head)
         val overrides = held.overrides.toMutableMap()
         ask.wanted.forEach { (key, value) -> if (value == null) overrides.remove(key) else overrides[key] = value }
         val requested = current.copy(heads = current.heads + (head to held.copy(overrides = overrides)))
-        return when (val result = writer.write(requested)) {
+        return when (val result = writer.write(requested, base)) {
             is TopologyWriteResult.Refused -> refused(head, ask.rejected, result.findings)
             is TopologyWriteResult.Written -> {
                 config.headLayer.set(head, overrides)
@@ -143,8 +145,7 @@ internal class HeadOverrideWrite(
         return JsonReply(HttpStatusCode.BadRequest, JsonWire.string(body))
     }
 
-    private fun decode(writer: TopologyWriter): Topology =
-        json.decodeFromJsonElement(Topology.serializer(), writer.current())
+    private fun decode(tree: JsonObject): Topology = json.decodeFromJsonElement(Topology.serializer(), tree)
 
     private fun refuse(status: HttpStatusCode, message: String) =
         JsonReply(status, JsonWire.string(buildJsonObject { put("error", message) }))

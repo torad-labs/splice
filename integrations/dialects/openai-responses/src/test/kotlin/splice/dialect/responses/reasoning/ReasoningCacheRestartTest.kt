@@ -523,8 +523,11 @@ class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
         )
 
         val restarted = heads.restart(replay = true)
-        drive(restarted, "session", reasoning("rs_after_upgrade") + terminal)
-        val replay = restarted.buildTurn(opening, false, "session").requestBody.getValue("input")
+        // The next request, so the new item lands at its own position. A second turn of the opening itself is a
+        // re-send, and its first item there replaces what an earlier attempt left (ReasoningResendReplayTest).
+        val next = history(tool)
+        drive(restarted, "session", reasoning("rs_after_upgrade") + terminal, body = next)
+        val replay = restarted.buildTurn(next, false, "session").requestBody.getValue("input")
             .jsonArray.map { it.jsonObject }
         val restoredIds = ids(replay)
         assertTrue("rs_after_upgrade" in restoredIds, "legacy duplicate accounting froze new reasoning admission")

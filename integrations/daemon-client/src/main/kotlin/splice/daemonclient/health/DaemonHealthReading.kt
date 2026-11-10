@@ -68,7 +68,14 @@ internal object DaemonHealthReading {
         held = (obj["heldTurns"] as? JsonObject)
             ?.mapValues { (_, turns) -> (turns as? JsonArray).orEmpty().mapNotNull { heldTurn(it as? JsonObject) } }
             .orEmpty(),
+        refusing = (obj["refusingHeads"] as? JsonObject)
+            ?.mapNotNull { (key, run) -> reasonOf(run as? JsonObject)?.let { key to it } }
+            ?.toMap()
+            .orEmpty(),
     )
+
+    /** Why a head refusing every request refused the last one, or null when the run names none. */
+    private fun reasonOf(run: JsonObject?): String? = run?.let { JsonScalars.str(it, "reason") }
 
     private fun heldTurn(turn: JsonObject?): HeldTurnReading? {
         if (turn == null) return null

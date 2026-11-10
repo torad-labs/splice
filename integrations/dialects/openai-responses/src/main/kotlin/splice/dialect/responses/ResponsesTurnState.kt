@@ -107,8 +107,9 @@ internal class ResponsesTurnState {
     var reasoningTokens = 0L
     val reportedUsage = mutableSetOf<UsageField>()
 
-    // splice-reasoning envelopes of this round's encrypted reasoning items (fold replay). Collected
-    // only when ctx.reasoningCapture.collectEnvelopes — otherwise stays empty, pre-fold behaviour intact.
+    // splice-reasoning envelopes of this round's encrypted reasoning items: fold replay on a Success, and the
+    // re-anchor salvage a cut round's partial carries. Collected when ctx.reasoningCapture.collectEnvelopes, which
+    // ResponsesTurnSeams sets on every non-compact turn, fold or not.
     val reasoningEnvelopes = mutableListOf<String>()
     var nativePrefix: ResponsesNativePrefix? = null
     val nativeOutput = ResponsesCompletedOutput()
@@ -131,6 +132,9 @@ internal class ResponsesTurnState {
 
     /** Custom calls are captured opaque and interpreted only by an explicitly armed round interceptor. */
     val customCalls = mutableListOf<GatewayCustomCall>()
+
+    /** The client holds prose or a call from this round, whether or not the round reached its terminal. */
+    val clientHolds: Boolean get() = emittedText || hasToolUse || customCalls.isNotEmpty()
 
     /** W4-A: fold a refusal fragment into this latch, from any of THREE carriers.
      *

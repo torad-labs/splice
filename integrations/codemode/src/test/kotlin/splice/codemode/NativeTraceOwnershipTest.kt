@@ -10,6 +10,8 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.codemode.nativehost.grpc.NativeGrpcSession
+import splice.codemode.nativehost.grpc.delegate.NativeGrpcDelegate
 import splice.codemode.nativehost.trace.NativePerfContext
 import splice.codemode.nativehost.trace.NativeTracing
 import splice.codemode.nativehost.trace.NativeTracingProvider
@@ -150,6 +152,30 @@ class NativeTraceOwnershipTest {
             afterShutdown.end()
         }
         assertFalse(exporter.closed)
+    }
+
+    @Test
+    fun `a cancel after a callback's outcome is decided leaves the outcome, and one before it records cancelled`() {
+        val events = mutableListOf<PerfObservation>()
+        val request = recorder { events.add(it) }.request(PerfScope(), 0, 0)
+        val tracing = NativeTracing()
+        val parent = NativePerfContext.attach(Context.root(), request)
+        val session = NativeGrpcSession("local", "host", null)
+        fun delegate(id: String) = NativeGrpcDelegate(
+            session,
+            "cell",
+            id,
+            false,
+            tracing.start("code_mode.grpc.callback", current = parent),
+        )
+
+        val answered = delegate("answered")
+        answered.span?.outcome("bad") // the client answered the callback with an error
+        answered.cancel() // a closing session sweeps it before its completion job has ended
+        delegate("unanswered").cancel()
+
+        val outcomes = events.filter { it.kind == PerfEventKind.TOOL_FINISHED }.map { it.outcome }
+        assertEquals(listOf(OutcomeTag.UNEXPECTED.wire, OutcomeTag.CANCELLED.wire), outcomes)
     }
 
     private fun assertSealed(tracing: NativeTracing, parent: Context) {

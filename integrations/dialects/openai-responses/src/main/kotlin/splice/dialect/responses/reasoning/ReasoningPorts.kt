@@ -94,8 +94,14 @@ internal fun interface TurnReasoningSink {
 
     public fun compacted(): Unit = Unit
 
-    /** A completed reasoning item at an exact visible-history position, including prose-only rounds. */
+    /** A completed reasoning item at an exact visible-history position, including prose-only rounds. It is held
+     *  for its turn until [kept]: reasoning leads into output, and only output the client holds is history. */
     public fun positioned(position: String, envelope: String, order: ReasoningItemOrder? = null): Unit = Unit
+
+    /** The client now holds what this turn's reasoning so far led into (prose or a call reached it), or a round of
+     *  the turn reached its terminal: the reasoning held since the last call becomes the conversation's. A turn that
+     *  ends before either (cut, failed, abandoned, or the daemon stopped) leaves nothing a later request carries. */
+    public fun kept(): Unit = Unit
 
     /** Exact native message phases, independently of encrypted-reasoning replay. */
     public fun assistantPhases(records: Map<String, String>): Unit = Unit

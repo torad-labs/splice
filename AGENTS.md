@@ -22,14 +22,25 @@ fixtures — `npm run oracle:replay`). Do not weaken either.
    project ruling in `CLAUDE.md`; L2 still pins the mirror's implementation and
    wire behavior when enabled. `prompt_cache_key` (keyed on the first user
    message) warms the INPUT cache independently of replay.
-2. **L2 — the mirror never regresses.** ONE `mirrorInto()` in
-   `reasoning/mirror.mjs`, called by the stream path (`codex/stream.mjs`) and
-   the non-stream path (`codex-proxy.mjs`). Thresholds are named there:
-   mirror ≥20, promote ≥40, honesty <20 chars.
-3. **L3 — honest failures.** `anthropic/sse.mjs` is the only module that can
-   emit `message_stop`; clean stops only via `emitTerminal(...)` (which owns
-   stop_reason derivation), failures only via `emitError(...)`. A failed or
-   truncated stream can never masquerade as a clean `end_turn`.
+2. **L2 — the mirror never regresses.** ONE `mirrorInto()`, a member of `Mirror` in
+   `features/turns/src/main/kotlin/splice/head/reasoning/Mirror.kt` (wall
+   `kt-l2-single-mirror-definition`; `kt-l2-mirror-delegates-to-predicate` makes it ask the one
+   `willMirror` predicate instead of re-deriving the gate). It has ONE call site,
+   `StreamHonesty.mirrorGated` in `.../head/pipeline/StreamHonesty.kt`, which `StreamFinish` runs for
+   every turn that ends clean, so the stream turn (`SseEmitter`) and the non-stream turn
+   (`CollectingTerminal`) reach the same mirror. Thresholds are named in
+   `core/src/main/kotlin/splice/core/turn/ReasoningThresholds.kt`: mirror ≥20, promote ≥40. The
+   empty-turn honesty check keeps no count of its own (CX-09): it asks `willMirror`, so its floor is
+   the mirror's 20.
+3. **L3 — honest failures.** `SseEmitter` (`features/turns/src/main/kotlin/splice/head/wire/SseEmitter.kt`)
+   is the sole owner of how a turn ends: the only code that can write `message_stop` or
+   `message_delta`, and the only file that may hold the `end_turn` literal (walls
+   `kt-l3-sole-wire-terminals`, `kt-l3-end-turn-literal`). A clean stop is reachable only via
+   `emitTerminal(...)` (which owns stop_reason derivation), a failure only via `emitError(...)` (an SSE
+   error event, so Claude Code retries), and a client that is gone seals via `abandon()` with nothing on
+   the wire. The non-stream `CollectingTerminal` builds its one JSON body from
+   `SseEmitter.TerminalEnvelope`, so it holds no stop_reason of its own. A failed or truncated stream can
+   never masquerade as a clean `end_turn`.
 4. **L4 — no fake summaries.** Empty in, empty out. Promote-to-text promotes
    MODEL content (the reasoning summary) only; the only fabricated literals
    anywhere are error strings and `[… omitted …]` markers.
@@ -54,7 +65,8 @@ fixtures — `npm run oracle:replay`). Do not weaken either.
   guidance (2026-09-21: dropping `splice_exec` on compaction cost the whole
   transcript's cache on every compaction, `cached_tokens=0`).
 - Mirror wire format: `\n[reasoning summary]\n<text>\n` (`mirrorWireText`).
-- Legacy reasoning replay envelope (`reasoning/replay.mjs`): accept
+- Legacy reasoning replay envelope (`ReasoningReplay` in
+  `core/src/main/kotlin/splice/core/reasoning/Replay.kt`): accept
   `redacted_thinking` blocks tagged `splice-reasoning` v1; encode/decode stay
   paired (a tag/version bump strands in-flight transcripts). New Responses
   turns retain encrypted reasoning in ordered server-owned history and emit
@@ -71,30 +83,40 @@ fixtures — `npm run oracle:replay`). Do not weaken either.
 > `.mjs` file, treat the contract as authoritative and the filename as history — the 11 byte-exact
 > oracle fixtures pin the wire itself.
 
-Bearer-guarded (`Authorization: Bearer <key>`, the management key in the state root, which is
-install-dependent since V4-177),
-loopback-only, both proxies:
+There is NO `/mgmt` API any more. The Node proxies served `GET /mgmt/status`, `/mgmt/config` (and
+`PATCH`), `/mgmt/usage`, `/mgmt/compact`, `/mgmt/auth` (and `POST /mgmt/auth/refresh`), `/mgmt/logs` and
+`/mgmt/models` on every head; the Kotlin daemon registers none of them, so nothing answers them, and a tool or
+doctor check built on one fails. What they showed is the control plane's `/api/*` (next section), which reads the
+one JVM's state in process: `/api/status` and `/api/heads`, `/api/config`, `/api/usage`, `/api/compact`,
+`/api/auth` and `POST /api/auth/{head}/refresh`, `/api/logs` and `/api/logs/{head}?tail=N`, `/api/models`.
 
-| route | purpose |
-|---|---|
-| GET /mgmt/status | version, uptime, gate snapshot + live in-flight, mode/arm |
-| GET /mgmt/config | effective + all four layers + restart-required keys |
-| PATCH /mgmt/config | hot-apply runtime knobs; persists to state config.json |
-| GET /mgmt/usage | 5h output-token window + persisted ratelimit headers |
-| GET /mgmt/compact | compact outcomes + shadow-classifier tail |
-| GET /mgmt/auth, POST /mgmt/auth/refresh | token introspection (masked), refresh |
-| GET /mgmt/logs?tail=N | proxy log tail from the state root's `logs/` |
-| GET /mgmt/models | catalog, windows, pinned, discovery ids |
+A head is a loopback listener per `[heads.<key>]` and serves five routes (`features/turns/.../head/HeadEngine.kt`,
+`routes`; the doors are `Door` in `ClientAuth.kt`):
 
-Config layering: defaults ← `[defaults]` TOML ← `[heads.<key>.overrides]` TOML ←
-state/config.json ← env ← runtime PATCH. Env is the boot authority (the launcher
-writes it); PATCH wins until restart and persists to the file layer.
+| route | who may call | purpose |
+|---|---|---|
+| GET /health | anyone (open probe) | version and the head's state |
+| GET /v1/models | a caller who may run inference here | the head's model list |
+| GET /wire | the management key alone | the operator's view of what the head sent upstream; 404 naming the knob while capture is off |
+| POST /v1/messages | a caller, plus a credential to forward on a head that only forwards | a turn |
+| POST /v1/messages/count_tokens | a caller | a local token estimate |
+
+Config layering, lowest to highest (`core/.../config/ConfigService.kt`, `buildSnapshot`): defaults ←
+`[defaults]` and `[daemon]` TOML ← state/config.json ← env (each knob's own names) ← runtime PATCH ←
+`[heads.<key>.overrides]` TOML, which `getConfig(headKey)` folds in for that head. The per-head layer is the
+MOST specific and beats every shared layer, a runtime PATCH included: a console PATCH answers `applied` and moves
+the global `effective` view while a head whose overrides set the same key keeps its own value. A knob only the
+daemon-wide value reaches ignores a per-head value, and a global PATCH rejects a head-only knob. A PATCH beats
+every shared layer until restart, persists best-effort to state/config.json (the answer says `persisted`, or
+`not_persisted` with why), and that copy sits below env at the next boot. `PATCH /api/config?head=<key>` writes
+that head's overrides into splice.toml instead.
 
 Which keys need a restart is NOT a hand list here — a hand list is wrong the day a knob is added,
 and this one had been wrong for a long time (V4-109: it named four, while nearly every knob is
 snapshotted at `Daemon.start` and only the hot few apply live). Ask the machine instead:
 `restartRequiredKnobKeys` in `core/.../config/KnobKind.kt`, derived from the `Knob` enum's
-own flag, and the same list on the wire as `restart_required_keys` from `GET /mgmt/config`.
+own flag. On the wire each knob in `GET /api/config`'s `knobs` carries `disposition` (`restart` or
+`live`), and a PATCH answers `restart_required` with the applied keys that wait for a restart.
 Everything else hot-applies on the next request.
 
 All heads share ONE `ConfigService` (one JVM — unlike the Node lineage's
@@ -111,7 +133,7 @@ head (`[heads.<key>]` system_prompt / system_prompt_file / system_prompt_mode), 
 (`[projects."<root>".heads.<key>]`). The project is the deepest configured root containing the
 session's cwd (`SessionProject`). Appends stack as trailing blocks; a replace drops the client's
 field and every earlier layer. No projects table = V4-36's bytes. Resolver:
-`core/.../prompt/SystemPromptLayers.kt`; applied in `TurnPreparation.applySystemPrompt`.
+`core/.../prompt/SystemPromptLayers.kt`; applied in `TurnPrompts.applySystemPrompt`.
 
 ## Control plane (spliced)
 
@@ -119,31 +141,40 @@ field and every earlier layer. No projects table = V4-36's bytes. Resolver:
 > `app/src/main/kotlin/splice/app/control/ControlServer.kt`. The Node
 > `src/control-server.mjs` it replaced was deleted on 2026-08-10.
 
-The control plane is centralized. `spliced` (`src/control-server.mjs`, loopback
+The control plane is centralized. `spliced` (`ControlServer.kt`, loopback
 `:3096`, `controlPort`) hosts a bearer-guarded `/api/*` that AGGREGATES every head
 (same mgmt-key). The console returned on Oct 10, 2026 and is served only by this
-central control plane through `ConsoleMount`; heads still have no `/dashboard`.
-Console assets use the same authenticated `/api/*` surface. It reads file-based truth
-(auth, usage, compact) directly so a DOWN head is still visible, and talks to
-RUNNING heads over `/mgmt` for live status + config.
+central control plane through `ConsoleMount`; heads have no `/dashboard`.
+Console assets use the same authenticated `/api/*` surface. Every head runs inside the
+daemon's one JVM, so the control plane reads head state, config and file-based truth
+(auth, usage, compact) in process, and a DOWN head is still visible. The table lists the
+routes the old aggregate served; the full set is whatever the mounts under
+`app/src/main/kotlin/splice/app/control/mount/` register.
 
 | route | purpose |
 |---|---|
 | GET /api/heads · POST /api/heads/:head/{start,stop,restart} | live status + full lifecycle |
-| GET \| PATCH /api/config | effective + layers; PATCH fans out to running heads |
+| GET \| PATCH /api/config | effective + layers; PATCH goes to the one `ConfigService` (`?head=<key>` writes that head's overrides) |
 | GET /api/usage | per-head 5h usage + soft-warn (ok/warn/critical) |
 | GET /api/auth · POST /api/auth/:head/{refresh,login} | per-head auth; codex browser login |
 | GET /api/compact · GET /api/logs/:head | compact stats, per-head log tail |
 
-- **Head lifecycle is shared** (`launcher/heads.mjs`): the CLI launcher and spliced
-  call the SAME registry + spawn/kill primitives (never forked). Control-side
-  spawns strip `CONFIG_ENV_NAMES` so `config.json` wins over inherited env.
-- **Config PATCH fans out** to each running head's `/mgmt/config` (the runtime
-  layer, which beats the launcher's env pin); with no head up it writes the file.
-- **Soft-warn never blocks** (`usage/warn.mjs`, `usageWarnPct` / `usageWarnTokens5h`):
+- **Head lifecycle is shared** (`HeadLifecycle`, `features/turns/src/main/kotlin/splice/head/lifecycle/`):
+  every head runs inside the daemon's one JVM, so start, drain, stop and restart exist once per head,
+  serialized under one mutex, behind the `Head` contract in `core/.../head/Head.kt`. The console's
+  `POST /api/heads/:head/{start,stop,restart}` (`FleetMount` → `HeadOperations`, `features/heads`) and
+  the daemon's own drain-and-stop reach that same object, never a forked copy. The CLI launcher holds no
+  head code: `app/src/main/dist/bin/splice-launch` cold-starts the daemon if it is down and POSTs
+  `/launch`, and `LaunchService` (`features/launch/.../recipe/`) returns the exec recipe. No head is
+  spawned as a child process, so there is no inherited environment to strip: a head reads config
+  through the one `ConfigService`, where env sits below a runtime PATCH (see "Config layering").
+- **Config PATCH needs no fan-out**: heads share the one `ConfigService`, so the PATCH
+  lands in its runtime layer once and persists to state/config.json. A head whose
+  `[heads.<key>.overrides]` sets the key keeps its own value (see "Config layering").
+- **Soft-warn never blocks** (`core/.../usage/UsageWarn.kt`, `usageWarnPct` / `usageWarnTokens5h`):
   drives the statusline `⚠`.
-- Heads keep `/mgmt` but no longer serve `/dashboard`; every head launch
-  best-effort-starts spliced.
+- Heads serve no `/mgmt` and no `/dashboard`; a launch cold-starts the daemon when it is
+  down (`splice-launch`).
 
 ## Gates
 

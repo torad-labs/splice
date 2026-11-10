@@ -10,6 +10,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import splice.core.index.WireBlockIndex
+import splice.core.turn.Usage
 import splice.core.turn.WireFacts
 import splice.core.util.JsonScalars
 import splice.upstream.sse.BlockDeltas
@@ -54,9 +55,13 @@ internal class WireBlockWriter(
 ) : WireSink, BlockOpening by opens, WholeBlocks by opens, BlockDeltas by writes, BlockEnding by writes {
     override fun deferMessageStart() = start.defer()
 
+    override fun openingUsage(usage: Usage) = start.acceptUsage(usage)
+
+    /** The backend's opener is written after its frame's action, which is where the dialect reads the opener's
+     *  usage and hands it to [openingUsage]; written first, it went out with zeros over the real input. */
     override suspend fun withSourceFrame(event: JsonObject, action: SourceFrameAction) {
-        if (JsonScalars.strOrEmpty(event[TYPE]) == "message_start") start.acceptSource(event)
         writes.native.deliver(event, this, action)
+        if (JsonScalars.strOrEmpty(event[TYPE]) == "message_start") start.acceptSource(event)
     }
 
     override suspend fun relayEvent(event: JsonObject, index: WireBlockIndex?) {
@@ -181,10 +186,18 @@ internal class WireBlockWrites(
      * content_block_stop would corrupt the wire) — L3 block-pairing stays a property of THIS
      * writer, not of caller discipline.
      */
-    private suspend fun hotDelta(index: WireBlockIndex, deltaType: String, field: String, value: String) {
+    private suspend fun hotDelta(
+        index: WireBlockIndex,
+        deltaType: String,
+        field: String,
+        value: String,
+        visible: Boolean = false,
+    ) {
         if (index.value !in open) return
-        if (!native.has(BLOCK_DELTA)) {
-            frames.writeDeltaFrame(index, deltaType, field, value)
+        // A source frame that carries only the protocol keys merges to exactly these bytes' values, so it takes the
+        // hand-built frame too; only a frame with fields of its own pays for the tree.
+        if (!native.has(BLOCK_DELTA) || native.onlyProtocol(field)) {
+            frames.writeDeltaFrame(index, deltaType, field, value, visible)
             return
         }
         val delta = buildJsonObject {
@@ -196,11 +209,11 @@ internal class WireBlockWrites(
 
     override suspend fun textDelta(index: WireBlockIndex, text: String) {
         if (text.isNotEmpty() && index.value in open) facts?.noteText()
-        hotDelta(index, "text_delta", "text", text)
+        hotDelta(index, "text_delta", "text", text, visible = true)
     }
 
     override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) {
-        hotDelta(index, "thinking_delta", "thinking", thinking)
+        hotDelta(index, "thinking_delta", "thinking", thinking, visible = true)
     }
 
     override suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String) {

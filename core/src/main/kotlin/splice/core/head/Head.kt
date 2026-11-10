@@ -58,7 +58,16 @@ public interface Head {
     /** Failure-handling slice 5: the turns this head holds in their own requests until their cause lifts, oldest first.
      *  Empty on a head that holds none. */
     public fun heldTurns(): List<HeldTurnReading> = emptyList()
+
+    /** 2026-11-09 audit: the head has refused requests in a row before any upstream turn, enough of them for one cause
+     *  that it reads degraded, and has admitted none since; null while it admits turns. */
+    public fun refusing(): RefusingReading? = null
 }
+
+/** A head refusing every request (2026-11-09 audit, when claudex refused every turn for 67 minutes and every surface
+ *  read quiet): [reason] is the last refusal as daemon.log words it, [inRow] how many requests it has refused since
+ *  it last admitted a turn, and [sinceEpochMs] when the first of them came. */
+public data class RefusingReading(val reason: String, val inRow: Int, val sinceEpochMs: Long)
 
 /** One held turn as status and the console show it: the reset it waits for (epoch seconds, null where none was
  *  stated), the login it waits on, what it met ("limit", "overload", "credit") and the bytes its request keeps in

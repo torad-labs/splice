@@ -7,6 +7,7 @@ package splice.dialect.chat
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.index.WireBlockIndex
+import splice.upstream.SyntheticToolIds
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.BufferCapacity
 
@@ -29,9 +30,11 @@ internal class ChatToolCalls(private val frame: ChatToolFrame, private val prose
     // final consolidated array (emit). The value is the call's tool index.
     internal val openedIndexById = HashMap<String, Int>()
 
-    // Opened calls whose id was minted here ("toolu_<n>") because the stream never carried one, and the
-    // name each opened call went out under: what lets the fold match a final echo that arrives WITH an id
-    // back to the streamed call by its position and name.
+    // Opened calls whose id was minted here because the stream never carried one, and the name each opened
+    // call went out under: what lets the fold match a final echo that arrives WITH an id back to the streamed
+    // call by its position and name. The minted id rides back in later requests, so it comes from the shared
+    // SyntheticToolIds and never repeats an earlier turn's ("toolu_<index>" did, and pairing dropped the call).
+    private val syntheticIds = SyntheticToolIds()
     private val synthesizedIndices = HashSet<Int>()
     private val openedNames = HashMap<Int, String>()
 
@@ -76,7 +79,7 @@ internal class ChatToolCalls(private val frame: ChatToolFrame, private val prose
             return
         }
         val pending = pendingTools.getOrPut(parsed.index) {
-            PendingTool(id = parsed.id.ifEmpty { "toolu_${parsed.index}" }, synthesizedId = parsed.id.isEmpty())
+            PendingTool(id = parsed.id.ifEmpty { syntheticIds.mint() }, synthesizedId = parsed.id.isEmpty())
         }
         if (parsed.id.isNotEmpty()) {
             pending.id = parsed.id

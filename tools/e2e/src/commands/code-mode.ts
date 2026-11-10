@@ -1946,7 +1946,6 @@ command = "claude-${name}"
   writeFileSync(config, blocks.join("\n"));
   return daemonEnv({
     SPLICE_CONFIG: config, CLAUDEX_STATE_DIR: state, CLAUDEX_QUOTA_POLL: "off",
-    CODEX_AUTH_PATH: join(root, "missing-legacy-auth.json"),
     CODEX_OAUTH_TOKEN_URL: `http://127.0.0.1:${upstream}/oauth/token`, SPLICE_PROBE_BEARER: bearer,
   });
 }

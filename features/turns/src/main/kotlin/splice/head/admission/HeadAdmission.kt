@@ -11,8 +11,9 @@ import io.ktor.server.application.ApplicationCall
 import splice.core.auth.CredentialKey
 import splice.core.failure.EndingHeard
 import splice.core.failure.RequestFacts
-import splice.core.memory.HeapLease
+import splice.core.memory.HeapCapacityException
 import splice.core.turn.LiveWatchdogBudget
+import splice.core.util.Cancellables
 import splice.head.HeadDeps
 import splice.head.hold.ClientWallHeader
 import splice.head.hold.ResendLedger
@@ -36,13 +37,18 @@ internal class HeadAdmission(
     private val driver: TurnDriver,
 ) {
     private val keyAccounts = KeyAccount(preparation.provider.auth, deps.quotaBundle)
-    private val refusals = PreDriveRefusals(deps, admission, responses, driver, preparation.provider.loginCommand)
+
+    private val refusals =
+        preparation.provider.let { PreDriveRefusals(deps, admission, responses, driver, it.loginCommand, it.key) }
 
     // Failure-handling slice 4: the requests whose turn ended with an answer Claude Code sends again, so the identical
     // request after one is told as its re-send (RequestFacts.repeated) and ends for good if it fails the same way.
     private val resends = ResendLedger(deps.seams.clock)
 
     fun arrivalTime(): Long = telemetry.arrivalTime()
+
+    /** The head's degraded reading while it refuses every request, null while it admits turns. */
+    fun refusing(): splice.core.head.RefusingReading? = refusals.streak.reading()
 
     /** The listener observes arrivals before ingress can refuse their bodies without entering this handler. */
     fun observeRequests(application: Application) {
@@ -51,7 +57,17 @@ internal class HeadAdmission(
 
     suspend fun handleMessages(call: ApplicationCall, arrivalAt: Long = arrivalTime()) {
         RequestObservation.run(call, deps, preparation.provider.key, arrivalAt) {
-            handleObserved(call, arrivalAt)
+            // The head's door is total, as the control plane's has been since 2026-09-23 (ControlGuard): the head
+            // installs no StatusPages and the daemon ships no SLF4J provider, so an exception out of here was Ktor's
+            // empty 500 with no line anywhere. Preparation and the drive have their own boundaries; this one catches
+            // what escapes between them. Cancellation and an Error still propagate.
+            Cancellables.runCatchingBestEffort { handleObserved(call, arrivalAt) }
+                .onFailure { failure ->
+                    // A full heap is not a defect: HeapIngress answers it with the retryable overload, as it
+                    // always has.
+                    if (failure is HeapCapacityException) throw failure
+                    refusals.refuseEscaped(call, failure, telemetry, arrivalAt)
+                }
         }
     }
 
@@ -77,15 +93,7 @@ internal class HeadAdmission(
         try {
             // Prepared request trees survive decode and may belong to a detached compaction.
             // Their heap lease follows the same slot that already owns that drive's lifetime.
-            val owner = object : MaterializationOwner {
-                override fun onRelease(release: TurnEnd) {
-                    admitted.materializedEnd = release
-                }
-
-                override fun leased(lease: HeapLease) {
-                    admitted.heapLease = lease
-                }
-            }
+            val owner = admitted.materializationOwner()
             val leaseStart = telemetry.arrivalTime()
             val prepared = admission.materializeBodyOrRespond(
                 call,
@@ -103,7 +111,7 @@ internal class HeadAdmission(
         // Only a Ready turn names a live row. settle already returned Local/Replay/Collected ownership,
         // including a borrowed handle whose row still belongs to its independent source.
         when (prepared) {
-            is Preparation.Rejected -> responses.respondRefusal(call, prepared.cause)
+            is Preparation.Rejected -> refusals.refusePrepared(call, prepared, admitted)
             is Preparation.Local -> driver.answerLocally(call, prepared, admitted.perf)
             is Preparation.Replay -> {
                 // settle returned this retry's candidate before it follows the independently held drive.
@@ -121,6 +129,8 @@ internal class HeadAdmission(
 
     private suspend fun serveReady(call: ApplicationCall, prepared: Preparation.Ready, admitted: AdmittedTurn) {
         val meta = prepared.built.meta
+        // A turn the dialect and the head admitted ends any run of refusals (2026-11-09 audit).
+        refusals.streak.admitted()
         RequestObservation.ready(admitted.perf, prepared)
         // Before describe: a compaction held for a restart is not yet one the restart's read waits for.
         if (meta.compact && !admission.compactionAdmittedOrRespond(call, TurnEnd(admitted::release))) return
@@ -139,8 +149,9 @@ internal class HeadAdmission(
 
         // V4-134: turn.start fires HERE and nowhere earlier because this is the one path whose every
         // exit writes a perf row — the two local refusals below and the drive all go through
-        // TurnTelemetry's emitters, which fire turn.end. Rejected, Local and Replay write no row, so
-        // announcing them would leave the console a start with no end.
+        // TurnTelemetry's emitters, which fire turn.end. Local and Replay write no row, so announcing them
+        // would leave the console a start with no end; Rejected writes one and announces itself
+        // (PreDriveRefusals.refusePrepared).
         deps.seams.events.turnStarted(prepared.built.meta.scope.sessionId)
         // V4-174: the trace begins HERE, before the two local refusals, because a refused turn is a
         // request the head received and answered — a trace that skipped it would show a client

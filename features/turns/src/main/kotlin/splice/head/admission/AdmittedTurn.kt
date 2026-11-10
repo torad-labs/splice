@@ -55,6 +55,18 @@ internal class AdmittedTurn(
         }
     }
 
+    /** The materialization gate's owner for this request: its trees' release and heap lease follow this turn's slot,
+     *  which already owns a detached compaction's lifetime (moved here from HeadAdmission on Nov 10, concentration). */
+    fun materializationOwner(): MaterializationOwner = object : MaterializationOwner {
+        override fun onRelease(release: TurnEnd) {
+            materializedEnd = release
+        }
+
+        override fun leased(lease: HeapLease) {
+            heapLease = lease
+        }
+    }
+
     /** Bind to the settled permit, never the candidate borrowed only to parse this body. */
     fun retainRequest() {
         materializedEnd?.let(slot::onRelease)

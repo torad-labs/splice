@@ -53,17 +53,16 @@ internal class CodeModeHistoryJournal(
         if (fragment) log("[code-mode] authoritative history ignored an uncommitted final fragment")
     }
 
-    fun append(file: Path, delta: CodeModeHistoryDelta, committedBytes: Long): CodeModeHistoryCommitted {
+    /** Null, with nothing written, when [file] holds less than [committedBytes]: something removed or cut it under
+     *  the head (a Settings clear, a sweep), and a suffix appended there would be a journal without its parents. */
+    fun append(file: Path, delta: CodeModeHistoryDelta, committedBytes: Long): CodeModeHistoryCommitted? {
         val weight = CodeModeHistoryDeltas.weight(delta) * HISTORY_DECODE_FACTOR
         val stage = heap.reserve(weight) ?: throw HeapCapacityException()
         return stage.use {
             val text = json.encodeToString(CodeModeHistoryDelta.serializer(), delta)
             val next = committedBytes + CodeModeStateText(text).bytes + 1L
             if (next > maxBytes) throw CodeModeStorageException.Limit(next, maxBytes)
-            secure(file)
-            FileChannel.open(file, StandardOpenOption.WRITE).use { channel ->
-                if (channel.size() != committedBytes) channel.truncate(committedBytes)
-            }
+            if (!holds(file, committedBytes)) return@use null
             JsonlSink.appendLine(
                 file,
                 text,
@@ -72,6 +71,18 @@ internal class CodeModeHistoryJournal(
             )
             FileChannel.open(file.parent, StandardOpenOption.READ).use { channel -> channel.force(true) }
             CodeModeHistoryCommitted(next, splice.core.perf.InputDigest.hex(text))
+        }
+    }
+
+    /** Whether [file] still holds the [committedBytes] its writer last committed, cutting any torn tail past them.
+     *  False when it lost them (removed or cut short under a running head): the writer rewrites it whole. */
+    private fun holds(file: Path, committedBytes: Long): Boolean {
+        if (committedBytes > 0L && Files.notExists(file)) return false
+        secure(file)
+        return FileChannel.open(file, StandardOpenOption.WRITE).use { channel ->
+            val size = channel.size()
+            if (size > committedBytes) channel.truncate(committedBytes)
+            size >= committedBytes
         }
     }
 

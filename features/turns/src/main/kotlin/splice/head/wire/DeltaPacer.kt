@@ -59,6 +59,20 @@ private const val MESSAGE_DELTA_EVENT = "event: $MESSAGE_DELTA\n"
 private const val MESSAGE_STOP_EVENT = "event: $MESSAGE_STOP\n"
 private val TOOL_BLOCK_TYPES = setOf("tool_use", "server_tool_use")
 
+/** What the pacer reads of a frame: whether it is a visible (text or thinking) delta, and whether that delta carries
+ *  characters. A writer that builds a delta frame by hand knows it and hands it over with the frame
+ *  (FrameWrite.delta); any other frame is read from its text, once per write. */
+internal enum class DeltaShape {
+    /** Not a text or thinking delta: a tool's input, a signature, or any other frame. */
+    HIDDEN,
+
+    /** A text or thinking delta with nothing in it. */
+    EMPTY,
+
+    /** A text or thinking delta that carries characters. */
+    ARRIVING,
+}
+
 /** Holds the frames a burst queues and decides which leave each tick. Every member except
  *  [awaitSignal] and [finish] runs under the channel's writeMutex, which is what makes the queue safe. */
 internal class DeltaPacer(
@@ -101,8 +115,14 @@ internal class DeltaPacer(
      *  holds. Only a model frame ([modelOutput]) can be a visible delta: the pinger's status line never starts a wait.
      *  A frame that starts a tool call or ends the message never waits behind a burst: it answers false, so the
      *  caller writes everything held at once, then it. */
-    fun hold(frame: String, perf: TurnPerf, modelOutput: Boolean, nowMs: Long): Boolean {
-        val visible = modelOutput && isVisibleDelta(frame)
+    fun hold(
+        frame: String,
+        perf: TurnPerf,
+        modelOutput: Boolean,
+        nowMs: Long,
+        shape: DeltaShape = shapeOf(frame, modelOutput),
+    ): Boolean {
+        val visible = modelOutput && shape != DeltaShape.HIDDEN
         val slices = if (active && visible) VisibleDeltaSplitter.split(frame) else null
         if (slices == null && !mustWait(frame, visible, nowMs)) {
             if (visible) lastVisibleMs = nowMs
@@ -186,15 +206,15 @@ internal class DeltaPacer(
         return maxOf(floorPerTick, spread)
     }
 
-    /** A text or thinking delta. Read from the frame's own `delta` object, so a native source's key order and
-     *  whatever else the frame carries cannot change the answer. */
-    fun isVisibleDelta(frame: String): Boolean = DeltaFields.visible(frame) != null
-
-    /** A visible delta that carries characters: the client has nothing new to read from an empty one. */
-    fun isArrivingDelta(frame: String): Boolean {
-        val delta = DeltaFields.visible(frame) ?: return false
-        val field = if (JsonScalars.str(delta.type) == TEXT_DELTA) delta.text else delta.thinking
-        return !JsonScalars.str(field).isNullOrEmpty()
+    /** The frame's shape: [given] when its writer handed one over, else read from the frame's own `delta` object, so a
+     *  native source's key order and whatever else the frame carries cannot change the answer — one decode, none for
+     *  a frame that is not a content_block_delta, and none for a frame that is not the model's ([modelOutput] false),
+     *  which never paces. ARRIVING is a visible delta that carries characters: the client has nothing new to read
+     *  from an empty one. */
+    fun shapeOf(frame: String, modelOutput: Boolean = true, given: DeltaShape? = null): DeltaShape = when {
+        !modelOutput -> DeltaShape.HIDDEN
+        given != null -> given
+        else -> DeltaFields.shape(frame)
     }
 }
 
@@ -221,6 +241,13 @@ private object DeltaFields {
         val data = if (frame.startsWith(DELTA_EVENT)) frame.substringAfter("data:", "") else ""
         if (data.isBlank()) return null
         return parsed(data)?.takeIf { JsonScalars.str(it.type) in VISIBLE_TYPES }
+    }
+
+    /** The frame's shape, read from its `delta` object. */
+    fun shape(frame: String): DeltaShape {
+        val delta = visible(frame) ?: return DeltaShape.HIDDEN
+        val field = if (JsonScalars.str(delta.type) == TEXT_DELTA) delta.text else delta.thinking
+        return if (JsonScalars.str(field).isNullOrEmpty()) DeltaShape.EMPTY else DeltaShape.ARRIVING
     }
 
     // A frame whose data is not JSON, or whose delta is not an object, is not a delta; pacing never fails a turn

@@ -1,4 +1,5 @@
-// NEW: V4-454 — loopback probes refuse before every work recorder, on both credential kinds.
+// NEW: V4-454 — loopback probes refuse before every work recorder, on both credential kinds. 2026-11-09 audit: the
+// request-evidence plane is one of them, so a probe opens no request row there either.
 package splice.head
 
 import com.sun.net.httpserver.HttpServer
@@ -22,9 +23,17 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.model.TurnPrice
+import splice.core.perf.observation.PerfEventKind
+import splice.core.perf.observation.PerfIdentity
+import splice.core.perf.observation.PerfObservation
+import splice.core.perf.observation.PerfObserver
+import splice.core.perf.observation.PerfRecorder
 import splice.core.storage.ActivityDays
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
+import splice.core.util.ElapsedClock
+import splice.core.util.MonoClock
+import splice.core.util.WallClock
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.head.usage.EconomicsStore
@@ -34,6 +43,7 @@ import splice.upstream.ProviderTuning
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -45,6 +55,9 @@ private const val REAL_BODY =
         """"messages":[{"role":"user","content":"synthetic"}]}"""
 
 class HeadServerLivenessProbeTest {
+    /** Every request-evidence observation the head records: a probe may add none. */
+    private val recorded = CopyOnWriteArrayList<PerfObservation>()
+
     @Test
     fun `forward-only probes never become work`(@TempDir tmp: Path) = exercise(true, tmp)
 
@@ -77,6 +90,11 @@ class HeadServerLivenessProbeTest {
                     for (request in cases) {
                         reject(client, head.port, request)
                         noWork(deps, tmp.resolve("trace"), calls)
+                        // A marked request opens no request row; the unmarked one is a request refused at the door.
+                        // Arrivals alone: an earlier request's ending may still be landing.
+                        val arrived = recorded.filter { it.kind == PerfEventKind.REQUEST_ARRIVED }
+                        if (request.third != null) assertEquals(emptyList<PerfObservation>(), arrived)
+                        recorded.clear()
                         assertEquals(0, workEvents.get(), "no recent-turn event may name a probe")
                     }
                     // An unmarked control proves this listener really dispatches.
@@ -86,6 +104,7 @@ class HeadServerLivenessProbeTest {
                         setBody(REAL_BODY)
                     }.bodyAsText()
                     assertTrue(calls.get() > 0)
+                    assertTrue(recorded.any { it.kind == PerfEventKind.REQUEST_ARRIVED }, "the control has a row")
                     withTimeout(5.seconds) {
                         while (deps.stores.perfStats.tailNumeric().isEmpty()) delay(10.milliseconds)
                     }
@@ -161,13 +180,21 @@ class HeadServerLivenessProbeTest {
             "synthetic",
             1000,
         )
+        val identity = PerfIdentity("probe", "test", "test", "test")
+        val recorder = PerfRecorder(
+            identity,
+            PerfObserver { recorded.add(it) },
+            ElapsedClock(MonoClock::nowMs),
+            WallClock(System::currentTimeMillis),
+        )
+        val stores = headStores(tmp, economics = economics, trace = trace)
         val deps = headDeps(
             tmp,
             seams = HeadDeps.HeadSeams(events = events),
         ).copy(
             policy = HeadDeps.HeadPolicy(forwardClientAuth = forward),
         ).copy(
-            stores = headStores(tmp, economics = economics, trace = trace),
+            stores = stores.copy(captures = stores.captures.copy(observations = recorder)),
         )
         val head = HeadServer(provider, 0, deps)
         head.start()

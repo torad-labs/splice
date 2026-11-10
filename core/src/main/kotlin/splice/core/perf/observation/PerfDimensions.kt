@@ -36,7 +36,7 @@ internal object PerfDimensions {
         value in outcomes -> value
         OutcomeTags.isClean(value) -> "good"
         value == OutcomeTag.CANCELLED.wire || OutcomeTags.isStopped(value) -> "cancelled"
-        value == OutcomeTag.AT_CAPACITY.wire -> "refused"
+        value == OutcomeTag.AT_CAPACITY.wire || value == OutcomeTag.REFUSED.wire -> "refused"
         value == "?" -> UNKNOWN_DIMENSION
         else -> "bad"
     }
@@ -47,7 +47,10 @@ internal object PerfDimensions {
         "good" -> OutcomeTag.OK.wire
         "bad" -> OutcomeTag.UNEXPECTED.wire
         "cancelled" -> OutcomeTag.CANCELLED.wire
-        "refused", UNKNOWN_DIMENSION, "?" -> "?"
+        // A refusal is named, never folded into the unattributed "?" (2026-11-09: a head refusing every turn read as
+        // idle in perf-evidence).
+        "refused" -> OutcomeTag.REFUSED.wire
+        UNKNOWN_DIMENSION, "?" -> "?"
         else -> knownOutcome(value)
     }
 

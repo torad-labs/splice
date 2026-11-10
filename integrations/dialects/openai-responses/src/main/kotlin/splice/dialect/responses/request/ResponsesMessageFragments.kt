@@ -7,7 +7,6 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.core.util.JsonWire
 import splice.core.wire.AnthropicMessage
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.DocumentBlock
@@ -22,8 +21,10 @@ import splice.core.wire.UnknownBlock
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.ResponsesAssistantPhaseRecords
 import splice.dialect.responses.reasoning.ResponsesHistoryInput
+import splice.dialect.responses.reasoning.ResponsesHistoryMemo
 import splice.dialect.responses.stream.LoopGuard
 import splice.upstream.ToolNameShortener
+import splice.upstream.memory.FragmentContextKey
 import splice.upstream.memory.MessageFragmentContext
 import splice.upstream.memory.MessageFragments
 
@@ -33,6 +34,7 @@ internal class ResponsesMessageFragments(
     private val toolNames: ToolNameShortener,
 ) {
     private val fragments = MessageFragments()
+    private val historyMemo = ResponsesHistoryMemo()
 
     fun walk(
         body: AnthropicRequest,
@@ -50,6 +52,10 @@ internal class ResponsesMessageFragments(
             body.tools.associateByTo(mutableMapOf()) { it.name },
         )
         val context = context(body, raw, opts, directives, effort)
+        // Indexed by whether an assistant tool call follows: digested once per request, never per message.
+        val assistantContext = listOf(false, true).map { follows ->
+            context.with(buildJsonObject { put("future_assistant_tool_use", follows) })
+        }
         val history = history(body, opts)
         val assistantToolUseFollows = followingAssistantToolUse(body.messages)
         return buildJsonArray {
@@ -57,7 +63,7 @@ internal class ResponsesMessageFragments(
                 history?.inject(this)
                 val futureAssistantToolUse = assistantToolUseFollows[index]
                 if (!requiresLiveState(msg) && history?.advanceUnchanged(msg) != false) {
-                    fragments.message(phaseContext(context, msg, futureAssistantToolUse), msg) {
+                    fragments.message(phaseContext(context, assistantContext, msg, futureAssistantToolUse), msg) {
                         buildJsonArray {
                             inputBuilder.appendMessage(
                                 this,
@@ -86,7 +92,7 @@ internal class ResponsesMessageFragments(
     private fun history(body: AnthropicRequest, opts: BuildOptions): ResponsesHistoryInput? {
         val retainReasoning = opts.handoff.replay.v || quirks.roundTrip.reasoningCache
         val retainHistory = retainReasoning || hasPhaseHistory(opts)
-        return if (retainHistory) ResponsesHistoryInput(opts, body.messages) else null
+        return if (retainHistory) ResponsesHistoryInput(opts, body.messages, historyMemo.walk()) else null
     }
 
     private fun hasPhaseHistory(opts: BuildOptions): Boolean {
@@ -106,17 +112,13 @@ internal class ResponsesMessageFragments(
 
     /** Phase inference reads the adjacent assistant messages, so its cache identity must as well. */
     private fun phaseContext(
-        context: String,
+        context: FragmentContextKey,
+        assistantContext: List<FragmentContextKey>,
         message: AnthropicMessage,
         futureAssistantToolUse: Boolean,
-    ): String {
+    ): FragmentContextKey {
         if (message.role != ROLE_ASSISTANT) return context
-        return JsonWire.string(
-            buildJsonObject {
-                put("request_context", context)
-                put("future_assistant_tool_use", futureAssistantToolUse)
-            },
-        )
+        return assistantContext[if (futureAssistantToolUse) 1 else 0]
     }
 
     private fun followingAssistantToolUse(messages: List<AnthropicMessage>): BooleanArray {
@@ -139,7 +141,7 @@ internal class ResponsesMessageFragments(
         opts: BuildOptions,
         directives: Map<String, String>,
         effort: String?,
-    ): String = JsonWire.string(
+    ): FragmentContextKey = MessageFragmentContext.key(
         buildJsonObject {
             put("request", MessageFragmentContext.of(body, raw))
             put("original_model", opts.models.original)

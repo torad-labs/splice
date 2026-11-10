@@ -11,7 +11,6 @@
 package splice.provider.kimi
 
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.serialization.json.JsonObject
 import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialExpiry
@@ -19,8 +18,7 @@ import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.CredentialJson
 import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
-import splice.core.auth.INVALID_GRANT_REASON
-import splice.core.auth.InvalidGrantLatch
+import splice.core.auth.LoginAnswer
 import splice.core.auth.RefreshCall
 import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
@@ -28,16 +26,15 @@ import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
-import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import splice.upstream.credentials.AccountCredentialIdentitySource
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialEvidence
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialFileEvidenceReader
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialPresence
-import splice.upstream.credentials.BackgroundCredentialRefresh
-import splice.upstream.credentials.CredentialLock
-import splice.upstream.retry.SingleFlight
-import java.nio.file.Files
+import splice.upstream.credentials.HeldToken
+import splice.upstream.credentials.RenewalStage
+import splice.upstream.credentials.RenewalWindows
+import splice.upstream.credentials.TokenRenewal
 import java.nio.file.Path
 
 private const val LOG_TAG = "kimi-auth"
@@ -47,6 +44,9 @@ private const val MIN_PROACTIVE_S = 300L
 
 // G17 hard floor: below this many seconds of validity the refresh blocks the request.
 private const val HARD_FLOOR_S = 60L
+
+// The largest count of seconds that still fits in milliseconds.
+private const val MAX_S = Long.MAX_VALUE / MS_PER_S
 
 public class KimiAuthProvider(
     private val authPath: Path,
@@ -64,9 +64,16 @@ public class KimiAuthProvider(
     private val log: LogSink = LogSink(DaemonLog::write),
 ) : RefreshableAuthProvider, AccountCredentialIdentitySource {
 
-    private val singleFlight = SingleFlight<RefreshOutcome>()
-    private val backgroundRefresh = prefetchScope?.let { BackgroundCredentialRefresh(it, LOG_TAG, log) }
-    private val invalidGrantLatch = InvalidGrantLatch()
+    // Audit, Nov 9, 2026: the ladder (serve, prefetch, wait near expiry, stat, latch, lock, persist) is the shared
+    // TokenRenewal; what stays here is kimi's own: the flat file's shape, its windows and the merge.
+    private val renewal: TokenRenewal = TokenRenewal(
+        authPath,
+        LOG_TAG,
+        clock,
+        log,
+        prefetchScope,
+        RenewalStage { prior -> store.refreshLocked(prior) },
+    )
 
     // The plan-tier probe and the auth-file shaper moved to KimiOAuth with the rest of the kimi
     // OAuth wire helpers (HD-M5); this class reaches them through one collaborator.
@@ -78,108 +85,48 @@ public class KimiAuthProvider(
         log,
         KimiAuthStore.PersistGranted { persistGranted(it) },
         refreshCall,
+        renewal.text,
     )
-
-    init {
-        // Lifecycle ownership: when prefetchScope ends (Daemon.stop cancels probeScope), cancel the
-        // shared refresh so it cannot persist a token after shutdown. Per-request cancellation is
-        // unaffected — it only cancels that caller's await, never the SingleFlight scope.
-        prefetchScope?.coroutineContext?.get(Job)?.invokeOnCompletion { singleFlight.close() }
-    }
 
     private fun synthesizeExpiry(mtimeMs: Long): Long =
         CredentialExpiry.synthesizedExpiryMs(mtimeMs, clock()) / MS_PER_S
 
-    override suspend fun credentials(): Credentials? {
-        val snap = store.readSnapshot(authCacheMs) ?: return null
-        val nowS = clock() / MS_PER_S
-        val remainingS = snap.expiresAtS - nowS
-        if (remainingS >= maxOf(MIN_PROACTIVE_S, snap.expiresInS / 2)) return apiKey(snap.access)
-        return proactiveWindowCredentials(snap, nowS, remainingS)
+    // G17 two-tier, run by the shared renewal: the proactive window is max(300 s, expires_in / 2) before expiry; above
+    // the hard floor the request never waits (serve the current token and rotate in the background; measured p90
+    // 802 ms of request-path stall when this blocked, 2026-07-18); at or below it, or with no prefetch scope, it waits,
+    // still serving a token that has not expired.
+    override suspend fun answer(): LoginAnswer {
+        val snap = store.readSnapshot(authCacheMs)
+        // The file's unit is unix SECONDS; one too large for milliseconds saturates (DR-177), never wraps.
+        val held = snap?.let { HeldToken(apiKey(it.access), it.expiresAtS.coerceIn(-MAX_S, MAX_S) * MS_PER_S) }
+        val proactiveS = maxOf(MIN_PROACTIVE_S, (snap?.expiresInS ?: 0L) / 2).coerceAtMost(MAX_S)
+        return renewal.answer(held, RenewalWindows(proactiveS * MS_PER_S, HARD_FLOOR_S * MS_PER_S))
     }
 
-    // G17 two-tier: above the hard floor the request never waits — serve the current token and
-    // rotate in the background (SingleFlight dedupes concurrent kicks; measured p90 802ms of
-    // request-path stall when this blocked, 2026-07-18). At/below the floor block as before:
-    // a nearly-dead token risks a mid-stream 401, which costs more than the wait.
-    private suspend fun proactiveWindowCredentials(
-        snap: KimiAuthStore.Snapshot,
-        nowS: Long,
-        remainingS: Long,
-    ): Credentials? {
-        if (backgroundRefresh != null && remainingS > HARD_FLOOR_S) {
-            backgroundRefresh.launch { refresh() }
-            return apiKey(snap.access)
-        }
-        val refreshed = refresh()
-        return refreshed ?: (if (nowS < snap.expiresAtS) apiKey(snap.access) else null)
-    }
+    override suspend fun credentials(): Credentials? = (answer() as? LoginAnswer.Granted)?.credentials
 
     override suspend fun refresh(): Credentials? = (exchange() as? RefreshOutcome.Refreshed)?.credentials
 
-    // One token exchange, single-flight: its outcome is logged once, inside the flight (credentialsOrNull is the one
-    // logging flatten), and the turn's retry engine reads it whole (failure-handling slice 4).
-    override suspend fun exchange(): RefreshOutcome =
-        singleFlight.run { doRefresh().also { it.credentialsOrNull(LOG_TAG, log) } }
+    override suspend fun exchange(): RefreshOutcome = renewal.exchange()
 
     // Failure-handling slice 3: Kimi's plan-tier 401 is read as the plan limit it is (KimiReplies), never as a
     // refused login, so no refresh is planned for it and this provider carries no rule about a body.
 
-    // Sealed per-mode outcome (discipline L3): a dead refresh token, a transport blip, and a
-    // corrupt file are DIFFERENT stories; credentialsOrNull is the single logging flatten.
-    // Staged (read → exchange), each stage owning its own failure branches.
-    // G1: capture what THIS process last served BEFORE the lock, then re-read authoritatively INSIDE
-    // it — so a peer's rotation (landed while we waited on the lock) is seen, not overwritten.
-    // G15: gate on a latched confirmed invalid_grant BEFORE any file-content read or network call —
-    // a dead token no longer gets re-POSTed every turn. The gate gives way the instant the file's
-    // mtime changes (re-login), so a genuinely stale latch never outlives the credentials it named.
-    private suspend fun doRefresh(): RefreshOutcome {
-        // DR-59 (class law): logged-out is PROVEN by the stat, never an exists() pre-gate —
-        // exists() reads false through an untraversable parent, so an operator with intact tokens
-        // was told "not logged in". Only NoSuch with no NOFOLLOW entry is a genuine first
-        // run/logout; everything else is ReadFailed, whose flatten line says NOT-logged-out.
-        val statFailure = Cancellables.runCatchingCancellable {
-            Files.getLastModifiedTime(authPath)
-        }.exceptionOrNull()
-        if (statFailure != null) {
-            val genuinelyAbsent = statFailure is java.nio.file.NoSuchFileException &&
-                !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
-            return if (genuinelyAbsent) RefreshOutcome.NoCredentialsFile else RefreshOutcome.ReadFailed(statFailure)
-        }
-        val identity = oauth.kimiAuthIdentityOrNull(authPath, log)
-        if (invalidGrantLatch.isLatched(identity)) return RefreshOutcome.Rejected(INVALID_GRANT_REASON)
-        val priorAccess = store.cachedAccess()
-        // AUTH-002: wire the daemon log sink so the lock's proceed-unlocked fallback is observable
-        // (CredentialLock.withLock's `log` default is a silent no-op) instead of only greppable
-        // in a source comment.
-        val outcome = CredentialLock.withLock(authPath, log = log) { store.refreshLocked(priorAccess) }
-        if (outcome is RefreshOutcome.Rejected && outcome.reason == INVALID_GRANT_REASON) {
-            invalidGrantLatch.latch(identity)
-        }
-        return outcome
-    }
-
     private fun persistGranted(tokens: KimiRefreshedTokens): RefreshOutcome {
-        // The endpoint already rotated the old refresh_token (mandatory rotation) by the time
-        // we get here — a throwing write must degrade to a typed PersistFailed, never a raw
-        // throw through SingleFlight out of credentials()/refresh(), so the not-yet-expired
-        // current token still gets served.
+        // The endpoint already rotated the old refresh_token (mandatory rotation) by the time we get here: a write
+        // that fails is kept by the renewal and served from memory until it lands (audit, Nov 9, 2026).
         // SH-10: merge onto the on-disk object — a from-scratch rewrite dropped every
         // field kimi-cli/kimi-code stores beside ours (the 2026-07-18 audit shape grok and
         // codex already fixed). An unreadable file logs and degrades to tokens-only.
         val onDisk = Cancellables.runCatchingCancellable {
-            kimiJson.parseToJsonElement(Files.readString(authPath)) as? JsonObject ?: JsonObject(emptyMap())
+            kimiJson.parseToJsonElement(renewal.text.read()) as? JsonObject ?: JsonObject(emptyMap())
         }.onFailure {
             log(
                 "[kimi-auth] could not re-read $authPath before persist " +
                     "(${SafeFailureText.render(it)}); writing tokens-only",
             )
         }.getOrNull()
-        Cancellables.runCatchingCancellable {
-            val merged = CredentialJson.mergedCredentialJson(onDisk, oauth.kimiAuthJson(tokens, clock()))
-            writeSecure(authPath, merged.toString())
-            // DR-151: the throwable travels WHOLE to the sink, which owns the render.
-        }.getOrElse { return RefreshOutcome.PersistFailed.Write(it) }
+        renewal.persist(CredentialJson.mergedCredentialJson(onDisk, oauth.kimiAuthJson(tokens, clock())).toString())
         store.clearCache()
         return RefreshOutcome.Refreshed(apiKey(tokens.accessToken))
     }
@@ -187,8 +134,7 @@ public class KimiAuthProvider(
     private fun apiKey(token: String): Credentials =
         Credentials.ApiKey(key = token, header = "x-api-key", prefix = "")
 
-    override suspend fun describe(): AuthDescription =
-        store.describe(oauth.kimiAuthIdentityOrNull(authPath, log), invalidGrantLatch)
+    override suspend fun describe(): AuthDescription = store.describe(renewal.identity(), renewal.latch)
 
     override fun observedCredentialKey(): String? = store.readSnapshot(0L)?.access?.let {
         CredentialKey.fromCredentials(apiKey(it))
@@ -200,11 +146,4 @@ public class KimiAuthProvider(
 
     override fun credentialEvidence(): CredentialEvidence =
         CredentialFileEvidenceReader.read(authPath)
-
-    // Atomic 0600 credential write — routes to the shared primitive, mirroring the private member
-    // CodexAuthProvider/GrokAuthProvider already carry.
-
-    private fun writeSecure(path: Path, content: String) {
-        SecureFile.writeAtomic0600(path, content)
-    }
 }

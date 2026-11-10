@@ -27,9 +27,10 @@ internal data class ResponsesWireRequestControls(
     val safetyIdentifier: String? = null,
 )
 
-private val sourceOnlyControls = mapOf(
+// A top-level field is carried, refused here, dropped and said once, or refused as unknown: the rule is
+// ResponsesSourceFields'. These are the controls Responses has no equivalent for.
+internal val sourceOnlyControls = mapOf(
     SOURCE_REQUEST_CONTAINER to RequestFeature.CONTAINER,
-    SOURCE_REQUEST_DIAGNOSTICS to RequestFeature.DIAGNOSTICS,
     SOURCE_REQUEST_INFERENCE_GEO to RequestFeature.INFERENCE_GEO,
     SOURCE_REQUEST_USER_PROFILE_ID to RequestFeature.USER_PROFILE_ID,
     SOURCE_REQUEST_WORKSPACE_ID to RequestFeature.WORKSPACE_ID,
@@ -43,6 +44,12 @@ internal class ResponsesRequestControls(private val quirks: ResponsesQuirks) {
 
     fun refusal(raw: JsonObject): RequestRefusal? = refusedFeature(raw)?.let { feature ->
         RequestRefusal(FailureCause.Splice.Declined(Decline.Untranslatable(feature)))
+    } ?: ResponsesSourceFields.unknown(raw)?.let { field ->
+        RequestRefusal(
+            FailureCause.Splice.Declined(Decline.Untranslatable(RequestFeature.UNKNOWN_FIELD)),
+            "the request carries `${ResponsesSourceFields.nameOf(field)}`, " +
+                "a top-level field no Responses rule classifies",
+        )
     }
 
     fun wire(raw: JsonObject): ResponsesWireRequestControls = ResponsesWireRequestControls(
@@ -126,7 +133,6 @@ private const val SOURCE_REQUEST_STOP_SEQUENCES = "stop_sequences"
 private const val SOURCE_REQUEST_SERVICE_TIER = "service_tier"
 private const val SOURCE_REQUEST_SPEED = "speed"
 private const val SOURCE_REQUEST_CONTAINER = "container"
-private const val SOURCE_REQUEST_DIAGNOSTICS = "diagnostics"
 private const val SOURCE_REQUEST_INFERENCE_GEO = "inference_geo"
 private const val SOURCE_REQUEST_USER_PROFILE_ID = "user_profile_id"
 private const val SOURCE_REQUEST_WORKSPACE_ID = "workspace_id"

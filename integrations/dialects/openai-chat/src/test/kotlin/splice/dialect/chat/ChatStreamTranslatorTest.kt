@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.failure.ClientWire
@@ -262,8 +263,7 @@ class ChatStreamTranslatorTest {
 
     @Test
     fun `tool_call with null id falls back to synthetic toolu id not the string null`() = runTest {
-        val sink = Rec()
-        val outcome = ChatStreamTranslator(ctx()).driveTurn(
+        val turn = {
             listOf(
                 ev(
                     """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":null,"function":{"name":"run",""" +
@@ -274,13 +274,19 @@ class ChatStreamTranslatorTest {
                         """"finish_reason":null}]}""",
                 ),
                 ev("""{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"""),
-            ).asFlow(),
-            sink,
-        )
+            ).asFlow()
+        }
+        val sink = Rec()
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(turn(), sink)
         assertTrue((outcome as TurnOutcome.Success).hasToolUse)
-        assertEquals("toolu_0", sink.toolOpens.single().first)
+        val id = sink.toolOpens.single().first
+        assertTrue(id.startsWith("toolu_synth_"), id)
         // the arguments:null must not leak as a literal "null" input-json delta
         assertFalse(sink.calls.contains("json:null"))
+        // The minted id rides back in later requests, so the next turn's id-less call must not repeat it.
+        val next = Rec()
+        ChatStreamTranslator(ctx()).driveTurn(turn(), next)
+        assertNotEquals(id, next.toolOpens.single().first)
     }
 
     @Test

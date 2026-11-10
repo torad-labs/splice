@@ -23,7 +23,7 @@
       "features/turns/src/main/kotlin/splice/head/compaction/CompactionReplay.kt"
     ],
     "COLLISION DEFAULT_CLIENT_ID": [
-      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/auth/CodexAuthFile.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/auth/CodexOAuthEndpoints.kt",
       "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt"
     ],
     "COLLISION DEFAULT_EXPIRES_IN_S": [
@@ -109,11 +109,11 @@
       "app/src/main/kotlin/splice/app/provider/JdkLocalHttp.kt"
     ],
     "COLLISION REDIRECT_PORT": [
-      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/auth/CodexAuthFile.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/auth/CodexOAuthEndpoints.kt",
       "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt"
     ],
     "COLLISION REDIRECT_URI": [
-      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/auth/CodexAuthFile.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/auth/CodexOAuthEndpoints.kt",
       "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt"
     ],
     "COLLISION RUNAWAY_GUARD_MESSAGE": [
@@ -122,7 +122,7 @@
     ],
     "COLLISION SCOPE": [
       "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubFields.kt",
-      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/auth/CodexAuthFile.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/auth/CodexOAuthEndpoints.kt",
       "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt"
     ],
     "COLLISION SESSION_HEADER": [

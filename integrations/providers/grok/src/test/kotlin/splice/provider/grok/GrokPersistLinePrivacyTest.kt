@@ -8,7 +8,6 @@ package splice.provider.grok
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.Credentials
@@ -18,7 +17,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
 
-// DR-151: BS-2's arm above proves the FALLBACK — a lost write still serves the current token — but
+// DR-151: BS-2's arm proves the FALLBACK (since Nov 9, 2026: a lost write keeps and serves the granted pair), but
 // says nothing about the LINE the operator reads on the way, which is where a leak would hide.
 //
 // This arm deliberately does NOT inject the write. An earlier draft added a
@@ -64,11 +63,10 @@ class GrokPersistLinePrivacyTest {
         } finally {
             Files.setPosixFilePermissions(file.parent, writable)
         }
-        assertEquals("grok-access", (served as Credentials.Bearer).token, "BS-2 fallback must still hold")
+        assertEquals("new-access", (served as Credentials.Bearer).token, "the granted pair is kept, not dropped")
 
-        val persist = lines.single { it.contains("persist failed") }
+        val persist = lines.single { it.contains("credential write failed") }
         assertFalse(persist.contains("rotated-secret"), "the rotated token must never reach the log: $persist")
         assertFalse(persist.contains("grok-refresh"), "nor the old refresh token: $persist")
-        assertTrue(persist.contains("credential write failed"), "the typed Write branch must be what fired: $persist")
     }
 }

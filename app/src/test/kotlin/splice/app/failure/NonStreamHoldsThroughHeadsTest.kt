@@ -106,6 +106,9 @@ class NonStreamHoldsThroughHeadsTest {
     fun `a non-stream client that leaves during a short limit sends nothing at the reset`(
         @TempDir tmp: Path,
     ) = runTest {
+        // Since 1ca21503b (Nov 9) a non-stream turn with a session runs on detached when its client hangs up, so its
+        // slot is no longer let go at the hang-up: the held turn keeps the permit it was admitted with through the
+        // limit wait and lets it go at the reset. The send after the reset is still never made.
         withScriptedHeads(tmp, VirtualTime()) {
             provider.script(limited(START.plusSeconds(10)), reply { anthropicAnswer("must not be sent") })
             val head = anthropic(replies = HeadReplies.claude)
@@ -115,13 +118,16 @@ class NonStreamHoldsThroughHeadsTest {
             }
 
             client.hangUp()
+            // The held turn shows nothing a test can read when its client goes, so the hang-up gets a moment of real
+            // time to reach the head over loopback before the clock moves past the reset.
+            withContext(Dispatchers.Default) { delay(250) }
+            time.advanceBy(1.hours)
             withContext(Dispatchers.Default) {
                 withTimeout(10_000) { while (head.gate.snapshot().live.isNotEmpty()) delay(5) }
             }
-            time.advanceBy(1.hours)
             withContext(Dispatchers.Default) { delay(50) }
 
-            assertEquals(1, provider.requests.size, "the client close cancels the wait and every later send")
+            assertEquals(1, provider.requests.size, "the client close leaves no send for after the reset")
         }
     }
 

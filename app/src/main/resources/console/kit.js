@@ -241,7 +241,7 @@ const isFailed = (o) => !isClean(o) && !STOPPED.has(o);
 // are a request's re-anchor tick: splice re-sent a broken stream from its partial answer, or ran the round over
 // from scratch (his own two phrases).
 // "Resumed after a silence" is the stall tier's resume (Knob.kt:270-283), the one Silent models counts.
-// A chat stream that ended before its terminal is tagged overloaded on the wire (WireType.kt) but was cut by the provider, not refused.
+// A chat stream that ended before its terminal is tagged overloaded on the wire (ClientWire: a Torn path reads overloaded_error) but was cut by the provider, not refused.
 // Who ended a request, not the error splice handed Claude Code: the provider's own overload stays Overloaded, splice's watchdog giving up
 // after its stall re-anchors is Given up (cause UPSTREAM_STALLED), and a stream cut short is Cut off (UPSTREAM_TRUNCATED).
 const isCutOff = (r) => r.cause === "UPSTREAM_TRUNCATED";

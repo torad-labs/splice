@@ -37,10 +37,11 @@ internal class CodeModeUpstreamHistory(
     cacheBytes: Long = HISTORY_MAX_BYTES,
 ) {
     private val codec = CodexCodeModeHistoryCodec(json)
-    private val ledger = CodeModeUpstreamLedger(
-        storage = location?.let { CodeModeHistoryStorage(it, json, HISTORY_MAX_BYTES, log = log) },
-        cacheBytes = cacheBytes,
-    )
+    private val storage = location?.let { CodeModeHistoryStorage(it, json, HISTORY_MAX_BYTES, log = log) }
+    private val ledger = CodeModeUpstreamLedger(storage = storage, cacheBytes = cacheBytes)
+
+    /** The journals on disk: what the head holds now, and the sweep of what it let go. */
+    val kept = CodeModeHistoryKept(storage, ledger)
     private val clientDelta = CodeModeClientDelta(codec)
     val notifications = CodeModeHistoryNotifications(ledger)
     private val durableClears = CodeModeDurableClears(ledger, clientDelta)
@@ -241,7 +242,7 @@ internal class CodeModeUpstreamHistory(
     }
 }
 
-// A byte refusal is observable and fails closed; cache eviction never discards model authority.
+// Near this bound a journal is rewritten as its newest posts; only a post set that cannot fit even so is refused.
 private const val HISTORY_MAX_BYTES: Long = 256L * 1024 * 1024
 
 // Limit diagnostic keys to a short non-content correlation prefix.

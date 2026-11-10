@@ -253,11 +253,12 @@ class KimiAuthProviderTest {
     }
 
     // BS-2: a filesystem hiccup during the write inside exchangeRefreshToken's Granted branch (disk
-    // full, perms, NFS blip) must not throw through SingleFlight/credentials() — kimi rotation is
-    // MANDATORY (the old refresh_token is already dead upstream), so a lost write must still serve
-    // the not-yet-expired CURRENT token, never an exception.
+    // full, perms, NFS blip) must not throw through SingleFlight/credentials(). Kimi rotation is
+    // MANDATORY (the old refresh_token is already dead upstream), so since the audit of Nov 9, 2026 the
+    // granted pair is kept and served, not thrown away for a token whose refresh half is spent, and it
+    // lands once the folder takes the write.
     @Test
-    fun `write failure during persist serves the current not-yet-expired token, never throws`(
+    fun `write failure during persist serves the rotated token, never throws, and writes it later`(
         @TempDir dir: Path,
     ) = runTest {
         val nowMs = 1_000_000_000_000L
@@ -283,10 +284,12 @@ class KimiAuthProviderTest {
         val writablePerms = Files.getPosixFilePermissions(file.parent)
         Files.setPosixFilePermissions(file.parent, PosixFilePermissions.fromString("r-xr-xr-x"))
         try {
-            assertEquals("still-valid", (auth.credentials() as Credentials.ApiKey).key)
+            assertEquals("rotated-access", (auth.credentials() as Credentials.ApiKey).key)
         } finally {
             Files.setPosixFilePermissions(file.parent, writablePerms)
         }
+        assertEquals("rotated-access", (auth.credentials() as Credentials.ApiKey).key)
+        assertTrue(Files.readString(file).contains("rotated-refresh"), "the kept pair is written once it can be")
     }
 
     // G1: a peer process rotated the token on disk while we were about to refresh. The freshly-read

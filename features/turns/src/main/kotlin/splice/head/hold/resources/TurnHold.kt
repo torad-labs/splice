@@ -42,9 +42,15 @@ internal class TurnHold(
             surfaces.lease?.state(HeapOwnerState.ACTIVE)
             surfaces.terminal.holding(false)
             surfaces.liveTurns.state(surfaces.slot, TurnState.Running)
+        }
+        // The cap stays paused until the turn holds a permit again. Retaking it waits in the queue like any request,
+        // unbounded, and a turn queued there sends nothing: its cap counting that wait cancelled resumed turns that
+        // never reached the upstream, which a fresh request (its watchdog made after admission) never risks.
+        try {
+            if (end == HoldEnd.RESUME || end == HoldEnd.LOGIN_JOINED) surfaces.slot.retakePermit()
+        } finally {
             surfaces.watchdog.holdEnded()
         }
-        if (end == HoldEnd.RESUME || end == HoldEnd.LOGIN_JOINED) surfaces.slot.retakePermit()
         return end
     }
 

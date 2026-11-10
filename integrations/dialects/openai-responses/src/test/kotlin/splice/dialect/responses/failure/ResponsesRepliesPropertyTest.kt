@@ -1,5 +1,6 @@
 // NEW: failure-handling slice 3. The Responses reader, held to final-design.md section 7's table over generated
-// replies and events: an HTTP status reads by the Chat rows, a 4xx naming encrypted_content is stale reasoning, a 4xx
+// replies and events: an HTTP status reads by the Chat rows, a 400 or 422 refusing a reasoning item's encrypted_content
+// is stale reasoning where the Chat rows read nothing more specific (narrowed 2026-11-09), a 4xx
 // after the websocket closed the same body with 1009 is too long; response.failed and error events in every shape the
 // API and its proxies send are read by their code; incomplete reasons and refusal parts have their own rows. The
 // expected cause is the table's row, written here from the table, never from the reader.
@@ -28,7 +29,7 @@ import kotlin.random.Random
 
 private const val RUNS = 3_000
 
-private val TABLE_STATUSES = listOf(400, 401, 402, 403, 404, 429, 500, 502, 503, 504)
+private val TABLE_STATUSES = listOf(400, 401, 402, 403, 404, 422, 429, 500, 502, 503, 504)
 private val UNNAMED_STATUSES = listOf(405, 408, 409, 410, 413, 415, 422, 451, 501, 505, 520, 524, 529)
 private val CODES = listOf(
     "context_length_exceeded", "model_not_found", "content_policy_violation", "image_content_policy_violation",
@@ -49,11 +50,16 @@ private val PLAIN = listOf(
 )
 private const val STALE = "Invalid 'input[12].encrypted_content': the reasoning item could not be decrypted"
 
+/** A backend refusing the request's include value names the field too, and no reasoning it carried is stale. */
+private const val INCLUDE_REFUSED =
+    "Invalid value: 'reasoning.encrypted_content'. Supported values are: 'file_search_call.results'."
+
 private sealed class Said(val text: String) {
     class Plain(text: String) : Said(text)
     class Overflow(text: String, val limit: Long?) : Said(text)
     class Model(text: String, val name: String) : Said(text)
     class Stale : Said(STALE)
+    class IncludeRefused : Said(INCLUDE_REFUSED)
 }
 
 /** How one reply arrived, apart from what it said: whose login it answered, when it came, whether its body is the
@@ -113,13 +119,14 @@ private val EVENT_CODES = listOf(
 
 private val NEVER_SENT = SentKey { _, _ -> false }
 
-private fun said(random: Random): Said = when (random.nextInt(5)) {
+private fun said(random: Random): Said = when (random.nextInt(6)) {
     0 -> {
         val limit = random.nextLong(8_000, 2_000_000)
         Said.Overflow("This model's maximum context length is $limit tokens.", limit)
     }
     1 -> "gpt-5.6-terra".let { Said.Model("The model `$it` does not exist or you do not have access to it.", it) }
     2 -> Said.Stale()
+    3 -> Said.IncludeRefused()
     else -> Said.Plain(PLAIN.random(random))
 }
 
@@ -202,10 +209,22 @@ private fun expected(c: Case): FailureCause.Provider {
     return when {
         c.refusedOverWebSocket && clientError && c.status != 429 && chat !is FailureCause.Provider.TooLong ->
             FailureCause.Provider.TooLong(null, false, null)
-        clientError && c.body.contains("encrypted_content", ignoreCase = true) ->
+        refusesStale(c, chat) ->
             FailureCause.Provider.Rejected(true, ProviderWordsFilter.of(if (c.json) c.said.text else c.body))
         else -> chat
     }
+}
+
+/** Stale reasoning: a 400 or 422 whose error is invalid_encrypted_content, or whose words name a reasoning item's
+ *  encrypted_content and not the include value, where the Chat rows read nothing more specific. A 401, 404 or 429
+ *  naming the field keeps its own row. */
+private fun refusesStale(c: Case, chat: FailureCause.Provider): Boolean {
+    val generic = chat is FailureCause.Provider.Rejected || chat is FailureCause.Provider.Unrecognized
+    if (!generic || c.status !in setOf(400, 422)) return false
+    if (names(c, "invalid_encrypted_content")) return true
+    val words = if (c.json) c.said.text else c.body
+    return words.contains("encrypted_content", ignoreCase = true) &&
+        !words.contains("reasoning.encrypted_content", ignoreCase = true)
 }
 
 /** The shapes a failed round arrives in: response.failed's error object, the flat error event, an error event

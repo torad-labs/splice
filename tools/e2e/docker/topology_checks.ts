@@ -29,7 +29,15 @@ function countTokens(): void {
   console.log(JSON.stringify(d));
 }
 
-const RECIPE_KEYS = ["ANTHROPIC_BASE_URL", "API_TIMEOUT_MS", "CLAUDE_CODE_MAX_RETRIES", "CLAUDE_CODE_RETRY_WATCHDOG"] as const;
+const RECIPE_KEYS = [
+  "ANTHROPIC_BASE_URL",
+  "API_FORCE_IDLE_TIMEOUT",
+  "API_TIMEOUT_MS",
+  "CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES",
+  "CLAUDE_CODE_RETRY_WATCHDOG",
+  "CLAUDE_STREAM_IDLE_TIMEOUT_MS",
+  "CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS",
+] as const;
 
 function launchRecipe(port: string): void {
   const r = stdinJson();
@@ -39,9 +47,33 @@ function launchRecipe(port: string): void {
   const timeout = String(env["API_TIMEOUT_MS"] ?? "") || "0";
   check(/^[0-9]+$/.test(timeout), `API_TIMEOUT_MS must be a plain decimal integer: ${env["API_TIMEOUT_MS"]}`);
   check(BigInt(timeout) > 900_000n, `API_TIMEOUT_MS must exceed the daemon 900s wall: ${env["API_TIMEOUT_MS"]}`);
+  // Nov 8-9: without this the client cut every non-streaming request at Bun's built-in 360 s fetch timeout and re-sent
+  // it 228 times, so the head's own deadline never got to answer. "0" is the falsy value that turns it off. Every head.
+  check(
+    env["API_FORCE_IDLE_TIMEOUT"] === "0",
+    `the client's built-in fetch timeout must be off: ${env["API_FORCE_IDLE_TIMEOUT"]}`,
+  );
   // V4-72: without persistent retry the client stops after 10 attempts (~2-3 min) and a longer
   // rate-limit hold ends the session instead of resuming when the window reopens. Every head.
   check(env["CLAUDE_CODE_RETRY_WATCHDOG"] === "1", `persistent retry must be planted: ${env["CLAUDE_CODE_RETRY_WATCHDOG"]}`);
+  // Nov 9: with this unset the client re-sends a timed-out non-streaming request without limit (one subagent
+  // re-sent one request 228 times over 25 hours). Every head, like the watchdog.
+  check(
+    env["CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES"] === "2",
+    `non-streaming timeout retries must be bounded at 2: ${env["CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES"]}`,
+  );
+  // Nov 6: a streaming turn held at the head for a usage limit got "response stalled" and a re-send, because the
+  // client's stream watchdog gives up about 300 s plus this value after the last model event. It takes the session's
+  // client timeout, the wall a hold ends before. Every head.
+  check(
+    env["CLAUDE_STREAM_IDLE_TIMEOUT_MS"] === env["API_TIMEOUT_MS"],
+    `the stream idle timeout must be the client timeout: ${env["CLAUDE_STREAM_IDLE_TIMEOUT_MS"]}`,
+  );
+  // The value above would also stretch the client's no-byte watchdog to 30 minutes; it keeps 300 s. Every head.
+  check(
+    env["CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS"] === "300000",
+    `the byte idle timeout must stay 300 s: ${env["CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS"]}`,
+  );
   check(Array.isArray(r["argv"]) && r["argv"].length > 0, "empty argv");
 }
 

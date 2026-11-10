@@ -231,7 +231,7 @@ class SourceContinuationAdmissionTest {
 
 class AdmissionRefusalObservationTest {
     @Test
-    fun `refusal observations name capacity and restart only when admission knows the cause`(
+    fun `every refusal observation names its cause, with capacity and restart as their own`(
         @TempDir tmp: Path,
     ) = testApplication {
         val recorded = CopyOnWriteArrayList<PerfObservation>()
@@ -271,7 +271,7 @@ class AdmissionRefusalObservationTest {
                     if (kind == "stopping") assertEquals("close", response.headers[HttpHeaders.Connection])
                 }
                 assertEquals(
-                    listOf("?", OutcomeTag.AT_CAPACITY.wire, OutcomeTag.RESTARTED.wire),
+                    listOf(OutcomeTag.REFUSED.wire, OutcomeTag.AT_CAPACITY.wire, OutcomeTag.RESTARTED.wire),
                     recorded.filter { it.kind == PerfEventKind.REQUEST_FINISHED }.map { it.outcome },
                 )
             } finally {

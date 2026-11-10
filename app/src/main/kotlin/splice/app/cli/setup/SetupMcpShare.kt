@@ -34,8 +34,8 @@ internal class SetupMcpShare(private val frame: WizardFrame, private val units: 
         answer ?: return
         val result = Cancellables.runCatchingBestEffort {
             val current = TopologyLoader.parse(Files.readString(path))
-            TopologyWriter(path, StatePaths().configBackupsDir, TopologyParse(TopologyLoader::parse))
-                .write(current.copy(daemon = current.daemon.copy(mcpShare = answer)))
+            val writer = TopologyWriter(path, StatePaths().configBackupsDir, TopologyParse(TopologyLoader::parse))
+            writer.write(current.copy(daemon = current.daemon.copy(mcpShare = answer)), writer.tree(current))
         }
         val refused = result.getOrNull() as? TopologyWriteResult.Refused
         val why = refused?.findings?.joinToString("; ") { it.text() } ?: result.exceptionOrNull()?.message

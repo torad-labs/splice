@@ -13,7 +13,6 @@ import splice.core.turn.ReasoningDisplayNow
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnReasoning
 import splice.core.turn.TurnRoute
-import splice.core.util.JsonWire
 import splice.core.wire.AnthropicRequest
 import splice.upstream.memory.MessageFragmentContext
 
@@ -45,7 +44,7 @@ public class ChatRequestBuilder(
         val emitTools = quirks.capabilities.supportsTools && listed.tools.isNotEmpty()
         val effort = quirks.reasoning.effortVocabulary?.effort(raw, upstreamModel)
             ?: effortTiers.chatReasoningEffort(body, upstreamModel, raw)
-        val context = JsonWire.string(
+        val context = MessageFragmentContext.key(
             buildJsonObject {
                 put("request", MessageFragmentContext.of(body, raw))
                 put("upstream_model", upstreamModel)

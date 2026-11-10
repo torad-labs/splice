@@ -13,6 +13,7 @@ package splice.dialect.responses.reasoning
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import splice.core.util.JSONL_LOCK_SUFFIX
 import splice.core.util.JsonlForce
 import splice.core.util.JsonlSink
 import splice.core.util.LogSink
@@ -86,7 +87,7 @@ internal class ReasoningCacheFiles(
     /** Remove [key]'s file, and the lock JsonlSink.appendLine keeps beside it (the ActivityDays siblings). */
     fun drop(key: String) {
         val file = fileOf(key)
-        listOf(file, file.resolveSibling("${file.fileName}$LOCK_SUFFIX")).forEach { path ->
+        listOf(file, file.resolveSibling("${file.fileName}$JSONL_LOCK_SUFFIX")).forEach { path ->
             try {
                 Files.deleteIfExists(path)
             } catch (failure: IOException) {
@@ -165,4 +166,3 @@ private val lines = Json { ignoreUnknownKeys = false }
 // `splice-` + 32 hex (the opening's hash), then optionally `-` + 16 hex (the session's).
 private val KEY_SHAPE = Regex("[A-Za-z0-9-]{1,96}")
 private const val CONVERSATION_FILE = ".jsonl"
-private const val LOCK_SUFFIX = ".lock"

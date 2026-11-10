@@ -15,6 +15,7 @@ import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
 import io.ktor.util.AttributeKey
 import kotlinx.coroutines.CancellationException
+import splice.core.perf.LivenessProbe
 import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.perf.TimedWork
@@ -83,8 +84,12 @@ internal object RequestObservation {
     }
 
     suspend fun run(call: ApplicationCall, deps: HeadDeps, head: String, arrivalAt: Long, work: TimedWork<Unit>) {
-        // Routing reuses the listener's handle. Direct handler callers still own one from this point.
-        if (of(call) != null) {
+        // Routing reuses the listener's handle. Direct handler callers still own one from this point. The daemon's own
+        // liveness probe is no request (2026-11-09 audit): it posted every 30 s to every head and finished as "?",
+        // two thirds of perf-evidence's finished rows, so a refused or unnamed real request read like one. Its header
+        // alone refuses dispatch (ClientAuth), so leaving it out hides no work, and V4-454 already keeps it off the
+        // head's perf file.
+        if (of(call) != null || call.request.headers.getAll(LivenessProbe.PROBE_HEADER_NAME) != null) {
             work()
             return
         }
@@ -97,7 +102,8 @@ internal object RequestObservation {
         var ending = OutcomeTag.UNEXPECTED.wire
         try {
             work()
-            ending = if ((call.response.status()?.value ?: 0) >= HttpStatusCode.BadRequest.value) "refused" else "?"
+            val refused = (call.response.status()?.value ?: 0) >= HttpStatusCode.BadRequest.value
+            ending = if (refused) OutcomeTag.REFUSED.wire else "?"
         } catch (cancelled: CancellationException) {
             ending = OutcomeTag.CANCELLED.wire
             throw cancelled
@@ -154,6 +160,17 @@ internal object RequestObservation {
                     local = false,
                 ),
                 it.links.copy(sessionId = meta.scope.sessionId),
+            )
+        }
+    }
+
+    /** A request refused while it was prepared names the model, session and transport it asked for, as a served one
+     *  does, so its row is not a bare `{head}` beside the probes. [model] is empty when its body did not parse. */
+    fun refused(perf: TurnPerf, model: String, session: String?, stream: Boolean) {
+        perf.observations?.let {
+            it.update(
+                it.scope.copy(model = model.ifEmpty { null }, streaming = stream, local = false),
+                it.links.copy(sessionId = session),
             )
         }
     }

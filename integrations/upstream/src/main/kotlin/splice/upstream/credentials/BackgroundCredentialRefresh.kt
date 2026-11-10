@@ -10,13 +10,13 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 
 /** Runs a credential prefetch on its lifecycle owner's scope, reporting nonfatal failures once per launch. */
-public class BackgroundCredentialRefresh(
+internal class BackgroundCredentialRefresh(
     private val scope: CoroutineScope,
     private val logTag: String,
     private val log: LogSink,
 ) {
     /** The current token is already served. Cancellation and fatal errors still propagate unchanged. */
-    public fun launch(refresh: CredentialRefresh<Credentials?>): Job = scope.launch {
+    fun launch(refresh: CredentialRefresh<Credentials?>): Job = scope.launch {
         Cancellables.runCatchingBestEffort { refresh() }.fold(
             onSuccess = {},
             onFailure = { failure ->

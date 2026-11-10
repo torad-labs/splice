@@ -354,36 +354,12 @@ public class LaunchService(
             // The default only: splice-launch keeps a MAX_THINKING_TOKENS the caller already set, so a headless caller
             // that bounds its own thinking keeps that bound (Oct 13, the Temple's read).
             put("MAX_THINKING_TOKENS", "128000")
-            // Claude Code's default request timeout is 600s and it also bounds the first-byte
-            // deadline; the head's whole-turn cap is the wall that decides a turn, so the client
-            // must outlive it (spec.gateway.apiTimeoutMs = cap + grace). Without this every compaction
-            // longer than ten minutes died as client_abort while the daemon was still serving it.
-            // Planted unconditionally: the head's own wall owns this deadline, so an ambient
-            // API_TIMEOUT_MS is replaced rather than merged (unlike NO_PROXY below); a larger value
-            // buys nothing past totalCap and a smaller one recreates the abort.
-            // Claude Code's non-streaming fallback (after a streaming error it re-sends the turn
-            // with stream:false under this same deadline) stays ENABLED on purpose: the collect
-            // path answers it silently until the terminal body, and with the deadline past totalCap
-            // the head's wall speaks first. CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK would only
-            // delete a recovery path.
-            put("API_TIMEOUT_MS", spec.gateway.apiTimeoutMs.toString())
+            // The client's own timers and retry limits, so the head's wall decides every turn (LaunchClientTimers).
+            putAll(LaunchClientTimers.of(spec))
             // Failure-handling slice 5: the same timeout, told to the head on every request, so a turn held for a reset
             // fits the session that sent it (a session launched before this reads as the 960 s every session had).
             // Merged with any custom headers the shell already names, which Claude Code reads one per line.
             put("ANTHROPIC_CUSTOM_HEADERS", customHeaders(spec))
-            // V4-72: PERSISTENT RETRY. Without this the client gives up after its default 10 retries
-            // (~2-3 min of backoff), so a rate-limit hold longer than that ENDS THE SESSION instead
-            // of resuming when the window reopens. Verified in the Claude Code 2.1.257 binary: QI()
-            // reads CLAUDE_CODE_RETRY_WATCHDOG, and shouldRetry then returns true for status 429 or
-            // overloaded_error BEFORE the claude.ai-subscriber 429 gate — which is why it also
-            // covers the native head, whose client runs in subscriber mode. In this mode the 429
-            // sleep is sao(): anthropic-ratelimit-unified-reset epoch minus now, capped at 6h, other
-            // transient errors get 300 retries instead of 10, and the retry-after-too-long abort
-            // (a NON-persistent client aborts above 60s) is skipped. splice already sends the
-            // unified-reset header on its admission 429 (V4-51), so that sleep lands exactly on the
-            // cooldown lift. Planted UNCONDITIONALLY, native included: it is a client-side WAIT
-            // policy, and every head wants its session to survive a hold.
-            put("CLAUDE_CODE_RETRY_WATCHDOG", "1")
             // curl, which runs the statusline, reads the lowercase spelling first and ignores NO_PROXY once it is set.
             mergedNoProxy(spec).let { put("NO_PROXY", it); put("no_proxy", it) }
             // Hide Claude Code's built-in Anthropic-account commands: in a gateway head, auth is the

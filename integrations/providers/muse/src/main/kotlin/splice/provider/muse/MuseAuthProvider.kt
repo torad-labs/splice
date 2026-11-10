@@ -14,8 +14,10 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.Credentials
+import splice.core.auth.INVALID_GRANT_REASON
 import splice.core.auth.InvalidGrantLatch
 import splice.core.auth.LoginAnswer
+import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
@@ -44,18 +46,20 @@ public class MuseAuthProvider(
     private val prefetchScope: CoroutineScope? = null,
     flightContext: CoroutineContext = ProcessDispatchers().background(),
 ) : RefreshableAuthProvider, AccountCredentialIdentitySource {
-    private val store = MuseCredentialStore(authPath, log, clock)
-    private val singleFlight = SingleFlight<Credentials?>(flightContext)
-    private val mintFlight = SingleFlight<MintFlightResult>(flightContext)
-    private val invalidAccountLatch = InvalidGrantLatch()
-    private val holds = MuseMintHolds(clock)
-    private val oauth = MuseOAuth()
-    private val verdict = MuseMintVerdict(holds, oauth, store, log, clock)
-    private val mintPersistence = MuseMintPersistence()
     private val lockPathText = authPath.resolveSibling("${authPath.fileName}.lock").toString()
     private val lockLog = LogSink { message ->
         log(message.replace(lockPathText, "<muse-credential-lock>"))
     }
+    private val kept = MuseKeptKey(authPath, lockLog)
+    private val store = MuseCredentialStore(authPath, log, clock, kept.retained)
+    private val singleFlight = SingleFlight<RefreshOutcome>(flightContext)
+    private val mintFlight = SingleFlight<MintFlightResult>(flightContext)
+    private val invalidAccountLatch = InvalidGrantLatch()
+    private val holds = MuseMintHolds(clock)
+    private val pollBackoff = MusePollBackoff(clock, log)
+    private val oauth = MuseOAuth()
+    private val verdict = MuseMintVerdict(holds, oauth, store, log, clock)
+    private val mintPersistence = MuseMintPersistence()
 
     init {
         prefetchScope?.coroutineContext?.get(Job)?.invokeOnCompletion {
@@ -65,6 +69,7 @@ public class MuseAuthProvider(
     }
 
     override suspend fun credentials(): Credentials? {
+        kept.flush()
         val snapshot = store.read(authCacheMs) ?: return null
         return if (holds.blocksCredentials(snapshot)) {
             null
@@ -75,8 +80,11 @@ public class MuseAuthProvider(
 
     /** Muse's key mint can refuse this login, and its reason is the turn's ending (failure-handling slice 3): an
      *  inactive subscription says to renew it, a rate-limited mint is a soft limit until its hold ends, and a denied
-     *  mint is forbidden. Before this the turn ended as NoLogin and told a signed-in person to sign in. */
+     *  mint is forbidden. Before this the turn ended as NoLogin and told a signed-in person to sign in. Audit, Nov 9,
+     *  2026: only a mint a turn asked for, after its key stopped working, records a refusal; the usage poll's mint and
+     *  a mint that could not answer never do, so the stored key keeps serving while it works. */
     override suspend fun answer(): LoginAnswer {
+        kept.flush()
         val snapshot = store.read(authCacheMs) ?: return LoginAnswer.Missing
         holds.refusal(snapshot)?.let { return LoginAnswer.Refused(it) }
         return snapshot.apiKey
@@ -85,32 +93,41 @@ public class MuseAuthProvider(
             ?: LoginAnswer.Missing
     }
 
-    override suspend fun refresh(): Credentials? = singleFlight.run {
+    override suspend fun refresh(): Credentials? = (exchange() as? RefreshOutcome.Refreshed)?.credentials
+
+    /** One key mint for a turn whose key stopped working, read whole by the turn's retry engine: a mint that could not
+     *  answer is [RefreshOutcome.Unavailable], which the engine asks again, and never a hold (audit, Nov 9, 2026). */
+    override suspend fun exchange(): RefreshOutcome = singleFlight.run {
         Cancellables.runCatchingCancellable {
             CredentialLock.withLock(authPath, log = lockLog) {
-                val snapshot = store.read() ?: return@withLock null
-                val suppressed = invalidAccountLatch.isLatched(snapshot.identity) || holds.suppresses(snapshot)
+                kept.retained.flush()
+                val snapshot = store.read() ?: return@withLock RefreshOutcome.Rejected("no readable muse credential")
                 val accessToken = snapshot.accessToken
                 when {
-                    suppressed -> null
+                    invalidAccountLatch.isLatched(snapshot.identity) -> RefreshOutcome.Rejected(INVALID_GRANT_REASON)
+                    holds.suppresses(snapshot) -> RefreshOutcome.Rejected("key mint held")
                     // V4-292: only a missing token says so; a failed exchange ran `?:` into this line too.
                     accessToken == null -> {
                         log("[muse-auth] account access token missing; sign in again before refreshing")
-                        null
+                        RefreshOutcome.NoRefreshToken
                     }
-                    else -> exchange(accessToken, snapshot)
+                    else -> mint(accessToken, snapshot)
                 }
             }
         }.getOrElse { failure ->
             lockLog("[muse-auth] credential lock unavailable (${SafeFailureText.render(failure)}); refresh skipped")
-            null
+            RefreshOutcome.ReadFailed(failure)
         }
     }
 
     /**
      * Poller-only mint for `subs_usage`. Does not persist and does not take the credential lock.
-     * Obeys the same holds as [refresh]: a live hold is a null with no POST; 429 and inactive
-     * verdicts record those holds. Returns only the subs_usage object, and an empty object when a granted mint
+     * Obeys the holds [exchange] records: a live hold is a null with no POST. What the poll's own mint answers records
+     * no hold and no refusal (audit, Nov 9, 2026): one refused or failed poll held every turn for up to an hour though
+     * the stored key still worked, and a turn whose key stops working renews it itself. The poll keeps its own backoff
+     * instead ([MusePollBackoff]): a refused poll waits before it asks again, and a definite "subscription inactive"
+     * shows in [describe] while every turn still serves the stored key.
+     * Returns only the subs_usage object, and an empty object when a granted mint
      * carries none: Muse answered and has no usage for this account, which clears the bars (Oct 10, 2026), where a
      * null is only "nothing was asked".
      */
@@ -119,11 +136,14 @@ public class MuseAuthProvider(
         // The probe and its reading are one function since slice 3: this class gained answer(), and splitting the
         // two halves of one poll is what pushed it over the function ceiling, so the holds read as one line here.
         val accessToken = snapshot.accessToken?.takeUnless {
-            invalidAccountLatch.isLatched(snapshot.identity) || holds.suppresses(snapshot)
+            invalidAccountLatch.isLatched(snapshot.identity) || holds.suppresses(snapshot) ||
+                pollBackoff.waits(snapshot)
         } ?: return null
         return when (val attempt = attemptFor(accessToken, snapshot)) {
-            null -> null
-            is MuseMintAttempt.Granted -> attempt.key.fields["subs_usage"] as? JsonObject ?: JsonObject(emptyMap())
+            is MuseMintAttempt.Granted -> {
+                pollBackoff.clear()
+                attempt.key.fields["subs_usage"] as? JsonObject ?: JsonObject(emptyMap())
+            }
             is MuseMintAttempt.InvalidAccountToken -> {
                 invalidAccountToken(accessToken, allowChangedTokenRetry = false)
                 null
@@ -131,8 +151,9 @@ public class MuseAuthProvider(
             is MuseMintAttempt.SubscriptionRequired,
             is MuseMintAttempt.RateLimited,
             is MuseMintAttempt.Denied,
+            is MuseMintAttempt.Unavailable,
             -> {
-                verdict.hold(snapshot, attempt)
+                pollBackoff.refused(snapshot, attempt)
                 null
             }
         }
@@ -142,7 +163,7 @@ public class MuseAuthProvider(
     // (a plan limit, never a refused login), so no refresh is planned for it and this provider carries no rule
     // about a body. The default answer — refresh a refused login — is this provider's answer.
 
-    override suspend fun describe(): AuthDescription = store.describe(holds, invalidAccountLatch)
+    override suspend fun describe(): AuthDescription = store.describe(holds, pollBackoff, invalidAccountLatch)
 
     override fun observedCredentialKey(): String? = store.observedCredentialKey()
 
@@ -152,37 +173,38 @@ public class MuseAuthProvider(
 
     override fun credentialEvidence(): CredentialEvidence = CredentialFileEvidenceReader.read(authPath)
 
-    private suspend fun exchange(
+    private suspend fun mint(
         accessToken: String,
         snapshot: MuseCredentialSnapshot,
         allowChangedTokenRetry: Boolean = true,
-    ): Credentials? {
-        val attempt = attemptFor(accessToken, snapshot) ?: return null
-        return when (attempt) {
-            is MuseMintAttempt.Granted -> {
-                val ctx = currentCoroutineContext()
-                val guard = MuseMintWriteGuard { ctx.ensureActive() }
-                if (mintPersistence.persistGranted(authPath, accessToken, attempt.key, log, guard)) {
-                    store.clearCache()
-                    holds.clear()
-                    Credentials.Bearer(attempt.key.apiKey)
-                } else {
-                    null
-                }
+    ): RefreshOutcome = when (val attempt = attemptFor(accessToken, snapshot)) {
+        is MuseMintAttempt.Granted -> {
+            val ctx = currentCoroutineContext()
+            val guard = MuseMintWriteGuard { ctx.ensureActive() }
+            // A key whose write fails is kept and served until it is written (MuseKeptKey), so false here is only a
+            // login that changed under the mint or a file that cannot be read.
+            if (mintPersistence.keepGranted(kept.retained, accessToken, attempt.key, log, guard)) {
+                store.clearCache()
+                holds.clear()
+                pollBackoff.clear()
+                RefreshOutcome.Refreshed(Credentials.Bearer(attempt.key.apiKey))
+            } else {
+                RefreshOutcome.Rejected("minted key discarded: the credential changed or cannot be read")
             }
-            is MuseMintAttempt.InvalidAccountToken ->
-                invalidAccountToken(accessToken, allowChangedTokenRetry)
-            is MuseMintAttempt.SubscriptionRequired,
-            is MuseMintAttempt.RateLimited,
-            is MuseMintAttempt.Denied,
-            -> verdict.hold(snapshot, attempt)
         }
+        is MuseMintAttempt.InvalidAccountToken ->
+            invalidAccountToken(accessToken, allowChangedTokenRetry)
+        is MuseMintAttempt.SubscriptionRequired,
+        is MuseMintAttempt.RateLimited,
+        is MuseMintAttempt.Denied,
+        is MuseMintAttempt.Unavailable,
+        -> verdict.hold(snapshot, attempt)
     }
 
     private suspend fun attemptFor(
         accessToken: String,
         snapshot: MuseCredentialSnapshot,
-    ): MuseMintAttempt? {
+    ): MuseMintAttempt {
         val flown = mintOrHold(accessToken, snapshot)
         return if (flown.forToken(accessToken, snapshot)) {
             flown.attempt
@@ -200,10 +222,9 @@ public class MuseAuthProvider(
             val attempt = Cancellables.runCatchingCancellable {
                 mintCall(accessToken, MuseMintMode.REFRESH)
             }.getOrElse { failure ->
-                log("[muse-auth] key mint transport failed (${SafeFailureText.render(failure)})")
+                // Audit, Nov 9, 2026: a mint the request never reached is no verdict on the account and holds nothing.
                 store.clearCache()
-                holds.recordRetry(snapshot, DEFAULT_RATE_HOLD_MS)
-                null
+                MuseMintAttempt.Unavailable("key mint transport failed (${SafeFailureText.render(failure)})")
             }
             MintFlightResult(accessToken, snapshot.identity, attempt)
         }
@@ -213,7 +234,7 @@ public class MuseAuthProvider(
     private suspend fun invalidAccountToken(
         usedAccessToken: String,
         allowChangedTokenRetry: Boolean,
-    ): Credentials? {
+    ): RefreshOutcome {
         val current = store.read()
         val currentAccessToken = current?.accessToken
         return when {
@@ -221,20 +242,20 @@ public class MuseAuthProvider(
                 invalidAccountLatch.latch(current.identity)
                 store.clearCache()
                 log("[muse-auth] account access token rejected; sign in again")
-                null
+                RefreshOutcome.Rejected(INVALID_GRANT_REASON)
             }
             allowChangedTokenRetry && currentAccessToken != null ->
-                exchange(currentAccessToken, current, allowChangedTokenRetry = false)
+                mint(currentAccessToken, current, allowChangedTokenRetry = false)
             currentAccessToken == null -> {
                 log("[muse-auth] account access token rejected, and the credential file holds none now; sign in again")
-                null
+                RefreshOutcome.NoRefreshToken
             }
             else -> {
                 log(
                     "[muse-auth] account access token rejected, and the credential file's token changed since; " +
                         "the next refresh tries the new one",
                 )
-                null
+                RefreshOutcome.Rejected("account access token changed during the mint")
             }
         }
     }
@@ -243,7 +264,7 @@ public class MuseAuthProvider(
 private data class MintFlightResult(
     val accessToken: String,
     val identity: CredentialFileIdentity?,
-    val attempt: MuseMintAttempt?,
+    val attempt: MuseMintAttempt,
 ) {
     /** The token is the single-flight KEY, so this type holds one by construction. */
     override fun toString(): String =

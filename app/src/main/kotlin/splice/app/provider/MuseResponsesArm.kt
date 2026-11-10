@@ -103,20 +103,7 @@ internal class MuseResponsesArm(
             roundTrip = ResponsesRoundTripQuirks(continueReasoningOnly = MUSE_CONTINUES_REASONING_ONLY),
         ),
         ctx.cfg,
-    ).let { overlaid ->
-        // QuirksConfig's non-null default would replace Muse's session key with first-message hash.
-        if (ctx.providerCfg.quirks.cacheKey == "off") {
-            overlaid
-        } else {
-            overlaid.copy(
-                backend = overlaid.backend.copy(
-                    promptCache = overlaid.backend.promptCache.copy(
-                        key = CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH,
-                    ),
-                ),
-            )
-        }
-    }
+    )
 
     private fun wiredAccounts(accounts: List<MuseOAuthAccount>, headers: Map<String, String>): List<WiredAccount> =
         accounts.map { account ->

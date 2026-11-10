@@ -29,7 +29,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.parse.AnthropicTurnBody
 import splice.core.util.DaemonLog
-import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.upstream.ToolNameShortener
 import splice.upstream.memory.MessageFragmentContext
@@ -62,7 +61,7 @@ internal class PassthroughRequestBuilder(
         val context = if (names.active) {
             null
         } else {
-            JsonWire.string(
+            MessageFragmentContext.key(
                 buildJsonObject {
                     put("request", MessageFragmentContext.of(typed, raw))
                     put("upstream_model", upstreamModel)

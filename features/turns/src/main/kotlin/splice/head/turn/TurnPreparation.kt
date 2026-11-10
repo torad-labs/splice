@@ -35,7 +35,6 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.uri
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.serialization.json.JsonObject
 import splice.core.client.AGENT_HEADER
 import splice.core.client.SESSION_HEADER
 import splice.core.failure.Decline
@@ -45,6 +44,7 @@ import splice.core.parse.AnthropicTurnBody
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.session.ActivityAction
+import splice.core.util.Cancellables
 import splice.core.wire.AnthropicRequest
 import splice.head.ActivityLabel
 import splice.head.ActivitySamples
@@ -54,9 +54,11 @@ import splice.head.ClientAuth
 import splice.head.HeadDeps
 import splice.head.MessageEdges
 import splice.head.ReceivedBody
+import splice.head.RefusedRequest
 import splice.head.RequestBodyReader
 import splice.head.compact.CompactClassifier
 import splice.head.compaction.CompactionReplay
+import splice.head.compaction.HeldReply
 import splice.head.wire.ClientInbound
 import splice.head.wire.FrameRecording
 import splice.upstream.BuiltTurn
@@ -80,9 +82,11 @@ internal sealed class Preparation {
         fun takeInbound(): ClientInbound? = inbound.also { inbound = null }
     }
 
-    /** Refused before anything is recorded of it: [cause] decides the answer (ClientWire at admission) and the line
-     *  the client reads (the head's voice, failure-handling slice 2). */
-    data class Rejected(val cause: FailureCause.Splice) : Preparation()
+    /** Refused while it was prepared: [cause] decides the answer (ClientWire at admission) and the line the client
+     *  reads (the head's voice, failure-handling slice 2); [request] is what the refusal's log line, perf row and
+     *  trace record of it (PreDriveRefusals.refusePrepared). Recorded since 2026-11-09, when a dialect refused every
+     *  claudex turn for 67 minutes and the log, the perf file and the trace held nothing of it. */
+    data class Rejected(val cause: FailureCause.Splice, val request: RefusedRequest = RefusedRequest()) : Preparation()
 
     /** Answered by the proxy itself: the activity side query (ActivityLabel). No upstream turn. */
     data class Local(val text: String, val model: String, val sessionId: String?, val stream: Boolean) : Preparation()
@@ -97,14 +101,16 @@ internal sealed class Preparation {
         val model: String,
     ) : Preparation()
 
-    /** The non-stream sibling of [Replay]: a collect retry follows the held answer of the compaction
-     *  that outlived its first client (CompactionReplay.beginAnswer) instead of prefilling again —
-     *  finished holds complete at once, still-driving ones settle when their detached drive ends. */
+    /** The non-stream sibling of [Replay]: a collect retry follows the held reply of the non-stream turn (a
+     *  compaction or not) that outlived its first client (HeldCollectAnswers) instead of starting it again —
+     *  finished holds complete at once, still-driving ones settle when their detached drive ends. [compaction]: what
+     *  the held turn was, which the line of a re-send whose turn never finished names. */
     data class Collected(
-        val hold: CompletableDeferred<JsonObject?>,
+        val hold: CompletableDeferred<HeldReply?>,
         val key: String,
         val sessionId: String?,
         val model: String,
+        val compaction: Boolean,
     ) : Preparation()
 
     /** Claude Code's stream:false fallback for a STREAMED compaction that lost its client: the same upstream
@@ -159,14 +165,36 @@ internal class TurnPreparation(
     ): Preparation {
         perf.mark(PerfKeys.RECV)
         perf.setCount(PerfKeys.REQ_BYTES, body.bytes.toLong())
+        // Read once as the request arrives: a switch flipped now applies to the next request, never to this one. Taken
+        // before the parse, so a body refused as unparseable is in the trace that records its refusal.
+        val inbound = deps.stores.captures.trace?.takeIf { it.recording.on }?.let { inbound(call, body.text) }
         val parsing = bodyParse.parse(body.text)
-        val parsed = parsing.getOrNull() ?: return rejectedBody(call, body, parsing.exceptionOrNull())
+        val parsed = parsing.getOrNull() ?: return RefusedRequest(sessionId = headerSession, inbound = inbound).badBody(
+            body.bytes,
+            call.request.headers[HttpHeaders.ContentLength] ?: "no content-length",
+            parsing.exceptionOrNull(),
+        )
         // The request names its session in metadata.user_id; the header carries the same id and stands in when the body
         // does not (verified on Claude Code 2.1.257, spec 7 identification).
-        val sessionId = parsed.sessionId ?: headerSession
-        // Read once as the request arrives: a switch flipped now applies to the next request, never to this one.
-        val inbound = deps.stores.captures.trace?.takeIf { it.recording.on }?.let { inbound(call, body.text) }
-        refusalOf(parsed, sessionId)?.let { return it }
+        val asked = RefusedRequest(parsed.typed.model, parsed.sessionId ?: headerSession, parsed.typed.stream, inbound)
+        // The pre-drive boundary (2026-11-09 audit): everything from here to a Ready turn runs provider and prompt code
+        // (refusal tables, buildTurn, the prompt layers, the tool loop), and a defect thrown there used to answer an
+        // empty 500 with no log line, no perf row and no trace. It is now a refusal like any other, recorded as
+        // unexpected. Total, like the turn's own boundary (TurnFailures) and the control plane's (ControlGuard):
+        // cancellation and an Error still propagate.
+        return Cancellables.runCatchingBestEffort { preparedParsed(call, perf, parsed, asked) }
+            .getOrElse(asked::unprepared)
+    }
+
+    private fun preparedParsed(
+        call: ApplicationCall,
+        perf: TurnPerf,
+        parsed: AnthropicTurnBody,
+        asked: RefusedRequest,
+    ): Preparation {
+        val sessionId = asked.sessionId
+        val inbound = asked.inbound
+        refusalOf(parsed, asked)?.let { return it }
         messageEdges.observe(sessionId, parsed.typed)
         messageEdges.answered(sessionId, parsed.typed)
         val action = activityLabel.labelFor(parsed.typed)
@@ -179,21 +207,25 @@ internal class TurnPreparation(
         }
     }
 
-    /** The requests refused before anything is recorded of them: a model this head does not proxy, and
-     *  (V4-319) the one stream=false re-send of a turn the operator stopped, which LiveTurns tells by its
-     *  session and messages. The re-send is answered here and never built or sent upstream; the 400
-     *  ends the client's turn with no further request (the probe on Claude Code 2.1.283). */
-    private fun refusalOf(parsed: AnthropicTurnBody, sessionId: String?): Preparation.Rejected? = when {
+    /** The requests refused before they are built: a model this head does not proxy, (V4-319) the one stream=false
+     *  re-send of a turn the operator stopped, which LiveTurns tells by its session and messages, and whatever the
+     *  provider's dialect cannot carry. The re-send is answered here and never built or sent upstream; the 400
+     *  ends the client's turn with no further request (the probe on Claude Code 2.1.283). Each carries [asked], so
+     *  its refusal is recorded (PreDriveRefusals.refusePrepared). */
+    private fun refusalOf(parsed: AnthropicTurnBody, asked: RefusedRequest): Preparation.Rejected? = when {
         !provider.catalog.contains(parsed.typed.model) -> {
             // The line names the model the head's roster lacks: an unmapped tier's own model, not the tier's alias.
             val unserved = provider.catalog.refusals.unserved(parsed.typed.model)
-            Preparation.Rejected(FailureCause.Splice.Declined(Decline.UnknownModel(unserved)))
+            Preparation.Rejected(FailureCause.Splice.Declined(Decline.UnknownModel(unserved)), asked)
         }
-        !parsed.typed.stream && deps.traffic.liveTurns.refusesResend(sessionId, parsed.raw) -> {
-            deps.log("[${provider.key}] re-send of a stopped turn refused (${who(sessionId)}no upstream turn)\n")
-            Preparation.Rejected(FailureCause.Splice.Stopped(StoppedBy.CONSOLE))
+        !parsed.typed.stream && deps.traffic.liveTurns.refusesResend(asked.sessionId, parsed.raw) ->
+            Preparation.Rejected(
+                FailureCause.Splice.Stopped(StoppedBy.CONSOLE),
+                asked.copy(detail = "re-send of a stopped turn refused (no upstream turn)"),
+            )
+        else -> provider.requestRefusal(parsed)?.let { refused ->
+            Preparation.Rejected(refused.cause, refused.detail?.let { asked.copy(detail = it) } ?: asked)
         }
-        else -> provider.requestRefusal(parsed)?.let { Preparation.Rejected(it.cause) }
     }
 
     /** V4-265: a working session's own turn is its activity sample, at the side query's pace; see
@@ -287,7 +319,9 @@ internal class TurnPreparation(
         // streaming retry replays the recording's frames; a collect retry follows a collect compaction's held
         // answer, or else collects a streamed one's recording, which is Claude Code's stream:false fallback
         // (rig's findings of 2026-10-24 and 2026-10-25: hack-program cold-prefilled on every interruption).
-        val replayed = if (built.meta.compact) compactionReplay(built, parsed.typed.stream) else null
+        // A non-stream turn of any kind is held the same way since 2026-11-09 (CollectTurn): a Claude Code subagent
+        // re-sent one stream:false request 228 times in 25 hours, each re-send restarting its five minutes from zero.
+        val replayed = heldFor(built, parsed.typed.stream)
         // V4-165: a replayed turn is never driven, so what its build holds ends here, not at a drive.
         replayed?.let { built.onEnd?.ended() }
         return replayed ?: Preparation.Ready(
@@ -300,8 +334,12 @@ internal class TurnPreparation(
         )
     }
 
-    private fun compactionReplay(built: BuiltTurn, stream: Boolean): Preparation? =
-        if (stream) replayFor(built) else collectedFor(built)
+    /** A streamed compaction's recording, or a non-stream turn's held reply (a compaction's or not). */
+    private fun heldFor(built: BuiltTurn, stream: Boolean): Preparation? = when {
+        !stream -> collectedFor(built)
+        built.meta.compact -> replayFor(built)
+        else -> null
+    }
 
     private fun replayFor(built: BuiltTurn): Preparation.Replay? {
         val key = replay.key(built.meta, built.requestBody) ?: return null
@@ -325,11 +363,12 @@ internal class TurnPreparation(
         return when {
             hold != null -> {
                 val state = if (hold.isCompleted) "held" else "still driving"
+                val what = if (built.meta.compact) "compaction" else "non-stream"
                 deps.log(
-                    "[${provider.key}] collect compaction retry matches a detached one ($state, " +
+                    "[${provider.key}] collect $what retry matches a detached one ($state, " +
                         "${who(session)}following its held answer, no upstream turn)\n",
                 )
-                Preparation.Collected(hold, key, session, model)
+                Preparation.Collected(hold, key, session, model, built.meta.compact)
             }
             recording != null -> {
                 val state = if (recording.isComplete) "finished" else "still running"
@@ -341,20 +380,6 @@ internal class TurnPreparation(
             }
             else -> null
         }
-    }
-
-    // The class, never the content (safe-failure-render): the body is the user's transcript. The
-    // declared length beside the read one tells a truncated read from a malformed body.
-    private fun rejectedBody(call: ApplicationCall, body: ReceivedBody, cause: Throwable?): Preparation.Rejected {
-        val declared = call.request.headers[HttpHeaders.ContentLength] ?: "no content-length"
-        val why = cause?.let { it::class.simpleName } ?: "no exception"
-        deps.log(
-            "[${provider.key}] request rejected: invalid request body " +
-                "(${body.bytes} bytes read, $declared declared, $why)\n",
-        )
-        return Preparation.Rejected(
-            FailureCause.Splice.Declined(Decline.BadBody(body.bytes.toLong(), declared.toLongOrNull())),
-        )
     }
 
     // V4-100: SESSION_TAG_CHARS is the ONE session-tag width (declared in TurnDrive.kt, same

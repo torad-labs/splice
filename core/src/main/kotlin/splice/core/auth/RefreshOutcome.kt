@@ -51,15 +51,12 @@ public sealed class RefreshOutcome {
      * three live write paths were routed correctly; the TYPE still permitted the bypass, and a
      * wall that depends on everyone remembering is the thing DR-65 keeps re-learning.
      *
-     * Split into the two shapes the tree actually constructs — a write that threw, and one
-     * semantic post-write condition — so there is nowhere left to put a string. The throwable is
-     * carried whole and rendered ONCE, at the sink below, by the renderer that owns the decision.
-     * The hazard is now inexpressible rather than merely absent.
+     * Split into the two shapes the tree then constructed, so there is nowhere left to put a string. The write
+     * that threw is gone since the audit of Nov 9, 2026: a granted pair whose write fails is kept in memory and
+     * written again (RetainedCredentialWrite), so no renewal ends on it. What is left is the one semantic
+     * post-write condition, which carries no text at all.
      */
     public sealed class PersistFailed : RefreshOutcome() {
-        /** The credential write itself threw. The cause travels raw and is rendered at the sink. */
-        public data class Write(val cause: Throwable) : PersistFailed()
-
         /** The write reported success but the file did not read back — no throwable exists to carry. */
         public data object UnreadableAfterWrite : PersistFailed()
 
@@ -69,7 +66,6 @@ public sealed class RefreshOutcome {
             // Deliberately does NOT name a file. The three providers write three different paths
             // (codex/grok auth.json, kimi credentials/kimi-code.json), and `[$tag]` already says
             // which provider is speaking, so a hardcoded "auth.json" would be wrong for kimi.
-            is Write -> "credential write failed: ${SafeFailureText.render(cause)}"
             UnreadableAfterWrite -> "credential file unreadable after rotated-token write"
         }
     }

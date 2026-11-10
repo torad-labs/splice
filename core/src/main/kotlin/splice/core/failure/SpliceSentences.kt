@@ -54,7 +54,9 @@ internal class SpliceSentences(private val spoken: Spoken) {
         is FailureCause.Splice.Internal ->
             Said("This turn failed because of a fault in splice", next = Next.Resend(SEND_AGAIN))
         FailureCause.Splice.CompactionUnfinished -> Said(
-            "The summary this request was waiting on did not finish on ${facts.head}",
+            // A held non-stream turn's re-send waits on an answer too (2026-11-09), and it was no summary.
+            "The ${if (facts.request.compaction) "summary" else "answer"} this request was waiting on " +
+                "did not finish on ${facts.head}",
             next = Next.Resend(SEND_AGAIN),
         )
         is FailureCause.Splice.NoLogin, is FailureCause.Splice.AtCapacity, is FailureCause.Splice.Declined,
@@ -181,7 +183,7 @@ internal class DeclineSentences(private val spoken: Spoken) {
             "$head cannot enforce a mid-conversation tool removal for this request, so the turn was not sent"
         RequestFeature.TOP_K, RequestFeature.STOP_SEQUENCES,
         RequestFeature.SERVICE_TIER, RequestFeature.SPEED,
-        RequestFeature.CONTAINER, RequestFeature.DIAGNOSTICS,
+        RequestFeature.CONTAINER, RequestFeature.UNKNOWN_FIELD,
         RequestFeature.INFERENCE_GEO, RequestFeature.USER_PROFILE_ID,
         RequestFeature.WORKSPACE_ID, RequestFeature.CACHE_CONTROL,
         RequestFeature.CACHE_ONLY_WARMUP, RequestFeature.TOOL_STRICTNESS,
@@ -209,7 +211,7 @@ internal class DeclineSentences(private val spoken: Spoken) {
             "$head cannot carry this reasoning context, so the turn was not sent"
         RequestFeature.OUTPUT_FORMAT, RequestFeature.STRUCTURED_OUTPUT,
         RequestFeature.DOCUMENT_CITATIONS, RequestFeature.TOOL_CHOICE,
-        RequestFeature.CONTAINER, RequestFeature.DIAGNOSTICS,
+        RequestFeature.CONTAINER, RequestFeature.UNKNOWN_FIELD,
         RequestFeature.INFERENCE_GEO, RequestFeature.USER_PROFILE_ID,
         RequestFeature.WORKSPACE_ID, RequestFeature.TOOL_STRICTNESS,
         RequestFeature.TOOL_ALLOWED_CALLERS, RequestFeature.TOOL_TYPE,
@@ -222,8 +224,8 @@ internal class DeclineSentences(private val spoken: Spoken) {
     private fun untranslatableMetadata(what: RequestFeature, head: String): String = when (what) {
         RequestFeature.CONTAINER ->
             "$head cannot carry the container this request asks for, so the turn was not sent"
-        RequestFeature.DIAGNOSTICS ->
-            "$head cannot carry the diagnostics this request asks for, so the turn was not sent"
+        RequestFeature.UNKNOWN_FIELD ->
+            "$head cannot carry a request field it does not recognize, so the turn was not sent"
         RequestFeature.INFERENCE_GEO ->
             "$head cannot carry the inference region this request asks for, so the turn was not sent"
         RequestFeature.USER_PROFILE_ID ->
@@ -260,7 +262,7 @@ internal class DeclineSentences(private val spoken: Spoken) {
         RequestFeature.DOCUMENT_CITATIONS, RequestFeature.TOOL_CHOICE,
         RequestFeature.TOP_K, RequestFeature.STOP_SEQUENCES,
         RequestFeature.SERVICE_TIER, RequestFeature.SPEED,
-        RequestFeature.CONTAINER, RequestFeature.DIAGNOSTICS,
+        RequestFeature.CONTAINER, RequestFeature.UNKNOWN_FIELD,
         RequestFeature.INFERENCE_GEO, RequestFeature.USER_PROFILE_ID,
         RequestFeature.WORKSPACE_ID, RequestFeature.CACHE_CONTROL,
         RequestFeature.CACHE_ONLY_WARMUP, RequestFeature.REASONING_CONTEXT,

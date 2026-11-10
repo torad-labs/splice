@@ -53,6 +53,9 @@ class TopologyWriterTest {
         WallClock { NOW },
     )
 
+    /** [requested], built from what [FILE] decodes to, as every edit here is. */
+    private fun TopologyWriter.edit(requested: Topology): TopologyWriteResult = write(requested, tree(topology()))
+
     /** What sits beside splice.toml besides it and the empty lock every save takes. */
     private fun backups(): List<String> = Files.list(tmp).use { paths ->
         paths.map { it.fileName.toString() }.filter { it != "splice.toml" && it != ".splice.toml.lock" }.toList()
@@ -68,7 +71,7 @@ class TopologyWriterTest {
 
     @Test
     fun `a changed value lands, with the old bytes in a dated backup`() {
-        val result = writer(mapOf(FILE to topology(), EDITED to topology(port = 8802))).write(topology(port = 8802))
+        val result = writer(mapOf(FILE to topology(), EDITED to topology(port = 8802))).edit(topology(port = 8802))
         assertEquals(EDITED, Files.readString(file))
         val backup = (result as TopologyWriteResult.Written).backup
         assertEquals("splice.toml.bak-20260918T120000Z-", backup?.fileName.toString().substringBeforeLast('-') + "-")
@@ -78,27 +81,27 @@ class TopologyWriterTest {
     @Test
     fun `a head naming an undeclared provider is refused by name`() {
         val stray = topology(head = HeadConfig("nope", PORT, "ex/", "m1"))
-        val findings = untouched(writer(mapOf(FILE to topology())).write(stray))
+        val findings = untouched(writer(mapOf(FILE to topology())).edit(stray))
         assertEquals(listOf("heads.ex.provider"), findings.map { it.path })
     }
 
     @Test
     fun `a port outside the TCP range is refused by name`() {
-        val findings = untouched(writer(mapOf(FILE to topology())).write(topology(port = 0)))
+        val findings = untouched(writer(mapOf(FILE to topology())).edit(topology(port = 0)))
         val expected = TopologyFinding("heads.ex.port", "port 0 is outside 1-65535; use a port in that range")
         assertEquals(expected, findings.single())
     }
 
     @Test
     fun `a head on the control plane's port is refused on both owners`() {
-        val findings = untouched(writer(mapOf(FILE to topology())).write(topology(port = 3096)))
+        val findings = untouched(writer(mapOf(FILE to topology())).edit(topology(port = 3096)))
         assertEquals(listOf("heads.ex.port", "daemon.control_port"), findings.map { it.path })
     }
 
     @Test
     fun `a head with an empty discovery prefix is refused and the file keeps its bytes`() {
         val unbootable = topology(head = head(PORT).copy(discoveryPrefix = ""))
-        val findings = untouched(writer(mapOf(FILE to topology())).write(unbootable))
+        val findings = untouched(writer(mapOf(FILE to topology())).edit(unbootable))
         assertEquals(listOf("heads.ex.models"), findings.map { it.path })
         assertTrue(findings.single().message.contains("discovery prefix"), findings.toString())
     }
@@ -112,10 +115,10 @@ class TopologyWriterTest {
         val unlisting = topology(head = roster).let { t ->
             t.copy(providers = t.providers.mapValues { (_, p) -> p.copy(discovery = off) })
         }
-        val findings = untouched(writer(mapOf(FILE to topology())).write(unlisting))
+        val findings = untouched(writer(mapOf(FILE to topology())).edit(unlisting))
         assertEquals(listOf("heads.ex.models"), findings.map { it.path })
         assertTrue(findings.single().message.contains("'m9'"), findings.toString())
-        val listing = untouched(writer(mapOf(FILE to topology())).write(topology(head = roster)))
+        val listing = untouched(writer(mapOf(FILE to topology())).edit(topology(head = roster)))
         assertTrue(listing.none { it.path == "heads.ex.models" }, listing.toString())
     }
 
@@ -132,7 +135,7 @@ class TopologyWriterTest {
             WallClock { NOW },
             discovered = { key -> if (key == "ex") listOf(DiscoveredModel("m9")) else emptyList() },
         )
-        val findings = untouched(served.write(topology(head = roster)))
+        val findings = untouched(served.edit(topology(head = roster)))
         assertTrue(findings.none { it.path == "heads.ex.models" }, findings.toString())
         assertTrue(findings.single().message.startsWith("the edit would not parse"), findings.toString())
     }
@@ -147,7 +150,7 @@ class TopologyWriterTest {
                 },
             )
         }
-        val findings = untouched(writer(mapOf(FILE to topology())).write(unlisting))
+        val findings = untouched(writer(mapOf(FILE to topology())).edit(unlisting))
         assertEquals(listOf("heads.ex.model_slots"), findings.map { it.path })
         assertTrue(findings.single().message.contains("sonnet"), findings.toString())
         val served = TopologyWriter(
@@ -157,27 +160,27 @@ class TopologyWriterTest {
             WallClock { NOW },
             discovered = { key -> if (key == "ex") listOf(DiscoveredModel("m9")) else emptyList() },
         )
-        val accepted = untouched(served.write(topology(head = mapped)))
+        val accepted = untouched(served.edit(topology(head = mapped)))
         assertTrue(accepted.none { it.path == "heads.ex.model_slots" }, accepted.toString())
         assertTrue(accepted.single().message.startsWith("the edit would not parse"), accepted.toString())
     }
 
     @Test
     fun `a file that does not parse is never edited`() {
-        val findings = untouched(writer(emptyMap()).write(topology()))
+        val findings = untouched(writer(emptyMap()).edit(topology()))
         assertTrue(findings.single().message.startsWith("splice.toml on disk does not parse"), findings.toString())
     }
 
     @Test
     fun `an edit that would not parse is refused before any byte moves`() {
-        val findings = untouched(writer(mapOf(FILE to topology())).write(topology(port = 8802)))
+        val findings = untouched(writer(mapOf(FILE to topology())).edit(topology(port = 8802)))
         assertTrue(findings.single().message.startsWith("the edit would not parse"), findings.toString())
     }
 
     @Test
     fun `an edit the loader reads back differently is refused at the key that drifted`() {
         val table = mapOf(FILE to topology(), EDITED to topology(port = 8803))
-        val findings = untouched(writer(table).write(topology(port = 8802)))
+        val findings = untouched(writer(table).edit(topology(port = 8802)))
         val drift = TopologyFinding("heads.ex.port", "the writer cannot express this edit; nothing was written")
         assertEquals(drift, findings.single())
     }
@@ -189,19 +192,29 @@ class TopologyWriterTest {
             if (text == EDITED) Files.writeString(file, other)
             mapOf(FILE to topology(), EDITED to topology(port = 8802)).getValue(text)
         }
-        val result = writer(emptyMap(), racing).write(topology(port = 8802))
+        val result = writer(emptyMap(), racing).edit(topology(port = 8802))
         assertTrue(result is TopologyWriteResult.Refused, result.toString())
         assertEquals(other, Files.readString(file))
         assertEquals(emptyList<String>(), backups(), "no backup and no temp file")
     }
 
+    // Config audit, Nov 2026: an edit built from an earlier read, after another save changed the file, would patch that
+    // save back out. It is refused, and the file keeps the other save.
+    @Test
+    fun `an edit built from a read the file no longer holds is refused and the other save stays`() {
+        val stale = writer(mapOf(FILE to topology())).tree(topology(port = 8803))
+        val result = writer(mapOf(FILE to topology())).write(topology(port = 8802), stale)
+        val findings = untouched(result)
+        assertTrue(findings.single().message.contains("changed while this write was prepared"), findings.toString())
+    }
+
     @Test
     fun `an existing backup of the same name is never overwritten`() {
-        val first = writer(mapOf(FILE to topology(), EDITED to topology(port = 8802))).write(topology(port = 8802))
+        val first = writer(mapOf(FILE to topology(), EDITED to topology(port = 8802))).edit(topology(port = 8802))
         val backup = checkNotNull((first as TopologyWriteResult.Written).backup)
         Files.writeString(backup, "kept")
         Files.writeString(file, FILE)
-        writer(mapOf(FILE to topology(), EDITED to topology(port = 8802))).write(topology(port = 8802))
+        writer(mapOf(FILE to topology(), EDITED to topology(port = 8802))).edit(topology(port = 8802))
         assertEquals("kept", Files.readString(backup))
     }
 

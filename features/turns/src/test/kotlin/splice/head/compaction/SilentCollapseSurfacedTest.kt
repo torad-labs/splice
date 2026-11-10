@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.model.TurnPrice
+import splice.core.util.AsyncFileIo
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.head.compact.CompactStats
@@ -33,6 +34,28 @@ class SilentCollapseSurfacedTest {
         assertEquals(emptyList<Any>(), EconomicsStore(file, TurnPrice(null), WallClock { 0L }, sink).read())
         assertEquals(1, lines.size, "one trace for the unreadable history: $lines")
         assertTrue(lines.single().contains("[economics]"), lines.single())
+    }
+
+    @Test
+    fun `a corrupt economics file is set aside, not overwritten, by the first write`() {
+        val file = dir.resolve("economics.json").also { Files.writeString(it, "{not json") }
+        val store = EconomicsStore(file, TurnPrice(null), WallClock { 7L }, sink)
+        store.read()
+        store.flushNow()
+        val aside = dir.resolve("economics.json.unreadable-7")
+        assertEquals("{not json", Files.readString(aside), "the old bytes are kept")
+        assertEquals("[]", Files.readString(file).trim(), "the new file holds what memory had")
+    }
+
+    @Test
+    fun `a compact stats append that fails says so once per streak`() {
+        val blocked = dir.resolve("not-a-dir").also { Files.writeString(it, "") }
+        val stats = CompactStats(blocked.resolve("compact-stats.jsonl"), WallClock { 0L }, sink)
+        stats.record(mapOf("outcome" to "ok"))
+        stats.record(mapOf("outcome" to "ok"))
+        assertTrue(AsyncFileIo.drain())
+        assertEquals(1, lines.size, "one trace for the failing streak: $lines")
+        assertTrue(lines.single().contains("append FAILED"), lines.single())
     }
 
     @Test

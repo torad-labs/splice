@@ -22,23 +22,19 @@
 package splice.provider.grok
 
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.serialization.json.Json
 import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialExpiry
 import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
-import splice.core.auth.INVALID_GRANT_REASON
-import splice.core.auth.InvalidGrantLatch
+import splice.core.auth.LoginAnswer
 import splice.core.auth.RefreshCall
 import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.auth.SYNTHETIC_EXPIRY_TTL_MS
-import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
-import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import splice.core.util.WallClockIso
 import splice.upstream.LifecycleScope
@@ -47,10 +43,10 @@ import splice.upstream.credentials.AccountCredentialIdentitySource
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialEvidence
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialFileEvidenceReader
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialPresence
-import splice.upstream.credentials.BackgroundCredentialRefresh
-import splice.upstream.credentials.CredentialLock
-import splice.upstream.retry.SingleFlight
-import java.nio.file.Files
+import splice.upstream.credentials.HeldToken
+import splice.upstream.credentials.RenewalStage
+import splice.upstream.credentials.RenewalWindows
+import splice.upstream.credentials.TokenRenewal
 import java.nio.file.Path
 import java.time.Instant
 
@@ -60,6 +56,11 @@ internal const val LOG_TAG = "grok-auth"
 // success/re-check loop, short enough that a genuinely recovering endpoint retries soon.
 private const val REFRESH_INEFFECTIVE_BACKOFF_MS = 30_000L
 private const val MS_PER_S = 1000L
+
+// Why a dead token inside the SH-02(b) backoff is not renewed: the renewal before it granted one that expires inside
+// the stale floor, and another would too.
+private const val INEFFECTIVE_RENEWAL =
+    "the last renewal granted a token that expires inside the stale floor; backing off"
 
 /** Refresh this long before `expires` — well inside a 6h grok token, generous vs clock skew. */
 internal const val PROACTIVE_WINDOW_MS = 300_000L
@@ -93,14 +94,21 @@ public class GrokAuthProvider(
 ) : RefreshableAuthProvider, AccountCredentialIdentitySource {
 
     private val json = Json { ignoreUnknownKeys = true }
-    private val singleFlight = SingleFlight<RefreshOutcome>()
-    private val backgroundRefresh = BackgroundCredentialRefresh(prefetchScope, LOG_TAG, log)
-    private val invalidGrantLatch = InvalidGrantLatch()
 
-    // G15: the mtime probe lives on its own collaborator, not on this class. Measured, not assumed:
-    // GrokAuthProvider holds 14 non-override functions and TooManyFunctions flags at 15 (overrides
-    // are ignored), so folding grokAuthMtimeOrNull in here fails the build. HD-M5 red-proved this
-    // with a synthetic 15th member; codex/kimi sit at 13 and DO host their own probe.
+    // Audit, Nov 9, 2026: the ladder (serve, prefetch, wait near expiry, stat, latch, lock, persist) is the shared
+    // TokenRenewal; what stays here is grok's own: auth.json's shape, its `expires`, the merge and the SH-02 backoff.
+    private val windows = RenewalWindows(PROACTIVE_WINDOW_MS, STALE_FLOOR_MS)
+    private val renewal: TokenRenewal = TokenRenewal(
+        authPath,
+        LOG_TAG,
+        clock,
+        log,
+        prefetchScope,
+        RenewalStage { prior ->
+            authFile.refreshLocked(prior, PersistRotation { rt, tokens, access -> persistRotation(rt, tokens, access) })
+        },
+    )
+
     private val authJson = GrokAuthJson(
         authPath,
         json,
@@ -108,20 +116,14 @@ public class GrokAuthProvider(
         nowIso,
         clock,
         GrokAuthJson.SynthesizeExpiry { mtimeMs, nowMs -> synthesizeExpiry(mtimeMs, nowMs) },
+        renewal.text,
     )
 
     private fun synthesizeExpiry(mtimeMs: Long, nowMs: Long): Long =
         CredentialExpiry.synthesizedExpiryMs(mtimeMs, nowMs)
-    private val authFile = GrokAuthDescribe(authPath, authJson, invalidGrantLatch, log, refreshCall)
+    private val authFile = GrokAuthDescribe(authPath, authJson, renewal, refreshCall)
 
     private val forbidden = GrokForbidden(authJson, clock, log)
-
-    init {
-        // Lifecycle ownership: when prefetchScope ends (Daemon.stop cancels probeScope), cancel the
-        // shared refresh so it cannot persist a token after shutdown. Per-request cancellation is
-        // unaffected — it only cancels that caller's await, never the SingleFlight scope.
-        prefetchScope.coroutineContext[Job]?.invokeOnCompletion { singleFlight.close() }
-    }
 
     // SH-02(b): set when a refresh persisted an expiry still inside the stale floor; the blocking
     // tier serves the current token until the backoff lapses.
@@ -130,54 +132,33 @@ public class GrokAuthProvider(
     // "backoff active" from boot with small/injected clocks.
     private var lastIneffectiveRefreshAtMs: Long = Long.MIN_VALUE / 2
 
-    // Three tiers by remaining time-to-expiry, as a single if/else-if/else expression (not `when`,
-    // not extra member functions — GrokAuthProvider is already at its detekt function-count budget):
-    // outside the proactive window, serve as-is; above the stale floor, prefetch in the background
-    // and serve the current token (G17); below the floor, block for a confirmed-fresh token exactly
-    // as before G17 (on a failed refresh still serve the current token if it hasn't actually expired).
-    override suspend fun credentials(): Credentials? {
-        val snap = authJson.readSnapshot(authCacheMs) ?: return null
-        val current = Credentials.Bearer(snap.access, null)
-        val expiresAt = snap.expiresAtMs
-        // expiresAt is always populated now (real, or synthesized off mtime by readSnapshot — G18);
-        // still outside the proactive window means serve as-is. The null branch below stays as
-        // defensive-only dead code for a future caller that constructs Snapshot directly.
-        return if (expiresAt == null || expiresAt - clock() >= PROACTIVE_WINDOW_MS) {
-            current
-        } else if (expiresAt - clock() >= STALE_FLOOR_MS) {
-            // prefetch tier (G17): kick a single-flight refresh in the background, serve the CURRENT
-            // token now. singleFlight still dedups concurrent entrants to one network call;
-            // credentialsOrNull still owns the one logging flatten (discipline L3).
-            backgroundRefresh.launch { refresh() }
-            current
-        } else if (clock() - lastIneffectiveRefreshAtMs < REFRESH_INEFFECTIVE_BACKOFF_MS) {
-            // SH-02(b): the last refresh succeeded without advancing past the stale floor — another
-            // one would too. Serve the current token through the backoff window instead of burning
-            // a rotating refresh token per request.
-            //
-            // DR-146: but only while it is actually ALIVE. This branch served `current`
-            // unconditionally, where the stale-floor branch three lines below has always refused a
-            // token past its own expiry (`current.takeIf { clock() < expiresAt }`). A sub-floor
-            // grant arms this backoff, and once that token passes its expiry INSIDE the window a
-            // known-dead token went to UpstreamClient, which spent a real upstream call to collect
-            // a 403 and then burned the single-flight refresh anyway — so the stated goal of not
-            // burning a rotating refresh token per request was not achieved on the reactive path,
-            // and each request also cost a wasted round trip.
-            current.takeIf { clock() < expiresAt }
-        } else {
-            // stale floor: too close to hard expiry to risk it — block for a confirmed-fresh token,
-            // same as pre-G17 behavior.
-            val refreshed = refresh()
-            refreshed ?: current.takeIf { clock() < expiresAt }
+    // Three tiers by remaining time-to-expiry (G17), run by the shared renewal: outside the proactive window serve
+    // as-is; above the stale floor prefetch in the background and serve the current token; below the floor wait for
+    // the renewal, still serving a token that has not expired. expiresAt is always populated (real, or synthesized off
+    // mtime by readSnapshot, G18).
+    //
+    // SH-02(b), grok's own rule: when the last renewal succeeded without advancing past the stale floor, another one
+    // would too, so the floor serves the current token through the backoff instead of burning a rotating refresh token
+    // per request. DR-146: only while it is actually alive; a dead one is the renewal's refusal, never a token sent to
+    // collect a 403.
+    override suspend fun answer(): LoginAnswer {
+        val snap = authJson.readSnapshot(authCacheMs)
+        val held = snap?.let { HeldToken(Credentials.Bearer(it.access, null), it.expiresAtMs) }
+        val expiresAt = held?.expiresAtMs
+        val backingOff = expiresAt != null && expiresAt - clock() < STALE_FLOOR_MS &&
+            clock() - lastIneffectiveRefreshAtMs < REFRESH_INEFFECTIVE_BACKOFF_MS
+        return when {
+            !backingOff -> renewal.answer(held, windows)
+            clock() < expiresAt -> renewal.serve(held.credentials)
+            else -> LoginAnswer.Unrenewed(RefreshOutcome.Rejected(INEFFECTIVE_RENEWAL))
         }
     }
 
+    override suspend fun credentials(): Credentials? = (answer() as? LoginAnswer.Granted)?.credentials
+
     override suspend fun refresh(): Credentials? = (exchange() as? RefreshOutcome.Refreshed)?.credentials
 
-    // One token exchange, single-flight: its outcome is logged once, inside the flight (credentialsOrNull is the one
-    // logging flatten), and the turn's retry engine reads it whole (failure-handling slice 4).
-    override suspend fun exchange(): RefreshOutcome =
-        singleFlight.run { doRefresh().also { it.credentialsOrNull(LOG_TAG, log) } }
+    override suspend fun exchange(): RefreshOutcome = renewal.exchange()
 
     override fun observedCredentialKey(): String? = authJson.readSnapshot(0L)?.access?.let {
         CredentialKey.fromCredentials(Credentials.Bearer(it))
@@ -185,47 +166,6 @@ public class GrokAuthProvider(
 
     override fun allowRefreshAfterFailure(deadCredential: Boolean): Boolean =
         forbidden.allowRefreshAfterFailure(deadCredential)
-
-    // Sealed per-mode outcome (discipline L3): a dead refresh token, a transport blip, and a
-    // corrupt file are DIFFERENT stories; credentialsOrNull is the single logging flatten.
-    // Staged (read → exchange → persist), each stage owning its own failure branches.
-    // G1: capture what THIS process last served BEFORE the lock, then re-read authoritatively INSIDE
-    // it — so a peer's rotation (landed while we waited on the lock) is seen, not overwritten.
-    // G15: gate on a latched confirmed invalid_grant BEFORE any file-content read or network call —
-    // a dead token no longer gets re-POSTed every turn. The gate gives way the instant the file's
-    // mtime changes (re-login), so a genuinely stale latch never outlives the credentials it named.
-    private suspend fun doRefresh(): RefreshOutcome {
-        // DR-59 (class law): logged-out is PROVEN by the stat, never an exists() pre-gate —
-        // exists() reads false through an untraversable parent, so an operator with intact tokens
-        // was told "not logged in". Only NoSuch with no NOFOLLOW entry is a genuine first
-        // run/logout; everything else is ReadFailed, whose flatten line says NOT-logged-out.
-        val statFailure = Cancellables.runCatchingCancellable {
-            Files.getLastModifiedTime(authPath)
-        }.exceptionOrNull()
-        if (statFailure != null) {
-            val genuinelyAbsent = statFailure is java.nio.file.NoSuchFileException &&
-                !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
-            return if (genuinelyAbsent) RefreshOutcome.NoCredentialsFile else RefreshOutcome.ReadFailed(statFailure)
-        }
-        val identity = authFile.grokAuthIdentityOrNull(authPath, log)
-        if (invalidGrantLatch.isLatched(identity)) return RefreshOutcome.Rejected(INVALID_GRANT_REASON)
-        val priorAccess = authJson.cachedAccess()
-        // AUTH-002: wire the daemon log sink so the lock's proceed-unlocked fallback is observable
-        // (CredentialLock.withLock's `log` default is a silent no-op) instead of only greppable
-        // in a source comment.
-        val outcome = CredentialLock.withLock(authPath, log = log) {
-            authFile.refreshLocked(
-                priorAccess,
-                PersistRotation { rt, tokens, access ->
-                    persistRotation(rt, tokens, access)
-                },
-            )
-        }
-        if (outcome is RefreshOutcome.Rejected && outcome.reason == INVALID_GRANT_REASON) {
-            invalidGrantLatch.latch(identity)
-        }
-        return outcome
-    }
 
     private fun persistRotation(refreshToken: String, fresh: GrokRefreshedTokens, access: String): RefreshOutcome {
         // SH-02(a): an endpoint response with no expires_in used to persist a NULL expiry, and the
@@ -251,16 +191,9 @@ public class GrokAuthProvider(
                     "backing off ${REFRESH_INEFFECTIVE_BACKOFF_MS / MS_PER_S}s",
             )
         }
-        // The endpoint already consumed the old refresh_token (Granted) by the time we get here — a
-        // throwing write must degrade to a typed PersistFailed, never a raw throw through SingleFlight
-        // out of credentials()/refresh(), so the not-yet-expired current token still gets served.
-        Cancellables.runCatchingCancellable {
-            writeSecure(
-                authPath,
-                authJson.mergedAuthJson(access, fresh.refreshToken ?: refreshToken, expiresAtMs).toString(),
-            )
-            // DR-151: the throwable travels WHOLE to the sink, which owns the render.
-        }.getOrElse { return RefreshOutcome.PersistFailed.Write(it) }
+        // The endpoint already consumed the old refresh_token (Granted) by the time we get here: a write that fails is
+        // kept by the renewal and served from memory until it lands (audit, Nov 9, 2026).
+        renewal.persist(authJson.mergedAuthJson(access, fresh.refreshToken ?: refreshToken, expiresAtMs).toString())
         authJson.clearCache()
         return RefreshOutcome.Refreshed(Credentials.Bearer(access, null))
     }
@@ -273,8 +206,4 @@ public class GrokAuthProvider(
 
     override fun credentialEvidence(): CredentialEvidence =
         CredentialFileEvidenceReader.read(authPath)
-
-    // Atomic 0600 credential write — routes to the shared primitive (was an inline temp→chmod→move).
-
-    private fun writeSecure(path: Path, content: String) { SecureFile.writeAtomic0600(path, content) }
 }

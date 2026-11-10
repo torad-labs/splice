@@ -5,7 +5,8 @@
 // tool calls, duplicated reasoning — operator report 2026-07-24). This cache holds each round's
 // envelopes keyed by its REAL function_call ids so the builder can reinject the plan in-position
 // when the tool results come back. Entries are READ, not consumed — a client-retried request
-// re-reads the same envelopes (grace by design). Losing a conversation (restart, eviction, idle
+// re-reads the same envelopes (grace by design), until the retry stores its own reasoning at that
+// history position, which replaces them (2026-11-09; ResponsesTurnSeams). Losing a conversation (restart, eviction, idle
 // TTL) degrades to the no-injection status quo, never to an error (NEVER-BELOW-STATUS-QUO law).
 //
 // REWORKED 2026-07-31 (review of #71, round 2): the CONVERSATION is the primary record, not the
@@ -21,6 +22,11 @@
 // conversation that alone exceeds the bound FREEZES ADMISSION — the offered round (never yet
 // injected) is rejected and every admitted round keeps serving, which costs the tail its
 // injection instead of busting the whole prefix the way wipe+disable did.
+//
+// REWORKED 2026-11-09: the freeze also comes per conversation. The bounds were head-wide only, so one
+// conversation grew by evicting every neighbor whole until it froze alone, and the next put from anyone
+// evicted it whole in turn. Now a conversation freezes at its own share (ReasoningConversationBound), and
+// head-wide pressure is left for many conversations together.
 //
 // Policy + RC-4 walk live in ReasoningCachePolicy.kt so this file is the store only
 // (concentration, 2026-08-19).
@@ -46,7 +52,7 @@ import splice.core.util.MonoClock
 
 internal class ReasoningCache(
     private val maxEntries: Int = MAX_ENTRIES,
-    private val maxTotalBytes: Long = MAX_TOTAL_BYTES,
+    private val maxTotalBytes: Long = REASONING_BOUND_BYTES,
     private val ttlMs: Long = TTL_MS,
     // Monotonic, not wall clock: the null-key sweep's takeWhile early-exit is sound only while
     // iteration order matches timestamp order — an NTP step backward would break that invariant
@@ -60,6 +66,9 @@ internal class ReasoningCache(
      *  keeps them in memory only. Since fix 3 (2026-10-26) it writes behind the turns, and its owner drains it when
      *  the head stops (ResponsesParts.onHeadStop). */
     private val writes: ReasoningCacheWrites = ReasoningCacheWrites(null),
+    /** One conversation's share of the head's bounds (2026-11-09): past it the conversation freezes on its own,
+     *  without taking a byte from its neighbors. */
+    private val conversationBound: ReasoningConversationBound = ReasoningConversationBound(),
 ) : ReasoningCacheEvictions {
 
     // Iteration order = least-recently-TOUCHED first (touch re-inserts). Bound pressure evicts from
@@ -80,7 +89,7 @@ internal class ReasoningCache(
     private val lock = Any()
     private val positions = ReasoningCachePositions()
     private val proofs = ReasoningCacheProofs()
-    private val persistence = ReasoningRoundPersistence(writes, positions, proofs)
+    private val persistence = ReasoningRoundPersistence(writes, positions, proofs, log)
 
     // What the last process left on disk, published once before any read or write sees the maps: a
     // restarted daemon's first request must find it. The directory is read under the lazy's own lock,
@@ -110,13 +119,27 @@ internal class ReasoningCache(
                 totalBytes += convo.bytes
                 convos[conversation.key] = convo
                 if (normalized != recorded) totalBytes += persistence.rewrite(conversation.key, convo)
+                // A record written under an older, wider bound keeps serving what it holds and admits nothing more.
+                if (conversationBound.exceeded(convo)) {
+                    freezeWriterLocked(conversation.key, convo, offered = null, why = RESTORED_OVER_SHARE)
+                }
             }
             evictToBoundLocked(writing = null, writer = null, offered = null)
         }
         writes.wake()
     }
 
-    fun put(conversationKey: String?, toolIds: List<String>, envelopes: List<String>) {
+    /** [replacesPosition]: [toolIds] is one history-position record, the first its turn stores at that position. What
+     *  other turns left there goes first (2026-11-09): a turn reaches a position another turn already stored at only
+     *  when the client re-sent a request whose earlier attempt it never kept, so that reasoning follows nothing in
+     *  the history. A turn's records reach this put only once the client holds what they led into, or a round of the
+     *  turn reached its terminal (ResponsesTurnSeams), so an attempt cut before either stored nothing to replace. */
+    fun put(
+        conversationKey: String?,
+        toolIds: List<String>,
+        envelopes: List<String>,
+        replacesPosition: Boolean = false,
+    ) {
         if (toolIds.isEmpty() || envelopes.isEmpty()) return
         restored.value
         val bytes = envelopes.sumOf { it.length.toLong() } + toolIds.sumOf(positions::metadataBytes)
@@ -130,6 +153,14 @@ internal class ReasoningCache(
                 roundCount++
                 evictToBoundLocked(writing = null, writer = null, offered = null)
             } else {
+                // Ahead of the freeze: the replaced records sit where this turn's own history reached, so nothing
+                // before them moves in any request, and a conversation they froze stops sending them.
+                if (replacesPosition) {
+                    convos[conversationKey]?.let { persistence.replaceAt(conversationKey, it, toolIds) }?.let {
+                        totalBytes -= it.bytes
+                        roundCount -= it.records
+                    }
+                }
                 putConvoLocked(conversationKey, toolIds, envelopes, bytes)
             }
         }
@@ -251,7 +282,7 @@ internal class ReasoningCache(
 
     private fun putConvoLocked(key: String, toolIds: List<String>, envelopes: List<String>, bytes: Long) {
         val convo = touchLocked(key) ?: ReasoningCacheConvo().also { convos[key] = it }
-        val updated = positions.update(convo, toolIds, maxTotalBytes - totalBytes)
+        val updated = positions.update(convo, toolIds, conversationBound.available(convo, maxTotalBytes - totalBytes))
         if (updated != null) {
             totalBytes += updated.bytes
             if (updated.changed) totalBytes += persistence.rewrite(key, convo)
@@ -262,10 +293,15 @@ internal class ReasoningCache(
         // it again would orphan the old round, which still counts against the bound (review
         // finding 2's accelerator) — refresh (the touch above) and return instead.
         if (toolIds.any { it in convo.byToolId }) return
-        totalBytes += persistence.reclaimOrderMetadata(key, convo, bytes, maxTotalBytes - totalBytes)
+        totalBytes += persistence.reclaimOrderMetadata(
+            key,
+            convo,
+            bytes,
+            conversationBound.available(convo, maxTotalBytes - totalBytes),
+        )
         val offered = positions.admission(
             ReasoningCacheRound(toolIds, envelopes, bytes, clock()),
-            maxTotalBytes - totalBytes,
+            conversationBound.available(convo, maxTotalBytes - totalBytes),
         )
         val rk = "r${seq++}"
         convo.rounds[rk] = offered
@@ -291,6 +327,13 @@ internal class ReasoningCache(
      *  the invariant — the loop cannot spin (the false-return guard is unreachable from put()
      *  and exists only to make non-progress impossible by construction). */
     private fun evictToBoundLocked(writing: String?, writer: ReasoningCacheConvo?, offered: String?) {
+        // Over its own share the writer freezes before it can press on any neighbor: on 2026-11-08/09 one
+        // conversation took the whole head-wide bound six times and evicted 35 others whole on the way up.
+        // Rejecting the offered round restores the state before this put, which was within the head's bounds.
+        if (conversationBound.exceeded(writer)) {
+            freezeWriterLocked(writing, writer, offered, OVER_SHARE)
+            return
+        }
         while (roundCount > maxEntries || totalBytes > maxTotalBytes) {
             val oldestNull = nullRounds.keys.firstOrNull()
             val neighbor = if (oldestNull == null) convos.keys.firstOrNull { it != writing } else null
@@ -300,29 +343,36 @@ internal class ReasoningCache(
                     log("[reasoning-cache] bound pressure evicted conversation ${neighbor.take(KEY_LOG_CHARS)}… whole")
                     removeConvoLocked(neighbor)
                 }
-                else -> if (!freezeWriterLocked(writing, writer, offered)) return
+                else -> if (!freezeWriterLocked(writing, writer, offered, ALONE_OVER_BOUND)) return
             }
         }
     }
 
-    /** Reject the round just offered and freeze admission for the writer. True when the offered
-     *  round was removed (progress guaranteed); false only on the defensive no-writer path. */
-    private fun freezeWriterLocked(writing: String?, writer: ReasoningCacheConvo?, offered: String?): Boolean {
-        if (writer == null || offered == null) return false
-        val round = writer.rounds.remove(offered) ?: return false
-        round.toolIds.forEach { writer.byToolId.remove(it) }
-        writer.bytes -= round.bytes
-        totalBytes -= round.bytes
-        roundCount--
+    /** Reject the round just offered ([offered] null: none, as on restore) and freeze admission for
+     *  the writer. True when the offered round was removed (progress guaranteed); false on the
+     *  defensive no-writer path. The offered round was never injected, so removing it shifts nothing. */
+    private fun freezeWriterLocked(
+        writing: String?,
+        writer: ReasoningCacheConvo?,
+        offered: String?,
+        why: String,
+    ): Boolean {
+        if (writing == null || writer == null) return false
+        if (offered != null) {
+            val round = writer.rounds.remove(offered) ?: return false
+            round.toolIds.forEach { writer.byToolId.remove(it) }
+            writer.bytes -= round.bytes
+            totalBytes -= round.bytes
+            roundCount--
+        }
         if (!writer.frozen) {
             writer.frozen = true
             log(
-                "[reasoning-cache] conversation ${writing?.take(KEY_LOG_CHARS)}… froze admission at " +
-                    "${writer.rounds.size} rounds/${writer.bytes}B (alone over the bound); " +
-                    "admitted rounds keep serving",
+                "[reasoning-cache] conversation ${writing.take(KEY_LOG_CHARS)}… froze admission at " +
+                    "${writer.rounds.size} rounds/${writer.bytes}B ($why); admitted rounds keep serving",
             )
         }
-        return true
+        return offered != null
     }
 
     private fun sweepLocked() {
@@ -359,6 +409,7 @@ private class ReasoningRoundPersistence(
     private val writes: ReasoningCacheWrites,
     private val positions: ReasoningCachePositions,
     private val proofs: ReasoningCacheProofs,
+    private val log: LogSink,
 ) {
     fun enqueue(key: String, conversation: ReasoningCacheConvo, round: ReasoningCacheRound) {
         val firstWithProofs = conversation.rounds.size == 1 && conversation.resultProofs.isNotEmpty()
@@ -379,6 +430,22 @@ private class ReasoningRoundPersistence(
         return released + if (released != 0L) rewrite(key, conversation) else 0L
     }
 
+    /** Drop what other turns stored at [toolIds]' history position, file included, before it is admitted. This turn
+     *  reached that position through its own request or its own output, so the client kept nothing those turns
+     *  produced from there: their reasoning would ride upstream in front of history it never led to. The bytes
+     *  returned are what the cache's bound gets back, the rewrite's own change included. */
+    fun replaceAt(key: String, conversation: ReasoningCacheConvo, toolIds: List<String>): ReplacedRecords {
+        val index = toolIds.singleOrNull() ?: return ReplacedRecords(0, 0L)
+        val replaced = positions.replaceAt(conversation, index)
+        if (replaced.records == 0) return replaced
+        val rewritten = rewrite(key, conversation)
+        log(
+            "[reasoning-cache] conversation ${key.take(KEY_LOG_CHARS)}… re-sent at one history position: " +
+                "replaced ${replaced.records} records (${replaced.bytes}B) an earlier attempt left there",
+        )
+        return replaced.copy(bytes = replaced.bytes - rewritten)
+    }
+
     fun rewrite(key: String, conversation: ReasoningCacheConvo): Long {
         val released = proofs.compact(conversation)
         writes.replace(key, positions.stored(conversation))
@@ -391,16 +458,25 @@ private class ReasoningRoundPersistence(
 // end at compaction or under the bounds, never on a clock.
 private const val TTL_MS: Long = 30 * 60 * 1000L
 
-// Total ROUNDS across all conversations on the head (one entry per tool round). 8192, not the
-// original 256: live soak 2026-08-26 logged 1192 reasoning-cache events in one daemon.log — the
-// old round bound evicted whole active conversations every few minutes (one at 130 rounds), and
-// every eviction rebuilds with ZERO reasoning injection — the tool-amnesia respiral (repeated
-// identical tool calls) RC exists to prevent. This count bound is independent of the 64 MiB byte
-// bound: at a few KiB per round, 8192 rounds spans roughly 32-64 MiB and can bind alongside or
-// before it. Count caps many tiny rounds; bytes cap fewer large ones. codex-rs itself retains every
-// reasoning item until context compaction.
-private const val MAX_ENTRIES: Int = 8192
-private const val MAX_TOTAL_BYTES: Long = 64L * 1024 * 1024
+// The head's bounds, across all conversations. Bytes are the real bound: 64 MiB of envelopes. Every
+// eviction rebuilds a conversation with ZERO reasoning injection — the tool-amnesia respiral (repeated
+// identical tool calls) RC exists to prevent (live soak 2026-08-26, when a 256-round bound evicted
+// active conversations every few minutes). codex-rs itself retains every reasoning item until context
+// compaction.
+private const val MAX_TOTAL_MIB: Int = 64
+internal const val REASONING_BOUND_BYTES: Long = MAX_TOTAL_MIB * 1024L * 1024L
+
+// A round is one stored reasoning item (a positioned record) or one tool round, and its envelope alone is
+// about 1.9 KB even with no readable summary (2026-11-09: 6716 live rows, median 2915 B). The ROUND bound is
+// the byte bound over that floor, so bytes bind first for every real round and the count only stops a flood
+// of rounds smaller than any reasoning item. It was a fixed 8192, which bound at ~22 MB, a third of the bytes.
+private const val ROUND_BYTES_FLOOR: Int = 2048
+internal const val MAX_ENTRIES: Int = MAX_TOTAL_MIB * 1024 * 1024 / ROUND_BYTES_FLOOR
+
+// The freeze log's reasons.
+private const val ALONE_OVER_BOUND = "alone over the bound"
+private const val OVER_SHARE = "over its share of the head's bound"
+private const val RESTORED_OVER_SHARE = "restored over its share"
 
 // "splice-" + 7 hash chars: identifiable in logs, not noisy. Internal: ReasoningCacheFiles names keys too.
 internal const val KEY_LOG_CHARS: Int = 14

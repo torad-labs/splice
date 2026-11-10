@@ -43,9 +43,12 @@ public fun interface TerminalEvent {
  * It runs AFTER the connection is acquired, and that ordering is the whole reason it is a function
  * rather than a `String` parameter: the chaining layer picks full-vs-incremental against the
  * acquired connection's GENERATION, which does not exist until the connection does.
+ *
+ * Null is a frame this socket must not carry (one over the peer's frame limit): nothing is sent, the healthy
+ * connection goes back to the pool unused, and the round rides SSE.
  */
 public fun interface RoundFrame {
-    public operator fun invoke(connection: WsConnection): String
+    public operator fun invoke(connection: WsConnection): String?
 }
 
 /**

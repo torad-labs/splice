@@ -13,6 +13,7 @@ import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialFileEvidenceReader
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialPresence
+import splice.upstream.credentials.CredentialText
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -28,6 +29,11 @@ internal data class MuseCredentialSnapshot(
         "MuseCredentialSnapshot(accessToken=${held(accessToken)}, apiKey=${held(apiKey)}, " +
             "fields=<redacted:${fields.size} key(s)>, identity=$identity)"
 
+    /** Whether this snapshot is the credential revision a verdict was recorded for: the same file state where both are
+     *  known, else the same account token. */
+    fun isRevision(identity: CredentialFileIdentity?, accessToken: String?): Boolean =
+        if (identity != null && this.identity != null) identity == this.identity else accessToken == this.accessToken
+
     /** `null` or `<redacted>` — never the value. */
     private fun held(value: String?): String = if (value == null) "null" else "<redacted>"
 }
@@ -36,10 +42,12 @@ internal class MuseCredentialStore(
     private val authPath: Path,
     private val log: LogSink,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
+    // Audit, Nov 9, 2026: every read takes the document a failed write of a minted key still holds, else the file.
+    private val text: CredentialText = CredentialText { Files.readString(authPath) },
 ) {
     @Volatile private var cache: Cache? = null
 
-    fun describe(holds: MuseMintHolds, invalidAccountLatch: InvalidGrantLatch): AuthDescription {
+    fun describe(holds: MuseMintHolds, poll: MusePollBackoff, invalidAccountLatch: InvalidGrantLatch): AuthDescription {
         val snapshot = read()
         return AuthDescription(
             present = snapshot?.apiKey != null,
@@ -48,6 +56,8 @@ internal class MuseCredentialStore(
                 put("login", "device")
                 put("auth_path", authPath.toString())
                 snapshot?.let { current ->
+                    // A turn's verdict, which holds the login, is said over what the usage poll found.
+                    putAll(poll.description(current))
                     putAll(holds.description(current))
                     if (invalidAccountLatch.isLatched(current.identity)) put("account_token", "invalid")
                 }
@@ -80,7 +90,7 @@ internal class MuseCredentialStore(
         val before = CredentialFileEvidenceReader.read(authPath)
         if (before.presence == CredentialPresence.MISSING) return null
         val decoded = Cancellables.runCatchingCancellable {
-            val parsed = museJson.parseToJsonElement(Files.readString(authPath))
+            val parsed = museJson.parseToJsonElement(text.read())
             requireNotNull(parsed as? JsonObject) { "Muse credential root must be an object" }
         }
         return decoded.fold(

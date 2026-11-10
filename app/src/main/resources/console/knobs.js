@@ -841,8 +841,6 @@ const createKnobs = (scope) => {
     grokPort: ["claude-grok listens on port", { k: "count", plain: true }],
     chatgptApiBase: ["ChatGPT address", { k: "text" }],
     xaiApiBase: ["xAI address", { k: "text" }],
-    codexAuthPath: ["ChatGPT sign-in file", { k: "text" }],
-    grokAuthPath: ["Grok sign-in file", { k: "text" }],
     pinnedModel: ["Model it always uses", { k: "text" }],
     grokModel: ["claude-grok's model", { k: "text" }],
     contextWindowOverride: ["Context window", { k: "count", unit: "tokens", none: "The model's own" }],
@@ -859,9 +857,10 @@ const createKnobs = (scope) => {
   // SETTINGS SPLICE NO LONGER HAS (0.4.0): it decides when to send a failed request again, and when to continue an answer
   // whose reasoning was cut, from what happened, so there is nothing to set. A daemon from before 0.4.0 still reports
   // their keys, and every setting on the wire with no entry of its own is drawn under its key: this is where the kit
-  // decides what the wire's keys become, so a retired one is left out HERE and no page, panel or gear can offer it.
+  // decides what the wire's keys become, so a retired one is left out HERE and no page, panel or gear can offer it. The two
+  // sign-in file settings went the same way on Nov 9, 2026: a command signs in with its provider's auth.file.
   const RETIRED = new Set(["upstreamRetries", "retryBackoffBaseMs", "retryBackoffCapMs", "retryBackoffJitterPct", "foldReasoningModels",
-    "foldMaxContinue", "foldMarkerText", "foldMaxTier"]);
+    "foldMaxContinue", "foldMarkerText", "foldMaxTier", "codexAuthPath", "grokAuthPath"]);
   function others() {
     const wire = st.cfg?.knobs ?? {}, drawn = new Set(LIST.map((k) => k.key));
     return Object.keys(wire).filter((key) => !drawn.has(key) && !RETIRED.has(key)).sort().map((key) => {

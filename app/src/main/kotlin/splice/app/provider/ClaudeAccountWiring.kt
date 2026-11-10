@@ -58,6 +58,7 @@ internal class ClaudeAccountWiring(
                 auth = ClaudeFolderAuth(
                     account.directory,
                     refresh = refresh,
+                    log = log,
                     profiles = splice.app.auth.claude.ClaudeCredentialProfiles(statePaths.stateDir, log),
                     identities = identities,
                 ),

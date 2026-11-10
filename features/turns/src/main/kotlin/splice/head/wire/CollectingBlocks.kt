@@ -10,6 +10,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.index.WireBlockIndex
 import splice.core.util.JsonScalars
+import splice.upstream.SyntheticToolIds
 import splice.upstream.transport.BufferCapacity
 
 private const val FIELD_TYPE = "type"
@@ -32,7 +33,10 @@ internal class CollectingBlocks {
             val args: StringBuilder = StringBuilder(),
         ) : Blk()
         class Redacted(val data: String) : Blk()
-        class Raw(val payload: JsonObject) : Blk()
+
+        /** [args] holds a raw block's streamed input (a server_tool_use's input_json_delta), which the stream path
+         *  forwards as it comes and this body has to fold into the block's `input`. */
+        class Raw(val payload: JsonObject, val args: StringBuilder = StringBuilder()) : Blk()
     }
 
     // Blocks in OPEN order — the Anthropic content array order. Index handles are list positions.
@@ -58,8 +62,8 @@ internal class CollectingBlocks {
     internal var malformedToolInput: Boolean = false
         private set
 
-    // HEAD-004: id fallback counter for a tool_use whose upstream id was blank.
-    private var toolSynthCounter = 0
+    // HEAD-004: ids for a tool_use whose upstream id was blank, unique across turns as the stream path's are.
+    private val syntheticIds = SyntheticToolIds()
 
     internal fun openText(): WireBlockIndex {
         blocks.add(Blk.Text(StringBuilder(source.initial(FIELD_TEXT))))
@@ -100,14 +104,18 @@ internal class CollectingBlocks {
     }
 
     internal fun inputJsonDelta(index: WireBlockIndex, partialJson: String) {
-        val tool = blocks.getOrNull(index.value) as? Blk.Tool ?: return
+        val args = when (val block = blocks.getOrNull(index.value)) {
+            is Blk.Tool -> block.args
+            is Blk.Raw -> block.args
+            is Blk.Text, is Blk.Thinking, is Blk.Redacted, null -> return
+        }
         if (toolInputCapacityExceeded) return
         val nextSize = bufferedToolArgsChars + partialJson.length
         if (nextSize >= BufferCapacity.MAX_BUFFERED_CHARS) {
             toolInputCapacityExceeded = true
             return
         }
-        tool.args.append(partialJson)
+        args.append(partialJson)
         bufferedToolArgsChars = nextSize
         source.delta(index)
     }
@@ -121,8 +129,13 @@ internal class CollectingBlocks {
     }
 
     /** Finalize the accumulated blocks into Anthropic content items. Empty text/thinking blocks are
-     *  dropped (the wire rejects an empty text block; matches the stream path's honesty gate). */
-    internal fun contentBlocks(): List<JsonObject> = blocks.mapIndexedNotNull { index, blk ->
+     *  dropped (the wire rejects an empty text block; matches the stream path's honesty gate).
+     *
+     *  [cut] is true when the upstream ended the message on its output cap. A tool block whose arguments never
+     *  parsed was then cut with the output: it is dropped rather than failing the turn as a torn tool, because
+     *  the body says max_tokens and a re-send of the same request meets the same cap. HEAD-003 still holds, since
+     *  no tool reaches the client with emptied arguments. */
+    internal fun contentBlocks(cut: Boolean = false): List<JsonObject> = blocks.mapIndexedNotNull { index, blk ->
         val content = when (blk) {
             is Blk.Text -> blk.sb.takeIf { it.isNotEmpty() }?.let {
                 buildJsonObject {
@@ -131,12 +144,12 @@ internal class CollectingBlocks {
                 }
             }
             is Blk.Thinking -> blk.sb.takeIf { it.isNotEmpty() }?.let { thinkingBlock(it.toString(), blk.sig) }
-            is Blk.Tool -> toolBlock(blk)
+            is Blk.Tool -> toolBlock(blk, cut)
             is Blk.Redacted -> buildJsonObject {
                 put(FIELD_TYPE, "redacted_thinking")
                 put("data", blk.data)
             }
-            is Blk.Raw -> source.raw(index, blk.payload)
+            is Blk.Raw -> source.raw(index, blk.payload, blk.args)
         }
         content?.let { source.finish(index, it) }
     }
@@ -147,35 +160,39 @@ internal class CollectingBlocks {
         if (sig.isNotEmpty()) put("signature", sig.toString())
     }
 
-    // HEAD-004: a blank id is synthesized (opaque token, same idiom as
-    // ResponsesStreamTranslator's toolu_synth_ fallback) — a blank name has no safe stand-in, so
+    // HEAD-004: a blank id is synthesized by the minter every stream fold shares (SyntheticToolIds), so a
+    // non-stream turn's id never repeats an earlier turn's — a blank name has no safe stand-in, so
     // the block is dropped from content. REG-001: dropping it silently left stop_reason="tool_use"
     // (computed upstream from the raw event, before this filtering) disagreeing with an empty
     // content array — protocol-invalid. Reuse the malformedToolInput honest-failure path (HEAD-003)
     // instead of shipping the contradiction.
-    private fun toolBlock(tool: Blk.Tool): JsonObject? {
+    private fun toolBlock(tool: Blk.Tool, cut: Boolean): JsonObject? {
         if (tool.name.isBlank()) {
             malformedToolInput = true
             return null
         }
-        val id = tool.id.ifBlank { "toolu_synth_${toolSynthCounter++}" }
+        val input = if (tool.args.isEmpty()) {
+            tool.initialInput ?: EMPTY_INPUT
+        } else {
+            parseToolInput(tool.args.toString())
+        }
+        if (input == null) {
+            // A cut message's last tool lost its arguments to the cap (see contentBlocks); anything else is HEAD-003.
+            if (!cut) malformedToolInput = true
+            return null
+        }
+        val id = tool.id.ifBlank { syntheticIds.mint() }
         return buildJsonObject {
             put(FIELD_TYPE, "tool_use")
             put("id", id)
             put("name", tool.name)
-            val input = if (tool.args.isEmpty()) {
-                tool.initialInput ?: EMPTY_INPUT
-            } else {
-                parseToolInput(tool.args.toString())
-            }
             put("input", input)
         }
     }
 
-    private fun parseToolInput(raw: String): JsonObject {
+    /** The parsed arguments, or null for non-blank input that never parsed (HEAD-003). */
+    private fun parseToolInput(raw: String): JsonObject? {
         if (raw.isBlank()) return EMPTY_INPUT // a tool with genuinely no args — not a parse failure
-        val parsed = JsonScalars.objectOrNull(Json, raw)
-        if (parsed == null) malformedToolInput = true // HEAD-003: non-blank input that never parsed
-        return parsed ?: EMPTY_INPUT
+        return JsonScalars.objectOrNull(Json, raw)
     }
 }

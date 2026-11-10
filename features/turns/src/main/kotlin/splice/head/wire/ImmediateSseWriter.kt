@@ -38,6 +38,12 @@ internal fun interface RawSseFlush {
  */
 internal fun interface FrameWrite {
     public suspend operator fun invoke(frame: String)
+
+    /** A hand-built content_block_delta frame with the [shape] its writer knew while building it. A port that
+     *  paces deltas reads the shape instead of decoding the frame; any other port writes the frame as usual. */
+    public suspend fun delta(frame: String, shape: DeltaShape) {
+        invoke(frame)
+    }
 }
 
 /**

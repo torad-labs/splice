@@ -329,7 +329,8 @@ class ConfigServiceTest {
     @Test
     fun `positive materialization overrides fit the configured body cap while zero stays automatic`() {
         for (cap in listOf(4L, Knob.MAX_REQUEST_BYTES.count(), Long.MAX_VALUE)) {
-            val required = splice.core.memory.HeapWeights.request(cap)
+            // The body cap is held at Int.MAX_VALUE, the cap the wire enforces, so the budget fits that one.
+            val required = splice.core.memory.HeapWeights.request(minOf(cap, Int.MAX_VALUE.toLong()))
             for (configured in listOf(0L, 1L, required, Long.MAX_VALUE)) {
                 val cfg = service(
                     env = mapOf(
@@ -345,6 +346,16 @@ class ConfigServiceTest {
             }
         }
         assertEquals(0L, service().getConfig().asMap()[Knob.MATERIALIZATION_HEAP_BYTES.key])
+    }
+
+    // Config audit, Nov 2026: 3000000000 narrowed to a negative cap, and every request was answered 413, the PATCH that
+    // would have fixed it included.
+    @Test
+    fun `a body cap past Int MAX_VALUE is held there rather than wrapping below every request`() {
+        for (cap in listOf(3_000_000_000L, 4_294_967_296L, Long.MAX_VALUE)) {
+            val cfg = service(env = mapOf("SPLICE_MAX_REQUEST_BYTES" to cap.toString())).getConfig()
+            assertEquals(Int.MAX_VALUE, cfg.maxRequestBytes, "body cap=$cap")
+        }
     }
 
     @Test

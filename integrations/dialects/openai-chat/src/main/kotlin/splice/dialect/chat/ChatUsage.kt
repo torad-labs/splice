@@ -28,6 +28,9 @@ internal class ChatUsage {
         origin = UsageOrigin(measured = measured.toSet()),
     )
 
+    /** The backend has reported the round's output tokens: the bill a finished stream sends last. */
+    internal val billed: Boolean get() = UsageField.OUTPUT in reported
+
     internal fun usage(evt: JsonObject) {
         val u = evt["usage"] as? JsonObject ?: return
         // CX-18: OpenRouter's Responses-shaped routes and several OpenAI-compatible servers report

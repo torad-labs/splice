@@ -16,6 +16,7 @@ import splice.core.perf.WsAttemptTiming
 import splice.core.util.ElapsedClock
 import splice.core.util.JsonWire
 import splice.core.util.MonoClock
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
@@ -86,7 +87,17 @@ internal class WsPulse(
     internal fun peerClosed(statusCode: Int) {
         val beforeAnyEvent = roundStartedAt.get() != NEVER && roundEvents.read().first == 0
         if (statusCode == MESSAGE_TOO_BIG && beforeAnyEvent) timing.get()?.refusedAsTooLarge()
+        if (statusCode == INVALID_PAYLOAD && beforeAnyEvent) payloadRefused.set(true)
     }
+
+    private val payloadRefused = AtomicBoolean(false)
+
+    /** The peer closed with 1007 before any event of the round: a verdict on the request frame itself, which the
+     *  same bytes would get on any socket. The Responses peer answers a frame over about 32 MiB this way (Nov 2026:
+     *  31.68 MiB accepted, 32.09 MiB refused), so the round goes to HTTP without a fresh socket. Not counted as a
+     *  size refusal: HTTP's own 4xx for the body is read as it always was. Only a dead socket carries it, since the
+     *  close ends it. */
+    internal val refusedPayload: Boolean get() = payloadRefused.get()
 
     /** V4-242: the round in flight received an event of [type]. */
     internal fun event(type: String) {
@@ -171,3 +182,6 @@ private const val MAX_EVENT_TYPES = 8
 
 // why: RFC 6455 section 7.4.1 names 1009 "message too big": the peer refused a frame for its size.
 private const val MESSAGE_TOO_BIG = 1009
+
+// why: RFC 6455 section 7.4.1 names 1007 "invalid frame payload data": the peer refused what the frame carried.
+private const val INVALID_PAYLOAD = 1007

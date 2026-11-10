@@ -243,10 +243,13 @@ historyRetentionDays = "$HISTORY_DEFAULT_DAYS"
 # are in splice.example.toml.
 """
 
+    /** An empty SPLICE_CONFIG or XDG_CONFIG_HOME is unset, as the launch shim reads them (`[ -z ]`, `${3:-...}`) and
+     *  as the XDG spec says. Read as a path, empty is the working directory: the daemon then served a starter file
+     *  wherever it was started, on another port than the one the shim probed, or failed to read a directory. */
     public fun configPath(env: EnvReader = EnvReader(System::getenv)): Path {
-        val override = env("SPLICE_CONFIG")
+        val override = env("SPLICE_CONFIG")?.takeIf { it.isNotEmpty() }
         if (override != null) return Paths.get(UserHome.expand(override, env))
-        val xdg = env("XDG_CONFIG_HOME")
+        val xdg = env("XDG_CONFIG_HOME")?.takeIf { it.isNotEmpty() }
         val base = if (xdg != null) Paths.get(xdg) else UserHome.dir(env).resolve(".config")
         return base.resolve("splice").resolve("splice.toml")
     }

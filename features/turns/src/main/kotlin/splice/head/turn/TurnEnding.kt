@@ -1,8 +1,8 @@
 // PORT-OF: splice/gateway/head/TurnDriver.kt (emitFailure, emitConnReset) @ 86f1411 — invariants
 // unchanged: the honest-error-frame surface — one error frame per failure class, and the shared
 // conn-reset path for raw tears and reissue-exhausted StreamTornBeforeClient. Its own file (HD-24)
-// because this IS the L3 honesty contract: anything that is not a known turn failure and not a
-// RuntimeException (i.e. an Error) rethrows — never swallowed. Connection-class endings live in
+// because this IS the L3 honesty contract: anything that is not a known turn failure and not an
+// Exception (i.e. an Error) rethrows — never swallowed. Connection-class endings live in
 // TurnConnEnd; auth/upstream-HTTP endings live in TurnKnownEnd (concentration, 2026-08-19).
 package splice.head.turn
 
@@ -36,11 +36,13 @@ internal class TurnEnding(
     }
 
     /** One honest error frame per failure class; anything that is not a known turn failure and
-     *  not a RuntimeException (i.e. an Error) rethrows — never swallowed. */
+     *  not an Exception (i.e. an Error) rethrows — never swallowed. Every Exception, checked ones included, ends here
+     *  since the turn boundary became total (TurnFailures, 2026-11-09): a URISyntaxException or an ExecutionException
+     *  out of a drive is the same defect class as an IllegalStateException. */
     suspend fun emitFailure(drive: TurnDrive, e: Throwable) {
         if (connEnd.tryEmit(drive, e)) return
         when (e) {
-            is RuntimeException -> {
+            is Exception -> {
                 // e.g. a URL-parse error from a bad base_url, an IllegalState out of Ktor
                 // internals. Previously ESCAPED: truncated 200, no error frame, no perf row.
                 //

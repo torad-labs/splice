@@ -11,7 +11,10 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
+import splice.dialect.responses.CacheKeyStrategy
+import splice.dialect.responses.ResponsesQuirks
 import splice.provider.codex.CodexQuirks
+import splice.provider.grok.GrokQuirks
 import splice.topology.TopologyLoader
 import java.nio.file.Path
 
@@ -65,6 +68,24 @@ class ResponsesQuirksOverlayTest {
     fun `codex profile defaults websocket prefill on and topology can disable it`(@TempDir tmp: Path) {
         assertEquals(true, prefill("", tmp))
         assertEquals(false, prefill("""quirks = { websocket_prefill = false }""", tmp))
+    }
+
+    private fun grok(quirks: String, tmp: Path): ResponsesQuirks = QuirksOverlay().responsesQuirks(
+        TopologyLoader.parse(toml(quirks)).providers.getValue("codex"),
+        GrokQuirks().defaultQuirks(),
+        ConfigService(StatePaths(baseOverride = tmp), envReader = { null }).getConfig(),
+    )
+
+    // Config audit, Nov 2026: cache_key and tool_choice had non-null defaults, so a provider table that left them out
+    // sent Grok's turns keyed on the first message's hash, not its session, and without tool_choice.
+    @Test
+    fun `a table that leaves cache_key and tool_choice out keeps the provider's own`(@TempDir tmp: Path) {
+        val absent = grok("", tmp)
+        assertEquals(CacheKeyStrategy.SESSION_ID, absent.backend.promptCache.key)
+        assertEquals(true, absent.tools.emitToolChoice)
+        val written = grok("""quirks = { cache_key = "first-message-hash", tool_choice = false }""", tmp)
+        assertEquals(CacheKeyStrategy.FIRST_MESSAGE_HASH, written.backend.promptCache.key)
+        assertEquals(false, written.tools.emitToolChoice)
     }
 
     private fun lifetime(env: Map<String, String>, tmp: Path): Pair<Long?, Long?> = QuirksOverlay().responsesQuirks(

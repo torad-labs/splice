@@ -43,4 +43,20 @@ class ChatClientEffortTest {
             {"role":"user","content":"hi"},{"role":"system","content":"x","output_config":{"effort":"low"}}]}"""
         assertEquals("low", sent(buildRaw(changed)), "the latest message's output_config changes the turn's effort")
     }
+
+    // A head with its own effort vocabulary reads the same pick: a mid-session /effort rides a later message's
+    // output_config, and the request used to go out at the session-start effort.
+    @Test
+    fun `a head with an effort vocabulary sends the effort a later message names`() {
+        val vocabulary = ChatQuirks(
+            providerTag = "local",
+            reasoning = ChatReasoningQuirks(
+                effortVocabulary = ChatEffortVocabulary(default = "on", levels = mapOf("low" to "off", "high" to "on")),
+            ),
+        )
+        val changed = """{"model":"m","output_config":{"effort":"high"},"messages":[
+            {"role":"user","content":"hi"},{"role":"system","content":"x","output_config":{"effort":"low"}}]}"""
+        val req = buildRaw(changed, quirks = vocabulary)
+        assertEquals("off", req["reasoning_effort"]?.jsonPrimitive?.content)
+    }
 }

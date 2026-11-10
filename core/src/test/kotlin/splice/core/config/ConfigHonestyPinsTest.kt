@@ -144,8 +144,10 @@ class ConfigHonestyPinsTest {
         assertEquals("not a valid bool", rejects["heads.typo.trace"], "trace = 'enabled' was read as off: $rejects")
         assertFalse("heads.off.trace" in rejects, "off is a bool word: $rejects")
         assertFalse(service.getConfig("off").trace)
-        service.getConfig()
-        assertTrue(logged.any { it.contains("ignoring invalid env value for debug: 'y'") }, logged.joinToString())
+        repeat(3) { service.getConfig() }
+        // Once, not once per read: the environment does not change, and every request reads the config.
+        val said = logged.count { it.contains("ignoring invalid env value for debug: 'y'") }
+        assertEquals(1, said, logged.joinToString())
         assertEquals(mapOf("progressLine" to "invalid value"), service.patch(mapOf("progressLine" to "2")).rejected)
     }
 

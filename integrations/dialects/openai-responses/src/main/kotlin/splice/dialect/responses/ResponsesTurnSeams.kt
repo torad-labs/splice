@@ -3,10 +3,12 @@
 // keeps identity, buildTurn, and the WS/failure surfaces.
 package splice.dialect.responses
 
+import splice.core.reasoning.ReasoningHistory
 import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.TurnMeta
 import splice.core.util.LogSink
 import splice.dialect.responses.reasoning.EmitEncryptedReasoning
+import splice.dialect.responses.reasoning.ReasoningConversationBound
 import splice.dialect.responses.reasoning.ReasoningItemOrder
 import splice.dialect.responses.reasoning.ReasoningPositionIndex
 import splice.dialect.responses.reasoning.ResponsesReanchorPolicy
@@ -18,6 +20,7 @@ import splice.upstream.FoldPolicy
 import splice.upstream.ReanchorPolicy
 import splice.upstream.StreamTranslator
 import splice.upstream.TurnSignals
+import java.util.WeakHashMap
 
 internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
     // The controller is stateless — one cached instance serves every turn (a per-call
@@ -38,6 +41,7 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
         )
     }
     private val liteShape = ResponsesLiteShape(deps.quirks)
+    private val turnPositions = TurnReasoningPositions()
 
     fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator =
         summaryOwner(meta).let { summaryOwner ->
@@ -94,6 +98,8 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
         val positioned = meta.scope.sessionId?.takeIf { it.isNotEmpty() }?.let {
             deps.continuity.policy.conversationKey(it, meta.scope.reasoningStorageKey)
         }
+        // Ahead of the round's stream, while the cursor still stands where the client's request ended.
+        meta.scope.reasoningHistory?.let(turnPositions::open)
         return object : TurnReasoningSink {
             override fun invoke(toolIds: List<String>, envelopes: List<String>) {
                 if (conversation != null && retainsToolReasoning(meta)) {
@@ -119,11 +125,32 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
                 val storageEnabled = deps.quirks.roundTrip.reasoningCache || deps.turnOptions.replayOn()
                 if (!storageEnabled) return
                 // Private cache index, not a synthetic upstream call id. The envelope digest makes retries
-                // idempotent while distinct reasoning-only rounds may share the same visible boundary.
+                // idempotent while distinct reasoning-only rounds of ONE turn (fold, re-anchor) share the same
+                // visible boundary.
                 val index = ReasoningPositionIndex().index(position, envelope, order)
-                deps.continuity.cache.put(positioned, listOf(index), listOf(envelope))
+                val record = HeldReasoning(position, index, envelope)
+                val turn = meta.scope.reasoningHistory
+                if (turn == null || !turnPositions.hold(turn, record)) store(positioned, record, replaces = false)
+            }
+
+            override fun kept() {
+                val key = positioned ?: return
+                val turn = meta.scope.reasoningHistory ?: return
+                turnPositions.release(turn).forEach { (record, replaces) -> store(key, record, replaces) }
             }
         }
+    }
+
+    /** A different turn at [record]'s boundary is the client re-sending a request whose earlier attempt it never kept,
+     *  so this turn's first record there replaces what those left, unless its request ended on assistant output
+     *  (TurnReasoningPositions.open). */
+    private fun store(conversation: String, record: HeldReasoning, replaces: Boolean) {
+        deps.continuity.cache.put(
+            conversation,
+            listOf(record.index),
+            listOf(record.envelope),
+            replacesPosition = replaces,
+        )
     }
 
     private fun retainsToolReasoning(meta: TurnMeta): Boolean {
@@ -164,3 +191,60 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
     fun reanchorPolicy(meta: TurnMeta): ReanchorPolicy =
         if (liteShape.isLiteModel(meta.route.upstreamModel)) liteReanchorPolicy else defaultReanchorPolicy
 }
+
+/** The history positions each live turn has stored reasoning at. A turn is known by its own history cursor: every
+ *  round of the turn shares it (continuation rounds reuse the turn's meta) and no other turn holds it, so an entry
+ *  goes when its turn does. 2026-11-09: one request re-sent across 37 attempts left 6,715 records at one position,
+ *  each attempt's ids new, and every later attempt carried all of them upstream. */
+private class TurnReasoningPositions {
+    private val turns = WeakHashMap<ReasoningHistory, TurnPositions>()
+
+    // One turn holds at most what one conversation may keep in the cache, which refuses a record past that share.
+    private val heldMaxBytes = ReasoningConversationBound().bytes
+
+    /** Registers [turn] before its first round streams; a later round of the same turn finds it registered. Its
+     *  request ended on the client's or a tool's words, or on nothing, when the cursor's last step is not the
+     *  assistant's: only then is another turn's reasoning at its positions that of an attempt the client never kept.
+     *  A request ending on assistant output stands where an earlier turn's kept output ends, and the reasoning that
+     *  turn stored there leads into what followed that output, which the client may still hold elsewhere. */
+    fun open(turn: ReasoningHistory) {
+        synchronized(turns) { turns.getOrPut(turn) { TurnPositions(replaces = turn.lastRole != ASSISTANT_ROLE) } }
+    }
+
+    /** Holds [record] for [turn] until the client keeps what it led into; false when [turn] was never registered. Past
+     *  one conversation's share of the cache a record is not held: the cache would refuse it at that share anyway. */
+    fun hold(turn: ReasoningHistory, record: HeldReasoning): Boolean = synchronized(turns) {
+        val positions = turns[turn] ?: return false
+        val bytes = record.envelope.length.toLong()
+        if (positions.heldBytes + bytes <= heldMaxBytes) {
+            positions.held.add(record)
+            positions.heldBytes += bytes
+        }
+        true
+    }
+
+    /** What [turn] held, in the order it streamed, each with whether it replaces what other turns left at its
+     *  position: the first place the turn stores reasoning at, when its request did not end on assistant output.
+     *  Every later record there is its own. 2026-11-09: holding until the client keeps the output is what stops a
+     *  re-sent request carrying, even once, the reasoning of an attempt that ended without its terminal. */
+    fun release(turn: ReasoningHistory): List<Pair<HeldReasoning, Boolean>> = synchronized(turns) {
+        val positions = turns[turn] ?: return emptyList()
+        val released = positions.held.map { it to (positions.replaces && positions.stored.add(it.position)) }
+        positions.held.clear()
+        positions.heldBytes = 0
+        released
+    }
+}
+
+private data class TurnPositions(
+    val replaces: Boolean,
+    val stored: MutableSet<String> = hashSetOf(),
+    val held: MutableList<HeldReasoning> = mutableListOf(),
+    var heldBytes: Long = 0,
+)
+
+/** One completed reasoning item a turn holds until the client keeps what it led into. */
+private data class HeldReasoning(val position: String, val index: String, val envelope: String)
+
+// why: the role ReasoningHistory records for the model's own output, the role of an Anthropic assistant message.
+private const val ASSISTANT_ROLE = "assistant"

@@ -29,8 +29,11 @@ internal class PassthroughEventRouter(
 
     private suspend fun dispatch(evt: JsonObject, sink: WireSink) {
         when (UpstreamVocabulary.frame(JsonScalars.strOrEmpty(evt["type"]))) {
-            UpstreamFrame.MESSAGE_START ->
+            UpstreamFrame.MESSAGE_START -> {
                 usage.harvestUsage((evt["message"] as? JsonObject)?.get("usage") as? JsonObject)
+                // The opener the client reads carries this real input, not the zeros a translated opener has to.
+                sink.openingUsage(usage.toUsage())
+            }
             UpstreamFrame.CONTENT_BLOCK_START -> {
                 shape.openBlock(
                     JsonScalars.int(evt, "index"),

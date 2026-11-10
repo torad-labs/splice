@@ -88,6 +88,8 @@ private const val HASH_PREFIX = 12
 private const val BACKUPS_KEPT = 10
 private const val TOPOLOGY_FILE = "splice.toml"
 private const val UNEXPRESSIBLE = "the writer cannot express this edit; nothing was written"
+private const val CHANGED_SINCE_READ =
+    "$TOPOLOGY_FILE changed while this write was prepared; nothing was written, read it again"
 
 // why: a save holds the lock across one re-read, one compare and one rename, well under a second. A holder
 // past five seconds is wedged, and the save fails rather than parking a console request or a CLI behind it.
@@ -239,7 +241,12 @@ public class TopologyWriter(
     public fun tree(topology: Topology): JsonObject =
         keys.canonical(json.encodeToJsonElement(Topology.serializer(), topology)).jsonObject
 
-    public fun write(requested: Topology): TopologyWriteResult {
+    /** Write [requested], which the caller built from [basedOn]: the tree it read ([current], or [tree] of the
+     *  topology it parsed). The file is patched from what it holds now to [requested], so a change that landed after
+     *  the caller's read would be patched back out with nothing said; such a write is refused instead, to be read
+     *  again (config audit, Nov 2026: a capture toggle and a command's setting saved together lost one of the two).
+     *  The trees are compared, not the bytes, so a comment edited meanwhile neither refuses nor is lost. */
+    public fun write(requested: Topology, basedOn: JsonObject): TopologyWriteResult {
         val existing = Files.readString(path)
         val (stored, held) = Cancellables.runCatchingCancellable { parse(existing).let { it to tree(it) } }
             .getOrElse { failure ->
@@ -248,12 +255,15 @@ public class TopologyWriter(
             }
         // An edit is refused for what it brings: a finding the file already carries (a head whose roster the endpoint
         // did not list at start) is not the doing of removing another command, or of changing a window.
-        val standing = TopologyChecks(stored, discovered, backups, withRosters = true).findings().toSet()
-        val findings = TopologyChecks(requested, discovered, backups, withRosters = true).findings()
-            .filterNot { it in standing }
-        if (findings.isNotEmpty()) return TopologyWriteResult.Refused(findings)
-        val wanted = tree(requested)
-        return land(existing, TomlPatch(existing, wanted).compose(held), wanted)
+        val findings by lazy {
+            val standing = TopologyChecks(stored, discovered, backups, withRosters = true).findings().toSet()
+            TopologyChecks(requested, discovered, backups, withRosters = true).findings().filterNot { it in standing }
+        }
+        return when {
+            held != basedOn -> refused(CHANGED_SINCE_READ)
+            findings.isNotEmpty() -> TopologyWriteResult.Refused(findings)
+            else -> tree(requested).let { wanted -> land(existing, TomlPatch(existing, wanted).compose(held), wanted) }
+        }
     }
 
     private fun land(existing: String, composed: String, wanted: JsonObject): TopologyWriteResult {
@@ -273,7 +283,7 @@ public class TopologyWriter(
     /** The re-read and the rename under [TopologyFileLock], so a second save cannot pass the same re-read. */
     private fun commit(existing: String, composed: String): TopologyWriteResult = TopologyFileLock.held(path) {
         if (Files.readString(path) != existing) {
-            refused("$TOPOLOGY_FILE changed while this write was prepared; nothing was written, read it again")
+            refused(CHANGED_SINCE_READ)
         } else {
             val target = TopologyFileTarget.of(path)
             val backup = backupOf(existing)
@@ -521,16 +531,32 @@ private class TopologyChecks(
             perHeadOverrides = topology.heads.mapValues { (_, head) -> head.overrides },
             log = LogSink {},
         ).coerceRejects()
+        val daemon = daemonKnobs()
         val global = topology.defaults.keys.mapNotNull { key ->
             val canonical = if (key == "perf_collection_enabled") "perfCollectionEnabled" else key
-            ignored[canonical]?.let { TopologyFinding("defaults.$key", it) }
+            ignored[canonical]?.takeIf { canonical !in daemon }?.let { TopologyFinding("defaults.$key", it) }
+        }
+        val fromDaemon = daemon.mapNotNull { (knob, field) ->
+            ignored[knob]?.let { TopologyFinding("daemon.$field", it) }
         }
         val perHead = topology.heads.flatMap { (head, config) ->
             config.overrides.keys.mapNotNull { key ->
                 ignored["heads.$head.$key"]?.let { TopologyFinding("heads.$head.overrides.$key", it) }
             }
         }
-        return global + perHead
+        return global + fromDaemon + perHead
+    }
+
+    /** The word-valued [daemon] fields the knob layer copies under a knob's key (TopologyKnobLayer), knob key to TOML
+     *  name, for each one the file sets. Set there, it wins over [defaults], so a word coercion refuses is the
+     *  [daemon] line's: a typo in show_reasoning, summary or effort refuses boot as one under [defaults] does, rather
+     *  than leaving the knob at its default with one log line (config audit, Nov 2026). */
+    private fun daemonKnobs(): Map<String, String> = with(topology.daemon) {
+        listOfNotNull(
+            showReasoning?.let { "showReasoning" to "show_reasoning" },
+            summary?.let { "summary" to "summary" },
+            effort?.let { "effort" to "effort" },
+        ).toMap()
     }
 }
 

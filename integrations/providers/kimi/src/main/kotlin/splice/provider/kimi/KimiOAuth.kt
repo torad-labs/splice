@@ -15,16 +15,12 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import splice.core.auth.CredentialExpiry
-import splice.core.auth.CredentialFileDigest
-import splice.core.auth.CredentialFileIdentity
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.FormEncoding
 import splice.core.util.JsonScalars
-import splice.core.util.LogSink
 import splice.core.util.LoopbackOverride
-import splice.core.util.SafeFailureText
-import splice.core.util.StateMemory
+import splice.upstream.credentials.CredentialText
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -67,10 +63,8 @@ public data class KimiDeviceAuthorization(
     val intervalS: Long,
 )
 
-/** The kimi device-flow wire builders and response parsers. Collaborators construct one; its only state is the last credential-read failure it warned about. */
+/** The kimi device-flow wire builders and response parsers. Collaborators construct one; it holds no state. */
 public class KimiOAuth {
-    private val statFailures = StateMemory()
-
     /** Device-authorization request body: `client_id=<id>` — NO scope param. */
     public fun kimiDeviceAuthorizationForm(clientId: String = KimiOAuthEndpoints.CLIENT_ID): String =
         FormEncoding.formEncode(F_CLIENT_ID to clientId)
@@ -155,11 +149,14 @@ public class KimiOAuth {
     internal fun parseSnapshot(
         authPath: Path,
         synthesizeExpiry: KimiAuthStore.SynthesizeExpiry,
+        // Audit, Nov 9, 2026: read through the login's renewal (TokenRenewal.text), which serves a renewed document
+        // whose write failed in the file's place until it is written.
+        text: CredentialText,
     ): KimiAuthStore.Snapshot? {
         // DR-59: the read IS the absence probe (the old exists() pre-gate read an inaccessible
         // file as logged-out). Genuine absence returns null; anything else throws into the
         // caller's wrapper (readSnapshot's classified null, the exchange paths' ReadFailed).
-        val raw = Cancellables.runCatchingCancellable { Files.readString(authPath) }
+        val raw = Cancellables.runCatchingCancellable { text.read() }
             .getOrElse { failure ->
                 val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
                     !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
@@ -176,34 +173,6 @@ public class KimiOAuth {
             expiresInS = JsonScalars.long(obj, "expires_in") ?: 0L,
         )
     }
-
-    // G15: best-effort mtime probe for the invalid_grant latch gate; shared by doRefresh() and
-    // describe(). The failure is logged, not swallowed, before collapsing to null — a stat failure is
-    // "unknown", which InvalidGrantLatch treats as fail-open (never suppresses), NOT "file unchanged".
-    // DR-176: returns the file IDENTITY, not a bare mtime. Truncated milliseconds could not tell a
-    // freshly re-authenticated credential from the rejected one it replaced within the same tick.
-    internal fun kimiAuthIdentityOrNull(authPath: Path, log: LogSink): CredentialFileIdentity? =
-        Cancellables.runCatchingCancellable {
-            CredentialFileIdentity(
-                Files.getLastModifiedTime(authPath).toMillis(),
-                Files.size(authPath),
-                // V4-70: metadata cannot see a same-length rewrite, so the CONTENT is part of
-                // the identity. A read failure throws into the catch below and becomes a null
-                // identity — unknown, which the latch treats as fail-open.
-                CredentialFileDigest.of(authPath),
-            )
-        }.onSuccess {
-            statFailures.clear()
-        }.onFailure {
-            // One line per change of state: a status poll re-reads the same missing file every few seconds.
-            val state = "${SafeFailureText.render(it)} link=${Files.isSymbolicLink(authPath)}"
-            if (statFailures.isNews(state)) {
-                log(
-                    "[kimi-auth] failed to stat $authPath identity: ${SafeFailureText.render(it)}; " +
-                        "invalid_grant latch check skipped",
-                )
-            }
-        }.getOrNull()
 }
 
 internal const val MS_PER_S: Long = 1000

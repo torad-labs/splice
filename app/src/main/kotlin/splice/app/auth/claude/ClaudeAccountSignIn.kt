@@ -23,6 +23,7 @@
 package splice.app.auth.claude
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
@@ -71,6 +72,12 @@ internal class ClaudeAccountSignIn(
         @Volatile
         var job: Job? = null
 
+        /** Completes once the attempt has let go of everything it held: its job is over, its label is free and its
+         *  pending folder is gone ([release]). Whoever must find the folder gone waits on this and never on the job:
+         *  a job's join answers as soon as the job is over, which is before what runs at its end has run. On Nov 11,
+         *  2026 a Cancel answered while the folder it had ended was still on disk (CI, verify jvm-0). */
+        val released = CompletableDeferred<Unit>()
+
         /** Ends it when it is still open: it reads cancelled for [said], and its child is stopped. False for one that
          *  already ended, which keeps its own end and whatever it is still finishing (the head's restart). */
         fun end(said: String): Boolean {
@@ -117,7 +124,7 @@ internal class ClaudeAccountSignIn(
         val stopped = synchronized(lock) {
             active.values.firstOrNull { it.status.get().id == id }?.takeIf { it.end("the sign-in was cancelled") }
         }
-        stopped?.job?.join()
+        stopped?.released?.await()
         return poll(id)
     }
 
@@ -128,7 +135,7 @@ internal class ClaudeAccountSignIn(
         val stopped = synchronized(lock) {
             active[key(head, label)]?.takeIf { it.end("'$label' was removed from $head") }
         }
-        stopped?.job?.join()
+        stopped?.released?.await()
     }
 
     /** Every sign-in still starting or waiting on its browser page, oldest first. */
@@ -167,7 +174,7 @@ internal class ClaudeAccountSignIn(
         active[key(head, wanted)] = attempt
         cell.updateAndGet { it.copy(label = wanted) }
         val job = scope.launch(start = CoroutineStart.LAZY) {
-            earlier?.job?.join()
+            earlier?.released?.await()
             if (earlier != null) folders.discard(pending.directory)
             run(attempt, restart)
         }
@@ -285,16 +292,21 @@ internal class ClaudeAccountSignIn(
 
     /** However the attempt ended (signed in, refused, failed, expired or cancelled), its pending folder goes with
      *  whatever Claude Code wrote in it, so no credential outlives the sign-in that wrote it. A newer sign-in that
-     *  already took this label owns the folder now, and keeps it. */
+     *  already took this label owns the folder now, and keeps it. The label is freed and the folder removed in one
+     *  step, so a sign-in that starts on this label next is never given a folder this one is about to remove. */
     private fun release(attempt: Attempt) {
         val pending = attempt.pending
-        val owned = synchronized(lock) {
-            attempt.close(LoginFailure.CANCELLED, STOPPED_WITH_SPLICE)
-            active.remove(key(pending.head, pending.label), attempt)
+        try {
+            synchronized(lock) {
+                attempt.close(LoginFailure.CANCELLED, STOPPED_WITH_SPLICE)
+                if (active.remove(key(pending.head, pending.label), attempt)) folders.discard(pending.directory)
+            }
+            val ended = attempt.status.get()
+            val how = ended.failure?.let { "${it.kind.wire} (${it.reason})" } ?: ended.state.wire
+            log(attempt.line("ended: $how"))
+        } finally {
+            attempt.released.complete(Unit)
         }
-        if (owned) folders.discard(pending.directory)
-        val ended = attempt.status.get()
-        log(attempt.line("ended: " + (ended.failure?.let { "${it.kind.wire} (${it.reason})" } ?: ended.state.wire)))
     }
 
     private fun key(head: String, label: String): String = "$head/$label"

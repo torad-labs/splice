@@ -519,7 +519,11 @@ class SpliceLinesPropertyTest {
             val whose = block.login?.let { "${facts.head}'s login $it" } ?: "${facts.head}'s account"
             assertTrue(whose in line, "names whose account: $line")
             val terms = facts.providerName?.let { "$it's updated terms" } ?: "updated terms"
-            assertTrue("accepts $terms" in line, "names the step its owner takes: $line")
+            val step = when (block.step) {
+                OwnerStep.ACCEPT_TERMS -> "accepts $terms"
+                OwnerStep.ALLOW_SUBSCRIPTION_ACCESS -> "its organization allows subscription access"
+            }
+            assertTrue(step in line, "names the step its owner takes: $line")
             assertTrue("in ${block.where} " in line, "names where its owner takes it: $line")
             assertFalse("rejected" in line, "the request is not what the provider refused: $line")
             assertFalse(SAYS_RESEND in line, "no re-send changes the account: $line")

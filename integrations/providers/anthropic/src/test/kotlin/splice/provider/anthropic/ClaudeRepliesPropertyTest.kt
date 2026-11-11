@@ -1,6 +1,7 @@
 // NEW: failure-handling slice 4 (2026-10-27). Anthropic's answer that a Claude account must accept updated terms is a
 // block on the account, held over generated replies: whatever status or type carries it, it names the step and where
-// the owner takes it. Every other reply a Claude login meets is the Messages standard's, so the deviation claims none.
+// the owner takes it. So is its answer that a login's organization does not allow it (2026-11-10). Every other reply
+// a Claude login meets is the Messages standard's, so the deviation claims none.
 package splice.provider.anthropic
 
 import kotlinx.serialization.json.buildJsonObject
@@ -58,6 +59,12 @@ private val NEVER_SENT = SentKey { _, _ -> false }
 /** The block the updated-terms answer puts on the account it was sent to. */
 private val ACCEPT_TERMS = AccountBlock(OwnerStep.ACCEPT_TERMS, CLAUDE_AI)
 
+/** Anthropic's answer to every request on one of claude-splice's logins on Nov 10, 2026, verbatim (the journal). */
+private const val ORGANIZATION_REFUSES = "OAuth authentication is currently not allowed for this organization."
+
+/** The block that answer puts on the account, and where an admin of its organization lifts it. */
+private val ALLOW_ACCESS = AccountBlock(OwnerStep.ALLOW_SUBSCRIPTION_ACCESS, "the organization's settings")
+
 private fun body(type: String, message: String) = buildJsonObject {
     put("type", "error")
     putJsonObject("error") {
@@ -105,7 +112,23 @@ class ClaudeRepliesPropertyTest {
     }
 
     @Test
-    fun `every reply that does not name the updated terms is left to the Messages standard`() {
+    fun `an organization that does not allow a login blocks the account, over HTTP and in band, at any status`() {
+        val random = Random(4104)
+        val blocked = FailureCause.Provider.Forbidden(ProviderWordsFilter.of(ORGANIZATION_REFUSES), ALLOW_ACCESS)
+        repeat(RUNS) {
+            val owner = LoginOwner.entries.random(random)
+            val type = TYPES.random(random)
+            val reply = reply(STATUSES.random(random), type, ORGANIZATION_REFUSES, owner, answeredAt(random))
+
+            assertEquals(blocked, ClaudeReplies.http(reply), reply.toString())
+            // Renewing the login meets the same answer, so it is no dead credential either.
+            assertFalse(ClaudeReplies.deadCredential(reply), reply.toString())
+            assertEquals(blocked, ClaudeReplies.event(FailedEvent("error", body(type, ORGANIZATION_REFUSES), owner)))
+        }
+    }
+
+    @Test
+    fun `every reply that names neither answer is left to the Messages standard`() {
         val random = Random(4103)
         repeat(RUNS) {
             val said = PLAIN.random(random)

@@ -26,6 +26,9 @@ public object AccountSwitchReason {
     /** The provider refused the account itself until its owner accepts its updated terms, which no sign-in changes. */
     internal const val TERMS_NOT_ACCEPTED = "previous login's owner must accept the provider's updated terms"
 
+    /** The provider refused the account until its organization allows subscription access, which no sign-in changes. */
+    internal const val SUBSCRIPTION_ACCESS_OFF = "previous login's organization does not allow subscription access"
+
     private val reasons = setOf(
         CALLER_LOGIN,
         PINNED,
@@ -41,6 +44,7 @@ public object AccountSwitchReason {
         SIGN_IN_NEEDED,
         TOKEN_EXPIRED,
         TERMS_NOT_ACCEPTED,
+        SUBSCRIPTION_ACCESS_OFF,
         planLimit("5-hour"),
         planLimit("7-day"),
         "7d window exhausted",
@@ -52,6 +56,7 @@ public object AccountSwitchReason {
     /** Why a login its provider blocked until its owner acts stopped serving: the step its owner takes. */
     internal fun ownerStep(step: OwnerStep): String = when (step) {
         OwnerStep.ACCEPT_TERMS -> TERMS_NOT_ACCEPTED
+        OwnerStep.ALLOW_SUBSCRIPTION_ACCESS -> SUBSCRIPTION_ACCESS_OFF
     }
 
     /** Why a login moved from [previous] to [chosen]. What stopped the previous login is named before any order, a

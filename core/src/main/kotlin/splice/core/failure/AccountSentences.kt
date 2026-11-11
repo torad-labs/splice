@@ -16,6 +16,10 @@ internal object AccountSentences {
                 "$whose is blocked until its owner accepts $terms",
                 next = Next.Then("Accept them in ${block.where} with that account, then send the message again."),
             )
+            OwnerStep.ALLOW_SUBSCRIPTION_ACCESS -> Said(
+                "$whose is blocked until its organization allows subscription access",
+                next = Next.Then("An admin allows it in ${block.where} first, then send the message again."),
+            )
         }
     }
 }

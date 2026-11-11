@@ -35,6 +35,8 @@ internal class HeldWords {
     fun ownerStep(label: String, block: AccountBlock): String = when (block.step) {
         OwnerStep.ACCEPT_TERMS ->
             "'$label' is blocked until its owner accepts the provider's updated terms in ${block.where}"
+        OwnerStep.ALLOW_SUBSCRIPTION_ACCESS ->
+            "'$label' is blocked until an admin of its organization allows subscription access in ${block.where}"
     }
 
     /** No refusal: the login's usage reads full, and the pool spends a login with room before it. */

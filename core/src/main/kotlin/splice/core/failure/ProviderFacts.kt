@@ -13,6 +13,9 @@ public enum class LoginOwner { CLIENT, SPLICE }
 public enum class OwnerStep {
     /** Accept the provider's updated terms. */
     ACCEPT_TERMS,
+
+    /** Have the account's organization allow its subscription to be used from a coding client. */
+    ALLOW_SUBSCRIPTION_ACCESS,
 }
 
 /**

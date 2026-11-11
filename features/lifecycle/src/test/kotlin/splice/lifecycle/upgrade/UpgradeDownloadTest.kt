@@ -195,6 +195,22 @@ internal class UpgradeDownloadTest {
     }
 
     @Test
+    fun `a server that cannot resume and drops at the same place every time ends with a sentence`(@TempDir dir: Path) {
+        val url = serve { exchange, _ -> cut(exchange, 400_000) }
+        val seen = Seen(ProgressLines(TerminalOutput { }, "splice.jar")) { }
+        val target = dir.resolve("splice.jar")
+        val failed = assertThrows<UpgradeFetchFailed> {
+            JdkUpgradeFetch(pacing).download(url, target, sha(body), seen)
+        }
+        assertTrue(
+            failed.why.endsWith("3 tries in a row got no further; check the connection, then try again"),
+            failed.why,
+        )
+        assertTrue(seen.notes.any { it.contains("starting over") }, "${seen.notes}")
+        assertEquals(emptyList<String>(), files(dir), "neither the asset nor its part file is left")
+    }
+
+    @Test
     fun `a wrong checksum is refused and leaves no file`(@TempDir dir: Path) {
         val url = serve { exchange, _ -> whole(exchange) }
         val target = dir.resolve("splice.jar")

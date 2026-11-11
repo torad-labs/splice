@@ -1,8 +1,8 @@
 // Goal (2026-11-10): a first install downloads the 0.4.0 jar, about 473 MB, on an ordinary connection. install.sh's
 // downloads had no stall limit and no resume, so a dead connection hung the installer forever and a dropped one started
 // over. Now a try ends after SPLICE_DOWNLOAD_STALL_S seconds with no data, a broken try resumes where it stopped, a
-// server that cannot resume starts the file over, and three tries in a row with no data end the install with a sentence
-// that says where it stalled and how to retry. The checksum check after each download is as strict as before.
+// server that cannot resume starts the file over, and three tries in a row that get no further end the install with a
+// sentence that says where it stopped and how to retry. The checksum check after each download is as strict as before.
 //
 // The real curl against a loopback node:http server that cuts or stalls the jar on purpose; the rest of the machine is
 // faked the way install-provenance.test.ts fakes it.
@@ -150,6 +150,14 @@ describe("install.sh downloads survive a slow or broken connection", () => {
     expect(readFileSync(r.jar, "utf8")).toBe(JAR);
     expect(r.out).toContain("cannot resume");
   });
+
+  test("a server that cannot resume and drops at the same place every time ends the install", async () => {
+    const r = await install((_req, res) => cut(res, 300_000));
+    expect(r.code).not.toBe(0);
+    expect(r.out).toMatch(/downloading \S+splice\.jar failed at 0\.[23] MB \(curl exit \d+\), 3 tries in a row got no further; check the connection, then run the installer again/);
+    expect(existsSync(r.jar)).toBe(false);
+    expect(r.leftovers.filter((name) => name.startsWith(".splice.jar"))).toEqual([]);
+  }, 60_000); // each try and each start-over waits two seconds before the next
 
   test("a download that stops moving ends the install with where it stalled and how to retry", async () => {
     const r = await install((_req, res, n) => {

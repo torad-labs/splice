@@ -188,15 +188,16 @@ verify_sum() {
 # transfer: a try ends only when its connect takes over 30 s or no data arrives for DOWNLOAD_STALL_S seconds. A try
 # that ends early is resumed where it stopped (-C -). That is safe because every downloaded file is then checked
 # against sha256sums.txt by verify_sum and refused on any mismatch, so a resume can never install wrong bytes. Tries go
-# on while they bring data; DOWNLOAD_TRIES in a row that bring none end the install with where it stopped and how to
-# retry. A server that cannot resume (curl exit 33) starts the file over.
+# on while each ends further into the file than any before it; DOWNLOAD_TRIES in a row that get no further end the
+# install with where it stopped and how to retry. A server that cannot resume (curl exit 33) starts the file over, and
+# one that also drops at the same place every time brings data on every try without getting further, so it ends too.
 DOWNLOAD_STALL_S="${SPLICE_DOWNLOAD_STALL_S:-60}"
 DOWNLOAD_TRIES=3
 download_mb() {
   awk -v b="$1" 'BEGIN { printf "%.1f MB", b / 1000000 }'
 }
 download() {
-  local url="$1" out="$2" meter="-s" got=0 have=0 rc=0 fruitless=0
+  local url="$1" out="$2" meter="-s" got=0 have=0 furthest=0 rc=0 fruitless=0
   [ ! -t 2 ] || meter="-#"
   while :; do
     rc=0
@@ -216,12 +217,17 @@ download() {
       got=0
       echo "splice: the server cannot resume $url; starting it over" >&2
     fi
-    if [ "$got" -gt 0 ]; then fruitless=0; else fruitless=$((fruitless + 1)); fi
+    if [ "$have" -gt "$furthest" ]; then
+      furthest=$have
+      fruitless=0
+    else
+      fruitless=$((fruitless + 1))
+    fi
     if [ "$fruitless" -ge "$DOWNLOAD_TRIES" ]; then
       if [ "$rc" = 28 ]; then
-        echo "splice: downloading $url stalled at $(download_mb "$have"): no data for ${DOWNLOAD_STALL_S}s, $DOWNLOAD_TRIES tries in a row; check the connection, then run the installer again" >&2
+        echo "splice: downloading $url stalled at $(download_mb "$furthest"): no data for ${DOWNLOAD_STALL_S}s, $DOWNLOAD_TRIES tries in a row; check the connection, then run the installer again" >&2
       else
-        echo "splice: downloading $url failed at $(download_mb "$have") (curl exit $rc), $DOWNLOAD_TRIES tries in a row with no data; check the connection, then run the installer again" >&2
+        echo "splice: downloading $url failed at $(download_mb "$furthest") (curl exit $rc), $DOWNLOAD_TRIES tries in a row got no further; check the connection, then run the installer again" >&2
       fi
       exit 1
     fi

@@ -9,8 +9,10 @@
 // A BROKEN LEG RESUMES. A leg that ends early (the connection dropped, or it stalled) is followed by one that asks for the
 // rest with a Range request, tied to the first answer's ETag or Last-Modified through If-Range, so a file replaced
 // meanwhile is sent whole rather than spliced onto the old one's bytes. A server that answers the resume with the whole
-// file starts it over from zero. Legs go on while they bring bytes; DownloadPacing.fruitless legs in a row that bring
-// none end the download with a sentence that says where it stopped and what to do.
+// file starts it over from zero. Legs go on while each ends further into the file than any before it;
+// DownloadPacing.fruitless legs in a row that get no further end the download with a sentence that says where it stopped
+// and what to do. Bytes alone are not progress: a server that cannot resume and drops at the same place every time
+// brings bytes on every leg and never gets further.
 //
 // NOTHING IS HELD IN MEMORY. The bytes go to a TransferSink: a part file for an asset (UpgradeDownloadFiles.kt), which
 // lands only on its published sha256.
@@ -115,7 +117,9 @@ internal class HttpTransfer(
     private var total: Long? = null
     private var validator: String? = null
     private var answered = false
-    private var gained = 0L
+
+    /** The furthest into the file any leg has ended. */
+    private var furthest = 0L
 
     /** True once the whole file is in the sink, false when the server says there is none; [UpgradeFetchFailed] when the
      *  first request gets no answer, the server refuses it, or the legs stop bringing bytes. */
@@ -125,7 +129,7 @@ internal class HttpTransfer(
         var fruitless = 0
         var leg = leg(watch)
         while (leg is Leg.Broke) {
-            fruitless = if (gained > 0) 0 else fruitless + 1
+            fruitless = if (further()) 0 else fruitless + 1
             if (fruitless >= pacing.fruitless) {
                 throw UpgradeFetchFailed(
                     "${leg.what} at ${amount()}, and $fruitless tries in a row got no further; " +
@@ -140,8 +144,15 @@ internal class HttpTransfer(
         return leg is Leg.Complete
     }
 
+    /** True when the leg that just ended left the file further along than any leg before it. */
+    private fun further(): Boolean {
+        val reached = sink.size
+        if (reached <= furthest) return false
+        furthest = reached
+        return true
+    }
+
     private fun leg(watch: StallWatch): Leg {
-        gained = 0L
         watch.begin()
         val resuming = sink.size > 0
         val pending = client.sendAsync(request(resuming), HttpResponse.BodyHandlers.ofInputStream())
@@ -224,7 +235,6 @@ internal class HttpTransfer(
         var read = next(body, buffer)
         while (read >= 0) {
             sink.write(buffer, read)
-            gained += read
             watch.progressed()
             progress.received(sink.size, total)
             read = next(body, buffer)

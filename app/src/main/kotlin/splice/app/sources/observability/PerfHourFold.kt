@@ -8,7 +8,13 @@ import splice.core.perf.observation.PerfIssue
 import splice.core.perf.observation.PerfScope
 import java.io.IOException
 
-/** Streaming hour reduction keeps one minute decode and bounded aggregate cells, never sixty decoded minutes. */
+/**
+ * Streaming hour reduction keeps one minute decode and bounded aggregate cells, never sixty decoded minutes.
+ *
+ * A cell is charged what a held point takes ([PerfHistorySize.held]). Charged a flat 2 KiB and its text, the fold
+ * held some 900 cells, and an hour of a desk running ten commands across two boots has 1,348 (Nov 9, 2026, 5 PM CT):
+ * that hour never folded.
+ */
 internal class PerfHourFold(private val hour: Long) {
     private val identities = LinkedHashMap<PerfIdentity, HourIdentity>()
     private var bytes = 0L
@@ -25,7 +31,7 @@ internal class PerfHourFold(private val hour: Long) {
             val key = point.metric to point.scope
             val previous = state.points[key]
             if (previous == null) {
-                bytes += CELL_BYTES + point.metric.length * 2L + point.scope.toString().length * 2L
+                bytes += PerfHistorySize.held(point) + PERF_READ_CELL_OVERHEAD
                 if (bytes > MAX_HOUR_BYTES) throw IOException("aggregate hour memory limit")
                 state.points[key] = point.copy(fromMs = hour)
             } else {
@@ -71,9 +77,6 @@ internal class PerfHourFold(private val hour: Long) {
 
 // Limit retained hour-reduction cells to 2 MiB while streaming and releasing individual minute files.
 private const val MAX_HOUR_BYTES = 2L * 1_024 * 1_024
-
-// Charge 2 KiB per new hourly aggregate cell before its metric and dimension text.
-private const val CELL_BYTES = 2_048L
 
 // Retain sixty-four hour-coverage issues so reduction cannot accumulate unbounded diagnostic detail.
 private const val MAX_HOUR_ISSUES = 64

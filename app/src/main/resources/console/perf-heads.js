@@ -56,10 +56,10 @@ const PERF_CONSOLE = (() => {
   const section = (title, body) => `<section class="pc-section"><h3>${safe(title)}</h3>${body}</section>`;
   const detail = (title, body) => `<details class="pc-detail"><summary>${safe(title)}</summary>${body}</details>`;
   const known = (v) => typeof v === "number" && Number.isFinite(v);
-  const duration = (v) => !known(v) ? "Not measured" : v < 1000 ? `${num(v)} ms` : v < 60000 ? `${num(v / 1000)} s` : v < 3600000 ? `${num(v / 60000)} min` : v < 86400000 ? `${num(v / 3600000)} h` : `${num(v / 86400000)} days`;
+  const duration = (v) => !known(v) ? "Not measured" : v < 1000 ? `${num(v)} ms` : v < 60000 ? `${num(v / 1000)} s` : v < 3600000 ? `${num(v / 60000)} min` : v < 86400000 ? `${num(v / 3600000)} h` : `${num(v / 86400000)} ${v === 86400000 ? "day" : "days"}`;
   const bytes = (v) => { if (!known(v)) return "Not measured"; const i = Math.min(4, Math.max(0, Math.floor(Math.log2(Math.max(1, v)) / 10))); return `${num(v / 1024 ** i)} ${["B", "KiB", "MiB", "GiB", "TiB"][i]}`; };
   const keyWords = (v) => words(String(v).replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^runtime[_. ]/, "").replace(/\./g, " ")).replace(/\b(cpu|jvm|gc|rss|http|otlp|io)\b/gi, (x) => x.toUpperCase());
-  const metricNames = { arrival_to_first_meaningful_content_ms: "First content", arrival_to_terminal_ms: "Whole request", queue_wait_ms: "Queue wait", client_flush_ms: "Client flush", first_content_ms: "First content", completion_ms: "Completion", progress_gap_ms: "Progress gap", queue_ms: "Queue wait" };
+  const metricNames = { arrival_to_first_meaningful_content_ms: "First content", arrival_to_terminal_ms: "Whole request", queue_wait_ms: "Queue wait", client_flush_ms: "Client flush", first_content_ms: "First content", completion_ms: "Completion", progress_gap_ms: "Progress gap", queue_ms: "Queue wait", runtime_cpu_ns: "CPU time", runtime_cpu_ratio: "CPU load" };
   const metricName = (k) => metricNames[k] || keyWords(k).replace(/ (ms|ns|bytes|ratio)$/, "");
   const reading = (k, v) => !known(v) ? "Not measured" : /bytes_per_second$/.test(k) ? `${bytes(v)} / s` : /bytes$/i.test(k) ? bytes(v) : /(_ns|Nanos)$/.test(k) ? duration(v / 1000000) : /(_ms|Millis|Ms)$/.test(k) ? duration(v) : /(_ratio|Ratio)$/.test(k) ? percent(v) : num(v);
   const badge = (label, kind = "neutral") => `<span class="pc-state pc-state-${kind}"><i aria-hidden="true"></i>${safe(label)}</span>`;
@@ -76,7 +76,8 @@ const PERF_CONSOLE = (() => {
     const position = (v) => known(v) ? Math.max(0, Math.min(100, Math.log1p(Math.max(0, v)) / Math.log1p(max) * 100)) : 0;
     return `<div class="pc-ranges"><p class="pc-axis">Typical ▰ · p95 │ · p99 ● <span>Log scale · 0 → ${safe(duration(max))}</span></p>${items.map(([label, h]) => `<div class="pc-range-row"><span>${safe(label)}</span>${known(h?.p50) ? `<span class="pc-range" role="img" aria-label="${safe(label)}: typical ${safe(duration(h.p50))}, p95 ${safe(duration(h.p95))}, p99 ${safe(duration(h.p99))}; logarithmic scale"><b style="width:${position(h.p50)}%"></b>${known(h.p95) ? `<i style="left:${position(h.p95)}%"></i>` : ""}${known(h.p99) ? `<em style="left:${position(h.p99)}%"></em>` : ""}</span>` : badge("Not measured", "unknown")}<strong>${safe(duration(h?.p50))}</strong><small>p95 ${safe(duration(h?.p95))}</small></div>`).join("")}</div>`;
   }
-  const issues = (v) => [...(v?.coverage?.issues || []), ...(v?.issues || [])].map((x) => typeof x === "string" ? x : x.code).filter(Boolean);
+  // each reason once: a day whose hours had each expired listed "retention expired" nineteen times in a row (Nov 11, 2026)
+  const issues = (v) => [...new Set([...(v?.coverage?.issues || []), ...(v?.issues || [])].map((x) => typeof x === "string" ? x : x.code).filter(Boolean))];
   const status = (r) => !r ? "Loading" : !r.ok ? r.status === 0 ? "Offline" : r.status === 404 ? "Unsupported" : "Error" : (words(r.body?.status || "ok").replace(/^./, (c) => c.toUpperCase()));
   const explain = (r) => r?.body?.error?.reason || r?.body?.error?.code || r?.body?.reason || issues(r?.body).join(" · ");
   function params(query) {
@@ -418,23 +419,28 @@ const PERF_CONSOLE = (() => {
       const completed = completedWindow(), accountGap = issues(s).includes("account_alias_mapping_unavailable");
       return `<div class="pc-coverage" role="status">${badge(`${status(r)}${stale ? " · Stale" : ""}${st.busy ? " · Refreshing" : ""}`, !r?.ok || stale || issues(s).length ? "unknown" : "neutral")}<span>${safe(when(query.from_ms, true).replace(/^today/, "Today"))} to ${Math.abs(Date.now() - query.until_ms) < 120000 ? "now" : safe(when(query.until_ms, true))} CT</span>${s?.truncated ? badge("Truncated", "unknown") : ""}<button class="act quiet small" data-pc="completed-window"${!completed || st.busy ? " disabled" : ""}>Use completed window</button></div>`
         + (accountGap ? badge("Account names unavailable", "unknown") : "")
-        + detail("Coverage and recording boundary", note(`Recording certified for ${duration(s?.observed_duration_ms)} of the ${duration(s?.requested_duration_ms)} picked.`) + (completed ? note(`From ${date(completed.from_ms)} to ${date(completed.until_ms)} · same ${duration(completed.until_ms - completed.from_ms)} duration. This selects the interval ending at the certified recording boundary. Late records can revise it; coverage still applies. Your selected interval stays unchanged until you choose it.`) : note("No certified recording boundary available for this duration."))
+        + detail("Coverage and recording boundary", note(s?.observed_duration_ms > 0 ? `Recording certified for ${duration(s.observed_duration_ms)} of the ${duration(s?.requested_duration_ms)} picked.` : `No part of the ${duration(s?.requested_duration_ms)} picked has certified recording yet.`) + (completed ? note(`From ${date(completed.from_ms)} to ${date(completed.until_ms)} · same ${duration(completed.until_ms - completed.from_ms)} duration. This selects the interval ending at the certified recording boundary. Late records can revise it; coverage still applies. Your selected interval stays unchanged until you choose it.`) : note("No certified recording boundary available for this duration."))
           + (explain(r) ? note(words(explain(r))) : "")
           + (accountGap ? note("Account names are temporarily unavailable. Exact recorded account IDs still work. Name matching uses the last Accounts read for up to 60 seconds; opening Accounts refreshes it. This view does not refresh accounts automatically.") : ""))
-        + (s?.missing_fields?.length ? `<details class="pc-detail"><summary>${s.missing_fields.length} unavailable measurements</summary>${note(s.missing_fields.map(words).join(" · "))}</details>` : "");
+        + (s?.missing_fields?.length ? `<details class="pc-detail"><summary>${s.missing_fields.length} unavailable measurement${s.missing_fields.length === 1 ? "" : "s"}</summary>${note(s.missing_fields.map(words).join(" · "))}</details>` : "");
     }
     function overview() {
       const s = st.replies.summary?.body;
       if (!s?.rates) return note(`${status(st.replies.summary)} · Measurements have not been returned.`) + commandResults();
       const rates = s.rates;
       // each rate in the unit that gives it a readable figure (perTime): 0.00221 completions a second is 7.96 an hour
-      // These count lifecycle records, which can cover only part of the traffic; the pulse above counts every request, so
-      // a partial population says so beside the rates rather than reading as a contradiction of it.
+      // The rates divide what the recorder's minute totals hold by the whole period picked, so time missing from the
+      // recording lowers them: the note beside them says how much is missing.
       const hero = [["Arrivals recorded", "arrivals_per_s"], ["Completions recorded", "completions_per_s"], ["Successful completions", "successful_completions_per_s"], ["Attempts recorded", "attempts_per_s"]];
-      const partialPopulation = s.counts?.population_complete === false
-        ? note("These rates count the requests whose lifecycle splice recorded, part of the traffic in this period (Partial population below). The last hour above counts every request.") : "";
+      const missing = known(rates.coverage?.observed_ms) && known(s.requested_duration_ms) ? s.requested_duration_ms - rates.coverage.observed_ms : null;
+      const partialPopulation = rates.interpretation === "complete_population" ? ""
+        : note(missing >= 1000 ? `${duration(missing)} of this period is missing from the recording. The rates divide what was recorded by the whole period.` : "The recorder reports gaps inside this period (Coverage above). The rates count what it recorded.");
       const peak = Math.max(0, ...hero.map(([, k]) => rates[k] || 0));
-      const headline = `<div class="pc-meters">${hero.map(([label, k]) => `<div><span>${label}</span>${known(rates[k]) ? `<strong>${perTime(rates[k]).replace(/ (a|an) (second|minute|hour)$/, " <small>$1 $2</small>")}</strong>${track(rates[k], peak, `${label}: ${perTime(rates[k])}; shared scale 0 to ${perTime(peak)}`)}` : empty("Not measured")}</div>`).join("")}</div>`;
+      // An arrival is recorded before splice knows whether the request goes upstream, so a view of upstream requests
+      // (the page's own filter) has no arrivals to count: the tile says why instead of a bare "Not measured".
+      const unmeasured = (k) => k === "arrivals_per_s" && s.query?.filters?.local != null
+        ? empty("Not measured", "An arriving request is not yet known to go upstream, so it is not counted among upstream requests.") : empty("Not measured");
+      const headline = `<div class="pc-meters">${hero.map(([label, k]) => `<div><span>${label}</span>${known(rates[k]) ? `<strong>${perTime(rates[k]).replace(/ (a|an) (second|minute|hour)$/, " <small>$1 $2</small>")}</strong>${track(rates[k], peak, `${label}: ${perTime(rates[k])}; shared scale 0 to ${perTime(peak)}`)}` : unmeasured(k)}</div>`).join("")}</div>`;
       const traffic = bars([["Input", rates.input_tokens_per_s], ["Output", rates.output_tokens_per_s], ["Cached", rates.cached_tokens_per_s]], "Tokens a second")
         + bars([["Upstream", rates.upstream_bytes_per_s], ["Downstream", rates.downstream_bytes_per_s]], "Bytes a second")
         + detail("Event throughput", bars([["Upstream", rates.upstream_events_per_s], ["Downstream", rates.downstream_events_per_s]], "Events a second"));
@@ -444,6 +450,7 @@ const PERF_CONSOLE = (() => {
       const counts = s.counts || {};
       const populations = bars([["Known arrivals", counts.known_arrivals], ["Known completions", counts.known_completions], ["Known successful", counts.known_successful_completions]], "Recorded lifecycle counts")
         + badge(counts.population_complete ? "Complete population" : "Partial population", counts.population_complete ? "neutral" : "unknown")
+        + (counts.population_complete ? "" : note("Counted from request-by-request records, which hold part of this period. The rates above come from the recorder's minute totals."))
         + detail("Population definitions", facts(counts) + note("Arrival and completion windows are separate. Model-at-arrival may be unknown; returned attribution governs each rate."));
       return partialPopulation + headline + detail("Rate definitions", note(`Rates use requested wall duration. ${words(rates.interpretation)}. Attribution: ${words(rates.filter_attribution)}.`))
         + `<div class="pc-grid pc-overview-grid">${section("Throughput", traffic)}${section("Request populations", populations)}${section("Objective goodput", goodput)}</div>`
@@ -520,14 +527,16 @@ const PERF_CONSOLE = (() => {
       const series = st.replies.series?.body?.series || [], gauges = st.replies.summary?.body?.gauges || {};
       const row = ([k, g]) => [safe(words(k)), num(g.last), num(g.max), num(g.time_weighted_mean), num(g.sample_count), num(g.scope_count), num(g.covered_ms), metricCoverage(g)];
       const tableSummary = table(["Gauge", "Latest scope", "Max scope", "Weighted mean", "Samples", "Scopes", "Covered scope-ms", "Metric coverage / attribution"], entries(gauges).map(row), "Observed resource gauges");
+      const scopeName = (s) => [s?.head, s?.model, s?.transport].map((x) => x ?? "unknown").join(" / ") + (s?.compact ? " · compaction" : "");
+      const refused = st.replies.series?.body?.error;
       const points = series.flatMap((p) => entries(p.metrics).filter(([, m]) => Object.hasOwn(m, "last")).map(([k, m]) => ({ p, k, m })));
       const chosen = st.historyMetric || points[0]?.k;
       const filtered = points.filter((x) => x.k === chosen).slice(-120);
       const values = filtered.map((x) => x.m.last).filter((v) => typeof v === "number"), max = Math.max(1, ...values);
-      const graph = values.length ? `<div class="pc-axis">${safe(metricName(chosen))}<span>0 → ${num(max)} · per observed scope</span></div><div class="pc-history" role="img" aria-label="${safe(words(chosen))}: latest reading per returned interval and scope. Exact readings below.">${filtered.map(({ p, m }) => `<span title="${safe(date(p.from_ms))} · ${safe(p.scope?.head)} · ${num(m.last)}" style="--height:${known(m.last) && m.last > 0 ? m.last / max * 100 : 0}%"><i></i>${m.last === 0 ? '<b class="pc-zero"></b>' : !known(m.last) ? '<b class="pc-unknown-point">?</b>' : ""}</span>`).join("")}</div><p class="pc-axis"><span>${safe(date(filtered[0].p.from_ms))} CT</span><span>${safe(date(filtered.at(-1).p.until_ms))} CT</span></p>${values.every((v) => v === 0) ? badge("All recorded samples are zero") : ""}` : empty("No sampled history", `${status(st.replies.series)} · This cohort has no returned gauge samples.`);
+      const graph = values.length ? `<div class="pc-axis">${safe(metricName(chosen))}<span>0 → ${num(max)} · per observed scope</span></div><div class="pc-history" role="img" aria-label="${safe(words(chosen))}: latest reading per returned interval and scope. Exact readings below.">${filtered.map(({ p, m }) => `<span title="${safe(date(p.from_ms))} · ${safe(scopeName(p.scope))} · ${num(m.last)}" style="--height:${known(m.last) && m.last > 0 ? m.last / max * 100 : 0}%"><i></i>${m.last === 0 ? '<b class="pc-zero"></b>' : !known(m.last) ? '<b class="pc-unknown-point">?</b>' : ""}</span>`).join("")}</div><p class="pc-axis"><span>${safe(date(filtered[0].p.from_ms))} CT</span><span>${safe(date(filtered.at(-1).p.until_ms))} CT</span></p>${values.every((v) => v === 0) ? badge("All recorded samples are zero") : ""}` : refused ? empty("History not returned", `The recorder refused this period's history: ${words(explain(st.replies.series))}.`) : empty("No sampled history", `${status(st.replies.series)} · This cohort has no returned gauge samples.`);
       return select("historyMetric", "History measurement", [...new Set(points.map((x) => x.k))].map((k) => [k, metricName(k)]), chosen) + graph
         + note("Each point is one scope. Missing scopes remain unknown.")
-        + detail("Exact history readings", table(["From", "Until", "Head / model / transport", "Latest", "Max", "Weighted mean", "Samples"], filtered.map(({ p, m }) => [safe(date(p.from_ms)), safe(date(p.until_ms)), safe([p.scope?.head, p.scope?.model, p.scope?.transport].map((x) => x ?? "unknown").join(" / ")), num(m.last), num(m.max), num(m.time_weighted_mean), num(m.sample_count)]), "History · last 120 returned scope intervals"))
+        + detail("Exact history readings", table(["From", "Until", "Head / model / transport", "Latest", "Max", "Weighted mean", "Samples"], filtered.map(({ p, m }) => [safe(date(p.from_ms)), safe(date(p.until_ms)), safe(scopeName(p.scope)), num(m.last), num(m.max), num(m.time_weighted_mean), num(m.sample_count)]), "History · last 120 returned scope intervals"))
         + detail("Gauge summary and meanings", note("Latest is one observed scope, never a process total. Max is the largest scope sample; mean is weighted over observed scope time. Covered milliseconds are summed over scopes; missing scopes are unknown.") + tableSummary)
         + detail("Event counters", table(["Counter", "Measurements", "Sum of deltas", "Per second", "Metric coverage / attribution"], entries(st.replies.summary?.body?.counters).map(([k, c]) => [safe(metricName(k)), num(c.count), num(c.sum), num(c.per_s), metricCoverage(c)]), "Counters · requested-duration rates"));
     }
@@ -624,7 +633,7 @@ const PERF_CONSOLE = (() => {
         + note("Explicit capture · current process · one at a time · 1–300 seconds")
         + `<div class="pc-capabilities">${caps.map((c) => `<div><strong>${safe(name(c.id))}</strong>${badge(c.supported ? "Available" : "Unavailable", c.supported ? "neutral" : "unknown")}${!c.supported ? detail("Reason", note(words(c.reason))) : ""}</div>`).join("")}</div>`
         + detail("Capture bounds and capabilities", note("Capture starts only when you press Start capture. It records the current process, independently of request filters. Bounds: 1–300 seconds; one capture per process. No native profiler is downloaded."))
-        + (p ? `<div class="pc-profile-result">${badge(words(p.status), p.status === "failed" ? "bad" : p.status === "running" ? "unknown" : "neutral")}<strong>${safe(bytes(p.size_bytes))}</strong><span>${safe(date(p.from_ms))} → ${safe(date(p.until_ms))} CT</span></div>`
+        + (p?.status === "none" ? note("No capture to show. None has been taken since the daemon started, or the last one is no longer kept.") : p ? `<div class="pc-profile-result">${badge(words(p.status), p.status === "failed" ? "bad" : p.status === "running" ? "unknown" : "neutral")}<strong>${safe(bytes(p.size_bytes))}</strong><span>${safe(date(p.from_ms))} → ${safe(date(p.until_ms))} CT</span></div>`
           + detail("Capture details", facts({ profile_id: p.profile_id, artifact_available: p.artifact_available }) + note([...(p.issues || []), ...(p.limitations || [])].map((x) => words(typeof x === "string" ? x : x.code)).join(" · ")))
           + `<div class="pc-actions"><button class="act quiet small" data-pc="profile-refresh"${actionPending() ? " disabled" : ""}>Refresh status</button>${p.status === "running" ? `<button class="act small" data-pc="profile-stop"${actionPending() ? " disabled" : ""}>Stop capture</button>` : ""}${p.artifact_available && p.profile_id ? `<button class="act small" data-pc="profile-download"${actionPending() ? " disabled" : ""}>Download artifact</button>` : ""}</div>` : note(`${status(st.profilesReply)} · Profile status has not been returned.`));
     }

@@ -15,12 +15,25 @@ import java.security.MessageDigest
 internal class PerfCursorInventory(private val live: Path, private val archive: Path?) {
     private val names = PerfArchiveName(live.fileName.toString())
 
-    fun candidates(): List<Path> {
-        val candidates = archived()
+    /**
+     * The generations that can hold a row from [sinceMs] on, oldest first.
+     *
+     * An archived generation's name carries the second it was retired, and the rolled one was last written before
+     * the rotation that rolled it: each is an upper bound on every row inside, so a generation that ends a full
+     * second before [sinceMs] stays unopened, by the rule the Requests list reads by (PerfArchiveName.endsBefore).
+     * Until Nov 11, 2026 a cursor read every generation from its first byte. On a desk with 35 archived generations
+     * of 64 MiB its 512 MiB of work ran out inside the third, and every period, the last minute included, answered
+     * cursor_work_limit with no rows.
+     */
+    fun candidates(sinceMs: Long): List<Path> {
+        val candidates = archived(sinceMs)
         candidates.sortBy { names.rotatedAt(it.fileName.toString()) }
-        for (path in listOf(live.resolveSibling("${live.fileName}.1"), live)) {
+        val rolled = rolled()
+        for (path in listOf(rolled, live)) {
             try {
-                if (attributes(path).isRegularFile) candidates.add(path)
+                val attributes = attributes(path)
+                val past = path == rolled && names.endsBefore(attributes.modified, sinceMs)
+                if (attributes.isRegularFile && !past) candidates.add(path)
             } catch (_: NoSuchFileException) {
                 // An absent live generation carries no records.
             }
@@ -28,12 +41,16 @@ internal class PerfCursorInventory(private val live: Path, private val archive: 
         return candidates
     }
 
-    private fun archived(): ArrayList<Path> {
+    /** Whether [path] is the rolled generation, the one a copied archive can repeat. */
+    fun isRolled(path: Path): Boolean = path == rolled()
+
+    private fun rolled(): Path = live.resolveSibling("${live.fileName}.1")
+
+    private fun archived(sinceMs: Long): ArrayList<Path> {
         val root = archive ?: return ArrayList()
         return try {
             val paths = Files.newDirectoryStream(root).use { paths ->
-                paths.asSequence().filter { names.rotatedAt(it.fileName.toString()) != null }
-                    .take(PERF_CURSOR_MAX_SEGMENTS + 1).toList()
+                paths.asSequence().filter { opens(it, sinceMs) }.take(PERF_CURSOR_MAX_SEGMENTS + 1).toList()
             }
             if (paths.size > PERF_CURSOR_MAX_SEGMENTS) throw PerfReadRefusal(PerfReadIssue.CURSOR_SEGMENT_LIMIT)
             ArrayList(paths)
@@ -42,13 +59,23 @@ internal class PerfCursorInventory(private val live: Path, private val archive: 
         }
     }
 
+    private fun opens(archived: Path, sinceMs: Long): Boolean {
+        val rotatedAt = names.rotatedAt(archived.fileName.toString()) ?: return false
+        return !names.endsBefore(rotatedAt, sinceMs)
+    }
+
     fun capture(path: Path, work: PerfCursorWork): PerfCursorSegment {
+        val outline = outline(path)
+        return outline.copy(digest = digest(path, outline.end, work))
+    }
+
+    /** The generation at [path] as it stands, unread: its digest is empty until a reader takes it from the bytes. */
+    fun outline(path: Path): PerfCursorSegment {
         val attributes = attributes(path)
         if (!attributes.isRegularFile) throw PerfReadRefusal(PerfReadIssue.CURSOR_SEGMENT_NOT_REGULAR)
-        val end = attributes.size
         val key = attributes.fileKey
         val id = hash("${key ?: path.toAbsolutePath()}@${attributes.created}")
-        return PerfCursorSegment(id, path.fileName.toString(), key, end, digest(path, end, work))
+        return PerfCursorSegment(id, path.fileName.toString(), key, attributes.size, "")
     }
 
     fun resolve(segment: PerfCursorSegment, candidates: List<Path>, work: PerfCursorWork): Path? {
@@ -64,9 +91,7 @@ internal class PerfCursorInventory(private val live: Path, private val archive: 
     }
 
     fun aliasesRolled(path: Path, segment: PerfCursorSegment, previous: List<PerfCursorSegment>): Boolean =
-        path.fileName.toString() == "${live.fileName}.1" && previous.any {
-            it.end == segment.end && it.digest == segment.digest
-        }
+        isRolled(path) && previous.any { it.end == segment.end && it.digest == segment.digest }
 
     fun digest(path: Path, end: Long, work: PerfCursorWork): String {
         val digest = MessageDigest.getInstance("SHA-256")
@@ -92,11 +117,13 @@ internal class PerfCursorInventory(private val live: Path, private val archive: 
         val size = requireNotNull(values["size"] as? Long) { ATTRIBUTES_MISSING }
         val regular = requireNotNull(values["isRegularFile"] as? Boolean) { ATTRIBUTES_MISSING }
         val created = requireNotNull(values["creationTime"] as? FileTime) { ATTRIBUTES_MISSING }
+        val modified = requireNotNull(values["lastModifiedTime"] as? FileTime) { ATTRIBUTES_MISSING }
         return PerfCursorAttributes(
             values["fileKey"]?.toString(),
             size,
             regular,
             created.toMillis(),
+            modified.toMillis(),
         )
     }
 
@@ -113,4 +140,5 @@ private data class PerfCursorAttributes(
     val size: Long,
     val isRegularFile: Boolean,
     val created: Long,
+    val modified: Long,
 )

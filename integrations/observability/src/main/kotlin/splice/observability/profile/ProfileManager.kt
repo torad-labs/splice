@@ -77,11 +77,7 @@ public class ProfileManager(
     override fun status(id: String?): JsonObject = ProfileReplies.create {
         synchronized(lock) {
             val record = if (id == null) active?.record ?: archive.record(null) else archive.record(id)
-            record?.json(
-                identity,
-                clock(),
-            ) ?: ProfileRecord(PerfProfileRequest(), clock())
-                .reply(identity, clock(), PROFILE_FAILED, "profile_not_found_or_expired")
+            record?.json(identity, clock()) ?: ProfileAbsence(identity, clock).reply(id)
         }
     }
 
@@ -128,4 +124,4 @@ public class ProfileManager(
 
 // Retain only sixteen characters of rejected profiler settings so refusal metadata cannot copy arbitrary input.
 private const val MAX_SETTING_LENGTH = 16
-private const val PROFILE_FAILED = "failed"
+internal const val PROFILE_FAILED = "failed"

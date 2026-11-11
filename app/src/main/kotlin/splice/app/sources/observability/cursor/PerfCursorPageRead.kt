@@ -25,32 +25,47 @@ internal class PerfCursorPageRead(private val files: PerfCursorFiles, private va
         request: PerfCursorRequest,
         work: PerfCursorWork,
     ): PerfCursorPage {
-        val candidates = inventory.candidates()
-        val paths = manifest.segments.map {
-            inventory.resolve(it, candidates, work) ?: throw PerfReadRefusal(PerfReadIssue.CURSOR_SEGMENT_EXPIRED)
-        }
+        val paths = CursorSegmentPaths(manifest, inventory, work)
         val selection = CursorPageSelection(manifest, request, paths, work)
         val page = files.index(manifest.id).use { index -> selection.read(index, offset, files) }
-        paths.forEachIndexed { index, path ->
+        paths.verify()
+        retainedBytes = selection.retainedBytes
+        return page
+    }
+}
+
+/**
+ * The files a page's rows are read from, each found by its digest when a row first needs it and digested again once
+ * the page is read. Until Nov 11, 2026 a page digested every segment of the cursor twice, the ones it took no row
+ * from included: a first page of one row read two whole generations four times over.
+ */
+private class CursorSegmentPaths(
+    private val manifest: PerfCursorManifest,
+    private val inventory: PerfCursorInventory,
+    private val work: PerfCursorWork,
+) {
+    private val candidates by lazy { inventory.candidates(manifest.fromMs) }
+    private val found = LinkedHashMap<Int, Path>()
+
+    fun of(segment: Int): Path = found.getOrPut(segment) {
+        inventory.resolve(manifest.segments[segment], candidates, work)
+            ?: throw PerfReadRefusal(PerfReadIssue.CURSOR_SEGMENT_EXPIRED)
+    }
+
+    fun verify() {
+        found.forEach { (index, path) ->
             val segment = manifest.segments[index]
-            if (inventory.digest(
-                    path,
-                    segment.end,
-                    work,
-                ) != segment.digest
-            ) {
+            if (inventory.digest(path, segment.end, work) != segment.digest) {
                 throw PerfReadRefusal(PerfReadIssue.CURSOR_SEGMENT_CHANGED)
             }
         }
-        retainedBytes = selection.retainedBytes
-        return page
     }
 }
 
 private class CursorPageSelection(
     private val manifest: PerfCursorManifest,
     private val request: PerfCursorRequest,
-    private val paths: List<Path>,
+    private val paths: CursorSegmentPaths,
     private val work: PerfCursorWork,
 ) {
     private val decoder =
@@ -79,7 +94,7 @@ private class CursorPageSelection(
         val segment = checked(position)
         val charge = (position.end - position.start) * PAGE_DECODE_EXPANSION + PAGE_ROW_OVERHEAD
         if (retainedBytes + charge > PERF_CURSOR_OUTPUT_BYTES) return false
-        val raw = raw(paths[position.segment], position)
+        val raw = raw(paths.of(position.segment), position)
         work.charge(position.end - position.start)
         val row = decoder.decode(raw).row ?: throw PerfReadRefusal(PerfReadIssue.CURSOR_RECORD_CHANGED)
         validate(row)

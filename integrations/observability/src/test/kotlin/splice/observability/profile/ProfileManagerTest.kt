@@ -129,6 +129,17 @@ class ProfileManagerTest {
     }
 
     @Test
+    fun `a process that has taken no capture reports none, not a failed one`(@TempDir directory: Path) {
+        ProfileManager(directory, identity).use { manager ->
+            val status = manager.status(null)
+            assertEquals("none", status.getValue("status").jsonPrimitive.content)
+            assertEquals("null", status.getValue("profile_id").toString())
+            assertEquals("[]", status.getValue("issues").toString())
+            PerfWorkBudget.release(status)
+        }
+    }
+
+    @Test
     fun `close aborts an active recording and leaves no artifact`(@TempDir directory: Path) {
         val manager = ProfileManager(directory, identity)
         manager.start(PerfProfileRequest(durationSeconds = 300))

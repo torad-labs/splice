@@ -26,6 +26,23 @@ internal object PerfHistorySize {
     fun point(value: PerfAggregatePoint): Long = HISTORY_POINT_OVERHEAD + text(value.metric) + scope(value.scope) +
         value.buckets.size.toLong() * BUCKET_BYTES
 
+    /** A decoded snapshot as a read returns it: its points held as objects, never rendered or escaped. */
+    fun held(value: PerfAggregateSnapshot): Long {
+        var bytes = HISTORY_SNAPSHOT_OVERHEAD + identity(value.identity) + coverage(value.coverage)
+        if (bytes >= ESTIMATE_LIMIT) return ESTIMATE_LIMIT
+        for (point in value.points) {
+            bytes += held(point)
+            if (bytes >= ESTIMATE_LIMIT) return ESTIMATE_LIMIT
+        }
+        return bytes
+    }
+
+    /** One decoded point as a read holds it in memory. [point] charges the rendered, escaped form, about three times
+     *  this. Charged that way a read's fold held some 700 series in its 2 MiB, and one hour of a desk running ten
+     *  commands records 616 (Nov 11, 2026): a measurement of a day stopped inside its first hours. */
+    fun held(value: PerfAggregatePoint): Long = HELD_POINT_BYTES + heldText(value.metric) + heldScope(value.scope) +
+        value.buckets.size.toLong() * BUCKET_BYTES
+
     fun issue(value: PerfIssue): Long = HISTORY_ISSUE_OVERHEAD + text(
         value.code,
     ) + text(value.source) + text(value.detail)
@@ -50,6 +67,12 @@ internal object PerfHistorySize {
 
     private fun text(value: String?): Long =
         if (value == null) 0L else HISTORY_STRING_OVERHEAD + value.length.toLong() * STRING_CHAR_BYTES
+
+    private fun heldScope(value: PerfScope): Long = HELD_SCOPE_BYTES + heldText(value.head) + heldText(value.model) +
+        heldText(value.transport) + heldText(value.work) + heldText(value.outcome)
+
+    private fun heldText(value: String?): Long =
+        if (value == null) 0L else HISTORY_STRING_OVERHEAD + value.length.toLong() * HELD_CHAR_BYTES
 }
 
 // Saturate ownership estimates at 16 MiB, the shared work ceiling, instead of accumulating beyond admissible work.
@@ -63,6 +86,15 @@ private const val IDENTITY_BYTES = 256L
 
 // Charge 1 KiB for point scalar fields and object ownership before metric, scope and histogram charges.
 private const val HISTORY_POINT_OVERHEAD = 1_024L
+
+// Charge 192 bytes for a held point: its object, three boxed optional readings and its histogram list header.
+private const val HELD_POINT_BYTES = 192L
+
+// Charge sixty-four bytes for a held scope object before its dimension strings.
+private const val HELD_SCOPE_BYTES = 64L
+
+// Two bytes per UTF-16 code unit of a held string: nothing is escaped or encoded while it is only held.
+private const val HELD_CHAR_BYTES = 2L
 
 // Charge thirty-two bytes per histogram entry to cover boxed values and collection ownership.
 private const val BUCKET_BYTES = 32L

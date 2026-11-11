@@ -20,13 +20,19 @@ internal class PerfReadCoverage(private val from: Long, private val until: Long,
         val stop = minOf(until, snapshot.untilMs, snapshot.fromMs + snapshot.coverage.observedMs)
         if (stop > start) covered += stop - start
         end = maxOf(end, stop)
-        edge = edge || snapshot.fromMs < from || snapshot.untilMs > until
         snapshot.coverage.issues.forEach(::observe)
     }
 
-    fun error(code: String) {
+    /** A stored bucket that crosses an edge of the window stays out of the read: its time is not counted as
+     *  observed, and the result names the edge. */
+    fun excluded(snapshot: PerfAggregateSnapshot) {
+        edge = true
+        snapshot.coverage.issues.forEach(::observe)
+    }
+
+    fun error(code: String, times: Long = 1L) {
         val key = PerfReadIssueKey(code, HISTORY_SINK, null, null, null)
-        val count = (issues[key]?.count ?: 0L) + 1
+        val count = (issues[key]?.count ?: 0L) + times
         observe(PerfIssue(code, HISTORY_SINK, count))
     }
 
@@ -42,18 +48,39 @@ internal class PerfReadCoverage(private val from: Long, private val until: Long,
         if (!value.overlaps(from, until)) return
         val key = PerfReadIssueKey(value.code, value.source, value.detail, value.fromMs, value.untilMs)
         val existing = issues[key]
-        if (existing != null) {
-            issues[key] = existing.copy(count = maxOf(existing.count, value.count))
-        } else if (issues.size < MAX_READ_COVERAGE_ISSUES && issueBytes + PerfHistorySize.issue(
-                value,
-            ) <= READ_COVERAGE_ISSUE_BUDGET
-        ) {
-            issues[key] = value
-            issueBytes += PerfHistorySize.issue(value)
-        } else {
-            issues[PerfReadIssueKey("coverage_issue_limit", HISTORY_SINK, null, null, null)] =
+        val sameCode = issues.entries.filter { it.value.code == value.code && it.value.source == value.source }
+        val room = issues.size < MAX_READ_COVERAGE_ISSUES &&
+            issueBytes + PerfHistorySize.issue(value) <= READ_COVERAGE_ISSUE_BUDGET
+        when {
+            existing != null -> issues[key] = existing.copy(count = maxOf(existing.count, value.count))
+            sameCode.size >= MAX_ISSUES_PER_CODE -> widen(sameCode.last().key, value)
+            room -> {
+                issues[key] = value
+                issueBytes += PerfHistorySize.issue(value)
+            }
+            else -> issues[PerfReadIssueKey("coverage_issue_limit", HISTORY_SINK, null, null, null)] =
                 PerfIssue("coverage_issue_limit", HISTORY_SINK)
         }
+    }
+
+    /** One code's later intervals widen its last kept entry to span them, so a code that repeats cannot crowd the
+     *  others out. On Nov 11, 2026 a day's read carried 55 "retention_expired" intervals, the limit left no room
+     *  for "query_memory_limit", and the read's gap was reported without its cause. */
+    private fun widen(key: PerfReadIssueKey, value: PerfIssue) {
+        val kept = issues.remove(key) ?: return
+        val from = kept.fromMs?.let { a -> value.fromMs?.let { b -> minOf(a, b) } }
+        val until = kept.untilMs?.let { a -> value.untilMs?.let { b -> maxOf(a, b) } }
+        // An entry without both bounds stays unbounded: it then counts against every window, the cautious reading.
+        val bounded = from != null && until != null
+        val spanned = kept.copy(
+            count = maxOf(kept.count, value.count),
+            detail = null,
+            fromMs = from.takeIf { bounded },
+            untilMs = until.takeIf { bounded },
+        )
+        issueBytes += PerfHistorySize.issue(spanned) - PerfHistorySize.issue(kept)
+        val wide = PerfReadIssueKey(spanned.code, spanned.source, null, spanned.fromMs, spanned.untilMs)
+        issues[wide] = issues[wide]?.let { it.copy(count = maxOf(it.count, spanned.count)) } ?: spanned
     }
 }
 
@@ -67,6 +94,9 @@ private data class PerfReadIssueKey(
 
 // Keep at most sixty-four distinct coverage issues while duplicate codes accumulate counts.
 private const val MAX_READ_COVERAGE_ISSUES = 64
+
+// Keep at most eight intervals of one code and source, so sixty-four entries always hold eight codes or more.
+private const val MAX_ISSUES_PER_CODE = 8
 
 // Limit retained issue details to 128 KiB independently of the issue-count bound.
 private const val READ_COVERAGE_ISSUE_BUDGET = 128L * 1_024

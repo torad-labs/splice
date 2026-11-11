@@ -34,24 +34,30 @@ internal class PerfCells(private val memory: PerfMemoryAccount?) {
         return true
     }
 
+    /**
+     * Carries a gauge's last reading across the minutes from [from] to [until], and marks only the minute [until]
+     * is in as changed.
+     *
+     * A minute that has ended needs no new page for this: its last page was captured after it ended, with the same
+     * reading previewed over the same span, so the page already holds what the cell now does. Until Nov 11, 2026
+     * every minute was marked. A head or model that had been idle then marked, on its next request, every minute the
+     * recorder held. A marked minute cannot be evicted until its page is written again, one page each five seconds,
+     * so a full recorder had no minute to give up and refused the new series of the minute in progress. In the hour
+     * after that day's 7:19 AM CT restart it held 601 of the request log's 602 completions and lacked the tokens of
+     * two requests, at 8:04:07 and 8:14:08, and its count of refused cells rose around both.
+     */
     fun integrate(series: PerfSeriesKey, from: Long, until: Long, value: Double) {
         val cutoff = minute(
             until,
         ) - (PerfObservationLimits.RETAINED_MINUTES - 1) * PerfObservationLimits.AGGREGATE_MINUTE_MS
+        val open = minute(until)
         var start = maxOf(from, cutoff)
         while (start < until) {
             val end = minOf(until, minute(start) + PerfObservationLimits.AGGREGATE_MINUTE_MS)
             val minute = minute(start)
-            if (minute in evictedMinutes) {
-                start = end
-                continue
-            }
-            val target = cell(series.metric, series.scope, start)
-            if (target == null) {
-                markDirty(minute)
-            } else {
-                target.integrate(value, end - start)
-                markDirty(minute)
+            if (minute !in evictedMinutes) {
+                cell(series.metric, series.scope, start)?.integrate(value, end - start)
+                if (minute == open) markDirty(minute)
             }
             start = end
         }

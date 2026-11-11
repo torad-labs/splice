@@ -1436,6 +1436,54 @@ origin.
 - **`splice login` names a Claude login by its label, never its email,** in every sentence it prints.
 
 ### Fixed
+- **A measured period counts each recorded minute once, and reads all of them.** The Performance panel's "Measure any
+  period" and `splice perf` gave a different rate for the same day minutes apart: 1.47 completions a minute, then 50.9
+  an hour, then 3.59 a minute, beside a request log of 24,203 requests for that day. Three faults in how a measurement
+  reads the recorder's files, none in what was recorded. The newest minutes were counted twice, once from the file and
+  once from the recorder's memory: for ten minutes that held 92 completions the summary answered 123. A period that
+  began or ended inside a minute lost every series that minute touched, for the whole period. And the read ran out of
+  its 2 MiB after about 700 series, where one hour of a desk running ten commands records 616, so a day stopped inside
+  its first hours and the newest went unread. The files now answer only for minutes the recorder no longer holds, a
+  minute that crosses the period's edge stays out alone, and the read charges a series what it takes to hold, merges
+  boots once time is one bucket, and past that turns away only a series it has not met, saying how many. A gap reason
+  that repeats no longer hides the others: 55 "retention expired" intervals had filled the list.
+- **The performance recorder folds old minutes into hours again, so its history reaches back weeks.** Minutes older
+  than a day are folded into one file an hour. An hour that did not fit was tried again at every checkpoint, twice
+  every five seconds, and no later hour was ever folded: on one desk the hour of Nov 9, 5 PM CT was read 66,183 times,
+  minute files filled the recorder's 176 MiB, and its history reached back 38 hours where it is meant to reach 35
+  days. That hour held 1,348 series. The fold charged each a flat 2 KiB and gave up near 900, and the write refused a
+  file at a third of the size a read accepts, counting three bytes a character. The fold now charges what a series
+  takes to hold, the write measures the file it would write, and an hour that still does not fit stays as minutes
+  while the next hour gets its turn.
+- **A measured period's History tab draws again, and `splice perf series` answers for more than a few minutes.** Every
+  entry of the series reply repeated the reply's whole list of gaps, about 1,000 characters each on a desk with eleven
+  to report, and a reply past its 4 MiB was refused whole: five minutes answered, fifteen did not, and the tab drew
+  "No sampled history" for every longer period. An entry now holds its interval, scope and measurements, and the gaps
+  stay once on the reply. When the entries alone are still too many, their intervals double in width until the reply
+  fits, and `resolution_ms` says the width. The tab names a compaction's readings, which read as a second row of the
+  same scope, and says so when the recorder refuses a period instead of calling it empty.
+- **The Performance panel says what its rates are made of.** Under a rate it names how much of the period is missing
+  from the recording, where it said only that the population was partial. "Arrivals recorded" says an arriving request
+  is not yet known to go upstream, where it read "Not measured" with no reason. The request counts say they come from
+  request-by-request records, which hold part of the period, while the rates come from the recorder's minute totals.
+  The two Runtime readings both labelled "CPU" read "CPU time" and "CPU load".
+- **The recorder no longer turns away a minute's first readings when an idle head or model wakes.** A gauge that had
+  not changed for some minutes, on its next change, marked every minute the recorder held as needing to be written
+  again. A marked minute cannot be given up for a new one, so for the few seconds until one was written a full
+  recorder refused every new series, and what it refused was gone: on one desk, one completion of 602 in an hour and
+  the tokens of two requests. Only the minute in progress is marked now; an ended minute's file already holds the
+  same reading.
+- **A measured period lists its recorded requests again, and `splice perf turns` answers on a desk with a long
+  history.** The list read every kept generation of the request log from its first byte, three times each, and then
+  digested them all twice more for a first page of one row, against 512 MiB of work. On a desk with 35 archived
+  generations of 64 MiB the work ran out inside the third, and every period, the last minute included, answered
+  "reached its work limit" with no rows. A generation that ended before the period now stays unopened, by the rule
+  the Requests list already reads by. A generation is read once, its digest taken from the bytes that were read, and
+  a page digests only the files its rows come from.
+- **The Profiles tab no longer shows a failed capture nobody started.** With no capture taken, the profile status
+  answered a made-up record, failed, with a new id on every call, and the tab drew a red "failed · 0 B". The status
+  now answers `none` with no id, `splice perf profiles status` included, and the tab says no capture has been taken.
+  An id that is asked for and no longer kept still answers `profile_not_found_or_expired`.
 - **A Claude login whose organization refuses it is held, instead of being tried first by every new session.**
   Anthropic answers such a login with a 403 reading "OAuth authentication is currently not allowed for this
   organization", which Claude Code shows as "Your organization has disabled Claude subscription access for Claude

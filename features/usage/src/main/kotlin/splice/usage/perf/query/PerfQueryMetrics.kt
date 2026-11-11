@@ -91,13 +91,19 @@ internal object PerfQueryMetrics {
         put("interpretation", if (data.complete) "complete_population" else "known_observations_with_reported_gaps")
     }
 
-    fun series(data: QueryData): JsonArray = JsonArray(
+    /**
+     * One entry an interval and scope. A point narrower than [width] joins the others of its scope in the same
+     * [width]-wide slot counted from [origin], and the entry spans the points it merged. The coverage is the reply's.
+     */
+    fun series(data: QueryData, origin: Long, width: Long): JsonArray = JsonArray(
         data.points.values.groupBy {
-            Triple(it.fromMs, it.untilMs, it.scope)
+            val whole = it.untilMs - it.fromMs >= width
+            val from = if (whole) it.fromMs else it.fromMs - (it.fromMs - origin).mod(width)
+            Triple(from, if (whole) it.untilMs else from + width, it.scope)
         }.entries.sortedBy { it.key.first }.map { (key, points) ->
             buildJsonObject {
-                put("from_ms", key.first)
-                put("until_ms", key.second)
+                put("from_ms", points.minOf { it.fromMs })
+                put("until_ms", points.maxOf { it.untilMs })
                 put("scope", scopeJson(key.third))
                 put(
                     "metrics",
@@ -116,7 +122,6 @@ internal object PerfQueryMetrics {
                         },
                     ),
                 )
-                put("coverage", coverageJson(data.coverage, data.complete))
             }
         },
     )

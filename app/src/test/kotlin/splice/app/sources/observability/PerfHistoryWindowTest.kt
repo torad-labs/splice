@@ -27,6 +27,9 @@ import java.nio.file.Path
 class PerfHistoryWindowTest {
     private val identity = PerfIdentity("boot", "build", "1", "config")
 
+    // How many boots a seeded history is split across, in equal runs of intervals.
+    private var boots = 1
+
     @Test
     fun `a full day larger than one MiB returns every count and histogram at an explicit coarser resolution`(
         @TempDir dir: Path,
@@ -37,6 +40,47 @@ class PerfHistoryWindowTest {
     @Test
     fun `a full week of retained hourly history returns every count and histogram`(@TempDir dir: Path) {
         window(dir, 168, PERF_HOUR_MS, 48)
+    }
+
+    @Test
+    fun `a period that begins and ends inside a minute returns every whole minute within it`(@TempDir dir: Path) {
+        val start = PERF_DAY_MS
+        seed(dir, 1_440, PERF_MINUTE_MS, 8, start)
+        val from = start + PERF_MINUTE_MS / 2
+        val until = start + PERF_DAY_MS - PERF_MINUTE_MS / 2
+        PerfAggregateStore(dir, identity, WallClock { until }).use { store ->
+            val read = store.read(from, until)
+            try {
+                val points = read.snapshots.flatMap { it.points }
+                assertTrue(points.all { it.fromMs >= from && it.untilMs <= until }, "a point crosses the period's edge")
+                assertEquals(1_438L * 8 * 2, points.sumOf { it.count })
+                assertEquals(1_438L * PERF_MINUTE_MS, read.coverage.observedMs)
+                assertTrue(read.coverage.issues.any { it.code == "partial_boundary_bucket" })
+            } finally {
+                PerfWorkBudget.release(read)
+            }
+        }
+    }
+
+    @Test
+    fun `a day of many boots and series returns every count, its boots merged and each still named`(
+        @TempDir dir: Path,
+    ) {
+        val start = PERF_DAY_MS
+        val until = start + PERF_DAY_MS
+        // Twenty-four boots of an hour each with 64 series: more cells boot by boot than a read holds, 64 merged.
+        boots = 24
+        seed(dir, 1_440, PERF_MINUTE_MS, 64, start)
+        PerfAggregateStore(dir, identity, WallClock { until }).use { store ->
+            val read = store.read(start, until)
+            try {
+                assertTrue(read.coverage.issues.isEmpty(), read.coverage.issues.toString())
+                assertEquals(24, read.snapshots.map { it.identity }.distinct().size)
+                assertEquals(1_440L * 64 * 2, read.snapshots.flatMap { it.points }.sumOf { it.count })
+            } finally {
+                PerfWorkBudget.release(read)
+            }
+        }
     }
 
     @Test
@@ -143,6 +187,7 @@ class PerfHistoryWindowTest {
         var diskBytes = 0L
         repeat(intervals) { index ->
             val from = start + index * resolution
+            val boot = if (boots == 1) identity else identity.copy(bootId = "boot-${index * boots / intervals}")
             val points = List(metrics) { metric ->
                 PerfAggregatePoint(
                     "metric-$metric",
@@ -156,7 +201,7 @@ class PerfHistoryWindowTest {
             }
             val snapshot =
                 PerfAggregateSnapshot(
-                    identity,
+                    boot,
                     from,
                     from + resolution,
                     points,

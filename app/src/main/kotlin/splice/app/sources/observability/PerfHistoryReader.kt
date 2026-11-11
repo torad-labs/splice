@@ -31,12 +31,9 @@ internal class PerfHistoryReader(private val files: PerfHistoryFiles, private va
         var retained = false
         try {
             val result = scanned(scan, sink)
-            lease.retain(
-                result,
-                result.snapshots.sumOf(
-                    PerfHistoryFormat::estimate,
-                ) + PerfHistorySize.coverage(result.coverage) + HISTORY_RESULT_OVERHEAD,
-            )
+            // The fold admitted these points at their held size, so the result is kept at the same charge.
+            val held = result.snapshots.sumOf { PerfHistorySize.held(it) }
+            lease.retain(result, held + PerfHistorySize.coverage(result.coverage) + HISTORY_RESULT_OVERHEAD)
             retained = true
             return result
         } finally {

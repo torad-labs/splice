@@ -1887,7 +1887,7 @@ async function readLogins(head) {
   const names = DRAW.names("login", rows.map((r) => ({ name: r.display_name || r.label, provider: state.providerOf[head], plan: r.plan, ids: DRAW.loginIds(r) })));
   ui.logins[head] = rows.map((r, i) => ({
     label: r.account_labels?.[head] || r.label, name: names[i].text, plan: r.plan ? r.plan.charAt(0).toUpperCase() + r.plan.slice(1) : null,
-    ready: !!r.credential_present && !r.refusal, windows: windowsOf(r),
+    ready: !!r.credential_present && !r.refusal && !r.owner_block, windows: windowsOf(r),
   }));
   ui.canSwitch[head] = rows.length > 1 && order.ok; // a pool splice switches: its order route answered
   render();
@@ -2100,7 +2100,9 @@ async function readChoices(s) {
     const near = [[row?.five_hour_used_percent, row?.five_hour_reset_epoch_seconds], [row?.seven_day_used_percent, row?.seven_day_reset_epoch_seconds]]
       // a window whose reset has gone by holds the ended window's figure, which Accounts drops too: it is not spent now
       .filter(([pct, reset]) => pct != null && !(reset && reset * 1000 <= Date.now())).reduce((a, w) => (!a || w[0] > a[0] ? w : a), null);
-    const kind = !row || !row.credential_present || row.refusal ? "signedout" : near && near[0] >= 100 ? "limit" : "room";
+    // a login its provider blocked until its owner acts is not signed out and has no room: it says Blocked, and stays a
+    // press, since a command with no other login asks it once to learn whether the block was lifted
+    const kind = !row || !row.credential_present || row.refusal ? "signedout" : row.owner_block ? "blocked" : near && near[0] >= 100 ? "limit" : "room";
     return { head: h.head, own: h.head === s.head, names, kind, acct: row?.display_name ?? null, plan: row?.plan ? row.plan.charAt(0).toUpperCase() + row.plan.slice(1) : null,
       used: near ? Math.round(near[0]) : null, until: near?.[1] ? new Date(near[1] * 1000) : null, rank: kind === "room" ? 0 : 3,
       long: row?.seven_day_reset_epoch_seconds ?? Infinity, short: row?.five_hour_reset_epoch_seconds ?? Infinity };
@@ -2122,6 +2124,7 @@ function choicesHtml(s) {
     const room = g.kind === "room" && g.used != null ? `<span class="room"><span class="bar sub"><b style="width:${g.used}%"></b></span><span class="pct">${g.used}%<span class="used">used</span></span></span>`
       : g.kind === "limit" ? `<span class="room out"><span class="pct limit">100%<span class="used">used</span></span>${g.until ? `${ICON.lock}Resets ${backWord(g.until)}` : ""}</span>`
       : g.kind === "unlinked" ? `<span class="room out">Not installed${g.fix ? ` · <code>${esc(g.fix)}</code>` : ""}</span>`
+      : g.kind === "blocked" ? `<span class="room out">${ICON.lock}Blocked</span>`
       : g.kind === "signedout" ? `<span class="room out">Signed out</span>` : "";
     const off = g.kind === "limit" || g.kind === "signedout" || g.kind === "unlinked";
     const key = `${s.id}|${g.head}`, all = ui.allModels.has(key), left = g.names.length - MODELS_SHOWN;

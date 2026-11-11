@@ -359,6 +359,8 @@ function planAccount(row) {
     // an expired token its own command renews on its next run is not a sign-out: the card keeps its readings
     renews: !!row.token_renews,
     out,
+    // the step its owner takes before the provider serves it again, in splice's words; null for every other login
+    blocked: row.owner_block || null,
     canRename: !!row.can_rename, canRemove: !!row.can_remove, native: !!row.carrying_request,
     // the provider answered with no usage for this account: no bars, never an older reading drawn as today's
     noUsage: !windows.length && !!row.no_usage_at_epoch_seconds,
@@ -407,7 +409,9 @@ const ended = (w) => w.left == null && w.rolledMs != null;
 // At its limit NOW: full, and still inside the window that filled. A window at 100% that reported no reset at all
 // stays held, because nothing on the page says it rolled — only a reset that has gone by says that.
 const atLimit = (w) => w.used >= 100 && !ended(w);
-const held = (a) => (a.windows || []).some(atLimit);
+// HELD BY ITS PROVIDER TOO: a login its provider blocked until its owner acts (owner_block) serves no turn and no
+// sign-in changes that, so it is held, with the step as its line, and never signed out
+const held = (a) => !!a.blocked || (a.windows || []).some(atLimit);
 const room = (a) => !a.out && !a.renews && !held(a);
 const backAt = (a) => Math.max(0, ...a.windows.filter(atLimit).map((w) => w.left ?? 0));
 const laneAccts = (p, c) => c.order.map((id) => p.accounts.find((a) => a.id === id)).filter(Boolean);
@@ -497,7 +501,7 @@ const waiting = () => `<span class="waitbox" role="status">${GLYPH.wait}<span cl
 // the lock says what it means beside it: a bare red lock read as nothing until the footer under the stack (walk, Oct 13)
 const locked = (pop = false, word = "Limit reached") => DRAW.lock(word, { pop });
 // a held login is held until the last of its windows at their limit resets
-const heldUntil = (a) => { const w = a.windows.filter(atLimit).sort((x, y) => y.left - x.left)[0]; return w?.resetMs != null ? `Limit reached until ${at(w.resetMs)}` : "Limit reached"; };
+const heldUntil = (a) => { if (a.blocked) return esc(a.blocked); const w = a.windows.filter(atLimit).sort((x, y) => y.left - x.left)[0]; return w?.resetMs != null ? `Limit reached until ${at(w.resetMs)}` : "Limit reached"; };
 
 // the ring and the meter are the KIT's now (kit.js DRAW, console.css): this page's own drawings, lifted so that every
 // page draws a share the way this one does. The arc is how much of the window is left; the bar is how much is used.
@@ -1224,7 +1228,7 @@ function cardHtml(p, c, a, i, serves) {
     const why = a.row?.last_read_failure ? READ_WHY[a.row.last_read_failure.reason] ?? null : null;
     const rows = windowLabels(p).map((l) => `<span class="label">${l}</span>${bar(null)}<span class="pct">${DRAW.dash}</span><span></span>`).join("");
     body = never && ui.probing ? `<div class="windows" aria-busy="true">${WINDOW_GHOST()}${WINDOW_GHOST()}</div>${signRow}`
-      : `<div class="windows"><span class="unproved">${DAY_NOT_READ}${why ? `<span class="why"> · ${esc(why)}</span>` : ""}</span>${rows}</div>${signRow}`;
+      : `<div class="windows">${a.blocked ? `<span class="heldline">${heldUntil(a)}</span>` : ""}<span class="unproved">${DAY_NOT_READ}${why ? `<span class="why"> · ${esc(why)}</span>` : ""}</span>${rows}</div>${signRow}`;
   } else if (p.kind === "plan") {
     const first = c && serving(p, c) === a;
     const next = first ? nextOf(p, c) : null;
@@ -1885,7 +1889,8 @@ function render({ flip = false } = {}) {
   if (!unheard) {
     // counted against the logins whose limits splice reads, as Usage and Settings count them (lead look, Oct 29: the bar read
     // "of 17" with keys and local servers in it, beside "of 14" on Usage and "of 9" on Settings)
-    const read = data.flatMap((p) => p.accounts).filter((a) => !a.out && (a.windows || []).length), out = read.filter(held);
+    // a login its provider blocked is held and not at a limit, so the count, which says "at their limit", leaves it out
+    const read = data.flatMap((p) => p.accounts).filter((a) => !a.out && (a.windows || []).length), out = read.filter((a) => a.windows.some(atLimit));
     navMark("accounts.html", out.length, "limit", out.map((a) => Math.max(0, ...a.windows.filter(atLimit).map((w) => w.resetMs ?? 0)) || null), read.length);
   }
   // a day's hours rise in with the bars, when the fresh reading lands (ui.grow), and a day that lands after it rises on

@@ -1445,7 +1445,12 @@ origin.
   another can serve, a turn with no other login asks it once to learn whether an admin allowed it, the switch reason
   reads "previous login's organization does not allow subscription access", and a turn that ends on it says
   `<head>'s login <label> is blocked until its organization allows subscription access.` `An admin allows it in the
-  organization's settings first, then send the message again.` A pin on such a login names the same step.
+  organization's settings first, then send the message again.` A pin on such a login names the same step. Its card on
+  Accounts reads "Blocked until its organization allows subscription access" under a lock, where it read "Signed out"
+  beside a Sign in button that no block is lifted by; `/api/accounts` carries the step as `owner_block`. The hold
+  outlasts a credential file Claude Code rewrites around the same account, which ended it before: on Nov 11 a rewrite
+  one second after the refusal sent the next session's first request to the held login 56 seconds after its hold
+  began. A file that names another account still ends it at once.
 - **A new field in Claude Code's request no longer takes a Responses head down, and a head that refuses every turn says
   so.** Claude Code 2.1.321 sends a top-level `diagnostics` field, which refused every claudex turn from 5:51 to
   6:58 PM CT on Nov 9 while daemon.log, the perf file and the trace held nothing. Every top-level field of a Responses

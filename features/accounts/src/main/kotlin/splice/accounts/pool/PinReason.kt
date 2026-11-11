@@ -39,6 +39,12 @@ internal class HeldWords {
             "'$label' is blocked until an admin of its organization allows subscription access in ${block.where}"
     }
 
+    /** The same step on the login's own card, under its name: no label, since the card is the login. */
+    fun blocked(block: AccountBlock): String = when (block.step) {
+        OwnerStep.ACCEPT_TERMS -> "Blocked until its owner accepts the provider's updated terms in ${block.where}"
+        OwnerStep.ALLOW_SUBSCRIPTION_ACCESS -> "Blocked until its organization allows subscription access"
+    }
+
     /** No refusal: the login's usage reads full, and the pool spends a login with room before it. */
     fun readsFull(label: String, full: QuotaFull): String {
         val window = when (full.window) {

@@ -124,6 +124,10 @@ internal class TtlCredentialIdentitySource(
 
     override fun credentialIdentity(): CredentialFileIdentity? = delegate?.credentialIdentity()
 
+    /** Read through and never cached: asked only when a provider blocks the login, and when its credential file
+     *  changes under that block (AccountCredentialEligibility). Without it a block never learned its account. */
+    override fun credentialAccount(): String? = delegate?.credentialAccount()
+
     override fun credentialPresence(): AccountCredentialIdentitySource.CredentialPresence =
         delegate?.credentialPresence()
             ?: AccountCredentialIdentitySource.CredentialPresence.UNKNOWN

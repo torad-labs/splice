@@ -3,7 +3,9 @@
 package splice.accounts.pool
 
 /** Why a pooled or single-login account cannot be selected right now, or all null when it can. [refusal]
- *  (V4-410) is the permanent kind: splice will not load that credential at all, so it is not a renewal. */
+ *  (V4-410) is the permanent kind: splice will not load that credential at all, so it is not a renewal.
+ *  [ownerBlock] is the provider refusing the account until its owner acts, in the card's words: no sign-in clears
+ *  it, so the console draws it as held and never as signed out. */
 internal data class AuthExclusionView(
     val untilEpochMillis: Long?,
     val reason: String?,
@@ -11,6 +13,7 @@ internal data class AuthExclusionView(
     val ref: String? = null,
     val displayName: String? = null,
     val email: String? = null,
+    val ownerBlock: String? = null,
 )
 
 /** The three yes/no/unknown facts a console row renders as booleans — grouped for the same

@@ -15,6 +15,7 @@ import splice.accounts.pool.AccountNameFacts
 import splice.accounts.pool.AccountNaming
 import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.pool.HeadAccountView
+import splice.accounts.pool.HeldWords
 import splice.core.auth.AuthDescription
 import splice.core.auth.REFUSAL_FIELD
 import splice.core.usage.QuotaFreshness
@@ -106,6 +107,7 @@ internal class ClaudeLoginRows(
         put("auth_exclusion_reason", selected?.credential?.exclusionReason)
         val reason = description?.fields?.get(REFUSAL_FIELD) ?: view.credential.refusal
         put("refusal", refusal(view, selected, reason))
+        put("owner_block", selected?.credential?.ownerBlock?.let(HeldWords()::blocked))
         put("token_renews", !available && description?.fields?.get(TOKEN_RENEWS_FIELD) == "true")
     }
 
@@ -115,6 +117,9 @@ internal class ClaudeLoginRows(
             selected?.available == true -> null
             reason != null -> reason
             selected?.credential?.present != true -> "No usable native access token; $signIn"
+            // Held until its owner acts (owner_block says the step): no sign-in clears it, so it is no refusal to
+            // sign in again. Until Nov 11, 2026 the card of a login its organization refused read Signed out.
+            selected.credential.ownerBlock != null -> null
             selected.credential.exclusionReason != null -> "This login was refused; $signIn"
             else -> "This login reached its subscription limit; wait for its reported reset before it can take over."
         }

@@ -121,7 +121,7 @@ internal class AccountCredentialEligibility(
             val failureCount = nextFailureCount(current, lease)
             val updated = current.copy(
                 failureCount = failureCount,
-                hold = Hold(lease.now() + holdMs(failureCount), block),
+                hold = Hold(lease.now() + holdMs(failureCount), block, block?.let { evidence.account() }),
                 probeToken = null,
                 generation = current.generation + 1L,
             )
@@ -140,7 +140,7 @@ internal class AccountCredentialEligibility(
     private fun reconcile(): State {
         while (true) {
             val current = state.get()
-            val updated = evidence.observe().reconciled(current)
+            val updated = evidence.observe().reconciled(current, evidence)
             if (updated == current) return current
             if (state.compareAndSet(current, updated)) return updated
         }
@@ -182,6 +182,9 @@ internal class AccountCredentialEligibility(
     ) {
         val tracksIdentity: Boolean get() = source != null
 
+        /** The provider account the credential names now, where its source proves one (credentialAccount). */
+        fun account(): String? = source?.credentialAccount()
+
         fun initialState(): State {
             val observed = observe()
             val present = observed.initialPresence(configuredCredentialPresent)
@@ -210,8 +213,8 @@ internal class AccountCredentialEligibility(
             else -> configured
         }
 
-        fun reconciled(current: State): State = when {
-            identity != null -> current.observeIdentity(identity)
+        fun reconciled(current: State, source: CredentialEvidence): State = when {
+            identity != null -> current.observeIdentity(identity, source)
             presence == AccountCredentialIdentitySource.CredentialPresence.PRESENT -> current.observePresent()
             presence == AccountCredentialIdentitySource.CredentialPresence.MISSING ->
                 current.observeMissing().copy(renewable = renewable)
@@ -236,11 +239,18 @@ internal class AccountCredentialEligibility(
         val generation: Long,
         val renewable: Boolean = false,
     ) {
-        fun observeIdentity(observed: CredentialFileIdentity): State = when {
+        /** A changed credential file is a new credential, which ends a hold, except a hold on the ACCOUNT: the
+         *  provider blocked the account, and a rewritten file that still names it is the same blocked login. At
+         *  12:17:14 AM CT on Nov 11, 2026, Claude Code rewrote its credential file around the same token one second
+         *  after its login was held for its organization's block; the hold ended with the rewrite, and the next
+         *  session's first request went to that login 56 seconds after the hold began. [source] is asked for
+         *  its account only then. A file that names another account, or none splice can prove, ends the hold. */
+        fun observeIdentity(observed: CredentialFileIdentity, source: CredentialEvidence): State = when {
             !credentialPresent -> recovered(observed)
             identity == null -> copy(identity = observed)
-            identity != observed -> recovered(observed)
-            else -> this
+            identity == observed -> this
+            hold?.blocks(source) == true -> copy(identity = observed)
+            else -> recovered(observed)
         }
 
         fun observePresent(): State = if (credentialPresent) this else recovered(null)
@@ -277,6 +287,11 @@ internal class AccountCredentialEligibility(
     }
 
     /** A hold on this login after its provider refused it, until [untilEpochMillis]. With [block], the provider refused
-     *  the account itself until its owner takes that step, which only a turn served on the login again shows. */
-    private data class Hold(val untilEpochMillis: Long, val block: AccountBlock? = null)
+     *  the account itself until its owner takes that step, which only a turn served on the login again shows;
+     *  [account] is the account the credential named when it was refused, where its source proves one. */
+    private data class Hold(val untilEpochMillis: Long, val block: AccountBlock? = null, val account: String? = null) {
+        /** Whether this hold is a block on the very account the credential in [source] names now. */
+        fun blocks(source: CredentialEvidence): Boolean =
+            block != null && account != null && account == source.account()
+    }
 }

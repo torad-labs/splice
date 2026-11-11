@@ -16,8 +16,12 @@ import splice.upstream.failure.ProviderDeviation
 /** Where the owner of a Claude account accepts Anthropic's terms, as Anthropic's answer names it. */
 private const val CLAUDE_AI = "claude.ai"
 
+/** Where an organization's admin allows its logins' subscriptions. Anthropic's answer names no place, and Claude Code's
+ *  own line for the same answer says only "ask your admin to enable access" (anthropics/claude-code#63886). */
+private const val ORGANIZATION_SETTINGS = "the organization's settings"
+
 /**
- * Anthropic's one documented deviation for a Claude login: an account its owner must act on.
+ * Anthropic's deviations for a Claude login: an account its owner, or its organization, must act on.
  *
  * At 2:52:10 PM CT on Oct 27, 2026, Anthropic answered claude-splice with a 400 invalid_request_error reading "We've
  * updated our Consumer Terms and Privacy Policy. You'll need to accept them in claude.ai with the email in /status to
@@ -26,10 +30,22 @@ private const val CLAUDE_AI = "claude.ai"
  * on any login of that account meets it until the account's owner accepts the terms in claude.ai, which no re-send or
  * renewal changes. It reads as Forbidden with that block, whatever status or type carries it, so the turn moves to
  * another login, the login that met it is held, and a line names the step and where its owner takes it.
+ *
+ * On Nov 10, 2026, Anthropic answered every request on one of claude-splice's ten logins with a 403 permission_error
+ * reading "OAuth authentication is currently not allowed for this organization." Claude Code reads the same answer as
+ * "Your organization has disabled Claude subscription access for Claude Code. Use an Anthropic API key instead, or ask
+ * your admin to enable access." The standard reads a 403 as a model the plan leaves out, so the turn moved to another
+ * login and nothing held the refused one: it had the most room left, so the pool chose it again for every session that
+ * started, 20 of them in the 22 minutes after the 11:12 PM CT start, each answered 403 before it was served elsewhere.
+ * It is the same kind of answer as the terms one, about the account and not the request, and it carries its own block.
  */
 public object ClaudeReplies : ProviderDeviation {
     /** How Anthropic's answer names terms the account's owner has not accepted yet. */
     private val updatedTerms = Regex("""updated our Consumer Terms""", RegexOption.IGNORE_CASE)
+
+    /** How Anthropic's answer names an organization that has turned subscription access off for its logins. */
+    private val subscriptionAccessOff =
+        Regex("""OAuth authentication is (currently )?not allowed for this organization""", RegexOption.IGNORE_CASE)
 
     override fun http(reply: FailedReply): FailureCause.Provider? =
         blocked(ErrorMessage.of(reply.body), ErrorMessage.said(reply.body))
@@ -40,10 +56,14 @@ public object ClaudeReplies : ProviderDeviation {
         return blocked(message, ProviderWordsFilter.of(message))
     }
 
-    private fun blocked(message: String?, said: ProviderWords?): FailureCause.Provider? =
-        if (message != null && updatedTerms.containsMatchIn(message)) {
+    private fun blocked(message: String?, said: ProviderWords?): FailureCause.Provider? = when {
+        message == null -> null
+        updatedTerms.containsMatchIn(message) ->
             FailureCause.Provider.Forbidden(said, AccountBlock(OwnerStep.ACCEPT_TERMS, CLAUDE_AI))
-        } else {
-            null
-        }
+        subscriptionAccessOff.containsMatchIn(message) -> FailureCause.Provider.Forbidden(
+            said,
+            AccountBlock(OwnerStep.ALLOW_SUBSCRIPTION_ACCESS, ORGANIZATION_SETTINGS),
+        )
+        else -> null
+    }
 }

@@ -1436,6 +1436,16 @@ origin.
 - **`splice login` names a Claude login by its label, never its email,** in every sentence it prints.
 
 ### Fixed
+- **A Claude login whose organization refuses it is held, instead of being tried first by every new session.**
+  Anthropic answers such a login with a 403 reading "OAuth authentication is currently not allowed for this
+  organization", which Claude Code shows as "Your organization has disabled Claude subscription access for Claude
+  Code". splice read it as a model the plan leaves out: the turn moved to another login and nothing held the refused
+  one, so a pool that ranked it first sent every new session's first request to it, 20 of them in 22 minutes on Nov 10.
+  It is now read as a block on the account, like the updated-terms answer: the login is held out of later turns while
+  another can serve, a turn with no other login asks it once to learn whether an admin allowed it, the switch reason
+  reads "previous login's organization does not allow subscription access", and a turn that ends on it says
+  `<head>'s login <label> is blocked until its organization allows subscription access.` `An admin allows it in the
+  organization's settings first, then send the message again.` A pin on such a login names the same step.
 - **A new field in Claude Code's request no longer takes a Responses head down, and a head that refuses every turn says
   so.** Claude Code 2.1.321 sends a top-level `diagnostics` field, which refused every claudex turn from 5:51 to
   6:58 PM CT on Nov 9 while daemon.log, the perf file and the trace held nothing. Every top-level field of a Responses

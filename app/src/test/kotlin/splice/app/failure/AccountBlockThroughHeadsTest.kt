@@ -31,6 +31,11 @@ private const val UPDATED_TERMS =
 
 private const val BAD_REQUEST = 400
 
+/** Anthropic's answer to every request on one of claude-splice's logins on Nov 10, 2026, verbatim (the journal). */
+private const val ORGANIZATION_REFUSES = "OAuth authentication is currently not allowed for this organization."
+
+private const val FORBIDDEN = 403
+
 /** Two logins of one Claude command, named so a line that names one cannot be mistaken for any other word. */
 private const val KESTREL = "kestrel"
 private const val OSPREY = "osprey"
@@ -179,6 +184,57 @@ class AccountBlockThroughHeadsTest {
                 assertEquals("false", answer.shouldRetry, answer.describe())
             }
         }
+
+    // Nov 10, 2026: the pool chose a login Anthropic refused for every session that started, 20 times in 22 minutes,
+    // because the turn that met the answer moved on and nothing held the login.
+    @Test
+    fun `a login whose organization refuses it hands the turn to the next login, and later turns skip it`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(
+                organizationRefuses(),
+                reply { anthropicAnswer("answered on the next login") },
+                reply { anthropicAnswer("a later turn") },
+            )
+            val head = pooledAnthropic(listOf(KESTREL, OSPREY), HeadReplies.claude, CLAUDE)
+
+            val first = head.client.send()
+            val later = head.client.send()
+
+            assertEquals("answered on the next login", first.text, first.describe())
+            assertEquals("a later turn", later.text, later.describe())
+            assertEquals(listOf(KESTREL, OSPREY, OSPREY), provider.requests.map(::login))
+        }
+    }
+
+    @Test
+    fun `with no other login the turn ends naming the login and what its organization allows, and where`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(organizationRefuses(), reply { anthropicAnswer("not reached") })
+            val head = pooledAnthropic(listOf(KESTREL), HeadReplies.claude, CLAUDE)
+
+            val answer = head.client.send()
+
+            val line = answer.error?.message.orEmpty()
+            assertEquals(1, provider.requests.size, "the same answer awaits every re-send: ${answer.describe()}")
+            assertTrue(line.startsWith(PREFIX), "a person reads one [splice] line: ${answer.describe()}")
+            assertTrue(KESTREL in line, "names the login: $line")
+            assertTrue("its organization allows subscription access" in line, "names the step: $line")
+            assertTrue("the organization's settings" in line, "names where an admin takes it: $line")
+            // Before the answer was read as a block, the line said the account may not use this model.
+            assertFalse("may not use this model" in line, "the model is not what the provider refused: $line")
+            assertEquals("false", answer.shouldRetry, "nothing changes until an admin acts: ${answer.describe()}")
+        }
+    }
+
+    /** Anthropic's 403 telling a Claude login that its organization does not allow it. */
+    private fun organizationRefuses(): ScriptedReply = reply {
+        status(FORBIDDEN)
+        anthropicErrorBody("permission_error", ORGANIZATION_REFUSES)
+    }
 
     /** Anthropic's 400 telling a Claude account to accept its updated terms. */
     private fun termsNotAccepted(): ScriptedReply = reply {

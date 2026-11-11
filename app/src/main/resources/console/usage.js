@@ -567,6 +567,9 @@ function planCard(row, mx) {
   const windows = windowsOf(row);
   const idx = accountIdx(row), out = signedOut(row), heads = row.heads || [];
   const mine = usageOfPlan(row), s = sumOf(mine), held = windows.some((w) => w.used >= 100);
+  // a login its provider blocked until its owner acts (owner_block): held, with the step as its line, as its card on
+  // Accounts says it, where two dashed windows stood with no word why
+  const blocked = !out && !held && row.owner_block ? row.owner_block : null;
   if (held) heldNow.add(idx);
   const rows = [];
   for (const w of windows) {
@@ -592,13 +595,13 @@ function planCard(row, mx) {
   const ran = ranOut ? `<a class="ranout" href="requests.html?win=7d#${encodeURIComponent(ranOut.id)}">Ran out ${dayClock(new Date(ranOut.ts))}${OPEN}</a>` : "";
   const fig = leadFig(s, windows, { out });
   return { prov: providerOfHead(heads[0]), kind: "plan", name: planName(row) || "Account", used: out || !windows.length ? -1 : Math.max(0, ...windows.filter((w) => !w.sub).map((w) => w.used)), s, heads: new Set(heads),
-    rows: lines, h: cardH("plan", lines, out, held || ran ? 1 : 0, s),
-    make: (withChips) => `<article class="card pcard${held ? " held" : ""}${out ? " out" : ""}${picked ? " picked" : ""}${ui.landed === idx ? " landed" : ""}" data-a="plan-${idx}" style="--c:${colorOf(providerOfHead(heads[0]))}"${door}>`
+    rows: lines, h: cardH("plan", lines, out, held || ran || blocked ? 1 : 0, s),
+    make: (withChips) => `<article class="card pcard${held || blocked ? " held" : ""}${out ? " out" : ""}${picked ? " picked" : ""}${ui.landed === idx ? " landed" : ""}" data-a="plan-${idx}" style="--c:${colorOf(providerOfHead(heads[0]))}"${door}>`
       + topRow(fig, headEnd(withChips ? heads : [], out))
       + `<header>${canName(row) ? nameSlot(row, idx, "card") : `<span class="nm">${planNameHtml(row)}</span>`}`
       + `${row.plan && !planName(row).toLowerCase().includes(row.plan.toLowerCase()) ? `<span class="pv">${esc(row.plan.charAt(0).toUpperCase() + row.plan.slice(1))}</span>` : ""}</header>`
       // the lock pops in over the kit's pop time only on a login that has just reached its limit, never on a redraw
-      + (held ? `<p class="heldline">${DRAW.lock(until?.resetMs ? `Limit reached until ${backWord(new Date(until.resetMs))}` : "Limit reached", { pop: heldKnown != null && !heldKnown.has(idx) })}${ran}</p>` : ran ? `<p class="heldline">${ran}</p>` : "")
+      + (held ? `<p class="heldline">${DRAW.lock(until?.resetMs ? `Limit reached until ${backWord(new Date(until.resetMs))}` : "Limit reached", { pop: heldKnown != null && !heldKnown.has(idx) })}${ran}</p>` : blocked ? `<p class="heldline">${DRAW.lock(blocked)}${ran}</p>` : ran ? `<p class="heldline">${ran}</p>` : "")
       + body + noReq(s)
       + thruCells(s, mx, false) + (lead ? `<span class="drill" aria-hidden="true">${DRAW.go}</span>` : "") + `</article>` };
 }

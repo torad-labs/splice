@@ -452,6 +452,7 @@ class AccountPoolTest {
         private val quotas = mutableMapOf<PoolAccount, AtomicReference<QuotaSnapshot>>()
         private val identities = mutableMapOf<PoolAccount, AtomicReference<CredentialFileIdentity?>>()
         private val presences = mutableMapOf<PoolAccount, AtomicReference<CredentialPresence>>()
+        private val named = mutableMapOf<PoolAccount, AtomicReference<String?>>()
         private var elapsed = 0L
         private var revision = 1L
 
@@ -480,8 +481,10 @@ class AccountPoolTest {
                     else -> CredentialPresence.UNKNOWN
                 },
             )
+            val names = AtomicReference<String?>(null)
             val auth = object : RefreshableAuthProvider, AccountCredentialIdentitySource {
                 override suspend fun credentials(): Credentials = Credentials.Bearer("secret", "private-account-id")
+                override fun credentialAccount(): String? = names.get()
                 override suspend fun describe(): AuthDescription =
                     AuthDescription(true, "test", mapOf("token" to "***"))
                 override suspend fun refresh(): Credentials = credentials()
@@ -502,6 +505,7 @@ class AccountPoolTest {
                 quotas[it] = quotaRef
                 identities[it] = identity
                 presences[it] = presence
+                named[it] = names
             }
         }
 
@@ -515,6 +519,11 @@ class AccountPoolTest {
 
         fun advanceWall(ms: Long) {
             now.set(now.get() + ms)
+        }
+
+        /** The provider account [account]'s credential file names from now on, as a sign-in there sets it. */
+        fun signIn(account: PoolAccount, providerAccount: String) {
+            named.getValue(account).set(providerAccount)
         }
 
         fun rotateCredential(account: PoolAccount) {

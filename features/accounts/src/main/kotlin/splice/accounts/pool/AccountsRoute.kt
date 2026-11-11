@@ -180,6 +180,7 @@ public class AccountsRoute(
             fields[ACCOUNT_REF_FIELD],
             fields["display_name"],
             fields["email"],
+            account.credential.ownerBlock?.let(HeldWords()::blocked),
         ),
         flags = AccountFlags(
             available = account.available,
@@ -261,6 +262,7 @@ public class AccountsRoute(
         into.put("auth_excluded_until_epoch_millis", row.authExclusion.untilEpochMillis)
         into.put("auth_exclusion_reason", row.authExclusion.reason)
         into.put("refusal", row.authExclusion.refusal)
+        into.put("owner_block", row.authExclusion.ownerBlock)
         into.put("selected", row.flags.selected)
         into.putJsonArray("pinned_heads") { row.pinnedHeads.forEach { add(it) } }
         into.putJsonArray("heads") { row.heads.sorted().forEach { add(it) } }

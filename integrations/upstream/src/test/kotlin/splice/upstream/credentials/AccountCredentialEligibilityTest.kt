@@ -16,6 +16,8 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.AccountBlock
+import splice.core.failure.OwnerStep
 import splice.core.util.ElapsedClock
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialEvidence
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialFileEvidenceReader
@@ -254,6 +256,28 @@ class AccountCredentialEligibilityTest {
         assertEquals("terminal_401", view.credential.exclusionReason)
         assertEquals(1_300_000L, view.credential.excludedUntilEpochMillis)
         assertSame(backup, pool.chosen("after-stale-refresh").account)
+    }
+
+    @Test
+    fun `a block outlasts a rewritten credential file that names the same account, and ends at another`() {
+        val fixture = AccountPoolTest.Fixture()
+        val primary = fixture.account("primary", primary = true)
+        val backup = fixture.account("plus-a")
+        val pool = fixture.pool(primary, backup)
+        val block = AccountBlock(OwnerStep.ALLOW_SUBSCRIPTION_ACCESS, "the organization's settings")
+        fixture.signIn(primary, "account-one")
+        pool.chosen("refused").markCredentialUnavailable(block)
+
+        fixture.rotateCredential(primary)
+
+        assertSame(backup, pool.chosen("after-rewrite").account, "the same account in a rewritten file is still held")
+        assertEquals(block, pool.view(null).accounts.single { it.primary }.credential.block)
+
+        fixture.signIn(primary, "account-two")
+        fixture.rotateCredential(primary)
+
+        assertSame(primary, pool.chosen("after-sign-in").account, "another account signed in there is not blocked")
+        assertNull(pool.view(null).accounts.single { it.primary }.credential.block)
     }
 
     @Test

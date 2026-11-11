@@ -121,12 +121,12 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
     }
 
     private fun latencies(rows: List<PerfRow>): JsonObject = buildJsonObject {
-        stats(rows.mapNotNull { it.fields[PerfKeys.FIRST_BYTE] })?.let { put("time_before_first_byte_ms", it) }
-        stats(rows.mapNotNull(::streaming))?.let { put("time_streaming_ms", it) }
-        stats(rows.mapNotNull { it.fields[PerfKeys.TOTAL] })?.let { put("total_ms", it) }
+        statsOf(rows) { it.fields[PerfKeys.FIRST_BYTE] }?.let { put("time_before_first_byte_ms", it) }
+        statsOf(rows, ::streaming)?.let { put("time_streaming_ms", it) }
+        statsOf(rows) { it.fields[PerfKeys.TOTAL] }?.let { put("total_ms", it) }
         // Queue pressure (§3): only a request the gate held behind a full limit carries ADMIT_HELD_MS, so the stats are
         // over the held requests and their count says how many waited.
-        stats(rows.mapNotNull { it.fields[PerfKeys.ADMIT_HELD_MS] })?.let { put("queue_wait_ms", it) }
+        statsOf(rows) { it.fields[PerfKeys.ADMIT_HELD_MS] }?.let { put("queue_wait_ms", it) }
     }
 
     private fun counters(rows: List<PerfRow>): JsonObject = buildJsonObject {
@@ -190,7 +190,7 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
             buildJsonObject {
                 put("count", rows.size)
                 put("failure_share", rows.count { OutcomeTags.isFailed(it.outcome) }.toDouble() / rows.size)
-                stats(rows.mapNotNull { it.fields[PerfKeys.TOTAL] })?.let { put("total_ms", it) }
+                statsOf(rows) { it.fields[PerfKeys.TOTAL] }?.let { put("total_ms", it) }
             }
         }
 
@@ -202,17 +202,44 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
 
     /** {count, p50, p95, max} of [values], or null when there are none: the one implementation
      *  both /api/perf and /api/perf/summary print. */
-    internal fun stats(values: List<Long>): JsonObject? {
-        val sorted = values.sorted().takeIf { it.isNotEmpty() } ?: return null
-        return buildJsonObject {
-            put("count", sorted.size)
-            put("p50", percentile(sorted, P50))
-            put("p95", percentile(sorted, PERF_P95_QUANTILE))
-            put("max", sorted.last())
-        }
+    internal fun stats(values: List<Long>): JsonObject? =
+        Samples().also { samples -> values.forEach(samples::add) }.stats()
+
+    /** [stats] of what [pick] reads from each row, gathered in one pass without a list of boxed values per figure. */
+    private inline fun statsOf(rows: List<PerfRow>, pick: (PerfRow) -> Long?): JsonObject? {
+        val samples = Samples()
+        rows.forEach { row -> pick(row)?.let(samples::add) }
+        return samples.stats()
     }
 
-    /** Nearest-rank percentile on a pre-sorted list. */
-    private fun percentile(sorted: List<Long>, q: Double): Long =
-        sorted[ceil(q * sorted.size).toInt().coerceIn(1, sorted.size) - 1]
+    /** Samples held as primitives and sorted in place when read: a busy command's week is a few hundred thousand of
+     *  them, 8 bytes each, where boxed values in a list and a sorted copy of it cost about ten times that. The figures
+     *  stay exact (nearest rank), so every page that reads them agrees to the last digit. */
+    private class Samples {
+        private var values = LongArray(FIRST_SAMPLES)
+        private var size = 0
+
+        fun add(value: Long) {
+            if (size == values.size) values = values.copyOf(size * 2)
+            values[size++] = value
+        }
+
+        fun stats(): JsonObject? {
+            if (size == 0) return null
+            values.sort(0, size)
+            return buildJsonObject {
+                put("count", size)
+                put("p50", nearestRank(P50))
+                put("p95", nearestRank(PERF_P95_QUANTILE))
+                put("max", values[size - 1])
+            }
+        }
+
+        /** Nearest-rank percentile of the sorted samples. */
+        private fun nearestRank(q: Double): Long = values[ceil(q * size).toInt().coerceIn(1, size) - 1]
+    }
 }
+
+// why: most figures of a head are over a few dozen rows, and the array doubles from here, so a small window pays for
+// the samples it has while a week of the busiest command reaches its few hundred thousand in a dozen doublings.
+private const val FIRST_SAMPLES = 64

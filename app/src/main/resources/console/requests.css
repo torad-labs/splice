@@ -527,6 +527,9 @@ mark.rq-q { padding: .12rem .35rem; border-radius: .25rem; background: color-mix
 .byr .bn small { flex: none; font: 500 .8rem/1 var(--font-data); color: var(--text-mute); }
 .bys.hits { container: hits / inline-size; }
 @container hits (max-width: 30rem) { .byr .bn { flex-direction: column; align-items: flex-start; gap: 0.333rem; } }
+/* stood under each other, the name is as wide as its words unless it is held to the row: held, a long one ends in its
+   ellipsis instead of being cut mid-letter at the row's edge */
+@container hits (max-width: 30rem) { .byr .bn .nm { max-width: 100%; } }
 /* two sessions of one name: the second carries its place among them, muted */
 .ord { display: inline-grid; place-items: center; min-width: 1.35rem; height: 1.35rem; margin-left: 0.667rem; padding: 0 .3rem; box-sizing: border-box; border-radius: 99rem; box-shadow: inset 0 0 0 .1rem var(--track-line); font: 500 .75rem/1 var(--font-data); font-style: normal; color: var(--text-mute); vertical-align: .05rem; }
 

@@ -123,6 +123,20 @@ class PeerHostProcessTest {
     }
 
     @Test
+    fun `a host told to stop leaves, and takes its peers with it`(@TempDir dir: Path) {
+        HostFixture(dir).use { fixture ->
+            fixture.peers("alpha")
+            val host = fixture.start()
+            val alpha = fixture.running("alpha")
+            // The plain stop a newer build's daemon sends a host that must make way (SIGTERM).
+            host.destroy()
+            assertTrue(host.waitFor(WAIT_MS, TimeUnit.MILLISECONDS), "the host is still running: ${fixture.report()}")
+            assertTrue(fixture.gone("alpha"), "its peer's files went with it")
+            assertFalse(ProcessHandle.of(alpha.pid).map { it.isAlive }.orElse(false), "and so did the peer's pid")
+        }
+    }
+
+    @Test
     fun `a host left with no peer exits`(@TempDir dir: Path) {
         HostFixture(dir).use { fixture ->
             fixture.peers("alpha")

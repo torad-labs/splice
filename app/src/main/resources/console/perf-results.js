@@ -5,9 +5,10 @@
 // every request in one bar sized by outcome, the cache as a ring, the stages on one axis, the compactions, the models.
 //
 // It reads GET /api/perf/summary?window=1h|24h|7d, the daemon's fold over every request each command recorded. That fold
-// carries every command's figures at every window it keeps; the cohort query behind the Performance measurements
-// (perf-heads.js) stops at its processing limit on a busy command's day or week and returns its count alone (live
-// Nov 10: claude-splice, claudex and claude-kimi had no failure rate or time at 7 days), so the table reads the fold.
+// carries every command's figures at every window it keeps, whatever the page's filters. The cohort query behind the
+// Performance measurements (perf-heads.js) folds the same rows with the same arithmetic, but it used to stop at 4,096 of
+// them and return a busy command's count alone (live Nov 10: claude-splice, claudex and claude-kimi had no failure rate or
+// time at 7 days), so this table read the fold; the table still does, because the fold is the one that ignores filters.
 // The table ignores the page's project pick and filters and says so on its head when one is set; the measurements below
 // it follow them exactly. Nothing is invented: a figure the summary does not carry is a dash, never a zero.
 //

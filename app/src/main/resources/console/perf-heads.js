@@ -469,13 +469,17 @@ const PERF_CONSOLE = (() => {
       };
       const active = heads.filter(([, h]) => h.count !== 0);
       const inactive = heads.filter(([, h]) => h.count === 0);
-      // a busy command's long period stops at the query's processing limit and keeps its count alone; say where its times are
+      // a command with more requests than the query folds (a million) keeps its count alone; say where its times are
       const partial = active.filter(([, h]) => h.metrics_complete === false).map(([head]) => commandName(head));
       const limit = partial.length ? note(`${partial.join(", ")} reached this period's processing limit, so only ${partial.length === 1 ? "its count is" : "their counts are"} shown. A shorter period or a narrower filter measures ${partial.length === 1 ? "its" : "their"} times; the last hour above reads every figure.`) : "";
+      // a period that begins more than a week back is not read per command (the daemon would decode gigabytes of archive
+      // past its deadline), so it lists none and says so, where it used to fail the whole read
+      const beyond = issues(s).includes("legacy_window_beyond_kept_rows");
       const rows = active.map(renderHead).join("") + (inactive.length
         ? `<details class="pc-inactive-commands"${st.inactiveOpen ? " open" : ""}><summary>${num(inactive.length)} commands with no recorded rows</summary><div>${inactive.map(renderHead).join("")}</div></details>`
         : "");
-      return `<section class="pc-results" aria-label="Results by command">${heading}<div class="card pc-commands">${labels}${rows || note(`${status(reply)} · No command results returned.`)}</div>${limit}</section>`;
+      const none = beyond ? note("Commands are measured for periods that begin within the last 7 days, and this one begins earlier. The measurements above cover the whole period; pick a shorter one to see each command's requests, failures and times.") : note(`${status(reply)} · No command results returned.`);
+      return `<section class="pc-results" aria-label="Results by command">${heading}<div class="card pc-commands">${labels}${rows || none}</div>${limit}</section>`;
     }
     function commandDetail(head, h) {
       const link = (label, extra = {}) => `<a href="${safe(address(st.query, { head, ...extra }))}">${safe(label)}</a>`;

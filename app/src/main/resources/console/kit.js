@@ -1539,6 +1539,20 @@ function ghostHost(region) {
   }
   return null;
 }
+/** The opening line of [host] when its real words stand where a ring of [size] at [left], [top] would: a loading table keeps
+ *  its column names, and the last of them ends in the corner the ring takes. Measured on the words themselves, not on the
+ *  boxes that hold them, so a title at the line's start leaves the corner free. */
+function wordsInCorner(host, left, top, size) {
+  const line = host.firstElementChild;
+  if (!line || line.matches(".ghost, .ghosted")) return null;
+  const range = document.createRange();
+  for (const el of [line, ...line.querySelectorAll("*")]) {
+    if (el.children.length || !el.textContent.trim() || el.closest(".ghost")) continue;
+    range.selectNodeContents(el);
+    for (const r of range.getClientRects()) if (r.right > left && r.left < left + size && r.bottom > top && r.top < top + size) return line;
+  }
+  return null;
+}
 /** The rings stand in their own layer over the page, placed on the leading ghost's corner from its box, so a page that
  *  rebuilds its ghosts or counts its own children never meets one. The layer scrolls with the page; the ring follows its
  *  ghost once a second, and goes with it when the read lands. */
@@ -1618,7 +1632,10 @@ function watchGhosts() {
     // on a card or a plate the ring stands in its top right corner; on a lone striped bar it stands at the bar's end, centred on it
     const bare = host.matches(".ghost");
     const low = small && host.matches(".ptile");
-    ring.style.top = `${Math.round(bare ? box.top + scrollY + box.height / 2 - size / 2 : low ? box.bottom + scrollY - gap - size : box.top + scrollY + gap)}px`;
+    // a card that opens on a line of real words reaching that corner (a table's column names) keeps them: the ring stands under the line
+    const corner = bare || low ? null : wordsInCorner(host, box.right - gap - size, box.top + gap, size);
+    const cardTop = corner ? corner.getBoundingClientRect().bottom : box.top;
+    ring.style.top = `${Math.round(bare ? box.top + scrollY + box.height / 2 - size / 2 : low ? box.bottom + scrollY - gap - size : cardTop + scrollY + gap)}px`;
     ring.style.left = `${Math.round(bare ? box.right + scrollX + gap : box.right + scrollX - gap - size)}px`;
   }
   if (layer) for (const ring of layer.querySelectorAll(".slr-ring")) if (!live.has(ring.dataset.read)) ring.remove();

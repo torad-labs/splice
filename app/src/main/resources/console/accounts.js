@@ -361,6 +361,9 @@ function planAccount(row) {
     out,
     // the step its owner takes before the provider serves it again, in splice's words; null for every other login
     blocked: row.owner_block || null,
+    // blocked, and no longer held: its hold's time ran out, or the person pressed Try again. The block stays named until
+    // its provider serves a turn on it, and the next turn that reaches it asks (AccountCredentialEligibility.askAgain)
+    asking: !!row.owner_block && !((row.auth_excluded_until_epoch_millis ?? 0) > Date.now()),
     canRename: !!row.can_rename, canRemove: !!row.can_remove, native: !!row.carrying_request,
     // the provider answered with no usage for this account: no bars, never an older reading drawn as today's
     noUsage: !windows.length && !!row.no_usage_at_epoch_seconds,
@@ -501,7 +504,7 @@ const waiting = () => `<span class="waitbox" role="status">${GLYPH.wait}<span cl
 // the lock says what it means beside it: a bare red lock read as nothing until the footer under the stack (walk, Oct 13)
 const locked = (pop = false, word = "Limit reached") => DRAW.lock(word, { pop });
 // a held login is held until the last of its windows at their limit resets
-const heldUntil = (a) => { if (a.blocked) return esc(a.blocked); const w = a.windows.filter(atLimit).sort((x, y) => y.left - x.left)[0]; return w?.resetMs != null ? `Limit reached until ${at(w.resetMs)}` : "Limit reached"; };
+const heldUntil = (a) => { if (a.blocked) return `${esc(a.blocked)}${a.asking ? `<span class="why">· its next turn asks again</span>` : ""}`; const w = a.windows.filter(atLimit).sort((x, y) => y.left - x.left)[0]; return w?.resetMs != null ? `Limit reached until ${at(w.resetMs)}` : "Limit reached"; };
 
 // the ring and the meter are the KIT's now (kit.js DRAW, console.css): this page's own drawings, lifted so that every
 // page draws a share the way this one does. The arc is how much of the window is left; the bar is how much is used.
@@ -1019,8 +1022,9 @@ function slotHtml(p, c, a, serves) {
   }
   // a key that is missing leaves its commands without one: each is a chip here, with no live dot, so the card says which
   if (p.kind === "key" && !a.has) return `<span class="state">No key</span>${p.cmds.filter((x) => (a.heads || []).includes(x.head)).map((x) => `<span class="chip">${esc(x.cmd)}</span>`).join("")}`;
-  // a login its provider blocked has an act of its own beside the lock: Try again, for once what the block names is done
-  if (held(a)) return `${err}${pin}${a.blocked && c ? tryAct(p, c, a) : ""}${locked(false, "")}`;
+  // a login its provider blocked has an act of its own beside the lock: Try again, for once what the block names is done.
+  // One already waiting to be asked (asking) has nothing left to press: its line says its next turn asks.
+  if (held(a)) return `${err}${pin}${a.blocked && !a.asking && c ? tryAct(p, c, a) : ""}${locked(false, "")}`;
   if (p.kind === "plan" && c) {
     // armed, Use now waits in the row under the card's head, beside the sessions it would cut (armRow)
     const armed = ui.moving && ui.moving.a === a.id && ui.moving.c === c.cmd;

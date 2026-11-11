@@ -127,6 +127,10 @@ public data class PoolAccount(
     internal fun resetCredentialAvailability() {
         credentialEligibility.reset()
     }
+
+    internal fun askCredentialAgain(at: Long) {
+        credentialEligibility.askAgain(at)
+    }
 }
 
 /** Why one session moved between accounts. Labels are operator-safe; no provider identity is carried. */

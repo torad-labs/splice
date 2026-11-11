@@ -1461,21 +1461,23 @@ origin.
   card kept reading Blocked, after it was signed in again: the hold only ended when the login served a turn, and the
   login was not tried again until the hold's time ran out, up to an hour. On Nov 11 a login blocked while its
   organization's payment had failed was signed in again after the payment was fixed, and nothing changed on its card.
-  Now a sign-in the person finishes for a login lets go of that login's hold and block, so the next turn asks
-  Anthropic with what was just signed in, and Anthropic's answer decides: served, or refused and held again with the
-  reason. A credential file Claude Code rewrites by itself still does not lift a block. A limit the login read stays.
+  Now a sign-in the person finishes for a login ends that login's hold, so the next turn that reaches it asks
+  Anthropic with what was just signed in, and Anthropic's answer decides: served, and the block is gone, or refused
+  and held again with the reason. Until that answer the card goes on reading Blocked, and says its next turn asks
+  again. A credential file Claude Code rewrites by itself still does not end a hold. A limit the login read stays.
   The same holds when the sign-in comes back "Already added", as it does on a command's own Claude Code login signed
-  in again with the account it holds: nothing is filed, the login that holds the account is let go of its block, and
-  the card's reason says so.
+  in again with the account it holds: nothing is filed, the hold on the login that holds the account ends, and the
+  card's reason says so.
 - **A blocked login's card has Try again.** A login Anthropic refuses until its owner acts (new terms to accept, an
   organization that does not allow subscription access) read Blocked on Accounts with one act, Sign in again, in its
   menu, and a sign-in is not what a block waits for. Once its cause was fixed, nothing on the card told splice so: the
   login was asked again only when its hold had run out, up to an hour, and a turn happened to reach it, or after a
   daemon restart. On Nov 11 a login blocked while its organization's payment had failed was signed in again for want
-  of any other act. Now the card has Try again beside its lock. Pressing it has splice let go of that login's hold and
-  block (`POST /api/auth/{head}/ask`), the card reads as a login a turn can take, and the next turn that reaches it
-  asks Anthropic. A login still refused reads Blocked again from that answer, and the turn goes on to the next login
-  as it did before.
+  of any other act. Now the card has Try again beside its lock. Pressing it ends that login's hold
+  (`POST /api/auth/{head}/ask`), and the next turn that reaches it asks Anthropic. The card goes on reading Blocked
+  until Anthropic serves a turn on it, since only that shows the block is lifted, and says "its next turn asks again"
+  with nothing left to press; a login whose hold ran out by itself reads the same. A login still refused is held
+  again from that answer, with Try again back, and the turn goes on to the next login as it did before.
 - **+ Add account on a ChatGPT or Grok command adds a login, and no longer writes over the first one.** A sign-in
   sent to splice with no label is the command's first login signing in again, and it lands over that login's file.
   Since Oct 13 the Accounts page asked for a place of its own only on Muse and Kimi commands, so on a ChatGPT or Grok

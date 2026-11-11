@@ -381,19 +381,34 @@ class AccountPoolTest {
 
     // Marcos, Nov 11, 2026: a login blocked while its organization's payment had failed, signed in again once paid.
     @Test
-    fun `a login the person asks for again is let go of its block and its hold`() {
+    fun `a blocked login asked again is held no longer, and reads blocked until a turn is served on it`() {
         val fixture = Fixture()
         val pool = fixture.pool(fixture.account("primary", primary = true))
         val organization = AccountBlock(OwnerStep.ALLOW_SUBSCRIPTION_ACCESS, "its organization")
         pool.chosen("session").markCredentialUnavailable(organization)
-        assertEquals(organization, pool.view(null).accounts.single().credential.block)
+        assertTrue(pool.view(null).accounts.single().credential.excludedUntilEpochMillis != null)
 
         assertTrue(pool.askAgain("primary"))
 
-        val credential = pool.view(null).accounts.single().credential
-        assertEquals(null, credential.block)
-        assertEquals(null, credential.excludedUntilEpochMillis)
+        val asked = pool.view(null).accounts.single().credential
+        assertEquals(organization, asked.block, "the provider has not served it yet")
+        assertEquals(null, asked.excludedUntilEpochMillis)
+        pool.chosen("session").markTurnSucceeded()
+        assertEquals(null, pool.view(null).accounts.single().credential.block)
         assertFalse(pool.askAgain("no-such-login"))
+    }
+
+    @Test
+    fun `a login held for a refusal with no block is let go whole when the person asks for it again`() {
+        val fixture = Fixture()
+        val pool = fixture.pool(fixture.account("primary", primary = true))
+        pool.chosen("session").markCredentialUnavailable()
+
+        assertTrue(pool.askAgain("primary"))
+
+        val asked = pool.view(null).accounts.single().credential
+        assertEquals(null, asked.block)
+        assertEquals(null, asked.excludedUntilEpochMillis)
     }
 
     @Test

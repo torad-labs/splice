@@ -67,6 +67,12 @@ class OtlpCollectorsTest {
         }
         val collector = builder.build().start()
         try {
+            // A first gRPC call loads the client's and the collector's classes, and on a coverage runner that took
+            // longer than the 750 ms an attempt is given: on Nov 11, 2026 metrics and traces, sent first, failed there
+            // twice while logs, sent last, arrived. One export nobody judges goes first, so the one judged meets a
+            // collector that already answers.
+            exercise("grpc", "http://127.0.0.1:${collector.port}", judged = false)
+            received.clear()
             exercise("grpc", "http://127.0.0.1:${collector.port}")
             assertEquals(3, received.size)
             assertPayloads(received)
@@ -118,7 +124,7 @@ class OtlpCollectorsTest {
         }
     }
 
-    private fun exercise(protocol: String, endpoint: String) {
+    private fun exercise(protocol: String, endpoint: String, judged: Boolean = true) {
         val config = PerfExportConfig(
             endpoint = endpoint,
             protocol = protocol,
@@ -138,6 +144,7 @@ class OtlpCollectorsTest {
             request.update(request.scope, ExportFixtures.links)
             assertTrue(request.finish("ok"))
             val flushed = exports.flush()
+            if (!judged) return@use
             ExportStatusRead(exports).use { status ->
                 assertTrue(flushed, status.value.toString())
                 assertFalse(status.value.toString().contains("header-secret"))

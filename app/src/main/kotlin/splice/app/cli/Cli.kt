@@ -15,13 +15,13 @@ public class Cli {
         // never as a usage error. Until Nov 11, 2026 a bare `splice` started a second daemon on the person's
         // terminal, and `splice --help` printed the one-line usage as an error.
         val start = args.isEmpty() || args.first() in START_WORDS
-        val help = if (start) "$START\n\n$USAGE" else parser.help(args)
+        val help = if (start) "$START\n\n$VERBS_USAGE" else parser.help(args)
         if (help != null) {
             println(help)
             return 0
         }
         val command = parser.parse(args) ?: run {
-            System.err.println(USAGE)
+            System.err.println(VERBS_USAGE)
             return 2
         }
         return guarded { command.run() }
@@ -74,7 +74,7 @@ public class Cli {
 
 /** Every verb: the answer to a command splice cannot read, and the end of the start screen. Broken into lines a
  *  terminal of 80 columns shows whole; as one line of 470 characters it wrapped in the middle of a word. */
-private const val USAGE =
+private const val VERBS_USAGE =
     "usage: splice [setup|add <profile>|add-model|models [provider]|upgrade|status|\n" +
         "  sessions [relaunch]|perf|wire <head> [--last N] [--json]|peer <verb>|\n" +
         "  share [on|off|status]|remote [add|remove]|restart [--now]|console [<action>]|\n" +

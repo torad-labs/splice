@@ -438,25 +438,38 @@
 .sessions .rename .kept { flex: none; font: 400 .85rem/1 var(--font-name); color: var(--text-mute); }
 /* an empty cell still holds its column: nothing on a row may shift the columns the rest of the page shares */
 .sessions .s .top .last {
-  margin: 0; display: block; height: 1.4rem; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin: 0; display: flex; align-items: center; height: 1.4rem; min-width: 0; white-space: nowrap; overflow: hidden;
   font: 400 .95rem/1.4rem var(--font-name); color: var(--text-body); -webkit-line-clamp: none;
 }
+/* THE CELL IS ONE ROW THAT SHARES ITS WIDTH: where it runs, what the lamp cannot say, then what it last ran. When the track
+   is narrower than they ask, the file or command gives way first and ends in its own ellipsis, then the folder in its own,
+   and the state words, the tool's mark and its word stay whole. Each keeps room for a letter and its ellipsis (2ch): in
+   less, a box draws a letter cut in half and no ellipsis. Until Nov 10, 2026 the parts stood as inline boxes and the
+   tool took the whole cell as its room, so beside a folder it ran past the edge by the folder's width and the cell's one
+   ellipsis stood in for the tool whole: a row read "tmp.HZArhHalBq …" where it had run Read on tokens.3.css. */
+.sessions .s.ghosted .top .last { display: block; }
 /* where it runs, where the block's own header does not already say it: in No project, and grouped by command or team */
 .sessions .s .top .last > .place {
-  display: inline-block; vertical-align: top; max-width: 10rem; margin-right: var(--u); overflow: hidden;
+  flex: 0 1 auto; min-width: 2ch; max-width: 10rem; margin-right: var(--u); overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; font: 500 .85rem/1.4rem var(--font-data); color: var(--text-mute);
 }
 .sessions .s .top .last.only > .place { max-width: 100%; margin-right: 0; }
-/* what it last ran: the tool's mark, its word, and the file or command it was on */
-.sessions .last .tdo { display: inline-flex; align-items: center; gap: 0.333rem; max-width: 100%; min-width: 0; vertical-align: top; }
-.sessions .last .tdo .tg { display: inline-flex; flex: none; color: var(--text-mute); }
+/* what it last ran: the tool's mark, its word, and the file or command it was on. The tool is no box of its own, so its
+   three parts are parts of the cell's row: the mark and the word keep their width, and the file or command gives way
+   before the folder does. Its shrink factor is a million times the folder's so the folder's share of a shortfall rounds to
+   nothing: at a thousand times the folder came a tenth of a pixel short and drew an ellipsis of its own. */
+.sessions .last .tdo { display: contents; }
+.sessions .last .tdo .tg { display: inline-flex; flex: none; margin-right: 0.333rem; color: var(--text-mute); }
 .sessions .last .tdo .tg svg { width: 1rem; height: 1rem; }
 .sessions .last .tdo .tname { flex: none; margin: 0; font: 500 .88rem/1.4rem var(--font-data); color: var(--text-body); }
-.sessions .last .tdo .tgt { min-width: 0; overflow: hidden; text-overflow: ellipsis; font: 400 .92rem/1.4rem var(--font-data); color: var(--text); }
+.sessions .last .tdo .tgt {
+  flex: 0 1000000 auto; min-width: 2ch; margin-left: 0.333rem; overflow: hidden; text-overflow: ellipsis;
+  font: 400 .92rem/1.4rem var(--font-data); color: var(--text);
+}
 /* what the lamp cannot say leads the words, in its own colours, and a row with nothing to add spends no room on it */
 .sessions .stw {
   display: inline-flex; flex-wrap: nowrap; align-items: center; vertical-align: top; height: 1.4rem; gap: 0.333rem;
-  margin: 0 var(--u) 0 0; overflow: visible; font: 500 .85rem/1.4rem var(--font-data);
+  margin: 0 var(--u) 0 0; overflow: visible; flex: none; font: 500 .85rem/1.4rem var(--font-data);
 }
 .sessions .stw > * { flex: none; white-space: nowrap; }
 .sessions .stw .word { display: inline-flex; align-items: center; gap: 0.333rem; }

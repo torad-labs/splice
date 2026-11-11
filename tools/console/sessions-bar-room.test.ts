@@ -84,3 +84,46 @@ test("at his width every row keeps at least 16rem of bar, and the axis keeps its
     await page.close();
   }
 }, 120_000);
+
+// A row that says where it runs and what it last ran keeps both in its cell (walk of the installed console, Nov 10, 2026:
+// at 3394 in dark mode a session in No project read "tmp.HZArhHalBq …": the tool it had run was replaced whole by the
+// cell's ellipsis, in a words track cut to 12rem while the row's bar stood 8rem over its floor). The tool's mark and word
+// stand whole after the folder, the file ends inside the cell, the folder is cut only once the file has given way, and a
+// file is cut only when the bar has no 3rem step left to give the words.
+test("a row with a folder and a tool shows both in its cell, and its file is cut only when the bar has no room left to give", async () => {
+  const read = { role: "assistant", tool: "Read", text: "/tmp/tmp.HZArhHalBq/src/icon-glyphs-first.tsx", ts: Date.now() - 5_000 };
+  sessions = [...board(NAMES[0]!, WORDS[0]!),
+    { ...row(8, "tmp-hzarhhalbq-b8", "x", { status: "working", last: read }), project: undefined, cwd: "/tmp/tmp.HZArhHalBq" },
+    { ...row(9, "loose-notes", "x"), project: undefined, cwd: "/home/notes" }];
+  const page = await browser.newPage({ viewport: { width: 3394, height: 1889 } });
+  try {
+    await page.goto(`http://127.0.0.1:${server.port}/sessions.html`);
+    await page.locator(".list:not(.ghosts) .s > .top .last > .place ~ .tdo .tgt").first().waitFor({ state: "attached", timeout: 15_000 });
+    await page.waitForTimeout(300); // the tracks are fitted once the rows are drawn
+    const m = await page.evaluate(() => {
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+      const top = [...document.querySelectorAll<HTMLElement>(".list:not(.ghosts) .s > .top")].find((t) => t.querySelector(".last > .place ~ .tdo .tgt"))!;
+      const cell = top.querySelector(".last")!.getBoundingClientRect();
+      const part = (sel: string) => {
+        const e = top.querySelector<HTMLElement>(sel)!, box = e.getBoundingClientRect();
+        return { text: e.textContent!.trim(), left: box.left, right: box.right, width: box.width, cut: e.scrollWidth > e.clientWidth + 1 };
+      };
+      const tracks = getComputedStyle(top).gridTemplateColumns.split(" ").map((t) => parseFloat(t) / rem);
+      return { right: cell.right, folder: part(".place"), mark: part(".tg"), word: part(".tname"), file: part(".tgt"), words: tracks[1]!, bar: tracks[2]! };
+    });
+    expect([m.folder.text, m.word.text, m.file.text]).toEqual(["tmp.HZArhHalBq", "Read", "icon-glyphs-first.tsx"]);
+    // the mark and the word are whole and inside the cell, after the folder
+    expect(m.mark.left).toBeGreaterThanOrEqual(m.folder.right);
+    expect(m.mark.width).toBeGreaterThan(0);
+    expect(m.word.cut).toBe(false);
+    expect(m.word.right).toBeLessThanOrEqual(m.right + 0.5);
+    // the file ends inside the cell, in its own ellipsis when it is cut, and the folder is whole while any of the file shows
+    expect(m.file.right).toBeLessThanOrEqual(m.right + 0.5);
+    expect(m.folder.cut).toBe(false);
+    // a cut file means the bar had no step to give: the words stand at their 24rem cap, or the bar within 3rem of its floor
+    if (m.file.cut && m.words < 24) expect(m.bar).toBeLessThan(BAR_MIN_REM + 3);
+    expect(m.bar).toBeGreaterThanOrEqual(BAR_MIN_REM - 0.05);
+  } finally {
+    await page.close();
+  }
+}, 30_000);

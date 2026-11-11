@@ -1781,7 +1781,10 @@ function fitTracks() {
     const gap = 4 * 1.333;
     const room = Math.min(...widths) - gap - cmdW - actW - BAR_MIN;
     if (nameW + doingW > room && room > 0) {
-      if (doingW) doingW = Math.min(doingW, Math.max(4, Math.floor((room * 0.4) / 3) * 3));
+      // the words give up what the row is short of and no more, and never fall under 40% of the room for a long name.
+      // Until Nov 10, 2026 they fell to that 40% whatever the name asked: a row 0.6rem short cut them from 21rem to 12
+      // while its bar stood 8rem over BAR_MIN, and a folder beside "Read tokens.3.css" lost the tool to an ellipsis
+      if (doingW) doingW = Math.min(doingW, Math.max(4, Math.floor(Math.max(room * 0.4, room - nameW) / 3) * 3));
       nameW = Math.max(8, Math.min(nameW, Math.floor((room - doingW) * 10) / 10));
     }
   }

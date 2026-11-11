@@ -785,32 +785,33 @@ auth = { kind = "client" }
 # A DEFAULT: whatever the client sends wins. Present so a caller that omits the header still
 # produces a valid Anthropic request.
 extra_headers = { anthropic-version = "2023-06-01" }
-# platform.claude.com/docs/en/models/overview (read 2026-09-25): Fable 5.1, Opus 5.5 and Sonnet 5
-# have a 1M context window, Haiku 4.5 200K, and a forwarded subscription login gets the 1M window on
-# every plan (code.claude.com/docs/en/model-config).
+# platform.claude.com/docs/en/models/overview (read 2026-11-11): Fable 5.2, Opus 5.5, Sonnet 5.5 and
+# Haiku 5.5 each have a 1M context window. These rows say what splice knows about a model; they are not
+# the list Claude Code shows, and a turn on a model with no row here is forwarded and priced all the same.
 [[providers.anthropic.models]]
-id = "claude-fable-5-1"
-label = "Claude Fable 5.1"
+id = "claude-fable-5-2"
+label = "Claude Fable 5.2"
 context_window = 1000000
 [[providers.anthropic.models]]
 id = "claude-opus-5-5"
 label = "Claude Opus 5.5"
 context_window = 1000000
 [[providers.anthropic.models]]
-id = "claude-sonnet-5"
-label = "Claude Sonnet 5"
+id = "claude-sonnet-5-5"
+label = "Claude Sonnet 5.5"
 context_window = 1000000
 [[providers.anthropic.models]]
-id = "claude-haiku-4-5"
-label = "Claude Haiku 4.5"
-context_window = 200000
+id = "claude-haiku-5-5"
+label = "Claude Haiku 5.5"
+context_window = 1000000
 
 [heads.claude-splice]
 provider = "anthropic"
 port = 3104                    # 3103 is fireworks above
 discovery_prefix = "claude-splice--"
-pinned_model = "claude-fable-5-1"
-models = [{ id = "claude-fable-5-1", slot = "fable" }, { id = "claude-opus-5-5", slot = "opus" }, { id = "claude-sonnet-5", slot = "sonnet" }, { id = "claude-haiku-4-5", slot = "haiku" }]
+# No pinned_model and no models list: Claude Code shows its own models and starts on its own default, so a
+# model Anthropic releases tomorrow is there without an edit here. A pinned_model, if you add one, only
+# chooses the model a new session starts on.
 context_window = 1000000
 [heads.claude-splice.claude]
 # The SEPARATE lane: a command of its own, beside the `claude` you already run. Nothing in

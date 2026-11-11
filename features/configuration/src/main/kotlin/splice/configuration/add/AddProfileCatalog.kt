@@ -409,81 +409,29 @@ internal class AddProfileCatalog {
             labels = AddLabels(
                 summary = "Anthropic with your own Claude login, forwarded untouched",
             ),
-            // V4-224: platform.claude.com/docs/en/models/overview (read 2026-09-25): Fable 5.1, Opus 5.5 and
-            // Sonnet 5 have a 1M context window, Haiku 4.5 200K. A forwarded subscription login reaches 1M too:
-            // "On the Anthropic API, Fable 5.1, Fable 5, Sonnet 5, and Opus 4.7 and later run with the 1M
-            // window on every plan, including Pro" (code.claude.com/docs/en/model-config).
+            // THE HEAD NAMES NO MODEL (Marcos, Nov 9, 2026, of his own Claude head: "for default anthropic claude
+            // it should juyst show the default models iot shouldn't list anything otherwise when new models like
+            // this comes up wi'll miss them"). Until Nov 11, 2026 this profile pinned claude-fable-5-1 and listed
+            // Fable 5.1, Opus 5.5, Sonnet 5 and Haiku 4.5 by tier, so a new install started on Fable 5.1 and
+            // never showed Fable 5.2, Sonnet 5.5 or Haiku 5.5, on a machine whose own Claude sessions ran
+            // claude-fable-5-2 for 85 in 100 requests. The policy below writes neither line: Claude Code shows
+            // its own models and starts on its own default.
             //
-            // V4-240 RATES: Opus 5.5's API card, platform.claude.com/docs/en/about-claude/pricing (read
-            // 2026-09-25): input $4, cache hits $0.20, output $20 per 1M tokens, 5-minute cache writes $5
-            // and 1-hour writes $8, and Claude 4.6 and later carry "the full 1M token context window at
-            // standard pricing", so no tier. BOTH write prices are declared (Oct 10, 2026 review): Claude
-            // Code asks for the 1-hour cache on a subscriber's login (the pinned 2.1.285's bundle, as
-            // 2.1.284's, 2.1.283's and 2.1.282's: ttl "1h", reason "subscriber") and this profile forwards
-            // that login, so most writes are hourly — but the wire reports the TTL of each
-            // (cache_creation.ephemeral_1h_input_tokens), so a card with one price had to be wrong in one
-            // direction for every write it did not describe. Each write now bills at its own duration's rate.
+            // THE ROWS only declare the current models' names and windows, for the Models page and
+            // `splice models`: platform.claude.com/docs/en/about-claude/models/overview and the pricing page
+            // (read Nov 11, 2026) give Fable 5.2, Opus 5.5, Sonnet 5.5 and Haiku 5.5 a 1M window. A model that is
+            // not a row is served all the same, since the client picks (ProviderConfig.clientPicksModels).
             //
-            // V4-270 RATES: the other three rows' cards from the same page (read 2026-09-25), per 1M tokens as
-            // input / cache hits / 1-hour writes / output: Fable 5.1 $10 / $0.25 / $20 / $50, Sonnet 5
-            // $2 / $0.20 / $4 / $10 (its launch price, which the page says "is now the standard price"), and
-            // Haiku 4.5 $1 / $0.10 / $2 / $5. Their 5-minute writes are the page's 1.25x input, as Opus 5.5's
-            // $5 is: $12.50, $2.50 and $1.25. Both prices are declared on each. No tier: Fable 5.1
-            // and Sonnet 5 are Claude 4.6 and later, and Haiku 4.5's window is 200K. Claude Code takes its
-            // small-fast turns on Haiku 4.5, so without these a default install counted them unpriced.
+            // RATES: none written, as on DeepSeek's rows. splice ships Anthropic's published card for each model
+            // (published-rates.tsv), a turn on a model no row names is priced from it too (TurnPrice), and a
+            // card written here would win over it and keep a new install on the day's prices for good. The rows
+            // carried their own cards from before that table existed (V4-240, V4-270).
+            policy = AddModelPolicy(clientRoster = true),
             models = listOf(
-                AddModel(
-                    "claude-fable-5-1",
-                    "Claude Fable 5.1",
-                    WINDOW_1M,
-                    listOf("fable"),
-                    rates = ModelRates(
-                        input = 10.0,
-                        cacheRead = 0.25,
-                        output = 50.0,
-                        cacheWrite = 12.5,
-                        cacheWriteHourly = 20.0,
-                    ),
-                ),
-                AddModel(
-                    "claude-opus-5-5",
-                    "Claude Opus 5.5",
-                    WINDOW_1M,
-                    listOf("opus"),
-                    rates = ModelRates(
-                        input = 4.0,
-                        cacheRead = 0.2,
-                        output = 20.0,
-                        cacheWrite = 5.0,
-                        cacheWriteHourly = 8.0,
-                    ),
-                ),
-                AddModel(
-                    "claude-sonnet-5",
-                    "Claude Sonnet 5",
-                    WINDOW_1M,
-                    listOf("sonnet"),
-                    rates = ModelRates(
-                        input = 2.0,
-                        cacheRead = 0.2,
-                        output = 10.0,
-                        cacheWrite = 2.5,
-                        cacheWriteHourly = 4.0,
-                    ),
-                ),
-                AddModel(
-                    "claude-haiku-4-5",
-                    "Claude Haiku 4.5",
-                    WINDOW_200K,
-                    listOf("haiku"),
-                    rates = ModelRates(
-                        input = 1.0,
-                        cacheRead = 0.1,
-                        output = 5.0,
-                        cacheWrite = 1.25,
-                        cacheWriteHourly = 2.0,
-                    ),
-                ),
+                AddModel("claude-fable-5-2", "Claude Fable 5.2", WINDOW_1M),
+                AddModel("claude-opus-5-5", "Claude Opus 5.5", WINDOW_1M),
+                AddModel("claude-sonnet-5-5", "Claude Sonnet 5.5", WINDOW_1M),
+                AddModel("claude-haiku-5-5", "Claude Haiku 5.5", WINDOW_1M),
             ),
         ),
         AddProfile(

@@ -17,6 +17,11 @@
 # Anthropic: platform.claude.com/docs/en/about-claude/pricing. The page prices the 5-minute write at 1.25x input and the
 #   1-hour write at 2x input, with no model deviating from either; Haiku 5.5 bills its higher card for a prompt over
 #   100,000 tokens. Opus 4.1, Opus 4, Sonnet 4 and Haiku 3.5 are retired and have no row.
+#   Read again Nov 11, 2026: Fable 5.2 added at 8 in and 40 out, its cache read at 2.5% of input. The Fable 5.1,
+#   Opus 5.5, Sonnet 5.5, Sonnet 5, Haiku 5.5 and Haiku 4.5 rows matched the page; the older rows were not read
+#   again. claude-haiku-4-5-20251001 is Haiku 4.5's dated id, which Claude Code still sends by that name, at the same
+#   price. Mythos 5.2 and 5.1 are priced as Fable 5.2 and 5.1 and have no row: the models page prints no API id
+#   for them.
 # OpenAI: developers.openai.com/api/docs/pricing (Standard; prompts over 272K input are 2x input and cache, 1.5x output).
 #   The page states the 272K threshold on its gpt-5.5 and gpt-5.4 rows; the gpt-6 and gpt-5.6 rows show short and
 #   long prices with no threshold, so theirs is taken to be the same 272K. Its two write prices are the two CONTEXT
@@ -35,11 +40,13 @@
 host	model	input	cache_read	output	cache_write	cache_write_1h	tier_over	tier_input	tier_cache_read	tier_output	tier_cache_write	tier_cache_write_1h	peak_factor	peak_hours_utc	peak_days
 api.anthropic.com	claude-fable-5	10	1	50	12.5	20									
 api.anthropic.com	claude-fable-5-1	10	0.25	50	12.5	20									
+api.anthropic.com	claude-fable-5-2	8	0.2	40	10	16									
 api.anthropic.com	claude-opus-5	5	0.5	25	6.25	10									
 api.anthropic.com	claude-opus-5-5	4	0.2	20	5	8									
 api.anthropic.com	claude-sonnet-5	2	0.2	10	2.5	4									
 api.anthropic.com	claude-sonnet-5-5	2	0.1	10	2.5	4									
 api.anthropic.com	claude-haiku-4-5	1	0.1	5	1.25	2									
+api.anthropic.com	claude-haiku-4-5-20251001	1	0.1	5	1.25	2									
 api.anthropic.com	claude-opus-4-8	5	0.5	25	6.25	10									
 api.anthropic.com	claude-opus-4-7	5	0.5	25	6.25	10									
 api.anthropic.com	claude-opus-4-6	5	0.5	25	6.25	10									

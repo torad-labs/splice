@@ -23,7 +23,7 @@ internal object AccountHealthChecks {
         read: AccountPoolsRead.Read,
         authRefusals: Map<String, ProviderAnswer> = emptyMap(),
     ): List<DoctorCheck> =
-        read.nativeLogins.filter { it.expired || !it.present }.map { login ->
+        read.nativeLogins.filter { it.expired || !it.present }.filterNot { unsigned(read, it.head) }.map { login ->
             val current = read.pools[login.head]?.let {
                 AccountPoolText().summary(it, read.accountNames[login.head].orEmpty())
             }
@@ -32,6 +32,8 @@ internal object AccountHealthChecks {
             } else {
                 "has no access token"
             }
+            // A place that holds no login may never have had one, so only an expired login is signed in to "again".
+            val step = if (login.expired) "Sign in again" else "Sign in"
             DoctorCheck(
                 "native login ${login.place.command}",
                 CheckStatus.WARN,
@@ -39,13 +41,18 @@ internal object AccountHealthChecks {
                     current?.let { "${login.head} is $it" },
                     "${login.place.command}'s login $standing",
                 ).joinToString(". "),
-                "Sign in again: run ${login.place.command} and use /login.",
+                "$step: run ${login.place.command} and use /login.",
             )
         } + read.lastRefusals.mapNotNull { (head, answer) ->
             refusal(head, answer).takeUnless { authRefusals[head] == answer }
         } + read.accountRefusals.flatMap { (head, accounts) ->
             accounts.map { (label, answer) -> refusal("$head account $label", answer) }
         }
+
+    /** A command nobody has signed in to Claude Code for yet: its own row says so once (AccountPoolText), so its
+     *  login places are not each reported as a login that went missing. */
+    private fun unsigned(read: AccountPoolsRead.Read, head: String): Boolean =
+        read.pools[head]?.let(AccountPoolText()::neverSignedIn) == true
 
     fun refusal(head: String, answer: ProviderAnswer): DoctorCheck = DoctorCheck(
         head,

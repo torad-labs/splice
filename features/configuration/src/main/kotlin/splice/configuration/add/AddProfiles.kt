@@ -73,9 +73,13 @@ public data class AddProfile internal constructor(
      *  the profile's name, which alone ("codex", "muse") does not say what plan it is. */
     public val summary: String get() = labels.summary
 
-    /** The models this profile writes by default, as a picker offers them (setup, spec section 1). */
+    /** True when the client picks among its own models on this profile, so there is none to choose at setup. */
+    public val ownModels: Boolean get() = policy.clientRoster
+
+    /** The models this profile writes by default, as a picker offers them (setup, spec section 1). None where the
+     *  client shows its own. */
     public val modelChoices: List<AddModelChoice>
-        get() = models.map { AddModelChoice(it.id, it.label, it.contextWindow) }
+        get() = if (ownModels) emptyList() else models.map { AddModelChoice(it.id, it.label, it.contextWindow) }
 }
 
 /** One of a profile's own models: its id, its name and the context window it is written with. */
@@ -122,6 +126,9 @@ internal data class AddModelPolicy(
     val listAuthoritative: Boolean = true,
     /** The endpoint supplies the serving roster; declared rows supply only pinned models and tiers. */
     val discoverRoster: Boolean = false,
+    /** The client shows its own models and picks among them, as Claude Code does on its own login: the head names
+     *  no launch default and no roster, so a model the vendor ships tomorrow is there without a line changing. */
+    val clientRoster: Boolean = false,
 )
 
 public class AddProfiles {
@@ -176,7 +183,8 @@ public class AddProfiles {
         }
         val kin = family?.let { listOf("[providers.$key.discovery]", "family = \"$it\"") }.orEmpty()
         val provider = origin + (tables + kin).takeIf { shared == null }.orEmpty()
-        val mappings = models.flatMap { m -> m.slots.map { slot -> m.id to slot } }
+        val own = profile.policy.clientRoster
+        val mappings = if (own) emptyList() else models.flatMap { m -> m.slots.map { slot -> m.id to slot } }
         val pinned = models.first()
         val head = listOfNotNull(
             "".takeIf { shared == null },
@@ -184,7 +192,8 @@ public class AddProfiles {
             "provider = \"${shared ?: key}\"",
             "port = $port",
             "discovery_prefix = \"claude-$key--\"",
-            "pinned_model = \"${pinned.id}\"",
+            "pinned_model = \"${pinned.id}\"".takeUnless { own },
+            OWN_MODELS_NOTE.takeIf { own },
         ) + headExtras(mappings, pinned.contextWindow, profile.policy.discoverRoster) + listOf(
             "[heads.$key.claude]",
             "command = \"${profile.head.command}\"",
@@ -215,3 +224,7 @@ public class AddProfiles {
 }
 
 private const val NAME_PAD = 12
+
+/** Written in a head whose client picks its own models, where a pin and a list would otherwise be expected. */
+private const val OWN_MODELS_NOTE =
+    "# No pinned_model and no models list: Claude Code shows its own models and starts on its own default."

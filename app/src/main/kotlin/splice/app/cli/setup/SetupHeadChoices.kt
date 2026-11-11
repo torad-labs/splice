@@ -30,11 +30,16 @@ internal class SetupHeadChoices(
     fun ask(heads: List<String>): Map<String, HeadChoice> {
         if (!prompts.hasConsole()) return emptyMap<String, HeadChoice>().also { answers = it }
         return heads.associateWith { name ->
-            val offered = profiles.find(name)?.modelChoices.orEmpty()
+            val profile = profiles.find(name)
+            val offered = profile?.modelChoices.orEmpty()
             val picked = if (offered.isEmpty()) emptyList() else models(name, offered)
             val live = prompts.frame.confirm("Run one short live turn against '$name' once it is up?", false)
             val args = picked.flatMap { listOf("--model", "${it.id}:${it.contextWindow}") }
-            val said = if (picked.isEmpty()) "its default models" else picked.joinToString(", ") { it.id }
+            val said = when {
+                picked.isNotEmpty() -> picked.joinToString(", ") { it.id }
+                profile?.ownModels == true -> "Claude Code's own models"
+                else -> "its default models"
+            }
             HeadChoice(args, live, "$name: $said${if (live) ", then a live turn" else ""}")
         }.also { answers = it }
     }
@@ -65,7 +70,10 @@ internal class SetupHeadChoices(
     fun checkLive(landed: List<String>, topology: Topology, env: EnvReader) {
         landed.filter { answers[it]?.live == true }.forEach { key ->
             val head = topology.heads[key] ?: return@forEach
-            val model = head.models.orEmpty().firstOrNull()?.id ?: return@forEach
+            // A head that lists no model of its own (the client picks) is checked on its provider's first row.
+            val model = head.models.orEmpty().firstOrNull()?.id
+                ?: topology.providers[head.provider]?.models?.firstOrNull()?.id
+                ?: return@forEach
             val result = Cancellables.runCatchingBestEffort { liveTurn(head.claude.command ?: key, model, env) }
             val said = result.fold({ it.detail }, { "the check could not run" })
             val ok = result.getOrNull()?.ok == true

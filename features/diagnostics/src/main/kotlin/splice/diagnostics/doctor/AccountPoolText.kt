@@ -18,9 +18,15 @@ import kotlin.time.Duration.Companion.seconds
 public class AccountPoolText(private val now: WallClock = WallClock { System.currentTimeMillis() }) {
 
     /** `on Work (1 of 2 open) · pinned to Work · 5h 12% · 7d 40%; switched from Max to Work 3m ago: 7d window exhausted`.
-     *  [names] are the logins' Accounts names by pool label; a label with none is printed as it is. */
+     *  [names] are the logins' Accounts names by pool label; a label with none is printed as it is. A command nobody
+     *  has signed in to Claude Code for reads `not signed in to Claude Code yet`, in status and doctor alike. */
     public fun summary(view: HeadAccountPoolView, names: Map<String, String> = emptyMap()): String {
         val safe = safeView(view)
+        return if (neverSignedIn(safe)) NOT_SIGNED_IN else standing(safe, names)
+    }
+
+    /** The login a command is on, how many are open, and what else its pool has to say. */
+    private fun standing(safe: HeadAccountPoolView, names: Map<String, String>): String {
         val selected = if (safe.selectionUnknown) null else safe.selectedAccount()
         val open = safe.accounts.count { it.available && it.credential.present }
         val choice = selected?.label?.let { shown(it, names) } ?: "no account"
@@ -47,7 +53,15 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
             return DoctorCheck(headKey, CheckStatus.WARN, detail, "splice login $headKey", fixKind = FixKind.COMMAND)
         }
         val exhausted = safe.accounts.isNotEmpty() && safe.accounts.none { it.available && it.credential.present }
-        if (!exhausted) return DoctorCheck(headKey, openStatus(safe), detail)
+        return when {
+            !exhausted -> DoctorCheck(headKey, openStatus(safe), detail)
+            neverSignedIn(safe) -> DoctorCheck(headKey, CheckStatus.WARN, detail, "Run $headKey and use /login.")
+            else -> out(headKey, safe, detail)
+        }
+    }
+
+    /** Every login the command has is held or spent: when the first comes back, and what to do meanwhile. */
+    private fun out(headKey: String, safe: HeadAccountPoolView, detail: String): DoctorCheck {
         val atMillis = now()
         val reset = safe.accounts.mapNotNull { safe.blockedUntilEpochSecondsByLabel[it.label] }
             .filter { it.seconds > atMillis.milliseconds }.minOrNull()
@@ -59,13 +73,19 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
             headKey,
             CheckStatus.WARN,
             "every account is out ($at): $detail",
-            if (safe.accounts.all { it.label.startsWith("native:") }) {
+            if (safe.accounts.all { it.label.startsWith(NATIVE_LABEL) }) {
                 "Wait for the earliest reset above, or run another of the native login places and use /login."
             } else {
                 "splice login $headKey --label <name>"
             },
         )
     }
+
+    /** A command that runs on Claude Code's own logins with none on this machine: nobody has signed in yet, which is
+     *  one thing to do and no limit to wait out. Until Nov 11, 2026 a new install read "every account is out (no reset
+     *  time reported)" with "Wait for the earliest reset above", beside one "Sign in again" warning per login place. */
+    public fun neverSignedIn(view: HeadAccountPoolView): Boolean = view.accounts.isNotEmpty() &&
+        view.accounts.all { it.label.startsWith(NATIVE_LABEL) && !it.credential.present }
 
     /** Rendering also accepts directly constructed views, so decoding is not the only label gate. */
     private fun safeView(view: HeadAccountPoolView): HeadAccountPoolView {
@@ -114,3 +134,8 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
 
     private fun ago(atMillis: Long): String = DoctorAge.ago(now() - atMillis)
 }
+
+// why: a login Claude Code itself holds is labelled by its place, `native:<place>`; an added login is `account-N`.
+private const val NATIVE_LABEL = "native:"
+
+private const val NOT_SIGNED_IN = "not signed in to Claude Code yet"

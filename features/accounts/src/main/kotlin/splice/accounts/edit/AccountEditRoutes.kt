@@ -10,8 +10,11 @@ import splice.accounts.AccountReplies
 import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlaces
 import splice.accounts.claude.ClaudeLoginPlacesSource
+import splice.accounts.pool.PRIMARY_ID
 import splice.accounts.signin.AccountMutation
 import splice.accounts.signin.ConsoleAccountsSource
+import splice.core.auth.CLIENT_AUTH_KIND
+import splice.core.util.Cancellables
 import splice.http.JsonBody
 
 public class AccountEditRoutes(
@@ -81,11 +84,27 @@ public class AccountEditRoutes(
         val result = when (target) {
             is Target.Pool -> {
                 val port = accounts() ?: return AccountReplies.respondUnwired(call, AccountReplies.ACCOUNTS_PORT)
-                port.removeAccount(head.key, target.id)
+                port.removeAccount(head.key, target.id).also { rediscover(head, target, it) }
             }
             is Target.Native -> target.owner.remove(target.place)
         }
         respondMutation(call, result)
+    }
+
+    /** A ChatGPT, Grok, Kimi or Muse head builds its pool once, when it starts, so it went on holding a login whose
+     *  file was just removed or renamed: the roster listed it as signed out, with a Sign in that would file it again
+     *  under the label just removed, until the daemon next restarted (Marcos, Nov 11, 2026: "I had issues before like
+     *  this adding new accounts, removing"). The head starts again and finds its pool as it is on disk, the way it
+     *  does when a sign-in lands ([splice.accounts.signin.HeadRestart]). A Claude head follows its folders by
+     *  itself, and a head's first login is read where it is, so neither needs it. A head that does not come back
+     *  is its own start's to report: the file is gone either way. */
+    private suspend fun rediscover(head: AccountHead, target: Target.Pool, answered: AccountMutation) {
+        val built = target.id != PRIMARY_ID && head.auth.describe().kind != CLIENT_AUTH_KIND
+        if (answered != AccountMutation.Ok || !built) return
+        Cancellables.discard(
+            Cancellables.runCatchingBestEffort { head.restart.restart() },
+            "the login is removed or renamed on disk whether or not the head comes back",
+        )
     }
 
     /** PATCH /api/auth/{head}/accounts/{label} (FEATURES.md §6): relabels a pooled account. Body:
@@ -107,7 +126,7 @@ public class AccountEditRoutes(
         val result = when (target) {
             is Target.Pool -> {
                 val port = accounts() ?: return AccountReplies.respondUnwired(call, AccountReplies.ACCOUNTS_PORT)
-                port.relabelAccount(head.key, target.id, newLabel)
+                port.relabelAccount(head.key, target.id, newLabel).also { rediscover(head, target, it) }
             }
             is Target.Native -> target.owner.relabel(target.place, newLabel)
         }

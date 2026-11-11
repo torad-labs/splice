@@ -2452,8 +2452,12 @@ document.addEventListener("click", async (e) => {
       const res = p.kind === "key" ? await API.del(`/api/keys/${encodeURIComponent(a.env)}`) : await API.del(editPath(a));
       ui.removing = null;
       if (!res.ok) {
-        ui.removeErr = { spot: t.dataset.s, ...mutationError(res, p.kind === "key" ? "Key not removed" : "Not removed") };
-        ui.armed = null; refused(`remove:${t.dataset.s}`); render(); break;
+        const said = () => { ui.removeErr = { spot: t.dataset.s, ...mutationError(res, p.kind === "key" ? "Key not removed" : "Not removed") }; refused(`remove:${t.dataset.s}`); };
+        ui.armed = null;
+        // a refusal from splice is read against what splice holds now: a login another tab already removed leaves with
+        // its card, where it used to stay with "Not removed" on it for as long as the menu was open
+        if (res.status) await refresh(null, said); else { said(); render(); }
+        break;
       }
       ui.menu = null; ui.armed = null;
       // a sign-in this login had open ended with it on splice (ConsoleAccounts.removeAccount); its row goes with the

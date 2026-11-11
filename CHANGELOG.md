@@ -1486,6 +1486,12 @@ origin.
   first login is there, and the new login joins beside it. A command whose first login is signed out has no pool to
   join yet, so its add still signs that first login in. Adding the account a ChatGPT command's first login already
   holds makes a second card for it, which Remove takes away.
+- **Removing an added login from a ChatGPT, Grok, Kimi or Muse command takes it out of the running command.** Those
+  commands build their list of logins once, when they start, so a login removed on Accounts stayed in the running
+  command, listed with no sign-in behind it and a Sign in that would file it again under the label just removed,
+  until splice next restarted. The command now starts again after such a removal, as it does when a sign-in lands,
+  and finds its logins as they are on disk. A Remove splice refuses is read against what splice holds now, so a
+  login another tab already removed leaves with its card instead of keeping "Not removed" on it.
 - **A measured period counts each recorded minute once, and reads all of them.** The Performance panel's "Measure any
   period" and `splice perf` gave a different rate for the same day minutes apart: 1.47 completions a minute, then 50.9
   an hour, then 3.59 a minute, beside a request log of 24,203 requests for that day. Three faults in how a measurement

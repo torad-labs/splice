@@ -72,6 +72,13 @@ internal class LoginSessions(
             return before.open
         }
 
+        /** Waits until a sign-in that ended without signing in has let go of what it held: its callback port and
+         *  its label. That is its job's end, whoever ended it and however long ago. One that signed in is not
+         *  waited for: it holds neither any more, and keeps what it is finishing (the head's restart). */
+        suspend fun released() {
+            if (cell.get().failure != null) job?.join()
+        }
+
         /** A line for the daemon's log, written when a sign-in starts and when it ends. It names the sign-in's
          *  command and label and never its code, its page's address or a credential. */
         fun line(what: String): String = "[accounts] sign-in ${cell.get().shortId} on $place: ${LogSafe.str(what)}\n"
@@ -97,10 +104,14 @@ internal class LoginSessions(
         val attempt = LoginAttempt(headKey, provider, topology, label)
         val job = synchronized(lock) {
             val replaced = "a newer sign-in on $place took its place"
-            val earlier = sessions.values.filter { it.place == place && it.end(replaced) }
+            // Every earlier sign-in of this place is waited for, not only the ones ended here. Of three started
+            // quickly, the second ends the first and waits for it; the third ends the second, whose wait ends with
+            // it, and the first, already ended, was no longer counted: the third started while the first still held
+            // the callback port or the label, and failed on the very conflict a replacement is there to prevent.
+            val earlier = sessions.values.filter { it.place == place }.onEach { it.end(replaced) }
             sessions[id] = session
             scope.launch(start = CoroutineStart.LAZY) {
-                earlier.forEach { it.job?.join() }
+                earlier.forEach { it.released() }
                 runAndLand(attempt, observer, restart, session.cell)
             }.also { session.job = it }
         }
@@ -117,7 +128,9 @@ internal class LoginSessions(
      *  finished, and null for an id this daemon never started. */
     internal suspend fun cancel(id: String): LoginStatus? {
         val session = synchronized(lock) { sessions[id] } ?: return null
-        if (session.end("the sign-in was cancelled")) session.job?.join()
+        session.end("the sign-in was cancelled")
+        // one a newer sign-in or another Cancel ended a moment ago may still be stopping: this answers after it has
+        session.released()
         return session.cell.get()
     }
 
@@ -127,8 +140,8 @@ internal class LoginSessions(
     internal suspend fun withdraw(headKey: String, label: String?) {
         val place = place(headKey, label)
         val removed = "the login it was for was removed from $headKey"
-        val stopped = synchronized(lock) { sessions.values.filter { it.place == place && it.end(removed) } }
-        stopped.forEach { it.job?.join() }
+        val stopped = synchronized(lock) { sessions.values.filter { it.place == place }.onEach { it.end(removed) } }
+        stopped.forEach { it.released() }
     }
 
     /** What a sign-in is for, as the log names it: the command, and the label when one was asked for. */

@@ -6,12 +6,17 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.head.usage.BucketCost
 import splice.head.usage.EconomicsBucket
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 
 class EconomicsEvidenceCacheTest {
+    // An hour as the older loop recorded it, with no failed-requests count: the only kind whose count may hold a probe a
+    // torn line was, so the only kind such a line leaves not read.
+    private val olderLoopHour = EconomicsBucket(0L, cost = BucketCost(failedTurns = null))
+
     @Test
     fun `cold retained and evicted economics evidence agree at the cutoff after work selections`(@TempDir dir: Path) {
         val file = dir.resolve("synthetic-perf.jsonl")
@@ -47,7 +52,7 @@ class EconomicsEvidenceCacheTest {
         source.window(0)
         for (cutoff in listOf(1L, 2L)) {
             assertEquals(1, source.economicsEvidence(cutoff).work.skipped)
-            val failure = ProbeEconomics(source).withoutProbes(listOf(EconomicsBucket(0L)))
+            val failure = ProbeEconomics(source).withoutProbes(listOf(olderLoopHour))
             assertEquals(ProbeGap.UNREADABLE, (failure as ProbeDeduction.Unavailable).gap)
         }
     }
@@ -58,7 +63,7 @@ class EconomicsEvidenceCacheTest {
         write(file)
         val source = PerfRowsFileSource(file, cache = PerfRowsCache(32_768))
         val economics = ProbeEconomics(source)
-        val buckets = listOf(EconomicsBucket(0L))
+        val buckets = listOf(olderLoopHour)
         assertEquals(ProbeGap.UNREADABLE, (economics.withoutProbes(buckets) as ProbeDeduction.Unavailable).gap)
         assertEquals(ProbeGap.UNREADABLE, (economics.withoutProbes(buckets) as ProbeDeduction.Unavailable).gap)
         val appended = """{"ts":103,"outcome":"ok","model":"synthetic","in_tokens":7}""" + "\n"
@@ -76,7 +81,7 @@ class EconomicsEvidenceCacheTest {
         write(file)
         val source = PerfRowsFileSource(file, cache = PerfRowsCache(32_768))
         val economics = ProbeEconomics(source)
-        val buckets = listOf(EconomicsBucket(0L))
+        val buckets = listOf(olderLoopHour)
         assertEquals(ProbeGap.UNREADABLE, (economics.withoutProbes(buckets) as ProbeDeduction.Unavailable).gap)
         val mended = Files.readAllLines(file).filterNot { it.startsWith("{\"ts\":2,") }
         Files.writeString(file, mended.joinToString("\n", postfix = "\n"))

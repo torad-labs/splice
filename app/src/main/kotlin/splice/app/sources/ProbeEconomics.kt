@@ -40,7 +40,12 @@ internal sealed class ProbeDeduction {
  *  line that could be a probe makes unavailable only the hours its row can lie in ([PerfTear.mayHold]). One with no
  *  time made every hour unavailable until Oct 23, 2026, and claudex's whole history with it once the backfill reached
  *  back past such a line in its Oct 1 archive. New probes cannot dispatch, so a settled hour stays judged while the log is
- *  only appended to and the rollup for that hour is as it was. */
+ *  only appended to and the rollup for that hour is as it was.
+ *
+ *  A torn line costs an hour only where the rollup may have counted the probe that line was ([mayCountLostProbe]).
+ *  Until Nov 10, 2026 it cost every hour it could lie in: a machine stop at 8:28 PM CT left a run of NUL bytes in
+ *  claude-splice's and claudex's logs, and Accounts read "Not read" for the day on both, over 22,000 requests the
+ *  rollup had counted, with three hours of each left not read for good. */
 internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
     /** The answers kept across restarts, so a start does not judge every hour again (ProbeJudgments says why). */
     private val kept = ProbeJudgments(perf.files)
@@ -115,7 +120,7 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
             val probes = log.probes[bucket.hour].takeIf { gap == null }
             now[bucket.hour] = ProbeJudged(signatures.getValue(bucket.hour), probes, gap)
             // an hour the log still grows into is judged again at the next look; one settled stays judged
-            if (log.settled(bucket.hour)) {
+            if (log.settled(bucket)) {
                 judged[bucket.hour] = now.getValue(bucket.hour)
             } else {
                 judged.remove(bucket.hour)
@@ -140,9 +145,13 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
          *  at once; any other hour waits for the log to move on, and so does one a line with nothing after it may hold,
          *  since the next row bounds that line ([PerfTear.open]). That row can carry a time hours before the line, when
          *  its round was held past the late-row margin, which is not a bound, so it can free an hour the rollup already
-         *  holds (round 14 of #247). */
-        fun settled(hour: Long): Boolean =
-            hour in torn && hour !in open || hour in probes || newest != null && hour + SETTLED_AFTER_MS <= newest
+         *  holds (round 14 of #247). A torn line holds only an hour whose rollup may have counted its probe; any other
+         *  hour settles as one with no torn line does. */
+        fun settled(bucket: EconomicsBucket): Boolean {
+            val hour = bucket.hour
+            val held = mayCountLostProbe(bucket) && hour in torn
+            return held && hour !in open || hour in probes || newest != null && hour + SETTLED_AFTER_MS <= newest
+        }
 
         // Probes were dispatched only until they were retired, and none is written now. An hour more than one past the newest probe row or
         // the newest hour a probe-like torn line can lie in, and after the one the log begins in, has no probe to take off: the log's only
@@ -153,17 +162,32 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
         // partial, an older one is not in the log at all, and an hour at or before a probe may hide one, so none is vouched for.
         // A torn line with no time and no row after it in `.1` or the live file has no newest hour, so no hour graded here
         // is vouched for.
+        // An hour whose rollup cannot have counted a lost probe is placed against the whole probe rows alone: a torn
+        // line is no probe of its count, so it neither makes the hour unreadable nor moves the newest probe for it.
+        private val newestWholeProbe = probes.keys.maxOrNull()
         private val newestProbe =
             (probes.keys + probeLike.mapNotNull { it.latestHour(perf.files) ?: hours.maxOrNull() }).maxOrNull()
         private val beginsIn = read.work.oldestHeldTs?.let { it / PROBE_BUCKET_MS * PROBE_BUCKET_MS }
 
         fun gap(bucket: EconomicsBucket): ProbeGap? {
-            if (bucket.hour in torn) return ProbeGap.UNREADABLE
+            val lost = mayCountLostProbe(bucket)
+            if (lost && bucket.hour in torn) return ProbeGap.UNREADABLE
             val afterLogBegins = beginsIn != null && bucket.hour > beginsIn
-            val noProbeToTake = afterLogBegins && (newestProbe == null || bucket.hour > newestProbe + PROBE_BUCKET_MS)
+            val lastProbe = if (lost) newestProbe else newestWholeProbe
+            val noProbeToTake = afterLogBegins && (lastProbe == null || bucket.hour > lastProbe + PROBE_BUCKET_MS)
             return grade(bucket, all[bucket.hour], probes[bucket.hour], noProbeToTake)
         }
     }
+
+    /** Whether a line the log lost could be a probe [bucket] counted. Only the older loop counted a probe as it ran
+     *  (v0.3.0 to v0.3.2; 959f83ed4 of Oct 1, 2026 keeps the probe out of command work), and an hour it recorded has no
+     *  failed-requests count: [splice.head.usage.BucketCost.failedTurns] came on Oct 12 (8e91e7cc3), is null for an
+     *  hour first recorded before it, and stays null when a later build adds requests to that hour. An hour that has
+     *  the count was recorded by a build that refuses the probe, or rebuilt by the backfill from the rows it could
+     *  read, so the only probes in its count are the whole probe rows the log shows, and those are taken off as before.
+     *  This reads what the hour holds and needs no clock: an hour of the days between the two commits, or one an
+     *  upgrade began part-way through, has no count and is judged as an hour of the older loop. */
+    private fun mayCountLostProbe(bucket: EconomicsBucket): Boolean = bucket.cost.failedTurns == null
 
     /** Why this hour cannot be shown with its probes off, or null when its rollup and its rows agree. Perf is recorded
      *  before economics, so a live hour may be ahead of the rollup; an hour holding probes must match to the row. */

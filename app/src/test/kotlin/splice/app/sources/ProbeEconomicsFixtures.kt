@@ -1,6 +1,11 @@
 // Fixtures shared by the economics reconciliation tests.
 package splice.app.sources
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -23,6 +28,7 @@ import splice.usage.economics.EconomicsRow
 import splice.usage.economics.HeadEconomicsSource
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
+import java.nio.file.Files
 import java.nio.file.Path
 
 internal const val PROBE_HOUR = 3_600_000L
@@ -72,6 +78,22 @@ internal fun store(
     log = { },
     plans = plans,
 )
+
+/** The hours [recorded] holds in [dir], as the older loop recorded them: the same file with the failed-requests count
+ *  taken out of every hour, which is how an hour first recorded before Oct 12, 2026 is held, read back by a store on
+ *  [clock]. Only such an hour can have counted a probe whose line the log lost. */
+internal fun asTheOlderLoopRecorded(
+    recorded: EconomicsStore,
+    dir: Path,
+    clock: WallClock = WallClock { PROBE_HOUR + 123 },
+): EconomicsStore {
+    recorded.flushNow()
+    val file = dir.resolve("economics.json")
+    val hours = Json.parseToJsonElement(Files.readString(file)).jsonArray
+        .map { JsonObject(it.jsonObject - "failed_turns") }
+    Files.writeString(file, JsonArray(hours).toString())
+    return store(dir, clock)
+}
 
 internal fun turn(
     model: String,

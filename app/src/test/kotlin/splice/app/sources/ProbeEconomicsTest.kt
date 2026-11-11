@@ -70,19 +70,22 @@ class ProbeEconomicsTest {
     }
 
     // Every legacy probe row has an empty model, so a torn line that shows a model is a work row and must not hide the hours
-    // counted before it; one cut before its model shows, or with an empty model, could be a probe and refuses.
+    // counted before it; one cut before its model shows, or with an empty model, could be a probe and refuses in an hour
+    // the older loop recorded, the only loop that counted a probe as it ran.
     @Test
     fun `a torn row that shows a model leaves the day figure, and one that could be a probe refuses it`(
         @TempDir dir: Path,
     ) {
         val rows = listOf(SYNTHETIC_PROBE_ROW, MODELED_WORK_ROW, LOCAL_WORK_ROW)
-        fun read(torn: String): EconomicsStoreSource {
+        fun read(torn: String, olderLoop: Boolean = false): EconomicsStoreSource {
             val file = dir.resolve("head-${torn.length}-perf.jsonl")
             Files.writeString(file, (rows + torn).joinToString("\n") + "\n")
-            val store = store(dir.resolve("store-${torn.length}"))
+            val home = dir.resolve("store-${torn.length}")
+            val store = store(home)
             store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
             recordWork(store)
-            return EconomicsStoreSource(store, PerfRowsFileSource(file))
+            val held = if (olderLoop) asTheOlderLoopRecorded(store, home) else store
+            return EconomicsStoreSource(held, PerfRowsFileSource(file))
         }
         val control = store(dir.resolve("control"))
         recordWork(control)
@@ -93,13 +96,13 @@ class ProbeEconomicsTest {
         }
         // the tear a 0.3.x daemon leaves when it is stopped for the upgrade: right after its own last probe, after Oct 1
         val lastWrite = """{"ts":3630123,"model":"","outcome":"error:upstream-failed","req_bytes":30"""
-        assertEquals(ProbeGap.UNREADABLE.sentence, read(lastWrite).gap())
+        assertEquals(ProbeGap.UNREADABLE.sentence, read(lastWrite, olderLoop = true).gap())
         val beforeModel = """{"ts":3630123,"mod"""
-        assertEquals(ProbeGap.UNREADABLE.sentence, read(beforeModel).gap())
+        assertEquals(ProbeGap.UNREADABLE.sentence, read(beforeModel, olderLoop = true).gap())
         val onlyTs = """{"ts":3630123,"""
-        assertEquals(ProbeGap.UNREADABLE.sentence, read(onlyTs).gap())
+        assertEquals(ProbeGap.UNREADABLE.sentence, read(onlyTs, olderLoop = true).gap())
         val unstamped = """{"model":"synthetic","outcome":"ok","cache_write_tokens"""
-        assertEquals(ProbeGap.UNREADABLE.sentence, read(unstamped).gap())
+        assertEquals(ProbeGap.UNREADABLE.sentence, read(unstamped, olderLoop = true).gap())
     }
 
     // The rollup meters a turn's absorbed rounds beside its final round, so the perf evidence must sum
@@ -161,10 +164,10 @@ class ProbeEconomicsTest {
     @Test
     fun `a torn probe cannot freeze an empty correction and its repaired evidence is retried`(@TempDir dir: Path) {
         val file = dir.resolve("head-perf.jsonl")
-        val store = store(dir)
-        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
+        val counted = store(dir)
+        counted.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
         Files.writeString(file, SYNTHETIC_PROBE_ROW.dropLast(1) + "\n")
-        val source = EconomicsStoreSource(store, PerfRowsFileSource(file))
+        val source = EconomicsStoreSource(asTheOlderLoopRecorded(counted, dir), PerfRowsFileSource(file))
         assertEquals(ProbeGap.UNREADABLE.sentence, source.gap())
         Files.writeString(file, SYNTHETIC_PROBE_ROW + "\n")
         assertEquals(emptyList<Any>(), source.rows())

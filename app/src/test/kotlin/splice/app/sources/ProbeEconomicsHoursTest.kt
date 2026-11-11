@@ -112,6 +112,7 @@ class ProbeEconomicsHoursTest {
         assertEquals(listOf(20 * PROBE_HOUR), read.notRead, "the log may have begun part-way through that hour")
     }
 
+    // Only the older loop counted a probe as it ran, so a torn line can hide one only in an hour that loop recorded.
     @Test
     fun `a torn line that could be a probe refuses only the hour it was written in`(@TempDir dir: Path) {
         val file = dir.resolve("head-perf.jsonl")
@@ -122,10 +123,11 @@ class ProbeEconomicsHoursTest {
                 atHour(21 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW) + torn + "\n",
         )
         var now = 20 * PROBE_HOUR + 123
-        val store = store(dir, WallClock { now })
-        recordWork(store)
+        val counted = store(dir, WallClock { now })
+        recordWork(counted)
         now = 21 * PROBE_HOUR + 123
-        recordWork(store)
+        recordWork(counted)
+        val store = asTheOlderLoopRecorded(counted, dir, WallClock { now })
         val read = shown(store, file)
         assertEquals(listOf(20 * PROBE_HOUR), read.rows.map { it.hour })
         assertEquals(listOf(21 * PROBE_HOUR), read.notRead)
@@ -138,6 +140,7 @@ class ProbeEconomicsHoursTest {
 
     // A power loss leaves NUL bytes in the live file, and the next start appends after them. The row that line held was
     // written before the first row after it, so every hour after that row's is read, not every hour since the crash.
+    // The hours are the older loop's, which may have counted the probe that line was.
     @Test
     fun `a torn line with no time in the live file costs only the hours up to the row written after it`(
         @TempDir dir: Path,
@@ -150,19 +153,51 @@ class ProbeEconomicsHoursTest {
                 atHour(24 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW),
         )
         var now = 20 * PROBE_HOUR + 123
-        val store = store(dir, WallClock { now })
-        recordWork(store)
+        val counted = store(dir, WallClock { now })
+        recordWork(counted)
         now = 21 * PROBE_HOUR + 123
-        recordWork(store)
+        recordWork(counted)
         now = 24 * PROBE_HOUR + 123
-        recordWork(store)
-        val read = shown(store, file)
+        recordWork(counted)
+        val read = shown(asTheOlderLoopRecorded(counted, dir, WallClock { now }), file)
         assertEquals(listOf(24 * PROBE_HOUR), read.rows.map { it.hour }, "the hour after them is read")
         assertEquals(
             listOf(20 * PROBE_HOUR, 21 * PROBE_HOUR),
             read.notRead,
             "the hours from the row before the line to the row after it are not read",
         )
+    }
+
+    // Live, Nov 10: the machine stopped at 8:28 PM CT and left a run of NUL bytes in claude-splice's and claudex's
+    // logs, where a request the rollup had counted would have been. Accounts read "Not read" for the day on both. Those
+    // hours were counted by a build that refuses the probe, so no line the log lost is a probe in their count: they
+    // show the rollup's figure, and the route names no hour.
+    @Test
+    fun `a machine stop costs no hour counted by a build that refuses the probe`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            file,
+            atHour(20 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW) +
+                atHour(21 * PROBE_HOUR + 123, MODELED_WORK_ROW) + "\u0000".repeat(800) + "\n" +
+                atHour(21 * PROBE_HOUR + 900, MODELED_WORK_ROW, LOCAL_WORK_ROW) +
+                atHour(22 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW),
+        )
+        var now = 20 * PROBE_HOUR + 123
+        val store = store(dir, WallClock { now })
+        recordWork(store)
+        now = 21 * PROBE_HOUR + 123
+        recordWork(store)
+        recordWork(store)
+        now = 22 * PROBE_HOUR + 123
+        recordWork(store)
+        val read = shown(store, file)
+        assertEquals(listOf(20 * PROBE_HOUR, 21 * PROBE_HOUR, 22 * PROBE_HOUR), read.rows.map { it.hour })
+        assertEquals(emptyList<Long>(), read.notRead, "the hours around the stop are read")
+        assertEquals(2L, read.rows[1].localSteps, "the hour of the stop shows the rollup's count, lost request and all")
+        val heads = UsageHeads { listOf(head("a", EconomicsStoreSource(store, PerfRowsFileSource(file)))) }
+        val payload = Json.parseToJsonElement(EconomicsPayloads(heads).economicsJson())
+        val named = payload.jsonObject.getValue("heads").jsonArray.single().jsonObject.getValue("not_read_hours")
+        assertEquals(JsonArray(emptyList()), named, "the route names no hour, so the day has its figure")
     }
 
     // Each look reads from the oldest hour it has not judged, so a torn line long before it lies before the read, and so
@@ -199,6 +234,7 @@ class ProbeEconomicsHoursTest {
 
     // A row held for a streaming round lands with its turn's time, which can be hours before the line it follows when
     // the round was held past the late-row margin, so the hours a line with nothing after it may hold wait for that row.
+    // The hours are the older loop's, the only ones such a line can hold.
     @Test
     fun `an hour a torn line may hold is read once a late row after the line rules it out`(@TempDir dir: Path) {
         val file = dir.resolve("head-perf.jsonl")
@@ -208,10 +244,11 @@ class ProbeEconomicsHoursTest {
                 atHour(22 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW) + "\u0000".repeat(944) + "\n",
         )
         var now = 20 * PROBE_HOUR + 123
-        val store = store(dir, WallClock { now })
-        recordWork(store)
+        val counted = store(dir, WallClock { now })
+        recordWork(counted)
         now = 22 * PROBE_HOUR + 123
-        recordWork(store)
+        recordWork(counted)
+        val store = asTheOlderLoopRecorded(counted, dir, WallClock { now })
         val source = EconomicsStoreSource(store, PerfRowsFileSource(file))
         val first = assertInstanceOf(EconomicsRead.Rows::class.java, source.read())
         assertEquals(listOf(22 * PROBE_HOUR), first.notRead, "the line may hold the hour of the rows before it")

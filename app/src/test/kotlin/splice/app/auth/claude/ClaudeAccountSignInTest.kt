@@ -202,6 +202,21 @@ class ClaudeAccountSignInTest {
         assertEquals(listOf("uuid-work", "uuid-home"), accounts.map { it.identity?.uuid })
     }
 
+    // The browser's own session decides which account a sign-in is for, so Sign in again on one login's card can
+    // come back as another account. It read "Config error", with no Try again.
+    @Test
+    fun `signing in again on a login with another account says so, and the login keeps its own`() {
+        add(HEAD, "work", "uuid-work")
+        val before = Files.readString(credentials(HEAD, "work"))
+
+        val refused = add(HEAD, "work", "uuid-home")
+
+        assertEquals(LoginState.FAILED, refused.state)
+        assertEquals(LoginFailure.OTHER_ACCOUNT, refused.failureKind)
+        assertEquals(before, Files.readString(credentials(HEAD, "work")), "byte for byte")
+        assertEquals(listOf("uuid-work"), folders().accounts(HEAD).map { it.identity?.uuid })
+    }
+
     @Test
     fun `the same account under a new label is refused by the name it already has, and writes nothing`() {
         add(HEAD, "work", "uuid-work")
@@ -209,7 +224,9 @@ class ClaudeAccountSignInTest {
         val again = add(HEAD, "second", "uuid-work")
 
         assertEquals(LoginState.FAILED, again.state)
-        assertEquals("that account is already on this command as 'work'", again.failureReason)
+        val said = "that account is already on this command as 'work', so nothing was added. " +
+            "If that login was blocked, its next turn asks the provider again"
+        assertEquals(said, again.failureReason)
         assertEquals(LoginFailure.ALREADY_ADDED, again.failureKind)
         assertEquals("work", again.label, "the console pulses the card already there by this label")
         assertEquals(listOf("work"), folders().accounts(HEAD).map { it.label }, "no second folder was filed")

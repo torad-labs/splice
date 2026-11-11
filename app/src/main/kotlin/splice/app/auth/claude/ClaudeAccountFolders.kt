@@ -236,15 +236,27 @@ internal class ClaudeAccountFolders(
      *  or as one of its own logins ([ClaudeHeldLogins]), or the label already holds another readable account, which a
      *  sign-in never writes over (sessions' README read, Oct 13: "never replacing another login"), or the sign-in
      *  becomes [ClaudePendingAccount.label]'s own folder. A label signed in again keeps its original time, and one
-     *  whose folder is unreadable is signed in again over it. */
+     *  whose folder is unreadable is signed in again over it.
+     *
+     *  An account the head already holds files nothing, and the login that holds it is asked again on the next turn
+     *  ([ClaudePoolChanges.signedIn]): the person just finished a sign-in for that account, which is the one act a
+     *  blocked card's menu offers, so it never ends with the card still held (Marcos, Nov 11, 2026: "I did sign in
+     *  again because it said it was blocked"). */
     private fun file(pending: ClaudePendingAccount, identity: ClaudeAccountIdentity): ClaudeAccountLanding {
         val added = accounts(pending.head)
         val same = added.firstOrNull { it.identity?.uuid == identity.uuid }
         val other = added.firstOrNull { it.label == pending.label }?.identity
-        val login = if (same == null) held.label(pending.head, identity.uuid) else null
+        // where the head already holds this account, by the label its pool knows that login under
+        val there = if (same != null) {
+            same.label.takeIf { it != pending.label }
+        } else {
+            held.label(pending.head, identity.uuid)?.let { "native:$it" }
+        }
         return when {
-            same != null && same.label != pending.label -> ClaudeAccountLanding.AlreadyAdded(same.label)
-            login != null -> ClaudeAccountLanding.AlreadyAdded(login)
+            there != null -> {
+                changes?.signedIn(pending.head, there)
+                ClaudeAccountLanding.AlreadyAdded(there.removePrefix("native:"))
+            }
             other != null && other.uuid != identity.uuid -> ClaudeAccountLanding.LabelTaken(pending.label)
             else -> {
                 move(pending, addedAt = same?.addedAtEpochMillis?.takeIf { it != Long.MAX_VALUE } ?: filedAt(added))

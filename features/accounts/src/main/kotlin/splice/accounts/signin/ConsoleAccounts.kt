@@ -98,6 +98,9 @@ public enum class LoginFailure(public val wire: String) {
 
     /** The account signed into is already one of this command's. */
     ALREADY_ADDED("already_added"),
+
+    /** Signed in again on a login, with another account than the one that login holds. Nothing was replaced. */
+    OTHER_ACCOUNT("other_account"),
 }
 
 /** What a sign-in asks the person to do. [userCode] and [verificationUri] are the device flow's announcement;

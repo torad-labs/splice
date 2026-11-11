@@ -1454,7 +1454,9 @@ origin.
   Usage also follows the daemon now: one status read splice did not answer used to end it on the card as "Not
   completed" with no reason while the daemon went on holding it. The row now waits through reads splice does not
   answer, and a daemon restarted in the middle of a sign-in reads "Stopped", with that as its reason. A pasted code
-  the sign-in does not take ends it on the daemon as well, with the daemon's reason on the card.
+  the sign-in does not take ends it on the daemon as well, with the daemon's reason on the card. Signing in again on
+  a Claude login's card while the browser is signed in to another account read "Config error" with nothing to press;
+  it now reads "Other account", says the login kept its own, and offers Try again.
 - **A Claude login signed in again is asked again at once.** A login Anthropic had refused stayed held, and its
   card kept reading Blocked, after it was signed in again: the hold only ended when the login served a turn, and the
   login was not tried again until the hold's time ran out, up to an hour. On Nov 11 a login blocked while its
@@ -1462,6 +1464,9 @@ origin.
   Now a sign-in the person finishes for a login lets go of that login's hold and block, so the next turn asks
   Anthropic with what was just signed in, and Anthropic's answer decides: served, or refused and held again with the
   reason. A credential file Claude Code rewrites by itself still does not lift a block. A limit the login read stays.
+  The same holds when the sign-in comes back "Already added", as it does on a command's own Claude Code login signed
+  in again with the account it holds: nothing is filed, the login that holds the account is let go of its block, and
+  the card's reason says so.
 - **A blocked login's card has Try again.** A login Anthropic refuses until its owner acts (new terms to accept, an
   organization that does not allow subscription access) read Blocked on Accounts with one act, Sign in again, in its
   menu, and a sign-in is not what a block waits for. Once its cause was fixed, nothing on the card told splice so: the
@@ -1471,6 +1476,14 @@ origin.
   block (`POST /api/auth/{head}/ask`), the card reads as a login a turn can take, and the next turn that reaches it
   asks Anthropic. A login still refused reads Blocked again from that answer, and the turn goes on to the next login
   as it did before.
+- **+ Add account on a ChatGPT or Grok command adds a login, and no longer writes over the first one.** A sign-in
+  sent to splice with no label is the command's first login signing in again, and it lands over that login's file.
+  Since Oct 13 the Accounts page asked for a place of its own only on Muse and Kimi commands, so on a ChatGPT or Grok
+  command that already had a login, + Add account signed in as another account left one card, holding the new
+  account where the first had been. Now every command that signs in through splice asks for a new place once its
+  first login is there, and the new login joins beside it. A command whose first login is signed out has no pool to
+  join yet, so its add still signs that first login in. Adding the account a ChatGPT command's first login already
+  holds makes a second card for it, which Remove takes away.
 - **A measured period counts each recorded minute once, and reads all of them.** The Performance panel's "Measure any
   period" and `splice perf` gave a different rate for the same day minutes apart: 1.47 completions a minute, then 50.9
   an hour, then 3.59 a minute, beside a request log of 24,203 requests for that day. Three faults in how a measurement

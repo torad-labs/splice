@@ -450,7 +450,7 @@ const FAILS = {
   not_completed: { word: "Not completed", retry: true }, network: { word: "Network error", retry: true },
   file: { word: "File error" }, config: { word: "Config error" }, expired: { word: "Expired", retry: true },
   stopped: { word: "Stopped", retry: true }, cancelled: { word: "Cancelled", retry: true },
-  already_added: { word: "Already added", pulse: true },
+  already_added: { word: "Already added", pulse: true }, other_account: { word: "Other account", retry: true },
 };
 // A name splice takes, and one no other account of the command has (ClaudeAccountFolders.kt:199,
 // OAuthAccountFiles.kt:264-266). On Claude: letters, digits, - and _, starting with a letter or digit, up to 64
@@ -2052,10 +2052,14 @@ function startAdd(p, cmd, field) {
 }
 // How a command takes one more login.
 function addHow(p, c) {
-  // an OAuth command's added login takes a new place in its pool ("auto", OAuthAccountFiles' next free label); sent with no
-  // label it signed the FIRST login in again, over its file, so a second Muse account replaced the spent one rather than
-  // joining beside it (Oct 13, 5:38 AM). The first login of a command has no pool yet and still lands as its first.
-  const pooled = /^(muse|kimi)-oauth$/.test(c.authKind ?? "") && p.accounts.some((x) => x.row?.heads?.includes(c.head));
+  // an OAuth command's added login takes a new place in its pool ("auto", OAuthAccountFiles.loginAccount: the next free
+  // place for Grok, Kimi and Muse, a place named after the account for ChatGPT); sent with no label it signed the FIRST
+  // login in again, over its file, so a second Muse account replaced the spent one rather than joining beside it (Oct 13,
+  // 5:38 AM). Until Nov 11, 2026 only Muse and Kimi asked for a place, so + Add account on a ChatGPT or Grok command
+  // still wrote over its first login. A command whose first login holds no file has no pool yet (splice refuses a place
+  // in one), so its add still lands as its first.
+  const first = (x) => x.row?.heads?.includes(c.head) && x.row.primary && x.row.credential_present !== false;
+  const pooled = /-oauth$/.test(c.authKind ?? "") && p.accounts.some(first);
   return { start: `/api/auth/${encodeURIComponent(c.head)}/login`, body: pooled ? { label: "auto" } : {}, poll: c.head };
 }
 // THE PAGE SHOWS THE SIGN-INS SPLICE HOLDS. One still open when the page opens (a reload, another tab) is drawn where

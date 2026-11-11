@@ -30,7 +30,8 @@ const windows = {
 const noToken = (command: string) => `No usable access token. Sign in again: run ${command} and use /login.`;
 // the reasons the stub's sign-ins end with, as splice words them (ClaudeAccountSignIn, NativeClaudeAuth)
 const WRAP_REASON = "claude is the splice launch shim and the wrap state /x is missing";
-const ADDED_REASON = "that account is already on this command as 'work'";
+const ADDED_REASON = "that account is already on this command as 'work', so nothing was added. If that login was blocked, its next turn asks the provider again";
+const OTHER_REASON = "that sign-in was for another account than 'account-2' holds, and a sign-in never replaces a login's account. Sign in again with this login's account, or add the other one";
 const login = (name: string, extra: Record<string, unknown>) => ({
   label: name, display_name: name, ref: name.padEnd(8, "0").slice(0, 8), heads: [HEAD], provider: "anthropic", kind: "client",
   credential_present: true, identity_verified: true, can_rename: true, ...extra,
@@ -54,17 +55,18 @@ const failed = (kind: string, reason: string, label: string | null) =>
   ({ id: crypto.randomUUID(), state: "failed", failure_kind: kind, failure_reason: reason, label, user_code: null, verification_uri: null, browser_url: null });
 // The sign-ins the page started, by route. Each ends the way splice ends a sign-in it refuses.
 const started: string[] = [];
-const signIns: Record<string, () => unknown> = {
+const signIns: Record<string, (label: unknown) => unknown> = {
   "/api/claude-logins/claude/login": () => failed("config", WRAP_REASON, null),
-  [`/api/auth/${HEAD}/login`]: () => failed("already_added", ADDED_REASON, "account-2"),
+  // signed in again on the login "work" (account-2), the browser came back as another account; an add came back as "work"
+  [`/api/auth/${HEAD}/login`]: (label) => (label === "account-2" ? failed("other_account", OTHER_REASON, "account-2") : failed("already_added", ADDED_REASON, "account-2")),
 };
 const server = Bun.serve({
   port: 0,
-  fetch(req) {
+  async fetch(req) {
     const path = new URL(req.url).pathname;
     if (req.method === "POST" && path in signIns) {
       started.push(path);
-      return Response.json(signIns[path]!());
+      return Response.json(signIns[path]!((await req.json().catch(() => null))?.label));
     }
     if (path in answers) return Response.json(answers[path]);
     if (/^\/api\/auth\/[^/]+\/order$/.test(path)) return Response.json({ order: [], effective_order: [], next_target: null, following_target: null });
@@ -119,6 +121,16 @@ test("a Sign in splice refuses on a login's card says its word there, and splice
   await expect(there.getByRole("button", { name: "Try again" })).toHaveCount(0);
   await there.getByRole("button", { name: "Cancel" }).click();
   await expect(there.getByRole("button", { name: "Sign in" })).toBeVisible();
+}), 30_000);
+
+// The browser's own session decides which account a sign-in is for. It read "Config error" with nothing to press.
+test("Sign in again that comes back as another account says Other account, with splice's reason and a Try again", () => onPage(async (page) => {
+  const there = card(page, "work");
+  await there.getByRole("button", { name: "More" }).click();
+  await page.getByRole("menuitem", { name: "Sign in again" }).click();
+  await expect(there.locator(".result", { hasText: "Other account" })).toBeVisible({ timeout: 10_000 });
+  await expect(there.locator(".reason")).toHaveText(OTHER_REASON);
+  await expect(there.getByRole("button", { name: "Try again" })).toBeVisible();
 }), 30_000);
 
 test("+ Add account that signs in an account already there says Already added, and splice's reason is printed under it", () => onPage(async (page) => {

@@ -251,12 +251,16 @@ internal class ClaudeAccountSignIn(
                 }
             }
             is ClaudeAccountLanding.AlreadyAdded -> cell.updateAndGet { // the label names the account already there
-                val said = "that account is already on this command as '${landed.label}'"
+                val said = "that account is already on this command as '${landed.label}', so nothing was added. " +
+                    "If that login was blocked, its next turn asks the provider again"
                 it.failed(LoginFailure.ALREADY_ADDED, said).copy(label = landed.label)
             }
+            // The browser was signed in to another account than the card's. It read "Config error" with nothing to
+            // press, as if the config were at fault; it is the person's to do again, with the right account.
             is ClaudeAccountLanding.LabelTaken -> cell.updateAndGet {
-                val said = "'${landed.label}' already holds another account on this command; sign in under a new label"
-                it.failed(LoginFailure.CONFIG, said).copy(label = landed.label)
+                val said = "that sign-in was for another account than '${landed.label}' holds, and a sign-in never " +
+                    "replaces a login's account. Sign in again with this login's account, or add the other one"
+                it.failed(LoginFailure.OTHER_ACCOUNT, said).copy(label = landed.label)
             }
             is ClaudeAccountLanding.Unreadable ->
                 cell.updateAndGet { it.failed(LoginFailure.NOT_COMPLETED, landed.why) }

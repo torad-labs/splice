@@ -11,25 +11,37 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 internal class SetupMenu(private val frame: WizardFrame, private val profiles: AddProfiles) {
+    /** What setup found on this machine before it asks anything, in the words the rest of the wizard uses. Until
+     *  Nov 11, 2026 it printed the config's own identifiers ("Detected chatgpt-oauth, daemon"). */
     fun printDetected(facts: SetupFacts) {
         val bits = mutableListOf<String>()
-        if (facts.spliceOwned.isNotEmpty()) bits.add(facts.spliceOwned.sorted().joinToString(", "))
-        if (facts.vendorCli.isNotEmpty()) bits.add(facts.vendorCli.sorted().joinToString(", "))
-        if (facts.openRouterKey) bits.add("OPENROUTER_API_KEY")
-        if (facts.daemonUp) bits.add("daemon")
-        if (bits.isNotEmpty()) frame.step("Detected ${bits.joinToString(", ")}")
+        for (kind in AuthKindRegistry.knownKinds().filter { it.isOAuth }) {
+            when (kind.wire) {
+                in facts.spliceOwned -> bits.add("${kind.signInLabel} signed in")
+                in facts.vendorCli -> bits.add("${kind.signInLabel} signed in to its own app")
+            }
+        }
+        if (facts.openRouterKey) bits.add("an OpenRouter key")
+        if (facts.daemonUp) bits.add("splice running")
+        if (bits.isNotEmpty()) frame.step("Found here: ${bits.joinToString(", ")}")
     }
 
     fun startOptions(facts: SetupFacts): List<SelectOption<SetupStart>> {
         val options = mutableListOf<SelectOption<SetupStart>>()
-        val keyCount = if (facts.openRouterKey) 1 else 0
-        options.add(SelectOption(SetupStart.OpenRouter, "OpenRouter", "$keyCount keys"))
+        // Each hint says what was found, in words: the counts they were ("1 keys", "0 credentials", "1 daemons")
+        // could only ever be none or one.
+        val key = if (facts.openRouterKey) "key found" else "no key yet"
+        options.add(SelectOption(SetupStart.OpenRouter, "OpenRouter", key))
         for (kind in AuthKindRegistry.knownKinds().filter { it.isOAuth }) {
-            val n = listOf(kind.wire in facts.spliceOwned, kind.wire in facts.vendorCli).count { it }
-            options.add(SelectOption(SetupStart.OAuth(kind.wire), kind.signInLabel, "$n credentials"))
+            val hint = when (kind.wire) {
+                in facts.spliceOwned -> "signed in"
+                in facts.vendorCli -> "signed in to its own app"
+                else -> "not signed in"
+            }
+            options.add(SelectOption(SetupStart.OAuth(kind.wire), kind.signInLabel, hint))
         }
-        val daemons = if (facts.daemonUp) 1 else 0
-        options.add(SelectOption(SetupStart.Existing, "Existing topology", "$daemons daemons"))
+        val running = if (facts.daemonUp) "splice is running" else "splice is not running"
+        options.add(SelectOption(SetupStart.Existing, "Existing topology", running))
         return options
     }
 

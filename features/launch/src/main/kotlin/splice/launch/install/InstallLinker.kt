@@ -139,7 +139,11 @@ internal class InstallLinker(
             val previous = if (link.isSymbolicLink()) Files.readSymbolicLink(link) else null
             if (previous != null) Files.deleteIfExists(link)
             claimOrRestore(link, launchShim, previous)
-            output.line("splice: installed '$command' -> $launchShim (head=$headKey)")
+            // `splice` itself is relinked beside every wrapper, so it is announced when its link is made or changed
+            // and not each time: a setup that added three commands said "installed 'splice'" five times.
+            if (command != SELF_COMMAND || previous != launchShim) {
+                output.line("splice: installed '$command' -> $launchShim (head=$headKey)")
+            }
             null
         } catch (e: java.io.IOException) {
             "failed to link $command: $link was not claimable (${SafeFailureText.render(e)})"

@@ -76,8 +76,12 @@ internal class StatusCommand(
         println()
         // Paths sink below the table: they are reference, not the answer, and an operator who wants
         // them knows they are here. Above the heads they read as though something were wrong.
-        println("  " + palette.paint(palette.quiet, "config  ${TopologyLoader.configPath()}"))
-        println("  " + palette.paint(palette.quiet, "jar     ${jarLine()}"))
+        println("  " + palette.paint(palette.quiet, "config   ${TopologyLoader.configPath()}"))
+        println("  " + palette.paint(palette.quiet, "jar      ${jarLine()}"))
+        // The console is named here because nothing a person runs on a new install named it (Nov 11, 2026): the
+        // installer, setup's last screen and this one all left `splice console` to be found in the usage line.
+        val console = "console  splice console opens accounts, models and usage in a browser"
+        println("  " + palette.paint(palette.quiet, console))
     }
 
     internal fun clientVersionWarning(health: HealthView?): String? = health?.client?.versionWarning

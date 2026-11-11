@@ -1436,6 +1436,28 @@ origin.
 - **`splice login` names a Claude login by its label, never its email,** in every sentence it prints.
 
 ### Fixed
+- **`splice setup` says what each row is, and its install no longer talks over itself.** A first run on a new
+  machine, Nov 11, 2026. The list of commands to add named each row by its profile alone ("codex", "muse") and marked
+  every row splice held no credential for "sign-in needed", the Claude row and the API-key rows among them. It opened
+  with two lines that read as failures before anything had been tried ("splice add api-key: needs a base URL; run:
+  ..."). The installer's first line ran into the spinner ("Installingsplice: wrote starter topology"), "installed
+  'splice'" came with every command added, and `splice doctor`'s whole report came once per command. A Claude command
+  was checked as "credential present" on a machine where nobody had signed in, and its four rows each said "unchecked:
+  provider lists no window size" on one line. Now each row says what plan it is and how it signs in, and says "signed
+  in", "key found in DEEPSEEK_API_KEY" or "key saved" only when splice already holds one, a key saved by `splice key
+  set` included. The two kinds the list cannot add come after it, each as what it is and the command that adds it.
+  The installer's lines come once the spinner has stopped, `splice` is announced when its link is made or changed,
+  and the checkup runs once, after the last command. What setup found reads in words ("Found here: Codex (ChatGPT)
+  signed in, splice running") instead of config identifiers, and the start menu's hints say "key found" or "not signed
+  in" where they counted "1 keys" and "0 credentials".
+- **The console is named where a new install looks.** Setup's last screen and `splice status` both say that
+  `splice console` opens accounts, models and usage in a browser. The line had left the last screen on Oct 7 with the
+  old dashboard, and nothing a person runs on a new install had named the console since it came back.
+- **`splice` typed alone says what it is.** On a terminal it prints what splice does in a line, the four commands to
+  start from, and every verb, and so do `splice --help`, `splice -h` and `splice help`. A bare `splice` started a
+  second daemon in the person's terminal, which printed "another splice daemon serves on :3096; exiting (the winner
+  serves)" and left, and `--help` printed the usage as an error. With no terminal attached a bare run still starts
+  the daemon. The usage is broken into lines an 80-column terminal shows whole.
 - **Cancel on a sign-in ends it, and Sign in again always gets a new sign-in.** On the Accounts page, Cancel on a
   sign-in only forgot it in the page. The daemon kept it: Claude Code's own sign-in ran on for its ten minutes, and a
   browser or device sign-in held its label and its callback port for up to five. The next Sign in on that login was

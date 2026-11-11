@@ -124,11 +124,13 @@ internal class AddChecks(
             credential(c.providerKey, c.provider, env)
         }
 
-    /** Present AND usable: an OAuth file must carry token material the daemon could serve or refresh. */
+    /** Present AND usable: an OAuth file must carry token material the daemon could serve or refresh. A head that
+     *  forwards the person's own Claude login holds no credential, and says so: it read "present" until Nov 11, 2026,
+     *  on a machine where nobody had signed in. */
     fun credential(key: String, provider: ProviderConfig, env: EnvReader): AddCheck {
         val kind = provider.auth.kind
+        if (kind == AuthKind.Client.wire) return AddCheck("credential", true, FORWARDED_LOGIN)
         val problem = when {
-            kind == AuthKind.Client.wire -> null
             !presence.configured(key, provider, env) -> "no credential for '$key' ($kind)"
             AuthKindRegistry.isOAuth(kind) -> oauthPath(provider)?.let { credentialFile.problem(it, kind) }
             else -> null
@@ -234,3 +236,6 @@ internal class AddChecks(
     private fun apiKey(provider: ProviderConfig, key: String, env: EnvReader): String? =
         credentials.apiKey(provider, key, env)
 }
+
+/** What the credential check says of a head that forwards the person's own Claude login. */
+private const val FORWARDED_LOGIN = "none of its own: your Claude Code login is forwarded"

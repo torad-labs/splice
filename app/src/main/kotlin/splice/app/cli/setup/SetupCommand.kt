@@ -9,11 +9,14 @@ import splice.app.InstallWiring
 import splice.app.LifecycleWiring
 import splice.app.cli.AdminSupport
 import splice.app.cli.auth.LoginCommand
+import splice.configuration.add.AddDoctor
 import splice.configuration.add.AddProfiles
 import splice.configuration.add.DaemonRestart
 import splice.configuration.add.DaemonUpProbe
+import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.launch.install.InstallCommand
 import splice.launch.install.InstallLayout
 import splice.launch.install.InstallResult
 import splice.topology.TopologyLoader
@@ -28,10 +31,7 @@ internal class SetupEffects(
     env: EnvReader,
     /** The `splice add` arguments each head's answers add (SetupHeadChoices): its models and their windows. */
     private val choices: MutableMap<String, List<String>> = mutableMapOf(),
-    private val add: ProfileAdd = ProfileAdd { name ->
-        AddWiring.add(restart = DaemonRestart { true })
-            .add(listOf(name, "--yes") + choices[name].orEmpty(), EnvReader(System::getenv))
-    },
+    private val add: ProfileAdd = CommandAdd(choices),
     val restart: DaemonRestart = DaemonRestart { LifecycleWiring.restart() },
     private val wrap: ClaudeWrap = DaemonClaudeWrap(env),
 ) {
@@ -40,10 +40,26 @@ internal class SetupEffects(
 
     fun lanes(prompts: SetupPrompts): SetupClaudeLane = SetupClaudeLane(prompts.pickLane, wrap)
 
+    /** `splice doctor`, once, after the last head is added. */
+    fun checkup(env: EnvReader) = add.checkup(env)
+
     /** What each head's add carries beyond `--yes`, from the person's answers. */
     fun choose(answers: Map<String, HeadChoice>) {
         choices.clear()
         answers.forEach { (name, choice) -> choices[name] = choice.addArgs }
+    }
+}
+
+/** `splice add <profile> --yes` as setup runs it. Each add would restart the daemon and end on `splice doctor`: setup
+ *  restarts once after its last head and runs the checkup once too. Until Nov 11, 2026 a setup that added three heads
+ *  printed the whole report three times. */
+private class CommandAdd(private val choices: Map<String, List<String>>) : ProfileAdd {
+    override suspend fun invoke(name: String): Boolean =
+        AddWiring.add(restart = DaemonRestart { true }, doctor = AddDoctor { true })
+            .add(listOf(name, "--yes") + choices[name].orEmpty(), EnvReader(System::getenv))
+
+    override fun checkup(env: EnvReader) {
+        AddWiring.checkup()(env)
     }
 }
 
@@ -107,14 +123,7 @@ internal class SetupCommand(
     }
 
     private suspend fun install(plan: WizardAnswer.Plan): Boolean {
-        prompts.spinner.start("Installing")
-        val result = Cancellables.runCatchingBestEffort { runInstall() }
-        val installed = result.fold(onSuccess = { it is InstallResult.Linked }, onFailure = { false })
-        if (installed) prompts.spinner.stop("Installed wrappers") else prompts.spinner.fail("Install failed")
-        // A refusal prints its sentence on one line, as the install verb does, after the spinner has stopped.
-        result.getOrNull()?.let { if (it is InstallResult.Refused) System.err.println("splice: ${it.sentence}") }
-        result.exceptionOrNull()?.let { throw it }
-        if (!installed) return false
+        if (!linked()) return false
         val landed = plan.picker.addAll(plan.heads)
         plan.lanes.apply(plan.lane, landed)?.let { println(it) }
         localModel.install(plan.local)
@@ -123,6 +132,7 @@ internal class SetupCommand(
         mcpShare.hub(plan.path, plan.share)
         val ok = signIn.signInPendingHeads(topology)
         headChoices.checkLive(landed, topology, env)
+        if (landed.isNotEmpty()) effects.checkup(env)
         signIn.printNextSteps(topology)
         // The ONE completion line on the last screen — printNextSteps deliberately has none. "You're
         // set." rather than "Toolkit ready!": splice is not called a toolkit anywhere else.
@@ -130,11 +140,27 @@ internal class SetupCommand(
         return ok
     }
 
-    private fun runInstall(): InstallResult {
-        InstallWiring.init(env)
-        val install = InstallWiring.command()
-        val wrappers = install.install("--all", env)
-        return if (wrappers is InstallResult.Linked) install.installSelf(env) else wrappers
+    /** The install step under its spinner: true when every wrapper is linked. The installer's own lines wait for the
+     *  spinner to stop: said while it spun, the first one ran into the spinner's line ("Installingsplice: wrote
+     *  starter topology to ..."). */
+    private fun linked(): Boolean {
+        val said = mutableListOf<String>()
+        prompts.spinner.start("Installing")
+        val result = Cancellables.runCatchingBestEffort { runInstall(TerminalOutput { said += it }) }
+        val installed = result.fold(onSuccess = { it is InstallResult.Linked }, onFailure = { false })
+        if (installed) prompts.spinner.stop("Installed wrappers") else prompts.spinner.fail("Install failed")
+        said.forEach { frame.step(it.removePrefix("splice: ")) }
+        // A refusal prints its sentence on one line, as the install verb does, after the spinner has stopped.
+        result.getOrNull()?.let { if (it is InstallResult.Refused) System.err.println("splice: ${it.sentence}") }
+        result.exceptionOrNull()?.let { throw it }
+        return installed
+    }
+
+    /** The starter file, then every command the topology names. `install --all` links `splice` itself with them, so
+     *  no second link is made here: the one that was said "installed 'splice'" twice. */
+    private fun runInstall(output: TerminalOutput): InstallResult {
+        InstallWiring.init(env, output)
+        return InstallCommand(output, TerminalOutput(System.err::println)).install("--all", env)
     }
 }
 

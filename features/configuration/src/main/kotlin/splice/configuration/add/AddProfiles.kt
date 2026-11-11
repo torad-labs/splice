@@ -69,6 +69,10 @@ public data class AddProfile internal constructor(
     /** What added the row, named in its TOML comment and the verb's title. */
     internal val origin: String get() = labels.origin ?: "splice add $name"
 
+    /** What the profile is, in a line: the plan or service and how it signs in. The setup tick list says it beside
+     *  the profile's name, which alone ("codex", "muse") does not say what plan it is. */
+    public val summary: String get() = labels.summary
+
     /** The models this profile writes by default, as a picker offers them (setup, spec section 1). */
     public val modelChoices: List<AddModelChoice>
         get() = models.map { AddModelChoice(it.id, it.label, it.contextWindow) }

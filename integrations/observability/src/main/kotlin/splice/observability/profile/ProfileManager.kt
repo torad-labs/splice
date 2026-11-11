@@ -1,12 +1,6 @@
 package splice.observability.profile
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.put
 import splice.core.perf.observation.PerfIdentity
 import splice.core.perf.runtime.PerfProfileArtifact
 import splice.core.perf.runtime.PerfProfileRead
@@ -83,29 +77,8 @@ public class ProfileManager(
     override fun status(id: String?): JsonObject = ProfileReplies.create {
         synchronized(lock) {
             val record = if (id == null) active?.record ?: archive.record(null) else archive.record(id)
-            when {
-                record != null -> record.json(identity, clock())
-                id == null -> none()
-                else -> ProfileRecord(PerfProfileRequest(), clock())
-                    .reply(identity, clock(), PROFILE_FAILED, "profile_not_found_or_expired")
-            }
+            record?.json(identity, clock()) ?: ProfileAbsence(identity, clock).reply(id)
         }
-    }
-
-    /**
-     * The answer when there is no capture to report: this process has taken none, or its last one is no longer kept.
-     * Until Nov 11, 2026 that was a made-up record, failed, with a new id on every call, and the console drew a red
-     * "failed · 0 B" for a capture nobody had started.
-     */
-    private fun none(): JsonObject = buildJsonObject {
-        put("schema_version", identity.schemaVersion)
-        put("status", PROFILE_NONE)
-        put("profile_id", JsonNull)
-        put("identity", Json.encodeToJsonElement(identity))
-        put("process_id", ProcessHandle.current().pid())
-        put("size_bytes", 0)
-        put("artifact_available", false)
-        put("issues", JsonArray(emptyList()))
     }
 
     override fun artifact(id: String): PerfProfileArtifact? = synchronized(lock) { archive.artifact(id) }
@@ -151,5 +124,4 @@ public class ProfileManager(
 
 // Retain only sixteen characters of rejected profiler settings so refusal metadata cannot copy arbitrary input.
 private const val MAX_SETTING_LENGTH = 16
-private const val PROFILE_FAILED = "failed"
-private const val PROFILE_NONE = "none"
+internal const val PROFILE_FAILED = "failed"

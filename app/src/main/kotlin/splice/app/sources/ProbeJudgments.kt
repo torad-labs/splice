@@ -28,7 +28,9 @@ import java.nio.file.Path
 // not read under rule 1 for a NUL line of Jul 20 (round 13 of #247).
 // 3: Oct 23, 2026, a line with nothing after it waits for a late row that may rule its hours out; builds 0153e6371 and
 // bcb857b54 settled those hours as not read under rule 2 (round 15 of #247).
-internal const val TEAR_RULE = 3
+// 4: Nov 10, 2026, a torn line costs an hour only where the rollup may have counted its probe; the NUL lines a machine
+// stop left that evening kept 7, 8 and 9 PM CT of claude-splice and claudex not read under rule 3.
+internal const val TEAR_RULE = 4
 
 /** One hour's answer: the rollup signature it answered, the probes to take off, or why the hour cannot be shown. */
 internal data class ProbeJudged(val signature: List<Long>, val probes: EconomicsBucket?, val gap: ProbeGap?)

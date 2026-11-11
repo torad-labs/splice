@@ -73,7 +73,9 @@ class EconomicsRepriceTest {
     // every turn unpriced, because the hour rebuilt from the rows carried 714 local steps where the rollup
     // recorded 458. A row the rollup never counted cannot be what makes an hour a different hour.
     // Until Oct 23, 2026 a torn line with no time refused the whole reprice, so claudex's unpriced hours read unpriced
-    // though its log held their turns. Now only the hours that line's row can lie in go unread.
+    // though its log held their turns. An hour that line's row can lie in is left as it was recorded: with the row gone
+    // there is nothing to price it by. It is still read, since Nov 10, 2026, when a build that refuses the probe
+    // counted it, because the line is then no probe in its count (ProbeEconomics.mayCountLostProbe).
     @Test
     fun `an unpriced hour beside a torn line with no time reads at the card splice holds now`(@TempDir dir: Path) {
         val file = dir.resolve("head-perf.jsonl")
@@ -96,9 +98,10 @@ class EconomicsRepriceTest {
             EconomicsStoreSource(uncarded, PerfRowsFileSource(file), TurnPrice(card)).read(),
         )
 
-        assertEquals(listOf(REPRICE_HOUR), read.rows.map { it.hour }, "the hour away from the torn line is shown")
-        assertEquals(expected.cost, read.rows.single().cost, "at the card splice holds now")
-        assertEquals(listOf(4 * REPRICE_HOUR), read.notRead, "the hour the torn line's row may be in is not read")
+        assertEquals(listOf(REPRICE_HOUR, 4 * REPRICE_HOUR), read.rows.map { it.hour }, "both hours are shown")
+        assertEquals(expected.cost, read.rows.first().cost, "the hour away from the torn line, at the card held now")
+        assertEquals(1L, read.rows.last().cost.unpricedTurns, "the hour the line's row may be in, as it was recorded")
+        assertEquals(emptyList<Long>(), read.notRead, "a build that refuses the probe counted both")
     }
 
     @Test

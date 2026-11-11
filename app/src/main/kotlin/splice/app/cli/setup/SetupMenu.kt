@@ -62,11 +62,10 @@ internal class SetupMenu(private val frame: WizardFrame, private val profiles: A
         heads: List<String>,
         claudeLane: String,
     ): List<String> {
-        val starter = if (Files.exists(path)) {
-            "No starter will be written because one is already present"
-        } else {
-            "Starter topology (no plan) → $path"
-        }
+        // The summary lists what the install will do. The installer writes the file before setup runs, so until
+        // Nov 11, 2026 every new install's summary opened on "No starter will be written because one is already
+        // present": a line about nothing happening, in words ("starter") nobody had been given.
+        val starter = "Starter topology (no plan) → $path".takeUnless { Files.exists(path) }
         val wrappers = "Wrapper commands under $bin"
         val suggested = when (start) {
             is SetupStart.OAuth -> profiles.catalog().firstOrNull { it.provider.authKind == start.kind }
@@ -88,6 +87,6 @@ internal class SetupMenu(private val frame: WizardFrame, private val profiles: A
         // The lane line only when the Claude head is actually being added: a summary that answered
         // a question nobody was asked is noise the operator has to parse past.
         val lane = if (CLAUDE_PROFILE in heads) listOf(claudeLane) else emptyList()
-        return listOf(starter, wrappers) + extra + adding + lane + keys
+        return listOfNotNull(starter, wrappers) + extra + adding + lane + keys
     }
 }

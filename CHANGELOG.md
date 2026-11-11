@@ -1451,6 +1451,9 @@ origin.
   value read a fraction of what it was. The row is there now at Anthropic's published price (8 in, 40 out, a cache
   read at 0.20, writes at 10 and 16 per million tokens, read Nov 11), beside one for `claude-haiku-4-5-20251001`, the
   dated id Claude Code still sends for some background turns.
+- **Setup's summary no longer opens on a file it will not write.** On a new install the box before "Install now?"
+  began "No starter will be written because one is already present", since the installer had written it a moment
+  earlier. The summary lists what the install will do, and that line is gone when there is nothing to write.
 - **`splice doctor` on a machine with no Claude login says to sign in, once.** A new install that added the Claude
   command before anyone had signed in to Claude Code read "every account is out (no reset time reported)" with the
   fix "Wait for the earliest reset above", and under it one warning per login place saying "Sign in again". There

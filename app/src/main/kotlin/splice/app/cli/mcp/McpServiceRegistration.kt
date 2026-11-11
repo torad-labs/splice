@@ -53,8 +53,20 @@ internal class McpServiceRegistration(private val env: EnvReader) {
         wanted.codexHome?.toString() ?: JsonScalars.str(previous, "codex_home")
             ?: env("TEMPLE_CODEX_HOME") ?: env("CODEX_HOME")
 
-    private fun server(previous: JsonObject?, wanted: McpServiceRequestParser.Request): JsonObject = buildJsonObject {
-        previous?.filterKeys { it !in setOf("command", "args", "cwd", "env") }
+    /** An endpoint keeps nothing of a launch it replaces, and a launch keeps nothing of an endpoint. */
+    private fun server(previous: JsonObject?, wanted: McpServiceRequestParser.Request): JsonObject = when (wanted) {
+        is McpServiceRequestParser.Request.Endpoint -> buildJsonObject {
+            put("type", "http")
+            put("url", wanted.url)
+        }
+        is McpServiceRequestParser.Request.Process -> launched(previous, wanted)
+    }
+
+    private fun launched(
+        previous: JsonObject?,
+        wanted: McpServiceRequestParser.Request.Process,
+    ): JsonObject = buildJsonObject {
+        previous?.filterKeys { it !in setOf("command", "args", "cwd", "env", "type", "url") }
             ?.forEach { (key, value) -> put(key, value) }
         put("command", wanted.command)
         put("args", JsonArray(wanted.args.map { JsonPrimitive(it) }))
@@ -64,17 +76,20 @@ internal class McpServiceRegistration(private val env: EnvReader) {
 
     private fun environment(
         previous: JsonObject?,
-        wanted: McpServiceRequestParser.Request,
+        wanted: McpServiceRequestParser.Request.Process,
     ): JsonObject = buildJsonObject {
         (previous?.get("env") as? JsonObject)?.forEach { (key, value) -> put(key, value) }
         wanted.env.forEach { (key, value) -> put(key, value) }
         put("TEMPLE_URL", wanted.url)
     }
 
-    private fun valid(body: JsonObject): Boolean =
-        (body[SERVER_KEY] as? JsonObject)?.let(::fields)?.let {
-            process.valid(it.command, it.args, it.environment)
-        } == true
+    private fun valid(body: JsonObject): Boolean = (body[SERVER_KEY] as? JsonObject)?.let { server ->
+        endpoint(server) || fields(server)?.let { process.valid(it.command, it.args, it.environment) } == true
+    } == true
+
+    /** An endpoint entry holds an address and nothing to launch; the address was judged when it was parsed. */
+    private fun endpoint(server: JsonObject): Boolean =
+        JsonScalars.str(server, "type") == "http" && server.keys == setOf("type", "url")
 
     private fun fields(server: JsonObject): ProcessFields? {
         val command = JsonScalars.str(server, "command")

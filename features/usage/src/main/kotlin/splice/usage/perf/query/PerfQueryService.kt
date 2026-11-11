@@ -84,7 +84,7 @@ public class PerfQueryService(
         data.goodput = PerfEvidenceJson.initialGoodput(query.objective)
         measured(query, filter, data)
         if (data.counts.isEmpty()) data.counts = PerfPopulationCounts.aggregate(data)
-        if (query.source in setOf("auto", "legacy")) PerfLegacyQuery(sources).read(query, filter, data)
+        if (query.source in setOf("auto", "legacy")) PerfLegacyQuery(sources).read(query, filter, clock(), data)
         filter.accountUnavailable()?.let { data.issue(it, "accounts") }
         data.configuration = PerfConfigurationQuery.render(sources, query, data)
         return data

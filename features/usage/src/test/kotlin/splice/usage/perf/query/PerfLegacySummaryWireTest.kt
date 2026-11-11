@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.perf.PerfKeys
 import splice.core.util.JsonScalars
@@ -73,16 +74,49 @@ class PerfLegacySummaryWireTest {
         assertFalse("total_ms" in legacy)
     }
 
-    private fun summary(query: PerfQuery): JsonObject {
+    @Test
+    fun `a command with thousands of requests in the period keeps its failure share and its times`() {
+        // 10,000 requests, one failed in every hundred, the n-th taking n ms: exact figures a reader can check by hand
+        val busy = (0 until 10_000).map { n ->
+            PerfRow(100L + n, if (n % 100 == 0) "error:upstream-failed" else "ok", mapOf(PerfKeys.TOTAL to n + 1L))
+        }
+        val legacy = summary(PerfQuery(100, 20_000), busy)
+        assertEquals("10000", JsonScalars.str(legacy, "count"))
+        assertEquals("true", JsonScalars.str(legacy, "metrics_complete"))
+        assertEquals("0.01", JsonScalars.str(legacy, "failure_share"))
+        val total = legacy.getValue("total_ms").jsonObject
+        assertEquals("10000", JsonScalars.str(total, "count"))
+        assertEquals("5000", JsonScalars.str(total, "p50"))
+        assertEquals("9500", JsonScalars.str(total, "p95"))
+        assertEquals("10000", JsonScalars.str(total, "max"))
+    }
+
+    @Test
+    fun `a period that begins more than a week back lists no command and says the rows are not read`() {
+        val day = 24L * 3_600_000
+        val now = 30 * day
+        val recent = listOf(PerfRow(now - 1_000, "ok", mapOf(PerfKeys.TOTAL to 50L)))
+        val month = result(PerfQuery(now - 30 * day, now), recent, now)
+        assertEquals(JsonObject(emptyMap()), month.getValue("legacy"))
+        assertTrue("legacy_window_beyond_kept_rows" in month.toString())
+        // the same row is read once the period begins within the week
+        val week = result(PerfQuery(now - 7 * day, now), recent, now)
+        assertEquals("1", JsonScalars.str(week.getValue("legacy").jsonObject.getValue("h").jsonObject, "count"))
+        assertFalse("legacy_window_beyond_kept_rows" in week.toString())
+    }
+
+    private fun summary(query: PerfQuery, rows: List<PerfRow> = legacyRows): JsonObject =
+        result(query, rows, 1_000).getValue("legacy").jsonObject.getValue("h").jsonObject
+
+    private fun result(query: PerfQuery, rows: List<PerfRow>, now: Long): JsonObject {
         val sources = object : PerfQuerySources {
             override fun heads(): Set<String> = setOf("h")
-            override fun rows(head: String): PerfRowsSource = PerfRowsSource { PerfRowsWindow(legacyRows) }
+            override fun rows(head: String): PerfRowsSource = PerfRowsSource { PerfRowsWindow(rows) }
         }
-        return PerfQueryService(sources, clock = WallClock { 1_000 }).use { service ->
+        return PerfQueryService(sources, clock = WallClock { now }).use { service ->
             val result = service.summary(query)
             try {
                 Json.parseToJsonElement(JsonWire.bytes(result).decodeToString()).jsonObject
-                    .getValue("legacy").jsonObject.getValue("h").jsonObject
             } finally {
                 PerfWorkBudget.release(result)
             }

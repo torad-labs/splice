@@ -7,6 +7,7 @@ import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondText
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
@@ -19,12 +20,11 @@ import splice.core.util.PerfWorkBudget
 import splice.core.util.PerfWorkPhase
 import splice.upstream.codemode.ProcessDispatchers
 import java.io.IOException
-import java.util.concurrent.Semaphore
 
 /** Two active reads and two suspended waiters across performance endpoints, all within one deadline. */
 internal class PerfHttpWork(val io: CoroutineDispatcher = ProcessDispatchers().io()) {
     private val admitted = Semaphore(ACTIVE_REQUESTS + WAITING_REQUESTS)
-    private val running = kotlinx.coroutines.sync.Semaphore(ACTIVE_REQUESTS)
+    private val running = Semaphore(ACTIVE_REQUESTS)
 
     suspend fun execute(call: ApplicationCall, block: PerfControlWork) {
         withAdmission(call) { running.withPermit { block.run() } }
@@ -36,7 +36,7 @@ internal class PerfHttpWork(val io: CoroutineDispatcher = ProcessDispatchers().i
     }
 
     private suspend fun withAdmission(call: ApplicationCall, block: PerfControlWork) {
-        if (!admitted.tryAcquire()) {
+        if (!admit()) {
             return refusal(
                 call,
                 "busy",
@@ -56,6 +56,12 @@ internal class PerfHttpWork(val io: CoroutineDispatcher = ProcessDispatchers().i
             admitted.release()
         }
     }
+
+    /** A slot comes back a moment after its reply is written, and the console sends its next read as each reply
+     *  lands. A read that finds every slot taken waits that moment out before it is refused, so it is never refused
+     *  for a slot whose answer its client already holds. */
+    private suspend fun admit(): Boolean =
+        admitted.tryAcquire() || withTimeoutOrNull(ADMISSION_GRACE_MS) { admitted.acquire() } != null
 
     suspend fun respond(call: ApplicationCall, telemetry: PerfTelemetry?, read: PerfJsonRead) {
         val started = MonoClock.nowMs()
@@ -102,6 +108,10 @@ private const val ACTIVE_REQUESTS = 2
 
 // Let the other two requests in a normal four-read console burst suspend without occupying threads.
 private const val WAITING_REQUESTS = 2
+
+// why: a slot whose reply is written is handed back within a few milliseconds even on a loaded host; a quarter of a
+// second covers that many times over and is all a read that really is over capacity waits before its refusal.
+private const val ADMISSION_GRACE_MS = 250L
 
 // Include admission waiting in the existing fifteen-second deadline, so a queue cannot extend request lifetime.
 private const val DEADLINE_MS = 15_000L

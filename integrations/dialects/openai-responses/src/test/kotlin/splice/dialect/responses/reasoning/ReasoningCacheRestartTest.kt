@@ -48,6 +48,7 @@ import java.nio.file.Path
 import java.nio.file.attribute.FileTime
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.io.path.appendText
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.writeText
 import kotlin.time.Duration.Companion.seconds
@@ -200,6 +201,17 @@ private val summaryAnswer = listOf(
     ev("""{"type":"response.completed","response":{"id":"r_sum","usage":{"input_tokens":100,"output_tokens":7}}}"""),
 )
 
+/** The client's request two tool rounds in: the opening, then each call and its result in order. */
+private fun afterCalls(first: String, second: String) = AnthropicParse.parseAnthropicBody(
+    """{"model":"gpt-5.6-sol","max_tokens":1000,"messages":[
+        {"role":"user","content":"$OPENING"},
+        {"role":"assistant","content":[{"type":"tool_use","id":"$first","name":"run","input":{}}]},
+        {"role":"user","content":[{"type":"tool_result","tool_use_id":"$first","content":"ok"}]},
+        {"role":"assistant","content":[{"type":"tool_use","id":"$second","name":"run","input":{}}]},
+        {"role":"user","content":[{"type":"tool_result","tool_use_id":"$second","content":"ok"}]}
+    ],$TOOLS}""",
+)
+
 /** The client's request after the round's tool ran: the opening, the call, its result. */
 private fun afterCall(callId: String) = AnthropicParse.parseAnthropicBody(
     """{"model":"gpt-5.6-sol","max_tokens":1000,"messages":[
@@ -234,8 +246,9 @@ private fun reasoningBefore(
     session: String?,
     callId: String,
     agentId: String? = null,
+    body: splice.core.parse.AnthropicTurnBody = afterCall(callId),
 ): String? {
-    val input = provider.buildTurn(afterCall(callId).copy(agentId = agentId), compact = false, sessionId = session)
+    val input = provider.buildTurn(body.copy(agentId = agentId), compact = false, sessionId = session)
         .requestBody.getValue("input").jsonArray.map { it.jsonObject }
     val at = input.indexOfFirst {
         it["type"]?.jsonPrimitive?.content == "function_call" && it["call_id"]?.jsonPrimitive?.content == callId
@@ -372,12 +385,36 @@ class ReasoningCacheRestartTest(@param:TempDir private val state: Path) {
         assertEquals("rw-------", mode(files.single()))
     }
 
+    // Goal (2026-11-10): a machine that stops dead mid-write costs a conversation the round it was writing, never the
+    // reasoning it had already kept. The stop of 8:28 PM that day cut the last line of two live conversations, and the
+    // next start removed both whole, so every earlier tool step went out with no reasoning in front of it.
+    @Test
+    fun `a conversation whose last line was cut short keeps the reasoning of every round before it`() = runTest {
+        drive(heads.start(), "session-1", toolRound("call_1", "cipher-1"))
+        heads.stopAll()
+        val file = conversationFiles().single()
+        file.appendText("{\"ids\":[\"call_2\"],\"envel")
+        val logs = mutableListOf<String>()
+
+        val restarted = heads.restart(logs)
+
+        assertEquals("cipher-1", reasoningBefore(restarted, "session-1", "call_1"))
+        assertTrue(logs.any { "[reasoning-cache]" in it && "cut short" in it }, "no line says a round was lost: $logs")
+        // The next round lands on a line of its own, so the start after that still finds both.
+        drive(restarted, "session-1", toolRound("call_3", "cipher-3"), body = afterCall("call_1"))
+        val again = heads.restart()
+        val twoRounds = afterCalls("call_1", "call_3")
+        assertEquals("cipher-1", reasoningBefore(again, "session-1", "call_1", body = twoRounds))
+        assertEquals("cipher-3", reasoningBefore(again, "session-1", "call_3", body = twoRounds))
+    }
+
     @Test
     fun `a corrupt conversation file degrades to no injection, says so, and is removed`() = runTest {
         drive(heads.start(), "session-1", toolRound("call_1", "cipher-1"))
         heads.stopAll()
         val file = conversationFiles().single()
-        file.writeText("{\"ids\":[\"call_1\"],\"envelopes\":[\"e\"]}\n{not json")
+        // not a round in the middle of the file: no write that was cut short leaves that
+        file.writeText("{not json\n{\"ids\":[\"call_1\"],\"envelopes\":[\"e\"]}\n")
         val logs = mutableListOf<String>()
 
         assertEquals(null, reasoningBefore(heads.restart(logs), "session-1", "call_1"))

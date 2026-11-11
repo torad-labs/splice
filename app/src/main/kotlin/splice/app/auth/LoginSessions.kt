@@ -122,10 +122,11 @@ internal class LoginSessions(
     }
 
     /** Ends the sign-in still open for [label] on [headKey], when there is one: an account being removed is not
-     *  signed in again behind its removal. */
-    internal suspend fun withdraw(headKey: String, label: String) {
+     *  signed in again behind its removal. [label] is null for the head's first account, whose sign-in carries no
+     *  label ([start]), so that one is found too. */
+    internal suspend fun withdraw(headKey: String, label: String?) {
         val place = place(headKey, label)
-        val removed = "'$label' was removed from $headKey"
+        val removed = "the login it was for was removed from $headKey"
         val stopped = synchronized(lock) { sessions.values.filter { it.place == place && it.end(removed) } }
         stopped.forEach { it.job?.join() }
     }

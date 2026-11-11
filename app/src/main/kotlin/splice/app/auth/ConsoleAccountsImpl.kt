@@ -49,7 +49,9 @@ internal class ConsoleAccountsImpl(
     override fun openLogins(): List<LoginStatus> = sessions.open()
 
     override suspend fun removeAccount(headKey: String, label: String): AccountMutation {
-        sessions.withdraw(headKey, label)
+        // The first account signs in with no label, so no label is the place a sign-in still open for it holds. Under
+        // its reserved name the removal looked for a sign-in nobody starts, and the open one could file it again.
+        sessions.withdraw(headKey, label.takeUnless { it == PRIMARY_LABEL })
         return removeFiled(headKey, label)
     }
 

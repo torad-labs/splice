@@ -58,7 +58,8 @@ internal class AccountCredentialEligibility(
             excludedUntilEpochMillis = current.hold?.untilEpochMillis.takeIf { holdActive },
             reason = reason,
             renewable = !current.credentialPresent && current.renewable,
-            block = current.hold?.block.takeIf { holdActive },
+            // The block stands past the hold's time: only a served turn or another account's credential ends it.
+            block = current.hold?.block,
         )
     }
 
@@ -171,8 +172,12 @@ internal class AccountCredentialEligibility(
         val reason: String?,
         /** Not present, and its own command renews it (CredentialEvidence.renewable): no sign-in is needed. */
         val renewable: Boolean = false,
-        /** While held: the provider refused the account itself until its owner takes this step, which no sign-in
-         *  changes. Null for every other hold. */
+        /** The provider refused the account itself until its owner takes this step, which no sign-in changes. It
+         *  stands from that refusal until the login serves a turn or its credential names another account: through
+         *  the hold, and after the hold's time has run out and the next turn may ask again. Null for every other
+         *  hold. Until Nov 11, 2026 it ended with the hold's time: a login refused at 2:29:35 AM CT read "Use now" on
+         *  its card from 3:29 AM, and a session that found its recovery probe running at 2:29:35 AM moved off it
+         *  with only "account unavailable" for a reason. */
         val block: AccountBlock? = null,
     )
 

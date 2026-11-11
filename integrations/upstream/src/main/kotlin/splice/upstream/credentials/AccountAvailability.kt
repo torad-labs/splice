@@ -196,7 +196,8 @@ internal object AccountAvailability {
  * told the step.
  */
 internal object OwnerBlocks {
-    /** The logins in [order] held on such a block at [at]: the last a turn may ask, after every other. */
+    /** The logins in [order] such a block stands on at [at]: the last a turn may ask, after every other. One whose
+     *  hold has run out is also in the turn's ordinary order, where it is asked first, as its recovery probe. */
     fun lastResort(order: List<PoolAccount>, at: Long): List<PoolAccount> =
         order.filter { it.credentialStatus(at).block != null }
 

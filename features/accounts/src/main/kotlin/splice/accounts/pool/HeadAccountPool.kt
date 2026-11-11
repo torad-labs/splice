@@ -115,7 +115,8 @@ public data class HeadAccountCredential(
     val present: Boolean = true,
     val excludedUntilEpochMillis: Long? = null,
     val exclusionReason: String? = null,
-    /** Set while the provider refuses the login until its owner acts, which no sign-in changes. */
+    /** Set from the provider refusing the login until its owner acts, which no sign-in changes, until the login
+     *  serves a turn again: through its hold and after the hold's time has run out. */
     val ownerBlock: AccountBlock? = null,
     /** An expired token its own client renews the next time it runs: it cannot send, and nobody signs in again. */
     val renewable: Boolean = false,

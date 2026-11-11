@@ -361,6 +361,9 @@ function planAccount(row) {
     out,
     // the step its owner takes before the provider serves it again, in splice's words; null for every other login
     blocked: row.owner_block || null,
+    // blocked, and no longer held: its hold's time ran out, or the person pressed Try again. The block stays named until
+    // its provider serves a turn on it, and the next turn that reaches it asks (AccountCredentialEligibility.askAgain)
+    asking: !!row.owner_block && !((row.auth_excluded_until_epoch_millis ?? 0) > Date.now()),
     canRename: !!row.can_rename, canRemove: !!row.can_remove, native: !!row.carrying_request,
     // the provider answered with no usage for this account: no bars, never an older reading drawn as today's
     noUsage: !windows.length && !!row.no_usage_at_epoch_seconds,
@@ -442,16 +445,6 @@ function nextOf(p, c) {
   return p.accounts.find((a) => a.id === c.following) || null;
 }
 
-// A failed sign-in says its kind in a word or two where it was pressed, and splice's own sentence opens under the word,
-// never on the card (refusalHtml): a bare red "In use" on a Sign in left him nothing to act on (Oct 27). splice names
-// each failure's kind (failure_kind, ConsoleAccounts.kt LoginFailure); a kind it doesn't name reads Not completed. A
-// file or config failure fails again until it's fixed, so it has no Try again.
-const FAILS = {
-  not_completed: { word: "Not completed", retry: true }, network: { word: "Network error", retry: true },
-  file: { word: "File error" }, config: { word: "Config error" }, expired: { word: "Expired", retry: true },
-  stopped: { word: "Stopped", retry: true }, cancelled: { word: "Cancelled", retry: true }, in_progress: { word: "In progress" },
-  already_added: { word: "Already added", pulse: true }, in_use: { word: "In use", retry: true },
-};
 // A name splice takes, and one no other account of the command has (ClaudeAccountFolders.kt:199,
 // OAuthAccountFiles.kt:264-266). On Claude: letters, digits, - and _, starting with a letter or digit, up to 64
 // (ClaudeAccountFolders.kt:34, :195). Elsewhere: lowercase letters, digits, ., - and _, up to 48
@@ -501,7 +494,7 @@ const waiting = () => `<span class="waitbox" role="status">${GLYPH.wait}<span cl
 // the lock says what it means beside it: a bare red lock read as nothing until the footer under the stack (walk, Oct 13)
 const locked = (pop = false, word = "Limit reached") => DRAW.lock(word, { pop });
 // a held login is held until the last of its windows at their limit resets
-const heldUntil = (a) => { if (a.blocked) return esc(a.blocked); const w = a.windows.filter(atLimit).sort((x, y) => y.left - x.left)[0]; return w?.resetMs != null ? `Limit reached until ${at(w.resetMs)}` : "Limit reached"; };
+const heldUntil = (a) => { if (a.blocked) return `${esc(a.blocked)}${a.asking ? `<span class="why">· its next turn asks again</span>` : ""}`; const w = a.windows.filter(atLimit).sort((x, y) => y.left - x.left)[0]; return w?.resetMs != null ? `Limit reached until ${at(w.resetMs)}` : "Limit reached"; };
 
 // the ring and the meter are the KIT's now (kit.js DRAW, console.css): this page's own drawings, lifted so that every
 // page draws a share the way this one does. The arc is how much of the window is left; the bar is how much is used.
@@ -854,6 +847,8 @@ function previewCap(field) {
 const CODE_HINT = `<span class="code-hint">Enter this code on the sign-in page</span>`; // the act on the code, where Open sign-in goes (fin)
 function signingHtml(target) {
   const s = ui.signin[target];
+  // splice is ending it: the row stays, with nothing to press, until splice answers (cancelSignin)
+  if (s.state === "ending") return `${waiting()}<button class="act quiet" disabled>Cancelling</button>`;
   const cancel = `<button class="act quiet" data-act="cancel-signin" data-t="${target}">Cancel</button>`;
   if (s.state === "fail") {
     const f = s.fail, err = { word: f.word, why: s.why }, key = `signin:${target}`;
@@ -866,56 +861,35 @@ function signingHtml(target) {
   return `${waiting()}${open}${cancel}`;
 }
 // how: { start: the POST that begins it, poll: the head its status is read under, native: a Claude Code sign-in }
+// The steps of a sign-in (start, read, land, fail, cancel, a pasted code) are every page's one runner, SIGNIN in api.js.
+// Here is what this page does around them: where a sign-in shows, and what follows when it lands or fails.
 function startSignin(target, how, spot = null) { // spot: the one card it shows on
-  ui.signin[target] = { how, spot, by: how.native ? "paste" : "browser" };
+  ui.signin[target] = { how, spot };
   waitSignin(target);
 }
-const stopTimers = (s) => clearTimeout(s.timer);
-async function waitSignin(target) {
+const stopTimers = (s) => SIGNIN.quiet(s);
+// What the page does as the sign-in at [target] changes. It holds that sign-in while it is the one on its card or tile.
+function signOn(target) {
   const s = ui.signin[target];
-  stopTimers(s);
-  Object.assign(s, { state: "wait", code: null, url: null, id: null, gen: (s.gen || 0) + 1 });
-  render();
-  const gen = s.gen, res = await API.post(s.how.start, s.how.body || {});
-  if (ui.signin[target] !== s || s.gen !== gen) return;
-  if (!res.ok || !res.body?.id) { failSignin(target, res.body); return; }
-  s.id = res.body.id; seen(target, read(s, res.body));
+  return { held: () => ui.signin[target] === s, draw: render, done: (st) => finishSignin(target, st), failed: (st) => failedSignin(target, st) };
 }
-// An add's answer carries its sign-in inside it (AddViews.kt:63); a command's sign-in answers as itself.
-const read = (s, body) => (s.how.watch ? body?.sign_in || {} : body);
-function seen(target, st) { // one status answer: show its step, finish, fail, or ask again in a second
+const waitSignin = (target) => SIGNIN.start(ui.signin[target], signOn(target));
+// A sign-in the page itself ends as failed, in splice's words: a provider splice would not add, a save that did not land.
+function failSignin(target, st = null) { SIGNIN.fail(ui.signin[target], signOn(target), st); }
+// A sign-in that failed carries its word and splice's reason (SIGNIN.fail). They show where it was pressed.
+function failedSignin(target, st) {
   const s = ui.signin[target];
-  if (!s || s.state !== "wait") return;
-  if (st.state === "failed") { failSignin(target, st); return; }
-  if (st.state === "signed_in" || st.state === "live_after_restart") { finishSignin(target); return; }
-  const url = st.verification_uri || st.browser_url || null, by = st.user_code ? "code" : s.how.native ? "paste" : "browser";
-  const changed = url !== s.url || by !== s.by || (st.user_code || null) !== s.code;
-  s.swapped = !!(s.code && st.user_code && st.user_code !== s.code); // a device code that expired is replaced (DeviceLoginFlow.kt:88-93)
-  Object.assign(s, { url, by, code: st.user_code || null });
-  if (changed) { render(); s.swapped = false; }
-  const gen = s.gen;
-  s.timer = setTimeout(async () => {
-    const res = await API.get(s.how.watch || `/api/auth/${encodeURIComponent(s.how.poll)}/login/${encodeURIComponent(s.id)}`);
-    if (ui.signin[target] !== s || s.gen !== gen) return;
-    if (!res.ok) { failSignin(target); return; }
-    seen(target, read(s, res.body));
-  }, 1000);
-}
-function failSignin(target, st = null) {
-  const s = ui.signin[target];
-  stopTimers(s);
-  s.state = "fail"; s.fail = FAILS[st?.failure_kind] || FAILS.not_completed;
-  // why, in splice's words: the sign-in's own failure_reason, or the error a start splice refused answered with
-  const why = st?.failure_reason ?? st?.error;
-  s.why = typeof why === "string" ? why.trim() : "";
+  if (!s) return;
   refused(`signin:${target}`);
-  if (s.fail.pulse && st?.label) { // Already added: the card already there for that account pulses once
-    const there = data.flatMap((p) => p.accounts).find((a) => a.row?.label === st.label && a.row.heads.includes(s.how.poll));
+  if (s.fail.pulse && s.how?.poll) { // Already added: the card already there for that account pulses once
+    // splice names that login by its label; with none, it is the command's first login, which carries none
+    const is = (a) => (st?.label ? a.row.label === st.label : a.row.primary && st?.failure_reason);
+    const there = data.flatMap((p) => p.accounts).find((a) => a.row?.heads?.includes(s.how.poll) && is(a));
     if (there) ui.pulse = there.id;
   }
   render();
 }
-async function finishSignin(target) {
+async function finishSignin(target, st = null) {
   const s = ui.signin[target];
   stopTimers(s);
   if (s.how.done && !(await s.how.done())) return; // an add saves after its sign-in; a refused save says so in place
@@ -923,9 +897,29 @@ async function finishSignin(target) {
   if (target === "prov") ui.addProv = null;
   await refresh(s.spot ? s.spot.split("/")[1] : "new");
   if (s.how.name) await nameAdded(s.how);
+  landedOn(s.how, st);
 }
-function cancelSignin(target) {
-  if (ui.signin[target]) stopTimers(ui.signin[target]);
+// An add whose sign-in landed on a login already here (the browser held an account this command already has, and
+// splice signed that login in again): no card is new, so the one it landed on pulses once. Without it the tile closed
+// and nothing on the page said the press had done anything.
+function landedOn(how, st) {
+  if (!how.before || !st?.label) return;
+  const mine = data.flatMap((p) => p.accounts).filter((a) => a.row?.heads?.includes(how.poll));
+  if (mine.some((a) => a.row.ref && !how.before.has(a.row.ref))) return;
+  const there = mine.find((a) => a.row.label === st.label || a.row.account_labels?.[how.poll] === st.label);
+  if (there) { ui.pulse = there.id; render(); }
+}
+// Cancel ends the sign-in on splice, and the card lets go of it only once splice has answered. Until Nov 11, 2026 it
+// only forgot the sign-in here: splice kept it for its ten minutes and refused the next Sign in on that login as
+// already running (Marcos: "it said it canceled ... so it didnt really cancelled"). A sign-in that already failed has
+// ended, and an add's sign-in ends with its add (dropAdd, AddConsole.discard).
+async function cancelSignin(target) {
+  const s = ui.signin[target];
+  if (!s) return;
+  const own = !s.how.watch && s.how.poll; // an add's sign-in is its add's, and ends with it below
+  if (own ? !(await SIGNIN.cancel(s, signOn(target))) : s.state === "ending") return;
+  if (ui.signin[target] !== s) return;
+  stopTimers(s);
   delete ui.signin[target];
   if (target === "prov") dropAdd();
   render();
@@ -935,14 +929,11 @@ function openSignin(target) {
   if (s.url) window.open(s.url, "_blank", "noopener");
   if (s.by === "paste") board.querySelector(`.code-in[data-t="${target}"]`)?.focus();
 }
-async function submitCode(field) {
+function submitCode(field) {
   if (!field.value.trim() || field.readOnly) return;
   field.readOnly = true;
   const s = ui.signin[field.dataset.t];
-  if (!s?.id) return;
-  const res = await API.post(`/api/auth/${encodeURIComponent(s.how.poll)}/login/${encodeURIComponent(s.id)}/code`, { code: field.value.trim() });
-  if (!res.ok) { failSignin(field.dataset.t); return; }
-  seen(field.dataset.t, res.body);
+  if (s?.id) SIGNIN.code(s, signOn(field.dataset.t), field.value.trim());
 }
 // How an account signs in again: Claude Code's own sign-in through its place, any other through its command's login
 // under its own name (ClaudeLoginRoutes.kt:20, LoginRoutes.kt:24).
@@ -984,7 +975,9 @@ function slotHtml(p, c, a, serves) {
   }
   // a key that is missing leaves its commands without one: each is a chip here, with no live dot, so the card says which
   if (p.kind === "key" && !a.has) return `<span class="state">No key</span>${p.cmds.filter((x) => (a.heads || []).includes(x.head)).map((x) => `<span class="chip">${esc(x.cmd)}</span>`).join("")}`;
-  if (held(a)) return `${err}${pin}${locked(false, "")}`;
+  // a login its provider blocked has an act of its own beside the lock: Try again, for once what the block names is done.
+  // One already waiting to be asked (asking) has nothing left to press: its line says its next turn asks.
+  if (held(a)) return `${err}${pin}${a.blocked && !a.asking && c ? tryAct(p, c, a) : ""}${locked(false, "")}`;
   if (p.kind === "plan" && c) {
     // armed, Use now waits in the row under the card's head, beside the sessions it would cut (armRow)
     const armed = ui.moving && ui.moving.a === a.id && ui.moving.c === c.cmd;
@@ -993,6 +986,12 @@ function slotHtml(p, c, a, serves) {
   return "";
 }
 const slotKey = (a, c) => `slot:${a.id}|${c.cmd}`;
+// Try again on a login its provider blocked until its owner acts: splice lets go of its hold, and the next turn that
+// reaches the login asks the provider, whose answer decides (AskAgainRoute.kt). Until Nov 11, 2026 a blocked card offered
+// only Sign in again, in its menu, and a sign-in lifts no block. Marcos, that day: "I did sign in again because it said it
+// was blocked, I realized my payument failed, so I paid again".
+const tryAct = (p, c, a) => `<button class="act quiet" data-act="ask" data-p="${p.id}" data-c="${esc(c.cmd)}" data-a="${a.id}"`
+  + ` title="Its next turn asks the provider again">Try again</button>`;
 // the models a pinned login still cannot serve, each with when it can again (PinReason.kt pin_models_held), as one line
 const modelsHeld = (weeks) => (Array.isArray(weeks) ? weeks : [])
   .filter((m) => m?.model && m.until_epoch_seconds)
@@ -1947,7 +1946,7 @@ async function probe() {
   // what splice last knew is drawn at once and marked as being checked: the page never reads empty while every
   // provider is asked, which takes up to half a minute on his machine (Marlin, splice-lead, Oct 11); before its first
   // answer the board stands as its ghosts (render)
-  if (!data.length) { render(); await load(); }
+  if (!data.length) { render(); await load(); adoptSignins(); }
   ui.probing = true; glyph.classList.add("turning"); render();
   await API.post("/api/usage/probe");
   await load();
@@ -2006,11 +2005,38 @@ function startAdd(p, cmd, field) {
   if (err) { ui.naming = { cmd, draft: v, err }; render(); return; }
   const { c } = findCmd(cmd), before = new Set(p.accounts.map((x) => x.row?.ref).filter(Boolean));
   ui.naming = null;
-  // an OAuth command's added login takes a new place in its pool ("auto", OAuthAccountFiles' next free label); sent with no
-  // label it signed the FIRST login in again, over its file, so a second Muse account replaced the spent one rather than
-  // joining beside it (Oct 13, 5:38 AM). The first login of a command has no pool yet and still lands as its first.
-  const pooled = /^(muse|kimi)-oauth$/.test(c.authKind ?? "") && p.accounts.some((x) => x.row?.heads?.includes(c.head));
-  startSignin(`add:${cmd}`, { start: `/api/auth/${encodeURIComponent(c.head)}/login`, body: pooled ? { label: "auto" } : {}, poll: c.head, name: v || null, before });
+  startSignin(`add:${cmd}`, { ...addHow(p, c), name: v || null, before });
+}
+// How a command takes one more login.
+function addHow(p, c) {
+  // an OAuth command's added login takes a new place in its pool ("auto", OAuthAccountFiles.loginAccount: the next free
+  // place for Grok, Kimi and Muse, a place named after the account for ChatGPT); sent with no label it signed the FIRST
+  // login in again, over its file, so a second Muse account replaced the spent one rather than joining beside it (Oct 13,
+  // 5:38 AM). Until Nov 11, 2026 only Muse and Kimi asked for a place, so + Add account on a ChatGPT or Grok command
+  // still wrote over its first login. A command whose first login holds no file has no pool yet (splice refuses a place
+  // in one), so its add still lands as its first.
+  const first = (x) => x.row?.heads?.includes(c.head) && x.row.primary && x.row.credential_present !== false;
+  const pooled = /-oauth$/.test(c.authKind ?? "") && p.accounts.some(first);
+  return { start: `/api/auth/${encodeURIComponent(c.head)}/login`, body: pooled ? { label: "auto" } : {}, poll: c.head };
+}
+// THE PAGE SHOWS THE SIGN-INS SPLICE HOLDS. One still open when the page opens (a reload, another tab) is drawn where
+// it would have been pressed, with its step and its Cancel (GET /api/auth/logins): on its login's card when it signs
+// that login in again, and on its command's Add account otherwise. Read once, when the board first stands; a sign-in
+// pressed here afterwards is already on its card. Until Nov 11, 2026 a reloaded page showed none of them.
+async function adoptSignins() {
+  const res = await API.get("/api/auth/logins");
+  let found = false;
+  for (const l of res.body?.logins || []) {
+    const p = data.find((x) => x.cmds?.some((c) => c.head === l.head)), c = p?.cmds.find((x) => x.head === l.head);
+    if (!p || Object.values(ui.signin).some((s) => s.id === l.id)) continue;
+    const a = p.accounts.find((x) => x.row?.heads?.includes(l.head) && labelOn(x, l.head) === l.label);
+    const target = a ? `${a.out ? "out" : "re"}:${a.id}` : `add:${c.cmd}`;
+    if (ui.signin[target]) continue;
+    const how = a ? howFor(p, a, null) : addHow(p, c);
+    ui.signin[target] = { how, spot: null };
+    SIGNIN.adopt(ui.signin[target], signOn(target), l); found = true;
+  }
+  if (found) render();
 }
 async function nameAdded(how) {
   const added = data.flatMap((p) => p.accounts).find((x) => x.row?.ref && !how.before.has(x.row.ref) && x.row.heads.includes(how.poll));
@@ -2334,6 +2360,13 @@ document.addEventListener("click", async (e) => {
       await refresh(null, res.ok ? null : () => { ui.slotErr = { a: a.id, c: k.cmd, ...mutationError(res, "Not switched") }; refused(slotKey(a, k)); });
       break;
     }
+    // Try again on a blocked login: splice lets go of its hold and the board reads what it holds now. One still refused
+    // reads blocked again from its next turn's answer.
+    case "ask": {
+      const res = await API.post(headPath(k, "ask"), { label: labelOn(a, k.head) });
+      await refresh(null, res.ok ? null : () => { ui.slotErr = { a: a.id, c: k.cmd, ...mutationError(res, "Not asked") }; refused(slotKey(a, k)); });
+      break;
+    }
     case "unpin": {
       const on = findCmdPin(k);
       k.pin = null; render({ flip: true });
@@ -2372,10 +2405,17 @@ document.addEventListener("click", async (e) => {
       const res = p.kind === "key" ? await API.del(`/api/keys/${encodeURIComponent(a.env)}`) : await API.del(editPath(a));
       ui.removing = null;
       if (!res.ok) {
-        ui.removeErr = { spot: t.dataset.s, ...mutationError(res, p.kind === "key" ? "Key not removed" : "Not removed") };
-        ui.armed = null; refused(`remove:${t.dataset.s}`); render(); break;
+        const said = () => { ui.removeErr = { spot: t.dataset.s, ...mutationError(res, p.kind === "key" ? "Key not removed" : "Not removed") }; refused(`remove:${t.dataset.s}`); };
+        ui.armed = null;
+        // a refusal from splice is read against what splice holds now: a login another tab already removed leaves with
+        // its card, where it used to stay with "Not removed" on it for as long as the menu was open
+        if (res.status) await refresh(null, said); else { said(); render(); }
+        break;
       }
       ui.menu = null; ui.armed = null;
+      // a sign-in this login had open ended with it on splice (ConsoleAccounts.removeAccount); its row goes with the
+      // card, or the board would count as busy and stop reading again for as long as the page stayed open (atRest)
+      for (const k of [`re:${a.id}`, `out:${a.id}`]) if (ui.signin[k]) { stopTimers(ui.signin[k]); delete ui.signin[k]; }
       board.querySelectorAll(`.card[data-a="${CSS.escape(a.id)}"]`).forEach((el) => el.classList.add("leaving"));
       await refresh();
       break;

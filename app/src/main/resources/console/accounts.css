@@ -205,6 +205,7 @@
 .windows .next .nextlock { display: flex; justify-content: flex-end; }
 /* a login not read: its reason muted after the word, over the provider's own rows drawn empty */
 .windows .unproved .why { color: var(--text-mute); }
+.windows .heldline .why { color: var(--text-mute); margin-left: calc(.8 * var(--u)); white-space: nowrap; }
 /* an expired token its command renews: the renewal is drawn on that command's chip */
 .card .slot .chip.renew { color: var(--text-body); }
 .card .slot .chip.renew svg { color: var(--text-mute); }

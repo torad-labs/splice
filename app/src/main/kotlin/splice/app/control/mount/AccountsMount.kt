@@ -18,6 +18,7 @@ import splice.accounts.pool.ACCOUNT_NAMES_FILE
 import splice.accounts.pool.AccountNameRoute
 import splice.accounts.pool.AccountNameStore
 import splice.accounts.pool.AccountsRoute
+import splice.accounts.pool.AskAgainRoute
 import splice.accounts.pool.FirstAccounts
 import splice.accounts.pool.SwitchRoute
 import splice.accounts.signin.ConsoleAccountsSource
@@ -57,6 +58,7 @@ internal class AccountsMount(
     // Read at CALL time: ControlPlane assigns [ConsolePorts.accounts] after the server is constructed.
     private val loginRoutes = LoginRoutes(accountResolver, ConsoleAccountsSource { ports.accounts })
     private val switchRoute = SwitchRoute(accountResolver)
+    private val askAgainRoute = AskAgainRoute(accountResolver)
     private val accountEditRoutes = AccountEditRoutes(
         accountResolver,
         ConsoleAccountsSource { ports.accounts },
@@ -107,9 +109,11 @@ internal class AccountsMount(
             }
         }
         route.post("/api/auth/{head}/login") { guard.guarded(call) { loginRoutes.startLogin(call) } }
+        route.get("/api/auth/logins") { guard.guarded(call) { loginRoutes.openLogins(call) } }
         route.get("/api/auth/{head}/login/{id}") {
             guard.guarded(call) { if (!claudeRoutes.poll(call)) loginRoutes.pollLogin(call) }
         }
+        route.delete("/api/auth/{head}/login/{id}") { guard.guarded(call) { loginRoutes.cancelLogin(call) } }
         route.post("/api/claude-logins/{place}/login") { guard.guarded(call) { claudeRoutes.login(call) } }
         route.post("/api/auth/{head}/login/{id}/code") { guard.guarded(call) { claudeRoutes.submit(call) } }
         route.get("/api/auth/{head}/order") {
@@ -118,6 +122,7 @@ internal class AccountsMount(
         route.put("/api/auth/{head}/order") { guard.guarded(call) { accountOrderRoute.set(call) } }
         route.post("/api/auth/{head}/switch") { guard.guarded(call) { switchRoute.switchAccount(call) } }
         route.delete("/api/auth/{head}/switch") { guard.guarded(call) { switchRoute.unpinAccount(call) } }
+        route.post("/api/auth/{head}/ask") { guard.guarded(call) { askAgainRoute.askAgain(call) } }
         route.delete("/api/auth/{head}/accounts/{label}") {
             guard.guarded(call) { accountEditRoutes.removeAccount(call) }
         }

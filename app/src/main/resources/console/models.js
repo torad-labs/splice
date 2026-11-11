@@ -330,6 +330,20 @@ function outcomeOf(c) {
   return { g, e, max, flight, refused, le, pe, served, total, failed, share: total > 0 ? failed / total : null };
 }
 const order = (cs) => [...cs.filter((c) => stateOf(c)), ...cs.filter((c) => !stateOf(c))];
+/** A sign-in splice is waiting on (SIGNIN, api.js): its code and page while it waits, and nothing to press while splice
+ *  ends it. Drawn the same for a command's sign-in, in its header, and for an add's, in the add pane. */
+function signBox(sg) {
+  const wait = (word) => `<span class="waitbox" role="status">${ICON.wait}<span class="sr">${word}</span></span>`;
+  if (sg.state === "ending") return `<div class="outbox">${wait("Cancelling")}<button class="act quiet" disabled>Cancelling</button></div>`;
+  // a page that ends in a code to paste back (Claude Code's own sign-in) has the field for it here
+  const paste = sg.by === "paste"
+    ? `<input class="field code-in" id="sg-code" placeholder="Paste code" aria-label="Paste code" autocomplete="off" spellcheck="false" value="${esc(sg.pasted ?? "")}"${sg.sent ? " readonly" : ""}>` : "";
+  return `<div class="outbox">${wait("Signing in")}`
+    + `${sg.code ? `<button class="usercode" data-act="copy-code">${esc(sg.code)}</button><span class="code-hint">Enter this code on the sign-in page</span>` : ""}`
+    + `${sg.url ? `<button class="act" data-act="open-signin">Open sign-in</button>` : ""}${paste}<button class="act quiet" data-act="cancel-signin">Cancel</button></div>`;
+}
+// splice's own sentence for a sign-in that failed, under the word that names it
+const signWhy = (why) => (why ? `<p class="signwhy">${esc(why)}</p>` : "");
 function signHtml(c) {
   const kf = ui.keyin;
   if (kf?.key === c.key) {
@@ -337,11 +351,7 @@ function signHtml(c) {
       + DRAW.act({ word: "Add", act: "savekey", cls: "primary" }) + DRAW.act({ word: "Cancel", act: "cancel-key", cls: "quiet" })
       + `${kf.said ? DRAW.result(kf.said, "bad") : ""}</div>`;
   }
-  const sg = ui.sign;
-  if (sg?.key !== c.key) return "";
-  return `<div class="outbox"><span class="waitbox" role="status">${ICON.wait}<span class="sr">Signing in</span></span>`
-    + `${sg.code ? `<button class="usercode" data-act="copy-code">${esc(sg.code)}</button><span class="code-hint">Enter this code on the sign-in page</span>` : ""}`
-    + `${sg.url ? `<button class="act" data-act="open-signin">Open sign-in</button>` : ""}<button class="act quiet" data-act="cancel-signin">Cancel</button></div>`;
+  return ui.sign?.key === c.key ? signBox(ui.sign) : "";
 }
 /** THE STRIP UNDER A READY CARD: how its command is doing, drawn. Its requests in flight against the most it lets in at once
  *  (an empty track when idle; with no limit set, a dot for each request in the dashed track), and under it the share of what
@@ -715,7 +725,7 @@ function paneHead(c, d, st) {
     + `${word || fix || said ? `<div class="meta">${word}${fix}${said}</div>` : ""}</div>`
     + `<div class="acts">${headActsHtml(c)}${removeHtml(c)}</div>`
     + `${signbar ? `<div class="hask rn-signbar">${signbar}</div>` : ""}<button class="icon close" data-act="close" aria-label="Close">${GL.close}</button>`
-    + `${sign ? `<div class="hask signrow">${sign}</div>` : ""}${ask ? `<div class="hask${ui.fx?.ask ? " unfold" : ""}">${ask}</div>` : ""}${removeAskHtml(c)}</header>`;
+    + `${sign ? `<div class="hask signrow">${sign}</div>` : ""}${ui.fixSaid?.key === c.key && ui.fixSaid.why ? `<div class="hask">${signWhy(ui.fixSaid.why)}</div>` : ""}${ask ? `<div class="hask${ui.fx?.ask ? " unfold" : ""}">${ask}</div>` : ""}${removeAskHtml(c)}</header>`;
 }
 /** RIGHT NOW: how the command is doing, this second and since it started (GET /api/heads' gate and health). It leads with
  *  the share of what it took that failed, the one 2.9rem figure, drawn on a scale that ends on the first round percent
@@ -3060,11 +3070,10 @@ function addPaneHtml() {
   // while splice runs its checks, their rows are arriving shapes in the place the answers land
   const checks = a.checks ? `<ol class="checks">${a.checks.map(checkRow).join("")}</ol>`
     : a.busy && !a.sign ? `<ol class="checks" aria-busy="true">${[9, 7, 8].map((w) => `<li class="gcheck">${GHOST.bar(1.2)}${GHOST.bar(w)}</li>`).join("")}</ol>` : "";
-  const sg = a.sign;
-  const sign = sg ? `<div class="outbox"><span class="waitbox" role="status">${ICON.wait}<span class="sr">Signing in</span></span>`
-    + `${sg.code ? `<button class="usercode" data-act="copy-code">${esc(sg.code)}</button><span class="code-hint">Enter this code on the sign-in page</span>` : ""}`
-    + `${sg.url ? `<button class="act" data-act="open-signin">Open sign-in</button>` : ""}<button class="act quiet" data-act="cancel-signin">Cancel</button></div>` : "";
+  const sign = a.sign ? signBox(a.sign) : "";
   const said = a.said ? DRAW.result(a.said, "bad") : "";
+  // a sign-in that failed says why under the foot, in splice's words, while its word is the one the foot shows
+  const why = a.why?.word === a.said ? signWhy(a.why.text) : "";
   // WHAT ADD STILL WAITS FOR IS DRAWN, NOT WRITTEN: one segment per thing it needs, filled as each is given, beside Add; the
   // field itself wears the dashed edge until it holds something, so the eye goes to it
   const reqs = [];
@@ -3086,7 +3095,7 @@ function addPaneHtml() {
   // band stands beside it
   return `<div class="pane add-pane${ui.fx?.add ? " unfold" : ""}" style="--c:${colorOf(fam)}">${head}<div class="body">`
     + `<div class="addhead"><span class="addchip">${chip}</span>${back}</div>`
-    + `<div class="addcols n${groups.length}">${groups.join("")}<div class="addband">${checks}${sign}${foot}</div></div></div></div>`;
+    + `<div class="addcols n${groups.length}">${groups.join("")}<div class="addband">${checks}${sign}${foot}${why}</div></div></div></div>`;
 }
 const CHECK_NAME = { credential: "Key", "base url": "URL", models: "Models", windows: "Windows", "live turn": "Live request" };
 // what a provider's HTTP status means for him, in words; the number itself stays on the word's title and in the log
@@ -3129,36 +3138,33 @@ async function startAdd() {
     const put = await API.put(`/api/keys/${encodeURIComponent(res.body.key_env)}`, { value: a.key.trim() });
     if (!put.ok) { a.busy = false; a.said = "Key not saved"; ui.shook = "add"; render(); return; }
   }
-  if (res.body.sign_in_by === "login") { await signIn(); return; }
+  if (res.body.sign_in_by === "login") { signIn(); return; }
   await verifyAndSave();
 }
-async function signIn() {
-  const a = ui.add;
-  a.sign = { code: null, url: null };
-  render();
-  const res = await API.post(`/api/add/${encodeURIComponent(a.id)}/login`, {});
-  if (!res.ok) { a.sign = null; a.busy = false; a.said = "Not completed"; render(); return; }
-  for (let i = 0; i < 300 && a.sign; i++) {
-    const st = (await API.get(`/api/add/${encodeURIComponent(a.id)}`)).body?.sign_in ?? {};
-    if (st.state === "failed") { a.sign = null; a.busy = false; a.said = "Not completed"; render(); return; }
-    if (st.state === "signed_in" || st.state === "live_after_restart") { a.sign = null; await verifyAndSave(); return; }
-    const url = st.verification_uri || st.browser_url || null;
-    if (url !== a.sign.url || (st.user_code || null) !== a.sign.code) { a.sign = { code: st.user_code || null, url }; render(); }
-    await new Promise((r) => setTimeout(r, 1000));
-  }
+// An add's sign-in. Its steps are every page's one runner (SIGNIN, api.js): the add carries the sign-in (watch) and ends
+// it (end). Here is what this pane does around them: it checks and saves once the sign-in lands, and says in a word how
+// one failed. The pane holds the sign-in while it is its add's. Until Nov 11, 2026 this was the page's own loop, which
+// went on drawing "Signing in" for five minutes over a sign-in a restarted splice no longer held.
+function signIn() {
+  const a = ui.add, add = `/api/add/${encodeURIComponent(a.id)}`;
+  const sg = a.sign = { how: { start: `${add}/login`, body: {}, watch: add, end: `${add}/login` } };
+  sg.on = {
+    held: () => ui.add === a && a.sign === sg, draw: render,
+    done: async () => { a.sign = null; await verifyAndSave(); },
+    failed: () => { a.sign = null; a.busy = false; a.said = sg.fail.word; a.why = { word: a.said, text: sg.why }; render(); },
+  };
+  SIGNIN.start(sg, sg.on);
 }
-const profileOf = (a) => data.profiles.find((x) => x.name === a.profile);
-// Add with a failed check saves nothing, and says so on the form with what to fix (marlin p226: a press did nothing). A
-// failed address opens the URL field beside the check, filled with the address tried, so it can be fixed in place.
-// The check that stopped it is lamped red on its own row under the card, with its word, so the foot says only Not added,
-// never the check again as a sentence.
-function notAddedWhy(a, prof) {
-  const failed = a.checks.find((c) => !c.ok && !SOFT.has(c.name)) ?? a.checks.find((c) => !c.ok);
-  if (failed?.name === "base url") {
-    a.urlFailed = true;
-    if (!a.url.trim()) a.url = /\bat (\S+)$/.exec(failed.detail ?? "")?.[1] ?? prof.base_url ?? "";
-  }
-  return "Not added";
+// Cancel on a sign-in, an add's or a command's. It ends on splice, and the box goes once splice has answered: it reads
+// Cancelling until then (SIGNIN.cancel). Until Nov 11, 2026 Cancel only forgot it here, and splice went on holding it
+// (Marcos: "it said it canceled ... so it didnt really cancelled"): the provider's callback port stayed taken, and a
+// sign-in page finished later still filed the login.
+async function cancelSignin(a) {
+  const sg = a?.sign ?? ui.sign;
+  if (!sg || !(await SIGNIN.cancel(sg, sg.on))) return;
+  if (a?.sign === sg) { a.sign = null; a.busy = false; }
+  if (ui.sign === sg) ui.sign = null;
+  render();
 }
 async function verifyAndSave() {
   const a = ui.add;
@@ -3203,23 +3209,26 @@ async function saveKey() {
   await readAll();
   render();
 }
-async function signinCommand(key) {
+function signinCommand(key) {
   const c = cmdByKey(key);
   if (/key/i.test(c.auth)) { ui.keyin = { key, said: null }; render(); focusLater(() => document.getElementById("k-in")); return; }
-  ui.sign = { key, code: null, url: null }; ui.fixSaid = null;
-  render();
-  const res = await API.post(`/api/auth/${encodeURIComponent(key)}/login`, {});
-  // a sign-in that did not finish says so in the header where Sign in was pressed, on the command it was for
-  if (!res.ok || !res.body?.id) { ui.sign = null; ui.fixSaid = { key, word: "Not completed" }; render(); return; }
-  const sg = ui.sign;
-  for (let i = 0; i < 300 && ui.sign === sg; i++) {
-    const st = (await API.get(`/api/auth/${encodeURIComponent(key)}/login/${encodeURIComponent(res.body.id)}`)).body ?? {};
-    if (st.state === "failed") { ui.sign = null; ui.fixSaid = { key, word: "Not completed" }; render(); return; }
-    if (st.state === "signed_in" || st.state === "live_after_restart") { ui.sign = null; await readAll(); render(); return; }
-    const url = st.verification_uri || st.browser_url || null;
-    if (url !== sg.url || (st.user_code || null) !== sg.code) { Object.assign(sg, { url, code: st.user_code || null }); render(); }
-    await new Promise((r) => setTimeout(r, 1000));
-  }
+  // Its steps are every page's one runner (SIGNIN, api.js). A sign-in that did not finish says how, in a word, in the
+  // header where Sign in was pressed, on the command it was for; the page holds it while it is that header's.
+  const sg = ui.sign = { key, how: { start: `/api/auth/${encodeURIComponent(key)}/login`, body: {}, poll: key } }; ui.fixSaid = null;
+  sg.on = {
+    held: () => ui.sign === sg, draw: render,
+    done: async () => { ui.sign = null; await readAll(); render(); },
+    failed: () => { ui.sign = null; ui.fixSaid = { key, word: sg.fail.word, why: sg.why }; render(); },
+  };
+  SIGNIN.start(sg, sg.on);
+}
+// The code a sign-in page showed, pasted back in the box (Claude Code's own sign-in). It goes to splice, which lands the
+// sign-in or ends it with its reason (SIGNIN.code); the field holds what was sent until splice has answered.
+function sendCode(field) {
+  const sg = ui.sign, text = field.value.trim();
+  if (!sg || !text || sg.sent) return;
+  sg.pasted = text; sg.sent = true; field.readOnly = true;
+  SIGNIN.code(sg, sg.on, text);
 }
 // ---------- the fix splice offers: Start, Sign in, Restore ----------
 async function fix(key) {
@@ -3687,7 +3696,7 @@ function onClick(e) {
     case "try-live": tryLive(d.h); break;
     case "savekey": saveKey(); break;
     case "cancel-key": ui.keyin = null; render(); break;
-    case "cancel-signin": if (a?.sign) { a.sign = null; a.busy = false; } else ui.sign = null; render(); break;
+    case "cancel-signin": cancelSignin(a); break;
     case "arm": armRemove(ui.open); break;
     case "disarm": ui.rm = null; render(); break;
     case "reread": readAll().then(() => armRemove(ui.open)); break;
@@ -3811,6 +3820,7 @@ function onInput(e) {
   if (t.id === "prq") { ui.prq = t.value; render(); return; }
   if (t.id === "ppq") { ui.ppq = t.value; render(); return; }
   if (t.id === "k-in") { if (ui.keyin) ui.keyin.val = t.value; return; }
+  if (t.id === "sg-code") { if (ui.sign) ui.sign.pasted = t.value; return; }
   if (a) {
     if (t.id === "a-name") a.name = t.value;
     else if (t.id === "a-url") a.url = t.value;
@@ -3841,6 +3851,9 @@ function onInput(e) {
 }
 root.addEventListener("click", onClick);
 root.addEventListener("input", onInput);
+// a pasted sign-in code is sent as it lands, or on Enter when it was typed
+root.addEventListener("paste", (e) => { if (e.target.id === "sg-code") setTimeout(() => sendCode(e.target), 0); });
+root.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.id === "sg-code") sendCode(e.target); });
 document.getElementById("claude").addEventListener("click", onClick);
 document.querySelector('.foot [data-act="theme"]')?.addEventListener("click", toggleTheme);
 

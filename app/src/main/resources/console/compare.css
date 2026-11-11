@@ -375,7 +375,10 @@
 .pg-fixacts .act .go { width: .9rem; height: .9rem; }
 .pg-usew, .pg-nologin { font: 500 .92rem/1.2 var(--font-name); color: var(--text-mute); }
 .pg-nologin { padding-inline: var(--u); }
-.pg-signing { display: inline-flex; align-items: center; gap: var(--u); }
+.pg-signing { display: inline-flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: var(--u); }
+.pg-signing .pg-codein { width: 11rem; min-width: 0; }
+/* what splice said of an act that failed in the pane: under the acts, at their edge, wrapped inside the pane */
+.pg-fxwhy { margin: 0; align-self: flex-end; max-width: 100%; text-align: right; font: 500 .92rem/1.4 var(--font-name); color: var(--text-body); overflow-wrap: anywhere; }
 .pg-code { font: 700 1.05rem/1 var(--font-data); letter-spacing: .08em; padding: .35rem .6rem; border: .12rem solid var(--ink); border-radius: var(--r-in); background: var(--sunk, var(--obj-high)); color: var(--text); }
 .pg-capf { display: inline-flex; align-items: center; gap: 0.333rem; font: 600 .98rem/1 var(--font-data); color: var(--text-body); }
 .pg-capf .field { width: 7rem; min-width: 0; }

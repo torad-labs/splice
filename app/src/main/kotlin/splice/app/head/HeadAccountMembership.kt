@@ -60,6 +60,13 @@ internal class HeadAccountMembership(
 
     override fun publish() = update()
 
+    /** The pool reads its logins again, then lets go of whatever held [label] out for its credential: the person
+     *  just signed it in, so the next turn asks the provider with it ([AccountPool.askAgain]). */
+    override fun signedIn(label: String) {
+        update()
+        pool.askAgain(label)
+    }
+
     override fun completeWithdrawal(label: String) {
         lock.withLock {
             withdrawn.remove(label)

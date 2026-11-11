@@ -55,7 +55,7 @@ internal class ClaudeLoginWiring(
             changes = poolChanges,
             held = held,
         )
-        val signIn = ClaudeAccountSignIn(folders, native, scope)
+        val signIn = ClaudeAccountSignIn(folders, native, scope, log)
         return ClaudeLoginArm(
             owner = ClaudeLoginOwner(
                 places,

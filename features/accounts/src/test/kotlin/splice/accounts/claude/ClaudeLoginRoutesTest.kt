@@ -4,6 +4,7 @@ package splice.accounts.claude
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
@@ -11,6 +12,7 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.accounts.signin.LoginPrompt
 import splice.accounts.signin.LoginState
@@ -22,7 +24,7 @@ private class TestNativePlaces : ClaudeLoginPlaces {
         "native-id",
         "claude-splice",
         LoginState.WAITING,
-        prompt = LoginPrompt(browserUrl = "https://claude.ai/fixture"),
+        prompt = LoginPrompt(browserUrl = "https://claude.ai/fixture", pasteBack = true),
     )
 
     override fun hasCarryingProof(head: String, session: String): Boolean = false
@@ -79,7 +81,10 @@ class ClaudeLoginRoutesTest {
             assertEquals(2, source.requested.size)
             val unknown = client.post("/api/claude-logins/wrong/login") { setBody("{}") }
             assertEquals(HttpStatusCode.NotFound, unknown.status)
-            assertEquals(HttpStatusCode.OK, client.get("/api/auth/claude-splice/login/native-id").status)
+            val polled = client.get("/api/auth/claude-splice/login/native-id")
+            assertEquals(HttpStatusCode.OK, polled.status)
+            // the page draws the field for the code from this, on every card that shows the link
+            assertTrue(polled.bodyAsText().contains("\"paste_code\":true"), polled.bodyAsText())
             assertEquals(HttpStatusCode.NotFound, client.get("/api/auth/other/login/native-id").status)
             val code = client.post("/api/auth/claude-splice/login/native-id/code") {
                 setBody("""{"code":"synthetic-code"}""")

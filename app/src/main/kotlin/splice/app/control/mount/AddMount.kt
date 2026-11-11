@@ -39,6 +39,7 @@ internal class AddMount(
         route.post("/api/add") { guard.guarded(call) { routes.open(call) } }
         route.get("/api/add/{id}") { guard.guarded(call) { routes.poll(call) } }
         route.post("/api/add/{id}/login") { guard.guarded(call) { routes.signIn(call) } }
+        route.delete("/api/add/{id}/login") { guard.guarded(call) { routes.cancelSignIn(call) } }
         route.post("/api/add/{id}/verify") { guard.guarded(call) { routes.verify(call) } }
         route.post("/api/add/{id}/save") { guard.guarded(call) { routes.save(call) } }
         route.delete("/api/add/{id}") { guard.guarded(call) { routes.discard(call) } }

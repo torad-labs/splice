@@ -85,6 +85,18 @@ internal class OAuthAccountWrites(private val json: Json, private val validation
         return OAuthAccountWrite(writeLabeled(kind, dir, destination, providerJson), retainedQuota)
     }
 
+    /** Whether the command's first login, in [primaryFile], holds the account [providerJson] signed in. A sign-in
+     *  that names no account, or a first login whose file does not, is never the same one. */
+    fun firstHolds(
+        kind: AuthKind.OAuth,
+        primaryFile: Path,
+        providerJson: JsonObject,
+        identity: OAuthAccountIdentity?,
+    ): Boolean {
+        val signedIn = identity?.invoke(providerJson) ?: return false
+        return ExistingIdentity(kind, identity, signedIn, json).holds(primaryFile)
+    }
+
     /** Both entries are checked without following links. A linked credential cannot claim the
      *  quota at this label belongs to it; only an in-place regular credential may re-login. */
     fun retainedQuota(dir: Path, label: String): Path? {
@@ -135,6 +147,10 @@ private class ExistingIdentity(
         return JsonScalars.str(saved, FIELD_KIND) == kind.wire &&
             JsonScalars.str(saved, FIELD_LABEL) == label && identity(saved) == expected
     }
+
+    /** The account alone, for a file that carries no label of ours: a command's first login, which is in its
+     *  provider's own shape and may be the provider's own CLI's file. */
+    fun holds(file: Path): Boolean = jsonObjectOrNull(file)?.let(identity::invoke) == expected
 
     /** [path] parsed as a JSON object; null when it cannot be read or is not one. */
     private fun jsonObjectOrNull(path: Path): JsonObject? = try {

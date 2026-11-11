@@ -4,6 +4,7 @@ package splice.app.head
 import splice.accounts.order.AccountOrderStore
 import splice.accounts.order.AccountPinStore
 import splice.accounts.order.HeadAccountOrderSource
+import splice.accounts.pool.HeadAccountAskSource
 import splice.accounts.pool.HeadAccountAuthSource
 import splice.accounts.pool.HeadAccountCredential
 import splice.accounts.pool.HeadAccountHolds
@@ -178,8 +179,14 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
         private val head: String? = null,
         private val orders: AccountOrderStore? = null,
         private val pins: AccountPinStore? = null,
-    ) : HeadAccountPoolSource, HeadAccountPinSource, HeadAccountOrderSource, HeadAccountSessionSource {
+    ) : HeadAccountPoolSource,
+        HeadAccountPinSource,
+        HeadAccountAskSource,
+        HeadAccountOrderSource,
+        HeadAccountSessionSource {
         override val active: Boolean get() = pool.active
+
+        override fun askAgain(label: String): Boolean = pool.askAgain(label)
 
         override fun sessions(sessionIds: Collection<String>): HeadAccountSessions = HeadAccountSessions(
             headPinnedLabel = pool.pinned(null),

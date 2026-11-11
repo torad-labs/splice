@@ -409,17 +409,23 @@ class ClaudeLivePoolMembershipTest {
                         restart: HeadRestart,
                     ): LoginStart = LoginStart.UnsupportedAuthKind("client")
                     override fun pollLogin(id: String): LoginStatus? = null
-                    override suspend fun removeAccount(headKey: String, label: String): AccountMutation =
-                        AccountMutation.UnsupportedAuthKind("client")
+                    override suspend fun cancelLogin(id: String): LoginStatus? = null
+                    override fun openLogins(): List<LoginStatus> = emptyList()
+                    override suspend fun removeAccount(
+                        headKey: String,
+                        label: String,
+                        restart: HeadRestart,
+                    ): AccountMutation = AccountMutation.UnsupportedAuthKind("client")
                     override suspend fun relabelAccount(
                         headKey: String,
                         label: String,
                         newLabel: String,
+                        restart: HeadRestart,
                     ): AccountMutation = AccountMutation.UnsupportedAuthKind("client")
                 },
                 ClaudeAccountsSource { ClaudeAccountsPort(signIn(scope, NativeLoginTestProcess()), folders) },
             )
-            assertEquals(AccountMutation.Ok, arm.removeAccount(HEAD, "office"))
+            assertEquals(AccountMutation.Ok, arm.removeAccount(HEAD, "office", HeadRestart { }))
             assertFalse(pool.pin("office"), "a removed credential cannot remain an addressable pool member")
             assertTrue(pool.pin("work"))
             assertEquals("Bearer synthetic-work", sent(registry, head))

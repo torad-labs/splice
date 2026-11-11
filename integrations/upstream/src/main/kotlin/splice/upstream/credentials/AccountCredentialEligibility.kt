@@ -115,6 +115,20 @@ internal class AccountCredentialEligibility(
         }
     }
 
+    /** The person asks for this login again ([AccountPool.askAgain]). Its hold ends [at] this moment and its series
+     *  of refusals starts over, so the next turn that reaches it asks the provider, and a refusal holds it for the
+     *  first, shortest time. A block its provider put on it stays named: splice learns that the owner acted only from
+     *  the provider's next answer, so the login reads blocked until a turn is served on it ([succeeded]). On Nov 11,
+     *  2026 this let go of the block as well, and a login pressed Try again read as one a turn could take for three
+     *  minutes, until Anthropic refused it again. */
+    fun askAgain(at: Long) {
+        while (true) {
+            val current = reconcile()
+            val named = current.hold?.takeIf { it.block != null }?.copy(untilEpochMillis = at)
+            if (state.compareAndSet(current, current.resetRuntime().copy(hold = named))) return
+        }
+    }
+
     private fun scheduleFailure(lease: Lease, block: AccountBlock? = null) {
         while (true) {
             val current = reconcile()

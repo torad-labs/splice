@@ -81,7 +81,7 @@ public class AccountEditRoutes(
         val result = when (target) {
             is Target.Pool -> {
                 val port = accounts() ?: return AccountReplies.respondUnwired(call, AccountReplies.ACCOUNTS_PORT)
-                port.removeAccount(head.key, target.id)
+                port.removeAccount(head.key, target.id, head.restart)
             }
             is Target.Native -> target.owner.remove(target.place)
         }
@@ -107,7 +107,7 @@ public class AccountEditRoutes(
         val result = when (target) {
             is Target.Pool -> {
                 val port = accounts() ?: return AccountReplies.respondUnwired(call, AccountReplies.ACCOUNTS_PORT)
-                port.relabelAccount(head.key, target.id, newLabel)
+                port.relabelAccount(head.key, target.id, newLabel, head.restart)
             }
             is Target.Native -> target.owner.relabel(target.place, newLabel)
         }

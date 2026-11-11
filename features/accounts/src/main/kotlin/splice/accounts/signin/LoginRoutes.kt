@@ -4,6 +4,8 @@ package splice.accounts.signin
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.accounts.AccountHeadResolver
@@ -50,20 +52,51 @@ public class LoginRoutes(
         }
         AccountReplies.respond(call, LoginStatusJson.json(status))
     }
+
+    /** DELETE /api/auth/{head}/login/{id}: ends a sign-in [startLogin] or a Claude Code login place began, and
+     *  answers once it has ended, with how: cancelled, or its own end when it finished first. The page's Cancel
+     *  waits for this answer, so a card that reads cancelled is one splice holds no sign-in for. */
+    public suspend fun cancelLogin(call: ApplicationCall) {
+        val key = call.parameters["head"].orEmpty()
+        val head = resolver.resolveOrRespond(call, key) ?: return
+        val accounts = accounts() ?: return AccountReplies.respondUnwired(call, AccountReplies.ACCOUNTS_PORT)
+        val id = call.parameters["id"].orEmpty()
+        val ended = accounts.pollLogin(id)?.takeIf { it.head == head.key }?.let { accounts.cancelLogin(id) }
+        if (ended == null) {
+            AccountReplies.respondError(call, "unknown login id", HttpStatusCode.NotFound)
+            return
+        }
+        AccountReplies.respond(call, LoginStatusJson.json(ended))
+    }
+
+    /** GET /api/auth/logins: every sign-in still open on this daemon, each with the command it is for. A page opened
+     *  after one began reads them here, so it shows a sign-in it did not start and can end it. */
+    public suspend fun openLogins(call: ApplicationCall) {
+        val accounts = accounts() ?: return AccountReplies.respondUnwired(call, AccountReplies.ACCOUNTS_PORT)
+        val open = buildJsonArray {
+            accounts.openLogins().forEach { status ->
+                add(JsonObject(LoginStatusJson.fields(status) + buildJsonObject { put("head", status.head) }))
+            }
+        }
+        AccountReplies.respond(call, buildJsonObject { put("logins", open) }.toString())
+    }
 }
 
 /** Identical OAuth and native CLI progress payloads, never subprocess output or credential bytes. */
 internal object LoginStatusJson {
-    fun json(status: LoginStatus): String = buildJsonObject {
+    fun json(status: LoginStatus): String = fields(status).toString()
+
+    fun fields(status: LoginStatus): JsonObject = buildJsonObject {
         put("id", status.id)
         put("state", status.state.wire)
         put("user_code", status.prompt.userCode)
         put("verification_uri", status.prompt.verificationUri)
         put("browser_url", status.prompt.browserUrl)
+        put("paste_code", status.prompt.pasteBack)
         put("failure_reason", status.failureReason)
         put("failure_kind", status.failureKind?.wire)
         put("label", status.label)
-    }.toString()
+    }
 }
 
 /** Where a route reads the console's [ConsoleAccounts] port AT CALL TIME: the daemon assigns it after

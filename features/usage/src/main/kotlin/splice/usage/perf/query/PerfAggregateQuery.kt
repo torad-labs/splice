@@ -15,6 +15,9 @@ import splice.core.util.PerfWorkBudget
  * start time. A read that coarsens the files (any longer than a few minutes) no longer has that start time, so both
  * copies counted: for 6:42 to 6:52 AM CT that day the files held 92 completions, the live recorder 31 of the same,
  * and the summary answered 123.
+ *
+ * One minute is both's: the first one the live recorder holds, when the daemon started partway through it. Its file
+ * holds what an earlier boot observed in it, under that boot's own identity, and those are read from the file.
  */
 internal class PerfAggregateQuery(private val sources: PerfQuerySources) {
     fun read(query: PerfQuery, filter: PerfQueryFilter, data: QueryData) {
@@ -26,6 +29,7 @@ internal class PerfAggregateQuery(private val sources: PerfQuerySources) {
         val live = if (query.source in setOf("auto", "live")) sources.live() else null
         val share = Share(query, history, live)
         share.files?.let { history(share, it, filter, data) }
+        earlierBoots(share, history, live, filter, data)
         live?.let { live(it, share, filter, data) }
         if (history == null && live == null) data.issue("aggregate_source_unavailable", "aggregates")
         data.populationCoverage["aggregate_event_time_scope"] = PerfQueryJson.coverageJson(data.coverage, data.complete)
@@ -74,6 +78,29 @@ internal class PerfAggregateQuery(private val sources: PerfQuerySources) {
             data.resolution = read.resolutionMs
             read.snapshots.forEach { accept(it, query.fromMs, query, filter, data) }
             data.complete = read.coverage.observedMs >= query.untilMs - query.fromMs && data.coverage.issues.isEmpty()
+        } finally {
+            PerfWorkBudget.release(read)
+        }
+    }
+
+    /** What an earlier boot observed in the first live minute. A daemon that restarted partway through a minute leaves
+     *  that minute's file holding the earlier boot's observations under their own identity, and the live recorder
+     *  holds only its own, so the file answers for the others. Until Nov 11, 2026 the files were read only up to that
+     *  minute, and a period measured across a restart left those observations out while the restart minute was the
+     *  first one the live recorder held. */
+    private fun earlierBoots(
+        share: Share,
+        history: PerfHistory?,
+        live: PerfAggregateSnapshot?,
+        filter: PerfQueryFilter,
+        data: QueryData,
+    ) {
+        val minute = share.sharedMinute ?: return
+        if (history == null || live == null) return
+        val read = history.read(minute, minute + LIVE_MINUTE_MS)
+        try {
+            read.snapshots.filter { it.identity != live.identity }
+                .forEach { accept(it, minute, share.query, filter, data) }
         } finally {
             PerfWorkBudget.release(read)
         }
@@ -129,6 +156,10 @@ internal class PerfAggregateQuery(private val sources: PerfQuerySources) {
 
         /** The earliest start of a live point that counts. */
         val liveFloor: Long = liveFrom ?: query.fromMs
+
+        /** The first live minute, when the period holds it: the one minute whose file can hold an earlier boot's
+         *  observations beside the live recorder's own. */
+        val sharedMinute: Long? = liveFrom?.takeIf { it >= query.fromMs && it < query.untilMs }
 
         /** Whether the live minutes observed the end of a period whose start the files answered. */
         val liveTail: Boolean = files != null && liveFrom != null && liveFrom < query.untilMs

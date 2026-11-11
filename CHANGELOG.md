@@ -1436,6 +1436,89 @@ origin.
 - **`splice login` names a Claude login by its label, never its email,** in every sentence it prints.
 
 ### Fixed
+- **Cancel on a sign-in ends it, and Sign in again always gets a new sign-in.** On the Accounts page, Cancel on a
+  sign-in only forgot it in the page. The daemon kept it: Claude Code's own sign-in ran on for its ten minutes, and a
+  browser or device sign-in held its label and its callback port for up to five. The next Sign in on that login was
+  then refused, as "In progress" with nothing to press on a Claude login, and as a config error or a bare "Not
+  completed" on the others. On Nov 11 a sign-in started at 9:54 AM CT and cancelled on the page was still running at
+  10:04, and its login could not be signed in again until it ran out. Now `DELETE /api/auth/{head}/login/{id}` ends a
+  sign-in where it stands: its process or flow is stopped, what it held is free, and the page's Cancel waits for that
+  answer before the card lets go. A new sign-in to the same login ends the one still open and takes its place, so
+  pressing Sign in again is never refused by your own earlier press. Removing a login ends a sign-in still open for
+  it, which until now could file the removed login again if its page was finished afterwards. A page opened while the
+  daemon holds a sign-in (a reload, a second tab) shows it on its card with its Cancel, from `GET /api/auth/logins`.
+  Discarding a provider being added ends its sign-in too. The daemon's log now has one line when a sign-in starts and
+  one when it ends, saying how; it had none. The same holds on every page that signs a login in: Usage's sign-in box
+  on a login's card, the Models page's sign-in for a command and for a provider being added (`DELETE
+  /api/add/{id}/login`), and Compare's, which each only forgot the sign-in in the page. A sign-in on Accounts and
+  Usage also follows the daemon now: one status read splice did not answer used to end it on the card as "Not
+  completed" with no reason while the daemon went on holding it. The row now waits through reads splice does not
+  answer, and a daemon restarted in the middle of a sign-in reads "Stopped", with that as its reason. A pasted code
+  the sign-in does not take ends it on the daemon as well, with the daemon's reason on the card. Signing in again on
+  a Claude login's card while the browser is signed in to another account read "Config error" with nothing to press;
+  it now reads "Other account", says the login kept its own, and offers Try again.
+- **A Claude login signed in again is asked again at once.** A login Anthropic had refused stayed held, and its
+  card kept reading Blocked, after it was signed in again: the hold only ended when the login served a turn, and the
+  login was not tried again until the hold's time ran out, up to an hour. On Nov 11 a login blocked while its
+  organization's payment had failed was signed in again after the payment was fixed, and nothing changed on its card.
+  Now a sign-in the person finishes for a login ends that login's hold, so the next turn that reaches it asks
+  Anthropic with what was just signed in, and Anthropic's answer decides: served, and the block is gone, or refused
+  and held again with the reason. Until that answer the card goes on reading Blocked, and says its next turn asks
+  again. A credential file Claude Code rewrites by itself still does not end a hold. A limit the login read stays.
+  The same holds when the sign-in comes back "Already added", as it does on a command's own Claude Code login signed
+  in again with the account it holds: nothing is filed, the hold on the login that holds the account ends, and the
+  card's reason says so.
+- **A blocked login's card has Try again.** A login Anthropic refuses until its owner acts (new terms to accept, an
+  organization that does not allow subscription access) read Blocked on Accounts with one act, Sign in again, in its
+  menu, and a sign-in is not what a block waits for. Once its cause was fixed, nothing on the card told splice so: the
+  login was asked again only when its hold had run out, up to an hour, and a turn happened to reach it, or after a
+  daemon restart. On Nov 11 a login blocked while its organization's payment had failed was signed in again for want
+  of any other act. Now the card has Try again beside its lock. Pressing it ends that login's hold
+  (`POST /api/auth/{head}/ask`), and the next turn that reaches it asks Anthropic. The card goes on reading Blocked
+  until Anthropic serves a turn on it, since only that shows the block is lifted, and says "its next turn asks again"
+  with nothing left to press; a login whose hold ran out by itself reads the same. A login still refused is held
+  again from that answer, with Try again back, and the turn goes on to the next login as it did before.
+- **+ Add account on a ChatGPT or Grok command adds a login, and no longer writes over the first one.** A sign-in
+  sent to splice with no label is the command's first login signing in again, and it lands over that login's file.
+  Since Oct 13 the Accounts page asked for a place of its own only on Muse and Kimi commands, so on a ChatGPT or Grok
+  command that already had a login, + Add account signed in as another account left one card, holding the new
+  account where the first had been. Now every command that signs in through splice asks for a new place once its
+  first login is there, and the new login joins beside it. A command whose first login is signed out has no pool to
+  join yet, so its add still signs that first login in. An add that comes back as the account a ChatGPT command's
+  first login already holds adds nothing: it reads "Already added" with splice's reason under it, and the card that
+  account has pulses once. It filed a second login for that one account, since the sign-in page signs in whichever
+  account its browser holds. An add that comes back as a login added earlier signs that login in again, and its
+  card pulses once, where the tile closed with no sign that anything had happened.
+- **Every Claude sign-in has the field for the code its page shows.** splice signs a Claude login in through Claude
+  Code's own sign-in, and the page its link opens ends by showing a code to paste back. Only a command's own Claude
+  Code login had the field for that code. Sign in again on an added Claude login, and + Add account on a Claude
+  command, opened the same page and left the code with nowhere to go, so the sign-in read as still in progress
+  until its ten minutes ran out. splice now says in a sign-in's status that its code is pasted back
+  (`paste_code`), and Accounts, Usage, Models and Compare each draw the field from that. A code splice does not
+  take ends the sign-in with its reason.
+- **Models and Compare say why a sign-in failed, and Compare's sign-in has Cancel.** A failed sign-in on Models or
+  Compare read its word alone ("Other account", "Expired"); splice's own sentence now stands under it, as on
+  Accounts and Usage. A sign-in started from a Compare pane could only be ended by closing the pane; it has Cancel
+  from its first moment, before splice has a link or a code to show, and it reads Cancelling until splice has ended
+  it.
+- **Usage draws no card for a Claude login place that holds no account.** A command's own Claude Code login place
+  whose file held no usable sign-in was drawn on Usage as one more login ("Account 4, Signed out", with Sign in),
+  where Accounts has left such a place off its board since Oct 27. Both pages go by one rule now: signed out, no
+  proved account and no reading is no login.
+- **A sign-in behaves the same on Accounts, Usage, Models and Compare.** Each of the four pages ran its own copy of
+  a sign-in's steps, and the copies had drifted. Now they share one. On Models and Compare a sign-in that failed says
+  how in a word (Expired, Stopped, Config error, Already added, Other account) where it read "Not completed" for
+  every one, and a sign-in that ended because splice restarted says Stopped at once, where the page went on drawing
+  "Signing in" for five minutes. On Usage the box says the same word over splice's reason, and offers Try again only
+  where trying again can work. Cancel on Usage and Models reads Cancelling until splice has ended the sign-in, and
+  "Not cancelled" when splice did not answer, as on Accounts. A sign-in whose card, pane or form is gone ends on
+  splice too, and none of the pages gives up on one before splice does.
+- **Removing an added login from a ChatGPT, Grok, Kimi or Muse command takes it out of the running command.** Those
+  commands build their list of logins once, when they start, so a login removed on Accounts stayed in the running
+  command, listed with no sign-in behind it and a Sign in that would file it again under the label just removed,
+  until splice next restarted. The command now starts again after such a removal, as it does when a sign-in lands,
+  and finds its logins as they are on disk. A Remove splice refuses is read against what splice holds now, so a
+  login another tab already removed leaves with its card instead of keeping "Not removed" on it.
 - **A measured period counts each recorded minute once, and reads all of them.** The Performance panel's "Measure any
   period" and `splice perf` gave a different rate for the same day minutes apart: 1.47 completions a minute, then 50.9
   an hour, then 3.59 a minute, beside a request log of 24,203 requests for that day. Three faults in how a measurement
@@ -1446,7 +1529,9 @@ origin.
   its first hours and the newest went unread. The files now answer only for minutes the recorder no longer holds, a
   minute that crosses the period's edge stays out alone, and the read charges a series what it takes to hold, merges
   boots once time is one bucket, and past that turns away only a series it has not met, saying how many. A gap reason
-  that repeats no longer hides the others: 55 "retention expired" intervals had filled the list.
+  that repeats no longer hides the others: 55 "retention expired" intervals had filled the list. A period measured
+  across a restart also counts what splice recorded, before it restarted, in the minute it restarted: those requests
+  were left out for as long as that minute was the oldest one the recorder still held in memory.
 - **The performance recorder folds old minutes into hours again, so its history reaches back weeks.** Minutes older
   than a day are folded into one file an hour. An hour that did not fit was tried again at every checkpoint, twice
   every five seconds, and no later hour was ever folded: on one desk the hour of Nov 9, 5 PM CT was read 66,183 times,

@@ -4,6 +4,7 @@
 package splice.app
 
 import splice.app.auth.AddSignInSessions
+import splice.app.auth.LoginSessions
 import splice.app.cli.AdminSupport
 import splice.app.cli.auth.LoginCommand
 import splice.app.provider.JdkLocalHttp
@@ -72,7 +73,7 @@ internal object AddWiring {
     fun console(log: LogSink): AddConsole {
         val lines = TerminalOutput { line -> log("[control] add: ${LogSafe.str(line)}\n") }
         return AddConsole(
-            signIn = AddSignInSessions(),
+            signIn = AddSignInSessions(LoginSessions(log = log)),
             install = LinkerInstall(InstallCommand(lines, lines)),
             env = EnvReader(System::getenv),
             output = lines,

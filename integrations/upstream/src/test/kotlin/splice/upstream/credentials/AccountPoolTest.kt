@@ -14,6 +14,8 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.AccountBlock
+import splice.core.failure.OwnerStep
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.ElapsedClock
@@ -375,6 +377,38 @@ class AccountPoolTest {
         assertEquals(0L, primary.cooldown.remainingMs())
         assertEquals(null, pool.view("session").selectedLabel)
         assertEquals("secret", (primary.auth.credentials() as Credentials.Bearer).token)
+    }
+
+    // Marcos, Nov 11, 2026: a login blocked while its organization's payment had failed, signed in again once paid.
+    @Test
+    fun `a blocked login asked again is held no longer, and reads blocked until a turn is served on it`() {
+        val fixture = Fixture()
+        val pool = fixture.pool(fixture.account("primary", primary = true))
+        val organization = AccountBlock(OwnerStep.ALLOW_SUBSCRIPTION_ACCESS, "its organization")
+        pool.chosen("session").markCredentialUnavailable(organization)
+        assertTrue(pool.view(null).accounts.single().credential.excludedUntilEpochMillis != null)
+
+        assertTrue(pool.askAgain("primary"))
+
+        val asked = pool.view(null).accounts.single().credential
+        assertEquals(organization, asked.block, "the provider has not served it yet")
+        assertEquals(null, asked.excludedUntilEpochMillis)
+        pool.chosen("session").markTurnSucceeded()
+        assertEquals(null, pool.view(null).accounts.single().credential.block)
+        assertFalse(pool.askAgain("no-such-login"))
+    }
+
+    @Test
+    fun `a login held for a refusal with no block is let go whole when the person asks for it again`() {
+        val fixture = Fixture()
+        val pool = fixture.pool(fixture.account("primary", primary = true))
+        pool.chosen("session").markCredentialUnavailable()
+
+        assertTrue(pool.askAgain("primary"))
+
+        val asked = pool.view(null).accounts.single().credential
+        assertEquals(null, asked.block)
+        assertEquals(null, asked.excludedUntilEpochMillis)
     }
 
     @Test

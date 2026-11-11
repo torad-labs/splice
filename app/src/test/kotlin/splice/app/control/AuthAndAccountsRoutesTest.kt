@@ -27,6 +27,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterAll
@@ -45,12 +46,14 @@ import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.accounts.claude.ClaudeLoginPlaces
 import splice.accounts.claude.ClaudeLoginStanding
+import splice.accounts.pool.HeadAccountAskSource
 import splice.accounts.pool.HeadAccountPinSource
 import splice.accounts.pool.HeadAccountPoolSource
 import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.signin.AccountMutation
 import splice.accounts.signin.ConsoleAccounts
 import splice.accounts.signin.HeadRestart
+import splice.accounts.signin.LoginFailure
 import splice.accounts.signin.LoginPrompt
 import splice.accounts.signin.LoginStart
 import splice.accounts.signin.LoginState
@@ -193,6 +196,41 @@ class AuthAndAccountsRoutesTest {
     }
 
     @Test
+    fun `cancelling a login answers how it ended, and an id splice never started is a 404`() = runBlocking {
+        awaitPort()
+        val waiting = LoginStatus("login-9", WIRED, LoginState.WAITING)
+        accounts.onPoll = { id -> waiting.takeIf { it.id == id } }
+        accounts.onCancel = { id ->
+            waiting.takeIf { it.id == id }?.failed(LoginFailure.CANCELLED, "the sign-in was cancelled")
+        }
+
+        val ended = delete("/api/auth/$WIRED/login/login-9")
+        val unknown = delete("/api/auth/$WIRED/login/no-such-id")
+
+        assertEquals(HttpStatusCode.OK, ended.status, ended.bodyAsText())
+        val body = json.parseToJsonElement(ended.bodyAsText()).jsonObject
+        assertEquals("failed", body["state"]!!.jsonPrimitive.content)
+        assertEquals("cancelled", body["failure_kind"]!!.jsonPrimitive.content)
+        assertEquals("the sign-in was cancelled", body["failure_reason"]!!.jsonPrimitive.content)
+        assertEquals(HttpStatusCode.NotFound, unknown.status, unknown.bodyAsText())
+    }
+
+    @Test
+    fun `the open logins are listed, each with the command it is for`() = runBlocking {
+        awaitPort()
+        accounts.open = listOf(LoginStatus("login-9", WIRED, LoginState.WAITING, label = "work"))
+
+        val response = get("/api/auth/logins")
+
+        assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
+        val login = json.parseToJsonElement(response.bodyAsText()).jsonObject["logins"]!!.jsonArray.single().jsonObject
+        assertEquals("login-9", login["id"]!!.jsonPrimitive.content)
+        assertEquals(WIRED, login["head"]!!.jsonPrimitive.content)
+        assertEquals("work", login["label"]!!.jsonPrimitive.content)
+        assertEquals("waiting", login["state"]!!.jsonPrimitive.content)
+    }
+
+    @Test
     fun `switchAccount pins a known label and answers ok true`() = runBlocking {
         awaitPort()
         pin.result = true
@@ -229,6 +267,34 @@ class AuthAndAccountsRoutesTest {
         val response = post("/api/auth/$NO_POOL/switch", """{"label":"plus-a"}""")
         assertEquals(HttpStatusCode.BadRequest, response.status, response.bodyAsText())
         assertTrue(response.bodyAsText().contains(NO_POOL), response.bodyAsText())
+    }
+
+    // Try again on a login its provider refused (Marcos, Nov 11, 2026: "I did sign in again because it said it was
+    // blocked"): the card's own act, which until then was only Sign in again.
+    @Test
+    fun `asking a login again answers ok true, and a label the pool does not list is a 400 naming it`() = runBlocking {
+        awaitPort()
+
+        val asked = post("/api/auth/$WIRED/ask", """{"label":"plus-a"}""")
+        val unknown = post("/api/auth/$WIRED/ask", """{"label":"no-such-label"}""")
+
+        assertEquals(HttpStatusCode.OK, asked.status, asked.bodyAsText())
+        assertEquals("true", json.parseToJsonElement(asked.bodyAsText()).jsonObject["ok"]!!.jsonPrimitive.content)
+        assertEquals(HttpStatusCode.BadRequest, unknown.status, unknown.bodyAsText())
+        assertTrue(unknown.bodyAsText().contains("no-such-label"), unknown.bodyAsText())
+    }
+
+    @Test
+    fun `asking again with no label, or on a head with no pool, is a 400 that says which`() = runBlocking {
+        awaitPort()
+
+        val blank = post("/api/auth/$WIRED/ask", "{}")
+        val noPool = post("/api/auth/$NO_POOL/ask", """{"label":"plus-a"}""")
+
+        assertEquals(HttpStatusCode.BadRequest, blank.status, blank.bodyAsText())
+        assertTrue(blank.bodyAsText().contains("label"), blank.bodyAsText())
+        assertEquals(HttpStatusCode.BadRequest, noPool.status, noPool.bodyAsText())
+        assertTrue(noPool.bodyAsText().contains(NO_POOL), noPool.bodyAsText())
     }
 
     @Test
@@ -454,8 +520,11 @@ class AuthAndAccountsRoutesTest {
      *  (`head.pool as? HeadAccountPinSource`). */
     private class PinnedPoolSource(
         private val pinner: HeadAccountPinSource,
-    ) : HeadAccountPoolSource, HeadAccountPinSource by pinner {
+    ) : HeadAccountPoolSource, HeadAccountPinSource by pinner, HeadAccountAskSource {
         override fun view(sessionId: String?): HeadAccountPoolView = HeadAccountPoolView(null, emptyList(), null)
+
+        /** "plus-a" is this pool's one login. */
+        override fun askAgain(label: String): Boolean = label == "plus-a"
     }
 
     private class FakePin : HeadAccountPinSource {
@@ -479,6 +548,8 @@ class AuthAndAccountsRoutesTest {
     private class FakeConsoleAccounts : ConsoleAccounts {
         var onStart: () -> LoginStart = { LoginStart.UnknownHead }
         var onPoll: (String) -> LoginStatus? = { null }
+        var onCancel: (String) -> LoginStatus? = { null }
+        var open: List<LoginStatus> = emptyList()
         var onRemove: (String, String) -> AccountMutation = { _, _ -> AccountMutation.UnknownHead }
         var onRelabel: (String, String, String) -> AccountMutation = { _, _, _ -> AccountMutation.UnknownHead }
         val lastRelabel = AtomicReference<Pair<String, String>?>(null)
@@ -488,9 +559,19 @@ class AuthAndAccountsRoutesTest {
 
         override fun pollLogin(id: String): LoginStatus? = onPoll(id)
 
-        override suspend fun removeAccount(headKey: String, label: String): AccountMutation = onRemove(headKey, label)
+        override suspend fun cancelLogin(id: String): LoginStatus? = onCancel(id)
 
-        override suspend fun relabelAccount(headKey: String, label: String, newLabel: String): AccountMutation {
+        override fun openLogins(): List<LoginStatus> = open
+
+        override suspend fun removeAccount(headKey: String, label: String, restart: HeadRestart): AccountMutation =
+            onRemove(headKey, label)
+
+        override suspend fun relabelAccount(
+            headKey: String,
+            label: String,
+            newLabel: String,
+            restart: HeadRestart,
+        ): AccountMutation {
             lastRelabel.set(label to newLabel)
             return onRelabel(headKey, label, newLabel)
         }

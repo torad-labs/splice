@@ -17,6 +17,9 @@ public interface AddSignIn {
 
     /** What the flow started by [start] has announced so far, or null for an id it never issued. */
     public fun poll(id: String): LoginStatus?
+
+    /** Ends the flow [id] where it stands, and answers how it ended: its own end when it had already finished. */
+    public suspend fun cancel(id: String): LoginStatus?
 }
 
 /** A compaction the save's restart waits for: the head holding it and how long it has run. */

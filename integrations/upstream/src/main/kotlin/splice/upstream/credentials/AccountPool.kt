@@ -341,6 +341,19 @@ public class AccountPool(
         }
     }
 
+    /** The person says [label] can be asked again: they signed it in again, or pressed Try again on its card once
+     *  what its provider's block names was done. The hold a refusal put on its credential ends now, so the next turn
+     *  that reaches it asks the provider and the provider's answer decides. A block its owner has to lift stays named
+     *  until that answer serves a turn ([AccountCredentialEligibility.askAgain]). A limit it read stays: that is the
+     *  account's, not the credential's. A credential file the client rewrites by itself does none of this; only the
+     *  person's own act does. Until Nov 11, 2026 a login whose organization's payment was fixed was not asked again,
+     *  signed in again or not, until its hold ran out. False when [label] names no account here. */
+    public fun askAgain(label: String): Boolean {
+        val account = liveMembership.byLabel[label] ?: return false
+        account.askCredentialAgain(now())
+        return true
+    }
+
     /** Pins [label] as the account [select] tries FIRST, ahead of the primary preference, until [unpin] or until the
      *  login reads a limit it did not read now; a [reset] keeps it. False (nothing pinned) when [label] names no account
      *  here. */

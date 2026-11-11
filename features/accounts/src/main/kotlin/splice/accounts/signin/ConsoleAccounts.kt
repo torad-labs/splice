@@ -12,12 +12,30 @@ package splice.accounts.signin
 public interface ConsoleAccounts {
     public suspend fun startLogin(headKey: String, label: String?, restart: HeadRestart): LoginStart
     public fun pollLogin(id: String): LoginStatus?
-    public suspend fun removeAccount(headKey: String, label: String): AccountMutation
-    public suspend fun relabelAccount(headKey: String, label: String, newLabel: String): AccountMutation
+
+    /** Ends the sign-in [id] where it stands: whatever ran for it is stopped, and what it held (a label, a callback
+     *  port, a pending folder) is free for the next one. Answers how it ended, which is its own end when it had
+     *  already finished, and null for an id this daemon never started. */
+    public suspend fun cancelLogin(id: String): LoginStatus?
+
+    /** Every sign-in still starting or waiting, so a page opened after one began shows it and can end it. */
+    public fun openLogins(): List<LoginStatus>
+
+    /** Removes the login [label] from [headKey], or gives it the label [newLabel]. [restart] is the head's own, for a
+     *  head that only finds its logins when it starts: once the login is gone or renamed on disk, the head starts
+     *  again so the running command lets go of it too. */
+    public suspend fun removeAccount(headKey: String, label: String, restart: HeadRestart): AccountMutation
+    public suspend fun relabelAccount(
+        headKey: String,
+        label: String,
+        newLabel: String,
+        restart: HeadRestart,
+    ): AccountMutation
 }
 
 /** Calls back into the head lifecycle once a login's credential has landed, so the account joins
- *  its pool (the row's "on landing the head restarts" contract). Bound to the resolved
+ *  its pool (the row's "on landing the head restarts" contract), and once a login was removed or
+ *  renamed, so the pool lets go of it. Bound to the resolved
  *  [splice.accounts.AccountHead] at the ROUTE, so the :app-side port implementation never needs its
  *  own copy of the daemon's head map — the same reason the heads feature restarts the head it
  *  resolved directly rather than through a lookup. */
@@ -50,16 +68,29 @@ public data class LoginStatus(
     public val failureReason: String? get() = failure?.reason
     public val failureKind: LoginFailure? get() = failure?.kind
 
+    /** Enough of [id] to tell two sign-ins apart in a log line, as a commit is named by its first characters. */
+    public val shortId: String get() = id.take(SHORT_ID)
+
+    /** Whether it is still starting, or waiting on the person: the states a cancel or a newer sign-in ends. */
+    public val open: Boolean get() = state == LoginState.STARTING || state == LoginState.WAITING
+
     /** This login, failed for [reason], which is of [kind]. */
     public fun failed(kind: LoginFailure, reason: String): LoginStatus =
         copy(state = LoginState.FAILED, failure = FailedLogin(kind, reason))
+
+    /** This login ended for [reason] when it was still open; one that already ended keeps its own end. */
+    public fun closed(kind: LoginFailure, reason: String): LoginStatus = if (open) failed(kind, reason) else this
 }
+
+// why: eight characters of a random id tell apart the few sign-ins one daemon's log holds, and read at a glance.
+private const val SHORT_ID = 8
 
 /** Why a login failed: its [kind], which a surface names, and splice's own sentence, which the log keeps. */
 public data class FailedLogin(val kind: LoginFailure, val reason: String)
 
-/** Why a sign-in failed, one word per reason a surface shows. The network, a file and the config can fail any flow;
- *  the rest come only from running Claude Code's own sign-in. A file or config failure fails again until it is fixed. */
+/** Why a sign-in failed, one word per reason a surface shows. The network, a file and the config can fail any flow,
+ *  and any flow can be cancelled; the rest come only from running Claude Code's own sign-in. A file or config failure
+ *  fails again until it is fixed. */
 public enum class LoginFailure(public val wire: String) {
     NOT_COMPLETED("not_completed"),
     NETWORK("network"),
@@ -71,16 +102,15 @@ public enum class LoginFailure(public val wire: String) {
 
     /** Claude Code's sign-in process stopped on its own. */
     STOPPED("stopped"),
-    CANCELLED("cancelled"),
 
-    /** Another sign-in to the same place is still running. */
-    IN_PROGRESS("in_progress"),
+    /** Ended before it finished: by the person, by a newer sign-in to the same place, or by the daemon stopping. */
+    CANCELLED("cancelled"),
 
     /** The account signed into is already one of this command's. */
     ALREADY_ADDED("already_added"),
 
-    /** A session of the command is running, or its login is being edited, so the login can't change under it. */
-    IN_USE("in_use"),
+    /** Signed in again on a login, with another account than the one that login holds. Nothing was replaced. */
+    OTHER_ACCOUNT("other_account"),
 }
 
 /** What a sign-in asks the person to do. [userCode] and [verificationUri] are the device flow's announcement;
@@ -89,6 +119,9 @@ public data class LoginPrompt(
     val userCode: String? = null,
     val verificationUri: String? = null,
     val browserUrl: String? = null,
+    /** The page at [browserUrl] ends by showing a code, which the person pastes back where they pressed Sign in
+     *  (Claude Code's own sign-in). The console draws the field for it from this, on every card that signs in. */
+    val pasteBack: Boolean = false,
 )
 
 public sealed class LoginStart {

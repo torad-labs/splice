@@ -107,6 +107,88 @@ class ClaudeAccountSignInTest {
         }
     }
 
+    /** A sign-in store whose sign-ins each run the next of [children], open for [check] and torn down after it. */
+    private fun open(
+        account: String,
+        children: List<NativeLoginTestProcess>,
+        check: suspend (ClaudeAccountSignIn) -> Unit,
+    ) = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + ProcessDispatchers().io())
+        val next = children.iterator()
+        val auth = NativeClaudeAuth(
+            WrapStateRead { ClaudeToRun.Wrapped("fixture-native") },
+            emptyMap(),
+            ProcessDispatchers().io(),
+            NativeAuthStart { builder ->
+                write(Path.of(builder.environment().getValue("CLAUDE_CONFIG_DIR")), account)
+                next.next()
+            },
+        )
+        try {
+            check(ClaudeAccountSignIn(folders(), auth, scope))
+        } finally {
+            scope.coroutineContext[Job]!!.cancelAndJoin()
+        }
+    }
+
+    private suspend fun waiting(owner: ClaudeAccountSignIn, id: String) =
+        withTimeout(5_000) { while (owner.poll(id)?.state != LoginState.WAITING) yield() }
+
+    @Test
+    fun `a cancelled sign-in reads cancelled, stops Claude Code and leaves nothing behind`() {
+        val child = NativeLoginTestProcess(BROWSER)
+        open("uuid-work", listOf(child)) { owner ->
+            val started = owner.start(HEAD, "work")
+            waiting(owner, started.id)
+
+            val ended = owner.cancel(started.id)
+
+            assertEquals(LoginFailure.CANCELLED, ended?.failureKind)
+            assertFalse(child.isAlive, "Claude Code's sign-in is stopped")
+            assertEquals(emptyList<LoginStatus>(), owner.open())
+            assertFalse(Files.exists(state.resolve("claude-accounts-pending").resolve(HEAD).resolve("work")))
+            assertEquals(emptyList<String>(), folders().accounts(HEAD).map { it.label })
+        }
+    }
+
+    // Marcos, Nov 11, 2026: "then trhe sign in in splice showed still in progress". The link Claude Code prints ends
+    // in a code to paste back, and only a command's own login card had the field for it.
+    @Test
+    fun `a sign-in waiting on Claude Code's page says its code is pasted back, whichever card started it`() {
+        val child = NativeLoginTestProcess(BROWSER)
+        open("uuid-work", listOf(child)) { owner ->
+            val started = owner.start(HEAD, "work")
+            waiting(owner, started.id)
+
+            val prompt = owner.poll(started.id)!!.prompt
+
+            assertTrue(prompt.pasteBack)
+            assertEquals(BROWSER.trim(), prompt.browserUrl)
+            owner.cancel(started.id)
+        }
+    }
+
+    // Marcos, Nov 11, 2026: "it said it canceled, then when I tried sign in again, it said it was already in progress".
+    @Test
+    fun `signing in again on a login whose sign-in is still open replaces it, and the new one lands`() {
+        val first = NativeLoginTestProcess(BROWSER)
+        val second = NativeLoginTestProcess(BROWSER)
+        open("uuid-work", listOf(first, second)) { owner ->
+            val earlier = owner.start(HEAD, "work")
+            waiting(owner, earlier.id)
+
+            val again = owner.start(HEAD, "work")
+            waiting(owner, again.id)
+
+            assertEquals(LoginFailure.CANCELLED, owner.poll(earlier.id)?.failureKind)
+            assertFalse(first.isAlive, "the earlier sign-in's Claude Code is stopped")
+            second.finish(0)
+            withTimeout(5_000) { while (owner.poll(again.id)?.state == LoginState.WAITING) yield() }
+            assertEquals(LoginState.SIGNED_IN, owner.poll(again.id)?.state)
+            assertEquals(listOf("work"), folders().accounts(HEAD).map { it.label })
+        }
+    }
+
     private fun credentials(head: String, label: String): Path =
         state.resolve("claude-accounts").resolve(head).resolve(label).resolve(".credentials.json")
 
@@ -137,6 +219,21 @@ class ClaudeAccountSignInTest {
         assertEquals(listOf("uuid-work", "uuid-home"), accounts.map { it.identity?.uuid })
     }
 
+    // The browser's own session decides which account a sign-in is for, so Sign in again on one login's card can
+    // come back as another account. It read "Config error", with no Try again.
+    @Test
+    fun `signing in again on a login with another account says so, and the login keeps its own`() {
+        add(HEAD, "work", "uuid-work")
+        val before = Files.readString(credentials(HEAD, "work"))
+
+        val refused = add(HEAD, "work", "uuid-home")
+
+        assertEquals(LoginState.FAILED, refused.state)
+        assertEquals(LoginFailure.OTHER_ACCOUNT, refused.failureKind)
+        assertEquals(before, Files.readString(credentials(HEAD, "work")), "byte for byte")
+        assertEquals(listOf("uuid-work"), folders().accounts(HEAD).map { it.identity?.uuid })
+    }
+
     @Test
     fun `the same account under a new label is refused by the name it already has, and writes nothing`() {
         add(HEAD, "work", "uuid-work")
@@ -144,7 +241,9 @@ class ClaudeAccountSignInTest {
         val again = add(HEAD, "second", "uuid-work")
 
         assertEquals(LoginState.FAILED, again.state)
-        assertEquals("that account is already on this command as 'work'", again.failureReason)
+        val said = "that account is already on this command as 'work', so nothing was added. " +
+            "If that login was blocked, its next turn asks the provider again"
+        assertEquals(said, again.failureReason)
         assertEquals(LoginFailure.ALREADY_ADDED, again.failureKind)
         assertEquals("work", again.label, "the console pulses the card already there by this label")
         assertEquals(listOf("work"), folders().accounts(HEAD).map { it.label }, "no second folder was filed")

@@ -1436,6 +1436,30 @@ origin.
 - **`splice login` names a Claude login by its label, never its email,** in every sentence it prints.
 
 ### Fixed
+- **A new Claude command names no model, so Claude Code shows its own.** `splice add claude`, and the Claude row of
+  `splice setup`, wrote `pinned_model = "claude-fable-5-1"` and a list of four models (Fable 5.1, Opus 5.5, Sonnet 5,
+  Haiku 4.5): a new install started on last month's model, and its list was behind the day Fable 5.2 came out.
+  Marcos, Nov 9, 2026: "for default anthropic claude it should juyst show the default models iot shouldn't list
+  anything otherwise when new models like this comes up wi'll miss them". The command writes neither line now, as
+  the head doc always allowed for a provider that forwards the client's own login, and setup says "Claude Code's own
+  models" in place of asking which to keep. The provider's rows, which carry what splice knows about a model and are
+  not the list Claude Code shows, name Fable 5.2, Opus 5.5, Sonnet 5.5 and Haiku 5.5 at 1M tokens each, and
+  `splice.example.toml` follows. An install that already has a Claude command is not rewritten.
+- **Turns on Claude Fable 5.2 have a price.** The shipped price table had no row for `claude-fable-5-2`, and a Claude
+  command takes whatever model Claude Code asks for, so every turn on it counted as unpriced: on one machine, from
+  10 AM to 3:23 PM CT on Nov 11, 2026, 3,813 of 4,633 turns on its Claude command carried no price and the plan's
+  value read a fraction of what it was. The row is there now at Anthropic's published price (8 in, 40 out, a cache
+  read at 0.20, writes at 10 and 16 per million tokens, read Nov 11), beside one for `claude-haiku-4-5-20251001`, the
+  dated id Claude Code still sends for some background turns.
+- **Setup's summary no longer opens on a file it will not write.** On a new install the box before "Install now?"
+  began "No starter will be written because one is already present", since the installer had written it a moment
+  earlier. The summary lists what the install will do, and that line is gone when there is nothing to write.
+- **`splice doctor` on a machine with no Claude login says to sign in, once.** A new install that added the Claude
+  command before anyone had signed in to Claude Code read "every account is out (no reset time reported)" with the
+  fix "Wait for the earliest reset above", and under it one warning per login place saying "Sign in again". There
+  was no limit to wait out and nothing to sign in to again. It reads "not signed in to Claude Code yet" with one
+  step, `Run claude-splice and use /login.`, and a login place that holds no login beside one that does is told
+  "Sign in", not "Sign in again".
 - **`splice setup` says what each row is, and its install no longer talks over itself.** A first run on a new
   machine, Nov 11, 2026. The list of commands to add named each row by its profile alone ("codex", "muse") and marked
   every row splice held no credential for "sign-in needed", the Claude row and the API-key rows among them. It opened

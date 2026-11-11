@@ -9,7 +9,16 @@ private const val LISTED_SHOWN = 10
 /** The single name used for model-list checks on the CLI and console. */
 internal const val MODELS_CHECK = "models"
 
+// why: said in place of a model count and a window check on a head that lists no model of its own.
+private const val OWN_MODELS = "Claude Code's own: splice forwards whichever model it asks for"
+
 internal object AddModelChecks {
+    /** The model lines of an add's report: the [listed] and [windows] checks, or, where the client shows its own
+     *  models ([own]) and the head names none, one line saying so. Such an add read "4 model(s) as entered" and
+     *  named four rows as unchecked, for a head that lists no model (Nov 11, 2026). */
+    fun rows(own: Boolean, listed: AddCheck, windows: AddCheck): List<AddCheck> =
+        if (own) listOf(AddCheck(MODELS_CHECK, true, OWN_MODELS)) else listOf(listed, windows)
+
     /** [authoritative] false is a server that answers any model id: its list still has to ANSWER
      *  (an unreadable one fails as before), but an unlisted row is trusted and said to be. */
     fun listed(models: List<String>, listed: ListedModels, authoritative: Boolean = true): AddCheck =

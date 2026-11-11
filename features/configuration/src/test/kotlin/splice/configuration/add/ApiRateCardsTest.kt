@@ -44,27 +44,31 @@ class ApiRateCardsTest {
         )
     }
 
-    // V4-270: a default claude-splice install takes Claude Code's small-fast turns on Haiku 4.5 and /model
-    // sonnet or fable turns on those rows, and each one with no card counted as "1 turn unpriced".
+    // V4-270: a default claude-splice install takes its turns on whichever models Claude Code picks, and each
+    // one with no card counted as "1 turn unpriced". The profile writes no card of its own since Nov 11, 2026:
+    // the price is the shipped table's (published-rates.tsv), which a card written here would win over.
     @Test
-    fun `every model the claude profile lists carries a rate card`() {
+    fun `every model the claude profile lists is priced`() {
         val catalog = catalogOf("claude", "claude-splice")
         val unpriced = catalog.models.filter { it.rates == null }.map { catalog.stripSuffixes(it.id) }.distinct()
         assertEquals(emptyList<String>(), unpriced, "models the claude profile lists with no rate card")
     }
 
     // The team tally (TeamsEconomics.kt PerfTally.rates) and TurnPrice resolve a turn's card the same way:
-    // the stripped model id against the head's catalog. perf rows record the small-fast turn as
-    // claude-haiku-4-5, so one such turn must come back priced, not null.
+    // the stripped model id against the head's catalog, then the shipped table. The head names no model, so
+    // the turns Claude Code sends are priced from the table: Fable 5.2, which had no row until Nov 11, 2026
+    // and counted every turn on it as unpriced, and the dated Haiku 4.5 id its background turns still carry.
     @Test
-    fun `one Haiku turn on the claude profile is priced`() {
+    fun `the turns Claude Code sends on the claude profile are priced`() {
         val counters = mapOf(
             PerfKeys.IN_TOKENS to 1_000_000L,
             PerfKeys.CACHED_TOKENS to 0L,
             PerfKeys.CACHE_WRITE_TOKENS to 0L,
             PerfKeys.OUT_TOKENS to 1_000_000L,
         )
-        assertEquals(6.0, TurnPrice(catalogOf("claude", "claude-splice")).usd("claude-haiku-4-5", counters))
+        val price = TurnPrice(catalogOf("claude", "claude-splice"))
+        assertEquals(48.0, price.usd("claude-fable-5-2", counters))
+        assertEquals(6.0, price.usd("claude-haiku-4-5-20251001", counters))
     }
 
     @Test

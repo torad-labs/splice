@@ -131,6 +131,22 @@ class AccountStatusTest {
         assertFalse(check.fix.orEmpty().contains("splice login"))
     }
 
+    // A new install: the Claude command is added and nobody has signed in to Claude Code yet. The row read "every
+    // account is out (no reset time reported)" with "Wait for the earliest reset above" (Nov 11, 2026).
+    @Test
+    fun `a Claude command nobody has signed in to says so, with the one step that signs in`() {
+        val roster = nativeView()
+        val none = HeadAccountCredential(present = false)
+        val view = roster.copy(
+            selectedLabel = null,
+            accounts = roster.accounts.map { it.copy(selected = false, available = false, credential = none) },
+        )
+        val check = AccountPoolText { 0L }.check("claude-splice", view)
+        assertEquals(CheckStatus.WARN, check.status)
+        assertEquals("not signed in to Claude Code yet", check.detail)
+        assertEquals("Run claude-splice and use /login.", check.fix)
+    }
+
     private fun nativeView(): HeadAccountPoolView = HeadAccountPoolView(
         "native:claude",
         listOf(

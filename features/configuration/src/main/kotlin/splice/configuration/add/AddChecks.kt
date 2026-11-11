@@ -96,9 +96,8 @@ internal class AddChecks(
             LocalRowsAnswer()
         }
         val refused = runtime.refused.entries.joinToString("; ") { (id, why) -> "$id: $why" }
-        return listOf(
-            credential(c, env),
-            reachable(c.provider.baseUrl),
+        return listOf(credential(c, env), reachable(c.provider.baseUrl)) + AddModelChecks.rows(
+            c.resolved.policy.clientRoster,
             modelsListed(c.models, listed, c.resolved.policy.listAuthoritative),
             modelWindows(c.provider.models, listed.withServed(runtime.windows), runtime.unchecked),
         ) + listOfNotNull(

@@ -101,6 +101,38 @@ internal class PerfAccumulatorBehaviorTest {
             assertEquals(snapshot, fixture.accumulator.snapshot())
         }
     }
+
+    @Test
+    fun `a scope that wakes after idle minutes does not cost the next minute its first events`() {
+        ObservationFixture().use { fixture ->
+            val idle = fixture.scope.copy(model = "idle")
+            fixture.recorder.emit(idle, PerfEventKind.GATE_STATE, mapOf("gate_limit" to 1.0))
+            repeat(FILLED_MINUTES) {
+                busyMinute(fixture)
+                fixture.advance(PerfObservationLimits.AGGREGATE_MINUTE_MS)
+                writePages(fixture)
+            }
+            fixture.recorder.emit(idle, PerfEventKind.GATE_STATE, mapOf("gate_limit" to 2.0))
+            busyMinute(fixture)
+            val newest = fixture.points(UPSTREAM_EVENTS).filter { it.fromMs == fixture.wall }
+            assertEquals(BUSY_SCOPES.toDouble(), newest.sumOf { it.sum })
+        }
+    }
+
+    /** One event from each busy scope: a full recorder gives up its oldest written minute to hold them. */
+    private fun busyMinute(fixture: ObservationFixture) {
+        repeat(BUSY_SCOPES) { index ->
+            val scope = fixture.scope.copy(model = "busy-$index")
+            fixture.recorder.emit(scope, PerfEventKind.PROTOCOL_PROGRESS, mapOf(UPSTREAM_EVENTS to 1.0))
+        }
+    }
+
+    /** Writes every changed minute's page, as the checkpoint loop does one page at a time. */
+    private fun writePages(fixture: ObservationFixture) {
+        repeat(FILLED_MINUTES * 2) {
+            fixture.accumulator.checkpointPage()?.let { fixture.accumulator.settleCheckpointPage(it, durable = true) }
+        }
+    }
 }
 
 private const val MEAN_LIMIT = 1.5
@@ -108,3 +140,8 @@ private const val MODEL_STRESS = 1000
 private const val MEDIAN = 0.5
 private const val TAIL = 0.95
 private const val GATE_SATURATED = "gate_saturated"
+private const val UPSTREAM_EVENTS = "upstream_events"
+
+// Ten minutes of 250 series each pass the recorder's 2,048 cells, so it is full and evicting when the idle scope wakes.
+private const val FILLED_MINUTES = 10
+private const val BUSY_SCOPES = 250

@@ -1467,6 +1467,12 @@ origin.
   is not yet known to go upstream, where it read "Not measured" with no reason. The request counts say they come from
   request-by-request records, which hold part of the period, while the rates come from the recorder's minute totals.
   The two Runtime readings both labelled "CPU" read "CPU time" and "CPU load".
+- **The recorder no longer turns away a minute's first readings when an idle head or model wakes.** A gauge that had
+  not changed for some minutes, on its next change, marked every minute the recorder held as needing to be written
+  again. A marked minute cannot be given up for a new one, so for the few seconds until one was written a full
+  recorder refused every new series, and what it refused was gone: on one desk, one completion of 602 in an hour and
+  the tokens of two requests. Only the minute in progress is marked now; an ended minute's file already holds the
+  same reading.
 - **A measured period lists its recorded requests again, and `splice perf turns` answers on a desk with a long
   history.** The list read every kept generation of the request log from its first byte, three times each, and then
   digested them all twice more for a first page of one row, against 512 MiB of work. On a desk with 35 archived

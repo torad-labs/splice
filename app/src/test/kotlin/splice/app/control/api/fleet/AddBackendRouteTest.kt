@@ -9,6 +9,7 @@ import com.sun.net.httpserver.HttpServer
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.expectSuccess
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -367,6 +368,23 @@ class AddBackendRouteTest {
         assertEquals(1, signIns.size)
     }
 
+    // Cancel on an add's sign-in (Models page) ends the flow on the daemon and keeps the form.
+    @Test
+    fun `cancelling an add's sign-in answers the add with that sign-in ended, and the add stays open`() = runBlocking {
+        val id = body(post("/api/add", """{"profile":"codex","name":"cx"}"""))["id"]!!.jsonPrimitive.content
+        post("/api/add/$id/login")
+
+        val cancelled = delete("/api/add/$id/login")
+
+        assertEquals(HttpStatusCode.OK, cancelled.status, cancelled.bodyAsText())
+        val signIn = body(cancelled)["sign_in"]!!.jsonObject
+        assertEquals("failed", signIn["state"]!!.jsonPrimitive.content)
+        assertEquals("cancelled", signIn["failure_kind"]!!.jsonPrimitive.content)
+        assertEquals(HttpStatusCode.OK, get("/api/add/$id").status, "the add is still open")
+        val again = body(post("/api/add/$id/login"))["sign_in"]!!.jsonObject
+        assertEquals("waiting", again["state"]!!.jsonPrimitive.content, "Sign in after a cancel starts a new flow")
+    }
+
     @Test
     fun `refusals carry their own sentence and the status that fits`() = runBlocking {
         assertEquals(HttpStatusCode.NotFound, post("/api/add", """{"profile":"nope"}""").status)
@@ -479,6 +497,11 @@ class AddBackendRouteTest {
     private suspend fun get(path: String): HttpResponse = withTimeout(TIMEOUT_MS) {
         awaitPort()
         client.get("$url$path") { header("Authorization", "Bearer $key") }
+    }
+
+    private suspend fun delete(path: String): HttpResponse = withTimeout(TIMEOUT_MS) {
+        awaitPort()
+        client.delete("$url$path") { header("Authorization", "Bearer $key") }
     }
 
     private fun managedHead(): ManagedHead = ManagedHead(

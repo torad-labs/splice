@@ -150,7 +150,16 @@ public class AddRoutes(
         }
     }
 
-    /** DELETE /api/add/{id}: 200 with an empty object; a sign-in already running is not stopped. */
+    /** DELETE /api/add/{id}/login: ends the sign-in the add has open and answers the add's view, the sign-in in it as
+     *  it ended. The add stays open. Until Nov 11, 2026 the Models page's Cancel on an add's sign-in only forgot it in
+     *  the page, and the flow ran on holding the provider's callback port. */
+    public suspend fun cancelSignIn(call: ApplicationCall) {
+        val (adds, s) = session(call) ?: return
+        adds.cancelSignIn(s)
+        view(call, adds, s)
+    }
+
+    /** DELETE /api/add/{id}: 200 with an empty object; a sign-in the add still had open ends with it. */
     public suspend fun discard(call: ApplicationCall) {
         val adds = console() ?: return refuse(call, UNWIRED, HttpStatusCode.ServiceUnavailable)
         val id = call.parameters[ID_PARAM].orEmpty()

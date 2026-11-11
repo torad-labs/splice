@@ -1448,7 +1448,13 @@ origin.
   it, which until now could file the removed login again if its page was finished afterwards. A page opened while the
   daemon holds a sign-in (a reload, a second tab) shows it on its card with its Cancel, from `GET /api/auth/logins`.
   Discarding a provider being added ends its sign-in too. The daemon's log now has one line when a sign-in starts and
-  one when it ends, saying how; it had none.
+  one when it ends, saying how; it had none. The same holds on every page that signs a login in: Usage's sign-in box
+  on a login's card, the Models page's sign-in for a command and for a provider being added (`DELETE
+  /api/add/{id}/login`), and Compare's, which each only forgot the sign-in in the page. A sign-in on Accounts and
+  Usage also follows the daemon now: one status read splice did not answer used to end it on the card as "Not
+  completed" with no reason while the daemon went on holding it. The row now waits through reads splice does not
+  answer, and a daemon restarted in the middle of a sign-in reads "Stopped", with that as its reason. A pasted code
+  the sign-in does not take ends it on the daemon as well, with the daemon's reason on the card.
 - **A Claude login signed in again is asked again at once.** A login Anthropic had refused stayed held, and its
   card kept reading Blocked, after it was signed in again: the hold only ended when the login served a turn, and the
   login was not tried again until the hold's time ran out, up to an hour. On Nov 11 a login blocked while its

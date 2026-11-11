@@ -143,6 +143,12 @@ public class AddConsole(
         return true
     }
 
+    /** Ends the sign-in [s] still has open and leaves the add as it stands: its form stays, and Sign in starts a new
+     *  one. Nothing happens when it has none. */
+    internal suspend fun cancelSignIn(s: AddSession) {
+        s.signInId?.let { signIn.cancel(it) }
+    }
+
     internal fun signInStatus(s: AddSession): LoginStatus? = s.signInId?.let(signIn::poll)
 
     /** A second request while a flow runs answers that flow rather than starting another. */

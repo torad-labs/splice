@@ -98,9 +98,6 @@ public enum class LoginFailure(public val wire: String) {
 
     /** The account signed into is already one of this command's. */
     ALREADY_ADDED("already_added"),
-
-    /** A session of the command is running, or its login is being edited, so the login can't change under it. */
-    IN_USE("in_use"),
 }
 
 /** What a sign-in asks the person to do. [userCode] and [verificationUri] are the device flow's announcement;

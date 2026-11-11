@@ -1021,8 +1021,11 @@ async function signIn(p) {
   say(p, {});
   const res = await API.post(`/api/auth/${enc(p.key)}/login`, {});
   if (!res.ok || !res.body?.id) { refuse(p, "Not completed"); return; }
+  // A sign-in nobody is waiting on any more ends on splice too: its pane was closed or took another act, or five
+  // minutes passed. Until Nov 11, 2026 it ran on there, holding its command's label and callback port.
+  const end = () => API.del(`/api/auth/${enc(p.key)}/login/${enc(res.body.id)}`);
   for (let i = 0; i < 300; i++) {
-    if (!ui.panes.includes(p) || p.fx !== x || x.gen !== gen) return;
+    if (!ui.panes.includes(p) || p.fx !== x || x.gen !== gen) { end(); return; }
     const st = (await API.get(`/api/auth/${enc(p.key)}/login/${enc(res.body.id)}`)).body ?? {};
     if (st.state === "failed") { refuse(p, "Not completed"); return; }
     if (st.state === "signed_in" || st.state === "live_after_restart") {
@@ -1035,6 +1038,7 @@ async function signIn(p) {
     if (url !== x.url || code !== x.code) say(p, { url, code });
     await new Promise((r) => setTimeout(r, 1000));
   }
+  end();
   refuse(p, "Not completed");
 }
 // ---------- the request, in Requests' own open request (reqview.js), under the row of answers it was asked in ----------

@@ -3134,18 +3134,31 @@ async function startAdd() {
 }
 async function signIn() {
   const a = ui.add;
-  a.sign = { code: null, url: null };
+  const sg = a.sign = { code: null, url: null };
   render();
   const res = await API.post(`/api/add/${encodeURIComponent(a.id)}/login`, {});
+  // cancelled while splice was starting it: what splice started ends too
+  if (a.sign !== sg) { if (res.ok) API.del(`/api/add/${encodeURIComponent(a.id)}/login`); return; }
   if (!res.ok) { a.sign = null; a.busy = false; a.said = "Not completed"; render(); return; }
-  for (let i = 0; i < 300 && a.sign; i++) {
+  for (let i = 0; i < 300 && a.sign === sg; i++) {
     const st = (await API.get(`/api/add/${encodeURIComponent(a.id)}`)).body?.sign_in ?? {};
     if (st.state === "failed") { a.sign = null; a.busy = false; a.said = "Not completed"; render(); return; }
     if (st.state === "signed_in" || st.state === "live_after_restart") { a.sign = null; await verifyAndSave(); return; }
     const url = st.verification_uri || st.browser_url || null;
-    if (url !== a.sign.url || (st.user_code || null) !== a.sign.code) { a.sign = { code: st.user_code || null, url }; render(); }
+    if (url !== sg.url || (st.user_code || null) !== sg.code) { Object.assign(sg, { code: st.user_code || null, url }); render(); }
     await new Promise((r) => setTimeout(r, 1000));
   }
+  // five minutes of waiting, with nobody finishing it: it ends on splice too, and the form says so
+  if (a.sign === sg) { endSignin(a, null); a.said = "Not completed"; render(); }
+}
+// Ends a sign-in on splice as it leaves the page: an add's through its add, a command's by its own id. Until Nov 11,
+// 2026 Cancel only forgot it here, and splice went on holding it (Marcos: "it said it canceled ... so it didnt really
+// cancelled"): the provider's callback port stayed taken, and a sign-in page finished later still filed the login.
+function endSignin(a, sg) {
+  if (a?.sign) { a.sign = null; a.busy = false; API.del(`/api/add/${encodeURIComponent(a.id)}/login`); return; }
+  if (!sg) return;
+  if (ui.sign === sg) ui.sign = null;
+  if (sg.id) API.del(`/api/auth/${encodeURIComponent(sg.key)}/login/${encodeURIComponent(sg.id)}`);
 }
 const profileOf = (a) => data.profiles.find((x) => x.name === a.profile);
 // Add with a failed check saves nothing, and says so on the form with what to fix (marlin p226: a press did nothing). A
@@ -3206,12 +3219,14 @@ async function saveKey() {
 async function signinCommand(key) {
   const c = cmdByKey(key);
   if (/key/i.test(c.auth)) { ui.keyin = { key, said: null }; render(); focusLater(() => document.getElementById("k-in")); return; }
-  ui.sign = { key, code: null, url: null }; ui.fixSaid = null;
+  const sg = ui.sign = { key, id: null, code: null, url: null }; ui.fixSaid = null;
   render();
   const res = await API.post(`/api/auth/${encodeURIComponent(key)}/login`, {});
+  // cancelled while splice was starting it: what splice started ends too
+  if (ui.sign !== sg) { if (res.body?.id) API.del(`/api/auth/${encodeURIComponent(key)}/login/${encodeURIComponent(res.body.id)}`); return; }
   // a sign-in that did not finish says so in the header where Sign in was pressed, on the command it was for
   if (!res.ok || !res.body?.id) { ui.sign = null; ui.fixSaid = { key, word: "Not completed" }; render(); return; }
-  const sg = ui.sign;
+  sg.id = res.body.id;
   for (let i = 0; i < 300 && ui.sign === sg; i++) {
     const st = (await API.get(`/api/auth/${encodeURIComponent(key)}/login/${encodeURIComponent(res.body.id)}`)).body ?? {};
     if (st.state === "failed") { ui.sign = null; ui.fixSaid = { key, word: "Not completed" }; render(); return; }
@@ -3220,6 +3235,8 @@ async function signinCommand(key) {
     if (url !== sg.url || (st.user_code || null) !== sg.code) { Object.assign(sg, { url, code: st.user_code || null }); render(); }
     await new Promise((r) => setTimeout(r, 1000));
   }
+  // five minutes of waiting, with nobody finishing it: it ends on splice too, and the header says so
+  if (ui.sign === sg) { endSignin(null, sg); ui.fixSaid = { key, word: "Not completed" }; render(); }
 }
 // ---------- the fix splice offers: Start, Sign in, Restore ----------
 async function fix(key) {
@@ -3687,7 +3704,7 @@ function onClick(e) {
     case "try-live": tryLive(d.h); break;
     case "savekey": saveKey(); break;
     case "cancel-key": ui.keyin = null; render(); break;
-    case "cancel-signin": if (a?.sign) { a.sign = null; a.busy = false; } else ui.sign = null; render(); break;
+    case "cancel-signin": endSignin(a, ui.sign); render(); break;
     case "arm": armRemove(ui.open); break;
     case "disarm": ui.rm = null; render(); break;
     case "reread": readAll().then(() => armRemove(ui.open)); break;

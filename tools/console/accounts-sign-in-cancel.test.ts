@@ -3,7 +3,8 @@
 // sign-in in the page: splice kept it for its ten minutes and refused the next Sign in on that login. Through the real
 // page against a stub daemon in the routes' own shapes (LoginRoutes.kt): Cancel asks splice to end the sign-in and the
 // card lets go of it only once splice has answered, and a page opened while splice holds a sign-in shows it where it
-// would have been pressed, with a Cancel that ends it.
+// would have been pressed, with a Cancel that ends it. A status read splice does not answer ends nothing on the card,
+// and a splice that restarted, and so no longer knows the sign-in, reads as that.
 import { afterAll, beforeAll, expect as bunExpect, test } from "bun:test";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -33,6 +34,8 @@ type Held = { id: string; label: string | null; open: boolean };
 const held = new Map<string, Held>();
 // When set, a DELETE waits for it: the moment between Cancel being pressed and splice having ended the sign-in.
 let answerCancel: Promise<void> | null = null;
+// How splice answers a read of a sign-in's status: as it stands, not at all, or as a daemon started since, which knows none.
+let reads: "answered" | "unanswered" | "restarted" = "answered";
 const view = (h: Held) => ({
   id: h.id, state: h.open ? "waiting" : "failed", label: h.label, user_code: null, verification_uri: null,
   browser_url: h.open ? "https://claude.example.invalid/authorize" : null,
@@ -57,6 +60,8 @@ const server = Bun.serve({
       one.open = false;
       return Response.json(view(one));
     }
+    if (one && reads === "unanswered") return new Response("", { status: 503 });
+    if (one && reads === "restarted") return Response.json({ error: "unknown login id" }, { status: 404 });
     if (one) return Response.json(view(one));
     if (path in answers) return Response.json(answers[path]);
     if (/^\/api\/auth\/[^/]+\/order$/.test(path)) return Response.json({ order: [], effective_order: [], next_target: null, following_target: null });
@@ -81,6 +86,7 @@ const addTile = (page: Page) => page.locator(`[data-key="add:${HEAD}"]`);
 async function onPage(check: (page: Page) => Promise<void>, before: () => void = () => {}) {
   held.clear();
   answerCancel = null;
+  reads = "answered";
   before();
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, colorScheme: "dark" });
   await context.addInitScript(() => localStorage.setItem("splice-console-theme", "night"));
@@ -107,6 +113,20 @@ test("Cancel ends the sign-in on splice, and the card lets go of it only once sp
   answer();
   await expect(page.locator(`[data-act="add"][data-c="${HEAD}"]`)).toBeVisible({ timeout: 10_000 });
   bunExpect(openOnSplice()).toHaveLength(0);
+}), 30_000);
+
+test("a sign-in waits through reads splice does not answer, and reads Stopped once splice has restarted without it", () => onPage(async (page) => {
+  await page.locator(`[data-act="add"][data-c="${HEAD}"]`).click();
+  await page.locator(`[data-act="add-go"][data-c="${HEAD}"]`).click();
+  await expect(addTile(page).getByRole("button", { name: "Open sign-in" })).toBeVisible({ timeout: 10_000 });
+  reads = "unanswered";
+  // three reads go unanswered: the sign-in is still splice's, so the row still waits, with its Cancel
+  await page.waitForTimeout(3_200);
+  await expect(addTile(page).getByRole("button", { name: "Open sign-in" })).toBeVisible();
+  await expect(addTile(page).getByRole("button", { name: "Cancel" })).toBeVisible();
+  reads = "restarted";
+  await expect(addTile(page)).toContainText("Stopped", { timeout: 10_000 });
+  await expect(addTile(page).getByRole("button", { name: "Try again" })).toBeVisible();
 }), 30_000);
 
 test("a page opened while splice holds sign-ins shows each where it would have been pressed, and its Cancel ends it", () => onPage(async (page) => {

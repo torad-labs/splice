@@ -450,7 +450,7 @@ const FAILS = {
   not_completed: { word: "Not completed", retry: true }, network: { word: "Network error", retry: true },
   file: { word: "File error" }, config: { word: "Config error" }, expired: { word: "Expired", retry: true },
   stopped: { word: "Stopped", retry: true }, cancelled: { word: "Cancelled", retry: true },
-  already_added: { word: "Already added", pulse: true }, in_use: { word: "In use", retry: true },
+  already_added: { word: "Already added", pulse: true },
 };
 // A name splice takes, and one no other account of the command has (ClaudeAccountFolders.kt:199,
 // OAuthAccountFiles.kt:264-266). On Claude: letters, digits, - and _, starting with a letter or digit, up to 64
@@ -900,12 +900,21 @@ function seen(target, st) { // one status answer: show its step, finish, fail, o
   s.swapped = !!(s.code && st.user_code && st.user_code !== s.code); // a device code that expired is replaced (DeviceLoginFlow.kt:88-93)
   Object.assign(s, { url, by, code: st.user_code || null });
   if (changed) { render(); s.swapped = false; }
-  const gen = s.gen;
+  askSignin(target);
+}
+// Asks splice how the sign-in stands, a second from now. The sign-in is splice's, so only splice's answer ends it here.
+// Until Nov 11, 2026 one status read that failed ended it on the card as "Not completed", with no reason, while splice
+// went on holding it: a second place the page and splice disagreed about a sign-in, beside Cancel (cancelSignin).
+function askSignin(target) {
+  const s = ui.signin[target], gen = s.gen;
   s.timer = setTimeout(async () => {
     const res = await API.get(s.how.watch || loginPath(s, s.id));
     if (ui.signin[target] !== s || s.gen !== gen) return;
-    if (!res.ok) { failSignin(target); return; }
-    seen(target, read(s, res.body));
+    if (res.ok) { seen(target, read(s, res.body)); return; }
+    // splice holds no sign-in under this id: it restarted since, and the sign-in ended with the daemon that ran it
+    if (res.status === 404) { failSignin(target, { failure_kind: "stopped", failure_reason: "splice restarted, and this sign-in ended with it" }); return; }
+    // no answer is not an end: the row waits, and reads what splice says once it answers again
+    askSignin(target);
   }, 1000);
 }
 function failSignin(target, st = null) {
@@ -964,7 +973,10 @@ async function submitCode(field) {
   const s = ui.signin[field.dataset.t];
   if (!s?.id) return;
   const res = await API.post(`/api/auth/${encodeURIComponent(s.how.poll)}/login/${encodeURIComponent(s.id)}/code`, { code: field.value.trim() });
-  if (!res.ok) { failSignin(field.dataset.t); return; }
+  // A code splice did not take ends the sign-in here with splice's own reason, and on splice too, so the card and
+  // splice agree it is over and Try again starts a new one. It read "Not completed" with no reason, over a sign-in
+  // splice could still be holding.
+  if (!res.ok) { API.del(loginPath(s, s.id)); failSignin(field.dataset.t, res.body); return; }
   seen(field.dataset.t, res.body);
 }
 // How an account signs in again: Claude Code's own sign-in through its place, any other through its command's login

@@ -102,32 +102,40 @@ class NonStreamHoldsThroughHeadsTest {
         }
     }
 
+    // Since 1ca21503b (Nov 9) a non-stream turn with a session runs on detached when its client hangs up: it waits
+    // out the limit, is sent once at the reset, and holds its answer for the same request asked again. Until Nov 11,
+    // 2026 this test said the opposite ("sends nothing at the reset") and passed by a race. It moved the clock an hour
+    // in one step, where the turn's idle watchdog and the reset's wake were both due, and the watchdog usually ran
+    // first and ended the turn as abandoned. On CI the reset's wake ran first once and the turn was sent, which is
+    // what the product does at a real reset.
     @Test
-    fun `a non-stream client that leaves during a short limit sends nothing at the reset`(
+    fun `a non-stream client that leaves during a short limit finds its answer when it asks again`(
         @TempDir tmp: Path,
     ) = runTest {
-        // Since 1ca21503b (Nov 9) a non-stream turn with a session runs on detached when its client hangs up, so its
-        // slot is no longer let go at the hang-up: the held turn keeps the permit it was admitted with through the
-        // limit wait and lets it go at the reset. The send after the reset is still never made.
         withScriptedHeads(tmp, VirtualTime()) {
-            provider.script(limited(START.plusSeconds(10)), reply { anthropicAnswer("must not be sent") })
+            provider.script(limited(START.plusSeconds(10)), reply { anthropicAnswer("after the short limit") })
             val head = anthropic(replies = HeadReplies.claude)
-            val client = head.client.open(ClientRequest(stream = false))
+            val request = ClientRequest(stream = false)
+            val client = head.client.open(request)
             withContext(Dispatchers.Default) {
-                withTimeout(10_000) { while (provider.requests.isEmpty() || time.parkedNow() == 0) delay(5) }
+                withTimeout(10_000) { while (10.seconds !in time.parkedDues()) delay(5) }
             }
 
             client.hangUp()
-            // The held turn shows nothing a test can read when its client goes, so the hang-up gets a moment of real
-            // time to reach the head over loopback before the clock moves past the reset.
-            withContext(Dispatchers.Default) { delay(250) }
-            time.advanceBy(1.hours)
+            // The head says when it has seen its client go, and the clock reaches the reset only after that.
             withContext(Dispatchers.Default) {
-                withTimeout(10_000) { while (head.gate.snapshot().live.isNotEmpty()) delay(5) }
+                withTimeout(10_000) { while (head.log.none { "client left mid-turn" in it }) delay(5) }
             }
-            withContext(Dispatchers.Default) { delay(50) }
+            time.advanceBy(10.seconds)
+            val again = head.client.send(request)
 
-            assertEquals(1, provider.requests.size, "the client close leaves no send for after the reset")
+            assertEquals(200, again.status, again.describe())
+            assertTrue("after the short limit" in again.body, again.describe())
+            assertEquals(
+                listOf(0.seconds, 10.seconds),
+                provider.requests.map { it.at },
+                "the turn is sent once at the reset, and the request asked again reads its answer",
+            )
         }
     }
 

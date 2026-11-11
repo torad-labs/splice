@@ -105,9 +105,18 @@ const API = (() => {
   const PERF_ACTIVE = 4, PERF_WAITING = 32, perfWaiting = new Map();
   let perfRunning = 0;
   const localPerfBusy = () => ({ ok: false, status: 429, body: { status: "busy", reason: "console_query_capacity" } });
+  const requestsOwn = (key) => key.startsWith("requests:");
+  // A measurement a person just asked for goes ahead of Requests' own counts. Over 30 days that page lines up one count
+  // per project and command (88 live on Nov 10), each taking seconds, and the Performance panel's three reads behind
+  // them were refused here unsent and drawn as "Error" for two minutes while the page was only still reading.
+  function nextPerf() {
+    for (const entry of perfWaiting) if (!requestsOwn(entry[0])) return entry;
+    return perfWaiting.entries().next().value;
+  }
+  const panelWaiting = () => { let n = 0; for (const key of perfWaiting.keys()) if (!requestsOwn(key)) n++; return n; };
   function drainPerf() {
     while (perfRunning < PERF_ACTIVE && perfWaiting.size) {
-      const [key, next] = perfWaiting.entries().next().value;
+      const [key, next] = nextPerf();
       perfWaiting.delete(key);
       if (!next.current()) { next.resolve(null); continue; }
       perfRunning++;
@@ -132,8 +141,9 @@ const API = (() => {
       pendingRead?.resolve(null);
       // Requests' own reads wait their turn rather than be refused here: its project tiles alone ask one count per project
       // and command at once (14 projects by 11 commands live on Nov 10), and every read past the 32nd came back as a
-      // local refusal that drew the tile as a dash. They still go four at a time, inside the daemon's admission.
-      if (!pendingRead && !key.startsWith("requests:") && perfRunning >= PERF_ACTIVE && perfWaiting.size >= PERF_WAITING) {
+      // local refusal that drew the tile as a dash. They still go four at a time, inside the daemon's admission. Nor do
+      // they count against another panel's reads: only a panel's own backlog refuses a panel's read.
+      if (!pendingRead && !requestsOwn(key) && perfRunning >= PERF_ACTIVE && panelWaiting() >= PERF_WAITING) {
         resolve(localPerfBusy());
         return;
       }

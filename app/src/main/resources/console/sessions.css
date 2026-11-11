@@ -413,8 +413,10 @@
 .sessions .s .top.bare .who { grid-column: 1 / span 2; }
 .sessions .s .top.bare .last { display: none; }
 /* the name is who it is: the chevron that opens it in place, then the name, then its branch mark, which gives way first */
-.sessions .s .name { flex: 0 1 auto; display: inline-flex; align-items: center; gap: 0.333rem; min-width: 0; max-width: 100%; font: 500 1.05rem/1.4rem var(--font-name); }
-.sessions .s .name > .chev { stroke: var(--text-mute); }
+/* The name is a block with its chevron inline, never a flex row: a flex row cuts a long name mid-letter, because an
+   ellipsis is drawn only for text that sits straight in the box that clips it (live Nov 10: "bench-…-3900601-coc"). */
+.sessions .s .name { flex: 0 1 auto; display: block; min-width: 0; max-width: 100%; font: 500 1.05rem/1.4rem var(--font-name); }
+.sessions .s .name > .chev { display: inline-block; vertical-align: -0.05em; margin-right: 0.333rem; stroke: var(--text-mute); }
 .sessions .s .name:hover > .chev { stroke: var(--text); }
 /* how many ended sessions carried this name: the layers mark and the count, never a bare plus */
 .sessions .s .who .also { flex: none; display: inline-flex; align-items: center; gap: 0.333rem; font: 500 .85rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }

@@ -1455,6 +1455,17 @@ origin.
   file at a third of the size a read accepts, counting three bytes a character. The fold now charges what a series
   takes to hold, the write measures the file it would write, and an hour that still does not fit stays as minutes
   while the next hour gets its turn.
+- **A measured period's History tab draws again, and `splice perf series` answers for more than a few minutes.** Every
+  entry of the series reply repeated the reply's whole list of gaps, about 1,000 characters each on a desk with eleven
+  to report, and a reply past its 4 MiB was refused whole: five minutes answered, fifteen did not, and the tab drew
+  "No sampled history" for every longer period. An entry now holds its interval, scope and measurements, and the gaps
+  stay once on the reply. When the entries alone are still too many, their intervals double in width until the reply
+  fits, and `resolution_ms` says the width. The tab names a compaction's readings, which read as a second row of the
+  same scope, and says so when the recorder refuses a period instead of calling it empty.
+- **The Performance panel says what its rates are made of.** Under a rate it names how much of the period is missing
+  from the recording, where it said only that the population was partial. "Arrivals recorded" says an arriving request
+  is not yet known to go upstream, where it read "Not measured" with no reason. The request counts say they come from
+  request-by-request records, which hold part of the period, while the rates come from the recorder's minute totals.
 - **A Claude login whose organization refuses it is held, instead of being tried first by every new session.**
   Anthropic answers such a login with a 403 reading "OAuth authentication is currently not allowed for this
   organization", which Claude Code shows as "Your organization has disabled Claude subscription access for Claude

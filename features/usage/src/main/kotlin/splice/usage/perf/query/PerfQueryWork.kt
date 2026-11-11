@@ -49,8 +49,9 @@ internal class PerfQueryWork(private val clock: WallClock, private val sources: 
         var retained = false
         return try {
             val result = result(query, operation, read)
-            val bytes = result.toString().length.toLong() * QUERY_JSON_CHARGE + RESULT_OVERHEAD
-            if (bytes > QUERY_BYTES) return queryError("result_limit", "query_result_exceeds_budget", "partial")
+            val chars = result.toString().length.toLong()
+            if (chars > QUERY_REPLY_CHARS) return queryError("result_limit", "query_result_exceeds_budget", "partial")
+            val bytes = chars * QUERY_JSON_CHARGE + RESULT_OVERHEAD
             lease.retain(result, bytes)
             retained = true
             result
@@ -119,6 +120,9 @@ private const val CHAR_CHARGE = 2L
 
 // Add 4 KiB for response collections and ownership beyond the text-dependent result charge.
 private const val RESULT_OVERHEAD = 4_096L
+
+// The longest reply the 4 MiB admits at that charge: 523,776 rendered characters.
+internal const val QUERY_REPLY_CHARS = (QUERY_BYTES - RESULT_OVERHEAD) / QUERY_JSON_CHARGE
 
 // Reuse an identical query result for at most one second so repeated polling avoids immediate recomputation.
 private const val QUERY_CACHE_MS = 1_000L

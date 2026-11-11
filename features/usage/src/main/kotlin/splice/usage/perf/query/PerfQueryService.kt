@@ -1,8 +1,6 @@
 package splice.usage.perf.query
 
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import splice.core.util.WallClock
 import splice.usage.perf.RecordedAccounts
 import splice.usage.perf.RequestProjects
@@ -29,8 +27,7 @@ public class PerfQueryService(
     }
 
     public fun series(query: PerfQuery): JsonObject = execute(query, "series") { selected, filter ->
-        val data = read(selected, filter)
-        envelope(selected, data, buildJsonObject { put("series", PerfQueryMetrics.series(data)) })
+        PerfSeriesReply(selected, read(selected, filter)).render()
     }
 
     public fun rows(

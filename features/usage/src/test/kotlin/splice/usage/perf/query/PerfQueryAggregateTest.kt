@@ -1,5 +1,6 @@
 package splice.usage.perf.query
 
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -98,6 +99,39 @@ class PerfQueryAggregateTest {
 
         assertEquals("0.05", JsonScalars.str(result.getValue("rates").jsonObject, "completions_per_s"))
         assertEquals("120000", JsonScalars.str(result, "observed_duration_ms"))
+        PerfWorkBudget.release(result)
+    }
+
+    @Test
+    fun `a series too long for one reply returns every count, in intervals widened until it fits`() {
+        val until = 40 * 60_000L
+        // 4,000 entries of a minute each pass the reply's 523,776 characters; two minutes an entry fit.
+        val points = (0 until 40).flatMap { minute ->
+            (0 until 100).map { model ->
+                val from = minute * 60_000L
+                val each = PerfScope(head = "h", model = "model-$model")
+                PerfAggregatePoint("requests_finished", each, from, from + 60_000, 1, 1.0, 1.0, 1.0)
+            }
+        }
+        val live = PerfAggregateSnapshot(identity, 0, until, points, PerfCoverage(0, until, until))
+        val service = PerfQueryService(object : PerfQuerySources {
+            override fun heads(): Set<String> = setOf("h")
+            override fun rows(head: String): PerfRowsSource? = null
+            override fun live(): PerfAggregateSnapshot = live
+        })
+
+        val result = service.series(PerfQuery(0, until, source = "live"))
+
+        val series = result.getValue("series").jsonArray
+        assertEquals("120000", JsonScalars.str(result, "resolution_ms"))
+        assertEquals(2_000, series.size)
+        assertEquals(
+            4_000L,
+            series.sumOf {
+                val finished = it.jsonObject.getValue("metrics").jsonObject.getValue("requests_finished")
+                checkNotNull(JsonScalars.str(finished.jsonObject, "count")).toLong()
+            },
+        )
         PerfWorkBudget.release(result)
     }
 

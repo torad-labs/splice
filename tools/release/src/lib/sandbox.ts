@@ -105,9 +105,15 @@ export function fakeNetwork(): FakeNetwork {
   writeStub(
     join(dir, "curl"),
     // install.sh's download() calls `curl <options> -o <dest> <url>`: the destination follows -o and the url is last.
+    // `splice doctor`, which the installer runs at its end, asks `curl --version`: that is answered as curl answers
+    // it and is no download, so it never reaches the URL log the acceptance run compares.
     'import { appendFileSync, copyFileSync } from "node:fs";\n' +
       'import { basename, join } from "node:path";\n' +
       "const argv = process.argv.slice(2);\n" +
+      'if (argv.includes("--version")) {\n' +
+      '  console.log("curl 8.0.0 (release-accept stub)");\n' +
+      "  process.exit(0);\n" +
+      "}\n" +
       "const url = argv[argv.length - 1] ?? \"\";\n" +
       "const dest = argv[argv.indexOf(\"-o\") + 1] ?? \"\";\n" +
       'appendFileSync(process.env.SPLICE_FAKE_CURL_LOG, `${url}\\n`);\n' +

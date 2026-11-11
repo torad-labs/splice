@@ -47,7 +47,8 @@ changing a rule.
 ## PR title
 
 The org-injected PR-title gate (check name `title`) enforces Conventional Commits on the **PR
-title**. Landing preserves the branch's commits, never squashes them. This repo used
+title**. A PR lands on `main` as one squashed commit, because `main` requires a linear history, and
+GitHub takes that commit's subject from the PR title or from a branch commit. This repo used
 to ship `.github/workflows/pr-title.yml`; that workflow is deleted. The allowed types live once,
 in `tools/gate/src/lib/conventional.ts`, mirroring the org gate. A second copy is how two types the org gate
 rejects survived here after that deletion.
@@ -63,25 +64,29 @@ so the PR cannot merge.
 `verify(x):` — fails the check.
 
 **Use an allowed type in every commit subject as well.** The complete gate checks HEAD's subject
-against the same vocabulary. Landing preserves those subjects because commits are never squashed.
+against the same vocabulary when it runs locally. The squash can take its subject from either source,
+so a branch commit with a type the vocabulary rejects can reach `main` even when the PR title passed.
 
 ## Working and landing on the shared branch
 
-All seats work in one checkout on the same dev branch (`dev`), not in separate feature
-branches or worktrees. Coordinate ownership by file and preserve every other seat's work.
+All seats work in one checkout on the same branch (the one the project's lead names; no seat opens its own
+feature branch or worktree, and there is no standing `dev` branch). Coordinate ownership by file and preserve
+every other seat's work.
 
 1. Commit only your own files by explicit path: `git commit -m "docs(scope): subject" -- <paths>`.
    For new files, add only those paths and commit them in the same command. The index is shared,
    so leave nothing staged. Never use `git add -A`, `git commit -a`, stash, reset or switch the
    shared branch.
-2. The maintainer pushes the shared branch and keeps one PR from it to `main`.
-3. CI's `gate` job must pass on the exact SHA being landed and installed. Local gate runs are
-   feedback, not the verdict. A red gate is fixed forward with a commit and another CI run.
-4. Land by fast-forward or merge commit, never squash. If a merge creates a new SHA, that SHA
-   needs its own passing CI gate before landing or installation.
-5. Install the jar CI built: download the `splice-jar` artifact of the green gate run on that SHA
-   (`gh run download <run> -n splice-jar`). Never build an install from the shared checkout, and
-   never make a second checkout of any kind (worktree, clone, archive or copy), not even to build.
+2. Any seat pushes the shared branch and opens the PR from it to `main`; there is no single driver.
+3. The required checks on `main` are `gate`, `codeql-java-kotlin`, `codeql-javascript-typescript` and
+   `dependency-review`. Local gate runs are feedback, not the verdict: the `gate` job must pass on the
+   head being landed. A red check is fixed forward with a commit and another run.
+4. Land with a squash merge: `main` requires a linear history, which rules out a merge commit. The commit
+   that results is the SHA that gets installed.
+5. Install the jar CI built: download the `splice-jar` artifact of the green `ci` run on that SHA
+   (`gh run download <run> -n splice-jar`). When CI cannot run, build that SHA in a throwaway tree under
+   `/tmp` and delete the tree once the install is verified. Never build an install from the shared
+   checkout, and never keep a second checkout of any kind (worktree, clone, archive or copy) beyond that.
 
 `main` reaches `prod` as described under [Releasing](#releasing).
 
@@ -111,8 +116,10 @@ migration oracle), the `/api/*` payload shapes (`WebuiContractTest`), the state-
 
 ## Releasing
 
-The `prod` branch is the release line, and **merging the `main -> prod` PR is the release
-action** — GitHub does the rest, no local command involved:
+The `prod` branch is the release line, and **merging the `main -> prod` PR starts the release**.
+GitHub builds and attests it as a draft; the maintainer's machine then puts the files on
+splice.torad.ai/download and publishes the draft, which creates the tag. Nothing is attached to the
+GitHub release itself, only its notes:
 
 1. Land a version-bump PR on `main` (all three sites move together: `Versions.kt`
    `GATEWAY_VERSION`, `app/src/main/dist/bin/splice-launch` `SPLICE_GATEWAY_VERSION`, `package.json`), with
@@ -125,7 +132,28 @@ action** — GitHub does the rest, no local command involved:
    opens the same PR after a courtesy version preflight. `promotion-check` fails the PR before
    merge if the promoted version is already tagged (a promotion that would release nothing).
 3. **Merge it with a merge commit** (never squash: squashing collapses main's promoted history
-   into one alien commit on prod). The resulting push fires `release.yml` on `prod`: full gate,
-   build, attestations, and the `vX.Y.Z` tag created at the promoted commit when the draft
-   release publishes. The version is derived from the promoted code, so the tag can never
-   disagree with what shipped.
+   into one alien commit on prod; `prod` has no linear-history rule, so GitHub allows it). The
+   resulting push fires `release.yml` on `prod`: full gate, build, `release accept`, attestations, and a
+   draft GitHub release that carries the `CHANGELOG.md` notes and no file. The version is derived from
+   the promoted code, so the tag can never disagree with what shipped.
+4. Once that run is green, publish it from the maintainer's machine:
+
+   ```bash
+   bun tools/release publish X.Y.Z --run <release.yml run id>
+   ```
+
+   The run id is `gh run list --workflow release.yml --branch prod --limit 1 --json databaseId --jq '.[0].databaseId'`.
+   The command downloads the run's accepted bundle, refuses any file whose `gh attestation verify` does not
+   bind it to `release.yml`, uploads every file to splice.torad.ai/download (R2 through the S3 API, with a
+   bucket-scoped token from the keyring, never one in the shell or the repository), writes `releases.json` last,
+   and only then runs `gh release edit vX.Y.Z --draft=false`, which creates the `vX.Y.Z` tag at the promoted
+   commit. `install.sh` and `splice upgrade` read from that site, not from GitHub.
+
+### Betas
+
+A beta (`X.Y.Z-beta.N`) is cut from `origin/main` on the maintainer's machine, outside `release.yml`:
+`bun tools/release beta X.Y.Z-beta.N`. It needs the same three-site version bump and `CHANGELOG.md`
+section on `main` first, builds the jar and bundle in a throwaway tree under `/tmp`, runs `release accept`,
+publishes the files on splice.torad.ai/download and creates a GitHub prerelease with the notes alone. It
+carries no attestation, so `install.sh` run with a signed-in `gh` refuses it; the notes say so and give the
+install command for a signed-out `gh`.

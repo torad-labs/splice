@@ -128,6 +128,8 @@ public class CodexAuthProvider(
 
     override suspend fun exchange(): RefreshOutcome = renewal.exchange()
 
+    override suspend fun exchange(refused: Credentials?): RefreshOutcome = renewal.exchange(refused)
+
     private fun persistRotation(
         raw: JsonObject,
         tokens: JsonObject,

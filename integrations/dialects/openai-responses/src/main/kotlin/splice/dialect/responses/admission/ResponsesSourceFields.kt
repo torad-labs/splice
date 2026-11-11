@@ -1,6 +1,7 @@
 // NEW: 2026-11-09 audit — the rule for a top-level field of the source request on every Responses head. Claude Code
-// updates itself, and 2.1.321's new `diagnostics` field, then listed among the controls this path refuses, refused
-// every claudex turn for 67 minutes (5:51-6:58 PM CT). A field the client adds must not take a head down unless it
+// updates itself, and a request carrying its `diagnostics` field, then listed among the controls this path refuses,
+// refused every claudex turn for 67 minutes (5:51-6:58 PM CT). The field is not new in 2.1.321: it is in 2.1.319
+// requests and in the 2.1.296 binary. A field the client adds must not take a head down unless it
 // could change what the model does. Every field is one of three kinds, and that is the line between them:
 //  1. A control over the answer: what the Responses request is built from ([carriedFields]), or a control it has no
 //     equivalent for (sourceOnlyControls and the policy checks in ResponsesRequestControls), which refuses the turn

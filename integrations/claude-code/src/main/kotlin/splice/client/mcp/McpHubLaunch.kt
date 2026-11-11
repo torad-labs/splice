@@ -80,8 +80,9 @@ public data class McpHubFront(
     val hub: McpHubLive = McpHubLive { true },
 )
 
-/** The Claude Code version proof (f) ran on, where the flag holds with no recorded check, and the recorded checks. */
-public data class PluginFlagGate(val tested: String, val checked: PluginFlagHolds = PluginFlagHolds { false })
+/** The Claude Code version proof (f) ran on, where the flag holds with no recorded check, and the recorded checks. It is
+ *  not the version splice is tested on: that one moves with every release, and this one only with a new proof. */
+public data class PluginFlagGate(val proven: String, val checked: PluginFlagHolds = PluginFlagHolds { false })
 
 public class McpHubLaunch(
     private val planner: McpLaunchPlanner,
@@ -175,7 +176,7 @@ public class McpHubLaunch(
         } catch (_: IOException) {
             null
         } ?: return false
-        return version == flag.tested || flag.checked.holds(version)
+        return version == flag.proven || flag.checked.holds(version)
     }
 
     private fun isPid(text: String): Boolean = text.isNotEmpty() && text.all(Char::isDigit)

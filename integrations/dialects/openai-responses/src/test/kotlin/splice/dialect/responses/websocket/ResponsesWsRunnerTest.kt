@@ -837,6 +837,23 @@ class ResponsesWsSocketFaultTest {
         )
     }
 
+    // Nov 8: a long answer meets the 60-minute limit every hour; that close is the socket's lifetime, continued on its
+    // own count, while a lost chain is a fault the turn recovers from like any other.
+    @Test
+    fun `only the 60-minute connection limit is a planned close`() {
+        val runner = Rig { emptyList() }.runner
+        assertTrue(runner.isPlannedClose(event(CONNECTION_LIMIT)))
+        assertFalse(
+            runner.isPlannedClose(
+                event(
+                    """{"type":"response.failed","response":{"id":"r1",""" +
+                        """"error":{"code":"previous_response_not_found","message":"gone"}}}""",
+                ),
+            ),
+        )
+        assertFalse(runner.isPlannedClose(event(created("r1"))))
+    }
+
     // Marcos, 2026-10-27: "every fallback logs a warning and a counter". A socket that cannot take the round at all is
     // counted on the turn, so the head can tell it from a round that was never the websocket's to take.
     @Test

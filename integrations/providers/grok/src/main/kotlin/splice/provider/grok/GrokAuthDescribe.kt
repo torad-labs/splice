@@ -85,13 +85,17 @@ internal class GrokAuthDescribe(
             authJson.parseSnapshot() to JsonScalars.str(authJson.tokensOf()?.get("refresh_token"))
         }.getOrElse { return RefreshOutcome.ReadFailed(it) }
         authJson.peerRotation(priorAccess, snap)?.let { return it }
-        return if (refreshToken == null) RefreshOutcome.NoRefreshToken else exchangeRefreshToken(refreshToken, persist)
+        return if (refreshToken == null) {
+            RefreshOutcome.NoRefreshToken
+        } else {
+            exchangeRefreshToken(refreshToken, snap?.access, persist)
+        }
     }
 
     private suspend fun exchangeRefreshToken(
         refreshToken: String,
+        usedAccess: String?,
         persist: PersistRotation,
-        allowRereadRetry: Boolean = true,
     ): RefreshOutcome {
         val attempt = Cancellables.runCatchingCancellable { refreshCall(refreshToken) }
             .getOrElse { return RefreshOutcome.TransportFailed(it) }
@@ -99,41 +103,38 @@ internal class GrokAuthDescribe(
             is RefreshAttempt.Granted -> {
                 val access = attempt.tokens.accessToken
                 if (access == null) {
-                    rejectedOrRetry(refreshToken, persist, allowRereadRetry, "refresh response missing access_token")
+                    rejectedOrAdopted(refreshToken, usedAccess, "refresh response missing access_token")
                 } else {
                     persist(refreshToken, attempt.tokens, access)
                 }
             }
-            is RefreshAttempt.InvalidGrant ->
-                rejectedOrRetry(refreshToken, persist, allowRereadRetry, INVALID_GRANT_REASON)
-            is RefreshAttempt.Denied -> rejectedOrRetry(refreshToken, persist, allowRereadRetry, attempt.detail)
+            is RefreshAttempt.InvalidGrant -> rejectedOrAdopted(refreshToken, usedAccess, INVALID_GRANT_REASON)
+            is RefreshAttempt.Denied -> rejectedOrAdopted(refreshToken, usedAccess, attempt.detail)
             // No verdict on the token, so no confirming re-read: the turn's engine asks again later.
             is RefreshAttempt.Unavailable -> RefreshOutcome.Unavailable(attempt.detail)
         }
     }
 
-    private suspend fun rejectedOrRetry(
-        usedRefreshToken: String,
-        persist: PersistRotation,
-        allowRereadRetry: Boolean,
-        reason: String,
-    ): RefreshOutcome {
-        if (!allowRereadRetry) return RefreshOutcome.Rejected(reason)
-        // The confirming reread exists to prove the rejection wasn't a stale-token race. When it
-        // FAILS, the rejection is unconfirmed: surface the read failure in the reason (codex twin
-        // parity) — the composite string also keeps the invalid_grant latch from arming on it.
-        val reread = Cancellables
-            .runCatchingCancellable { JsonScalars.str(authJson.tokensOf()?.get("refresh_token")) }
+    // G1, the confirming re-read: an endpoint rejection MIGHT be a stale-token race. When the auth file now holds
+    // a DIFFERENT refresh token, a peer (the grok CLI, which takes no splice lock) rotated it while our POST was in
+    // flight, and its pair is fresh: it is adopted as the current credential and nothing is posted. Posting the
+    // peer's refresh token once, as this did until Nov 10, 2026, spent the token the grok CLI had just been issued
+    // and could sign the CLI out. The adopted access token is served as it is and renewed later by the usual rules
+    // (its proactive window, or a 401 naming that exact token). One POST per renewal, whatever the race.
+    private fun rejectedOrAdopted(usedRefreshToken: String, usedAccess: String?, reason: String): RefreshOutcome {
+        // When the reread FAILS, the rejection is unconfirmed: surface the read failure in the reason (codex
+        // twin parity) — the composite string also keeps the invalid_grant latch from arming on it.
+        val reread = Cancellables.runCatchingCancellable {
+            authJson.parseSnapshot() to JsonScalars.str(authJson.tokensOf()?.get("refresh_token"))
+        }
         val rereadFailure = reread.exceptionOrNull()
         if (rereadFailure != null) {
             val detail = SafeFailureText.render(rereadFailure).take(REFRESH_ERROR_SNIPPET)
             return RefreshOutcome.Rejected("$reason; credential reread failed: $detail")
         }
-        val newToken = reread.getOrThrow()
-        return if (newToken != null && newToken != usedRefreshToken) {
-            exchangeRefreshToken(newToken, persist, allowRereadRetry = false)
-        } else {
-            RefreshOutcome.Rejected(reason)
-        }
+        val (snap, newToken) = reread.getOrThrow()
+        if (newToken == null || newToken == usedRefreshToken) return RefreshOutcome.Rejected(reason)
+        return authJson.peerRotation(usedAccess, snap)
+            ?: RefreshOutcome.Rejected("$reason; the credential file changed during the renewal")
     }
 }

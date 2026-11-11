@@ -89,6 +89,15 @@ public interface RefreshableAuthProvider : AuthProvider {
         refresh()?.let(RefreshOutcome::Refreshed) ?: RefreshOutcome.Rejected("not renewed")
 
     /**
+     * [exchange] for a request the provider refused as a rejected login: [refused] is the credential that request
+     * actually sent, or null when none was sent (the login lookup's own renewal failed first). A refresh token is
+     * single-use, so a provider that renews one decides from [refused], never from what it served last: when the
+     * credential on file is no longer [refused], a renewal already replaced it and that one is adopted, never a
+     * second rotation. A provider with nothing to rotate answers as [exchange] does.
+     */
+    public suspend fun exchange(refused: Credentials?): RefreshOutcome = exchange()
+
+    /**
      * Provider-specific veto on spending a refresh: the reply was read as a rejected login, or as one this provider
      * names dead ([deadCredential], a ProviderDeviation's answer), and this provider says whether a refresh can
      * change it. The reading belongs to the provider's reader; this answers only whether to spend a token exchange

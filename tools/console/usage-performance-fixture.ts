@@ -2,6 +2,8 @@
 // Keep both shapes in the browser fixtures so the page/Results bridge is exercised, not only a standalone component.
 export function performanceSummary(url: URL, legacy: Record<string, unknown>) {
   const p = url.searchParams, from = Number(p.get("from")), until = Number(p.get("until"));
+  // Without contract=1 the route answers its fold, one entry per head (PerfPayloads.summaryJson), as Results reads it.
+  if (p.get("contract") !== "1") return { heads: Object.entries(legacy).map(([key, h]) => ({ key, ...(h as Record<string, unknown>) })) };
   const filters = Object.fromEntries(["head", "model", "transport", "outcome", "session", "project", "account", "local", "compact", "streaming"].filter((k) => p.has(k)).map((k) => [k, p.get(k)]));
   return {
     schema_version: 1, contract_version: 1, status: "ok", as_of_ms: until, settled_until_ms: null,

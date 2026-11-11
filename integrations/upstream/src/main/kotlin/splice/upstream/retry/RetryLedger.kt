@@ -9,10 +9,11 @@ import java.time.Instant
 /** How a token exchange ended: renewed, refused for good, or failed in a way a later exchange can heal. */
 internal enum class Exchange { RENEWED, REFUSED, UNAVAILABLE }
 
-/** The budgets a turn's steps spend, one count each (RetryBudgets). */
+/** The budgets a turn's steps spend, one count each (RetryBudgets). [ROTATION] counts the provider's planned socket
+ *  rotations, which a turn continues across on their own count and never on a failure's. */
 internal enum class Spend {
     BURST, THROTTLE, OVERLOAD, LOADING, SERVER_RESEND, STREAM_RECOVERY, FRESH_REISSUE, EMPTY, CONTINUE_REASONING, AMEND,
-    UNRECOGNIZED, CODE_MODE, FOLD, UNREACHABLE, WARM, NONE,
+    UNRECOGNIZED, CODE_MODE, FOLD, UNREACHABLE, WARM, ROTATION, NONE,
 }
 
 /** What one turn has spent on its failures. Not thread-safe: a turn's posts and rounds run one at a time. */

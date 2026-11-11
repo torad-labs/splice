@@ -6,6 +6,14 @@
 // same session, same messages, 4.4-19.6 ms later) is answered HERE with a 400 and never reaches the
 // upstream; and the mark that refuses it is spent by that one refusal. The upstream's request count
 // is the proof of "never sent", read from the mock rather than from splice's own counters.
+//
+// WHERE THE STOP LANDS decides the shape of the answer, so each shape is pinned from its own side. A turn whose
+// stream the client already holds (the response head arrived, which the head sends only once it has chosen the
+// stream) ends in band, with the error frame. A turn stopped before its first frame has no status yet: the head
+// answers the stop's own 400 with x-should-retry false (ClientWire, family P), and never lets the drive's
+// cancellation reach Ktor first, which answered a bare 500 whose body was the exception's message. The stream
+// tests therefore wait for the response head, the event they mean, and not for the gate's STREAMING phase, which
+// is the upstream's headers and lands before the first frame has reached the client.
 package splice.head
 
 import io.ktor.client.HttpClient
@@ -14,11 +22,14 @@ import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -52,6 +63,7 @@ import splice.head.wire.WireTap
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
+import splice.upstream.Ticker
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Files
@@ -73,11 +85,18 @@ private class StopFakeAuth : RefreshableAuthProvider {
     override suspend fun describe(): AuthDescription = AuthDescription(true, "fake")
 }
 
+/** What a client reads of one answer: its status, whether it was told not to send it again, and its whole body. */
+private data class Answer(val status: Int, val shouldRetry: String?, val body: String)
+
 class HeadServerTurnStopTest {
 
     /** A real HeadServer over the mock upstream with its live turns wired to [routes] the way the
      *  control plane wires them. maxRetries = 1 so the held turn stays held rather than backing off. */
-    private class Rig(private val tmp: Path, val tap: WireTap? = null) {
+    private class Rig(
+        private val tmp: Path,
+        val tap: WireTap? = null,
+        seams: HeadDeps.HeadSeams = HeadDeps.HeadSeams(),
+    ) {
         val mock = MockChatGptUpstream()
         val gate = InflightGate(maxInflight = { 4 }, maxQueued = { 4 })
         val turns = LiveTurns()
@@ -115,6 +134,7 @@ class HeadServerTurnStopTest {
                 upstream = UpstreamClient(totalTimeoutMs = 60_000),
                 gate = gate,
                 log = { journal.add(it) },
+                seams = seams,
             ).let { base ->
                 base.copy(
                     traffic = base.traffic.copy(liveTurns = turns),
@@ -141,21 +161,37 @@ class HeadServerTurnStopTest {
 
         suspend fun close() {
             mock.releaseHold()
+            mock.startHoldRelease.countDown()
             head.stop()
             client.close()
             mock.stop()
         }
+
+        private fun request(text: String, stream: Boolean, scenario: String) =
+            """{"model":"claude-codex--gpt-5.6-sol","stream":$stream,"max_tokens":64,
+                "system":"You are a test. SCENARIO:$scenario",
+                "messages":[{"role":"user","content":"$text"}]}"""
 
         /** One turn of [SESSION] asking [text], held upstream by the hold scenario until released. */
         suspend fun turn(text: String, stream: Boolean, session: String = SESSION): HttpResponse =
             client.post("http://127.0.0.1:${head.port}/v1/messages") {
                 header("Content-Type", "application/json")
                 header("x-claude-code-session-id", session)
-                setBody(
-                    """{"model":"claude-codex--gpt-5.6-sol","stream":$stream,"max_tokens":64,
-                        "system":"You are a test. SCENARIO:hold",
-                        "messages":[{"role":"user","content":"$text"}]}""",
-                )
+                setBody(request(text, stream, "hold"))
+            }
+
+        /** One streamed turn of [SESSION] read the way a client reads it: [headReceived] completes with the status
+         *  the moment the response head arrives, long before the body ends. The head sends one only once it has
+         *  chosen its answer, so a 200 here is a stream the client holds. [scenario] is the upstream's: "hold"
+         *  streams a first delta and waits, "holdstart" waits before any event. */
+        suspend fun streamed(text: String, headReceived: CompletableDeferred<Int>, scenario: String = "hold"): Answer =
+            client.preparePost("http://127.0.0.1:${head.port}/v1/messages") {
+                header("Content-Type", "application/json")
+                header("x-claude-code-session-id", SESSION)
+                setBody(request(text, stream = true, scenario))
+            }.execute { response ->
+                headReceived.complete(response.status.value)
+                Answer(response.status.value, response.headers["x-should-retry"], response.bodyAsText())
             }
 
         suspend fun until(what: String, check: () -> Boolean) {
@@ -181,7 +217,9 @@ class HeadServerTurnStopTest {
         val rig = Rig(tmp)
         rig.start()
         try {
-            val held = async(Dispatchers.IO) { rig.turn("go", stream = true).bodyAsText() }
+            val headReceived = CompletableDeferred<Int>()
+            val held = async(Dispatchers.IO) { rig.streamed("go", headReceived) }
+            assertEquals(200, withTimeout(WAIT_MS) { headReceived.await() }, "the client holds an open stream")
             rig.until("the turn is streaming upstream") {
                 rig.gate.snapshot().live.any { it.phase == GatePhase.STREAMING }
             }
@@ -198,7 +236,7 @@ class HeadServerTurnStopTest {
             assertEquals("{}", stop.body)
 
             // Bounded: a stop that cancels nothing leaves the turn held, and that must fail, not hang.
-            val body = withTimeout(WAIT_MS) { held.await() }
+            val body = withTimeout(WAIT_MS) { held.await() }.body
             assertTrue(body.contains("event: error"), body)
             assertTrue(body.contains("invalid_request_error"), body)
             assertTrue(body.contains(STOPPED), body)
@@ -226,6 +264,46 @@ class HeadServerTurnStopTest {
             val again = rig.turn("go", stream = false)
             assertEquals(200, again.status.value, again.bodyAsText())
             assertEquals(2, rig.mock.upstreamBodies.size)
+        } finally {
+            rig.close()
+        }
+    }
+
+    @Test
+    fun `a stop before the first frame is answered with the stop's own 400, never a bare 500 or a retry`(
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        // The client pinger never ticks, so no status line can open the stream before the stop lands.
+        val silentPinger = HeadDeps.HeadTicks(client = Ticker { awaitCancellation() })
+        val rig = Rig(tmp, seams = HeadDeps.HeadSeams(ticks = silentPinger))
+        rig.start()
+        try {
+            val headReceived = CompletableDeferred<Int>()
+            val held = async(Dispatchers.IO) { rig.streamed("go", headReceived, scenario = "holdstart") }
+            rig.until("the upstream was asked and is silent, and the turn is listed") {
+                rig.mock.upstreamBodies.size == 1 && rig.turns.list().size == 1
+            }
+            assertFalse(headReceived.isCompleted, "no frame has reached the client: the status is still the head's")
+
+            val id = json(rig.routes.live("codex").body).getValue("turns").jsonArray.single().jsonObject
+                .getValue("id").jsonPrimitive.content
+            assertEquals(200, rig.routes.stop("codex", id).status.value)
+
+            val answer = withTimeout(WAIT_MS) { held.await() }
+            assertEquals(400, answer.status, "the stop's own status, never a 500 for a cancellation: ${answer.body}")
+            assertEquals("false", answer.shouldRetry, "the client is told not to send it again")
+            assertTrue(answer.body.contains("invalid_request_error") && answer.body.contains(STOPPED), answer.body)
+            assertFalse(answer.body.contains("retry") || answer.body.contains("again"), "a stop never invites a retry")
+
+            rig.until("the stopped turn's slot is released") { rig.gate.snapshot().inflight == 0 }
+            rig.until("the stopped turn leaves the live list") { rig.turns.list().isEmpty() }
+            rig.until("the journal names the stop") { rig.journal.any { "turn ERROR stopped" in it } }
+            rig.until("the perf row records the stop") { "error:stopped" in rig.perfRows() }
+
+            // The mark a stop leaves does not depend on where it landed: a re-send is refused here once.
+            val resend = rig.turn("go", stream = false)
+            assertEquals(400, resend.status.value, resend.bodyAsText())
+            assertEquals(1, rig.mock.upstreamBodies.size, "the refused re-send never reached the upstream")
         } finally {
             rig.close()
         }
@@ -271,12 +349,14 @@ class HeadServerTurnStopTest {
         val rig = Rig(tmp)
         rig.start()
         try {
-            val held = async(Dispatchers.IO) { rig.turn("go", stream = true).bodyAsText() }
+            val headReceived = CompletableDeferred<Int>()
+            val held = async(Dispatchers.IO) { rig.streamed("go", headReceived) }
+            assertEquals(200, withTimeout(WAIT_MS) { headReceived.await() }, "the client holds an open stream")
             rig.until("the turn is streaming upstream") {
                 rig.gate.snapshot().live.any { it.phase == GatePhase.STREAMING }
             }
             rig.turns.stop(rig.turns.list().single().id)
-            assertTrue(withTimeout(WAIT_MS) { held.await() }.contains(STOPPED))
+            assertTrue(withTimeout(WAIT_MS) { held.await() }.body.contains(STOPPED))
             rig.mock.releaseHold()
 
             val streamed = rig.turn("go", stream = true)

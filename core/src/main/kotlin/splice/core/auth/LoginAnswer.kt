@@ -20,6 +20,9 @@ public sealed class LoginAnswer {
      *  [Missing]: the person is signed in. The turn's retry engine reads [outcome] as it reads a renewal after a refused
      *  login: a token endpoint that could not answer is asked again 2 s and then 4 s later, and anything else moves
      *  the turn to another login or ends it as splice's own login refused (audit, Nov 9, 2026: a resume past the
-     *  token's expiry told a signed-in person to log in, with no retry, because the outcome was flattened to null). */
-    public data class Unrenewed(val outcome: RefreshOutcome) : LoginAnswer()
+     *  token's expiry told a signed-in person to log in, with no retry, because the outcome was flattened to null).
+     *  [held] is the expired credential the lookup read (null: none known): nothing was sent, so a later exchange the
+     *  turn asks for is asked about this one, and adopts a renewal another turn landed meanwhile instead of rotating
+     *  the renewed token again (Nov 10, 2026). */
+    public data class Unrenewed(val outcome: RefreshOutcome, val held: Credentials? = null) : LoginAnswer()
 }

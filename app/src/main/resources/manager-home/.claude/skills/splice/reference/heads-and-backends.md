@@ -1,4 +1,4 @@
-Last read: 2026-10-15 against splice 0.4.0 (feat/v0.4.0)
+Last read: 2026-10-15 against splice 0.4.0, then the feat/v0.4.0 branch (merged to main 2026-10-31); not re-read since
 
 # Heads and backends: add a head, and reach a backend splice has no profile for
 

@@ -143,46 +143,45 @@ internal class KimiAuthStore(
             .getOrElse { return RefreshOutcome.ReadFailed(it) }
         peerRotation(priorAccess, snap)?.let { return it }
         val refreshToken = snap?.refresh
-        return if (refreshToken == null) RefreshOutcome.NoRefreshToken else exchangeRefreshToken(refreshToken)
+        return if (refreshToken == null) {
+            RefreshOutcome.NoRefreshToken
+        } else {
+            exchangeRefreshToken(refreshToken, snap.access)
+        }
     }
 
-    private suspend fun exchangeRefreshToken(
-        refreshToken: String,
-        allowRereadRetry: Boolean = true,
-    ): RefreshOutcome {
+    private suspend fun exchangeRefreshToken(refreshToken: String, usedAccess: String?): RefreshOutcome {
         val attempt = Cancellables.runCatchingCancellable { refreshCall(refreshToken) }
             .getOrElse { return RefreshOutcome.TransportFailed(it) }
         return when (attempt) {
             is RefreshAttempt.Granted -> persist(attempt.tokens)
-            is RefreshAttempt.InvalidGrant -> rejectedOrRetry(refreshToken, allowRereadRetry, INVALID_GRANT_REASON)
-            is RefreshAttempt.Denied -> rejectedOrRetry(refreshToken, allowRereadRetry, attempt.detail)
+            is RefreshAttempt.InvalidGrant -> rejectedOrAdopted(refreshToken, usedAccess, INVALID_GRANT_REASON)
+            is RefreshAttempt.Denied -> rejectedOrAdopted(refreshToken, usedAccess, attempt.detail)
             // No verdict on the token, so no confirming re-read: the turn's engine asks again later.
             is RefreshAttempt.Unavailable -> RefreshOutcome.Unavailable(attempt.detail)
         }
     }
 
-    private suspend fun rejectedOrRetry(
-        usedRefreshToken: String,
-        allowRereadRetry: Boolean,
-        reason: String,
-    ): RefreshOutcome {
-        if (!allowRereadRetry) return RefreshOutcome.Rejected(reason)
-        // The confirming reread exists to prove the rejection wasn't a stale-token race. When it
-        // FAILS, the rejection is unconfirmed: surface the read failure in the reason (codex twin
-        // parity) — the composite string also keeps the invalid_grant latch from arming on it.
-        val reread = Cancellables
-            .runCatchingCancellable { oauth.parseSnapshot(authPath, synthesizeExpiry, text)?.refresh }
+    // G1, the confirming re-read: an endpoint rejection MIGHT be a stale-token race. When the credential file now
+    // holds a DIFFERENT refresh token, a peer (the kimi CLI, which takes no splice lock) rotated it while our POST
+    // was in flight, and its pair is fresh: it is adopted as the current credential and nothing is posted. Posting
+    // the peer's refresh token once, as this did until Nov 10, 2026, spent the token the kimi CLI had just been
+    // issued and could sign the CLI out. The adopted access token is served as it is and renewed later by the usual
+    // rules (its proactive window, or a 401 naming that exact token). One POST per renewal, whatever the race.
+    private fun rejectedOrAdopted(usedRefreshToken: String, usedAccess: String?, reason: String): RefreshOutcome {
+        // When the reread FAILS, the rejection is unconfirmed: surface the read failure in the reason (codex
+        // twin parity) — the composite string also keeps the invalid_grant latch from arming on it.
+        val reread = Cancellables.runCatchingCancellable { oauth.parseSnapshot(authPath, synthesizeExpiry, text) }
         val rereadFailure = reread.exceptionOrNull()
         if (rereadFailure != null) {
             val detail = SafeFailureText.render(rereadFailure).take(REFRESH_ERROR_SNIPPET)
             return RefreshOutcome.Rejected("$reason; credential reread failed: $detail")
         }
-        val newToken = reread.getOrThrow()
-        return if (newToken != null && newToken != usedRefreshToken) {
-            exchangeRefreshToken(newToken, allowRereadRetry = false)
-        } else {
-            RefreshOutcome.Rejected(reason)
-        }
+        val snap = reread.getOrThrow()
+        val newToken = snap?.refresh
+        if (newToken == null || newToken == usedRefreshToken) return RefreshOutcome.Rejected(reason)
+        return peerRotation(usedAccess, snap)
+            ?: RefreshOutcome.Rejected("$reason; the credential file changed during the renewal")
     }
 
     internal fun describe(identity: CredentialFileIdentity?, latch: InvalidGrantLatch): AuthDescription {

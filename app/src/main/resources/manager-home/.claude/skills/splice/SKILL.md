@@ -3,7 +3,8 @@ name: splice
 description: Use for any question about running, configuring, extending or debugging splice, the local proxy that puts Claude Code on many model backends. That covers its heads and providers, splice.toml, adding a head or an unsupported backend, accounts and logins, models and routing, sessions and Teams, the console, retries and errors, MCP hosting, install, upgrade and logs, and showing or doing things for the person in the console with `splice console <action>`. Load it before you answer about splice or change its configuration.
 ---
 
-Last read: 2026-10-15 against splice 0.4.0 (feat/v0.4.0)
+Last read: 2026-11-10 against splice 0.4.0 on main (the feat/v0.4.0 branch merged 2026-10-31; the verb list, the mental
+model table and the console pages were re-read against `CommandParser.kt`, `AuthKind.kt` and the console's page files)
 
 # splice
 
@@ -93,12 +94,14 @@ Reading `../splice.toml` or its backups is not free: Claude Code asks the person
 answer to ask for. `splice <verb> --help` prints usage and runs nothing, though Claude Code asks the person to approve it.
 
 **Ask first, and wait for a yes.** Editing `splice.toml`, and running `splice restart`, `upgrade`, `install`,
-`uninstall`, `init`, `add`, `add-model`, `setup`, bare `console`, `trace` or `wire`. Anything that deletes, signs
-out, kills a process or spends money. `splice add` and `splice add-model` write splice.toml themselves. A
+`uninstall`, `init`, `add`, `add-model`, `setup`, `rotate-key`, `sessions relaunch`, `share`, `remote`, bare
+`console`, `trace` or `wire`. Anything that deletes, signs
+out, kills a process or spends money. `splice add`, `splice add-model`, `splice share` and `splice remote` write
+splice.toml themselves, and the last two restart the daemon. A
 `splice console` tap, fill, select or key press that deletes, signs out, restarts, spends money, changes a
 setting or touches a running session: say what you will press and why first.
 
-**The person runs these, never you.** `splice key` and `splice login`, in their own terminal.
+**The person runs these, never you.** `splice key`, `splice login` and `splice rotate-key`, in their own terminal.
 
 **Secrets.** Everything you read goes to the head the person picked, which can be a hosted provider. Never
 read, print, copy, summarize or send `keys.toml`, `key-ledger.json` or anything under `auth/`. Read nothing in

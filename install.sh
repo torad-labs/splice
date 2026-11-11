@@ -184,6 +184,58 @@ verify_sum() {
   echo "${name}: OK"
 }
 
+# download <url> <file> — one release file. The 0.4.0 jar is about 473 MB, so curl gets no limit on the whole
+# transfer: a try ends only when its connect takes over 30 s or no data arrives for DOWNLOAD_STALL_S seconds. A try
+# that ends early is resumed where it stopped (-C -). That is safe because every downloaded file is then checked
+# against sha256sums.txt by verify_sum and refused on any mismatch, so a resume can never install wrong bytes. Tries go
+# on while each ends further into the file than any before it; DOWNLOAD_TRIES in a row that get no further end the
+# install with where it stopped and how to retry. A server that cannot resume (curl exit 33) starts the file over, and
+# one that also drops at the same place every time brings data on every try without getting further, so it ends too.
+DOWNLOAD_STALL_S="${SPLICE_DOWNLOAD_STALL_S:-60}"
+DOWNLOAD_TRIES=3
+download_mb() {
+  awk -v b="$1" 'BEGIN { printf "%.1f MB", b / 1000000 }'
+}
+download() {
+  local url="$1" out="$2" meter="-s" got=0 have=0 furthest=0 rc=0 fruitless=0
+  [ ! -t 2 ] || meter="-#"
+  while :; do
+    rc=0
+    got="$(curl -fSL "$meter" --connect-timeout 30 --speed-limit 1 --speed-time "$DOWNLOAD_STALL_S" \
+      -C - -w '%{size_download}' -o "$out" "$url")" || rc=$?
+    case "$got" in '' | *[!0-9]*) got=0 ;; esac
+    have=$((have + got))
+    [ "$rc" != 0 ] || return 0
+    # 22: the server answered with an HTTP error; 37: a file:// release has no such file. Neither gets better by asking again.
+    if [ "$rc" = 22 ] || [ "$rc" = 37 ]; then
+      echo "splice: $url is not there to download (curl exit $rc, its error is above); check the release address, then run the installer again" >&2
+      exit 1
+    fi
+    if [ "$rc" = 33 ]; then
+      : >"$out"
+      have=0
+      got=0
+      echo "splice: the server cannot resume $url; starting it over" >&2
+    fi
+    if [ "$have" -gt "$furthest" ]; then
+      furthest=$have
+      fruitless=0
+    else
+      fruitless=$((fruitless + 1))
+    fi
+    if [ "$fruitless" -ge "$DOWNLOAD_TRIES" ]; then
+      if [ "$rc" = 28 ]; then
+        echo "splice: downloading $url stalled at $(download_mb "$furthest"): no data for ${DOWNLOAD_STALL_S}s, $DOWNLOAD_TRIES tries in a row; check the connection, then run the installer again" >&2
+      else
+        echo "splice: downloading $url failed at $(download_mb "$furthest") (curl exit $rc), $DOWNLOAD_TRIES tries in a row got no further; check the connection, then run the installer again" >&2
+      fi
+      exit 1
+    fi
+    [ "$rc" = 33 ] || echo "splice: the download of $url stopped at $(download_mb "$have") (curl exit $rc); resuming" >&2
+    if command -v sleep >/dev/null 2>&1; then sleep 2; fi
+  done
+}
+
 # shim_marker <launcher> — the launcher's SPLICE_SHIM_VERSION, the version it shares with the jar's
 # `shim-version` (InstallShim.kt reads the same line; a 0.3.x bash launcher spells it without
 # `const`). Empty when the file is missing or carries none.
@@ -320,10 +372,10 @@ else
   JAR_URL="${RELEASE_BASE}/splice.jar"
   SUMS_URL="${RELEASE_BASE}/sha256sums.txt"
   echo "splice: downloading $JAR_URL"
-  curl -fsSL "$JAR_URL" -o "$JAR_TMP"
+  download "$JAR_URL" "$JAR_TMP"
   echo "splice: verifying sha256 against $SUMS_URL"
   SUMS_TMP="$(mktemp)"
-  curl -fsSL "$SUMS_URL" -o "$SUMS_TMP"
+  download "$SUMS_URL" "$SUMS_TMP"
   verify_sum "$JAR_TMP" "$SUMS_TMP" splice.jar
 
   # A checksum binds the asset to sha256sums.txt; the attestation independently binds the
@@ -333,7 +385,7 @@ else
   # The launch shim is a release asset too — without it every wrapper symlink dangles.
   SHIM_URL="${RELEASE_BASE}/splice-launch"
   echo "splice: downloading $SHIM_URL"
-  curl -fsSL "$SHIM_URL" -o "$SHIM_TMP"
+  download "$SHIM_URL" "$SHIM_TMP"
   verify_sum "$SHIM_TMP" "$SUMS_TMP" splice-launch
   verify_attestation "$SHIM_TMP" splice-launch "$RELEASE_BASE"
   SHIM_SRC="$SHIM_TMP"
@@ -345,8 +397,8 @@ if [ ! -f "$SHIM_SRC" ]; then
   [ -n "$JAR_VERSION" ] || { echo "splice: prebuilt jar has no readable splice version" >&2; exit 1; }
   RELEASE_BASE="${SPLICE_RELEASE_BASE_URL:-${RELEASE_SITE}/v${JAR_VERSION}}"
   SUMS_TMP="$(mktemp)"
-  curl -fsSL "${RELEASE_BASE}/sha256sums.txt" -o "$SUMS_TMP"
-  curl -fsSL "${RELEASE_BASE}/splice-launch" -o "$SHIM_TMP"
+  download "${RELEASE_BASE}/sha256sums.txt" "$SUMS_TMP"
+  download "${RELEASE_BASE}/splice-launch" "$SHIM_TMP"
   verify_sum "$SHIM_TMP" "$SUMS_TMP" splice-launch
   verify_attestation "$SHIM_TMP" splice-launch "$RELEASE_BASE"
   SHIM_SRC="$SHIM_TMP"
@@ -364,7 +416,7 @@ if [ "$HUB_PLATFORM" = 1 ]; then
       hub_src="${REPO_ROOT}/integrations/mcp-hub/build/bin/linuxX64/${asset#splice-mcp-}ReleaseExecutable/${asset}.kexe"
       [ ! -f "$hub_src" ] || cp "$hub_src" "$HUB_TMP_DIR/$asset"
     elif [ -n "$SUMS_TMP" ] && grep -Eq "[[:space:]]${asset}\$" "$SUMS_TMP"; then
-      curl -fsSL "${RELEASE_BASE}/${asset}" -o "$HUB_TMP_DIR/$asset"
+      download "${RELEASE_BASE}/${asset}" "$HUB_TMP_DIR/$asset"
       verify_sum "$HUB_TMP_DIR/$asset" "$SUMS_TMP" "$asset"
       verify_attestation "$HUB_TMP_DIR/$asset" "$asset" "$RELEASE_BASE"
     fi

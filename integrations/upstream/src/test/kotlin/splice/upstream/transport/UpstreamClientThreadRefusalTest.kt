@@ -289,6 +289,18 @@ private class CapturedRefusalSockets : SocketFactory() {
 }
 
 // V4-307: the posts after a real refusal. Its own JVM (see the file header).
+//
+// Every post here reads the upstream's reply to its end, as the real consumer does (SseReader reads until the
+// channel ends), and that is what makes the connection count a fact about the pool and not about the scheduler.
+// OkHttp puts a connection back in the pool the moment its reply has been read whole, on the thread that read it
+// and before the reader sees the end. A handler that returns with the reply unread (`{ "ok" }`, as this test did)
+// leaves the connection to a race instead: ktor 3.6.1's HttpStatement.cleanup cancels the call of a reply whose
+// body channel was not read to its end (3.6.0 completed the call and cancelled only the channel, so OkHttp's
+// body close drained up to 100 ms), and the cancel closes the socket (RealCall.cancel -> RealConnection.cancel)
+// unless ktor's body pump, a virtual thread of its own, has already taken the reply off the wire. Idle, the pump
+// usually wins. On a loaded host it can lose, and then the next post finds its connection closed and dials a
+// second one: correct, because a connection whose reply was abandoned unread cannot be trusted with another
+// request, and nothing a test should count on either way.
 class AfterRefusedThreadStartTest {
 
     @Test
@@ -297,23 +309,31 @@ class AfterRefusedThreadStartTest {
             val client = refusalClient()
             val restore = refuseTaskRunnerThreads()
             try {
-                val _ = runCatching { runBlocking { client.posted(upstream.context(), "{}") { "ok" } } }
+                val _ = runCatching { runBlocking { client.posted(upstream.context(), "{}") { it.readWhole() } } }
             } finally {
                 restore()
             }
 
             val after = List(3) {
-                runCatching { runBlocking { client.posted(upstream.context(), "{}") { "ok" } } }
+                runCatching { runBlocking { client.posted(upstream.context(), "{}") { it.readWhole() } } }
                     .getOrElse { failure -> failure.toString() }
             }
 
-            assertEquals(List(3) { "ok" }, after, "a refused start must not end the process's connects")
+            assertEquals(List(3) { LOOPBACK_REPLY }, after, "a refused start must not end the process's connects")
             // The refusal also ends idle eviction for the process; what bounds the pool then is reuse, which
             // OkHttp tries before any new connect (RealRoutePlanner.plan), so these posts share one connection.
             assertEquals(1, upstream.accepted.get(), "sequential posts after the refusal share one connection")
         }
     }
 }
+
+/** The reply, read to its end. */
+private suspend fun UpstreamResponse.readWhole(): String = bodyTextLimited(LOOPBACK_REPLY_READ_LIMIT)
+
+/** What [LoopbackUpstream] answers every request with. */
+private const val LOOPBACK_REPLY = "{}"
+
+private const val LOOPBACK_REPLY_READ_LIMIT = 1_024
 
 private fun refusalClient(clock: ElapsedClock = ProcessElapsedNow()) = UpstreamClient(
     totalTimeoutMs = REFUSAL_TOTAL_MS,
@@ -402,7 +422,10 @@ private class LoopbackUpstream : AutoCloseable {
     }
 
     private companion object {
-        val ANSWER = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}".toByteArray()
+        val ANSWER = (
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${LOOPBACK_REPLY.length}\r\n\r\n" +
+                LOOPBACK_REPLY
+            ).toByteArray()
     }
 }
 

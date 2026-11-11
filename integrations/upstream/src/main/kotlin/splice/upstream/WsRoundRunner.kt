@@ -56,6 +56,11 @@ public interface WsRoundRunner {
      *  before any HTTP fallback (Marcos, 2026-10-27). False for every event by default. */
     public fun isSocketFault(event: JsonObject): Boolean = false
 
+    /** True when [event] is the provider closing the socket at its planned lifetime, not a failure of the request or
+     *  of the answer: a round it closes mid-answer is continued on a fresh socket on the rotations' own count, with no
+     *  line to the person and no failure's budget spent (2026-11-08). False for every event by default. */
+    public fun isPlannedClose(event: JsonObject): Boolean = false
+
     /** Called once the round is over: [ok] true only for a clean, fully-consumed terminal.
      *  Anything else must clear the chaining state — a response id that was never completed would
      *  anchor the next turn onto context the server never finished building. */

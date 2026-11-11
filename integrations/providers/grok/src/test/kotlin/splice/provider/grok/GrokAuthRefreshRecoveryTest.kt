@@ -79,46 +79,48 @@ class GrokAuthRefreshRecoveryTest {
         assertEquals(beforeContent, Files.readString(file)) // no extra write
     }
 
-    // G1: the endpoint rejects R1, but disk shows a rotation to R2 landed underneath us between our
-    // read and the POST — retry ONCE against R2, which succeeds. Exactly two POSTs, no more.
+    // G1 (rewritten Nov 10, 2026, a decided change): the endpoint rejects R1 because the grok CLI rotated the
+    // file to a fresh pair while our POST was in flight. The CLI's pair is adopted as it is, and its refresh token
+    // is never posted: posting it would spend the token the CLI was just issued and sign the CLI out.
     @Test
-    fun `refresh rejected once but the disk-fresh refresh token succeeds - one bounded retry`(
+    fun `refresh rejected while a peer rotated the file - the peer's pair is adopted, one POST`(
         @TempDir dir: Path,
     ) = runTest {
         val file = authFile(dir, access = "acc", refresh = "R1")
-        val seen = mutableListOf<String>()
+        val peerPair = """{"tokens":{"access_token":"peer-access","refresh_token":"R2"},"cli_field":"keep-me"}"""
+        val posted = mutableListOf<String>()
         val auth =
             GrokAuthProvider(authPath = file, authCacheMs = 30_000L, clock = { 1_000_000L }, refreshCall = { token ->
-                seen.add(token)
-                if (token == "R1") {
-                    // another process's rotation lands on disk between our read and the POST reaching xAI.
-                    Files.writeString(file, """{"tokens":{"access_token":"acc","refresh_token":"R2"}}""")
-                    RefreshAttempt.Denied("xAI rejected R1")
-                } else {
-                    RefreshAttempt.Granted(GrokRefreshedTokens("new-access", "new-refresh", expiresIn = 21_600))
-                }
+                posted.add(token)
+                // the CLI's rotation lands on disk between our read and the POST reaching xAI.
+                Files.writeString(file, peerPair)
+                RefreshAttempt.InvalidGrant("xAI rejected R1")
             })
-        assertEquals("new-access", bearerToken(auth.refresh()))
-        assertEquals(listOf("R1", "R2"), seen) // exactly two POSTs, R1 then the disk-fresh R2
-        val onDisk = Json.parseToJsonElement(Files.readString(file)).jsonObject
-        assertEquals("new-refresh", onDisk["tokens"]!!.jsonObject["refresh_token"]!!.jsonPrimitive.content)
+        assertEquals("peer-access", bearerToken(auth.refresh()))
+        assertEquals(listOf("R1"), posted) // the CLI's R2 never left the machine
+        assertEquals(peerPair, Files.readString(file)) // the CLI's file stands as it wrote it
+        assertEquals("peer-access", bearerToken(auth.credentials()))
+        assertNull(auth.describe().fields["refresh_latched"], "an adopted pair is not a dead login")
     }
 
-    // G1: the retry is bounded even when the disk token keeps rotating and every POST is rejected —
-    // exactly two POSTs, then it gives up (the retry POSTs with allowRereadRetry=false, never loops).
+    // G1: a file whose refresh token changed but whose access token is still the one splice tried holds no
+    // fresh pair to adopt. The rejection stands, nothing more is posted, and the composite reason keeps the
+    // invalid_grant latch from arming on a rejection the race check could not confirm.
     @Test
-    fun `refresh genuinely dead - bounded to two POSTs, no infinite retry`(@TempDir dir: Path) = runTest {
+    fun `refresh rejected and the file changed only its refresh token - one POST, nothing adopted`(
+        @TempDir dir: Path,
+    ) = runTest {
         val file = authFile(dir, access = "acc", refresh = "R1")
-        val calls = AtomicInteger()
-        val auth = GrokAuthProvider(authPath = file, authCacheMs = 30_000L, clock = { 1_000_000L }, refreshCall = {
-            val n = calls.incrementAndGet()
-            // rotate to a NEW distinct token on every call, and always reject — proves the retry is
-            // capped, not driven-forever by continuous disk changes.
-            Files.writeString(file, """{"tokens":{"access_token":"acc","refresh_token":"R${n + 1}"}}""")
-            RefreshAttempt.Denied("test-denied")
-        })
+        val posted = mutableListOf<String>()
+        val auth =
+            GrokAuthProvider(authPath = file, authCacheMs = 30_000L, clock = { 1_000_000L }, refreshCall = { token ->
+                posted.add(token)
+                Files.writeString(file, """{"tokens":{"access_token":"acc","refresh_token":"R2"}}""")
+                RefreshAttempt.InvalidGrant("test-denied")
+            })
         assertNull(auth.refresh())
-        assertEquals(2, calls.get())
+        assertEquals(listOf("R1"), posted)
+        assertNull(auth.describe().fields["refresh_latched"])
     }
 
     @Test
@@ -145,8 +147,8 @@ class GrokAuthRefreshRecoveryTest {
         assertTrue(persisted > now, "expires must ADVANCE past now (was $oldExpires, got $persisted)")
     }
 
-    // G15: a confirmed invalid_grant (post-G1 re-read: disk untouched, so the retry-once check
-    // finds no rotation and gives up) latches — the SECOND call must not re-POST the dead token.
+    // G15: a confirmed invalid_grant (post-G1 re-read: disk untouched, so the race check finds no
+    // peer pair to adopt) latches — the SECOND call must not re-POST the dead token.
     @Test
     fun `latched invalid_grant skips the network POST on the next call`(@TempDir dir: Path) = runTest {
         val file = authFile(dir, refresh = "dead-refresh")

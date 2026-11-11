@@ -53,6 +53,11 @@ internal object PathSentences {
 
     private fun torn(cause: FailureCause.Path.Torn, head: String, answering: Boolean, ongoing: Boolean): String = when {
         cause.why == Tear.OVERSIZED_EVENT -> "$head sent a stream event larger than splice accepts"
+        // A rotation is continued in silence; it ends a turn only past its own count or where the answer cannot be
+        // continued, and the line names the provider's planned close rather than a cut.
+        cause.why == Tear.ROTATED ->
+            "$head's provider closed its connection at its hourly limit" +
+                if (answering) " and splice could not continue this answer again" else ""
         answering -> cut(head, ongoing, cause.toolOpen)
         cause.why == Tear.NO_EVENTS -> "$head closed the connection before sending anything"
         else -> "$head closed the connection before answering"

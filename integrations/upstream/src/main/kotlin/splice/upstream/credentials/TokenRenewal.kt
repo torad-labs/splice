@@ -31,9 +31,9 @@ import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 
 /** The vendor's half of one renewal, run while the credential lock is held: read the file again ([TokenRenewal.text]),
- *  adopt a rotation that landed since [prior] was served (G1), else exchange the refresh token and
- *  [TokenRenewal.persist] what the endpoint granted. [prior] is the token this process last served, taken before the
- *  lock. */
+ *  adopt a rotation that landed since [prior] was read (G1), else exchange the refresh token and
+ *  [TokenRenewal.persist] what the endpoint granted. [prior] is the token the renewal was asked about, taken before the
+ *  lock: the one a lookup held when it saw a renewal was due, or, for a 401, the one the refused request sent. */
 public fun interface RenewalStage {
     public suspend fun renew(prior: String?): RefreshOutcome
 }
@@ -66,8 +66,10 @@ public class TokenRenewal(
      *  file itself. */
     public val text: CredentialText get() = retained
 
+    /** The token this login last served: what a renewal is asked about when its caller names no token of its own (a
+     *  probe's, an operator's). A refused request names its own, never this one, which another turn moves. */
     @Volatile
-    private var lastServed: String? = null
+    private var lastHeld: String? = null
 
     init {
         // Lifecycle ownership: when the scope ends (Daemon.stop cancels probeScope), the renewal in flight is cancelled
@@ -86,7 +88,8 @@ public class TokenRenewal(
         return when {
             left >= windows.proactiveMs -> serve(held.credentials)
             left >= windows.floorMs && background != null -> {
-                background.launch { (exchange() as? RefreshOutcome.Refreshed)?.credentials }
+                val seen = secretOf(held.credentials)
+                background.launch { (exchangeSeen(seen) as? RefreshOutcome.Refreshed)?.credentials }
                 serve(held.credentials)
             }
             else -> waited(held, expiresAt)
@@ -95,15 +98,29 @@ public class TokenRenewal(
 
     /** A token a vendor rule serves without a renewal (grok's ineffective-renewal backoff); remembered as served. */
     public fun serve(credentials: Credentials): LoginAnswer {
-        lastServed = secretOf(credentials)
+        lastHeld = secretOf(credentials)
         return LoginAnswer.Granted(credentials)
     }
 
     /** One token exchange, single-flight, logged once inside the flight (credentialsOrNull is the one logging
-     *  flatten), and read whole by the turn's retry engine (failure-handling slice 4). */
-    public suspend fun exchange(): RefreshOutcome {
-        val outcome = flight.run { renewed().also { it.credentialsOrNull(tag, log) } }
-        if (outcome is RefreshOutcome.Refreshed) lastServed = secretOf(outcome.credentials)
+     *  flatten), asked about the token this login last held: a probe's or an operator's renewal. */
+    public suspend fun exchange(): RefreshOutcome = exchangeSeen(lastHeld)
+
+    /** The exchange a refused request asks for, read whole by the turn's retry engine (failure-handling slice 4).
+     *  [refused] is the credential that request actually sent (null: none was sent, and the last token held stands
+     *  in). Asked about that token, never the last one served: a second 401 for a token a first 401 already rotated
+     *  away adopts the pair on file instead of spending its refresh token again (Nov 10, 2026). */
+    public suspend fun exchange(refused: Credentials?): RefreshOutcome =
+        exchangeSeen(refused?.let(::secretOf) ?: lastHeld)
+
+    /** One renewal for a caller that last saw [seen]: the token its lookup read, or the one a refused request sent
+     *  (null: none known, so the stage rotates whatever is on file). A caller that arrives after a renewal ended starts
+     *  the next one, and that one must tell from [seen] that the renewal it missed already replaced the token the
+     *  caller holds. A caller joins a renewal in flight only when it was started about the same token: one started
+     *  about another token decides nothing for it, so the caller waits for it to end and asks about its own. */
+    private suspend fun exchangeSeen(seen: String?): RefreshOutcome {
+        val outcome = flight.run(seen) { renewed(seen).also { it.credentialsOrNull(tag, log) } }
+        if (outcome is RefreshOutcome.Refreshed) lastHeld = secretOf(outcome.credentials)
         return outcome
     }
 
@@ -135,12 +152,16 @@ public class TokenRenewal(
     }.getOrNull()
 
     private suspend fun waited(held: HeldToken, expiresAtMs: Long): LoginAnswer {
-        val outcome = exchange()
+        // The renewal is asked about the token this lookup read, not the one last served: a renewal that landed after
+        // the read and before this call has already replaced it, and its grant is this lookup's answer, never a second
+        // rotation that spends the refresh token the first one just issued.
+        val outcome = exchangeSeen(secretOf(held.credentials))
         return when {
             outcome is RefreshOutcome.Refreshed -> LoginAnswer.Granted(outcome.credentials)
             clock() < expiresAtMs -> serve(held.credentials)
             outcome == RefreshOutcome.NoCredentialsFile -> LoginAnswer.Missing
-            else -> LoginAnswer.Unrenewed(outcome)
+            // Nothing is sent: the turn's next exchange is asked about the token this lookup held.
+            else -> LoginAnswer.Unrenewed(outcome, held.credentials)
         }
     }
 
@@ -149,24 +170,31 @@ public class TokenRenewal(
     // vendor stage runs inside the cross-process lock. Audit, Nov 9, 2026: a lock that cannot be taken (a read-only
     // folder, a lock file another user owns, no file descriptors left) is a local read failure with its own line,
     // never a throw that the turn would report as the upstream resetting the connection.
-    private suspend fun renewed(): RefreshOutcome {
+    private suspend fun renewed(seen: String?): RefreshOutcome {
         val statFailure = Cancellables.runCatchingCancellable { Files.getLastModifiedTime(authPath) }.exceptionOrNull()
         if (statFailure != null) {
             val absent = statFailure is NoSuchFileException && !Files.exists(authPath, LinkOption.NOFOLLOW_LINKS)
             return if (absent) RefreshOutcome.NoCredentialsFile else RefreshOutcome.ReadFailed(statFailure)
         }
-        val identity = identity()
-        if (latch.isLatched(identity)) return RefreshOutcome.Rejected(INVALID_GRANT_REASON)
-        val prior = lastServed
-        val outcome = Cancellables.runCatchingCancellable {
+        if (latch.isLatched(identity())) return RefreshOutcome.Rejected(INVALID_GRANT_REASON)
+        return Cancellables.runCatchingCancellable {
             // AUTH-002: the daemon log hears the lock's contention and its bounded unlocked degrade.
             CredentialLock.withLock(authPath, log = log) {
                 retained.flush()
-                stage.renew(prior)
+                val read = identity()
+                stage.renew(seen).also { latchRefusal(it, read) }
             }
         }.getOrElse { RefreshOutcome.ReadFailed(it) }
-        if (outcome is RefreshOutcome.Rejected && outcome.reason == INVALID_GRANT_REASON) latch.latch(identity)
-        return outcome
+    }
+
+    /** G15, keyed on the state whose refresh token was refused (Nov 10, 2026). The latch used to take the file's
+     *  identity before the lock, so a renewal that waited out a peer's rotation latched a state it never posted from,
+     *  and an exchange whose stage re-read and posted a newer pair latched the older one. Now [read] is the file as the
+     *  stage found it, under the lock, and the latch is set only when the file still stands so after the refusal: a
+     *  file that moved meanwhile holds a pair this refusal says nothing about, so nothing is latched against it. */
+    private fun latchRefusal(outcome: RefreshOutcome, read: CredentialFileIdentity?) {
+        if (outcome !is RefreshOutcome.Rejected || outcome.reason != INVALID_GRANT_REASON) return
+        if (read != null && identity() == read) latch.latch(read)
     }
 
     /** A renewed document waits to be written: written again under the lock, so it never lands over a peer's write. */

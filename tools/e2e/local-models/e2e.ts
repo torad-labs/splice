@@ -1,10 +1,13 @@
 #!/usr/bin/env bun
-/** Local models e2e (FEATURES.md §10): starts a splice daemon from a jar against a config with one
- *  good local head and deliberately bad heads, then proves — against the live runtime — that a row
- *  naming an unlisted model or over-declaring context is refused at boot, that the good head streams,
- *  survives a cancelled turn, carries a tool result into the next turn, and that doctor reports it all
- *  as "local". Fail-closed: the receipt is written only when every check passes. One run = one runtime;
- *  run it once per runtime (Ollama, LM Studio) and keep one receipt each.
+/** Local models e2e (FEATURES.md §10): takes a config with one good local head and deliberately bad
+ *  heads and proves — against the live runtime — that a row naming an unlisted model or over-declaring
+ *  context is a boot finding (`splice check-config` exits 3 and names each bad head, the way boot refuses
+ *  the whole config: since Oct 12, 2026 a row the runtime refuses is a boot finding, so a daemon never
+ *  serves a bad head as DEGRADED), then starts a daemon from a jar against a copy of that config with the bad heads dropped and
+ *  proves that the good head streams, survives a cancelled turn, carries a tool result into the next
+ *  turn, and that doctor, read against the FULL config, reports it all as "local". Fail-closed: the
+ *  receipt is written only when every check passes. One run = one runtime; run it once per runtime
+ *  (Ollama, LM Studio) and keep one receipt each.
  *
  *    e2e.ts --runtime ollama --jar app-all.jar --config splice-local.toml --home /isolated/home \
  *           --good-head ollama --bad-heads ollama-unlisted,ollama-overclaim --out receipts/local-models-ollama.json
@@ -361,9 +364,14 @@ class Daemon {
   }
 
   env(): Record<string, string> {
+    return this.envFor(this.config);
+  }
+
+  /** The environment of a splice command reading [config]: the daemon's own, or the full config with the bad heads in. */
+  envFor(config: string): Record<string, string> {
     return {
       ...(process.env as Record<string, string>),
-      SPLICE_CONFIG: this.config,
+      SPLICE_CONFIG: config,
       OLLAMA_API_KEY: "ollama",
       LMSTUDIO_API_KEY: "lmstudio",
       HOME: this.home,
@@ -586,24 +594,67 @@ async function checkBoot(d: Daemon, good: string, bad: string[]): Promise<Mappin
   }
   const present = bad.filter((b) => b in heads);
   if (present.length > 0) throw new Failed(`bad heads served instead of refused: ${pyRepr(present)}`);
-  const log = readFileSync(d.log, "utf8");
-  const refusals: Mapping = [];
-  for (const b of bad) {
-    const line = log.split("\n").find((ln) => ln.includes(b) && ln.includes("refuses"));
-    if (line === undefined) throw new Failed(`no refusal line for ${b} in daemon.log`);
-    refusals.push([b, line.trim()]);
-  }
-  const up = log.split("\n").find((ln) => ln.includes("[daemon] up"));
+  const up = readFileSync(d.log, "utf8").split("\n").find((ln) => ln.includes("[daemon] up"));
   if (up === undefined) throw new Failed("no [daemon] up line in daemon.log");
-  if (!up.includes("DEGRADED=") || !bad.every((b) => up.includes(b))) {
-    throw new Failed(`[daemon] up line does not list the refused heads: ${up}`);
-  }
   const gh = heads[good]!;
   return [
     ["good_head", obj(["key", "port", "healthy", "authKind"].map((k) => [k, get(gh, k)] as [string, PyValue]))],
-    ["refused", obj(refusals)],
     ["up_line", up.trim()],
   ];
+}
+
+/** [text], a splice.toml, without the tables of the bad heads: `[providers.<b>]`, `[heads.<b>]` and every table
+ *  beneath them (`[[providers.<b>.models]]`, `[providers.<b>.quirks]`, `[heads.<b>.claude]`), each with its lines up
+ *  to the next table header. The result is parsed again so a head this cut could not drop, such as one written as an
+ *  inline table, fails here by name instead of booting a daemon that refuses. */
+export function withoutBadHeads(text: string, bad: string[]): string {
+  const kept: string[] = [];
+  let dropping = false;
+  for (const line of text.split("\n")) {
+    const header = /^\s*\[\[?\s*([^\]\s]+)\s*\]\]?/.exec(line);
+    if (header) {
+      const name = header[1]!;
+      dropping = bad.some((b) => ["providers", "heads"].some((t) => name === `${t}.${b}` || name.startsWith(`${t}.${b}.`)));
+    }
+    if (!dropping) kept.push(line);
+  }
+  const cut = kept.join("\n");
+  const doc = Bun.TOML.parse(cut) as Record<string, Record<string, unknown> | undefined>;
+  const left = bad.filter((b) => b in (doc["providers"] ?? {}) || b in (doc["heads"] ?? {}));
+  if (left.length > 0) throw new Failed(`could not drop the bad heads from the config: ${pyRepr(left)} are still in it`);
+  return cut;
+}
+
+/** Fail-closed boot (v0.4.0 §10): a local runtime that is up and refuses a row splice.toml declares is a boot finding,
+ *  so a config that carries a bad head does not boot. `splice check-config` runs the same findings pass boot runs and
+ *  exits 3 with every finding listed; each bad head must be named in it, by the provider table or the head table the
+ *  finding points at, in a finding that says the runtime refuses it, and the good head must not be named at all. */
+function checkRefusal(d: Daemon, config: string, good: string, bad: string[]): Mapping {
+  // Same browser wall as the daemon spawn: a separate JVM inherits no Gradle test property.
+  const proc = spawnSync("java", ["-Dsplice.noSystemBrowser=1", `-Duser.home=${d.home}`, "-jar", d.jar, "check-config"], {
+    env: d.envFor(config),
+    encoding: "utf8",
+    timeout: 120_000,
+  });
+  const lines = `${proc.stdout ?? ""}\n${proc.stderr ?? ""}`.split("\n");
+  if (proc.status !== 3) {
+    throw new Failed(`check-config on the full config exited ${proc.status}, not 3: ${tail(lines.join("\n"), 800)}`);
+  }
+  // A key ends at a character no key holds, so `ollama` is not found inside `ollama-unlisted`.
+  const names = (key: string): string[] => {
+    const escaped = key.replace(/[.*+?^$()|[\]\\{}-]/g, "\\$&");
+    const table = new RegExp(`(providers|heads)\\.${escaped}(?![A-Za-z0-9_-])`);
+    return lines.filter((ln) => table.test(ln));
+  };
+  const refusals: Mapping = [];
+  for (const b of bad) {
+    const line = names(b).find((ln) => ln.includes("refuses"));
+    if (line === undefined) throw new Failed(`no finding says the runtime refuses ${b}: ${tail(lines.join("\n"), 800)}`);
+    refusals.push([b, line.trim()]);
+  }
+  const named = names(good);
+  if (named.length > 0) throw new Failed(`the good head ${good} is named in a boot finding: ${named[0]!.trim()}`);
+  return refusals;
 }
 
 async function checkStreaming(port: number, bearer: string, model: string, head: string): Promise<PyValue> {
@@ -730,12 +781,13 @@ async function checkToolContinuity(port: number, bearer: string, model: string):
  *  the signature still matches the caller and a future diff of the two files does not read as a
  *  porting omission. */
 async function checkDoctor(
-  d: Daemon, good: string, bad: string[], model: string, badRows: Mapping, label: string,
+  d: Daemon, good: string, bad: string[], model: string, badRows: Mapping, label: string, fullConfig: string,
 ): Promise<Mapping> {
   void bad;
-  // Same browser wall as the daemon spawn above: a separate JVM inherits no Gradle test property.
+  // Same browser wall as the daemon spawn above: a separate JVM inherits no Gradle test property. Doctor reads the FULL
+  // config, the bad heads included, since the daemon booted from a copy without them and only doctor can fail their rows.
   const proc = spawnSync("java", ["-Dsplice.noSystemBrowser=1", `-Duser.home=${d.home}`, "-jar", d.jar, "doctor", "--json"], {
-    env: d.env(),
+    env: d.envFor(fullConfig),
     encoding: "utf8",
     timeout: 120_000,
   });
@@ -828,7 +880,19 @@ export async function main(argv: string[]): Promise<number> {
   const goodModel = get(goodRow, "id");
   const badRows: Mapping = bad.map((b) => [b, get(firstModel(b), "id")]);
 
-  const d = new Daemon(resolve(args.jar), resolve(args.config), resolve(args.home), args.control_port);
+  // The daemon boots from a copy of the config with the bad heads dropped, since a config that carries one is refused at
+  // boot (checkRefusal); check-config and doctor read the full one.
+  const fullConfig = resolve(args.config);
+  const bootConfig = resolve(args.home, "splice-boot.toml");
+  mkdirSync(resolve(args.home), { recursive: true });
+  try {
+    writeFileSync(bootConfig, withoutBadHeads(readFileSync(fullConfig, "utf8"), bad), "utf8");
+  } catch (e) {
+    if (!(e instanceof Failed)) throw e;
+    process.stderr.write(`E2E FAILED: ${e.message}\n`);
+    return 1;
+  }
+  const d = new Daemon(resolve(args.jar), bootConfig, resolve(args.home), args.control_port);
   const receipt: Mapping = [
     ["kind", "local-models-e2e"],
     ["at", strftimeUtc("%Y-%m-%dT%H:%M:%SZ", new Date())],
@@ -848,6 +912,9 @@ export async function main(argv: string[]): Promise<number> {
       ["declared", declared], ["served", served], ["card", get(obj(runtime), "card_context_length")],
     ])]);
     process.stdout.write(`runtime: ${pyStr(obj(runtime))}\n`);
+    const refused = checkRefusal(d, fullConfig, args.good_head, bad);
+    receipt.push(["refused", obj(refused)]);
+    process.stdout.write(`refused at boot: ${pyStr(obj(refused))}\n`);
     await d.start();
     const boot = await checkBoot(d, args.good_head, bad);
     receipt.push(["boot", obj(boot)]);
@@ -873,7 +940,7 @@ export async function main(argv: string[]): Promise<number> {
     const continuity = await checkToolContinuity(port, bearer, model);
     receipt.push(["tool_continuity", obj(continuity)]);
     process.stdout.write(`tool continuity: ${pyStr(obj(continuity))}\n`);
-    const doctor = await checkDoctor(d, args.good_head, bad, String(goodModel), badRows, label);
+    const doctor = await checkDoctor(d, args.good_head, bad, String(goodModel), badRows, label, fullConfig);
     receipt.push(["doctor", obj(doctor)]);
     process.stdout.write(`doctor: ${dumpsIndent(obj(doctor), 1)}\n`);
   } catch (e) {

@@ -333,6 +333,8 @@ a.oseg:hover { box-shadow: inset 0 0 0 999px color-mix(in oklab, var(--text) 16%
 a.mam-sw:hover { filter: brightness(1.15); }
 .mam-swh { display: flex; justify-content: flex-end; }
 .pb > .mam-sw { align-self: flex-start; margin-block: var(--u); }
+.pb > .pbhead { align-self: flex-start; display: inline-flex; align-items: center; gap: var(--u); margin-block: var(--u) 0; font: 500 .92rem/1.2 var(--font-name); color: var(--text-body); text-decoration: none; }
+.pb > .pbhead:hover { color: var(--text); }
 .pb .barcell.mam-cut .vbar b { background: var(--mam-cut); }
 .pb .barcell.mam-cut > .v { color: var(--text-body); }
 .peaks .pq .barcell { min-width: 0; }

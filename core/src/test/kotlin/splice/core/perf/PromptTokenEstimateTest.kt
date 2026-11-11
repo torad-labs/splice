@@ -36,4 +36,13 @@ class PromptTokenEstimateTest {
         val estimate = PromptTokenEstimate.forRequest(json.length.toLong(), request(json))
         assertTrue(estimate < 5_000) { "a screenshot returned by a tool estimated at $estimate tokens" }
     }
+
+    @Test
+    fun `a plain-text document counts by its text, not at the flat media cost`() {
+        val data = "word ".repeat(60_000)
+        val json = """{"model":"m","messages":[{"role":"user","content":[
+            {"type":"document","source":{"type":"text","media_type":"text/plain","data":"$data"}}]}]}"""
+        val estimate = PromptTokenEstimate.forRequest(json.length.toLong(), request(json))
+        assertEquals(PromptTokenEstimate.fromBytes(json.length.toLong()), estimate)
+    }
 }

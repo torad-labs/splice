@@ -19,6 +19,7 @@ import splice.core.failure.Moment
 import splice.core.failure.Outlast
 import splice.core.failure.Position
 import splice.core.failure.ProtocolFault
+import splice.core.failure.ReasoningLoop
 import splice.core.failure.RefusedBy
 import splice.core.failure.ServerFault
 import splice.core.failure.Stall
@@ -170,6 +171,8 @@ internal object PlanModel {
         val cause = met.cause as FailureCause.Provider.Empty
         val continues = cause.reasoningOnly && met.facts.continuesReasoning
         when {
+            // A run of empty reasoning splice ended is never asked again: the same request meets the same loop.
+            cause.loop != null -> end(met)
             continues && ledger.count(Spend.CONTINUE_REASONING) < 1 -> again(How.CONTINUE_REASONING)
             !continues && ledger.count(Spend.EMPTY) < 1 -> again(How.SAME)
             else -> end(met)
@@ -194,9 +197,19 @@ internal object PlanModel {
         val cause = met.cause as FailureCause.Path.Torn
         when {
             cause.toolOpen || cause.why == Tear.OVERSIZED_EVENT -> end(met)
+            cause.why == Tear.ROTATED -> rotated(met, ledger)
             cause.why == Tear.NO_EVENTS || !met.at.streamBegan -> fresh(met, ledger)
             else -> recover(met, ledger)
         }
+    }
+
+    /** A planned socket rotation: twelve a turn, on their own count, sent again before the stream began and continued
+     *  after it where the head can; no failure's budget moves. */
+    private fun rotated(met: Met, ledger: RetryLedger): RetryStep = when {
+        ledger.count(Spend.ROTATION) >= 12 -> end(met)
+        !met.at.streamBegan -> again(How.SAME)
+        met.facts.canContinue -> again(How.REANCHOR)
+        else -> end(met)
     }
 
     private val stalled = Row { met, ledger ->
@@ -272,6 +285,7 @@ internal class Failures(private val random: Random) {
         { FailureCause.Provider.ModelMissing("gone") },
         { FailureCause.Provider.Refused(pick(RefusedBy.entries)) },
         { FailureCause.Provider.Empty(reasoningOnly = random.nextBoolean()) },
+        { FailureCause.Provider.Empty(reasoningOnly = true, loop = ReasoningLoop(items = 100, forMs = 600_000L)) },
         { FailureCause.Provider.ToolTear(runaway = random.nextBoolean()) },
         { FailureCause.Provider.ReasoningCut(reasoningTokens = 518L * random.nextLong(1, 7) - 2) },
         { FailureCause.Provider.Unrecognized(clientError = random.nextBoolean()) },
@@ -380,6 +394,12 @@ private fun protocolFault(cause: FailureCause): Boolean =
  *  the run took before this step, since the table waits a still-loading model only once those five are spent. */
 private fun spendOf(taken: Taken, overloads: Int = 0): Spend? {
     val step = taken.step as? RetryStep.Again ?: return null
+    val rotation = (taken.met.cause as? FailureCause.Path.Torn)?.why == Tear.ROTATED
+    return if (rotation) Spend.ROTATION else howSpend(taken, step, overloads)
+}
+
+/** What a step that is not a planned rotation spent, by how it sends again. */
+private fun howSpend(taken: Taken, step: RetryStep.Again, overloads: Int): Spend? {
     return when (step.how) {
         How.REANCHOR ->
             if (taken.met.cause is FailureCause.Provider.Unrecognized) Spend.UNRECOGNIZED else Spend.STREAM_RECOVERY
@@ -506,6 +526,7 @@ class RetryEngineModelTest {
             Spend.UNRECOGNIZED to MAX_UNRECOGNIZED_RETRIES,
             Spend.CODE_MODE to MAX_CODE_MODE_STARTS,
             Spend.UNREACHABLE to UNREACHABLE_WAITS,
+            Spend.ROTATION to MAX_SOCKET_ROTATIONS,
         )
         val reached = mutableSetOf<Spend>()
         runs.forEach { run ->
@@ -604,6 +625,60 @@ class RetryEngineModelTest {
         }
         (runs + long).forEach { run ->
             assertTrue(run.last().sends <= MAX_ATTEMPTS_OUTSIDE_HOLDS, "${run.last().sends} sends: $run")
+        }
+    }
+
+    /** Nov 8: a 6.3-hour answer met the Responses websocket's 60-minute close six times, each spent as a failure, and
+     *  the turn ended "stayed overloaded" with its answer still coming. A planned rotation continues on its own count. */
+    @Test
+    fun `a planned socket rotation mid-answer is continued and spends no recovery`() {
+        val at = Position(Moment.MID_CONTENT, streamBegan = true)
+        val facts = TurnFacts(
+            pooled = false,
+            freeLogin = false,
+            warmWaitLeftMs = 0L,
+            continuesReasoning = false,
+            canContinue = true,
+            deadlines = TurnFacts.Deadlines(Long.MAX_VALUE),
+            earliestLift = null,
+        )
+        val rotation = FailureCause.Path.Torn(Tear.ROTATED, toolOpen = false)
+        val ledger = RetryLedger().apply { sent() }
+        repeat(MAX_SOCKET_ROTATIONS) {
+            val step = RetryEngine.next(rotation, at, ledger, facts, NOW)
+            assertEquals(RetryStep.Again(0L, How.REANCHOR), step, "rotation ${it + 1}")
+            ledger.took(step, rotation)
+            ledger.sent()
+        }
+        assertEquals(0, ledger.count(Spend.STREAM_RECOVERY), "no failure's recovery was spent")
+        // A real tear after them still has the whole recovery budget.
+        val reset = FailureCause.Path.Torn(Tear.RESET, toolOpen = false)
+        assertEquals(RetryStep.Again(0L, How.REANCHOR), RetryEngine.next(reset, at, ledger, facts, NOW))
+        // Past its own count the rotation ends the turn, with the line that names it.
+        assertEquals(RetryStep.End(rotation), RetryEngine.next(rotation, at, ledger, facts, NOW))
+        // A tool call the close cut in half still cannot be continued.
+        val cutTool = FailureCause.Path.Torn(Tear.ROTATED, toolOpen = true)
+        assertEquals(RetryStep.End(cutTool), RetryEngine.next(cutTool, at, RetryLedger(), facts, NOW))
+    }
+
+    @Test
+    fun `a run of empty reasoning splice ended is not asked again and the client does not re-send it`() {
+        val run = ReasoningLoop(items = 140, forMs = 610_000L)
+        val loop = FailureCause.Provider.Empty(reasoningOnly = true, loop = run)
+        val at = Position(Moment.MID_CONTENT, streamBegan = true)
+        val facts = TurnFacts(
+            pooled = false,
+            freeLogin = false,
+            warmWaitLeftMs = 0L,
+            continuesReasoning = true,
+            canContinue = true,
+            deadlines = TurnFacts.Deadlines(Long.MAX_VALUE),
+            earliestLift = null,
+        )
+        assertEquals(RetryStep.End(loop), RetryEngine.next(loop, at, RetryLedger(), facts, NOW))
+        for (moment in listOf(Moment.BEFORE_COMMIT, Moment.COMMITTED, Moment.MID_CONTENT, Moment.NON_STREAM)) {
+            val where = Position(moment, streamBegan = true)
+            assertTrue(!ClientWire.answer(loop, where).clientResends, "re-sent at $moment")
         }
     }
 

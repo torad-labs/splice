@@ -50,6 +50,11 @@ internal const val SERVER_FIRST_RESEND_MS: Long = 200L // why: the first of the 
  *  failed fold round: each continues from what arrived. The failed and truncated rows make 6 requests with it. */
 internal const val MAX_STREAM_RECOVERIES: Int = 5
 
+/** A provider's planned socket rotation (the Responses websocket's 60-minute connection limit) is continued on its own
+ *  count, never on [MAX_STREAM_RECOVERIES]: it is the socket's lifetime, not a failure, and a long answer meets one
+ *  every hour (2026-11-08: a 6.3-hour turn met six, each spent as a failure, and ended "stayed overloaded"). */
+internal const val MAX_SOCKET_ROTATIONS: Int = 12 // why: twelve hours of one answer; past it the turn ends honestly
+
 /** A stream that closed before any event, or a first byte that never came, is sent fresh twice. */
 internal const val MAX_FRESH_REISSUES: Int = 2
 
@@ -116,8 +121,10 @@ public const val WALL_MARGIN_MS: Long = 30_000L
  *  outlasts every hold within 7 days. */
 public const val CLIENT_WALL_GRACE_MS: Long = 60_000L
 
-/** A request without the wall header has the client timeout every session had before slice 5: the 900 s budget plus
- *  60 s (LaunchServiceTest's API_TIMEOUT_MS row). */
+/** A request without the wall header comes from a session launched before slice 5 (Oct 27, 2026), which has the client
+ *  timeout every session had then: the whole-turn budget of that day, 900 s, plus 60 s. The budget's default is 1,800 s
+ *  since that commit, and a launch since then names its own timeout in the header, so this figure is no one's current
+ *  budget. */
 public const val OLD_CLIENT_WALL_MS: Long = 960_000L
 
 /** Claude Code aborts a compaction on its own timer, 1.5 ms per token of the conversation, from 600 s to 1 h

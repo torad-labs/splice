@@ -297,3 +297,64 @@
   .pc-runtime-grid > .pc-section, .pc-comparisons > .pc-section { padding-inline: 0; }
 }
 .pc-runtime-grid:has(> :only-child), .pc-comparisons:has(> :only-child) { grid-template-columns: minmax(0, 1fr); }
+
+/* The fold: Performance as one heading line under Results (Usage) or above the request list (Requests), the views it holds
+   named once beside it, and one Show control at the line's end. The open console drops its own repeated title. */
+.pc-fold { margin-top: calc(4 * var(--u)); padding-top: calc(3 * var(--u)); border-top: 1px solid var(--hair); }
+.pc-fold-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(2 * var(--u)); width: 100%; min-height: var(--ctl-h); padding: 0; background: none; border: 0; color: inherit; text-align: left; cursor: pointer; }
+.pc-fold-head h2 { font: 400 1.4rem/1.1 var(--font-lead); letter-spacing: normal; margin: 0; }
+.pc-fold-says { min-width: 0; font: 500 .95rem/1.3 var(--font-name); color: var(--text-mute); }
+.pc-fold-go { margin-left: auto; display: inline-flex; align-items: center; gap: .4rem; padding: .45rem .8rem; border: 1px solid var(--hair); border-radius: var(--r-in); font: 500 .95rem/1.2 var(--font-name); color: var(--text); }
+.pc-fold-head:hover .pc-fold-go, .pc-fold-head:focus-visible .pc-fold-go { background: var(--obj); }
+.pc-fold-head:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+.pc-fold.open > .pc-fold-head { margin-bottom: calc(2 * var(--u)); }
+.pc-fold .perf-console .pc-heading h2 { display: none; }
+.pc-fold .perf-console .pc-heading { justify-content: flex-end; }
+#requests-performance:has(> .pc-fold:not(.open)) { margin: calc(2 * var(--u)) 0; padding-bottom: calc(2 * var(--u)); }
+#requests-performance > .pc-fold { margin-top: 0; padding-top: 0; border-top: 0; }
+
+/* The first step (Nov 10): one sentence that says whether anything is slower or failing more than usual right now, then
+   each command's last hour over its own last 7 days, on one card. The second step holds the measurement console. */
+.pc-pulse { margin: 0 0 calc(3 * var(--u)); }
+.pc-pulse-says { margin: 0 0 calc(2 * var(--u)); max-width: 64rem; font: 400 1.2rem/1.5 var(--font-name); color: var(--text-body); }
+.pc-pulse-says strong { color: var(--text); font-weight: 600; }
+.pc-pulse[aria-busy=true] .pc-pulse-says { color: var(--text-mute); }
+.perf-console .pc-pulse-wrap { background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--wall-low), var(--cast) var(--cast) 0 var(--ink-w) var(--ink); overflow-x: auto; }
+.pc-pulse-table { width: 100%; border-collapse: collapse; font-size: 15px; }
+.pc-pulse-table caption { caption-side: top; text-align: left; padding: 1rem 1.2rem .6rem; font: 500 14px/1.4 var(--font-name); color: var(--text-mute); }
+.pc-pulse-table th, .pc-pulse-table td { padding: .85rem 1.2rem; text-align: right; vertical-align: top; border-top: 1px solid var(--hair); white-space: nowrap; }
+.pc-pulse-table thead th { padding-block: .6rem; font: 500 14px/1.4 var(--font-name); color: var(--text-mute); }
+.pc-pulse-table :is(thead th, tbody th):first-child { text-align: left; width: 30%; }
+.pc-pulse-table tbody th { font: 500 15px/1.4 var(--font-name); }
+.pc-pulse-table tbody th a { color: var(--text); }
+.pc-pulse-table td b { display: block; font: 500 16px/1.3 var(--font-data); color: var(--text); }
+.pc-pulse-table td small { display: block; margin-top: .2rem; font: 500 13px/1.3 var(--font-name); color: var(--text-mute); }
+.pc-pulse-table td.pc-hot b { color: var(--key-ink); font-weight: 700; }
+.pc-pulse-table tr:has(.pc-state-bad) td.pc-hot b { color: var(--limit); }
+.pc-pulse-table td:last-child { width: 1%; }
+.pc-pulse .pc-note { margin: calc(1.5 * var(--u)) 0 0; }
+.pc-state-watch { color: var(--key-ink); border-color: currentColor; }
+.pc-state-watch > i { background: currentColor; }
+/* px, not rem: the console scales its root size with the window, so a rem bound moves with it */
+@container performance (max-width: 820px) {
+  .pc-pulse-table thead { display: none; }
+  .pc-pulse-table tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--hair); }
+  .pc-pulse-table tbody :is(th, td) { border-top: 0; text-align: left; white-space: normal; width: auto; }
+  .pc-pulse-table tbody td:last-child { width: auto; }
+  .pc-pulse-table tbody th { grid-column: 1 / -1; padding-bottom: 0; }
+  .pc-pulse-table tbody td[data-l]::before { content: attr(data-l); display: block; margin-bottom: .2rem; font: 500 13px/1.3 var(--font-name); color: var(--text-mute); }
+}
+.pc-deep { margin-top: calc(2 * var(--u)); border-top: 1px solid var(--hair); }
+.perf-console .pc-deep > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem 1.2rem; padding: calc(2 * var(--u)) 0; list-style: none; }
+.pc-deep > summary::-webkit-details-marker { display: none; }
+.pc-deep > summary::marker { content: ""; }
+.pc-deep-title { font: 500 1.1rem/1.3 var(--font-name); color: var(--text); }
+.pc-deep-title::before { content: "+ "; }
+.pc-deep[open] .pc-deep-title::before { content: "− "; }
+.pc-deep-says { min-width: 0; font: 500 .9rem/1.4 var(--font-name); color: var(--text-mute); }
+.pc-deep > summary:hover .pc-deep-title { text-decoration: underline; text-underline-offset: .2em; }
+.pc-deep-body { padding-top: var(--u); }
+.pc-meters strong small { font: 500 1rem/1.2 var(--font-name); color: var(--text-mute); }
+.pc-results > .pc-note { margin-top: calc(1.5 * var(--u)); }
+/* on a wide screen the comparison stays one readable block: figures sit near their command, not spread over 3,000 px */
+.perf-console .pc-pulse-wrap { max-width: 1600px; }

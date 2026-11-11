@@ -15,7 +15,7 @@
 // failed was lost though Anthropic had already spent the old refresh token, and the 401 path answered with the very
 // token that drew the 401 because it only rotated inside the window. Now a token that is still alive is served
 // whatever the rotation said, a grant whose write fails is held and written again, and a 401 always rotates unless
-// the folder already holds a newer token than the one served.
+// the folder already holds a newer token than the one the refused request sent.
 package splice.app.auth.claude
 
 import kotlinx.serialization.json.Json
@@ -100,10 +100,13 @@ internal class ClaudeFolderAuth(
     /** The folder's access token, rotated first when it is at or inside its proactive window. */
     override suspend fun credentials(): Credentials? = (answer() as? LoginAnswer.Granted)?.credentials
 
-    /** What the transport's 401 path calls: one rotation, coalesced with any already in flight. */
+    /** One rotation, coalesced with any already in flight about the same token. */
     override suspend fun refresh(): Credentials? = (exchange() as? RefreshOutcome.Refreshed)?.credentials
 
     override suspend fun exchange(): RefreshOutcome = renewal.exchange()
+
+    /** What the transport's 401 path calls, with the token the refused request sent. */
+    override suspend fun exchange(refused: Credentials?): RefreshOutcome = renewal.exchange(refused)
 
     override suspend fun describe(): AuthDescription {
         val held = read()
@@ -124,7 +127,8 @@ internal class ClaudeFolderAuth(
     }
 
     /** The vendor half of one rotation, under the credential lock. The folder is read again first: when it already
-     *  holds a token other than [prior], the one this process served, a rotation landed since and is adopted. */
+     *  holds a token other than [prior], the one the caller read (a 401's: the one the refused request sent), a rotation
+     *  landed since and is adopted, so two turns that read the same near-expiry token spend its refresh token once. */
     private suspend fun renew(prior: String?): RefreshOutcome {
         val held = readHeld().getOrElse { return RefreshOutcome.ReadFailed(it) } ?: return RefreshOutcome.NoRefreshToken
         val adopted = prior != null && held.accessToken != prior
@@ -163,7 +167,10 @@ internal class ClaudeFolderAuth(
 
     /** The whole document plus the three fields splice reads, or null when the folder holds no readable credential. */
     private fun read(): Held? = readHeld()
-        .onFailure { why -> log("[claude-account] ${name()} has no readable credential (${why::class.simpleName})\n") }
+        // The account's label is its folder's own name: enough to act on, and never a token.
+        .onFailure { why ->
+            log("[claude-account] ${folder.fileName ?: folder} has no readable credential (${why::class.simpleName})\n")
+        }
         .getOrNull()
 
     /** [folder]'s credential as the three fields splice reads, plus the whole document so a save keeps every other
@@ -199,9 +206,6 @@ internal class ClaudeFolderAuth(
 
     private fun text(obj: JsonObject, key: String): String? =
         JsonScalars.strIfString(obj[key]).takeIf { it.isNotBlank() }
-
-    /** The account's label, which is its folder's own name: enough to act on, and never a token. */
-    private fun name(): String = folder.fileName?.toString() ?: folder.toString()
 
     private data class Held(
         val accessToken: String,

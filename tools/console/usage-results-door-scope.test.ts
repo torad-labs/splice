@@ -1,6 +1,8 @@
-// Usage's Results door names the command behind its returned failure share. Results now uses contract=1 and the exact
-// shared window/project: 5 hours stays 5 hours, 30 days stays 30 days, and a project selection narrows the result.
-// The native page, integrated panel, header navigation and Requests links must agree on that scope.
+// Usage, the header's door to Results by command and the Performance measurements folded under the bands. Results reads the
+// daemon's fold over every request in its own window (1 hour, 24 hours or 7 days; the page's 5 hours as 24 hours and its
+// 30 days as 7 days), so its door says what its figure covers wherever that differs from the doors beside it: the table's
+// window when it is not the page's, and all requests when a project is picked. The measurements read the exact cohort
+// (contract=1): 5 hours stays 5 hours, 30 days stays 30 days, a project narrows them, and their Requests links agree.
 import { afterAll, beforeAll, test } from "bun:test";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -127,8 +129,9 @@ const server = Bun.serve({
   port: 0,
   async fetch(req) {
     const url = new URL(req.url), path = url.pathname;
-    // Legacy rows belong to Usage's ordinary route; the guarded Perf contract has four admissions.
-    const guarded = limitPerfHttp && path.startsWith("/api/perf/") && !(path === "/api/perf/turns" && url.searchParams.get("contract") !== "1");
+    // Legacy rows and the legacy fold belong to Usage's ordinary route; the guarded Perf contract has four admissions.
+    const legacy = (path === "/api/perf/turns" || path === "/api/perf/summary") && url.searchParams.get("contract") !== "1";
+    const guarded = limitPerfHttp && path.startsWith("/api/perf/") && !legacy;
     if (!guarded) return fixtureResponse(req);
     if (admittedPerfHttp >= 4) return httpCapacity();
     admittedPerfHttp++;
@@ -150,27 +153,56 @@ afterAll(async () => {
   server.stop(true);
 });
 
-const door = (p: Page) => p.locator("#doors [data-act=door][data-v=perf]");
+const door = (p: Page) => p.locator("#doors [data-act=door][data-v=results]");
+const fold = (p: Page) => p.locator("#band-perf [data-act=perffold]");
 const said = (p: Page) => door(p).locator(".upl-dq");
 async function open(query: string, run: (p: Page) => Promise<void>) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1400 } });
   const p = await context.newPage();
   try {
     await p.goto(`http://127.0.0.1:${server.port}/usage.html${query}`);
-    // This is the named command's server-reported share, including the selected project's different population.
-    await expect(door(p).locator("[data-tn=door-failed]")).toHaveText(query ? "5%" : "3%", { timeout: 20_000 });
+    // 3 of 100 requests failed in the fold, whatever project is picked, however the page rounds it
+    await expect(door(p).locator("[data-tn=door-failed]")).toHaveText(/^3(\.0)?%$/, { timeout: 20_000 });
     await run(p);
   } finally {
     await context.close();
   }
 }
 
-test("Usage: Results door names its command and opens expandable diagnostics in the shared panel", async () => {
+test("Usage: where the Results table and the page agree, the door reads its figure as failed and nothing more", async () => {
   await open("", async (p) => {
-    await expect(said(p)).toContainText("claude-plan failed · 7 days");
-    await expect(door(p)).toHaveAttribute("aria-label", "Results by command");
+    await expect(said(p)).toHaveText("failed");
+  });
+}, 90_000);
+
+test("Usage: the Results door names the table's window when the page's window is one the table does not keep", async () => {
+  await open("", async (p) => {
+    await p.locator("#win [data-act=win][data-v='5h']").click();
+    await expect(p.locator("#band-results [data-act=perfwin][aria-pressed=true], #band-results [data-act=perfwin][aria-checked=true]")).toContainText("24 hours", { timeout: 20_000 });
+    await expect(said(p)).toContainText("24 hours", { timeout: 20_000 });
+    await p.locator("#win [data-act=win][data-v='30d']").click();
+    await expect(said(p)).toContainText("7 days", { timeout: 20_000 });
+    // the table's own switch moves the door with it
+    await p.locator("#band-results [data-act=perfwin][data-v='1h']").click();
+    await expect(said(p)).toContainText("1 hour", { timeout: 20_000 });
+    expect(await live(said(p), (el) => el.getClientRects().length)).toBe(1);
+  });
+}, 90_000);
+
+test("Usage: with a project picked, the Results door says its figure is over all requests, as the band's head does", async () => {
+  await open("?project=/work/website", async (p) => {
+    await expect(p.locator("#band-results .bandhead")).toContainText("All requests", { timeout: 20_000 });
+    await expect(said(p)).toContainText(/all requests/i, { timeout: 20_000 });
+    expect(await live(said(p), (el) => el.getClientRects().length)).toBe(1);
+  });
+}, 90_000);
+
+test("Usage: the folded Performance measurements open expandable diagnostics for a command", async () => {
+  await open("", async (p) => {
+    await fold(p).click();
+    await p.locator("#band-perf .pc-deep > summary").click();
     await p.getByRole("button", { name: "Profiles", exact: true }).click();
-    await door(p).click();
+    await p.getByRole("button", { name: "Overview", exact: true }).click();
     await expect(p.getByRole("button", { name: "Overview", exact: true })).toHaveAttribute("aria-current", "page");
     await p.locator('#band-perf [data-pc-command="plan"] > summary').click();
     const outcomes = p.locator(".pc-command-detail .pc-section").filter({ hasText: "Recorded outcomes" });
@@ -200,7 +232,6 @@ test("Usage: bounded Perf admission preserves startup views and pending profile 
   try {
     await p.goto(`http://127.0.0.1:${server.port}/usage.html?contract=1&model=one-query-worker&project=/work/website&from=${now - 60000}&until=${now}`);
     const panel = p.locator("#band-perf"), content = panel.locator(".pc-content");
-    await expect(door(p).locator("[data-tn=door-failed]")).toHaveText("5%");
     await expect(content).toHaveAttribute("aria-busy", "false");
     await panel.locator('[data-pc-tab="runtime"]').click();
     await expect(content).toContainText("Current process sample");
@@ -221,14 +252,13 @@ test("Usage: bounded Perf admission preserves startup views and pending profile 
     await expect(panel.locator(".pc-message")).toHaveText("Performance action pending…");
     for (const project of ["/work/old-a", "/work/old-b", "/work/website"]) {
       await panel.locator('[name="project"]').fill(project);
-      await panel.getByRole("button", { name: "Apply cohort", exact: true }).click();
+      await panel.getByRole("button", { name: "Measure", exact: true }).click();
     }
     await expect(panel.getByRole("button", { name: "Start capture", exact: true })).toBeDisabled();
     reads.forEach((hold) => hold.release());
     await expect(panel.locator(".pc-message")).toHaveText("Capture: Running");
     await expect(content).toHaveAttribute("aria-busy", "false");
     await expect(panel.locator(".pc-coverage .pc-state")).toHaveText("Ok");
-    await expect(door(p).locator("[data-tn=door-failed]")).toHaveText("5%");
     await panel.getByRole("button", { name: "Stop capture", exact: true }).click();
     await expect(panel.locator(".pc-message")).toHaveText("Capture: Stopped");
     const artifact = p.waitForEvent("download");
@@ -264,7 +294,7 @@ test("Usage: bounded Perf admission preserves startup views and pending profile 
     const builder = panel.locator('[data-pc-form="add-objective"]');
     await builder.locator('[name="id"]').fill("builder-after-submit");
     await builder.getByRole("button", { name: "Add to draft", exact: true }).click();
-    await panel.getByRole("button", { name: "Apply cohort", exact: true }).click();
+    await panel.getByRole("button", { name: "Measure", exact: true }).click();
     await expect(panel.getByRole("button", { name: "Save objectives and rules", exact: true })).toBeDisabled();
     await expect(panel.getByRole("button", { name: "Discard edits and reload", exact: true })).toBeDisabled();
     save.release();
@@ -311,8 +341,10 @@ test("Usage: bounded Perf admission preserves startup views and pending profile 
   }
 }, 90_000);
 
-test("Usage: native and Results window controls keep exact 5-hour, 30-day and 1-hour intervals", async () => {
+test("Usage: the page's window and the measurements' own keep exact 5-hour, 30-day and 1-hour intervals", async () => {
   await open("", async (p) => {
+    await fold(p).click();
+    await p.locator("#band-perf .pc-deep > summary").click();
     const readFor = (duration: number) => p.waitForRequest((r) => {
       const u = new URL(r.url());
       return u.pathname === "/api/perf/summary" && u.searchParams.get("contract") === "1" && Number(u.searchParams.get("until")) - Number(u.searchParams.get("from")) === duration;
@@ -321,24 +353,22 @@ test("Usage: native and Results window controls keep exact 5-hour, 30-day and 1-
     await p.locator("#win [data-act=win][data-v='5h']").click();
     await fiveHours;
     await expect(p.locator('#band-perf [name="window"]')).toHaveValue("5h");
-    await expect(said(p)).toContainText("5 hours", { timeout: 20_000 });
     const thirtyDays = readFor(30 * 86400000);
     await p.locator("#win [data-act=win][data-v='30d']").click();
     await thirtyDays;
-    await expect(said(p)).toContainText("30 days", { timeout: 20_000 });
+    await expect(p.locator('#band-perf [name="window"]')).toHaveValue("30d");
     const oneHour = readFor(3600000);
     await p.locator('#band-perf [name="window"]').selectOption("1h");
-    await p.getByRole("button", { name: "Apply cohort", exact: true }).click();
+    await p.getByRole("button", { name: "Measure", exact: true }).click();
     await oneHour;
-    await expect(said(p)).toContainText("1 hour", { timeout: 20_000 });
-    expect(await live(said(p), (el) => el.getClientRects().length)).toBe(1);
   });
 }, 90_000);
 
-test("Usage: selected project changes the Results population and survives request navigation", async () => {
+test("Usage: a selected project changes the measurements' population and survives request navigation", async () => {
   await open("?project=/work/website", async (p) => {
+    await fold(p).click();
+    await p.locator("#band-perf .pc-deep > summary").click();
     await expect(p.locator('#band-perf [name="project"]')).toHaveValue("/work/website");
-    await expect(said(p)).toContainText("selected cohort", { timeout: 20_000 });
     await p.locator('#band-perf [data-pc-command="plan"] > summary').click();
     await expect(p.locator(".pc-command-failure")).toHaveText("5% failed");
     const outcomes = p.locator(".pc-command-detail .pc-section").filter({ hasText: "Recorded outcomes" });
@@ -350,7 +380,6 @@ test("Usage: selected project changes the Results population and survives reques
     expect(href.searchParams.get("head")).toBe("plan");
     expect(href.searchParams.get("local")).toBe("0");
     expect(Number(href.searchParams.get("until")) - Number(href.searchParams.get("from"))).toBe(7 * 86400000);
-    expect(await live(said(p), (el) => el.getClientRects().length)).toBe(1);
   });
 }, 90_000);
 
@@ -366,12 +395,12 @@ test("Usage: a single query worker returns every view for the newest cohort and 
     // the newest cohort. Aborting its browser response does not release this fixture's worker.
     for (const project of ["/work/old-a", "/work/old-b", "/work/website"]) {
       await panel.locator('[name="project"]').fill(project);
-      await panel.getByRole("button", { name: "Apply cohort", exact: true }).click();
+      await panel.getByRole("button", { name: "Measure", exact: true }).click();
     }
     first.release();
     await expect(content).toHaveAttribute("aria-busy", "false");
     await expect(panel.locator('[name="project"]')).toHaveValue("/work/website");
-    await expect(door(p).locator("[data-tn=door-failed]")).toHaveText("5%");
+    await expect(panel.locator(".pc-command-failure")).toHaveText("5% failed");
     await panel.locator('[data-pc-tab="history"]').click();
     await panel.locator("details.pc-detail").filter({ hasText: "Exact history readings" }).locator("summary").click();
     await expect(panel.getByRole("table", { name: "History · last 120 returned scope intervals", exact: true })).toContainText("7");
@@ -421,7 +450,7 @@ test("Usage: an accepted capacity retry keeps query ownership until its held res
     await panel.locator('[data-pc-tab="timeline"]').click();
     await retry.ready;
     await panel.locator('[name="project"]').fill("/work/website");
-    await panel.getByRole("button", { name: "Apply cohort", exact: true }).click();
+    await panel.getByRole("button", { name: "Measure", exact: true }).click();
     // The new cohort waits behind the accepted retry's worker ownership, even though the old view is stale.
     expect(queryBusyResponses).toBe(0);
     retry.release();

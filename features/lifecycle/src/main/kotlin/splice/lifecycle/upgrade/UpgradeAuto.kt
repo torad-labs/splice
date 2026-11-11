@@ -9,9 +9,9 @@
 //
 // WHAT IT DOES IS WHAT THE CONSOLE'S UPGRADE BUTTON DOES. It finds the newest published release on its channel, and when
 // that is newer than the version this daemon serves it starts the same out-of-process run (UpgradeRuns), with --auto:
-// the run checks every asset against the release's sha256sums.txt and not through gh's attestation, because a beta built
-// while Actions is locked has none (splice-lead, Oct 13), and it restarts at the first moment no turn is in flight, or
-// once the bounded wait is spent.
+// the run checks every asset against the release's sha256sums.txt and not through gh's attestation, because a beta is
+// built on the maintainer's machine, outside release.yml, and has none (splice-lead, Oct 13), and it restarts at the
+// first moment no turn is in flight, or once the bounded wait is spent.
 //
 // ONE TRY PER VERSION PER DAEMON. A run that fails leaves this daemon serving, and the same version is not tried again
 // until the daemon restarts or a newer one is published, so a release that cannot install does not loop.
@@ -35,8 +35,8 @@ import java.util.concurrent.TimeUnit
 // to have done what they restarted for; a release published meanwhile waits that much longer, no more.
 private const val FIRST_LOOK_MINUTES = 10L
 
-// why: betas are cut through the day; an hour keeps a new one at most an hour away and stays far inside GitHub's
-// unauthenticated limit of 60 API reads an hour.
+// why: betas are cut through the day; an hour keeps a new one at most an hour away, and the look is one small read of
+// the releases list on splice.torad.ai (ReleaseChannel), not a GitHub API call, so no GitHub rate limit applies to it.
 private const val LOOK_EVERY_MINUTES = 60L
 
 /** What splice.toml says now: whether the daemon installs newer releases itself, and whether betas count as newer. */

@@ -189,7 +189,8 @@
 /* the port is the socket the command sits in: its number in the command's own edge */
 .field.rt-port { flex: 0 0 6.4rem; width: 6.4rem; text-align: center; font: 600 1rem/1 var(--font-data); font-variant-numeric: tabular-nums; border: .14rem solid var(--c); }
 .rt-pfxrow { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u); width: 100%; min-width: 0; }
-.field.rt-pfx { flex: 1 1 100%; min-width: 0; border-radius: 999px; border-left: .3rem solid var(--c); padding-inline: calc(2 * var(--u)); }
+.field.rt-pfx { flex: 1 1 100%; min-width: 0; padding-inline: calc(1.5 * var(--u)); }
+.rt-flabel { flex: 1 1 100%; font: 500 .82rem/1.2 var(--font-name); color: var(--text-mute); }
 .rt-arrow { display: inline-flex; color: var(--text-mute); }
 .rt-arrow svg { width: 1.1rem; height: 1.1rem; }
 .rt-model { min-width: 0; padding: .4rem calc(1.2 * var(--u)); border: .1rem solid var(--track-line); border-radius: var(--r-in); background: var(--obj-high); font: 600 .92rem/1.2 var(--font-data); color: var(--text); overflow-wrap: anywhere; }

@@ -1,4 +1,4 @@
-Last read: 2026-10-15 against splice 0.4.0 (feat/v0.4.0)
+Last read: 2026-10-15 against splice 0.4.0, then the feat/v0.4.0 branch (merged to main 2026-10-31); the Settings version card, Teams start, the manager card and the pin text re-read against main 2026-11-10
 
 # How splice works for the person: accounts, models, sessions, Teams, the console
 
@@ -131,8 +131,12 @@ request", "New command". "Save N changes" writes `splice.toml` (comments kept, b
 
 **Settings.** Rail: Stalled answers, Many agents at once, Reasoning, Plan limits, MCP servers, Projects, Your data, Version. Each knob
 shows "Live" or "Applies on restart"; "Set for one command" writes `[heads.<key>.overrides]`. Your data holds keep-for windows and
-"Delete now" with a confirm. Version has "Check", "Restart splice", "Upgrade to X", "Go back to X". Reasoning effort, trace retention
-days and trace body size have no control (TOML only, by decision).
+"Delete now" with a confirm. Version draws one card per release: Running (buttons "Check" and "Restart splice"), Previous when a
+release is on this machine to go back to (button "Go back"), and Newest once a check has found a newer one (buttons "Upgrade" and a
+"Releases" link to the notes on GitHub). "Go back" and "Upgrade" arm first: the card then asks with "Go back to X" or "Upgrade to X"
+beside "Stay on Y". A run shows its steps (Checked, Stopping, Waiting for running turns, Starting) and a "Full log" when it fails.
+Files lists "Settings file", "State" and "Logs", shown and never edited. Reasoning effort, trace retention days and trace body size
+have no control (TOML only, by decision).
 
 **Requests.** Filters: window, command, session, model, account, outcome ("All", "Failed", "Stopped"), "Started over", "Compactions".
 A failed row names the cause in plain words: Overloaded, Network error, Given up after no progress, Cut off, Rate limited, No quota,
@@ -209,7 +213,10 @@ section 11 (Superseded 2026-10-03; Deviations 2026-10-10); repo `CLAUDE.md` proj
 ### Pins, Claude accounts, budgets
 
 - **Pin.** "Use now" pins a head to one login from the next turn; "Unpin" releases it. A session's pin outranks the head's for that
-  session. A pin on an out-of-quota account falls back to automatic and stays set. A daemon restart clears every pin.
+  session. A pin lets go at the first limit its login reads that it had not read when "Use now" was pressed (a plan window spent, the
+  provider holding the account, or a usage reading at 100%); a limit already read at the press keeps it. While a pinned login cannot
+  serve, the pin stays and its card says why and which login the turns use instead. Pins are saved in `<state>/account-pins.json`
+  (0600, one `.bak`), so a daemon restart keeps them.
 - **Claude.** Claude Code signs in; splice never refreshes the command's own login. Added Claude accounts live in splice-owned
   folders `~/.splice/state/claude-accounts/<head>/<label>/`, which splice may refresh. `splice login claude-splice --label <name>`
   is a different feature: it saves or switches named copies of the one login, changes nothing while any session of the command runs,
@@ -351,7 +358,7 @@ Source: `sessions.js:222-247,285-321,378-427,637,677-697,802-813,880-917,973-109
   was read. Sessions carry a derived turn key and cannot call keyed `/api` routes.
 
 Source: `features/sessions/.../http/SessionContinue.kt:1-40`, `docs/specs/v0.4.0.md` section 12 (Resolved, both Deviations 2026-10-13),
-`README.md` "Heads that see each other", `sessions.js:973-1058`, `walks/console-shell/MANAGER-BRIEF.md`.
+`README.md` "Heads that see each other", `sessions.js:973-1058`.
 
 ## Teams
 
@@ -373,7 +380,9 @@ A session already on another active team is refused.
 **How a slot starts, and why it never resumes.**
 1. "Start new", "Try again" or "Start team".
 2. Splice mints a NEW session id, binds the slot to it before the terminal opens, pins the slot's account, and opens a tmux pane in the team's
-   repo running `<command> --session-id <id> --name <slot>`. The first request already finds the role.
+   repo (the home folder when the team has none, or its folder is gone) running `<command> --session-id <id> --name <slot>`, plus
+   `--model <model>` when the slot names one. `<command>` is run by the path of its link in `~/.local/bin`; a command not linked there is
+   refused ("The <command> command is not linked; run splice install <head>."). The first request already finds the role.
 3. It waits up to 45 s for Claude Code to register that id. Outcomes: up; asked something first such as the folder-trust question (202; the card
    shows it, splice answers only when the person clicks); "Not started" (504, "Waited N s"); "Terminal closed" (409); "Not answering". A failed
    start puts the binding back and closes the terminal.
@@ -384,8 +393,8 @@ A session already on another active team is refused.
 6. "Stop" stops the member's turn; "End" sends `/exit` to one member; "End all" ends every started member and keeps the team, listing losses
    first; "Archive" and "Restore" never delete.
 
-Source: `docs/specs/v0.4.0.md` section 14, `features/sessions/.../http/TeamStart.kt:1-44`, `teams.js:248-258,270-340,530-579,1004-1260,919`; the
-tmux command line is quoted from `walks/console-shell/MANAGER-BRIEF.md` (unverified, not re-read in `TeamStartWiring.kt`).
+Source: `docs/specs/v0.4.0.md` section 14, `features/sessions/.../http/TeamStart.kt` (the start sequence, `launch`), `app/.../control/mount/TeamStartWiring.kt`
+(`HeadStartCommands`: the link path and the refusal), `teams.js:248-258,270-340,530-579,1004-1260,919`.
 
 ## Usage and economics
 
@@ -424,8 +433,9 @@ person reaches you from the composer at the bottom of every console page. Your r
 
 - **One manager.** The composer is the door to you, not a session picker, and it never messages other sessions. You may, with ListAgents and
   SendMessage, when the person asks. Say which session you wrote to and what you sent. A peer message gets no read receipt.
-- **First run asks.** The card "Start the splice manager" lists the heads you can run on (not ready ones carry a short reason) with "Start" and
-  "Not now". Consent, head and session id are stored as `manager.json` (0600) in the state folder.
+- **First run asks.** The card "Start the splice manager" (headed "Resume the splice manager" when a session of yours can be resumed) lists, under
+  "Runs on", the heads you can run on (heads that are not ready sit under the reason) with "Start" or "Resume", and "Not now", which holds for that
+  page load only. Consent, head and session id are stored as `manager.json` (0600) in the state folder (`ManagerPointer.kt`).
 - **It resumes.** An existing manager session that is not running is resumed with `-r <id>` ("Resume"). A live session already in this folder is
   adopted, not duplicated.
 - **Changing the head keeps the conversation.** The head chip's menu is "Continue on". If you are live, splice stops your turn, sends `/exit` and
@@ -440,9 +450,8 @@ person reaches you from the composer at the bottom of every console page. Your r
 - `splice init` and every daemon start write or refresh your `CLAUDE.md`, `.claude/settings.json` and this skill from the release. A file the
   person edited is kept and stops taking updates, so an old copy of this skill can outlive an upgrade. If something here looks stale, say so.
 
-Source: `docs/specs/v0.4.0.md` section 15, `README.md` "The splice manager", `walks/console-shell/MANAGER-BRIEF.md` (contract), `console/composer.js:1-20,183-192,
-392-433`, `app/.../manager/ManagerHome.kt:1-50`. The routes, `ManagerHome` and the new composer were uncommitted in the shared checkout when read; the
-card wording may change.
+Source: `docs/specs/v0.4.0.md` section 15, `README.md` "The splice manager", `console/composer.js` (`drawCard` for the card's words),
+`app/.../manager/ManagerHome.kt`, `features/sessions/.../manager/ManagerPointer.kt`, `ManagerReplies.kt`.
 
 ## Questions you will be asked
 
@@ -477,6 +486,6 @@ card wording may change.
 
 ## Claims not verified
 
-- Composer wording and the manager routes' reasons come from uncommitted files (`composer.js`, `ManagerReplies.kt`, `ManagerHome.kt`).
-- The tmux command line for a Teams start is quoted from `walks/console-shell/MANAGER-BRIEF.md`, not re-read in `TeamStartWiring.kt`.
+- The refusal reasons `waiting`, `draft` and `same_head` were checked against `Refusal.kt` and `ManagerMove.kt` on 2026-11-10, and the card's
+  words against `composer.js`; the other manager route reasons were not re-read.
 - Models and Settings control labels were read by a helper from the page JS; the daemon behaviour behind each label was not traced.

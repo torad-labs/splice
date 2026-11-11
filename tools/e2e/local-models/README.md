@@ -4,12 +4,17 @@ Live proof that a user-managed local runtime is first-class on the openai-chat d
 never downloads a model or manages the runtime: the operator starts Ollama, LM Studio or vLLM,
 declares rows, and splice validates the rows against what the runtime reports.
 
-What `e2e.ts` proves, against a daemon it starts itself from a jar and a config:
+What `e2e.ts` proves, against the live runtime and a daemon it starts itself from a jar and a config. Boot is
+fail-closed: since 2026-10-12 a local runtime that is up and refuses a row `splice.toml` declares is a boot finding,
+and a config with a finding does not boot. So the script runs `splice check-config` on the full config first, then
+starts the daemon from a copy of that config with the bad heads' tables dropped (`splice-boot.toml` in the isolated
+home), and reads `doctor` against the full config:
 
 | check | how |
 |---|---|
-| unavailable model refused at boot | a head whose row names a model the runtime does not list is DEGRADED, absent from `/api/heads`, with the reason in the daemon log |
-| context limit refused at boot | a head whose row declares more than the runtime serves for the loaded model is DEGRADED the same way |
+| unavailable model refused at boot | `splice check-config` on the full config exits 3 and a finding names the head whose row names a model the runtime does not list, saying the runtime refuses it |
+| context limit refused at boot | the same, for a head whose row declares more than the runtime serves for the loaded model |
+| good head not refused | no finding names the good head, and the daemon booted from the copy without the bad heads lists it healthy in `/api/heads` |
 | context limit recorded | the good row's `context_window` equals the served window the runtime reports (Ollama `/api/ps`, LM Studio `loaded_context_length`); the model card is only a ceiling |
 | streaming | `tools/e2e/probes/stream_probe.ts` validates the Anthropic SSE contract and incremental delivery at the head port |
 | cancellation | a streaming turn is dropped mid-answer; the next turn succeeds and the head's perf log records a client-gone row (`client_abort` or `error:conn-reset`); on Ollama the journal's `cancel task` line is recorded too |
@@ -33,8 +38,13 @@ bun tools/e2e/local-models/e2e.ts --runtime lmstudio \
 ```
 
 The receipt is only written when every check passes. It records the runtime and its version, the
-model (digest on Ollama, quantization on LM Studio), the card and served context lengths, and the
-jar the daemon ran.
+model (digest on Ollama, quantization on LM Studio), the card and served context lengths, the boot
+findings that named each bad head, and the jar the daemon ran.
+
+**Run history.** The one live run on record (2026-10-12, below) booted a daemon on the full config and read the
+bad heads as DEGRADED, which the boot findings of the same day made impossible. The script was reworked on 2026-11-10
+to the check-config and trimmed-config split above, on a machine with no local runtime, so the reworked script has
+not run live: its first run is its acceptance, and it is not part of CI.
 
 ## Runtimes
 

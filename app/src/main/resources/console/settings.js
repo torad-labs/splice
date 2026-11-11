@@ -1110,7 +1110,9 @@ function pushback() {
     if (!total) continue;
     const shares = per.filter((p) => !p.err && p.n).sort((a, b) => b.n - a.n), top = shares[0]?.n || 1;
     const k = why === "overloaded" ? "over" : "cut", said = `${fmt(total)} ${what}${all ? ` of ${DRAW.n(all)} requests` : ""}`;
-    parts.push(`<div class="pb mam-k-${k}"><a class="mam-sw mam-k-${k}" href="${reqUrl({ from: today(), why })}" aria-label="${esc(said)}" title="${esc(said)}"></a>`
+    // the swatch says its kind in words beside it: two bare swatches over two claude-splice rows read as the same thing
+    // twice at his width, where the tiles that key their colours stand a column away (desk walk, Nov 10)
+    parts.push(`<div class="pb mam-k-${k}"><a class="pbhead" href="${reqUrl({ from: today(), why })}"><span class="mam-sw mam-k-${k}" aria-hidden="true"></span>${esc(said)}</a>`
       + `<div class="pbrows">${shares.map((p) => `<a class="pbrow" href="${reqUrl({ from: today(), why, cmd: p.head.command })}">${cmdChip(p.head.key)}${DRAW.barCell({ w: (p.n / top) * 100, text: fmt(p.n), level: why === "overloaded" ? "bad" : "", cls: why === "overloaded" ? "" : "mam-cut" })}</a>`).join("")}</div></div>`);
   }
   return parts.join("") + (quiet.length ? `<p class="zeros">${quiet.join('<span class="dot">·</span>')}</p>` : "");

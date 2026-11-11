@@ -95,28 +95,39 @@ public class MuseAuthProvider(
 
     override suspend fun refresh(): Credentials? = (exchange() as? RefreshOutcome.Refreshed)?.credentials
 
+    override suspend fun exchange(): RefreshOutcome = exchange(null)
+
     /** One key mint for a turn whose key stopped working, read whole by the turn's retry engine: a mint that could not
-     *  answer is [RefreshOutcome.Unavailable], which the engine asks again, and never a hold (audit, Nov 9, 2026). */
-    override suspend fun exchange(): RefreshOutcome = singleFlight.run {
-        Cancellables.runCatchingCancellable {
-            CredentialLock.withLock(authPath, log = lockLog) {
-                kept.retained.flush()
-                val snapshot = store.read() ?: return@withLock RefreshOutcome.Rejected("no readable muse credential")
-                val accessToken = snapshot.accessToken
-                when {
-                    invalidAccountLatch.isLatched(snapshot.identity) -> RefreshOutcome.Rejected(INVALID_GRANT_REASON)
-                    holds.suppresses(snapshot) -> RefreshOutcome.Rejected("key mint held")
-                    // V4-292: only a missing token says so; a failed exchange ran `?:` into this line too.
-                    accessToken == null -> {
-                        log("[muse-auth] account access token missing; sign in again before refreshing")
-                        RefreshOutcome.NoRefreshToken
+     *  answer is [RefreshOutcome.Unavailable], which the engine asks again, and never a hold (audit, Nov 9, 2026).
+     *  [refused] is the key the refused request sent: when the file already holds another key, a mint since replaced
+     *  it and that key is the answer, never a second mint that could revoke the one other turns now send (Nov 10). */
+    override suspend fun exchange(refused: Credentials?): RefreshOutcome {
+        val refusedKey = (refused as? Credentials.Bearer)?.token
+        return singleFlight.run(refusedKey) {
+            Cancellables.runCatchingCancellable {
+                CredentialLock.withLock(authPath, log = lockLog) {
+                    kept.retained.flush()
+                    val snapshot = store.read()
+                        ?: return@withLock RefreshOutcome.Rejected("no readable muse credential")
+                    val accessToken = snapshot.accessToken
+                    val replacing = snapshot.keyReplacing(refusedKey)
+                    when {
+                        invalidAccountLatch.isLatched(snapshot.identity) ->
+                            RefreshOutcome.Rejected(INVALID_GRANT_REASON)
+                        holds.suppresses(snapshot) -> RefreshOutcome.Rejected("key mint held")
+                        replacing != null -> RefreshOutcome.Refreshed(Credentials.Bearer(replacing))
+                        // V4-292: only a missing token says so; a failed exchange ran `?:` into this line too.
+                        accessToken == null -> {
+                            log("[muse-auth] account access token missing; sign in again before refreshing")
+                            RefreshOutcome.NoRefreshToken
+                        }
+                        else -> mint(accessToken, snapshot)
                     }
-                    else -> mint(accessToken, snapshot)
                 }
+            }.getOrElse { failure ->
+                lockLog("[muse-auth] credential lock unavailable (${SafeFailureText.render(failure)}); refresh skipped")
+                RefreshOutcome.ReadFailed(failure)
             }
-        }.getOrElse { failure ->
-            lockLog("[muse-auth] credential lock unavailable (${SafeFailureText.render(failure)}); refresh skipped")
-            RefreshOutcome.ReadFailed(failure)
         }
     }
 
@@ -205,19 +216,6 @@ public class MuseAuthProvider(
         accessToken: String,
         snapshot: MuseCredentialSnapshot,
     ): MuseMintAttempt {
-        val flown = mintOrHold(accessToken, snapshot)
-        return if (flown.forToken(accessToken, snapshot)) {
-            flown.attempt
-        } else {
-            mintOrHold(accessToken, snapshot, coalesce = false).attempt
-        }
-    }
-
-    private suspend fun mintOrHold(
-        accessToken: String,
-        snapshot: MuseCredentialSnapshot,
-        coalesce: Boolean = true,
-    ): MintFlightResult {
         val mint = suspend {
             val attempt = Cancellables.runCatchingCancellable {
                 mintCall(accessToken, MuseMintMode.REFRESH)
@@ -228,7 +226,9 @@ public class MuseAuthProvider(
             }
             MintFlightResult(accessToken, snapshot.identity, attempt)
         }
-        return if (coalesce) mintFlight.run { mint() } else mint()
+        // A coalesced mint for another token or file state answers nothing here: this one mints on its own.
+        val flown = mintFlight.run { mint() }
+        return if (flown.forToken(accessToken, snapshot)) flown.attempt else mint().attempt
     }
 
     private suspend fun invalidAccountToken(

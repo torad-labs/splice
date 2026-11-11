@@ -42,6 +42,11 @@ internal class RetryState(var cooldown: RateLimitCooldown, val t0: Long, val ret
     // A retry counts only once its send goes out, past the next attempt's budget, auth and hold checks.
     var pendingRetry: RetryKind? = null
 
+    /** The credential the latest send of this post carried, which a refused login's token exchange is asked about
+     *  (RefreshableAuthProvider.exchange(refused)); once a lookup's own renewal failed before anything was sent, the
+     *  expired credential that lookup held instead. */
+    var sentCredentials: Credentials? = null
+
     fun markResend(ctx: PostContext) {
         val retry = pendingRetry ?: return
         pendingRetry = null
@@ -88,6 +93,7 @@ internal class RetryState(var cooldown: RateLimitCooldown, val t0: Long, val ret
             (credentials as? Credentials.ApiKey)?.header,
         ) ?: fallback
         cooldown = selected
+        sentCredentials = credentials
         ledger.onLogin(LOGIN_PREFIX + System.identityHashCode(ctx.auth).toString(LOGIN_RADIX))
         return AttemptCredentials(credentials, headers, postedAtMs, selected)
     }

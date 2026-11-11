@@ -75,9 +75,12 @@ test("teams keeps Read again off while its read is out", () => reading("teams", 
 }), 30_000);
 
 // Breakdown is the "Where it went" band now and Results by command its own band (the Usage rebuild, Oct 26): each draws
-// its own table in stripes, in the band its rows land in
+// its own table in stripes, in the band its rows land in. Results by command lives in #band-results again (b64e9f989,
+// as Marcos approved it Oct 29); Performance under it stays folded to one line and draws no card until it is opened.
 test("usage draws Breakdown and Commands in the frames they land in, one card each", () => reading("usage", async (p) => {
   expect(await p.locator("#band-by .card .ghost").count()).toBeGreaterThan(3);
   expect(await p.locator("#band-by .card.ghosted").count()).toBe(1);
-  expect(await p.locator("#band-perf .card.ghosted").count()).toBe(1);
+  await p.locator("#band-results .card.ghosted").first().waitFor({ timeout: 15_000 });
+  expect(await p.locator("#band-results .card.ghosted").count()).toBe(1);
+  expect(await p.locator("#band-perf .card").count()).toBe(0);
 }), 30_000);

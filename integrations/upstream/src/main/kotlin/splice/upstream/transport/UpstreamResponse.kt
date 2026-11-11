@@ -5,8 +5,10 @@ package splice.upstream.transport
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.utils.io.ByteReadChannel
+import kotlinx.coroutines.withTimeoutOrNull
 import splice.core.auth.CredentialKey
 import splice.core.usage.QuotaHeaderRead
+import splice.core.util.Cancellables
 import splice.upstream.failure.SseSpuriousWakeupException
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -17,6 +19,8 @@ public class UpstreamResponse(
      *  double in the DR-21 production-path test. Default references the ctor's [resp]. */
     private val bodyChannelSource: BodyChannelSource = BodyChannelSource { resp.bodyAsChannel() },
 ) {
+    private var opened: ByteReadChannel? = null
+
     /** This attempt's POST start on its TurnPerf clock; absent when the request was not instrumented.
      *  Written by the transport before this response reaches its consumer, never inherited from a retry. */
     public var postedAtMs: Long? = null
@@ -32,15 +36,62 @@ public class UpstreamResponse(
         into.observe(CredentialKey.fromHeaders(headers), QuotaHeaderRead(::header))
     }
 
-    public suspend fun bodyChannel(): ByteReadChannel = resp.bodyAsChannel()
+    /** The body, opened once: ktor hands a reply's channel out a single time, so the reader and [drainTail] must
+     *  share the one this returns. */
+    public suspend fun bodyChannel(): ByteReadChannel = opened ?: bodyChannelSource.open().also { opened = it }
 
     /** The bounded error-body read, through the injectable [bodyChannelSource] so THIS method — not
      *  just [LimitedBodyReader] — is pinned against re-inlining an uncaught walk: a spurious-wakeup
      *  storm mid-error-body must degrade to the truncated diagnostic, never replace the classified
      *  upstream status the caller holds with an unclassified IOException (DR-21). */
     internal suspend fun bodyTextLimited(maxBytes: Int): String =
-        LimitedBodyReader().read(bodyChannelSource.open(), maxBytes)
+        LimitedBodyReader().read(bodyChannel(), maxBytes)
+
+    /**
+     * Reads what a stream left behind its last word, so the connection goes back to the pool. A reader that stops
+     * at the protocol's own end (the chat finish, the Responses completed event) leaves the body's last bytes
+     * unread, and ktor 3.6.1 cancels the call of a reply whose body was not read to its end
+     * (HttpStatement.cleanup), which closes the socket unless the transport had already taken those bytes off the
+     * wire. 3.6.0 only cancelled the channel, and OkHttp's body close drained for up to 100 ms
+     * (ExchangeCodec.DISCARD_STREAM_TIMEOUT_MILLIS); this is that drain, bounded the same way in time and in bytes.
+     *
+     * Only for a stream the upstream ended. A stream the turn ends on purpose (a client gone, a reaped round, a
+     * runaway frame) is left alone: what is still coming is not a tail, and its connection is closed. Never throws
+     * for a torn or timed-out body, whose connection is gone or discarded either way.
+     *
+     * @return true when the body's end was read within [maxBytes] and [withinMs], so the connection is reusable.
+     */
+    public suspend fun drainTail(maxBytes: Int = TAIL_DRAIN_MAX_BYTES, withinMs: Long = TAIL_DRAIN_MS): Boolean {
+        val channel = bodyChannel()
+        val ended = withTimeoutOrNull(withinMs) {
+            Cancellables.runCatchingCleanup { readToEnd(channel, maxBytes) }.getOrDefault(false)
+        }
+        return ended == true
+    }
+
+    private suspend fun readToEnd(channel: ByteReadChannel, maxBytes: Int): Boolean {
+        val buffer = ByteArray(TAIL_READ_BYTES)
+        var total = 0
+        while (true) {
+            val read = ChannelReads.readAvailableOrEof(channel, buffer)
+            if (read == -1) return true
+            total += read
+            if (total > maxBytes) return false
+        }
+    }
 }
+
+// why: what a stream's last word may leave behind (a [DONE] line, an end-of-stream marker) fits in a few hundred
+// bytes; more is not a tail but a reply still being sent, which the connection is not worth reading for.
+private const val TAIL_DRAIN_MAX_BYTES = 8 * 1024
+
+// why: OkHttp's own bound for draining an unread body (ExchangeCodec.DISCARD_STREAM_TIMEOUT_MILLIS), which is what
+// ktor 3.6.0 left in force; a server holding its stream open past its last word costs a turn this long at most.
+private const val TAIL_DRAIN_MS = 100L
+
+// why: one read's worth of a tail that is a few hundred bytes at most; small enough that the byte bound above is
+// checked several times before it is reached, so a reply still being sent is given up on early.
+private const val TAIL_READ_BYTES = 1024
 
 /** Receives response headers with the request's private credential join key, never a wire-visible field. */
 public fun interface CredentialQuotaReceiver {

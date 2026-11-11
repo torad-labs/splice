@@ -34,6 +34,10 @@ internal data class MuseCredentialSnapshot(
     fun isRevision(identity: CredentialFileIdentity?, accessToken: String?): Boolean =
         if (identity != null && this.identity != null) identity == this.identity else accessToken == this.accessToken
 
+    /** The key on file when a mint since replaced [refusedKey], the key a refused request sent; null when the file
+     *  still holds that key, holds none, or no refused key is known. */
+    fun keyReplacing(refusedKey: String?): String? = apiKey?.takeIf { refusedKey != null && it != refusedKey }
+
     /** `null` or `<redacted>` — never the value. */
     private fun held(value: String?): String = if (value == null) "null" else "<redacted>"
 }

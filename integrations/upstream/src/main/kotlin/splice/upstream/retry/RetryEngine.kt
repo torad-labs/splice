@@ -67,8 +67,7 @@ public object RetryEngine {
     internal fun spendOf(step: RetryStep, cause: FailureCause, ledger: RetryLedger): Spend {
         if (step !is RetryStep.Again) return Spend.NONE
         return when (step.how) {
-            How.REANCHOR ->
-                if (cause is FailureCause.Provider.Unrecognized) Spend.UNRECOGNIZED else Spend.STREAM_RECOVERY
+            How.REANCHOR -> reanchorSpend(cause)
             How.CONTINUE_REASONING -> Spend.CONTINUE_REASONING
             How.AMEND_REASONING -> Spend.AMEND
             How.FOLD_CONTINUE -> Spend.FOLD
@@ -77,10 +76,20 @@ public object RetryEngine {
         }
     }
 
+    /** A planned socket rotation spends its own count, never a failure's (MAX_SOCKET_ROTATIONS). */
+    private fun reanchorSpend(cause: FailureCause): Spend = when {
+        cause is FailureCause.Provider.Unrecognized -> Spend.UNRECOGNIZED
+        rotated(cause) -> Spend.ROTATION
+        else -> Spend.STREAM_RECOVERY
+    }
+
+    private fun rotated(cause: FailureCause): Boolean = (cause as? FailureCause.Path.Torn)?.why == Tear.ROTATED
+
     private fun sameSpend(step: RetryStep.Again, cause: FailureCause, ledger: RetryLedger): Spend = when (cause) {
         is FailureCause.Provider -> providerSpend(step, cause, ledger)
         is FailureCause.Path.Unreachable -> Spend.UNREACHABLE
-        is FailureCause.Path.Torn, is FailureCause.Path.Stalled -> Spend.FRESH_REISSUE
+        is FailureCause.Path.Torn -> if (rotated(cause)) Spend.ROTATION else Spend.FRESH_REISSUE
+        is FailureCause.Path.Stalled -> Spend.FRESH_REISSUE
         is FailureCause.Splice -> if (cause is FailureCause.Splice.Protocol) Spend.CODE_MODE else Spend.NONE
     }
 
@@ -177,7 +186,7 @@ private object Rows {
     private fun verdict(turn: RetryTurn, cause: FailureCause.Provider): RetryStep = when (cause) {
         is FailureCause.Provider.Rejected ->
             if (cause.staleReasoning) turn.once(Spend.AMEND, MAX_AMENDS, How.AMEND_REASONING) else turn.end
-        is FailureCause.Provider.Empty -> Logins.empty(turn, cause.reasoningOnly)
+        is FailureCause.Provider.Empty -> Logins.empty(turn, cause)
         is FailureCause.Provider.ReasoningCut ->
             if (turn.ledger.count(Spend.FOLD) < MAX_FOLD_CONTINUES) turn.again(How.FOLD_CONTINUE) else RetryStep.Keep
         is FailureCause.Provider.Unrecognized -> Streams.unrecognized(turn)
@@ -206,10 +215,12 @@ private object Rows {
     }
 
     /** A stream that broke: a swept-shut tool block and an event too large to read cannot be continued, a stream
-     *  that carried no event is sent fresh, and anything else continues from what arrived. */
+     *  that carried no event is sent fresh, a planned socket rotation continues on its own count, and anything else
+     *  continues from what arrived. */
     private fun torn(turn: RetryTurn, cause: FailureCause.Path.Torn): RetryStep = when {
         cause.toolOpen || cause.why == Tear.OVERSIZED_EVENT -> turn.end
         cause.why == Tear.NO_EVENTS -> Streams.fresh(turn)
+        cause.why == Tear.ROTATED -> Streams.rotated(turn)
         else -> Streams.recovered(turn)
     }
 }
@@ -233,6 +244,15 @@ private object Streams {
     }
 
     fun fresh(turn: RetryTurn): RetryStep = turn.once(Spend.FRESH_REISSUE, MAX_FRESH_REISSUES, How.SAME)
+
+    /** The provider retired the socket at its planned lifetime: sent again on a fresh one before the stream began, and
+     *  continued from what arrived after it, on the rotations' own count and at once. No failure's budget is spent. */
+    fun rotated(turn: RetryTurn): RetryStep = when {
+        turn.ledger.count(Spend.ROTATION) >= MAX_SOCKET_ROTATIONS -> turn.end
+        !turn.at.streamBegan -> turn.again(How.SAME)
+        turn.facts.canContinue -> turn.again(How.REANCHOR)
+        else -> turn.end
+    }
 
     /** Tried once more by where it stood: sent again before the stream began, continued after it where the head can. */
     fun unrecognized(turn: RetryTurn): RetryStep = when {
@@ -262,12 +282,14 @@ private object Logins {
         return turn.switchOr(RetryStep.End(FailureCause.Provider.AuthRejected(LoginOwner.SPLICE, cause.said)))
     }
 
-    fun empty(turn: RetryTurn, reasoningOnly: Boolean): RetryStep =
-        if (reasoningOnly && turn.facts.continuesReasoning) {
+    /** An empty answer is asked again once. A run of empty reasoning splice ended ([FailureCause.Provider.Empty.loop])
+     *  ends the turn: asking again meets the same loop, and it already ran for minutes. */
+    fun empty(turn: RetryTurn, cause: FailureCause.Provider.Empty): RetryStep = when {
+        cause.loop != null -> turn.end
+        cause.reasoningOnly && turn.facts.continuesReasoning ->
             turn.once(Spend.CONTINUE_REASONING, MAX_EMPTY_RETRIES, How.CONTINUE_REASONING)
-        } else {
-            turn.once(Spend.EMPTY, MAX_EMPTY_RETRIES, How.SAME)
-        }
+        else -> turn.once(Spend.EMPTY, MAX_EMPTY_RETRIES, How.SAME)
+    }
 }
 
 /** The bounds every hold keeps (final-design.md section 9): a cause that did not lift at three of the times it stated

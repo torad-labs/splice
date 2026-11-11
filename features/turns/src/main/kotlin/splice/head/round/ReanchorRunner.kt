@@ -19,6 +19,7 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.TurnPerfTiming
 import splice.core.turn.TurnOutcome
+import splice.head.transport.PlannedClose
 import splice.upstream.ReanchorPolicy
 import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
@@ -111,6 +112,12 @@ internal class ReanchorRunner(
     private suspend fun announceRecovery(failure: TurnOutcome.Failure, fromScratch: Boolean, attempt: Int) {
         val restarted =
             if (fromScratch) "restarting the round from scratch" else "continuing from partial output"
+        // A planned socket rotation is no failure the person needs to hear of: the journal names it and the answer
+        // goes on (2026-11-10).
+        if (PlannedClose.isRotation(failure.cause)) {
+            log("[$key] socket rotation ${attempt + 1}: ${failure.evidence.message}; $restarted on a fresh socket\n")
+            return
+        }
         // V4-242: with the round's own words, which name what ended it (a peer's close code and
         // reason, a stall's cap); the wire type alone read "overloaded_error" for all of them.
         val type = ClientWire.ownType(failure.cause).wireName

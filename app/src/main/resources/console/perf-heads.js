@@ -4,6 +4,9 @@ const PERF_CONSOLE = (() => {
   const FILTERS = ["head", "model", "transport", "outcome", "session", "project", "account", "local", "compact", "streaming"];
   const SELECTORS = [...FILTERS, "silence_ms", "queued_ms", "resumed", "started_over", "unattributed", "test"];
   const WINDOWS = { "1m": 60000, "5m": 300000, "15m": 900000, "1h": 3600000, "5h": 18000000, "24h": 86400000, "7d": 604800000, "30d": 2592000000 };
+  const PERIOD = { "1m": "minute", "5m": "5 minutes", "15m": "15 minutes", "1h": "hour", "5h": "5 hours", "24h": "24 hours", "7d": "7 days", "30d": "30 days" };
+  const LABELS = { transport: "Transport", outcome: "Outcome", session: "Session", account: "Account", silence_ms: "Silence · ms", queued_ms: "Waited in line · ms",
+    resumed: "Resumed", started_over: "Started over", unattributed: "Unattributed", test: "Test traffic", local: "Local steps", compact: "Compactions", streaming: "Streaming" };
   const ARTIFACT_REFUSALS = ["control_query_capacity", "control_query_deadline", "performance_io_failure", "invalid_profile_id", "artifact_reader_capacity", "profile_artifact_unavailable"];
   const perfTransport = API;
   // The four query projections also share one worker across panel generations and page mounts.
@@ -25,13 +28,26 @@ const PERF_CONSOLE = (() => {
     });
   }
   const safe = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-  const num = (v) => typeof v === "number" && Number.isFinite(v) ? v.toLocaleString("en-US", v !== 0 && Math.abs(v) < .01 ? { maximumSignificantDigits: 3 } : { maximumFractionDigits: 3 }) : "—";
-  const percent = (v) => typeof v === "number" && Number.isFinite(v) ? `${num(v * 100)}%` : "—";
+  // A figure as the eye uses it (Nov 10): whole numbers from 100 up, three significant digits below, so a rate reads 385
+  // and 0.00221, never 384.628; counts keep every digit. A share reads one decimal under 10% and whole from there.
+  const num = (v) => typeof v === "number" && Number.isFinite(v) ? v.toLocaleString("en-US", Number.isInteger(v) || Math.abs(v) >= 100 ? { maximumFractionDigits: 0 } : { maximumSignificantDigits: 3 }) : "—";
+  const percent = (v) => typeof v === "number" && Number.isFinite(v) ? v > 0 && v < .0005 ? "<0.1%" : `${(v * 100).toLocaleString("en-US", { maximumFractionDigits: v >= .0995 ? 0 : 1 })}%` : "—";
+  // a per-second rate in the unit that gives it a readable figure: 0.00221 a second is 7.96 an hour
+  const perTime = (v) => typeof v !== "number" || !Number.isFinite(v) ? "—" : v === 0 || v >= 1 ? `${num(v)} a second` : v * 60 >= 1 ? `${num(v * 60)} a minute` : `${num(v * 3600)} an hour`;
   const words = (v) => String(v ?? "Unknown").replace(/_/g, " ");
   const reasonText = (v) => v === "cursor_work_limit"
     ? "The request timeline reached its work limit. Narrow the time range or filters, then refresh."
     : words(v);
   const date = (v) => Number.isFinite(v) ? new Date(v).toLocaleString("en-US", { timeZone: "America/Chicago" }) : "Unknown time";
+  // a moment as a person says it: the clock alone today, the weekday and date before that
+  const when = (v, sayToday = false) => {
+    if (!Number.isFinite(v)) return "Unknown time";
+    const d = new Date(v), today = d.toLocaleDateString("en-US", { timeZone: "America/Chicago" }) === new Date().toLocaleDateString("en-US", { timeZone: "America/Chicago" });
+    const at = d.toLocaleString("en-US", { timeZone: "America/Chicago", hour: "numeric", minute: "2-digit", ...(today ? {} : { weekday: "short", month: "short", day: "numeric" }) });
+    return today && sayToday ? `today ${at}` : at;
+  };
+  // the browser's datetime-local value for an instant (its own zone, to the second), and back
+  const localInput = (v) => Number.isFinite(v) ? new Date(v - new Date(v).getTimezoneOffset() * 60000).toISOString().slice(0, 19) : "";
   const entries = (v) => v && typeof v === "object" && !Array.isArray(v) ? Object.entries(v) : [];
   const scalar = (v) => typeof v === "number" ? num(v) : typeof v === "boolean" ? String(v) : v == null ? "—" : safe(words(v));
   const note = (s) => `<p class="pc-note">${safe(s)}</p>`;
@@ -165,7 +181,11 @@ const PERF_CONSOLE = (() => {
     const { document, API, setTimeout, clearTimeout, setInterval } = scope;
     const panelRead = (key, method, path, current, body, transport = API, opts = {}) =>
       transport.perfRequest(`perf:${options.id}:${key}`, method.toUpperCase(), path, body, current, { ...opts, replace: key !== "action" });
-    const st = { key: null, query: null, replies: {}, tab: "overview", busy: false, rowsBusy: false, abort: null, timer: null, generation: 0, message: "", baselines: loadBaselines(), selected: 0, draft: null, draftRevision: 0, builders: new Map(), profiles: null, settings: null, openRequest: null, cursor: null, advanced: false, commands: new Set() };
+    const st = { key: null, query: null, replies: {}, tab: "overview", busy: false, rowsBusy: false, abort: null, timer: null, generation: 0, message: "", baselines: loadBaselines(), selected: 0, draft: null, draftRevision: 0, builders: new Map(), profiles: null, settings: null, openRequest: null, cursor: null, advanced: false, commands: new Set(), queryDraft: null,
+      // the last hour against the last 7 days, read from the daemon's fold, and whether the second step is open: a page
+      // opened from a performance link (contract=1, perf=1) names a cohort and lands with it open
+      pulse: { now: null, usual: null, at: 0, reading: false, failed: false }, pulseTimer: null,
+      deep: ["contract", "perf"].some((k) => new URLSearchParams(scope.location?.search ?? globalThis.location?.search ?? "").get(k) === "1") };
     const clearRows = () => { delete st.replies.rows; st.rowsQuery = null; };
     const clearMeasurements = () => { st.replies = Object.fromEntries(["schema", "caps", "preferences"].filter((k) => st.replies[k]).map((k) => [k, st.replies[k]])); st.rowsQuery = null; };
     const current = () => options.query();
@@ -221,7 +241,7 @@ const PERF_CONSOLE = (() => {
       API.cancelPerf("perf:shared-query");
       const changed = key !== st.key; st.key = key; st.query = queryNow(); st.busy = true; st.rowsBusy = false;
       if (!st.standingStarted) { st.standingStarted = true; standing(); }
-      if (changed) { clearMeasurements(); st.cursor = null; st.openRequest = null; }
+      if (changed) { clearMeasurements(); st.cursor = null; st.openRequest = null; st.queryDraft = null; }
       else if (refreshRows) clearRows();
       if (accountChoices().length > 1) {
         clearMeasurements(); st.busy = false; st.advanced = true;
@@ -272,7 +292,7 @@ const PERF_CONSOLE = (() => {
       repaint();
       if (st.profiles?.status === "running") refreshProfile();
       notifyAlerts();
-      st.timer = setTimeout(() => { if (!document.hidden && !host()?.contains(document.activeElement)) read(); else st.timer = setTimeout(() => read(), 15000); }, 15000);
+      st.timer = setTimeout(() => { if (!st.deep) return; if (!document.hidden && !host()?.contains(document.activeElement)) read(); else st.timer = setTimeout(() => read(), 15000); }, 15000);
     }
     function standing() {
       if (st.standingBusy) return st.standingPromise;
@@ -296,20 +316,95 @@ const PERF_CONSOLE = (() => {
       })().finally(() => { st.standingBusy = false; repaint(); });
       return st.standingPromise;
     }
+    // WHAT A PERSON OPENING PERFORMANCE WANTS FIRST (Nov 10): is anything slow or failing right now, which command, and
+    // against what. The daemon's fold (GET /api/perf/summary?window=1h|7d, the one Results by command reads) carries every
+    // command's complete figures at both, so the panel leads with the last hour against the last 7 days, read every minute
+    // while the panel is up; the exact cohort reads stay behind the second step.
+    async function readPulse(force = false) {
+      clearTimeout(st.pulseTimer);
+      if (st.pulse.reading || (!force && Date.now() - st.pulse.at < 55000)) return;
+      st.pulse.reading = true;
+      const [hour, week] = await Promise.all([API.get("/api/perf/summary?window=1h"), API.get("/api/perf/summary?window=7d")]);
+      st.pulse = { now: hour?.ok ? hour.body : null, usual: week?.ok ? week.body : null, at: Date.now(), reading: false, failed: !hour?.ok || !week?.ok };
+      if (!attached()) return;
+      paintPulse();
+      st.pulseTimer = setTimeout(() => { if (attached()) readPulse(); }, 60000);
+    }
+    // the minute's new figures redraw the pulse alone: a whole repaint would put back a cohort form being edited below
+    function paintPulse() {
+      const h = host(), el = h?.querySelector(".pc-pulse");
+      if (!el) { repaint(); return; }
+      el.outerHTML = pulse();
+      const refresh = h.querySelector('[data-pc="refresh"]'); if (refresh) refresh.disabled = st.busy || st.pulse.reading;
+    }
+    const FEW = 5;
+    // a command's last hour against its last 7 days: failing more, slower, as usual, or too few requests to say
+    function verdict(h, u) {
+      if (!(h.count >= FEW)) return { kind: "unknown", word: "Too few to compare" };
+      const f = h.failure_share, uf = u?.failure_share, t = h.total_ms || {}, ut = u?.total_ms || {};
+      if (known(f) && f >= .02 && Math.round(f * h.count) >= 3 && (!known(uf) || f >= 2 * uf)) return { kind: "bad", word: "Failing more", why: "fail" };
+      if (known(t.p50) && ut.p50 > 0 && t.p50 >= 1.5 * ut.p50) return { kind: "watch", word: "Slower", why: "p50" };
+      if (known(t.p95) && ut.p95 > 0 && t.p95 >= 2 * ut.p95) return { kind: "watch", word: "Slowest 5% slower", why: "p95" };
+      return { kind: "neutral", word: "As usual" };
+    }
+    const RANK = { bad: 0, watch: 1, neutral: 2, unknown: 3 };
+    function pulse() {
+      const p = st.pulse, scoped = Object.keys(current().filters || {}).some((k) => k !== "local");
+      const wrap = (body, busy = false) => `<section class="pc-pulse" aria-label="The last hour against the last 7 days" aria-busy="${busy}">${body}</section>`;
+      if (!p.at) return wrap(`<p class="pc-pulse-says">Reading the last hour…</p>`, true);
+      if (p.failed) return wrap(`<p class="pc-pulse-says">splice did not send the last hour's figures. Refresh to ask again.</p>`);
+      const heads = (b) => new Map((b?.heads || []).map((h) => [h.key, h]));
+      const hour = heads(p.now), week = heads(p.usual);
+      const rows = [...hour.values()].filter((h) => h.count > 0).map((h) => ({ h, u: week.get(h.key), v: verdict(h, week.get(h.key)) }))
+        .sort((a, b) => RANK[a.v.kind] - RANK[b.v.kind] || b.h.count - a.h.count);
+      const quiet = [...week.values()].filter((u) => u.count > 0 && !(hour.get(u.key)?.count > 0)).map((u) => commandName(u.key));
+      const total = rows.reduce((a, r) => a + r.h.count, 0), flagged = rows.filter((r) => r.v.kind === "bad" || r.v.kind === "watch");
+      const plural = (n, one, many = `${one}s`) => `${num(n)} ${n === 1 ? one : many}`;
+      let says;
+      if (flagged.length) {
+        const { h, u, v } = flagged[0], name = safe(commandName(h.key));
+        says = v.why === "fail" ? `<strong>${name} is failing more than usual.</strong> ${percent(h.failure_share)} of its ${plural(h.count, "request")} in the last hour failed, against ${percent(u?.failure_share)} over the last 7 days.`
+          : v.why === "p50" ? `<strong>${name} is slower than usual.</strong> Its typical request took ${duration(h.total_ms.p50)} in the last hour, against ${duration(u.total_ms.p50)} over the last 7 days.`
+          : `<strong>${name}'s slowest requests are slower than usual.</strong> Its slowest 5% took ${duration(h.total_ms.p95)} or more in the last hour, against ${duration(u.total_ms.p95)} over the last 7 days.`;
+        if (flagged.length > 1) says += ` ${flagged.length - 1} more ${flagged.length === 2 ? "command needs" : "commands need"} a look below.`;
+      } else if (rows.length) says = `<strong>Nothing is slower or failing more than usual.</strong> ${plural(total, "request")} in the last hour across ${plural(rows.length, "command")}, each against its own last 7 days.`;
+      else says = `<strong>No requests in the last hour.</strong>${quiet.length ? ` ${plural(quiet.length, "command")} answered in the last 7 days.` : ""}`;
+      const hourAgo = p.at - WINDOWS["1h"];
+      const pair = (now, usual) => `<b>${now}</b><small>usual ${usual}</small>`;
+      const body = rows.map(({ h, u, v }) => `<tr><th scope="row"><a href="${safe(address({ from_ms: hourAgo, until_ms: p.at, source: "auto", filters: { head: h.key } }))}">${safe(commandName(h.key))}</a></th>`
+        + `<td data-l="Requests"><b>${num(h.count)}</b><small>${num(u?.count)} in 7 days</small></td>`
+        + `<td data-l="Failed" class="${v.why === "fail" ? "pc-hot" : ""}">${pair(percent(h.failure_share), percent(u?.failure_share))}</td>`
+        + `<td data-l="Typical time" class="${v.why === "p50" ? "pc-hot" : ""}">${pair(duration(h.total_ms?.p50), duration(u?.total_ms?.p50))}</td>`
+        + `<td data-l="Slowest 5%" class="${v.why === "p95" ? "pc-hot" : ""}">${pair(duration(h.total_ms?.p95), duration(u?.total_ms?.p95))}</td>`
+        + `<td>${badge(v.word, v.kind)}</td></tr>`).join("");
+      const table = rows.length ? `<div class="pc-table-wrap pc-pulse-wrap" tabindex="0" role="region" aria-label="Each command's last hour against its last 7 days"><table class="pc-pulse-table">`
+        + `<caption>Last hour, to ${safe(when(p.at))} · each figure over its own last 7 days</caption>`
+        + `<thead><tr><th scope="col">Command</th><th scope="col">Requests</th><th scope="col">Failed</th><th scope="col">Typical time</th><th scope="col">Slowest 5%</th><th scope="col"><span class="sr">Compared</span></th></tr></thead><tbody>${body}</tbody></table></div>` : "";
+      const tail = [quiet.length ? `Quiet in the last hour: ${quiet.join(", ")}.` : "", scoped ? "This compares every request; the page's project and filters narrow the measurements below." : ""].filter(Boolean);
+      return wrap(`<p class="pc-pulse-says">${says}</p>${table}${tail.map((x) => note(x)).join("")}`);
+    }
     const field = (k, label, value = "", type = "text", extra = "") => `<label>${safe(label)}<input class="field" name="${safe(k)}" type="${type}" value="${safe(value)}" ${extra}></label>`;
     const select = (k, label, values, picked) => `<label>${safe(label)}<select name="${safe(k)}" class="field">${values.map(([v, t]) => `<option value="${safe(v)}"${String(picked ?? "") === v ? " selected" : ""}>${safe(t)}</option>`).join("")}</select></label>`;
     const metricCoverage = (m) => `${m?.coverage?.complete === true ? "Complete" : m?.coverage ? "Partial" : "Unknown"} · ${num(m?.coverage?.observed_ms)} ms · ${safe(words(m?.filter_attribution))}`;
     function controls() {
       const q = st.query || queryNow(), input = current(), f = q.filters, accounts = accountChoices();
+      // Labelled in words (Nov 10): a period reads "Last 7 days", an exact one is picked on a date and clock, and an empty
+      // filter says what it lets through. The exact instants ride in hidden fields, so a submit that leaves the clock
+      // untouched keeps the interval to the millisecond a link named.
+      const any = (what) => `placeholder="${safe(what)}"`;
+      // a value being edited survives a redraw: a read landing while the period is picked must not put the old one back
+      const draft = (k, v) => st.queryDraft && k in st.queryDraft ? st.queryDraft[k] : v;
+      const F = (k, label, v, ...rest) => field(k, label, draft(k, v), ...rest), S = (k, label, values, picked) => select(k, label, values, draft(k, picked));
       return `<form class="pc-query" data-pc-form="query"><div class="pc-query-main">`
-        + select("window", "Window", [["", "Exact interval"], ...Object.keys(WINDOWS).map((x) => [x, x])], input.window || "")
-        + field("head", "Command", f.head) + field("model", "Model", f.model) + field("project", "Project", f.project)
-        + select("objective", "Objective", [["", "Unconfigured"], ...(st.settings?.objectives || []).map((x) => [x.id, x.id])], q.objective_id)
-        + `<button class="act small" type="submit">Apply cohort</button><button class="act quiet small" type="button" data-pc="filters" aria-expanded="${st.advanced}">All filters</button></div>`
-        + `<div class="pc-query-extra"${st.advanced ? "" : " hidden"}>${field("from", "From · epoch ms", q.from_ms, "number")}${field("until", "Until · exclusive epoch ms", q.until_ms, "number")}`
-        + ["transport", "outcome", "session", "account", "silence_ms", "queued_ms", "resumed", "started_over", "unattributed", "test"].map((k) => k === "account" && accounts.length > 1 ? select(k, "Recorded account", [["", "Choose one ID"], ...accounts.map((v) => [v, v])], "") : field(k, words(k), f[k])).join("")
-        + ["local", "compact", "streaming"].map((k) => select(k, words(k), [["", "Any"], ["1", "Yes"], ["0", "No"]], f[k])).join("")
-        + select("source", "Source", [["auto", "Automatic"], ["live", "Live"], ["history", "History"], ["evidence", "Recorded evidence"], ["legacy", "Legacy rows"]], q.source) + `</div></form>`
+        + S("window", "Period", [["", "Exact dates"], ...Object.keys(WINDOWS).map((x) => [x, `Last ${PERIOD[x]}`])], input.window || "")
+        + F("head", "Command", f.head, "text", any("Every command")) + F("model", "Model", f.model, "text", any("Every model")) + F("project", "Project", f.project, "text", any("Every project"))
+        + S("objective", "Objective", [["", "No objective"], ...(st.settings?.objectives || []).map((x) => [x.id, x.id])], q.objective_id)
+        + `<button class="act small" type="submit">Measure</button><button class="act quiet small" type="button" data-pc="filters" aria-expanded="${st.advanced}">All filters</button></div>`
+        + `<div class="pc-query-extra"${st.advanced ? "" : " hidden"}>${F("fromAt", "From", localInput(q.from_ms), "datetime-local", 'step="1"')}${F("untilAt", "Until (not included)", localInput(q.until_ms), "datetime-local", 'step="1"')}`
+        + `<input type="hidden" name="from" value="${safe(q.from_ms)}"><input type="hidden" name="until" value="${safe(q.until_ms)}">`
+        + ["transport", "outcome", "session", "account", "silence_ms", "queued_ms", "resumed", "started_over", "unattributed", "test"].map((k) => k === "account" && accounts.length > 1 ? S(k, "Recorded account", [["", "Choose one ID"], ...accounts.map((v) => [v, v])], "") : F(k, LABELS[k] || words(k), f[k], "text", any("Any"))).join("")
+        + ["local", "compact", "streaming"].map((k) => S(k, LABELS[k], [["", "Any"], ["1", "Yes"], ["0", "No"]], f[k])).join("")
+        + S("source", "Source", [["auto", "Automatic"], ["live", "Live"], ["history", "History"], ["evidence", "Recorded evidence"], ["legacy", "Legacy rows"]], q.source) + `</div></form>`
         + (accounts.length > 1 ? note("Cohort unavailable: this account uses multiple recorded IDs. Choose one ID to narrow Usage and Performance together. Usage continues to show the combined account until you choose.") : "");
     }
     function completedWindow() {
@@ -321,9 +416,9 @@ const PERF_CONSOLE = (() => {
       const query = st.query || queryNow();
       const r = st.replies.summary, s = r?.body, stale = s?.as_of_ms != null && query.until_ms - s.as_of_ms > 60000;
       const completed = completedWindow(), accountGap = issues(s).includes("account_alias_mapping_unavailable");
-      return `<div class="pc-coverage" role="status">${badge(`${status(r)}${stale ? " · Stale" : ""}${st.busy ? " · Refreshing" : ""}`, !r?.ok || stale || issues(s).length ? "unknown" : "neutral")}<span>${safe(date(query.from_ms))} → ${safe(date(query.until_ms))} CT</span><span>${safe(duration(s?.observed_duration_ms))} observed / ${safe(duration(s?.requested_duration_ms))} selected</span>${s?.truncated ? badge("Truncated", "unknown") : ""}<button class="act quiet small" data-pc="completed-window"${!completed || st.busy ? " disabled" : ""}>Use completed window</button></div>`
+      return `<div class="pc-coverage" role="status">${badge(`${status(r)}${stale ? " · Stale" : ""}${st.busy ? " · Refreshing" : ""}`, !r?.ok || stale || issues(s).length ? "unknown" : "neutral")}<span>${safe(when(query.from_ms, true).replace(/^today/, "Today"))} to ${Math.abs(Date.now() - query.until_ms) < 120000 ? "now" : safe(when(query.until_ms, true))} CT</span>${s?.truncated ? badge("Truncated", "unknown") : ""}<button class="act quiet small" data-pc="completed-window"${!completed || st.busy ? " disabled" : ""}>Use completed window</button></div>`
         + (accountGap ? badge("Account names unavailable", "unknown") : "")
-        + detail("Coverage and recording boundary", (completed ? note(`From ${date(completed.from_ms)} to ${date(completed.until_ms)} · same ${duration(completed.until_ms - completed.from_ms)} duration. This selects the interval ending at the certified recording boundary. Late records can revise it; coverage still applies. Your selected interval stays unchanged until you choose it.`) : note("No certified recording boundary available for this duration."))
+        + detail("Coverage and recording boundary", note(`Recording certified for ${duration(s?.observed_duration_ms)} of the ${duration(s?.requested_duration_ms)} picked.`) + (completed ? note(`From ${date(completed.from_ms)} to ${date(completed.until_ms)} · same ${duration(completed.until_ms - completed.from_ms)} duration. This selects the interval ending at the certified recording boundary. Late records can revise it; coverage still applies. Your selected interval stays unchanged until you choose it.`) : note("No certified recording boundary available for this duration."))
           + (explain(r) ? note(words(explain(r))) : "")
           + (accountGap ? note("Account names are temporarily unavailable. Exact recorded account IDs still work. Name matching uses the last Accounts read for up to 60 seconds; opening Accounts refreshes it. This view does not refresh accounts automatically.") : ""))
         + (s?.missing_fields?.length ? `<details class="pc-detail"><summary>${s.missing_fields.length} unavailable measurements</summary>${note(s.missing_fields.map(words).join(" · "))}</details>` : "");
@@ -332,12 +427,17 @@ const PERF_CONSOLE = (() => {
       const s = st.replies.summary?.body;
       if (!s?.rates) return note(`${status(st.replies.summary)} · Measurements have not been returned.`) + commandResults();
       const rates = s.rates;
-      const hero = [["Arrivals / s", "arrivals_per_s"], ["Completions / s", "completions_per_s"], ["Successful / s", "successful_completions_per_s"], ["Attempts / s", "attempts_per_s"]];
+      // each rate in the unit that gives it a readable figure (perTime): 0.00221 completions a second is 7.96 an hour
+      // These count lifecycle records, which can cover only part of the traffic; the pulse above counts every request, so
+      // a partial population says so beside the rates rather than reading as a contradiction of it.
+      const hero = [["Arrivals recorded", "arrivals_per_s"], ["Completions recorded", "completions_per_s"], ["Successful completions", "successful_completions_per_s"], ["Attempts recorded", "attempts_per_s"]];
+      const partialPopulation = s.counts?.population_complete === false
+        ? note("These rates count the requests whose lifecycle splice recorded, part of the traffic in this period (Partial population below). The last hour above counts every request.") : "";
       const peak = Math.max(0, ...hero.map(([, k]) => rates[k] || 0));
-      const headline = `<div class="pc-meters">${hero.map(([label, k]) => `<div><span>${label}</span>${known(rates[k]) ? `<strong>${num(rates[k])}</strong>${track(rates[k], peak, `${label}: ${num(rates[k])}; shared scale 0 to ${num(peak)}`)}` : empty("Rate unavailable")}</div>`).join("")}</div>`;
-      const traffic = bars([["Input", rates.input_tokens_per_s], ["Output", rates.output_tokens_per_s], ["Cached", rates.cached_tokens_per_s]], "Tokens / s")
-        + bars([["Upstream", rates.upstream_bytes_per_s], ["Downstream", rates.downstream_bytes_per_s]], "Bytes / s")
-        + detail("Event throughput", bars([["Upstream", rates.upstream_events_per_s], ["Downstream", rates.downstream_events_per_s]], "Events / s"));
+      const headline = `<div class="pc-meters">${hero.map(([label, k]) => `<div><span>${label}</span>${known(rates[k]) ? `<strong>${perTime(rates[k]).replace(/ (a|an) (second|minute|hour)$/, " <small>$1 $2</small>")}</strong>${track(rates[k], peak, `${label}: ${perTime(rates[k])}; shared scale 0 to ${perTime(peak)}`)}` : empty("Not measured")}</div>`).join("")}</div>`;
+      const traffic = bars([["Input", rates.input_tokens_per_s], ["Output", rates.output_tokens_per_s], ["Cached", rates.cached_tokens_per_s]], "Tokens a second")
+        + bars([["Upstream", rates.upstream_bytes_per_s], ["Downstream", rates.downstream_bytes_per_s]], "Bytes a second")
+        + detail("Event throughput", bars([["Upstream", rates.upstream_events_per_s], ["Downstream", rates.downstream_events_per_s]], "Events a second"));
       const g = s.goodput || {};
       const goodput = g.status === "unconfigured" ? empty("Objective not selected", "Select an objective above to measure goodput.") : badge(words(g.status), g.bad > 0 ? "bad" : "neutral") + bars([["Good", g.good], ["Bad", g.bad], ["Pending", g.pending], ["Unknown", g.unknown]], "Objective results")
         + detail("Goodput definitions and coverage", facts({ objective: g.objective_id, revision: g.objective_revision, known_evaluable: g.known_evaluable, observed_arrivals: g.observed_arrivals, whole_window_eligible: g.eligible, whole_window_good_per_s: g.per_s, good_fraction: g.good_fraction, known_good_per_s: g.known_good_per_s, known_good_rate_is_lower_bound: g.known_good_rate_is_lower_bound }) + note(words(g.attribution)));
@@ -345,7 +445,7 @@ const PERF_CONSOLE = (() => {
       const populations = bars([["Known arrivals", counts.known_arrivals], ["Known completions", counts.known_completions], ["Known successful", counts.known_successful_completions]], "Recorded lifecycle counts")
         + badge(counts.population_complete ? "Complete population" : "Partial population", counts.population_complete ? "neutral" : "unknown")
         + detail("Population definitions", facts(counts) + note("Arrival and completion windows are separate. Model-at-arrival may be unknown; returned attribution governs each rate."));
-      return headline + detail("Rate definitions", note(`Rates use requested wall duration. ${words(rates.interpretation)}. Attribution: ${words(rates.filter_attribution)}.`))
+      return partialPopulation + headline + detail("Rate definitions", note(`Rates use requested wall duration. ${words(rates.interpretation)}. Attribution: ${words(rates.filter_attribution)}.`))
         + `<div class="pc-grid pc-overview-grid">${section("Throughput", traffic)}${section("Request populations", populations)}${section("Objective goodput", goodput)}</div>`
         + commandResults()
         + `<details class="pc-detail"><summary>Population coverage and outcomes</summary>${facts(s.outcomes)}${entries(s.population_coverage).map(([k, v]) => section(words(k), facts(v))).join("")}</details>`;
@@ -353,7 +453,7 @@ const PERF_CONSOLE = (() => {
     const commandName = (head) => options.commandName?.(head) || head;
     function commandResults() {
       const reply = st.replies.summary, s = reply?.body;
-      const columns = ["Command", "Requests", "Failed", "Typical · ms", "Slowest 5% · ms", "Coverage"];
+      const columns = ["Command", "Requests", "Failed", "Typical", "Slowest 5%", "Coverage"];
       const heading = `<h3>Results by command</h3>${note("Selected cohort and interval · open a command for outcomes, cache, load, stages and models.")}`;
       const labels = `<div class="pc-command-grid pc-command-labels" aria-hidden="true">${columns.map((x) => `<span>${x}</span>`).join("")}</div>`;
       if (!reply || st.busy || options.ready?.() === false) {
@@ -363,15 +463,19 @@ const PERF_CONSOLE = (() => {
       const heads = entries(s?.legacy).sort((a, b) => (b[1].failure_share ?? -1) - (a[1].failure_share ?? -1) || (b[1].count ?? -1) - (a[1].count ?? -1));
       const renderHead = ([head, h]) => {
         const covered = h.count === 0 ? "No recorded rows" : h.metrics_complete === false ? "Partial metrics" : h.read_status === "readable" ? "Recorded rows" : "Unread / unknown";
-        const cells = [commandName(head), h.count === 0 ? "No recorded rows" : num(h.count), percent(h.failure_share), num(h.total_ms?.p50), num(h.total_ms?.p95), covered];
+        const time = (v) => known(v) ? duration(v) : "—";
+        const cells = [commandName(head), h.count === 0 ? "No recorded rows" : num(h.count), percent(h.failure_share), time(h.total_ms?.p50), time(h.total_ms?.p95), covered];
         return `<details class="pc-command" data-pc-command="${safe(head)}"${st.commands.has(head) ? " open" : ""}><summary class="pc-command-grid">${cells.map((value, i) => `<span><small>${columns[i]}</small>${safe(value)}</span>`).join("")}</summary><div class="pc-command-detail">${commandDetail(head, h)}</div></details>`;
       };
       const active = heads.filter(([, h]) => h.count !== 0);
       const inactive = heads.filter(([, h]) => h.count === 0);
+      // a busy command's long period stops at the query's processing limit and keeps its count alone; say where its times are
+      const partial = active.filter(([, h]) => h.metrics_complete === false).map(([head]) => commandName(head));
+      const limit = partial.length ? note(`${partial.join(", ")} reached this period's processing limit, so only ${partial.length === 1 ? "its count is" : "their counts are"} shown. A shorter period or a narrower filter measures ${partial.length === 1 ? "its" : "their"} times; the last hour above reads every figure.`) : "";
       const rows = active.map(renderHead).join("") + (inactive.length
         ? `<details class="pc-inactive-commands"${st.inactiveOpen ? " open" : ""}><summary>${num(inactive.length)} commands with no recorded rows</summary><div>${inactive.map(renderHead).join("")}</div></details>`
         : "");
-      return `<section class="pc-results" aria-label="Results by command">${heading}<div class="card pc-commands">${labels}${rows || note(`${status(reply)} · No command results returned.`)}</div></section>`;
+      return `<section class="pc-results" aria-label="Results by command">${heading}<div class="card pc-commands">${labels}${rows || note(`${status(reply)} · No command results returned.`)}</div>${limit}</section>`;
     }
     function commandDetail(head, h) {
       const link = (label, extra = {}) => `<a href="${safe(address(st.query, { head, ...extra }))}">${safe(label)}</a>`;
@@ -382,8 +486,9 @@ const PERF_CONSOLE = (() => {
         ? `<p class="pc-note"><span class="flag ${flag.kind === "failing" ? "failing" : "slow"}">${link(`${flag.kind === "failing" ? "Failing" : "Slow"} in sampled records · ${date(flag.from)} to ${date(flag.to)}`, flag.kind === "failing" ? { outcome: "failed" } : {})}</span></p>` : "";
       const outcomes = bars(entries(h.outcomes), "Recorded outcomes", "", (outcome) => link(words(outcome), { outcome }));
       const stageItems = [["Waited in line", h.queue_wait_ms], ["Before first byte", h.time_before_first_byte_ms], ["Streaming", h.time_streaming_ms], ["Whole request", h.total_ms]];
-      const stages = ranges(stageItems) + detail("Stage sample counts", table(["Stage", "Samples", "Typical · ms", "Slowest 5% · ms", "Maximum · ms"], stageItems.map(([label, v]) => [label, num(v?.count), num(v?.p50), num(v?.p95), num(v?.max)]), `${commandName(head)} stages`));
-      const models = table(["Model", "Requests", "Failed", "Typical · ms", "Slowest 5% · ms"], entries(h.models).map(([model, v]) => [model === "?" ? "Ended before a model was picked" : link(model, { model }), num(v.count), percent(v.failure_share), num(v.total_ms?.p50), num(v.total_ms?.p95)]), `${commandName(head)} models`);
+      const time = (v) => known(v) ? duration(v) : "—";
+      const stages = ranges(stageItems) + detail("Stage sample counts", table(["Stage", "Samples", "Typical", "Slowest 5%", "Longest"], stageItems.map(([label, v]) => [label, num(v?.count), time(v?.p50), time(v?.p95), time(v?.max)]), `${commandName(head)} stages`));
+      const models = table(["Model", "Requests", "Failed", "Typical", "Slowest 5%"], entries(h.models).map(([model, v]) => [model === "?" ? "Ended before a model was picked" : link(model, { model }), num(v.count), percent(v.failure_share), time(v.total_ms?.p50), time(v.total_ms?.p95)]), `${commandName(head)} models`);
       return `<div class="pc-actions"><strong class="pc-command-failure">${safe(failure)}</strong>${link("Open requests")}${h.failure_share > 0 ? link("Open failures", { outcome: "failed" }) : ""}${link("Open compactions", { compact: "1" })}</div>`
         + sampled + detail("Recorded row coverage", note(`Recorded request rows: ${num(h.count)} · local steps: ${num(h.local_steps)}. ${h.metrics_complete === false ? "Metric details are unavailable because this query reached its processing limit. Narrow the time range or filters to inspect metrics; counts remain available." : "Metrics describe the returned recorded-row population; coverage gaps can leave records uncounted."}`))
         + `<div class="pc-grid">${section("Outcomes", outcomes)}${section("Cache and load", facts({ cache_hit_ratio: percent(h.cache_hit_ratio), cold_after_account_switch: h.cache_cold, retries: h.retries, refreshes: h.refreshes, peak_inflight: h.peak_inflight }))}${section("Stages", stages)}</div>`
@@ -570,14 +675,22 @@ const PERF_CONSOLE = (() => {
     }
     const tabs = { overview: ["Overview", overview], distribution: ["Latency", distribution], history: ["History", history], runtime: ["Runtime", runtime], timeline: ["Requests & traces", timeline], baselines: ["Baselines", baselines], profiles: ["Profiles", profiles], objectives: ["Objectives", objectives], alerts: ["Alerts", alerts] };
     function inner() {
-      return `<div class="bandhead pc-heading"><h2>Performance</h2>${accountChoices().length > 1 ? "" : `<a href="${safe(address(st.query || queryNow()))}">Open requests ↗</a>`}<button class="act quiet small" data-pc="refresh"${st.busy ? " disabled" : ""}>Refresh</button></div>`
-        + controls() + coverage() + `<nav class="pc-tabs" aria-label="Performance views">${entries(tabs).map(([k, [title]]) => `<button type="button" data-pc-tab="${k}" aria-current="${st.tab === k ? "page" : "false"}">${title}</button>`).join("")}</nav>`
-        + (st.message ? `<p class="pc-message" role="status">${safe(st.message)}</p>` : "")
-        + `<div class="pc-content" aria-busy="${st.busy}">${tabs[st.tab][1]()}</div>`;
+      // The first step answers "is anything slow or failing right now" (pulse); the second, one click away, is the whole
+      // measurement console PR #482 built: an exact period and cohort, its coverage, and its nine views.
+      const deep = `<details class="pc-deep" data-pc-deep${st.deep ? " open" : ""}><summary><span class="pc-deep-title">Measure any period</span>`
+        + `<span class="pc-deep-says">Pick exact dates, a command, model or project, then read rates, latency, history, runtime, request traces, baselines, profiles, objectives and alerts</span></summary>`
+        + (st.deep ? `<div class="pc-deep-body">${controls()}${coverage()}<nav class="pc-tabs" aria-label="Performance views">${entries(tabs).map(([k, [title]]) => `<button type="button" data-pc-tab="${k}" aria-current="${st.tab === k ? "page" : "false"}">${title}</button>`).join("")}</nav>`
+          + (st.message ? `<p class="pc-message" role="status">${safe(st.message)}</p>` : "")
+          + `<div class="pc-content" aria-busy="${st.busy}">${tabs[st.tab][1]()}</div></div>` : "")
+        + `</details>`;
+      return `<div class="bandhead pc-heading"><h2>Performance</h2>${accountChoices().length > 1 ? "" : `<a href="${safe(address(st.query || queryNow()))}">Open requests ↗</a>`}<button class="act quiet small" data-pc="refresh"${st.busy || st.pulse.reading ? " disabled" : ""}>Refresh</button></div>`
+        + pulse() + deep;
     }
     function html() {
       rememberBuilders(host());
-      if (fingerprint() !== st.key) { clearMeasurements(); st.query = queryNow(); setTimeout(() => read(), 0); }
+      // the cohort is read only while the second step is open; the pulse reads whenever the panel is drawn
+      if (st.deep && fingerprint() !== st.key) { clearMeasurements(); st.query = queryNow(); setTimeout(() => read(), 0); }
+      if (!st.pulse.reading && Date.now() - st.pulse.at >= 55000) setTimeout(() => readPulse(), 0);
       return `<section class="perf-console" data-performance="${options.id}">${inner()}</section>`;
     }
     function saveStore(next) {
@@ -634,8 +747,10 @@ const PERF_CONSOLE = (() => {
           if (input.filters.project === "-") input.filters.project = "none";
           if (input.filters.outcome === "fail") input.filters.outcome = "failed";
           if (input.filters.outcome === "all") delete input.filters.outcome;
-          if (!input.window) { input.from_ms = Number(values.get("from")); input.until_ms = Number(values.get("until")); if (!(input.until_ms > input.from_ms)) throw new Error("Enter a valid exact interval"); }
-          st.message = ""; options.apply(input); st.key = null; read(true); return;
+          // the clock a person set, or the exact instant behind it when the clock still reads what it was given
+          const exact = (at, raw) => { const v = String(values.get(at) || ""), held = Number(values.get(raw)); return v && v !== localInput(held) ? new Date(v).getTime() : held; };
+          if (!input.window) { input.from_ms = exact("fromAt", "from"); input.until_ms = exact("untilAt", "until"); if (!(input.until_ms > input.from_ms)) throw new Error("Enter a valid exact interval"); }
+          st.message = ""; st.queryDraft = null; options.apply(input); st.key = null; read(true); return;
         }
         if (actionPending()) { st.message = "A performance action is pending. Wait for it to finish."; return; }
         st.actionBusy = actionStarted = true; st.message = "Performance action pending…"; repaint();
@@ -660,11 +775,23 @@ const PERF_CONSOLE = (() => {
       } catch (error) { st.message = error.message || "Action failed"; }
       finally { if (actionStarted) st.actionBusy = false; repaint(); }
     });
+    // what a person types or picks in the cohort form is held until it is measured or the cohort changes under it
+    const keepDraft = (e) => { const form = e.target.closest?.("[data-pc-form=\"query\"]"); if (form && host()?.contains(form) && e.target.name && e.target.type !== "hidden") st.queryDraft = { ...st.queryDraft, [e.target.name]: e.target.value }; };
+    document.addEventListener("input", keepDraft);
+    document.addEventListener("change", keepDraft);
     document.addEventListener("input", (e) => { if (host()?.contains(e.target) && e.target.name === "settings") { st.draft = e.target.value; st.draftRevision++; e.target.rows = Math.max(8, st.draft.split("\n").length + 1); } });
     document.addEventListener("toggle", (e) => {
       const el = e.target;
       if (!host()?.contains(el)) return;
       if (el.matches?.("[data-pc-editor]")) { st.editorOpen = el.open; return; }
+      // the second step: opening it draws and reads the cohort; a details drawn already open fires its own toggle, which
+      // finds the state already matching and does nothing
+      if (el.matches?.("[data-pc-deep]")) {
+        if (st.deep === el.open) return;
+        st.deep = el.open;
+        if (st.deep && fingerprint() !== st.key) { clearMeasurements(); st.query = queryNow(); read(); } else repaint();
+        return;
+      }
       if (el.matches?.(".pc-inactive-commands")) { st.inactiveOpen = el.open; return; }
       if (!el.matches?.("[data-pc-command]")) return;
       if (el.open) st.commands.add(el.dataset.pcCommand); else st.commands.delete(el.dataset.pcCommand);
@@ -672,6 +799,11 @@ const PERF_CONSOLE = (() => {
     document.addEventListener("change", async (e) => {
       if (!host()?.contains(e.target)) return;
       const el = e.target;
+      // exact dates live with the other filters: picking them opens that row where the From and Until clocks stand
+      if (el.name === "window" && !el.value && !st.advanced) {
+        st.advanced = true; host().querySelector(".pc-query-extra").hidden = false;
+        host().querySelector('[data-pc="filters"]')?.setAttribute("aria-expanded", "true");
+      }
       if (el.name === "historyMetric") { st.historyMetric = el.value; repaint(); }
       if (el.name === "openRequest") { st.openRequest = el.value; repaint(); }
       if (el.name === "baseline") { st.selected = Number(el.value); repaint(); }
@@ -689,7 +821,7 @@ const PERF_CONSOLE = (() => {
       const button = e.target.closest("[data-pc]"); if (!button) return;
       const action = button.dataset.pc; let actionStarted = false;
       try {
-        if (action === "refresh") { read(true, true); return; }
+        if (action === "refresh") { readPulse(true); if (st.deep) read(true, true); return; }
         if (action === "completed-window") { const q = completedWindow(); if (!q || st.busy) return; options.apply(q); st.message = "Selected the completed window. Coverage is reported below."; st.key = null; read(true); return; }
         if (action === "filters") {
           // Disclosure must preserve the query being edited, not redraw it from the last applied cohort.
@@ -761,6 +893,19 @@ const PERF_CONSOLE = (() => {
   }
   return { create, params, address, fromAddress, snapshot, comparison };
 })();
+// THE MEASUREMENTS, ONE STEP AWAY. Usage leads with Results by command and Requests with its requests; Performance
+// stands under one heading line that names what it holds, folded until it is opened, and reads nothing while folded.
+// Opened, it answers first whether anything is slower or failing more than usual (the last hour against the last 7
+// days); the whole measurement console (its cohort, coverage and nine views) is its second step. A page opened from a
+// performance link opens both.
+const PERF_FOLD = {
+  html(open, body) {
+    const head = `<button class="pc-fold-head" type="button" data-act="perffold" aria-expanded="${open}">`
+      + `<h2>Performance</h2><span class="pc-fold-says">Is anything slower or failing more than usual, and measurements for any period</span>`
+      + `<span class="pc-fold-go">${open ? "Hide" : "Show"}${DRAW.mpChev(open)}</span></button>`;
+    return `<section class="pc-fold${open ? " open" : ""}">${head}${open ? body() : ""}</section>`;
+  },
+};
 const createPerfHeads = (scope, helpers) => {
   let override = null, addressActive = true, lastNative = "";
   const canonicalAccount = (query) => {

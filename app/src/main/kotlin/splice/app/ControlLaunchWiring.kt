@@ -19,6 +19,7 @@ import splice.client.mcp.McpHubLaunch
 import splice.client.mcp.McpHubLive
 import splice.client.mcp.McpLaunchPlanner
 import splice.client.mcp.McpSharing
+import splice.client.mcp.PLUGIN_FLAG_PROVEN_VERSION
 import splice.client.mcp.PluginFlagGate
 import splice.client.mcp.PluginFlagHolds
 import splice.client.resume.AuthHeaderFile
@@ -30,7 +31,6 @@ import splice.client.resume.originals.CopyingOriginals
 import splice.client.resume.originals.OriginalsCutoff
 import splice.client.resume.originals.TranscriptOriginals
 import splice.client.wrap.WrappedHead
-import splice.core.TESTED_CLAUDE_CODE
 import splice.core.config.TurnKey
 import splice.launch.recipe.LaunchService
 import splice.upstream.LifecycleScope
@@ -128,7 +128,7 @@ internal class ControlLaunchWiring(
                 daemon.mcpAccess,
                 McpHubFront(MCP_HUB_FRONT_PORT, statePaths.stateDir.resolve("mcp-hub"), hub = hub),
                 log,
-                PluginFlagGate(TESTED_CLAUDE_CODE, pluginFlags),
+                PluginFlagGate(PLUGIN_FLAG_PROVEN_VERSION, pluginFlags),
                 overlay = HostedMcpOverlay(home, sharing, statePaths.stateDir, log, temple),
             )
         }

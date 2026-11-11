@@ -24,12 +24,18 @@ internal object FailureFamilies {
         is FailureCause.Provider.Refused,
         -> ClientWire.Family.P
         is FailureCause.Provider.Unrecognized -> if (cause.clientError) ClientWire.Family.P else ClientWire.Family.R
-        is FailureCause.Provider.Limited -> again(!cause.isExhausted)
+        is FailureCause.Provider.Limited, is FailureCause.Provider.Empty -> again(heals(cause))
         is FailureCause.Provider.Overloaded, is FailureCause.Provider.ServerError,
-        is FailureCause.Provider.NeedsPayment, is FailureCause.Provider.Empty, is FailureCause.Provider.ToolTear,
+        is FailureCause.Provider.NeedsPayment, is FailureCause.Provider.ToolTear,
         is FailureCause.Provider.ReasoningCut,
         -> ClientWire.Family.R
     }
+
+    /** Whether a re-send can heal [cause]: a limit that is not exhausted can; a run of empty reasoning splice ended
+     *  cannot, since the same request met the same loop and the person's next message is what changes it. */
+    private fun heals(cause: FailureCause.Provider): Boolean =
+        (cause as? FailureCause.Provider.Limited)?.isExhausted != true &&
+            (cause as? FailureCause.Provider.Empty)?.loop == null
 
     private fun splice(cause: FailureCause.Splice): ClientWire.Family = when (cause) {
         is FailureCause.Splice.NoLogin -> ClientWire.Family.HELD_LOGIN

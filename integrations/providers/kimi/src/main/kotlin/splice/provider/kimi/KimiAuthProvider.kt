@@ -109,6 +109,8 @@ public class KimiAuthProvider(
 
     override suspend fun exchange(): RefreshOutcome = renewal.exchange()
 
+    override suspend fun exchange(refused: Credentials?): RefreshOutcome = renewal.exchange(refused)
+
     // Failure-handling slice 3: Kimi's plan-tier 401 is read as the plan limit it is (KimiReplies), never as a
     // refused login, so no refresh is planned for it and this provider carries no rule about a body.
 

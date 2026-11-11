@@ -1073,7 +1073,10 @@ function whereSection(c, d, st) {
     + `<div class="rt-node rt-cmd" style="--c:${colorOf(c.family)}"><div class="rt-nh"><span class="lamp inline ${k.cls}" aria-hidden="true">${k.lamp}</span>`
     + `<input class="field num rt-port${dirt(d.port !== was.port)}" id="h-port" value="${esc(d.port)}" inputmode="numeric" spellcheck="false" autocomplete="off" aria-label="Port on this computer"${s.port ? "" : ' aria-invalid="true"'}>`
     + `${bad(s.port, "Not a port")}</div>`
-    + `<div class="rt-pfxrow"><input class="field mono rt-pfx${dirt(d.prefix !== was.prefix)}" id="h-prefix" value="${esc(d.prefix)}" spellcheck="false" autocomplete="off" aria-label="Model prefix"${s.prefix ? "" : ' aria-invalid="true"'}>`
+    // THE PREFIX IS A FIELD, NOT A NAME (Nov 10): drawn as a round pill in the command's colour it read as a command chip
+    // called "claude-bonsai--", trailing dashes and all. The dashes are the daemon's own discovery prefix, the start of every
+    // model id this command lists in Claude Code's picker, so the field says what it is and wears a field's shape.
+    + `<div class="rt-pfxrow"><label class="rt-flabel" for="h-prefix">Model ids start with</label><input class="field mono rt-pfx${dirt(d.prefix !== was.prefix)}" id="h-prefix" value="${esc(d.prefix)}" spellcheck="false" autocomplete="off" aria-label="Model prefix"${s.prefix ? "" : ' aria-invalid="true"'}>`
     + `${shown ? `<span class="rt-arrow" aria-hidden="true">${GL.maps}</span>${shown}` : ""}${bad(s.prefix, "Needs a prefix")}</div></div>`
     + `<span class="rt-rail" aria-hidden="true"></span>`
     + `<div class="rt-node rt-prov" style="--c:${colorOf(c.family)}"><span class="rt-nn">${esc(c.prov)}</span><span class="rt-host">${hostNow ? esc(hostNow) : DASH}</span>${dialectHtml(c)}`

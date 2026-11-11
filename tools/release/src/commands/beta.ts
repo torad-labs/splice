@@ -1,6 +1,7 @@
-// `release beta <version>` — a beta cut on this machine while GitHub Actions is locked (Marcos, 2026-10-13:
-// local betas, no attestation). Releases are built from main only (Marcos, 2026-10-13), so this command bumps and
-// pushes nothing: the version bump reaches main through the dev branch like any other change. The command
+// `release beta <version>` — a beta cut on this machine, outside release.yml, so it carries no attestation (Marcos,
+// 2026-10-13: local betas, no attestation; written while GitHub Actions was locked, and still how this verb works now
+// that it runs). Releases are built from main only (Marcos, 2026-10-13), so this command bumps and pushes nothing: the
+// version bump reaches main through a pull request like any other change. The command
 //
 //   1. checks    that origin/main says <version> in the launcher, core's Versions and package.json, and that
 //                its CHANGELOG.md has the version's own section;
@@ -88,7 +89,7 @@ function provenanceSection(sha: string, version: string): string {
     "",
     `## This build: v${version}`,
     "",
-    `Built locally from ${sha} on main without GitHub attestation, because Actions is locked. The tag v${version}`,
+    `Built locally from ${sha} on main without GitHub attestation, not by release.yml. The tag v${version}`,
     `points at that commit. The build ran \`bun tools/release beta ${version}\` in a throwaway tree, which appended`,
     "this section before building, so the jar embeds it. No Sigstore attestation exists for these assets:",
     "`gh attestation verify` fails on them, and install.sh, run with a signed-in gh, refuses them. Each asset is",
@@ -102,7 +103,7 @@ function notesFor(changelog: string, version: string, sha: string): string {
   const section = releaseNotes(changelog, version);
   if (section instanceof Error) throw new Refusal(`release beta: on main, ${section.message}`);
   return [
-    `**Built locally from ${sha} on main without GitHub attestation, because Actions is locked.** The tag points at`,
+    `**Built locally from ${sha} on main without GitHub attestation, not by release.yml.** The tag points at`,
     `that commit. Its files are on ${SITE}/v${version}/, not on this page. \`gh attestation verify\` fails on them, so`,
     "install.sh refuses them while gh is signed in. Install with gh signed out:",
     "",

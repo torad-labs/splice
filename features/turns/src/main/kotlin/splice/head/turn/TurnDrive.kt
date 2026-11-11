@@ -15,6 +15,7 @@ import splice.head.perf.SourceRowHold
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.RoundUsage
 import splice.head.round.RunnerSignals
+import splice.head.transport.EmptyReasoningRun
 import splice.head.transport.TurnAccountHandoff
 import splice.head.transport.TurnAccountLabel
 import splice.head.turn.delivery.CollectPerf
@@ -143,6 +144,9 @@ internal data class TurnDrive(
 
     private val claims = TurnClaims()
     val collectPerf = CollectPerf()
+
+    /** This turn's run of empty reasoning, across its rounds, read by both transports' round drivers. */
+    val emptyReasoning = EmptyReasoningRun()
 
     /** This turn's row, held while a source round it posted still streams ([splice.upstream.PostingTurnRow]). */
     val sourceRow = SourceRowHold()

@@ -1487,7 +1487,8 @@ origin.
   join yet, so its add still signs that first login in. An add that comes back as the account a ChatGPT command's
   first login already holds adds nothing: it reads "Already added" with splice's reason under it, and the card that
   account has pulses once. It filed a second login for that one account, since the sign-in page signs in whichever
-  account its browser holds.
+  account its browser holds. An add that comes back as a login added earlier signs that login in again, and its
+  card pulses once, where the tile closed with no sign that anything had happened.
 - **Every Claude sign-in has the field for the code its page shows.** splice signs a Claude login in through Claude
   Code's own sign-in, and the page its link opens ends by showing a code to paste back. Only a command's own Claude
   Code login had the field for that code. Sign in again on an added Claude login, and + Add account on a Claude
@@ -1498,7 +1499,12 @@ origin.
 - **Models and Compare say why a sign-in failed, and Compare's sign-in has Cancel.** A failed sign-in on Models or
   Compare read its word alone ("Other account", "Expired"); splice's own sentence now stands under it, as on
   Accounts and Usage. A sign-in started from a Compare pane could only be ended by closing the pane; it has Cancel
-  beside its code, which reads Cancelling until splice has ended it.
+  from its first moment, before splice has a link or a code to show, and it reads Cancelling until splice has ended
+  it.
+- **Usage draws no card for a Claude login place that holds no account.** A command's own Claude Code login place
+  whose file held no usable sign-in was drawn on Usage as one more login ("Account 4, Signed out", with Sign in),
+  where Accounts has left such a place off its board since Oct 27. Both pages go by one rule now: signed out, no
+  proved account and no reading is no login.
 - **A sign-in behaves the same on Accounts, Usage, Models and Compare.** Each of the four pages ran its own copy of
   a sign-in's steps, and the copies had drifted. Now they share one. On Models and Compare a sign-in that failed says
   how in a word (Expired, Stopped, Config error, Already added, Other account) where it read "Not completed" for
@@ -1523,7 +1529,9 @@ origin.
   its first hours and the newest went unread. The files now answer only for minutes the recorder no longer holds, a
   minute that crosses the period's edge stays out alone, and the read charges a series what it takes to hold, merges
   boots once time is one bucket, and past that turns away only a series it has not met, saying how many. A gap reason
-  that repeats no longer hides the others: 55 "retention expired" intervals had filled the list.
+  that repeats no longer hides the others: 55 "retention expired" intervals had filled the list. A period measured
+  across a restart also counts what splice recorded, before it restarted, in the minute it restarted: those requests
+  were left out for as long as that minute was the oldest one the recorder still held in memory.
 - **The performance recorder folds old minutes into hours again, so its history reaches back weeks.** Minutes older
   than a day are folded into one file an hour. An hour that did not fit was tried again at every checkpoint, twice
   every five seconds, and no later hour was ever folded: on one desk the hour of Nov 9, 5 PM CT was read 66,183 times,

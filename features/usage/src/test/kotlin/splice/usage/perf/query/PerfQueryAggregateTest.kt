@@ -102,6 +102,40 @@ class PerfQueryAggregateTest {
         PerfWorkBudget.release(result)
     }
 
+    // The daemon restarted partway through the second minute. That minute's file holds what the earlier boot observed
+    // in it and this boot's own earlier checkpoint; the live recorder holds this boot's newer copy.
+    @Test
+    fun `a period across a restart counts what the earlier boot observed in the minute the daemon restarted`() {
+        val before = PerfIdentity("boot-before", "b", "v", "c")
+        val live = snapshot(3, fromMs = 60_000)
+        val files = listOf(
+            snapshot(1, by = before),
+            snapshot(2, fromMs = 60_000, by = before),
+            snapshot(1, fromMs = 60_000),
+        )
+        val service = PerfQueryService(object : PerfQuerySources {
+            override fun heads(): Set<String> = setOf("h")
+            override fun rows(head: String): PerfRowsSource? = null
+            override fun live(): PerfAggregateSnapshot = live
+            override fun history(): PerfHistory = object : PerfHistory {
+                override fun append(snapshot: PerfAggregateSnapshot): Boolean = false
+                override fun read(fromMs: Long, untilMs: Long): PerfHistoryRead = PerfHistoryRead(
+                    files.filter { it.fromMs >= fromMs && it.fromMs < untilMs },
+                    PerfCoverage(fromMs, untilMs, untilMs - fromMs),
+                    60_000,
+                )
+                override fun status(): PerfSinkStatus = PerfSinkStatus("test", 0, 0, 0, 0, 0, 0, null, null)
+            }
+        })
+
+        val result = service.summary(PerfQuery(0, 120_000, source = "auto"))
+
+        // 1 and 2 by the earlier boot and 3 by this one, whose file checkpoint of that minute is not counted again:
+        // 6 in 120 s
+        assertEquals("0.05", JsonScalars.str(result.getValue("rates").jsonObject, "completions_per_s"))
+        PerfWorkBudget.release(result)
+    }
+
     @Test
     fun `a series too long for one reply returns every count, in intervals widened until it fits`() {
         val until = 40 * 60_000L
@@ -164,8 +198,9 @@ class PerfQueryAggregateTest {
         count: Long,
         fromMs: Long = 0,
         issue: PerfIssue? = null,
+        by: PerfIdentity = identity,
     ): PerfAggregateSnapshot = PerfAggregateSnapshot(
-        identity,
+        by,
         fromMs,
         fromMs + 60_000,
         listOf(

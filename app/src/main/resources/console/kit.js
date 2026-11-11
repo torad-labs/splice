@@ -608,7 +608,7 @@ function commandFix(c, checks = []) {
 }
 /** Runs the fix for command [key] and says how it went: { ok, word }, the word being the one a refusal is told in beside the act.
  *  [fix] is what commandFix gave the caller; left out, it is read from the daemon (its commands and doctor), as the page that
- *  has not read them already needs. A sign-in is the page's own flow and is not run here. */
+ *  has not read them already needs. A sign-in is not run here: the page runs it through every page's one runner (SIGNIN, api.js). */
 async function fixCommand(key, fix) {
   const refused = { ok: false, word: "Not done" };
   const heads = async () => ((await API.get("/api/heads")).body?.heads ?? []).find((h) => h.key === key);

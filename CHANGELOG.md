@@ -1486,6 +1486,14 @@ origin.
   first login is there, and the new login joins beside it. A command whose first login is signed out has no pool to
   join yet, so its add still signs that first login in. Adding the account a ChatGPT command's first login already
   holds makes a second card for it, which Remove takes away.
+- **A sign-in behaves the same on Accounts, Usage, Models and Compare.** Each of the four pages ran its own copy of
+  a sign-in's steps, and the copies had drifted. Now they share one. On Models and Compare a sign-in that failed says
+  how in a word (Expired, Stopped, Config error, Already added, Other account) where it read "Not completed" for
+  every one, and a sign-in that ended because splice restarted says Stopped at once, where the page went on drawing
+  "Signing in" for five minutes. On Usage the box says the same word over splice's reason, and offers Try again only
+  where trying again can work. Cancel on Usage and Models reads Cancelling until splice has ended the sign-in, and
+  "Not cancelled" when splice did not answer, as on Accounts. A sign-in whose card, pane or form is gone ends on
+  splice too, and none of the pages gives up on one before splice does.
 - **Removing an added login from a ChatGPT, Grok, Kimi or Muse command takes it out of the running command.** Those
   commands build their list of logins once, when they start, so a login removed on Accounts stayed in the running
   command, listed with no sign-in behind it and a Sign in that would file it again under the label just removed,

@@ -1013,33 +1013,25 @@ async function useLogin(p, label) {
 }
 // the command's own sign-in, from the page that failed: the code and page it needs stand beside the act while it waits, and the
 // pane asks again once the login is in
-async function signIn(p) {
+// Its steps are every page's one runner (SIGNIN, api.js). The pane holds the sign-in while it is the act its failure
+// shows, so one whose pane was closed, or whose failure took another act, ends on splice too; it says in a word how one
+// failed. Until Nov 11, 2026 this was the pane's own loop, which went on waiting for five minutes on a sign-in a
+// restarted splice no longer held, and read "Not completed" however it had failed.
+function signIn(p) {
   const x = fx(p);
   if (x.busy) return;
-  const gen = (x.gen ?? 0) + 1;
-  Object.assign(x, { act: "signin", data: "", busy: true, word: "", shook: false, code: null, url: null, gen });
-  say(p, {});
-  const res = await API.post(`/api/auth/${enc(p.key)}/login`, {});
-  if (!res.ok || !res.body?.id) { refuse(p, "Not completed"); return; }
-  // A sign-in nobody is waiting on any more ends on splice too: its pane was closed or took another act, or five
-  // minutes passed. Until Nov 11, 2026 it ran on there, holding its command's label and callback port.
-  const end = () => API.del(`/api/auth/${enc(p.key)}/login/${enc(res.body.id)}`);
-  for (let i = 0; i < 300; i++) {
-    if (!ui.panes.includes(p) || p.fx !== x || x.gen !== gen) { end(); return; }
-    const st = (await API.get(`/api/auth/${enc(p.key)}/login/${enc(res.body.id)}`)).body ?? {};
-    if (st.state === "failed") { refuse(p, "Not completed"); return; }
-    if (st.state === "signed_in" || st.state === "live_after_restart") {
+  const sg = { how: { start: `/api/auth/${enc(p.key)}/login`, body: {}, poll: p.key } };
+  Object.assign(x, { act: "signin", data: "", busy: true, word: "", shook: false, code: null, url: null, sign: sg });
+  SIGNIN.start(sg, {
+    held: () => ui.panes.includes(p) && p.fx === x && x.sign === sg,
+    draw: () => say(p, { code: sg.code, url: sg.url }),
+    done: async () => {
       await read(); restore();
       p.fx = null;
       if (ui.prompt.trim()) run([p]); else render();
-      return;
-    }
-    const url = st.verification_uri || st.browser_url || null, code = st.user_code || null;
-    if (url !== x.url || code !== x.code) say(p, { url, code });
-    await new Promise((r) => setTimeout(r, 1000));
-  }
-  end();
-  refuse(p, "Not completed");
+    },
+    failed: () => refuse(p, sg.fail.word),
+  });
 }
 // ---------- the request, in Requests' own open request (reqview.js), under the row of answers it was asked in ----------
 // The pane's head already names the model, its command and its account, and its strip draws the request's time, tokens

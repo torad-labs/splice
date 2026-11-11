@@ -445,16 +445,6 @@ function nextOf(p, c) {
   return p.accounts.find((a) => a.id === c.following) || null;
 }
 
-// A failed sign-in says its kind in a word or two where it was pressed, and splice's own sentence opens under the word,
-// never on the card (refusalHtml): a bare red "In use" on a Sign in left him nothing to act on (Oct 27). splice names
-// each failure's kind (failure_kind, ConsoleAccounts.kt LoginFailure); a kind it doesn't name reads Not completed. A
-// file or config failure fails again until it's fixed, so it has no Try again.
-const FAILS = {
-  not_completed: { word: "Not completed", retry: true }, network: { word: "Network error", retry: true },
-  file: { word: "File error" }, config: { word: "Config error" }, expired: { word: "Expired", retry: true },
-  stopped: { word: "Stopped", retry: true }, cancelled: { word: "Cancelled", retry: true },
-  already_added: { word: "Already added", pulse: true }, other_account: { word: "Other account", retry: true },
-};
 // A name splice takes, and one no other account of the command has (ClaudeAccountFolders.kt:199,
 // OAuthAccountFiles.kt:264-266). On Claude: letters, digits, - and _, starting with a letter or digit, up to 64
 // (ClaudeAccountFolders.kt:34, :195). Elsewhere: lowercase letters, digits, ., - and _, up to 48
@@ -871,65 +861,30 @@ function signingHtml(target) {
   return `${waiting()}${open}${cancel}`;
 }
 // how: { start: the POST that begins it, poll: the head its status is read under, native: a Claude Code sign-in }
+// The steps of a sign-in (start, read, land, fail, cancel, a pasted code) are every page's one runner, SIGNIN in api.js.
+// Here is what this page does around them: where a sign-in shows, and what follows when it lands or fails.
 function startSignin(target, how, spot = null) { // spot: the one card it shows on
-  ui.signin[target] = { how, spot, by: how.native ? "paste" : "browser" };
+  ui.signin[target] = { how, spot };
   waitSignin(target);
 }
-const stopTimers = (s) => clearTimeout(s.timer);
-async function waitSignin(target) {
+const stopTimers = (s) => SIGNIN.quiet(s);
+// What the page does as the sign-in at [target] changes. It holds that sign-in while it is the one on its card or tile.
+function signOn(target) {
   const s = ui.signin[target];
-  stopTimers(s);
-  Object.assign(s, { state: "wait", code: null, url: null, id: null, gen: (s.gen || 0) + 1 });
-  render();
-  const gen = s.gen, res = await API.post(s.how.start, s.how.body || {});
-  if (ui.signin[target] !== s || s.gen !== gen) { // cancelled while splice was starting it: what splice started ends too
-    if (!s.how.watch && res.body?.id) API.del(loginPath(s, res.body.id));
-    return;
-  }
-  if (!res.ok || !res.body?.id) { failSignin(target, res.body); return; }
-  s.id = res.body.id; seen(target, read(s, res.body));
+  return { held: () => ui.signin[target] === s, draw: render, done: () => finishSignin(target), failed: (st) => failedSignin(target, st) };
 }
-// An add's answer carries its sign-in inside it (AddViews.kt:63); a command's sign-in answers as itself.
-const read = (s, body) => (s.how.watch ? body?.sign_in || {} : body);
-// one sign-in on splice: read with GET, ended with DELETE (LoginRoutes.kt)
-const loginPath = (s, id) => `/api/auth/${encodeURIComponent(s.how.poll)}/login/${encodeURIComponent(id)}`;
-function seen(target, st) { // one status answer: show its step, finish, fail, or ask again in a second
+const waitSignin = (target) => SIGNIN.start(ui.signin[target], signOn(target));
+// A sign-in the page itself ends as failed, in splice's words: a provider splice would not add, a save that did not land.
+function failSignin(target, st = null) { SIGNIN.fail(ui.signin[target], signOn(target), st); }
+// A sign-in that failed carries its word and splice's reason (SIGNIN.fail). They show where it was pressed.
+function failedSignin(target, st) {
   const s = ui.signin[target];
-  if (!s || s.state !== "wait") return;
-  if (st.state === "failed") { failSignin(target, st); return; }
-  if (st.state === "signed_in" || st.state === "live_after_restart") { finishSignin(target); return; }
-  const url = st.verification_uri || st.browser_url || null, by = st.user_code ? "code" : s.how.native ? "paste" : "browser";
-  const changed = url !== s.url || by !== s.by || (st.user_code || null) !== s.code;
-  s.swapped = !!(s.code && st.user_code && st.user_code !== s.code); // a device code that expired is replaced (DeviceLoginFlow.kt:88-93)
-  Object.assign(s, { url, by, code: st.user_code || null });
-  if (changed) { render(); s.swapped = false; }
-  askSignin(target);
-}
-// Asks splice how the sign-in stands, a second from now. The sign-in is splice's, so only splice's answer ends it here.
-// Until Nov 11, 2026 one status read that failed ended it on the card as "Not completed", with no reason, while splice
-// went on holding it: a second place the page and splice disagreed about a sign-in, beside Cancel (cancelSignin).
-function askSignin(target) {
-  const s = ui.signin[target], gen = s.gen;
-  s.timer = setTimeout(async () => {
-    const res = await API.get(s.how.watch || loginPath(s, s.id));
-    if (ui.signin[target] !== s || s.gen !== gen) return;
-    if (res.ok) { seen(target, read(s, res.body)); return; }
-    // splice holds no sign-in under this id: it restarted since, and the sign-in ended with the daemon that ran it
-    if (res.status === 404) { failSignin(target, { failure_kind: "stopped", failure_reason: "splice restarted, and this sign-in ended with it" }); return; }
-    // no answer is not an end: the row waits, and reads what splice says once it answers again
-    askSignin(target);
-  }, 1000);
-}
-function failSignin(target, st = null) {
-  const s = ui.signin[target];
-  stopTimers(s);
-  s.state = "fail"; s.fail = FAILS[st?.failure_kind] || FAILS.not_completed;
-  // why, in splice's words: the sign-in's own failure_reason, or the error a start splice refused answered with
-  const why = st?.failure_reason ?? st?.error;
-  s.why = typeof why === "string" ? why.trim() : "";
+  if (!s) return;
   refused(`signin:${target}`);
-  if (s.fail.pulse && st?.label) { // Already added: the card already there for that account pulses once
-    const there = data.flatMap((p) => p.accounts).find((a) => a.row?.label === st.label && a.row.heads.includes(s.how.poll));
+  if (s.fail.pulse && s.how?.poll) { // Already added: the card already there for that account pulses once
+    // splice names that login by its label; with none, it is the command's first login, which carries none
+    const is = (a) => (st?.label ? a.row.label === st.label : a.row.primary && st?.failure_reason);
+    const there = data.flatMap((p) => p.accounts).find((a) => a.row?.heads?.includes(s.how.poll) && is(a));
     if (there) ui.pulse = there.id;
   }
   render();
@@ -949,38 +904,25 @@ async function finishSignin(target) {
 // ended, and an add's sign-in ends with its add (dropAdd, AddConsole.discard).
 async function cancelSignin(target) {
   const s = ui.signin[target];
-  if (!s || s.state === "ending") return;
-  stopTimers(s);
-  if (s.state !== "wait" || s.how.watch || !s.how.poll) {
-    delete ui.signin[target];
-    if (target === "prov") dropAdd();
-    render(); return;
-  }
-  Object.assign(s, { state: "ending", gen: (s.gen || 0) + 1 }); // a start still on its way is ended when it answers (waitSignin)
-  render();
-  const res = s.id ? await API.del(loginPath(s, s.id)) : { ok: true };
+  if (!s) return;
+  const own = !s.how.watch && s.how.poll; // an add's sign-in is its add's, and ends with it below
+  if (own ? !(await SIGNIN.cancel(s, signOn(target))) : s.state === "ending") return;
   if (ui.signin[target] !== s) return;
-  // an id splice does not know has no sign-in behind it (splice restarted since): that one has ended too
-  if (res.ok || res.status === 404) { delete ui.signin[target]; render(); return; }
-  Object.assign(s, { state: "fail", fail: { word: "Not cancelled", retry: true }, why: "splice did not answer, so the sign-in may still be open. Try again starts a new one in its place." });
-  refused(`signin:${target}`); render();
+  stopTimers(s);
+  delete ui.signin[target];
+  if (target === "prov") dropAdd();
+  render();
 }
 function openSignin(target) {
   const s = ui.signin[target];
   if (s.url) window.open(s.url, "_blank", "noopener");
   if (s.by === "paste") board.querySelector(`.code-in[data-t="${target}"]`)?.focus();
 }
-async function submitCode(field) {
+function submitCode(field) {
   if (!field.value.trim() || field.readOnly) return;
   field.readOnly = true;
   const s = ui.signin[field.dataset.t];
-  if (!s?.id) return;
-  const res = await API.post(`/api/auth/${encodeURIComponent(s.how.poll)}/login/${encodeURIComponent(s.id)}/code`, { code: field.value.trim() });
-  // A code splice did not take ends the sign-in here with splice's own reason, and on splice too, so the card and
-  // splice agree it is over and Try again starts a new one. It read "Not completed" with no reason, over a sign-in
-  // splice could still be holding.
-  if (!res.ok) { API.del(loginPath(s, s.id)); failSignin(field.dataset.t, res.body); return; }
-  seen(field.dataset.t, res.body);
+  if (s?.id) SIGNIN.code(s, signOn(field.dataset.t), field.value.trim());
 }
 // How an account signs in again: Claude Code's own sign-in through its place, any other through its command's login
 // under its own name (ClaudeLoginRoutes.kt:20, LoginRoutes.kt:24).
@@ -2080,8 +2022,8 @@ async function adoptSignins() {
     const target = a ? `${a.out ? "out" : "re"}:${a.id}` : `add:${c.cmd}`;
     if (ui.signin[target]) continue;
     const how = a ? howFor(p, a, null) : addHow(p, c);
-    ui.signin[target] = { how, spot: null, by: how.native ? "paste" : "browser", state: "wait", id: l.id, gen: 1 };
-    seen(target, l); found = true;
+    ui.signin[target] = { how, spot: null };
+    SIGNIN.adopt(ui.signin[target], signOn(target), l); found = true;
   }
   if (found) render();
 }

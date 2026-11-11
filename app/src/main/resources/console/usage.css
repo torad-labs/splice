@@ -161,7 +161,8 @@
 .upb-login.bad.shook { animation: shake 300ms var(--e-out) 1; }
 .upb-login .run { margin: 0; display: flex; align-items: center; gap: .6rem; font: 500 .95rem/1.2 var(--font-name); color: var(--text-body); }
 .upb-login .run.why { color: var(--limit); }
-.upb-why { margin: 0; font: 500 .9rem/1.3 var(--font-name); color: var(--text-body); }
+/* splice's own sentence for a failed sign-in runs to two lines or more, and the card sets its lines not to wrap: it wraps inside its box */
+.upb-why { margin: 0; min-width: 0; white-space: normal; overflow-wrap: anywhere; font: 500 .9rem/1.3 var(--font-name); color: var(--text-body); }
 .upb-code { align-self: flex-start; padding: 0; border: 0; background: none; cursor: pointer; font: 600 1.35rem/1 var(--font-data); letter-spacing: .08em; color: var(--text); }
 .upb-hint { margin: 0; font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
 .upb-loginrow { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }

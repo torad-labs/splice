@@ -614,9 +614,13 @@ function signInBox(target) {
   const data = ` data-t="${esc(target)}"`;
   if (!g) return `<div class="outbox"><button class="act primary" type="button" data-act="signin"${data}>Sign in</button></div>`;
   const stop = DRAW.act({ word: "Cancel", act: "signstop", cls: "small quiet", data });
+  // splice is ending it: the box stays, with nothing to press, until splice answers (signStop)
+  if (g.state === "ending") return `<div class="upb-login"><p class="run"><i class="upb-spin" aria-hidden="true"></i>Cancelling</p></div>`;
   if (g.state === "fail") {
-    return `<div class="upb-login bad${ui.signShook === target ? " shook" : ""}"><p class="run why">Not completed</p>${g.why ? `<p class="upb-why">${esc(g.why)}</p>` : ""}`
-      + `<div class="upb-loginrow">${DRAW.act({ word: "Try again", act: "signin", cls: "small primary", data })}${stop}</div></div>`;
+    // the kind of failure in a word, as on Accounts (SIGNIN.FAILS); one that fails again until it is fixed has no Try again
+    const again = g.fail.retry ? DRAW.act({ word: "Try again", act: "signin", cls: "small primary", data }) : "";
+    return `<div class="upb-login bad${ui.signShook === target ? " shook" : ""}"><p class="run why">${esc(g.fail.word)}</p>${g.why ? `<p class="upb-why">${esc(g.why)}</p>` : ""}`
+      + `<div class="upb-loginrow">${again}${stop}</div></div>`;
   }
   return `<div class="upb-login"><p class="run"><i class="upb-spin" aria-hidden="true"></i>Signing in</p>`
     + (g.code ? `<button class="upb-code" type="button" data-act="signcopy"${data} aria-label="Copy the code">${esc(g.code)}</button><p class="upb-hint">Enter this code on the sign-in page</p>` : "")
@@ -1657,58 +1661,26 @@ function howFor(target) {
   const head = target.slice(5).split("|")[0];
   return head ? { start: `/api/auth/${encodeURIComponent(head)}/login`, body: {}, poll: head } : null;
 }
-const stopSign = (g) => clearTimeout(g?.timer);
-async function signStart(target) {
+// The steps of a sign-in (start, read, land, fail, cancel, a pasted code) are every page's one runner, SIGNIN in api.js.
+// Here is what this page does around them: the box draws from the sign-in the runner keeps, the card draws its meters
+// once it lands, and the box shakes when it fails. The page holds a sign-in while it is the one in its card's box.
+function signOn(target) {
+  const g = ui.signing[target];
+  return { held: () => ui.signing[target] === g, draw: () => renderBand("money"), done: () => signDone(target), failed: () => signFailed(target) };
+}
+function signStart(target) {
   const how = howFor(target);
   if (!how) return;
-  stopSign(ui.signing[target]);
-  const g = ui.signing[target] = { how, state: "wait", by: how.native ? "paste" : "browser", code: null, url: null, id: null, gen: (ui.signing[target]?.gen || 0) + 1 };
-  renderBand("money");
-  const res = await API.post(how.start, how.body || {});
-  // cancelled while splice was starting it: what splice started ends too
-  if (ui.signing[target] !== g) { if (res.body?.id) API.del(signPath(g, res.body.id)); return; }
-  if (!res.ok || !res.body?.id) { signFail(target, res.body); return; }
-  g.id = res.body.id;
-  signSeen(target, res.body);
+  SIGNIN.quiet(ui.signing[target]);
+  ui.signing[target] = { how };
+  SIGNIN.start(ui.signing[target], signOn(target));
 }
-function signSeen(target, st) {
-  const g = ui.signing[target];
-  if (!g || g.state !== "wait") return;
-  if (st?.state === "failed") { signFail(target, st); return; }
-  if (st?.state === "signed_in" || st?.state === "live_after_restart") { signDone(target); return; }
-  const url = st?.verification_uri || st?.browser_url || null, by = st?.user_code ? "code" : g.how.native ? "paste" : "browser", code = st?.user_code || null;
-  const changed = url !== g.url || by !== g.by || code !== g.code;
-  Object.assign(g, { url, by, code });
-  if (changed) renderBand("money");
-  signAsk(target);
-}
-// one sign-in on splice: read with GET, ended with DELETE (LoginRoutes.kt)
-const signPath = (g, id) => `/api/auth/${encodeURIComponent(g.how.poll)}/login/${encodeURIComponent(id)}`;
-// Asks splice how the sign-in stands, a second from now. The sign-in is splice's, so only splice's answer ends it here:
-// a read splice does not answer keeps the box waiting, and a splice that restarted, and so knows no such sign-in, says
-// that. Until Nov 11, 2026 one failed read ended it in the box with no reason while splice went on holding it.
-function signAsk(target) {
-  const g = ui.signing[target];
-  g.timer = setTimeout(async () => {
-    const res = await API.get(signPath(g, g.id));
-    if (ui.signing[target] !== g) return;
-    if (res.ok) { signSeen(target, res.body); return; }
-    if (res.status === 404) { signFail(target, { failure_reason: "splice restarted, and this sign-in ended with it" }); return; }
-    signAsk(target);
-  }, 1000);
-}
-function signFail(target, st) {
-  const g = ui.signing[target];
-  if (!g) return;
-  stopSign(g);
-  const why = st?.failure_reason ?? st?.error;
-  Object.assign(g, { state: "fail", why: typeof why === "string" ? why.trim() : "" });
+function signFailed(target) {
   ui.signShook = target;
   renderBand("money");
   setTimeout(() => { ui.signShook = null; }, 400);
 }
 async function signDone(target) {
-  stopSign(ui.signing[target]);
   delete ui.signing[target];
   const accounts = await API.get("/api/accounts");
   if (accounts.ok) S.accounts = accounts.body?.accounts || [];
@@ -1716,26 +1688,21 @@ async function signDone(target) {
   renderBand("money"); renderBand("by");
   setTimeout(() => { ui.landed = null; }, 1000);
 }
-// Cancel ends the sign-in on splice, and the box goes once it is asked to. Until Nov 11, 2026 it only forgot the sign-in
-// here: splice held it for up to ten minutes, refused the next Sign in on that login as already running, and a sign-in
-// page finished later still filed the login (Marcos: "it said it canceled ... so it didnt really cancelled"). One that
-// already failed has ended on splice, and one still starting is ended when its start answers (signStart).
-function signStop(target) {
+// Cancel ends the sign-in on splice, and the box goes once splice has answered (SIGNIN.cancel): it reads Cancelling
+// until then, and "Not cancelled" when splice did not answer. Until Nov 11, 2026 it only forgot the sign-in here: splice
+// held it for up to ten minutes, refused the next Sign in on that login as already running, and a sign-in page finished
+// later still filed the login (Marcos: "it said it canceled ... so it didnt really cancelled").
+async function signStop(target) {
   const g = ui.signing[target];
-  stopSign(g);
+  if (!g || !(await SIGNIN.cancel(g, signOn(target))) || ui.signing[target] !== g) return;
   delete ui.signing[target];
   renderBand("money");
-  if (g?.state === "wait" && g.id) API.del(signPath(g, g.id));
 }
 function signCode(field) {
   const g = ui.signing[field.dataset.t];
   if (!g?.id || !field.value.trim() || field.readOnly) return;
   field.readOnly = true;
-  API.post(`/api/auth/${encodeURIComponent(g.how.poll)}/login/${encodeURIComponent(g.id)}/code`, { code: field.value.trim() }).then((res) => {
-    if (ui.signing[field.dataset.t] !== g) return;
-    // a code splice did not take ends the sign-in on splice too, so the box and splice agree it is over
-    if (!res.ok) { API.del(signPath(g, g.id)); signFail(field.dataset.t, res.body); } else signSeen(field.dataset.t, res.body);
-  });
+  SIGNIN.code(g, signOn(field.dataset.t), field.value.trim());
 }
 
 // ---------- naming a login, in place, on the card or the row it belongs to ----------

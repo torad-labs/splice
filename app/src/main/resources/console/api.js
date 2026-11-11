@@ -258,3 +258,137 @@ const API = (() => {
   });
   return client();
 })();
+
+// ---------- one sign-in, as splice holds it ----------
+// A sign-in is splice's: splice starts it, holds it and ends it, and a page shows the one splice holds. Accounts, Usage,
+// Models and Compare each carried their own copy of these steps, and the copies drifted. On Nov 11, 2026 Cancel was
+// mended on Accounts while three pages still only forgot the sign-in; Models and Compare went on drawing "Signing in"
+// for five minutes over a sign-in a restarted splice no longer held; and only Accounts said in what way one had
+// failed (Marcos: "TRhe whol state machine system for login is broken"). The steps are here once. A page brings what
+// is its own: where its sign-in starts (how), the object it draws from (s), and what it does as the sign-in changes (on).
+//   how: { start: the POST that begins it, body, poll: the head its status is read under, native: Claude Code's own
+//          sign-in, which takes a pasted code; an add's sign-in is carried by its add instead: watch, the GET that
+//          answers it as sign_in, and end, the DELETE that ends it }
+//   s:   { how, state: "wait" | "ending" | "fail", id, url, code, by: "code" | "paste" | "browser", swapped, fail, why }
+//   on:  { held(): the page still shows this sign-in, draw(), done(status), failed(status) }
+const SIGNIN = (() => {
+  // A failed sign-in says its kind in a word or two where it was pressed, with splice's own sentence beside the word:
+  // a bare red "In use" on a Sign in left him nothing to act on (Oct 27). splice names each failure's kind
+  // (failure_kind, ConsoleAccounts.kt LoginFailure); a kind it doesn't name reads Not completed. A file or config
+  // failure fails again until it's fixed, so it has no Try again.
+  const FAILS = {
+    not_completed: { word: "Not completed", retry: true }, network: { word: "Network error", retry: true },
+    file: { word: "File error" }, config: { word: "Config error" }, expired: { word: "Expired", retry: true },
+    stopped: { word: "Stopped", retry: true }, cancelled: { word: "Cancelled", retry: true },
+    already_added: { word: "Already added", pulse: true }, other_account: { word: "Other account", retry: true },
+  };
+  // splice holds no sign-in under this id: it restarted since, and the sign-in ended with the daemon that ran it
+  const STOPPED = { failure_kind: "stopped", failure_reason: "splice restarted, and this sign-in ended with it" };
+  const NOT_CANCELLED = "splice did not answer, so the sign-in may still be open. Try again starts a new one in its place.";
+  // one sign-in on splice: read with GET, ended with DELETE (LoginRoutes.kt)
+  const at = (s, id) => `/api/auth/${encodeURIComponent(s.how.poll)}/login/${encodeURIComponent(id)}`;
+  const endPath = (s, id) => (s.how.watch ? s.how.end || null : id && s.how.poll ? at(s, id) : null);
+  // An add's answer carries its sign-in inside it (AddViews.kt:63); a command's sign-in answers as itself.
+  const read = (s, body) => (s.how.watch ? body?.sign_in || {} : body);
+  const quiet = (s) => clearTimeout(s?.timer);
+  // A sign-in the page stopped showing without ending it (its card, pane or form went) ends on splice too, so none
+  // stays open there with nobody to finish or cancel it. Nobody waits on that answer.
+  function gone(s, on, gen) {
+    if (on.held() && s.gen === gen) return false;
+    if (s.gen === gen && s.state === "wait") leave(s);
+    return true;
+  }
+  function leave(s, id = s.id) {
+    quiet(s);
+    const path = s.state === "wait" ? endPath(s, id) : null;
+    Object.assign(s, { state: "left", gen: (s.gen || 0) + 1 });
+    if (path) API.del(path);
+  }
+  /** Starts the sign-in, or starts it again in place after one that failed. */
+  async function start(s, on) {
+    quiet(s);
+    Object.assign(s, { state: "wait", by: s.how.native ? "paste" : "browser", code: null, url: null, id: null, fail: null, why: "", gen: (s.gen || 0) + 1 });
+    on.draw();
+    const gen = s.gen, res = await API.post(s.how.start, s.how.body || {});
+    if (!on.held() || s.gen !== gen) {
+      // Let go of while splice was starting it: what splice started ends too. One started again in place ends a
+      // command's earlier sign-in by its id, and keeps an add's, which holds one sign-in and it is now this start's.
+      const kept = s.how.watch && on.held() && s.state === "wait";
+      const path = res.ok && !kept ? endPath(s, res.body?.id) : null;
+      if (path) API.del(path);
+      return;
+    }
+    if (!res.ok || !(s.how.watch || res.body?.id)) { fail(s, on, res.body); return; }
+    s.id = res.body?.id ?? null;
+    seen(s, on, read(s, res.body));
+  }
+  /** Takes up a sign-in splice already holds (GET /api/auth/logins), as a page opened after it began. */
+  function adopt(s, on, status) {
+    Object.assign(s, { state: "wait", by: s.how.native ? "paste" : "browser", code: null, url: null, id: status.id, gen: (s.gen || 0) + 1 });
+    seen(s, on, status);
+  }
+  // one status answer: show its step, land, fail, or ask again in a second
+  function seen(s, on, st) {
+    if (s.state !== "wait") return;
+    if (st?.state === "failed") { fail(s, on, st); return; }
+    if (st?.state === "signed_in" || st?.state === "live_after_restart") { quiet(s); s.state = "done"; on.done(st); return; }
+    const url = st?.verification_uri || st?.browser_url || null, code = st?.user_code || null;
+    const by = code ? "code" : s.how.native ? "paste" : "browser";
+    const changed = url !== s.url || by !== s.by || code !== s.code;
+    s.swapped = !!(s.code && code && code !== s.code); // a device code that expired is replaced (DeviceLoginFlow.kt:88-93)
+    Object.assign(s, { url, by, code });
+    if (changed) { on.draw(); s.swapped = false; }
+    ask(s, on);
+  }
+  // Asks splice how the sign-in stands, a second from now. Only splice's answer ends it here: a read splice does not
+  // answer keeps the page waiting, and a splice that restarted, and so knows no such sign-in, says that. Until Nov 11,
+  // 2026 one read that failed ended it on the card as "Not completed" with no reason, while splice went on holding it.
+  function ask(s, on) {
+    // one chain of reads: an ask made while a read is out (a pasted code's answer) takes over from it
+    const gen = s.gen, turn = s.turn = (s.turn || 0) + 1;
+    quiet(s);
+    s.timer = setTimeout(async () => {
+      if (gone(s, on, gen)) return;
+      const res = await API.get(s.how.watch || at(s, s.id));
+      if (gone(s, on, gen) || s.turn !== turn) return;
+      if (res.ok) { seen(s, on, read(s, res.body)); return; }
+      if (res.status === 404) { fail(s, on, STOPPED); return; }
+      ask(s, on);
+    }, 1000);
+  }
+  /** Ends the sign-in here as failed, in splice's words: its status, or the answer of a call splice refused. */
+  function fail(s, on, st = null) {
+    quiet(s);
+    const why = st?.failure_reason ?? st?.error;
+    Object.assign(s, { state: "fail", fail: FAILS[st?.failure_kind] || FAILS.not_completed, why: typeof why === "string" ? why.trim() : "" });
+    on.failed(st);
+  }
+  /** Cancel. The sign-in ends on splice, and the page lets go of it only once splice has answered: true when it is over
+   *  there (one that already failed, or that splice never knew, is over), false when splice did not answer, with the
+   *  sign-in left as "Not cancelled" for the page to draw. Until Nov 11, 2026 Cancel only forgot the sign-in in the
+   *  page (Marcos: "it said it canceled ... so it didnt really cancelled"). */
+  async function cancel(s, on) {
+    if (s.state === "ending") return false;
+    quiet(s);
+    const path = s.state === "wait" ? endPath(s, s.id) : null;
+    // a start still on its way is ended when it answers (start)
+    Object.assign(s, { state: path ? "ending" : "left", gen: (s.gen || 0) + 1 });
+    if (!path) return true;
+    on.draw();
+    const res = await API.del(path);
+    if (res.ok || res.status === 404) { s.state = "left"; return true; }
+    Object.assign(s, { state: "fail", fail: { word: "Not cancelled", retry: true }, why: NOT_CANCELLED });
+    if (on.held()) on.failed(null);
+    return false;
+  }
+  /** A code pasted back. One splice does not take ends the sign-in there too, with splice's own reason here, so the
+   *  page and splice agree it is over and Try again starts a new one. */
+  async function code(s, on, text) {
+    if (!s.id || s.how.watch || s.state !== "wait") return;
+    const gen = s.gen, res = await API.post(`${at(s, s.id)}/code`, { code: text });
+    if (gone(s, on, gen)) return;
+    if (!res.ok) { API.del(at(s, s.id)); fail(s, on, res.body); return; }
+    seen(s, on, res.body);
+  }
+  return { FAILS, start, adopt, cancel, code, fail, quiet };
+})();

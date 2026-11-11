@@ -20,6 +20,7 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import java.io.IOException
+import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -27,7 +28,7 @@ internal class ReasoningCacheFiles(
     private val dir: Path,
     /** How an appended record reaches the disk: the page cache, not a force per record (fix 3, 2026-10-26). The page
      *  cache outlives the process, so a restart keeps every record. A power loss can take the records the kernel had
-     *  not yet written out, and a conversation whose last line it tore is dropped whole at the next start ([read]).
+     *  not yet written out and cut the last one short; the next start keeps every whole record before that ([read]).
      *  A test stands a slow disk in here. */
     private val force: JsonlForce = JsonlSink.PAGE_CACHE_FORCE,
     private val log: LogSink,
@@ -39,8 +40,8 @@ internal class ReasoningCacheFiles(
 
     /** Every conversation the directory holds, least recently written first (the order the cache's LRU map
      *  keeps), or null when the directory cannot be made owner-only: then nothing is written and the cache is
-     *  the in-memory one it was before V4-334. A file that does not read back whole is removed and skipped:
-     *  its conversation injects nothing, which is where it stood before. */
+     *  the in-memory one it was before V4-334. A file with a line that is not a round anywhere but its end is removed
+     *  and skipped: its conversation injects nothing, which is where it stood before. */
     fun restore(): List<StoredConversation>? {
         val listed = try {
             val open = SecureFile.ownerOnlyDirectory(dir)
@@ -115,12 +116,29 @@ internal class ReasoningCacheFiles(
         file.fileName.toString().takeIf { it.endsWith(CONVERSATION_FILE) }?.removeSuffix(CONVERSATION_FILE)
             ?.takeIf(::accepts)
 
+    /** A LINE CUT SHORT AT THE END COSTS THAT ROUND ALONE (2026-11-10). A record is appended as its line and the
+     *  newline after it, so whatever follows the last newline is a write that never finished: this machine stopped
+     *  dead at 8:28 PM on Nov 10 (its journal ends there with no shutdown), and the next start removed two live
+     *  conversations whole, with every round they had kept, over one such line each. The rounds before it are whole
+     *  and are everything the conversation had kept, so they keep serving, which leaves the request the same up to
+     *  the lost round where removing the file changed it from the first one. A line that is not a round anywhere
+     *  before the end is no cut write, and removes the file as before. */
     private fun read(file: Path): StoredConversation? {
         val key = conversationOf(file) ?: return null
         val why = try {
-            val rounds = Files.readAllLines(file).filter(String::isNotBlank)
-                .map { lines.decodeFromString(StoredRound.serializer(), it) }
-            if (rounds.isNotEmpty() && rounds.all(StoredRound::whole)) return StoredConversation(key, rounds)
+            val bytes = Files.readAllBytes(file)
+            val ended = bytes.lastIndexOf(NEWLINE) + 1
+            // Strict up to the last newline (a line there that is not text is not a round); what follows it may end
+            // mid-character, so it is read leniently and judged as a round or not.
+            val finished = Charsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes, 0, ended)).lineSequence()
+                .filter(String::isNotBlank).map { lines.decodeFromString(StoredRound.serializer(), it) }.toList()
+            val unfinished = String(bytes, ended, bytes.size - ended, Charsets.UTF_8).takeIf(String::isNotBlank)
+            val last = unfinished?.let(::roundOrNull)
+            val rounds = finished + listOfNotNull(last)
+            if (rounds.isNotEmpty() && rounds.all(StoredRound::whole)) {
+                val stored = StoredConversation(key, rounds)
+                return if (unfinished == null) stored else mended(stored, cut = last == null)
+            }
             "an empty conversation or round"
         } catch (failure: IOException) {
             SafeFailureText.render(failure)
@@ -135,6 +153,28 @@ internal class ReasoningCacheFiles(
         )
         drop(key)
         return null
+    }
+
+    /** [line] as a round, or null when it is not one: the end of a write that was cut short. */
+    private fun roundOrNull(line: String): StoredRound? = try {
+        lines.decodeFromString(StoredRound.serializer(), line)
+    } catch (_: IllegalArgumentException) {
+        null
+    }
+
+    /** [stored] written back as whole lines, so the next round starts on a line of its own instead of joining what
+     *  the cut write left. A file that cannot be written again is removed ([replace]), and its conversation is then
+     *  not restored: half of it must never be what the disk holds. */
+    private fun mended(stored: StoredConversation, cut: Boolean): StoredConversation? {
+        if (!replace(stored.key, stored.rounds)) return null
+        if (cut) {
+            log(
+                "[reasoning-cache] conversation ${stored.key.take(KEY_LOG_CHARS)}… ended in a line cut short (a " +
+                    "write that never finished): its ${stored.rounds.size} whole record(s) are kept, the cut one " +
+                    "is gone",
+            )
+        }
+        return stored
     }
 
     private fun inMemoryOnly(why: String): List<StoredConversation>? {
@@ -166,3 +206,7 @@ private val lines = Json { ignoreUnknownKeys = false }
 // `splice-` + 32 hex (the opening's hash), then optionally `-` + 16 hex (the session's).
 private val KEY_SHAPE = Regex("[A-Za-z0-9-]{1,96}")
 private const val CONVERSATION_FILE = ".jsonl"
+
+// why: the byte JsonlSink.appendLine ends every record with; what follows the last one in a file is an unfinished
+// write.
+private const val NEWLINE = '\n'.code.toByte()

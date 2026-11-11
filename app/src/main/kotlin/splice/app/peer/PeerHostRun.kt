@@ -9,12 +9,10 @@
 // every peer: each removes its record, key file, socket and helper.json, and its anchor process ends.
 package splice.app.peer
 
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import splice.core.util.Cancellables
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
@@ -33,6 +31,7 @@ import java.nio.file.StandardOpenOption
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 // why: EX_USAGE from sysexits.h; only a daemon that spelled the command line wrong sees it.
 private const val HOST_USAGE_EXIT = 64
@@ -43,7 +42,8 @@ private const val STOP_WAIT_MS = 15_000L
 // why: a host of an older build that is making way finishes its stop within this; past it this one leaves.
 private const val HOST_LOCK_WAIT_MS = 20_000L
 
-// why: how soon a peer asked of the host starts; a listing of one small folder four times a second costs nothing.
+// why: how soon a peer asked of the host starts, and how soon the host sees it was told to stop; a listing of one
+// small folder four times a second costs nothing.
 private const val POLL_MS = 250L
 
 // why: a peer revoked and registered again, or restarted, finds the host still up within this; past it a host with
@@ -101,12 +101,16 @@ internal class PeerHostRun(private val args: List<String>) {
         val build = host.setup(PEER_HOST_COMMAND) ?: return HOST_USAGE_EXIT
         val files = PeerHostFiles(build.stateDir)
         val lock = lock(files) ?: return 0
-        val stop = CompletableDeferred<Unit>()
+        val stop = AtomicBoolean(false)
         val stopped = CountDownLatch(1)
-        // The hook never stops anything: it asks main to, and waits on a plain latch until main's cleanup is done.
+        // The hook never stops anything: it raises a flag main reads, and waits on a plain latch until main's cleanup
+        // is done. The flag is one nothing can wait on, on purpose. Main ends in exitProcess, and whatever the hook
+        // resumed would run on the hook's own thread: an exit called there waits for the JVM's shutdown lock, held by the
+        // thread that is waiting for this hook, so the host cleaned up and then never left. A host told to make way on
+        // Nov 3 was still running on Nov 10.
         Runtime.getRuntime().addShutdownHook(
             Executors.defaultThreadFactory().newThread {
-                stop.complete(Unit)
+                stop.set(true)
                 stopped.await(STOP_WAIT_MS, TimeUnit.MILLISECONDS)
             },
         )
@@ -130,13 +134,13 @@ internal class PeerHostRun(private val args: List<String>) {
     }
 
     /** Serves each peer asked of [build] until a stop, or until no peer is left or asked for [IDLE_MS]. */
-    private suspend fun serve(peers: PeerHost, files: PeerHostFiles, build: String, stop: CompletableDeferred<Unit>) {
+    private suspend fun serve(peers: PeerHost, files: PeerHostFiles, build: String, stop: AtomicBoolean) {
         var idleSince = clock()
-        while (!stop.isCompleted) {
+        while (!stop.get()) {
             for (name in files.take(build)) peers.start(name)
             if (peers.count() > 0 || files.waiting(build)) idleSince = clock()
             if (clock() - idleSince >= IDLE_MS) return
-            withTimeoutOrNull(POLL_MS) { stop.await() }
+            waiter.wait(POLL_MS)
         }
     }
 

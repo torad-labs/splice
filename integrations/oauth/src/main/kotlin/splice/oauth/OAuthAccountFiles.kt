@@ -11,7 +11,6 @@ import splice.upstream.credentials.CredentialLock
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 internal const val FIELD_KIND = "splice_auth_kind"
@@ -20,6 +19,10 @@ internal const val PRIMARY = "primary"
 internal const val AUTO = "auto"
 internal const val JSON_SUFFIX = ".json"
 internal const val MAX_LABEL_CHARS = 48
+
+// The sign-in page signs in whichever account its browser holds, so this is what an add most often comes back as.
+private const val ALREADY_FIRST = "that account is already this command's first login, so nothing was added. " +
+    "To add another account, finish the sign-in page as that other account"
 
 /** One credential's non-secret durable identity. [refusal] is set only for an entry splice will not load,
  *  in words for the operator. */
@@ -70,7 +73,7 @@ public class OAuthLoginAccount(
     private val writtenLabel = AtomicReference<String?>(null)
     private val setAsideQuota = AtomicReference<Path?>(null)
     private val refusal = AtomicReference<String?>(null)
-    private val refusedOnDisk = AtomicBoolean(false)
+    private val refusalKind = AtomicReference<OAuthLoginRefusal?>(null)
 
     /** A RE-PLANNED destination for a login that has not started, now bound to a reserved [label]: the label is
      *  final, so the default and the token-derived move are dropped. The reservation and the persisted label are
@@ -99,17 +102,17 @@ public class OAuthLoginAccount(
     /** Authored refusal, never a provider body. The console uses the same words as the CLI. */
     public fun refusal(): String? = refusal.get()
 
-    /** Whether [refusal] is the credential failing to reach disk, which fails again until the disk is fixed, rather
-     *  than a refusal of the account itself. */
-    public fun refusedOnDisk(): Boolean = refusedOnDisk.get()
+    /** What [refusal] is, so its surface can word it: the credential failing to reach disk, the account being one the
+     *  command already holds, or a refusal of the account itself. Null with no refusal. */
+    public fun refusalKind(): OAuthLoginRefusal? = refusalKind.get()
 
     internal fun recordSetAsideQuota(path: Path?) {
         setAsideQuota.set(path)
     }
 
-    internal fun recordRefusal(reason: String, onDisk: Boolean) {
+    internal fun recordRefusal(reason: String, kind: OAuthLoginRefusal) {
         refusal.set(reason)
-        refusedOnDisk.set(onDisk)
+        refusalKind.set(kind)
     }
 
     internal fun releaseReservation() {
@@ -128,8 +131,12 @@ public data class OAuthAccountWrite(
     public val setAsideQuota: Path? = null,
 )
 
-/** Authored operator-facing refusal; [reason] contains no credential material. */
-public class OAuthAccountRefused(public val reason: String) : IllegalArgumentException(reason)
+/** Authored operator-facing refusal; [reason] contains no credential material. [kind] is the account's own unless
+ *  the one refusing knows it is something else. */
+public class OAuthAccountRefused(
+    public val reason: String,
+    public val kind: OAuthLoginRefusal = OAuthLoginRefusal.ACCOUNT,
+) : IllegalArgumentException(reason)
 
 /** Finds the in-place legacy primary and validated labeled accounts for one OAuth kind. */
 public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys = true }) {
@@ -238,14 +245,22 @@ public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys
     ): OAuthAccountWrite =
         writes.writeLabeledRenewal(kind, poolDir(kind, primaryFile), label, providerJson)
 
-    /** Post-exchange collision handling is only for labels that cannot be resolved before OAuth. */
+    /** Post-exchange collision handling is only for labels that cannot be resolved before OAuth. A sign-in that came
+     *  back as the account the command's first login holds adds nothing. It filed a second login for that one
+     *  account: the first login's file carries no label of ours, so the pool's own match for a returning account
+     *  never saw it (Marcos, Nov 11, 2026: "I had issues before like this adding new accounts"). */
     public fun writeTokenDerived(
         kind: AuthKind.OAuth,
         primaryFile: Path,
         label: String,
         providerJson: JsonObject,
         identity: OAuthAccountIdentity? = null,
-    ): OAuthAccountWrite = writes.writeTokenDerived(kind, poolDir(kind, primaryFile), label, providerJson, identity)
+    ): OAuthAccountWrite {
+        if (writes.firstHolds(kind, primaryFile, providerJson, identity)) {
+            throw OAuthAccountRefused(ALREADY_FIRST, OAuthLoginRefusal.ALREADY_THERE)
+        }
+        return writes.writeTokenDerived(kind, poolDir(kind, primaryFile), label, providerJson, identity)
+    }
 
     /** DELETE /api/auth/{head}/accounts/{label} (FEATURES.md §6): the credential and any retained
      *  quota file. True when a credential existed to remove. The primary is refused — it is not a

@@ -1484,8 +1484,10 @@ origin.
   command that already had a login, + Add account signed in as another account left one card, holding the new
   account where the first had been. Now every command that signs in through splice asks for a new place once its
   first login is there, and the new login joins beside it. A command whose first login is signed out has no pool to
-  join yet, so its add still signs that first login in. Adding the account a ChatGPT command's first login already
-  holds makes a second card for it, which Remove takes away.
+  join yet, so its add still signs that first login in. An add that comes back as the account a ChatGPT command's
+  first login already holds adds nothing: it reads "Already added" with splice's reason under it, and the card that
+  account has pulses once. It filed a second login for that one account, since the sign-in page signs in whichever
+  account its browser holds.
 - **A sign-in behaves the same on Accounts, Usage, Models and Compare.** Each of the four pages ran its own copy of
   a sign-in's steps, and the copies had drifted. Now they share one. On Models and Compare a sign-in that failed says
   how in a word (Expired, Stopped, Config error, Already added, Other account) where it read "Not completed" for

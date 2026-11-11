@@ -196,12 +196,9 @@ internal class LoginIo(
                 persistLabeled(path, account, parsed)
             }
         }.getOrElse { failure ->
-            val reason = if (failure is OAuthAccountRefused) {
-                failure.reason
-            } else {
-                "credential persistence error: ${SafeFailureText.render(failure)}"
-            }
-            account?.recordRefusal(reason, onDisk = failure !is OAuthAccountRefused)
+            val refused = failure as? OAuthAccountRefused
+            val reason = refused?.reason ?: "credential persistence error: ${SafeFailureText.render(failure)}"
+            account?.recordRefusal(reason, refused?.kind ?: OAuthLoginRefusal.DISK)
             output.line("splice: $reason")
             null
         } ?: return false

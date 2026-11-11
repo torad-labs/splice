@@ -33,6 +33,7 @@ import splice.core.util.LruSizing
 import splice.core.util.SafeFailureText
 import splice.oauth.LoginAnnouncement
 import splice.oauth.LoginObserver
+import splice.oauth.OAuthLoginRefusal
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
 import java.util.UUID
@@ -200,11 +201,13 @@ internal class LoginSessions(
         else -> LoginFailure.NOT_COMPLETED
     }
 
-    /** A refusal splice wrote: the credential not reaching disk, or the account or label refused by the config. */
-    private fun refused(result: LoginCommand.LoginResult): LoginFailure = when {
-        result.account?.refusedOnDisk() == true -> LoginFailure.FILE
-        result.refusal != null -> LoginFailure.CONFIG
-        else -> LoginFailure.NOT_COMPLETED
+    /** A refusal splice wrote: the credential not reaching disk, the account being one the command already holds, or
+     *  the account or label refused by the config. One refused before the sign-in began is the config's too. */
+    private fun refused(result: LoginCommand.LoginResult): LoginFailure = when (result.account?.refusalKind()) {
+        OAuthLoginRefusal.DISK -> LoginFailure.FILE
+        OAuthLoginRefusal.ALREADY_THERE -> LoginFailure.ALREADY_ADDED
+        OAuthLoginRefusal.ACCOUNT -> LoginFailure.CONFIG
+        null -> if (result.refusal != null) LoginFailure.CONFIG else LoginFailure.NOT_COMPLETED
     }
 
     private fun announce(cell: AtomicReference<LoginStatus>, detail: LoginAnnouncement) {

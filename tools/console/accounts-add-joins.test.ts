@@ -3,6 +3,7 @@
 // lands over that login's file (LoginIo.persistIfSignedIn); a place of its own is asked for as "auto"
 // (OAuthAccountFiles.loginAccount). Since Oct 13 only Muse and Kimi commands asked for one, so on a ChatGPT or Grok
 // command + Add account, signed in as another account, left one card holding the new account where the first had been.
+// An add that comes back as the account the first login already holds adds nothing, where it filed a twin of it.
 // Through the real page against a stub daemon that files a sign-in the way splice does.
 import { afterAll, beforeAll, test } from "bun:test";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";
@@ -35,15 +36,22 @@ const row = (l: Login) => {
     account_labels: {}, available: l.present, refusal: l.present ? null : "signed out", ...(l.present ? windows : {}),
   };
 };
-// One finished sign-in, in LoginRoutes' shape. The browser it ran in was signed in as the account "second".
+// what splice says of an add that came back as the first login's account (OAuthAccountFiles.writeTokenDerived)
+const FIRST_REASON = "that account is already this command's first login, so nothing was added. To add another account, finish the sign-in page as that other account";
+// The account the sign-in page's browser holds: another one, "second", or the one the command's first login is for.
+let browserHolds: "second" | "first" = "second";
+const ended = (kind: string, reason: string) =>
+  ({ id: crypto.randomUUID(), state: "failed", failure_kind: kind, failure_reason: reason, label: null, user_code: null, verification_uri: null, browser_url: null });
+// One finished sign-in, in LoginRoutes' shape.
 function signIn(head: string, label: unknown) {
   const first = logins.find((l) => l.head === head && l.primary)!;
   let filed: string | null = null;
+  if (label === "auto" && first.present && browserHolds === "first") return ended("already_added", FIRST_REASON);
   if (label === "auto" && first.present) { // a place of its own, beside the first login
     filed = `${head}-2`;
     logins.push({ head, label: filed, name: "second", primary: false, present: true });
   } else if (label === "auto") { // splice refuses a place in a pool whose first login holds no file
-    return { id: crypto.randomUUID(), state: "failed", failure_kind: "config", failure_reason: "sign in without --label first to create the primary account", label: null, user_code: null, verification_uri: null, browser_url: null };
+    return ended("config", "sign in without --label first to create the primary account");
   } else { // no label: the first login signs in again, and its file now holds the account that signed in
     Object.assign(first, { name: "second", present: true });
   }
@@ -76,7 +84,8 @@ afterAll(async () => {
 
 const card = (page: Page, name: string) => page.locator("article.card").filter({ has: page.locator(".name", { hasText: new RegExp(`^${name}(?: \\d+)?$`) }) });
 // [present]: whether each command's first login holds its file
-async function onPage(check: (page: Page) => Promise<void>, present = true) {
+async function onPage(check: (page: Page) => Promise<void>, present = true, holds: typeof browserHolds = "second") {
+  browserHolds = holds;
   logins = COMMANDS.map((c) => ({ head: c.head, label: null, name: `first-${c.head}`, primary: true, present }));
   const context = await browser.newContext({ viewport: { width: 1440, height: 1200 }, colorScheme: "dark" });
   await context.addInitScript(() => localStorage.setItem("splice-console-theme", "night"));
@@ -101,6 +110,17 @@ for (const c of COMMANDS) {
     await expect(card(page, `first-${c.head}`)).toBeVisible();
   }), 30_000);
 }
+
+test("+ Add account that comes back as the account the command's first login holds says Already added, and adds no twin", () => onPage(async (page) => {
+  const c = COMMANDS[0]!;
+  await add(page, c.head);
+  const tile = page.locator(`[data-key="add:${c.head}"]`);
+  await expect(tile.locator(".result", { hasText: "Already added" })).toBeVisible({ timeout: 10_000 });
+  // the card that account already has pulses once, so the eye lands on it
+  await expect(card(page, `first-${c.head}`)).toHaveClass(/pulse-once/);
+  await expect(tile.locator(".reason")).toHaveText(FIRST_REASON);
+  await expect(page.locator("article.card")).toHaveCount(COMMANDS.length);
+}, true, "first"), 30_000);
 
 test("+ Add account on a command whose first login is signed out signs that one in, since it has no pool to join yet", () => onPage(async (page) => {
   const c = COMMANDS[0]!;

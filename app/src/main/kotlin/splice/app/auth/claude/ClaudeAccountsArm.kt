@@ -48,6 +48,12 @@ internal class ClaudeAccountsArm(
     /** A Claude sign-in's id is known only to its own arm, and an OAuth id only to the generic port. */
     override fun pollLogin(id: String): LoginStatus? = claude.current()?.signIn?.poll(id) ?: generic.pollLogin(id)
 
+    /** The same split as [pollLogin]: each store ends only a sign-in it started. */
+    override suspend fun cancelLogin(id: String): LoginStatus? =
+        claude.current()?.signIn?.cancel(id) ?: generic.cancelLogin(id)
+
+    override fun openLogins(): List<LoginStatus> = claude.current()?.signIn?.open().orEmpty() + generic.openLogins()
+
     /** A stored Claude login's stable id stays put; only its display alias changes. */
     override suspend fun relabelAccount(headKey: String, label: String, newLabel: String): AccountMutation {
         val answered = generic.relabelAccount(headKey, label, newLabel)
@@ -61,6 +67,7 @@ internal class ClaudeAccountsArm(
         val answered = generic.removeAccount(headKey, label)
         if (answered !is AccountMutation.UnsupportedAuthKind || answered.kind != CLIENT_AUTH_KIND) return answered
         val port = claude.current() ?: return answered
+        port.signIn.withdraw(headKey, label)
         return when (port.folders.remove(headKey, label)) {
             ClaudeAccountRemoval.Removed -> AccountMutation.Ok
             ClaudeAccountRemoval.OwnSignIn -> AccountMutation.Refused(

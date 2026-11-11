@@ -1436,6 +1436,19 @@ origin.
 - **`splice login` names a Claude login by its label, never its email,** in every sentence it prints.
 
 ### Fixed
+- **Cancel on a sign-in ends it, and Sign in again always gets a new sign-in.** On the Accounts page, Cancel on a
+  sign-in only forgot it in the page. The daemon kept it: Claude Code's own sign-in ran on for its ten minutes, and a
+  browser or device sign-in held its label and its callback port for up to five. The next Sign in on that login was
+  then refused, as "In progress" with nothing to press on a Claude login, and as a config error or a bare "Not
+  completed" on the others. On Nov 11 a sign-in started at 9:54 AM CT and cancelled on the page was still running at
+  10:04, and its login could not be signed in again until it ran out. Now `DELETE /api/auth/{head}/login/{id}` ends a
+  sign-in where it stands: its process or flow is stopped, what it held is free, and the page's Cancel waits for that
+  answer before the card lets go. A new sign-in to the same login ends the one still open and takes its place, so
+  pressing Sign in again is never refused by your own earlier press. Removing a login ends a sign-in still open for
+  it, which until now could file the removed login again if its page was finished afterwards. A page opened while the
+  daemon holds a sign-in (a reload, a second tab) shows it on its card with its Cancel, from `GET /api/auth/logins`.
+  Discarding a provider being added ends its sign-in too. The daemon's log now has one line when a sign-in starts and
+  one when it ends, saying how; it had none.
 - **A measured period counts each recorded minute once, and reads all of them.** The Performance panel's "Measure any
   period" and `splice perf` gave a different rate for the same day minutes apart: 1.47 completions a minute, then 50.9
   an hour, then 3.59 a minute, beside a request log of 24,203 requests for that day. Three faults in how a measurement

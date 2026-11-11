@@ -13,10 +13,19 @@
 // It is also what Sign in and Sign in again do on a command's own login card ([ClaudeLoginOwner.login]). Marcos, Oct
 // 27, 2026: "SPlice console login ADDs an account, it doesn't replace it". None of these writes a login a running
 // session reads, so none of them waits for sessions to stop.
+//
+// A sign-in ends one of five ways and each is final: the account lands, it is refused by name, Claude Code stops, its
+// ten minutes run out, or it is cancelled. Cancelled means by the person ([cancel]), by a newer sign-in to the same
+// label ([prepare]) or by the daemon stopping, and in each the child is stopped and the pending folder goes. Until Nov
+// 11, 2026 there was no cancel: the console's Cancel only forgot the sign-in in the page, Claude Code's child ran on
+// for its ten minutes, and the next Sign in on that login was refused as already running (Marcos: "it said it
+// canceled, then when I tried sign in again, it said it was already in progress, so it didnt really cancelled").
 package splice.app.auth.claude
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
@@ -25,6 +34,8 @@ import splice.accounts.signin.LoginFailure
 import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
 import splice.core.util.Cancellables
+import splice.core.util.LogSafe
+import splice.core.util.LogSink
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference
 
@@ -39,23 +50,48 @@ private const val ADD_ACCOUNT_HISTORY = 32
  *  first added account reads as the second login of the pool, which is what it is. */
 private const val MINTED_LABEL_PREFIX = "account-"
 
+private const val STOPPED_WITH_SPLICE = "splice stopped while the sign-in was open"
+
 internal class ClaudeAccountSignIn(
     private val folders: ClaudeAccountFolders,
     private val auth: NativeClaudeAuth,
     private val scope: CoroutineScope,
+    private val log: LogSink = LogSink { },
 ) {
     private val lock = Any()
     private val active = mutableMapOf<String, Attempt>()
     private val history = LinkedHashMap<String, AtomicReference<LoginStatus>>()
 
-    /** One sign-in in flight: the folder Claude Code writes, the status the console polls, and the child a code
-     *  pasted on the card goes to. */
+    /** One sign-in in flight: the folder Claude Code writes, the status the console polls, the child a code pasted
+     *  on the card goes to, and the job a cancel stops. */
     private class Attempt(val pending: ClaudePendingAccount, val status: AtomicReference<LoginStatus>) {
         @Volatile
         var child: NativeClaudeAuthRun? = null
 
-        /** Whether it is still starting, or waiting on its browser page. */
-        fun open(): Boolean = status.get().state.let { it == LoginState.STARTING || it == LoginState.WAITING }
+        @Volatile
+        var job: Job? = null
+
+        /** Ends it when it is still open: it reads cancelled for [said], and its child is stopped. False for one that
+         *  already ended, which keeps its own end and whatever it is still finishing (the head's restart). */
+        fun end(said: String): Boolean {
+            val before = status.getAndUpdate { it.closed(LoginFailure.CANCELLED, said) }
+            if (before.open) job?.cancel()
+            return before.open
+        }
+
+        fun fail(kind: LoginFailure, reason: String): LoginStatus = status.updateAndGet { it.failed(kind, reason) }
+
+        /** [fail], for an end that must not write over one already reached: a sign-in that landed and is restarting
+         *  its head when the daemon stops is still signed in. */
+        fun close(kind: LoginFailure, reason: String): LoginStatus = status.updateAndGet { it.closed(kind, reason) }
+
+        /** A line for the daemon's log, written when a sign-in starts and when it ends. It names the sign-in's
+         *  command and label and never its page's address or a credential. Until Nov 11, 2026 a sign-in left no
+         *  line at all, and what one had done could only be read off the process list and its folder's times. */
+        fun line(what: String): String {
+            val where = "${pending.head} as ${pending.label}"
+            return "[claude-accounts] sign-in ${status.get().shortId} on $where: ${LogSafe.str(what)}\n"
+        }
     }
 
     /** Starts a sign-in that ADDS an account to [head] under [label], or mints one when none is asked for.
@@ -65,14 +101,39 @@ internal class ClaudeAccountSignIn(
         val cell = AtomicReference(LoginStatus(UUID.randomUUID().toString(), head, LoginState.STARTING))
         val attempt = synchronized(lock) {
             remember(cell)
-            prepare(head, label, cell)
+            prepare(head, label, cell, restart)
         } ?: return cell.get()
-        val job = scope.launch { run(attempt, restart) }
-        job.invokeOnCompletion { release(attempt) }
+        log(attempt.line("started"))
+        attempt.job?.start()
         return cell.get()
     }
 
     fun poll(id: String): LoginStatus? = synchronized(lock) { history[id]?.get() }
+
+    /** Ends the sign-in [id] where it stands: Claude Code's child is stopped, its pending folder goes with whatever
+     *  it wrote, and its label is free for the next sign-in. Answers how the sign-in ended, which is its own end
+     *  when it had already finished, and null for an id this daemon never started. */
+    suspend fun cancel(id: String): LoginStatus? {
+        val stopped = synchronized(lock) {
+            active.values.firstOrNull { it.status.get().id == id }?.takeIf { it.end("the sign-in was cancelled") }
+        }
+        stopped?.job?.join()
+        return poll(id)
+    }
+
+    /** Ends the sign-in still open for [label] on [head], when there is one. An account being removed is not signed
+     *  in again behind its removal: until Nov 11, 2026 a sign-in left open for a login that was then removed filed
+     *  the login again if its page was finished. */
+    suspend fun withdraw(head: String, label: String) {
+        val stopped = synchronized(lock) {
+            active[key(head, label)]?.takeIf { it.end("'$label' was removed from $head") }
+        }
+        stopped?.job?.join()
+    }
+
+    /** Every sign-in still starting or waiting on its browser page, oldest first. */
+    fun open(): List<LoginStatus> =
+        synchronized(lock) { active.values.map { it.status.get() }.filter(LoginStatus::open) }
 
     /** The code Claude Code's sign-in page shows, pasted on the card, for the sign-in [id] that is waiting for it.
      *  False when no sign-in by that id is running, or it would not take the code. */
@@ -83,29 +144,41 @@ internal class ClaudeAccountSignIn(
             .getOrDefault(false)
     }
 
-    /** The attempt and its pending folder, or null with the refusal already on [cell]. */
-    private fun prepare(head: String, label: String?, cell: AtomicReference<LoginStatus>): Attempt? {
+    /** The attempt, its pending folder and its job (not yet started), or null with the refusal already on [cell].
+     *
+     *  A sign-in to the same label that is still open ends here, replaced. Pressing Sign in again is the person asking
+     *  for a sign-in page now, and their own earlier press is never a reason to refuse them one. The new child is
+     *  given the pending folder only once the earlier one has let go of it. */
+    private fun prepare(
+        head: String,
+        label: String?,
+        cell: AtomicReference<LoginStatus>,
+        restart: HeadRestart?,
+    ): Attempt? {
         val wanted = label?.takeIf { it.isNotBlank() } ?: mint(head)
-        if (busy(head, wanted)) {
-            val said = "a sign-in for '$wanted' on $head is already running; finish it in its browser page, or wait " +
-                "for it to end"
-            failed(cell, LoginFailure.IN_PROGRESS, said)
-            return null
-        }
         val pending = Cancellables.runCatchingCancellable { folders.pending(head, wanted) }
-            .onFailure { why -> failed(cell, LoginFailure.CONFIG, why.message ?: "that account label cannot be used") }
+            .onFailure { why ->
+                cell.updateAndGet { it.failed(LoginFailure.CONFIG, why.message ?: "that account label cannot be used") }
+            }
             .getOrNull() ?: return null
+        val earlier = active[key(head, wanted)]
+        earlier?.end("a newer sign-in for '$wanted' on $head took its place")
         val attempt = Attempt(pending, cell)
         active[key(head, wanted)] = attempt
         cell.updateAndGet { it.copy(label = wanted) }
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            earlier?.job?.join()
+            if (earlier != null) folders.discard(pending.directory)
+            run(attempt, restart)
+        }
+        job.invokeOnCompletion { release(attempt) }
+        attempt.job = job
         return attempt
     }
 
-    private fun busy(head: String, label: String): Boolean = active[key(head, label)]?.open() == true
-
     /** The first `account-N` on [head] that no filed account and no sign-in still running holds, starting at 2
-     *  because the caller's own sign-in is the first login. A sign-in the person walked away from keeps its label
-     *  until it ends, so the next one takes the following number rather than being refused as already running. */
+     *  because the caller's own sign-in is the first login. A sign-in still open keeps its label until it ends, so a
+     *  second add started beside it takes the following number. */
     private fun mint(head: String): String {
         val running = active.values.filter { it.pending.head == head }.map { it.pending.label }
         val taken = folders.accounts(head).map(ClaudeAccount::label).toSet() + running
@@ -115,19 +188,19 @@ internal class ClaudeAccountSignIn(
     }
 
     private suspend fun run(attempt: Attempt, restart: HeadRestart?) {
-        val cell = attempt.status
         try {
             val outcome = Cancellables.runCatchingCancellable {
                 withTimeout(ADD_ACCOUNT_TIMEOUT_MS) { authenticate(attempt, restart) }
             }.onFailure { why ->
                 val said = "Claude Code's sign-in stopped unexpectedly (${why::class.simpleName})"
-                failed(cell, LoginFailure.STOPPED, said)
+                attempt.close(LoginFailure.STOPPED, said)
             }
             Cancellables.discard(outcome, "the attempt status records a classified sign-in failure")
         } catch (_: TimeoutCancellationException) {
-            failed(cell, LoginFailure.EXPIRED, "the sign-in page was not finished within 10 minutes")
+            attempt.close(LoginFailure.EXPIRED, "the sign-in page was not finished within 10 minutes")
         } catch (cancelled: CancellationException) {
-            failed(cell, LoginFailure.CANCELLED, "splice stopped while the sign-in was open")
+            // Whoever cancelled it has said why already; only the daemon stopping leaves it open until here.
+            attempt.close(LoginFailure.CANCELLED, STOPPED_WITH_SPLICE)
             throw cancelled
         }
     }
@@ -136,7 +209,7 @@ internal class ClaudeAccountSignIn(
         val cell = attempt.status
         val child = when (val begun = auth.begin(attempt.pending.directory)) {
             is NativeSignIn.Refused -> {
-                failed(cell, LoginFailure.CONFIG, begun.reason)
+                attempt.fail(LoginFailure.CONFIG, begun.reason)
                 return
             }
             is NativeSignIn.Running -> begun.run
@@ -149,7 +222,7 @@ internal class ClaudeAccountSignIn(
             if (completed) {
                 land(attempt.pending, cell, restart)
             } else {
-                failed(cell, LoginFailure.NOT_COMPLETED, "Claude Code's sign-in ended without signing in an account")
+                attempt.fail(LoginFailure.NOT_COMPLETED, "Claude Code's sign-in ended without signing in an account")
             }
         } finally {
             child.close()
@@ -166,7 +239,8 @@ internal class ClaudeAccountSignIn(
         folders.verify(pending)
         when (val landed = folders.land(pending)) {
             is ClaudeAccountLanding.Added -> {
-                cell.updateAndGet { it.copy(state = LoginState.SIGNED_IN, label = landed.label) }
+                // The account is filed, so signed in is what happened, even when a cancel reached it a moment before.
+                cell.updateAndGet { it.copy(state = LoginState.SIGNED_IN, failure = null, label = landed.label) }
                 // A head that will not come up is still a landed account: the credential is filed and the row
                 // reads signed in, live after the next start. Its failure is the restart's to report, not this
                 // sign-in's to undo.
@@ -184,7 +258,8 @@ internal class ClaudeAccountSignIn(
                 val said = "'${landed.label}' already holds another account on this command; sign in under a new label"
                 it.failed(LoginFailure.CONFIG, said).copy(label = landed.label)
             }
-            is ClaudeAccountLanding.Unreadable -> failed(cell, LoginFailure.NOT_COMPLETED, landed.why)
+            is ClaudeAccountLanding.Unreadable ->
+                cell.updateAndGet { it.failed(LoginFailure.NOT_COMPLETED, landed.why) }
         }
     }
 
@@ -203,16 +278,13 @@ internal class ClaudeAccountSignIn(
     private fun release(attempt: Attempt) {
         val pending = attempt.pending
         val owned = synchronized(lock) {
-            if (attempt.open()) {
-                failed(attempt.status, LoginFailure.CANCELLED, "splice stopped while the sign-in was open")
-            }
+            attempt.close(LoginFailure.CANCELLED, STOPPED_WITH_SPLICE)
             active.remove(key(pending.head, pending.label), attempt)
         }
         if (owned) folders.discard(pending.directory)
+        val ended = attempt.status.get()
+        log(attempt.line("ended: " + (ended.failure?.let { "${it.kind.wire} (${it.reason})" } ?: ended.state.wire)))
     }
-
-    private fun failed(cell: AtomicReference<LoginStatus>, kind: LoginFailure, reason: String): LoginStatus =
-        cell.updateAndGet { it.failed(kind, reason) }
 
     private fun key(head: String, label: String): String = "$head/$label"
 }

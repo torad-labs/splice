@@ -107,9 +107,11 @@ internal class AccountsMount(
             }
         }
         route.post("/api/auth/{head}/login") { guard.guarded(call) { loginRoutes.startLogin(call) } }
+        route.get("/api/auth/logins") { guard.guarded(call) { loginRoutes.openLogins(call) } }
         route.get("/api/auth/{head}/login/{id}") {
             guard.guarded(call) { if (!claudeRoutes.poll(call)) loginRoutes.pollLogin(call) }
         }
+        route.delete("/api/auth/{head}/login/{id}") { guard.guarded(call) { loginRoutes.cancelLogin(call) } }
         route.post("/api/claude-logins/{place}/login") { guard.guarded(call) { claudeRoutes.login(call) } }
         route.post("/api/auth/{head}/login/{id}/code") { guard.guarded(call) { claudeRoutes.submit(call) } }
         route.get("/api/auth/{head}/order") {

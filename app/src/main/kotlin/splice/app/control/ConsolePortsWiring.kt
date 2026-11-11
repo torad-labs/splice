@@ -5,6 +5,7 @@ import splice.app.AddWiring
 import splice.app.DoctorWiring
 import splice.app.LifecycleWiring
 import splice.app.auth.ConsoleAccountsImpl
+import splice.app.auth.LoginSessions
 import splice.app.console.DrainingRestartAdapter
 import splice.app.daemon.BootedTopology
 import splice.core.config.KeyStore
@@ -67,7 +68,7 @@ internal object ConsolePortsWiring {
         // the port's :app-side implementation, assigned here like every port above it. Unassigned,
         // the four routes behind it answer a named 503 rather than a payload reading as "no
         // accounts".
-        srv.ports.accounts = ConsoleAccountsImpl()
+        srv.ports.accounts = ConsoleAccountsImpl(LoginSessions(log = log))
 
         // V4-220 item 3: the SAME keys.toml every api-key head reads (ApiKeyAuthProvider's default is
         // KeyStorePath.defaultPath() over this process's environment), so a console PUT lands in the

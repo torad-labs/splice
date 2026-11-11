@@ -229,6 +229,8 @@ class AddModelRouteTest {
             error("add-model started a sign-in")
 
         override fun poll(id: String): LoginStatus? = null
+
+        override suspend fun cancel(id: String): LoginStatus? = null
     }
 
     private fun body(response: HttpResponse): JsonObject =

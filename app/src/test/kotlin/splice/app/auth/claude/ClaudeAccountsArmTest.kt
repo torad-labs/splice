@@ -54,6 +54,10 @@ class ClaudeAccountsArmTest {
 
         override fun pollLogin(id: String): LoginStatus? = oauthStatus.takeIf { id == it.id }
 
+        override suspend fun cancelLogin(id: String): LoginStatus? = pollLogin(id)
+
+        override fun openLogins(): List<LoginStatus> = listOf(oauthStatus)
+
         override suspend fun removeAccount(headKey: String, label: String): AccountMutation {
             removed = headKey to label
             return if (headKey == CLAUDE_HEAD) AccountMutation.UnsupportedAuthKind("client") else AccountMutation.Ok

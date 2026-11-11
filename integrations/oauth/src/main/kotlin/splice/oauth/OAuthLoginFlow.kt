@@ -13,6 +13,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.runInterruptible
 import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
@@ -94,7 +95,9 @@ public class OAuthLoginFlow(
         }
         server.start()
         try {
-            val code = awaitCode(spec, latch, codeRef, errRef, observer) ?: return false
+            // The wait parks its thread for up to five minutes. Interruptible, so a cancelled sign-in leaves it at
+            // once and the listener's port is free for the next one; until Nov 11, 2026 nothing could end it early.
+            val code = runInterruptible { awaitCode(spec, latch, codeRef, errRef, observer) } ?: return false
             return exchangeAndPersist(spec, code)
         } finally {
             server.stop(0)

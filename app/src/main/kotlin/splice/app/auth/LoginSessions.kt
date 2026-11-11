@@ -7,8 +7,15 @@
 // /api/auth/{head}/accounts/{label} are plain OAuthAccountFiles calls, no off-request state.
 //
 // ConsoleAccountsImpl owns account mutations and delegates asynchronous sign-in to this store.
+//
+// A sign-in can be ended ([cancel]), and a newer one to the same place ends the one before it ([start]): its flow is
+// stopped, and the label or callback port it held is free before the next flow asks for it. Until Nov 11, 2026 a
+// sign-in could only run out. A second press on the same account was then refused by the first one's own label hold
+// or callback port, as a config error or a bare "not completed", for up to five minutes.
 package splice.app.auth
 
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import splice.accounts.signin.HeadRestart
 import splice.accounts.signin.LoginFailure
@@ -20,6 +27,8 @@ import splice.configuration.add.AddSignIn
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
+import splice.core.util.LogSafe
+import splice.core.util.LogSink
 import splice.core.util.LruSizing
 import splice.core.util.SafeFailureText
 import splice.oauth.LoginAnnouncement
@@ -38,20 +47,42 @@ private const val MAX_TRACKED_LOGINS = 256
  *  [ConsoleAccountsImpl]), so every login this daemon starts shares one bounded id space. */
 internal class LoginSessions(
     private val scope: LifecycleScope = LifecycleScope(ProcessDispatchers().io()),
+    private val log: LogSink = LogSink { },
 ) {
     private val lock = Any()
-    private val sessions = object : LinkedHashMap<String, AtomicReference<LoginStatus>>(
+    private val sessions = object : LinkedHashMap<String, Session>(
         LruSizing.INITIAL_CAPACITY,
         LruSizing.LOAD_FACTOR,
         true,
     ) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, AtomicReference<LoginStatus>>?) =
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Session>?) =
             size > MAX_TRACKED_LOGINS
+    }
+
+    /** One sign-in: the place it signs in to, the status the console polls, and the job a cancel stops. */
+    private class Session(val place: String, val cell: AtomicReference<LoginStatus>) {
+        @Volatile
+        var job: Job? = null
+
+        /** Ends it when it is still open: it reads cancelled for [said], and its flow is stopped. False for one that
+         *  already ended, which keeps its own end and whatever it is still finishing (the head's restart). */
+        fun end(said: String): Boolean {
+            val before = cell.getAndUpdate { it.closed(LoginFailure.CANCELLED, said) }
+            if (before.open) job?.cancel()
+            return before.open
+        }
+
+        /** A line for the daemon's log, written when a sign-in starts and when it ends. It names the sign-in's
+         *  command and label and never its code, its page's address or a credential. */
+        fun line(what: String): String = "[accounts] sign-in ${cell.get().shortId} on $place: ${LogSafe.str(what)}\n"
     }
 
     /** Starts [provider]'s login flow off-request and returns immediately with its STARTING view.
      *  [restart] null is a head the daemon does not run yet (V4-220, a console add): the credential
-     *  lands and the state stays signed in, since no restart of this login's would bring it up. */
+     *  lands and the state stays signed in, since no restart of this login's would bring it up.
+     *
+     *  A sign-in to the same head and label that is still open ends here, replaced: pressing Sign in again is the
+     *  person asking for a sign-in page now. The new flow starts once the earlier one has let go of what it held. */
     internal fun start(
         headKey: String,
         provider: ProviderConfig,
@@ -60,15 +91,60 @@ internal class LoginSessions(
         restart: HeadRestart?,
     ): LoginStatus {
         val id = UUID.randomUUID().toString()
-        val cell = AtomicReference(LoginStatus(id, headKey, LoginState.STARTING))
-        synchronized(lock) { sessions[id] = cell }
-        val observer = LoginObserver { detail -> announce(cell, detail) }
+        val place = place(headKey, label)
+        val session = Session(place, AtomicReference(LoginStatus(id, headKey, LoginState.STARTING)))
+        val observer = LoginObserver { detail -> announce(session.cell, detail) }
         val attempt = LoginAttempt(headKey, provider, topology, label)
-        scope.launch { runAndLand(attempt, observer, restart, cell) }
-        return cell.get()
+        val job = synchronized(lock) {
+            val replaced = "a newer sign-in on $place took its place"
+            val earlier = sessions.values.filter { it.place == place && it.end(replaced) }
+            sessions[id] = session
+            scope.launch(start = CoroutineStart.LAZY) {
+                earlier.forEach { it.job?.join() }
+                runAndLand(attempt, observer, restart, session.cell)
+            }.also { session.job = it }
+        }
+        job.invokeOnCompletion { finished(session) }
+        log(session.line("started"))
+        job.start()
+        return session.cell.get()
     }
 
-    internal fun poll(id: String): LoginStatus? = synchronized(lock) { sessions[id] }?.get()
+    internal fun poll(id: String): LoginStatus? = synchronized(lock) { sessions[id] }?.cell?.get()
+
+    /** Ends the sign-in [id] where it stands: its flow is stopped, and its label hold and callback port are free for
+     *  the next one by the time this answers. Answers how it ended, which is its own end when it had already
+     *  finished, and null for an id this daemon never started. */
+    internal suspend fun cancel(id: String): LoginStatus? {
+        val session = synchronized(lock) { sessions[id] } ?: return null
+        if (session.end("the sign-in was cancelled")) session.job?.join()
+        return session.cell.get()
+    }
+
+    /** Ends the sign-in still open for [label] on [headKey], when there is one: an account being removed is not
+     *  signed in again behind its removal. */
+    internal suspend fun withdraw(headKey: String, label: String) {
+        val place = place(headKey, label)
+        val removed = "'$label' was removed from $headKey"
+        val stopped = synchronized(lock) { sessions.values.filter { it.place == place && it.end(removed) } }
+        stopped.forEach { it.job?.join() }
+    }
+
+    /** What a sign-in is for, as the log names it: the command, and the label when one was asked for. */
+    private fun place(headKey: String, label: String?): String =
+        if (label.isNullOrBlank()) headKey else "$headKey as $label"
+
+    /** Every sign-in still starting or waiting on the person. */
+    internal fun open(): List<LoginStatus> =
+        synchronized(lock) { sessions.values.map { it.cell.get() } }.filter(LoginStatus::open)
+
+    /** The job is over. One it left open was stopped with the daemon, the only end that says nothing itself. */
+    private fun finished(session: Session) {
+        val ended = session.cell.updateAndGet {
+            it.closed(LoginFailure.CANCELLED, "splice stopped while the sign-in was open")
+        }
+        log(session.line("ended: " + (ended.failure?.let { "${it.kind.wire} (${it.reason})" } ?: ended.state.wire)))
+    }
 
     private suspend fun runAndLand(
         attempt: LoginAttempt,
@@ -79,16 +155,18 @@ internal class LoginSessions(
         val result = Cancellables.runCatchingBestEffort {
             LoginCommand().runLoginAttempt(attempt.headKey, attempt.provider, attempt.topology, attempt.label, observer)
         }.getOrElse { e ->
-            update(cell) { it.failed(thrown(e), SafeFailureText.render(e)) }
+            update(cell) { it.closed(thrown(e), SafeFailureText.render(e)) }
             null
         } ?: return
         if (!result.ok) {
-            update(cell) { it.failed(refused(result), result.refusal ?: "login did not complete") }
+            update(cell) { it.closed(refused(result), result.refusal ?: "login did not complete") }
             return
         }
+        // The credential is on disk, so signed in is what happened, even when a cancel reached it a moment before.
         update(cell) {
             it.copy(
                 state = LoginState.SIGNED_IN,
+                failure = null,
                 label = result.account?.persistedLabel(),
             )
         }
@@ -117,6 +195,7 @@ internal class LoginSessions(
 
     private fun announce(cell: AtomicReference<LoginStatus>, detail: LoginAnnouncement) {
         update(cell) {
+            if (!it.open) return@update it
             it.copy(
                 state = LoginState.WAITING,
                 prompt = LoginPrompt(
@@ -159,4 +238,6 @@ internal class AddSignInSessions(private val sessions: LoginSessions = LoginSess
         sessions.start(key, provider, topology, label = null, restart = null)
 
     override fun poll(id: String): LoginStatus? = sessions.poll(id)
+
+    override suspend fun cancel(id: String): LoginStatus? = sessions.cancel(id)
 }

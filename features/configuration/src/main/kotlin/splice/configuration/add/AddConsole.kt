@@ -135,7 +135,13 @@ public class AddConsole(
 
     internal fun session(id: String): AddSession? = synchronized(lock) { sessions[id] }
 
-    internal fun discard(id: String): Boolean = synchronized(lock) { sessions.remove(id) != null }
+    /** Closes the add [id]. A sign-in it still had open ends with it, so the provider's label and callback port are
+     *  free for the next add. Until Nov 11, 2026 the flow ran on with nobody to read it. */
+    internal suspend fun discard(id: String): Boolean {
+        val closed = synchronized(lock) { sessions.remove(id) } ?: return false
+        closed.signInId?.let { signIn.cancel(it) }
+        return true
+    }
 
     internal fun signInStatus(s: AddSession): LoginStatus? = s.signInId?.let(signIn::poll)
 

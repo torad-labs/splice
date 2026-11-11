@@ -35,6 +35,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
+import splice.accounts.signin.LoginFailure
 import splice.accounts.signin.LoginPrompt
 import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
@@ -444,6 +445,9 @@ class AddBackendRouteTest {
         }
 
         override fun poll(id: String): LoginStatus? = statuses[id]
+
+        override suspend fun cancel(id: String): LoginStatus? =
+            statuses[id]?.closed(LoginFailure.CANCELLED, "the sign-in was cancelled")?.also { statuses[id] = it }
     }
 
     private fun body(response: HttpResponse): JsonObject =

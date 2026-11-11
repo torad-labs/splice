@@ -409,6 +409,8 @@ class ClaudeLivePoolMembershipTest {
                         restart: HeadRestart,
                     ): LoginStart = LoginStart.UnsupportedAuthKind("client")
                     override fun pollLogin(id: String): LoginStatus? = null
+                    override suspend fun cancelLogin(id: String): LoginStatus? = null
+                    override fun openLogins(): List<LoginStatus> = emptyList()
                     override suspend fun removeAccount(headKey: String, label: String): AccountMutation =
                         AccountMutation.UnsupportedAuthKind("client")
                     override suspend fun relabelAccount(

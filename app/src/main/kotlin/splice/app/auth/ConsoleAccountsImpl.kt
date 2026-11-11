@@ -44,7 +44,16 @@ internal class ConsoleAccountsImpl(
 
     override fun pollLogin(id: String): LoginStatus? = sessions.poll(id)
 
-    override suspend fun removeAccount(headKey: String, label: String): AccountMutation =
+    override suspend fun cancelLogin(id: String): LoginStatus? = sessions.cancel(id)
+
+    override fun openLogins(): List<LoginStatus> = sessions.open()
+
+    override suspend fun removeAccount(headKey: String, label: String): AccountMutation {
+        sessions.withdraw(headKey, label)
+        return removeFiled(headKey, label)
+    }
+
+    private fun removeFiled(headKey: String, label: String): AccountMutation =
         onOAuthHead(headKey) { target ->
             val removed = if (label == PRIMARY_LABEL) {
                 first.remove(target.kind, target.primaryFile)

@@ -449,7 +449,7 @@ function nextOf(p, c) {
 const FAILS = {
   not_completed: { word: "Not completed", retry: true }, network: { word: "Network error", retry: true },
   file: { word: "File error" }, config: { word: "Config error" }, expired: { word: "Expired", retry: true },
-  stopped: { word: "Stopped", retry: true }, cancelled: { word: "Cancelled", retry: true }, in_progress: { word: "In progress" },
+  stopped: { word: "Stopped", retry: true }, cancelled: { word: "Cancelled", retry: true },
   already_added: { word: "Already added", pulse: true }, in_use: { word: "In use", retry: true },
 };
 // A name splice takes, and one no other account of the command has (ClaudeAccountFolders.kt:199,
@@ -854,6 +854,8 @@ function previewCap(field) {
 const CODE_HINT = `<span class="code-hint">Enter this code on the sign-in page</span>`; // the act on the code, where Open sign-in goes (fin)
 function signingHtml(target) {
   const s = ui.signin[target];
+  // splice is ending it: the row stays, with nothing to press, until splice answers (cancelSignin)
+  if (s.state === "ending") return `${waiting()}<button class="act quiet" disabled>Cancelling</button>`;
   const cancel = `<button class="act quiet" data-act="cancel-signin" data-t="${target}">Cancel</button>`;
   if (s.state === "fail") {
     const f = s.fail, err = { word: f.word, why: s.why }, key = `signin:${target}`;
@@ -877,12 +879,17 @@ async function waitSignin(target) {
   Object.assign(s, { state: "wait", code: null, url: null, id: null, gen: (s.gen || 0) + 1 });
   render();
   const gen = s.gen, res = await API.post(s.how.start, s.how.body || {});
-  if (ui.signin[target] !== s || s.gen !== gen) return;
+  if (ui.signin[target] !== s || s.gen !== gen) { // cancelled while splice was starting it: what splice started ends too
+    if (!s.how.watch && res.body?.id) API.del(loginPath(s, res.body.id));
+    return;
+  }
   if (!res.ok || !res.body?.id) { failSignin(target, res.body); return; }
   s.id = res.body.id; seen(target, read(s, res.body));
 }
 // An add's answer carries its sign-in inside it (AddViews.kt:63); a command's sign-in answers as itself.
 const read = (s, body) => (s.how.watch ? body?.sign_in || {} : body);
+// one sign-in on splice: read with GET, ended with DELETE (LoginRoutes.kt)
+const loginPath = (s, id) => `/api/auth/${encodeURIComponent(s.how.poll)}/login/${encodeURIComponent(id)}`;
 function seen(target, st) { // one status answer: show its step, finish, fail, or ask again in a second
   const s = ui.signin[target];
   if (!s || s.state !== "wait") return;
@@ -895,7 +902,7 @@ function seen(target, st) { // one status answer: show its step, finish, fail, o
   if (changed) { render(); s.swapped = false; }
   const gen = s.gen;
   s.timer = setTimeout(async () => {
-    const res = await API.get(s.how.watch || `/api/auth/${encodeURIComponent(s.how.poll)}/login/${encodeURIComponent(s.id)}`);
+    const res = await API.get(s.how.watch || loginPath(s, s.id));
     if (ui.signin[target] !== s || s.gen !== gen) return;
     if (!res.ok) { failSignin(target); return; }
     seen(target, read(s, res.body));
@@ -924,11 +931,27 @@ async function finishSignin(target) {
   await refresh(s.spot ? s.spot.split("/")[1] : "new");
   if (s.how.name) await nameAdded(s.how);
 }
-function cancelSignin(target) {
-  if (ui.signin[target]) stopTimers(ui.signin[target]);
-  delete ui.signin[target];
-  if (target === "prov") dropAdd();
+// Cancel ends the sign-in on splice, and the card lets go of it only once splice has answered. Until Nov 11, 2026 it
+// only forgot the sign-in here: splice kept it for its ten minutes and refused the next Sign in on that login as
+// already running (Marcos: "it said it canceled ... so it didnt really cancelled"). A sign-in that already failed has
+// ended, and an add's sign-in ends with its add (dropAdd, AddConsole.discard).
+async function cancelSignin(target) {
+  const s = ui.signin[target];
+  if (!s || s.state === "ending") return;
+  stopTimers(s);
+  if (s.state !== "wait" || s.how.watch || !s.how.poll) {
+    delete ui.signin[target];
+    if (target === "prov") dropAdd();
+    render(); return;
+  }
+  Object.assign(s, { state: "ending", gen: (s.gen || 0) + 1 }); // a start still on its way is ended when it answers (waitSignin)
   render();
+  const res = s.id ? await API.del(loginPath(s, s.id)) : { ok: true };
+  if (ui.signin[target] !== s) return;
+  // an id splice does not know has no sign-in behind it (splice restarted since): that one has ended too
+  if (res.ok || res.status === 404) { delete ui.signin[target]; render(); return; }
+  Object.assign(s, { state: "fail", fail: { word: "Not cancelled", retry: true }, why: "splice did not answer, so the sign-in may still be open. Try again starts a new one in its place." });
+  refused(`signin:${target}`); render();
 }
 function openSignin(target) {
   const s = ui.signin[target];
@@ -1947,7 +1970,7 @@ async function probe() {
   // what splice last knew is drawn at once and marked as being checked: the page never reads empty while every
   // provider is asked, which takes up to half a minute on his machine (Marlin, splice-lead, Oct 11); before its first
   // answer the board stands as its ghosts (render)
-  if (!data.length) { render(); await load(); }
+  if (!data.length) { render(); await load(); adoptSignins(); }
   ui.probing = true; glyph.classList.add("turning"); render();
   await API.post("/api/usage/probe");
   await load();
@@ -2006,11 +2029,34 @@ function startAdd(p, cmd, field) {
   if (err) { ui.naming = { cmd, draft: v, err }; render(); return; }
   const { c } = findCmd(cmd), before = new Set(p.accounts.map((x) => x.row?.ref).filter(Boolean));
   ui.naming = null;
+  startSignin(`add:${cmd}`, { ...addHow(p, c), name: v || null, before });
+}
+// How a command takes one more login.
+function addHow(p, c) {
   // an OAuth command's added login takes a new place in its pool ("auto", OAuthAccountFiles' next free label); sent with no
   // label it signed the FIRST login in again, over its file, so a second Muse account replaced the spent one rather than
   // joining beside it (Oct 13, 5:38 AM). The first login of a command has no pool yet and still lands as its first.
   const pooled = /^(muse|kimi)-oauth$/.test(c.authKind ?? "") && p.accounts.some((x) => x.row?.heads?.includes(c.head));
-  startSignin(`add:${cmd}`, { start: `/api/auth/${encodeURIComponent(c.head)}/login`, body: pooled ? { label: "auto" } : {}, poll: c.head, name: v || null, before });
+  return { start: `/api/auth/${encodeURIComponent(c.head)}/login`, body: pooled ? { label: "auto" } : {}, poll: c.head };
+}
+// THE PAGE SHOWS THE SIGN-INS SPLICE HOLDS. One still open when the page opens (a reload, another tab) is drawn where
+// it would have been pressed, with its step and its Cancel (GET /api/auth/logins): on its login's card when it signs
+// that login in again, and on its command's Add account otherwise. Read once, when the board first stands; a sign-in
+// pressed here afterwards is already on its card. Until Nov 11, 2026 a reloaded page showed none of them.
+async function adoptSignins() {
+  const res = await API.get("/api/auth/logins");
+  let found = false;
+  for (const l of res.body?.logins || []) {
+    const p = data.find((x) => x.cmds?.some((c) => c.head === l.head)), c = p?.cmds.find((x) => x.head === l.head);
+    if (!p || Object.values(ui.signin).some((s) => s.id === l.id)) continue;
+    const a = p.accounts.find((x) => x.row?.heads?.includes(l.head) && labelOn(x, l.head) === l.label);
+    const target = a ? `${a.out ? "out" : "re"}:${a.id}` : `add:${c.cmd}`;
+    if (ui.signin[target]) continue;
+    const how = a ? howFor(p, a, null) : addHow(p, c);
+    ui.signin[target] = { how, spot: null, by: how.native ? "paste" : "browser", state: "wait", id: l.id, gen: 1 };
+    seen(target, l); found = true;
+  }
+  if (found) render();
 }
 async function nameAdded(how) {
   const added = data.flatMap((p) => p.accounts).find((x) => x.row?.ref && !how.before.has(x.row.ref) && x.row.heads.includes(how.poll));
@@ -2376,6 +2422,9 @@ document.addEventListener("click", async (e) => {
         ui.armed = null; refused(`remove:${t.dataset.s}`); render(); break;
       }
       ui.menu = null; ui.armed = null;
+      // a sign-in this login had open ended with it on splice (ConsoleAccounts.removeAccount); its row goes with the
+      // card, or the board would count as busy and stop reading again for as long as the page stayed open (atRest)
+      for (const k of [`re:${a.id}`, `out:${a.id}`]) if (ui.signin[k]) { stopTimers(ui.signin[k]); delete ui.signin[k]; }
       board.querySelectorAll(`.card[data-a="${CSS.escape(a.id)}"]`).forEach((el) => el.classList.add("leaving"));
       await refresh();
       break;

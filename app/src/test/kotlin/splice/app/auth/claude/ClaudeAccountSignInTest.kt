@@ -107,6 +107,71 @@ class ClaudeAccountSignInTest {
         }
     }
 
+    /** A sign-in store whose sign-ins each run the next of [children], open for [check] and torn down after it. */
+    private fun open(
+        account: String,
+        children: List<NativeLoginTestProcess>,
+        check: suspend (ClaudeAccountSignIn) -> Unit,
+    ) = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + ProcessDispatchers().io())
+        val next = children.iterator()
+        val auth = NativeClaudeAuth(
+            WrapStateRead { ClaudeToRun.Wrapped("fixture-native") },
+            emptyMap(),
+            ProcessDispatchers().io(),
+            NativeAuthStart { builder ->
+                write(Path.of(builder.environment().getValue("CLAUDE_CONFIG_DIR")), account)
+                next.next()
+            },
+        )
+        try {
+            check(ClaudeAccountSignIn(folders(), auth, scope))
+        } finally {
+            scope.coroutineContext[Job]!!.cancelAndJoin()
+        }
+    }
+
+    private suspend fun waiting(owner: ClaudeAccountSignIn, id: String) =
+        withTimeout(5_000) { while (owner.poll(id)?.state != LoginState.WAITING) yield() }
+
+    @Test
+    fun `a cancelled sign-in reads cancelled, stops Claude Code and leaves nothing behind`() {
+        val child = NativeLoginTestProcess(BROWSER)
+        open("uuid-work", listOf(child)) { owner ->
+            val started = owner.start(HEAD, "work")
+            waiting(owner, started.id)
+
+            val ended = owner.cancel(started.id)
+
+            assertEquals(LoginFailure.CANCELLED, ended?.failureKind)
+            assertFalse(child.isAlive, "Claude Code's sign-in is stopped")
+            assertEquals(emptyList<LoginStatus>(), owner.open())
+            assertFalse(Files.exists(state.resolve("claude-accounts-pending").resolve(HEAD).resolve("work")))
+            assertEquals(emptyList<String>(), folders().accounts(HEAD).map { it.label })
+        }
+    }
+
+    // Marcos, Nov 11, 2026: "it said it canceled, then when I tried sign in again, it said it was already in progress".
+    @Test
+    fun `signing in again on a login whose sign-in is still open replaces it, and the new one lands`() {
+        val first = NativeLoginTestProcess(BROWSER)
+        val second = NativeLoginTestProcess(BROWSER)
+        open("uuid-work", listOf(first, second)) { owner ->
+            val earlier = owner.start(HEAD, "work")
+            waiting(owner, earlier.id)
+
+            val again = owner.start(HEAD, "work")
+            waiting(owner, again.id)
+
+            assertEquals(LoginFailure.CANCELLED, owner.poll(earlier.id)?.failureKind)
+            assertFalse(first.isAlive, "the earlier sign-in's Claude Code is stopped")
+            second.finish(0)
+            withTimeout(5_000) { while (owner.poll(again.id)?.state == LoginState.WAITING) yield() }
+            assertEquals(LoginState.SIGNED_IN, owner.poll(again.id)?.state)
+            assertEquals(listOf("work"), folders().accounts(HEAD).map { it.label })
+        }
+    }
+
     private fun credentials(head: String, label: String): Path =
         state.resolve("claude-accounts").resolve(head).resolve(label).resolve(".credentials.json")
 

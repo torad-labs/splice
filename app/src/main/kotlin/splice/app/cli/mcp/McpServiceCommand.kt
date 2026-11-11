@@ -11,13 +11,15 @@ import splice.daemonclient.PostReading
 import splice.topology.TopologyStatePaths
 
 internal const val MCP_SERVICE_USAGE =
-    "install temple (--script FILE [--command COMMAND] | --launch-file FILE) --url URL [--codex-home DIR]"
+    "install temple ((--script FILE [--command COMMAND] | --launch-file FILE) --url URL | --endpoint URL) " +
+        "[--codex-home DIR]"
 
 // why: the refresh call is bounded after the Temple registration has already been persisted.
 private const val SERVICE_REFRESH_MS = 90_000
 
 /** Persists the already-resolved Temple entry, rather than teaching Splice a machine-specific checkout path.
- *  Temple calls this once while provisioning; the registration survives both processes and every reboot. */
+ *  Temple calls this once while provisioning; the registration survives both processes and every reboot. A Temple
+ *  that serves MCP itself registers its endpoint, and Splice then starts nothing for it. */
 internal class McpServiceCommand(
     private val out: TerminalOutput = TerminalOutput(::println),
     private val err: TerminalOutput = TerminalOutput(System.err::println),
@@ -52,7 +54,7 @@ internal class McpServiceCommand(
         }
         return when {
             read == null || read == PostReading.NotConnected -> {
-                out.line("Temple MCP registered durably. Splice will start it at its next daemon boot.")
+                out.line("Temple MCP registered durably. Splice takes it up at its next daemon boot.")
                 0
             }
             read is PostReading.Answered && read.reply.status == HttpStatus.OK -> {

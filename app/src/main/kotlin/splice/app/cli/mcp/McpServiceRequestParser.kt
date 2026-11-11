@@ -12,6 +12,8 @@ import java.nio.file.Path
 
 private const val INVALID_LAUNCH_DESCRIPTOR =
     "Temple MCP launch descriptor is invalid; verify command, args, cwd, and env."
+private const val ENDPOINT_FLAG = "--endpoint"
+private const val CODEX_HOME_FLAG = "--codex-home"
 
 /** The string constraints ProcessBuilder applies after a descriptor would otherwise be durable. */
 internal class McpProcessStrings {
@@ -25,14 +27,22 @@ internal class McpProcessStrings {
 
 internal class McpServiceRequestParser {
     private val process = McpProcessStrings()
-    internal data class Request(
-        val command: String,
-        val args: List<String>,
-        val cwd: String?,
-        val env: Map<String, String>,
-        val url: String,
-        val codexHome: Path?,
-    )
+
+    /** What an install registers: a process Splice launches, or the address of a Temple that serves MCP itself. */
+    internal sealed class Request {
+        abstract val codexHome: Path?
+
+        data class Process(
+            val command: String,
+            val args: List<String>,
+            val cwd: String?,
+            val env: Map<String, String>,
+            val url: String,
+            override val codexHome: Path?,
+        ) : Request()
+
+        data class Endpoint(val url: String, override val codexHome: Path?) : Request()
+    }
 
     internal data class ParseResult(val request: Request?, val error: String?)
 
@@ -40,24 +50,33 @@ internal class McpServiceRequestParser {
         if (args.take(2) != listOf("install", "temple")) return ParseResult(null, null)
         val pairs = args.drop(2).chunked(2)
         val flags = pairs.filter { it.size == 2 }.associate { it[0] to it[1] }
-        val allowed = setOf("--script", "--launch-file", "--url", "--command", "--codex-home")
+        val allowed = setOf("--script", "--launch-file", ENDPOINT_FLAG, "--url", "--command", CODEX_HOME_FLAG)
         val malformed = pairs.any { it.size != 2 } || flags.size != pairs.size
-        return if (malformed || !allowed.containsAll(flags.keys)) {
-            ParseResult(null, null)
-        } else {
-            requested(flags)
+        return when {
+            malformed || !allowed.containsAll(flags.keys) -> ParseResult(null, null)
+            ENDPOINT_FLAG in flags -> ParseResult(endpointRequest(flags), null)
+            else -> requested(flags)
         }
+    }
+
+    /** An endpoint stands alone: a launch, its command or the app's address beside it is refused, never mixed in. */
+    private fun endpointRequest(flags: Map<String, String>): Request? {
+        val endpoint = flags[ENDPOINT_FLAG]?.takeIf { validUrl(it) && process.validValue(it) }
+        val codexHome = flags[CODEX_HOME_FLAG]?.let(::path)
+        val alone = (flags.keys - setOf(ENDPOINT_FLAG, CODEX_HOME_FLAG)).isEmpty()
+        val homeNamed = CODEX_HOME_FLAG !in flags || codexHome != null
+        return endpoint?.takeIf { alone && homeNamed }?.let { Request.Endpoint(it, codexHome) }
     }
 
     private fun requested(flags: Map<String, String>): ParseResult {
         val scriptMode = "--script" in flags
         val launchMode = "--launch-file" in flags
         val url = flags["--url"]?.takeIf(::validUrl)
-        val codexHome = flags["--codex-home"]?.let(::path)
+        val codexHome = flags[CODEX_HOME_FLAG]?.let(::path)
         val validShape = scriptMode != launchMode &&
             !(launchMode && "--command" in flags) &&
             url != null && process.validValue(url) &&
-            !("--codex-home" in flags && codexHome == null)
+            !(CODEX_HOME_FLAG in flags && codexHome == null)
         if (!validShape) return ParseResult(null, null)
         return if (scriptMode) {
             scriptRequest(flags, checkNotNull(url), codexHome)
@@ -70,7 +89,7 @@ internal class McpServiceRequestParser {
         val script = flags["--script"]?.let(::path)?.takeIf { Files.isRegularFile(it) }
         val command = flags["--command"] ?: "bun"
         val request = if (script != null && process.valid(command, listOf(script.toString()), emptyMap())) {
-            Request(command, listOf(script.toString()), null, emptyMap(), url, codexHome)
+            Request.Process(command, listOf(script.toString()), null, emptyMap(), url, codexHome)
         } else {
             null
         }
@@ -80,7 +99,7 @@ internal class McpServiceRequestParser {
     private fun launchRequest(flags: Map<String, String>, url: String, codexHome: Path?): ParseResult {
         val file = flags["--launch-file"]?.let(::path)
         val launch = file?.let(::launch)
-        val request = launch?.let { Request(it.command, it.args, it.cwd, it.env, url, codexHome) }
+        val request = launch?.let { Request.Process(it.command, it.args, it.cwd, it.env, url, codexHome) }
         return if (request == null) ParseResult(null, INVALID_LAUNCH_DESCRIPTOR) else ParseResult(request, null)
     }
 

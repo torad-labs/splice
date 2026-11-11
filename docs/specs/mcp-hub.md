@@ -178,6 +178,14 @@ provenance permits sharing its exact command, arguments, environment and directo
 `cwd` retain their per-session classification. Descriptor paths are resolved before persistence; invalid process
 strings and environment names are refused before the prior registration is replaced.
 
+A Temple that serves MCP itself, on one HTTP endpoint for every session, registers that endpoint with
+`splice mcp install temple --endpoint URL`, alone or with `--codex-home` (Nov 11, 2026: the rebuilt Temple answers
+at `http://127.0.0.1:7740/mcp`, and the registered stdio server's files were gone, so no session held a Temple
+tool). The registration then holds `{"type":"http","url":URL}` and no process. Splice starts and hosts nothing for
+it: every Claude launch plan and the native Codex entry carry the address as it is, with no Splice access key. A
+launch-form install replaces an endpoint whole, and an endpoint replaces a launch whole. Tool definitions then come
+from the Temple's own endpoint, so a stopped Temple fails initialization and tool discovery until it answers again.
+
 Every Claude launch plan includes this service under `temple`, with its tools still named `mcp__temple__*`.
 The current Temple contract is its six fixed tools; dispatch remains available through `act`, not a legacy
 `dispatch_send` alias. Definitions come from Temple's local stdio process, never the app's root URL.

@@ -19,9 +19,11 @@ public const val TEMPLE_MCP_NAME: String = "temple"
 public const val TEMPLE_MCP_PROVENANCE_KEY: String = "provenance"
 public const val TEMPLE_MCP_REGISTERED_SERVICE: String = "registered_service"
 
-/** The installed Temple stdio entry, shared by daemon boot and every client's launch plan. The app is not queried:
+/** The installed Temple entry, shared by daemon boot and every client's launch plan. The app is not queried:
  *  its local MCP process must be discoverable before the app starts. Existing declarations keep their exact command,
- *  arguments and environment, including older Temple entries with a larger tool surface. */
+ *  arguments and environment, including older Temple entries with a larger tool surface. A Temple that serves MCP
+ *  itself registers its one HTTP endpoint instead: every client is handed that entry as it is, and nothing is
+ *  launched or hosted for it. */
 public class TempleMcpEntry(
     private val home: Path,
     private val env: EnvReader = EnvReader(System::getenv),
@@ -38,7 +40,7 @@ public class TempleMcpEntry(
     public fun server(): McpPlannedServer? {
         val registration = registration()
         val entry = registration["server"] as? JsonObject
-        return entry?.takeIf(::stdio)?.let {
+        return entry?.takeIf { stdio(it) || endpoint(it) }?.let {
             McpPlannedServer(
                 TEMPLE_MCP_NAME,
                 McpPlanScope.USER,
@@ -78,6 +80,10 @@ public class TempleMcpEntry(
         val type = JsonScalars.str(entry, "type")
         return (type == null || type == "stdio") && !JsonScalars.str(entry, "command").isNullOrBlank()
     }
+
+    /** The registration of a Temple that answers MCP on its own port: an address, and no process to start. */
+    private fun endpoint(entry: JsonObject): Boolean =
+        JsonScalars.str(entry, "type") == "http" && !JsonScalars.str(entry, "url").isNullOrBlank()
 
     private fun fromEnvironment(): McpPlannedServer? {
         val script = env("TEMPLE_TOOLS_SERVER")?.let(PathProbe::spelled)

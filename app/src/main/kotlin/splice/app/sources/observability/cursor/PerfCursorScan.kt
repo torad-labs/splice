@@ -8,12 +8,21 @@ import splice.app.sources.PerfLineReader
 import splice.app.sources.PerfRowsCache
 import splice.usage.perf.history.PerfCursorRequest
 import java.io.IOException
+import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import java.security.DigestOutputStream
+import java.security.MessageDigest
 
-/** Scans every eligible committed row before counting; retains only a fixed-width disk index. */
+/**
+ * Scans every eligible committed row before counting; retains only a fixed-width disk index.
+ *
+ * A generation is read once, and its digest is taken from the bytes the scan decoded, so a segment is exactly what
+ * was read: its rows, up to the last whole line. Until Nov 11, 2026 each generation was read three times, once to
+ * digest it, once to scan it and once more to digest it again, all against the cursor's 512 MiB of work.
+ */
 internal class PerfCursorScan(
     private val inventory: PerfCursorInventory,
     private val request: PerfCursorRequest,
@@ -31,7 +40,7 @@ internal class PerfCursorScan(
     private val decoder = PerfLineDecoder(PerfRowsCache(CACHE_OVERHEAD_BYTES + DECODER_BYTES), Json, ParseTally { })
 
     fun scan(index: FileChannel) {
-        for (path in inventory.candidates()) {
+        for (path in inventory.candidates(request.query.fromMs)) {
             val issue = try {
                 candidate(path, index)
                 null
@@ -49,23 +58,31 @@ internal class PerfCursorScan(
     }
 
     private fun candidate(path: Path, index: FileChannel) {
-        val segment = inventory.capture(path, work)
-        if (inventory.aliasesRolled(path, segment, segments)) {
+        val whole = inventory.outline(path)
+        if (copiedRolled(path, whole)) {
             // Legacy copied archives carry no writer-issued logical segment id. Equal complete bytes
             // prevent duplicate export, but cannot prove that two independent generations were not equal.
             issues += "rotation_alias_identity_unproven"
             return
         }
-        segments += segment
-        scanSegment(path, segment, index)
-        if (inventory.digest(path, segment.end, work) != segment.digest) {
-            throw PerfCursorScanRefusal("cursor_segment_changed")
+        segments += whole
+        val read = SegmentDigest()
+        try {
+            scanSegment(path, whole.end, read, index)
+        } finally {
+            // Whatever stopped the scan, the segment is the lines it read and no byte past them.
+            segments[segments.lastIndex] = whole.copy(end = read.end, digest = read.hex())
         }
     }
 
-    private fun scanSegment(path: Path, segment: PerfCursorSegment, index: FileChannel) {
+    /** Only the rolled generation can repeat an archive, and only one of its length: proving it costs a read. */
+    private fun copiedRolled(path: Path, whole: PerfCursorSegment): Boolean =
+        inventory.isRolled(path) && segments.any { it.end == whole.end } &&
+            inventory.aliasesRolled(path, inventory.capture(path, work), segments)
+
+    private fun scanSegment(path: Path, limit: Long, read: SegmentDigest, index: FileChannel) {
         FileChannel.open(path, StandardOpenOption.READ).use { input ->
-            val reader = PerfLineReader(input, 0L, segment.end, PERF_CURSOR_MAX_LINE_BYTES)
+            val reader = PerfLineReader(input, 0L, limit, PERF_CURSOR_MAX_LINE_BYTES)
             var scanning = true
             while (scanning) {
                 val start = reader.position
@@ -75,7 +92,10 @@ internal class PerfCursorScan(
                 if (raw != null && !reader.terminated) {
                     issues += "uncommitted_tail"
                 }
-                if (scanning) record(requireNotNull(raw), start, reader.position, index)
+                if (scanning) {
+                    record(requireNotNull(raw), start, reader.position, index)
+                    read.line(reader)
+                }
             }
         }
     }
@@ -104,6 +124,21 @@ internal class PerfCursorScan(
 
 // why: Charge the single reusable legacy-row decoder while scanning the cursor's bounded disk index.
 private const val DECODER_BYTES = 64L * 1_024
+
+/** The digest of a generation's first [end] bytes, taken line by line from what the scan decoded. */
+private class SegmentDigest {
+    private val digest = MessageDigest.getInstance("SHA-256")
+    private val sink = DigestOutputStream(OutputStream.nullOutputStream(), digest)
+    var end = 0L
+        private set
+
+    fun line(reader: PerfLineReader) {
+        reader.hashTo(sink)
+        end = reader.position
+    }
+
+    fun hex(): String = digest.digest().joinToString("") { "%02x".format(it) }
+}
 
 /** Only locally constructed cursor reason codes cross the evidence boundary; arbitrary I/O text never does. */
 private class PerfCursorScanRefusal(val issue: String) : IOException()

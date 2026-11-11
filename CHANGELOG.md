@@ -1467,6 +1467,13 @@ origin.
   is not yet known to go upstream, where it read "Not measured" with no reason. The request counts say they come from
   request-by-request records, which hold part of the period, while the rates come from the recorder's minute totals.
   The two Runtime readings both labelled "CPU" read "CPU time" and "CPU load".
+- **A measured period lists its recorded requests again, and `splice perf turns` answers on a desk with a long
+  history.** The list read every kept generation of the request log from its first byte, three times each, and then
+  digested them all twice more for a first page of one row, against 512 MiB of work. On a desk with 35 archived
+  generations of 64 MiB the work ran out inside the third, and every period, the last minute included, answered
+  "reached its work limit" with no rows. A generation that ended before the period now stays unopened, by the rule
+  the Requests list already reads by. A generation is read once, its digest taken from the bytes that were read, and
+  a page digests only the files its rows come from.
 - **The Profiles tab no longer shows a failed capture nobody started.** With no capture taken, the profile status
   answered a made-up record, failed, with a new id on every call, and the tab drew a red "failed · 0 B". The status
   now answers `none` with no id, `splice perf profiles status` included, and the tab says no capture has been taken.

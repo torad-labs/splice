@@ -1,5 +1,6 @@
 package splice.app.sources.observability
 
+import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -18,6 +19,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.FileTime
 
 class PerfCommittedCursorTest {
     private val query = PerfCursorQuery(0L, 10_000L, "all")
@@ -135,6 +137,28 @@ class PerfCommittedCursorTest {
                 assertEquals("\"expired\"", missing.metadata["status"].toString())
                 assertTrue(missing.rows.isEmpty())
             }
+        }
+    }
+
+    @Test
+    fun `a period after every rolled generation returns its rows from the live one alone`(@TempDir directory: Path) {
+        val file = directory.resolve("head.jsonl")
+        val archive = directory.resolve("archive")
+        Files.createDirectories(archive)
+        val names = PerfArchiveName(file.fileName.toString())
+        // Two generations retired long before the period, and the rolled one last written before it.
+        Files.writeString(archive.resolve(names.of(1_000L)), row(500, "ok"))
+        Files.writeString(archive.resolve(names.of(5_000L)), row(2_000, "ok"))
+        val rolled = file.resolveSibling("${file.fileName}.1")
+        Files.writeString(rolled, row(6_000, "ok"))
+        Files.setLastModifiedTime(rolled, FileTime.fromMillis(7_000L))
+        Files.writeString(file, row(60_000, "ok") + row(61_000, "ok"))
+        val recent = PerfCursorQuery(50_000L, 70_000L, "all")
+
+        PerfRowsFileSource(file, archive).page(PerfCursorRequest(recent, all, pageSize = 10)).use { page ->
+            assertEquals(listOf(60_000L, 61_000L), page.rows.map { it.ts })
+            assertEquals("\"complete\"", page.metadata["status"].toString())
+            assertEquals("1", page.metadata.getValue("coverage").jsonObject["segments"].toString())
         }
     }
 

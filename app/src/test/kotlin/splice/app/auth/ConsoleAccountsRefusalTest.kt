@@ -56,8 +56,8 @@ class ConsoleAccountsRefusalTest {
         runBlocking {
             val port = port()
 
-            val removed = port.removeAccount(CLAUDE_HEAD, "work")
-            val relabelled = port.relabelAccount(CLAUDE_HEAD, "work", "personal")
+            val removed = port.removeAccount(CLAUDE_HEAD, "work", HeadRestart { })
+            val relabelled = port.relabelAccount(CLAUDE_HEAD, "work", "personal", HeadRestart { })
             val started = port.startLogin(CLAUDE_HEAD, "work", HeadRestart { })
 
             assertEquals(AccountMutation.UnsupportedAuthKind(CLIENT_AUTH_KIND), removed)
@@ -68,9 +68,10 @@ class ConsoleAccountsRefusalTest {
     @Test
     fun `a head that is not configured at all stays unknown`() = runBlocking {
         val port = port()
+        val none = HeadRestart { }
 
-        assertEquals(AccountMutation.UnknownHead, port.removeAccount(UNKNOWN_HEAD, "work"))
-        assertEquals(AccountMutation.UnknownHead, port.relabelAccount(UNKNOWN_HEAD, "work", "personal"))
-        assertEquals(LoginStart.UnknownHead, port.startLogin(UNKNOWN_HEAD, "work", HeadRestart { }))
+        assertEquals(AccountMutation.UnknownHead, port.removeAccount(UNKNOWN_HEAD, "work", none))
+        assertEquals(AccountMutation.UnknownHead, port.relabelAccount(UNKNOWN_HEAD, "work", "personal", none))
+        assertEquals(LoginStart.UnknownHead, port.startLogin(UNKNOWN_HEAD, "work", none))
     }
 }

@@ -20,12 +20,22 @@ public interface ConsoleAccounts {
 
     /** Every sign-in still starting or waiting, so a page opened after one began shows it and can end it. */
     public fun openLogins(): List<LoginStatus>
-    public suspend fun removeAccount(headKey: String, label: String): AccountMutation
-    public suspend fun relabelAccount(headKey: String, label: String, newLabel: String): AccountMutation
+
+    /** Removes the login [label] from [headKey], or gives it the label [newLabel]. [restart] is the head's own, for a
+     *  head that only finds its logins when it starts: once the login is gone or renamed on disk, the head starts
+     *  again so the running command lets go of it too. */
+    public suspend fun removeAccount(headKey: String, label: String, restart: HeadRestart): AccountMutation
+    public suspend fun relabelAccount(
+        headKey: String,
+        label: String,
+        newLabel: String,
+        restart: HeadRestart,
+    ): AccountMutation
 }
 
 /** Calls back into the head lifecycle once a login's credential has landed, so the account joins
- *  its pool (the row's "on landing the head restarts" contract). Bound to the resolved
+ *  its pool (the row's "on landing the head restarts" contract), and once a login was removed or
+ *  renamed, so the pool lets go of it. Bound to the resolved
  *  [splice.accounts.AccountHead] at the ROUTE, so the :app-side port implementation never needs its
  *  own copy of the daemon's head map — the same reason the heads feature restarts the head it
  *  resolved directly rather than through a lookup. */

@@ -563,9 +563,15 @@ class AuthAndAccountsRoutesTest {
 
         override fun openLogins(): List<LoginStatus> = open
 
-        override suspend fun removeAccount(headKey: String, label: String): AccountMutation = onRemove(headKey, label)
+        override suspend fun removeAccount(headKey: String, label: String, restart: HeadRestart): AccountMutation =
+            onRemove(headKey, label)
 
-        override suspend fun relabelAccount(headKey: String, label: String, newLabel: String): AccountMutation {
+        override suspend fun relabelAccount(
+            headKey: String,
+            label: String,
+            newLabel: String,
+            restart: HeadRestart,
+        ): AccountMutation {
             lastRelabel.set(label to newLabel)
             return onRelabel(headKey, label, newLabel)
         }

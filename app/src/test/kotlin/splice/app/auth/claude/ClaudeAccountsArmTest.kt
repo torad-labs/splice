@@ -58,13 +58,17 @@ class ClaudeAccountsArmTest {
 
         override fun openLogins(): List<LoginStatus> = listOf(oauthStatus)
 
-        override suspend fun removeAccount(headKey: String, label: String): AccountMutation {
+        override suspend fun removeAccount(headKey: String, label: String, restart: HeadRestart): AccountMutation {
             removed = headKey to label
             return if (headKey == CLAUDE_HEAD) AccountMutation.UnsupportedAuthKind("client") else AccountMutation.Ok
         }
 
-        override suspend fun relabelAccount(headKey: String, label: String, newLabel: String): AccountMutation =
-            AccountMutation.Ok
+        override suspend fun relabelAccount(
+            headKey: String,
+            label: String,
+            newLabel: String,
+            restart: HeadRestart,
+        ): AccountMutation = AccountMutation.Ok
     }
 
     private fun folders(): ClaudeAccountFolders = ClaudeAccountFolders(state)
@@ -127,7 +131,7 @@ class ClaudeAccountsArmTest {
         val generic = Generic()
         try {
             val started = arm(scope, generic, wired = true).startLogin(OAUTH_HEAD, null, NO_RESTART)
-            val removed = arm(scope, generic, wired = true).removeAccount(OAUTH_HEAD, "work")
+            val removed = arm(scope, generic, wired = true).removeAccount(OAUTH_HEAD, "work", NO_RESTART)
 
             assertSame(generic.oauthStatus, (started as LoginStart.Started).status)
             assertEquals(AccountMutation.Ok, removed)
@@ -143,7 +147,7 @@ class ClaudeAccountsArmTest {
         try {
             val arm = arm(scope, Generic(), wired = false)
             val answered = arm.startLogin(CLAUDE_HEAD, "work", NO_RESTART)
-            val removed = arm.removeAccount(CLAUDE_HEAD, "work")
+            val removed = arm.removeAccount(CLAUDE_HEAD, "work", NO_RESTART)
 
             assertTrue(answered is LoginStart.UnsupportedAuthKind, "no invented flow: $answered")
             assertEquals("client", (answered as LoginStart.UnsupportedAuthKind).kind)
@@ -175,7 +179,7 @@ class ClaudeAccountsArmTest {
         added(CLAUDE_HEAD, "work")
         added(CLAUDE_HEAD, "personal")
         try {
-            val removed = arm(scope, Generic(), wired = true).removeAccount(CLAUDE_HEAD, "work")
+            val removed = arm(scope, Generic(), wired = true).removeAccount(CLAUDE_HEAD, "work", NO_RESTART)
 
             assertEquals(AccountMutation.Ok, removed)
             assertEquals(listOf("personal"), folders().accounts(CLAUDE_HEAD).map { it.label })
@@ -191,8 +195,8 @@ class ClaudeAccountsArmTest {
         added(CLAUDE_HEAD, "work")
         val arm = arm(scope, Generic(), wired = true)
         try {
-            val own = arm.removeAccount(CLAUDE_HEAD, OWN_SIGN_IN_LABEL)
-            val absent = arm.removeAccount(CLAUDE_HEAD, "never-added")
+            val own = arm.removeAccount(CLAUDE_HEAD, OWN_SIGN_IN_LABEL, NO_RESTART)
+            val absent = arm.removeAccount(CLAUDE_HEAD, "never-added", NO_RESTART)
 
             assertEquals(
                 "'claude-code' is your own Claude Code sign-in, which splice forwards and never holds",

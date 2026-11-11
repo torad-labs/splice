@@ -10,6 +10,7 @@ import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
+import splice.core.util.Cancellables
 import splice.oauth.OAuthAccountFiles
 import splice.oauth.OAuthAccountRefused
 import splice.oauth.OAuthPrimaryAccount
@@ -48,11 +49,26 @@ internal class ConsoleAccountsImpl(
 
     override fun openLogins(): List<LoginStatus> = sessions.open()
 
-    override suspend fun removeAccount(headKey: String, label: String): AccountMutation {
+    override suspend fun removeAccount(headKey: String, label: String, restart: HeadRestart): AccountMutation {
         // The first account signs in with no label, so no label is the place a sign-in still open for it holds. Under
         // its reserved name the removal looked for a sign-in nobody starts, and the open one could file it again.
         sessions.withdraw(headKey, label.takeUnless { it == PRIMARY_LABEL })
-        return removeFiled(headKey, label)
+        return removeFiled(headKey, label).also { rediscover(label, it, restart) }
+    }
+
+    /** A ChatGPT, Grok, Kimi or Muse head builds its pool once, when it starts, so it went on holding a login whose
+     *  file was just removed or renamed: the roster listed it as signed out, with a Sign in that would file it again
+     *  under the label just removed, until the daemon next restarted (Marcos, Nov 11, 2026: "I had issues before like
+     *  this adding new accounts, removing"). The head starts again and finds its pool as it is on disk, the way it
+     *  does when a sign-in lands ([LoginSessions]). A head's first login is read where it is, so it needs none, and
+     *  a Claude head never answers Ok here: it follows its folders by itself. A head that does not come back is its
+     *  own start's to report: the file is gone either way. */
+    private suspend fun rediscover(label: String, answered: AccountMutation, restart: HeadRestart) {
+        if (answered != AccountMutation.Ok || label == PRIMARY_LABEL) return
+        Cancellables.discard(
+            Cancellables.runCatchingBestEffort { restart.restart() },
+            "the login is removed or renamed on disk whether or not the head comes back",
+        )
     }
 
     private fun removeFiled(headKey: String, label: String): AccountMutation =
@@ -65,14 +81,19 @@ internal class ConsoleAccountsImpl(
             if (!removed) throw OAuthAccountRefused("no OAuth account labeled '$label'")
         }
 
-    override suspend fun relabelAccount(headKey: String, label: String, newLabel: String): AccountMutation =
+    override suspend fun relabelAccount(
+        headKey: String,
+        label: String,
+        newLabel: String,
+        restart: HeadRestart,
+    ): AccountMutation =
         onOAuthHead(headKey) { target ->
             if (label == PRIMARY_LABEL) {
                 first.rename(target.kind, target.primaryFile, newLabel)
             } else {
                 files.relabel(target.kind, target.primaryFile, label, newLabel)
             }
-        }
+        }.also { rediscover(label, it, restart) }
 
     /** A configured head with another auth kind keeps its own refusal; it is not an unknown head. */
     private inline fun onOAuthHead(headKey: String, block: (OAuthTarget) -> Unit): AccountMutation {

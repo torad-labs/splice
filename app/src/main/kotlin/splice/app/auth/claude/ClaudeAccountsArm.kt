@@ -55,16 +55,21 @@ internal class ClaudeAccountsArm(
     override fun openLogins(): List<LoginStatus> = claude.current()?.signIn?.open().orEmpty() + generic.openLogins()
 
     /** A stored Claude login's stable id stays put; only its display alias changes. */
-    override suspend fun relabelAccount(headKey: String, label: String, newLabel: String): AccountMutation {
-        val answered = generic.relabelAccount(headKey, label, newLabel)
+    override suspend fun relabelAccount(
+        headKey: String,
+        label: String,
+        newLabel: String,
+        restart: HeadRestart,
+    ): AccountMutation {
+        val answered = generic.relabelAccount(headKey, label, newLabel, restart)
         if (answered !is AccountMutation.UnsupportedAuthKind || answered.kind != CLIENT_AUTH_KIND) return answered
         return claude.current()?.folders?.relabel(headKey, label, newLabel) ?: answered
     }
 
     /** A Claude head's remove deletes one added account's own folder. The sentences are here rather than in the
      *  store because this is the surface a person reads, and each one says what was found rather than "failed". */
-    override suspend fun removeAccount(headKey: String, label: String): AccountMutation {
-        val answered = generic.removeAccount(headKey, label)
+    override suspend fun removeAccount(headKey: String, label: String, restart: HeadRestart): AccountMutation {
+        val answered = generic.removeAccount(headKey, label, restart)
         if (answered !is AccountMutation.UnsupportedAuthKind || answered.kind != CLIENT_AUTH_KIND) return answered
         val port = claude.current() ?: return answered
         port.signIn.withdraw(headKey, label)

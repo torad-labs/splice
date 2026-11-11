@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.control.perf.PerfHttpWork
+import splice.app.instrumentation.WorkBudgetMark
 import splice.core.perf.observation.PerfAggregatePoint
 import splice.core.perf.observation.PerfAggregateSnapshot
 import splice.core.perf.observation.PerfCoverage
@@ -42,7 +43,7 @@ import java.util.concurrent.TimeUnit
 class PerfCheckpointQueryTest {
     @Test
     fun `HTTP source query waits for queued history work then returns the persisted population`(@TempDir dir: Path) {
-        val before = PerfWorkBudget.retainedBytes()
+        val budget = WorkBudgetMark()
         val identity = PerfIdentity("boot", "build", "1", "config")
         val clock = WallClock { 120_000L }
         val snapshot = PerfAggregateSnapshot(
@@ -69,7 +70,7 @@ class PerfCheckpointQueryTest {
                 queuedSnapshot(store, snapshot, dir)
             }
         }
-        assertEquals(before, PerfWorkBudget.retainedBytes())
+        budget.assertGivenBack()
     }
 
     private fun queuedSnapshot(store: PerfAggregateStore, snapshot: PerfAggregateSnapshot, dir: Path) {

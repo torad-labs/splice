@@ -33,7 +33,7 @@ class PerfReplyOwnershipTest {
             "partial" to """{"status":"partial","heads":{"one":{"status":"busy"},"two":{"status":"complete"}}}""",
         ).mapValues { Json.parseToJsonElement(it.value).jsonObject }
         val work = PerfHttpWork()
-        val before = PerfWorkBudget.retainedBytes()
+        val budget = WorkBudgetMark()
         application {
             routing {
                 replies.forEach { (path, body) ->
@@ -54,7 +54,7 @@ class PerfReplyOwnershipTest {
             assertEquals(ContentType.Application.Json, response.contentType()?.withoutParameters())
             assertEquals(body, Json.parseToJsonElement(response.bodyAsText()))
         }
-        assertEquals(before, PerfWorkBudget.retainedBytes())
+        budget.assertGivenBack()
     }
 
     @Test
@@ -80,7 +80,7 @@ class PerfReplyOwnershipTest {
     fun `fatal or cancelled teardown releases later owned memory and preserves the first failure`() {
         val cleanup = PerfCleanup(LogSink {})
         for (failure in listOf(CancellationException("cancelled"), AssertionError("fatal"))) {
-            val before = PerfWorkBudget.retainedBytes()
+            val budget = WorkBudgetMark()
             val first = checkNotNull(PerfWorkBudget.acquire(1024))
             val last = checkNotNull(PerfWorkBudget.acquire(1024))
             val thrown = assertThrows(failure.javaClass) {
@@ -91,7 +91,7 @@ class PerfReplyOwnershipTest {
                 )
             }
             assertSame(failure, thrown)
-            assertEquals(before, PerfWorkBudget.retainedBytes())
+            budget.assertGivenBack()
             assertEquals("later failure", thrown.suppressed.single().message)
         }
     }

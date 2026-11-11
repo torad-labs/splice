@@ -22,7 +22,7 @@ class PerfProfileContentTest {
     @Test
     fun `artifact response delivers all bytes before releasing its bounded reader`() = testApplication {
         val expected = ByteArray(PERF_PROFILE_READ_BUFFER_BYTES * 3 + 1) { (it % 251).toByte() }
-        val before = PerfWorkBudget.retainedBytes()
+        val budget = WorkBudgetMark()
         val work = PerfHttpWork()
         application {
             routing {
@@ -40,7 +40,7 @@ class PerfProfileContentTest {
         assertEquals(HttpStatusCode.OK, response.status)
         assertEquals(expected.size.toString(), response.headers["Content-Length"])
         assertArrayEquals(expected, response.body<ByteArray>())
-        assertEquals(before, PerfWorkBudget.retainedBytes())
+        budget.assertGivenBack()
     }
 
     private class Reader(private val bytes: ByteArray) : PerfProfileRead {

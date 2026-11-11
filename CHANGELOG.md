@@ -1466,6 +1466,11 @@ origin.
   from the recording, where it said only that the population was partial. "Arrivals recorded" says an arriving request
   is not yet known to go upstream, where it read "Not measured" with no reason. The request counts say they come from
   request-by-request records, which hold part of the period, while the rates come from the recorder's minute totals.
+  The two Runtime readings both labelled "CPU" read "CPU time" and "CPU load".
+- **The Profiles tab no longer shows a failed capture nobody started.** With no capture taken, the profile status
+  answered a made-up record, failed, with a new id on every call, and the tab drew a red "failed · 0 B". The status
+  now answers `none` with no id, `splice perf profiles status` included, and the tab says no capture has been taken.
+  An id that is asked for and no longer kept still answers `profile_not_found_or_expired`.
 - **A Claude login whose organization refuses it is held, instead of being tried first by every new session.**
   Anthropic answers such a login with a 403 reading "OAuth authentication is currently not allowed for this
   organization", which Claude Code shows as "Your organization has disabled Claude subscription access for Claude

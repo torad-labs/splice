@@ -92,6 +92,7 @@ internal object LoginStatusJson {
         put("user_code", status.prompt.userCode)
         put("verification_uri", status.prompt.verificationUri)
         put("browser_url", status.prompt.browserUrl)
+        put("paste_code", status.prompt.pasteBack)
         put("failure_reason", status.failureReason)
         put("failure_kind", status.failureKind?.wire)
         put("label", status.label)

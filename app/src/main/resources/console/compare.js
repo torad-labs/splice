@@ -899,7 +899,7 @@ function actsHtml(p) {
 // spins where it stands, its result lands beside it in plain words, and a refusal shakes it once.
 const fx = (p) => (p.fx ??= {});
 function say(p, patch) { Object.assign(fx(p), patch); if (ui.panes.includes(p) && p.st === "failed") paintPane(p); }
-const refuse = (p, word) => say(p, { busy: false, word, shook: true });
+const refuse = (p, word, why = "") => say(p, { busy: false, word, why, shook: true });
 const fxAct = (p, word, act, { cls = "small", data = "" } = {}) => {
   const f = fx(p), mine = f.act === act && (f.data ?? "") === data;
   return `<button class="act ${cls}${mine && f.shook ? " shook" : ""}" type="button" data-act="${act}"${data}${mine && f.busy ? ` aria-busy="true"` : ""}>${esc(word)}</button>`;
@@ -930,7 +930,14 @@ function fixActs(p) {
     acts = `<button class="act small" type="button" data-act="retry">Try again</button>`;
   }
   // a sign-in under way: the code to type and the page to type it on, beside the act
-  const wait = x.act === "signin" && x.busy && (x.code || x.url) ? `<span class="pg-signing">${x.code ? `<b class="pg-code">${esc(x.code)}</b>` : ""}${x.url ? `<a class="act quiet small" href="${esc(x.url)}" target="_blank" rel="noopener">Open sign-in page${DRAW.go}</a>` : ""}</span>` : "";
+  // a page that ends in a code to paste back (Claude Code's own sign-in) has the field for it, and a sign-in under way has
+  // its Cancel, which reads Cancelling until splice has ended it
+  const sg = x.sign, ending = sg?.state === "ending";
+  const paste = sg?.by === "paste" && !ending
+    ? `<input class="field pg-codein" type="text" placeholder="Paste code" aria-label="Paste code" autocomplete="off" spellcheck="false" value="${esc(x.pasted ?? "")}"${x.sent ? " readonly" : ""}>` : "";
+  const cancel = ending ? `<button class="act quiet small" type="button" disabled>Cancelling</button>`
+    : `<button class="act quiet small" type="button" data-act="cancel-signin">Cancel</button>`;
+  const wait = x.act === "signin" && x.busy && (x.code || x.url) ? `<span class="pg-signing">${x.code && !ending ? `<b class="pg-code">${esc(x.code)}</b>` : ""}${x.url && !ending ? `<a class="act quiet small" href="${esc(x.url)}" target="_blank" rel="noopener">Open sign-in page${DRAW.go}</a>` : ""}${paste}${cancel}</span>` : "";
   const res = x.word ? DRAW.result(x.word, "bad") : "";
   return `${wait}${res}${acts}${swapAct}`;
 }
@@ -962,7 +969,9 @@ function fixHtml(p) {
   const text = f.said || (f.code != null ? `Answered ${f.code} with ${f.spent ? "a reset time" : "no reason"}` : "");
   const who = f.splice ? "Splice said" : "Provider said";
   const said = text ? `<div class="pg-said${p.said ? " open" : ""}">${DRAW.disc({ open: p.said, act: "said", cls: "pg-saidd", inner: `<span class="who">${who}</span><q>${esc(text)}</q>` })}</div>` : "";
-  const html = `<div class="pg-fix${p.tries > 1 ? " again" : ""}"><div class="pg-fixrow"><div class="pg-fixword">${head}${tries}</div><div class="pg-fixacts">${fixActs(p)}</div></div>${shape}${said}</div>`;
+  // what splice said of an act that failed here (a sign-in), under the acts, where its word stands
+  const why = p.fx?.word && p.fx.why ? `<p class="pg-fxwhy">${esc(p.fx.why)}</p>` : "";
+  const html = `<div class="pg-fix${p.tries > 1 ? " again" : ""}"><div class="pg-fixrow"><div class="pg-fixword">${head}${tries}</div><div class="pg-fixacts">${fixActs(p)}</div></div>${why}${shape}${said}</div>`;
   if (p.fx) p.fx.shook = false; // a shake is one turn: the next draw of this pane stands still
   return html;
 }
@@ -1021,8 +1030,8 @@ function signIn(p) {
   const x = fx(p);
   if (x.busy) return;
   const sg = { how: { start: `/api/auth/${enc(p.key)}/login`, body: {}, poll: p.key } };
-  Object.assign(x, { act: "signin", data: "", busy: true, word: "", shook: false, code: null, url: null, sign: sg });
-  SIGNIN.start(sg, {
+  Object.assign(x, { act: "signin", data: "", busy: true, word: "", why: "", shook: false, code: null, url: null, pasted: "", sent: false, sign: sg });
+  sg.on = {
     held: () => ui.panes.includes(p) && p.fx === x && x.sign === sg,
     draw: () => say(p, { code: sg.code, url: sg.url }),
     done: async () => {
@@ -1030,8 +1039,27 @@ function signIn(p) {
       p.fx = null;
       if (ui.prompt.trim()) run([p]); else render();
     },
-    failed: () => refuse(p, sg.fail.word),
-  });
+    // its word beside the act, and splice's own sentence under it
+    failed: () => refuse(p, sg.fail.word, sg.why),
+  };
+  SIGNIN.start(sg, sg.on);
+}
+// Cancel on a pane's sign-in. It ends on splice, and the pane lets go of it once splice has answered (SIGNIN.cancel);
+// one splice did not answer reads Not cancelled, through the sign-in's own failure. Until Nov 11, 2026 a pane's sign-in
+// had no Cancel: it ended only when its pane was closed.
+async function cancelSignin(p) {
+  const x = p.fx, sg = x?.sign;
+  if (!sg || !x.busy || !(await SIGNIN.cancel(sg, sg.on))) return;
+  if (p.fx !== x || x.sign !== sg) return;
+  say(p, { busy: false, word: "", why: "", code: null, url: null, sign: null });
+}
+// The code a sign-in page showed, pasted back in the pane (Claude Code's own sign-in): it goes to splice, which lands
+// the sign-in or ends it with its reason (SIGNIN.code).
+function sendCode(p, field) {
+  const x = p.fx, sg = x?.sign, text = field.value.trim();
+  if (!sg || !text || x.sent) return;
+  Object.assign(x, { pasted: text, sent: true }); field.readOnly = true;
+  SIGNIN.code(sg, sg.on, text);
 }
 // ---------- the request, in Requests' own open request (reqview.js), under the row of answers it was asked in ----------
 // The pane's head already names the model, its command and its account, and its strip draws the request's time, tokens
@@ -1683,7 +1711,14 @@ async function reread() {
   if (ui.error) root.querySelector('[data-act="reread"]')?.classList.add("shook");
 }
 
+// a pasted sign-in code is sent as it lands, or on Enter when it was typed
+root.addEventListener("paste", (e) => {
+  if (!e.target.classList?.contains("pg-codein")) return;
+  const p = byUid(e.target.closest(".pgp")?.dataset.u);
+  if (p) setTimeout(() => sendCode(p, e.target), 0);
+});
 root.addEventListener("input", (e) => {
+  if (e.target.classList?.contains("pg-codein")) { const p = byUid(e.target.closest(".pgp")?.dataset.u); if (p?.fx) p.fx.pasted = e.target.value; return; }
   if (e.target.id === "find") { ui.q = e.target.value; paintBoard(); return; }
   if (e.target.id !== "prompt") return;
   const was = ui.panes.map(stale).join();
@@ -1698,6 +1733,7 @@ root.addEventListener("keydown", (e) => {
   if (t.id === "prompt" && e.key === "Escape" && ui.prompt.trim()) { e.preventDefault(); closeField(); root.querySelector("[data-act=write]")?.focus(); return; }
   if (t.dataset?.act === "write" && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openField(t.offsetHeight); return; }
   if (e.key === "Escape" && t.closest?.(".pg-acts.armed")) { e.preventDefault(); const p = byUid(t.closest(".pgp").dataset.u); if (p) arm(p, false); return; }
+  if (t.classList?.contains("pg-codein") && e.key === "Enter") { e.preventDefault(); const p = byUid(t.closest(".pgp")?.dataset.u); if (p) sendCode(p, t); return; }
   // Enter in a budget's amount saves it, as its Save does
   if (t.classList?.contains("pg-cap") && e.key === "Enter") { e.preventDefault(); const p = byUid(t.closest(".pgp")?.dataset.u); if (p?.st === "failed") saveBudget(p); return; }
   // Enter in the find field takes the first model it found
@@ -1787,6 +1823,7 @@ document.addEventListener("click", (e) => {
     case "reread": reread(); return;
     case "uselogin": if (p && p.st === "failed") useLogin(p, t.dataset.label); return;
     case "signin": if (p && p.st === "failed") signIn(p); return;
+    case "cancel-signin": if (p) cancelSignin(p); return;
     case "savebudget": if (p && p.st === "failed") saveBudget(p); return;
     // the models read in another order: the lists are drawn again in it and fade in where they stand
     case "sort": {

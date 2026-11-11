@@ -119,6 +119,9 @@ public data class LoginPrompt(
     val userCode: String? = null,
     val verificationUri: String? = null,
     val browserUrl: String? = null,
+    /** The page at [browserUrl] ends by showing a code, which the person pastes back where they pressed Sign in
+     *  (Claude Code's own sign-in). The console draws the field for it from this, on every card that signs in. */
+    val pasteBack: Boolean = false,
 )
 
 public sealed class LoginStart {

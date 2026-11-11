@@ -333,7 +333,13 @@ const SIGNIN = (() => {
     if (st?.state === "failed") { fail(s, on, st); return; }
     if (st?.state === "signed_in" || st?.state === "live_after_restart") { quiet(s); s.state = "done"; on.done(st); return; }
     const url = st?.verification_uri || st?.browser_url || null, code = st?.user_code || null;
-    const by = code ? "code" : s.how.native ? "paste" : "browser";
+    // The step is splice's to say: a code to type on the provider's page, a code that page shows to paste back here
+    // (paste_code: Claude Code's own sign-in, whichever card started it), or a page that finishes by itself. Until
+    // Nov 11, 2026 the page decided the paste step from which card was pressed, and only a command's own Claude Code
+    // login had the field: an added Claude login signed in again, and + Add account, opened the same page and left
+    // its code with nowhere to go. An add's sign-in takes no code (code, below).
+    const paste = !s.how.watch && (st?.paste_code || s.how.native);
+    const by = code ? "code" : paste ? "paste" : "browser";
     const changed = url !== s.url || by !== s.by || code !== s.code;
     s.swapped = !!(s.code && code && code !== s.code); // a device code that expired is replaced (DeviceLoginFlow.kt:88-93)
     Object.assign(s, { url, by, code });

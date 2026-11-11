@@ -216,8 +216,15 @@ internal class ClaudeAccountSignIn(
         }
         attempt.child = child
         try {
+            // The link Claude Code prints is the one whose page ends in a code to paste back ("Paste code here if
+            // prompted"), so the status says so and every card that shows the link has the field for the code. Until
+            // Nov 11, 2026 only a command's own login card drew that field: Sign in again on an added login, and
+            // + Add account, opened the same page and left its code with nowhere to go, so the sign-in stayed open
+            // (Marcos: "then trhe sign in in splice showed still in progress").
             val completed = child.await { url ->
-                cell.updateAndGet { it.copy(state = LoginState.WAITING, prompt = it.prompt.copy(browserUrl = url)) }
+                cell.updateAndGet {
+                    it.copy(state = LoginState.WAITING, prompt = it.prompt.copy(browserUrl = url, pasteBack = true))
+                }
             }
             if (completed) {
                 land(attempt.pending, cell, restart)

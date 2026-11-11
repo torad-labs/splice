@@ -1488,6 +1488,17 @@ origin.
   first login already holds adds nothing: it reads "Already added" with splice's reason under it, and the card that
   account has pulses once. It filed a second login for that one account, since the sign-in page signs in whichever
   account its browser holds.
+- **Every Claude sign-in has the field for the code its page shows.** splice signs a Claude login in through Claude
+  Code's own sign-in, and the page its link opens ends by showing a code to paste back. Only a command's own Claude
+  Code login had the field for that code. Sign in again on an added Claude login, and + Add account on a Claude
+  command, opened the same page and left the code with nowhere to go, so the sign-in read as still in progress
+  until its ten minutes ran out. splice now says in a sign-in's status that its code is pasted back
+  (`paste_code`), and Accounts, Usage, Models and Compare each draw the field from that. A code splice does not
+  take ends the sign-in with its reason.
+- **Models and Compare say why a sign-in failed, and Compare's sign-in has Cancel.** A failed sign-in on Models or
+  Compare read its word alone ("Other account", "Expired"); splice's own sentence now stands under it, as on
+  Accounts and Usage. A sign-in started from a Compare pane could only be ended by closing the pane; it has Cancel
+  beside its code, which reads Cancelling until splice has ended it.
 - **A sign-in behaves the same on Accounts, Usage, Models and Compare.** Each of the four pages ran its own copy of
   a sign-in's steps, and the copies had drifted. Now they share one. On Models and Compare a sign-in that failed says
   how in a word (Expired, Stopped, Config error, Already added, Other account) where it read "Not completed" for

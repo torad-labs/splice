@@ -3,7 +3,7 @@
 // "Not completed" however the sign-in had failed, and went on waiting for five minutes on one a restarted splice no
 // longer held. It runs the steps every page shares now (SIGNIN, api.js), and a sign-in whose pane is closed ends on
 // splice too. Through the real page against a stub daemon in the routes' own shapes (LoginRoutes.kt).
-import { afterAll, beforeAll, test } from "bun:test";
+import { afterAll, beforeAll, expect as bunExpect, test } from "bun:test";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -22,6 +22,7 @@ const view = (h: Held) => ({
   failure_kind: h.open ? null : h.kind, failure_reason: h.open ? null : h.reason,
 });
 const openOnSplice = () => [...held.values()].filter((h) => h.open).length;
+const end = (kind: string, reason: string) => { for (const h of held.values()) if (h.open) Object.assign(h, { open: false, kind, reason }); };
 
 const server = Bun.serve({
   port: 0,
@@ -85,6 +86,21 @@ test("Compare: a sign-in splice no longer holds, because it restarted, says Stop
   await expect(page.locator(".result", { hasText: "Stopped" })).toBeVisible({ timeout: 10_000 });
   await expect(page.locator(".pg-code")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+}), 60_000);
+
+test("Compare: a sign-in that fails says how in a word, with splice's own reason under the acts", () => signingIn(async (page) => {
+  end("expired", "the sign-in was not finished in ten minutes");
+  await expect(page.locator(".result", { hasText: "Expired" })).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".pg-fxwhy")).toHaveText("the sign-in was not finished in ten minutes");
+}), 60_000);
+
+// Until Nov 11, 2026 a pane's sign-in had no Cancel: it ended only when its pane was closed.
+test("Compare: Cancel on a pane's sign-in ends it on splice, and Sign in is back", () => signingIn(async (page) => {
+  await page.locator("article.pgp").getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.locator(".pg-code")).toHaveCount(0, { timeout: 10_000 });
+  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+  await expect(page.locator(".pg-fxwhy")).toHaveCount(0);
+  bunExpect(openOnSplice()).toBe(0);
 }), 60_000);
 
 test("Compare: a sign-in whose pane is closed ends on splice too", () => signingIn(async (page) => {

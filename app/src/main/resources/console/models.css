@@ -151,6 +151,8 @@
 /* the question a cutting press asks: under the acts, on its own line, right where the press was */
 .pane > header .hask { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 0.667rem; margin-top: 0.667rem; }
 .pane > header .hask .said { white-space: normal; }
+/* splice's sentence for a sign-in that failed: under the word that names it, wrapped inside the header or the add band */
+.signwhy { margin: 0; max-width: 46rem; font: 500 .95rem/1.4 var(--font-name); color: var(--text-body); white-space: normal; overflow-wrap: anywhere; }
 .pane > header .outbox { margin-top: 1rem; }
 /* the way back: to the value the provider sets, or to the templates */
 .act.back, .back { display: inline-flex; align-items: center; gap: 0.333rem; padding: .25rem .5rem; border: 0; background: none; color: var(--text-mute); font: 500 .88rem/1 var(--font-name); cursor: pointer; }

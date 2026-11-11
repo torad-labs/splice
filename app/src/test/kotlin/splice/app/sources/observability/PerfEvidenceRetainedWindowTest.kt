@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.instrumentation.WorkBudgetMark
 import splice.core.perf.UsageMeasurementStamp
 import splice.core.perf.observation.PerfEventKind
 import splice.core.perf.observation.PerfIdentity
@@ -33,14 +34,14 @@ import java.nio.file.Path
 class PerfEvidenceRetainedWindowTest {
     @Test
     fun `full day and week summaries and series preserve production-written request populations`(@TempDir root: Path) {
-        val before = PerfWorkBudget.retainedBytes()
+        val budget = WorkBudgetMark()
         checkNotNull(PerfWorkBudget.acquire(5L * 1_024 * 1_024)).use {
             RetainedEvidenceFixture(root).use { fixture ->
                 fixture.seed()
                 windows(fixture)
             }
         }
-        assertEquals(before, PerfWorkBudget.retainedBytes())
+        budget.assertGivenBack()
     }
 
     private fun windows(fixture: RetainedEvidenceFixture) {

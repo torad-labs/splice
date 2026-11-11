@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.instrumentation.WorkBudgetMark
 import splice.app.sources.observability.cursor.PerfCursorPruning
 import splice.core.util.AsyncFileIo
 import splice.core.util.JsonScalars
@@ -120,11 +121,11 @@ class PerfEvidenceScratchTest {
             fixture.seed(2)
             failedCleanup(root)
             val source = fixture.evidence()
-            val retained = PerfWorkBudget.retainedBytes()
+            val budget = WorkBudgetMark()
             assertThrows(CancellationException::class.java) {
                 source.consume(fixture.evidenceQuery(), PerfObservationConsumer { throw CancellationException("stop") })
             }
-            assertEquals(retained, PerfWorkBudget.retainedBytes())
+            budget.assertGivenBack()
             source.consume(fixture.evidenceQuery(), PerfObservationConsumer { true }).use { read ->
                 assertTrue(read.complete, read.coverage.issues.toString())
                 assertEquals(200L, read.coverage.observedMs)

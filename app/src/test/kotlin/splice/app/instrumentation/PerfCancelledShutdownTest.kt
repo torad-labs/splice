@@ -24,7 +24,7 @@ import kotlin.coroutines.cancellation.CancellationException
 class PerfCancelledShutdownTest {
     @Test
     fun `cancelled caller closes telemetry owners and allows the next store owner`(@TempDir directory: Path) = runTest {
-        val before = PerfWorkBudget.retainedBytes()
+        val budget = WorkBudgetMark()
         val first = telemetry(directory)
         first.start()
         val until = System.currentTimeMillis()
@@ -41,18 +41,18 @@ class PerfCancelledShutdownTest {
         try {
             assertTrue(cancellationPreserved)
             assertEquals("1", JsonScalars.str(reply, "schema_version"))
-            assertTrue(PerfWorkBudget.retainedBytes() > before, "the caller still owns its returned reply")
+            assertTrue(PerfWorkBudget.retainedBytes() > budget.total, "the caller still owns its returned reply")
         } finally {
             PerfWorkBudget.release(reply)
         }
-        assertEquals(before, PerfWorkBudget.retainedBytes())
+        budget.assertGivenBack()
         val replacement = telemetry(directory)
         try {
             replacement.start()
         } finally {
             replacement.close()
         }
-        assertEquals(before, PerfWorkBudget.retainedBytes())
+        budget.assertGivenBack()
     }
 
     private fun telemetry(directory: Path): PerfTelemetry {

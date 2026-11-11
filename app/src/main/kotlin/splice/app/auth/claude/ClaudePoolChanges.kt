@@ -20,6 +20,9 @@ internal fun interface ClaudePoolChange {
     fun publish()
     fun withdraw(label: String) = publish()
     fun completeWithdrawal(label: String) = publish()
+
+    /** [publish], for a sign-in the person just finished as [label]. */
+    fun signedIn(label: String) = publish()
 }
 
 /** What the daemon does when a login joins a head. */
@@ -87,6 +90,13 @@ internal class ClaudePoolChanges {
     fun publish(head: String): Boolean {
         val change = heads[head] ?: return false
         change.publish()
+        return true
+    }
+
+    /** [publish], for a sign-in the person just finished as [label] on [head]. */
+    fun signedIn(head: String, label: String): Boolean {
+        val change = heads[head] ?: return false
+        change.signedIn(label)
         return true
     }
 }

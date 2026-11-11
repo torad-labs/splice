@@ -1449,6 +1449,13 @@ origin.
   daemon holds a sign-in (a reload, a second tab) shows it on its card with its Cancel, from `GET /api/auth/logins`.
   Discarding a provider being added ends its sign-in too. The daemon's log now has one line when a sign-in starts and
   one when it ends, saying how; it had none.
+- **A Claude login signed in again is asked again at once.** A login Anthropic had refused stayed held, and its
+  card kept reading Blocked, after it was signed in again: the hold only ended when the login served a turn, and the
+  login was not tried again until the hold's time ran out, up to an hour. On Nov 11 a login blocked while its
+  organization's payment had failed was signed in again after the payment was fixed, and nothing changed on its card.
+  Now a sign-in the person finishes for a login lets go of that login's hold and block, so the next turn asks
+  Anthropic with what was just signed in, and Anthropic's answer decides: served, or refused and held again with the
+  reason. A credential file Claude Code rewrites by itself still does not lift a block. A limit the login read stays.
 - **A measured period counts each recorded minute once, and reads all of them.** The Performance panel's "Measure any
   period" and `splice perf` gave a different rate for the same day minutes apart: 1.47 completions a minute, then 50.9
   an hour, then 3.59 a minute, beside a request log of 24,203 requests for that day. Three faults in how a measurement

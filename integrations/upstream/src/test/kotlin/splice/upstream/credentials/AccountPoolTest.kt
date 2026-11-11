@@ -14,6 +14,8 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.AccountBlock
+import splice.core.failure.OwnerStep
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.ElapsedClock
@@ -375,6 +377,23 @@ class AccountPoolTest {
         assertEquals(0L, primary.cooldown.remainingMs())
         assertEquals(null, pool.view("session").selectedLabel)
         assertEquals("secret", (primary.auth.credentials() as Credentials.Bearer).token)
+    }
+
+    // Marcos, Nov 11, 2026: a login blocked while its organization's payment had failed, signed in again once paid.
+    @Test
+    fun `a login the person signed in again is let go of its block and its hold`() {
+        val fixture = Fixture()
+        val pool = fixture.pool(fixture.account("primary", primary = true))
+        val organization = AccountBlock(OwnerStep.ALLOW_SUBSCRIPTION_ACCESS, "its organization")
+        pool.chosen("session").markCredentialUnavailable(organization)
+        assertEquals(organization, pool.view(null).accounts.single().credential.block)
+
+        assertTrue(pool.signedIn("primary"))
+
+        val credential = pool.view(null).accounts.single().credential
+        assertEquals(null, credential.block)
+        assertEquals(null, credential.excludedUntilEpochMillis)
+        assertFalse(pool.signedIn("no-such-login"))
     }
 
     @Test

@@ -248,7 +248,7 @@ internal class ClaudeAccountFolders(
             other != null && other.uuid != identity.uuid -> ClaudeAccountLanding.LabelTaken(pending.label)
             else -> {
                 move(pending, addedAt = same?.addedAtEpochMillis?.takeIf { it != Long.MAX_VALUE } ?: filedAt(added))
-                ClaudeAccountLanding.Added(pending.label, changes?.publish(pending.head) == true)
+                ClaudeAccountLanding.Added(pending.label, changes?.signedIn(pending.head, pending.label) == true)
             }
         }
     }

@@ -341,6 +341,18 @@ public class AccountPool(
         }
     }
 
+    /** The person signed [label] in again. Whatever held it out for its credential, a refusal's hold or a block its
+     *  owner has to lift, is let go, so the next turn asks the provider with what was just signed in and the
+     *  provider's answer decides. A limit it read stays: that is the account's, not the credential's. A credential
+     *  file the client rewrites by itself does none of this ([AccountCredentialEligibility]); only a sign-in the
+     *  person finished does. Until Nov 11, 2026 a login signed in again after its organization's payment was fixed
+     *  still read blocked, and was not asked again until its hold ran out. False when [label] names no account here. */
+    public fun signedIn(label: String): Boolean {
+        val account = liveMembership.byLabel[label] ?: return false
+        account.resetCredentialAvailability()
+        return true
+    }
+
     /** Pins [label] as the account [select] tries FIRST, ahead of the primary preference, until [unpin] or until the
      *  login reads a limit it did not read now; a [reset] keeps it. False (nothing pinned) when [label] names no account
      *  here. */

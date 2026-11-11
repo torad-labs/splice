@@ -937,7 +937,9 @@ function fixActs(p) {
     ? `<input class="field pg-codein" type="text" placeholder="Paste code" aria-label="Paste code" autocomplete="off" spellcheck="false" value="${esc(x.pasted ?? "")}"${x.sent ? " readonly" : ""}>` : "";
   const cancel = ending ? `<button class="act quiet small" type="button" disabled>Cancelling</button>`
     : `<button class="act quiet small" type="button" data-act="cancel-signin">Cancel</button>`;
-  const wait = x.act === "signin" && x.busy && (x.code || x.url) ? `<span class="pg-signing">${x.code && !ending ? `<b class="pg-code">${esc(x.code)}</b>` : ""}${x.url && !ending ? `<a class="act quiet small" href="${esc(x.url)}" target="_blank" rel="noopener">Open sign-in page${DRAW.go}</a>` : ""}${paste}${cancel}</span>` : "";
+  // it stands from the first moment, before splice has a link or a code to show, so a sign-in that never gets one
+  // can still be ended
+  const wait = x.act === "signin" && x.busy ? `<span class="pg-signing">${x.code && !ending ? `<b class="pg-code">${esc(x.code)}</b>` : ""}${x.url && !ending ? `<a class="act quiet small" href="${esc(x.url)}" target="_blank" rel="noopener">Open sign-in page${DRAW.go}</a>` : ""}${paste}${cancel}</span>` : "";
   const res = x.word ? DRAW.result(x.word, "bad") : "";
   return `${wait}${res}${acts}${swapAct}`;
 }

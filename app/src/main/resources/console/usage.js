@@ -673,7 +673,7 @@ function moneyHtml() {
   if (!S.accounts.length && !S.keys.length) {
     return boardHead() + DRAW.masonry([`<a class="add" href="accounts.html"><span class="plus" aria-hidden="true">+</span><span>Add account</span></a>`], 38, { cls: "plans" });
   }
-  const plans = S.accounts.filter((row) => (row.heads || []).some(isPlanHead) && !(row.login_place && !row.credential_present && !row.observed_at_epoch_seconds));
+  const plans = S.accounts.filter((row) => (row.heads || []).some(isPlanHead) && !emptyPlace(row));
   const keyRows = [];
   for (const k of S.keys) {
     if (!(k.heads || []).map((x) => x.head).filter(isKeyHead).length) continue;

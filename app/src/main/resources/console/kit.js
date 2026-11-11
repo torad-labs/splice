@@ -136,15 +136,19 @@ const loginIds = (a) => {
   const at = (a?.heads ?? []).flatMap((h) => [...own, a?.account_labels?.[h]].filter((x) => typeof x === "string" && x).map((x) => `${h}|${x}`));
   return [a?.ref, ...at, ...own].filter((x) => typeof x === "string" && x);
 };
+/** A command's own login place that holds no account: signed out, no proved account, no reading. It is no login, so no
+ *  board draws a card for it. A credential file with no usable token in it is such a place too: Usage went by the file
+ *  alone until Nov 11, 2026, and drew "Account 4, Signed out" for a place Accounts had left off since Oct 27. */
+const emptyPlace = (a) => Boolean(a?.login_place && !a.identity_verified && !a.observed_at_epoch_seconds && !a.token_renews
+  && (!a.credential_present || a.auth_exclusion_reason === "credential_missing" || a.refusal));
 function loginRoster(rows) {
   if (!Array.isArray(rows)) return;
   // a name two logins answer to (a pool slot such as "primary" is on every command's first login) names neither
   const book = new Map(), shared = new Set();
-  // a command's own login place that never proved an account is drawn by few pages, so it is numbered after the others and
+  // a command's own login place that never proved an account is drawn by no board, so it is numbered after the others and
   // never moves their numbers
-  const placeOnly = (a) => a?.login_place && !a.identity_verified && !a.observed_at_epoch_seconds && !a.token_renews && (!a.credential_present || a.auth_exclusion_reason === "credential_missing" || a.refusal);
   const unnamed = rows.filter((a) => a?.kind !== "api-key" && !ownName(a?.display_name));
-  const ordered = [...unnamed.filter((a) => !placeOnly(a)), ...unnamed.filter(placeOnly)];
+  const ordered = [...unnamed.filter((a) => !emptyPlace(a)), ...unnamed.filter(emptyPlace)];
   ordered.forEach((a, k) => {
     for (const id of new Set(loginIds(a))) { if (book.has(id)) shared.add(id); else book.set(id, k + 1); }
   });

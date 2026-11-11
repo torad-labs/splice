@@ -871,7 +871,7 @@ const stopTimers = (s) => SIGNIN.quiet(s);
 // What the page does as the sign-in at [target] changes. It holds that sign-in while it is the one on its card or tile.
 function signOn(target) {
   const s = ui.signin[target];
-  return { held: () => ui.signin[target] === s, draw: render, done: () => finishSignin(target), failed: (st) => failedSignin(target, st) };
+  return { held: () => ui.signin[target] === s, draw: render, done: (st) => finishSignin(target, st), failed: (st) => failedSignin(target, st) };
 }
 const waitSignin = (target) => SIGNIN.start(ui.signin[target], signOn(target));
 // A sign-in the page itself ends as failed, in splice's words: a provider splice would not add, a save that did not land.
@@ -889,7 +889,7 @@ function failedSignin(target, st) {
   }
   render();
 }
-async function finishSignin(target) {
+async function finishSignin(target, st = null) {
   const s = ui.signin[target];
   stopTimers(s);
   if (s.how.done && !(await s.how.done())) return; // an add saves after its sign-in; a refused save says so in place
@@ -897,6 +897,17 @@ async function finishSignin(target) {
   if (target === "prov") ui.addProv = null;
   await refresh(s.spot ? s.spot.split("/")[1] : "new");
   if (s.how.name) await nameAdded(s.how);
+  landedOn(s.how, st);
+}
+// An add whose sign-in landed on a login already here (the browser held an account this command already has, and
+// splice signed that login in again): no card is new, so the one it landed on pulses once. Without it the tile closed
+// and nothing on the page said the press had done anything.
+function landedOn(how, st) {
+  if (!how.before || !st?.label) return;
+  const mine = data.flatMap((p) => p.accounts).filter((a) => a.row?.heads?.includes(how.poll));
+  if (mine.some((a) => a.row.ref && !how.before.has(a.row.ref))) return;
+  const there = mine.find((a) => a.row.label === st.label || a.row.account_labels?.[how.poll] === st.label);
+  if (there) { ui.pulse = there.id; render(); }
 }
 // Cancel ends the sign-in on splice, and the card lets go of it only once splice has answered. Until Nov 11, 2026 it
 // only forgot the sign-in here: splice kept it for its ten minutes and refused the next Sign in on that login as

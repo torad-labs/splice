@@ -49,7 +49,8 @@ function signIn(head: string, label: unknown) {
   if (label === "auto" && first.present && browserHolds === "first") return ended("already_added", FIRST_REASON);
   if (label === "auto" && first.present) { // a place of its own, beside the first login
     filed = `${head}-2`;
-    logins.push({ head, label: filed, name: "second", primary: false, present: true });
+    // an account already in the pool lands on its own login's file again, under the label it has (OAuthAccountWrites)
+    if (!logins.some((l) => l.head === head && l.label === filed)) logins.push({ head, label: filed, name: "second", primary: false, present: true });
   } else if (label === "auto") { // splice refuses a place in a pool whose first login holds no file
     return ended("config", "sign in without --label first to create the primary account");
   } else { // no label: the first login signs in again, and its file now holds the account that signed in
@@ -121,6 +122,16 @@ test("+ Add account that comes back as the account the command's first login hol
   await expect(tile.locator(".reason")).toHaveText(FIRST_REASON);
   await expect(page.locator("article.card")).toHaveCount(COMMANDS.length);
 }, true, "first"), 30_000);
+
+test("+ Add account that comes back as an added login already there adds nothing, and that login's card pulses once", () => onPage(async (page) => {
+  const c = COMMANDS[0]!;
+  await add(page, c.head);
+  await expect(card(page, "second")).toBeVisible({ timeout: 10_000 });
+  await add(page, c.head);
+  await expect(card(page, "second")).toHaveClass(/pulse-once/, { timeout: 10_000 });
+  await expect(page.locator("article.card")).toHaveCount(COMMANDS.length + 1);
+  await expect(page.locator(".result.bad")).toHaveCount(0);
+}), 30_000);
 
 test("+ Add account on a command whose first login is signed out signs that one in, since it has no pool to join yet", () => onPage(async (page) => {
   const c = COMMANDS[0]!;

@@ -212,6 +212,8 @@
 .pc-inactive-commands > summary { display: flex; align-items: center; min-height: 3.7rem; padding: .6rem 1rem; color: var(--text-body); font: 600 1rem/1.4 var(--font-name); }
 .pc-inactive-commands > div { border-top: 1px solid var(--hair); }
 .pc-commands .ghost { width: 80%; height: 1rem; }
+/* a sentence standing in for the rows starts under the first column's name, not flush with the card's edge */
+.pc-commands > .pc-note { margin: 0; padding: 0 1rem 1rem; }
 @container performance (max-width: 70rem) {
   .pc-command-labels { display: none; }
   .pc-command-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }

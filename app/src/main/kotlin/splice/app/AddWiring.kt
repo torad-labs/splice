@@ -51,8 +51,12 @@ private const val LIVE_EXIT_WAIT_SECONDS = 2L
 internal object AddWiring {
 
     /** [restart] is the plain `splice restart` unless a caller owns the restart itself: setup adds its
-     *  ticked heads and restarts once at the end. */
-    fun add(restart: DaemonRestart = DaemonRestart { LifecycleWiring.restart() }): AddVerb = AddVerb(
+     *  ticked heads and restarts once at the end. [doctor] is the checkup the add ends on, which setup runs once
+     *  itself, after its last head. */
+    fun add(
+        restart: DaemonRestart = DaemonRestart { LifecycleWiring.restart() },
+        doctor: AddDoctor = checkup(),
+    ): AddVerb = AddVerb(
         output = TerminalOutput(::println),
         errors = TerminalOutput(System.err::println),
         ports = AddPorts(
@@ -62,10 +66,13 @@ internal object AddWiring {
             daemonUp = DaemonUpProbe { port -> AdminSupport.daemonUp(port) },
             prompt = ConsolePrompter(),
             liveTurn = CommandLiveTurn(),
-            doctor = AddDoctor { env -> DoctorWiring.command().doctor(emptyList(), env) },
+            doctor = doctor,
         ),
         localRows = RuntimeRows(),
     )
+
+    /** `splice doctor`, as an add ends on it. */
+    fun checkup(): AddDoctor = AddDoctor { env -> DoctorWiring.command().doctor(emptyList(), env) }
 
     /** V4-220 item 3: `splice add` as the console runs it — its own sign-in sessions, the wrapper linked
      *  by the install verb with its lines in the daemon log, and this process's environment, the one

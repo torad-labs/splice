@@ -58,7 +58,10 @@ class StatusAccountsLineTest {
         val line = printed.lines().single { it.contains("accounts") && it.contains("claudex") }
         assertTrue(line.contains("on work (1 of 2 open)"), line)
         assertTrue(line.contains("switched from primary to work 3m ago: 7d window exhausted"), line)
-        assertEquals(1, printed.lines().count { it.contains("accounts") }, "one line per pooled head")
+        // the line that names the console says the word too ("opens accounts, models and usage"), so a head's line
+        // is told by where the word stands
+        val heads = printed.lines().count { it.trimStart().startsWith("accounts") }
+        assertEquals(1, heads, "one line per pooled head")
     }
 
     @Test

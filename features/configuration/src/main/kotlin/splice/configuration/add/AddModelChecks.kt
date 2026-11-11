@@ -45,14 +45,18 @@ internal object AddModelChecks {
     fun windows(models: List<ModelEntry>, listed: ListedModels, unchecked: String? = null): AddCheck {
         val windows = (listed as? ListedModels.Listed)?.windows.orEmpty()
         val oversized = models.any { row -> windows[row.id]?.let { row.contextWindow > it } == true }
-        val detail = models.joinToString("; ") { row ->
+        // The rows no size could be checked for share one reason, so it is said once, after their names: four Claude
+        // rows said "unchecked: provider lists no window size" four times on one line (Nov 11, 2026).
+        val blind = models.filter { windows[it.id] == null }.map { it.id }
+        val why = unchecked ?: "provider lists no window size"
+        val detail = models.mapNotNull { row ->
             val served = windows[row.id]
             when {
-                served == null -> "${row.id} unchecked: ${unchecked ?: "provider lists no window size"}"
+                served == null -> "${blind.joinToString(", ")} unchecked: $why".takeIf { row.id == blind.first() }
                 row.contextWindow > served -> "${row.id} declares ${row.contextWindow}, provider serves $served"
                 else -> "${row.id} fits: declares ${row.contextWindow}, provider serves $served"
             }
-        }.ifEmpty { "no declared model windows to check" }
+        }.joinToString("; ").ifEmpty { "no declared model windows to check" }
         return AddCheck("windows", !oversized, detail)
     }
 }

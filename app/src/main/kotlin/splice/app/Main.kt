@@ -1,6 +1,7 @@
 // NEW: process entry (P4-SUP). `main` is suspend, so no runBlocking exists anywhere. Acquires the
 // single-flight daemon lock, loads topology, starts the daemon, installs a
-// shutdown hook. `splice daemon` is the default; other subcommands route to the CLI (P5-CLI).
+// shutdown hook. `splice daemon` runs it; a bare `splice` does too when no terminal is attached, and prints the start
+// screen when one is. Other subcommands route to the CLI (P5-CLI).
 package splice.app
 
 import kotlinx.coroutines.CompletableDeferred
@@ -65,7 +66,15 @@ public suspend fun main(args: Array<String>) {
     // ControlServer's, which is why this is a process-wide line and not a per-engine flag.
     when (args.firstOrNull()) {
         CODE_MODE_PARITY_COMMAND -> CodeModeParityProbe.run(args.drop(1).toTypedArray())
-        null, "daemon" -> DaemonProcess(args.toList()).runDaemon()
+        // `splice` typed alone on a terminal is a person asking what it does, and the CLI answers with its start
+        // screen. With no terminal the bare run stays the daemon's, for a unit or script that never spelled `daemon`.
+        null ->
+            if (System.console() == null) {
+                DaemonProcess().runDaemon()
+            } else {
+                exitProcess(splice.app.cli.Cli().runCli(args))
+            }
+        "daemon" -> DaemonProcess(args.toList()).runDaemon()
         PEER_HOST_COMMAND -> exitProcess(PeerHostRun(args.drop(1)).run())
         "start" -> LifecycleWiring.startThroughUnit()?.let(::exitProcess) ?: DaemonProcess(args.toList()).runDaemon()
         else -> exitProcess(splice.app.cli.Cli().runCli(args))

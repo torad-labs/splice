@@ -51,14 +51,10 @@ internal class SetupSignIn(
 
     internal suspend fun signInPendingHeads(topology: Topology): Boolean {
         val pending = pendingOAuthHeads(topology)
-        if (pending.isEmpty()) {
-            // Confirmation only. This line used to add "Set OPENROUTER_API_KEY before launching."
-            // unconditionally — on machines where the key was set, and on topologies with no
-            // openrouter head at all. The close below names every head still missing a credential
-            // and the command that fixes it, so an instruction here could only repeat or contradict it.
-            println(palette.paint(palette.live, "\u2713") + " wrapper installed.")
-            return true
-        }
+        // No head waits for a sign-in: nothing to say. Until Nov 11, 2026 this printed "wrapper installed." under the
+        // spinner's own "Installed wrappers". The close below names every head still missing a credential and the
+        // command that fixes it.
+        if (pending.isEmpty()) return true
         println(
             palette.paint(
                 palette.quiet,
@@ -127,6 +123,9 @@ internal class SetupSignIn(
         println()
         // The redesign moved the launch command to the top and dropped the labels. The dashboard
         // left with the console on Oct 7, 2026.
+        // The console came back after that, and nothing on a new install named it (Nov 11, 2026): the installer, this
+        // screen and `splice status` all left a person to find `splice console` in the usage line.
+        verb("splice console", "accounts, models and usage, in a browser")
         verb("splice status", "see what's running")
         verb("splice doctor", "anything wrong prints its fix")
         // Room before the frame's outro, which renders at column 0 and would otherwise read as one
@@ -145,5 +144,5 @@ internal class SetupSignIn(
     }
 }
 
-/** Width of the command column in the closing block; "splice status" and "splice doctor" are 13. */
+/** Width of the command column in the closing block; "splice console" is the longest at 14. */
 private const val VERB_W = 18

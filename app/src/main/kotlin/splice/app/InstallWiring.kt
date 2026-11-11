@@ -91,21 +91,22 @@ internal object InstallWiring {
 
     /** `splice init`: the starter topology the install verbs read, written only when absent; the splice manager's folder
      *  beside it (ManagerHome), which install.sh installs by running init on every install; and on Linux the MCP hub
-     *  front's environment file, which its unit reads (the hub runs under systemd --user, so nowhere else). */
-    fun init(env: EnvReader) {
+     *  front's environment file, which its unit reads (the hub runs under systemd --user, so nowhere else). Its lines
+     *  leave through [output], which setup holds until its spinner has stopped. */
+    fun init(env: EnvReader, output: TerminalOutput = TerminalOutput(::println)) {
         val path = TopologyLoader.configPath(env)
         val existed = Files.exists(path)
         val topology = TopologyLoader.loadOrMaterialize(path)
-        println(if (existed) "splice: topology already at $path" else "splice: wrote starter topology to $path")
+        output.line(if (existed) "splice: topology already at $path" else "splice: wrote starter topology to $path")
         // The daemon's own state resolver, so init and boot keep one record of what splice wrote there.
         val stateDir = TopologyStatePaths(env).of(topology).stateDir
         ManagerHome(path, stateDir, LogSink { print(it) }).ensureBestEffort()
-            ?.let { println("splice: the splice manager's folder is $it") }
+            ?.let { output.line("splice: the splice manager's folder is $it") }
         if (linux()) {
             val hubDir = StatePaths(envReader = env).stateDir.resolve("mcp-hub")
             McpFrontEnv(path.resolveSibling("mcp-front.env"))
                 .write(hubDir, AdminSupport.controlPort(topology, env))
-                ?.let(::println)
+                ?.let(output::line)
         }
     }
 }

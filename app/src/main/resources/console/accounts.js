@@ -1007,7 +1007,8 @@ function slotHtml(p, c, a, serves) {
   }
   // a key that is missing leaves its commands without one: each is a chip here, with no live dot, so the card says which
   if (p.kind === "key" && !a.has) return `<span class="state">No key</span>${p.cmds.filter((x) => (a.heads || []).includes(x.head)).map((x) => `<span class="chip">${esc(x.cmd)}</span>`).join("")}`;
-  if (held(a)) return `${err}${pin}${locked(false, "")}`;
+  // a login its provider blocked has an act of its own beside the lock: Try again, for once what the block names is done
+  if (held(a)) return `${err}${pin}${a.blocked && c ? tryAct(p, c, a) : ""}${locked(false, "")}`;
   if (p.kind === "plan" && c) {
     // armed, Use now waits in the row under the card's head, beside the sessions it would cut (armRow)
     const armed = ui.moving && ui.moving.a === a.id && ui.moving.c === c.cmd;
@@ -1016,6 +1017,12 @@ function slotHtml(p, c, a, serves) {
   return "";
 }
 const slotKey = (a, c) => `slot:${a.id}|${c.cmd}`;
+// Try again on a login its provider blocked until its owner acts: splice lets go of its hold, and the next turn that
+// reaches the login asks the provider, whose answer decides (AskAgainRoute.kt). Until Nov 11, 2026 a blocked card offered
+// only Sign in again, in its menu, and a sign-in lifts no block. Marcos, that day: "I did sign in again because it said it
+// was blocked, I realized my payument failed, so I paid again".
+const tryAct = (p, c, a) => `<button class="act quiet" data-act="ask" data-p="${p.id}" data-c="${esc(c.cmd)}" data-a="${a.id}"`
+  + ` title="Its next turn asks the provider again">Try again</button>`;
 // the models a pinned login still cannot serve, each with when it can again (PinReason.kt pin_models_held), as one line
 const modelsHeld = (weeks) => (Array.isArray(weeks) ? weeks : [])
   .filter((m) => m?.model && m.until_epoch_seconds)
@@ -2378,6 +2385,13 @@ document.addEventListener("click", async (e) => {
       k.pin = a.id; render({ flip: true });
       const res = await API.post(headPath(k, "switch"), { label: labelOn(a, k.head) });
       await refresh(null, res.ok ? null : () => { ui.slotErr = { a: a.id, c: k.cmd, ...mutationError(res, "Not switched") }; refused(slotKey(a, k)); });
+      break;
+    }
+    // Try again on a blocked login: splice lets go of its hold and the board reads what it holds now. One still refused
+    // reads blocked again from its next turn's answer.
+    case "ask": {
+      const res = await API.post(headPath(k, "ask"), { label: labelOn(a, k.head) });
+      await refresh(null, res.ok ? null : () => { ui.slotErr = { a: a.id, c: k.cmd, ...mutationError(res, "Not asked") }; refused(slotKey(a, k)); });
       break;
     }
     case "unpin": {

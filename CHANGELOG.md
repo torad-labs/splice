@@ -1456,6 +1456,15 @@ origin.
   Now a sign-in the person finishes for a login lets go of that login's hold and block, so the next turn asks
   Anthropic with what was just signed in, and Anthropic's answer decides: served, or refused and held again with the
   reason. A credential file Claude Code rewrites by itself still does not lift a block. A limit the login read stays.
+- **A blocked login's card has Try again.** A login Anthropic refuses until its owner acts (new terms to accept, an
+  organization that does not allow subscription access) read Blocked on Accounts with one act, Sign in again, in its
+  menu, and a sign-in is not what a block waits for. Once its cause was fixed, nothing on the card told splice so: the
+  login was asked again only when its hold had run out, up to an hour, and a turn happened to reach it, or after a
+  daemon restart. On Nov 11 a login blocked while its organization's payment had failed was signed in again for want
+  of any other act. Now the card has Try again beside its lock. Pressing it has splice let go of that login's hold and
+  block (`POST /api/auth/{head}/ask`), the card reads as a login a turn can take, and the next turn that reaches it
+  asks Anthropic. A login still refused reads Blocked again from that answer, and the turn goes on to the next login
+  as it did before.
 - **A measured period counts each recorded minute once, and reads all of them.** The Performance panel's "Measure any
   period" and `splice perf` gave a different rate for the same day minutes apart: 1.47 completions a minute, then 50.9
   an hour, then 3.59 a minute, beside a request log of 24,203 requests for that day. Three faults in how a measurement

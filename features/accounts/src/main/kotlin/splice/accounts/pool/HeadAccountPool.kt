@@ -39,6 +39,14 @@ public interface HeadAccountPinSource {
     public fun unpin(sessionId: String? = null)
 }
 
+/** Try again on a login its provider refused, behind POST /api/auth/{head}/ask. A SIBLING of [HeadAccountPoolSource]
+ *  for the reason [HeadAccountPinSource] is one, and found by the same checked cast. */
+public fun interface HeadAccountAskSource {
+    /** Lets go of whatever holds [label] out for its credential, so the next turn that reaches it asks its provider
+     *  again. False when [label] names no account in this head's pool. */
+    public fun askAgain(label: String): Boolean
+}
+
 public data class HeadAccountPoolView(
     val selectedLabel: String?,
     val accounts: List<HeadAccountView>,

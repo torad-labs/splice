@@ -46,6 +46,7 @@ import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.accounts.claude.ClaudeLoginPlaces
 import splice.accounts.claude.ClaudeLoginStanding
+import splice.accounts.pool.HeadAccountAskSource
 import splice.accounts.pool.HeadAccountPinSource
 import splice.accounts.pool.HeadAccountPoolSource
 import splice.accounts.pool.HeadAccountPoolView
@@ -266,6 +267,34 @@ class AuthAndAccountsRoutesTest {
         val response = post("/api/auth/$NO_POOL/switch", """{"label":"plus-a"}""")
         assertEquals(HttpStatusCode.BadRequest, response.status, response.bodyAsText())
         assertTrue(response.bodyAsText().contains(NO_POOL), response.bodyAsText())
+    }
+
+    // Try again on a login its provider refused (Marcos, Nov 11, 2026: "I did sign in again because it said it was
+    // blocked"): the card's own act, which until then was only Sign in again.
+    @Test
+    fun `asking a login again answers ok true, and a label the pool does not list is a 400 naming it`() = runBlocking {
+        awaitPort()
+
+        val asked = post("/api/auth/$WIRED/ask", """{"label":"plus-a"}""")
+        val unknown = post("/api/auth/$WIRED/ask", """{"label":"no-such-label"}""")
+
+        assertEquals(HttpStatusCode.OK, asked.status, asked.bodyAsText())
+        assertEquals("true", json.parseToJsonElement(asked.bodyAsText()).jsonObject["ok"]!!.jsonPrimitive.content)
+        assertEquals(HttpStatusCode.BadRequest, unknown.status, unknown.bodyAsText())
+        assertTrue(unknown.bodyAsText().contains("no-such-label"), unknown.bodyAsText())
+    }
+
+    @Test
+    fun `asking again with no label, or on a head with no pool, is a 400 that says which`() = runBlocking {
+        awaitPort()
+
+        val blank = post("/api/auth/$WIRED/ask", "{}")
+        val noPool = post("/api/auth/$NO_POOL/ask", """{"label":"plus-a"}""")
+
+        assertEquals(HttpStatusCode.BadRequest, blank.status, blank.bodyAsText())
+        assertTrue(blank.bodyAsText().contains("label"), blank.bodyAsText())
+        assertEquals(HttpStatusCode.BadRequest, noPool.status, noPool.bodyAsText())
+        assertTrue(noPool.bodyAsText().contains(NO_POOL), noPool.bodyAsText())
     }
 
     @Test
@@ -491,8 +520,11 @@ class AuthAndAccountsRoutesTest {
      *  (`head.pool as? HeadAccountPinSource`). */
     private class PinnedPoolSource(
         private val pinner: HeadAccountPinSource,
-    ) : HeadAccountPoolSource, HeadAccountPinSource by pinner {
+    ) : HeadAccountPoolSource, HeadAccountPinSource by pinner, HeadAccountAskSource {
         override fun view(sessionId: String?): HeadAccountPoolView = HeadAccountPoolView(null, emptyList(), null)
+
+        /** "plus-a" is this pool's one login. */
+        override fun askAgain(label: String): Boolean = label == "plus-a"
     }
 
     private class FakePin : HeadAccountPinSource {

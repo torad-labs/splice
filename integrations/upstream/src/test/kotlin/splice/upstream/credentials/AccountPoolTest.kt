@@ -381,19 +381,19 @@ class AccountPoolTest {
 
     // Marcos, Nov 11, 2026: a login blocked while its organization's payment had failed, signed in again once paid.
     @Test
-    fun `a login the person signed in again is let go of its block and its hold`() {
+    fun `a login the person asks for again is let go of its block and its hold`() {
         val fixture = Fixture()
         val pool = fixture.pool(fixture.account("primary", primary = true))
         val organization = AccountBlock(OwnerStep.ALLOW_SUBSCRIPTION_ACCESS, "its organization")
         pool.chosen("session").markCredentialUnavailable(organization)
         assertEquals(organization, pool.view(null).accounts.single().credential.block)
 
-        assertTrue(pool.signedIn("primary"))
+        assertTrue(pool.askAgain("primary"))
 
         val credential = pool.view(null).accounts.single().credential
         assertEquals(null, credential.block)
         assertEquals(null, credential.excludedUntilEpochMillis)
-        assertFalse(pool.signedIn("no-such-login"))
+        assertFalse(pool.askAgain("no-such-login"))
     }
 
     @Test

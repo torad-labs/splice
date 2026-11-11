@@ -1450,7 +1450,9 @@ origin.
   beside a Sign in button that no block is lifted by; `/api/accounts` carries the step as `owner_block`. The hold
   outlasts a credential file Claude Code rewrites around the same account, which ended it before: on Nov 11 a rewrite
   one second after the refusal sent the next session's first request to the held login 56 seconds after its hold
-  began. A file that names another account still ends it at once.
+  began. A file that names another account still ends it at once. The card and the switch reason keep the step after
+  the hold's time runs out, until the login serves a turn: before, a login refused at 2:29 AM CT read "Use now" again
+  from 3:29 AM, and a session that found its hourly ask already running moved off it with "account unavailable".
 - **A new field in Claude Code's request no longer takes a Responses head down, and a head that refuses every turn says
   so.** Claude Code 2.1.321 sends a top-level `diagnostics` field, which refused every claudex turn from 5:51 to
   6:58 PM CT on Nov 9 while daemon.log, the perf file and the trace held nothing. Every top-level field of a Responses

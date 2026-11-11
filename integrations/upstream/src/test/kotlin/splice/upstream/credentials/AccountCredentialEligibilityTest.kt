@@ -281,6 +281,28 @@ class AccountCredentialEligibilityTest {
     }
 
     @Test
+    fun `a block is still named once its hold has run out, until the login serves a turn`() {
+        val fixture = AccountPoolTest.Fixture()
+        val primary = fixture.account("primary", primary = true)
+        val backup = fixture.account("plus-a")
+        val pool = fixture.pool(primary, backup)
+        val block = AccountBlock(OwnerStep.ALLOW_SUBSCRIPTION_ACCESS, "the organization's settings")
+        pool.chosen("refused").markCredentialUnavailable(block)
+
+        fixture.advanceWall(300_000L)
+
+        val lapsed = pool.view(null).accounts.single { it.primary }.credential
+        assertEquals(block, lapsed.block, "nothing has shown that its owner acted")
+        assertNull(lapsed.excludedUntilEpochMillis, "the hold's time has run out, so the next turn may ask it")
+        val asked = pool.chosen("asks-again")
+        assertSame(primary, asked.account)
+
+        asked.markTurnSucceeded()
+
+        assertNull(pool.view(null).accounts.single { it.primary }.credential.block)
+    }
+
+    @Test
     fun `missing credentials stay unavailable until a recreated revision appears`() {
         val fixture = AccountPoolTest.Fixture()
         val primary = fixture.account("primary", primary = true, credential = CredentialState.MISSING)

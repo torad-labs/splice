@@ -1,5 +1,7 @@
 package splice.app.sources.observability
 
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -69,6 +71,32 @@ class PerfAggregateStoreTest {
             assertTrue(late.coverage.issues.any { it.code == "late_checkpoint_expired" })
         } finally {
             PerfWorkBudget.release(late)
+        }
+        store.close()
+    }
+
+    @Test
+    fun `an hour too large for one file stays as minutes and the next hour still becomes a rollup`(
+        @TempDir directory: Path,
+    ) {
+        val next = PERF_HOUR_MS
+        repeat(60) { index ->
+            // The first hour names 4,800 series, more than an hour file holds; the next names 1,300 throughout.
+            seed(directory, index * minute, List(80) { "large-$index-$it" })
+            seed(directory, next + index * minute, List(1_300) { "next-$it" })
+        }
+        val now = 27L * PERF_HOUR_MS
+        val store = PerfAggregateStore(directory, identity, WallClock { now })
+
+        append(store, directory, snapshot(now, 1, now + 1_000))
+
+        assertTrue(Files.exists(directory.resolve("hour-$next.json")), "the next hour stayed minutes")
+        assertTrue(Files.exists(directory.resolve("minute-0.json")), "the oversized hour lost its minutes")
+        val folded = store.read(next, next + PERF_HOUR_MS)
+        try {
+            assertEquals(60L * 1_300 * 2, folded.snapshots.flatMap { it.points }.sumOf { it.count })
+        } finally {
+            PerfWorkBudget.release(folded)
         }
         store.close()
     }
@@ -160,6 +188,17 @@ class PerfAggregateStoreTest {
         assertFalse(offline.append(enormous))
         assertEquals(1L, offline.status().dropped)
         assertEquals(0L, offline.status().enqueued)
+    }
+
+    /** Writes one minute's file as the recorder leaves it, each of [series] counted twice. */
+    private fun seed(directory: Path, from: Long, series: List<String>) {
+        val points = series.map {
+            PerfAggregatePoint(it, PerfScope(head = "representative"), from, from + minute, 2L, 30.0, 10.0, 20.0)
+        }
+        val coverage = PerfCoverage(from, from + minute, minute)
+        val snapshot = PerfAggregateSnapshot(identity, from, from + minute, points, coverage)
+        val file = PerfHistoryFile(resolutionMs = PERF_MINUTE_MS, fromMs = from, snapshots = listOf(snapshot))
+        Files.writeString(directory.resolve("minute-$from.json"), Json.encodeToString(file))
     }
 
     private fun append(store: PerfAggregateStore, directory: Path, value: PerfAggregateSnapshot) {

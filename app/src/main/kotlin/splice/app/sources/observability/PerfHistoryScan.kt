@@ -70,8 +70,9 @@ internal class PerfHistoryScan(
         } catch (_: IllegalArgumentException) {
             error("history_malformed")
             true
-        } catch (_: IOException) {
-            error("history_read_error")
+        } catch (failure: IOException) {
+            // One stored record over the decode limit: named as the limit it met, and the files after it still read.
+            error(if (failure.message == "query_memory_limit") "query_memory_limit" else "history_read_error")
             true
         }
     }

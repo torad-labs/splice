@@ -1447,6 +1447,14 @@ origin.
   minute that crosses the period's edge stays out alone, and the read charges a series what it takes to hold, merges
   boots once time is one bucket, and past that turns away only a series it has not met, saying how many. A gap reason
   that repeats no longer hides the others: 55 "retention expired" intervals had filled the list.
+- **The performance recorder folds old minutes into hours again, so its history reaches back weeks.** Minutes older
+  than a day are folded into one file an hour. An hour that did not fit was tried again at every checkpoint, twice
+  every five seconds, and no later hour was ever folded: on one desk the hour of Nov 9, 5 PM CT was read 66,183 times,
+  minute files filled the recorder's 176 MiB, and its history reached back 38 hours where it is meant to reach 35
+  days. That hour held 1,348 series. The fold charged each a flat 2 KiB and gave up near 900, and the write refused a
+  file at a third of the size a read accepts, counting three bytes a character. The fold now charges what a series
+  takes to hold, the write measures the file it would write, and an hour that still does not fit stays as minutes
+  while the next hour gets its turn.
 - **A Claude login whose organization refuses it is held, instead of being tried first by every new session.**
   Anthropic answers such a login with a 403 reading "OAuth authentication is currently not allowed for this
   organization", which Claude Code shows as "Your organization has disabled Claude subscription access for Claude

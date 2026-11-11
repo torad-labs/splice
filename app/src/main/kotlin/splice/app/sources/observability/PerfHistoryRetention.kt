@@ -2,15 +2,28 @@ package splice.app.sources.observability
 
 import splice.core.perf.observation.PerfIssue
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * Prunes the recorder's files and folds minutes older than a day into hours, one hour a checkpoint.
+ *
+ * An hour whose minutes do not fit one hour file stays as minutes, and this process does not fold it again: the next
+ * hour gets its turn. Until Nov 11, 2026 the oldest hour was tried first every time, so one that did not fit was
+ * read again at every checkpoint, twice every five seconds and 66,183 times on one desk, and no later hour was ever
+ * folded: minutes filled the disk allowance and the recorder kept 38 hours where it is meant to keep 35 days.
+ */
 internal class PerfHistoryRetention(private val files: PerfHistoryFiles) {
+    private val unfolded = ConcurrentHashMap.newKeySet<Long>()
+
     fun maintain(now: Long): List<PerfIssue> {
         val issues = ArrayList<PerfIssue>()
         val entries = prune(now, issues)
         val cutoff = PerfHistoryFormat.hour(now - PERF_DAY_MS)
         val old = entries.filter { it.resolutionMs == PERF_MINUTE_MS && it.fromMs < cutoff }
         // One bounded hour per checkpoint; reads also roll older minutes up without mutating files.
-        old.groupBy { PerfHistoryFormat.hour(it.fromMs) }.entries.firstOrNull()?.let { (hour, minutes) ->
+        val hours = old.groupBy { PerfHistoryFormat.hour(it.fromMs) }
+        unfolded.retainAll(hours.keys)
+        hours.entries.firstOrNull { it.key !in unfolded }?.let { (hour, minutes) ->
             compact(hour, minutes, issues)
             // Compaction may publish or remove files even when it reports a deferred failure.
             prune(now, issues)
@@ -27,8 +40,10 @@ internal class PerfHistoryRetention(private val files: PerfHistoryFiles) {
             }
             minutes.forEach(files::remove)
         } catch (_: IOException) {
+            unfolded += hour
             issues += PerfIssue("hour_compaction_deferred", HISTORY_SINK)
         } catch (_: IllegalArgumentException) {
+            unfolded += hour
             issues += PerfIssue("hour_compaction_malformed", HISTORY_SINK)
         }
     }

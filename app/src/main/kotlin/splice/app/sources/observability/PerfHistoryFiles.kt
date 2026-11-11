@@ -83,10 +83,9 @@ internal class PerfHistoryFiles(private val directory: Path) {
             value.revisions.keys.sumOf { it.length.toLong() * 2L + REVISION_BYTES }
         if (owned > PERF_HISTORY_WORK_BYTES / 2L) throw IOException("aggregate checkpoint memory limit")
         val encoded = json.encodeToString(value)
-        if (encoded.length * HISTORY_UTF8_BYTES_PER_CHAR > PERF_HISTORY_FILE_BYTES) {
-            throw IOException(
-                "aggregate checkpoint size limit",
-            )
+        // The file's own size, as a read checks it: three bytes a character refused an hour file of 170 KB.
+        if (encoded.encodeToByteArray().size > PERF_HISTORY_FILE_BYTES) {
+            throw IOException("aggregate checkpoint size limit")
         }
         SecureFile.writeAtomic0600(path(value.fromMs, value.resolutionMs), encoded)
         FileChannel.open(directory, StandardOpenOption.READ).use { it.force(true) }

@@ -70,6 +70,38 @@ class PerfQueryAggregateTest {
     }
 
     @Test
+    fun `a minute the live recorder still holds is counted once, from its live copy`() {
+        val live = snapshot(3, fromMs = 60_000)
+        // The files hold both minutes, the second as its earlier checkpoint.
+        val stored = mapOf(0L to 3L, 60_000L to 2L)
+        val service = PerfQueryService(object : PerfQuerySources {
+            override fun heads(): Set<String> = setOf("h")
+            override fun rows(head: String): PerfRowsSource? = null
+            override fun live(): PerfAggregateSnapshot = live
+            override fun history(): PerfHistory = object : PerfHistory {
+                override fun append(snapshot: PerfAggregateSnapshot): Boolean = false
+
+                // One coarsened bucket, as a read of more than a few minutes returns: it starts where the read does.
+                override fun read(fromMs: Long, untilMs: Long): PerfHistoryRead {
+                    val count = stored.filterKeys { it >= fromMs && it < untilMs }.values.sum()
+                    val coverage = PerfCoverage(fromMs, untilMs, untilMs - fromMs)
+                    val sum = count.toDouble()
+                    val point = PerfAggregatePoint("requests_finished", scope, fromMs, untilMs, count, sum, 1.0, 1.0)
+                    val bucket = PerfAggregateSnapshot(identity, fromMs, untilMs, listOf(point), coverage)
+                    return PerfHistoryRead(listOf(bucket), coverage, untilMs - fromMs)
+                }
+                override fun status(): PerfSinkStatus = PerfSinkStatus("test", 0, 0, 0, 0, 0, 0, null, null)
+            }
+        })
+
+        val result = service.summary(PerfQuery(0, 120_000, source = "auto"))
+
+        assertEquals("0.05", JsonScalars.str(result.getValue("rates").jsonObject, "completions_per_s"))
+        assertEquals("120000", JsonScalars.str(result, "observed_duration_ms"))
+        PerfWorkBudget.release(result)
+    }
+
+    @Test
     fun `bounded retention issue only marks overlapping aggregate query windows partial`() {
         val retention = PerfIssue(
             "retention_expired",

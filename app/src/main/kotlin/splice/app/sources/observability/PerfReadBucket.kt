@@ -7,8 +7,11 @@ import splice.core.perf.observation.PerfIdentity
 import splice.core.perf.observation.PerfScope
 import java.io.IOException
 
-/** One identity/time bucket; original point boundaries remain visible after coarsening. */
-internal class PerfReadBucket(val identity: PerfIdentity) {
+/** One time bucket of one boot, or of every boot once the fold has merged them; original point boundaries remain
+ *  visible after coarsening. */
+internal class PerfReadBucket(identity: PerfIdentity) {
+    // Oldest first, as the scan reads them: more than one only once the fold has merged boots.
+    private val identities = linkedSetOf(identity)
     private val points = LinkedHashMap<Pair<String, PerfScope>, PerfAggregatePoint>()
     private var first = Long.MAX_VALUE
     private var until = 0L
@@ -18,7 +21,16 @@ internal class PerfReadBucket(val identity: PerfIdentity) {
         private set
 
     fun additional(point: PerfAggregatePoint): Long =
-        if ((point.metric to point.scope) in points) 0L else PerfHistorySize.point(point) + PERF_READ_CELL_OVERHEAD
+        if ((point.metric to point.scope) in points) 0L else PerfHistorySize.held(point) + PERF_READ_CELL_OVERHEAD
+
+    /** What naming [identity] among this bucket's boots would add: nothing for one it already names. */
+    fun additional(identity: PerfIdentity): Long =
+        if (identity in identities) 0L else PerfHistorySize.identity(identity)
+
+    fun carry(identity: PerfIdentity) {
+        bytes += additional(identity)
+        identities += identity
+    }
 
     fun coverage(snapshot: PerfAggregateSnapshot) {
         first = minOf(first, snapshot.fromMs)
@@ -36,6 +48,7 @@ internal class PerfReadBucket(val identity: PerfIdentity) {
     }
 
     fun absorb(value: PerfReadBucket) {
+        value.identities.forEach(::carry)
         first = minOf(first, value.first)
         until = maxOf(until, value.until)
         observed += value.observed
@@ -49,13 +62,23 @@ internal class PerfReadBucket(val identity: PerfIdentity) {
         }
     }
 
-    fun snapshot(): PerfAggregateSnapshot = PerfAggregateSnapshot(
-        identity,
-        first,
-        until,
-        points.values.toList(),
-        PerfCoverage(first, until, observed),
-    )
+    /** The bucket's points under its newest boot. A bucket of merged boots also gives each older one a snapshot with
+     *  no points, so a reader still learns every boot the points came from. */
+    fun snapshots(): List<PerfAggregateSnapshot> {
+        val newest = identities.last()
+        val older = identities.filter { it != newest }.map {
+            PerfAggregateSnapshot(it, first, until, emptyList(), PerfCoverage(first, until, 0L))
+        }
+        return older + PerfAggregateSnapshot(
+            newest,
+            first,
+            until,
+            points.values.toList(),
+            PerfCoverage(first, until, observed),
+        )
+    }
+
+    fun identity(): PerfIdentity = identities.last()
 
     fun fromMs(): Long = first
 

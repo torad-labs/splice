@@ -76,7 +76,8 @@ const PERF_CONSOLE = (() => {
     const position = (v) => known(v) ? Math.max(0, Math.min(100, Math.log1p(Math.max(0, v)) / Math.log1p(max) * 100)) : 0;
     return `<div class="pc-ranges"><p class="pc-axis">Typical ▰ · p95 │ · p99 ● <span>Log scale · 0 → ${safe(duration(max))}</span></p>${items.map(([label, h]) => `<div class="pc-range-row"><span>${safe(label)}</span>${known(h?.p50) ? `<span class="pc-range" role="img" aria-label="${safe(label)}: typical ${safe(duration(h.p50))}, p95 ${safe(duration(h.p95))}, p99 ${safe(duration(h.p99))}; logarithmic scale"><b style="width:${position(h.p50)}%"></b>${known(h.p95) ? `<i style="left:${position(h.p95)}%"></i>` : ""}${known(h.p99) ? `<em style="left:${position(h.p99)}%"></em>` : ""}</span>` : badge("Not measured", "unknown")}<strong>${safe(duration(h?.p50))}</strong><small>p95 ${safe(duration(h?.p95))}</small></div>`).join("")}</div>`;
   }
-  const issues = (v) => [...(v?.coverage?.issues || []), ...(v?.issues || [])].map((x) => typeof x === "string" ? x : x.code).filter(Boolean);
+  // each reason once: a day whose hours had each expired listed "retention expired" nineteen times in a row (Nov 11, 2026)
+  const issues = (v) => [...new Set([...(v?.coverage?.issues || []), ...(v?.issues || [])].map((x) => typeof x === "string" ? x : x.code).filter(Boolean))];
   const status = (r) => !r ? "Loading" : !r.ok ? r.status === 0 ? "Offline" : r.status === 404 ? "Unsupported" : "Error" : (words(r.body?.status || "ok").replace(/^./, (c) => c.toUpperCase()));
   const explain = (r) => r?.body?.error?.reason || r?.body?.error?.code || r?.body?.reason || issues(r?.body).join(" · ");
   function params(query) {

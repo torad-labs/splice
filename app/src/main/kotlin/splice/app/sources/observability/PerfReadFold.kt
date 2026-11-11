@@ -3,54 +3,81 @@ package splice.app.sources.observability
 import splice.core.perf.observation.PerfAggregatePoint
 import splice.core.perf.observation.PerfAggregateSnapshot
 import splice.core.perf.observation.PerfIdentity
-import java.io.IOException
 
-/** Adaptive streaming fold. Coarsening merges counts/buckets, never averages percentiles or drops old cells. */
+/**
+ * Adaptive streaming fold. Coarsening merges counts/buckets, never averages percentiles or drops old cells: first in
+ * time, down to one bucket for the whole span, then across boots, whose points a summary adds together anyway.
+ *
+ * Coarsened as far as it goes, it keeps adding to every series it already holds and turns away only a series it has
+ * not met, which [refused] counts. Until Nov 11, 2026 it stopped the whole read there, and the files after that
+ * point, the newest, went unread: a day on a desk that had restarted ten times returned five of its hours.
+ */
 internal class PerfReadFold(initialResolution: Long, private val span: Long) {
     var resolution = initialResolution
         private set
+    var refused = 0L
+        private set
     private var collapsed = false
+    private var bootsMerged = false
     private var bytes = 0L
     private var buckets = LinkedHashMap<ReadBucketKey, PerfReadBucket>()
 
     fun add(snapshot: PerfAggregateSnapshot) {
-        ensure(snapshot.identity, snapshot.fromMs, null)
-        buckets.getValue(key(snapshot.identity, snapshot.fromMs)).coverage(snapshot)
+        if (!fits(snapshot.identity, snapshot.fromMs, null)) {
+            refused += snapshot.points.size
+            return
+        }
+        open(snapshot.identity, snapshot.fromMs).coverage(snapshot)
         for (point in snapshot.points) {
-            ensure(snapshot.identity, snapshot.fromMs, point)
-            val bucket = buckets.getValue(key(snapshot.identity, snapshot.fromMs))
+            if (!fits(snapshot.identity, snapshot.fromMs, point)) {
+                refused++
+                continue
+            }
+            val bucket = open(snapshot.identity, snapshot.fromMs)
             val before = bucket.bytes
             bucket.point(point)
             bytes += bucket.bytes - before
         }
     }
 
-    fun snapshots(): List<PerfAggregateSnapshot> = buckets.values.sortedBy { it.fromMs() }.map { it.snapshot() }
+    fun snapshots(): List<PerfAggregateSnapshot> = buckets.values.sortedBy { it.fromMs() }.flatMap { it.snapshots() }
 
-    private fun ensure(identity: PerfIdentity, from: Long, point: PerfAggregatePoint?) {
-        while (bytes + additional(identity, from, point) > FOLD_BYTES) {
-            if (!coarsen()) throw IOException("query_memory_limit")
+    /** Coarsens until [point], or with none its bucket, fits. False once nothing coarser is left and it does not. */
+    private fun fits(identity: PerfIdentity, from: Long, point: PerfAggregatePoint?): Boolean {
+        while (true) {
+            val extra = additional(identity, from, point)
+            // A series the fold already holds costs nothing more, so its counts are never turned away.
+            if (extra == 0L || bytes + extra <= FOLD_BYTES) return true
+            if (!coarsen()) return false
         }
+    }
+
+    private fun open(identity: PerfIdentity, from: Long): PerfReadBucket {
         val key = key(identity, from)
-        if (key !in buckets) {
-            val bucket = PerfReadBucket(identity)
-            buckets[key] = bucket
-            bytes += bucket.bytes
-        }
+        val bucket = buckets.getOrPut(key) { PerfReadBucket(identity).also { bytes += it.bytes } }
+        val before = bucket.bytes
+        bucket.carry(identity)
+        bytes += bucket.bytes - before
+        return bucket
     }
 
     private fun additional(identity: PerfIdentity, from: Long, point: PerfAggregatePoint?): Long {
         val bucket = buckets[key(identity, from)]
-        val metadata = if (bucket == null) BUCKET_OVERHEAD + PerfHistorySize.identity(identity) else 0L
-        val cell = point?.let { bucket?.additional(it) ?: (PerfHistorySize.point(it) + PERF_READ_CELL_OVERHEAD) } ?: 0L
+        val metadata = bucket?.additional(identity) ?: (BUCKET_OVERHEAD + PerfHistorySize.identity(identity))
+        val cell = point?.let { bucket?.additional(it) ?: (PerfHistorySize.held(it) + PERF_READ_CELL_OVERHEAD) } ?: 0L
         return metadata + cell
     }
 
     private fun coarsen(): Boolean {
-        if (collapsed) return false
-        val next = nextResolution()
-        collapsed = next >= span
-        resolution = if (collapsed) maxOf(span, resolution) else next
+        when {
+            bootsMerged -> return false
+            collapsed -> bootsMerged = true
+            else -> {
+                val next = nextResolution()
+                collapsed = next >= span
+                resolution = if (collapsed) maxOf(span, resolution) else next
+            }
+        }
         val previous = buckets
         buckets = LinkedHashMap()
         bytes = 0L
@@ -73,7 +100,7 @@ internal class PerfReadFold(initialResolution: Long, private val span: Long) {
     }
 
     private fun rebin(value: PerfReadBucket) {
-        val key = key(value.identity, value.fromMs())
+        val key = key(value.identity(), value.fromMs())
         val existing = buckets[key]
         if (existing == null) {
             buckets[key] = value
@@ -86,10 +113,11 @@ internal class PerfReadFold(initialResolution: Long, private val span: Long) {
     }
 
     private fun key(identity: PerfIdentity, from: Long): ReadBucketKey =
-        ReadBucketKey(identity, if (collapsed) 0L else Math.floorDiv(from, resolution))
+        ReadBucketKey(identity.takeUnless { bootsMerged }, if (collapsed) 0L else Math.floorDiv(from, resolution))
 }
 
-private data class ReadBucketKey(val identity: PerfIdentity, val slot: Long)
+/** [identity] is null once the fold has merged boots: one bucket then holds every boot's points for its slot. */
+private data class ReadBucketKey(val identity: PerfIdentity?, val slot: Long)
 
 // Coarsen when aggregate cells exceed 2 MiB instead of dropping counts or retaining every source point.
 private const val FOLD_BYTES = 2L * 1_024 * 1_024

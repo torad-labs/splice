@@ -1436,6 +1436,17 @@ origin.
 - **`splice login` names a Claude login by its label, never its email,** in every sentence it prints.
 
 ### Fixed
+- **A measured period counts each recorded minute once, and reads all of them.** The Performance panel's "Measure any
+  period" and `splice perf` gave a different rate for the same day minutes apart: 1.47 completions a minute, then 50.9
+  an hour, then 3.59 a minute, beside a request log of 24,203 requests for that day. Three faults in how a measurement
+  reads the recorder's files, none in what was recorded. The newest minutes were counted twice, once from the file and
+  once from the recorder's memory: for ten minutes that held 92 completions the summary answered 123. A period that
+  began or ended inside a minute lost every series that minute touched, for the whole period. And the read ran out of
+  its 2 MiB after about 700 series, where one hour of a desk running ten commands records 616, so a day stopped inside
+  its first hours and the newest went unread. The files now answer only for minutes the recorder no longer holds, a
+  minute that crosses the period's edge stays out alone, and the read charges a series what it takes to hold, merges
+  boots once time is one bucket, and past that turns away only a series it has not met, saying how many. A gap reason
+  that repeats no longer hides the others: 55 "retention expired" intervals had filled the list.
 - **A Claude login whose organization refuses it is held, instead of being tried first by every new session.**
   Anthropic answers such a login with a 403 reading "OAuth authentication is currently not allowed for this
   organization", which Claude Code shows as "Your organization has disabled Claude subscription access for Claude

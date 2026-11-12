@@ -27,6 +27,8 @@ internal const val SPLICE_SUCCEEDS: String = "SPLICE_SUCCEEDS"
  *  handed over to and from, by a launcher of that build. */
 internal const val SPLICE_GENERATIONS: String = "SPLICE_GENERATIONS"
 
+// why: the retire route's yes. The running daemon answers 202 before it starts handing over, and any other status
+// (an older build's 404, a daemon with no launcher's 503) means it stays serving.
 private const val HTTP_ACCEPTED = 202
 private const val NEVER_ASKED = Long.MIN_VALUE
 

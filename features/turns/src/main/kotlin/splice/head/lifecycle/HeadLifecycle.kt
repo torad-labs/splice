@@ -110,11 +110,11 @@ internal class HeadLifecycle(
     }
 
     /** #523: the cut of a restart that keeps the answers in progress. Admission closes first, as in a drain; then
-     *  only the turns whose upstream has not begun answering are cut. The books close HERE, before the daemon hands
-     *  over: from [splice.head.perf.RetiredRows.retire] on, a row this process records is left for the next daemon
-     *  to count, and the flushes after it are the last writes this process makes to the usage, hourly and
-     *  session-total files. A provider that cannot finish a turn beside another daemon stops whole, here, so its own
-     *  last flush lands before the hand-over too. */
+     *  only the turns whose upstream has not begun answering are cut, and the detached compactions with them. The
+     *  books close HERE, before the daemon hands over: from [splice.head.perf.RetiredRows.retire] on, a row this
+     *  process records is left for the next daemon to count, and the flushes after it are the last writes this
+     *  process makes to the usage, hourly and session-total files. A provider that cannot finish a turn beside
+     *  another daemon stops whole, here, so its own last flush lands before the hand-over too. */
     private suspend fun retireLocked(): Int {
         // A head already drained or already retired has no answer left to keep.
         val nothingToKeep = drained || retired
@@ -124,7 +124,6 @@ internal class HeadLifecycle(
         }
         engine.closeAdmission(window)
         val kept = driver.retireActive()
-        driver.stopDetached()
         deps.stores.perfStats.retired.retire()
         // A row recorded before that moment counts its hour on the file lane, behind its own append: the lane runs
         // what it holds, and then the books are written once, whole.

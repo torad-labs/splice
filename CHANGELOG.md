@@ -90,8 +90,10 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   model's week while its own week has room. The page asked the daemon where the command's next turn would go
   without naming a model, so the mark could sit on a login that refuses the model every session of the command
   uses: on Nov 12, 2026 it sat on a login with Fable at 100% while the sessions ran on the one login that had
-  Fable left. The daemon now answers `next_target` and `following_target` for the model most of the command's
-  last 64 turns asked for.
+  Fable left. The daemon now answers `next_target` and `following_target` for the model most of the last 64
+  turns of the command's sessions asked for. A turn Claude Code sends for a subagent is not counted: sessions
+  that hand their reading to helpers on a smaller model send more helper turns than their own, and the mark
+  would have followed the helpers' model.
 - **The Claude command has one login: Claude Code's own.** Started by its own name, `claude-splice` ran Claude
   Code over a second home, `~/.claude-claude-splice`, with a sign-in of its own, and the command counted that
   home as its first login beside the one in `~/.claude`. A machine that signs in to `claude` and nowhere else

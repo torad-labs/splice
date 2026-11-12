@@ -54,7 +54,7 @@ class DetachedCompactionTearTest {
             val first = head.client.open(compaction)
             first.awaitText("summary so far")
             first.hangUp()
-            awaitLog(head, "compaction continues detached")
+            awaitLog(head, "continues detached")
             provider.release()
             awaitLog(head, "detached compaction finished")
 

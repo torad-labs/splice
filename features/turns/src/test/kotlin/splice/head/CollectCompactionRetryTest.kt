@@ -274,7 +274,7 @@ class CollectCompactionRetryTest {
         assertTrue(waitFor(20_000) { held.gate.snapshot().inflight == 1 }, "the streaming compaction holds its slot")
         first.close()
         assertTrue(
-            waitFor(20_000) { held.lines.any { "compaction continues detached" in it } },
+            waitFor(20_000) { held.lines.any { "continues detached" in it } },
             "the streaming compaction must detach: ${held.lines.joinToString("")}",
         )
     }

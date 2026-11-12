@@ -246,7 +246,7 @@ internal class TurnStreamer(
                 val who = drive.sessionTag()?.let { "session $it, " } ?: ""
                 deps.log(
                     "[${provider.key}] client gone (${who}call cancelled); " +
-                        "compaction continues detached; its answer is held for a retry\n",
+                        "the turn continues detached; its answer is held for a retry\n",
                 )
             }
             throw e

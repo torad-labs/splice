@@ -43,6 +43,7 @@ import splice.head.turn.TurnState
 import splice.http.ingress.HeapIngress
 import splice.http.listen.AdoptedBootstrap
 import splice.upstream.Provider
+import splice.upstream.credentials.EarlyResetHeard
 
 public class HeadServer(
     private val provider: Provider,
@@ -80,6 +81,11 @@ public class HeadServer(
         deps.quotaBundle.accountPool?.onJoined = Runnable {
             val waiting = holds.joined()
             if (waiting > 0) deps.log("[${provider.key}] a login joined: $waiting waiting turn(s) asked to move\n")
+        }
+        // A login reset at its provider comes back at once, and the journal says which one and why.
+        deps.quotaBundle.accountPool?.onEarlyReset = EarlyResetHeard { label, ended ->
+            val windows = ended.joinToString(" and ")
+            deps.log("[${provider.key}] login $label reads $windows reset before its time: its hold ended\n")
         }
         deps.quotaBundle.onAllowed { holds.allowed() }
     }

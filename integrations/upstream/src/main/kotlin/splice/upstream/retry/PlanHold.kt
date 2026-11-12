@@ -81,6 +81,12 @@ public class PlanHold internal constructor(
         write(held.updateAndGet { current -> current - setOf(null, model) })
     }
 
+    /** Ends the week of [model] alone: the provider's own reading shows it reset before the time its refusal named
+     *  (EarlyReset). The whole login's hold and every other model's week stay. */
+    internal fun release(model: String) {
+        write(held.updateAndGet { current -> current - model })
+    }
+
     /** V4-412: brings back a hold a restart interrupted, silently and without writing it again;
      *  a reset that has already passed restores nothing, and neither does one model's week that names no model. */
     internal fun restore(limit: PlanLimit) {

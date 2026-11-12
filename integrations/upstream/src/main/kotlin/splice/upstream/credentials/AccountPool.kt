@@ -83,10 +83,25 @@ public class AccountPool(
     private val joined = AtomicLong(0L)
 
     /** How many times a login became one a waiting turn may take: a label the pool did not hold, a label that now
-     *  sends another credential (Claude Code signed in to another account in the same place), or a login the person
-     *  said to ask again. A turn that a login refused before the newest of these may be offered that login again:
+     *  sends another credential (Claude Code signed in to another account in the same place), a login the person
+     *  said to ask again, or a login whose reading shows a held window reset before its time ([EarlyReset]). A turn
+     *  that a login refused before the newest of these may be offered that login again:
      *  what was refused then may be another account now, and a login still spent is kept out by its own hold. */
     public val joins: Long get() = joined.get()
+
+    /** Hears a login's hold end on a reading that shows its window reset before its time, before [onJoined] does. */
+    @Volatile
+    public var onEarlyReset: EarlyResetHeard? = null
+
+    private val earlyReset = EarlyResetHeard { label, ended ->
+        joined.incrementAndGet()
+        onEarlyReset?.heard(label, ended)
+        onJoined?.run()
+    }
+
+    init {
+        accounts.forEach { it.onEarlyReset = earlyReset }
+    }
 
     /** Hears the pins that let go at a limit reading, so the saved pins let go too and a restart does not restore them. */
     @Volatile
@@ -100,6 +115,7 @@ public class AccountPool(
         get() = membership.get().accounts
         set(accounts) {
             val updated = AccountMembership(accounts)
+            accounts.forEach { it.onEarlyReset = earlyReset }
             val before = synchronized(membershipMonitor) { membership.getAndSet(updated) }
             if (updated.accounts.any { before.byLabel[it.label]?.auth !== it.auth }) {
                 joined.incrementAndGet()

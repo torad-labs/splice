@@ -5,6 +5,15 @@
 Changes on main since v0.4.0. They take a version's heading when that version is cut.
 
 ### Fixed
+- **A login reset at its provider is used again at once.** When a provider refuses a login for a spent plan
+  window, splice holds that login until the reset the refusal named, and only an answered turn ended the hold
+  sooner. No turn is sent to a held login while another is open, so a login reset early at the provider stayed
+  out of use: on Nov 12, 2026 one read 0% of its Fable week after a reset and would have been passed over for
+  six more days while the last open login ran out. A usage reading that shows a held window lower than it last
+  read, and below full, now ends that hold, for one model's week or for the whole login. The waiting turns are
+  asked to move to it, and the daemon's log names the login and the window. A figure that reads below full
+  without having fallen ends nothing: a week read at 99% a few minutes before its refusal reads 99% after it
+  too.
 - **Accounts marks where a command's next turn goes for the model its turns ask for.** A plan can use up one
   model's week while its own week has room. The page asked the daemon where the command's next turn would go
   without naming a model, so the mark could sit on a login that refuses the model every session of the command

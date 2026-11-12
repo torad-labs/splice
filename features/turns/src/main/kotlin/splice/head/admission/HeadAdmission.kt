@@ -9,7 +9,6 @@ package splice.head.admission
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import splice.core.auth.CredentialKey
-import splice.core.client.AGENT_HEADER
 import splice.core.failure.EndingHeard
 import splice.core.failure.RequestFacts
 import splice.core.memory.HeapCapacityException
@@ -198,8 +197,7 @@ internal class HeadAdmission(
                 callerCredentialKey = callerKey,
                 // a login whose provider refused another model for the week still serves this one (Nov 3, 2026)
                 model = prepared.built.meta.route.upstreamModel,
-                // a subagent's turn is served like any other, and has no say in the command's usual model
-                own = call.request.headers[AGENT_HEADER].isNullOrBlank(),
+                own = prepared.own,
             )
         }
         val account = when (selection) {

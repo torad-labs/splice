@@ -262,7 +262,11 @@ public class AccountPool(
         // The head switched only when the login it serves new or moved sessions on changed: once per change, never
         // once per session that starts on a backup while the primary is held (about 10,000 a day on claude-splice,
         // Oct 12). A session staying on its login, and the first login served after a start, are no switch of the head.
-        val headFrom = if (previous == null || moved != null) headServing.getAndSet(chosen.account.label) else null
+        // And only a turn of the model the command's turns ask for: a helper turn on a small model starts on a login
+        // that is out of the sessions' model, and that is not the command moving back to it (Nov 12, 2026: "switched
+        // from Seek Apps to Ethan: primary account reset" a minute after Ethan ran out of Fable).
+        val turned = if (previous == null || moved != null) headServing.takeIf { asked.leads(caller.model) } else null
+        val headFrom = turned?.getAndSet(chosen.account.label)
         val headSwitch = headFrom?.takeIf { it != chosen.account.label }?.let {
             val reason = AccountSwitchReason.of(current.byLabel[it], chosen.account, at, policy)
             AccountSwitch(it, chosen.account.label, reason, at)

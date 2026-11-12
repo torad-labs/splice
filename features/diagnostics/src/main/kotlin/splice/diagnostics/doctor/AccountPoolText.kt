@@ -124,12 +124,25 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
         }.takeIf { it.isNotEmpty() }
     }
 
-    /** The models [login] reads used up, each with when its week resets: its own reset, else the login's week's. The
-     *  name is the provider's, so only a plain one is printed. */
-    private fun usedUp(login: HeadAccountView, atSeconds: Long): List<Pair<String, Long?>> =
-        login.quota.sevenDayModels
-            .filter { it.runsAt(atSeconds) && it.usedUp && plainModel.matches(it.model) }
-            .map { it.model to (it.resetsAt ?: login.quota.sevenDay.resetEpochSeconds) }
+    /** The models [login] is out of, each with when it serves that model again. A model the pool holds the login out
+     *  of counts whatever its reading says, until the reset the provider named: that hold is what a turn's routing
+     *  reads, and on Nov 12, 2026 a login just refused still read 99%. A model with no hold counts when its reading is
+     *  all used, until its own reset, else the login's week's. The name is the provider's, so only a plain one is
+     *  printed; a held model no reading names goes by the name its turns ask for. */
+    private fun usedUp(login: HeadAccountView, atSeconds: Long): List<Pair<String, Long?>> {
+        val held = login.quota.holds.models.filter { it.resetEpochSeconds > atSeconds }
+        val weeks = login.quota.sevenDayModels.filter { it.runsAt(atSeconds) && plainModel.matches(it.model) }
+        val read = weeks.mapNotNull { week ->
+            val hold = held.firstOrNull { it.model?.let(week::weekOf) == true }
+            val until = hold?.resetEpochSeconds ?: week.resetsAt ?: login.quota.sevenDay.resetEpochSeconds
+            (week.model to until).takeIf { hold != null || week.usedUp }
+        }
+        val unread = held.mapNotNull { hold ->
+            val id = hold.model?.takeIf { id -> plainModel.matches(id) && weeks.none { it.weekOf(id) } }
+            id?.let { Pair<String, Long?>(it, hold.resetEpochSeconds) }
+        }
+        return read + unread
+    }
 
     /** A pool down to its last usable login says so, with the earliest reset among the held ones (splice-lead, Oct 13:
      *  claude-splice ran on one live login most of the day, and nothing said the next limit had no fallback). Null for

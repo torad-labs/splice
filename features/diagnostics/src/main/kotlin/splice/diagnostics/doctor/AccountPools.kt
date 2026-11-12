@@ -6,16 +6,19 @@ package splice.diagnostics.doctor
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import splice.accounts.pool.HeadAccountCredential
+import splice.accounts.pool.HeadAccountHolds
 import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.pool.HeadAccountQuota
 import splice.accounts.pool.HeadAccountSwitchView
 import splice.accounts.pool.HeadAccountView
 import splice.accounts.pool.HeadAccountWindow
+import splice.core.usage.PlanLimit
 import splice.core.usage.QuotaJson
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
@@ -151,6 +154,7 @@ internal class AccountPoolProjection {
                     resetEpochSeconds = JsonScalars.long(a, "seven_day_reset_epoch_seconds"),
                 ),
                 sevenDayModels = QuotaJson().models(a["seven_day_models"]),
+                holds = HeadAccountHolds(models = heldModels(a["models_held"])),
             ),
             credential = HeadAccountCredential(
                 present = credentialPresent(a),
@@ -159,6 +163,16 @@ internal class AccountPoolProjection {
             ),
         )
     }
+
+    /** The models the pool holds the login out of, as the daemon's reply names them (HeldWords.modelWeeks). */
+    private fun heldModels(held: JsonElement?): List<PlanLimit> =
+        (held as? JsonArray).orEmpty().filterIsInstance<JsonObject>().mapNotNull { row ->
+            JsonScalars.str(row, "model")?.let { model ->
+                JsonScalars.long(row, "until_epoch_seconds")?.let { until ->
+                    JsonScalars.str(row, "claim")?.let { claim -> PlanLimit(claim, until, model = model) }
+                }
+            }
+        }
 
     private fun authExclusion(a: JsonObject): Pair<Long?, String?> {
         val reason = JsonScalars.str(a, "auth_exclusion_reason")

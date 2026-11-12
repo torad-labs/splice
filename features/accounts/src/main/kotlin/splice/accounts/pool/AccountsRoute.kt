@@ -172,6 +172,7 @@ public class AccountsRoute(
             observedAtEpochSeconds = account.quota.observedAtEpochSeconds,
             sevenDayModels = account.quota.sevenDayModels,
             noUsageAt = account.quota.noUsageAtEpochSeconds,
+            modelsHeld = account.quota.holds.models,
         ),
         authExclusion = AuthExclusionView(
             account.credential.excludedUntilEpochMillis,

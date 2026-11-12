@@ -23,6 +23,10 @@ public class AskedModels {
         val most = counts.values.maxOrNull() ?: return null
         return recent.last { counts[it] == most }
     }
+
+    /** Whether a turn of [model] is one of the command's own: it asks for the usual model, names none, or nothing is
+     *  usual yet. A helper turn on a small model is not. */
+    public fun leads(model: String?): Boolean = model == null || usual().let { it == null || it == model }
 }
 
 // why: enough turns that a burst of helper turns on a small model does not outvote the sessions' own model.

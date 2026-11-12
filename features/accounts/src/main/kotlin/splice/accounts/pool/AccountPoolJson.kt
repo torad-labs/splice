@@ -63,6 +63,12 @@ public class AccountPoolJson {
                         put("seven_day_reset_epoch_seconds", account.quota.sevenDay.resetEpochSeconds)
                         // Each model's own week, which `splice status` names when one is used up (Nov 12, 2026).
                         QuotaJson().putModels(this, "seven_day_models", account.quota.sevenDayModels)
+                        // The models the pool holds this login out of, which is what a turn's routing reads. A reading
+                        // does not show it: on Nov 12, 2026 a login just refused read 99%, and one reset at its
+                        // provider read 0% while its refusal still stood.
+                        account.quota.holds.models.takeIf { it.isNotEmpty() }?.let { weeks ->
+                            putJsonArray("models_held") { HeldWords().modelWeeks(this, weeks) }
+                        }
                         descriptions[account.label]?.let { description -> auth(this, description) }
                     }
                 }

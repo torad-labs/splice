@@ -4,7 +4,9 @@ package splice.accounts.pool
 
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import splice.core.usage.ModelQuota
+import splice.core.usage.PlanLimit
 import splice.core.usage.QuotaJson
 import splice.core.usage.QuotaWindowView as PlanWindow
 
@@ -24,6 +26,8 @@ internal data class JoinedQuota(
     val sevenDayModels: List<ModelQuota> = emptyList(),
     /** Epoch SECONDS the provider last answered with no usage for this account ([QuotaView.noUsageAt]). */
     val noUsageAt: Long? = null,
+    /** The models the pool holds this login out of until the provider's reset: what a turn's routing reads. */
+    val modelsHeld: List<PlanLimit> = emptyList(),
 ) {
     /** The quota fields of a row's JSON. */
     fun writeInto(into: JsonObjectBuilder, nowSeconds: Long) {
@@ -37,6 +41,7 @@ internal data class JoinedQuota(
         into.put("seven_day_window_seconds", sevenDay.windowSeconds)
         into.put("seven_day_current", current(sevenDay, nowSeconds))
         QuotaJson().putModels(into, "seven_day_models", sevenDayModels.filter { it.runsAt(nowSeconds) })
+        if (modelsHeld.isNotEmpty()) into.putJsonArray("models_held") { HeldWords().modelWeeks(this, modelsHeld) }
         into.put("observed_at_epoch_seconds", observedAtEpochSeconds)
         into.put("no_usage_at_epoch_seconds", noUsageAt)
     }

@@ -5,6 +5,19 @@
 Changes on main since v0.4.0. They take a version's heading when that version is cut.
 
 ### Fixed
+- **Accounts and `splice status` show a login out of a model from the moment its provider refuses it there.**
+  splice keeps two records about a login: the usage its provider last reported, and a hold it sets when the
+  provider refuses a turn, which lasts until the reset the refusal named and decides where the next turn goes.
+  The screens drew only the first. On Nov 12, 2026 a login refused for Fable went on reading 99%, so its card
+  showed room and `splice status` counted Fable used up on six logins of eight when seven could not serve it,
+  and a login reset at its provider read 0% and looked open while its hold still stood (Marcos: "after I reset
+  it I saw it showing upo in SPlice right away"). The accounts reply now carries each login's held models
+  (`models_held`, each with its claim and the reset the provider named). A card says "Fable used up until ..."
+  for a held model whatever its bar reads, and `splice status` counts that login among the ones the model is
+  used up on. `splice status` names the login the command's next turn goes to for the model its turns ask
+  for, and "switched from ... to ..." is recorded only for a turn of that model: a new session's first turn on
+  a small model starts on a login that is out of the sessions' model, which read as "switched from Seek Apps to
+  Ethan: primary account reset" a minute after Ethan ran out of Fable.
 - **A login reset at its provider is used again at once.** When a provider refuses a login for a spent plan
   window, splice holds that login until the reset the refusal named, and only an answered turn ended the hold
   sooner. No turn is sent to a held login while another is open, so a login reset early at the provider stayed

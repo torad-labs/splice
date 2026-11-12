@@ -13,6 +13,7 @@ import splice.core.util.JsonWire
 import splice.core.util.SafeFailureText
 import splice.head.TurnsHeadLookup
 import splice.head.trace.TraceDirPort
+import splice.head.trace.body.TraceStop
 import splice.http.JsonReply
 import java.io.IOException
 import java.nio.file.Path

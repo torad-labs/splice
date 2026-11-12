@@ -10,7 +10,9 @@
 package splice.core.storage
 
 import splice.core.util.Cancellables
+import splice.core.util.DaemonLog
 import splice.core.util.JsonlForce
+import splice.core.util.LogSink
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import java.io.IOException
@@ -50,6 +52,8 @@ public const val BODY_BUDGET_EVICTED_REASON: String = "evicted by the body budge
 private const val FLOOR_REACHED = "trace volume free-space floor reached"
 
 private const val INDEX_CAP_REACHED = "shared trace index budget exhausted by the day being written"
+
+private const val BODY_BUDGET_SPENT = "shared rolling trace body budget exhausted"
 
 /** How a day's v2 and v1 body packs end: the day file's `.jsonl`, then the format's suffix. */
 private const val DAY_PACK_V2_ENDING = ".jsonl$DAY_BODY_V2_SUFFIX"
@@ -95,6 +99,7 @@ public class DayBodyBudget(
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     private val force: JsonlForce = JsonlForce { _, channel -> channel.force(true) },
     private val indexMaxBytes: Long = TRACE_INDEX_MAX_BYTES,
+    private val log: LogSink = LogSink(DaemonLog::write),
 ) {
     // The listing this thread's outermost withLock keeps, absent outside one.
     private val held = ThreadLocal<DayHold>()
@@ -129,18 +134,29 @@ public class DayBodyBudget(
         require(bytes >= 0)
         val day = dayFile(pack)
         if (evicted(day)) throw DayBodyCapacityException(BODY_BUDGET_EVICTED_REASON)
-        if (bytes > maxBytes) throw DayBodyCapacityException("shared rolling trace body budget exhausted")
+        if (bytes > maxBytes) throw DayBodyCapacityException(BODY_BUDGET_SPENT)
         val hold = hold(pack.parent)
         val today = Instant.ofEpochMilli(clock()).atZone(ZoneOffset.UTC).toLocalDate()
         val active = dateOf(day.fileName.toString())
         while (!fits(pack.parent, hold.packs().sumOf { it.bytes }, bytes)) {
+            // Saved days make room in the budget and nowhere else. A volume under its floor is as much other data's
+            // doing as the trace's, so there the new body is refused, with the floor for its reason, and every saved
+            // day stays. Until Nov 12, 2026 the floor removed days as the budget does. One machine's markers show
+            // every day's bodies from Oct 29 to Nov 11 removed within three days of the day's end, half of them within
+            // four hours, where a day's bodies are a small part of the budget and its log names the floor.
+            if (floor.below(pack.parent, bytes)) throw DayBodyCapacityException(floor.reached(pack.parent))
             val days = hold.packs()
             val oldest = days.filter { it.date.isBefore(today) && it.date != active }.minByOrNull { it.date }
-                ?: throw DayBodyCapacityException(reason(pack.parent, bytes))
+                ?: throw DayBodyCapacityException(BODY_BUDGET_SPENT)
             // A whole completed UTC day goes together, across every head and both body formats.
             val gone = days.filter { it.date == oldest.date }
             hold.changed()
             gone.forEach(::evict)
+            log(
+                "[trace] the prompts and answers saved on ${oldest.date} (UTC) were removed to keep the trace " +
+                    "inside its $maxBytes B budget: ${gone.sumOf { it.bytes }} B in ${gone.size} file(s); " +
+                    "their records stay\n",
+            )
         }
         hold.granted(pack, bytes)
     }
@@ -182,9 +198,6 @@ public class DayBodyBudget(
 
     private fun fits(dir: Path, stored: Long, growth: Long): Boolean =
         growth <= maxBytes && stored <= maxBytes - growth && !floor.below(dir, growth)
-
-    private fun reason(dir: Path, growth: Long): String =
-        if (floor.below(dir, growth)) floor.reached(dir) else "shared rolling trace body budget exhausted"
 
     private fun evict(body: BodyDay) {
         // Both forces precede unlink: a crash cannot erase the omission's reason while keeping its deletion.

@@ -19,9 +19,13 @@
 // earlier may have rows no total counted, so its figure stays a lower bound. Dropping a total (idle
 // past SESSION_IDLE_RETENTION_MS, or past MAX_SESSION_TOTALS) moves [since] past that total's newest
 // row, so the same tag coming back is born after its lost rows and cannot claim them; a live total
-// keeps the start it was born with. The file says whether a head stop wrote it last ("clean"):
-// anything else (a kill, a crash, a failed final write) may have lost rows the file never saw, so the
-// totals start over at this process's start and claim nothing older, as they do for a corrupt file.
+// keeps the start it was born with. The file says whether a head stop wrote it last ("clean").
+// Anything else (a kill, a crash, a failed final write) may have lost rows the file never saw: the
+// last second's, by the debounce. Every row such a total does hold is its session's, so the totals
+// are kept and each is moved to begin at this process's start: it claims every row since then and
+// none before, and its session reads as a lower bound with the figure it had (SessionCost). Until
+// Nov 12, 2026 these totals started over, and after each of two machine stops in two days a session
+// days long was priced from the last rows of the head's log alone. A corrupt file still starts over.
 package splice.head.perf
 
 import kotlinx.serialization.json.Json
@@ -74,7 +78,15 @@ private const val TOTALS_FLUSH_DELAY_MS = 1_000L
 private data class Kept(val total: PerfSessionTotal, val lastMs: Long)
 
 /** What the file held: whether a head stop wrote it last, when its counting began, each tag's total. */
-private data class Loaded(val clean: Boolean, val since: Long, val sessions: List<Pair<String, Kept>>)
+private data class Loaded(val clean: Boolean, val since: Long, val sessions: List<Pair<String, Kept>>) {
+    /** These totals begun again at [at]: what each counted stays, and it claims no row from before then (the
+     *  header's "what a total may claim"). */
+    fun fromStart(at: Long): Loaded = Loaded(
+        clean = false,
+        since = at,
+        sessions = sessions.map { (tag, kept) -> tag to kept.copy(total = kept.total.copy(fromMs = at)) },
+    )
+}
 
 public class SessionTotals(
     private val file: Path,
@@ -228,15 +240,15 @@ public class SessionTotals(
         loaded = true
         val disk = readFromDisk()
         since = disk?.since ?: bornAt
-        // readFromDisk hands back only a file a head stop closed, so the mark on disk is clean until the
-        // first row after boot takes it away.
-        closed = disk != null
+        // A file a head stop closed carries the clean mark on disk until the first row after boot takes it away.
+        closed = disk?.clean == true
         disk?.sessions?.sortedBy { (_, kept) -> kept.lastMs }?.forEach { (tag, kept) -> sessions[tag] = kept }
     }
 
-    // DR-60 (class law): only PROVEN absence is the quiet first run. A file past the size guard, one
-    // that will not read, and one no head stop closed all start over the same way and say so, because
-    // the totals they held may be short of rows the file never saw. Cold path: runs once.
+    // DR-60 (class law): only PROVEN absence is the quiet first run. A file past the size guard and one
+    // that will not read start over and say so. One no head stop closed keeps its totals from this
+    // start (Loaded.fromStart) and says so, because they may be short of rows the file never saw.
+    // Cold path: runs once.
     private fun readFromDisk(): Loaded? {
         val disk = Cancellables.runCatchingCancellable {
             val size = Files.size(file)
@@ -251,8 +263,12 @@ public class SessionTotals(
             if (!genuinelyAbsent) startOver("did not read (${SafeFailureText.render(failure)})")
             null
         }
-        if (disk?.clean == false) startOver("was not closed by a head stop (a kill or a crash)")
-        return disk?.takeIf { it.clean }
+        if (disk?.clean != false) return disk
+        log(
+            "[session-totals] $file was not closed by a head stop (a kill or a crash); its totals are kept and " +
+                "count from this start, so a session begun before now reads as a lower bound\n",
+        )
+        return disk.fromStart(bornAt)
     }
 
     private fun startOver(why: String) {

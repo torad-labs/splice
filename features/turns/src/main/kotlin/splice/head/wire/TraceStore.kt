@@ -27,6 +27,7 @@ import splice.core.storage.DayRecord
 import splice.core.turn.TurnMeta
 import splice.core.util.WallClock
 import splice.head.trace.body.TraceBodies
+import splice.head.trace.body.TraceStopFile
 import splice.upstream.memory.JvmHeap
 import java.nio.file.Path
 import java.util.UUID
@@ -69,7 +70,7 @@ public class TraceStore(
 ) {
     /** Whether the next request is recorded; moved by the capture switch with no restart. A store records until told
      *  not to, so a fixture that builds one gets what it always got. */
-    public val recording: TraceSwitch = TraceSwitch(true, now)
+    public val recording: TraceSwitch = TraceSwitch(true, now, TraceStopFile(days.beside("saving-stopped")))
 
     private val bodies = TraceBodies(heap = heap, budget = bodyBudget, saves = recording)
 

@@ -58,7 +58,7 @@ class DayBodyBudgetTest {
             WallClock { BODY_TEST_NOW },
         )
         val refused = assertThrows(DayBodyCapacityException::class.java) { budget.admit(current, 1) }
-        assertEquals("trace volume free-space floor reached", refused.reason)
+        assertEquals("trace volume free-space floor reached: splice leaves 64 B free", refused.reason)
         assertEquals(BODY_TEST_BYTES, Files.size(current))
     }
 
@@ -167,8 +167,26 @@ class DayBodyBudgetTest {
         assertThrows(NoSuchFileException::class.java, { budget.admitIndex(day, 1) }, "once its directory is deleted")
         Files.createDirectory(first)
         assertNull(budget.admitIndex(day, 1), "the recreated directory has room again")
-        val floor = DayBodyBudget(minFreeBytes = Long.MAX_VALUE / 2, clock = WallClock { BODY_TEST_NOW })
-        assertEquals("trace volume free-space floor reached", floor.admitIndex(day, 1))
+    }
+
+    @Test
+    fun `a volume keeps a twentieth of itself free where that is less than 64 GiB`(@TempDir root: Path) {
+        val day = root.resolve("a-2026-10-05.jsonl")
+        var free = 40L shl 30
+        var size = 256L shl 30
+        val volume = object : DayVolumeSpace {
+            override fun available(dir: Path): Long = free
+
+            override fun total(dir: Path): Long = size
+        }
+        val budget = DayBodyBudget(space = volume, clock = WallClock { BODY_TEST_NOW })
+        val reached = "trace volume free-space floor reached: splice leaves"
+        assertNull(budget.admitIndex(day, 1), "40 GiB free of 256 GiB is above the 12.8 GiB that volume keeps")
+        free = 12L shl 30
+        assertEquals("$reached 13743895347 B free", budget.admitIndex(day, 1))
+        free = 40L shl 30
+        size = 2048L shl 30
+        assertEquals("$reached 68719476736 B free", budget.admitIndex(day, 1))
     }
 
     @Test

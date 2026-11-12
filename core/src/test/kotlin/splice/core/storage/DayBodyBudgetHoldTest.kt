@@ -102,7 +102,7 @@ private const val GRANTED = "granted"
 
 // why: the refusals the budget documents, by their reasons
 private const val BODY_CAP = "refused: shared rolling trace body budget exhausted"
-private const val FLOOR_REACHED = "refused: trace volume free-space floor reached"
+private const val FLOOR_REACHED = "refused: trace volume free-space floor reached: splice leaves $FLOOR B free"
 private const val INDEX_CAP = "refused: shared trace index budget exhausted by the day being written"
 
 // why: a day file's name, `<head>-<yyyy-MM-dd>.jsonl`, then what may follow it: a rolled generation or a body pack

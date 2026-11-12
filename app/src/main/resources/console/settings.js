@@ -611,7 +611,11 @@ function traceStopped() {
   // the cause in his words; the daemon's own sentence goes to the console, where it can be read in full. Each known
   // cause is one that deleting what is kept clears, so it carries the way to Free up space; an unknown one does not.
   if (why) console.warn(`trace: saving stopped: ${why}`);
-  const known = /free-space floor/.test(why) ? "The disk is down to the 64 GB splice leaves free"
+  // the floor is a twentieth of the disk, 64 GB at most, and the daemon's reason ends in its size: the card said
+  // "64 GB" on every disk while that was the one floor (Nov 11)
+  const floor = /free-space floor reached: splice leaves (\d+) B free/.exec(why);
+  const known = floor ? `The disk is down to the ${mbWord(+floor[1])} splice leaves free`
+    : /free-space floor/.test(why) ? "The disk is nearly full"
     : /index budget/.test(why) ? "The 16 GB for request records is full"
     : /body budget|evicted/.test(why) ? "The 32 GB for prompts and answers is full" : "";
   const heads = stops.length < ui.heads.filter(traceOn).length ? stops.map(({ h }) => h) : [];

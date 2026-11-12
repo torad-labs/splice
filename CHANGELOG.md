@@ -1234,7 +1234,8 @@ origin.
 - **Trace bodies use compressed daily packs with one shared rolling budget.** JSONL rows refer to
   deterministic chunks targeting 8 KiB, stored once as zstd frames in `.jsonl.bodies2`. Identical
   bodies and unchanged regions share chunks. Body packs across all heads share a 32 GiB budget.
-  New body writes preserve a 64 GiB free-space floor on the trace volume. Pressure removes the oldest
+  New body writes preserve a free-space floor on the trace volume: a twentieth of the volume, and 64 GiB at most.
+  Pressure removes the oldest
   completed UTC day's body packs across heads. The current UTC day's packs are protected, and
   JSONL records survive body eviction. An evicted or refused body is marked unavailable with its reason.
   Existing v1 `.jsonl.bodies` and inline rows remain readable, and retention or purge removes
@@ -1436,6 +1437,12 @@ origin.
 - **`splice login` names a Claude login by its label, never its email,** in every sentence it prints.
 
 ### Fixed
+- **Prompts and answers are saved on a disk with less than 64 GiB free.** splice stops saving them when the disk is
+  nearly full, and "nearly full" was 64 GiB free on every disk. That is more than most laptops have free, so there
+  nothing was ever saved and Settings read "Saving stopped" from the first request. The floor is now a twentieth of the
+  disk, and 64 GiB at most: a 256 GiB disk keeps 12.8 GiB free, and a disk of 1.25 TiB or more keeps 64 GiB as before.
+  Settings names the figure for that disk ("The disk is down to the 12.8 GB splice leaves free"), where it said 64 GB
+  on all of them, and the daemon's log line carries it too.
 - **`splice setup` opens on the plans to connect.** Its first screen was a "Starting point" menu (OpenRouter, a
   ChatGPT, Grok, Kimi or Muse sign-in, or "Existing topology") whose pick changed nothing but one line of the summary:
   "Connect the chosen plan with: splice add openrouter", said even to a person who had ticked only Claude on the next

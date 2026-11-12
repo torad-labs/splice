@@ -523,6 +523,7 @@ names = [
     "SessionAddress",
     "SessionServedOf",
     "SliceMemoryCap",
+    "TypedCommand",
 ]
 reason = """CredentialAccountNames resolves a PRIVATE EFFECTIVE-CREDENTIAL DIGEST to a proved account name. \
 Its miss means no account identity was proved, not a missing environment variable or response header. \
@@ -576,7 +577,12 @@ answer means systemd knows no such scope, which once the child's root has exited
 can still run, so the child's server may start it again. Its null means systemd could not be asked, and the \
 generation stays retained. Served by SliceMemoryCap, a ceiling or infinity would be read as a cgroup path. \
 Served by a lookup whose null means nothing is there, a manager that did not answer would settle a \
-generation whose workers may still run."""
+generation whose workers may still run. \
+TypedCommand (Nov 12, 2026) is an EIGHTH source: a head's key to the name a person types for that head when it \
+is not the head's own command, read from the wrap a launch reads (`claude` for the Claude head while plain \
+`claude` goes through splice). Its null is the ordinary answer for every other head and while nothing is \
+wrapped: show the head's own command. Served by HeadOfSession or SessionAddress it would be asked with a head \
+key where a session id is expected, and a screen would name a command after a session's head or its address."""
 
 # ── 5 names, () -> T ──────────────────────────────────────────────────────────────────────────────
 [[groups]]

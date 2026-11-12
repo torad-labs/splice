@@ -3,9 +3,6 @@
 package splice.app.cli.status
 
 import splice.app.cli.auth.CliSignIn
-import splice.client.wrap.WrappedHead
-import splice.core.config.InstallPaths
-import splice.core.config.UserHome
 import splice.core.head.HeldTurnReading
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepthProbe
@@ -20,7 +17,6 @@ import splice.core.usage.QuotaFullWindow
 import splice.core.util.EnvReader
 import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
-import splice.launch.wrap.WrappedClaudeLaunch
 import java.util.concurrent.TimeUnit
 
 internal class StatusTable(
@@ -119,16 +115,10 @@ internal class StatusTable(
         } else {
             palette.paint(palette.strain, STRAIN_GLYPH)
         }
-        val typed = typed(key, command, envReader)
+        // The action beside it still names the head's own command, which is the one `splice install` links.
+        val typed = signIn.typedCommand(key, command, envReader)
         return Row(glyph, listOf(key, typed, head.port.toString(), backendLabel(provider)), action)
     }
-
-    /** The command a person types for [key]: `claude` for the Claude head while his `claude` goes through splice, as
-     *  the console names it (WrappedClaudeLaunch.typed), and the head's own [command] otherwise. The action beside it
-     *  still names the head's own command, which is the one `splice install` links. */
-    private fun typed(key: String, command: String, envReader: EnvReader): String =
-        WrappedClaudeLaunch(WrappedHead(UserHome.dir(envReader), InstallPaths(envReader = envReader))).typed(key)
-            ?: command
 
     /** What stops a turn on a head that is otherwise set up, or null. A missing wrapper or login still
      *  names the command that fixes it first ([action]).

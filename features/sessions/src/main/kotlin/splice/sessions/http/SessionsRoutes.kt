@@ -166,7 +166,7 @@ public class SessionsRoutes(
     /** Each row's last, model and title, kept against its transcript file's stamp. */
     private val transcriptFields = RowTranscriptFields(transcripts, viewEnabled, titleOf)
 
-    public fun sessionsJson(): String = asks.once { listingJson() }
+    public fun sessionsJson(): String = asks.listing().use { listingJson() }
 
     private fun listingJson(): String = buildJsonObject {
         val listing = registry.list()

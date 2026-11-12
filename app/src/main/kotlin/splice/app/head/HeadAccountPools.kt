@@ -18,6 +18,7 @@ import splice.accounts.pool.HeadAccountSessions
 import splice.accounts.pool.HeadAccountSwitchView
 import splice.accounts.pool.HeadAccountView
 import splice.accounts.pool.HeadAccountWindow
+import splice.accounts.pool.HeadNextTarget
 import splice.app.provider.Wired
 import splice.app.provider.WiredAccount
 import splice.core.auth.AuthDescription
@@ -204,7 +205,7 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
             // The session's own next login: a session pinned before its first turn shows that pin, not the head's pick.
             // For the model the command's turns ask for, as the order route answers: asked with none, `splice status`
             // read "on" a login whose week had room and that had used up the model every session ran (Nov 12, 2026).
-            nextTargetLabel = pool.nextTargetLabel(sessionId, pool.asked.usual()),
+            next = pool.asked.usual().let { model -> HeadNextTarget(pool.nextTargetLabel(sessionId, model), model) },
         )
 
         // Synchronized so two presses save in the order they pinned: each save writes the pins as they stand.

@@ -15,6 +15,7 @@ import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.accounts.claude.ClaudeLoginPlaces
 import splice.accounts.claude.ClaudeLoginPlacesSource
 import splice.accounts.pool.HeadAccountPoolSource
+import splice.accounts.pool.HeadNextTarget
 import splice.app.control.NativeUsageSource
 import splice.app.probe.UpstreamPlaygroundProbe
 import splice.app.provider.ClaudeNativeAccountWiring
@@ -106,7 +107,7 @@ class ClaudeNativePoolIdentityTest {
             val observed = requireNotNull(rig.head.authSurface.accountPool).view(null)
             val announcing = rig.head.copy(
                 authSurface = rig.head.authSurface.copy(
-                    accountPool = HeadAccountPoolSource { observed.copy(nextTargetLabel = "new-login") },
+                    accountPool = HeadAccountPoolSource { observed.copy(next = HeadNextTarget("new-login")) },
                 ),
             )
             val source = NativeUsageSource(

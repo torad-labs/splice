@@ -44,7 +44,9 @@ import splice.core.topology.Topology
 import splice.core.turn.WatchdogBudget
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
+import splice.core.util.WallClock
 import splice.head.usage.CredentialQuotaFiles
+import splice.head.usage.QuotaTracker
 import splice.models.roster.DeclaredHead
 import splice.models.roster.DeclaredHeads
 import splice.topology.TopologyLoader
@@ -85,6 +87,26 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
                 fiveHour = QuotaWindow(10.0, 4_102_000_000L, 18_000L),
                 updatedAt = System.currentTimeMillis(),
             ),
+        )
+    }
+
+    /** A second login, labelled "added", landed in the command's account folders the way a finished sign-in lands. */
+    fun addLogin() {
+        val folders = ClaudeAccountFolders(paths.stateDir, now = WallClock { 1000 })
+        val pending = folders.pending(NATIVE_HEAD, "added")
+        Files.createDirectories(pending.directory)
+        Files.writeString(
+            pending.directory.resolve(".credentials.json"),
+            """{"claudeAiOauth":{"accessToken":"synthetic-added",""" +
+                """"refreshToken":"must-not-be-used","expiresAt":4102444800000}}""",
+        )
+        Files.writeString(pending.directory.resolve(".claude.json"), """{"oauthAccount":{"accountUuid":"stale"}}""")
+        val credential = requireNotNull(CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer synthetic-added")))
+        ClaudeCredentialProfiles(paths.stateDir, {}).observed(credential, ClaudeAccountIdentity("added-account", null))
+        assertEquals(ClaudeAccountLanding.Added("added"), folders.land(pending))
+        val account = folders.accounts(NATIVE_HEAD).single()
+        QuotaTracker(account.directory.resolve("quota.json")).record(
+            QuotaSnapshot(fiveHour = QuotaWindow(27.0, 4_102_000_000L, 18_000L), updatedAt = 1000),
         )
     }
 

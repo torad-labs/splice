@@ -18,6 +18,7 @@ import splice.accounts.pool.HeadAccountQuota
 import splice.accounts.pool.HeadAccountSwitchView
 import splice.accounts.pool.HeadAccountView
 import splice.accounts.pool.HeadAccountWindow
+import splice.accounts.pool.HeadNextTarget
 import splice.core.usage.PlanLimit
 import splice.core.usage.QuotaJson
 import splice.core.util.Cancellables
@@ -95,6 +96,9 @@ internal class AccountPoolProjection {
 
     // SignInPlanner's portable wrapper shape: these keys become text and bare login arguments.
     private val headKey = Regex("[A-Za-z0-9][A-Za-z0-9._-]*")
+
+    // a model id is printed to a terminal and sent in a notice, so only a plain one is kept
+    private val modelId = Regex("[A-Za-z0-9][A-Za-z0-9._:/\\[\\]-]{0,127}")
     private val authExclusionReasons = setOf(
         "terminal_401",
         "credential_missing",
@@ -126,7 +130,10 @@ internal class AccountPoolProjection {
             accounts = accounts,
             lastSwitch = (pool["last_switch"] as? JsonObject)?.let(::switch),
             pinnedLabel = label(pool, "pinned_label"),
-            nextTargetLabel = label(pool, "next_target_label"),
+            next = HeadNextTarget(
+                label(pool, "next_target_label"),
+                JsonScalars.str(pool, "usual_model")?.takeIf(modelId::matches),
+            ),
             selectionUnknown = missingSelection || droppedSelected,
             blockedUntilEpochSecondsByLabel = rawAccounts.mapNotNull { account ->
                 val label = label(account, "label") ?: return@mapNotNull null

@@ -116,6 +116,9 @@ internal class ControlServer(
         performance.accounts(accounts.performanceNames())
     }
 
+    /** The roster /api/accounts serves, for the daemon's own reading of it (LoginAlerting). */
+    internal fun accountRoster(): AccountRoster = AccountRoster { accounts.accountsJson() }
+
     private val resolver = readings.resolver(heads)
     private val audit = ControlAudit(log)
 

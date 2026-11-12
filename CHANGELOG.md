@@ -4,6 +4,28 @@
 
 Changes on main since v0.4.0. They take a version's heading when that version is cut.
 
+### Added
+- **splice tells you when a command is on its last login.** A command with several logins moves to the next when
+  a plan limit is reached, and nothing said when it reached the last. On Nov 12, 2026 every Claude login on one
+  machine ran out of Fable one after another and eleven sessions waited three hours, while the person had resets
+  to spend (Marcos: "just let me know when we're on the last account close to hit limit and I'll call a
+  reset"). The daemon now checks each command's logins once a minute. When only one can serve the model the
+  command's sessions ask for and it has used 80% of a limit, splice says so, with the login, the limit and when
+  it resets, and says it again at 95%. When no login can serve, it says that and when the first comes back. Each
+  is said once, a restart included, and again only when it returns after half an hour of not applying, so a
+  login that drops out for a few minutes repeats nothing. It is posted to the webhook saved in the alert settings, and handed to a
+  program of your own set in `splice.toml`:
+
+  ```toml
+  [daemon]
+  alert_command = ["/usr/local/bin/notify-me", "--from", "splice"]
+  ```
+
+  The list is the program and its arguments, run with no shell. The message arrives on its standard input and
+  what the program prints is discarded. The first time a command is set it is sent one line saying what it will
+  be used for, so a wrong command shows that day. The key is read at the daemon's start and can be set only in
+  the file. A command with one login says nothing: it has no last one to be down to.
+
 ### Fixed
 - **Accounts and `splice status` show a login out of a model from the moment its provider refuses it there.**
   splice keeps two records about a login: the usage its provider last reported, and a hold it sets when the

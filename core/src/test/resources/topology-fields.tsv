@@ -20,6 +20,7 @@ compaction.project[].instructions
 compaction.project[].model	
 compaction.project[].path	
 daemon	
+daemon.alert_command	
 daemon.auto_update	
 daemon.control_port	
 daemon.effort	

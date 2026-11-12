@@ -40,6 +40,15 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # The daemon re-reads both keys at each check.
 # update_channel = "stable"      # "stable" follows releases only; "beta" follows prereleases too
 # auto_update = true
+# A program of yours the daemon runs to tell you what cannot wait for the console. Today that is one thing: a command
+# with two or more logins is on the last one that can serve the model its sessions ask for, and that login has used
+# 80% of a limit (said again at 95%); or no login can serve it at all. Each is said once, and again only when it
+# returns after half an hour of not applying. The list is the program and its arguments, run as they stand with no
+# shell. The message, one or two sentences of plain text, arrives on its standard input, and what the program prints
+# is discarded. The first time a command is set it is sent one line saying what it will be used for, so a wrong
+# command shows that day. The same notice is posted to the webhook saved in the console's alert settings, when there
+# is one. Read at the daemon's start.
+# alert_command = ["/usr/local/bin/notify-me", "--from", "splice"]
 
 # ── LAN share: this machine's heads, run from your other machines (docs/specs/lan-share.md) ──
 # `splice share on` writes this table and restarts; `splice share status` prints each command's address. Sharing opens

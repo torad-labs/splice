@@ -98,6 +98,15 @@ dependencies {
     constraints {
         "ktlint"("ch.qos.logback:logback-classic:${catalog.version("logback")}")
         "ktlint"("ch.qos.logback:logback-core:${catalog.version("logback")}")
+        // TRANSITIVE CVE FLOOR — guava (2026-11-02, GHSA-xxph-c9ww-hj94, high). grpc-api 1.85.1 pins guava
+        // 33.6.0-android and nothing of ours declares guava, so the floor is a constraint, held here for every
+        // module: it adds no artifact where guava does not arrive, and it reaches a module's tests because
+        // testImplementation extends implementation. Until Nov 11, 2026 it sat on integrations/codemode alone,
+        // while integrations/observability's tests pulled grpc with no floor and kept the advisory open on the
+        // repository for nine days after the shipped jar was fixed. Drop it once grpc's chain carries 33.7.2+.
+        "implementation"("com.google.guava:guava:${catalog.version("guava")}") {
+            because("GHSA-xxph-c9ww-hj94; grpc-api 1.85.1 pins guava 33.6.0-android")
+        }
     }
 }
 

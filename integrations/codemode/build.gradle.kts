@@ -31,14 +31,7 @@ dependencies {
     // omitted inputs separately from explicit null; the older framed transport cannot.
     implementation(libs.grpc.netty.shaded)
     implementation(libs.protobuf.java)
-    // TRANSITIVE CVE FLOOR — guava (2026-11-02, GHSA-xxph-c9ww-hj94, high). grpc-api 1.85.1 pins guava
-    // 33.6.0-android at runtime and nothing here declares guava, so the floor is a constraint on the
-    // configuration grpc resolves in. Drop it once grpc's chain carries 33.7.2+.
-    constraints {
-        implementation("com.google.guava:guava:${libs.versions.guava.get()}") {
-            because("GHSA-xxph-c9ww-hj94; grpc-api 1.85.1 pins guava 33.6.0-android")
-        }
-    }
+    // grpc-api 1.85.1 pins a guava with an open advisory; splice.kotlin-common floors it for every module.
     implementation(libs.opentelemetry.api)
     api(libs.opentelemetry.sdk.trace)
     implementation(libs.graaljs.polyglot)

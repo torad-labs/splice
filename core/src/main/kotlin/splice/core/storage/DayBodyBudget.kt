@@ -49,11 +49,11 @@ public const val BODY_BUDGET_EVICTED_REASON: String = "evicted by the body budge
 
 /** Why a write was refused below the free-space floor: a body, or the index line beside it. The floor's size follows
  *  these words, so the log and Settings say how much the disk has to have free. */
-private const val FLOOR_REACHED = "trace volume free-space floor reached"
+internal const val FLOOR_REACHED: String = "trace volume free-space floor reached"
 
-private const val INDEX_CAP_REACHED = "shared trace index budget exhausted by the day being written"
+internal const val INDEX_CAP_REACHED: String = "shared trace index budget exhausted by the day being written"
 
-private const val BODY_BUDGET_SPENT = "shared rolling trace body budget exhausted"
+internal const val BODY_BUDGET_SPENT: String = "shared rolling trace body budget exhausted"
 
 /** How a day's v2 and v1 body packs end: the day file's `.jsonl`, then the format's suffix. */
 private const val DAY_PACK_V2_ENDING = ".jsonl$DAY_BODY_V2_SUFFIX"

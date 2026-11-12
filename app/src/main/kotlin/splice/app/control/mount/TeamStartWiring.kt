@@ -37,7 +37,10 @@ internal class HeadStartCommands(
             managed == null || managed.launchSpec == null || command == null ->
                 StartCommand.Refused("no launchable head is keyed '$head'")
             !Files.isSymbolicLink(installPaths.binDir.resolve(command)) ->
-                StartCommand.Refused("The $command command is not linked; run splice install $head.")
+                StartCommand.Refused(
+                    "The $command command is not linked; run splice install $head.",
+                    fix = "splice install $head",
+                )
             else -> StartCommand.Ready(listOf(installPaths.binDir.resolve(command).toString()))
         }
     }

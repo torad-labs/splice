@@ -81,7 +81,7 @@ async function read() {
   // behind one word). The rows stay, dimmed, under a line that says splice did not answer and when it last did.
   state.error = sessions.ok ? null : refusedAs(sessions, "Not read", "/api/sessions");
   if (sessions.ok) state.readAt = Date.now();
-  state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null, idleMs: h.gate?.stream_idle_ms ?? null, firstByteMs: h.gate?.first_byte_timeout_ms ?? null, authKind: h.authKind ?? null, cannotStart: h.cannotStart ?? null }));
+  state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null, idleMs: h.gate?.stream_idle_ms ?? null, firstByteMs: h.gate?.first_byte_timeout_ms ?? null, authKind: h.authKind ?? null, cannotStart: h.cannotStart ?? null, cannotStartFix: h.cannotStartFix ?? null }));
   // kept apart from the live commands: nothing runs on a removed one, so Stop, a move and the live reads never ask it
   state.retired = retiredHeads(retired, state.heads);
   for (const row of models.body?.heads || []) {
@@ -2084,8 +2084,8 @@ async function readChoices(s) {
       .filter((n) => h.head !== s.head || (n.id !== now && n.label !== s.model));
     if (!names.length) return null;
     // a command splice cannot start says so, with its fix, before the press: a move onto it would only be refused
-    const unstartable = state.heads.find((x) => x.key === h.head)?.cannotStart;
-    if (unstartable) return { head: h.head, own: h.head === s.head, names, kind: "unlinked", fix: unstartable.match(/(splice install \S+?)\.?$/)?.[1] ?? null, rank: 4 };
+    const unstartable = state.heads.find((x) => x.key === h.head && x.cannotStart);
+    if (unstartable) return { head: h.head, own: h.head === s.head, names, kind: "unlinked", fix: unstartable.cannotStartFix, rank: 4 };
     if (state.heads.find((x) => x.key === h.head)?.authKind === "api-key") {
       // a key reads as its provider, the heading Accounts draws over it; its variable joins only when two keys of
       // that provider feed this command, so the line says which one it sends (fin)

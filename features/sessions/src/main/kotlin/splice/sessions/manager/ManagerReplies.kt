@@ -1,7 +1,8 @@
 // NEW: Oct 15, 2026 (the splice manager) — what GET /api/manager and both POSTs answer, and how they refuse.
 //
 //   { "folder", "consented", "state": "off" | "resumable" | "live", "head", "session_id",
-//     "status": "working" | "idle" | "waiting" | null, "heads": [ { "key", "label", "ready", "why" } ],
+//     "status": "working" | "idle" | "waiting" | null,
+//     "heads": [ { "key", "label", "ready", "why", "why_code" } ],
 //     "line": { "model", "model_id", "effort", "context": { "used", "window", "percent", "cache" } | null, "at" } | null }
 //
 // live: the manager's client runs (registered, or a pane splice opened that asks something before it registers, which
@@ -25,14 +26,36 @@ import java.nio.file.Path
 
 private const val MANAGER_WAITING_STATUS = "waiting"
 
+/** Why a head cannot carry the manager now, by name. The composer chooses its state word by this, where it used to
+ *  match the words of [ManagerHeadChoice.why]. */
+@Serializable
+public enum class ManagerHeadBlock {
+    /** Its command is not linked on this machine. */
+    @SerialName("not_installed")
+    NOT_INSTALLED,
+
+    /** Its window is full, or its provider said to wait. */
+    @SerialName("out_of_quota")
+    OUT_OF_QUOTA,
+
+    /** Its local runtime did not answer. */
+    @SerialName("not_answering")
+    NOT_ANSWERING,
+
+    /** It is stopped. */
+    @SerialName("stopped")
+    STOPPED,
+}
+
 /** One head the person can pick; [why] says in plain words why it cannot carry the manager now, when [ready] is
- *  false. */
+ *  false, and [whyCode] names that cause. */
 @Serializable
 public data class ManagerHeadChoice(
     val key: String,
     val label: String,
     val ready: Boolean,
     val why: String?,
+    @SerialName("why_code") val whyCode: ManagerHeadBlock?,
 )
 
 /** How full the manager's context is, as its status line prints it: tokens used of the window, the percent, and the

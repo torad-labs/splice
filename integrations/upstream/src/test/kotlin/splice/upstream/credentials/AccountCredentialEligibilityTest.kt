@@ -324,9 +324,10 @@ class AccountCredentialEligibilityTest {
         assertEquals(block, restarted.view(null).accounts.single { it.primary }.credential.block)
 
         fixture.signIn(primary, "account-two")
-        val signedInWhileDown = fixture.pool(primary.copy(), backup)
+        val signedIn = primary.copy()
+        val signedInWhileDown = fixture.pool(signedIn, backup)
 
-        assertSame(primary, signedInWhileDown.chosen("new-sign-in").account, "another account is not blocked")
+        assertSame(signedIn, signedInWhileDown.chosen("new-sign-in").account, "another account is not blocked")
         assertNull(kept.loginHold().load(), "a hold on the account that left is not kept")
     }
 
@@ -350,7 +351,8 @@ class AccountCredentialEligibilityTest {
 
         fixture.rotateCredential(primary)
 
-        assertSame(primary, fixture.pool(primary.copy(), backup).chosen("new-file").account)
+        val renewed = primary.copy()
+        assertSame(renewed, fixture.pool(renewed, backup).chosen("new-file").account)
     }
 
     @Test

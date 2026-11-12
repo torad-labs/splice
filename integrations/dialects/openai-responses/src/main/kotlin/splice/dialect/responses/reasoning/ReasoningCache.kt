@@ -113,14 +113,13 @@ internal class ReasoningCache(
     /** #525: [key]'s file was written by another process since this one last read or wrote it, so what the file
      *  holds replaces what this cache holds of the conversation. Every call that names a conversation comes through
      *  here first. It costs one look at the file; the read happens only when the look says another process wrote.
-     *  That read runs under the cache's lock and after this process's own queued writes have landed, so a round
-     *  admitted here meanwhile is in the file it reads. The writer never takes the cache's lock, so waiting for it
-     *  under the lock cannot deadlock; it is the one place the lock is held across the disk, and it is taken only
-     *  for a conversation another daemon wrote. */
+     *  That read runs under the cache's lock, the one place the lock is held across the disk, and only while no
+     *  write of this process's own is on its way to that file: such a write is queued under the same lock, so a
+     *  round admitted here is either in the file that is read or still to come, in which case the look says nothing
+     *  and the call after it lands looks again. */
     private fun adopt(key: String?) {
         if (key == null || !writes.writtenElsewhere(key)) return
         synchronized(lock) {
-            val _ = writes.drain(ADOPT_WRITES_MS)
             if (!writes.writtenElsewhere(key)) return
             val stored = writes.reread(key)
             holdLocked(key, stored)
@@ -523,10 +522,6 @@ internal const val REASONING_BOUND_BYTES: Long = MAX_TOTAL_MIB * 1024L * 1024L
 // of rounds smaller than any reasoning item. It was a fixed 8192, which bound at ~22 MB, a third of the bytes.
 private const val ROUND_BYTES_FLOOR: Int = 2048
 internal const val MAX_ENTRIES: Int = MAX_TOTAL_MIB * 1024 * 1024 / ROUND_BYTES_FLOOR
-
-// why: this process's own queued writes for a conversation land before its file is read again; a page-cache append
-// takes microseconds, so the two seconds a head's stop gives the same writes bind only on a stalled disk.
-private const val ADOPT_WRITES_MS = 2_000L
 
 // The freeze log's reasons.
 private const val ALONE_OVER_BOUND = "alone over the bound"

@@ -273,6 +273,24 @@ class ReasoningCacheRestartTest(@param:TempDir private val state: Path) {
         assertEquals("cipher-1", reasoningBefore(restarted, "session-1", "call_1"))
     }
 
+    /** #525: at a restart the retiring daemon finishes the answer it is giving beside the next one, which has already
+     *  read what the disk held. Neither head is stopped in between: the hand-over stops nothing. */
+    @Test
+    fun `a round the retiring daemon finishes beside the next one is in that session's next request`() = runTest {
+        val retiring = heads.start()
+        retiring.onHeadRetire()
+        assertTrue(drive(retiring, "session-1", toolRound("call_1", "cipher-1")) is TurnOutcome.Success)
+        val next = heads.start()
+        assertEquals("cipher-1", reasoningBefore(next, "session-1", "call_1"))
+
+        val went = drive(retiring, "session-1", toolRound("call_2", "cipher-2"), body = afterCall("call_1"))
+
+        assertTrue(went is TurnOutcome.Success)
+        val request = afterCalls("call_1", "call_2")
+        assertEquals("cipher-1", reasoningBefore(next, "session-1", "call_1", body = request))
+        assertEquals("cipher-2", reasoningBefore(next, "session-1", "call_2", body = request))
+    }
+
     @Test
     fun `a client that sends no session id finds its reasoning after a restart by its opening alone`() = runTest {
         drive(heads.start(), null, toolRound("call_1", "cipher-1"))

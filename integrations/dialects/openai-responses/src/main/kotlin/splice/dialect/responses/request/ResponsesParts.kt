@@ -103,6 +103,15 @@ internal class ResponsesParts(
         log,
     )
 
+    /** #525: the head is retiring and finishes its answers beside the next daemon. Each record a turn keeps from here
+     *  lands on disk before the turn goes on ([ReasoningCacheWrites.landsBeforeReturning]): a turn keeps its records
+     *  before it hands the client the end of its answer, so the file holds them before the client can send the
+     *  conversation's next turn, which the next daemon answers. */
+    fun onHeadRetire() {
+        reasoningWrites.landsBeforeReturning = true
+        phaseWrites.landsBeforeReturning = true
+    }
+
     /** The head is stopping: land the reasoning records still queued for the disk, waiting at most [STOP_WRITES_MS],
      *  so the next start restores them. They are written behind the turns that made them (fix 3, 2026-10-26), so a
      *  stop that did not wait could end the process with the last ones still queued. A disk that did not keep up is

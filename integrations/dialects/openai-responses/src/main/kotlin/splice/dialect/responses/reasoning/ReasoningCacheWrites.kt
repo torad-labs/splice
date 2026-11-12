@@ -26,6 +26,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal class ReasoningCacheWrites(private val files: ReasoningCacheFiles?) {
     private val pending = ConcurrentLinkedQueue<ReasoningCacheWrite>()
 
+    // #525: how many of this process's own writes each conversation still has queued or being applied. Until they
+    // land, a file that differs from the one last known may differ by this process's own hand ([writtenElsewhere]).
+    private val unlanded = ConcurrentHashMap<String, Int>()
+
     // A pass is queued that has not yet begun to read [pending]: a wake meanwhile is already covered by it.
     private val woken = AtomicBoolean()
 
@@ -60,8 +64,11 @@ internal class ReasoningCacheWrites(private val files: ReasoningCacheFiles?) {
         return stored.orEmpty()
     }
 
-    /** Whether another process wrote [key]'s file since this one last read or wrote it (one look at the file). */
-    fun writtenElsewhere(key: String): Boolean = usable && files?.writtenElsewhere(key) == true
+    /** Whether another process wrote [key]'s file since this one last read or wrote it (one look at the file). Never
+     *  while a write of this process's own is on its way to that file: the file may differ by that write alone, and a
+     *  turn must not wait on the disk to find out (fix 3, 2026-10-26). The look after it lands tells. */
+    fun writtenElsewhere(key: String): Boolean =
+        usable && !unlanded.containsKey(key) && files?.writtenElsewhere(key) == true
 
     /** [key]'s conversation as the disk holds it now, or null when it holds none that reads. */
     fun reread(key: String): StoredConversation? = files?.reread(key)
@@ -74,20 +81,25 @@ internal class ReasoningCacheWrites(private val files: ReasoningCacheFiles?) {
         resultProofs: Map<String, String?> = emptyMap(),
     ) {
         if (usable && files?.accepts(key) == true) {
-            pending.add(ReasoningCacheWrite(key, StoredRound(toolIds, envelopes, resultProofs)))
+            queue(ReasoningCacheWrite(key, StoredRound(toolIds, envelopes, resultProofs)))
         }
     }
 
     /** A reconciled conversation replaces its old records atomically, retaining the installed schema. */
     fun replace(key: String, rounds: List<StoredRound>) {
         if (usable && files?.accepts(key) == true) {
-            pending.add(ReasoningCacheWrite(key, round = null, replacement = rounds))
+            queue(ReasoningCacheWrite(key, round = null, replacement = rounds))
         }
     }
 
     /** Queue the removal of [key]'s file. Called under the cache's lock. */
     fun drop(key: String) {
-        if (usable && files?.accepts(key) == true) pending.add(ReasoningCacheWrite(key, round = null))
+        if (usable && files?.accepts(key) == true) queue(ReasoningCacheWrite(key, round = null))
+    }
+
+    private fun queue(write: ReasoningCacheWrite) {
+        unlanded.merge(write.key, 1) { held, one -> held + one }
+        pending.add(write)
     }
 
     /** Hand every write queued so far to the writer and return at once: the caller never waits on the disk, except
@@ -129,7 +141,11 @@ internal class ReasoningCacheWrites(private val files: ReasoningCacheFiles?) {
         val disk = files ?: return
         while (true) {
             val write = pending.poll() ?: break
-            applyWrite(disk, write)
+            try {
+                applyWrite(disk, write)
+            } finally {
+                unlanded.computeIfPresent(write.key) { _, held -> (held - 1).takeIf { it > 0 } }
+            }
         }
     }
 

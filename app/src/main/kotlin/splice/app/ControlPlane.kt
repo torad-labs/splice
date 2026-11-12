@@ -271,6 +271,7 @@ internal class ControlPlane(
         srv.ports.sessionDriver = sessionWiring.driver()
         srv.ports.processes = ProcessReads { sessionWiring.processes() }
         ConsoleWiring.wireV4133(srv, budgets, alerts, playground)
+        stores.loginAlerting(srv, topology).watch(probeScope)
         ConsoleWiring.wireVerbReads(srv, topology, statePaths, console)
         // A Claude head's add and remove go through folders splice owns, which the generic accounts port refuses
         // by kind. Wrapped AFTER ConsoleWiring.wire assigns that port, and reading the arm per call, so a daemon

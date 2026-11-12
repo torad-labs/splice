@@ -10,6 +10,7 @@ import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.pool.HeadAccountQuota
 import splice.accounts.pool.HeadAccountView
+import splice.accounts.pool.HeadNextTarget
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.diagnostics.doctor.AccountPoolProjection
@@ -70,10 +71,13 @@ internal class AccountRosterProjection {
                 unsafeSelection(head, rows) ||
                 (selected != null && accounts.none { it.label == selected }),
             pinnedLabel = metadata?.pinnedLabel,
-            nextTargetLabel = metadata?.nextTargetLabel,
+            next = next(metadata),
             blockedUntilEpochSecondsByLabel = metadata?.blockedUntilEpochSecondsByLabel.orEmpty(),
         )
     }
+
+    /** What the pool said of its next choice; a command whose pool sent nothing about itself has none. */
+    private fun next(metadata: HeadAccountPoolView?): HeadNextTarget = metadata?.next ?: HeadNextTarget()
 
     /** Each login's Accounts name by its pool label: a name a person gave or splice's default ("Max 2"), never an
      *  email. Control characters are dropped, since the name is printed to a terminal. */

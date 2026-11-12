@@ -64,6 +64,15 @@ public class AlertDelivery(
         scope.launch { post(head, url, text) }
     }
 
+    /** Whether a webhook is saved to post to. */
+    public val set: Boolean get() = source.settings().webhookUrl != null
+
+    /** A notice about a command's logins, to the saved webhook and off the caller's path, as a reached budget is. */
+    public fun accounts(head: String, text: String) {
+        val url = source.settings().webhookUrl ?: return
+        scope.launch { post(head, url, text, "accounts") }
+    }
+
     /** The performance adapter serializes/bounds calls; existing preferences and webhook body are reused. */
     public suspend fun performance(event: JsonObject): String {
         val url = source.settings().webhookUrl

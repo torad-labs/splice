@@ -26,7 +26,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.accounts.claude.ClaudeAccountIdentity
 import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.order.HeadAccountOrderSource
 import splice.accounts.pool.HeadAccountPinSource
@@ -46,8 +45,6 @@ import splice.core.usage.QuotaWindow
 import splice.core.util.AsyncFileIo
 import splice.core.util.JsonlSink
 import splice.core.util.LogSink
-import splice.core.util.WallClock
-import splice.head.usage.QuotaTracker
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionClient
 import splice.sessions.registry.SessionListing
@@ -69,32 +66,12 @@ class ClaudeCarryingPoolUsageTest {
     private fun key(token: String): String =
         requireNotNull(CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer $token")))
 
-    private fun add(fixture: ClaudeNativePoolFixture) {
-        val folders = ClaudeAccountFolders(fixture.paths.stateDir, now = WallClock { 1000 })
-        val pending = folders.pending(NATIVE_HEAD, "added")
-        Files.createDirectories(pending.directory)
-        Files.writeString(
-            pending.directory.resolve(".credentials.json"),
-            """{"claudeAiOauth":{"accessToken":"synthetic-added",""" +
-                """"refreshToken":"must-not-be-used","expiresAt":4102444800000}}""",
-        )
-        Files.writeString(pending.directory.resolve(".claude.json"), """{"oauthAccount":{"accountUuid":"stale"}}""")
-        val credential = key("synthetic-added")
-        ClaudeCredentialProfiles(fixture.paths.stateDir, {})
-            .observed(credential, ClaudeAccountIdentity("added-account", null))
-        assertEquals(ClaudeAccountLanding.Added("added"), folders.land(pending))
-        val account = folders.accounts(NATIVE_HEAD).single()
-        QuotaTracker(account.directory.resolve("quota.json")).record(
-            QuotaSnapshot(fiveHour = QuotaWindow(27.0, 4_102_000_000L, 18_000L), updatedAt = 1000),
-        )
-    }
-
     private fun fixture(): ClaudeNativePoolFixture = ClaudeNativePoolFixture(home).also { fixture ->
         fixture.seed(
             "native",
             quota = QuotaSnapshot(fiveHour = QuotaWindow(91.0, 4_102_000_000L, 18_000L), updatedAt = 1000),
         )
-        add(fixture)
+        fixture.addLogin()
     }
 
     private fun sessions(): SessionSource = object : SessionSource {
@@ -344,7 +321,7 @@ class ClaudeCarryingPoolUsageTest {
     fun `request evidence summary follows the account ref actually used by the selected pool turn`() = runBlocking {
         val fixture = ClaudeNativePoolFixture(home).also {
             it.seed("native")
-            add(it)
+            it.addLogin()
         }
         val telemetry = telemetry(fixture)
         telemetry.start()

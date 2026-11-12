@@ -45,6 +45,7 @@ public class AccountPoolJson {
                 putJsonArray("pin_models_held") { HeldWords().modelWeeks(this, weeks) }
             }
             put("next_target_label", view.nextTargetLabel)
+            view.usualModel?.let { put("usual_model", it) }
             putJsonArray("accounts") {
                 view.accounts.forEach { account ->
                     addJsonObject {

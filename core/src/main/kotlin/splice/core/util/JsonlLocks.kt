@@ -58,11 +58,13 @@ internal object JsonlLocks {
         }
     }
 
-    // DR-178: three orders of magnitude above a healthy hold (stat + maybe-rename + append) and far
+    // why (DR-178): three orders of magnitude above a healthy hold (stat + maybe-rename + append) and far
     // below the multi-second parking that harms the lane. Deliberately much tighter than
     // KeyStore's 5s, because what waits here is not one CLI command but every other writer in the
-    // process. Poll interval matches KeyStore's.
+    // process.
     private const val LOCK_WAIT_MS = 250L
+
+    // why: the interval KeyStore polls the same tryLock at.
     private const val LOCK_POLL_MS = 25L
 }
 

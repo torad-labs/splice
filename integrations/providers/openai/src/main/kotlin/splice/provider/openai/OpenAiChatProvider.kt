@@ -47,6 +47,11 @@ public class OpenAiChatProvider(
     override val showReasoning: ReasoningDisplay get() = display()
 
     private val builder = ChatRequestBuilder(quirks, display, affinity)
+
+    /** #525: a chat turn keeps nothing on disk, so a head finishes the answers it is giving beside the next daemon.
+     *  Not where it pins conversations to a local runtime's slots ([SlotAffinity]): the next daemon starts with every
+     *  slot free, and would give this turn's slot to another conversation while the turn still streams from it. */
+    override val finishesTurnsWhenRetired: Boolean = affinity == null
     private val compactionTail = ChatCompactionTail()
     private val systemPrompt = ChatSystemPrompt()
 

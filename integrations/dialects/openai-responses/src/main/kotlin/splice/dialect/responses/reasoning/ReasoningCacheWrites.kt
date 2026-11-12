@@ -14,6 +14,7 @@
 // power loss what the kernel had not yet written out (ReasoningCacheFiles.force says what that costs).
 package splice.dialect.responses.reasoning
 
+import splice.core.util.LogSink
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
@@ -163,6 +164,84 @@ internal class ReasoningCacheWrites(private val files: ReasoningCacheFiles?) {
         }
     }
 }
+
+// MOVED 2026-11-12 (#525) from ReasoningCache.kt, whole, beside the lane it writes through: the cache gained the reload
+// of a conversation another daemon wrote (ReasoningCache.adopt), and its file had no room left for both.
+
+/** The first reasoning record makes pending proofs durable; later records append without rewriting history. */
+internal class ReasoningRoundPersistence(
+    private val writes: ReasoningCacheWrites,
+    private val positions: ReasoningCachePositions,
+    private val proofs: ReasoningCacheProofs,
+    private val log: LogSink,
+) {
+    fun enqueue(key: String, conversation: ReasoningCacheConvo, round: ReasoningCacheRound) {
+        val firstWithProofs = conversation.rounds.size == 1 && conversation.resultProofs.isNotEmpty()
+        if (firstWithProofs) {
+            writes.append(key, emptyList(), emptyList(), conversation.resultProofs.toMap())
+        }
+        writes.append(key, round.toolIds, round.envelopes)
+    }
+
+    fun reclaimOrderMetadata(
+        key: String,
+        conversation: ReasoningCacheConvo,
+        offeredBytes: Long,
+        availableBytes: Long,
+    ): Long {
+        if (offeredBytes <= availableBytes) return 0L
+        val released = positions.releaseMetadata(conversation)
+        return released + if (released != 0L) rewrite(key, conversation) else 0L
+    }
+
+    /** Drop what other turns stored at [toolIds]' history position, file included, before it is admitted. This turn
+     *  reached that position through its own request or its own output, so the client kept nothing those turns
+     *  produced from there: their reasoning would ride upstream in front of history it never led to. The bytes
+     *  returned are what the cache's bound gets back, the rewrite's own change included. */
+    fun replaceAt(key: String, conversation: ReasoningCacheConvo, toolIds: List<String>): ReplacedRecords {
+        val index = toolIds.singleOrNull() ?: return ReplacedRecords(0, 0L)
+        val replaced = positions.replaceAt(conversation, index)
+        if (replaced.records == 0) return replaced
+        val rewritten = rewrite(key, conversation)
+        log(
+            "[reasoning-cache] conversation ${key.take(KEY_LOG_CHARS)}… re-sent at one history position: " +
+                "replaced ${replaced.records} records (${replaced.bytes}B) an earlier attempt left there",
+        )
+        return replaced.copy(bytes = replaced.bytes - rewritten)
+    }
+
+    fun rewrite(key: String, conversation: ReasoningCacheConvo): Long {
+        val released = proofs.compact(conversation)
+        writes.replace(key, positions.stored(conversation))
+        return released
+    }
+
+    /** [stored] rebuilt as the cache holds a conversation, its rounds keyed from [firstSeq] on and stamped [at]. Null
+     *  for one that recorded no round: nothing of it is held, and its file is removed. */
+    fun rebuilt(stored: StoredConversation, firstSeq: Long, at: Long): RebuiltConvo? {
+        val recorded = stored.rounds.filter { it.ids.isNotEmpty() }
+        if (recorded.isEmpty()) {
+            writes.drop(stored.key)
+            return null
+        }
+        val convo = ReasoningCacheConvo()
+        val normalized = positions.normalized(recorded)
+        normalized.forEachIndexed { index, round ->
+            val rk = "r${firstSeq + index}"
+            val bytes = round.envelopes.sumOf { it.length.toLong() } + round.ids.sumOf(positions::metadataBytes)
+            convo.rounds[rk] = ReasoningCacheRound(round.ids, round.envelopes, bytes, at)
+            round.ids.forEach { convo.byToolId[it] = rk }
+            positions.admitted(convo, rk, convo.rounds.getValue(rk))
+            convo.bytes += bytes
+        }
+        proofs.restore(convo, stored.rounds)
+        return RebuiltConvo(convo, renormalized = normalized != recorded)
+    }
+}
+
+/** A conversation rebuilt from its file; [renormalized] when its records changed on the way and are to be written
+ *  again. */
+internal data class RebuiltConvo(val convo: ReasoningCacheConvo, val renormalized: Boolean)
 
 /** One queued write: append [round] to [key]'s conversation, or remove the conversation when it is null. */
 internal data class ReasoningCacheWrite(

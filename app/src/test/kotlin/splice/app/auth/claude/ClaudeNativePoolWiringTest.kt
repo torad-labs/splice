@@ -26,6 +26,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -35,7 +36,14 @@ import splice.app.probe.UpstreamPlaygroundProbe
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.CredentialKey
 import splice.core.config.LAUNCH_PROOF_HEADER
+import splice.core.usage.ModelQuota
 import splice.core.usage.PlanLimit
+import splice.core.usage.QuotaSnapshot
+import splice.core.usage.QuotaWindow
+import splice.core.util.EnvReader
+import splice.diagnostics.doctor.AccountPoolText
+import splice.diagnostics.doctor.AccountPoolsRead
+import splice.diagnostics.doctor.JdkAccountPoolRead
 import splice.diagnostics.playground.PlaygroundHead
 import splice.head.usage.CredentialQuotaFiles
 import splice.upstream.RetryNotice
@@ -123,6 +131,45 @@ class ClaudeNativePoolWiringTest {
         assertTrue(wait > 30, "no other login can serve a recheck, so the client waits for the true reset: $wait")
         assertTrue(reset > System.currentTimeMillis() / 1_000L, "the per-window member retains the true reset")
     }
+
+    @Test
+    fun `status counts the login out of a model its provider just refused there while its reading has room`() =
+        runBlocking {
+            // Nov 12, 2026: Anthropic refused Fable on the login in use, whose reading said 99%, and `splice status`
+            // went on counting Fable used up on six logins of eight where seven could no longer serve it. The rig's
+            // one model stands in for Fable: its week reads 99% as the provider names it, "Synthetic".
+            val reset = System.currentTimeMillis() / 1_000L + 86_400L
+            fixture.seed(
+                "native",
+                NATIVE_ACCESS_EXPIRY,
+                QuotaSnapshot(
+                    sevenDay = QuotaWindow(55.0, reset, 604_800L),
+                    models = listOf(ModelQuota("Synthetic", 99.0, reset)),
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
+            val sent = java.util.concurrent.CopyOnWriteArrayList<String?>()
+            val bodies = java.util.concurrent.CopyOnWriteArrayList<String>()
+            val upstream = fixture.nativeUpstream(sent, bodies, claim = "seven_day_overage_included").start()
+            val port = upstream.engine.resolvedConnectors().single().port
+            val rig = rig(upstreamUrl = "http://127.0.0.1:$port")
+            try {
+                HttpClient(Java).use { client ->
+                    assertEquals(HttpStatusCode.TooManyRequests, nativeTurn(client, rig).status)
+                }
+                // `splice status` in another shell: the daemon's /api/accounts, read with the management key.
+                val state = Files.createDirectories(home.resolve("status-shell"))
+                Files.writeString(state.resolve("mgmt-key"), rig.key.get())
+                val env = mapOf("SPLICE_STATE_DIR" to state.toString())
+                val read = JdkAccountPoolRead()(rig.server.listeningPort, EnvReader { env[it] })
+                val pools = assertInstanceOf(AccountPoolsRead.Read::class.java, read).pools
+                val said = AccountPoolText().summary(pools.getValue(NATIVE_HEAD))
+                assertTrue(said.contains("Synthetic used up on every login"), said)
+            } finally {
+                rig.close()
+                upstream.stop()
+            }
+        }
 
     private suspend fun nativeTurn(client: HttpClient, rig: ClaudeNativePoolFixture.Rig): HttpResponse =
         client.post("http://127.0.0.1:${rig.head.head.port}/v1/messages") {

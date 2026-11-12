@@ -99,6 +99,10 @@ internal class ClaudeLoginRows(
         val available = selected?.available == true
         put("selector_key", key)
         put("available", available)
+        // The models the pool holds this login out of, as an added login's row carries them (JoinedQuota).
+        selected?.quota?.holds?.models?.takeIf { it.isNotEmpty() }?.let { weeks ->
+            putJsonArray("models_held") { HeldWords().modelWeeks(this, weeks) }
+        }
         put("selected", selected?.selected)
         // The console reads WHICH head pins a row, because a row shared by two heads can be pinned on one. A native login
         // belongs to one head, so the answer is that head when the pin names this login.

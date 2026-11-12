@@ -202,7 +202,9 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
         override fun view(sessionId: String?): HeadAccountPoolView = controlView(pool.view(sessionId)).copy(
             pinnedLabel = pool.pinned(sessionId),
             // The session's own next login: a session pinned before its first turn shows that pin, not the head's pick.
-            nextTargetLabel = pool.nextTargetLabel(sessionId),
+            // For the model the command's turns ask for, as the order route answers: asked with none, `splice status`
+            // read "on" a login whose week had room and that had used up the model every session ran (Nov 12, 2026).
+            nextTargetLabel = pool.nextTargetLabel(sessionId, pool.asked.usual()),
         )
 
         // Synchronized so two presses save in the order they pinned: each save writes the pins as they stand.

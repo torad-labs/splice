@@ -338,6 +338,10 @@ async function readAll({ asks = true } = {}) {
 
 // A plan login as the page holds it, from one row of /api/accounts: the board reads it, and a first visit's ghosts size and
 // order their cards from the same function, so both cut a wide rail at the same card. Null for no login at all.
+// whether a model's week, as its provider names it ("Fable"), is the week of the model a turn asks for by id
+// ("claude-fable-5-2"): the id carries each word of the name (ModelQuota.weekOf)
+const weekOf = (name, id) => { const parts = String(id || "").toLowerCase().split(/[-._ \[\]]/), words = String(name || "").toLowerCase().split(/[ .-]/).filter(Boolean);
+  return words.length > 0 && words.every((w) => parts.includes(w)); };
 function planAccount(row) {
   const windows = [windowOf(row.five_hour_used_percent, row.five_hour_reset_epoch_seconds, row.five_hour_window_seconds, "short", row.five_hour_current),
     windowOf(row.seven_day_used_percent, row.seven_day_reset_epoch_seconds, row.seven_day_window_seconds, "long", row.seven_day_current)].filter(Boolean);
@@ -347,8 +351,16 @@ function planAccount(row) {
   // account, no reading. Its Sign in only adds an account, as Add account does, and the place still read Signed out
   // after it. One that was signed in and expired keeps its account, and shows.
   if (row.login_place && out && !row.identity_verified && !row.observed_at_epoch_seconds) return null;
-  const models = (row.seven_day_models || []).map((m) => ({ name: m.model,
+  // the models the pool holds this login out of until the provider's reset (models_held): the provider refused a turn of
+  // that model here, and that hold is what a turn's routing reads. A reading does not show it: on Nov 12, 2026 a login
+  // just refused read 99%, and one reset at its provider read 0% while its refusal still stood.
+  const heldIds = (row.models_held || []).filter((m) => m?.model && m.until_epoch_seconds * 1000 > Date.now());
+  const heldMs = (name) => { const h = heldIds.find((m) => weekOf(name, m.model)); return h ? h.until_epoch_seconds * 1000 : null; };
+  const models = (row.seven_day_models || []).map((m) => ({ name: m.model, heldMs: heldMs(m.model),
     ...windowOf(m.used_percent, m.resets_at, LEN.Week * 60, "long", modelCurrent(row.seven_day_current, m)) }));
+  // a held model no reading names yet, by the name its turns ask for
+  const heldOnly = heldIds.filter((h) => !models.some((m) => weekOf(m.name, h.model)))
+    .map((h) => ({ name: modelName({}, h.model), heldMs: h.until_epoch_seconds * 1000 }));
   // a session names its login by the label the pool gave it on its head; a login answers to that, its selector or its
   // own label, and a single login with none is the primary
   const namesOn = (head) => { const n = [row.account_labels?.[head], row.selector_key, row.label].filter(Boolean); return n.length ? n : ["primary"]; };
@@ -368,7 +380,7 @@ function planAccount(row) {
     // the provider answered with no usage for this account: no bars, never an older reading drawn as today's
     noUsage: !windows.length && !!row.no_usage_at_epoch_seconds,
     // each model's own weekly window, drawn under the week (Claude's Opus and Sonnet)
-    models };
+    models, heldOnly };
 }
 
 let data = [];
@@ -419,10 +431,12 @@ const room = (a) => !a.out && !a.renews && !held(a);
 // USED UP FOR ONE MODEL: the login has room and serves every other model, and not this one until its week resets. It
 // says so where a held login says its limit: on Nov 12, 2026 eleven sessions waited on Fable while six cards read
 // "Use now" over a half-used week, each with only a thin full bar to say why no turn went to it.
-const spentModels = (a) => (held(a) || a.out || !(a.windows || []).some((w) => w.label === "Week" && !ended(w)) ? []
-  : (a.models || []).filter((m) => m.used >= 100 && !ended(m)));
+// A model the pool holds the login out of counts whatever its bar reads, until the reset the provider named.
+const spentModels = (a) => { if (held(a) || a.out) return [];
+  const weekRuns = (a.windows || []).some((w) => w.label === "Week" && !ended(w));
+  return [...(a.models || []).filter((m) => m.heldMs || (weekRuns && m.used >= 100 && !ended(m))), ...(a.heldOnly || [])]; };
 const LIST = new Intl.ListFormat("en", { style: "long", type: "conjunction" });
-const spentUntil = (a) => { const ms = spentModels(a), last = ms.map((m) => m.resetMs).filter((t) => t != null).sort((x, y) => y - x)[0];
+const spentUntil = (a) => { const ms = spentModels(a), last = ms.map((m) => m.heldMs ?? m.resetMs).filter((t) => t != null).sort((x, y) => y - x)[0];
   return `${LIST.format(ms.map((m) => m.name))} used up${last != null ? ` until ${at(last)}` : ""}`; };
 // a card's one line of standing over its bars: its limit, or the models it has used up
 const standing = (a) => (held(a) ? heldUntil(a) : spentModels(a).length ? esc(spentUntil(a)) : "");

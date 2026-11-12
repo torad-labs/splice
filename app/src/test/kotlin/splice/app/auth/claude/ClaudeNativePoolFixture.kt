@@ -229,6 +229,7 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
         sent: MutableList<String?>,
         bodies: MutableList<String>,
         refusedCredential: String? = "Bearer synthetic-native",
+        claim: String = "seven_day",
     ) =
         embeddedServer(Netty, host = "127.0.0.1", port = 0) {
             routing {
@@ -238,7 +239,7 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
                     bodies.add(call.receiveText())
                     if (credential == refusedCredential) {
                         call.response.header("anthropic-ratelimit-unified-status", "rejected")
-                        call.response.header("anthropic-ratelimit-unified-representative-claim", "seven_day")
+                        call.response.header("anthropic-ratelimit-unified-representative-claim", claim)
                         call.response.header(
                             "anthropic-ratelimit-unified-reset",
                             (System.currentTimeMillis() / 1_000L + 3_600L).toString(),

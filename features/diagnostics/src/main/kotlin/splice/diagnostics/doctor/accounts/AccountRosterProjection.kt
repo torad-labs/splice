@@ -119,6 +119,8 @@ internal class AccountRosterProjection {
                         ),
                         observedAtEpochSeconds = account.quota.observedAtEpochSeconds,
                         sevenDayModels = account.quota.sevenDayModels,
+                        // what the provider refused here is the pool's to say, whichever reading is shown
+                        holds = pooled.quota.holds,
                     ),
                     credential = pooled.credential.copy(present = account.credential.present),
                 )

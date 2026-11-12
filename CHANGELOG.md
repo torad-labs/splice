@@ -27,6 +27,12 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   the file. A command with one login says nothing: it has no last one to be down to.
 
 ### Fixed
+- **Usage counts the logins that have used up a model.** The head of Plans and keys read "0 of 10 logins at their
+  limit" on Nov 12, 2026 while six of eight Claude logins had used up Fable, the model every session was asking
+  for: it counted a login's own windows and left each model's week out. It now also says, for a model some login
+  cannot serve, on how many ("6 of 8 with Fable used up"), the model out on most logins first and at most two. A
+  login counts when that model's week reads full or when its provider refused the model there and the reset has
+  not come, the two records Accounts and `splice status` read.
 - **The session list no longer rereads every ended session from disk each time it is asked for.** The console
   asks for the list every five seconds on Sessions, Models and Teams, and so do `splice status` and anything
   else that reads `/api/sessions`. On Nov 12, 2026 one reply on a machine with 3,141 ended sessions read

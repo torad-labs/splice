@@ -338,10 +338,6 @@ async function readAll({ asks = true } = {}) {
 
 // A plan login as the page holds it, from one row of /api/accounts: the board reads it, and a first visit's ghosts size and
 // order their cards from the same function, so both cut a wide rail at the same card. Null for no login at all.
-// whether a model's week, as its provider names it ("Fable"), is the week of the model a turn asks for by id
-// ("claude-fable-5-2"): the id carries each word of the name (ModelQuota.weekOf)
-const weekOf = (name, id) => { const parts = String(id || "").toLowerCase().split(/[-._ \[\]]/), words = String(name || "").toLowerCase().split(/[ .-]/).filter(Boolean);
-  return words.length > 0 && words.every((w) => parts.includes(w)); };
 function planAccount(row) {
   const windows = [windowOf(row.five_hour_used_percent, row.five_hour_reset_epoch_seconds, row.five_hour_window_seconds, "short", row.five_hour_current),
     windowOf(row.seven_day_used_percent, row.seven_day_reset_epoch_seconds, row.seven_day_window_seconds, "long", row.seven_day_current)].filter(Boolean);

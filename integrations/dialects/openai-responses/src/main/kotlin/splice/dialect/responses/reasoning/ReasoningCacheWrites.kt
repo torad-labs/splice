@@ -47,6 +47,11 @@ internal class ReasoningCacheWrites(private val files: ReasoningCacheFiles?) {
 
     @Volatile private var usable = files != null
 
+    /** #525: the head is retiring, and finishes the answers it was giving beside the next daemon. From here each
+     *  [wake] waits for its writes to land: the next daemon reads a conversation's file when that conversation's
+     *  next turn reaches it, which can be a moment after this one handed the client the end of its answer. */
+    @Volatile var landsBeforeReturning: Boolean = false
+
     /** What the disk holds, read once before the cache serves anything, so before any write is queued; empty when
      *  nothing is kept. */
     fun restore(): List<StoredConversation> {
@@ -54,6 +59,12 @@ internal class ReasoningCacheWrites(private val files: ReasoningCacheFiles?) {
         usable = stored != null
         return stored.orEmpty()
     }
+
+    /** Whether another process wrote [key]'s file since this one last read or wrote it (one look at the file). */
+    fun writtenElsewhere(key: String): Boolean = usable && files?.writtenElsewhere(key) == true
+
+    /** [key]'s conversation as the disk holds it now, or null when it holds none that reads. */
+    fun reread(key: String): StoredConversation? = files?.reread(key)
 
     /** Queue [key]'s admitted round. Called under the cache's lock; a key no file can carry is not queued. */
     fun append(
@@ -79,10 +90,16 @@ internal class ReasoningCacheWrites(private val files: ReasoningCacheFiles?) {
         if (usable && files?.accepts(key) == true) pending.add(ReasoningCacheWrite(key, round = null))
     }
 
-    /** Hand every write queued so far to the writer and return at once: the caller never waits on the disk. Called
-     *  with no cache lock held. */
+    /** Hand every write queued so far to the writer and return at once: the caller never waits on the disk, except
+     *  on a retiring head ([landsBeforeReturning]), where it waits at most [RETIRED_WRITE_MS]. Called with no cache
+     *  lock held. */
     fun wake() {
-        if (usable && woken.compareAndSet(false, true)) writer.execute(::writeQueued)
+        if (!usable) return
+        if (landsBeforeReturning) {
+            val _ = drain(RETIRED_WRITE_MS)
+        } else if (woken.compareAndSet(false, true)) {
+            writer.execute(::writeQueued)
+        }
     }
 
     /** Wait until every write queued before this call is on disk, at most [timeoutMs]. False when the time ran out
@@ -137,6 +154,10 @@ internal data class ReasoningCacheWrite(
     val round: StoredRound?,
     val replacement: List<StoredRound>? = null,
 )
+
+// why: a page-cache append lands in microseconds, so this binds only on a stalled disk, where the answer's turn is
+// not held longer than the two seconds a head's stop gives the same writes.
+private const val RETIRED_WRITE_MS = 2_000L
 
 // How long the writer's thread outlives its last write: a head in use keeps its one thread, an idle head keeps none.
 private const val WRITER_IDLE_SECONDS = 10L

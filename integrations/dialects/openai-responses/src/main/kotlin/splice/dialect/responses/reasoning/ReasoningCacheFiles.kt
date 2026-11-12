@@ -16,6 +16,7 @@ import kotlinx.serialization.json.Json
 import splice.core.util.JSONL_LOCK_SUFFIX
 import splice.core.util.JsonlForce
 import splice.core.util.JsonlSink
+import splice.core.util.JsonlWhole
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
@@ -23,6 +24,7 @@ import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 
 internal class ReasoningCacheFiles(
     private val dir: Path,
@@ -33,6 +35,22 @@ internal class ReasoningCacheFiles(
     private val force: JsonlForce = JsonlSink.PAGE_CACHE_FORCE,
     private val log: LogSink,
 ) {
+    private val known = KnownFiles()
+
+    /** Whether [key]'s file is not what this process last read or wrote, so another process wrote it. One look at
+     *  the file's size and time, and no read. */
+    fun writtenElsewhere(key: String): Boolean = accepts(key) && known.differs(key, fileOf(key))
+
+    /** [key]'s conversation as the disk holds it now; null when it holds none, or one that cannot be read, which is
+     *  removed as [restore] removes it. */
+    fun reread(key: String): StoredConversation? {
+        val file = fileOf(key)
+        if (Files.notExists(file)) {
+            known.forget(key)
+            return null
+        }
+        return read(file)
+    }
 
     /** Whether [key] can name a file here. The cache's keys are `splice-<hex>`, with `-<hex>` per session
      *  (ReasoningCachePolicy.conversationKey); any other key stays in memory rather than become a path. */
@@ -62,8 +80,10 @@ internal class ReasoningCacheFiles(
         val file = fileOf(key)
         return try {
             if (Files.notExists(file)) SecureFile.createNew0600(file, ByteArray(0))
-            val line = lines.encodeToString(StoredRound.serializer(), round)
-            JsonlSink.appendLine(file, line, maxBytes = Long.MAX_VALUE, force = force)
+            val line = (lines.encodeToString(StoredRound.serializer(), round) + "\n").toByteArray(Charsets.UTF_8)
+            val before = known.of(key)
+            JsonlSink.appendLine(file, line, Long.MAX_VALUE, JsonlSink.NO_ARCHIVE, force)
+            known.grown(key, file, before, line.size)
             true
         } catch (failure: IOException) {
             log(
@@ -77,7 +97,8 @@ internal class ReasoningCacheFiles(
 
     fun replace(key: String, rounds: List<StoredRound>): Boolean = try {
         val contents = rounds.joinToString("\n", postfix = "\n") { lines.encodeToString(StoredRound.serializer(), it) }
-        SecureFile.writeAtomic0600(fileOf(key), contents)
+        JsonlWhole.replace(fileOf(key), contents)
+        known.saw(key, fileOf(key))
         true
     } catch (failure: IOException) {
         log("[reasoning-cache] reconciled conversation not written (${SafeFailureText.render(failure)}): memory only")
@@ -87,6 +108,7 @@ internal class ReasoningCacheFiles(
 
     /** Remove [key]'s file, and the lock JsonlSink.appendLine keeps beside it (the ActivityDays siblings). */
     fun drop(key: String) {
+        known.forget(key)
         val file = fileOf(key)
         listOf(file, file.resolveSibling("${file.fileName}$JSONL_LOCK_SUFFIX")).forEach { path ->
             try {
@@ -126,7 +148,11 @@ internal class ReasoningCacheFiles(
     private fun read(file: Path): StoredConversation? {
         val key = conversationOf(file) ?: return null
         val why = try {
-            val bytes = Files.readAllBytes(file)
+            // Its stamp is taken before its bytes: a record another process adds after this read then shows as a file
+            // that differs. The bytes are read under the appends' own lock, so a line another process is still
+            // writing is never seen half written and mended away as a write cut short.
+            known.saw(key, file)
+            val bytes = JsonlWhole.read(file)
             val ended = bytes.lastIndexOf(NEWLINE) + 1
             // Strict up to the last newline (a line there that is not text is not a round); what follows it may end
             // mid-character, so it is read leniently and judged as a round or not.
@@ -181,6 +207,55 @@ internal class ReasoningCacheFiles(
         log("[reasoning-cache] conversations are not kept in $dir ($why): reasoning lives in memory only")
         return null
     }
+}
+
+// One look at a file: the three attributes a stamp is made of, asked for by name in one call.
+private const val STAMP_ATTRIBUTES = "size,lastModifiedTime,fileKey"
+
+/** #525: what this process last read or wrote of each conversation's file. A file that differs was written by another
+ *  process: a daemon that is retiring finishes the answers it was giving beside the next one, and records their
+ *  reasoning in the same directory. Kept for the files the directory holds, and let go with each. */
+private class KnownFiles {
+    private val known = ConcurrentHashMap<String, FileStamp>()
+
+    fun of(key: String): FileStamp? = known[key]
+
+    /** Whether [file] is not what this process last read or wrote under [key]. */
+    fun differs(key: String, file: Path): Boolean = stampOf(file) != known[key]
+
+    fun forget(key: String) {
+        known.remove(key)
+    }
+
+    /** [file] as it is now is what this process knows of [key]; a file that is not there is none known. */
+    fun saw(key: String, file: Path) {
+        val stamp = stampOf(file)
+        if (stamp == null) known.remove(key) else known[key] = stamp
+    }
+
+    /** This process appended [added] bytes to [file], known as [before] until then. It is known again only when it
+     *  is that file with exactly those bytes more. Anything else was written by another process too, and stays
+     *  unknown, so the next look reads it. */
+    fun grown(key: String, file: Path, before: FileStamp?, added: Int) {
+        val now = stampOf(file) ?: return
+        if (now.grew(before, added)) known[key] = now
+    }
+
+    /** [file] as its size, its time and the file it is ([java.nio.file.attribute.BasicFileAttributes.fileKey]: a
+     *  replaced file is another one), or null when there is none to look at. */
+    private fun stampOf(file: Path): FileStamp? = try {
+        val seen = Files.readAttributes(file, STAMP_ATTRIBUTES)
+        (seen["size"] as? Long)?.let { FileStamp(it, seen["lastModifiedTime"].toString(), seen["fileKey"]?.toString()) }
+    } catch (_: IOException) {
+        null
+    }
+}
+
+/** What one look at a conversation's file shows without reading it. */
+private data class FileStamp(val bytes: Long, val modified: String, val file: String?) {
+    /** Whether this is [earlier] with exactly [added] bytes more; no earlier file is one that held none. */
+    fun grew(earlier: FileStamp?, added: Int): Boolean =
+        bytes == (earlier?.bytes ?: 0L) + added && (earlier == null || earlier.file == file)
 }
 
 /** One conversation as the disk holds it: its rounds in the order they were admitted. */

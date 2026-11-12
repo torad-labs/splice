@@ -7,6 +7,7 @@ import splice.core.budget.HeadBudget
 import splice.core.budget.NoHeadBudget
 import splice.core.perf.PerfSnapshot
 import splice.core.util.Cancellables
+import splice.head.perf.RetiredRows
 
 /** The two places a served turn's spend is told: the hourly quota rollup and the head's daily budget. */
 internal class TurnSpend(
@@ -17,6 +18,8 @@ internal class TurnSpend(
      *  Defaulted because tests build TurnTelemetry directly; the one production site (TurnDriver)
      *  passes the head's own, and HeadBudgetTest fails if a served turn stops reaching it. */
     private val budget: HeadBudget = NoHeadBudget,
+    /** #523: once the head has retired, the day's spend is the next daemon's to count, from the row left for it. */
+    private val retired: RetiredRows? = null,
 ) {
     /** V4-133 review: the day's spend moves by THIS row — its own ts, model and counters, the same
      *  facts a restarted daemon reads back from the file. Best-effort like [economics]: a
@@ -29,6 +32,7 @@ internal class TurnSpend(
         account: String?,
         outcome: String,
     ) {
+        if (retired?.isRetired == true) return
         Cancellables.discard(
             Cancellables.runCatchingCancellable { budget.spentOn(account, rowTs, model, counters, outcome) },
             "telemetry is best-effort; a turn must never fail on its budget",

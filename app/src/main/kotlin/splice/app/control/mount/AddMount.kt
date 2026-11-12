@@ -55,7 +55,7 @@ private class SaveRestart(
     private val ports: ConsolePorts,
 ) : AddDaemonRestart {
     override fun take(): AddRestartTaken = when (
-        val taken = restarts.take(false, shutdown, ports.lifecycle.supervised)
+        val taken = restarts.take(false, ports.lifecycle.restartBy(shutdown), ports.lifecycle.supervised)
     ) {
         is RestartTaken.Refused -> AddRestartTaken.Refused(taken.reason)
         is RestartTaken.Accepted -> when (val phase = taken.phase) {
@@ -68,6 +68,6 @@ private class SaveRestart(
     }
 
     override fun drain() {
-        shutdown()
+        ports.lifecycle.restartBy(shutdown)()
     }
 }

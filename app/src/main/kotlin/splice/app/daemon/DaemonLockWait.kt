@@ -39,6 +39,17 @@ internal class DaemonLockWait(
         return if (lock.tryAcquire()) LockOutcome.WON else LockOutcome.EXPIRED
     }
 
+    /** #523: the wait of a daemon whose predecessor agreed to hand over. That predecessor answers /health until
+     *  its control server closes, so a live peer is no reason to yield here: the lock alone decides. The window is
+     *  the same one, which covers the predecessor's whole stop ladder. */
+    fun awaitHandOver(lock: DaemonLock): LockOutcome {
+        repeat(polls) {
+            if (lock.tryAcquire()) return LockOutcome.WON
+            Thread.sleep(pollIntervalMs)
+        }
+        return if (lock.tryAcquire()) LockOutcome.WON else LockOutcome.EXPIRED
+    }
+
     fun windowMs(): Long = polls * pollIntervalMs
 }
 

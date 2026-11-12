@@ -2,6 +2,7 @@ package splice.head.lifecycle
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import splice.core.util.AsyncFileIo
 import splice.head.HeadDeps
 import splice.head.HeadEngine
 import splice.head.StopSeal
@@ -36,12 +37,24 @@ internal class HeadLifecycle(
 ) {
     private val mutex = Mutex()
     private var drained = false
+
+    // #523: set once this head has handed its books to the next daemon; from then on it writes none of them.
+    private var retired = false
     private val gate get() = deps.traffic.gate
     private val log get() = deps.log
 
     suspend fun start(): Unit = mutex.withLock { startLocked() }
     suspend fun drain(): Unit = mutex.withLock { drainLocked() }
     suspend fun stop(): Unit = mutex.withLock { stopLocked() }
+    suspend fun retire(): Int = mutex.withLock { retireLocked() }
+
+    /** #523: waits for the answers a retired head kept, then stops it. The wait is outside the lock, so a stop that
+     *  arrives meanwhile (the service being stopped) is not held behind it: that stop cuts what is still running with
+     *  the restart line, as any stop does, and this then finds a head already closed. */
+    suspend fun finish(withinMs: Long) {
+        StopSeal(gate, engine, deps.seams.waiter).settle(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(withinMs))
+        mutex.withLock { if (engine.isRunning) stopLocked() }
+    }
     suspend fun restart(): Unit = mutex.withLock {
         stopLocked()
         startLocked()
@@ -96,15 +109,47 @@ internal class HeadLifecycle(
         drained = true
     }
 
+    /** #523: the cut of a restart that keeps the answers in progress. Admission closes first, as in a drain; then
+     *  only the turns whose upstream has not begun answering are cut. The books close HERE, before the daemon hands
+     *  over: from [splice.head.perf.RetiredRows.retire] on, a row this process records is left for the next daemon
+     *  to count, and the flushes after it are the last writes this process makes to the usage, hourly and
+     *  session-total files. A provider that cannot finish a turn beside another daemon stops whole, here, so its own
+     *  last flush lands before the hand-over too. */
+    private suspend fun retireLocked(): Int {
+        // A head already drained or already retired has no answer left to keep.
+        val nothingToKeep = drained || retired
+        if (nothingToKeep || !provider.finishesTurnsWhenRetired) {
+            stopLocked()
+            return 0
+        }
+        engine.closeAdmission(window)
+        val kept = driver.retireActive()
+        driver.stopDetached()
+        deps.stores.perfStats.retired.retire()
+        // A row recorded before that moment counts its hour on the file lane, behind its own append: the lane runs
+        // what it holds, and then the books are written once, whole.
+        val _ = AsyncFileIo.drain()
+        deps.stores.usageStore.freeze()
+        deps.stores.economicsStore?.flushNow()
+        deps.stores.perfStats.totals?.flushNow()
+        retired = true
+        log("[${provider.key}] retire: finishing $kept turn(s) already answering; the next daemon takes the rest\n")
+        return kept
+    }
+
     /** The half that closes the port and settles this head's books. Everything here is what a client
      *  can no longer be served through, so it runs as late as the daemon's stop can leave it. */
     private fun closeLocked() {
         engine.stop()
         provider.onHeadStop()
         driver.flushHeldRows()
-        deps.stores.usageStore.flushNow()
-        deps.stores.economicsStore?.flushNow()
-        deps.stores.perfStats.totals?.flushNow()
+        // #523: a retired head's books are the next daemon's since the hand-over; writing them here would put this
+        // process's older copy over what the next daemon has counted since.
+        if (!retired) {
+            deps.stores.usageStore.flushNow()
+            deps.stores.economicsStore?.flushNow()
+            deps.stores.perfStats.totals?.flushNow()
+        }
         // Spent: a head that starts again, or is stopped again, drains afresh.
         drained = false
     }

@@ -57,6 +57,8 @@ public class UsageStore(
     private val ring = UsageRing(ringFile, clock() - FIVE_HOURS_MS)
     private val rateLimitStore = RateLimitStore(RateLimitFile(ratelimitFile), RateLimitHeaders(clock), writeLock)
     private val writeScheduled = AtomicBoolean(false)
+
+    @Volatile private var frozen = false
     private val answers = ProviderAnswers(
         RateLimitFile(ratelimitFile.resolveSibling("${ratelimitFile.fileName}.provider-answer"), log),
         log = log,
@@ -98,6 +100,7 @@ public class UsageStore(
     // minute-bucketed, serialized, and atomically replaced: completion bursts neither block turn
     // slots nor race older snapshots over newer ones.
     public fun appendOutputTokens(outputTokens: Long) {
+        if (frozen) return
         if (ring.appendOutputTokens(clock(), outputTokens)) {
             CoalescedFlush.scheduleCoalesced(USAGE_FLUSH_DELAY_MS, writeScheduled) { flushScheduled() }
         }
@@ -124,6 +127,16 @@ public class UsageStore(
     }
 
     public fun readRateLimit(): RateLimitState? = rateLimitStore.readRateLimit()
+
+    /** #523: a retired head's output-token window belongs to the next daemon, which read this file as it started.
+     *  After this flush a turn this process finishes adds nothing to the window and writes nothing for it. The
+     *  rate-limit and provider-answer files are written as a response's headers arrive, which a turn already
+     *  answering is past; one the transport sends again writes them once more, and the next daemon's next answer
+     *  replaces them whole. */
+    public fun freeze() {
+        flushNow()
+        frozen = true
+    }
 
     private fun flushScheduled() {
         val (snapshot, version) = ring.snapshot()

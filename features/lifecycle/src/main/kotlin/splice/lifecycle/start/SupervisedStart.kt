@@ -153,6 +153,13 @@ public class SupervisedStart internal constructor(
      *  once; a manual restart also resets the unit's restart counter, so no backoff is waited out.
      *  Returns when the restart job is done, which is why it runs on [restarter]. */
     internal fun restart(unit: String): Boolean = restarter(listOf("restart", unit)) == 0
+
+    /** #523: SIGHUP to [unit]'s main process, the launcher that supervises the daemon: it starts the next daemon
+     *  beside the running one, and the running one hands over and finishes its answers. True when systemd delivered
+     *  the signal. The option naming the main process was spelled `--kill-who` before systemd 252. */
+    internal fun roll(unit: String): Boolean =
+        systemctl(listOf("kill", "--kill-whom=main", "--signal=HUP", unit)) == 0 ||
+            systemctl(listOf("kill", "--kill-who=main", "--signal=HUP", unit)) == 0
 }
 
 // why: `systemctl --user cat|start` answer in milliseconds; a manager that hangs longer than this is

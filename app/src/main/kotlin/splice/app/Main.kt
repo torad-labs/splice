@@ -5,10 +5,14 @@
 package splice.app
 
 import kotlinx.coroutines.CompletableDeferred
+import splice.app.control.HandOver
+import splice.app.control.NextDaemon
 import splice.app.daemon.DaemonLock
 import splice.app.daemon.DaemonLockWait
 import splice.app.daemon.HeapFlags
+import splice.app.daemon.Launcher
 import splice.app.daemon.LockOutcome
+import splice.app.daemon.Succession
 import splice.app.diagnostics.CODE_MODE_PARITY_COMMAND
 import splice.app.diagnostics.CodeModeParityProbe
 import splice.app.manager.ManagerHome
@@ -25,6 +29,7 @@ import splice.core.util.DaemonLog
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.launch.install.InstallShim
+import splice.lifecycle.restart.ShutdownDaemon
 import splice.lifecycle.start.BOOT_LOG_FLAG
 import splice.topology.RetiredSettings
 import splice.topology.TopologyLoader
@@ -108,7 +113,10 @@ internal class DaemonProcess(
         val controlPort = splice.app.cli.AdminSupport.controlPort(topology)
         val lockWait = DaemonLockWait()
         val lost = LostLock(controlPort, lockWait.windowMs())
-        if (lockLost(start, lockWait.acquire(lock, controlPort), lost, TerminalOutput(System.err::println))) return
+        val err = TerminalOutput(System.err::println)
+        // #523: a daemon the launcher started beside a running one asks it to hand over, then waits for the lock.
+        val succession = Succession(EnvReader(System::getenv), lockWait, err)
+        if (lockLost(start, succession.acquire(lock, controlPort), lost, err)) return
         val log = persistentLogger(statePaths.logsDir)
         // Components that would otherwise fall back to bare stderr (auth providers, ConfigService,
         // ResponsesProvider) default to this sink, so their diagnostics reach daemon.log and therefore
@@ -121,6 +129,7 @@ internal class DaemonProcess(
         // effort: a failure is logged and never refuses boot.
         ManagerHome(start.topologyPath, statePaths.stateDir, log).ensureBestEffort()
         val shutdownSignal = CompletableDeferred<Unit>()
+        val retireSignal = CompletableDeferred<Unit>()
         InstallShim().shimStalenessWarning(EnvReader(System::getenv))?.let { log("$it\n") }
         // FAIL-CLOSED: a socket manager's hand-off is read and checked BEFORE anything binds, and a hand-off that
         // cannot be trusted refuses boot with every reason at once, the way a config finding does.
@@ -140,13 +149,20 @@ internal class DaemonProcess(
             // splice.toml is visible to the shim, doctor, and the dashboard.
             topologyDigest = start.loaded.digest,
             topologyPath = start.topologyPath,
-        ).also { it.adopted = AdoptedServing((handoff as? Handoff.Adopted)?.listeners) }
+        ).also {
+            it.adopted = AdoptedServing((handoff as? Handoff.Adopted)?.listeners)
+            // #523: only under the launcher's supervisor is there a next daemon to hand over to.
+            val launcher = Launcher()
+            if (launcher.supervises) {
+                it.handOver = HandOver(ShutdownDaemon { retireSignal.complete(Unit) }, NextDaemon(launcher::startNext))
+            }
+        }
 
         // V4-445: keeps a wrapped plain `claude` wrapped across Claude Code's own updates. Production only: it
         // watches the real ~/.local/bin, which a test daemon must never do.
         WrapGuard(WrappedHead(UserHome.dir()), InstallPaths().binDir, log).use { guard ->
             guard.start()
-            DaemonRun(this, boundary).serve(daemon, lock, shutdownSignal)
+            DaemonRun(this, boundary).serve(daemon, lock, shutdownSignal, retireSignal)
         }
     }
 

@@ -30,15 +30,30 @@ internal class TurnOneDrive(
 ) {
     private val lifecycle = Any()
     private var stopSignal = HeadStopSignal()
-    private val activeJobs = mutableSetOf<Job>()
+    private val activeJobs = mutableMapOf<Job, TurnDrive>()
 
     /** Stop unfinished child turns before the engine closes their client sockets. */
     fun stopActive() {
         val jobs = synchronized(lifecycle) {
             stopSignal.stop()
-            activeJobs.toList()
+            activeJobs.keys.toList()
         }
         jobs.forEach { it.cancel(HeadRestart()) }
+    }
+
+    /** #523: the cut a retiring head makes, and how many turns it kept. A turn whose upstream has begun answering is
+     *  kept to its end, because Claude Code does not send again a turn cut after its answer began: the session stops
+     *  until someone types into it. Every other turn is cut as [stopActive] cuts it: its client has read nothing but
+     *  pings, so it sends the turn again and the next daemon answers. */
+    fun retireActive(): Int {
+        val (kept, cut) = synchronized(lifecycle) {
+            stopSignal.stop()
+            activeJobs.entries.map { it.key to it.value }.partition { (_, drive) ->
+                drive.perf.hasMark(PerfKeys.FIRST_BYTE)
+            }
+        }
+        cut.forEach { (job, _) -> job.cancel(HeadRestart()) }
+        return kept.size
     }
 
     /** The same driver is used after a head restart; new turns may run again. */
@@ -60,7 +75,7 @@ internal class TurnOneDrive(
         // CompletableJob completed in finally: a plain child Job never completes on its own and
         // would park the PARENT call forever after the turn returns.
         val owner = synchronized(lifecycle) { stopSignal }
-        val turnJob = newTurnJob(owner)
+        val turnJob = newTurnJob(owner, drive)
         // V4-319: the operator's stop cancels exactly this job, the one the watchdog cancels (LiveTurns).
         deps.traffic.liveTurns.driving(drive.slot, turnJob)
         // Per TURN: the line counts the heartbeats of the current quiet stretch to thin its lines out,
@@ -125,10 +140,10 @@ internal class TurnOneDrive(
         }
     }
 
-    private suspend fun newTurnJob(owner: HeadStopSignal): CompletableJob {
+    private suspend fun newTurnJob(owner: HeadStopSignal, drive: TurnDrive): CompletableJob {
         val job = Job(currentCoroutineContext()[Job])
         val cut = synchronized(lifecycle) {
-            activeJobs += job
+            activeJobs[job] = drive
             owner.isStopping
         }
         if (cut) job.cancel(HeadRestart())

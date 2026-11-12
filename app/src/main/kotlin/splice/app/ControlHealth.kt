@@ -12,7 +12,9 @@ import splice.app.control.TurnPathStalled
 import splice.app.control.api.ControlHealthReport
 import splice.app.control.api.HeadReadiness
 import splice.app.control.api.HeadSignals
+import splice.app.control.api.ServingProcess
 import splice.app.daemon.BootedTopology
+import splice.app.daemon.Generations
 import splice.app.daemon.TopologyStaleness
 import splice.app.head.HeadProbeReadings
 import splice.configuration.topology.TopologyStale
@@ -54,6 +56,7 @@ internal class ControlHealth(
                 ?: TopologyStaleness.probe(topology.path, topology.digest),
             clientVersions = clientVersions,
             mcpHub = mcp.hub,
+            process = ServingProcess(ProcessHandle.current().pid(), Generations().launcher()),
         )
     }
 }

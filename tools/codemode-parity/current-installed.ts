@@ -4,9 +4,12 @@ import { homedir } from "node:os";
 import { candidateCommand } from "./candidate-command";
 import { sha256 } from "./qualification";
 
+/** [pid] is the daemon's JVM. Since launcher shim-25 the unit's first process is the launcher, which holds the sockets
+ *  and runs the daemon as its child, so [parentPid] names the process that started the JVM; before shim-25 the JVM was
+ *  the unit's first process itself. Identities recorded before then carry no [parentPid]. */
 export type ListenerIdentity = {
   pid: number; startTicks: string; bootId: string; controlPort: number; socketInodes: string[];
-  supervisorUnit: string; supervisorMainPid: number | null;
+  supervisorUnit: string; supervisorMainPid: number | null; parentPid?: number | null;
 };
 export type CurrentInstalledIdentity = {
   listener: ListenerIdentity; jarFd: string; jarSha256: string; installedPath: string;
@@ -25,7 +28,8 @@ export function listenerFindings(recorded: ListenerIdentity | undefined, current
   for (const name of ["pid", "startTicks", "bootId", "controlPort", "supervisorUnit"] as const) {
     if (recorded[name] !== current[name]) failures.push(`installed configured listener ${name} changed`);
   }
-  if (current.supervisorMainPid !== current.pid) failures.push("configured service MainPID does not own the configured listener");
+  const mainOwns = current.supervisorMainPid === current.pid || (current.parentPid != null && current.parentPid === current.supervisorMainPid);
+  if (!mainOwns) failures.push("configured service MainPID does not own the configured listener");
   if (recorded.supervisorMainPid !== current.supervisorMainPid) failures.push("installed configured service selection changed");
   if (JSON.stringify(recorded.socketInodes) !== JSON.stringify(current.socketInodes)) failures.push("installed configured listening socket changed");
   return failures;
@@ -35,6 +39,12 @@ async function birth(pid: number): Promise<string> {
   const ticks = status.slice(end + 2).split(" ")[19];
   if (!ticks || !/^\d+$/.test(ticks)) throw new Error(`cannot establish process ${pid} birth`);
   return ticks;
+}
+async function parent(pid: number): Promise<number> {
+  const status = await readFile(`/proc/${pid}/stat`, "utf8");
+  const ppid = status.slice(status.lastIndexOf(")") + 2).split(" ")[1];
+  if (!ppid || !/^\d+$/.test(ppid)) throw new Error(`cannot establish process ${pid} parent`);
+  return Number(ppid);
 }
 async function execute(argv: string[], environment?: Record<string, string>): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const child = Bun.spawn(argv, { stdin: "ignore", stdout: "pipe", stderr: "pipe", ...(environment ? { env: environment } : {}) });
@@ -101,10 +111,14 @@ export async function observeCurrentInstallation(java: string, candidateJarHash:
   const tables = await Promise.all(["tcp", "tcp6"].map(protocol => readFile(`/proc/net/${protocol}`, "utf8")));
   const socketInodes = listeningInodes(tables, settings.controlPort);
   if (!socketInodes.length) throw new Error(`configured control listener :${settings.controlPort} is not listening`);
+  // The service's main process always holds the listener. Since shim-25 it is the launcher, and the one daemon it runs
+  // holds the listener beside it; a second daemon beside the first is a restart in progress, which is no identity.
   const pids = await owners(socketInodes);
-  if (pids.length !== 1) throw new Error(`configured listener requires exactly one independently resolved owner, found ${pids.join(",") || "none"}`);
-  const pid = pids[0]!;
-  if (pid !== servicePid || await birth(servicePid) !== serviceBirth) throw new Error("the configured service MainPID does not own the authoritative listener");
+  const run = pids.filter(owner => owner !== servicePid);
+  if (!pids.includes(servicePid) || run.length > 1) throw new Error(`configured listener requires the service's main process, and at most one daemon it runs, as its only owners; found ${pids.join(",") || "none"}`);
+  const pid = run[0] ?? servicePid;
+  const parentPid = await parent(pid);
+  if ((pid !== servicePid && parentPid !== servicePid) || await birth(servicePid) !== serviceBirth) throw new Error("the configured service MainPID does not own the authoritative listener");
   const [startTicks, bootId, command] = await Promise.all([birth(pid), readFile("/proc/sys/kernel/random/boot_id", "utf8"), readFile(`/proc/${pid}/cmdline`, "utf8")]);
   if (basename(await readlink(`/proc/${pid}/exe`)) !== "java" || !command.split("\0").includes("daemon") || command.includes("--internal-code-mode-parity")) throw new Error("configured listener is not the installed Splice daemon JVM");
   let jarFd: string | undefined;
@@ -122,7 +136,7 @@ export async function observeCurrentInstallation(java: string, candidateJarHash:
   }
   if (!hostPid) throw new Error("configured listener has no live owned native host matching the current reference");
   const listener: ListenerIdentity = { pid, startTicks, bootId: bootId.trim(), controlPort: settings.controlPort, socketInodes,
-    supervisorUnit: settings.supervisorUnit, supervisorMainPid: servicePid };
+    supervisorUnit: settings.supervisorUnit, supervisorMainPid: servicePid, parentPid };
   if (await birth(pid) !== startTicks) throw new Error("listener process changed during identity inspection");
   return { listener, jarFd, jarSha256: candidateJarHash, installedPath, hostPid, hostStartTicks: await birth(hostPid), hostExeSha256: nativeHash, settingsCommand };
 }

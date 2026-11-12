@@ -14,6 +14,7 @@ import splice.daemonclient.DaemonProbe
 import splice.daemonclient.DaemonProbe.HealthClient
 import splice.daemonclient.DaemonProbe.HealthHeads
 import splice.daemonclient.DaemonProbe.HealthMcpHub
+import splice.daemonclient.DaemonProbe.HealthProcess
 import splice.daemonclient.DaemonProbe.HealthQuota
 import splice.daemonclient.DaemonProbe.HealthTopology
 import splice.daemonclient.DaemonProbe.HealthTurns
@@ -48,6 +49,10 @@ internal object DaemonHealthReading {
                 },
             ),
             turns = turns(obj),
+            process = HealthProcess(
+                pid = JsonScalars.long(obj, "pid"),
+                launcher = (obj["launcher"] as? JsonPrimitive)?.takeIf { it.isString }?.content,
+            ),
         )
     }
 

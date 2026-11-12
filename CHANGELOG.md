@@ -12,6 +12,18 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   back. The hold is now kept in the state folder, beside what the provider said about that login's limits, and put
   back at the start: on the same account where the provider blocked the account, and on the same credential file
   otherwise. A sign-in made while the daemon was down ends it, as one made while it runs does.
+- **A session's cost on the status line survives a stop nothing closed.** Each session's running total is written
+  at most a second behind its turns, and a daemon stopped by a kill, a crash or a power cut used to throw those
+  totals away at the next start, because the last second's turns might be missing from them. A session days long
+  was then priced from the last rows of its command's request log alone: the daemon's log shows the totals
+  starting over after each of two machine stops, on Nov 10 and Nov 11, 2026. The totals are now kept and marked
+  as counting from that start, so the session reads the figure it had with the ≥ mark. A session that began
+  before its total reads the larger of that total and the log's last rows, where it read only the rows.
+- **"Saving stopped" on Settings keeps its time across a restart.** When prompts and answers stop being saved (the
+  disk at its free-space floor, or the size budget spent), the card says since when. That time lived in the
+  daemon's memory, so after a restart the card showed the first refusal since that start: on Nov 11, 2026 it
+  read "Saving stopped 6:37 PM" a minute after a restart, while nothing had been saved since 6:00 PM. The time
+  is now kept beside the saved requests and removed when a request saves whole again (#518).
 
 ## splice v0.4.0: teams across models, resume on another model, and one-command setup - 2026-11-11
 

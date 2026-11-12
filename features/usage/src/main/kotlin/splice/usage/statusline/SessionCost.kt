@@ -60,11 +60,23 @@ internal class SessionCost(
 
     /** V4-244: the session's running total when it holds every row of the session, which is when the
      *  session began at or after the total did (a blob with no start makes no claim either way, as
-     *  with the tail). Otherwise the session has rows from before the total, and the tail prices it. */
+     *  with the tail). Otherwise the session has rows from before the total, and [inPart] prices it. */
     override fun spendFor(sessionId: String?, modelId: String?, sessionStartMs: Long?): SessionSpend? {
         val session = sessionId?.takeIf { it.isNotBlank() } ?: return null
-        val whole = tokens.sessionTotal(session)?.takeIf { sessionStartMs == null || sessionStartMs >= it.fromMs }
-        return if (whole != null) spendOf(whole) else fromTail(tokens.sessionTail(session), modelId, sessionStartMs)
+        val total = tokens.sessionTotal(session)
+        val whole = total?.takeIf { sessionStartMs == null || sessionStartMs >= it.fromMs }
+        if (whole != null) return spendOf(whole)
+        return inPart(total, fromTail(tokens.sessionTail(session), modelId, sessionStartMs))
+    }
+
+    /** A session with rows from before its running total. A tail that reaches the session's first row holds
+     *  all of it and is the figure. Otherwise the tail and the total are each a part of the session, so the
+     *  larger is the figure, marked a lower bound. Until Nov 12, 2026 the tail alone answered: a session days
+     *  long whose total was kept across a hard stop read as the last rows of the head's log. */
+    private fun inPart(total: PerfSessionTotal?, tail: SessionSpend?): SessionSpend? {
+        if (tail?.lowerBound == false) return tail
+        val counted = total?.let(::spendOf)?.copy(lowerBound = true)
+        return listOfNotNull(tail, counted).maxByOrNull { it.usd }
     }
 
     /** V4-244: each turn was priced at its own model's card when its row was appended; a turn with no

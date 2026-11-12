@@ -191,6 +191,10 @@ public class ActivityDays(
     @Throws(IOException::class)
     public fun retainedFiles(): List<Path> = files.files(oldestKept(day(clock()))).asReversed()
 
+    /** A file of this store's own beside its day files, named after the store as its delete marker is
+     *  ("<prefix>.<name>") and never read as a day file. Handed out here because the directory and prefix live here. */
+    public fun beside(name: String): Path = dir.resolve("$prefix.$name")
+
     /** The row-exact cut over this store's days (Oct 10, 2026): the same family as [sweep], which
      *  drops whole days the window has passed, for a save that has to delete exactly what a person
      *  was shown. Handed out here because this store's directory and prefix live here. */

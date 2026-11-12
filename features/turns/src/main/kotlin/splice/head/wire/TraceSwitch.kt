@@ -14,21 +14,31 @@ import java.util.concurrent.atomic.AtomicReference
 /** Whether a head records a trace of the NEXT request. Seeded from the head's config at boot, then moved by the capture
  *  switch; the file the operator keeps is still splice.toml. It also holds when saving stopped while the switch stayed on
  *  (the disk at the free-space floor, or the body budget spent), so Settings can say so instead of a size that looks
- *  live (walk on d0ec523b5: "25.2 GB counted" while nothing had been saved since 10:44 AM). */
-public class TraceSwitch(initial: Boolean, private val clock: WallClock = WallClock(System::currentTimeMillis)) :
-    TraceBodySaves {
+ *  live (walk on d0ec523b5: "25.2 GB counted" while nothing had been saved since 10:44 AM). With [kept], that time is
+ *  read at the start and kept as it changes, so a restart while saving is stopped still shows when it first did. */
+public class TraceSwitch(
+    initial: Boolean,
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
+    private val kept: TraceStopFile? = null,
+) : TraceBodySaves {
     private val flag = AtomicBoolean(initial)
-    private val stop = AtomicReference<TraceStop?>(null)
+    private val stop = AtomicReference<TraceStop?>(kept?.load())
 
     /** When saving first stopped since the last request saved whole, and why; null while requests save whole. */
     public val stopped: TraceStop? get() = stop.get()
 
     override fun refused(reason: String) {
-        stop.compareAndSet(null, TraceStop(clock(), reason))
+        if (stop.compareAndSet(null, TraceStop(clock(), reason))) keep()
     }
 
     override fun saved() {
-        stop.set(null)
+        if (stop.getAndSet(null) != null) keep()
+    }
+
+    /** Writes the stop as it stands at this moment, so of two changes in a row the later one is the one kept. */
+    @Synchronized
+    private fun keep() {
+        kept?.save(stop.get())
     }
 
     /** True when the next request is recorded. */

@@ -544,11 +544,15 @@ class SessionCostTest {
     }
 
     @Test
-    fun `a session whose rows predate the running total keeps the mark`() {
+    fun `a session whose rows predate the running total reads the larger part, with the mark`() {
         val cost = costWith(opusOnly)
         val spend = cost.spendFor(sessionId, "claude-opus-5-5", 900_000L)!!
         assertTrue(spend.lowerBound, "it began before the total, so rows may be missing from both")
-        assertEquals(0.525, spend.usd, 1e-12, "the tail's own figure, as V4-240 prices it")
+        assertEquals(5.25, spend.usd, 1e-12, "the total's ten turns, more of the session than the tail's one")
+
+        val oneTurn = mapOf("claude-opus-5-5" to tenOpusTurns.copy(turns = 1, usd = 0.1))
+        val short = costWith(oneTurn).spendFor(sessionId, "claude-opus-5-5", 900_000L)!!
+        assertEquals(0.525 to true, short.usd to short.lowerBound, "the tail's figure where the tail holds more")
     }
 
     @Test

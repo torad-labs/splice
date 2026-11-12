@@ -69,7 +69,7 @@ public class TraceStore(
 ) {
     /** Whether the next request is recorded; moved by the capture switch with no restart. A store records until told
      *  not to, so a fixture that builds one gets what it always got. */
-    public val recording: TraceSwitch = TraceSwitch(true, now)
+    public val recording: TraceSwitch = TraceSwitch(true, now, TraceStopFile(days.beside("saving-stopped")))
 
     private val bodies = TraceBodies(heap = heap, budget = bodyBudget, saves = recording)
 

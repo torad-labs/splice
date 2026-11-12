@@ -21,7 +21,14 @@ internal class ProviderHoldFiles(
         wired.accounts.associate { account ->
             val native = account.auth as? ClaudeNativeAuth
             val store = if (native != null) {
-                forHead(key)
+                // Claude Code's own logins share the head's file for the provider's word, one entry per credential.
+                // Each keeps its own hold by its place, named as its quota file is (native%<place>).
+                val place = account.label.replace(':', '%')
+                FileProviderHoldStore(
+                    statePaths.stateDir.resolve("$key-provider-hold.json"),
+                    log,
+                    statePaths.stateDir.resolve("$key-$place-provider-hold-login.json"),
+                )
             } else {
                 FileProviderHoldStore(statePaths.stateDir.resolve("$key-${account.label}-provider-hold.json"), log)
             }

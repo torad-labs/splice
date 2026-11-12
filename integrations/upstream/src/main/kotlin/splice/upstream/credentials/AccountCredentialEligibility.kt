@@ -340,7 +340,7 @@ internal class AccountCredentialEligibility(
             val sameFile = saved.identity != null && saved.identity == identity
             val stands = credentialPresent && if (saved.block != null) hold.blocks(source) else sameFile
             if (stands) return copy(failureCount = saved.failureCount, hold = hold)
-            kept?.save(null)
+            kept.save(null)
             return this
         }
     }

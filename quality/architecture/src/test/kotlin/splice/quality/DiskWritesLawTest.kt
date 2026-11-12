@@ -647,6 +647,11 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "integrations/upstream/src/main/kotlin/splice/upstream/retry/ProviderHoldStore.kt" to mapOf(
         "writeAtomic0600(" to 1,
     ),
+    // Nov 12, 2026: the hold a refusal put on one login, owner-only and atomic, beside that login's provider-hold file,
+    // so a restart does not send a refused login to its provider again before the hold ends.
+    "integrations/upstream/src/main/kotlin/splice/upstream/retry/LoginHoldStore.kt" to mapOf(
+        "writeAtomic0600(" to 1,
+    ),
     // The numeric performance ledger, request evidence and explicit objective settings are in their
     // dedicated StatePaths-owned files/directories; profile artifacts are separately opt-in.
     "app/src/main/kotlin/splice/app/observability/PerfConfigHistory.kt" to

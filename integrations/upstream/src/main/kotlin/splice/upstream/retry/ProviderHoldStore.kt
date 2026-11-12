@@ -56,26 +56,36 @@ public interface ProviderHoldStore {
     public fun loginHold(): LoginHoldStore? = null
 }
 
+/** [word] with the login's own hold kept in [login], whichever credential the store is scoped to. The provider's
+ *  word is kept per credential, and a login whose token is renewed is still the same login: its hold has to be found
+ *  under the token a restart finds, so it stays in the one place its owner names. */
+public class ProviderHoldWithLogin(
+    private val word: ProviderHoldStore,
+    private val login: LoginHoldStore,
+) : ProviderHoldStore by word {
+    override fun forCredential(key: String): ProviderHoldStore? =
+        word.forCredential(key)?.let { ProviderHoldWithLogin(it, login) }
+
+    override fun loginHold(): LoginHoldStore = login
+}
+
 /** [ProviderHoldStore] over one small JSON file, 0600 like every state file, written atomically.
  *  A missing file is the normal first boot and says nothing; a file that cannot be read or parsed
  *  loads as none and logs the failure class, never the credential-keyed filename or file content. */
 public class FileProviderHoldStore(
     private val path: Path,
     private val log: LogSink,
-    /** Where the login's own hold is kept: a sibling of [path] unless the caller names the file. That name ends in a
-     *  word no credential key is, so [credentialKeys] never lists it. */
-    private val loginPath: Path = path.resolveSibling("${path.fileName.toString().removeSuffix(".json")}-login.json"),
 ) : ProviderHoldStore {
 
-    /** The provider's word is kept per credential. The login's own hold stays in the one file of the store it came
-     *  from: a renewed token is the same login, and its hold has to be found under the token a restart finds. */
     override fun forCredential(key: String): FileProviderHoldStore {
         require(credentialKey(key))
         val scoped = path.resolveSibling("${path.fileName.toString().removeSuffix(".json")}-$key.json")
-        return FileProviderHoldStore(scoped, log, loginPath)
+        return FileProviderHoldStore(scoped, log)
     }
 
-    override fun loginHold(): LoginHoldStore = FileLoginHoldStore(loginPath, log)
+    /** A sibling file. Its name ends in a word no credential key is, so [credentialKeys] never lists it. */
+    override fun loginHold(): LoginHoldStore =
+        FileLoginHoldStore(path.resolveSibling("${path.fileName.toString().removeSuffix(".json")}-login.json"), log)
 
     private fun credentialKey(key: String): Boolean =
         key.length == CREDENTIAL_KEY_HEX_CHARS && key.all { it in '0'..'9' || it in 'a'..'f' }

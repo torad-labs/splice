@@ -77,9 +77,7 @@ internal class PerfAccountRows(private val scanBytes: Long) {
             scanLines(reader, start, decode)
         }
         val proofStart = proofStart(before, start)
-        val suffix = FileChannel.open(after.path, READ).use { channel ->
-            fingerprint(channel, proofStart, version.size)
-        }
+        val suffix = suffixProof(after.path, version, proofStart)
         if (version(after.path) != version) throw IOException("perf generation changed during account indexing")
         return after.copy(
             receipt = JsonlAppendProof.current(after.path),
@@ -91,6 +89,16 @@ internal class PerfAccountRows(private val scanBytes: Long) {
     }
 
     private fun proofStart(before: Generation?, start: Long): Long = before?.proof?.start ?: start
+
+    /** The span's fingerprint, made only where [unchanged] reads it: on a filesystem that reports no change time.
+     *  Where it reports one, an equal version already says nothing wrote the file. Made regardless, it reread the
+     *  generation from the seed's start at every append: 32 MiB per session list on a 32 MiB perf file (Nov 12, 2026). */
+    private fun suffixProof(path: Path, version: JsonlFileVersion, start: Long): ByteArray? =
+        if (version.changed != null) {
+            null
+        } else {
+            FileChannel.open(path, READ).use { channel -> fingerprint(channel, start, version.size) }
+        }
 
     private fun wholePrefix(before: Generation?, start: Long): Boolean = start == 0L || before?.prefix != null
 

@@ -9,6 +9,8 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.selects.select
@@ -120,7 +122,15 @@ internal class SharedWorkerChannel(
             val sending = async { send(cell, payload, session, writeTimeoutMs) }
             try {
                 select {
-                    lifetime.closing.onAwait { throw CodeModeWorkerLostException() }
+                    lifetime.closing.onAwait {
+                        // A caller that was cancelled is cancelled, whatever closed the cell since. The cancel reaches
+                        // the write below before it reaches this select, and letting go of the pending slot there can
+                        // be what closes the worker (a death frame with nobody left to claim it, [deliver]). The select
+                        // then finds the cell closed, and the cancelled caller failed with "worker was stopped": seen
+                        // once in CI on Nov 12, 2026, as SharedWorkerChannelCellCloseTest failing with this exception.
+                        currentCoroutineContext().ensureActive()
+                        throw CodeModeWorkerLostException()
+                    }
                     sending.onAwait { it }
                 }
             } finally {

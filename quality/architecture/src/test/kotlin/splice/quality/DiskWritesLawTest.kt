@@ -87,6 +87,12 @@ internal object DiskWrites {
                 "the locked JSONL append; it also keeps the file's `.lock` and one rolled `.1` beside it",
             ),
             Helper(
+                "core/src/main/kotlin/splice/core/util/JsonlLocks.kt",
+                Regex("""\bJsonlWhole\s*\.\s*replace\s*\("""),
+                "a JSONL file replaced whole under the lock its appends hold (#525: two daemons keep records in " +
+                    "one file while one retires); the lock is the same `.lock` JsonlSink keeps beside the file",
+            ),
+            Helper(
                 "core/src/main/kotlin/splice/core/storage/ActivityDays.kt",
                 Regex("""\bActivityDays\s*\("""),
                 "one JSONL file per UTC day in a store's directory, through JsonlSink",
@@ -590,7 +596,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "reasoning/ReasoningCacheFiles.kt" to mapOf(
             "JsonlSink.appendLine(" to 1,
             "createNew0600(" to 1,
-            "writeAtomic0600(" to 1,
+            "JsonlWhole.replace(" to 1,
         ),
     "integrations/oauth/src/main/kotlin/splice/oauth/LoginIo.kt" to mapOf("writeAtomic0600(" to 1),
     "integrations/oauth/src/main/kotlin/splice/oauth/OAuthAccountFiles.kt" to mapOf("Files.move(" to 1),

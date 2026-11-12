@@ -6,7 +6,9 @@
 // WHICH COMMAND. A session in its head's own config folder was started by the head's command, which plants that
 // folder, and is started by it again. One in any other folder went through the person's wrapped `claude`, the one
 // command that runs in his own folders: that `claude` starts it again, with the folder named outright, since the
-// terminal's environment may name another. Any other is refused, because splice cannot say what started it.
+// terminal's environment may name another. While `claude` is not wrapped, a session in his own ~/.claude was started
+// by the Claude head's own command, which runs there too, and is started by it again. Any other is refused, because
+// splice cannot say what started it.
 //
 // WHICH WORDS. The words its process was given, less the ones splice's launch put before his (LaunchRecipeArgs), read
 // as the client reads them (ClaudeArgv.resumed): every option he gave is kept, his first prompt is never sent again,
@@ -86,13 +88,19 @@ internal class RelaunchCommands(
         }
     }
 
-    /** The wrapped `claude` in config [folder], named outright: the terminal it starts in may name another folder. */
+    /** The wrapped `claude` in config [folder], named outright: the terminal it starts in may name another folder.
+     *  While `claude` is not wrapped, a session in his own folder is the Claude command's, started by its own name,
+     *  which runs there too: that command starts it again. */
     private fun throughClaude(head: String, folder: Path): StartCommand {
-        val wrapped = claude?.of(head)
-            ?: return StartCommand.Refused("it runs in $folder, and no splice command starts a session there")
         val vanilla = same(folder, UserHome.claudeDir())
         val dir = if (vanilla) listOf("-u", CONFIG_DIR_VARIABLE) else listOf("$CONFIG_DIR_VARIABLE=$folder")
-        return StartCommand.Ready(listOf("env") + dir + wrapped.toString())
+        val program = claude?.of(head)?.let { StartCommand.Ready(listOf(it.toString())) }
+            ?: headCommands.forHead(head).takeIf { vanilla && claude?.ownHome(head) == true }
+        return when (program) {
+            is StartCommand.Ready -> StartCommand.Ready(listOf("env") + dir + program.argv)
+            is StartCommand.Refused -> program
+            null -> StartCommand.Refused("it runs in $folder, and no splice command starts a session there")
+        }
     }
 
     private fun same(one: Path, other: Path): Boolean =

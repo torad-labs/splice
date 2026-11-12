@@ -68,7 +68,7 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
     val paths = StatePaths(baseOverride = home.resolve(".splice/state"))
 
     fun seed(place: String, expiresAt: Long = NATIVE_ACCESS_EXPIRY, quota: QuotaSnapshot? = null) {
-        val directory = home.resolve(if (place == "native") ".claude" else ".claude-splice")
+        val directory = home.resolve(".claude")
         Files.createDirectories(directory)
         val token = "synthetic-$place"
         Files.writeString(
@@ -82,7 +82,7 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
             key,
             quota ?: QuotaSnapshot(
                 plan = "synthetic",
-                fiveHour = QuotaWindow(10.0, if (place == "native") 4_102_000_000L else 4_102_100_000L, 18_000L),
+                fiveHour = QuotaWindow(10.0, 4_102_000_000L, 18_000L),
                 updatedAt = System.currentTimeMillis(),
             ),
         )
@@ -136,8 +136,6 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
             provider = "native"
             port = 3100
             discovery_prefix = "synthetic--"
-            [heads.claude-splice.claude]
-            config_dir = "~/.claude-splice"
             """.trimIndent(),
         )
         return file

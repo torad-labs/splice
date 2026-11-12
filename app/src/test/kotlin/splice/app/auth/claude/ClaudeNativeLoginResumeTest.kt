@@ -51,7 +51,6 @@ class ClaudeNativeLoginResumeTest {
     @Test
     fun `in client login resumes the same session on its new credential without the old plan hold`() = runBlocking {
         seed("native")
-        seed("splice", expiresAt = 1L)
         val sent = java.util.concurrent.CopyOnWriteArrayList<String?>()
         val bodies = java.util.concurrent.CopyOnWriteArrayList<String>()
         val upstream = fixture.nativeUpstream(sent, bodies).start()
@@ -67,34 +66,6 @@ class ClaudeNativeLoginResumeTest {
                 assertEquals(listOf("Bearer synthetic-native", "Bearer synthetic-replacement"), sent)
                 assertEquals(1, bodies.distinct().size, "login must not rewrite the resumed request")
                 assertArrayEquals(replacement, Files.readAllBytes(file), "only native login writes credentials")
-            }
-        } finally {
-            rig.close()
-            upstream.stop()
-        }
-    }
-
-    @Test
-    fun `a new caller login replaces the resumed session's sticky standby`() = runBlocking {
-        seed("native")
-        seed("splice")
-        val sent = java.util.concurrent.CopyOnWriteArrayList<String?>()
-        val bodies = java.util.concurrent.CopyOnWriteArrayList<String>()
-        val upstream = fixture.nativeUpstream(sent, bodies).start()
-        val port = upstream.engine.resolvedConnectors().single().port
-        val rig = rig(upstreamUrl = "http://127.0.0.1:$port")
-        try {
-            HttpClient(Java).use { client ->
-                val first = nativeTurn(client, rig, "resumed-session", "synthetic-native")
-                assertEquals(HttpStatusCode.OK, first.status, first.bodyAsText())
-                assertEquals(listOf("Bearer synthetic-native", "Bearer synthetic-splice"), sent)
-                assertEquals(HttpStatusCode.OK, nativeTurn(client, rig, "resumed-session", "synthetic-native").status)
-                assertEquals("Bearer synthetic-splice", sent.last(), "unchanged caller login keeps failover sticky")
-                fixture.replaceNative()
-                val resumed = nativeTurn(client, rig, "resumed-session", "synthetic-replacement")
-                assertEquals(HttpStatusCode.OK, resumed.status, resumed.bodyAsText())
-                assertEquals("Bearer synthetic-replacement", sent.last(), "login must override sticky failover")
-                assertEquals(1, bodies.distinct().size)
             }
         } finally {
             rig.close()

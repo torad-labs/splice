@@ -304,8 +304,7 @@ class ClaudeCarryingPoolUsageTest {
             assertEquals(ClaudeLoginPlaceId.NATIVE, owner.carrying(NATIVE_HEAD, "moving"))
             val pool = requireNotNull(rig.head.authSurface.accountPool)
             val accounts = pool.view(null).accounts
-            assertEquals(setOf(NATIVE_SELECTOR, SPLICE_SELECTOR, "added"), accounts.map { it.label }.toSet())
-            assertEquals(false, accounts.single { it.label == SPLICE_SELECTOR }.credential.present)
+            assertEquals(setOf(NATIVE_SELECTOR, "added"), accounts.map { it.label }.toSet())
             assertTrue((pool as HeadAccountPinSource).pin("added"))
             HttpClient(Java).use { client ->
                 val turn = client.post("http://127.0.0.1:${rig.head.head.port}/v1/messages") {

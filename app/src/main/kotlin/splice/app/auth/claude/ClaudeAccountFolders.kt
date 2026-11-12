@@ -209,7 +209,11 @@ internal class ClaudeAccountFolders(
         changes?.withdraw(head, label)
         discard(directory)
         changes?.completeWithdrawal(head, label)
-        return if (Files.exists(directory)) ClaudeAccountRemoval.Failed else ClaudeAccountRemoval.Removed
+        val gone = !Files.exists(directory)
+        // The journal says when a login left: on Nov 12, 2026 one added at 9:04:59 AM was gone 18 seconds later, and
+        // no line told what had taken it.
+        log("[claude-accounts] $label on $head: ${if (gone) "removed" else "could not be removed, still on disk"}\n")
+        return if (gone) ClaudeAccountRemoval.Removed else ClaudeAccountRemoval.Failed
     }
 
     /** Renames display metadata only. The stable id, credential, quota, pin and account order stay unchanged. */

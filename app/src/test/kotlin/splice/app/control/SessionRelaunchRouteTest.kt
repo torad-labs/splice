@@ -29,7 +29,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -83,7 +82,6 @@ import java.util.concurrent.ConcurrentHashMap
 private const val HEAD = "claude-splice"
 private const val REVIEW = "5e1a0001-0000-4000-8000-000000000001"
 private const val SEAT = "5e1a0002-0000-4000-8000-000000000002"
-private const val LEADER = "5e1a0003-0000-4000-8000-000000000003"
 
 /** A seat beside [SEAT] in one config folder, as the seats of the claudex head share ~/.claude-claudex. */
 private const val NEIGHBOR = "5e1a0004-0000-4000-8000-000000000004"
@@ -184,20 +182,6 @@ class SessionRelaunchRouteTest {
     private fun said(body: String, field: String): String? =
         Json.parseToJsonElement(body).jsonObject[field]?.jsonPrimitive?.content
 
-    /** The lead, started by the head's own command in the head's own folder, resumed by its name. */
-    private fun startLead(): SessionPane = start(
-        LEADER,
-        FIRST_PID + 2,
-        listOf(
-            realClaude.toString(),
-            "--mcp-config", paths.stateDir.resolve("mcp-hub/launch-${FIRST_PID + 2}.json").toString(),
-            "--plugin-dir-no-mcp", "/home/p/.claude/plugins/a", "--plugin-dir-no-mcp", "/home/p/.claude/plugins/b",
-            "--name", "splice-lead", "-r", "splice-lead",
-        ),
-        environ = listOf("SPLICE=1", "CLAUDE_CONFIG_DIR=$headDir"),
-        transcripts = headDir,
-    )
-
     @Test
     fun `a session started through his claude comes back in its pane, in its own config folder, as it was started`() {
         val seatFolder = home.resolve(".claude-work")
@@ -237,26 +221,25 @@ class SessionRelaunchRouteTest {
     }
 
     @Test
-    fun `a session started by its head's command comes back on that command, in the head's folder`() {
-        serve { daemon ->
-            val lead = startLead()
+    fun `a claude-splice session in his own folder comes back on claude-splice while claude is not wrapped`() {
+        serve(wrapped = false) { daemon ->
+            val review = startReview()
 
-            val reply = daemon.relaunch(LEADER)
+            val reviewed = daemon.relaunch(REVIEW)
+            assertEquals(HttpStatusCode.OK, reviewed.first, reviewed.second)
 
-            assertEquals(HttpStatusCode.OK, reply.first, reply.second)
             assertEquals(
                 listOf(
                     Restart(
-                        lead,
-                        listOf(bin.resolve(HEAD).toString(), "--name", "splice-lead") +
-                            listOf("-r", LEADER, "--model", ROW_MODEL),
-                        cwd(LEADER).toString(),
+                        review,
+                        listOf("env", "-u", "CLAUDE_CONFIG_DIR", bin.resolve(HEAD).toString()) +
+                            listOf("--agent", "eli", "-n", "splice-review-3", "-r", REVIEW, "--model", ROW_MODEL),
+                        cwd(REVIEW).toString(),
                     ),
                 ),
                 terminal.restarted,
+                "the command that runs in his own folder starts it there again",
             )
-            assertTrue(terminal.opened.isEmpty(), "no new terminal is opened: ${terminal.opened}")
-            assertEquals(listOf(lead), terminal.released)
         }
     }
 
@@ -472,13 +455,14 @@ class SessionRelaunchRouteTest {
         )
     }
 
-    /** A daemon serving [HEAD], whose `claude` is wrapped, with this rig's registry, processes and terminal. */
-    private fun serve(test: suspend (Daemon) -> Unit) =
+    /** A daemon serving [HEAD], whose `claude` is [wrapped], with this rig's registry, processes and terminal. */
+    private fun serve(wrapped: Boolean = true, test: suspend (Daemon) -> Unit) =
         UserHome.within(home) {
-            val launch = launchService()
-            assertNotNull(
-                WrappedClaudeLaunch(launch.wrap).of(HEAD),
-                "his claude is wrapped, as `splice wrap` leaves it",
+            val launch = launchService(wrapped)
+            assertEquals(
+                wrapped,
+                WrappedClaudeLaunch(launch.wrap).of(HEAD) != null,
+                "his claude is wrapped as `splice wrap` leaves it, or left alone",
             )
             Files.createSymbolicLink(bin.resolve(HEAD), share.resolve("splice-launch"))
             val mgmt = MgmtKey(paths)
@@ -547,7 +531,7 @@ class SessionRelaunchRouteTest {
 
     /** The launch the daemon serves, its wrap under [home]: `claude` linked to the launch shim, the real binary
      *  kept. */
-    private fun launchService(): LaunchService {
+    private fun launchService(wrapped: Boolean): LaunchService {
         Files.writeString(share.resolve("splice-launch"), "#!/bin/sh\n")
         Files.createSymbolicLink(bin.resolve("claude"), realClaude)
         val wrap = WrappedHead(
@@ -555,7 +539,7 @@ class SessionRelaunchRouteTest {
             installPaths = InstallPaths(binOverride = bin, shareOverride = share),
             stateStore = WrapStateStore(file = home.resolve("state/claude-head-wrap.json")),
         )
-        wrap.wrap()
+        if (wrapped) wrap.wrap()
         return LaunchService(ClaudeConfigMaterializer(home), wrap = wrap)
     }
 

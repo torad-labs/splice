@@ -209,7 +209,7 @@ If the daemon is already running, finish pending work before a full `splice rest
 
 ### Claude
 
-`claude-splice` routes Claude Code through splice and keeps its own Claude Code config directory. Sign in with `/login` inside that command. Plain claude’s login and claude-splice’s own login are separate. A Claude head can also hold additional subscriptions in separate splice-owned folders and select between its available logins per request ([More than one Claude login](#more-than-one-claude-login-on-claude-splice)). Splice reads the commands' live access tokens for selection but never refreshes their credentials. It refreshes only the added accounts whose folders it alone owns.
+`claude-splice` routes Claude Code through splice over Claude Code's own home, `~/.claude`: the same login, settings and sessions as plain `claude`, whether or not `claude` itself goes through splice. There is one Claude Code login, not one per command; sign in with `/login` inside either. A Claude head can also hold additional subscriptions in separate splice-owned folders and select between its available logins per request ([More than one Claude login](#more-than-one-claude-login-on-claude-splice)). Splice reads Claude Code's live access token for selection but never refreshes its credential. It refreshes only the added accounts whose folders it alone owns.
 
 ### The billing word in Claude Code's header
 
@@ -377,7 +377,7 @@ Splice signs in on its own. Each OAuth head keeps its own credential file under 
 
 | Backend / route | Auth kind | Location | Notes |
 | --- | --- | --- | --- |
-| Claude (`claude-splice`) | `client` | Plain claude’s login and claude-splice’s own login in separate Claude Code directories; additional accounts under `~/.splice/state/claude-accounts/<head>/<label>/` | Claude Code performs sign-in; splice never refreshes the commands' own credentials and refreshes only the added folders it owns |
+| Claude (`claude-splice`) | `client` | Claude Code's own login in `~/.claude`; additional accounts under `~/.splice/state/claude-accounts/<head>/<label>/` | Claude Code performs sign-in; splice never refreshes Claude Code's own credential and refreshes only the added folders it owns |
 | codex (ChatGPT) | `chatgpt-oauth` | `~/.config/splice/auth/codex.json` | splice's own OAuth tokens (`splice login claudex`); `~/.codex/auth.json` only by explicit `auth.file` |
 | grok (xAI) | `grok-oauth` | `~/.config/splice/auth/grok.json` | splice's own OAuth tokens (`claude-grok login`); `~/.grok/auth.json` only by explicit `auth.file` |
 | kimi (Moonshot) | `kimi-oauth` | `~/.config/splice/auth/kimi.json` (+ `device_id` beside it) | splice's own device-flow token (`claude-kimi login`); the app's file only by explicit `auth.file` |
@@ -510,10 +510,16 @@ A Claude head can hold multiple subscriptions. `POST /api/auth/<head>/login` on 
 adds one through Claude Code's own browser sign-in into a new folder under `~/.splice/state/claude-accounts/<head>/<label>/`, never
 replacing another login. Once filed, it can join a running head through membership publication.
 The pool is per head, and uses the same pin, saved order, sticky default selection and same-turn
-hand-off on a refusal described above. Plain claude’s login and claude-splice’s own login are separate
-selectable places on `claude-splice`: splice reads their live access tokens without refreshing
-or replacing their credentials during selection. It can refresh an added folder's credential
-because no other program uses that folder.
+hand-off on a refusal described above. Claude Code's own login, the one in `~/.claude`, is one
+selectable login on `claude-splice`, whichever of `claude` and `claude-splice` started the session:
+splice reads its live access token without refreshing or replacing its credential during selection.
+It can refresh an added folder's credential because no other program uses that folder.
+
+When every login is at its limit for the model a turn asked for, the turn waits and the session says
+so, with the time the first login comes back. It continues at that time, or sooner: when a login
+frees, when an account is added, when Claude Code signs in to another account with `/login`, or when
+you press Try again on a login's card. `splice status` and the Accounts page name a model that is
+used up on a login while that login's week still has room.
 
 Removing or renaming
 a Claude login requires its explicit target kind and stable id; a saved display name never
@@ -521,16 +527,19 @@ chooses between a command's own login and an added account with the same name. R
 command's own login is refused while its sessions are active or their state is unknown, and its
 credential is backed up before removal.
 
-The labelled-copy CLI is separate from automatic pool selection. `claude-splice` still holds one
-own login at a time in its config directory; `splice login claude-splice --label <name>` saves or
-switches copies of that login:
+The labelled-copy CLI is separate from automatic pool selection, and it is for a second Claude
+command you declare yourself: a head with `auth = "client"` under a name other than `claude-splice`,
+which keeps a Claude Code config directory of its own, `~/.claude-<head>/`, with one login at a
+time. `splice login <head> --label <name>` saves or switches copies of that login. On `claude-splice`
+it changes nothing and says where to sign in, since that command runs on Claude Code's own login and
+its other accounts are added on the Accounts page.
 
 - **Save.** With a login the label has never seen, it saves the head's live login under `<name>`
   and selects it. With the label the head already holds, it saves the newer copy over the old.
 - **Switch.** With another saved label, it first saves the head's live login under its own label,
-  then puts `<name>`'s copy in the head. The next session of `claude-splice` signs in with it.
+  then puts `<name>`'s copy in the head. The next session of that command signs in with it.
 - **Add an account.** With a new label while the head's login is already saved under another, it
-  saves that one and signs the head out. Start `claude-splice`, `/login` with the new account,
+  saves that one and signs the head out. Start the command, `/login` with the new account,
   exit, and run the same command again.
 
 A saved login can become stale after the head refreshes it. A launch never copies a saved login
@@ -538,7 +547,7 @@ into the head, and `splice login` changes the head's login only under four rules
 
 1. **Save before switching.** The login being replaced is saved under its own label first, so
    every saved copy is its account's newest. If that save fails, nothing is switched.
-2. **Never under a running session.** While any session of `claude-splice` runs, or while splice
+2. **Never under a running session.** While any session of the head runs, or while splice
    cannot tell, it changes nothing and names the session.
 3. **Filed by account.** Each label records its account's id and email from the head's
    `.claude.json`, never a token; this labelled-copy operation copies the credential file byte for byte and never calls Anthropic with it. A login
@@ -550,8 +559,7 @@ into the head, and `splice login` changes the head's login only under four rules
 A saved copy that may be older than its account's last refresh is never put back. That covers a
 label whose login left the head without being saved first (a `/login` to another account, or a
 `/logout`), and a copy saved before splice recorded accounts. Re-save it from a live login: sign in
-to that account with `/login` in `claude-splice`, then run `splice login claude-splice --label
-<name>`.
+to that account with `/login` in the command, then run `splice login <head> --label <name>`.
 
 ## What splice keeps on your disk
 
@@ -719,9 +727,9 @@ These files hold settings and statistics. Custom compaction instructions and tea
 
 | File | What it holds | Who can read it | How long it stays | Written by |
 | --- | --- | --- | --- | --- |
-| `~/.claude-<head>/settings.json` and `.claude.json` | The head's settings: its models, status line and hooks. `.claude.json` carries Claude Code's own keys forward | Only you (0600) | Rewritten at each launch | `ClaudeConfigMaterializer.kt` |
+| `~/.claude-<head>/settings.json` and `.claude.json` | The head's settings: its models, status line and hooks. `.claude.json` carries Claude Code's own keys forward. `claude-splice` has no such folder: it runs over `~/.claude`, which splice does not rewrite, and carries its settings on the command line | Only you (0600) | Rewritten at each launch | `ClaudeConfigMaterializer.kt` |
 | `~/.claude-<head>/.splice-hook-origins.json` | Hook settings before and after the last materialization, with only the inherited entries splice actually appended; no callback IDs or launch owner | Only you (0600) | Rewritten at each launch, before the atomic settings swap | `ClaudeConfigMaterializer.kt` |
-| `~/.claude-claude-splice/.credentials.json`, and the account in its `.claude.json` | Written by `splice login claude-splice --label <name>` only when it switches the head to a saved login: the saved copy, and its account's id and email. Adding an account signs the head out, which deletes the file. Claude Code writes both itself on `/login` | Only you (0600) | Until the next switch, `/login` or `/logout` | `ClaudeLogins.kt`, `ClaudeLoginFiles.kt` |
+| `~/.claude-<head>/.credentials.json` of a second Claude command, and the account in its `.claude.json` | Written by `splice login <head> --label <name>` only when it switches the head to a saved login: the saved copy, and its account's id and email. Adding an account signs the head out, which deletes the file. Claude Code writes both itself on `/login` | Only you (0600) | Until the next switch, `/login` or `/logout` | `ClaudeLogins.kt`, `ClaudeLoginFiles.kt` |
 | Links in `~/.claude-<head>/` to `~/.claude/` | The config a head shares: agents, commands, skills, hooks, plugins, `CLAUDE.md`, and, when shared, `sessions` and `projects`, whose existing files are merged into `~/.claude` the first time | Links only | Until you change what the head shares | `ClaudeConfigMaterializer.kt`, `SessionRegistryLink.kt`, `ProjectsLink.kt` |
 | `~/.claude-<head>/splice-*-hook.sh` | The sign-in, key-capture and resume hook scripts (a foreground hook script from before its retirement may remain for sessions started then). They hold the daemon's local address and a path to the turn key's file, never a key | Only you (0700) | Rewritten at each launch | `HookScriptFiles.kt` |
 | `~/.claude-<head>/commands/login.md`, and links to your own commands | The head's `/login` command | Only you (0600) | Rewritten at each launch | `HeadCommandsDir.kt` |
@@ -769,7 +777,7 @@ can run rig's installer.
 
 | Route | Auth | Status |
 | --- | --- | --- |
-| Claude (`claude-splice`) | `client` (Claude Code sign-in) | **Primary**: per-head Claude account pool; Claude Code signs in, splice reads the commands' own logins without refreshing them and refreshes only added account folders |
+| Claude (`claude-splice`) | `client` (Claude Code sign-in) | **Primary**: per-head Claude account pool; Claude Code signs in, splice reads Claude Code's own login without refreshing it and refreshes only added account folders |
 | OpenRouter | `api-key` (`OPENROUTER_API_KEY`) | **Supported**: pay-per-token, any OpenAI-compatible vendor |
 | Moonshot | `api-key` (`MOONSHOT_API_KEY`) | **Supported**: pay-per-token Anthropic base |
 | DeepSeek | `api-key` (`DEEPSEEK_API_KEY`) | **Supported**: pay-per-token over DeepSeek's Anthropic-format endpoint |

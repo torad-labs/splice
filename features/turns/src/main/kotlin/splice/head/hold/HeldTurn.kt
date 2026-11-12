@@ -147,7 +147,7 @@ internal class HeldTurn(
         return when (race(next - now, registry.waitFor(this), lost)) {
             Woke.Timer -> timerEnded(resetAt, probeAt)
             Woke.ClientGone -> HoldEnd.CLIENT_GONE
-            Woke.Signaled -> signaled()
+            Woke.Signaled -> signaled(ask)
         }
     }
 
@@ -163,10 +163,10 @@ internal class HeldTurn(
         }
     }
 
-    private suspend fun signaled(): HoldEnd? {
+    private suspend fun signaled(ask: HoldAsk): HoldEnd? {
         val signal = registry.takeSignal(this)
         return if (signal is Signal.Wake) {
-            woken(signal.wake).also { if (it == HoldEnd.RESUME) registry.sent(this, wall()) }
+            woken(signal.wake, ask).also { if (it == HoldEnd.RESUME) registry.sent(this, wall()) }
         } else {
             null
         }
@@ -179,14 +179,18 @@ internal class HeldTurn(
     }
 
     /** What a wake does: a login answered, so the turn goes a second after each turn ahead of it; a probe asked for
-     *  goes at once; a login that joined takes the turn. */
-    private suspend fun woken(wake: HoldWake): HoldEnd = when (wake) {
+     *  goes at once; a login that joined takes the turn where it can serve it. Null where it cannot: the turn goes on
+     *  waiting as it was. Until Nov 12, 2026 any join ended the hold, and a turn the new login could not serve (the
+     *  same model spent there too) ended on its limit, in a session that had been waiting to continue by itself. */
+    private suspend fun woken(wake: HoldWake, ask: HoldAsk): HoldEnd? = when (wake) {
         is HoldWake.Served -> {
             waiter.wait((registry.rank(this) + 1) * WAKE_STAGGER_STEP_MS)
             HoldEnd.RESUME
         }
         HoldWake.Allowed, is HoldWake.TryNow -> HoldEnd.RESUME
-        HoldWake.Joined -> {
+        HoldWake.Joined -> if (ask.moves?.invoke(ask.cause) == false) {
+            null
+        } else {
             registry.leave(this)
             HoldEnd.LOGIN_JOINED
         }

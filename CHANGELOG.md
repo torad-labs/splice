@@ -5,6 +5,41 @@
 Changes on main since v0.4.0. They take a version's heading when that version is cut.
 
 ### Fixed
+- **The Claude command has one login: Claude Code's own.** Started by its own name, `claude-splice` ran Claude
+  Code over a second home, `~/.claude-claude-splice`, with a sign-in of its own, and the command counted that
+  home as its first login beside the one in `~/.claude`. A machine that signs in to `claude` and nowhere else
+  carried a second, empty Claude login in the pool, in `splice status` and in the daemon's choice of where a
+  session starts (Marcos, Nov 12, 2026: "why ... is claude and claude-splice two identities? We use Claude only
+  via splice"). `claude-splice` now launches over `~/.claude`, as a `claude` that goes through splice does and
+  whether or not it does: the same login, settings and sessions under either name. The second login is gone
+  from Accounts, Usage, `splice status`, `splice doctor` and `/api/claude-logins`. If you signed in inside
+  `claude-splice` and never in `claude`, sign in once more with `/login`; the old sign-in stays on disk in
+  `~/.claude-claude-splice` and nothing reads it. `splice login claude-splice --label <name>` saved and switched
+  copies of that second sign-in; it now changes nothing and says where to sign in. It still works on a second
+  Claude command declared under another name.
+- **A turn waiting on a used-up model goes the moment a login can take it.** On Nov 12, 2026 Anthropic answered
+  429 for one model on the Claude command's logins from 5:58 AM CT, and eleven sessions on one machine each
+  held one request open for about three hours. A waiting turn woke only for an account added under a new name.
+  Signing Claude Code in to an account with room at 9:05 AM kept the login's name, so none of them heard it:
+  the first answer on that account went to a new request, and each waiting one ended when its client closed
+  it. A waiting turn is now asked to move when an account is added, when a login's credential changes to
+  another account under the same name, and when Try again is pressed on a login's card. At that moment it
+  forgets which logins refused it earlier and asks them again. A turn that no login can take keeps waiting; it
+  used to end on its limit when a login joined that could not serve it. The command's log says how many
+  waiting turns were asked: `a login joined: 11 waiting turn(s) asked to move`.
+- **A session waiting on every login says so, and so do `splice status` and the Accounts page.** The line a
+  waiting session printed named one login's limit. With more than one login it now reads "Every Claude login
+  is at its usage limit for this model, the first until 1:00 PM. This turn waits and continues then, or as soon
+  as a login frees or one is added." A plan can use up one model's week while the plan's own week has room, and
+  nothing said so: `splice status` counted such a login as open, and its card showed only the percentage.
+  `splice status` now adds "Fable used up on 6 of 9 logins", or "on every login, first back" with the time,
+  and each such card reads "Fable used up until Sun 12:00 PM".
+- **Removing an added Claude login is written to the daemon's log, and takes its hold with it.** A folder under
+  `~/.splice/state/claude-accounts/<head>/` left no line when it was removed: on Nov 12, 2026 a login signed in
+  again at 9:04:59 AM was gone 18 seconds later, and the log could not say what took it. What the login was
+  held for stayed on disk under its label, so the next account filed as `account-8` would have read as out of
+  one model until the removed login's reset. The file now goes with the login, and a login filed under a label
+  starts with none.
 - **A restart no longer cuts an answer that is already arriving.** A restart stopped the daemon and then started
   the next, so every answer in progress ended with the restart line. Claude Code sends a request again when none
   of its answer has arrived, but not one cut partway: it shows "API Error: Server error mid-response" and the

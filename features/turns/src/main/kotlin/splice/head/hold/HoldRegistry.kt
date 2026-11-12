@@ -54,10 +54,10 @@ public class HoldRegistry : HoldWakes {
         }
     }
 
-    /** A login joined the head: every held turn moves to it, or to whichever login the pool chooses. */
-    public fun joined() {
-        synchronized(lock) { byLogin.values.flatMap { it.turns }.forEach { it.signal(HoldWake.Joined) } }
-    }
+    /** A login joined the head: every held turn that it, or another login, can serve moves there, and the rest go on
+     *  waiting. Answers how many turns were waiting to hear it. */
+    public fun joined(): Int =
+        synchronized(lock) { byLogin.values.flatMap { it.turns }.count { it.signal(HoldWake.Joined) } }
 
     /** A request on [login] was answered 2xx: the turns sending on it are no longer held, and the ones still waiting go
      *  on, a second apart. */

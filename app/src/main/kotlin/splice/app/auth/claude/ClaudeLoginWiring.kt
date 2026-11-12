@@ -54,6 +54,7 @@ internal class ClaudeLoginWiring(
             profileRefresh = identities,
             changes = poolChanges,
             held = held,
+            log = log,
         )
         val signIn = ClaudeAccountSignIn(folders, native, scope, log)
         return ClaudeLoginArm(

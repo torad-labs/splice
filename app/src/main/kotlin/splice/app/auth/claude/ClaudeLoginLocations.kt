@@ -1,8 +1,8 @@
-// NEW: the two native command destinations share a head, never a live folder or selection marker.
+// NEW: where the Claude head's one own login lives: Claude Code's own home.
 package splice.app.auth.claude
 
+import splice.accounts.claude.CLAUDE_LOGIN_HEAD
 import splice.accounts.claude.ClaudeLoginPlaceId
-import splice.app.head.HeadConfigDirs
 import splice.client.ClaudeHead
 import splice.client.ClaudeLoginTarget
 import splice.core.config.StatePaths
@@ -19,26 +19,19 @@ internal data class ClaudeLoginLocation(
     val credentials: Path get() = target.head.configDir.resolve(".credentials.json")
 }
 
-/** The native default has a home-level account file; the separate command has a directory-local one. */
+/** Claude Code keeps its login in ~/.claude and its account record in the home-level ~/.claude.json. */
 internal class ClaudeLoginLocations(
     private val home: Path,
     private val paths: StatePaths,
 ) {
     fun read(topology: Topology): List<ClaudeLoginLocation> {
-        val key = ClaudeLoginPlaceId.SPLICE.wire
-        val declared = topology.heads[key] ?: return emptyList()
-        val stores = paths.stateDir.resolve("claude-logins")
-        val separate = HeadConfigDirs.of(key, declared.claude.configDir, home)
+        if (CLAUDE_LOGIN_HEAD !in topology.heads) return emptyList()
+        val own = ClaudeHead(CLAUDE_LOGIN_HEAD, home.resolve(UserHome.CLAUDE_DIR))
         return listOf(
             ClaudeLoginLocation(
                 ClaudeLoginPlaceId.NATIVE,
-                ClaudeLoginTarget(ClaudeHead(key, home.resolve(UserHome.CLAUDE_DIR)), home.resolve(".claude.json")),
-                stores.resolve("native"),
-            ),
-            ClaudeLoginLocation(
-                ClaudeLoginPlaceId.SPLICE,
-                ClaudeLoginTarget(ClaudeHead(key, separate), separate.resolve(".claude.json")),
-                stores,
+                ClaudeLoginTarget(own, home.resolve(".claude.json")),
+                paths.stateDir.resolve("claude-logins").resolve("native"),
             ),
         )
     }

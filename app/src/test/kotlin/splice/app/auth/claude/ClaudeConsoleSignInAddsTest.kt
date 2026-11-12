@@ -116,33 +116,32 @@ class ClaudeConsoleSignInAddsTest {
     }
 
     @Test
-    fun `Sign in on a Claude Code login card adds an account while sessions on the head, unknown and direct run`() {
+    fun `Sign in on the Claude Code login card adds an account while sessions on the head, unknown and direct run`() {
         rig.sessions("head", "unknown", "direct")
 
         rig.plan("paste")
-        val first = rig.signIn("claude-splice", code = "uuid-first")
+        val first = rig.signIn("claude", code = "uuid-first")
         rig.plan("ok uuid-second")
         val second = rig.signIn("claude")
 
-        assertEquals("signed_in", first.state, "the claude-splice card's Sign in: $first")
-        assertEquals("signed_in", second.state, "the claude card's Sign in again: $second")
+        assertEquals("signed_in", first.state, "the card's Sign in: $first")
+        assertEquals("signed_in", second.state, "the card's Sign in again: $second")
         assertEquals(setOf("uuid-first", "uuid-second"), rig.accountUuids(), "both are the command's accounts now")
     }
 
     @Test
     fun `the login running sessions use is untouched byte for byte, and the login it has selected stays selected`() {
-        rig.login(rig.spliceDir, rig.spliceDir.resolve(".claude.json"), "uuid-live")
-        rig.login(rig.nativeDir, rig.home.resolve(".claude.json"), "uuid-own")
+        rig.login(rig.nativeDir, rig.nativeDir.resolve(".claude.json"), "uuid-live")
         val store = ClaudeLogins(rig.paths.stateDir.resolve("claude-logins"))
-        val seeded = store.login(ClaudeHead(HEAD, rig.spliceDir), "work", HeadSessions.Read(emptyList()))
+        val seeded = store.login(ClaudeHead(HEAD, rig.nativeDir), "work", HeadSessions.Read(emptyList()))
         assertEquals("work", store.selected(), "the store selects the live login it saved: $seeded")
         val before = rig.live()
 
         rig.plan("ok uuid-new")
-        val added = rig.signIn("claude-splice")
+        val added = rig.signIn("claude")
 
         assertEquals("signed_in", added.state, added.toString())
-        assertEquals(before, rig.live(), "neither command's live login changed")
+        assertEquals(before, rig.live(), "the live login did not change")
         assertEquals("work", store.selected(), "the selected login is still the one sessions use")
         assertEquals(setOf("uuid-new"), rig.accountUuids())
     }
@@ -150,15 +149,15 @@ class ClaudeConsoleSignInAddsTest {
     @Test
     fun `an account the command already holds answers Already added, and nothing changes`() {
         rig.plan("ok uuid-added")
-        assertEquals("signed_in", rig.signIn("claude-splice").state)
+        assertEquals("signed_in", rig.signIn("claude").state)
         rig.login(rig.nativeDir, rig.home.resolve(".claude.json"), "uuid-own")
         val accounts = rig.accounts()
         val before = rig.live()
 
         rig.plan("ok uuid-added")
-        val again = rig.signIn("claude-splice")
+        val again = rig.signIn("claude")
         rig.plan("ok uuid-own")
-        val own = rig.signIn("claude-splice")
+        val own = rig.signIn("claude")
 
         assertEquals(Triple("failed", "already_added", accounts.single().label), again.outcome(), "$again")
         assertEquals(Triple("failed", "already_added", "claude"), own.outcome(), "the claude login holds it: $own")
@@ -171,7 +170,7 @@ class ClaudeConsoleSignInAddsTest {
     fun `a completed sign-in leaves no scratch folder and no credential behind`() {
         val before = rig.live()
         rig.plan("ok uuid-card")
-        val card = rig.signIn("claude-splice")
+        val card = rig.signIn("claude")
         rig.plan("ok uuid-tile")
         val tile = rig.add()
 
@@ -185,7 +184,7 @@ class ClaudeConsoleSignInAddsTest {
         val before = rig.live()
         rig.plan("fail uuid-gone")
 
-        val card = rig.signIn("claude-splice")
+        val card = rig.signIn("claude")
         val tile = rig.add()
 
         assertEquals(listOf("not_completed", "not_completed"), listOf(card.kind, tile.kind), "$card / $tile")
@@ -198,7 +197,7 @@ class ClaudeConsoleSignInAddsTest {
     fun `an expired sign-in leaves no scratch folder and no credential behind`() {
         val before = rig.live()
         rig.plan("wait uuid-late")
-        val card = rig.startCard("claude-splice")
+        val card = rig.startCard("claude")
         val tile = rig.startTile()
         rig.awaitCard(card) { it.state == "waiting" }
         rig.awaitTile(tile) { it.state == "waiting" }
@@ -216,7 +215,7 @@ class ClaudeConsoleSignInAddsTest {
     fun `a cancelled sign-in leaves no scratch folder and no credential behind`() {
         val before = rig.live()
         rig.plan("wait uuid-stopped")
-        val card = rig.startCard("claude-splice")
+        val card = rig.startCard("claude")
         val tile = rig.startTile()
         rig.awaitCard(card) { it.state == "waiting" }
         rig.awaitTile(tile) { it.state == "waiting" }
@@ -233,11 +232,11 @@ class ClaudeConsoleSignInAddsTest {
     @Test
     fun `Cancel then Sign in again on the same card starts a new sign-in instead of refusing`() {
         rig.plan("wait uuid-walked-away")
-        val walkedAway = rig.startCard("claude-splice")
+        val walkedAway = rig.startCard("claude")
         rig.awaitCard(walkedAway) { it.state == "waiting" }
 
         rig.plan("ok uuid-again")
-        val again = rig.signIn("claude-splice")
+        val again = rig.signIn("claude")
 
         assertEquals("signed_in", again.state, again.toString())
         assertTrue("uuid-again" in rig.accountUuids(), rig.accountUuids().toString())
@@ -271,7 +270,6 @@ private data class Seen(
 private class Rig(root: Path) : AutoCloseable {
     val home: Path = root.resolve("home")
     val paths = StatePaths(baseOverride = home.resolve(".splice").resolve("state"))
-    val spliceDir: Path = home.resolve(".claude-$HEAD")
     val nativeDir: Path = home.resolve(".claude")
 
     // The daemon's own scope runs on virtual time, so a sign-in's ten minutes can pass in a moment.
@@ -361,10 +359,8 @@ private class Rig(root: Path) : AutoCloseable {
         ClaudeCredentialProfiles(paths.stateDir, {}).observed(digest, ClaudeAccountIdentity(account, null))
     }
 
-    /** Both commands' live login files, as they read now. */
+    /** The live login files, as they read now. */
     fun live(): Map<String, String?> = listOf(
-        spliceDir.resolve(".credentials.json"),
-        spliceDir.resolve(".claude.json"),
         nativeDir.resolve(".credentials.json"),
         home.resolve(".claude.json"),
     ).associate { it.toString() to if (Files.exists(it)) Files.readString(it) else null }

@@ -75,7 +75,12 @@ public class HeadServer(
     init {
         // Failure-handling slice 5: a login joining the head and a quota reading turned allowed each wake its held turns.
         val holds = deps.traffic.liveTurns.holds
-        deps.quotaBundle.accountPool?.onJoined = Runnable { holds.joined() }
+        // The journal says when it happened: on Nov 12, 2026 a login was added while eleven turns waited, and no line
+        // told whether any of them had heard it.
+        deps.quotaBundle.accountPool?.onJoined = Runnable {
+            val waiting = holds.joined()
+            if (waiting > 0) deps.log("[${provider.key}] a login joined: $waiting waiting turn(s) asked to move\n")
+        }
         deps.quotaBundle.onAllowed { holds.allowed() }
     }
 

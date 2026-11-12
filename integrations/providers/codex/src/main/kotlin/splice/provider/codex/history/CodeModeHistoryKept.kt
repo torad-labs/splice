@@ -12,6 +12,9 @@ internal class CodeModeHistoryKept(
     /** Removes the journals of conversations last used before [beforeMs] that no request holds now. */
     fun sweep(beforeMs: Long): CodeModeHistorySwept? = storage?.sweep(beforeMs, ledger.hot())
 
+    /** #525: the conversations whose history is held in memory now, which a retiring head lets go. */
+    fun hot(): Set<String> = ledger.hot()
+
     /** The history files of the conversations held in memory now, which a Settings clear leaves on the disk. */
     fun inUse(): Set<Path> = storage?.files(ledger.hot()).orEmpty()
 }

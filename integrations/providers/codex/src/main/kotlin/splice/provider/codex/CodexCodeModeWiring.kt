@@ -40,8 +40,9 @@ public class CodexCodeModeWiring(
     internal fun turnBuilder(media: ResponsesToolResultMedia): CodexCodeModeTurnBuilder =
         CodexCodeModeTurnBuilder(bridge, media, models, onlyModels, originalImageModels, settings)
 
-    /** Whether this head runs code mode at all: it has a cell runtime. */
-    internal val runs: Boolean get() = bridge != null
+    internal fun onHeadRetire() {
+        bridge?.onHeadRetire()
+    }
 
     internal fun onHeadStop() {
         bridge?.onHeadStop()

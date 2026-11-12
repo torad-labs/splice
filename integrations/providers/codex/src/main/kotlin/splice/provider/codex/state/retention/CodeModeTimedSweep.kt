@@ -49,6 +49,9 @@ internal class CodeModeTimedSweep(
         private set
     private var terminal: Runnable? = null
     private var released = false
+
+    /** #525: the head retired; this timer never runs again in this process. */
+    private var retired = false
     internal var nativeOwned: CodeModeSweepOwnership? = null
 
     /** A sweep changed the records and could not save them yet; the next sweep saves again. */
@@ -62,11 +65,19 @@ internal class CodeModeTimedSweep(
         monitor.withLock { arm() }
     }
 
+    /** #525 (2026-11-12): the head retires. The timer stops for good: a sweep would save and delete conversations
+     *  the next daemon owns from here on. The final stop ([finish]) still runs its one sweep. */
+    fun retire() = synchronized(lifecycle) {
+        retired = true
+        running?.cancel(false)
+        running = null
+    }
+
     /** Under [monitor]: starts the sweeps when a record is kept and none run. */
     fun arm() {
         val retained = records.isNotEmpty() || history.entries.isNotEmpty() || terminal != null ||
             nativeOwned?.retained() == true || store.cold.retained
-        if (released) return
+        if (released || retired) return
         if (running == null && retained) running = CodeModeSweeps.every(interval) { sweep() }
     }
 

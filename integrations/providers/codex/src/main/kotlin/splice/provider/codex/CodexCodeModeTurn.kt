@@ -42,7 +42,9 @@ internal class CodexCodeModeTurn(
     private val identity = CodeModeTurnIdentity()
     private val notes = CodeModeTurnNotes(registry, log)
     private val branch = CodexCodeModeBranch(registry, driver, machine, validation, log)
-    private val locks = CodeModeTurnLocks()
+
+    /** The conversations' turn locks; a retiring head hands its conversations over through them (#525). */
+    val locks = CodeModeTurnLocks()
 
     private val placement = CodeModeOwnerPlacement(registry, wire, machine, log)
 
@@ -52,6 +54,8 @@ internal class CodexCodeModeTurn(
         val held = input.post.perf?.timed(PerfKeys.CODE_MODE_TURN_LOCK_WAIT_MS) { locks.acquire(branchKey, key) }
             ?: locks.acquire(branchKey, key)
         return try {
+            // #525 (2026-11-12): a conversation the retiring daemon still held at boot is read once it lets go.
+            registry.adoption.await(key)
             registry.cache.acquire(key)
             try {
                 runHeld(input, key)

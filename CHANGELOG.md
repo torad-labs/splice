@@ -45,17 +45,19 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   holds 32,768 records, and one reply reads the settings, the teams and each login's name once. The reply is
   unchanged.
 - **A restart no longer cuts an answer that is already arriving on a Grok, OpenAI or OpenRouter command, on any
-  other command that speaks the chat-completions API, or on a ChatGPT command with code mode off.** Only a
-  command that speaks Anthropic's API kept such an answer until now (#523). A chat-completions turn keeps
+  other command that speaks the chat-completions API, or on a ChatGPT command, whether or not it runs code mode.**
+  Only a command that speaks Anthropic's API kept such an answer until now (#523). A chat-completions turn keeps
   nothing on disk, so it only had to be allowed. A Responses turn (Grok, OpenAI, ChatGPT) keeps its
   conversation's reasoning on disk, and the next daemon read that directory once, at its first request: an
   answer finished after that would have left the conversation's next turn without its reasoning. The retiring
   daemon now writes each record to disk before it hands the client the end of the answer, and the next daemon
-  reads a conversation's file again when another daemon has written it. Still cut, as before: a ChatGPT command
-  that runs code mode, which it does unless its provider sets `code_mode = false` (its cells live in the daemon
-  that started them, and the next daemon marks their records lost when it starts, #525); a Muse command (it
-  keeps where each conversation runs in a file two daemons would write over); and a local runtime with
-  `slot_affinity` on (the next daemon would hand the answer's slot to another conversation).
+  reads a conversation's file again when another daemon has written it. A ChatGPT command that runs code mode
+  keeps each conversation it is answering in the retiring daemon until that answer ends, and the next daemon
+  reads the conversation from disk at its next request, so that request carries the scripts the answer ran (#525).
+  A script that was still running, or waiting on Claude Code, when the answer ended does not survive the restart:
+  the model is told once that it was lost and runs it again. Still cut, as before: a Muse command (it keeps where
+  each conversation runs in a file two daemons would write over), and a local runtime with `slot_affinity` on
+  (the next daemon would hand the answer's slot to another conversation).
 - **Accounts and `splice status` show a login out of a model from the moment its provider refuses it there.**
   splice keeps two records about a login: the usage its provider last reported, and a hold it sets when the
   provider refuses a turn, which lasts until the reset the refusal named and decides where the next turn goes.

@@ -68,6 +68,9 @@ internal class CodeModeStreams(
     private val rounds = ConcurrentHashMap<String, CodeModeLiveRound>()
     private val reading: MutableSet<CodeModeLiveRound> = ConcurrentHashMap.newKeySet()
 
+    /** #525: the conversation each reading round was begun for, so a retiring head can stop one conversation's. */
+    private val readingKeys = ConcurrentHashMap<CodeModeLiveRound, String>()
+
     fun begin(
         context: CodeModeRunContext,
         body: CodeModeBody,
@@ -84,8 +87,12 @@ internal class CodeModeStreams(
     ).also { round ->
         if (CODE_MODE_EARLY_WRITE_TOOL in context.turn.tools) round.switching.streamEarlyWrites()
         reading += round
+        readingKeys[round] = context.key
         context.postedSources += round
-        round.start(scope, post, body) { reading.remove(round) }
+        round.start(scope, post, body) {
+            reading.remove(round)
+            readingKeys.remove(round)
+        }
     }
 
     fun keep(record: CodeModeRecord, round: CodeModeLiveRound, predecessor: CodeModeRecord? = null) {
@@ -202,9 +209,17 @@ internal class CodeModeStreams(
         record.sourceEnd = null
     }
 
-    fun stop() {
-        reading.forEach(CodeModeLiveRound::stop)
-        scope.coroutineContext.cancelChildren()
-        rounds.clear()
+    /** Stops every reading round, or with [key] only that conversation's (#525, 2026-11-12: a retiring head lets
+     *  go of a conversation while the others it still answers read on). */
+    fun stop(key: String? = null) {
+        if (key == null) {
+            reading.forEach(CodeModeLiveRound::stop)
+            scope.coroutineContext.cancelChildren()
+            rounds.clear()
+            return
+        }
+        val owned = reading.filter { readingKeys[it] == key || it.key == key } + rounds.values.filter { it.key == key }
+        owned.distinct().forEach(CodeModeLiveRound::stop)
+        rounds.entries.removeIf { (_, round) -> round.key == key }
     }
 }

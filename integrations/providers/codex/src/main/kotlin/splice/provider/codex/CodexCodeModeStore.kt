@@ -75,7 +75,9 @@ internal class CodexCodeModeStore(
     private val keyLocks = access?.keys ?: CodeModeKeyLocks()
     private val journal = CodeModeJournalText(json)
     private val dir = location.dir
-    private val files = CodeModeStateDirectory(dir, json, log, heap)
+
+    /** The directory's files by conversation key; #525's hand-over finds a conversation's journal through it. */
+    val files = CodeModeStateDirectory(dir, json, log, heap)
 
     @Volatile private var needsSave = false
     private val pendingWrites = AtomicInteger()
@@ -111,7 +113,7 @@ internal class CodexCodeModeStore(
         get() = (kept.keys + cold.keys).flatMapTo(HashSet()) { key ->
             listOf(files.path(key), files.lockPath(key), files.olderPath(key), files.olderLockPath(key))
                 .map { it.toAbsolutePath().normalize() }
-        }
+        } + files.held.inUse()
 
     /** Terminal disposal may drop hot snapshots only after every write and failed purge settles. While the journal is
      *  off, a write it owes does not hold disposal: nothing is kept then, and the owed marks wait for it to come back. */
@@ -131,7 +133,9 @@ internal class CodexCodeModeStore(
     fun load(maxBytes: Long = Long.MAX_VALUE): CodeModePersistedState {
         val coldMarkers = readDirectory(maxBytes)
         val legacy = readLegacy()
-        val carried = legacy.orEmpty().filterKeys { !kept.containsKey(it) && it !in cold }
+        val carried = legacy.orEmpty().filterKeys {
+            !kept.containsKey(it) && it !in cold && !files.held.holds(files.path(it))
+        }
         val stays = "${location.legacyFile.fileName} stays"
         val written = carried.count { (key, conversation) -> checkpoint(key, conversation, stays) }
         if (legacy != null && written == carried.size) {
@@ -177,7 +181,9 @@ internal class CodexCodeModeStore(
             return
         }
         // Absence from the hot list is not deletion: a cold conversation still lives in its journal.
-        val selected = (if (retryOnly) keys.intersect(failedKeys) else keys) - cold.keys
+        // #525: a conversation a retiring daemon let go is the next daemon's; this one never writes it again.
+        val asked = (if (retryOnly) keys.intersect(failedKeys) else keys) - cold.keys
+        val selected = asked.filterTo(HashSet(), files.writes::allows)
         val retryKeys = selected.intersect(failedKeys)
         pendingWrites.incrementAndGet()
         failedKeys.addAll(selected)
@@ -203,6 +209,8 @@ internal class CodexCodeModeStore(
     }
 
     private fun persist(item: Prepared) {
+        // #525: the same fence as [save], at the one place every write and removal of a conversation passes.
+        if (!files.writes.allows(item.key)) return
         val progress = WriteProgress()
         try {
             val conversation = item.conversation

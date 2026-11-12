@@ -10,6 +10,8 @@ import splice.core.util.SafeFailureText
 import splice.provider.codex.CodeModeExpiredSnapshot
 import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.CodeModeRecordSnapshot
+import splice.provider.codex.state.handover.CodeModeHeldJournals
+import splice.provider.codex.state.handover.CodeModeWriteScope
 import splice.upstream.memory.JvmHeap
 import java.io.IOException
 import java.nio.file.Files
@@ -25,6 +27,14 @@ internal class CodeModeStateDirectory(
     private val heap: HeapReservations = JvmHeap.budget,
 ) {
     data class Loaded(val state: CodeModePersistedState, val checkpoint: Boolean)
+
+    /** #525: the conversations a retiring daemon still held when this one listed the directory. */
+    val held = CodeModeHeldJournals(dir, log)
+
+    /** #525 (2026-11-12): the conversations this daemon may write. All of them until its head retires; after it,
+     *  only those it still holds. Every write, rename and delete of a conversation's files passes here
+     *  ([splice.provider.codex.CodexCodeModeStore]). */
+    val writes = CodeModeWriteScope()
 
     private data class OnDisk(val path: Path, val key: String, val state: CodeModePersistedState, val liveBytes: Long) {
         val updatedAt: Long = maxOf(
@@ -42,8 +52,10 @@ internal class CodeModeStateDirectory(
             log("[code-mode] $dir not listed (${SafeFailureText.render(failure)}): its conversations are not restored")
             return emptySequence()
         }
-        dropOrphanLocks(listed)
-        val files = listed.filter { FILE_NAME.matches(it.fileName.toString()) }
+        // #525: a conversation another daemon still holds is not read, rewritten or deleted, nor its lock dropped.
+        val free = held.scan(listed)
+        dropOrphanLocks(free)
+        val files = free.filter { FILE_NAME.matches(it.fileName.toString()) }
         // Decode one conversation at a time: cold journals must not all become resident at boot.
         return files.groupBy { it.fileName.toString().substringBefore('.') }.values.asSequence().mapNotNull { paths ->
             val versions = paths.mapNotNull(::read)
@@ -67,6 +79,18 @@ internal class CodeModeStateDirectory(
         val keys = state.records.map { it.key } + state.expired.map { it.key }
         require(state.records.isNotEmpty() && keys.all { it == key }) {
             "cold code-mode journal belongs to another conversation"
+        }
+        CodeModeStateJournal.liveBytes(state, json, heap)
+        return state
+    }
+
+    /** #525: a conversation that was held elsewhere at boot, read whole once its hold is free; null when it has no
+     *  journal yet, which is a new conversation. A journal of another conversation is refused, as [restore] does. */
+    fun reload(key: String): CodeModePersistedState? {
+        if (Files.notExists(path(key))) return null
+        val state = CodeModeStateJournal.read(path(key), json, heap)
+        require((state.records.map { it.key } + state.expired.map { it.key }).all { it == key }) {
+            "held code-mode journal belongs to another conversation"
         }
         CodeModeStateJournal.liveBytes(state, json, heap)
         return state

@@ -176,7 +176,7 @@ class RestartThroughUnitTest {
             val restarted = command(tmp, daemon.port, ctl).restart(NEW, waitForCompactions = false)
             val said = lines.joinToString("\n")
             assertTrue(restarted, "the restart must report the next daemon up:\n$said")
-            assertTrue("An answer already arriving on a command that speaks Anthropic's API finishes" in said, said)
+            assertTrue("An answer already arriving finishes, except on a Muse command" in said, said)
             assertFalse("restarting $UNIT" in said, "the unit was restarted whole:\n$said")
         } finally {
             daemon.close()

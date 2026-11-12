@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.util.LogSink
 import splice.core.util.WallClock
+import splice.head.trace.body.TraceStop
+import splice.head.trace.body.TraceStopFile
 import java.nio.file.Path
 
 private const val FLOOR = "trace volume free-space floor reached"

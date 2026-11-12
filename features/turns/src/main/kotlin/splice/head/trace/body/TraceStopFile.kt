@@ -1,7 +1,7 @@
 // NEW: #518. When a head's trace stopped saving is kept across a restart. TraceSwitch held the first refusal's time in
 // memory only, so a restart forgot it and Settings showed the first refusal since that start: on Nov 11, 2026 the card
 // read "Saving stopped 6:37 PM" a minute after a restart at 6:37 PM, while nothing had been saved since 6:00 PM.
-package splice.head.wire
+package splice.head.trace.body
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
@@ -57,6 +57,9 @@ public class TraceStopFile(private val path: Path, private val log: LogSink = Lo
         },
     )
 }
+
+/** A trace that stopped saving: the first refusal's time in epoch milliseconds, and the store's own reason. */
+public data class TraceStop(val atEpochMs: Long, val reason: String)
 
 private const val STOPPED_AT = "at_epoch_ms"
 private const val STOP_REASON = "reason"

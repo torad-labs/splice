@@ -8,6 +8,8 @@ package splice.head.wire
 
 import splice.core.util.WallClock
 import splice.head.trace.body.TraceBodySaves
+import splice.head.trace.body.TraceStop
+import splice.head.trace.body.TraceStopFile
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
@@ -49,6 +51,3 @@ public class TraceSwitch(
         flag.set(enabled)
     }
 }
-
-/** A trace that stopped saving: the first refusal's time in epoch milliseconds, and the store's own reason. */
-public data class TraceStop(val atEpochMs: Long, val reason: String)

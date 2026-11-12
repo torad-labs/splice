@@ -649,7 +649,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     ),
     // Nov 12, 2026 (#518): when a head's trace stopped saving, a time and a fixed reason, owner-only and atomic, in
     // the trace directory beside the head's day files, so a restart still shows when saving first stopped.
-    "features/turns/src/main/kotlin/splice/head/wire/TraceStopFile.kt" to mapOf(
+    "features/turns/src/main/kotlin/splice/head/trace/body/TraceStopFile.kt" to mapOf(
         "writeAtomic0600(" to 1,
     ),
     // Nov 12, 2026: the hold a refusal put on one login, owner-only and atomic, beside that login's provider-hold file,

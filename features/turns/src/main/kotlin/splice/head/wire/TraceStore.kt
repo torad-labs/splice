@@ -27,6 +27,7 @@ import splice.core.storage.DayRecord
 import splice.core.turn.TurnMeta
 import splice.core.util.WallClock
 import splice.head.trace.body.TraceBodies
+import splice.head.trace.body.TraceStopFile
 import splice.upstream.memory.JvmHeap
 import java.nio.file.Path
 import java.util.UUID

@@ -7,11 +7,14 @@ import splice.core.memory.HeapOwners
 import splice.core.memory.HeapRelease
 import splice.core.memory.HeapReservations
 
-// why: The 2,048-record cap bounds metadata count without dropping sessions from listings.
-private const val MAX_SEEN_CACHE_ENTRIES = 2_048
+// why: A listing walks every kept record in one fixed order, so a cap under their number evicts each record just
+// before it is asked for again and every listing rereads them all: at 2,048 with 3,141 ended sessions kept, one
+// /api/sessions reply read 14.8 MiB in 32,000 reads (Nov 12, 2026). 32,768 holds about three months of a heavy
+// machine's sessions; past it eviction still only forces a reread.
+private const val MAX_SEEN_CACHE_ENTRIES = 32_768
 
-// why: 4 MiB caps retained metadata and lazy projections; eviction only forces a reread.
-private const val MAX_SEEN_CACHE_BYTES = 4L shl 20
+// why: about 900 bytes a record, so 32 MiB holds the entry cap above with room for long names and folders.
+private const val MAX_SEEN_CACHE_BYTES = 32L shl 20
 
 // why: 16 starts small registries cheaply and grows only as records are cached.
 private const val SEEN_CACHE_INITIAL_CAPACITY = 16

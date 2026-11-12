@@ -4,6 +4,8 @@ package splice.upstream.credentials
 import splice.core.auth.CredentialFileIdentity
 import splice.core.failure.AccountBlock
 import splice.core.util.WallClock
+import splice.upstream.retry.LoginHoldStore
+import splice.upstream.retry.SavedLoginHold
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
@@ -18,9 +20,10 @@ private val nextProbeToken = AtomicLong()
 internal class AccountCredentialEligibility(
     identitySource: AccountCredentialIdentitySource?,
     configuredCredentialPresent: Boolean,
+    kept: LoginHoldStore? = null,
 ) {
     private val evidence = CredentialEvidence(identitySource, configuredCredentialPresent)
-    private val state = AtomicReference(evidence.initialState())
+    private val state = KeptState(evidence, kept)
 
     /** A lease to send on this login, or null while it may not: no credential, a hold, or a probe already in flight.
      *  A login its provider blocked until its owner acts ([AccountBlock]) is held from the turns another login can
@@ -195,6 +198,26 @@ internal class AccountCredentialEligibility(
         val block: AccountBlock? = null,
     )
 
+    /** The login's state. Its hold is written to [kept] at each change and put back from it at the start, so a
+     *  restart does not send the next turns to a login its provider has just refused (Nov 12, 2026). */
+    private class KeptState(evidence: CredentialEvidence, private val kept: LoginHoldStore?) {
+        private val now = AtomicReference(evidence.initialState().restored(kept, evidence))
+
+        fun get(): State = now.get()
+
+        fun compareAndSet(current: State, updated: State): Boolean {
+            if (!now.compareAndSet(current, updated)) return false
+            if (updated.hold != current.hold || updated.failureCount != current.failureCount) keep()
+            return true
+        }
+
+        /** Writes the hold as it stands at this moment, so of two changes in a row the later one is the one kept. */
+        @Synchronized
+        private fun keep() {
+            kept?.save(now.get().saved())
+        }
+    }
+
     private class CredentialEvidence(
         private val source: AccountCredentialIdentitySource?,
         private val configuredCredentialPresent: Boolean,
@@ -303,6 +326,23 @@ internal class AccountCredentialEligibility(
             probeToken = null,
             generation = generation + 1L,
         )
+
+        /** This login's hold as a restart keeps it; null when nothing holds the login. */
+        fun saved(): SavedLoginHold? =
+            hold?.let { SavedLoginHold(it.untilEpochMillis, failureCount, it.block, it.account, identity) }
+
+        /** The state a start begins from. What [kept] holds stands again on the credential it was put on: the same
+         *  account where the provider blocked the account, the same file otherwise. On any other credential, or on
+         *  none, it is dropped: a sign-in while the daemon was down is a new credential, which ends a hold. */
+        fun restored(kept: LoginHoldStore?, source: CredentialEvidence): State {
+            val saved = kept?.load() ?: return this
+            val hold = Hold(saved.untilEpochMillis, saved.block, saved.account)
+            val sameFile = saved.identity != null && saved.identity == identity
+            val stands = credentialPresent && if (saved.block != null) hold.blocks(source) else sameFile
+            if (stands) return copy(failureCount = saved.failureCount, hold = hold)
+            kept?.save(null)
+            return this
+        }
     }
 
     /** A hold on this login after its provider refused it, until [untilEpochMillis]. With [block], the provider refused

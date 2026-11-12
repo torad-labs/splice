@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.Credentials
@@ -19,10 +20,13 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.failure.AccountBlock
 import splice.core.failure.OwnerStep
 import splice.core.util.ElapsedClock
+import splice.core.util.LogSink
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialEvidence
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialFileEvidenceReader
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialPresence
+import splice.upstream.retry.FileProviderHoldStore
 import splice.upstream.retry.RateLimitCooldown
+import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicInteger
 
 class AccountCredentialEligibilityTest {
@@ -300,6 +304,53 @@ class AccountCredentialEligibilityTest {
         asked.markTurnSucceeded()
 
         assertNull(pool.view(null).accounts.single { it.primary }.credential.block)
+    }
+
+    @Test
+    fun `a login its provider blocked is still blocked after a restart, until another account signs in there`(
+        @TempDir state: Path,
+    ) {
+        val fixture = AccountPoolTest.Fixture()
+        val kept = FileProviderHoldStore(state.resolve("head-primary-provider-hold.json"), LogSink { })
+        val primary = fixture.keeping(fixture.account("primary", primary = true), kept)
+        val backup = fixture.account("plus-a")
+        val block = AccountBlock(OwnerStep.ALLOW_SUBSCRIPTION_ACCESS, "the organization's settings")
+        fixture.signIn(primary, "account-one")
+        fixture.pool(primary, backup).chosen("refused").markCredentialUnavailable(block)
+
+        val restarted = fixture.pool(primary.copy(), backup)
+
+        assertSame(backup, restarted.chosen("after-restart").account, "the refused login is not asked again")
+        assertEquals(block, restarted.view(null).accounts.single { it.primary }.credential.block)
+
+        fixture.signIn(primary, "account-two")
+        val signedInWhileDown = fixture.pool(primary.copy(), backup)
+
+        assertSame(primary, signedInWhileDown.chosen("new-sign-in").account, "another account is not blocked")
+        assertNull(kept.loginHold().load(), "a hold on the account that left is not kept")
+    }
+
+    @Test
+    fun `a login refused for its credential is still held after a restart, until that file changes`(
+        @TempDir state: Path,
+    ) {
+        val fixture = AccountPoolTest.Fixture()
+        val kept = FileProviderHoldStore(state.resolve("head-primary-provider-hold.json"), LogSink { })
+        val primary = fixture.keeping(fixture.account("primary", primary = true), kept)
+        val backup = fixture.account("plus-a")
+        fixture.pool(primary, backup).chosen("refused").markCredentialUnavailable()
+
+        val restarted = fixture.pool(primary.copy(), backup)
+
+        assertSame(backup, restarted.chosen("after-restart").account, "the refused login is not asked again")
+        assertEquals(
+            fixture.now.get() + 300_000L,
+            restarted.view(null).accounts.single { it.primary }.credential.excludedUntilEpochMillis,
+        )
+
+        fixture.rotateCredential(primary)
+
+        assertSame(primary, fixture.pool(primary.copy(), backup).chosen("new-file").account)
     }
 
     @Test

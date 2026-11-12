@@ -73,6 +73,9 @@ public class RateLimitCooldown public constructor(
     private val providerUnavailableUntilMs = AtomicLong(0L)
 
     private val holds = ProviderHolds(store)
+
+    /** Where the hold a refusal put on this login itself is kept between restarts; none without a store. */
+    public val loginHold: LoginHoldStore? = store?.loginHold()
     private var terminalCause: FailureCause.Provider.Limited? = null
     private var terminalUntilMs = 0L
 

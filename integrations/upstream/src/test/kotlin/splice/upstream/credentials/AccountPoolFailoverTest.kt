@@ -14,7 +14,9 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.usage.ModelQuota
 import splice.core.usage.PlanLimit
+import splice.core.usage.QuotaSnapshot
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 import splice.core.wire.NativeReply
@@ -25,6 +27,7 @@ import java.nio.file.Path
 
 private const val SESSION = "one-command"
 private const val HOUR_S = 3_600L
+private const val FABLE = "claude-fable-5-2"
 
 class AccountPoolFailoverTest {
 
@@ -35,6 +38,23 @@ class AccountPoolFailoverTest {
         }
 
     private fun wallSeconds(): Long = System.currentTimeMillis() / 1_000L
+
+    /** The login a new session's turn of [model] is sent to. */
+    private fun AccountPool.chosenFor(model: String, sessionId: String): String =
+        when (val selection = select(sessionId, emptySet(), null, model)) {
+            is Selection.Chosen -> selection.account.account.label
+            is Selection.Exhausted -> throw AssertionError("expected a chosen login, got exhausted")
+        }
+
+    /** A reading whose Fable week reads [percent], taken at [at]: each is its own, as the provider gives them. */
+    private fun AccountPoolTest.Fixture.fableAt(percent: Double, at: Long): QuotaSnapshot =
+        quota().copy(models = listOf(ModelQuota("Fable", percent)), updatedAt = at)
+
+    /** Anthropic's refusal of a Fable turn on [account]: that model's week, spent until tomorrow. */
+    private fun spendFable(account: PoolAccount) {
+        val week = PlanLimit("seven_day_overage_included", wallSeconds() + 24 * HOUR_S, model = FABLE)
+        account.cooldown.planHold.hold(week) {}
+    }
 
     private fun reply(label: String): NativeReply = NativeReply(
         """{"type":"error","error":{"type":"rate_limit_error","message":"limit reached for $label"}}""",
@@ -89,6 +109,55 @@ class AccountPoolFailoverTest {
 
         assertEquals("two", pool.nextTargetLabel(model = pool.asked.usual()), "one's week for that model is used up")
         assertEquals("one", pool.nextTargetLabel(model = "haiku"), "and it still serves another model")
+    }
+
+    @Test
+    fun `a login reset at its provider takes the model's turns again before the reset its refusal named`() {
+        val fixture = AccountPoolTest.Fixture()
+        val one = fixture.account("one", primary = true, quota = fixture.fableAt(100.0, at = 1L))
+        val two = fixture.account("two")
+        val pool = fixture.pool(one, two).also { it.order = listOf("one", "two") }
+        spendFable(one)
+        assertEquals("two", pool.chosenFor(FABLE, "first"), "one's Fable week is used up until tomorrow")
+        val heard = mutableListOf<String>()
+        pool.joins.onEarlyReset = EarlyResetHeard { label, ended -> heard += "$label: $ended" }
+        val joinsBefore = pool.joins.count
+
+        // The person resets the login at the provider: its next reading shows the week at nothing.
+        fixture.setQuota(one, fixture.fableAt(0.0, at = 2L))
+
+        assertEquals("one", pool.chosenFor(FABLE, "second"), "the reading shows the week reset, so the hold ended")
+        assertEquals(listOf("one: [$FABLE]"), heard, "and the journal is told which login and which window")
+        assertEquals(joinsBefore + 1, pool.joins.count, "and every waiting turn is asked to move")
+    }
+
+    @Test
+    fun `a week that read below full before its refusal stays held while it reads the same`() {
+        val fixture = AccountPoolTest.Fixture()
+        val one = fixture.account("one", primary = true, quota = fixture.fableAt(99.0, at = 1L))
+        val two = fixture.account("two")
+        val pool = fixture.pool(one, two).also { it.order = listOf("one", "two") }
+        assertEquals("one", pool.chosenFor(FABLE, "first"), "the reading is a few minutes old and shows room")
+        spendFable(one)
+
+        // An answer for another model on the same login carries the same Fable figure in a newer reading.
+        fixture.setQuota(one, fixture.fableAt(99.0, at = 2L))
+
+        assertEquals("two", pool.chosenFor(FABLE, "second"), "the figure did not fall, so the refusal still stands")
+    }
+
+    @Test
+    fun `a login whose whole week reads reset comes back for every model`() {
+        val fixture = AccountPoolTest.Fixture()
+        val one = fixture.account("one", primary = true, quota = fixture.quota(weekly = 100.0))
+        val two = fixture.account("two")
+        val pool = fixture.pool(one, two).also { it.order = listOf("one", "two") }
+        holdRefusal(one, 24 * HOUR_S)
+        assertEquals("two", pool.chosen("first"), "one's week is used up until tomorrow")
+
+        fixture.setQuota(one, fixture.quota(weekly = 0.0))
+
+        assertEquals("one", pool.chosen("second"), "its week reads reset")
     }
 
     @Test

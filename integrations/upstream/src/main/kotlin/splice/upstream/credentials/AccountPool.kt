@@ -10,7 +10,6 @@ import splice.core.failure.AccountBlock
 import splice.core.util.LruSizing
 import splice.core.util.WallClock
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 private const val MAX_TRACKED_SESSIONS = 4_096
@@ -76,17 +75,9 @@ public class AccountPool(
             return current
         }
 
-    /** Hears a login join the pool: the head's held turns may move to it (failure-handling slice 5). */
-    @Volatile
-    public var onJoined: Runnable? = null
-
-    private val joined = AtomicLong(0L)
-
-    /** How many times a login became one a waiting turn may take: a label the pool did not hold, a label that now
-     *  sends another credential (Claude Code signed in to another account in the same place), or a login the person
-     *  said to ask again. A turn that a login refused before the newest of these may be offered that login again:
-     *  what was refused then may be another account now, and a login still spent is kept out by its own hold. */
-    public val joins: Long get() = joined.get()
+    /** The pool's word that a login became one a waiting turn may take, and who hears it: the head's held turns may
+     *  move to that login (failure-handling slice 5). */
+    public val joins: PoolJoins = PoolJoins().also { it.hears(accounts) }
 
     /** Hears the pins that let go at a limit reading, so the saved pins let go too and a restart does not restore them. */
     @Volatile
@@ -95,16 +86,14 @@ public class AccountPool(
     /** Publishes membership only. Existing session choices, order, cooldown objects and leased turns survive. A label
      *  the pool did not hold before is a login that joined, and so is a label that now sends another credential: on
      *  Nov 12, 2026 Claude Code was signed in to an account with room while eleven turns waited on a spent model, the
-     *  label stayed native:claude, and no waiting turn moved. [onJoined] hears both. */
+     *  label stayed native:claude, and no waiting turn moved. [joins] hears both. */
     public var members: List<PoolAccount>
         get() = membership.get().accounts
         set(accounts) {
             val updated = AccountMembership(accounts)
+            joins.hears(accounts)
             val before = synchronized(membershipMonitor) { membership.getAndSet(updated) }
-            if (updated.accounts.any { before.byLabel[it.label]?.auth !== it.auth }) {
-                joined.incrementAndGet()
-                onJoined?.run()
-            }
+            if (updated.accounts.any { before.byLabel[it.label]?.auth !== it.auth }) joins.joined()
         }
 
     /** A forwarded caller alone is the legacy path, not a choice between stored logins. */
@@ -367,12 +356,11 @@ public class AccountPool(
      *  account's, not the credential's. A credential file the client rewrites by itself does none of this; only the
      *  person's own act does. Until Nov 11, 2026 a login whose organization's payment was fixed was not asked again,
      *  signed in again or not, until its hold ran out. The turns waiting on other logins hear it as a login that
-     *  joined ([onJoined]). False when [label] names no account here. */
+     *  joined ([joins]). False when [label] names no account here. */
     public fun askAgain(label: String): Boolean {
         val account = liveMembership.byLabel[label] ?: return false
         account.askCredentialAgain(now())
-        joined.incrementAndGet()
-        onJoined?.run()
+        joins.joined()
         return true
     }
 

@@ -58,6 +58,11 @@ public class QuotaTracker(
     @Volatile
     public var onAllowed: Runnable? = null
 
+    /** Hears each reading once it is kept: the login it belongs to weighs it against its plan holds, which a reading
+     *  that shows a window reset before its time ends (PlanHold.weigh). */
+    @Volatile
+    public var onRecorded: Runnable? = null
+
     public fun snapshot(): QuotaSnapshot? = latest.get()
 
     /** Latest wins. Persisted at once: a snapshot arrives at most once per round or per poll. A provider's answer
@@ -77,6 +82,7 @@ public class QuotaTracker(
         if (wasFull && nowAllowed) {
             onAllowed?.run()
         }
+        onRecorded?.run()
     }
 
     private fun keep(snapshot: QuotaSnapshot) {

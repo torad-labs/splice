@@ -205,7 +205,9 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
             // The session's own next login: a session pinned before its first turn shows that pin, not the head's pick.
             // For the model the command's turns ask for, as the order route answers: asked with none, `splice status`
             // read "on" a login whose week had room and that had used up the model every session ran (Nov 12, 2026).
-            next = pool.asked.usual().let { model -> HeadNextTarget(pool.nextTargetLabel(sessionId, model), model) },
+            next = pool.asked.usual().let { model ->
+                HeadNextTarget(pool.nextTargetLabel(sessionId, model), model, pool.asked.lately())
+            },
         )
 
         // Synchronized so two presses save in the order they pinned: each save writes the pins as they stand.

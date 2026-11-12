@@ -229,13 +229,15 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
         val plane = plane(file, config, key)
         plane.performance = performance
         val model = ModelEntry("synthetic-model", contextWindow = 4_000)
+        // A second model, as a session's helpers ask for: no login has a week of its own for it.
+        val helper = ModelEntry("small-helper", contextWindow = 4_000)
         val factory = factory(plane, topology, config, key, probes)
         probes?.let { factory.quotaProbes = it }
         val ctx = ProviderBuild(
             NATIVE_HEAD,
             topology.heads.getValue(NATIVE_HEAD).copy(port = 0),
             topology.providers.getValue("native"),
-            ModelCatalog("synthetic--", listOf(model), defaultContextWindow = 4_000),
+            ModelCatalog("synthetic--", listOf(model, helper), defaultContextWindow = 4_000),
             config.getConfig(NATIVE_HEAD),
             UpstreamFaultPlan(WatchdogBudget(60.seconds, 60.seconds, 600.seconds), "synthetic login"),
         )

@@ -5,6 +5,7 @@ package splice.accounts.pool
 
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -46,6 +47,9 @@ public class AccountPoolJson {
             }
             put("next_target_label", view.nextTargetLabel)
             view.usualModel?.let { put("usual_model", it) }
+            view.next.asked.takeIf { it.isNotEmpty() }?.let { asked ->
+                putJsonArray("asked_models") { asked.forEach { add(it) } }
+            }
             putJsonArray("accounts") {
                 view.accounts.forEach { account ->
                     addJsonObject {

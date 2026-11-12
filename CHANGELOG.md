@@ -9,9 +9,11 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   a plan limit is reached, and nothing said when it reached the last. On Nov 12, 2026 every Claude login on one
   machine ran out of Fable one after another and eleven sessions waited three hours, while the person had resets
   to spend (Marcos: "just let me know when we're on the last account close to hit limit and I'll call a
-  reset"). The daemon now checks each command's logins once a minute. When only one can serve the model the
-  command's sessions ask for and it has used 80% of a limit, splice says so, with the login, the limit and when
-  it resets, and says it again at 95%. When no login can serve, it says that and when the first comes back. Each
+  reset"). The daemon now checks each command's logins once a minute, for every model a turn of the command
+  asked for in the last hour, so the turns of helpers on a small model never hide the model the sessions wait
+  on. When only one login can serve a model and it has used 80% of a limit, splice says so, with the login, the
+  limit and when it resets, and says it again at 95%. When no login can serve, it says that and when the first
+  comes back. Each
   is said once, a restart included, and again only when it returns after half an hour of not applying, so a
   login that drops out for a few minutes repeats nothing. It is posted to the webhook saved in the alert settings, and handed to a
   program of your own set in `splice.toml`:

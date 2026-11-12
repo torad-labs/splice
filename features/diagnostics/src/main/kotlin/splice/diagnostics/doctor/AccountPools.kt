@@ -133,6 +133,8 @@ internal class AccountPoolProjection {
             next = HeadNextTarget(
                 label(pool, "next_target_label"),
                 JsonScalars.str(pool, "usual_model")?.takeIf(modelId::matches),
+                (pool["asked_models"] as? JsonArray).orEmpty()
+                    .mapNotNull { asked -> JsonScalars.str(asked)?.takeIf(modelId::matches) },
             ),
             selectionUnknown = missingSelection || droppedSelected,
             blockedUntilEpochSecondsByLabel = rawAccounts.mapNotNull { account ->

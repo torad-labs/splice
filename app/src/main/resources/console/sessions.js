@@ -810,20 +810,22 @@ function rowColsHtml(pieces, n) {
 /** WHY THESE SESSIONS ARE IN NO PROJECT, SAID ONCE (gap: one sentence printed on eight rows, in the code's word for a
  *  folder). Each reason the repo wire gives, once, in plain words, with the folders it holds (round 2: with two
  *  reasons, which folder had which was lost), so the reason is what he acts on. A session with no reason says nothing. */
+// keyed by the name the daemon sends beside its sentence (repo.reason_code); a reason with no name here is said in the
+// daemon's own sentence, tidied
 const REASON_WORD = {
-  "the cwd is not inside a git repository": "Not in a git repository",
-  "the cwd is outside the trusted roots ($HOME, /tmp, statuslineGitRoots), so it was not probed": "Outside the folders splice reads",
-  "the cwd does not exist on this host": "Folder not on this computer",
-  "the cwd is not an absolute path": "Folder path not whole",
+  no_repo: "Not in a git repository",
+  untrusted: "Outside the folders splice reads",
+  missing: "Folder not on this computer",
+  not_absolute: "Folder path not whole",
 };
-const reasonWord = (r) => REASON_WORD[r] ?? String(r).replace(/\(.*?\)/g, "").replace(/\bcwd\b/g, "folder").replace(/\s+/g, " ").trim().replace(/^./, (c) => c.toUpperCase());
+const reasonWord = (repo) => REASON_WORD[repo.reason_code] ?? String(repo.reason).replace(/\(.*?\)/g, "").replace(/\bcwd\b/g, "folder").replace(/\s+/g, " ").trim().replace(/^./, (c) => c.toUpperCase());
 const FOLDERS_SAID = 3;
 function noProjectWhy(rows) {
   const why = new Map();
   for (const s of rows) {
     const r = s.row.repo?.reason;
     if (!r) continue;
-    const whole = s.row.place || s.repo || "", word = reasonWord(r), place = shortPlace(whole);
+    const whole = s.row.place || s.repo || "", word = reasonWord(s.row.repo), place = shortPlace(whole);
     if (!why.has(word)) why.set(word, new Map());
     if (place && !why.get(word).has(place)) why.get(word).set(place, whole);
   }
@@ -1444,7 +1446,7 @@ function factsHtml(s) {
   const chip = (html, cls = "") => `<span class="sx-chip${cls ? ` ${cls}` : ""}">${html}</span>`;
   const where = whereHtml(s, true);
   const place = chip(where || DRAW.dash, "folder");
-  const reason = !s.project && s.row.repo?.reason ? chip(esc(reasonWord(s.row.repo.reason)), "note") : "";
+  const reason = !s.project && s.row.repo?.reason ? chip(esc(reasonWord(s.row.repo)), "note") : "";
   const tree = s.wt && wtWord(s.wt) !== "Worktree" ? chip(`${ICON.branch}<span>${esc(s.wt)}</span>`) : "";
   const team = chip(`${ICON.team}<span>Team</span> ${s.team ? esc(s.team) : DRAW.dash}`);
   const version = chip(`Claude Code ${s.row.version ? esc(s.row.version) : DRAW.dash}`, "mono");

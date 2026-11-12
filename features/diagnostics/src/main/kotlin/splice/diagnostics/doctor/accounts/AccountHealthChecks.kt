@@ -7,8 +7,10 @@ import splice.core.head.ProviderAnswer
 import splice.core.wire.HttpStatus
 import splice.diagnostics.doctor.AccountPoolText
 import splice.diagnostics.doctor.AccountPoolsRead
+import splice.diagnostics.doctor.CheckCause
 import splice.diagnostics.doctor.CheckStatus
 import splice.diagnostics.doctor.DoctorCheck
+import splice.diagnostics.doctor.DoctorCheckNotes
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -64,5 +66,6 @@ internal object AccountHealthChecks {
         } else {
             null
         },
+        notes = DoctorCheckNotes(cause = CheckCause.PROVIDER_REFUSED),
     )
 }

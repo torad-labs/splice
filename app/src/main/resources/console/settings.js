@@ -1955,7 +1955,7 @@ function runStep(output) {
   for (const l of output) {
     if (/restarted, serving/.test(l)) return RUN_STEPS.length;
     if (/stopping daemon/.test(l)) at = Math.max(at, 1);
-    else if (at >= 1 && /waiting up to|in flight|compaction/.test(l)) at = Math.max(at, 2);
+    else if (at >= 1 && /waiting up to/.test(l)) at = Math.max(at, 2);
     else if (/starting the daemon/.test(l)) at = Math.max(at, 3);
   }
   return at;

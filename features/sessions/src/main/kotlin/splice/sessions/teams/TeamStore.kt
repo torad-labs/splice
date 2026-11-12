@@ -122,8 +122,16 @@ internal fun interface TeamEdit {
     public operator fun invoke(team: Team): Team
 }
 
-/** A write the store refused, with the reason the route reports. */
-internal class TeamRefusal(message: String) : IllegalArgumentException(message)
+/** A write the store refused, with the reason the route reports. [code] names the refusals a page words on its own
+ *  (the reply's `code`); null for the rest. */
+internal class TeamRefusal(message: String, val code: TeamRefusalCode? = null) : IllegalArgumentException(message)
+
+/** The refusals of a team's repo, which the Teams page says beside the Repo field. */
+internal enum class TeamRefusalCode(val wire: String) {
+    REPO_NEEDED("repo_needed"),
+    REPO_MISSING("repo_missing"),
+    REPO_NOT_A_DIRECTORY("repo_not_a_directory"),
+}
 
 /** A create that reused an idempotency key with a different body; the route answers 409. */
 internal class TeamKeyConflict(message: String) : IllegalArgumentException(message)

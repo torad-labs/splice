@@ -33,6 +33,8 @@ public class CompactionInstructions(
         val file: Path? = null,
         /** Its `file =` could not be read when the table was built. */
         val unreadable: Boolean = false,
+        /** The model a model or project-model rule is for; null on a rule for every model. */
+        val model: String? = null,
     )
 
     private data class FileText(val modified: FileTime?, val text: String?)
@@ -93,7 +95,7 @@ public class CompactionInstructions(
                 entry.file,
                 CompactionScope.MODEL,
                 "model:${entry.model}",
-            )?.let { entry.model to it }
+            )?.let { entry.model to it.copy(model = entry.model) }
         }.toMap()
         val projects = config.project.mapIndexedNotNull { index, entry ->
             val scope = if (entry.model == null) CompactionScope.PROJECT else CompactionScope.PROJECT_MODEL
@@ -103,7 +105,7 @@ public class CompactionInstructions(
                 "project:${normalizedProjects[index]} model:${entry.model}"
             }
             ruleFor(entry.instructions, entry.file, scope, source)?.let { rule ->
-                ProjectRule(normalizedProjects[index], entry.model, rule)
+                ProjectRule(normalizedProjects[index], entry.model, rule.copy(model = entry.model))
             }
         }
         return Table(config, global, models, projects)
@@ -117,7 +119,7 @@ public class CompactionInstructions(
         val selected = normalized?.let { path -> projectRule(path, model) ?: projectRule(path, null) }
             ?: models[model]
             ?: global
-        return selected?.let { EffectiveCompactionInstructions(currentText(it), it.scope, it.source) }
+        return selected?.let(::effective)
             ?: EffectiveCompactionInstructions(null, CompactionScope.CLIENT, CompactionScope.CLIENT.wire)
     }
 
@@ -142,7 +144,7 @@ public class CompactionInstructions(
         addAll(projects.filter { it.model == null }.map { it.rule })
         addAll(models.values)
         global?.let(::add)
-    }.map { EffectiveCompactionInstructions(currentText(it), it.scope, it.source) }
+    }.map(::effective)
 
     /** The configured rules a compaction in [project] can resolve to, in [resolve]'s precedence:
      *  exactly the distinct outcomes of [resolve] over every model for that project, no more.
@@ -179,7 +181,7 @@ public class CompactionInstructions(
         (projects.map { it.rule } + models.values + listOfNotNull(global)).filter { it.unreadable }.map { it.source }
 
     private fun effective(rule: Rule): EffectiveCompactionInstructions =
-        EffectiveCompactionInstructions(currentText(rule), rule.scope, rule.source)
+        EffectiveCompactionInstructions(currentText(rule), rule.scope, rule.source, rule.model)
 
     /** A file rule's text as of now: re-read when the file's modification time moved since the last
      *  read (one stat per compaction), so an edit is live without a restart and a file that becomes

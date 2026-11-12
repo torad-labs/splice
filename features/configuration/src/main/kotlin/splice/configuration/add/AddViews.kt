@@ -60,6 +60,12 @@ internal class AddViews {
                 put("name", row.name)
                 put("ok", row.ok)
                 put("detail", row.detail)
+                // What the check found, by name, beside its sentence: the page words these and never reads the detail.
+                row.finding?.let { found ->
+                    put("cause", found.cause.wire)
+                    found.status?.let { put("http_status", it) }
+                    found.at?.let { put("at", it) }
+                }
             }
         }
     }

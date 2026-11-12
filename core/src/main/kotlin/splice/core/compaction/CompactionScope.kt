@@ -36,11 +36,13 @@ public enum class CompactionScope(public val wire: String) {
 }
 
 /** Effective text and its inspectable provenance. Null text preserves the client's request;
- *  empty text is an explicit opt-out and also preserves it, but retains the configured source. */
+ *  empty text is an explicit opt-out and also preserves it, but retains the configured source. [model] is the model
+ *  a model or project-model rule is for, so a page finds a model's rule by the model and never inside [source]. */
 public data class EffectiveCompactionInstructions(
     val text: String?,
     val scope: CompactionScope,
     val source: String,
+    val model: String? = null,
 ) {
     public val tailText: String? get() = text?.takeIf(String::isNotEmpty)
 }

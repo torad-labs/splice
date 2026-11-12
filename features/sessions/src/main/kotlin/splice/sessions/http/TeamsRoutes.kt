@@ -152,7 +152,8 @@ public class TeamsRoutes(
                         failure.message.orEmpty().startsWith(NO_SUCH_TEAM) -> HttpStatusCode.NotFound
                         else -> HttpStatusCode.BadRequest
                     }
-                    refuse(status, failure.message ?: "the team write failed with no reason given")
+                    val said = failure.message ?: "the team write failed with no reason given"
+                    refuse(status, said, (failure as? TeamRefusal)?.code?.wire)
                 },
             )
         }
@@ -168,8 +169,14 @@ public class TeamsRoutes(
         return block(store)
     }
 
-    private fun refuse(status: HttpStatusCode, message: String) =
-        JsonReply(status, buildJsonObject { put("error", message) }.toString())
+    private fun refuse(status: HttpStatusCode, message: String, code: String? = null) = JsonReply(
+        status,
+        buildJsonObject {
+            put("error", message)
+            // The refusal by name, beside its sentence, where the Teams page words it on its own.
+            code?.let { put("code", it) }
+        }.toString(),
+    )
 }
 
 /** TeamStore's refusal prefix for an unknown team id, which the routes answer 404. */

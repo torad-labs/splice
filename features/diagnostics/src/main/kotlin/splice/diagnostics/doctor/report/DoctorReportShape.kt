@@ -74,7 +74,8 @@ internal class DoctorReportShape(private val redaction: DoctorRedaction, private
         put("unreadable_entries", usage.unreadable)
     }
 
-    /** {id, status, detail, fix, fix_kind, fix_id, pending_restart}, plus optional supporting `details`
+    /** {id, status, detail, fix, fix_kind, fix_id, pending_restart}, plus optional supporting `details`, the
+     *  `command` a shared check is about and a sign-in check's `cause`
      *  (schema 1): `fix` is the check's
      *  remedy, null when it has none, `fix_kind` is `command` (one line safe to paste) or `advice` (null
      *  with no fix), and `fix_id` names the daemon-run fix, null on every row whose remedy is the
@@ -93,6 +94,8 @@ internal class DoctorReportShape(private val redaction: DoctorRedaction, private
                             put("status", c.status.name.lowercase())
                             put("detail", safe(c.detail))
                             c.notes.details?.let { put("details", safe(it)) }
+                            c.notes.command?.let { put("command", safe(it)) }
+                            c.notes.cause?.let { put("cause", it.wire) }
                             put("fix", c.fix?.let(::safe))
                             put("fix_id", c.fixId?.wire)
                             put("fix_kind", c.fixKind?.wire)

@@ -52,6 +52,19 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   Nov 11, 2026 went within three days of its end, half of them within four hours, and nothing said so. Under
   the floor a new request is now refused, with the floor for its reason on Settings, and every saved day stays.
   When the budget does remove a day, the daemon's log names it.
+- **Models shows each model its own compaction rule.** The page found a model's rule by looking for the model's
+  id inside the rule's label, so with rules for two models whose ids begin alike (`claude-opus-5` and
+  `claude-opus-5-5`), one could be shown the other's. Each rule now carries its model. On the same page, the
+  event list said Restored for any log line holding the word, and the only lines that hold it report a
+  failure; that event is gone, and Settings re-read now appears when an edit to `splice.toml` changes a
+  command's windows.
+
+### Changed
+- **The console reads names, not sentences.** Twelve replies of the daemon's API now carry a short name beside
+  the sentence they always sent (why saving stopped, why a command cannot carry the manager, what a check
+  found, why a team's repo was refused, and so on), and the console's pages choose their words by those names.
+  A page's wording no longer depends on how a sentence in the daemon happens to be phrased. The sentences are
+  unchanged, and so is every reply's existing field.
 
 ## splice v0.4.0: teams across models, resume on another model, and one-command setup - 2026-11-11
 

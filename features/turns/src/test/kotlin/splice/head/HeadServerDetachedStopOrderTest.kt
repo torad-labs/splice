@@ -153,7 +153,7 @@ class HeadServerDetachedStopOrderTest {
         assertTrue(waitFor(20_000) { gate.snapshot().inflight == 1 }, "precondition: the compaction holds a slot")
         socket.close() // the client hangs up mid-lull; the drive detaches
         assertTrue(
-            waitFor(20_000) { lines.any { it.contains("compaction continues detached") } },
+            waitFor(20_000) { lines.any { it.contains("continues detached") } },
             "precondition: the compaction must detach: ${lines.joinToString("")}",
         )
     }

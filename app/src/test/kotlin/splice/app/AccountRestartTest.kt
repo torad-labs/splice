@@ -122,7 +122,7 @@ class AccountRestartTest {
 
         assertFalse(restarted.single { it.primary }.credentialPresent)
         assertTrue(restarted.single { it.label == "work" }.credentialPresent)
-        assertTrue(failure.message.orEmpty().contains("without --label first"))
+        assertTrue(failure.message.orEmpty().contains("no first login yet"))
     }
 
     @Test

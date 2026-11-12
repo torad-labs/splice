@@ -198,13 +198,15 @@ public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys
         // Signing the primary account in again is allowed under its own label; a NEW account never takes it.
         val primaryAgain = requestedLabel == PRIMARY && Files.isRegularFile(primaryFile)
         if (requestedLabel == null || primaryAgain) return OAuthLoginAccount(kind, primary = true, label = null)
+        // Both refusals reach a card in the console as well as a terminal, so neither names a flag: until Nov 11,
+        // 2026 they said "sign in without --label", and the second named the login by its config word.
         if (requestedLabel == PRIMARY) {
-            refuse("the primary account keeps its reserved label; sign in without --label to create it")
+            refuse("that label belongs to this command's first login: sign in with no label to create it")
         }
         if (requestedLabel != AUTO) validation.requireLabel(requestedLabel)
         val primaryExists = Files.isRegularFile(primaryFile)
         if (!primaryExists) {
-            refuse("sign in without --label first to create the primary ${kind.wire} account")
+            refuse("this command has no first login yet: sign in once with no label, then add another account")
         }
         if (requestedLabel == AUTO) {
             val resolver = defaultLabel ?: ordinalLabel(kind, primaryFile)

@@ -80,7 +80,9 @@ internal interface StatusGate {
 // slot behind it) undetected for up to 10s; tightened to 2s. Same mechanism, smaller tick.
 private const val CLIENT_PING_INTERVAL_MS = 2_000L
 
-private const val DETACHED_NOTE = "compaction continues detached; its answer is held for a retry"
+// "the turn", not "compaction": since Nov 9, 2026 an ordinary non-stream turn detaches the same way, and its line in
+// the log read "compaction continues detached" for a turn that compacted nothing.
+private const val DETACHED_NOTE = "the turn continues detached; its answer is held for a retry"
 private const val KEEPALIVE_FAILURE = "client connection closed while writing a keepalive"
 private const val PACED_FAILURE = "client connection closed while writing a paced delta"
 

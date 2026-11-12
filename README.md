@@ -159,7 +159,7 @@ every failing check.
 
 ### Guided setup
 
-`splice setup` is what the installer tells you to run next. It says what it finds on the machine, then asks where to start (OpenRouter, a ChatGPT, Grok, Kimi or Muse sign-in, or the topology you already have), which other commands to add, and whether plain `claude` itself goes through splice or a separate `claude-splice` sits beside it. It also asks whether sessions share MCP servers, and, on a Linux machine with an NVIDIA card, whether to run a local model. It shows a summary and writes nothing until you confirm; without a terminal it takes every default. The sections below are the same steps by hand.
+`splice setup` is what the installer tells you to run next. It says what it finds on the machine, then asks which plans to connect (Claude's own login, a ChatGPT, Grok, Kimi or Muse sign-in, a DeepSeek or OpenRouter key), and whether plain `claude` itself goes through splice or a separate `claude-splice` sits beside it. It also asks whether sessions share MCP servers, and, on a Linux machine with an NVIDIA card, whether to run a local model. It shows a summary and writes nothing until you confirm; without a terminal it takes every default. The sections below are the same steps by hand.
 
 ### API-key starter: OpenRouter
 

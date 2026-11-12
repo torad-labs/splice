@@ -24,7 +24,6 @@ import splice.core.topology.Topology
 import splice.core.util.EnvReader
 import splice.terminal.ConfirmPrompt
 import splice.terminal.MultiSelectOutcome
-import splice.terminal.SelectOutcome
 import splice.terminal.Spinner
 import splice.terminal.WizardFrame
 import java.io.ByteArrayOutputStream
@@ -60,7 +59,6 @@ class SetupCommandTest {
                                 false
                             },
                         ),
-                        choose = { options, index -> SelectOutcome.Chosen(options[index].value) },
                         spinner = Spinner(StringBuilder(), tty = false),
                     ),
                     loginHead = NO_REAL_LOGIN,
@@ -154,7 +152,6 @@ class SetupCommandTest {
                 runBlocking {
                     SetupCommand(
                         prompts = SetupPrompts(
-                            choose = { options, index -> SelectOutcome.Chosen(options[index].value) },
                             spinner = Spinner(tty = false),
                         ),
                         loginHead = { true },
@@ -165,18 +162,6 @@ class SetupCommandTest {
         assertFalse(log.contains("unofficial", ignoreCase = true), log)
         assertFalse(log.contains("own risk", ignoreCase = true), log)
         assertTrue("own credential file" in log, log)
-    }
-
-    @Test
-    fun `two different picks produce two different Summary bodies`(@TempDir home: Path) {
-        val openRouter = summaryFor(home, SetupStart.OpenRouter)
-        val oauth = summaryFor(home, SetupStart.OAuth("chatgpt-oauth"))
-        assertTrue(openRouter != oauth, "discarding the pick would make both Summaries identical")
-        assertTrue("Wrapper commands under" in openRouter, openRouter)
-        assertTrue("Wrapper commands under" in oauth, oauth)
-        assertTrue("splice add codex" in oauth, "the selected plan must name a real profile: $oauth")
-        assertFalse("splice add codex" in openRouter, openRouter)
-        assertFalse("splice add chatgpt-oauth" in oauth, "an auth kind is not an add profile: $oauth")
     }
 
     @Test
@@ -193,7 +178,6 @@ class SetupCommandTest {
                             out = StringBuilder(),
                             ask = ConfirmPrompt { _, _ -> false },
                         ),
-                        choose = { options, index -> SelectOutcome.Chosen(options[index].value) },
                         spinner = Spinner(StringBuilder(), tty = false),
                     ),
                     loginHead = NO_REAL_LOGIN,
@@ -205,7 +189,7 @@ class SetupCommandTest {
     }
 
     @Test
-    fun `cancelling at select writes no topology and returns true`(@TempDir home: Path) {
+    fun `leaving the list of plans with Escape ends setup and writes no topology`(@TempDir home: Path) {
         val path = home.resolve(".config").resolve("splice").resolve("splice.toml")
         val ok = withHome(home) {
             seedShim(home)
@@ -213,7 +197,7 @@ class SetupCommandTest {
                 SetupCommand(
                     prompts = SetupPrompts(
                         frame = WizardFrame(out = StringBuilder(), ask = ConfirmPrompt { _, d -> d }),
-                        choose = { _, _ -> SelectOutcome.Cancelled },
+                        pickHeads = HeadPicker { _, _ -> MultiSelectOutcome.Cancelled },
                         spinner = Spinner(StringBuilder(), tty = false),
                     ),
                     loginHead = NO_REAL_LOGIN,
@@ -366,7 +350,7 @@ class SetupCommandTest {
                 }
             }
             val text = chrome.toString()
-            assertTrue("Heads to add: muse, deepseek" in text, text)
+            assertTrue("Plans to connect: muse, deepseek" in text, text)
         }
 
         @Test
@@ -490,31 +474,11 @@ class SetupCommandTest {
         }
     }
 
-    private fun summaryFor(home: Path, pick: SetupStart): String {
-        val chrome = StringBuilder()
-        withHome(home) {
-            seedShim(home)
-            runBlocking {
-                SetupCommand(
-                    prompts = SetupPrompts(
-                        frame = WizardFrame(out = chrome, ask = ConfirmPrompt { _, _ -> false }),
-                        choose = { _, _ -> SelectOutcome.Chosen(pick) },
-                        spinner = Spinner(StringBuilder(), tty = false),
-                    ),
-                    loginHead = NO_REAL_LOGIN,
-                    detect = { emptyFacts() },
-                ).setup()
-            }
-        }
-        return chrome.toString()
-    }
-
     private fun emptyFacts() = SetupFacts(
         spliceOwned = emptySet(),
         vendorCli = emptySet(),
         openRouterKey = false,
         daemonUp = false,
-        suggested = SetupStart.OpenRouter,
     )
 
     private fun seedShim(home: Path) {

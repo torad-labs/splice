@@ -30,7 +30,6 @@ import splice.terminal.ConfirmPrompt
 import splice.terminal.ConsolePresence
 import splice.terminal.MultiSelectOutcome
 import splice.terminal.PulseScheduler
-import splice.terminal.SelectOutcome
 import splice.terminal.Spinner
 import splice.terminal.WizardFrame
 import splice.topology.TopologyLoader
@@ -190,7 +189,6 @@ class SetupLocalModelTest {
                 !question.startsWith("Run one short live turn")
             },
         ),
-        choose = { options, index -> SelectOutcome.Chosen(options[index].value) },
         pickHeads = HeadPicker { _, _ ->
             events += "pick heads"
             MultiSelectOutcome.Chosen(listOf("codex"))
@@ -209,7 +207,7 @@ class SetupLocalModelTest {
                 SetupCommand(
                     prompts = prompts,
                     loginHead = HeadSignIn { error("no head here needs a sign-in") },
-                    detect = { SetupFacts(emptySet(), emptySet(), false, false, SetupStart.OpenRouter) },
+                    detect = { SetupFacts(emptySet(), emptySet(), false, false) },
                     localModel = local,
                     effects = SetupEffects(
                         EnvReader(System::getenv),

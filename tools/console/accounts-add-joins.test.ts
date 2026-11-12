@@ -52,7 +52,7 @@ function signIn(head: string, label: unknown) {
     // an account already in the pool lands on its own login's file again, under the label it has (OAuthAccountWrites)
     if (!logins.some((l) => l.head === head && l.label === filed)) logins.push({ head, label: filed, name: "second", primary: false, present: true });
   } else if (label === "auto") { // splice refuses a place in a pool whose first login holds no file
-    return ended("config", "sign in without --label first to create the primary account");
+    return ended("config", "this command has no first login yet: sign in once with no label, then add another account");
   } else { // no label: the first login signs in again, and its file now holds the account that signed in
     Object.assign(first, { name: "second", present: true });
   }

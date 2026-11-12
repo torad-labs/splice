@@ -1436,6 +1436,17 @@ origin.
 - **`splice login` names a Claude login by its label, never its email,** in every sentence it prints.
 
 ### Fixed
+- **`splice setup` opens on the plans to connect.** Its first screen was a "Starting point" menu (OpenRouter, a
+  ChatGPT, Grok, Kimi or Muse sign-in, or "Existing topology") whose pick changed nothing but one line of the summary:
+  "Connect the chosen plan with: splice add openrouter", said even to a person who had ticked only Claude on the next
+  screen. That menu and its line are gone. Setup now opens on the list where a plan is actually chosen, titled "Plans
+  to connect", with Claude's own login at the top. A tick list says which keys act ("space ticks a row · enter
+  continues"): it named none, and Enter on a list of empty circles connects nothing. Leaving the list with Escape or
+  Ctrl-C ends setup, where it went on to the next question.
+- **Two sign-in refusals no longer name a command-line flag.** A sign-in asked for a second account on a command with
+  no first login was refused with "sign in without --label first to create the primary chatgpt-oauth account", on a
+  console card as well as in a terminal. It reads "this command has no first login yet: sign in once with no label,
+  then add another account", and the refusal of the first login's own label reads the same way.
 - **A new Claude command names no model, so Claude Code shows its own.** `splice add claude`, and the Claude row of
   `splice setup`, wrote `pinned_model = "claude-fable-5-1"` and a list of four models (Fable 5.1, Opus 5.5, Sonnet 5,
   Haiku 4.5): a new install started on last month's model, and its list was behind the day Fable 5.2 came out.

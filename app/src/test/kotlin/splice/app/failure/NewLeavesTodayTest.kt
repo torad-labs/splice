@@ -167,7 +167,7 @@ class NewLeavesTodayTest {
             val first = head.client.open(compaction)
             first.awaitText("summary so far")
             first.hangUp()
-            awaitLog(head, "compaction continues detached")
+            awaitLog(head, "continues detached")
             val retry = head.client.open(compaction)
             awaitLog(head, "still running")
             provider.release()

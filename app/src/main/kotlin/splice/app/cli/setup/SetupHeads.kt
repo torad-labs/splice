@@ -59,11 +59,13 @@ internal class SetupHeads(
     private val env: EnvReader,
     private val frame: WizardFrame,
 ) {
-    fun offer(facts: SetupFacts, path: Path): List<String> {
+    /** The plans the person ticked, none when every row is installed already; null when they left the list with
+     *  Escape or Ctrl-C, which ends setup. */
+    fun offer(facts: SetupFacts, path: Path): List<String>? {
         val catalog = profiles.catalog()
         val tickable = tickableProfiles(catalog, installedKeys(path))
         val picked = if (tickable.isEmpty()) emptyList() else pickFrom(tickable, facts)
-        announceByCommand(catalog)
+        if (picked != null) announceByCommand(catalog)
         return picked
     }
 
@@ -114,10 +116,11 @@ internal class SetupHeads(
                 else -> tickable += profile
             }
         }
-        return tickable
+        // Claude's own login first: it is what Claude Code runs on before splice, and the list opens the wizard.
+        return tickable.sortedByDescending { it.name == CLAUDE_PROFILE }
     }
 
-    private fun pickFrom(tickable: List<AddProfile>, facts: SetupFacts): List<String> {
+    private fun pickFrom(tickable: List<AddProfile>, facts: SetupFacts): List<String>? {
         val options = tickable.map { profile ->
             val hint = listOfNotNull(profile.summary, held(profile, facts)).joinToString(" \u00b7 ")
             SelectOption(profile.name, profile.name, hint)
@@ -130,7 +133,7 @@ internal class SetupHeads(
         }
         return when (val picked = pick(options, initial)) {
             is MultiSelectOutcome.Chosen -> picked.values
-            MultiSelectOutcome.Cancelled -> emptyList()
+            MultiSelectOutcome.Cancelled -> null
         }
     }
 

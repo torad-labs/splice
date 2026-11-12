@@ -14,6 +14,7 @@ import splice.accounts.CredentialVerdictJson
 import splice.core.auth.ACCOUNT_REF_FIELD
 import splice.core.auth.AuthDescription
 import splice.core.head.ProviderAnswer
+import splice.core.usage.QuotaJson
 
 /** A newest answer, not refusal history. Later success, overload or server error therefore renders null. */
 internal object AccountAnswerJson {
@@ -60,6 +61,8 @@ public class AccountPoolJson {
                         put("five_hour_reset_epoch_seconds", account.quota.fiveHour.resetEpochSeconds)
                         put("seven_day_used_percent", account.quota.sevenDay.usedPercent)
                         put("seven_day_reset_epoch_seconds", account.quota.sevenDay.resetEpochSeconds)
+                        // Each model's own week, which `splice status` names when one is used up (Nov 12, 2026).
+                        QuotaJson().putModels(this, "seven_day_models", account.quota.sevenDayModels)
                         descriptions[account.label]?.let { description -> auth(this, description) }
                     }
                 }

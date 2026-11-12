@@ -235,9 +235,11 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
 
         override fun effectiveOrder(): List<String> = pool.effectiveOrder()
 
-        override fun nextTarget(): String? = pool.nextTargetLabel()
+        // For the model the command's turns ask for: a login whose week for that model is used up is not where the
+        // next turn goes, whatever room its own week has (Nov 12, 2026).
+        override fun nextTarget(): String? = pool.nextTargetLabel(model = pool.asked.usual())
 
-        override fun followingTarget(): String? = pool.view(null).followingLabel
+        override fun followingTarget(): String? = pool.view(null, pool.asked.usual()).followingLabel
 
         @Synchronized
         override fun setOrder(labels: List<String>): Boolean {

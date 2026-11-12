@@ -118,6 +118,7 @@ internal class AccountRosterProjection {
                             resetEpochSeconds = account.quota.sevenDay.resetEpochSeconds,
                         ),
                         observedAtEpochSeconds = account.quota.observedAtEpochSeconds,
+                        sevenDayModels = account.quota.sevenDayModels,
                     ),
                     credential = pooled.credential.copy(present = account.credential.present),
                 )

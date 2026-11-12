@@ -79,6 +79,18 @@ class AccountStatusTest {
         assertEquals(CheckStatus.INFO, text.check("claudex", view).status)
     }
 
+    @Test
+    fun `status names a model used up on a login whose own week still has room`() {
+        val spent = body.replace(
+            "\"seven_day_used_percent\":61.5,",
+            "\"seven_day_used_percent\":61.5," +
+                "\"seven_day_models\":[{\"model\":\"Fable\",\"used_percent\":100.0,\"resets_at\":1800200000}],",
+        )
+        val view = AccountPoolProjection().parse(spent).getValue("claudex")
+        val said = AccountPoolText { 1_000_000L + 3 * 60_000L }.summary(view)
+        assertTrue(said.contains("Fable used up on 1 of 2 logins"), said)
+    }
+
     private fun withPin(label: String): String =
         body.replace("\"selected_label\":\"work\"", "\"selected_label\":\"work\",\"pinned_label\":\"$label\"")
 

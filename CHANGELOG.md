@@ -50,7 +50,8 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   before it hands the client the end of the answer, and the next daemon reads a conversation's file again when
   another daemon has written it. A ChatGPT command that runs code mode is still cut, as before, and it runs code
   mode unless its provider sets `code_mode = false`: its cells live in the daemon that started them, and the
-  next daemon marks their records lost when it starts (#525).
+  next daemon marks their records lost when it starts (#525). A Muse command is still cut too: it keeps where
+  each conversation runs in a file two daemons would write over.
 - **Accounts and `splice status` show a login out of a model from the moment its provider refuses it there.**
   splice keeps two records about a login: the usage its provider last reported, and a hold it sets when the
   provider refuses a turn, which lasts until the reset the refusal named and decides where the next turn goes.

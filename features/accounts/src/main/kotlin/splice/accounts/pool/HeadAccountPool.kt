@@ -48,8 +48,14 @@ public fun interface HeadAccountAskSource {
 }
 
 /** The login a pool would send its next turn to, by the real selector order, and the model that answer is for: the
- *  one most of the command's recent turns asked for, null until a turn has asked for one. */
-public data class HeadNextTarget(val label: String? = null, val model: String? = null)
+ *  one most of the command's recent turns asked for, null until a turn has asked for one. [asked] is every model the
+ *  command's turns asked for in the last hour, the latest first: [model] is one answer, and what is said about the
+ *  command's logins has to hold for each model someone is waiting on. */
+public data class HeadNextTarget(
+    val label: String? = null,
+    val model: String? = null,
+    val asked: List<String> = emptyList(),
+)
 
 public data class HeadAccountPoolView(
     val selectedLabel: String?,

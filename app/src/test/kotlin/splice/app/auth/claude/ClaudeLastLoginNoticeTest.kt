@@ -35,15 +35,15 @@ class ClaudeLastLoginNoticeTest {
     @TempDir
     lateinit var home: Path
 
-    /** One turn, so the pool knows which model the command's sessions ask for. */
-    private suspend fun turn(client: HttpClient, rig: ClaudeNativePoolFixture.Rig) {
+    /** One turn of [model], so the pool knows a model the command's turns ask for. */
+    private suspend fun turn(client: HttpClient, rig: ClaudeNativePoolFixture.Rig, model: String = "synthetic-model") {
         val response = client.post("http://127.0.0.1:${rig.head.head.port}/v1/messages") {
             bearerAuth("synthetic-caller")
             header(LAUNCH_PROOF_HEADER, rig.proof)
             header("x-claude-code-session-id", "working")
             contentType(ContentType.Application.Json)
             setBody(
-                """{"model":"synthetic-model","stream":false,"max_tokens":32,""" +
+                """{"model":"$model","stream":false,"max_tokens":32,""" +
                     """"messages":[{"role":"user","content":"synthetic session turn"}]}""",
             )
         }
@@ -69,7 +69,13 @@ class ClaudeLastLoginNoticeTest {
         val rig = fixture.rig(upstreamUrl = "http://127.0.0.1:$port")
         val heard = home.resolve("heard.txt")
         try {
-            HttpClient(Java).use { client -> turn(client, rig) }
+            // The session's own turn, then its helpers' on a small model every login serves. Helper turns outnumber
+            // a session's own (Nov 12, 2026: the Claude command's most asked model read Haiku while its sessions ran
+            // on Fable), and the notice is about the model the sessions wait on all the same.
+            HttpClient(Java).use { client ->
+                turn(client, rig)
+                repeat(2) { turn(client, rig, "small-helper") }
+            }
             val alerting = LoginAlerting(
                 rig.server.accountRoster(),
                 // a program of the operator's: it gets the message on standard input, one message a line here

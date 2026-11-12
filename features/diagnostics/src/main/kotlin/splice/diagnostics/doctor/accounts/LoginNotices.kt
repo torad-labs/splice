@@ -3,13 +3,19 @@
 // operator had resets to spend, and nothing told him the last login was nearly out (Marcos: "just let me know when
 // we're on the last account close to hit limit and I'll call a reset").
 //
-// ONE NOTICE PER COMMAND, read from the roster /api/accounts serves, so it never says what Accounts and
-// `splice status` do not show. A login can serve when the pool would send it a turn of the model the command's turns
-// ask for: it is open, the pool holds no refusal of that model on it, and that model's week does not read used up.
-// A command with one login has no last one to be down to, and says nothing.
+// ONE NOTICE PER COMMAND AND MODEL, read from the roster /api/accounts serves, so it never says what Accounts and
+// `splice status` do not show. A login can serve when the pool would send it a turn of that model: it is open, the
+// pool holds no refusal of that model on it, and that model's week does not read used up. A command with one login
+// has no last one to be down to, and says nothing.
 //
-// A COMMAND IS READ ONLY ONCE ITS SESSIONS' MODEL IS KNOWN. The pool learns that model from the turns it selects for,
-// so for a moment after a start it knows none and the command has no notice.
+// EVERY MODEL THE COMMAND'S TURNS ASKED FOR IN THE LAST HOUR IS READ, not only the one most turns asked for. The
+// first form read that one alone, and on the afternoon it shipped the Claude command's was Haiku: sessions hand
+// their reading to helpers, and the helpers' turns outnumbered their own. Every login serves Haiku, so the command
+// would have gone down to its last Fable login and through it with nothing said. Two models that share a week
+// ("Fable") share a notice.
+//
+// A COMMAND IS READ ONLY ONCE A MODEL IS KNOWN. The pool learns the models from the turns it selects for, so for a
+// moment after a start it knows none and the command has no notice.
 package splice.diagnostics.doctor.accounts
 
 import splice.accounts.pool.HeadAccountView
@@ -37,13 +43,13 @@ public class LoginNotices(private val now: WallClock = WallClock { System.curren
     public fun of(accountsJson: String): List<LoginNotice> {
         val read = roster.read(accountsJson) as? AccountPoolsRead.Read ?: return emptyList()
         val atSeconds = now().milliseconds.inWholeSeconds
-        return read.pools.mapNotNull { (head, view) ->
-            view.usualModel?.let { model ->
-                val logins = view.accounts.filter { it.credential.present }
+        return read.pools.flatMap { (head, view) ->
+            val logins = view.accounts.filter { it.credential.present }
+            (view.next.asked + listOfNotNull(view.usualModel)).distinct().mapNotNull { model ->
                 AskedOfLogins(head, model, atSeconds, logins)
                     .notice(view.blockedUntilEpochSecondsByLabel, read.accountNames[head].orEmpty())
             }
-        }
+        }.distinctBy { it.key }
     }
 }
 
@@ -93,7 +99,7 @@ private class AskedOfLogins(
         val resets = fullest.resetsAt?.let { ", which resets ${AccountResetText.forPerson(it)}" }.orEmpty()
         return LoginNotice(
             head,
-            "$head|$model|${login.label}|${fullest.words}|$mark",
+            "$head|$modelWords|${login.label}|${fullest.words}|$mark",
             "$head is on its last login that can serve $modelWords: $name has used " +
                 "${fullest.percent.roundToInt()}% of its ${fullest.words}$resets. When it runs out, sessions asking " +
                 "for $modelWords wait.",
@@ -106,7 +112,7 @@ private class AskedOfLogins(
         val first = back?.let { " The first comes back ${AccountResetText.forPerson(it)}." }.orEmpty()
         return LoginNotice(
             head,
-            "$head|$model|none",
+            "$head|$modelWords|none",
             "$head has no login that can serve $modelWords, so sessions asking for it are waiting.$first",
         )
     }

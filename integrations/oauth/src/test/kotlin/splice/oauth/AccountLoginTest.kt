@@ -203,7 +203,7 @@ class AccountLoginTest {
             OAuthAccountFiles().loginAccount(AuthKind.GrokOAuth, dir.resolve("grok.json"), "work")
         }
 
-        assertTrue(failure.reason.contains("without --label first"))
+        assertTrue(failure.reason.contains("no first login yet"))
     }
 
     @Test
@@ -420,7 +420,7 @@ class AccountLoginTest {
             LoginKimi().spec("kimi", primary, "auto")
         }
 
-        assertTrue(refused.reason.contains("without --label first"))
+        assertTrue(refused.reason.contains("no first login yet"))
         assertFalse(Files.exists(store.poolDir(AuthKind.KimiOAuth, primary).resolve(".login-locks")))
     }
 

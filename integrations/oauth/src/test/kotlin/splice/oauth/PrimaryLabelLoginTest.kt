@@ -41,6 +41,6 @@ class PrimaryLabelLoginTest {
             OAuthAccountFiles().loginAccount(AuthKind.ChatgptOAuth, dir.resolve("codex.json"), "primary")
         }
 
-        assertTrue(failure.reason.contains("reserved label"), failure.reason)
+        assertTrue(failure.reason.contains("belongs to this command's first login"), failure.reason)
     }
 }

@@ -69,11 +69,31 @@ internal class LifecycleMount(
             }
         }
         // The same drain as shutdown: the unit or the armed detached successor brings it back.
-        // A failed successor arm refuses before this daemon drains.
+        // A failed successor arm refuses before this daemon drains. #523: where the launcher runs daemons side by
+        // side, the restart asks it for the next one instead, and this daemon hands over to it.
         route.post("/api/daemon/restart") {
-            guard.guarded(call) { daemonRoutes.restartJson(call, shutdownDaemon, ports.lifecycle.supervised) }
+            guard.guarded(call) {
+                daemonRoutes.restartJson(call, ports.lifecycle.restartBy(shutdownDaemon), ports.lifecycle.supervised)
+            }
         }
         route.get("/api/daemon/restart") { guard.guarded(call) { daemonRoutes.statusJson(call) } }
+        // #523: the next daemon, started beside this one, asks it to hand over. The 202 goes out first, as on
+        // shutdown: the hand-over closes this server.
+        route.post("/api/daemon/retire") {
+            guard.guarded(call) {
+                val retire = ports.lifecycle.handOver?.retire
+                if (retire == null) {
+                    call.respondText(
+                        """{"error":"this daemon cannot hand over to another; restart it instead"}""",
+                        ContentType.Application.Json,
+                        HttpStatusCode.ServiceUnavailable,
+                    )
+                } else {
+                    call.respondText("{}", ContentType.Application.Json, HttpStatusCode.Accepted)
+                    retire()
+                }
+            }
+        }
         // A restart run from a shell (`splice restart`, `splice upgrade`) holds new compactions before it reads
         // the ones in flight (CompactionWait); the console's restart holds them in-process through [compactions].
         // The hold lapses by itself, so it is bounded here: a typo cannot hold compactions for a day.

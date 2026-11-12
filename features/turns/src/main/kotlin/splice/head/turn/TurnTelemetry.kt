@@ -37,6 +37,7 @@ import splice.head.perf.PerfRowMeta
 import splice.head.perf.PerfStats
 import splice.head.perf.PerfTranscriptIds
 import splice.head.perf.UsageObservation
+import splice.head.usage.RetiredTurns
 import splice.head.usage.TurnSpend
 import splice.head.wire.TurnTrace
 
@@ -77,6 +78,9 @@ internal class TurnTelemetry(
 ) {
     private val cache = TurnCacheLine(headKey)
     private val line = TurnLine(headKey)
+
+    /** #523: the turns a retiring daemon finished after it handed over, counted here beside this head's own. */
+    private val retiredTurns = RetiredTurns(perfStats, spend, events)
 
     /** Rows waiting on a source round, so a head stop can write them ([flushHeld]). */
     private val held = HeldRows()
@@ -213,6 +217,7 @@ internal class TurnTelemetry(
         events.turnEnded(rowTs.toString(), outcomeTag, drive.meta.scope.sessionId)
         toolsOpened(drive)
         spend.spend(rowTs, drive.upstreamModel, snap.counters, accountLabel, outcomeTag)
+        retiredTurns.fold()
     }
 
     /** The line the turn ended with, as its client was told it: the one its terminal wrote, or, for a row written

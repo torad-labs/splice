@@ -657,6 +657,11 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "integrations/upstream/src/main/kotlin/splice/upstream/retry/LoginHoldStore.kt" to mapOf(
         "writeAtomic0600(" to 1,
     ),
+    // Nov 12, 2026 (#523): the request row of an answer a restarting daemon finished after the next one started, one
+    // owner-only file per row beside the request log, removed once the running daemon has counted it.
+    "features/turns/src/main/kotlin/splice/head/perf/RetiredRows.kt" to mapOf(
+        "writeAtomic0600(" to 1,
+    ),
     // The numeric performance ledger, request evidence and explicit objective settings are in their
     // dedicated StatePaths-owned files/directories; profile artifacts are separately opt-in.
     "app/src/main/kotlin/splice/app/observability/PerfConfigHistory.kt" to

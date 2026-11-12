@@ -162,4 +162,10 @@ public interface Provider : ProviderIdentity {
 
     /** Cancel provider-owned per-turn resources when a head stops; the provider remains restartable. */
     public fun onHeadStop() {}
+
+    /** #523: whether a head of this provider may finish the turns it is answering after the next daemon has taken
+     *  over (splice.core.head.Head.retire). True only where a turn that is already streaming needs nothing two
+     *  daemons would both write: no conversation state kept on disk, no code mode cells, no tool hub. False cuts
+     *  every turn at a restart, as before. */
+    public val finishesTurnsWhenRetired: Boolean get() = false
 }

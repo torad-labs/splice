@@ -52,6 +52,9 @@ public class PassthroughProvider(
     // baseUrl carries no /v1 (topology supplies the host root); the Messages path is /v1/messages.
     override val upstreamUrl: String = "${tuning.locations.baseUrl}/v1/messages"
 
+    /** #523: a passthrough turn is one request streamed back as it arrives, with no state of its own on disk. */
+    override val finishesTurnsWhenRetired: Boolean get() = true
+
     override val showReasoning: ReasoningDisplay = ReasoningDisplay.OFF
     override val replayReasoning: Boolean = false
 

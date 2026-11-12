@@ -151,6 +151,11 @@ describe("configured listener identity", () => {
     expect(listenerFindings(selected, { ...selected, startTicks: "999" }).join("\n")).toContain("startTicks changed");
     expect(listenerFindings(undefined, selected).join("\n")).toContain("independently resolved");
   });
+  test("a daemon the service's launcher runs as its child is the service's own listener", () => {
+    const launched: ListenerIdentity = { ...selected, supervisorMainPid: 399, parentPid: 399 };
+    expect(listenerFindings(launched, launched)).toEqual([]);
+    expect(listenerFindings(launched, { ...launched, parentPid: 1 }).join("\n")).toContain("MainPID does not own");
+  });
   test("resolves only listening sockets at the authoritative configured port", () => {
     const table = "sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode\n" +
       "0: 0100007F:0C18 00000000:0000 0A 00000000:00000000 00:00000000 00000000 1000 0 123\n" +

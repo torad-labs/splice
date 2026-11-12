@@ -155,6 +155,10 @@ public class HeadServer(
 
     override suspend fun stop(): Unit = lifecycle.stop()
 
+    override suspend fun retire(): Int = lifecycle.retire()
+
+    override suspend fun finish(withinMs: Long): Unit = lifecycle.finish(withinMs)
+
     override suspend fun restart(): Unit = lifecycle.restart()
 
     override fun healthSnapshot(): HeadHealth = diagnostics.healthSnapshot(engine.isRunning, engine.port)

@@ -19,6 +19,7 @@ import splice.app.control.ControlReadings
 import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
 import splice.app.control.FailedHeads
+import splice.app.control.HandOver
 import splice.app.control.KeyRotation
 import splice.app.control.ManagedHead
 import splice.app.control.ProcessReads
@@ -175,6 +176,9 @@ internal class ControlPlane(
      *  default binds the control port itself, which is every start without a socket manager. */
     internal var adopted: AdoptedServing = AdoptedServing()
 
+    /** #523: the hand-over's two requests, assigned by Daemon before [start] and published to the lifecycle routes. */
+    internal var handOver: HandOver? = null
+
     /** Constructs and binds the control plane. Returns null (having already called
      *  [shutdownDaemon] and logged) when the bind fails — defense in depth for the
      *  restart-into-a-still-bound-port race (BS-4 DEFECT B): unlike a per-head start, an uncaught
@@ -254,6 +258,7 @@ internal class ControlPlane(
         srv.ports.claudeLogins = claudeLogin.owner
         srv.ports.quotaReadFailures = quotaReadFailures
         srv.ports.lifecycle.keyRotation = KeyRotation(daemon.mgmtKey, daemon.mcpAccess, statePaths, log)
+        srv.ports.lifecycle.handOver = handOver
         providerAssembly.claudePoolChanges.onJoined = LoginJoined { head -> srv.sessionWake?.joined(head) }
         providerAssembly.claudePoolChanges.watch(probeScope, log)
         srv.ports.budgetSpending = console.budgets

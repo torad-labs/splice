@@ -5,6 +5,27 @@
 Changes on main since v0.4.0. They take a version's heading when that version is cut.
 
 ### Fixed
+- **A restart no longer cuts an answer that is already arriving.** A restart stopped the daemon and then started
+  the next, so every answer in progress ended with the restart line. Claude Code sends a request again when none
+  of its answer has arrived, but not one cut partway: it shows "API Error: Server error mid-response" and the
+  session stops until someone types. On one machine, 8 of the 14 answers cut that way between Nov 10 and
+  Nov 12, 2026 left their session stopped, for two to five minutes in seven cases and for two hours in one.
+  Under splice's systemd unit the launcher now keeps the unit's first process and the listening
+  sockets and runs the daemon as its child, and a restart starts the next daemon beside the running one. The
+  running one stops taking requests, writes its books, hands over, and finishes the answers already arriving,
+  for up to 15 minutes, while the next daemon serves every new request on the same ports. `splice restart`,
+  `splice upgrade`, the console's Restart and a console save that restarts all go this way, and each finished
+  answer's request row, tokens and cost are counted by the next daemon, once. Still ended with the restart line:
+  a request its provider had not begun answering, which Claude Code sends again; a turn on a command that does
+  not speak Anthropic's API (ChatGPT, Grok, Muse, OpenAI-compatible and local models); every turn on a daemon
+  started outside the unit or on macOS; and the first restart into this build. An upgrade that brings a newer
+  launcher restarts the unit whole, once, so that launcher starts. The daemon is now the launcher's child, not
+  the unit's first process, and `/health` names its `pid`. On a machine whose own tools take a unit's first
+  process for the service (an out-of-memory keeper that protects that process and not its children),
+  `SPLICE_HANDOVER=off` in the unit's environment keeps the daemon first, and restarts as they were (#523).
+- **A daemon stopping on a machine with no `~/.local/bin` no longer logs an uncaught failure.** The watch that
+  keeps a wrapped `claude` wrapped waits on a timer where that folder is missing, and the stop interrupted the
+  wait, which the daemon's log reported as `UNCAUGHT on wrap-guard` with a stack trace.
 - **A login its provider refused stays held across a restart.** A login refused for its credential, or blocked by
   its account's organization, was held only in the daemon's memory. Each restart forgot the hold, so the next turns
   went to that login again and were refused again: on Nov 11, 2026 a blocked login met four to six refusals after

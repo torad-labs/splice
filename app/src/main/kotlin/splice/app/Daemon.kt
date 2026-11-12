@@ -15,6 +15,7 @@ package splice.app
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import splice.app.control.FailedHeads
+import splice.app.control.HandOver
 import splice.app.control.ManagedHead
 import splice.app.daemon.BootedTopology
 import splice.app.daemon.HeadCatalogs
@@ -77,6 +78,11 @@ public class Daemon(
      *  rather than a constructor parameter: this constructor is at its width ceiling, and nothing reads the sockets
      *  until [start] opens the listeners. The default binds every port itself, which is every start without one. */
     internal var adopted: AdoptedServing = AdoptedServing()
+
+    /** #523: how the control plane asks this process to hand over to the next daemon (POST /api/daemon/retire) and
+     *  asks the launcher for one, assigned by Main before [start]. Null, every daemon a test builds, answers that
+     *  route with a named 503. */
+    internal var handOver: HandOver? = null
 
     // Topology TOML ([daemon] + [defaults]) feeds the headOverrides layer so reasoning
     // display is operator-editable without recompiling. Env and runtime PATCH still win.
@@ -220,10 +226,14 @@ public class Daemon(
     private val stopLock = Mutex()
     private var stopped = false
 
+    // #523: set once this daemon has handed over to the next one; its stop then closes only its heads.
+    private var retired = false
+
     public suspend fun start() {
         performance.start()
         // Before anything binds: the control plane and every head serve on a handed-over socket where there is one.
         controlPlane.adopted = adopted
+        controlPlane.handOver = handOver
         headServerFactory.adopted = adopted
         val cfg = config.getConfig()
         // TOML feeds ConfigService's topology layer; state/env/runtime override it consistently.
@@ -296,6 +306,36 @@ public class Daemon(
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
     }
 
+    /** #523: the hand-over to the next daemon, which is the stop below with one difference: a head whose provider
+     *  can finish an answer beside another daemon keeps the turns already answering. Everything else this process
+     *  holds that the next daemon needs is closed here, in the stop's own order: the share listener, the control
+     *  server, the probes and sign-ins, the performance recorder. When this returns the caller releases the daemon
+     *  lock and the next daemon boots; [finish] then waits for the kept turns. Returns how many were kept.
+     *
+     *  The probe scope ends here although kept turns are still streaming, which the stop never allows. It has to: a
+     *  login's renewal and an open sign-in are the next daemon's from the hand-over on, and two daemons renewing one
+     *  login would spend its refresh token twice. So a kept turn cannot renew its login in this process. It needs
+     *  to only for a second upstream attempt after its token ran out, and that attempt fails here. */
+    public suspend fun retire(): Int = stopLock.withLock {
+        if (stopped || retired) return@withLock 0
+        headProbes.fenceStarts()
+        controlPlane.ownership.fence()
+        share.close()
+        headProbes.closeStarts()
+        val kept = headShutdown.retireHeads(heads.values.map { it.head }, HEAD_STOP_BUDGET_MS, log) {
+            controlPlane.ownership.close()
+        }
+        closeBackground()
+        retired = true
+        kept
+    }
+
+    /** #523: waits up to [withinMs] for the turns [retire] kept, and stops each head when its last one ends. It holds
+     *  no lock, so a [stop] that arrives meanwhile is not held behind it and cuts what is still running. */
+    public suspend fun finish(withinMs: Long) {
+        headShutdown.finishHeads(heads.values.map { it.head }, withinMs, log)
+    }
+
     public suspend fun stop(): Unit = stopLock.withLock {
         if (!stopped) {
             // Both fences first and without waiting: a stop cut short by its deadline while a head start holds the
@@ -304,7 +344,7 @@ public class Daemon(
             headProbes.fenceStarts()
             controlPlane.ownership.fence()
             // No other machine's turn starts on a head that is about to drain.
-            share.close()
+            if (!retired) share.close()
 
             // Heads stop in PARALLEL under a phase DEADLINE, then control stops — see
             // [HeadShutdown.stopHeads]. The supervisor scope + stopFailureHandler live there so an
@@ -319,16 +359,21 @@ public class Daemon(
                 log,
             ) { controlPlane.ownership.close() }
 
-            // Probe cancellation runs AFTER the heads have drained: the probe scope is the scope
-            // ProviderAssembly hands every provider, so cancelling it first means a SingleFlight
-            // token refresh raised by a turn still streaming inside the 45s drain is cancelled by a
-            // job that turn does not own — a foreign CancellationException in a live turn.
-            headProbes.stop()
-            managedHeadFactory.closeEvidenceLoads()
-            controlPlane.cancelProbes()
-            performance.close()
-            topologyWindows.close()
+            // A daemon that handed over closed these then, before the next daemon opened its own.
+            if (!retired) closeBackground()
             stopped = true
         }
+    }
+
+    /** What runs beside the heads, closed once the heads no longer take turns. Probe cancellation runs AFTER the
+     *  heads have drained: the probe scope is the scope ProviderAssembly hands every provider, so cancelling it first
+     *  means a SingleFlight token refresh raised by a turn still streaming inside the drain is cancelled by a job
+     *  that turn does not own — a foreign CancellationException in a live turn. */
+    private suspend fun closeBackground() {
+        headProbes.stop()
+        managedHeadFactory.closeEvidenceLoads()
+        controlPlane.cancelProbes()
+        performance.close()
+        topologyWindows.close()
     }
 }

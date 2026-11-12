@@ -1076,6 +1076,19 @@ command = "claude-splice"
 #                           listeners BY NAME (`splice listeners` prints the names, `splice capabilities` the
 #                           contract). A hand-off that fails any check refuses boot with every reason at once;
 #                           unset, every listener binds its own port exactly as before
+#   SPLICE_GENERATIONS / SPLICE_SUCCEEDS  set by the launcher (splice-launch), never by an operator, on each daemon
+#                           it starts under a socket manager: there the launcher keeps the unit's first process
+#                           and the sockets, and runs the daemon as its child. SPLICE_GENERATIONS carries that
+#                           launcher's marker (shim-N) and says a restart can start the next daemon beside this
+#                           one, so an answer in progress finishes on the old one while the next serves new
+#                           requests. SPLICE_SUCCEEDS is the pid of the daemon the new one takes over from, empty
+#                           on the first. Set by hand, either makes a daemon wait for a hand-over nothing will run
+#   SPLICE_HANDOVER         read by the launcher, in the unit's environment: `off` keeps the daemon as the unit's
+#                           first process, as it was before the launcher ran daemons side by side, and a restart
+#                           then ends every running turn with the restart line. For a machine whose own tools
+#                           take a unit's first process for the service: an out-of-memory keeper that protects
+#                           that process and not its children would protect the launcher and expose the daemon.
+#                           Unset, or any other value, the launcher runs the daemon as its child
 #   HOME                    the home every ~/ path resolves against: config, key store, credentials,
 #                           state and install paths. Unset or blank falls back to the JVM's user.home;
 #                           the launch shim passes its HOME to every JVM it starts as -Duser.home

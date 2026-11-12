@@ -62,7 +62,7 @@ internal class TurnDriver(
             deps.stores.perfStats,
             deps.log,
             deps.seams.clock,
-            TurnSpend(deps.stores.economicsStore, deps.quotaBundle.budget),
+            TurnSpend(deps.stores.economicsStore, deps.quotaBundle.budget, deps.stores.perfStats.retired),
             deps.seams.events,
         )
     private val health = HeadHealthCounters()
@@ -217,6 +217,11 @@ internal class TurnDriver(
 
     /** Cancel active turns with a head-owned cause while their client sockets are still open. */
     internal fun stopActive() = oneDrive.stopActive()
+
+    /** #523: a retiring head's cut, which keeps the turns already answering ([TurnOneDrive.retireActive]). A
+     *  detached compaction has no client stream left to finish for, so it ends here with the rest of what is cut,
+     *  and the retry its client sends reaches the next daemon. */
+    internal fun retireActive(): Int = oneDrive.retireActive().also { streamer.stopDetached() }
 
     /** A restarted head reuses this driver. */
     internal fun headStarted() = oneDrive.headStarted()

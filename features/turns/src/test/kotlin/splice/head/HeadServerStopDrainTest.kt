@@ -49,6 +49,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.dialect.responses.ReasoningSettings
+import splice.upstream.Provider
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
@@ -116,6 +117,12 @@ private class DrainFakeAuth : RefreshableAuthProvider {
     override suspend fun describe(): AuthDescription = AuthDescription(true, "fake")
 }
 
+/** The rig's provider, declared able to finish a turn beside the next daemon (#523), as the Anthropic passthrough
+ *  is: what a retiring head keeps is decided by that one answer, whatever dialect the turn speaks. */
+private class FinishingProvider(base: Provider) : Provider by base {
+    override val finishesTurnsWhenRetired: Boolean get() = true
+}
+
 /** An upstream that answers every request with one burst of small text deltas and its completion, then ends.
  *  The head paces a burst out to its client over up to a second, so the client write outlives the turn. */
 private class BurstUpstream : AutoCloseable {
@@ -161,6 +168,7 @@ class HeadServerStopDrainTest {
         waiter: Waiter = ProcessWaiter(),
         stopDrainMs: Long = DEFAULT_STOP_DRAIN_MS,
         upstreamUrl: String? = null,
+        finishing: Boolean = false,
     ) {
         val mock = MockChatGptUpstream()
         val cutAt = AtomicLong(0L)
@@ -171,22 +179,8 @@ class HeadServerStopDrainTest {
         }
         val port: Int get() = head.port
         val head = HeadServer(
-            provider = TestResponsesProvider(
-                tuning = ProviderTuning(
-                    name = ProviderName(key = "codex", label = "claudex"),
-                    catalog = ModelCatalog(
-                        discoveryPrefix = "claude-codex--",
-                        models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
-                        defaultContextWindow = 272_000,
-                    ),
-                    pinnedModel = "gpt-5.6-sol",
-                    auth = DrainFakeAuth(),
-                    locations = ProviderLocations(baseUrl = upstreamUrl ?: mock.baseUrl),
-                    watchdog = watchdog,
-                    loginCommand = "claudex login",
-                ),
-                reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
-            ),
+            provider = responses(watchdog, upstreamUrl ?: mock.baseUrl)
+                .let { if (finishing) FinishingProvider(it) else it },
             listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
@@ -198,6 +192,24 @@ class HeadServerStopDrainTest {
                 },
             ).copy(policy = HeadDeps.HeadPolicy(stopDrainMs = stopDrainMs)),
         )
+
+        private fun responses(watchdog: WatchdogBudget, baseUrl: String): Provider =
+            TestResponsesProvider(
+                tuning = ProviderTuning(
+                    name = ProviderName(key = "codex", label = "claudex"),
+                    catalog = ModelCatalog(
+                        discoveryPrefix = "claude-codex--",
+                        models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
+                        defaultContextWindow = 272_000,
+                    ),
+                    pinnedModel = "gpt-5.6-sol",
+                    auth = DrainFakeAuth(),
+                    locations = ProviderLocations(baseUrl = baseUrl),
+                    watchdog = watchdog,
+                    loginCommand = "claudex login",
+                ),
+                reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
+            )
 
         suspend fun start() {
             mock.resetHold()
@@ -219,10 +231,17 @@ class HeadServerStopDrainTest {
                 setBody(heldBody(stream))
             }
 
-        private fun heldBody(stream: Boolean) =
+        private fun heldBody(stream: Boolean, scenario: String = "hold") =
             """{"model":"claude-codex--gpt-5.6-sol","stream":$stream,"max_tokens":64,
-                "system":"You are a test. SCENARIO:hold",
+                "system":"You are a test. SCENARIO:$scenario",
                 "messages":[{"role":"user","content":"go"}]}"""
+
+        /** A streamed turn whose upstream has sent nothing yet (SCENARIO:holdstart), read to its end. */
+        suspend fun unansweredStream(): String =
+            client.post("http://127.0.0.1:$port/v1/messages") {
+                header("Content-Type", "application/json")
+                setBody(heldBody(stream = true, scenario = "holdstart"))
+            }.bodyAsText()
 
         /** The held turn read to its END as its status and body: a streamed one through [heldStream], a buffered one
          *  through [heldTurn]. */
@@ -351,6 +370,56 @@ class HeadServerStopDrainTest {
             held.await()
         } finally {
             rig.mock.releaseHold()
+            rig.close()
+        }
+    }
+
+    // #523: a restart used to cut every running turn. Claude Code does not send again a turn cut after its answer
+    // began, so that session stopped until someone typed into it: 8 of the 14 such cuts on one machine, Nov 10 to 12,
+    // 2026. A retiring head now finishes the answers in progress while the next daemon takes everything else.
+    @Test
+    fun `a retiring head finishes the answer in progress and turns a new request away`(
+        @TempDir tmp: Path,
+    ): Unit = runBlocking {
+        val rig = Rig(tmp, WatchdogBudget(600.seconds, 600.seconds, 900.seconds), finishing = true)
+        rig.start()
+        try {
+            val reached = CompletableDeferred<Unit>()
+            val turn = async(Dispatchers.IO) { rig.heldStream(reached).second }
+            withTimeout(CONTENT_WAIT_MS) { reached.await() }
+
+            assertEquals(1, rig.head.retire(), "the turn already answering is kept")
+            val answer = rawRequest(rig.port)
+            assertEquals("", answer, "a retired head answers a new request with no status: ${answer.take(200)}")
+
+            rig.mock.releaseHold()
+            val body = turn.await()
+            assertTrue(body.contains("message_stop"), "the client reads its answer to the end: ${body.takeLast(300)}")
+            assertTrue(!body.contains("event: error"), "no error replaces the rest of the answer")
+            assertTrue(!body.contains(RESTART_SAID), "the turn was not cut")
+            withTimeout(TAKEOVER_BOUND_MS) { rig.head.finish(TAKEOVER_BOUND_MS) }
+        } finally {
+            rig.mock.releaseHold()
+            rig.close()
+        }
+    }
+
+    @Test
+    fun `a retiring head still cuts a turn its upstream has not begun answering, which its client sends again`(
+        @TempDir tmp: Path,
+    ): Unit = runBlocking {
+        val rig = Rig(tmp, WatchdogBudget(600.seconds, 600.seconds, 900.seconds), finishing = true)
+        rig.mock.resetStartHold()
+        rig.start()
+        try {
+            val turn = async(Dispatchers.IO) { rig.unansweredStream() }
+            assertTrue(rig.awaitInflight(), "precondition: the turn holds a slot and waits on its upstream")
+
+            assertEquals(0, rig.head.retire(), "a turn with no answer yet is not kept")
+            val body = withTimeout(TAKEOVER_BOUND_MS) { turn.await() }
+            assertTrue(body.contains("$RESTART_SAID $CLIENT_RESENDS"), "the client is told it sends again: $body")
+        } finally {
+            rig.mock.startHoldRelease.countDown()
             rig.close()
         }
     }

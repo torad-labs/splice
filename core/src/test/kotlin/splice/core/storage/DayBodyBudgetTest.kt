@@ -62,8 +62,9 @@ class DayBodyBudgetTest {
         assertEquals(BODY_TEST_BYTES, Files.size(current))
     }
 
-    /** From Oct 29 to Nov 11, 2026 one machine's disk stayed under the floor, and each day's bodies were removed at
-     *  the next UTC midnight to save the first of the new day. A disk other data filled costs no saved day. */
+    /** On one machine every day's bodies from Oct 29 to Nov 11, 2026 were removed within three days of the day's
+     *  end, half of them within four hours, with its disk under the floor. A disk other data filled costs no saved
+     *  day. */
     @Test
     fun `below the floor a new body is refused and every saved day stays`(@TempDir dir: Path) {
         val older = day(dir, "a", "2026-10-03")

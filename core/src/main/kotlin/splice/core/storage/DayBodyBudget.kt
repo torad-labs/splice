@@ -141,8 +141,9 @@ public class DayBodyBudget(
         while (!fits(pack.parent, hold.packs().sumOf { it.bytes }, bytes)) {
             // Saved days make room in the budget and nowhere else. A volume under its floor is as much other data's
             // doing as the trace's, so there the new body is refused, with the floor for its reason, and every saved
-            // day stays. Until Nov 12, 2026 the floor removed days as the budget does: on a disk that stayed under it
-            // from Oct 29 to Nov 11, each day's bodies went at the next UTC midnight, to save the first of the new day.
+            // day stays. Until Nov 12, 2026 the floor removed days as the budget does. One machine's markers show
+            // every day's bodies from Oct 29 to Nov 11 removed within three days of the day's end, half of them within
+            // four hours, where a day's bodies are a small part of the budget and its log names the floor.
             if (floor.below(pack.parent, bytes)) throw DayBodyCapacityException(floor.reached(pack.parent))
             val days = hold.packs()
             val oldest = days.filter { it.date.isBefore(today) && it.date != active }.minByOrNull { it.date }

@@ -75,7 +75,7 @@ public class FileLoginHoldStore(private val path: Path, private val log: LogSink
             untilEpochMillis = until,
             failureCount = JsonScalars.int(root, FAILURES) ?: 1,
             block = block(root[BLOCK] as? JsonObject),
-            account = JsonScalars.str(root, ACCOUNT),
+            account = JsonScalars.str(root, BLOCKED_ACCOUNT),
             identity = identity(root[CREDENTIAL] as? JsonObject),
         )
     }
@@ -104,7 +104,7 @@ public class FileLoginHoldStore(private val path: Path, private val log: LogSink
                     put(WHERE, block.where)
                 }
             }
-            hold.account?.let { put(ACCOUNT, it) }
+            hold.account?.let { put(BLOCKED_ACCOUNT, it) }
             hold.identity?.let { file ->
                 putJsonObject(CREDENTIAL) {
                     put(MTIME, file.mtimeMs)
@@ -121,7 +121,7 @@ private const val FAILURES = "refusals_in_a_row"
 private const val BLOCK = "block"
 private const val STEP = "step"
 private const val WHERE = "where"
-private const val ACCOUNT = "account"
+private const val BLOCKED_ACCOUNT = "account"
 private const val CREDENTIAL = "credential_file"
 private const val MTIME = "mtime_ms"
 private const val SIZE = "size_bytes"

@@ -280,6 +280,34 @@ class ClaudeHeadRoutesWiringTest {
         }
     }
 
+    /** One Claude on the screens (Nov 12, 2026): while `claude` goes through splice, the heads and status replies
+     *  name the Claude head's command `claude`, which is what the person types. Unwrapped, they name its own. */
+    @Test
+    fun `the heads and status replies name the Claude command claude while claude is wrapped`(@TempDir home: Path) {
+        val realBinary = home.resolve("real-claude").also { it.writeText("#!/bin/sh\n") }
+        serveWired(home, hermeticLaunchService(home, realBinary)) { port, key ->
+            val client = HttpClient(CIO) { expectSuccess = false }
+            try {
+                val url = "http://127.0.0.1:$port"
+                assertEquals(listOf("claude-splice", "claude-splice"), shownNames(client, url, key))
+                val wrapped = client.post("$url/api/claude-head/wrap") { header("Authorization", "Bearer $key") }
+                assertEquals(HttpStatusCode.OK, wrapped.status, wrapped.bodyAsText())
+                assertEquals(listOf("claude", "claude"), shownNames(client, url, key))
+            } finally {
+                client.close()
+            }
+        }
+    }
+
+    /** The command name the heads reply and the status reply give the rig's one head, in that order. */
+    private suspend fun shownNames(client: HttpClient, url: String, key: String): List<String> {
+        val heads = client.get("$url/api/heads") { header("Authorization", "Bearer $key") }.bodyAsText()
+        val status = client.get("$url/api/status") { header("Authorization", "Bearer $key") }.bodyAsText()
+        val head = Json.parseToJsonElement(heads).jsonObject.getValue("heads").jsonArray.single().jsonObject
+        val row = Json.parseToJsonElement(status).jsonObject.getValue("registry").jsonArray.single().jsonObject
+        return listOf(head, row).map { it.getValue("label").jsonPrimitive.content }
+    }
+
     /** The self-exec hazard the wrap state exists to close: with the shim standing in for `claude`, a launch that
      *  cannot read the record of the real binary must refuse, never plant bare `claude` (which is the shim). */
     @Test

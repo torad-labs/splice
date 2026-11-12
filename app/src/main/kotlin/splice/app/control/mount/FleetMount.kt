@@ -36,7 +36,7 @@ private const val DEFAULT_LOG_TAIL = 200
 
 internal class FleetMount(
     private val heads: Map<String, ManagedHead>,
-    resolver: HeadResolver,
+    private val resolver: HeadResolver,
     audit: ControlAudit,
     private val guard: ControlGuard,
     /** Read at CALL time for the declared roster's families: ControlPlane assigns it after construction. */
@@ -100,7 +100,7 @@ internal class FleetMount(
             heads.values.forEach { m ->
                 addJsonObject {
                     put(KEY, m.head.key)
-                    put(LABEL, m.head.label)
+                    put(LABEL, resolver.shown(m))
                     put("authKind", m.authSurface.authKind)
                     put("family", families[m.head.key])
                 }

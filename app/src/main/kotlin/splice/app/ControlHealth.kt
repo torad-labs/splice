@@ -13,6 +13,7 @@ import splice.app.control.api.ControlHealthReport
 import splice.app.control.api.HeadReadiness
 import splice.app.control.api.HeadSignals
 import splice.app.control.api.ServingProcess
+import splice.app.control.api.TypedCommand
 import splice.app.daemon.BootedTopology
 import splice.app.daemon.Generations
 import splice.app.daemon.TopologyStaleness
@@ -29,13 +30,18 @@ internal class ControlHealth(
     private val mcp: ControlMcpWiring,
 ) {
     /** The per-head readings the heads route and /health share, read from the daemon's probes per request. */
-    fun signals(heads: Map<String, ManagedHead>, sessions: SessionSource, probes: HeadProbeReadings) =
-        HeadSignals(
-            heads,
-            RuntimeNotAnswering { probes.runtimeNotAnswering() },
-            sessions,
-            RuntimeUnread { probes.runtimeUnread() },
-        )
+    fun signals(
+        heads: Map<String, ManagedHead>,
+        sessions: SessionSource,
+        probes: HeadProbeReadings,
+        typed: TypedCommand,
+    ) = HeadSignals(
+        heads,
+        RuntimeNotAnswering { probes.runtimeNotAnswering() },
+        sessions,
+        RuntimeUnread { probes.runtimeUnread() },
+        typed,
+    )
 
     /** The /health body: the head set's verdict, the per-head readings, and the booted config's identity. */
     fun report(

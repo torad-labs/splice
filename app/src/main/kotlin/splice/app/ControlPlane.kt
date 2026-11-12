@@ -23,6 +23,7 @@ import splice.app.control.HandOver
 import splice.app.control.KeyRotation
 import splice.app.control.ManagedHead
 import splice.app.control.ProcessReads
+import splice.app.control.api.TypedCommand
 import splice.app.daemon.BootedTopology
 import splice.app.head.HeadProbeReadings
 import splice.app.peer.PeersWiring
@@ -30,11 +31,13 @@ import splice.app.provider.ClaudeAccountWiring
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ModelRosters
 import splice.app.provider.ProviderAssembly
+import splice.client.wrap.WrappedHead
 import splice.core.compaction.CompactionInstructions
 import splice.core.usage.QuotaReadFailures
 import splice.core.version.ClientVersionTracker
 import splice.head.HeadDeps
 import splice.launch.RemoteCommands
+import splice.launch.wrap.WrappedClaudeLaunch
 import splice.lifecycle.restart.ShutdownDaemon
 import splice.oauth.codex.CodexRefresh
 import splice.upstream.LifecycleScope
@@ -210,7 +213,9 @@ internal class ControlPlane(
         val mcpServices = mcp.services(mcpHost, home)
         // One session source serves the sessions routes and the heads route's client pids.
         val sessions = sessionWiring.source(home, heads, console, foregroundTools)
-        val signals = health.signals(heads, sessions, probes)
+        // Read per request from the same wrap file a launch reads, so a wrap or an unwrap shows at the next reply.
+        val claude = WrappedClaudeLaunch(WrappedHead(home))
+        val signals = health.signals(heads, sessions, probes, TypedCommand(claude::typed))
         val guard = parts.guard()
         val srv = ControlServer(
             adopted.control(controlPort),

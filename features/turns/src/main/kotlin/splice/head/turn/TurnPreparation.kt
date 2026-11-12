@@ -77,6 +77,9 @@ internal sealed class Preparation {
         val messagesHash: String?,
         /** The installed client can only compact after at least one assistant exchange exists. */
         val hasPriorExchange: Boolean,
+        /** Whether a session sent this turn itself. A turn Claude Code sends for a subagent is served like any other
+         *  and has no say in the model the command's logins are named for (AskedModels, Nov 12, 2026). */
+        val own: Boolean = true,
     ) : Preparation() {
         /** Transfers the raw request to its trace without retaining a second post-handoff owner. */
         fun takeInbound(): ClientInbound? = inbound.also { inbound = null }
@@ -331,6 +334,7 @@ internal class TurnPreparation(
             // V4-319: what a stop of this turn marks. A collect is never listed, so only a stream carries it there.
             messagesHash.takeIf { parsed.typed.stream },
             hasPriorExchange = parsed.typed.messages.any { it.role == "assistant" },
+            own = parsed.agentId == null,
         )
     }
 

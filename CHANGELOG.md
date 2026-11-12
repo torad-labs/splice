@@ -29,6 +29,10 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   the file. A command with one login says nothing: it has no last one to be down to.
 
 ### Fixed
+- **A script call that is cancelled as its worker dies is cancelled, not failed.** On a ChatGPT command with code
+  mode, a call into a script's worker that was cancelled (the turn was stopped, or its client left) could end
+  with "Code-mode worker was stopped; source was not rerun" when the worker died of something else at the same
+  moment. The cancelled call now ends as cancelled.
 - **Usage counts the logins that have used up a model.** The head of Plans and keys read "0 of 10 logins at their
   limit" on Nov 12, 2026 while six of eight Claude logins had used up Fable, the model every session was asking
   for: it counted a login's own windows and left each model's week out. It now also says, for a model some login

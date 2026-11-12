@@ -198,8 +198,8 @@ internal class HeadAdmission(
                 callerCredentialKey = callerKey,
                 // a login whose provider refused another model for the week still serves this one (Nov 3, 2026)
                 model = prepared.built.meta.route.upstreamModel,
-                // a subagent's turn: it is served like any other, and has no say in the command's usual model
-                helper = !call.request.headers[AGENT_HEADER].isNullOrBlank(),
+                // a subagent's turn is served like any other, and has no say in the command's usual model
+                own = call.request.headers[AGENT_HEADER].isNullOrBlank(),
             )
         }
         val account = when (selection) {

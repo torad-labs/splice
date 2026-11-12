@@ -150,16 +150,17 @@ public class AccountPool(
 
     /** A changed caller login takes precedence over automatic stickiness, but never an operator pin. [model] is the
      *  model the turn asks for: a login whose provider refused another model for the week serves it (Nov 3, 2026).
-     *  [helper] is a turn a session's helper sent, which has no say in the command's usual model ([AskedModels]). */
+     *  [own] is a session's own turn at its admission, the only kind with a say in the command's usual model
+     *  ([AskedModels]). */
     public fun select(
         sessionId: String?,
         excluded: Set<String>,
         callerCredentialKey: String?,
         model: String? = null,
-        helper: Boolean = false,
+        own: Boolean = true,
     ): Selection {
         require(sessionId == null || sessionId.isNotBlank()) { "session id must not be blank" }
-        asked.asked(model, helper)
+        asked.asked(model, own)
         while (true) {
             val current = liveMembership
             current.accounts.forEach { it.refreshCredentialEvidence() }
@@ -184,13 +185,13 @@ public class AccountPool(
             excluded: Set<String> = emptySet(),
             callerCredentialKey: String? = null,
             model: String? = null,
-            helper: Boolean = false,
+            own: Boolean = true,
         ): Selection {
             require(sessionId == null || sessionId.isNotBlank()) { "session id must not be blank" }
             currentCoroutineContext().ensureActive()
             val loads = evidenceLoads
-                ?: return this@AccountPool.select(sessionId, excluded, callerCredentialKey, model, helper)
-            asked.asked(model, helper)
+                ?: return this@AccountPool.select(sessionId, excluded, callerCredentialKey, model, own)
+            asked.asked(model, own)
             while (true) {
                 loads.ensureActive()
                 val current = runInterruptible(loads.ioDispatcher) { liveMembership }

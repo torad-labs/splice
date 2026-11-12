@@ -32,9 +32,11 @@ internal class TurnAccountHandoff(
         val pending = pending(drive) ?: return false
         val model = drive.meta.route.upstreamModel
         val session = drive.meta.scope.sessionId
-        val available = pool.awaitingEvidence.select(session, pending.excluded, model = model)
+        // own = false: the turn was counted toward the command's usual model at its admission. Counted again here, a
+        // login running out would hand that say to the helpers' turns it refused, at the moment the screens are read.
+        val available = pool.awaitingEvidence.select(session, pending.excluded, model = model, own = false)
         val selected = if (available is Selection.Exhausted && earlierHeld(drive)) {
-            pool.awaitingEvidence.select(session, model = model)
+            pool.awaitingEvidence.select(session, model = model, own = false)
         } else {
             available
         }

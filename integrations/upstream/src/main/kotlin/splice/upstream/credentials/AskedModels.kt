@@ -23,15 +23,16 @@ public class AskedModels(private val now: WallClock = WallClock { System.current
     private val recent = ArrayDeque<String>()
     private val lastAsked = HashMap<String, Long>()
 
-    /** A turn asked for [model]. One that names none is not counted. [helper] is a turn a session's helper sent: its
-     *  model is among those asked for [lately], and it has no say in which one is [usual]. */
+    /** A turn asked for [model]. One that names none is not counted. [own] is a session's own turn, at its admission:
+     *  only that has a say in which model is [usual]. A helper's turn, and a turn already counted that is moving to
+     *  another login, are among those asked for [lately] and nothing more. */
     @Synchronized
-    public fun asked(model: String?, helper: Boolean = false) {
+    public fun asked(model: String?, own: Boolean = true) {
         if (model == null) return
         val at = now()
         lastAsked[model] = at
         lastAsked.values.removeIf { at - it > ASKED_FOR_MS }
-        if (helper) return
+        if (!own) return
         if (recent.size == RECENT) recent.removeFirst()
         recent.addLast(model)
     }

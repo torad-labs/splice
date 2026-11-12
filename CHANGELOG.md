@@ -27,6 +27,15 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   the file. A command with one login says nothing: it has no last one to be down to.
 
 ### Fixed
+- **The session list no longer rereads every ended session from disk each time it is asked for.** The console
+  asks for the list every five seconds on Sessions, Models and Teams, and so do `splice status` and anything
+  else that reads `/api/sessions`. On Nov 12, 2026 one reply on a machine with 3,141 ended sessions read
+  14.8 MiB in about 32,000 reads from disk. The record of ended sessions kept in memory held 2,048, fewer than
+  the machine had, and the list is walked in one fixed order, so each record was dropped just before it was
+  asked for again. Every row also checked the settings file five times and the teams file once, and, for an
+  ended session on a Claude login, read every Claude login's files to find that login's name. The memory now
+  holds 32,768 records, and one reply reads the settings, the teams and each login's name once. The reply is
+  unchanged.
 - **Accounts and `splice status` show a login out of a model from the moment its provider refuses it there.**
   splice keeps two records about a login: the usage its provider last reported, and a hold it sets when the
   provider refuses a turn, which lasts until the reset the refusal named and decides where the next turn goes.

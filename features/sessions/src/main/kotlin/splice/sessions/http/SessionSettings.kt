@@ -22,6 +22,47 @@ internal object NoSessionSettings : SessionSettings {
     override fun gitRoots(head: String?): List<String> = emptyList()
 }
 
+/** What builds one listing's reply. */
+internal fun interface ListingReply {
+    fun json(): String
+}
+
+/** [settings], with each answer read once for a listing. A listing asks the same three settings for every row, and
+ *  each ask reads the configuration again: 3,201 rows asked about 16,000 times for one /api/sessions reply (Nov 12,
+ *  2026). Inside [once] an answer is read at its first ask and held for the thread building that listing; outside it
+ *  every ask reads through, so a setting changed between two replies shows in the next one. */
+internal class ListingSettings(private val settings: SessionSettings) : SessionSettings {
+    private class Held {
+        var view: Boolean? = null
+        val roots = HashMap<String?, List<String>>()
+        val folders = HashMap<String?, List<String>>()
+    }
+
+    private val held = ThreadLocal<Held?>()
+
+    /** Runs [listing] with the settings held; a listing built inside another shares the outer one's answers. */
+    fun once(listing: ListingReply): String {
+        if (held.get() != null) return listing.json()
+        held.set(Held())
+        return try {
+            listing.json()
+        } finally {
+            held.remove()
+        }
+    }
+
+    override fun transcriptView(): Boolean {
+        val now = held.get() ?: return settings.transcriptView()
+        return now.view ?: settings.transcriptView().also { now.view = it }
+    }
+
+    override fun gitRoots(head: String?): List<String> =
+        held.get()?.roots?.getOrPut(head) { settings.gitRoots(head) } ?: settings.gitRoots(head)
+
+    override fun projectFolders(head: String?): List<String> =
+        held.get()?.folders?.getOrPut(head) { settings.projectFolders(head) } ?: settings.projectFolders(head)
+}
+
 /** The settings as the daemon's live configuration holds them. */
 public class ConfigSessionSettings(private val config: ConfigService) : SessionSettings {
     override fun transcriptView(): Boolean = config.getConfig().transcriptView

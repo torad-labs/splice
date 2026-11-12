@@ -30,11 +30,30 @@ internal data class DoctorCheck(
 )
 
 /** What a check says beside its finding. [pendingRestart]: the declared restart-required value differs
- *  from the running daemon's value. [details]: supporting counts shown separately from the finding. */
+ *  from the running daemon's value. [details]: supporting counts shown separately from the finding. [command]: the
+ *  command the finding is about, on a check whose name covers every command (a command's link). [cause]: why a
+ *  sign-in check is not ok, by name. A page reads these two; it never matches the finding's sentence. */
 internal data class DoctorCheckNotes(
     val pendingRestart: Boolean = false,
     val details: String? = null,
+    val command: String? = null,
+    val cause: CheckCause? = null,
 )
+
+/** Why a command's sign-in check is not ok: `cause` on the wire, absent on every other row. */
+internal enum class CheckCause(val wire: String) {
+    /** The provider answered the credential splice holds with a refusal. */
+    PROVIDER_REFUSED("provider_refused"),
+
+    /** The provider rejected the login the client forwards; only the client can sign in again. */
+    LOGIN_REJECTED("login_rejected"),
+
+    /** Nobody has signed this command in. */
+    NOT_SIGNED_IN("not_signed_in"),
+
+    /** The variable its key is read from is not set. */
+    KEY_NOT_SET("key_not_set"),
+}
 
 /** What a check's `fix` is: `fix_kind` on the wire (absent with no fix). */
 internal enum class FixKind(val wire: String) {

@@ -46,7 +46,7 @@ const server = Bun.serve({
     // the command holds no sign-in: the playground route refuses the send in splice's own words (a 401 is the console's
     // own key being refused, which locks the page, so splice never answers a command's missing sign-in with one)
     if (path === "/api/playground" && req.method === "POST") {
-      return Response.json({ error: "no credential for this command", outcome: "error:auth-missing", head: HEAD }, { status: 502 });
+      return Response.json({ error: "no credential for this command", code: "no_credential" }, { status: 502 });
     }
     if (path.startsWith("/api/")) return Response.json({});
     const file = join(consoleDir, path === "/" ? "compare.html" : path.slice(1));

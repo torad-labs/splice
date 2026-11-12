@@ -26,7 +26,7 @@ const TRUST = {
   choices: [{ choice: 1, label: "No, exit", here: true }, { choice: 2, label: "Yes, I trust this folder", here: false }],
 };
 const TAIL = "Claude Code v2.1.296\n~/work/website\n\nSessionStart:startup hook error\nFailed with non-blocking status code: /bin/sh: 1: bun: not found";
-const DAEMON_SENTENCE = "claude-alpha did not register within 45 s";
+const DAEMON_SENTENCE = "reviewer did not start: Claude Code had not registered after 45s";
 
 let teams: Row[] = [], sessions: Row[] = [], start: { status: number; body: Row } = { status: 200, body: {} };
 const answered: Row[] = [];
@@ -139,13 +139,15 @@ test("No closes the terminal: the member reads Not started and Terminal closed, 
 }, 120_000);
 
 test("a start that timed out with nothing asked reads Not started, its screen behind Last screen, never the daemon's sentence", async () => {
-  start = { status: 504, body: { error: DAEMON_SENTENCE, screen: TAIL } };
+  start = { status: 504, body: { error: DAEMON_SENTENCE, code: "not_registered", waited_s: 45, screen: TAIL } };
   teams = team(null); sessions = [];
   await shoot("notstarted", async (p) => {
     await reviewer(p).locator(".slot-acts .act", { hasText: "Start new" }).click({ timeout: 20_000 });
     const card = reviewer(p);
     await expect(card.locator(".word")).toHaveText("Not started", { timeout: 20_000 });
     await expect(card).not.toContainText(DAEMON_SENTENCE);
+    // the wait is said from the reply's own fields (code, waited_s), not cut out of the sentence
+    await expect(card.locator("p.why.wait")).toHaveText("Waited 45 s");
     await expect(card.locator("pre.screen")).toHaveCount(0);
     const door = card.locator(".slot-acts .act", { hasText: "Last screen" });
     await expect(door).toHaveAttribute("aria-expanded", "false");

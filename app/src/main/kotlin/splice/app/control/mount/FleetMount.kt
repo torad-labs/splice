@@ -48,17 +48,23 @@ internal class FleetMount(
     private val starts = HeadStartCommands(heads)
 
     /** Each head's status, and for a launchable head whose command cannot start a session the refusal as `cannotStart`,
-     *  so Continue on and a team start say it before the press rather than after it (walk p180). */
+     *  so Continue on and a team start say it before the press rather than after it (walk p180). The command that fixes
+     *  it travels beside the sentence as `cannotStartFix`, when there is one. */
     private val listHeads = ListHeads(
         HeadStatusListing {
             resolver.headStatuses().map { status ->
                 val key = JsonScalars.str(status, KEY)
                 val managed = key?.let(heads::get)?.takeIf { it.launchSpec != null }
                 val refused = managed?.let { starts.forHead(it.head.key) as? StartCommand.Refused }
-                if (refused == null) status else JsonObject(status + ("cannotStart" to JsonPrimitive(refused.reason)))
+                if (refused == null) status else JsonObject(status + cannotStart(refused))
             }
         },
     )
+
+    private fun cannotStart(refused: StartCommand.Refused): Map<String, JsonPrimitive> = buildMap {
+        put("cannotStart", JsonPrimitive(refused.reason))
+        refused.fix?.let { put("cannotStartFix", JsonPrimitive(it)) }
+    }
 
     /** The /api/heads body, for the daemon's own doctor (V4-230). */
     fun headsJson(): String = listHeads.json()

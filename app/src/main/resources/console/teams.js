@@ -2172,7 +2172,7 @@ async function save(startAfter) {
   c.saving = false;
   if (!answer.ok) {
     c.error = refusedAs(answer, "Not saved", "save team");
-    c.repoWord = answer.status === 0 ? null : repoWordOf(answer.body?.error);
+    c.repoWord = answer.status === 0 ? null : repoWordOf(answer.body?.code);
     render();
     if (c.repoWord) root.querySelector("#t-repo")?.focus(); // a refusal of the repo leaves the person on Repo's row
     return;
@@ -2216,7 +2216,7 @@ async function startSlot(tm, slot, path = null) {
   // the daemon's sentence goes to the console's log; the card says the fact and keeps what he has not seen (fin)
   if (answer.status === 504) {
     console.warn(`start ${key}: ${answer.body?.error || 504}`);
-    ui.unstarted.set(key, { screen: answer.body?.screen || "", why: reasonOf(answer.body?.error) });
+    ui.unstarted.set(key, { screen: answer.body?.screen || "", why: reasonOf(answer.body) });
   } else if (answer.status === 409 && answer.body?.reason === "closed") {
     ui.unstarted.set(key, { path, why: "Terminal closed" });
   } else if (!answer.ok) {
@@ -2228,20 +2228,14 @@ async function startSlot(tm, slot, path = null) {
   await read();
 }
 
-/** Repo's word for the three refusals TeamRules.kt makes of the repo, matched whole so no other refusal outlines Repo
- *  (fin): needed when a member joins by rule, a path that does not exist, and one that is not a folder. */
-const repoWordOf = (said) => {
-  const why = String(said || "");
-  if (/^repo is needed when a member joins by rule\b/.test(why)) return "Needed";
-  if (/^repo '.*' does not exist$/s.test(why)) return "Not found";
-  return /^repo '.*' is not a directory$/s.test(why) ? "Not a folder" : null;
-};
+/** Repo's word for the three refusals TeamRules.kt makes of the repo, by the name each carries beside its sentence (the
+ *  reply's code), so no other refusal outlines Repo (fin): needed when a member joins by rule, a path that does not
+ *  exist, and one that is not a folder. */
+const REPO_WORD = { repo_needed: "Needed", repo_missing: "Not found", repo_not_a_directory: "Not a folder" };
+const repoWordOf = (code) => REPO_WORD[code] ?? null;
 /** The reason line a start that gave up keeps on its card, as a state (fin; Marlin p223): "Claude Code had not registered
  *  after 45s" reads "Waited 45 s". Any other reason has no line; its sentence is already in the console's log. */
-const reasonOf = (said) => {
-  const waited = String(said || "").match(/had not registered after (\d+)\s*s/);
-  return waited ? `Waited ${waited[1]} s` : null;
-};
+const reasonOf = (body) => (body?.code === "not_registered" && body.waited_s ? `Waited ${body.waited_s} s` : null);
 /** The folder a question names: its panel's line that is a path, as the client drew it. */
 const pathOf = (offer) => (offer?.panel || []).map((l) => l.text).find((t) => /^[~/]/.test(t)) || null;
 /** The client's question in its own words: the panel's lines up to its question mark, from after the last line that

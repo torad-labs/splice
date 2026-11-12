@@ -8,6 +8,7 @@ import splice.core.config.ConfigService
 import splice.core.storage.DayFileRemoval
 import splice.core.storage.DayFiles
 import splice.core.storage.DayInventory
+import splice.core.storage.TraceCapacityReason
 import splice.core.util.Cancellables
 import splice.core.util.JsonWire
 import splice.core.util.SafeFailureText
@@ -70,6 +71,11 @@ public class TraceDeleteRoutes @JvmOverloads constructor(
         // floor, the body budget spent); both null while they save whole. The size above stays what is kept.
         put("saving_stopped_at_epoch_ms", stopped?.atEpochMs)
         put("saving_stopped_reason", stopped?.reason)
+        // The reason by name, which is what the console reads to choose its words, and the free space the store
+        // leaves when the disk was the cause; both null for a reason the store did not write.
+        val why = TraceCapacityReason(stopped?.reason)
+        put("saving_stopped_code", why.cause()?.wire)
+        put("saving_stopped_floor_bytes", why.floorBytes())
     }.let(JsonWire::string)
 
     private fun refuse(status: HttpStatusCode, message: String): JsonReply =

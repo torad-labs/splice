@@ -60,7 +60,11 @@ internal class DoctorPathCheck(private val probes: DoctorProbes) {
         }
     }
 
-    internal fun wrapperCheck(link: Path, command: String): DoctorCheck {
+    /** A command's link, with the command it is about beside the finding (DoctorCheckNotes.command). */
+    internal fun wrapperCheck(link: Path, command: String): DoctorCheck =
+        linkCheck(link, command).let { it.copy(notes = it.notes.copy(command = command)) }
+
+    private fun linkCheck(link: Path, command: String): DoctorCheck {
         // DR-69: the entry stat is the probe — NoSuch through a traversable parent is genuinely
         // not-linked; any other failure is a PRESENT-but-unreadable bin, a different diagnosis.
         val entryStat = Cancellables

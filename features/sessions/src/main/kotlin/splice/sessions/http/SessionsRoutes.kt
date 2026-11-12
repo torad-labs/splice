@@ -270,6 +270,7 @@ public class SessionsRoutes(
         repo.worktree?.let { put("worktree", it) }
         // why the folder gets no project (an untrusted or outside root), so Sessions can say it under No project
         repo.reason?.let { put("reason", it) }
+        repo.gap?.let { put("reason_code", it.wire) }
     }
 
     private fun resolverFor(head: String?): RepoResolver {

@@ -81,7 +81,7 @@ async function read() {
   // behind one word). The rows stay, dimmed, under a line that says splice did not answer and when it last did.
   state.error = sessions.ok ? null : refusedAs(sessions, "Not read", "/api/sessions");
   if (sessions.ok) state.readAt = Date.now();
-  state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null, idleMs: h.gate?.stream_idle_ms ?? null, firstByteMs: h.gate?.first_byte_timeout_ms ?? null, authKind: h.authKind ?? null, cannotStart: h.cannotStart ?? null }));
+  state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null, idleMs: h.gate?.stream_idle_ms ?? null, firstByteMs: h.gate?.first_byte_timeout_ms ?? null, authKind: h.authKind ?? null, cannotStart: h.cannotStart ?? null, cannotStartFix: h.cannotStartFix ?? null }));
   // kept apart from the live commands: nothing runs on a removed one, so Stop, a move and the live reads never ask it
   state.retired = retiredHeads(retired, state.heads);
   for (const row of models.body?.heads || []) {
@@ -810,20 +810,22 @@ function rowColsHtml(pieces, n) {
 /** WHY THESE SESSIONS ARE IN NO PROJECT, SAID ONCE (gap: one sentence printed on eight rows, in the code's word for a
  *  folder). Each reason the repo wire gives, once, in plain words, with the folders it holds (round 2: with two
  *  reasons, which folder had which was lost), so the reason is what he acts on. A session with no reason says nothing. */
+// keyed by the name the daemon sends beside its sentence (repo.reason_code); a reason with no name here is said in the
+// daemon's own sentence, tidied
 const REASON_WORD = {
-  "the cwd is not inside a git repository": "Not in a git repository",
-  "the cwd is outside the trusted roots ($HOME, /tmp, statuslineGitRoots), so it was not probed": "Outside the folders splice reads",
-  "the cwd does not exist on this host": "Folder not on this computer",
-  "the cwd is not an absolute path": "Folder path not whole",
+  no_repo: "Not in a git repository",
+  untrusted: "Outside the folders splice reads",
+  missing: "Folder not on this computer",
+  not_absolute: "Folder path not whole",
 };
-const reasonWord = (r) => REASON_WORD[r] ?? String(r).replace(/\(.*?\)/g, "").replace(/\bcwd\b/g, "folder").replace(/\s+/g, " ").trim().replace(/^./, (c) => c.toUpperCase());
+const reasonWord = (repo) => REASON_WORD[repo.reason_code] ?? String(repo.reason).replace(/\(.*?\)/g, "").replace(/\bcwd\b/g, "folder").replace(/\s+/g, " ").trim().replace(/^./, (c) => c.toUpperCase());
 const FOLDERS_SAID = 3;
 function noProjectWhy(rows) {
   const why = new Map();
   for (const s of rows) {
     const r = s.row.repo?.reason;
     if (!r) continue;
-    const whole = s.row.place || s.repo || "", word = reasonWord(r), place = shortPlace(whole);
+    const whole = s.row.place || s.repo || "", word = reasonWord(s.row.repo), place = shortPlace(whole);
     if (!why.has(word)) why.set(word, new Map());
     if (place && !why.get(word).has(place)) why.get(word).set(place, whole);
   }
@@ -1444,7 +1446,7 @@ function factsHtml(s) {
   const chip = (html, cls = "") => `<span class="sx-chip${cls ? ` ${cls}` : ""}">${html}</span>`;
   const where = whereHtml(s, true);
   const place = chip(where || DRAW.dash, "folder");
-  const reason = !s.project && s.row.repo?.reason ? chip(esc(reasonWord(s.row.repo.reason)), "note") : "";
+  const reason = !s.project && s.row.repo?.reason ? chip(esc(reasonWord(s.row.repo)), "note") : "";
   const tree = s.wt && wtWord(s.wt) !== "Worktree" ? chip(`${ICON.branch}<span>${esc(s.wt)}</span>`) : "";
   const team = chip(`${ICON.team}<span>Team</span> ${s.team ? esc(s.team) : DRAW.dash}`);
   const version = chip(`Claude Code ${s.row.version ? esc(s.row.version) : DRAW.dash}`, "mono");
@@ -2084,8 +2086,8 @@ async function readChoices(s) {
       .filter((n) => h.head !== s.head || (n.id !== now && n.label !== s.model));
     if (!names.length) return null;
     // a command splice cannot start says so, with its fix, before the press: a move onto it would only be refused
-    const unstartable = state.heads.find((x) => x.key === h.head)?.cannotStart;
-    if (unstartable) return { head: h.head, own: h.head === s.head, names, kind: "unlinked", fix: unstartable.match(/(splice install \S+?)\.?$/)?.[1] ?? null, rank: 4 };
+    const unstartable = state.heads.find((x) => x.key === h.head && x.cannotStart);
+    if (unstartable) return { head: h.head, own: h.head === s.head, names, kind: "unlinked", fix: unstartable.cannotStartFix, rank: 4 };
     if (state.heads.find((x) => x.key === h.head)?.authKind === "api-key") {
       // a key reads as its provider, the heading Accounts draws over it; its variable joins only when two keys of
       // that provider feed this command, so the line says which one it sends (fin)

@@ -106,6 +106,8 @@ public class ProjectsRoutes(
                         buildJsonObject {
                             put("scope", rule.scope.wire)
                             put("source", rule.source)
+                            // the model a model or project-model rule is for, absent on a rule for every model
+                            rule.model?.let { put("model", it) }
                             // live length: 0 for an explicit opt-out, null when the file is unreadable
                             // (the source label says so too) — CompactionInstructionsRoute's rule.
                             put("chars", rule.text?.length)

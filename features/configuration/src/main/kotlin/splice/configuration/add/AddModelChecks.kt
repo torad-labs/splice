@@ -41,8 +41,12 @@ internal object AddModelChecks {
                 when {
                     missing.isEmpty() ->
                         AddCheck(MODELS_CHECK, true, "all ${models.size} row(s) listed by the endpoint")
-                    authoritative ->
-                        AddCheck(MODELS_CHECK, false, "not listed by the endpoint: $missing (it lists $shown)")
+                    authoritative -> AddCheck(
+                        MODELS_CHECK,
+                        false,
+                        "not listed by the endpoint: $missing (it lists $shown)",
+                        AddFinding(AddCause.NOT_LISTED),
+                    )
                     else ->
                         AddCheck(MODELS_CHECK, true, "$missing trusted: the server answers any model id (lists $shown)")
                 }

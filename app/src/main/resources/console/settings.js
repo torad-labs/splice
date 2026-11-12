@@ -600,6 +600,13 @@ const traceSetDays = (head) => {
   const all = ks.cfg?.knobs?.traceRetentionDays;
   return all && all.scope !== "default" && Number(all.value) >= 1 ? Number(all.value) : null;
 };
+/** Why saving stopped, in the page's words, by the daemon's name for the cause (trace/kept's saving_stopped_code). */
+const STOP_WORDS = {
+  disk_floor: (bytes) => bytes ? `The disk is down to the ${mbWord(bytes)} splice leaves free` : "The disk is nearly full",
+  index_budget: () => "The 16 GB for request records is full",
+  body_budget: () => "The 32 GB for prompts and answers is full",
+  body_evicted: () => "The 32 GB for prompts and answers is full",
+};
 /** Since when prompts and answers have not saved, from each command's trace/kept answer: the first stop among the
  *  commands saving, the reason in words, and the commands it holds for. Null while every one saves whole. Settings said
  *  "25.2 GB counted" while nothing had been saved since 10:44 AM, the disk at splice's free-space floor (walk on d0ec523b5). */
@@ -607,17 +614,15 @@ function traceStopped() {
   const stops = ui.heads.map((h, i) => ({ h, b: ui.kept.trace?.[i] })).filter(({ h, b }) => traceOn(h) && b?.saving_stopped_at_epoch_ms);
   if (!stops.length) return null;
   const at = Math.min(...stops.map(({ b }) => b.saving_stopped_at_epoch_ms));
-  const why = String(stops.find(({ b }) => b.saving_stopped_at_epoch_ms === at).b.saving_stopped_reason || "");
+  const first = stops.find(({ b }) => b.saving_stopped_at_epoch_ms === at).b;
+  const why = String(first.saving_stopped_reason || "");
   // the cause in his words; the daemon's own sentence goes to the console, where it can be read in full. Each known
   // cause is one that deleting what is kept clears, so it carries the way to Free up space; an unknown one does not.
   if (why) console.warn(`trace: saving stopped: ${why}`);
-  // the floor is a twentieth of the disk, 64 GB at most, and the daemon's reason ends in its size: the card said
-  // "64 GB" on every disk while that was the one floor (Nov 11)
-  const floor = /free-space floor reached: splice leaves (\d+) B free/.exec(why);
-  const known = floor ? `The disk is down to the ${mbWord(+floor[1])} splice leaves free`
-    : /free-space floor/.test(why) ? "The disk is nearly full"
-    : /index budget/.test(why) ? "The 16 GB for request records is full"
-    : /body budget|evicted/.test(why) ? "The 32 GB for prompts and answers is full" : "";
+  // The cause by the daemon's name for it (saving_stopped_code), never by the words of its sentence: a reworded
+  // sentence used to change this card without anyone seeing it. The floor is a twentieth of the disk, 64 GB at
+  // most, and the daemon sends its size: the card said "64 GB" on every disk while that was the one floor (Nov 11).
+  const known = STOP_WORDS[first.saving_stopped_code]?.(first.saving_stopped_floor_bytes) ?? "";
   const heads = stops.length < ui.heads.filter(traceOn).length ? stops.map(({ h }) => h) : [];
   return { when: whenWord(at), words: known || shortWhy(why), known: !!known, heads };
 }
@@ -1950,7 +1955,7 @@ function runStep(output) {
   for (const l of output) {
     if (/restarted, serving/.test(l)) return RUN_STEPS.length;
     if (/stopping daemon/.test(l)) at = Math.max(at, 1);
-    else if (at >= 1 && /waiting up to|in flight|compaction/.test(l)) at = Math.max(at, 2);
+    else if (at >= 1 && /waiting up to/.test(l)) at = Math.max(at, 2);
     else if (/starting the daemon/.test(l)) at = Math.max(at, 3);
   }
   return at;

@@ -1109,7 +1109,8 @@ function authLook(c) {
 function authWord(c, row) {
   const ok = row.status === "ok" || row.status === "info", keyed = /key/i.test(c.auth);
   if (ok) return keyed ? "Key in place" : "Signed in";
-  return /refus|reject|invalid|401/i.test(row.detail ?? "") ? "Credentials refused" : keyed ? "No key" : "Signed out";
+  // why the check is not ok, by the name doctor sends for it (the row's `cause`), never by its sentence
+  return row.cause === "provider_refused" || row.cause === "login_rejected" ? "Credentials refused" : keyed ? "No key" : "Signed out";
 }
 function signInSection(c, d, st, bar = false) {
   const was = fieldsOf(c), s = st.own;
@@ -1394,8 +1395,8 @@ const EVENTS = [
   [/credentials? (refused|rejected)/i, () => "Credentials refused"],
   [/rate.?limited/i, () => "Rate limited"],
   [/command not found/i, () => "Command not found"],
-  [/wrapper (restored|relinked)|restored/i, () => "Restored"],
-  [/settings re-read|config(uration)? re-read/i, () => "Settings re-read"],
+  // the daemon's own line when an edit to splice.toml changes a command's windows (TopologyWindows.kt)
+  [/context windows re-read from splice\.toml/, () => "Settings re-read"],
 ];
 const REQUEST_LINE = /\b(turn|perf|cache|count_tokens|account|activity|re-anchor|mid-stream)\b|upstream \d+\/\d+/i;
 const ampm = (hms) => { // 8:02 AM, the way a message's time is written; the raw log keeps its seconds
@@ -2670,14 +2671,14 @@ function compRail(p, c) {
   const who = { base: `<span class="rbase">Claude Code's own</span>`, g: `<span class="rscope">Everywhere</span>`, m: mword, p: name, pm: `${name}${mword}` };
   // what splice reads for each rule (GET /api/projects compaction): a file it cannot read says so in the limit red
   const rows = p.compaction ?? [];
-  const rowOf = { g: rows.find((r) => r.scope === "global"), m: rows.find((r) => r.scope === "model" && r.source?.includes(`model:${model}`)),
-    p: rows.find((r) => r.scope === "project"), pm: rows.find((r) => r.scope === "project-model" && r.source?.includes(`model:${model}`)) };
+  const rowOf = { g: rows.find((r) => r.scope === "global"), m: rows.find((r) => r.scope === "model" && r.model === model),
+    p: rows.find((r) => r.scope === "project"), pm: rows.find((r) => r.scope === "project-model" && r.model === model) };
   const value = (k) => {
     const s = st[k];
     if (s.mode === "inherit") return "";
     if (s.mode === "off") return `<span class="rown">Claude Code's own</span>`;
     if (s.mode === "file") {
-      const r = rowOf[k], bad = r && (r.chars == null || / unreadable$/.test(r.source ?? ""));
+      const r = rowOf[k], bad = r && r.chars == null;
       // a file splice read with nothing in it is a rule that says nothing: a compaction here runs on Claude Code's own
       // instructions, so the rung says Empty beside the name instead of reading as a rule with text in it
       const said = bad ? `<span class="said limit">Unreadable</span>` : r?.chars === 0 ? `<span class="said">Empty</span>`
@@ -3104,15 +3105,17 @@ function httpWord(code) {
   return n === 401 || n === 403 ? "Key refused" : n === 404 ? "Not found there" : n === 429 ? "Rate limited"
     : n >= 500 ? "Provider failed" : n >= 400 ? "Refused" : "No answer";
 }
+// what a failed check found, by the names the daemon sends beside its sentence (cause, http_status, at); the sentence
+// itself goes to the log alone
 function failWordOf(c, p) {
-  const d = c.detail ?? "", http = /HTTP (\d{3})/.exec(d)?.[1] ?? null;
-  console.warn(`add check ${c.name}: ${d}`);
+  const http = c.http_status ?? null;
+  console.warn(`add check ${c.name}: ${c.detail ?? ""}`);
   if (c.name === "credential") return { word: /oauth|login|sign/i.test(p.auth_kind) ? "Signed out" : "No key" };
   // the address tried is the URL field's own value beside the check, so the word does not say it again; it rides the title
-  if (c.name === "base url") return { word: "No answer", at: /\bat (\S+)$/.exec(d)?.[1] ?? null };
+  if (c.name === "base url") return { word: "No answer", at: c.at ?? null };
   if (c.name === "models") {
     return http ? { word: httpWord(http), code: http }
-      : { word: /did not answer with a model list|not a list/i.test(d) ? "No list" : /not listed|missing/i.test(d) ? "Not listed" : "No answer" };
+      : { word: c.cause === "no_list" ? "No list" : c.cause === "not_listed" ? "Not listed" : "No answer" };
   }
   if (c.name === "windows") return { word: "Too large" };
   return http ? { word: httpWord(http), code: http } : { word: "No answer" };

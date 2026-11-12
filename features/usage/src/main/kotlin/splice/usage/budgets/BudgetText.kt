@@ -6,6 +6,7 @@
 // (ApiCostText); the budget beside it is the operator's own number and stays plain.
 package splice.usage.budgets
 
+import splice.core.budget.BudgetAmounts
 import splice.core.budget.BudgetBlock
 import splice.usage.ApiCostText
 import java.time.Instant
@@ -36,6 +37,7 @@ internal object BudgetText {
                 if (partial.isEmpty()) "" else " spend_complete=false",
             limit = ApiCostText.limit(limit),
             resetsAt = resetsAt,
+            amounts = BudgetAmounts(spentUsd = tally.usd, limitUsd = limit),
         )
     }
 

@@ -37,10 +37,11 @@
   const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
   const KEYS = MAC ? "⌘K" : "Ctrl+K";
   const WORD = { working: "Working", waiting: "Needs you", idle: "Ready" };
-  // A command that cannot carry the manager now, in the console's own state words for the daemon's reasons
-  // (ManagerWiring.why). Each state is said once, over the commands in it, never under every one of them.
-  const HEAD_STATES = [[/^not installed/i, "Not installed"], [/quota/i, "At limit"], [/not answering/i, "Not answering"], [/stopped/i, "Stopped"]];
-  const headState = (x) => HEAD_STATES.find(([re]) => re.test(x.why || ""))?.[1] ?? "Not ready";
+  // A command that cannot carry the manager now, in the console's own state words for the daemon's name of the cause
+  // (why_code, ManagerWiring.block), never for the words of its sentence. Each state is said once, over the commands in
+  // it, never under every one of them.
+  const HEAD_STATES = { not_installed: "Not installed", out_of_quota: "At limit", not_answering: "Not answering", stopped: "Stopped" };
+  const headState = (x) => HEAD_STATES[x.why_code] ?? "Not ready";
   // WHAT A CHANGE OF MODEL OR EFFORT COSTS, DRAWN AS THE FIGURE IT RE-READS (Oct 28): said once at the foot of the menu
   // that makes it, with the size of the conversation the manager's own status line reports, never a guess at one
   const rereadLine = (ctx) => `<p class="cmp-menuline cmp-reread">${ICON.retries}`

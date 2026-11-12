@@ -18,7 +18,7 @@ const server = Bun.serve({
     if (path === "/api/models") return Response.json({ heads: [{ head: "codex", provider: "codex", models: [{ id: "gpt-6.1-sol", label: "GPT 6.1 Sol" }] }] });
     if (path === "/api/auth") return Response.json({ codex: { present: true, display_name: "primary" } });
     if (path === "/api/playground" && req.method === "POST") {
-      return Response.json({ error: sentence, outcome: "error:budget-blocked", blocked: "budget", detail: "spent_usd=2.00", head: "codex" }, { status: 429 });
+      return Response.json({ error: sentence, outcome: "error:budget-blocked", blocked: "budget", head: "codex", spent_usd: 2, limit_usd: 2 }, { status: 429 });
     }
     if (path.startsWith("/api/")) return Response.json({});
     const file = join(consoleDir, path === "/" ? "compare.html" : path.slice(1));

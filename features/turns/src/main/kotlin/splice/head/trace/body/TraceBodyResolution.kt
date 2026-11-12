@@ -5,15 +5,20 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.storage.BODY_BUDGET_EVICTED_REASON
 import splice.core.storage.DayBodyBudget
+import splice.core.storage.TraceCapacityReason
 import splice.core.util.JsonScalars
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
+
+/** The key an unkept body's cause travels under, by name ([splice.core.storage.TraceCapacityCause.wire]). */
+private const val UNAVAILABLE_CODE = "code"
 
 /** Reference identity, body eviction and literal selection share one read-only boundary. */
 internal class TraceBodyResolution(
@@ -29,7 +34,7 @@ internal class TraceBodyResolution(
     ): JsonElement {
         val format = TracePackFormat.entries.firstOrNull { it.names(value) }
             ?: throw IOException("invalid trace body chunk version")
-        if (JsonScalars.str(value, "unavailable") == "true") return value
+        if (JsonScalars.str(value, "unavailable") == "true") return named(value)
         if (budget.evicted(day)) {
             validation?.invalidate(format.pack(day))
             return unavailable(BODY_BUDGET_EVICTED_REASON)
@@ -70,5 +75,14 @@ internal class TraceBodyResolution(
         put("unavailable", true)
         put("truncated", true)
         put("reason", reason)
+        TraceCapacityReason(reason).cause()?.let { put(UNAVAILABLE_CODE, it.wire) }
+    }
+
+    /** A body a record says was not kept, with its cause by name: the console reads the name, and a record written
+     *  before the names existed carries only the sentence. */
+    private fun named(unkept: JsonObject): JsonObject {
+        val cause = TraceCapacityReason(JsonScalars.str(unkept, "reason")).cause()
+        if (cause == null || UNAVAILABLE_CODE in unkept) return unkept
+        return JsonObject(unkept + (UNAVAILABLE_CODE to JsonPrimitive(cause.wire)))
     }
 }

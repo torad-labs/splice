@@ -58,6 +58,9 @@ import java.util.concurrent.ConcurrentHashMap
 // past it the screen is the answer, and a person is never left looking at Starting.
 internal const val ARRIVAL_SECONDS = 45L
 
+/** The name a start that gave up waiting for the session carries beside its sentence. */
+private const val NOT_REGISTERED_CODE = "not_registered"
+
 // why: enough of the bottom of the screen to read the question a prompt asks, and not a page of scrollback.
 internal const val SCREEN_TAIL_LINES = 12
 private const val NO_TERMINAL = "splice has no terminal to start sessions in yet"
@@ -253,6 +256,9 @@ public class TeamStart(
             HttpStatusCode.GatewayTimeout,
             buildJsonObject {
                 put("error", said + closing)
+                // The same fact by name, with the wait as a number: the card says "Waited 45 s" from these two.
+                put("code", NOT_REGISTERED_CODE)
+                put("waited_s", ARRIVAL_SECONDS)
                 put("screen", screen)
             }.toString(),
         )

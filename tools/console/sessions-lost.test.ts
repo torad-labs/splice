@@ -73,8 +73,8 @@ test("a login at its limit can still take the session, which moves there when th
 test("under No project each reason names the folders it holds", async () => {
   sessions = [
     row("s-a", "api", project("website")),
-    row("s-n1", "scratch", { place: "~/scratch", repo: { root: "/home/me/scratch", reason: "the cwd is not inside a git repository" } }),
-    row("s-n2", "vendored", { place: "/opt/vendor/lib", cwd: "/opt/vendor/lib", repo: { root: "/opt/vendor/lib", reason: "the cwd is outside the trusted roots ($HOME, /tmp, statuslineGitRoots), so it was not probed" } }),
+    row("s-n1", "scratch", { place: "~/scratch", repo: { root: "/home/me/scratch", reason: "the cwd is not inside a git repository", reason_code: "no_repo" } }),
+    row("s-n2", "vendored", { place: "/opt/vendor/lib", cwd: "/opt/vendor/lib", repo: { root: "/opt/vendor/lib", reason: "the cwd is outside the trusted roots ($HOME, /tmp, statuslineGitRoots), so it was not probed", reason_code: "untrusted" } }),
   ];
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   try {

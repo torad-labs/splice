@@ -593,8 +593,8 @@ TIME_AXIS.ticks.forEach(([ms], i) => document.documentElement.style.setProperty(
 // One routine for every page that offers it (Models' header act, Compare's Start on a card that is not answering), so the same
 // command gets the same press wherever it stands: Start, or Restore where its link is gone, each run through the fix the daemon's
 // doctor lists for it where one exists and through the plain start where none is; Check again where its runtime does not answer.
-// doctor's row for a command's own link names the command in quotes, so one command's name inside another's never matches
-const wrapperOf = (x, c) => x.id === "installation/wrapper" && Boolean(x.detail?.startsWith(`'${c.cmd}'`));
+// doctor's row for a command's own link carries the command beside its sentence (the row's `command`)
+const wrapperOf = (x, c) => x.id === "installation/wrapper" && x.command === c.cmd;
 /** What splice offers command [c] ({ key, cmd, live, down, unread, auth }) given doctor's [checks]: { id, label } for a doctor fix,
  *  { head, label } for the plain start, { recheck, label } to read its runtime again, { signin, label } to sign it in, or null. */
 function commandFix(c, checks = []) {
@@ -605,7 +605,7 @@ function commandFix(c, checks = []) {
   if (c.down) return { recheck: true, label: "Check again" };
   if (c.unread || !bad) return null;
   if (bad.id.startsWith("auth/")) {
-    const keyed = /key/i.test(c.auth), refused = /refus|reject|invalid|401/i.test(bad.detail ?? "");
+    const keyed = /key/i.test(c.auth), refused = bad.cause === "provider_refused";
     return { signin: true, label: keyed ? (refused ? "Replace key" : "Add key") : "Sign in" };
   }
   return bad.fix_id ? { id: bad.fix_id, label: bad.id === "installation/wrapper" ? "Restore" : "Start" } : null;

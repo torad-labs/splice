@@ -25,6 +25,8 @@ package splice.app.probe
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.java.Java
+import io.ktor.client.network.sockets.ConnectTimeoutException
+import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.headers
 import io.ktor.client.request.preparePost
@@ -49,6 +51,7 @@ import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
 import splice.diagnostics.playground.PlaygroundBlocked
 import splice.diagnostics.playground.PlaygroundFailure
+import splice.diagnostics.playground.PlaygroundFailureKind
 import splice.diagnostics.playground.PlaygroundHead
 import splice.diagnostics.playground.PlaygroundOutcome
 import splice.diagnostics.playground.PlaygroundProbe
@@ -64,6 +67,8 @@ import splice.upstream.failure.FailedReply
 import splice.upstream.failure.ForeignCredential
 import splice.upstream.transport.HeaderRedaction
 import splice.upstream.transport.UpstreamHeaders
+import java.net.SocketTimeoutException
+import java.net.http.HttpTimeoutException
 import java.time.Instant
 
 // why: matches UpstreamTransport's own connect budget — a playground probe is not a special client.
@@ -98,17 +103,23 @@ internal class UpstreamPlaygroundProbe(
      *  does not serve comes back as the provider's own answer, shown like any other. */
     override suspend fun run(head: PlaygroundHead, prompt: String, model: String?): PlaygroundOutcome {
         val target = providers.target(head.key)
-            ?: return PlaygroundFailure("head '${head.key}' has no running provider to send through")
+            ?: return PlaygroundFailure(
+                "head '${head.key}' has no running provider to send through",
+                PlaygroundFailureKind.NO_PROVIDER,
+            )
         val provider = target.provider
         val login = target.login
         val auth = login?.auth ?: target.auth ?: head.auth
         val creds = Cancellables.runCatchingCancellable { auth.credentials() }
             .getOrElse { return PlaygroundFailure("reading credentials failed: ${SafeFailureText.render(it)}") }
         return when {
-            creds == null -> PlaygroundFailure("head '${head.key}' has no credential configured")
+            creds == null -> PlaygroundFailure(
+                "head '${head.key}' has no credential configured",
+                PlaygroundFailureKind.NO_CREDENTIAL,
+            )
             creds is Credentials.ClientForwarded -> {
                 val why = "head '${head.key}' forwards the caller's own auth; playground has none to send"
-                PlaygroundFailure(why)
+                PlaygroundFailure(why, PlaygroundFailureKind.CALLER_AUTH)
             }
             else -> build(
                 provider,
@@ -144,7 +155,7 @@ internal class UpstreamPlaygroundProbe(
     private suspend fun send(provider: Provider, sender: Sender, turn: BuiltTurn): PlaygroundOutcome {
         val model = turn.meta.route.upstreamModel
         sender.sends?.admit(model, sender.login?.label)?.let {
-            return PlaygroundBlocked(sender.head, it.message)
+            return PlaygroundBlocked(sender.head, it.message, it.amounts)
         }
         val row = CompareSendRecord(sender.sends, model, sender.login?.label, clock)
         val url = provider.upstreamUrl
@@ -171,8 +182,16 @@ internal class UpstreamPlaygroundProbe(
                 sender.observer?.posted(replySender)
                 statement.execute { sent -> response(provider, sender, turn, replySender, Sent(url, sent, row)) }
             },
-            failed = { PlaygroundFailure("upstream call to $url failed: ${SafeFailureText.render(it)}") },
+            failed = { PlaygroundFailure("upstream call to $url failed: ${SafeFailureText.render(it)}", kindOf(it)) },
         )
+    }
+
+    /** A send the timeouts above cut, told by its type: the page says "Timed out" for these and names a lost
+     *  connection for the rest. */
+    private fun kindOf(failure: Throwable): PlaygroundFailureKind = when (failure) {
+        is HttpRequestTimeoutException, is ConnectTimeoutException -> PlaygroundFailureKind.TIMED_OUT
+        is SocketTimeoutException, is HttpTimeoutException -> PlaygroundFailureKind.TIMED_OUT
+        else -> PlaygroundFailureKind.CALL_FAILED
     }
 
     /** Header acceptance is published before reading the body, even if that stream later fails. */

@@ -1,6 +1,6 @@
 # Changelog
 
-## splice v0.4.0: teams across models, resume on another model, and one-command setup - 2026-10-14
+## splice v0.4.0: teams across models, resume on another model, and one-command setup - 2026-11-11
 
 ### Highlights
 - **GPT keeps its reasoning across prompts.** `replay_reasoning` now ships on for every head on the Responses

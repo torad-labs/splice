@@ -22,14 +22,7 @@ internal data class SetupFacts(
     val vendorCli: Set<String>,
     val openRouterKey: Boolean,
     val daemonUp: Boolean,
-    val suggested: SetupStart,
 )
-
-internal sealed class SetupStart {
-    data object OpenRouter : SetupStart()
-    data class OAuth(val kind: String) : SetupStart()
-    data object Existing : SetupStart()
-}
 
 internal class SetupDetection(
     private val env: EnvReader,
@@ -42,7 +35,7 @@ internal class SetupDetection(
         val vendor = presentVendor()
         val openRouter = !env(OPENROUTER_KEY).isNullOrBlank()
         val daemonUp = daemon(controlPort(env))
-        return SetupFacts(owned, vendor, openRouter, daemonUp, suggest(owned, vendor, openRouter, daemonUp))
+        return SetupFacts(owned, vendor, openRouter, daemonUp)
     }
 
     private fun presentOwned(): Set<String> =
@@ -55,18 +48,6 @@ internal class SetupDetection(
             val oauth = kind as? AuthKind.OAuth ?: return@mapNotNull null
             oauth.wire.takeIf { credentials(oauth.nativeAppFile) }
         }.toSet()
-
-    private fun suggest(
-        owned: Set<String>,
-        vendor: Set<String>,
-        openRouter: Boolean,
-        daemonUp: Boolean,
-    ): SetupStart {
-        val anyCredential = owned.isNotEmpty() || vendor.isNotEmpty() || openRouter
-        if (daemonUp && anyCredential) return SetupStart.Existing
-        val kind = AuthKindRegistry.knownKinds().firstOrNull { it.wire in owned || it.wire in vendor }
-        return if (kind != null) SetupStart.OAuth(kind.wire) else SetupStart.OpenRouter
-    }
 }
 
 private const val OPENROUTER_KEY = "OPENROUTER_API_KEY"

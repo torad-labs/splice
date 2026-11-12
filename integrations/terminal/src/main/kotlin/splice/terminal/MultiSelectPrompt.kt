@@ -72,6 +72,8 @@ public class MultiSelectPrompt(
                 Key.Up, Key.Down, Key.Left, Key.Right, Key.Backspace, is Key.Char -> Unit
             }
         }
+        // The answered list stays on the screen without its line of keys.
+        rewind(1)
         return outcome
     }
 
@@ -111,12 +113,11 @@ public class MultiSelectPrompt(
         for (i in options.indices) {
             paintRow(options[i], active = i == cursor, on = options[i].value in selected)
         }
-        var lines = 1 + options.size
-        if (notice != null) {
-            out.append(DIM).append(notice).append(RESET).append('\n')
-            lines += 1
-        }
-        return lines
+        // The keys, under the rows; a notice (why Enter was refused) takes the line while it stands. A tick list
+        // named no key until Nov 11, 2026, and a person at a column of empty circles pressed Enter, which ticks
+        // nothing.
+        out.append(DIM).append(notice ?: KEYS).append(RESET).append('\n')
+        return options.size + 2
     }
 
     private fun <T> paintRow(option: SelectOption<T>, active: Boolean, on: Boolean) {
@@ -149,6 +150,7 @@ public class MultiSelectPrompt(
     }
 }
 
+private const val KEYS = "space ticks a row · enter continues"
 private const val POINTER = "❯"
 private const val CHECKED = "◉"
 private const val UNCHECKED = "○"

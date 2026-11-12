@@ -102,19 +102,18 @@ internal class SetupCommand(
         frame.intro("splice setup")
         val facts = detect()
         menu.printDetected(facts)
-        val options = menu.startOptions(facts)
-        val picked = prompts.choose(options, menu.initialIndex(facts, options))
-        val start = menu.chosenStart(picked) ?: return WizardAnswer.Cancelled("cancelled")
         val path = TopologyLoader.configPath(env)
         val bin = InstallLayout().localBin(env)
         val lanes = effects.lanes(prompts)
         val picker = effects.heads(profiles, prompts, env)
-        val heads = picker.offer(facts, path)
+        // The list of plans is the first question, so leaving it with Escape or Ctrl-C ends setup. While a "Starting
+        // point" menu came first, leaving the list meant "none of these" and the wizard went on to its next question.
+        val heads = picker.offer(facts, path) ?: return WizardAnswer.Cancelled("cancelled")
         val choices = headChoices.ask(heads)
         val lane = lanes.ask(heads)
         val local = localModel.offer(path)
         val share = mcpShare.ask(path)
-        val summary = menu.summaryLines(start, path, bin, heads, lanes.summaryLine(lane)) +
+        val summary = menu.summaryLines(path, bin, heads, lanes.summaryLine(lane)) +
             choices.values.map { it.summary } + localModel.summary(local) + mcpShare.summary(share)
         frame.note("Summary", summary)
         if (!frame.confirm("Install now?", true)) return WizardAnswer.Cancelled("not installing")

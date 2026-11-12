@@ -26,14 +26,10 @@ import splice.terminal.WizardFrame
 
 internal data class SetupPrompts(
     val frame: WizardFrame = WizardFrame(),
-    /** The starting-point menu. */
-    val choose: StartChoice = StartChoice { options, index ->
-        SelectPrompt(KeyReader(System.`in`), TerminalMode(), System.out).ask("Starting point", options, index)
-    },
-    /** The tick list of heads to add. */
+    /** The tick list of plans to connect: the wizard's first question. */
     val pickHeads: HeadPicker = HeadPicker { options, initial ->
         MultiSelectPrompt(KeyReader(System.`in`), TerminalMode(), System.out)
-            .ask("Heads to add", options, initial, minimum = 0)
+            .ask("Plans to connect", options, initial, minimum = 0)
     },
     /** A ticked head's models to write (spec section 1), at least one. */
     val pickModels: ModelPicker = ModelPicker { question, options, initial ->

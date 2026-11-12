@@ -9,6 +9,7 @@ import splice.provider.codex.history.CodeModeHistorySweep
 import splice.provider.codex.history.CodeModeUpstreamHistory
 import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.state.diagnostics.CodeModeNativeRetirement
+import splice.provider.codex.state.retention.CodeModeHandover
 import splice.provider.codex.stream.CodeModeRoundInterceptor
 import splice.provider.codex.stream.CodeModeRuntimeRun
 import splice.upstream.RoundInterceptor
@@ -76,6 +77,15 @@ public class CodexCodeModeBridge(
         )
     internal val resume = CodexCodeModeResume(registry, wire, validation, machine, driver)
     internal val controller = CodexCodeModeTurn(registry, wire, driver, resume, machine, validation, config)
+    private val handover = CodeModeHandover(
+        registry,
+        controller.locks,
+        CodeModeSessionEnd { key ->
+            driver.streams.stop(key)
+            history.forget(key)
+        },
+        config.log,
+    )
 
     init {
         require(config.retention.perConversation?.let { it > 0 } != false) {
@@ -123,6 +133,15 @@ public class CodexCodeModeBridge(
         splice.provider.codex.stream.interrupt.CodeModeConversationInterrupts(
             registry,
         ).interrupt(sessionId, conversationKey)
+
+    /** #525 (2026-11-12): the head retires and finishes the turns it is answering beside the next daemon. The
+     *  conversations those turns belong to run on here until their last turn ends; every other one is stopped now
+     *  and is the next daemon's from here on ([CodeModeHandover]). */
+    public fun onHeadRetire() {
+        historySweep.stop()
+        val held = handover.retire()
+        (history.kept.hot() - held).forEach(history::forget)
+    }
 
     public fun onHeadStop() {
         driver.streams.stop()

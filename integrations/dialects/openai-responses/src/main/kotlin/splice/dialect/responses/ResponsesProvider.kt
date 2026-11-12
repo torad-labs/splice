@@ -158,12 +158,12 @@ public abstract class ResponsesProvider(
 
     /** #525: what a Responses turn keeps across turns is its conversation's reasoning, on disk, and the next daemon
      *  reads again a conversation this one wrote (ReasoningCache.adopt). So a head finishes the answers it is giving
-     *  beside the next daemon. A subclass with more at stake than that says no (codex, while code mode runs). */
+     *  beside the next daemon. Codex's code mode keeps more, and hands it over in [onHeadRetire] (2026-11-12). */
     override val finishesTurnsWhenRetired: Boolean get() = true
 
-    /** Final for the reason [onHeadStop] is: from here each reasoning record lands on disk before its turn goes on,
-     *  since the next daemon reads the file when the conversation's next turn reaches it. */
-    final override fun onHeadRetire() {
+    /** From here each reasoning record lands on disk before its turn goes on, since the next daemon reads the file
+     *  when the conversation's next turn reaches it. A subclass that overrides this calls it first. */
+    override fun onHeadRetire() {
         parts.onHeadRetire()
     }
 

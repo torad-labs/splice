@@ -1,6 +1,7 @@
 package splice.provider.codex.state
 
 import splice.core.memory.HeapReservations
+import splice.provider.codex.CodeModeExpiredSnapshot
 import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModeRecord
@@ -63,6 +64,26 @@ internal class CodeModeColdRecords(
         } finally {
             monitor?.lock()
         }
+    }
+
+    /** #525 (2026-11-12): a conversation another daemon held at boot, read from its journal now that the hold is free,
+     *  as the boot reads one: its records wait here, cold, for the turn that restores them, and its expiry markers
+     *  are returned for the registry's history. A conversation with no journal yet has neither. */
+    fun adopt(key: String): List<CodeModeExpiredSnapshot> {
+        val state = try {
+            files.reload(key)
+        } catch (failure: IOException) {
+            throw CodeModePersistenceException(failure, diskFull = false, CodeModeStorageOperation.RESTORE)
+        } catch (failure: IllegalArgumentException) {
+            throw CodeModePersistenceException(
+                CodeModeStorageException.Invalid(CodeModeStorageProblem.COLD_STATE, failure),
+                diskFull = false,
+                CodeModeStorageOperation.RESTORE,
+            )
+        } ?: return emptyList()
+        kept[key] = CodeModeKeptState(state.version, state, heap)
+        if (state.records.isNotEmpty()) evict(key)
+        return state.expired
     }
 
     /** Publish only after the registry has successfully materialized every live record. */

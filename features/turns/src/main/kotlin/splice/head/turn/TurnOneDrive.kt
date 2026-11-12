@@ -47,7 +47,8 @@ internal class TurnOneDrive(
      *  pings, so it sends the turn again and the next daemon answers. */
     fun retireActive(): Int {
         val (kept, cut) = synchronized(lifecycle) {
-            stopSignal.stop()
+            // #525 (2026-11-12): retired, not stopping, so a kept code-mode round is not told to stop.
+            stopSignal.retire()
             activeJobs.entries.map { it.key to it.value }.partition { (_, drive) ->
                 drive.perf.hasMark(PerfKeys.FIRST_BYTE)
             }
@@ -59,7 +60,7 @@ internal class TurnOneDrive(
     /** The same driver is used after a head restart; new turns may run again. */
     fun headStarted() {
         synchronized(lifecycle) {
-            if (stopSignal.isStopping) stopSignal = HeadStopSignal()
+            if (stopSignal.refusesNewTurns) stopSignal = HeadStopSignal()
         }
     }
 
@@ -144,7 +145,7 @@ internal class TurnOneDrive(
         val job = Job(currentCoroutineContext()[Job])
         val cut = synchronized(lifecycle) {
             activeJobs[job] = drive
-            owner.isStopping
+            owner.refusesNewTurns
         }
         if (cut) job.cancel(HeadRestart())
         return job

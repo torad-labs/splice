@@ -1,6 +1,7 @@
 // NEW: queued coroutine callers retain a conversation lock until its last user releases it.
 package splice.provider.codex.state
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -27,8 +28,13 @@ internal class CodeModeTurnLocks {
     private val keys = mutableMapOf<String, Entry>()
     private val drives = mutableMapOf<String, Int>()
 
+    /** #525: set when the head retires; told of each conversation whose last drive here ends from then on. */
+    @Volatile private var lastDrive: CodeModeSessionEnd? = null
+
     suspend fun acquire(branch: String, conversation: String): Entry {
         val entry = synchronized(monitor) {
+            // #525 (2026-11-12): once the head retired, a conversation with no drive left is the next daemon's.
+            if (lastDrive != null && conversation !in drives) throw CancellationException(RETIRED_CONVERSATION)
             drives[conversation] = (drives[conversation] ?: 0) + 1
             keys.getOrPut(branch) { Entry() }.also { it.users++ }
         }
@@ -50,13 +56,29 @@ internal class CodeModeTurnLocks {
     /** True while no other drive of [conversation] is queued or running. */
     fun alone(conversation: String): Boolean = synchronized(monitor) { (drives[conversation] ?: 0) <= 1 }
 
-    private fun unreference(branch: String, conversation: String, entry: Entry) = synchronized(monitor) {
-        entry.users--
-        if (entry.users == 0) keys.remove(branch)
-        val left = (drives[conversation] ?: 1) - 1
-        if (left == 0) drives.remove(conversation) else drives[conversation] = left
+    /** #525 (2026-11-12): the head retires. Returns the conversations with a drive queued or running; from here a
+     *  conversation with none is refused ([acquire]), and [ended] is told of each one as its last drive ends, on the
+     *  thread that ends it, cancelled or not. */
+    fun retire(ended: CodeModeSessionEnd): Set<String> = synchronized(monitor) {
+        lastDrive = ended
+        drives.keys.toSet()
+    }
+
+    private fun unreference(branch: String, conversation: String, entry: Entry) {
+        val last = synchronized(monitor) {
+            entry.users--
+            if (entry.users == 0) keys.remove(branch)
+            val left = (drives[conversation] ?: 1) - 1
+            if (left == 0) drives.remove(conversation) else drives[conversation] = left
+            left == 0
+        }
+        // #525: outside the monitor, since letting a conversation go saves it.
+        if (last) lastDrive?.invoke(conversation)
     }
 }
+
+// why: the cancellation a retired head's late turn meets; the turn was being cut anyway.
+private const val RETIRED_CONVERSATION = "the head retired: this conversation is the next daemon's"
 
 /** The exact conversation key and request digest that acquire the coroutine turn lock. A subagent is its own
  *  conversation, the way codex keeps one thread per conversation: two subagents of one session that open with

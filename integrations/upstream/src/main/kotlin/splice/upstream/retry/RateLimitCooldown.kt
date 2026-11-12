@@ -100,7 +100,7 @@ public class RateLimitCooldown public constructor(
 
     /** V4-233: the plan window the upstream named as spent, held until the reset it named. Its own
      *  class, so this one keeps its function budget; a newer accepted request ends it ([acceptance]). */
-    public val planHold: PlanHold = PlanHold(clock, wallClock, holds)
+    public val planHold: PlanHold = PlanHold(clock, wallClock, holds, StreamStart { acceptance().invoke() })
 
     init {
         val stored = holds.stored()

@@ -11,13 +11,25 @@
 // Nov 3, 2026: a window of one model's week holds the login for that model alone (PlanLimit.oneModel), beside the one
 // window of the whole login, each until its own reset; an answer for a model ends the whole login's hold and that
 // model's, never another model's.
+//
+// Nov 12, 2026: a hold also ends when the provider's own usage reading shows its window was reset before its time
+// ([PlanHold.weigh]). Until then only an answered turn ended one sooner, and no turn is sent to a held login while
+// another is open, so a login a person reset at the provider stayed out of the pool until the reset its refusal had
+// named. That morning one login read 0% of its Fable week after such a reset, and the pool would have passed it over
+// until the next Wednesday while the last open login ran out (Marcos: "I have 12 resets ... let me know when we're on
+// the last account close to hit limit and I'll call a reset").
 package splice.upstream.retry
 
+import splice.core.usage.FIVE_HOUR_CLAIM
 import splice.core.usage.PlanLimit
+import splice.core.usage.QuotaSnapshot
+import splice.core.usage.SEVEN_DAY_CLAIM
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 import splice.upstream.RetryNotice
+import splice.upstream.StreamStart
 import java.time.Instant
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 
 /** [clock] is the owning cooldown's ElapsedClock, so the hold and the horizon share one base;
@@ -28,7 +40,16 @@ public class PlanHold internal constructor(
     private val wallClock: WallClock,
     /** V4-412: where the hold is kept between restarts; the default remembers nothing on disk. */
     private val holds: ProviderHolds = ProviderHolds(null),
+    /** What an answer on this login does to everything its refusal left standing ([RateLimitCooldown.acceptance]):
+     *  the whole login's window reading reset before its time does the same. */
+    private val opened: StreamStart = StreamStart { },
 ) {
+    /** Each window's figure as last read: a model's week under the provider's name for it, the login's own five hours
+     *  and week under their claims. Kept whether or not a hold is live, since the figure a reset falls from is most
+     *  often read before the refusal that holds the login. A restart forgets them, and the reading saved before it
+     *  is the first one weighed after it, so a reset that happens across a restart is still seen to fall. */
+    private val read = ConcurrentHashMap<String, Double>()
+
     /** The held windows by the model each holds the login for, the whole login's under null. */
     private val held = AtomicReference<Map<String?, Held>>(emptyMap())
 
@@ -81,11 +102,28 @@ public class PlanHold internal constructor(
         write(held.updateAndGet { current -> current - setOf(null, model) })
     }
 
-    /** Ends the week of [model] alone: the provider's own reading shows it reset before the time its refusal named
-     *  (EarlyReset). The whole login's hold and every other model's week stay. */
-    internal fun release(model: String) {
-        write(held.updateAndGet { current -> current - model })
+    /** Weighs a usage reading of this login and ends each hold whose window reads lower than it last did and below
+     *  full: one model's week alone, the whole login's as an answer would. Returns what ended, a model's id or the
+     *  login's own window in words (`7-day`), none when no hold did.
+     *
+     *  What ends a hold is a figure that FELL, never a figure below full. A reading taken off an answer's headers
+     *  carries the model weeks of an older one (QuotaSnapshot.keepingModelsOf), so a week read at 99% five minutes
+     *  before its refusal reads 99% after it too, and says nothing. Usage inside a window only falls when the window
+     *  was reset. A window that rolls over at its own time falls too, and by then its hold has run out by itself. */
+    internal fun weigh(reading: QuotaSnapshot): List<String> {
+        val weeks = reading.models.filter { fell(it.model, it.usedPercent) && !it.usedUp }
+        val own = listOf(FIVE_HOUR_CLAIM to reading.fiveHour, SEVEN_DAY_CLAIM to reading.sevenDay)
+            .filter { (claim, window) -> window != null && fell(claim, window.usedPercent) && !window.usedUp }
+            .map { it.first }
+        val models = models().mapNotNull { it.model }.filter { model -> weeks.any { it.weekOf(model) } }
+        if (models.isNotEmpty()) write(held.updateAndGet { current -> current - models.toSet() })
+        val login = live()?.takeIf { it.claim in own }
+        if (login != null) opened()
+        return models + listOfNotNull(login?.windowWords)
     }
+
+    /** Whether [window] reads lower than it last did. Its figure is kept either way. */
+    private fun fell(window: String, percent: Double): Boolean = read.put(window, percent)?.let { percent < it } == true
 
     /** V4-412: brings back a hold a restart interrupted, silently and without writing it again;
      *  a reset that has already passed restores nothing, and neither does one model's week that names no model. */

@@ -46,7 +46,7 @@ public fun interface AccountQuotaSource {
     public val held: Boolean get() = false
 
     /** Asks to hear each new reading as it arrives, where this source can tell. A login's hold may end on one
-     *  ([EarlyReset]) while every turn waits and none is being selected; a source that cannot tell is read at the
+     *  (PlanHold.weigh) while every turn waits and none is being selected; a source that cannot tell is read at the
      *  next selection. */
     public fun onRead(listener: Runnable): Unit = Unit
 }
@@ -83,9 +83,7 @@ public data class PoolAccount(
     private val credentialEligibility =
         AccountCredentialEligibility(identitySource, credentialPresent, cooldown.loginHold)
 
-    private val earlyReset = EarlyReset(cooldown)
-
-    /** Hears a hold of this login end because its reading shows the window reset before its time; the pool sets it. */
+    /** Hears a hold of this login end because its reading shows the window reset before its time ([PoolJoins]). */
     @Volatile
     internal var onEarlyReset: EarlyResetHeard? = null
 
@@ -107,11 +105,11 @@ public data class PoolAccount(
         runInterruptible(loads.ioDispatcher, ::observeQuota)
     }
 
-    /** Reads the login's usage, and ends each plan hold the reading shows reset before its time ([EarlyReset]). */
+    /** Reads the login's usage, and ends each plan hold the reading shows reset before its time (PlanHold.weigh). */
     private fun observeQuota() {
         val snapshot = quota.snapshot()
         quotaObservation = QuotaObservation(snapshot, quota.held)
-        val ended = earlyReset.weigh(snapshot)
+        val ended = snapshot?.let(cooldown.planHold::weigh).orEmpty()
         if (ended.isNotEmpty()) onEarlyReset?.heard(label, ended)
     }
 

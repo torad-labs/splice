@@ -6,6 +6,7 @@ import splice.core.failure.AccountBlock
 import splice.core.usage.QuotaWindow
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 // why: a quota window reports usedPercent on a 0-100 scale, so 100.0 is an exhausted window.
 private const val FULLY_USED = 100.0
@@ -204,4 +205,49 @@ internal object OwnerBlocks {
     /** The block a turn no login could take is told, naming the login that met it, or null when none did. */
     fun named(accounts: List<PoolAccount>, at: Long): AccountBlock? =
         accounts.firstNotNullOfOrNull { account -> account.credentialStatus(at).block?.copy(login = account.label) }
+}
+
+/** Hears [label]'s holds end on a reading: [ended] names each window that reads reset, a model's id or the login's
+ *  own window in words (`7-day`). */
+public fun interface EarlyResetHeard {
+    public fun heard(label: String, ended: List<String>)
+}
+
+/** The pool's word that a login became one a waiting turn may take, and who hears it. Split from AccountPool on
+ *  Nov 12, 2026, when a fourth way for that to happen arrived: a usage reading that shows a held window reset before
+ *  its time (PlanHold.weigh). */
+public class PoolJoins internal constructor() {
+    /** Hears a login join the pool: the head's held turns may move to it (failure-handling slice 5). */
+    @Volatile
+    public var onJoined: Runnable? = null
+
+    /** Hears a login's hold end on a reading that shows its window reset before its time, before [onJoined] does. */
+    @Volatile
+    public var onEarlyReset: EarlyResetHeard? = null
+
+    private val times = AtomicLong(0L)
+
+    /** How many times a login became one a waiting turn may take: a label the pool did not hold, a label that now
+     *  sends another credential (Claude Code signed in to another account in the same place), a login the person
+     *  said to ask again, or a login whose reading shows a held window reset before its time. A turn that a login
+     *  refused before the newest of these may be offered that login again: what was refused then may be another
+     *  account now, or a window that is open again, and a login still spent is kept out by its own hold. */
+    public val count: Long get() = times.get()
+
+    private val reset = EarlyResetHeard { label, ended ->
+        times.incrementAndGet()
+        onEarlyReset?.heard(label, ended)
+        onJoined?.run()
+    }
+
+    /** A login joined, sends another credential under its label, or was asked again. */
+    internal fun joined() {
+        times.incrementAndGet()
+        onJoined?.run()
+    }
+
+    /** Each of [accounts] says here when a reading ends one of its holds. */
+    internal fun hears(accounts: List<PoolAccount>) {
+        accounts.forEach { it.onEarlyReset = reset }
+    }
 }

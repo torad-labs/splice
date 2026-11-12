@@ -59,7 +59,7 @@ public class QuotaTracker(
     public var onAllowed: Runnable? = null
 
     /** Hears each reading once it is kept: the login it belongs to weighs it against its plan holds, which a reading
-     *  that shows a window reset before its time ends (splice.upstream.credentials.EarlyReset). */
+     *  that shows a window reset before its time ends (PlanHold.weigh). */
     @Volatile
     public var onRecorded: Runnable? = null
 

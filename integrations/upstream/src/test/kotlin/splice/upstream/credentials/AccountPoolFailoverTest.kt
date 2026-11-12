@@ -120,15 +120,15 @@ class AccountPoolFailoverTest {
         spendFable(one)
         assertEquals("two", pool.chosenFor(FABLE, "first"), "one's Fable week is used up until tomorrow")
         val heard = mutableListOf<String>()
-        pool.onEarlyReset = EarlyResetHeard { label, ended -> heard += "$label: $ended" }
-        val joinsBefore = pool.joins
+        pool.joins.onEarlyReset = EarlyResetHeard { label, ended -> heard += "$label: $ended" }
+        val joinsBefore = pool.joins.count
 
         // The person resets the login at the provider: its next reading shows the week at nothing.
         fixture.setQuota(one, fixture.fableAt(0.0, at = 2L))
 
         assertEquals("one", pool.chosenFor(FABLE, "second"), "the reading shows the week reset, so the hold ended")
         assertEquals(listOf("one: [$FABLE]"), heard, "and the journal is told which login and which window")
-        assertEquals(joinsBefore + 1, pool.joins, "and every waiting turn is asked to move")
+        assertEquals(joinsBefore + 1, pool.joins.count, "and every waiting turn is asked to move")
     }
 
     @Test

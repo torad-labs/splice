@@ -24,6 +24,13 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   daemon's memory, so after a restart the card showed the first refusal since that start: on Nov 11, 2026 it
   read "Saving stopped 6:37 PM" a minute after a restart, while nothing had been saved since 6:00 PM. The time
   is now kept beside the saved requests and removed when a request saves whole again (#518).
+- **A full disk no longer costs the prompts and answers already saved.** Saved requests live inside a 32 GiB
+  budget, and a full budget removes the oldest day to make room for the newest. The free-space floor on the
+  disk removed days the same way, so a disk that other data kept under the floor cost a day's saved prompts
+  and answers at every UTC midnight, to save the first request of the new day: on one machine that was every
+  day from Oct 29 to Nov 11, 2026, and nothing said so. Under the floor a new request is now refused, with
+  the floor for its reason on Settings, and every saved day stays. When the budget does remove a day, the
+  daemon's log names it.
 
 ## splice v0.4.0: teams across models, resume on another model, and one-command setup - 2026-11-11
 

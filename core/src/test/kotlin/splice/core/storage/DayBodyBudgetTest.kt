@@ -62,6 +62,24 @@ class DayBodyBudgetTest {
         assertEquals(BODY_TEST_BYTES, Files.size(current))
     }
 
+    /** From Oct 29 to Nov 11, 2026 one machine's disk stayed under the floor, and each day's bodies were removed at
+     *  the next UTC midnight to save the first of the new day. A disk other data filled costs no saved day. */
+    @Test
+    fun `below the floor a new body is refused and every saved day stays`(@TempDir dir: Path) {
+        val older = day(dir, "a", "2026-10-03")
+        val saved = pack(older)
+        val current = pack(day(dir, "a", "2026-10-05"))
+        val budget = DayBodyBudget(
+            Long.MAX_VALUE,
+            BODY_TEST_FLOOR,
+            DayVolumeSpace { BODY_TEST_FLOOR },
+            WallClock { BODY_TEST_NOW },
+        )
+        val refused = assertThrows(DayBodyCapacityException::class.java) { budget.admit(current, 1) }
+        assertEquals("trace volume free-space floor reached: splice leaves 64 B free", refused.reason)
+        assertTrue(Files.exists(saved) && !budget.evicted(older), "the day already saved is still there")
+    }
+
     @Test
     fun `an overfull current day refuses growth without deleting current packs`(@TempDir dir: Path) {
         val first = pack(day(dir, "a", "2026-10-05"))

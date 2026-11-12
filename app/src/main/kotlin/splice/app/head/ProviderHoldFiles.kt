@@ -7,8 +7,10 @@ import splice.app.auth.claude.ClaudeNativeAuth
 import splice.app.provider.Wired
 import splice.core.config.StatePaths
 import splice.core.util.LogSink
+import splice.upstream.retry.FileLoginHoldStore
 import splice.upstream.retry.FileProviderHoldStore
 import splice.upstream.retry.ProviderHoldStore
+import splice.upstream.retry.ProviderHoldWithLogin
 
 internal class ProviderHoldFiles(
     private val statePaths: StatePaths,
@@ -21,7 +23,11 @@ internal class ProviderHoldFiles(
         wired.accounts.associate { account ->
             val native = account.auth as? ClaudeNativeAuth
             val store = if (native != null) {
-                forHead(key)
+                // Claude Code's own logins share the head's file for the provider's word, one entry per credential.
+                // Each keeps its own hold by its place, named as its quota file is (native%<place>).
+                val place = account.label.replace(':', '%')
+                val login = statePaths.stateDir.resolve("$key-$place-provider-hold-login.json")
+                ProviderHoldWithLogin(forHead(key), FileLoginHoldStore(login, log))
             } else {
                 FileProviderHoldStore(statePaths.stateDir.resolve("$key-${account.label}-provider-hold.json"), log)
             }

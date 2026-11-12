@@ -75,7 +75,8 @@ public data class PoolAccount(
     internal val quotaSnapshot: QuotaSnapshot? get() = quotaObservation.snapshot
     internal val quotaHeld: Boolean get() = quotaObservation.held
     private val identitySource = TtlCredentialIdentitySource(auth as? AccountCredentialIdentitySource)
-    private val credentialEligibility = AccountCredentialEligibility(identitySource, credentialPresent)
+    private val credentialEligibility =
+        AccountCredentialEligibility(identitySource, credentialPresent, cooldown.loginHold)
 
     init {
         require(AccountLabelPolicy.isSelector(label)) { "invalid OAuth account label" }

@@ -50,6 +50,23 @@ public interface ProviderHoldStore {
 
     /** Enumerates persisted credential identities for reporting before any caller arrives. */
     public fun credentialKeys(): List<String> = emptyList()
+
+    /** Where the hold a refusal put on this login itself is kept, beside the provider's word on its limits; none
+     *  where the store keeps none, and that hold then lasts until a restart. */
+    public fun loginHold(): LoginHoldStore? = null
+}
+
+/** [word] with the login's own hold kept in [login], whichever credential the store is scoped to. The provider's
+ *  word is kept per credential, and a login whose token is renewed is still the same login: its hold has to be found
+ *  under the token a restart finds, so it stays in the one place its owner names. */
+public class ProviderHoldWithLogin(
+    private val word: ProviderHoldStore,
+    private val login: LoginHoldStore,
+) : ProviderHoldStore by word {
+    override fun forCredential(key: String): ProviderHoldStore? =
+        word.forCredential(key)?.let { ProviderHoldWithLogin(it, login) }
+
+    override fun loginHold(): LoginHoldStore = login
 }
 
 /** [ProviderHoldStore] over one small JSON file, 0600 like every state file, written atomically.
@@ -65,6 +82,10 @@ public class FileProviderHoldStore(
         val scoped = path.resolveSibling("${path.fileName.toString().removeSuffix(".json")}-$key.json")
         return FileProviderHoldStore(scoped, log)
     }
+
+    /** A sibling file. Its name ends in a word no credential key is, so [credentialKeys] never lists it. */
+    override fun loginHold(): LoginHoldStore =
+        FileLoginHoldStore(path.resolveSibling("${path.fileName.toString().removeSuffix(".json")}-login.json"), log)
 
     private fun credentialKey(key: String): Boolean =
         key.length == CREDENTIAL_KEY_HEX_CHARS && key.all { it in '0'..'9' || it in 'a'..'f' }

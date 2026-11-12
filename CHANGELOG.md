@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+Changes on main since v0.4.0. They take a version's heading when that version is cut.
+
+### Fixed
+- **A login its provider refused stays held across a restart.** A login refused for its credential, or blocked by
+  its account's organization, was held only in the daemon's memory. Each restart forgot the hold, so the next turns
+  went to that login again and were refused again: on Nov 11, 2026 a blocked login met four to six refusals after
+  each of the day's restarts, and its card on Accounts read as one a turn could take until the first answer came
+  back. The hold is now kept in the state folder, beside what the provider said about that login's limits, and put
+  back at the start: on the same account where the provider blocked the account, and on the same credential file
+  otherwise. A sign-in made while the daemon was down ends it, as one made while it runs does.
+
 ## splice v0.4.0: teams across models, resume on another model, and one-command setup - 2026-11-11
 
 ### Highlights

@@ -6,8 +6,6 @@ package splice.core.util
 
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
-import java.nio.channels.FileLock
-import java.nio.channels.OverlappingFileLockException
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
@@ -45,7 +43,6 @@ public fun interface JsonlForce {
 }
 
 public object JsonlSink {
-    private val locks = ConcurrentHashMap<Path, Any>()
     private val unrotated = AtomicInteger()
 
     // The rolled generations whose hand-off failed, so the one line saying so is written once per file, not per append.
@@ -56,9 +53,6 @@ public object JsonlSink {
     public val NO_ARCHIVE: RotationArchive = RotationArchive { }
     private val OS_FORCE = JsonlForce { _, channel -> channel.force(true) }
 
-    // The `.lock` sibling is made 0600: it holds no byte, and a lock others may open is a lock others may hold.
-    private val LOCK_OPTIONS = setOf(StandardOpenOption.CREATE, StandardOpenOption.WRITE)
-
     /** Telemetry is allowed to lose its last page-cache writes on host loss, never on daemon restart. */
     public val PAGE_CACHE_FORCE: JsonlForce = JsonlForce { _, _ -> }
 
@@ -67,7 +61,7 @@ public object JsonlSink {
      *
      * IO-001: the [locks] map only serializes writers within THIS JVM; two head PROCESSES writing
      * the same file coordinate not at all otherwise, so both can read a stale size and overshoot
-     * the cap. A cross-process [FileLock] on a sibling `.lock` file (the CredentialLock shape,
+     * the cap. A cross-process FileLock on a sibling `.lock` file (the CredentialLock shape,
      * upstream/CredentialLock.kt) closes that gap.
      *
      * DR-178: that gap used to be closed with a plain blocking `channel.lock()`, justified here by
@@ -89,6 +83,8 @@ public object JsonlSink {
      * rotates it, which is the same bounded overshoot IO-001 already admits two processes cause,
      * and it is strictly above the status quo of parking the lane forever. [unrotatedAppends]
      * counts the degrade so it is observable rather than silent.
+     *
+     * The lock itself lives in [JsonlLocks] since #525, where a whole-file read and replace hold it too ([JsonlWhole]).
      */
     public fun appendLine(
         file: Path,
@@ -115,23 +111,10 @@ public object JsonlSink {
         force: JsonlForce,
     ) {
         require(line.isNotEmpty() && line.last() == NEWLINE_BYTE) { "an encoded JSONL record ends in a newline" }
-        val normalized = file.toAbsolutePath().normalize()
-        synchronized(locks.computeIfAbsent(normalized) { Any() }) {
-            val lockPath = normalized.resolveSibling("${normalized.fileName}$JSONL_LOCK_SUFFIX")
-            val mode = SecureFile.CREATE_0600
-            val opened = if (mode == null) {
-                FileChannel.open(lockPath, LOCK_OPTIONS)
-            } else {
-                FileChannel.open(lockPath, LOCK_OPTIONS, mode)
-            }
-            opened.use { channel ->
-                val lock = acquireBounded(channel)
-                try {
-                    append(file, line, RotatePolicy(maxBytes, rotate = lock != null, archive, force))
-                } finally {
-                    lock?.release()
-                }
-            }
+        JsonlLocks.holding(file) { lock ->
+            // Without the cross-process lock the line is appended UNROTATED, and counted.
+            if (lock == null) unrotated.incrementAndGet()
+            append(file, line, RotatePolicy(maxBytes, rotate = lock != null, archive, force))
         }
     }
 
@@ -139,26 +122,6 @@ public object JsonlSink {
      *  Mirrors [AsyncFileIo.droppedCount]: this lane cannot report through a log that it owns, so
      *  a counter is how the degrade stays visible. */
     public fun unrotatedAppends(): Int = unrotated.get()
-
-    /** tryLock poll to [LOCK_WAIT_MS]; null means the budget is spent and the caller appends
-     *  UNROTATED. A same-JVM overlap throws instead of queueing, so held-is-held either way —
-     *  KeyStore.acquireBounded says the same thing about the same primitive. */
-    private fun acquireBounded(channel: FileChannel): FileLock? {
-        val deadline = System.currentTimeMillis() + LOCK_WAIT_MS
-        while (true) {
-            val lock = try {
-                channel.tryLock()
-            } catch (ignored: OverlappingFileLockException) {
-                null // held by this JVM via another channel — same contention, same poll
-            }
-            if (lock != null) return lock
-            if (System.currentTimeMillis() >= deadline) {
-                unrotated.incrementAndGet()
-                return null
-            }
-            Thread.sleep(LOCK_POLL_MS)
-        }
-    }
 
     /**
      * DR-186 / V4-45: four decisions, four members. The durability change (the forced write below)
@@ -342,13 +305,6 @@ public object JsonlSink {
     // a test does not have to duplicate the number — one source, the same law const-single-source
     // enforces for every other repeated constant.
     public const val DEFAULT_MAX_BYTES: Long = 64L * 1024 * 1024
-
-    // DR-178: three orders of magnitude above a healthy hold (stat + maybe-rename + append) and far
-    // below the multi-second parking that harms the lane. Deliberately much tighter than
-    // KeyStore's 5s, because what waits here is not one CLI command but every other writer in the
-    // process. Poll interval matches KeyStore's.
-    private const val LOCK_WAIT_MS = 250L
-    private const val LOCK_POLL_MS = 25L
 }
 
 /** [JsonlSink.readTailAt]'s result: the complete lines in the trailing window, and the absolute

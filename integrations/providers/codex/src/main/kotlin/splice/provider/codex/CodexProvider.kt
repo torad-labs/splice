@@ -71,6 +71,11 @@ public class CodexProvider(
         codeMode.onHeadStop()
     }
 
+    /** #525: code mode runs cells in this process and keeps records of them that the next daemon reads once, at its
+     *  start, and marks lost. A head that runs it still stops whole at a restart; one that does not is a Responses
+     *  head like the others. */
+    override val finishesTurnsWhenRetired: Boolean get() = !codeMode.runs
+
     /** codex-rs 14a477ea8 codex-api/src/sse/responses.rs:65-71 captures the first HTTP token. */
     override fun observeResponseHeaders(meta: TurnMeta, response: UpstreamResponse) {
         meta.upstreamHeaders.capture(CODEX_TURN_STATE_HEADER, response.header(CODEX_TURN_STATE_HEADER))

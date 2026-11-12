@@ -14,6 +14,7 @@
 // power loss what the kernel had not yet written out (ReasoningCacheFiles.force says what that costs).
 package splice.dialect.responses.reasoning
 
+import splice.core.util.LogSink
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
@@ -25,6 +26,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 internal class ReasoningCacheWrites(private val files: ReasoningCacheFiles?) {
     private val pending = ConcurrentLinkedQueue<ReasoningCacheWrite>()
+
+    // #525: how many of this process's own writes each conversation still has queued or being applied. Until they
+    // land, a file that differs from the one last known may differ by this process's own hand ([writtenElsewhere]).
+    private val unlanded = ConcurrentHashMap<String, Int>()
 
     // A pass is queued that has not yet begun to read [pending]: a wake meanwhile is already covered by it.
     private val woken = AtomicBoolean()
@@ -47,6 +52,11 @@ internal class ReasoningCacheWrites(private val files: ReasoningCacheFiles?) {
 
     @Volatile private var usable = files != null
 
+    /** #525: the head is retiring, and finishes the answers it was giving beside the next daemon. From here each
+     *  [wake] waits for its writes to land: the next daemon reads a conversation's file when that conversation's
+     *  next turn reaches it, which can be a moment after this one handed the client the end of its answer. */
+    @Volatile var landsBeforeReturning: Boolean = false
+
     /** What the disk holds, read once before the cache serves anything, so before any write is queued; empty when
      *  nothing is kept. */
     fun restore(): List<StoredConversation> {
@@ -54,6 +64,15 @@ internal class ReasoningCacheWrites(private val files: ReasoningCacheFiles?) {
         usable = stored != null
         return stored.orEmpty()
     }
+
+    /** Whether another process wrote [key]'s file since this one last read or wrote it (one look at the file). Never
+     *  while a write of this process's own is on its way to that file: the file may differ by that write alone, and a
+     *  turn must not wait on the disk to find out (fix 3, 2026-10-26). The look after it lands tells. */
+    fun writtenElsewhere(key: String): Boolean =
+        usable && !unlanded.containsKey(key) && files?.writtenElsewhere(key) == true
+
+    /** [key]'s conversation as the disk holds it now, or null when it holds none that reads. */
+    fun reread(key: String): StoredConversation? = files?.reread(key)
 
     /** Queue [key]'s admitted round. Called under the cache's lock; a key no file can carry is not queued. */
     fun append(
@@ -63,26 +82,37 @@ internal class ReasoningCacheWrites(private val files: ReasoningCacheFiles?) {
         resultProofs: Map<String, String?> = emptyMap(),
     ) {
         if (usable && files?.accepts(key) == true) {
-            pending.add(ReasoningCacheWrite(key, StoredRound(toolIds, envelopes, resultProofs)))
+            queue(ReasoningCacheWrite(key, StoredRound(toolIds, envelopes, resultProofs)))
         }
     }
 
     /** A reconciled conversation replaces its old records atomically, retaining the installed schema. */
     fun replace(key: String, rounds: List<StoredRound>) {
         if (usable && files?.accepts(key) == true) {
-            pending.add(ReasoningCacheWrite(key, round = null, replacement = rounds))
+            queue(ReasoningCacheWrite(key, round = null, replacement = rounds))
         }
     }
 
     /** Queue the removal of [key]'s file. Called under the cache's lock. */
     fun drop(key: String) {
-        if (usable && files?.accepts(key) == true) pending.add(ReasoningCacheWrite(key, round = null))
+        if (usable && files?.accepts(key) == true) queue(ReasoningCacheWrite(key, round = null))
     }
 
-    /** Hand every write queued so far to the writer and return at once: the caller never waits on the disk. Called
-     *  with no cache lock held. */
+    private fun queue(write: ReasoningCacheWrite) {
+        unlanded.merge(write.key, 1) { held, one -> held + one }
+        pending.add(write)
+    }
+
+    /** Hand every write queued so far to the writer and return at once: the caller never waits on the disk, except
+     *  on a retiring head ([landsBeforeReturning]), where it waits at most [RETIRED_WRITE_MS]. Called with no cache
+     *  lock held. */
     fun wake() {
-        if (usable && woken.compareAndSet(false, true)) writer.execute(::writeQueued)
+        if (!usable) return
+        if (landsBeforeReturning) {
+            val _ = drain(RETIRED_WRITE_MS)
+        } else if (woken.compareAndSet(false, true)) {
+            writer.execute(::writeQueued)
+        }
     }
 
     /** Wait until every write queued before this call is on disk, at most [timeoutMs]. False when the time ran out
@@ -112,7 +142,11 @@ internal class ReasoningCacheWrites(private val files: ReasoningCacheFiles?) {
         val disk = files ?: return
         while (true) {
             val write = pending.poll() ?: break
-            applyWrite(disk, write)
+            try {
+                applyWrite(disk, write)
+            } finally {
+                unlanded.computeIfPresent(write.key) { _, held -> (held - 1).takeIf { it > 0 } }
+            }
         }
     }
 
@@ -131,12 +165,94 @@ internal class ReasoningCacheWrites(private val files: ReasoningCacheFiles?) {
     }
 }
 
+// MOVED 2026-11-12 (#525) from ReasoningCache.kt, whole, beside the lane it writes through: the cache gained the reload
+// of a conversation another daemon wrote (ReasoningCache.adopt), and its file had no room left for both.
+
+/** The first reasoning record makes pending proofs durable; later records append without rewriting history. */
+internal class ReasoningRoundPersistence(
+    private val writes: ReasoningCacheWrites,
+    private val positions: ReasoningCachePositions,
+    private val proofs: ReasoningCacheProofs,
+    private val log: LogSink,
+) {
+    fun enqueue(key: String, conversation: ReasoningCacheConvo, round: ReasoningCacheRound) {
+        val firstWithProofs = conversation.rounds.size == 1 && conversation.resultProofs.isNotEmpty()
+        if (firstWithProofs) {
+            writes.append(key, emptyList(), emptyList(), conversation.resultProofs.toMap())
+        }
+        writes.append(key, round.toolIds, round.envelopes)
+    }
+
+    fun reclaimOrderMetadata(
+        key: String,
+        conversation: ReasoningCacheConvo,
+        offeredBytes: Long,
+        availableBytes: Long,
+    ): Long {
+        if (offeredBytes <= availableBytes) return 0L
+        val released = positions.releaseMetadata(conversation)
+        return released + if (released != 0L) rewrite(key, conversation) else 0L
+    }
+
+    /** Drop what other turns stored at [toolIds]' history position, file included, before it is admitted. This turn
+     *  reached that position through its own request or its own output, so the client kept nothing those turns
+     *  produced from there: their reasoning would ride upstream in front of history it never led to. The bytes
+     *  returned are what the cache's bound gets back, the rewrite's own change included. */
+    fun replaceAt(key: String, conversation: ReasoningCacheConvo, toolIds: List<String>): ReplacedRecords {
+        val index = toolIds.singleOrNull() ?: return ReplacedRecords(0, 0L)
+        val replaced = positions.replaceAt(conversation, index)
+        if (replaced.records == 0) return replaced
+        val rewritten = rewrite(key, conversation)
+        log(
+            "[reasoning-cache] conversation ${key.take(KEY_LOG_CHARS)}… re-sent at one history position: " +
+                "replaced ${replaced.records} records (${replaced.bytes}B) an earlier attempt left there",
+        )
+        return replaced.copy(bytes = replaced.bytes - rewritten)
+    }
+
+    fun rewrite(key: String, conversation: ReasoningCacheConvo): Long {
+        val released = proofs.compact(conversation)
+        writes.replace(key, positions.stored(conversation))
+        return released
+    }
+
+    /** [stored] rebuilt as the cache holds a conversation, its rounds keyed from [firstSeq] on and stamped [at]. Null
+     *  for one that recorded no round: nothing of it is held, and its file is removed. */
+    fun rebuilt(stored: StoredConversation, firstSeq: Long, at: Long): RebuiltConvo? {
+        val recorded = stored.rounds.filter { it.ids.isNotEmpty() }
+        if (recorded.isEmpty()) {
+            writes.drop(stored.key)
+            return null
+        }
+        val convo = ReasoningCacheConvo()
+        val normalized = positions.normalized(recorded)
+        normalized.forEachIndexed { index, round ->
+            val rk = "r${firstSeq + index}"
+            val bytes = round.envelopes.sumOf { it.length.toLong() } + round.ids.sumOf(positions::metadataBytes)
+            convo.rounds[rk] = ReasoningCacheRound(round.ids, round.envelopes, bytes, at)
+            round.ids.forEach { convo.byToolId[it] = rk }
+            positions.admitted(convo, rk, convo.rounds.getValue(rk))
+            convo.bytes += bytes
+        }
+        proofs.restore(convo, stored.rounds)
+        return RebuiltConvo(convo, renormalized = normalized != recorded)
+    }
+}
+
+/** A conversation rebuilt from its file; [renormalized] when its records changed on the way and are to be written
+ *  again. */
+internal data class RebuiltConvo(val convo: ReasoningCacheConvo, val renormalized: Boolean)
+
 /** One queued write: append [round] to [key]'s conversation, or remove the conversation when it is null. */
 internal data class ReasoningCacheWrite(
     val key: String,
     val round: StoredRound?,
     val replacement: List<StoredRound>? = null,
 )
+
+// why: a page-cache append lands in microseconds, so this binds only on a stalled disk, where the answer's turn is
+// not held longer than the two seconds a head's stop gives the same writes.
+private const val RETIRED_WRITE_MS = 2_000L
 
 // How long the writer's thread outlives its last write: a head in use keeps its one thread, an idle head keeps none.
 private const val WRITER_IDLE_SECONDS = 10L

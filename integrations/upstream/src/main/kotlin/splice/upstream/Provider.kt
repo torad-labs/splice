@@ -164,8 +164,13 @@ public interface Provider : ProviderIdentity {
     public fun onHeadStop() {}
 
     /** #523: whether a head of this provider may finish the turns it is answering after the next daemon has taken
-     *  over (splice.core.head.Head.retire). True only where a turn that is already streaming needs nothing two
-     *  daemons would both write: no conversation state kept on disk, no code mode cells, no tool hub. False cuts
-     *  every turn at a restart, as before. */
+     *  over (splice.core.head.Head.retire). True only where a turn that is already streaming leaves nothing the
+     *  next daemon would miss or write over: no state of its own on disk, or state the next daemon reads again
+     *  when this one wrote it (#525: a Responses conversation's kept reasoning), and no code mode cells. False
+     *  cuts every turn at a restart, as before. */
     public val finishesTurnsWhenRetired: Boolean get() = false
+
+    /** #525: the head is retiring and will finish the turns it keeps beside the next daemon. Called once, before the
+     *  turns it does not keep are cut, and only where [finishesTurnsWhenRetired]. */
+    public fun onHeadRetire() {}
 }

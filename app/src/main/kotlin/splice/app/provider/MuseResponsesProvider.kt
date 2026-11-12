@@ -39,6 +39,11 @@ internal class MuseResponsesProvider(
 
     override fun route(meta: TurnMeta): VendorRoute? = conversation(meta)?.let { options.routes.route(it) }
 
+    /** #525: a Muse head keeps where each conversation runs in one file it reads at its start and writes whole when a
+     *  conversation moves (MuseGatewayRoutes). Beside another daemon each would write over the other's moves, so a
+     *  Muse head still stops whole at a restart. */
+    override val finishesTurnsWhenRetired: Boolean get() = false
+
     /** The same conversation key as prompt_cache_key; no client identity or raw session ID rides. Null when the cache
      *  key is off or the turn names no conversation, and then no route is pinned. */
     private fun conversation(meta: TurnMeta): String? {

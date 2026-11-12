@@ -123,6 +123,7 @@ internal class HeadLifecycle(
             return 0
         }
         engine.closeAdmission(window)
+        provider.onHeadRetire()
         val kept = driver.retireActive()
         deps.stores.perfStats.retired.retire()
         // A row recorded before that moment counts its hour on the file lane, behind its own append: the lane runs

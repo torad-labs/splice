@@ -40,6 +40,14 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   for, and "switched from ... to ..." is recorded only for a turn of that model: a new session's first turn on
   a small model starts on a login that is out of the sessions' model, which read as "switched from Seek Apps to
   Ethan: primary account reset" a minute after Ethan ran out of Fable.
+- **A `claude` that goes through splice is named `claude`.** With plain `claude` wrapped, the console and
+  `splice status` still named its command `claude-splice`, the name of its table in `splice.toml`, so a person
+  who only ever types `claude` saw a second Claude he never starts (Marcos, Nov 12, 2026: "why ... is claude and
+  claude-splice two identities? We use Claude only via splice"). While `claude` is wrapped, `/api/heads` and
+  `/api/status` answer `claude` as that command's name, so Sessions, Accounts, Usage, Requests and Models show
+  it, a session's resume line reads `claude -r <id>`, and the command column of `splice status` reads `claude`.
+  Unwrapped, they name `claude-splice` as before. The head's key, its table in `splice.toml` and the
+  `claude-splice` command itself do not change.
 - **A login reset at its provider is used again at once.** When a provider refuses a login for a spent plan
   window, splice holds that login until the reset the refusal named, and only an answered turn ended the hold
   sooner. No turn is sent to a held login while another is open, so a login reset early at the provider stayed

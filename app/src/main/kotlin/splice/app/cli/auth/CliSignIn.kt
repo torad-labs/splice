@@ -8,15 +8,18 @@ package splice.app.cli.auth
 
 import splice.accounts.status.CredentialPresence
 import splice.client.login.LoginOutcomeFile
+import splice.client.wrap.WrappedHead
 import splice.core.config.InstallPaths
 import splice.core.config.KeyStore
 import splice.core.config.KeyStorePath
 import splice.core.config.StatePaths
+import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.ProviderConfig
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import splice.launch.wrap.WrappedClaudeLaunch
 import splice.oauth.OAuthLoginAccount
 import java.nio.file.Files
 
@@ -72,4 +75,10 @@ internal class CliSignIn {
 
     internal fun wrapperInstalled(command: String, envReader: EnvReader): Boolean =
         Files.isSymbolicLink(InstallPaths(envReader = envReader).binDir.resolve(command))
+
+    /** The command a person types for the head [key]: `claude` for the Claude head while his `claude` goes through
+     *  splice, as the console names it (WrappedClaudeLaunch.typed), and the head's own [command] otherwise. */
+    internal fun typedCommand(key: String, command: String, envReader: EnvReader): String =
+        WrappedClaudeLaunch(WrappedHead(UserHome.dir(envReader), InstallPaths(envReader = envReader))).typed(key)
+            ?: command
 }

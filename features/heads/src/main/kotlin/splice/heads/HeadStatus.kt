@@ -16,16 +16,19 @@ import splice.core.head.Head
 
 /** Projects the current state of one runtime head using the established control API shape. */
 public object HeadStatus {
-    /** [pids] are the Claude Code clients running on this head now, as the caller's session registry reads them. */
+    /** [pids] are the Claude Code clients running on this head now, as the caller's session registry reads them.
+     *  [label] is the command a person types to reach the head, which is its own command unless the caller knows
+     *  another. */
     public fun json(
         head: Head,
         authKind: String,
         dialect: String? = null,
         pids: List<Long> = emptyList(),
+        label: String = head.label,
     ): JsonObject = buildJsonObject {
         val h = head.healthSnapshot()
         put("key", head.key)
-        put("label", head.label)
+        put("label", label)
         put("name", head.key)
         put("port", head.port)
         put("authKind", authKind)

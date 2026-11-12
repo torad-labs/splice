@@ -210,7 +210,7 @@ internal class ControlPlane(
         val mcpServices = mcp.services(mcpHost, home)
         // One session source serves the sessions routes and the heads route's client pids.
         val sessions = sessionWiring.source(home, heads, console, foregroundTools)
-        val signals = health.signals(heads, sessions, probes)
+        val signals = health.signals(heads, sessions, probes, home)
         val guard = parts.guard()
         val srv = ControlServer(
             adopted.control(controlPort),

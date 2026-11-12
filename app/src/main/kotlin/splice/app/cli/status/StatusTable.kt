@@ -115,7 +115,9 @@ internal class StatusTable(
         } else {
             palette.paint(palette.strain, STRAIN_GLYPH)
         }
-        return Row(glyph, listOf(key, command, head.port.toString(), backendLabel(provider)), action)
+        // The action beside it still names the head's own command, which is the one `splice install` links.
+        val typed = signIn.typedCommand(key, command, envReader)
+        return Row(glyph, listOf(key, typed, head.port.toString(), backendLabel(provider)), action)
     }
 
     /** What stops a turn on a head that is otherwise set up, or null. A missing wrapper or login still

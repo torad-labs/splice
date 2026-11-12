@@ -66,6 +66,9 @@ internal class HeadResolver(
         return headByName(name).filter { it.launchSpec != null }
     }
 
+    /** The command a person types to reach [managed], which is what the screens name it by (HeadSignals.shown). */
+    fun shown(managed: ManagedHead): String = signals.shown(managed.head)
+
     /** One head's status as the heads route serves it, with the client pids of its live sessions. */
     fun status(managed: ManagedHead): JsonObject =
         HeadStatus.json(
@@ -73,6 +76,7 @@ internal class HeadResolver(
             managed.authSurface.authKind,
             managed.authSurface.dialect,
             signals.clientPids()[managed.head.key].orEmpty(),
+            shown(managed),
         )
 
     /** Each head's status. Two readings ride on it that the head's own health does not say: for a local
@@ -105,6 +109,7 @@ internal class HeadResolver(
                 managed.authSurface.authKind,
                 managed.authSurface.dialect,
                 pids[key].orEmpty(),
+                shown(managed),
             )
             JsonObject(status + marks)
         }

@@ -32,15 +32,21 @@ public const val TRACE_BODY_MAX_BYTES: Long = 32L shl 30
  *  (splice-lead, Oct 12). The history window still bounds both; this keeps a busy window inside the disk. */
 internal const val TRACE_INDEX_MAX_BYTES: Long = 16L shl 30
 
-/** Trace bodies never consume the volume's last 64 GiB of usable space. */
+/** Trace bodies never consume the last 64 GiB of usable space on a large volume, nor the last twentieth of a volume
+ *  where a twentieth is less. Until Nov 11, 2026 the floor was 64 GiB on every volume: a thirtieth of the 1.8 TiB disk
+ *  it was sized on, and more than a laptop usually has free, where it refused every record from the first request. */
 internal const val TRACE_BODY_MIN_FREE_BYTES: Long = 64L shl 30
+
+/** The share of its volume a trace directory leaves free where that is less than the floor's 64 GiB. */
+private const val TRACE_FLOOR_VOLUME_SHARE: Long = 20L
 
 /** An eviction tombstone preserves the omission's reason without deleting the day's trace records. */
 internal const val DAY_BODY_EVICTED_SUFFIX: String = ".bodies-evicted"
 
 public const val BODY_BUDGET_EVICTED_REASON: String = "evicted by the body budget"
 
-/** Why a write was refused below the free-space floor: a body, or the index line beside it. */
+/** Why a write was refused below the free-space floor: a body, or the index line beside it. The floor's size follows
+ *  these words, so the log and Settings say how much the disk has to have free. */
 private const val FLOOR_REACHED = "trace volume free-space floor reached"
 
 private const val INDEX_CAP_REACHED = "shared trace index budget exhausted by the day being written"
@@ -55,6 +61,27 @@ private val DAY_DATE = Regex(".+-(\\d{4}-\\d{2}-\\d{2})\\.jsonl")
 /** The usable bytes on the volume containing a trace directory. */
 public fun interface DayVolumeSpace {
     public fun available(dir: Path): Long
+
+    /** The whole size of that volume. One that does not say reads as boundless, which leaves the floor at 64 GiB. */
+    public fun total(dir: Path): Long = Long.MAX_VALUE
+}
+
+/** The usable space a trace directory's volume keeps: [minFreeBytes], or a twentieth of the volume where that is less.
+ *  A volume that reports no size keeps [minFreeBytes]. */
+private class VolumeFloor(private val minFreeBytes: Long, private val space: DayVolumeSpace) {
+    fun of(dir: Path): Long {
+        val share = space.total(dir).takeIf { it > 0 }?.div(TRACE_FLOOR_VOLUME_SHARE) ?: minFreeBytes
+        return minOf(minFreeBytes, share)
+    }
+
+    /** Whether [growth] more bytes would take [dir]'s volume under its floor. */
+    fun below(dir: Path, growth: Long): Boolean {
+        val floor = of(dir)
+        return space.available(dir).let { it < floor || growth > it - floor }
+    }
+
+    /** Why a write below [dir]'s floor was refused, ending in the floor's size. */
+    fun reached(dir: Path): String = "$FLOOR_REACHED: splice leaves ${of(dir)} B free"
 }
 
 /** A refused body remains explicit metadata, not a failed or partially readable trace record. */
@@ -63,14 +90,15 @@ public class DayBodyCapacityException(public val reason: String) : IOException(r
 /** Admission and body-only eviction are serialized with every day index writer and purge. */
 public class DayBodyBudget(
     public val maxBytes: Long = TRACE_BODY_MAX_BYTES,
-    private val minFreeBytes: Long = TRACE_BODY_MIN_FREE_BYTES,
-    private val space: DayVolumeSpace = KeptVolumeSpace(),
+    minFreeBytes: Long = TRACE_BODY_MIN_FREE_BYTES,
+    space: DayVolumeSpace = KeptVolumeSpace(),
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     private val force: JsonlForce = JsonlForce { _, channel -> channel.force(true) },
     private val indexMaxBytes: Long = TRACE_INDEX_MAX_BYTES,
 ) {
     // The listing this thread's outermost withLock keeps, absent outside one.
     private val held = ThreadLocal<DayHold>()
+    private val floor = VolumeFloor(minFreeBytes, space)
 
     init {
         require(maxBytes > 0)
@@ -125,8 +153,7 @@ public class DayBodyBudget(
      *  its bodies), never today nor the day being written. Null when the line may be written, else why not. Call
      *  under [withLock]. */
     public fun admitIndex(day: Path, bytes: Long): String? {
-        val available = space.available(day.parent)
-        if (available < minFreeBytes || bytes > available - minFreeBytes) return FLOOR_REACHED
+        if (floor.below(day.parent, bytes)) return floor.reached(day.parent)
         val today = Instant.ofEpochMilli(clock()).atZone(ZoneOffset.UTC).toLocalDate()
         val active = dateOf(day.fileName.toString())
         val hold = hold(day.parent)
@@ -154,15 +181,10 @@ public class DayBodyBudget(
     }
 
     private fun fits(dir: Path, stored: Long, growth: Long): Boolean =
-        growth <= maxBytes && stored <= maxBytes - growth &&
-            space.available(dir).let { it >= minFreeBytes && growth <= it - minFreeBytes }
+        growth <= maxBytes && stored <= maxBytes - growth && !floor.below(dir, growth)
 
     private fun reason(dir: Path, growth: Long): String =
-        if (space.available(dir).let { it < minFreeBytes || growth > it - minFreeBytes }) {
-            FLOOR_REACHED
-        } else {
-            "shared rolling trace body budget exhausted"
-        }
+        if (floor.below(dir, growth)) floor.reached(dir) else "shared rolling trace body budget exhausted"
 
     private fun evict(body: BodyDay) {
         // Both forces precede unlink: a crash cannot erase the omission's reason while keeping its deletion.
@@ -297,15 +319,17 @@ public class DayBodyBudget(
     }
 
     /** The default free-space probe. It keeps the FileStore of the last directory asked about: building one reads the
-     *  whole mount table, while its usable space is one statvfs of that directory's own path at each call, so every
-     *  answer, and a missing directory's NoSuchFileException, is as fresh as a new store's. */
+     *  whole mount table, while its usable space and its size are each one statvfs of that directory's own path at each
+     *  call, so every answer, and a missing directory's NoSuchFileException, is as fresh as a new store's. */
     private class KeptVolumeSpace : DayVolumeSpace {
         @Volatile
         private var kept: Pair<Path, FileStore>? = null
 
-        override fun available(dir: Path): Long {
-            val store = kept?.takeIf { it.first == dir }?.second ?: Files.getFileStore(dir).also { kept = dir to it }
-            return store.usableSpace
-        }
+        override fun available(dir: Path): Long = store(dir).usableSpace
+
+        override fun total(dir: Path): Long = store(dir).totalSpace
+
+        private fun store(dir: Path): FileStore =
+            kept?.takeIf { it.first == dir }?.second ?: Files.getFileStore(dir).also { kept = dir to it }
     }
 }

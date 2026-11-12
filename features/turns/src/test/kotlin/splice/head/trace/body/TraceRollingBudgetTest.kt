@@ -66,7 +66,7 @@ class TraceRollingBudgetTest {
         // Below the floor neither a new body nor the index line of a stored one is written.
         for (text in listOf("synthetic other", "synthetic first")) {
             val refused = assertThrows(DayBodyCapacityException::class.java) { encoded(bodies, day, text) }
-            assertEquals("trace volume free-space floor reached", refused.reason)
+            assertEquals("trace volume free-space floor reached: splice leaves 64 B free", refused.reason)
         }
         free = Long.MAX_VALUE
         assertEquals(first, encoded(bodies, day, "synthetic first"))

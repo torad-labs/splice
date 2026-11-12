@@ -814,8 +814,10 @@ discovery_prefix = "claude-splice--"
 # chooses the model a new session starts on.
 context_window = 1000000
 [heads.claude-splice.claude]
-# The SEPARATE lane: a command of its own, beside the `claude` you already run. Nothing in
-# ~/.claude is touched, and this is what `splice setup` preselects.
+# The SEPARATE lane: a command of its own, beside the `claude` you already run, and what `splice setup`
+# preselects. It runs Claude Code over its own home, ~/.claude: the same login, settings and sessions as
+# plain `claude`. There is one Claude Code login, not one per command, and splice writes nothing there:
+# it hands Claude Code this head's settings on the command line.
 #
 # The other lane is WRAP, and it is not spelled here — do not set `command = "claude"` to get it.
 # Wrapping is an ACTION, not a config value: `splice setup` offers it, and the console's Settings

@@ -38,7 +38,7 @@ internal const val WRAP_HINT: String =
         "your settings, MCP servers and other Claude state stay untouched"
 
 internal const val SEPARATE_HINT: String =
-    "a claude-splice command beside your own; nothing in ~/.claude is touched"
+    "a claude-splice command beside your own, on the same Claude Code login, settings and sessions"
 
 /** The wrap POST's own read budget. ControlPlaneClient's 3s default was sized for the shutdown
  *  route, which answers 202 BEFORE it tears down; wrap answers only AFTER WrappedHead writes

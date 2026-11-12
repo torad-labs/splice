@@ -442,6 +442,17 @@ function modelWindows(row) {
     return { label: m.model || "Model", used: Math.round(m.used_percent), len: LEN.Week, sub: true, left: due ? left : null, resetMs: due ? m.resets_at * 1000 : null, stale: false };
   });
 }
+/** Each model a login reports a week for or is held out of, by the name its provider gives the week ("Fable"), and
+ *  whether the login can serve it now. It cannot when the model's own week reads full, or when the pool holds the login
+ *  out of the model until the provider's reset (models_held), whatever the bar reads: on Nov 12, 2026 a login just
+ *  refused read 99%. Accounts reads the same two records for its "Fable used up until" line. */
+function modelLimits(row) {
+  const now = NOW.getTime(), held = (row.models_held || []).filter((m) => m?.model && m.until_epoch_seconds * 1000 > now);
+  const weeks = (row.seven_day_models || []).filter((m) => m?.model).map((m) => ({ name: m.model,
+    out: (m.used_percent >= 100 && !(m.resets_at && m.resets_at * 1000 <= now)) || held.some((h) => weekOf(m.model, h.model)) }));
+  const heldOnly = held.filter((h) => !weeks.some((w) => weekOf(w.name, h.model))).map((h) => ({ name: modelName(S.labels, h.model), out: true }));
+  return [...weeks, ...heldOnly];
+}
 const isPlanHead = (key) => {
   const h = S.registry.find((x) => x.key === key);
   return h && h.authKind !== "api-key" && h.family !== "local" && h.family !== "vast";
@@ -594,7 +605,7 @@ function planCard(row, mx) {
   const lines = out ? 0 : rows.length || (row.no_usage_at_epoch_seconds ? 0 : 2);
   const ran = ranOut ? `<a class="ranout" href="requests.html?win=7d#${encodeURIComponent(ranOut.id)}">Ran out ${dayClock(new Date(ranOut.ts))}${OPEN}</a>` : "";
   const fig = leadFig(s, windows, { out });
-  return { prov: providerOfHead(heads[0]), kind: "plan", name: planName(row) || "Account", used: out || !windows.length ? -1 : Math.max(0, ...windows.filter((w) => !w.sub).map((w) => w.used)), s, heads: new Set(heads),
+  return { prov: providerOfHead(heads[0]), kind: "plan", name: planName(row) || "Account", used: out || !windows.length ? -1 : Math.max(0, ...windows.filter((w) => !w.sub).map((w) => w.used)), models: out ? [] : modelLimits(row), s, heads: new Set(heads),
     rows: lines, h: cardH("plan", lines, out, held || ran || blocked ? 1 : 0, s),
     make: (withChips) => `<article class="card pcard${held || blocked ? " held" : ""}${out ? " out" : ""}${picked ? " picked" : ""}${ui.landed === idx ? " landed" : ""}" data-a="plan-${idx}" style="--c:${colorOf(providerOfHead(heads[0]))}"${door}>`
       + topRow(fig, headEnd(withChips ? heads : [], out))
@@ -729,7 +740,14 @@ const boardHead = (cards = null) => {
   // so a signed-out login, one whose provider reports no limits and one splice no longer holds are not in it. The ladder
   // keeps a dashed rung for a login of the roster with no reading; a login splice no longer holds has no rung.
   const plans = cards.filter((c) => c.kind === "plan" && !c.gone), read = plans.filter((c) => c.used >= 0), held = read.filter((c) => c.used >= 100).length;
-  const hero = read.length ? `<p class="upb-hero"><b${held ? ` class="lim"` : ""} data-tn="">${held}</b><span>of ${read.length} ${read.length === 1 ? "login" : "logins"} at their limit</span></p>` : "";
+  // A LOGIN OUT OF ONE MODEL IS NOT AT ITS LIMIT, AND IS NOT FREE EITHER (Nov 12, 2026): six of eight Claude logins had
+  // used up Fable, the model every session asked for, and this read "0 of 10 logins at their limit". The models some login
+  // cannot serve are counted beside it, the one out on most logins first, in the words `splice status` uses.
+  const byModel = new Map();
+  for (const c of read) for (const m of c.models || []) { const e = byModel.get(m.name) || { out: 0, of: 0 }; e.of++; if (m.out) e.out++; byModel.set(m.name, e); }
+  const spent = [...byModel].filter(([, e]) => e.out).sort((a, b) => b[1].out - a[1].out || a[0].localeCompare(b[0])).slice(0, 2)
+    .map(([name, e]) => `<b class="lim" data-tn="">${e.out}</b><span>of ${e.of} with ${esc(name)} used up</span>`).join("");
+  const hero = read.length ? `<p class="upb-hero"><b${held ? ` class="lim"` : ""} data-tn="">${held}</b><span>of ${read.length} ${read.length === 1 ? "login" : "logins"} at their limit</span>${spent}</p>` : "";
   const rungs = plans.slice().sort((a, b) => b.used - a.used).map((c) => (c.used < 0 ? `<i class="upb-rung none" title="${esc(c.name)}"></i>`
     : `<i class="upb-rung${c.used >= 100 ? " full" : ""}" title="${esc(`${c.name}: ${c.used}%`)}"><b style="height:${Math.max(1, Math.min(100, c.used))}%;--c:${colorOf(c.prov)}"></b></i>`)).join("");
   return `<div class="bandhead upb-head"><div class="upb-lead"><h2>Plans and keys</h2>${hero}<p class="upb-key"><span><i class="lim" aria-hidden="true"></i>Limits</span><span><i aria-hidden="true"></i>Counted by splice</span></p></div>`

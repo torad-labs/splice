@@ -83,6 +83,10 @@ function learnModels(into, row) {
 /** The words these read as themselves rather than as a capitalised word, proved by his own declared labels:
  *  "GPT-5.6", "GLM-5.3-Flash Uncensored", "Kimi K3 (256k)". */
 const MODEL_WORD = { gpt: "GPT", glm: "GLM", k3: "K3" };
+// whether a model's week, as its provider names it ("Fable"), is the week of the model a turn asks for by id
+// ("claude-fable-5-2"): the id carries each word of the name (ModelQuota.weekOf)
+const weekOf = (name, id) => { const parts = String(id || "").toLowerCase().split(/[-._ \[\]]/), words = String(name || "").toLowerCase().split(/[ .-]/).filter(Boolean);
+  return words.length > 0 && words.every((w) => parts.includes(w)); };
 /** What a model is called: the label its head declares, else the name its own id spells. THE CLIENT PICKS
  *  MODELS THE CATALOG NEVER DECLARED — Claude Code runs its own small model for titles and summaries — so
  *  those live in the rows and in no catalog, and "claude-haiku-5-5" sat beside "Claude Sonnet 5.5" in one

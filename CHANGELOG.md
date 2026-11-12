@@ -49,7 +49,8 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   since its last look. Beside that it hashed the file again, from the index's start to its end, after every
   append, for a proof that is read only on a filesystem that reports no change time. On Nov 12, 2026, with the
   fix above installed, half the replies on a busy machine still read 33 MiB: the Claude command's perf file
-  was 32 MiB and grew about every three seconds. The hash is now made only where it is read.
+  was 32 MiB and grew about every three seconds. The hash now goes on from where the last one ended and reads
+  only what was appended.
 - **A restart no longer cuts an answer that is already arriving on a Grok, OpenAI or OpenRouter command, on any
   other command that speaks the chat-completions API, or on a ChatGPT command with code mode off.** Only a
   command that speaks Anthropic's API kept such an answer until now (#523). A chat-completions turn keeps

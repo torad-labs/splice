@@ -26,8 +26,6 @@ import splice.core.auth.AccountRef
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
-import splice.core.usage.QuotaSnapshot
-import splice.core.usage.QuotaWindow
 
 class ClaudeAccountRowsTest {
     private fun forwardedAuth(): AuthProvider = object : AuthProvider {
@@ -154,44 +152,4 @@ class ClaudeAccountRowsTest {
         val free = rowWith(null)
         assertTrue(free.getValue("pinned_heads").jsonArray.isEmpty(), "nothing pinned, no head named")
     }
-
-    @Test
-    fun `two commands on one head remain distinct rows and unknown windows never become zero or full limits`() =
-        runBlocking {
-            val first = ClaudeLoginPlaceView(
-                ClaudeLoginPlaceId.NATIVE,
-                "claude-splice",
-                ClaudeLoginCredential("/synthetic/native/.credentials.json", true),
-                ClaudeLoginIdentity(ClaudeAccountIdentity("native-account", "native@test")),
-                QuotaSnapshot(QuotaWindow(42.0, 20_000, 18_000), updatedAt = 100_000),
-                ClaudeLoginStanding(true, 200),
-            )
-            val second = first.copy(
-                id = ClaudeLoginPlaceId.SPLICE,
-                credential = first.credential.copy(path = "/synthetic/separate/.credentials.json"),
-                identity = ClaudeLoginIdentity(ClaudeAccountIdentity("separate-account", null)),
-                quota = null,
-                standing = ClaudeLoginStanding(null, null),
-            )
-            val body = AccountsRoute(emptyMap()).accountsJson(
-                mapOf("claude-splice" to "native-provider"),
-                listOf(first, second),
-                mapOf("claude-splice" to ClaudeLoginPlaceId.NATIVE),
-                nowSeconds = 100,
-            )
-            val rows = Json.parseToJsonElement(body).jsonObject.getValue("accounts").jsonArray
-            assertEquals(2, rows.size)
-            val native = rows[0].jsonObject
-            val separate = rows[1].jsonObject
-            assertEquals("native-provider", native.getValue("provider").jsonPrimitive.content)
-            assertEquals(42.0, native.getValue("five_hour_used_percent").jsonPrimitive.content.toDouble())
-            assertEquals("true", native.getValue("five_hour_current").jsonPrimitive.content)
-            assertEquals(JsonNull, separate["five_hour_used_percent"])
-            assertEquals("true", native.getValue("carrying_request").jsonPrimitive.content, "the matched place is")
-            assertEquals("false", separate.getValue("carrying_request").jsonPrimitive.content, "the sibling is not")
-            assertEquals(AccountRef.of("separate-account"), separate.getValue("ref").jsonPrimitive.content)
-            assertFalse(body.contains("separate-account"), "a place names its account by its ref, never its id")
-            assertFalse(body.contains("used_usd"))
-            assertFalse(body.contains("credential_key"))
-        }
 }

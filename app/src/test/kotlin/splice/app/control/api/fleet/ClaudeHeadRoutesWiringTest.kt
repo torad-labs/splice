@@ -240,6 +240,46 @@ class ClaudeHeadRoutesWiringTest {
         }
     }
 
+    /** One Claude login (Nov 12, 2026): the head launched by its own name runs over the person's own ~/.claude, as a
+     *  wrapped `claude` does, whether or not `claude` is wrapped. No second home is built and none is named. */
+    @Test
+    fun `launching claude-splice by its own name with claude unwrapped runs over the own home and writes none`(
+        @TempDir home: Path,
+    ) {
+        val launchService = LaunchService(
+            ClaudeConfigMaterializer(home),
+            wrap = WrappedHead(
+                home = home,
+                installPaths = InstallPaths(
+                    binOverride = Files.createDirectories(home.resolve("bin")),
+                    shareOverride = Files.createDirectories(home.resolve("share")),
+                ),
+                stateStore = WrapStateStore(file = home.resolve("state/claude-head-wrap.json")),
+            ),
+        )
+        serveWired(home, launchService) { port, key ->
+            val client = HttpClient(CIO) { expectSuccess = false }
+            try {
+                val launched = client.post("http://127.0.0.1:$port/launch/claude-splice") {
+                    header("Authorization", "Bearer $key")
+                    setBody("{}")
+                }
+                val body = launched.bodyAsText()
+                assertEquals(HttpStatusCode.OK, launched.status, body)
+                val recipe = Json.parseToJsonElement(body).jsonObject
+                val env = recipe.getValue("env").jsonObject
+                assertFalse(env.containsKey("CLAUDE_CONFIG_DIR"), "no second home is named: $env")
+                assertEquals("http://127.0.0.1:3104", env.getValue("ANTHROPIC_BASE_URL").jsonPrimitive.content)
+                val argv = recipe.getValue("argv").jsonArray.map { it.jsonPrimitive.content }
+                assertTrue("--settings" in argv, "the head's settings ride the launch as an overlay: $argv")
+                assertFalse(home.resolve(".claude-claude-splice").exists(), "the head's own dir is never built")
+                assertFalse(home.resolve(".claude").exists(), "nothing is written into ~/.claude")
+            } finally {
+                client.close()
+            }
+        }
+    }
+
     /** The self-exec hazard the wrap state exists to close: with the shim standing in for `claude`, a launch that
      *  cannot read the record of the real binary must refuse, never plant bare `claude` (which is the shim). */
     @Test

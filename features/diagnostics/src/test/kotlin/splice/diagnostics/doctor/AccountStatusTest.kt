@@ -96,29 +96,14 @@ class AccountStatusTest {
     @Test
     fun `status names the selected native login and counts its real roster`() {
         val view = nativeView()
-        assertEquals("on claude's login (1 of 2 open) · $lastLeft", AccountPoolText { 0L }.summary(view))
-    }
-
-    @Test
-    fun `native switches read as login names without selectors or arrows`() {
-        val view = nativeView().copy(
-            lastSwitch = HeadAccountSwitchView(
-                "native:claude-splice",
-                "native:claude",
-                "7d window exhausted",
-                0L,
-            ),
-        )
-        val detail = AccountPoolText { 0L }.summary(view)
-        assertTrue(detail.contains("switched from claude-splice's login to claude's login"), detail)
-        assertFalse(detail.contains("native:") || detail.contains("->"), detail)
+        assertEquals("on claude's login (1 of 1 open)", AccountPoolText { 0L }.summary(view))
     }
 
     @Test
     fun `doctor does not erase the native logins that Accounts offers`() {
         val check = AccountPoolText { 0L }.check("claude-splice", nativeView())
-        assertEquals(CheckStatus.INFO, check.status)
-        assertEquals("on claude's login (1 of 2 open) · $lastLeft", check.detail)
+        assertEquals(CheckStatus.OK, check.status)
+        assertEquals("on claude's login (1 of 1 open)", check.detail)
     }
 
     @Test
@@ -127,7 +112,7 @@ class AccountStatusTest {
         val view = roster.copy(accounts = roster.accounts.map { it.copy(available = false) })
         val check = AccountPoolText { 0L }.check("claude-splice", view)
         assertEquals(CheckStatus.WARN, check.status)
-        assertTrue(check.fix.orEmpty().contains("native login places"))
+        assertTrue(check.fix.orEmpty().contains("sign Claude Code in to another account with /login"))
         assertFalse(check.fix.orEmpty().contains("splice login"))
     }
 
@@ -149,10 +134,7 @@ class AccountStatusTest {
 
     private fun nativeView(): HeadAccountPoolView = HeadAccountPoolView(
         "native:claude",
-        listOf(
-            HeadAccountView("native:claude", false, true, true, null),
-            HeadAccountView("native:claude-splice", false, false, false, null),
-        ),
+        listOf(HeadAccountView("native:claude", false, true, true, null)),
         null,
     )
 

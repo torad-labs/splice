@@ -6,6 +6,7 @@
 // head splice cannot place counts as this head's: the switch is refused, never guessed.
 package splice.app.cli.auth
 
+import splice.accounts.claude.CLAUDE_LOGIN_HEAD
 import splice.app.head.HeadConfigDirs
 import splice.client.ClaudeHead
 import splice.client.ClaudeLoginResult
@@ -30,6 +31,15 @@ internal class ClaudeLoginLabel(
     private val processes: ProcessEnvironment = ProcessEnvironment(),
 ) {
     internal fun login(headKey: String, topology: Topology, label: String?, discard: Boolean): Boolean {
+        // The Claude command has no home of its own to save a login from or switch one into: it runs on Claude
+        // Code's own login, and its other accounts are the ones added on the Accounts page.
+        if (headKey == CLAUDE_LOGIN_HEAD) {
+            output.line(
+                "splice: $headKey runs on Claude Code's own login: sign in with /login inside claude. More accounts " +
+                    "are added on the Accounts page (splice console).",
+            )
+            return false
+        }
         if (label == null) {
             output.line(
                 "splice: $headKey signs in with Claude Code's own /login inside it; `splice login $headKey " +

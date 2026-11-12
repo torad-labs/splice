@@ -54,6 +54,7 @@ internal class HeadAccountMembership(
             polling?.remove(label)
             trackers.remove(label)?.retire()
             pool.members = pool.members.filter { it.label != label }
+            holds.forget(ctx.key, label)
             assembly.claudePoolChanges.accounts(ctx.key, wired.liveAccounts.filter { it.label != label })
         }
     }
@@ -88,6 +89,9 @@ internal class HeadAccountMembership(
             val current = assembly.claudeAccounts(ctx.key, wired.auth).filterNot { it.label in withdrawn }
             if (unchanged(current)) return
             val previous = pool.members.associateBy(PoolAccount::label)
+            // A label new to the running pool is a login just filed: a file under its label is an earlier login's.
+            current.filter { it.nativePlace == null && it.label !in previous }
+                .forEach { holds.forget(ctx.key, it.label) }
             val held = holds.forAccounts(ctx.key, wired.copy(accounts = current))
             val labels = current.map { it.label }.toSet() + OWN_SIGN_IN_LABEL
             trackers.keys.filter { it !in labels }.forEach { trackers.remove(it)?.retire() }

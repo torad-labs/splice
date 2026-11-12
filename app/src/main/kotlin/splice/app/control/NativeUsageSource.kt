@@ -1,7 +1,6 @@
 // NEW: native windows come from Accounts' identity-joined port, never the head-wide tracker.
 package splice.app.control
 
-import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlacesSource
 import splice.accounts.pool.HeadAccountPoolView
 import splice.app.auth.claude.OWN_SIGN_IN_LABEL
@@ -40,7 +39,7 @@ internal class NativeUsageSource(
             pool.nextTargetLabel?.takeIf { target -> pool.accounts.any { it.label == target } }
                 ?.let { pool.copy(selectedLabel = it).selectedQuota() }
         } else {
-            views.singleOrNull { it.id == ClaudeLoginPlaceId.SPLICE }?.quota?.let(::quotaView)
+            views.singleOrNull()?.quota?.let(::quotaView)
         }
     }
 

@@ -9,7 +9,6 @@ import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
-import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
@@ -46,7 +45,6 @@ import java.nio.file.Path
 
 internal const val NATIVE_HEAD = "claude-splice"
 internal const val NATIVE_SELECTOR = "native:claude"
-internal const val SPLICE_SELECTOR = "native:claude-splice"
 internal const val NATIVE_ACCESS_EXPIRY = 4_102_444_800_000L
 
 class ClaudeNativePoolWiringTest {
@@ -64,14 +62,13 @@ class ClaudeNativePoolWiringTest {
     ): ClaudeNativePoolFixture.Rig = fixture.rig(probes, upstreamUrl)
 
     @Test
-    fun `two verified native places become an active pool and default to the soonest reset`() = runBlocking {
+    fun `the native place becomes an active pool and is the one sent`() = runBlocking {
         seed("native")
-        seed("splice")
         val rig = rig()
         try {
             assertTrue(
                 requireNotNull(rig.head.authSurface.accountPool).active,
-                "the native owner must publish both places",
+                "the native owner must publish its place",
             )
             var authorization: String? = null
             HttpClient(
@@ -90,50 +87,9 @@ class ClaudeNativePoolWiringTest {
     }
 
     @Test
-    fun `the real console order route reads and changes the native selector`() = runBlocking {
+    fun `a weekly limit preserves the credential and the true reset`() = runBlocking {
         seed("native")
-        seed("splice")
-        val rig = rig()
-        try {
-            HttpClient(Java).use { client ->
-                val url = "http://127.0.0.1:${rig.server.listeningPort}/api/auth/$NATIVE_HEAD/order"
-                val initial = client.get(url) { bearerAuth(rig.key.get()) }
-                assertEquals(HttpStatusCode.OK, initial.status, "two native accounts must not return no source")
-                val changed = client.put(url) {
-                    bearerAuth(rig.key.get())
-                    contentType(ContentType.Application.Json)
-                    setBody("""{"order":["$SPLICE_SELECTOR","$NATIVE_SELECTOR"]}""")
-                }
-                assertEquals(HttpStatusCode.OK, changed.status)
-                val body = Json.parseToJsonElement(changed.bodyAsText()).jsonObject
-                assertEquals(
-                    listOf(SPLICE_SELECTOR, NATIVE_SELECTOR),
-                    body.getValue("effective_order").jsonArray.map { it.jsonPrimitive.content },
-                )
-                assertEquals(
-                    SPLICE_SELECTOR,
-                    requireNotNull(rig.head.authSurface.accountPool).view(null).nextTargetLabel,
-                )
-            }
-        } finally {
-            rig.close()
-        }
-    }
-
-    @Test
-    fun `a weekly native refusal hands off to the other live place without changing either credential`() = runBlocking {
-        limitControl(expiredStandby = false)
-    }
-
-    @Test
-    fun `a weekly limit and expired standby preserve credentials and the true reset`() = runBlocking {
-        limitControl(expiredStandby = true)
-    }
-
-    private suspend fun limitControl(expiredStandby: Boolean) {
-        seed("native")
-        seed("splice", expiresAt = if (expiredStandby) 1L else NATIVE_ACCESS_EXPIRY)
-        val files = listOf(home.resolve(".claude/.credentials.json"), home.resolve(".claude-splice/.credentials.json"))
+        val files = listOf(home.resolve(".claude/.credentials.json"))
         val before = files.map(Files::readAllBytes)
         val sent = java.util.concurrent.CopyOnWriteArrayList<String?>()
         val bodies = java.util.concurrent.CopyOnWriteArrayList<String>()
@@ -144,24 +100,9 @@ class ClaudeNativePoolWiringTest {
             HttpClient(Java).use { client ->
                 val first = nativeTurn(client, rig)
                 val second = nativeTurn(client, rig)
-                if (expiredStandby) {
-                    // Each turn asks the provider itself; buffered requests cannot wait a weekly reset and answer L.
-                    assertWeeklyRefusal(first)
-                    assertWeeklyRefusal(second)
-                    assertEquals(listOf("Bearer synthetic-native", "Bearer synthetic-native"), sent)
-                } else {
-                    assertEquals(HttpStatusCode.OK, first.status, first.bodyAsText())
-                    assertEquals(HttpStatusCode.OK, second.status, second.bodyAsText())
-                    assertEquals(
-                        listOf("Bearer synthetic-native", "Bearer synthetic-splice", "Bearer synthetic-splice"),
-                        sent,
-                    )
-                    assertEquals(
-                        1,
-                        bodies.distinct().size,
-                        "account handoff must not alter request bytes or cache keys",
-                    )
-                }
+                assertWeeklyRefusal(first)
+                assertWeeklyRefusal(second)
+                assertEquals(listOf("Bearer synthetic-native", "Bearer synthetic-native"), sent)
             }
             files.forEachIndexed { index, file -> assertArrayEquals(before[index], Files.readAllBytes(file)) }
         } finally {
@@ -170,17 +111,17 @@ class ClaudeNativePoolWiringTest {
         }
     }
 
-    /** Family L retains the real weekly reset while the client rechecks the pool, whose standby may be renewed. */
+    /** Family L retains the real weekly reset: the one login has no standby to recheck. */
     private suspend fun assertWeeklyRefusal(turn: HttpResponse) {
         assertEquals(HttpStatusCode.TooManyRequests, turn.status)
         val error = Json.parseToJsonElement(turn.bodyAsText()).jsonObject.getValue("error").jsonObject
         assertEquals("rate_limit_error", error.getValue("type").jsonPrimitive.content)
         val message = error.getValue("message").jsonPrimitive.content
         assertTrue(message.startsWith("[splice] "), message)
-        assertEquals("30", turn.headers["retry-after"], "a standby that is renewed can serve the next recheck")
         val reset = checkNotNull(turn.headers["anthropic-ratelimit-unified-7d-reset"]).toLong()
-        val recheck = checkNotNull(turn.headers["anthropic-ratelimit-unified-reset"]).toLong()
-        assertTrue(reset > recheck, "the per-window member retains the true reset")
+        val wait = checkNotNull(turn.headers["retry-after"]).toLong()
+        assertTrue(wait > 30, "no other login can serve a recheck, so the client waits for the true reset: $wait")
+        assertTrue(reset > System.currentTimeMillis() / 1_000L, "the per-window member retains the true reset")
     }
 
     private suspend fun nativeTurn(client: HttpClient, rig: ClaudeNativePoolFixture.Rig): HttpResponse =
@@ -197,12 +138,10 @@ class ClaudeNativePoolWiringTest {
     @Test
     fun `native expiry is read on the next selection without waiting for the cached evidence TTL`() = runBlocking {
         seed("native")
-        seed("splice")
         val rig = rig()
         try {
             assertEquals(NATIVE_SELECTOR, rig.plane.playgroundProviders.target(NATIVE_HEAD)?.login?.label)
             seed("native", expiresAt = 1L)
-            assertEquals(SPLICE_SELECTOR, rig.plane.playgroundProviders.target(NATIVE_HEAD)?.login?.label)
             val expired = rig.head.authSurface.accountPool?.view(null)?.accounts?.single { it.label == NATIVE_SELECTOR }
             assertEquals(false, expired?.available)
         } finally {
@@ -211,13 +150,11 @@ class ClaudeNativePoolWiringTest {
     }
 
     @Test
-    fun `removing all native credentials restores forwarding and readding one restores selection`() = runBlocking {
+    fun `removing the native credential restores forwarding and readding one restores selection`() = runBlocking {
         seed("native")
-        seed("splice")
         val rig = rig()
         try {
             Files.delete(home.resolve(".claude/.credentials.json"))
-            Files.delete(home.resolve(".claude-splice/.credentials.json"))
             assertEquals(false, rig.head.authSurface.accountPool?.active)
             assertNull(rig.plane.playgroundProviders.target(NATIVE_HEAD)?.login)
             seed("native")
@@ -231,7 +168,6 @@ class ClaudeNativePoolWiringTest {
     @Test
     fun `a captured native refusal cannot hold a replacement credential at the same physical place`() = runBlocking {
         seed("native")
-        seed("splice")
         val rig = rig()
         val entered = CompletableDeferred<Unit>()
         val released = CompletableDeferred<Unit>()
@@ -264,39 +200,10 @@ class ClaudeNativePoolWiringTest {
     }
 
     @Test
-    fun `saved native order survives reconstruction before the first send`() = runBlocking {
+    fun `native pollers use live access tokens and never change credentials`() = runBlocking {
         seed("native")
-        seed("splice")
-        val first = rig()
-        try {
-            HttpClient(Java).use { client ->
-                val url = "http://127.0.0.1:${first.server.listeningPort}/api/auth/$NATIVE_HEAD/order"
-                val response = client.put(url) {
-                    bearerAuth(first.key.get())
-                    contentType(ContentType.Application.Json)
-                    setBody("""{"order":["$SPLICE_SELECTOR","$NATIVE_SELECTOR"]}""")
-                }
-                assertEquals(HttpStatusCode.OK, response.status)
-            }
-        } finally {
-            first.close()
-        }
-        val restored = rig()
-        try {
-            assertEquals(SPLICE_SELECTOR, restored.plane.playgroundProviders.target(NATIVE_HEAD)?.login?.label)
-        } finally {
-            restored.close()
-        }
-    }
-
-    @Test
-    fun `native pollers use live access tokens and never probe an expired place or change credentials`() = runBlocking {
-        seed("native", expiresAt = 1L)
-        seed("splice")
         val nativeFile = home.resolve(".claude/.credentials.json")
-        val spliceFile = home.resolve(".claude-splice/.credentials.json")
         val nativeBefore = Files.readAllBytes(nativeFile)
-        val spliceBefore = Files.readAllBytes(spliceFile)
         val polled = CompletableDeferred<Unit>()
         val requests = java.util.concurrent.CopyOnWriteArrayList<String?>()
         HttpClient(
@@ -312,21 +219,22 @@ class ClaudeNativePoolWiringTest {
                 withTimeout(10_000L) {
                     polled.await()
                     while (
-                        rig.head.authSurface.accountPool?.view(null)?.accounts?.single { it.label == SPLICE_SELECTOR }
+                        rig.head.authSurface.accountPool?.view(null)?.accounts?.single { it.label == NATIVE_SELECTOR }
                             ?.quota?.fiveHour?.usedPercent != 37.0
                     ) {
                         yield()
                     }
                 }
-                assertEquals(listOf("Bearer synthetic-splice"), requests)
+                assertEquals(listOf("Bearer synthetic-native"), requests)
                 assertArrayEquals(nativeBefore, Files.readAllBytes(nativeFile))
-                assertArrayEquals(spliceBefore, Files.readAllBytes(spliceFile))
-                val key = requireNotNull(CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer synthetic-splice")))
+                val key = requireNotNull(
+                    CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer synthetic-native")),
+                )
                 val snapshot = CredentialQuotaFiles(paths.quotaFile(NATIVE_HEAD), {}).read(key)
                 assertEquals(37.0, snapshot?.fiveHour?.usedPercent)
                 rig.plane.providerAssembly.claudePoolChanges.publish(NATIVE_HEAD)
                 val republished = rig.head.authSurface.accountPool?.view(null)?.accounts
-                    ?.single { it.label == SPLICE_SELECTOR }
+                    ?.single { it.label == NATIVE_SELECTOR }
                 assertEquals(37.0, republished?.quota?.fiveHour?.usedPercent)
             } finally {
                 rig.close()
@@ -350,33 +258,9 @@ class ClaudeNativePoolWiringTest {
     }
 
     @Test
-    fun `usage before any send falls back to the next selectable native login`() = runBlocking {
+    fun `usage reads the login that carried the request`() = runBlocking {
         val observed = System.currentTimeMillis()
         seedUsage("native", 98.0, observed, NATIVE_ACCESS_EXPIRY)
-        seedUsage("splice", 59.0, observed - 75_600_000L, 1L)
-        val rig = rig()
-        try {
-            HttpClient(Java).use { client ->
-                val response = client.get("http://127.0.0.1:${rig.server.listeningPort}/api/usage") {
-                    bearerAuth(rig.key.get())
-                }
-                assertEquals(HttpStatusCode.OK, response.status)
-                val usage = Json.parseToJsonElement(response.bodyAsText()).jsonObject
-                    .getValue("heads").jsonArray.single().jsonObject.getValue("usage").jsonObject
-                val weekly = usage.getValue("quota").jsonObject.getValue("seven_day").jsonObject
-                assertEquals("98", weekly.getValue("used_pct").jsonPrimitive.content)
-                assertEquals("98", usage.getValue("warn").jsonObject.getValue("pct").jsonPrimitive.content)
-            }
-        } finally {
-            rig.close()
-        }
-    }
-
-    @Test
-    fun `usage reads the carrying login instead of the expired primary folder reading`() = runBlocking {
-        val observed = System.currentTimeMillis()
-        seedUsage("native", 98.0, observed, NATIVE_ACCESS_EXPIRY)
-        seedUsage("splice", 59.0, observed - 75_600_000L, 1L)
         val sent = java.util.concurrent.CopyOnWriteArrayList<String?>()
         val bodies = java.util.concurrent.CopyOnWriteArrayList<String>()
         val upstream = fixture.nativeUpstream(sent, bodies, refusedCredential = null).start()
@@ -416,9 +300,8 @@ class ClaudeNativePoolWiringTest {
     }
 
     @Test
-    fun `an expired native place is skipped and its credential is never refreshed or written`() = runBlocking {
+    fun `an expired native place is read as expired and its credential is never refreshed or written`() = runBlocking {
         seed("native", expiresAt = 1L)
-        seed("splice")
         val file = home.resolve(".claude/.credentials.json")
         val before = Files.readAllBytes(file)
         val rig = rig()
@@ -429,17 +312,14 @@ class ClaudeNativePoolWiringTest {
             assertArrayEquals(before, Files.readAllBytes(file), "splice must never write native credentials")
             val pool = requireNotNull(rig.head.authSurface.accountPool).view(null)
             assertEquals(false, pool.accounts.single { it.label == NATIVE_SELECTOR }.available)
-            assertEquals(SPLICE_SELECTOR, pool.nextTargetLabel)
             assertTrue(native.auth.describe().fields["refusal"].orEmpty().contains("expired"))
             HttpClient(Java).use { client ->
                 val response = client.get("http://127.0.0.1:${rig.server.listeningPort}/api/accounts") {
                     bearerAuth(rig.key.get())
                 }
                 val rows = Json.parseToJsonElement(response.bodyAsText()).jsonObject.getValue("accounts").jsonArray
-                assertEquals(2, rows.size, "native places must not also appear as managed pool rows")
+                assertEquals(1, rows.size, "the native place must not also appear as a managed pool row")
                 val expired = rows.single { it.jsonObject["label"]?.jsonPrimitive?.content == "claude" }.jsonObject
-                val usable = rows.single { it.jsonObject["label"]?.jsonPrimitive?.content == "claude-splice" }
-                    .jsonObject
                 assertEquals("false", expired.getValue("available").jsonPrimitive.content)
                 assertEquals(
                     "Access token expired. Run claude once and Claude Code renews it.",
@@ -447,7 +327,6 @@ class ClaudeNativePoolWiringTest {
                 )
                 assertEquals(NATIVE_SELECTOR, expired.getValue("selector_key").jsonPrimitive.content)
                 assertEquals("claude", expired.getValue("edit_target").jsonObject.getValue("id").jsonPrimitive.content)
-                assertEquals("true", usable.getValue("available").jsonPrimitive.content)
             }
         } finally {
             rig.close()

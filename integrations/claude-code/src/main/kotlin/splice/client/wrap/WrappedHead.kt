@@ -144,6 +144,12 @@ public class WrappedHead(
     public fun launchThrough(command: String): WrappedLaunch? =
         if (command == CLAUDE_COMMAND && claude() != ClaudeToRun.ThroughPath) WrappedLaunch(vanillaDir) else null
 
+    /** The launch the Claude head makes by its own name: over the person's own ~/.claude, as a wrapped `claude`
+     *  launches, whether `claude` is wrapped or not. The head has one Claude Code home, and so one login, whichever
+     *  name starts it (Marcos, Nov 12, 2026: "why ... is claude and claude-splice two identities? We use Claude only
+     *  via splice"). Its own name once ran Claude Code over a second home, which asked for a second sign-in. */
+    public fun ownHome(): WrappedLaunch = WrappedLaunch(vanillaDir)
+
     /** The person's `claude` command, where `splice install` links it, while it is wrapped: what a session started
      *  through it is started by again (a relaunch, Oct 26, 2026). Null while `claude` is not wrapped. */
     public fun command(): Path? = commandPath.takeIf { launchThrough(CLAUDE_COMMAND) != null }

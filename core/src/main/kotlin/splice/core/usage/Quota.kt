@@ -23,6 +23,9 @@ public data class ModelQuota(val model: String, val usedPercent: Double, val res
     /** Whether this model's week is still running at [nowSeconds]. A week past its own reset is the usage of a week
      *  that ended, whatever the account's week is doing; a row with no reset of its own rides the account's. */
     public fun runsAt(nowSeconds: Long): Boolean = resetsAt == null || resetsAt > nowSeconds
+
+    /** Whether the provider reads this model's week as all used: its next request on this login is refused. */
+    public val usedUp: Boolean get() = usedPercent >= FULLY_USED_PERCENT
 }
 
 /** Whose reading a quota file holds: the account's [ref] (splice.core.auth.AccountRef, the `ref` /api/accounts shows,

@@ -175,6 +175,20 @@ public class ScriptedHead internal constructor(
         pool.order = pool.order + name
     }
 
+    /** Signs the pooled login [label] in to another account, [account]: its label and its place in the order stay, and
+     *  its sends carry [ScriptedLogin.of] [account], as Claude Code's own login does after a person's /login. */
+    public fun signInAs(label: String, account: String) {
+        val pool = checkNotNull(wiring.pool) { "this head was built without a pool" }
+        pool.members = pool.members.map { held ->
+            if (held.label == label) wiring.login(account).copy(label = label, primary = held.primary) else held
+        }
+    }
+
+    /** Says the pooled login [label] can be asked again, as a person pressing Try again on its card does. */
+    public fun askAgain(label: String) {
+        checkNotNull(wiring.pool) { "this head was built without a pool" }.askAgain(label)
+    }
+
     /** Returns once [count] requests wait in the gate's queue. The gate signals nothing when one joins, so this
      *  looks again each time the test's coroutine runs. */
     public suspend fun awaitQueued(count: Int) {

@@ -6,11 +6,14 @@ package splice.app.head
 import splice.app.auth.claude.ClaudeNativeAuth
 import splice.app.provider.Wired
 import splice.core.config.StatePaths
+import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.upstream.retry.FileLoginHoldStore
 import splice.upstream.retry.FileProviderHoldStore
 import splice.upstream.retry.ProviderHoldStore
 import splice.upstream.retry.ProviderHoldWithLogin
+import java.nio.file.Files
+import java.nio.file.Path
 
 internal class ProviderHoldFiles(
     private val statePaths: StatePaths,
@@ -29,8 +32,20 @@ internal class ProviderHoldFiles(
                 val login = statePaths.stateDir.resolve("$key-$place-provider-hold-login.json")
                 ProviderHoldWithLogin(forHead(key), FileLoginHoldStore(login, log))
             } else {
-                FileProviderHoldStore(statePaths.stateDir.resolve("$key-${account.label}-provider-hold.json"), log)
+                FileProviderHoldStore(added(key, account.label), log)
             }
             account.label to (native?.credentialKey?.let(store::forCredential) ?: store)
         }
+
+    /** Drops the hold kept under an added account's [label]. A hold is its account's, and the file is named by the
+     *  label: a removed login left its file behind, and whichever account took the label next read it as its own
+     *  (Nov 12, 2026: a removed login's file still said one model was used up until the next morning). */
+    fun forget(key: String, label: String) {
+        Cancellables.discard(
+            Cancellables.runCatchingCleanup { Files.deleteIfExists(added(key, label)) },
+            "the file repeats the provider's word: left behind, it holds the label only until its own reset",
+        )
+    }
+
+    private fun added(key: String, label: String): Path = statePaths.stateDir.resolve("$key-$label-provider-hold.json")
 }

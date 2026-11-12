@@ -1,7 +1,6 @@
 // NEW: native places keep credential-stamped selector, auth and quota owners without changing display or edit identities.
 package splice.app.provider
 
-import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.accounts.claude.ClaudeLoginPlacesSource
 import splice.app.auth.claude.ClaudeCredentialProfiles
@@ -45,7 +44,6 @@ internal class ClaudeNativeAccountWiring(
     fun accounts(head: String): List<WiredAccount> {
         val views = places()?.places().orEmpty().filter { it.head == head }
         if (views.none { it.credential.present }) return emptyList()
-        val primary = views.firstOrNull { it.id == ClaudeLoginPlaceId.SPLICE }?.id ?: views.first().id
         return views.map { view ->
             val entry = requireNotNull(
                 held.compute("$head:${view.id.wire}") { _, previous ->
@@ -53,7 +51,6 @@ internal class ClaudeNativeAccountWiring(
                 },
             )
             entry.account.copy(
-                primary = view.id == primary,
                 credential = WiredAccountCredential(
                     present = view.credential.present,
                     refusal = view.credential.refusal,
@@ -73,7 +70,8 @@ internal class ClaudeNativeAccountWiring(
         )
         val wired = WiredAccount(
             label = "native:${view.id.wire}",
-            primary = view.id == ClaudeLoginPlaceId.SPLICE,
+            // Claude Code's own login is the command's first login: the one a new session starts from.
+            primary = true,
             auth = auth,
             quota = WiredAccountQuota(
                 file = paths.stateDir.resolve("${view.head}-native%${view.id.wire}-quota.json"),

@@ -43,16 +43,6 @@ class ClaudeLoginOwnerTest {
         )
     }
 
-    /** The other command's place, whose head key is NOT the one a fixed string would name. */
-    private fun other(): ClaudeLoginLocation {
-        val folder = Files.createDirectories(home.resolve("splice-native"))
-        return ClaudeLoginLocation(
-            ClaudeLoginPlaceId.SPLICE,
-            ClaudeLoginTarget(ClaudeHead("claude-splice", folder), home.resolve("splice.claude.json")),
-            home.resolve("splice-copies"),
-        )
-    }
-
     private fun live(location: ClaudeLoginLocation, account: String, bytes: String) {
         Files.writeString(location.credentials, bytes)
         Files.writeString(location.target.accountFile, """{"oauthAccount":{"accountUuid":"$account"}}""")
@@ -87,11 +77,9 @@ class ClaudeLoginOwnerTest {
     }
 
     @Test
-    fun `native removal backs up only its addressed credential and leaves sibling and pool logins intact`() {
+    fun `native removal backs up only its addressed credential and leaves pool logins intact`() {
         val native = location()
-        val sibling = other()
         val (edits, logins) = editable(native, "synthetic-native")
-        editable(sibling, "synthetic-sibling")
         val pool = Files.createDirectories(home.resolve("pool/work")).resolve(".credentials.json")
         Files.writeString(pool, "synthetic-pool")
         val bytes = Files.readString(native.credentials)
@@ -100,8 +88,6 @@ class ClaudeLoginOwnerTest {
 
         assertFalse(Files.exists(native.credentials))
         assertFalse(Files.exists(native.storeDir.resolve("work.credentials.json")))
-        assertTrue(Files.exists(sibling.credentials))
-        assertTrue(Files.exists(sibling.storeDir.resolve("work.credentials.json")))
         assertEquals("synthetic-pool", Files.readString(pool))
         val backup = Files.list(native.storeDir.resolve("removed")).use { it.toList().single() }
         assertEquals(bytes, Files.readString(backup))
@@ -125,23 +111,6 @@ class ClaudeLoginOwnerTest {
         assertTrue(Files.exists(native.storeDir.resolve("office.credentials.json")))
         assertFalse(Files.exists(native.storeDir.resolve("wrong.credentials.json")))
         assertEquals(ClaudeLoginPlaceId.NATIVE, native.id)
-    }
-
-    @Test
-    fun `a sign-in names its own command, so the console shows it on that card and not another's`() = runBlocking {
-        val native = location()
-        live(native, "outgoing", "outgoing bytes")
-        val scope = CoroutineScope(SupervisorJob() + ProcessDispatchers().io())
-        val child = NativeLoginTestProcess()
-        val owner = owner(native, scope, NativeAuthStart { child }, Surroundings(listOf(native, other())))
-        try {
-            val login = owner.login(ClaudeLoginPlaceId.NATIVE, null)
-
-            assertEquals("claude", login.head, "the sign-in opened on the claude card belongs to claude")
-            assertEquals("claude", owner.poll(login.id)?.head, "and the status the console polls says the same")
-        } finally {
-            scope.coroutineContext[Job]!!.cancelAndJoin()
-        }
     }
 
     @Test

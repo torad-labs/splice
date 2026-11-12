@@ -70,11 +70,9 @@ class ClaudeLoginReadTest {
     @Test
     fun `account attribution uses verified matching credentials rather than conflicting copied identities`() {
         val first = place(ClaudeLoginPlaceId.NATIVE, "first-synthetic", account = "first-account")
-        val second = place(ClaudeLoginPlaceId.SPLICE, "second-synthetic", account = "second-account")
         val reader = ClaudeLoginRead(paths(), {}, WallClock { 100_000 })
-        val locations = listOf(first, second)
+        val locations = listOf(first)
         assertEquals("first-account", reader.accountForCredential(locations, key("first-synthetic"))?.uuid)
-        assertEquals("second-account", reader.accountForCredential(locations, key("second-synthetic"))?.uuid)
         assertNull(reader.accountForCredential(locations, key("unproved-synthetic")))
         Files.writeString(first.credentials, """{"claudeAiOauth":{"accessToken":"rotated-synthetic"}}""")
         assertNull(reader.accountForCredential(locations, key("first-synthetic")), "a stale token proves no account")
@@ -84,119 +82,20 @@ class ClaudeLoginReadTest {
             ClaudeAccountIdentity("first-account", null),
         )
         assertEquals("first-account", reader.accountForCredential(locations, key("rotated-synthetic"))?.uuid)
-        Files.writeString(second.credentials, """{"claudeAiOauth":{"accessToken":"rotated-synthetic"}}""")
-        assertEquals(
-            "first-account",
-            reader.accountForCredential(locations, key("rotated-synthetic"))?.uuid,
-            "copied UUIDs cannot contradict the credential's verified profile",
-        )
     }
 
     @Test
-    fun `native commands have distinct standing and credential rotation never falls back to old or head-wide quota`() {
+    fun `credential rotation never falls back to old or head-wide quota`() {
         val paths = paths()
         val first = place(ClaudeLoginPlaceId.NATIVE, "first-synthetic", account = "first-account")
-        val second = place(ClaudeLoginPlaceId.SPLICE, "second-synthetic", account = "second-account")
         Files.writeString(paths.quotaFile("claude-splice"), QuotaJson().encode(window(99.0, 100_000)))
-        assertNull(used(read(first, second), ClaudeLoginPlaceId.NATIVE))
-        assertNull(used(read(first, second), ClaudeLoginPlaceId.SPLICE))
+        assertNull(used(read(first), ClaudeLoginPlaceId.NATIVE))
         observations(paths).observed(key("first-synthetic"), window(11.0, 100_000))
-        observations(paths).observed(key("second-synthetic"), window(77.0, 100_000))
-        assertEquals(11.0, used(read(first, second), ClaudeLoginPlaceId.NATIVE))
-        assertEquals(77.0, used(read(first, second), ClaudeLoginPlaceId.SPLICE))
-        assertEquals("first-account", read(first, second).getValue(ClaudeLoginPlaceId.NATIVE).identity.account?.uuid)
+        assertEquals(11.0, used(read(first), ClaudeLoginPlaceId.NATIVE))
+        assertEquals("first-account", read(first).getValue(ClaudeLoginPlaceId.NATIVE).identity.account?.uuid)
         Files.writeString(first.credentials, """{"claudeAiOauth":{"accessToken":"rotated-synthetic"}}""")
-        assertNull(used(read(first, second), ClaudeLoginPlaceId.NATIVE), "a rotated token inherits no window")
-        assertTrue(read(first, second).getValue(ClaudeLoginPlaceId.NATIVE).credential.present)
-        assertEquals(77.0, used(read(first, second), ClaudeLoginPlaceId.SPLICE))
-    }
-
-    @Test
-    fun `two logins of one account read that account's newest window rather than splitting it`() {
-        val paths = paths()
-        val native = place(ClaudeLoginPlaceId.NATIVE, "native-synthetic", account = "one-subscription")
-        val added = place(ClaudeLoginPlaceId.SPLICE, "splice-synthetic", account = "one-subscription")
-        observations(paths).observed(key("native-synthetic"), window(34.0, 90_000))
-
-        val probed = read(native, added)
-
-        assertEquals(34.0, used(probed, ClaudeLoginPlaceId.NATIVE))
-        assertEquals(
-            34.0,
-            used(probed, ClaudeLoginPlaceId.SPLICE),
-            "one subscription spends one window, so the login that has observed none reads its account's",
-        )
-
-        observations(paths).observed(key("splice-synthetic"), window(41.0, 95_000))
-        val later = read(native, added)
-
-        assertEquals(41.0, used(later, ClaudeLoginPlaceId.NATIVE), "the account's newest reading, whoever filed it")
-        assertEquals(41.0, used(later, ClaudeLoginPlaceId.SPLICE))
-    }
-
-    @Test
-    fun `copied account metadata cannot merge two different credentials quotas`() {
-        val paths = paths()
-        val native = place(
-            ClaudeLoginPlaceId.NATIVE,
-            "first-account-token",
-            account = "copied-stale-account",
-            verified = false,
-        )
-        val separate = place(
-            ClaudeLoginPlaceId.SPLICE,
-            "second-account-token",
-            account = "copied-stale-account",
-            verified = false,
-        )
-        observations(paths).observed(key("first-account-token"), window(11.0, 90_000))
-        observations(paths).observed(key("second-account-token"), window(77.0, 95_000))
-
-        val places = read(native, separate)
-
-        assertEquals(11.0, used(places, ClaudeLoginPlaceId.NATIVE), "an unbound config UUID proves no shared account")
-        assertEquals(77.0, used(places, ClaudeLoginPlaceId.SPLICE))
-    }
-
-    @Test
-    fun `different verified profiles stay independent despite equal stale config UUIDs`() {
-        val paths = paths()
-        val native = place(ClaudeLoginPlaceId.NATIVE, "first-profile-token", "stale", verified = false)
-        val separate = place(ClaudeLoginPlaceId.SPLICE, "second-profile-token", "stale", verified = false)
-        val profiles = ClaudeCredentialProfiles(paths.stateDir, {})
-        profiles.observed(key("first-profile-token"), ClaudeAccountIdentity("first-account", "first@synthetic.test"))
-        profiles.observed(key("second-profile-token"), ClaudeAccountIdentity("second-account", "second@synthetic.test"))
-        observations(paths).observed(key("first-profile-token"), window(11.0, 90_000))
-        observations(paths).observed(key("second-profile-token"), window(77.0, 95_000))
-
-        val places = read(native, separate)
-
-        assertEquals("first-account", places.getValue(ClaudeLoginPlaceId.NATIVE).identity.account?.uuid)
-        assertEquals("second-account", places.getValue(ClaudeLoginPlaceId.SPLICE).identity.account?.uuid)
-        assertEquals(11.0, used(places, ClaudeLoginPlaceId.NATIVE))
-        assertEquals(77.0, used(places, ClaudeLoginPlaceId.SPLICE))
-    }
-
-    @Test
-    fun `a login whose account splice cannot read joins with nobody`() {
-        val paths = paths()
-        val named = place(ClaudeLoginPlaceId.NATIVE, "named-synthetic", account = "one-subscription")
-        val anonymous = place(ClaudeLoginPlaceId.SPLICE, "anonymous-synthetic", account = null)
-        observations(paths).observed(key("named-synthetic"), window(52.0, 90_000))
-
-        val places = read(named, anonymous)
-
-        assertEquals(52.0, used(places, ClaudeLoginPlaceId.NATIVE))
-        assertNull(
-            used(places, ClaudeLoginPlaceId.SPLICE),
-            "no identity means nothing to join by, and a guess would show another person's window",
-        )
-
-        observations(paths).observed(key("anonymous-synthetic"), window(63.0, 95_000))
-        val own = read(named, anonymous)
-
-        assertEquals(63.0, used(own, ClaudeLoginPlaceId.SPLICE), "it still reads its own credential's observation")
-        assertEquals(52.0, used(own, ClaudeLoginPlaceId.NATIVE), "and lends nothing to an account it is not in")
+        assertNull(used(read(first), ClaudeLoginPlaceId.NATIVE), "a rotated token inherits no window")
+        assertTrue(read(first).getValue(ClaudeLoginPlaceId.NATIVE).credential.present)
     }
 
     private fun hold(token: String, reset: Long) {
@@ -205,41 +104,16 @@ class ClaudeLoginReadTest {
     }
 
     @Test
-    fun `one account held through a native place holds its other place's different token too`() {
+    fun `a held login reads as held until its reset, and a rotated token lends no hold`() {
         val native = place(ClaudeLoginPlaceId.NATIVE, "native-held-synthetic", account = "one-subscription")
-        val added = place(ClaudeLoginPlaceId.SPLICE, "splice-free-synthetic", account = "one-subscription")
         hold("native-held-synthetic", 18_000L)
 
-        val shared = read(native, added)
+        val held = read(native)
 
-        assertEquals(true, shared.getValue(ClaudeLoginPlaceId.NATIVE).standing.held)
-        assertEquals(true, shared.getValue(ClaudeLoginPlaceId.SPLICE).standing.held)
-        assertEquals(18_000L, shared.getValue(ClaudeLoginPlaceId.SPLICE).standing.untilEpochSeconds)
-
-        hold("splice-free-synthetic", 25_000L)
-        val later = read(native, added)
-        assertEquals(25_000L, later.getValue(ClaudeLoginPlaceId.NATIVE).standing.untilEpochSeconds)
-        assertEquals(25_000L, later.getValue(ClaudeLoginPlaceId.SPLICE).standing.untilEpochSeconds)
+        assertEquals(true, held.getValue(ClaudeLoginPlaceId.NATIVE).standing.held)
+        assertEquals(18_000L, held.getValue(ClaudeLoginPlaceId.NATIVE).standing.untilEpochSeconds)
 
         Files.writeString(native.credentials, """{"claudeAiOauth":{"accessToken":"rotated-synthetic"}}""")
-        Files.writeString(added.credentials, """{"claudeAiOauth":{"accessToken":"other-rotated-synthetic"}}""")
-        val rotated = read(native, added)
-        assertNull(rotated.getValue(ClaudeLoginPlaceId.NATIVE).standing.held, "retired observers lend no hold")
-        assertNull(rotated.getValue(ClaudeLoginPlaceId.SPLICE).standing.held)
-    }
-
-    @Test
-    fun `an account's hold is not lent to a different account or an unknown identity`() {
-        val held = place(ClaudeLoginPlaceId.NATIVE, "held-synthetic", account = "held-account")
-        val other = place(ClaudeLoginPlaceId.SPLICE, "other-synthetic", account = "other-account")
-        hold("held-synthetic", 18_000L)
-        assertNull(read(held, other).getValue(ClaudeLoginPlaceId.SPLICE).standing.held)
-
-        val anonymous = place(ClaudeLoginPlaceId.SPLICE, "anonymous-synthetic")
-        assertNull(read(held, anonymous).getValue(ClaudeLoginPlaceId.SPLICE).standing.held)
-        hold("anonymous-synthetic", 22_000L)
-        val separate = read(held, anonymous)
-        assertEquals(18_000L, separate.getValue(ClaudeLoginPlaceId.NATIVE).standing.untilEpochSeconds)
-        assertEquals(22_000L, separate.getValue(ClaudeLoginPlaceId.SPLICE).standing.untilEpochSeconds)
+        assertNull(read(native).getValue(ClaudeLoginPlaceId.NATIVE).standing.held, "retired observers lend no hold")
     }
 }

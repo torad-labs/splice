@@ -17,7 +17,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -321,11 +320,8 @@ class NativeUsageTruthTest {
     }
 
     @Test
-    fun `Accounts and Usage read the same sibling-observed account snapshot and refused probes retain it`() {
-        val places = listOf(
-            location(ClaudeLoginPlaceId.NATIVE, "one-subscription"),
-            location(ClaudeLoginPlaceId.SPLICE, "one-subscription"),
-        )
+    fun `Accounts and Usage read the same account snapshot and refused probes retain it`() {
+        val places = listOf(location(ClaudeLoginPlaceId.NATIVE, "one-subscription"))
         observed(ClaudeLoginPlaceId.NATIVE, 12.0)
         serve(native(places)) { read ->
             val accounts = read("/api/accounts", false).getValue("accounts").jsonArray.map { it.jsonObject }
@@ -349,87 +345,9 @@ class NativeUsageTruthTest {
         }
     }
 
-    /** Both commands send through one head, so its usage is the login its requests carry (2026-10-04: claude-splice
-     *  sent the ~/.claude login at 91% while Models and Usage read the folder's stale 59%). The record starts empty,
-     *  which is what a restart leaves: until a request matches a place, the head reads the command's own folder. */
-    @Test
-    fun `a client head's usage reads the login its newest request carried, not the command's own folder`() {
-        val places = listOf(
-            location(ClaudeLoginPlaceId.NATIVE, "native-subscription"),
-            location(ClaudeLoginPlaceId.SPLICE, "folder-subscription"),
-        )
-        observed(ClaudeLoginPlaceId.NATIVE, 91.0)
-        observed(ClaudeLoginPlaceId.SPLICE, 59.0)
-        val carried = ClaudeCarryingPlaces(places, ClaudeLoginRead(paths, {}, WallClock { now }))
-        serve(native(places, carried)) { read ->
-            suspend fun headUsage(): JsonObject = usage(read("/api/usage", false))
-            suspend fun fiveHour(): String = headUsage().getValue("quota").jsonObject.getValue("five_hour").jsonObject
-                .getValue("used_pct").jsonPrimitive.content
-            assertEquals("59", fiveHour(), "before any request the head reads its command's own folder")
-
-            carried.sent(HEAD, null, digest("synthetic-${ClaudeLoginPlaceId.NATIVE.wire}"))
-            assertEquals("91", fiveHour(), "a request carrying the ~/.claude login moves the head to that login")
-            val warn = headUsage().getValue("warn").jsonObject
-            assertEquals("quota_5h", warn.getValue("source").jsonPrimitive.content, "the near-limit warning: $warn")
-            assertEquals("91", warn.getValue("pct").jsonPrimitive.content, "the near-limit warning: $warn")
-
-            carried.sent(HEAD, null, digest("synthetic-unknown-login"))
-            assertEquals("59", fiveHour(), "an unmatched send clears the stale native place before fallback")
-
-            carried.sent(HEAD, null, digest("synthetic-${ClaudeLoginPlaceId.SPLICE.wire}"))
-            assertEquals("59", fiveHour(), "the newest matched request decides, in either direction")
-        }
-    }
-
-    /** The Accounts roster names the same login: true on the place whose credential carried the head's newest matched
-     *  request, false on its sibling, and null on both until a request matched, which is what a restart leaves. */
-    @Test
-    fun `the Accounts roster marks the login carrying a head's requests, and neither before one matched`() {
-        val places = listOf(
-            location(ClaudeLoginPlaceId.NATIVE, "native-subscription"),
-            location(ClaudeLoginPlaceId.SPLICE, "folder-subscription"),
-        )
-        val carried = ClaudeCarryingPlaces(places, ClaudeLoginRead(paths, {}, WallClock { now }))
-        serve(native(places, carried)) { read ->
-            suspend fun flags(): Map<String, String> = read("/api/accounts", false).getValue("accounts").jsonArray
-                .map { it.jsonObject }
-                .associate { row ->
-                    row.getValue("label").jsonPrimitive.content to (row["carrying_request"]?.toString() ?: "absent")
-                }
-            assertEquals(mapOf("claude" to "null", "claude-splice" to "null"), flags(), "no request has matched yet")
-
-            carried.sent(HEAD, null, digest("synthetic-${ClaudeLoginPlaceId.NATIVE.wire}"))
-            val nativeCarries = mapOf("claude" to "true", "claude-splice" to "false")
-            assertEquals(nativeCarries, flags(), "a request carrying the ~/.claude login marks that place")
-
-            carried.sent(HEAD, null, digest("synthetic-unknown-login"))
-            assertEquals(
-                mapOf("claude" to "null", "claude-splice" to "null"),
-                flags(),
-                "a credential no place holds must not mark the previous place as carrying",
-            )
-
-            carried.sent(HEAD, null, digest("synthetic-${ClaudeLoginPlaceId.SPLICE.wire}"))
-            assertEquals(mapOf("claude" to "false", "claude-splice" to "true"), flags(), "the newest match decides")
-        }
-    }
-
-    @Test
-    fun `different and unknown identities never inherit another native place's quota`() {
-        val places = listOf(
-            location(ClaudeLoginPlaceId.NATIVE, "different-subscription"),
-            location(ClaudeLoginPlaceId.SPLICE, null),
-        )
-        observed(ClaudeLoginPlaceId.NATIVE, 12.0)
-        serve(native(places)) { read -> assertFalse(usage(read("/api/usage", false)).containsKey("quota")) }
-    }
-
     @Test
     fun `a stale native snapshot remains visible without becoming a current warning`() {
-        val places = listOf(
-            location(ClaudeLoginPlaceId.NATIVE, "one-subscription"),
-            location(ClaudeLoginPlaceId.SPLICE, "one-subscription"),
-        )
+        val places = listOf(location(ClaudeLoginPlaceId.NATIVE, "one-subscription"))
         observed(ClaudeLoginPlaceId.NATIVE, 12.0, now - 3_600_000)
         serve(native(places)) { read ->
             val value = usage(read("/api/usage", false))
@@ -522,35 +440,6 @@ class NativeUsageTruthTest {
             read("/api/sessions", false).getValue("sessions").jsonArray.map { it.jsonObject }.associate { row ->
                 row.getValue("session_id").jsonPrimitive.content to row.getValue("account").jsonPrimitive.contentOrNull
             }
-
-        @Test
-        fun `each session on a client head reads the place its own requests carried, and null before one matched`() {
-            val places = listOf(
-                location(ClaudeLoginPlaceId.NATIVE, "native-subscription"),
-                location(ClaudeLoginPlaceId.SPLICE, "folder-subscription"),
-            )
-            val carried = ClaudeCarryingPlaces(places, ClaudeLoginRead(paths, {}, WallClock { now }))
-            val (first, second, idle) = sessionIds
-            serve(native(places, carried), sessions = registry(sessionIds)) { read ->
-                assertEquals(sessionIds.associateWith { null }, accounts(read), "no session has a matched request yet")
-
-                carried.sent(HEAD, first, digest("synthetic-${ClaudeLoginPlaceId.NATIVE.wire}"))
-                carried.sent(HEAD, second, digest("synthetic-${ClaudeLoginPlaceId.SPLICE.wire}"))
-                val own = mapOf(first to "claude", second to "claude-splice", idle to null)
-                assertEquals(own, accounts(read), "each session reads its own place, never the head's newest")
-
-                carried.sent(HEAD, first, digest("synthetic-unknown-login"))
-                carried.sent(HEAD, null, digest("synthetic-${ClaudeLoginPlaceId.NATIVE.wire}"))
-                assertEquals(
-                    own + (first to null),
-                    accounts(read),
-                    "an unknown credential clears only its session; an unnamed request restores no session",
-                )
-
-                carried.sent(HEAD, first, digest("synthetic-${ClaudeLoginPlaceId.SPLICE.wire}"))
-                assertEquals(own + (first to "claude-splice"), accounts(read), "a session's newest match decides")
-            }
-        }
 
         /** The record is bounded by recency: past its bound the session that sent least recently is forgotten and reads
          *  null again, while a session that sent again since is kept. */

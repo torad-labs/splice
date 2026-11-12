@@ -36,7 +36,7 @@ const answers: Record<string, unknown> = {
       seven_day_used_percent: 12, seven_day_reset_epoch_seconds: sec(now + 50 * HOUR), seven_day_window_seconds: 604_800 }),
     plan("quiet", { no_usage_at_epoch_seconds: sec(now - 60_000) }),
     // the unproved login place: the daemon names it "Account" and it holds no reading yet
-    plan("Account", { label: "claude-splice", label_default: true, identity_verified: false, can_rename: false, login_place: { id: "claude-splice" } }),
+    plan("Account", { label: "claude", label_default: true, identity_verified: false, can_rename: false, login_place: { id: "claude" } }),
     // seven Claude accounts in all, as desk c had in the walk (item 8)
     ...["lab", "spare", "team", "side"].map((name, i) => plan(name, { five_hour_used_percent: 5 + i, five_hour_reset_epoch_seconds: sec(now + 2 * HOUR),
       five_hour_window_seconds: 18_000, seven_day_used_percent: 9 + i, seven_day_reset_epoch_seconds: sec(now + 50 * HOUR), seven_day_window_seconds: 604_800 })),

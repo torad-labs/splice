@@ -5,16 +5,12 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.headersOf
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.accounts.claude.ClaudeAccountIdentity
 import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.accounts.claude.ClaudeLoginPlaces
 import splice.accounts.claude.ClaudeLoginPlacesSource
@@ -22,7 +18,6 @@ import splice.accounts.pool.HeadAccountPoolSource
 import splice.app.control.NativeUsageSource
 import splice.app.probe.UpstreamPlaygroundProbe
 import splice.app.provider.ClaudeNativeAccountWiring
-import splice.core.auth.CredentialKey
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.diagnostics.playground.PlaygroundHead
@@ -43,7 +38,6 @@ class ClaudeNativePoolIdentityTest {
                 updatedAt = System.currentTimeMillis(),
             ),
         )
-        fixture.seed("splice", expiresAt = 1L)
         val rig = fixture.rig()
         try {
             val owner = requireNotNull(rig.server.ports.claudeLogins)
@@ -70,7 +64,7 @@ class ClaudeNativePoolIdentityTest {
     }
 
     @Test
-    fun `a full plain native reading remains probeable beside an expired primary`() = runBlocking {
+    fun `a full plain native reading remains probeable on its own`() = runBlocking {
         val fixture = ClaudeNativePoolFixture(home)
         fixture.seed(
             "native",
@@ -80,8 +74,7 @@ class ClaudeNativePoolIdentityTest {
                 updatedAt = System.currentTimeMillis(),
             ),
         )
-        fixture.seed("splice", expiresAt = 1L)
-        val files = listOf(home.resolve(".claude/.credentials.json"), home.resolve(".claude-splice/.credentials.json"))
+        val files = listOf(home.resolve(".claude/.credentials.json"))
         val before = files.map(Files::readAllBytes)
         val rig = fixture.rig()
         try {
@@ -108,7 +101,6 @@ class ClaudeNativePoolIdentityTest {
     fun `a newly announced target cannot borrow the previous generation's primary quota`() = runBlocking {
         val fixture = ClaudeNativePoolFixture(home)
         fixture.seed("native")
-        fixture.seed("splice", expiresAt = 1L)
         val rig = fixture.rig()
         try {
             val observed = requireNotNull(rig.head.authSurface.accountPool).view(null)
@@ -122,45 +114,6 @@ class ClaudeNativePoolIdentityTest {
                 ClaudeLoginPlacesSource { rig.server.ports.claudeLogins },
             )
             assertNull(source.snapshot().quota, "the new target has no observation in the captured account generation")
-        } finally {
-            rig.close()
-        }
-    }
-
-    @Test
-    fun `native places proving one account share its refusal, not claiming another free subscription`() = runBlocking {
-        val fixture = ClaudeNativePoolFixture(home)
-        fixture.seed("native")
-        fixture.seed("splice")
-        val key = requireNotNull(
-            CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer synthetic-splice")),
-        )
-        val profiles = ClaudeCredentialProfiles(fixture.paths.stateDir, {})
-        profiles.observed(key, ClaudeAccountIdentity("account-native", null))
-        val rig = fixture.rig()
-        try {
-            HttpClient(
-                MockEngine {
-                    respond(
-                        """{"type":"error","error":{"type":"rate_limit_error",""" +
-                            """"message":"synthetic shared subscription"}}""",
-                        HttpStatusCode.TooManyRequests,
-                        headersOf(
-                            "anthropic-ratelimit-unified-status" to listOf("rejected"),
-                            "anthropic-ratelimit-unified-representative-claim" to listOf("seven_day"),
-                            "anthropic-ratelimit-unified-reset" to listOf(
-                                (System.currentTimeMillis() / 1_000L + 3_600L).toString(),
-                            ),
-                        ),
-                    )
-                },
-            ).use { client ->
-                UpstreamPlaygroundProbe(rig.plane.playgroundProviders, client)
-                    .run(PlaygroundHead(NATIVE_HEAD, rig.head.auth), "synthetic shared account", null)
-            }
-            assertTrue(rig.head.head.providerResetForMs() > 0L, "status must see the shared refusal before a pool view")
-            val pool = requireNotNull(rig.head.authSurface.accountPool).view(null)
-            assertFalse(pool.accounts.any { it.available }, "a second credential is not a second subscription")
         } finally {
             rig.close()
         }

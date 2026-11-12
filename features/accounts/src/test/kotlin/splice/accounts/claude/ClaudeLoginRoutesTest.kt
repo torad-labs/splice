@@ -48,7 +48,7 @@ private class TestNativePlaces : ClaudeLoginPlaces {
     override fun poll(id: String): LoginStatus? = status.takeIf { it.id == id }
     override suspend fun submit(id: String, code: String): Boolean = id == status.id && code == "synthetic-code"
     override fun carrying(head: String): ClaudeLoginPlaceId? =
-        ClaudeLoginPlaceId.SPLICE.takeIf { head == "claude-splice" }
+        ClaudeLoginPlaceId.NATIVE.takeIf { head == "claude-splice" }
 }
 
 class ClaudeLoginRoutesTest {
@@ -67,20 +67,19 @@ class ClaudeLoginRoutesTest {
                 }
             }
             val native = client.post("/api/claude-logins/claude/login") { setBody("""{"label":"named"}""") }
-            val separate = client.post("/api/claude-logins/claude-splice/login") { setBody("{}") }
             assertEquals(HttpStatusCode.OK, native.status)
-            assertEquals(HttpStatusCode.OK, separate.status)
-            val expected = listOf(ClaudeLoginPlaceId.NATIVE to "named", ClaudeLoginPlaceId.SPLICE to null)
-            assertEquals(expected, source.requested)
+            assertEquals(listOf(ClaudeLoginPlaceId.NATIVE to "named"), source.requested)
             for (invalid in listOf("not-json", "[]", """{"label":7}""", """{"label":{}}""")) {
                 assertEquals(
                     HttpStatusCode.BadRequest,
                     client.post("/api/claude-logins/claude/login") { setBody(invalid) }.status,
                 )
             }
-            assertEquals(2, source.requested.size)
+            assertEquals(1, source.requested.size)
             val unknown = client.post("/api/claude-logins/wrong/login") { setBody("{}") }
             assertEquals(HttpStatusCode.NotFound, unknown.status)
+            val gone = client.post("/api/claude-logins/claude-splice/login") { setBody("{}") }
+            assertEquals(HttpStatusCode.NotFound, gone.status, "the second login place no longer exists")
             val polled = client.get("/api/auth/claude-splice/login/native-id")
             assertEquals(HttpStatusCode.OK, polled.status)
             // the page draws the field for the code from this, on every card that shows the link

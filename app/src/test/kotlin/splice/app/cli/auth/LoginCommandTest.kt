@@ -168,13 +168,13 @@ class LoginCommandTest {
         label = "Claude Opus 5.5"
         context_window = 1000000
 
-        [heads.claude-splice]
+        [heads.claude-extra]
         provider = "anthropic"
         port = 3104
-        discovery_prefix = "claude-splice--"
+        discovery_prefix = "claude-extra--"
         pinned_model = "claude-opus-5-5"
 
-        [heads.claude-splice.claude]
+        [heads.claude-extra.claude]
         config_dir = "$configDir"
 
         [heads.claudex]
@@ -196,7 +196,7 @@ class LoginCommandTest {
             sessions.resolve("$pid.json"),
             """{"pid":$pid,"sessionId":"s-1","name":"$name","kind":"interactive"}""",
         )
-        val head = mapOf(3104 to "claude-splice", 3105 to "claudex").getValue(port)
+        val head = mapOf(3104 to "claude-extra", 3105 to "claudex").getValue(port)
         LaunchOwners(tmp.resolve("state")).write(pid, head, "http://127.0.0.1:$port", "session", "other")
     }
 
@@ -218,14 +218,14 @@ class LoginCommandTest {
     }
 
     @Test
-    fun `splice login on the Claude head saves its live login under the label and selects it`(
+    fun `splice login on another Claude client head saves its live login under the label and selects it`(
         @TempDir tmp: Path,
     ) {
         val configDir = signedIn(tmp)
         session(tmp, "a claudex session", port = 3105) // another head's session is not this head's
         val lines = mutableListOf<String>()
 
-        val ok = claudeLabel(tmp, lines).login("claude-splice", claudeHeads(configDir), "work", discard = false)
+        val ok = claudeLabel(tmp, lines).login("claude-extra", claudeHeads(configDir), "work", discard = false)
 
         assertTrue(ok, "$lines")
         assertEquals("A-gen1", Files.readString(tmp.resolve("store/work.credentials.json")))
@@ -234,14 +234,31 @@ class LoginCommandTest {
     }
 
     @Test
-    fun `splice login on the Claude head refuses while one of its sessions runs, naming it`(
+    fun `splice login on claude-splice points to Claude Code's own login and changes nothing`(
+        @TempDir tmp: Path,
+    ) {
+        val configDir = signedIn(tmp)
+        for (label in listOf(null, "work")) {
+            val lines = mutableListOf<String>()
+
+            val ok = claudeLabel(tmp, lines).login("claude-splice", claudeHeads(configDir), label, discard = false)
+
+            assertFalse(ok)
+            assertTrue(lines.single().contains("runs on Claude Code's own login"), "$lines")
+            assertTrue(lines.single().contains("/login inside claude"), "$lines")
+            assertFalse(Files.exists(tmp.resolve("store/work.credentials.json")), "nothing was saved")
+        }
+    }
+
+    @Test
+    fun `splice login on another Claude client head refuses while one of its sessions runs, naming it`(
         @TempDir tmp: Path,
     ) {
         val configDir = signedIn(tmp)
         session(tmp, "fix the parser", port = 3104)
         val lines = mutableListOf<String>()
 
-        val ok = claudeLabel(tmp, lines).login("claude-splice", claudeHeads(configDir), "work", discard = false)
+        val ok = claudeLabel(tmp, lines).login("claude-extra", claudeHeads(configDir), "work", discard = false)
 
         assertFalse(ok)
         assertTrue(lines.single().contains("'fix the parser'"), "$lines")

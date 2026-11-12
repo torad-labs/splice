@@ -416,6 +416,16 @@ const atLimit = (w) => w.used >= 100 && !ended(w);
 // sign-in changes that, so it is held, with the step as its line, and never signed out
 const held = (a) => !!a.blocked || (a.windows || []).some(atLimit);
 const room = (a) => !a.out && !a.renews && !held(a);
+// USED UP FOR ONE MODEL: the login has room and serves every other model, and not this one until its week resets. It
+// says so where a held login says its limit: on Nov 12, 2026 eleven sessions waited on Fable while six cards read
+// "Use now" over a half-used week, each with only a thin full bar to say why no turn went to it.
+const spentModels = (a) => (held(a) || a.out || !(a.windows || []).some((w) => w.label === "Week" && !ended(w)) ? []
+  : (a.models || []).filter((m) => m.used >= 100 && !ended(m)));
+const LIST = new Intl.ListFormat("en", { style: "long", type: "conjunction" });
+const spentUntil = (a) => { const ms = spentModels(a), last = ms.map((m) => m.resetMs).filter((t) => t != null).sort((x, y) => y - x)[0];
+  return `${LIST.format(ms.map((m) => m.name))} used up${last != null ? ` until ${at(last)}` : ""}`; };
+// a card's one line of standing over its bars: its limit, or the models it has used up
+const standing = (a) => (held(a) ? heldUntil(a) : spentModels(a).length ? esc(spentUntil(a)) : "");
 const backAt = (a) => Math.max(0, ...a.windows.filter(atLimit).map((w) => w.left ?? 0));
 const laneAccts = (p, c) => c.order.map((id) => p.accounts.find((a) => a.id === id)).filter(Boolean);
 function ruled(p, c) { // the rule alone: his order, or the soonest reset among the accounts with room
@@ -548,7 +558,8 @@ const loginDoor = (name, id, sock) => (id ? `<button class="mlogin" type="button
   + `${sock ? `<span class="msock" aria-hidden="true">${sock}</span>` : ""}<b class="nname">${esc(name)}</b></button>` : `<b class="nname">${esc(name)}</b>`);
 function windowsHtml(a, next = null, left = null, door = null, nextSock = 0) {
   // a held login says so on its own line under the header, where a narrow card wraps it instead of cutting its name
-  let rows = held(a) ? `<span class="heldline">${heldUntil(a)}</span>` : "";
+  const stands = standing(a);
+  let rows = stands ? `<span class="heldline">${stands}</span>` : "";
   for (const w of a.windows) {
     const full = atLimit(w), to = door?.(w.label);
     // each bar is marked from ITS OWN reading, never the account's: a current 5-hour window beside a week
@@ -1427,7 +1438,7 @@ function loginRem(a, next) {
   if (a.out) return top + REM.outbox;
   if (a.noUsage) return top + REM.line;
   if (!a.windows.length) return top + 3 * REM.row; // not read: its line and the provider's windows drawn empty
-  const rows = a.windows.length + (a.windows.some((w) => w.label === "Week") ? a.models.length : 0) + (held(a) ? 1 : 0) + (a.staleAt != null ? 1 : 0) + (next ? 1 : 0);
+  const rows = a.windows.length + (a.windows.some((w) => w.label === "Week") ? a.models.length : 0) + (standing(a) ? 1 : 0) + (a.staleAt != null ? 1 : 0) + (next ? 1 : 0);
   // the sessions it serves, as the last visit saw them (none before there was one), and what the serving login adds: the hairline, its moves
   const doors = a.sessions === null ? DOORS_SEEN.get(a.id) ?? 0 : a.sessions?.length || 0;
   return top + rows * REM.row + (doors > SESS_SHOWN - 1 ? REM.doors2 : doors ? REM.doors : 0) + (next ? REM.serving : 0);
@@ -1687,7 +1698,7 @@ function ghostRail(p) {
     const next = i === 0 && rail.length > 1;
     const wins = a.windows.length + (a.windows.some((w) => w.label === "Week") ? a.models.length : 0);
     const rows = a.out ? 0 : wins ? wins + (next ? 1 : 0) : -1;
-    return [rows, 0, 0, (a.email ? 1 : 0) + (held(a) ? 1 : 0), 0, loginRem(a, next)];
+    return [rows, 0, 0, (a.email ? 1 : 0) + (standing(a) ? 1 : 0), 0, loginRem(a, next)];
   });
 }
 function shapeFromRegistry(n, kept = new Map()) {

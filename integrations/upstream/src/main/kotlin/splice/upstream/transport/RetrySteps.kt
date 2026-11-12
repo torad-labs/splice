@@ -180,7 +180,9 @@ internal class RetrySteps(
         val ledger = state.ledger
         val now = wall()
         ledger.held(step.until, now, asked.cause)
-        val ask = HoldAsk(asked.cause, asked.at, step.until, step.probes, ledger.login, ledger.heldSinceMs ?: now)
+        val since = ledger.heldSinceMs ?: now
+        val moves = ctx.limits.otherLoginFree
+        val ask = HoldAsk(asked.cause, asked.at, step.until, step.probes, ledger.login, since, moves)
         return when (state.retry.waits.hold(ask)) {
             HoldEnd.RESUME -> {
                 state.pendingRetry = RetryKind.ORDINARY

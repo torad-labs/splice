@@ -53,7 +53,7 @@ public class QuotaJson {
             sevenDay = (root["seven_day"] as? JsonObject)?.let(::window),
             plan = (root["plan"] as? JsonPrimitive)?.takeIf { it.isString }?.content,
             updatedAt = (root["updated_at"] as? JsonPrimitive)?.longOrNull ?: 0L,
-            models = (root["models"] as? JsonArray).orEmpty().mapNotNull(::model),
+            models = models(root["models"]),
         ).takeIf { !it.isEmpty || it.answeredEmpty }
     }
 
@@ -70,6 +70,9 @@ public class QuotaJson {
             }
         }
     }
+
+    /** The per-model weekly windows [putModels] wrote, read back; a row that is not one is left out. */
+    public fun models(array: JsonElement?): List<ModelQuota> = (array as? JsonArray).orEmpty().mapNotNull(::model)
 
     private fun model(element: JsonElement): ModelQuota? {
         val obj = element as? JsonObject ?: return null

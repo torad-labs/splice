@@ -168,6 +168,7 @@ public class AccountPool(
         model: String? = null,
     ): Selection {
         require(sessionId == null || sessionId.isNotBlank()) { "session id must not be blank" }
+        asked.asked(model)
         while (true) {
             val current = liveMembership
             current.accounts.forEach { it.refreshCredentialEvidence() }
@@ -178,6 +179,9 @@ public class AccountPool(
     }
 
     private val selectionCommit = SelectionCommit()
+
+    /** The model this command's turns ask for, for a preview that has no turn of its own ([nextTargetLabel]). */
+    public val asked: AskedModels = AskedModels()
 
     /** Suspending turn admission shares raw reads; synchronous control callers retain [select]. */
     public val awaitingEvidence: AwaitingEvidence = AwaitingEvidence()
@@ -193,6 +197,7 @@ public class AccountPool(
             require(sessionId == null || sessionId.isNotBlank()) { "session id must not be blank" }
             currentCoroutineContext().ensureActive()
             val loads = evidenceLoads ?: return this@AccountPool.select(sessionId, excluded, callerCredentialKey, model)
+            asked.asked(model)
             while (true) {
                 loads.ensureActive()
                 val current = runInterruptible(loads.ioDispatcher) { liveMembership }
@@ -404,16 +409,17 @@ public class AccountPool(
      *  a credential lease — a read-only probe for an operator surface (GET /api/accounts "the next
      *  target by the real selector order"). Walks the exact same [candidates] order [choose] does,
      *  testing only [available]: [acquireIfAvailable] takes a probe lease, which this must not. */
-    public fun nextTargetLabel(sessionId: String? = null): String? {
+    public fun nextTargetLabel(sessionId: String? = null, model: String? = null): String? {
         val previous = synchronized(sessions) { sessionId?.let { sessions[it] } }
         val current = liveMembership
         current.accounts.forEach { it.refreshCredentialEvidence() }
         val pinLabel = pins.forSession(sessionId)
         val at = now()
         // A warm session keeps its login through a short hold, so the preview names it first, as [choose] does.
-        val stay = CallerLogin(null, sessionId, current.accounts).previewStay(previous, current.byLabel, pinLabel, at)
-        val order = candidates(previous?.label, current, pinLabel)
-        return AccountAvailability.upNext(order, at, stay).firstOrNull()?.label
+        val stay = CallerLogin(null, sessionId, current.accounts, model)
+            .previewStay(previous, current.byLabel, pinLabel, at)
+        val order = candidates(previous?.label, current, pinLabel, model)
+        return AccountAvailability.upNext(order, at, stay, model).firstOrNull()?.label
     }
 
     /** Session listings read every listed session through ONE membership read. A property, not a function: the class

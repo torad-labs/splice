@@ -16,6 +16,7 @@ import splice.accounts.pool.HeadAccountQuota
 import splice.accounts.pool.HeadAccountSwitchView
 import splice.accounts.pool.HeadAccountView
 import splice.accounts.pool.HeadAccountWindow
+import splice.core.usage.QuotaJson
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
@@ -149,6 +150,7 @@ internal class AccountPoolProjection {
                     usedPercent = JsonScalars.str(a, "seven_day_used_percent")?.toDoubleOrNull(),
                     resetEpochSeconds = JsonScalars.long(a, "seven_day_reset_epoch_seconds"),
                 ),
+                sevenDayModels = QuotaJson().models(a["seven_day_models"]),
             ),
             credential = HeadAccountCredential(
                 present = credentialPresent(a),

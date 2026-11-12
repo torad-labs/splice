@@ -76,6 +76,22 @@ class AccountPoolFailoverTest {
     }
 
     @Test
+    fun `the login named as next is one that serves the model the command's turns ask for`() {
+        val fixture = AccountPoolTest.Fixture()
+        val one = fixture.account("one", primary = true)
+        val two = fixture.account("two")
+        val pool = fixture.pool(one, two).also { it.order = listOf("one", "two") }
+        val week = PlanLimit("seven_day_overage_included", wallSeconds() + 24 * HOUR_S, model = "fable")
+        one.cooldown.planHold.hold(week) {}
+        assertEquals("one", pool.nextTargetLabel(model = pool.asked.usual()), "no turn has named a model yet")
+
+        pool.select(SESSION, emptySet(), null, "fable")
+
+        assertEquals("two", pool.nextTargetLabel(model = pool.asked.usual()), "one's week for that model is used up")
+        assertEquals("one", pool.nextTargetLabel(model = "haiku"), "and it still serves another model")
+    }
+
+    @Test
     fun `the account named as following is the one the command moves to when the one in use is held`() {
         val fixture = AccountPoolTest.Fixture()
         val one = fixture.account("one", primary = true)

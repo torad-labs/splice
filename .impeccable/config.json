@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "fraunces",
+        "files": [
+          "app/src/main/resources/console/console.css"
+        ],
+        "createdAt": "2026-10-18T17:49:56.765Z",
+        "reason": "Codex triage: intentional existing console typography, explicitly documented in console.css lines 1-4 as part of the shared launch-film design language; preserve the established design during functional fixes."
+      }
+    ]
+  }
+}

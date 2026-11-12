@@ -1,0 +1,102 @@
+// NEW: per-head Use now pins survive daemon restarts (Nov 3, 2026). A pin lived in the pool's memory alone, so the
+// restart that installed #459 dropped the one Marcos had just set, and on the beta channel the daemon restarts all day.
+package splice.accounts.order
+
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
+import splice.core.auth.SavedPins
+import splice.core.util.DaemonLog
+import splice.core.util.SafeFailureText
+import splice.core.util.SecureFile
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.NoSuchFileException
+import java.nio.file.Path
+
+/** The operator's per-head pin file, kept beside the other daemon state. Its own file, never a field of
+ *  [ACCOUNT_ORDER_FILE]: a build from before it reads that document strictly, so a new key there would refuse it. */
+public const val ACCOUNT_PINS_FILE: String = "account-pins.json"
+
+/** One head's pins. [over] is what each pinned login was pinned over (PR #468 review); a build from before it ignores
+ *  the key, since this file is read with unknown keys ignored. */
+@Serializable
+private data class HeadPinsDocument(
+    val head: String? = null,
+    val sessions: Map<String, String> = emptyMap(),
+    val over: Map<String, Set<String>> = emptyMap(),
+)
+
+@Serializable
+private data class PinsDocument(val heads: Map<String, HeadPinsDocument> = emptyMap())
+
+/** Atomic pin persistence, every head in one document. Each replacement keeps the file it replaced as
+ *  `account-pins.json.bak`, one copy. A document that cannot be read restores no pin rather than refuse the head:
+ *  a pin is one press to set again. One that reads as text but does not parse is still the `.bak` after the next pin
+ *  or unpin; one splice cannot read at all (its mode, bytes that are not UTF-8) is replaced. */
+public class AccountPinStore(private val file: Path) {
+    private val json = Json {
+        prettyPrint = true
+        ignoreUnknownKeys = true
+    }
+
+    public fun pins(head: String): SavedPins =
+        read()?.heads?.get(head)?.let { SavedPins(it.head, it.sessions, it.over) } ?: SavedPins()
+
+    @Synchronized
+    public fun set(head: String, pins: SavedPins) {
+        require(head.isNotBlank())
+        // Nothing to keep as the .bak when there is no file, or one splice cannot read: the press still saves.
+        val previous = try {
+            Files.readString(file)
+        } catch (_: IOException) {
+            null
+        }
+        val heads = read()?.heads.orEmpty() - head
+        val kept = if (pins.head == null && pins.sessions.isEmpty()) {
+            heads
+        } else {
+            heads + (head to HeadPinsDocument(pins.head, pins.sessions, pins.over))
+        }
+        if (previous != null) {
+            SecureFile.writeAtomic0600(file.resolveSibling(file.fileName.toString() + ".bak"), previous)
+        }
+        SecureFile.writeAtomic0600(file, json.encodeToString(PinsDocument(kept)))
+    }
+
+    /** Lets go of every pin [head] holds on one of [labels], the logins whose limit reading let their pins go (Nov 3,
+     *  2026), says so in the daemon log, and records [over], what each login still pinned is pinned over now. The rest
+     *  of the file stays as it is, so a press saved meanwhile is kept. A disk that refuses is logged, not thrown: the
+     *  pool has changed already, and a pin the file keeps is weighed against what it was saved over, so the next run
+     *  lets it go at its first read. */
+    @Synchronized
+    public fun release(head: String, labels: Set<String>, over: Map<String, Set<String>>) {
+        val names = labels.joinToString()
+        if (labels.isNotEmpty()) DaemonLog.write("[$head] Use now pin on $names let go: the login read a limit\n")
+        val saved = pins(head)
+        val headPin = saved.head?.takeUnless(labels::contains)
+        val sessions = saved.sessions.filterValues { it !in labels }
+        val pinned = sessions.values.toSet() + listOfNotNull(headPin)
+        val kept = SavedPins(headPin, sessions, (saved.over + over).filterKeys(pinned::contains))
+        try {
+            if (kept != saved) set(head, kept)
+        } catch (e: IOException) {
+            val what = if (labels.isEmpty()) "a limit that cleared" else "$names after it let go"
+            DaemonLog.write("[$head] the pin file kept $what: ${SafeFailureText.render(e)}\n")
+        }
+    }
+
+    private fun read(): PinsDocument? = try {
+        json.decodeFromString<PinsDocument>(Files.readString(file))
+    } catch (_: NoSuchFileException) {
+        PinsDocument()
+    } catch (_: SerializationException) {
+        null
+    } catch (_: IllegalArgumentException) {
+        null
+    } catch (_: IOException) {
+        // A file splice cannot read (its mode, a directory in its place) restores no pin either, rather than refuse
+        // the head at boot.
+        null
+    }
+}

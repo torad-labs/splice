@@ -1,0 +1,335 @@
+// OPERATOR LAW, 2026-09-16, Marcos verbatim: "I need an E2E test that will break if we ever
+// remove the retries again. We should ALWAYS have some sort of retry armed. ALWAYS. There will
+// never be a case, if an error occur, that we wont have a way to retry."
+//
+// THE INVARIANT. Every turn that ends in an error must leave the client able to recover. For every
+// error class the gateway can produce, the CLIENT-VISIBLE outcome must be exactly one of:
+//   (a) the turn SUCCEEDED because splice retried internally — the client sees 200, and the retry
+//       is therefore armed by construction;
+//   (b) an HTTP status Claude Code retries on (429, 408, 5xx except 501);
+//   (c) an SSE error frame whose TYPE Claude Code retries on (overloaded_error, api_error);
+//   (d) a member of the EXPLICIT exclusion list below, each with its reason written down.
+// Anything in none of the four FAILS BY NAME.
+//
+// (d) RECONCILED WITH V4-62 — TWO LAWS THAT TURNED OUT TO GOVERN DIFFERENT LAYERS.
+// The operator's law ("we would retry on any error, no matter what, with different levels of retry
+// and escalation + backoff") is about what SPLICE does to the upstream, and V4-62 made it so: the
+// status gate is gone from RetryPolicy and a 400 now takes the same 200ms curve as a 503. This list
+// is about what the CLIENT can usefully do with the ENDING. Different questions.
+//
+// SO THE FOUR STAY, AND EVERY REASON BELOW NOW READS AS "SPLICE ALREADY TRIED". The old wording
+// called them "genuinely non-retryable", which V4-62 falsified; the exclusion was never a decision
+// not to retry, it is a statement about EXHAUSTED retries. A 400 that splice backed off on and is
+// STILL a 400 is the request's own body — handing it to the client to retry sends the identical
+// body one more time. A 401 splice already refreshed and retried means the credential is really
+// rejected; the client's retry carries the same one.
+//
+// V4-62 makes this list STRONGER, not weaker: the more turns succeed inside splice, the more of
+// them land in (a) above and never reach this list at all. A type may be added here only when a
+// retry has been RUN and is provably a no-op — which is also why Failure.deterministic is the sole
+// carve-out in the retry path itself, for verdicts splice computed with no upstream involved.
+//
+// THIS TEST MUST NOT BE SATISFIABLE BY EDITING A COUNT. Every test that failed us before asserted
+// POLICY — how many upstream calls splice makes — and that is a number we control, so each change
+// was ratified by editing the assertion (the V4-10 notes record it edited 1->3 and 2->6, then
+// back). This asserts what the CLIENT RECEIVES, which is not ours to redefine. IF A FUTURE CHANGE
+// REDDENS THIS TEST, THE CORRECT RESPONSE IS TO RESTORE THE RETRY, NEVER TO RELAX THE ASSERTION.
+//
+// THE DENOMINATOR COMES FROM SOURCE (CLAUDE.md 24): the type list is ErrorType.entries, read by
+// reflection, NOT a hand-written roster of seven. A hand-written list cannot fail for an eighth
+// type somebody adds next month; a new ErrorType fails this build BY NAME until it is given a
+// disposition, which is the whole point.
+package splice.head.turn
+
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.fail
+import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
+import splice.core.auth.AuthDescription
+import splice.core.auth.Credentials
+import splice.core.auth.RefreshableAuthProvider
+import splice.core.model.ModelCatalog
+import splice.core.model.ModelEntry
+import splice.core.turn.ErrorType
+import splice.core.turn.ReasoningDisplay
+import splice.core.turn.WatchdogBudget
+import splice.core.util.WallClock
+import splice.dialect.responses.ReasoningSettings
+import splice.head.HeadServer
+import splice.head.MockChatGptUpstream
+import splice.head.TestResponsesProvider
+import splice.head.headDeps
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
+import splice.upstream.ProviderTuning
+import splice.upstream.Waiter
+import splice.upstream.retry.InflightGate
+import splice.upstream.transport.RetryPacing
+import splice.upstream.transport.UpstreamClient
+import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.time.Duration.Companion.seconds
+
+/** Excluded CLIENT-side after splice's own retries are EXHAUSTED — never "we did not retry". V4-62
+ *  retries every upstream failure; each reason below is about the ending the client is handed once
+ *  that has already happened. Anything not here must reach the client in a recoverable shape. */
+private val EXCLUDED: Map<ErrorType, String> = mapOf(
+    ErrorType.INVALID_REQUEST to
+        "splice already backed off and re-sent it; still a 400 means the body itself, and the " +
+        "client's retry sends that same body again",
+    ErrorType.AUTHENTICATION to
+        "splice already refreshed the credential once (G1) and was rejected again; a client retry " +
+        "carries the same rejected credential, so the fix is re-auth, not repetition",
+    ErrorType.PERMISSION to "an entitlement verdict that survived the retry budget; it is not transient",
+    ErrorType.NOT_FOUND to "the model or route does not exist; the retry budget was spent proving it",
+)
+
+/** The scenario that drives each type, or null when nothing in the mock can produce it yet. A null
+ *  is NOT a pass: the test fails by name and says a driver is owed. */
+private val DRIVER: Map<ErrorType, String?> = mapOf(
+    // RATE_LIMIT is driven TWICE by design: the first turn meets the limit mid-stream, which arms
+    // the cooldown, and the SECOND asks the provider itself (Marcos, Oct 26: a turn waits only on its
+    // own failure), so it must end exactly as recoverable as the first.
+    ErrorType.RATE_LIMIT to "quota429+quota429",
+    ErrorType.OVERLOADED to "overload_503",
+    ErrorType.AUTHENTICATION to "authfail",
+    ErrorType.INVALID_REQUEST to "overflow_sse",
+    ErrorType.API_ERROR to "malformed_sse",
+    ErrorType.PERMISSION to null,
+    ErrorType.NOT_FOUND to null,
+)
+
+private class RetryFakeAuth : RefreshableAuthProvider {
+    override suspend fun credentials(): Credentials = Credentials.Bearer("tok-retry", "acct-retry")
+    override suspend fun refresh(): Credentials = credentials()
+    override suspend fun describe(): AuthDescription = AuthDescription(true, "fake")
+}
+
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class RetryAlwaysArmedTest {
+
+    private val mock = MockChatGptUpstream()
+    private val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
+
+    // The head binds port 0 and reports what it got, so no leased port can be taken before the bind.
+    private val port: Int get() = head.port
+
+    private lateinit var head: HeadServer
+
+    // The engine waits a burst 429 out at 2, 4, 8 and 15 s (section 8), and holds a stated limit to its reset (slice 5),
+    // in REAL time on a process waiter, which outlived this test client's request timeout. The sweep needs the ending
+    // that follows the spent schedule (:upstream pins the schedule), so the waits are taken at once, and the wall clock
+    // a hold reads moves by each wait, as it would had the wait been slept.
+    private val waited = AtomicLong(0L)
+    private val upstreamClient = UpstreamClient(
+        totalTimeoutMs = 30_000,
+        pacing = RetryPacing(
+            waiter = Waiter { ms -> waited.addAndGet(ms) },
+            wall = WallClock { System.currentTimeMillis() + waited.get() },
+        ),
+    )
+    private lateinit var tmp: java.nio.file.Path
+
+    private val catalog = ModelCatalog(
+        discoveryPrefix = "claude-codex--",
+        models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
+        defaultContextWindow = 272_000,
+    )
+
+    @BeforeAll
+    fun setUp(@TempDir tempDir: Path) = runBlocking {
+        tmp = tempDir
+        val provider = TestResponsesProvider(
+            tuning = ProviderTuning(
+                name = ProviderName(key = "codex", label = "claudex"),
+                catalog = catalog,
+                pinnedModel = "gpt-5.6-sol",
+                auth = RetryFakeAuth(),
+                locations = ProviderLocations(baseUrl = mock.baseUrl),
+                watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
+                loginCommand = "claudex login",
+            ),
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
+        )
+        head = HeadServer(
+            provider = provider,
+            listenPort = 0,
+            deps = headDeps(
+                tmp = tmp,
+                upstream = upstreamClient,
+                gate = InflightGate(maxInflight = { 4 }, maxQueued = { 4 }),
+                log = {},
+            ),
+        )
+        head.start() // binds before returning (Ktor Netty bind(...).sync()); no warm-up (V4-139)
+    }
+
+    @AfterAll
+    fun tearDown() = runBlocking {
+        head.stop()
+        client.close()
+        mock.stop()
+    }
+
+    /** One error turn against [scenario]; returns the HTTP status and the body the client sees.
+     *  A scenario tagged "+re<name>" is driven twice, and the second reply is the one returned: the
+     *  turn that follows one which armed the cooldown, answered by the provider itself. */
+    private suspend fun drive(scenario: String): Pair<Int, String> {
+        val (first, again) = scenario.split("+").let { it.first() to it.getOrNull(1) }
+        upstreamClient.clearRateLimitCooldown()
+        var seen = request(first)
+        if (again != null) seen = request(again)
+        return seen
+    }
+
+    private suspend fun request(scenario: String, stream: Boolean = true): Pair<Int, String> {
+        val response = client.post("http://127.0.0.1:$port/v1/messages") {
+            header("Content-Type", "application/json")
+            setBody(
+                """{"model":"claude-codex--gpt-5.6-sol","stream":$stream,"max_tokens":64,
+                    "system":"You are a test. SCENARIO:$scenario",
+                    "messages":[{"role":"user","content":"go"}]}""",
+            )
+        }
+        return response.status.value to response.bodyAsText()
+    }
+
+    /** The four dispositions, as a decision about what the CLIENT got — never about what we sent. */
+    private fun classify(status: Int, body: String): String = when {
+        status == 200 && !body.contains("event: error") -> "SUCCEEDED (retry armed internally)"
+        status in RETRYABLE_STATUSES -> "retryable HTTP status $status"
+        else -> classifyBody(body)
+    }
+
+    /** The body half of [classify], once the status has ruled out the pre-stream outcomes. Written
+     *  as one expression so the dispositions stay a single readable list, first match wins, and
+     *  UNRECOVERABLE stays the honest default for a shape nothing in this table recognises. */
+    private fun classifyBody(body: String): String =
+        RETRYABLE_SSE_TYPES.firstOrNull { body.contains("\"type\":\"$it\"") }
+            ?.let { "retryable SSE error type $it" }
+            ?: EXCLUDED.keys.firstOrNull { body.contains("\"type\":\"${it.wireName}\"") }
+                ?.let { "excluded by name: ${it.name}" }
+            ?: "UNRECOVERABLE"
+
+    @Test
+    fun `every ErrorType is either recoverable by the client or excluded by name`() = runBlocking {
+        val unrecoverable = mutableListOf<String>()
+        val undriven = mutableListOf<String>()
+        val observed = mutableListOf<String>()
+        for (type in ErrorType.entries) {
+            val scenario = DRIVER[type]
+            if (scenario == null) {
+                // (d) is a disposition, but ONLY for a type carrying a written reason. A type that
+                // is neither driven by a scenario NOR on the exclusion list is an absence, and an
+                // absence fails by name — that is what stops an eighth ErrorType slipping through.
+                if (type !in EXCLUDED) {
+                    undriven += "${type.name} (${type.wireName}) is neither driven by a scenario " +
+                        "nor given a written exclusion"
+                }
+                continue
+            }
+            val (status, body) = drive(scenario)
+            val verdict = classify(status, body)
+            observed += "$scenario -> ${type.name}: status=$status verdict=$verdict"
+            if (verdict == "UNRECOVERABLE") {
+                unrecoverable += "${type.name} via $scenario: status=$status body=${body.take(160)}"
+            }
+        }
+        assertTrue(observed.isNotEmpty(), "the sweep must actually drive scenarios")
+        val gaps = unrecoverable + undriven
+        if (gaps.isNotEmpty()) {
+            fail<Unit>(
+                "THE ALWAYS-ARMED LAW IS VIOLATED. Restore the retry rather than relaxing this " +
+                    "assertion:\n" + gaps.joinToString("\n") +
+                    "\n--- everything observed this run ---\n" + observed.joinToString("\n"),
+            )
+        }
+    }
+
+    @Test
+    fun `a transient failure the upstream recovers from still reaches the client as a success`() = runBlocking {
+        // (a) of the invariant, and the operator's law in its plainest form: splice must retry a
+        // transient failure on its own. overload_once 503s exactly once then behaves; if the
+        // internal retry is ever removed this turn ends in an error instead of a 200.
+        val (status, body) = drive("overload_once")
+        assertEquals(200, status, "a once-failing upstream must still be answered from a retry, got: ${body.take(200)}")
+    }
+
+    @Test
+    fun `the FIRST persistent-429 turn holds to each stated reset, and a limit that never lifts ends saying so`() =
+        runBlocking {
+            // V4-71 asked that the first persistent-429 turn reach the client in a shape it acts on, where it used to
+            // die as an in-stream rate_limit_error. Failure-handling slice 5 (Oct 27) answers it inside splice: a
+            // stated limit holds the turn in its own request, which goes again 2 s after each reset the provider
+            // names. A limit that did not lift at three of the times it stated ends in the held cause's family, H
+            // (final-design.md section 11): the line says the limit did not lift and the turn stopped, and the
+            // answer is one this law's exclusions name, since splice already waited out every reset it was told.
+            upstreamClient.clearRateLimitCooldown()
+            val (firstStatus, firstBody) = request("quota429")
+
+            assertEquals(200, firstStatus, "the hold's line committed the stream: ${firstBody.take(240)}")
+            assertTrue(firstBody.contains(OUTLASTED_LIMIT), "the limit's own line: ${firstBody.take(400)}")
+            assertTrue(classify(firstStatus, firstBody) != "UNRECOVERABLE", "an answer the law names: $firstBody")
+
+            // The next turn asks the provider itself (Marcos, Oct 26), so a limit that still holds is held again.
+            val (nextStatus, nextBody) = request("quota429")
+            assertEquals(200, nextStatus, "the next turn is held and committed like the first: ${nextBody.take(240)}")
+            assertTrue(nextBody.contains(OUTLASTED_LIMIT), "and ends the same way: ${nextBody.take(400)}")
+        }
+
+    @Test
+    fun `the collect path answers the FIRST persistent-429 turn with a real 429, still a rate limit in words`() =
+        runBlocking {
+            // V4-81 CORRECTED THIS CELL, which had been pinning a BUG for a few hours.
+            //
+            // It was written under V4-78/V4-79 as a change-record: those rows applied the
+            // pre-content rule to EVERY failure that reached the wire, including the collect path,
+            // so a stream:false persistent-429 turn moved from a real 429 to a 529 overload. Pinning
+            // the new number made the suite green while the defect it recorded stayed in place —
+            // the "policy-mirroring test ratifies the regression" shape this campaign exists to
+            // catch. V4-81 moved the rule to SseEmitter.emitError, where the collect path cannot
+            // inherit it (CollectingTerminal is a separate TurnTerminal), and V4-81's own row text
+            // says the collect path keeps its real statuses: 429 rate_limit_error, 502 api_error.
+            //
+            // The 429 is the better answer on the merits, not just the older one: on stream:false
+            // the HTTP status IS the information and the rate-limit headers ride on it, so shipping
+            // a 529 claimed an overload that had not happened. Both numbers are client-retryable,
+            // which is why the regression was quiet.
+            upstreamClient.clearRateLimitCooldown()
+            val (status, body) = request("quota429", stream = false)
+            assertEquals(429, status, "collect path keeps the real status, got: ${body.take(240)}")
+            assertTrue(body.contains(USAGE_LIMIT), "the words stay rate-limit: ${body.take(240)}")
+        }
+}
+
+/** The head's words for a usage limit, whatever reset it states (final-design.md section 10). */
+private const val USAGE_LIMIT = "is at its usage limit"
+
+/** The head's words for a usage limit a hold outlasted (final-design.md section 10, HoldOutlasted). */
+private const val OUTLASTED_LIMIT = "did not lift at the times it stated"
+
+/** Statuses Claude Code retries on: 429, 408, and 5xx except 501. */
+private val RETRYABLE_STATUSES = setOf(408, 429, 500, 502, 503, 504, 529)
+
+/** SSE error types Claude Code retries on IN BAND — overloaded_error, and nothing else.
+ *
+ *  V4-78 corrected this: the list used to include api_error, which is the WEAKER reading of the
+ *  2.1.257 binary and made this wall pass over a path that was terminal for the client. The binary
+ *  retries an in-band error event only when the body carries overloaded_error; a 429 or 529 is
+ *  retried by STATUS (RETRYABLE_STATUSES above), which is a different mechanism entirely. A wall
+ *  that accepts api_error as retryable cannot see the difference between a turn the client will
+ *  re-send and one it will finalize as "Server error mid-response". */
+private val RETRYABLE_SSE_TYPES = listOf("overloaded_error")

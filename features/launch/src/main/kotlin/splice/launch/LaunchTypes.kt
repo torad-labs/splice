@@ -1,0 +1,305 @@
+// NEW: the launch request bag and the exec recipe it produces. Split from
+// LaunchService.kt so the assembler is not billed for the DTOs
+// (concentration, 2026-08-19). LAYOUT-01: the launch feature's shared read model — the recipe, the
+// Claude head's wrap and the resume hook all read a head's spec.
+package splice.launch
+
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import splice.client.ClaudePolicy
+import splice.client.login.SignInWay
+import splice.client.login.TokenCaptureSpec
+import splice.core.config.LAUNCH_PROOF_HEADER
+import splice.core.config.TurnKey
+import splice.core.model.CLAUDE_CODE_ONE_MILLION
+import splice.core.model.CLIENT_TABLE_WINDOW
+import splice.core.model.ClientSpelling
+import splice.core.model.ModelCatalog
+import splice.core.util.JsonScalars
+import java.nio.file.Path
+
+/** The key a /model picker row names its model under. */
+public const val PICKER_VALUE: String = "value"
+
+private const val PICKER_LABEL = "label"
+
+/** The transcript trees one launch may look at (V4-115): the head's OWN CLAUDE_CONFIG_DIR and every
+ *  OTHER head's. They are ONE fact — which trees this head can adopt a named session out of — so they
+ *  travel as one value, which also keeps [LaunchSpec] inside the constructor-width ratchet
+ *  (ConstructorWidthLawTest) instead of widening it one field at a time. */
+public data class HeadTrees(
+    val own: Path,
+    val siblings: List<Path> = emptyList(),
+    /** Plain Claude Code's own ~/.claude, searched after [siblings] by `-r ID` alone, so a session plain claude wrote
+     *  is found even when no head links to the shared tree. Read only: `-r` copies a session out and never writes
+     *  here. Null when it is this head's own dir or already a sibling (splice-lead, Oct 13). */
+    val vanilla: Path? = null,
+)
+
+/** How a head's models map onto Claude Code's own model names: its tier slots
+ *  ("opus"/"sonnet"/"haiku"/"fable") and, for a presented row, the Claude model it is resolved as. One
+ *  value, because every part answers the same question and [LaunchSpec] sits at the constructor-width
+ *  ratchet. */
+public data class ModelTiers(
+    /** tier slot -> model id, as the head declares it (HeadConfig.tierModels); two tiers may name one
+     *  model. Empty = fall back to [splice.launch.recipe.LaunchService]'s positional heuristic, which is
+     *  what every catalog used before slots existed and is the reason splice.toml carries an "ORDER IS
+     *  LOAD-BEARING" banner. Non-empty declarations take precedence, while undeclared tiers use the
+     *  supported positional fallback; fable follows declared opus when present, else the frontier model. */
+    val byTier: Map<String, String> = emptyMap(),
+    /** The ids the positional heuristic may place, in catalog order (ModelCatalog.tierModelIds), or
+     *  null for every offered id. 2026-09-22: a model the endpoint lists but no row declares joins
+     *  the picker and never a slot — slot order is a decision splice.toml makes, and a vendor's list
+     *  order is not one (OpenRouter's would put an arbitrary model behind `opus`). */
+    val candidates: List<String>? = null,
+    /** V4-232: settings.json `modelOverrides` (ModelCatalog.presented): each Claude model a presented row
+     *  is resolved as -> the row's id. Empty for a head that presents none. */
+    val modelOverrides: Map<String, String> = emptyMap(),
+    /** V4-358: row id -> the id the CLIENT is handed for it ([ClientSpelling]: the 1M hint), for the rows
+     *  that differ. Every id decision here (tier names, slots, labels, the resume rewrite) stays on the
+     *  row's own id; only what the client is handed is spelled, at the last step ([LaunchSpec.heldByClient],
+     *  [clientId]). Empty for a head that spells none, which is every head under 425k and every
+     *  client-auth one. */
+    val spelled: Map<String, String> = emptyMap(),
+) {
+    /** V4-232: the client's window for the presented rows, [CLIENT_TABLE_WINDOW], or 0 when there are
+     *  none. The client compacts at min(window, CLAUDE_CODE_AUTO_COMPACT_WINDOW), so the launch plants
+     *  that env no lower (LaunchService.buildEnv), or a presented row on a small runtime would compact
+     *  at a fraction of its window. */
+    val presentedWindow: Long get() = if (modelOverrides.isEmpty()) 0L else CLIENT_TABLE_WINDOW
+
+    /** V4-358: the client's window for the spelled rows, 1e6, or 0 when there are none: the same cap on
+     *  the auto-compact env as [presentedWindow], for the same reason. Without it a row spelled 1M on an
+     *  872k head would compact at min(1e6, 872k) reported tokens, 13% early once scaled. */
+    val spelledWindow: Long get() = if (spelled.isEmpty()) 0L else CLAUDE_CODE_ONE_MILLION
+
+    /** The id the client is handed for row [id]. */
+    public fun clientId(id: String): String = spelled[id] ?: id
+}
+
+/** What a head needs to produce a launch recipe (supplied by :app at wiring time). */
+public data class LaunchSpec(
+    val trees: HeadTrees,
+    val models: LaunchModels,
+    val signIn: LaunchSignIn,
+    val gateway: LaunchGateway,
+    val policy: ClaudePolicy,
+    /** The effort the session starts at, handed to Claude Code as its own --effort (Marcos, Oct 28: "effort at high
+     *  by default ... configurable by users in the console and in the toml file", and "claude code picks should also
+     *  be considered ... why can't it be both?"). Read per launch, so a change in the console reaches the next one;
+     *  Claude Code's /effort changes it from there, and every adapter sends what Claude Code's request names. Null
+     *  for a spec that names none, such as a command another machine serves. */
+    val effort: LaunchEffort? = null,
+) {
+    /** This boot-assembled spec with the current catalog's roster, labels, picker and windows.
+     *  Read per launch: provider discoveries and accepted TOML window edits need no daemon restart.
+     *  Discovered rows join the picker, never the positional tiers; client spellings follow their windows. */
+    public fun withWindows(catalog: ModelCatalog): LaunchSpec {
+        val current = catalog.live()
+        val refreshed = copy(
+            models = models.copy(
+                availableModelIds = current.availableModelIds(),
+                modelLabels = current.models.associate {
+                    it.id to it.label.ifBlank { models.modelLabels[it.id] ?: it.id }
+                },
+                contextWindow = current.clientLaunchWindow,
+                modelOptionsCache = pickerRows(current),
+                tiers = models.tiers.copy(
+                    candidates = models.tiers.candidates?.let { current.tierModelIds() },
+                    modelOverrides = current.presented.overrides,
+                ),
+            ),
+        )
+        val tiers = refreshed.models.tiers.copy(spelled = refreshed.spelledIn(current))
+        return refreshed.copy(models = refreshed.models.copy(tiers = tiers))
+    }
+
+    /** V4-358: this spec as the client is handed it: the pinned row, the allowlist and each picker row
+     *  under [ModelTiers.clientId]. The allowlist keeps the row's own id BESIDE its spelled one, so a
+     *  session written before the row was spelled (its transcript names the bare id) still resumes on
+     *  it instead of being retagged onto the pinned model, which drops the thinking of every row it
+     *  moves. The picker is drawn from the tier slots and the options cache, never from the allowlist,
+     *  so the extra id adds no row. This very spec when nothing is spelled. */
+    public fun heldByClient(): LaunchSpec {
+        val tiers = models.tiers
+        if (tiers.spelled.isEmpty()) return this
+        val options = (models.modelOptionsCache as? JsonArray)?.let { rows -> JsonArray(rows.map(::heldRow)) }
+        return copy(
+            models = models.copy(
+                pinnedModel = tiers.clientId(models.pinnedModel),
+                availableModelIds = models.availableModelIds.flatMap { listOfNotNull(tiers.spelled[it], it) },
+                modelOptionsCache = options ?: models.modelOptionsCache,
+            ),
+        )
+    }
+
+    private fun spelledIn(catalog: ModelCatalog): Map<String, String> {
+        if (gateway.clientModels) return emptyMap()
+        val spelling = ClientSpelling(catalog)
+        return (listOf(models.pinnedModel) + models.availableModelIds).distinct()
+            .associateWith(spelling::of)
+            .filter { (id, held) -> held != id }
+    }
+
+    private fun heldRow(row: JsonElement): JsonElement {
+        val option = row as? JsonObject ?: return row
+        val value = JsonScalars.str(option, PICKER_VALUE) ?: return row
+        return JsonObject(option + (PICKER_VALUE to JsonPrimitive(models.tiers.clientId(value))))
+    }
+
+    private fun pickerRows(catalog: ModelCatalog): JsonElement {
+        val rows = models.modelOptionsCache as? JsonArray ?: return models.modelOptionsCache
+        val kept = rows.filterIsInstance<JsonObject>().associateBy { JsonScalars.str(it, PICKER_VALUE) }
+        val options = catalog.models.map { model ->
+            val old = kept[model.id]
+            val labelChanged = model.label != models.modelLabels[model.id]
+            val includesLabel = old == null || PICKER_LABEL in old
+            val label = model.label.ifBlank { old?.let { JsonScalars.str(it, PICKER_LABEL) } ?: model.id }
+            buildJsonObject {
+                old?.forEach { (key, value) -> put(key, value) }
+                put(PICKER_VALUE, model.id)
+                if (includesLabel || labelChanged) put(PICKER_LABEL, label)
+                if (old == null) put("description", model.description.ifBlank { model.shownName() })
+                put("context_window", model.contextWindow)
+            }
+        }
+        return JsonArray(options + rows.filterNot { it is JsonObject })
+    }
+}
+
+/** The model side of a launch: which row is pinned, which rows are offered, how they are labelled and
+ *  slotted, and the window planted for the client. One value because every part answers "what may this
+ *  head's session run on", and [LaunchSpec] stays inside the constructor-width ratchet. */
+public data class LaunchModels(
+    val pinnedModel: String,
+    val availableModelIds: List<String>,
+    val modelLabels: Map<String, String>, // id -> display label (for the alias slot names)
+    /** The client window planted as CLAUDE_CODE_MAX_CONTEXT_TOKENS: ModelCatalog.clientLaunchWindow,
+     *  a constant. Per-row windows never ride the env — usage scaling applies them on the wire. */
+    val contextWindow: Long,
+    val modelOptionsCache: JsonElement, // the /model picker option list
+    /** Which models may stand behind Claude Code's tier slots — see [ModelTiers]. */
+    val tiers: ModelTiers = ModelTiers(),
+    /** The head's discovery prefix ("claude-codex--"): a tier that repeats an earlier tier's model
+     *  is planted under this wrapped spelling so the picker's allowlist hides its row (see
+     *  LaunchService.buildEnv). Blank keeps the duplicate row. */
+    val discoveryPrefix: String = "",
+)
+
+/** The effort a launch starts its session at, read when the launch asks: one of Claude Code's --effort words, or null
+ *  for none of splice's. */
+public fun interface LaunchEffort {
+    public fun current(): String?
+}
+
+/** How a head's sign-in is reached from inside a Claude Code session: the command, its label, whether it
+ *  opens a browser, and the in-session confirmation channel. One value, read by the /login block, the
+ *  key-missing advertiser and the resume hook alike. */
+public data class LaunchSignIn(
+    val loginCommand: String, // shell command that runs THIS head's provider sign-in (e.g. `claudex login`)
+    val signInLabel: String, // provider label for the /login UX ("Codex (ChatGPT)", "Grok (xAI)")
+    /** Terminal for api-key heads: the /login block reason points at a masked terminal prompt. Elsewhere for a
+     *  command another machine serves (LAN share): its /login names that machine and starts nothing here. */
+    val signInWay: SignInWay = SignInWay.Browser,
+    /** api-key heads: capture a bare pasted token into the KeyStore (blocked from model context). */
+    val tokenCapture: TokenCaptureSpec? = null,
+    /** Install the SessionStart key-missing advertiser (daemon sets it only while unconfigured). */
+    val advertiseKeySetup: Boolean = false,
+    /** Absolute path of this head's login receipt (LoginOutcomeFile) — the channel a DETACHED
+     *  sign-in uses to tell the session what happened. Empty = no in-session confirmation. */
+    val loginOutcomeFile: String = "",
+    /** The head's topology key ("codex"): `splice login <key>` and `<wrapper> login` name the same
+     *  sign-in, and the /login hook must find it under either spelling (review 2026-09-14). */
+    val headKey: String = "",
+)
+
+/** How a launched session holds the bearer a gateway head checks on every turn. */
+public sealed class GatewayBearer {
+    /** Planted once in ANTHROPIC_AUTH_TOKEN, which Claude Code reads at start and never again: for a word that
+     *  does not change while the session runs, like a LAN share's. */
+    public data class Planted(val token: String) : GatewayBearer()
+
+    /** Read through Claude Code's apiKeyHelper: a shell [command] that prints the current turn key. Claude Code runs
+     *  it again after a 401 and resends the turn, so a session whose key was rotated recovers on its own head with
+     *  its draft intact (key rotation, Oct 26, read in the 2.1.310 binary). */
+    public data class Helper(val command: String) : GatewayBearer()
+
+    /** A head that forwards the client's own login holds no bearer of the session's. It may hold logins of its own,
+     *  and serves those only to a caller proven splice's, so the session names [proof] in the launch proof header
+     *  (PR #247 review, Oct 29). The key is read from [turnKey] when the launch is built, so a rotation reaches the
+     *  next launch, and this class never prints it. */
+    public data class Forwarded(val turnKey: TurnKey) : GatewayBearer()
+}
+
+/** How the launched client reaches this head's gateway: the port, the bearer, the request timeout and
+ *  the status line that posts back, plus whether the client keeps its own credentials. */
+public data class LaunchGateway(
+    val port: Int,
+    /** How the session holds the local gateway credential the head's inbound verifier checks. A head that
+     *  forwards the client's own login uses neither form. */
+    val bearer: GatewayBearer,
+    /** Claude Code's per-request timeout (API_TIMEOUT_MS) for THIS head: the daemon's whole-turn
+     *  cap plus a grace, so the client always outlives the proxy's own wall and receives its honest
+     *  verdict instead of aborting first. 2026-09-01: the daemon allowed a compaction 900s while
+     *  Claude Code's 600s default gave up — every compaction over ten minutes ended as client_abort
+     *  with the summary still streaming, and the ones that survived had 20-100s to spare. */
+    val apiTimeoutMs: Long,
+    val statuslineCommand: String, // per-head statusline command (…/statusline/<head>)
+    /**
+     * TRUE for a client-auth head: the client keeps its OWN Anthropic credentials and its own
+     * /login (campaign claude-head). Every other head serves a FOREIGN vendor, so the recipe must
+     * strip the client's Anthropic session and plant the gateway bearer instead — here that would
+     * replace exactly the credential the head forwards upstream, and disabling /login would nail
+     * shut the only door that can heal a 401.
+     */
+    val forwardClientAuth: Boolean = false,
+    /** LAN share: the other machine's address this command's turns go to (`http://devbox.lan:3097/claudex`), in
+     *  place of this machine's loopback [port]. Null for a head on this machine. */
+    val remote: String? = null,
+    /** A Claude head on another machine ([remote]): its turns reach Anthropic on that machine's logins, so this one,
+     *  which holds none, has [forwardClientAuth] false. See [clientModels] and [reachesAnthropic]. */
+    val remoteClaude: Boolean = false,
+) {
+    /** TRUE when the client picks its own models: the launch plants no roster, tier, spelling or window, and the
+     *  person's own settings decide (V4-449). A head here does so exactly when it forwards the caller's login, a remote
+     *  one when it is a Claude head. Derived, so a copy that turns [forwardClientAuth] on carries it too. */
+    val clientModels: Boolean get() = forwardClientAuth || remoteClaude
+
+    /** TRUE when the turns reach Anthropic itself, so Anthropic's own server-side checks answer: a Claude head here,
+     *  or one on another machine. A translated head does not. */
+    val reachesAnthropic: Boolean get() = forwardClientAuth || remoteClaude
+
+    /** The token planted in ANTHROPIC_AUTH_TOKEN, or null: a head that forwards the client's login plants none,
+     *  since it would replace the very credential the head forwards. */
+    val plantedToken: String? get() = (bearer as? GatewayBearer.Planted)?.token?.takeUnless { forwardClientAuth }
+
+    /** The apiKeyHelper command the session's settings carry, or null: a head that forwards the client's login
+     *  keeps the client's own, as with [plantedToken]. */
+    val keyHelper: String? get() = (bearer as? GatewayBearer.Helper)?.command?.takeUnless { forwardClientAuth }
+
+    /** The launch proof's line for the session's custom headers, on a head here that forwards the client's login, else
+     *  none: a command another machine serves never carries this machine's turn key (PR #247 review, Oct 29). */
+    val proofLines: List<String> get() = listOfNotNull((bearer as? GatewayBearer.Forwarded)?.takeIf { remote == null })
+        .map { "$LAUNCH_PROOF_HEADER: ${it.turnKey.get()}" }
+}
+
+public data class LaunchRecipe(
+    val env: Map<String, String>,
+    val unset: List<String>,
+    val argv: List<String>,
+    // Non-null only when dangerouslySkipPermissions was engaged — surfaced to the operator via the
+    // control log and the /launch response so the danger is never silent.
+    val warning: String? = null,
+)
+
+/** What a launch came to: a recipe to run, or a refusal to say. */
+public sealed class LaunchOutcome {
+    public data class Ready(val recipe: LaunchRecipe) : LaunchOutcome()
+
+    /** The launch must not run: [reason] says why, in words the operator can act on. */
+    public data class Refused(val reason: String) : LaunchOutcome()
+}

@@ -1,0 +1,8 @@
+{
+  "schema": 2,
+  "checkedAt": "2026-10-28T00:17:54.926Z",
+  "verifier": "Pinned cosign v3.1.4 verify-blob with pinned trust root, exact GitHub workflow identity and source SHA",
+  "sourceRevision": "360319d8dee62d87e2d59fc0c21805d79519cfed",
+  "executableSha256": "522935d4392ec9674fab60b239b5495992c6a93e4deb65113a216b6f5451ccd4",
+  "bundleSha256": "39d7da4bf82b25577b745cee2947472b5215577038988cd47aaa2771bc4a043b"
+}

@@ -1,0 +1,62 @@
+{
+  "sourceRevision": "360319d8dee62d87e2d59fc0c21805d79519cfed",
+  "records": [
+    {
+      "id": "codex-rs/core/src/tools/code_mode/wait_spec.rs#function_item@124",
+      "file": "codex-rs/core/src/tools/code_mode/wait_spec.rs",
+      "kind": "function_item",
+      "label": "create_wait_tool",
+      "line": 6,
+      "start": 124,
+      "end": 2417,
+      "sha256": "e26703ebfb3ba7d3de2177ceac355d58588832731e6bd46675530b7deecd5666",
+      "ownership": "ported",
+      "extraction": "unchanged Git byte span",
+      "localFile": "src/wait_spec.rs",
+      "localFunctionStart": 89
+    },
+    {
+      "file": "codex-rs/core/src/tools/handlers/mod.rs",
+      "label": "parse_arguments",
+      "start": 3416,
+      "end": 3696,
+      "sha256": "8ffef8f20f658647d6dd0ce5f94eef01f765e15f32da9147c7a4f4dde69b869a",
+      "extraction": "unchanged complete source function",
+      "localFile": "src/parse_arguments.rs",
+      "localFunctionStart": 60
+    },
+    {
+      "file": "codex-rs/core/src/tools/handlers/tool_search.rs",
+      "label": "handle_call argument validation statements",
+      "start": 7503,
+      "end": 7952,
+      "sha256": "2e5277820284058358acf7c880fe7a90f659ba9d84656cec42154ffb77807a3e",
+      "extraction": "unchanged statement span; does NOT claim full handle_call execution",
+      "localFile": "src/search_arguments.rs",
+      "localFunctionStart": 326
+    },
+    {
+      "id": "codex-rs/core/src/tools/code_mode/tool_definitions.rs#function_item@349",
+      "file": "codex-rs/core/src/tools/code_mode/tool_definitions.rs",
+      "kind": "function_item",
+      "label": "prepare_code_mode_tool_definitions",
+      "line": 10,
+      "start": 349,
+      "end": 1226,
+      "sha256": "6e42595410cbad02fb07e907f1eb1fcee7d3d04f16f59f69fd86db54cb9b5b29",
+      "ownership": "ported",
+      "localFile": "src/prepare_definitions.rs",
+      "localFunctionStart": 131,
+      "extraction": "unchanged complete function; None-runtime branch, declaration-only CoreToolRuntime trait shell"
+    },
+    {
+      "file": "codex-rs/core/src/tools/code_mode/response_adapter.rs",
+      "localFile": "src/response_adapter.rs",
+      "sha256": "702b85e1a50baf24470f5018c355f27d7630134a2a9ea7b9a938c292702568f7",
+      "start": 0,
+      "end": 1934,
+      "extraction": "unchanged complete source file; actual codex-code-mode/protocol types",
+      "localFunctionStart": 0
+    }
+  ]
+}

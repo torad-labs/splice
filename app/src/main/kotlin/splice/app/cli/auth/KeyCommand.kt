@@ -1,0 +1,156 @@
+// NEW: `splice key set|list|unset` — the operator-facing front door to KeyStore
+// (~/.config/splice/keys.toml). Interactive `set` reads MASKED from the console (never echoed,
+// never in shell history); agents and hooks use --stdin or --value (both are transcript-visible —
+// the masked path exists precisely for humans). After a set, the next request already picks the
+// key up (ApiKeyAuthProvider re-reads the store per call); `splice restart` refreshes status. V4-222: a
+// store that refuses a write (unreadable, locked) ends in the verb's own one-line message.
+package splice.app.cli.auth
+
+import splice.core.config.KeyStore
+import splice.core.config.KeyStorePath
+import splice.core.util.Cancellables
+import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
+
+private const val MASK_PROMPT = "API key: "
+private const val STDIN_FLAG = "--stdin"
+private const val VALUE_FLAG = "--value"
+
+/** Where the CLI's default KeyStore lives — the operator's real ~/.config/splice/keys.toml in
+ *  production, a hermetic path in the DR-40 production-wiring arm. A fun interface (not a raw
+ *  `() -> Path`) per kt-no-lambda-seam; named for the ROLE. */
+internal fun interface KeyStorePathSource {
+    operator fun invoke(): java.nio.file.Path
+}
+
+/** The `key` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources carry
+ *  no top-level functions). Every member keeps the old function's name. */
+internal class KeyCommand(
+    private val storePath: KeyStorePathSource = KeyStorePathSource { KeyStorePath.defaultPath() },
+) {
+
+    /** DR-40 gap 2 (codex): where the CLI's KeyStore diagnostics land. The store's default sink is
+     *  DaemonLog, which only the DAEMON process installs — in this CLI process it is a no-op, so an
+     *  unreadable keys.toml made `splice key list` print "no keys stored" and silently drop the
+     *  corrupt-vs-empty warning. The CLI's user interface for diagnostics is stderr; the store's
+     *  lines carry their own newline, hence print not println. */
+    internal fun cliStoreSink(): LogSink = LogSink { System.err.print(it) }
+
+    /** argv after `key`: set <ENV> [--value V | --stdin] | list | unset <ENV>. Store injectable
+     *  for hermetic tests; null resolves the PRODUCTION default — [storePath] + [cliStoreSink] —
+     *  inside the body so the DR-40 wiring arm can drive the real chain with only the path swapped
+     *  (a default-parameter expression is invisible to a test that injects, so a mutant dropping
+     *  the sink there survived; resolving here makes it killable). */
+    internal fun key(
+        args: List<String>,
+        store: KeyStore? = null,
+    ): Boolean {
+        val resolved = store ?: KeyStore(storePath(), log = cliStoreSink())
+        // V4-309: an argv shaped otherwise lands on usage, before the store is touched.
+        return when (args.firstOrNull().takeIf { shaped(args) }) {
+            "set" -> keySet(resolved, args.getOrNull(1), args.drop(2))
+            "list" -> keyList(resolved)
+            "unset" -> keyUnset(resolved, args.getOrNull(1))
+            else -> {
+                System.err.println("usage: splice key set <ENV_NAME> [--value V | --stdin] | list | unset <ENV_NAME>")
+                false
+            }
+        }
+    }
+
+    /** V4-309: each sub-verb takes only the words it names — `set <ENV> [--value V | --stdin]`,
+     *  `list`, `unset <ENV>`. `unset FOO --help` removed FOO while only the first word was checked.
+     *  A missing <ENV> passes, so its own line still names what is missing. */
+    private fun shaped(args: List<String>): Boolean {
+        val name = args.getOrNull(1)
+        if (name != null && name.startsWith("-")) return false
+        val flags = args.drop(2)
+        return when (args.firstOrNull()) {
+            "set" -> flags.isEmpty() || flags == listOf(STDIN_FLAG) || flags[0] == VALUE_FLAG && flags.size <= 2
+            "list" -> args.size == 1
+            else -> args.size <= 2
+        }
+    }
+
+    private fun keySet(store: KeyStore, envVar: String?, flags: List<String>): Boolean {
+        if (envVar == null) {
+            System.err.println("splice key set: missing <ENV_NAME> (e.g. OPENROUTER_API_KEY)")
+            return false
+        }
+        val value = readValue(flags) ?: return false
+        return Cancellables.runCatchingCleanup { store.write(envVar, value) }
+            .onSuccess {
+                println("$envVar stored to ${store.path} (0600).")
+                // V4-227: nothing caches a key's presence (every describe() reads the store), so the one thing
+                // a restart still changes is the model list a head discovered at start without its key.
+                println("Live daemons use it from the next request, with no restart.")
+                println(
+                    "Only a head that could not list its models at start, for want of this key, " +
+                        "lists them after `splice restart`.",
+                )
+            }
+            .onFailure { System.err.println("splice key set: ${refusal(it)}") }
+            .isSuccess
+    }
+
+    // V4-222: KeyStore REFUSES with check() — an IllegalStateException (keys.toml unreadable, locked by a
+    // peer) that runCatchingCancellable lets escape, so `set` ended in a stack trace and `unset` had no
+    // catch at all. runCatchingCleanup's set is exactly the store's (I/O, (de)serialization,
+    // IllegalArgument, IllegalState; cancellation still propagates). The store builds those texts from
+    // the name and SafeFailureText alone, so they print as written; anything else is SafeFailureText's.
+    private fun refusal(failure: Throwable): String =
+        (failure as? IllegalStateException)?.message ?: SafeFailureText.render(failure)
+
+    private fun readValue(flags: List<String>): String? = when {
+        STDIN_FLAG in flags -> readKeyStdin()
+        VALUE_FLAG in flags -> flags.getOrNull(flags.indexOf(VALUE_FLAG) + 1)
+            ?: run {
+                System.err.println("splice key set: --value needs an argument (prefer --stdin; --value shows in ps)")
+                null
+            }
+        else -> readKeyMasked()
+    }
+
+    private fun readKeyStdin(): String? =
+        System.`in`.bufferedReader().readText().trim().ifEmpty {
+            System.err.println("splice key set: empty key on stdin")
+            null
+        }
+
+    private fun readKeyMasked(): String? {
+        val console = System.console() ?: run {
+            System.err.println(
+                "splice key set: no interactive console; use --stdin, or --value (visible in ps/history)",
+            )
+            return null
+        }
+        val chars = console.readPassword(MASK_PROMPT) ?: return null
+        return String(chars).trim().ifEmpty {
+            System.err.println("splice key set: empty key")
+            null
+        }
+    }
+
+    private fun keyList(store: KeyStore): Boolean {
+        val names = store.names()
+        if (names.isEmpty()) {
+            println("no keys stored (${store.path})")
+        } else {
+            names.sorted().forEach { println("$it = stored") }
+        }
+        return true
+    }
+
+    private fun keyUnset(store: KeyStore, envVar: String?): Boolean {
+        if (envVar == null) {
+            System.err.println("splice key unset: missing <ENV_NAME>")
+            return false
+        }
+        return Cancellables.runCatchingCleanup { store.unset(envVar) }
+            .onSuccess { removed ->
+                println(if (removed) "$envVar removed from ${store.path}" else "$envVar was not stored")
+            }
+            .onFailure { System.err.println("splice key unset: ${refusal(it)}") }
+            .isSuccess
+    }
+}

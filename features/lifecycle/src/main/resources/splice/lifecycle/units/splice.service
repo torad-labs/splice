@@ -1,0 +1,34 @@
+# splice-owned unit: splice's install lays this file and replaces it on every install, so an edit here does not last.
+# To change it, add a drop-in with `systemctl --user edit splice.service`, or put a whole unit of the same name in
+# ~/.config/systemd/user, which systemd reads instead of this one.
+[Unit]
+Description=Splice daemon, the LLM proxy every agent head routes through
+After=network-online.target
+# No start limit: a proxy that is down is worse than one restarting, so systemd never gives up on it.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+# The JDK `splice install` ran on. The shell puts it ahead of the user manager's PATH without replacing that PATH, for
+# the daemon and everything it starts, and execs the launcher, which execs java, so the daemon keeps this unit's first
+# pid. The `splice` link makes the launcher's head splice, so no SPLICE_HEAD reaches what the daemon starts.
+Environment="JAVA_HOME=@JAVA_HOME@"
+ExecStart=/bin/sh -c 'PATH="$$JAVA_HOME/bin:$$PATH" exec "@SPLICE@" daemon'
+Restart=always
+RestartSec=2
+# The retry backs off from 2 s to 5 min, so a daemon that can't stay up costs one start every 5 min, not every 2 s.
+RestartSteps=8
+RestartMaxDelaySec=300
+# A stop signals the daemon alone: it drains its workers and exits, and only the timeout kills the rest of its group.
+# 75 s covers the drain, and Java's 143 on SIGTERM is a clean stop.
+KillMode=mixed
+TimeoutStopSec=75
+SuccessExitStatus=143
+# A child's out-of-memory kill leaves the daemon up. Memory pressure reclaims other pages first, and systemd-oomd never
+# picks this unit.
+OOMPolicy=continue
+MemoryLow=1G
+ManagedOOMPreference=omit
+
+[Install]
+WantedBy=default.target

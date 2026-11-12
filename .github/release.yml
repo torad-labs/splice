@@ -21,7 +21,7 @@ changelog:
     - title: Gateway
       labels: [gateway]
     - title: Web UI
-      labels: [webui]
+      labels: [console]
     - title: Documentation
       labels: [documentation]
     - title: CI & release engineering

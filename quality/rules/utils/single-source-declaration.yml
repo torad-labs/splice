@@ -1,0 +1,10 @@
+# The declaration site of a single-source value: a Kotlin `const val`. A rule that guards a literal exempts the one
+# place the literal is declared by saying so in its own body, `not: inside: matches: single-source-declaration`,
+# instead of naming that file in an `ignores:` list. A path ignore also exempts every other literal in the file and
+# survives the declaration moving away; this exemption is the declaration's shape and nothing else. `gate rules`
+# reruns each rule that uses it with the exemption inverted, and fails when one literal is declared more than once.
+id: single-source-declaration
+language: kotlin
+rule:
+  kind: property_declaration
+  regex: '^(?:(?:public|internal)\s+)?const\s+val\s'

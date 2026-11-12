@@ -1,0 +1,42 @@
+id: kt-no-unsafe-cast
+valid:
+  # the compliant remedy: a `when` that binds the narrowed value
+  - |
+    when (outcome) {
+        is TurnOutcome.Failure -> absorbed.add(outcome)
+        is TurnOutcome.Success -> salvaged.add(outcome)
+        else -> return
+    }
+  # the safe cast — 25 sites in this tree already read this way
+  - 'val failure = outcome as? TurnOutcome.Failure ?: return'
+  - 'val success = state.outcome as? TurnOutcome.Success ?: return accumulated.finish(state.outcome)'
+  - 'val key = (read as? MgmtKeyRead.Present)?.key'
+  # dated exemption: `null as T?` is the kotlinx `put` overload ascription, not a narrowing
+  - 'put("mode", null as String?)'
+  - 'put("versionMatch", if (h.running) true else null as Boolean?)'
+  # dated exemption: foreign kotlinx.serialization hierarchy (element tree + codec seams)
+  - 'val obj = request.getValue("input") as JsonArray'
+  - 'val o = input[1] as JsonObject'
+  - 'val p = instruction.getValue("content") as JsonPrimitive'
+  - 'val input = decoder as JsonDecoder'
+  - 'val out = encoder as JsonEncoder'
+  # dated exemption: JDK / stdlib unboxing with no typed accessor
+  - 'val conn = URI(url).toURL().openConnection() as HttpURLConnection'
+  - 'val modifiedAt = (attributes.getValue("lastModifiedTime") as FileTime).toMillis()'
+  - 'val size = attributes.getValue("size") as Long'
+invalid:
+  # the census, by shape
+  - 'val failure = outcome as TurnOutcome.Failure'
+  - 'val searched = outcome as TurnOutcome.Success'
+  - 'salvaged.add(rounds.searchPartial(outcome as TurnOutcome.Success, buffered = true))'
+  # the site the DOTTED-spelling matcher missed: a sealed subtype spelled bare through a typealias.
+  # If this case ever goes green the denominator has been narrowed back to a naming convention.
+  - 'output = block.content.joinToString("") { (it as TextBlock).text }'
+  # a repo-owned type is red whether or not it wears its parent's name
+  - 'val cell = runtime as JvmCodeModeCell'
+  # the Json* exemption is anchored: it must not extend to a repo type whose name merely starts
+  # with a foreign one, nor be claimable from a generic type ARGUMENT position
+  - 'val v = raw as JsonlSinkHandle'
+  - 'val table = verbs as Map<String, JsonObject>'
+  # nullability is not the exemption — only the `null` LITERAL operand is
+  - 'val s = head as String?'

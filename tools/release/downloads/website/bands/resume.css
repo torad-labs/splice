@@ -1,0 +1,181 @@
+/* ===== resume band (class prefix rs-): the board of three columns (a Claude card at its limit, claudex -r's session list, the
+   session carrying on in a ChatGPT terminal) in one product window, then what carries over. Page parts use the console's
+   tokens (--wall, --obj, --ink, --text*, --r-obj, --ink-w, --cast, --u, --t-*, --e-out); console components keep the console's rem.
+
+   FACE. The three panels share one column width and one left edge. The Claude card's rail (socket and bar, 2.667rem) hangs in
+   the plate's left gutter, so the card face is as wide as each terminal face. Stacked, the rail is back inside the column.
+
+   MOTION (the band enters once on scroll). One keyframe, rs-rise: opacity 0 -> 1 and a rise of 1rem, over --t-pop (260 ms) on
+   --e-out. The panels start 0, 120 and 240 ms apart (--i x 120 ms), so the third ends at 500 ms. The chips row travels with the
+   third panel. Inside the first panel only what changed moves: the week meter grows over --t-snap (240 ms) from 120 ms, its
+   reset ring draws over --t-snap from 120 ms, and the lock pops over --t-pop from 200 ms. Reduced motion shows the final state. */
+
+/* ---------- the band's header: the page's split head; the line carries a command ---------- */
+.rs-bh .pg-line code { font: 500 .92em/1 var(--font-data); color: var(--text); white-space: nowrap; }   /* a command never splits; the space after "-r." is non-breaking, so the two commands stay on one line */
+
+/* ---------- type: the page's steps. t-1 the small words (kickers, chips, ages, reset times), t-2 what a row says (names, terminal
+   lines, the percent), t-4 the one focal figure. A console part is set on its step through #resume, which outranks the console's rule. ---------- */
+#resume :is(.rs-board .windows :is(.label, .when, .used), .socket, .rs-k, .rs-tag, .rs-from, .rs-age, .rs-only, .rs-path) { font-size: var(--pg-t-1); }
+#resume :is(.rs-board .windows .pct, .rs-board .card .name, .rs-board .provider > header h2) { font-size: var(--pg-t-2); }
+#resume .rs-board .windows > .pct.limit { font-size: var(--pg-t-4); }
+#resume .rs-board .windows > .pct.limit .used { font-size: var(--pg-t-1); }
+
+/* ---------- the product window: a plate on the wall, the board of three columns, then the chips ---------- */
+.rs-pw {
+  container: rsw / inline-size;
+  background: var(--wall-low); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
+  box-shadow: var(--cast) var(--cast) 0 var(--ink); padding: calc(4 * var(--u));
+}
+.rs-pwi { --rs-rail: 2.667rem; padding-left: var(--rs-rail); }            /* the gutter the Claude rail hangs in */
+.rs-board { align-items: stretch; gap: var(--gap-col); }
+.rs-board > .col { gap: 0; }
+.rs-board .rs-p1 .rail { margin-left: calc(-1 * var(--rs-rail)); }
+.rs-pv { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.rs-board .provider > header { margin-bottom: 1rem; }
+.rs-plate { position: relative; flex: 1; display: flex; flex-direction: column; min-width: 0; }
+/* three columns across: the Claude card runs down to the terminals' bottom edge, so the three columns end on one y. The card
+   holds both of the account's windows (the week's and the 5 hours'), packed from the top with the console's own row gap, so
+   what stretches is the card's foot by a few pixels and no row is spread. Stacked and in two columns it keeps its own height
+   (the window rules below set flex: none). */
+.rs-p1 > .rs-rv:last-child { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.rs-p1 .rail { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.rs-p1 .rail .card { flex: 1; display: flex; flex-direction: column; }
+
+/* the Claude card in its narrow reflow: label and figure on one row, the meter on the full row, the ring and its time under it,
+   once for the week and once for the 5 hours. One focal figure leads: the week's 100% at the console's focal size, in limit red,
+   "used" on its baseline. The 5-hour figure, the labels and the reset times stand at 14 to 16 px. */
+.rs-board .windows {
+  grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--u); row-gap: var(--u); margin-top: var(--u);
+}
+.rs-board .windows > .label { min-height: 0; }
+.rs-board .windows > :nth-child(1) { grid-area: 1 / 1; }
+.rs-board .windows > :nth-child(3) { grid-area: 1 / 2; }
+.rs-board .windows > :nth-child(2) { grid-area: 2 / 1 / 3 / -1; }
+.rs-board .windows > :nth-child(4) { grid-area: 3 / 1 / 4 / -1; min-width: 0; }
+.rs-board .windows > :nth-child(5) { grid-area: 4 / 1; }
+.rs-board .windows > :nth-child(7) { grid-area: 4 / 2; }
+.rs-board .windows > :nth-child(6) { grid-area: 5 / 1 / 6 / -1; }
+.rs-board .windows > :nth-child(8) { grid-area: 6 / 1 / 7 / -1; min-width: 0; }
+.rs-board .windows > :is(:nth-child(1), :nth-child(3), :nth-child(5), :nth-child(7)) { align-self: baseline; margin-bottom: var(--u); }
+.rs-board .windows > :is(:nth-child(5), :nth-child(7)) { margin-top: var(--u); }
+.rs-board .windows > .pct { min-width: 0; }
+.rs-board .windows > .pct.limit { font-weight: 600; line-height: 1; }
+.rs-board .card .top { min-height: 2.2rem; }
+/* the page also loads the models sheet, whose .held dims a card to half; this card holds a socket, not a held command */
+.rs-board .rs-p1 .card.held { opacity: 1; }
+.rs-board .provider > header .blot { flex-shrink: 1; }
+
+/* ---------- a terminal: one plate, the face of a sunk field, its cast in the colour of the command ---------- */
+.rs-term {
+  box-sizing: border-box; flex: 1; display: flex; flex-direction: column; min-width: 0;
+  padding: calc(1.5 * var(--u)) calc(1.75 * var(--u));
+  background: var(--obj-sunk); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
+  box-shadow: var(--cast) var(--cast) 0 var(--tc, var(--ink)), var(--cast) var(--cast) 0 var(--ink-w) var(--ink);
+  font: 500 var(--pg-t-2)/1.5 var(--font-data); color: var(--text);
+}
+[data-theme="day"] .rs-term { background: var(--obj); }   /* on Paper the sunk face is the plate's own colour, so the terminal takes the card face */
+.rs-tl { display: flex; align-items: center; gap: .667rem; min-height: 1.9rem; min-width: 0; }
+.rs-tl > span { min-width: 0; overflow-wrap: anywhere; }
+.rs-ps { color: var(--text-mute); flex: none; }
+.rs-ps::before { content: "$"; }
+.rs-pt { flex: none; width: .85rem; height: .85rem; color: var(--text-mute); }
+.rs-bul { flex: none; width: .55rem; height: .55rem; margin: 0 .15rem; border-radius: 50%; background: var(--text); }
+.rs-in-d { padding-left: 1.5rem; color: var(--text-body); font-weight: 400; }
+.rs-cur { display: inline-block; width: .62rem; height: 1.15rem; background: var(--text); }
+
+/* the resume list: Claude Code's own rows, a name and an age */
+.rs-list { flex: 1; display: flex; flex-direction: column; justify-content: space-around; gap: .5rem; margin-top: .667rem; }
+.rs-row {
+  display: grid; grid-template-columns: .85rem minmax(0, 1fr) auto; column-gap: .667rem; row-gap: .5rem; align-items: center;
+  padding: .8rem .667rem; border-radius: .3rem; color: var(--text-body);
+}
+.rs-row.picked { color: var(--text); }
+.rs-row .rs-nm { min-width: 0; overflow-wrap: anywhere; }
+.rs-row .rs-age { color: var(--text-mute); font-weight: 400; white-space: nowrap; }
+.rs-row .rs-tagline { grid-column: 2 / -1; display: flex; }
+.rs-row .rs-pt { color: var(--text); }
+.rs-from { --c: var(--claude); gap: 0; font: 500 var(--pg-t-1)/1 var(--font-name); color: var(--text-body); padding: .3rem .55rem; }
+
+/* the terminal after the pick */
+.rs-path {
+  display: block; width: fit-content; max-width: 100%; box-sizing: border-box; margin: .333rem 0 .333rem 1.5rem; padding: .35rem .6rem;
+  font: 500 var(--pg-t-1)/1.25 var(--font-data); color: var(--text); background: var(--obj);
+  border: .1rem solid var(--track-line); border-radius: .3rem; overflow-wrap: normal;
+}
+.rs-only { margin: 0 0 .5rem 1.5rem; font: 500 var(--pg-t-1)/1.2 var(--font-name); color: var(--text-mute); }
+.rs-prompt { margin-bottom: .75rem; }
+.rs-status { margin-top: auto; padding-top: .667rem; border-top: 1px solid var(--hair); flex-wrap: wrap; }
+.rs-status > .rs-model { flex: none; white-space: nowrap; }
+.rs-status .lamp { position: static; flex: none; width: 1.7rem; height: 1.7rem; }
+.rs-status .lamp svg.wave { width: 1.25rem; height: 1.25rem; }
+.rs-model { display: inline-flex; align-items: center; gap: .55rem; font-weight: 500; }
+.rs-dot { flex: none; width: .7rem; height: .7rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .14rem var(--ink); }
+
+/* ---------- what carries over ---------- */
+.rs-carry-w { margin-top: calc(4 * var(--u)); }
+.rs-carry {
+  padding-top: calc(4 * var(--u)); border-top: 1px solid var(--hair);
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: var(--gap-col); row-gap: calc(3 * var(--u)); align-items: start;
+}   /* on the board's own three columns */
+.rs-carry > .rs-grp:first-child { grid-column: 1 / 3; }
+.rs-grp { display: flex; flex-direction: column; gap: calc(2 * var(--u)); min-width: 0; }
+.rs-k { margin: 0; font: 600 var(--pg-t-1)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
+.rs-chips { display: flex; flex-wrap: wrap; gap: .667rem; }
+.rs-tag { --c: var(--track-line); gap: .5rem; padding: .5rem .8rem; font: 500 var(--pg-t-1)/1 var(--font-name); color: var(--text); }
+.rs-tag svg { flex: none; width: 1.05rem; height: 1.05rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; color: var(--text-mute); }
+.rs-gone { box-shadow: none; outline: .12rem dashed var(--track-line); outline-offset: -.12rem; color: var(--text-mute); }
+
+/* ---------- reveal: once, the first time the band scrolls into view (page.js adds is-seen to .rs-live) ---------- */
+@keyframes rs-rise { from { opacity: 0; transform: translateY(1rem); } }
+@keyframes rs-grow { from { transform: scaleX(0); } }
+@keyframes rs-arc { from { stroke-dasharray: 0 94.2; } }
+@media (prefers-reduced-motion: no-preference) {
+  .pg-js .rs-live:not(.is-seen) .rs-rv { opacity: 0; transform: translateY(1rem); }
+  .rs-live.is-seen .rs-rv { animation: rs-rise var(--t-pop) var(--e-out) both; animation-delay: calc(var(--i, 0) * 120ms); }
+  .rs-live.is-seen .rs-p1 .bar > b { transform-origin: left; animation: rs-grow var(--t-snap) var(--e-out) 120ms both; }
+  .rs-live.is-seen .rs-p1 .ring .arc { animation: rs-arc var(--t-snap) var(--e-out) 120ms both; }
+  .rs-live.is-seen .rs-p1 .state.limit { animation: pop var(--t-pop) var(--e-out) 200ms both; }
+}
+
+/* ---------- the window picks its shape from its own width ---------- */
+@container rsw (width < 105rem) {
+  .rs-pwi { padding-left: 0; }
+  .rs-board { flex-direction: column; gap: 2.4rem; }
+  .rs-board > .col { flex: none; }
+  .rs-board .rs-p1 .rail { margin-left: 0; }
+  .rs-pv { flex: none; }
+  .rs-plate { flex: none; }
+  .rs-p1 > .rs-rv:last-child, .rs-p1 .rail, .rs-p1 .rail .card { flex: none; }
+  .rs-term, .rs-list { flex: none; }
+  .rs-carry { grid-template-columns: minmax(0, 1fr); }
+  .rs-carry > .rs-grp:first-child { grid-column: 1; }
+}
+@container pg (max-width: 640px) {
+  .rs-pw { padding: calc(2 * var(--u)); }
+  /* a phone's terminal takes the console card's own side padding (1.15rem), so the Studio card and both terminals keep the same
+     room to their border; the path has no indent. Where its chip cannot hold the path on one line it breaks before a slash (the
+     markup's <wbr>), at the same type and padding as everywhere, and its text stays inside the chip */
+  .rs-term { padding-inline: 1.15rem; }
+  #resume .rs-path { margin-left: 0; }
+}
+
+/* ---------- from 1,280 px to 2,199 px the head stands beside the window, as the page does from 2,200 px: the head takes 4 of 12
+   columns (the heading holds two lines) and the window the other 8, on the side the band's place on the page gives it (even places put the head left) ---------- */
+@container pg (min-width: 1280px) and (max-width: 2199px) {
+  #resume > .pg-split { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--pg-cg); align-items: start; }
+  #resume > .pg-split > .pg-head { display: flex; flex-direction: column; align-self: stretch; grid-column: 1 / span 4; grid-row: 1; margin-bottom: 0; padding-right: clamp(0px, 1vw, 32px); }
+  #resume > .pg-split > :not(.pg-head) { grid-column: 5 / -1; grid-row: 1; margin-top: 0; }
+  #resume > .pg-split > .pg-head > .pg-art { flex: 1 1 auto; justify-self: stretch; width: auto; margin-top: var(--pg-sp-6); align-self: stretch; display: flex; flex-direction: column; }
+  #resume > .pg-split > .pg-head > .pg-art .pg-stub { display: inline; }
+  #resume > .pg-split > .pg-head > .pg-art::after { content: ""; flex: 1 1 auto; min-height: 0; width: 8px; margin-left: calc(var(--pg-ax, 9%) - 4px); background: linear-gradient(var(--pg-cable), var(--pg-cable)) 50% 0 / 1.5px 100% no-repeat, radial-gradient(circle, var(--pg-dot, var(--claude)) 0 2.6px, transparent 3.2px) 50% 0 / 8px 8px no-repeat; }
+}
+/* a window too narrow for three columns but wide enough for two: Claude and the list side by side, then the ChatGPT terminal and what
+   carries over side by side under them, so the story reads across and down, and the two columns end within a few pixels of each
+   other. The board's columns become the window's own grid cells; every cell is as tall as its row, and the cards inside take the
+   row's height as they do in three columns, so no card holds empty space. */
+@container rsw (min-width: 62rem) and (width < 105rem) {
+  .rs-pwi { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2.4rem; align-items: stretch; }
+  .rs-board { display: contents; }
+  .rs-pv, .rs-plate, .rs-term, .rs-list, .rs-p1 > .rs-rv:last-child, .rs-p1 .rail, .rs-p1 .rail .card { flex: 1; }
+  .rs-carry-w { margin-top: 0; }
+}

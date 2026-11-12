@@ -1,0 +1,1234 @@
+// THE LAUNCH SHIM'S REHEARSAL — checks/release/launcher-test.sh, arm for arm, against a real
+// loopback daemon, a mocked JVM and a mocked supervisor unit.
+//
+// WHY NOT A FAKE `curl` (the bash harness's mechanism, launcher-test.sh:27-75): the shim is a Node
+// script as of PR 6 and speaks node:http, so a curl stub on PATH is never called — under that
+// harness every /health read comes back "" and every arm after the first is dead while the script
+// still reports OK. The daemon is therefore a REAL HTTP server here, bound to loopback on a port
+// the kernel picks, and the arms that were "the URL curl was asked for" are now "the request the
+// daemon received". The state machine is unchanged: the daemon-state FILE is still the mock
+// daemon's memory, because the mocked `java` and `systemctl` are separate processes that flip it.
+//
+// What stays a PATH mock is what the shim genuinely spawns: `java` (coldStart's `spawn("java", …)`)
+// and `systemctl` (unitExists/startThroughUnit's execFileSync, frozen text — PR #171).
+//
+// The mock daemon's "current" version is DERIVED from the shim under test, never hardcoded — a
+// snapshot literal goes stale on the first version bump and flips every "up" daemon to "stale",
+// sending the launcher down the replace path against the mock (found by the v0.2.0 bump: the
+// hardcoded 0.1.1 made this test fail on exactly the commit that mattered). src/lib/shim.ts is the
+// one reader of the markers, so this file and `release accept` cannot disagree about them.
+//
+// The arms run IN ORDER in ONE sandbox, as the script's did — several depend on what the previous
+// one left in the daemon-state file.
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
+import { join } from "node:path";
+import { shimMarkers } from "./shim.ts";
+import { makeSandbox, writeStub } from "./sandbox.ts";
+import { exitStatusOf } from "../../../gate/src/lib/status.ts";
+import { resolveJdk21 } from "../../../gate/src/lib/jdk.ts";
+
+/** The selector env vars that mean "a harness's own daemon": the unit is never touched for these.
+ *  The same nine the shim's `unitDefaults()` reads. */
+export const SELECTORS = [
+  "SPLICE_CONFIG", "XDG_CONFIG_HOME", "SPLICE_JAR", "SPLICE_SHARE_DIR", "SPLICE_STATE_DIR",
+  "CLAUDEX_STATE_DIR", "SPLICE_CONTROL_PORT", "CONTROL_PROXY_PORT", "CONTROL_PORT",
+] as const;
+
+interface Exchange {
+  readonly url: string;
+  readonly body: string;
+  readonly authorization: string;
+  /** the Content-Length header as received, "" when the body arrived chunked */
+  readonly contentLength: string;
+}
+
+interface Daemon {
+  /** the port the TOML names */
+  readonly toml: number;
+  /** the port state/config.json names — the one that must WIN */
+  readonly state: number;
+  /** flipped per arm, the way the curl stub read its env */
+  topologyStale: boolean;
+  injectEnvKey: boolean;
+  /** the recipe's lines between the header and the end marker, when an arm wants its own */
+  recipe?: string;
+  pwnedFile: string;
+  /** what the ingress stand-in holds charged right now */
+  charged: number;
+  healthReads: number;
+  lastLaunch?: Exchange;
+  lastShutdown?: Exchange;
+  /** launches the daemon will answer 529 before it answers one */
+  refuseLaunches: number;
+  /** the heap-ingress stand-in: a body with a length costs 1, a chunked body costs 4, and what is over the budget is
+   *  answered 529. 0 turns it off. */
+  ingressBudget: number;
+  /** the 529s answered, whichever way they were decided */
+  refused: number;
+  /** launch requests received, refused or not */
+  launches: number;
+  /** Drop what the last arm recorded. A method, not an assignment: an arm that cleared a field by
+   *  hand would have the compiler narrow it to `undefined` and the assertion after it to `never`. */
+  forget(): void;
+  stop(): void;
+}
+
+interface Ctx {
+  readonly dir: string;
+  readonly shim: string;
+  readonly daemon: Daemon;
+  readonly env: Record<string, string>;
+  /** the harness's own daemon: the selectors that aim the shim at this sandbox */
+  readonly harness: Record<string, string>;
+  readonly captures: { java: string; javaArgv: string; unit: string; pwned: string; bootLog: string };
+  readonly stateDir: string;
+  readonly daemonState: string;
+  /** a memory limit, like systemd's MemoryMax=8G, that the arms sizing by memory run the shim and its JVM under, the
+   *  way a container or a unit with MemoryMax holds them; unset, they run under the machine's own memory */
+  readonly memoryMax?: string;
+  launch(env: Record<string, string | undefined>, argv?: readonly string[], command?: string): Promise<Run>;
+  cold(): void;
+}
+
+/** What one rehearsal runs: `arms` names the arms to run, in their order (all of them when unset), and `memoryMax` is
+ *  the memory limit of Ctx.memoryMax. */
+export interface RehearsalOptions {
+  readonly arms?: readonly string[];
+  readonly memoryMax?: string;
+}
+
+export const HEAP_CEILING_ARM =
+  "the daemon's heap ceiling is 16 GiB, or 75% of the memory the machine or its limit holds, where that is less";
+
+interface Run {
+  readonly code: number;
+  readonly stderr: string;
+  /** stdout and stderr together, as `2>&1` produced */
+  readonly output: string;
+}
+
+/** One arm of the rehearsal: a name, and a problem string when it fails. ASYNC, and every arm
+ *  awaits its launch: the mock daemon serves from THIS process, so a blocking `spawnSync` would
+ *  hold the event loop while the shim waits for a /health that can never be answered — measured,
+ *  before this was async: 112s of the shim's own timeouts and "<no request>" on the first arm. */
+interface Arm {
+  readonly name: string;
+  readonly run: (ctx: Ctx) => Promise<string | null>;
+}
+
+const read = (path: string): string => (existsSync(path) ? readFileSync(path, "utf8").trim() : "");
+
+const SIXTEEN_GIB = 16 * 1024 * 1024 * 1024;
+const THIRTY_TWO_MIB = 32 * 1024 * 1024;
+
+/** The real JDK the heap arm asks, found once, when this module loads and before any rehearsal starts: resolveJdk21 runs
+ *  `java -version` synchronously, and inside an arm that would hold the event loop the mock daemons answer from (Arm). */
+const REAL_JDK = resolveJdk21();
+
+/** The heap sizes a real JVM settles on when started with `flags`, as -XX:+PrintFlagsFinal prints them, run behind
+ *  `limit` (a command prefix, empty for none). Spawned, never run synchronously, for the same reason as REAL_JDK: each of
+ *  the rehearsals running side by side would wait for a /health that cannot be answered while the JVM starts. */
+async function finalFlags(
+  java: string,
+  flags: readonly string[],
+  limit: readonly string[],
+): Promise<{ MaxHeapSize?: number; G1HeapRegionSize?: number }> {
+  const proc = Bun.spawn([...limit, java, ...flags, "-XX:+PrintFlagsFinal", "-version"], {
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "ignore",
+  });
+  const printed = await new Response(proc.stdout).text();
+  await proc.exited;
+  const value = (name: string): number | undefined => {
+    const match = new RegExp(`^\\s*\\S+\\s+${name}\\s+:?=\\s+(\\d+)`, "m").exec(printed);
+    return match ? Number(match[1]) : undefined;
+  };
+  return { MaxHeapSize: value("MaxHeapSize"), G1HeapRegionSize: value("G1HeapRegionSize") };
+}
+
+const ARMS: readonly Arm[] = [
+  {
+    name: "the TOML control port",
+    run: async (ctx) => {
+      await ctx.launch(ctx.harness, ["", "line one\nline two"]);
+      const launch = ctx.daemon.lastLaunch;
+      if (launch?.url !== `http://127.0.0.1:${ctx.daemon.toml}/launch/test`) {
+        return `expected the TOML control port, got ${launch?.url ?? "<no request>"}`;
+      }
+      // curl --data-urlencode writes the request; every argv word is one `arg` field, in order, empty ones included.
+      const args = new URLSearchParams(launch.body).getAll("arg");
+      if (JSON.stringify(args) !== JSON.stringify(["", "line one\nline two"])) {
+        return `the argv must reach the daemon verbatim, got ${JSON.stringify(args)}`;
+      }
+      if (launch.authorization !== "Bearer test-key") {
+        return `the launch must carry the mgmt-key, got ${JSON.stringify(launch.authorization)}`;
+      }
+      return null;
+    },
+  },
+  {
+    // State config is above TOML in ConfigService's precedence and the shim must resolve the same
+    // port or it will probe/launch the daemon at one address and call another.
+    name: "state config outranks the TOML port",
+    run: async (ctx) => {
+      writeFileSync(join(ctx.stateDir, "config.json"), `{"controlPort":${ctx.daemon.state}}\n`);
+      await ctx.launch(ctx.harness);
+      const url = ctx.daemon.lastLaunch?.url;
+      return url === `http://127.0.0.1:${ctx.daemon.state}/launch/test`
+        ? null
+        : `state config must outrank the TOML port, got ${url ?? "<no request>"}`;
+    },
+  },
+  {
+    name: "a stale daemon is shut down and replaced",
+    run: async (ctx) => {
+      writeFileSync(ctx.daemonState, "old\n");
+      ctx.daemon.forget();
+      const run = await ctx.launch(ctx.harness);
+      const shutdown = ctx.daemon.lastShutdown;
+      if (shutdown?.url !== `http://127.0.0.1:${ctx.daemon.state}/api/daemon/shutdown`) {
+        return `a stale daemon must be shut down at the resolved port, got ${shutdown?.url ?? "<no request>"}`;
+      }
+      if (shutdown.authorization !== "Bearer test-key") {
+        return `the shutdown must carry the mgmt-key, got ${JSON.stringify(shutdown.authorization)}`;
+      }
+      return read(ctx.daemonState) === "new" ? null : `the stale daemon was not replaced: ${run.output}`;
+    },
+  },
+  {
+    // Fail-closed boot: the new jar refuses this splice.toml, so the old daemon is NOT stopped and the launch ends
+    // with the list. Order matters: it runs straight after the replace arm and puts the daemon back to "old".
+    name: "a stale daemon is left running when the new jar refuses the config",
+    run: async (ctx) => {
+      writeFileSync(ctx.daemonState, "old\n");
+      ctx.daemon.forget();
+      const run = await ctx.launch({ ...ctx.harness, LAUNCHER_CONFIG_REFUSES: "1" });
+      if (ctx.daemon.lastShutdown) return "the stale daemon was shut down although the new jar refuses splice.toml";
+      if (read(ctx.daemonState) !== "old") return "the stale daemon was replaced although the new jar refuses splice.toml";
+      if (!run.stderr.includes("heads.one.provider")) return `the launch must print the findings, got: ${run.stderr}`;
+      const said = run.stderr.includes("was not stopped") ? null : `the launch must say the daemon was not stopped, got: ${run.stderr}`;
+      // Hand the arms after this one the state the replace arm left them: a current daemon.
+      writeFileSync(ctx.daemonState, "new\n");
+      ctx.daemon.forget();
+      return said;
+    },
+  },
+  {
+    // A daemon of the same release number from before this launcher's line form answers the handshake and then
+    // cannot read the launch request. The launcher says so and how to fix it; it never sends the request.
+    name: "a daemon older than this launcher is named and the launch is not sent",
+    run: async (ctx) => {
+      writeFileSync(ctx.daemonState, "earlier\n");
+      ctx.daemon.forget();
+      const sentBefore = ctx.daemon.launches;
+      const run = await ctx.launch(ctx.harness);
+      writeFileSync(ctx.daemonState, "new\n");
+      ctx.daemon.forget();
+      if (run.code === 0) return "the launch must stop when the daemon is older than the launcher";
+      if (!run.stderr.includes("splice restart")) return `the launch must tell the user to run splice restart, got: ${run.stderr}`;
+      return ctx.daemon.launches === sentBefore ? null : "the launch request was sent to a daemon that cannot read it";
+    },
+  },
+  {
+    // Only a clean answer permits the stop: a check that cannot give a verdict (no such verb, a crash) keeps the
+    // serving daemon exactly as a refusal does, and the launch says why.
+    name: "a stale daemon is left running when the new jar's config check cannot answer",
+    run: async (ctx) => {
+      writeFileSync(ctx.daemonState, "old\n");
+      ctx.daemon.forget();
+      const run = await ctx.launch({ ...ctx.harness, LAUNCHER_CONFIG_UNCHECKABLE: "1" });
+      if (ctx.daemon.lastShutdown) return "the stale daemon was shut down although the config check could not answer";
+      if (read(ctx.daemonState) !== "old") return "the stale daemon was replaced although the config check could not answer";
+      const said = run.stderr.includes("could not check splice.toml") && run.stderr.includes("was not stopped")
+        ? null
+        : `the launch must say the check could not run and the daemon was not stopped, got: ${run.stderr}`;
+      writeFileSync(ctx.daemonState, "new\n");
+      ctx.daemon.forget();
+      return said;
+    },
+  },
+  {
+    // Regression: a recipe env key that is not a bare identifier must never reach the launched
+    // process. The bash shim's risk was `eval "$CMD"` executing `X$(touch …)`; the Node shim
+    // rejects the key by name, so BOTH are asserted — the file the substitution would have created
+    // is absent, and the shim said why.
+    name: "a malformed recipe env key is dropped, never executed",
+    run: async (ctx) => {
+      writeFileSync(ctx.daemonState, "new\n");
+      rmSync(ctx.captures.pwned, { force: true });
+      ctx.daemon.injectEnvKey = true;
+      const run = await ctx.launch(ctx.harness);
+      ctx.daemon.injectEnvKey = false;
+      if (existsSync(ctx.captures.pwned)) return "a recipe env key was executed as a command substitution";
+      if (!run.stderr.includes("ignoring malformed env key from daemon")) {
+        return `the dropped key must be named on stderr, got: ${run.stderr}`;
+      }
+      return run.code === 0 ? null : `the rest of the recipe must still launch, exit was ${run.code}`;
+    },
+  },
+  {
+    // JW-01: a boot-dead daemon must leave a tailable trace, and the launcher must SHOW it on the
+    // handshake failure instead of just "got <none>". The java stub writes its stack trace to
+    // stderr, which the shim's redirect must capture in daemon-boot.log.
+    name: "JW-01 the boot log is written and shown",
+    run: async (ctx) => {
+      writeFileSync(ctx.daemonState, "down\n");
+      rmSync(ctx.captures.bootLog, { force: true });
+      const run = await ctx.launch({ ...ctx.harness, LAUNCHER_JAVA_BOOT_FAILS: "1" });
+      if (run.code === 0) return "a daemon that dies at boot must fail the launch";
+      if (!run.output.includes("daemon-boot.log")) return `launcher must name the boot log, got: ${run.output}`;
+      if (!run.output.includes("kaboom-at-boot")) return `launcher must print the boot-log tail, got: ${run.output}`;
+      return readFileSync(ctx.captures.bootLog, "utf8").includes("kaboom-at-boot")
+        ? null
+        : "the boot log must hold the daemon's stderr";
+    },
+  },
+  {
+    // JW-04: a daemon reporting topologyStale=true must produce the non-fatal restart warning while
+    // the launch still proceeds (warning shape mirrors the shim-staleness one).
+    name: "JW-04 a stale topology warns and still launches",
+    run: async (ctx) => {
+      writeFileSync(ctx.daemonState, "up\n");
+      ctx.daemon.topologyStale = true;
+      const run = await ctx.launch(ctx.harness);
+      ctx.daemon.topologyStale = false;
+      if (!run.stderr.includes("running topology is stale")) {
+        return `expected the stale-topology warning, got: ${run.stderr}`;
+      }
+      if (!run.stderr.includes("splice restart")) return `the warning must name the fix, got: ${run.stderr}`;
+      return run.code === 0 ? null : `the launch must still proceed, exit was ${run.code}`;
+    },
+  },
+  {
+    // V4-189 / UF-01: with no selector override and splice.service on the box, a cold start STARTS
+    // THE UNIT and waits for it; java is never spawned beside it (the raw nohup spawn is how three
+    // stray daemons squatted :3096 on 2026-09-21).
+    name: "UF-01 a cold start goes through the unit",
+    run: async (ctx) => {
+      ctx.cold();
+      await ctx.launch({});
+      if (read(ctx.captures.unit) !== "splice.service") {
+        return `a cold start must start the unit, got ${read(ctx.captures.unit) || "<nothing>"}`;
+      }
+      if (existsSync(ctx.captures.java)) return "java must never be spawned beside the unit";
+      const url = ctx.daemon.lastLaunch?.url;
+      return url === `http://127.0.0.1:${ctx.daemon.toml}/launch/test`
+        ? null
+        : `the launch must reach the daemon the unit started, got ${url ?? "<no request>"}`;
+    },
+  },
+  {
+    // UF-02: the unit name is the operator's SPLICE_SUPERVISOR_UNIT, never a hardcoded splice.service.
+    name: "UF-02 the unit is SPLICE_SUPERVISOR_UNIT",
+    run: async (ctx) => {
+      ctx.cold();
+      await ctx.launch({ SPLICE_SUPERVISOR_UNIT: "splice-canary.service" });
+      if (read(ctx.captures.unit) !== "splice-canary.service") {
+        return `the unit must be SPLICE_SUPERVISOR_UNIT, got ${read(ctx.captures.unit) || "<nothing>"}`;
+      }
+      return existsSync(ctx.captures.java) ? "java must never be spawned beside the unit" : null;
+    },
+  },
+  // UF-03: any selector override means a harness's own daemon — the unit is never touched, the raw
+  // spawn runs. One arm per selector the guard names.
+  ...SELECTORS.map((selector) => ({
+    name: `UF-03 ${selector} raw-spawns instead of the unit`,
+    run: async (ctx: Ctx) => {
+      ctx.cold();
+      const run = await ctx.launch({ [selector]: selectorValue(selector, ctx) });
+      const unitStarted = existsSync(ctx.captures.unit);
+      const javaStarted = read(ctx.captures.java) === "spawned";
+      if (!unitStarted && javaStarted) return null;
+      const outputPath = join("/tmp", `splice-launcher-failure-${randomUUID()}.log`);
+      writeFileSync(outputPath, run.output, { flag: "wx", mode: 0o600 });
+      const failure = unitStarted ? `${selector} set must never start the unit` : `${selector} set must raw-spawn`;
+      return `${failure}; exit=${run.code}, unit_started=${unitStarted}, java_started=${javaStarted}, private_output=${outputPath}`;
+    },
+  })),
+  {
+    // UF-04: a unit that never answers is reported on a wall-clock deadline and the shim exits 1 —
+    // it never falls through to a raw spawn beside the unit it just started.
+    name: "UF-04 a dead unit is a deadline, never a second daemon",
+    run: async (ctx) => {
+      ctx.cold();
+      const run = await ctx.launch({ LAUNCHER_UNIT_BOOTS: "0", SPLICE_UNIT_WAIT_SECONDS: "1" });
+      if (run.code !== 1) return `expected exit 1, got ${run.code}`;
+      if (!run.output.includes("splice.service did not answer /health within 1s")) {
+        return `expected the deadline message, got: ${run.output}`;
+      }
+      if (read(ctx.captures.unit) !== "splice.service") return "the unit must still have been started";
+      return existsSync(ctx.captures.java) ? "a dead unit must never fall through to a raw spawn" : null;
+    },
+  },
+  {
+    // UF-05: no unit on the box (systemctl cat fails) — the raw spawn is still the cold start.
+    name: "UF-05 no unit on the box means the raw spawn",
+    run: async (ctx) => {
+      ctx.cold();
+      await ctx.launch({ LAUNCHER_UNIT_PRESENT: "0" });
+      if (existsSync(ctx.captures.unit)) return "no unit on the box means no unit start";
+      return read(ctx.captures.java) === "spawned" ? null : "without a unit the cold start is the raw spawn";
+    },
+  },
+  {
+    // V4-258: the daemon printed every daemon.log line to its stderr, which the raw spawn sends into
+    // daemon-boot.log, so the boot log grew as a second, unbounded copy of daemon.log. The shim tells
+    // the daemon its stderr is the boot log with the flag DaemonLaunch's argv passes too
+    // (BOOT_LOG_FLAG), and the daemon then keeps daemon.log's lines out of it.
+    name: "V4-258 the raw spawn tells the daemon its stderr is the boot log",
+    run: async (ctx) => {
+      ctx.cold();
+      rmSync(ctx.captures.javaArgv, { force: true });
+      await ctx.launch({ LAUNCHER_UNIT_PRESENT: "0" });
+      const runs = read(ctx.captures.javaArgv).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string[]);
+      const daemon = runs.find((javaArgv) => javaArgv.includes("daemon"));
+      if (daemon === undefined) return `the raw spawn never ran the daemon: ${JSON.stringify(runs)}`;
+      return daemon.slice(daemon.indexOf("daemon")).join(" ") === "daemon --stderr-is-boot-log"
+        ? null
+        : `the daemon must be told its stderr is the boot log, argv: ${JSON.stringify(daemon)}`;
+    },
+  },
+  {
+    name: "V4-457 daemon OOM diagnostics use one fixed state path even with custom JVM options",
+    run: async (ctx) => {
+      const stateDir = join(ctx.dir, "state with spaces ' and $ characters");
+      mkdirSync(stateDir, { recursive: true });
+      writeFileSync(join(stateDir, "mgmt-key"), "test-key\n");
+      const paths: readonly (readonly [string, readonly string[]])[] = [
+        ["test", []],
+        ["splice", ["daemon", "--stderr-is-boot-log", "literal argument with spaces"]],
+      ];
+      for (const [head, argv] of paths) {
+        ctx.cold();
+        const run = await ctx.launch({
+          ...ctx.harness,
+          SPLICE_HEAD: head,
+          SPLICE_STATE_DIR: stateDir,
+          SPLICE_JVM_OPTS: "-Xmx96m -XX:-ExitOnOutOfMemoryError -XX:-HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=wrong.hprof",
+          LAUNCHER_UNIT_PRESENT: "0",
+        }, argv);
+        if (run.code !== 0) return `${head}: the isolated daemon must launch: ${run.output}`;
+        const runs = read(ctx.captures.javaArgv).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string[]);
+        const daemon = runs.find((args) => args.includes("daemon"));
+        if (daemon === undefined) return `${head}: java never ran the daemon`;
+        const flags = daemon.slice(0, daemon.indexOf("-jar"));
+        const exitFlags = flags.filter((flag) => /^-XX:[+-]ExitOnOutOfMemoryError$/.test(flag));
+        const dumpFlags = flags.filter((flag) => /^-XX:[+-]HeapDumpOnOutOfMemoryError$/.test(flag));
+        const dumpPaths = flags.filter((flag) => flag.startsWith("-XX:HeapDumpPath="));
+        const expectedPath = `-XX:HeapDumpPath=${join(stateDir, "splice-oom.hprof")}`;
+        if (exitFlags.at(-1) !== "-XX:+ExitOnOutOfMemoryError") return `${head}: OOM must terminate with custom JVM options`;
+        if (dumpFlags.at(-1) !== "-XX:+HeapDumpOnOutOfMemoryError") return `${head}: OOM must dump with custom JVM options`;
+        if (dumpPaths.at(-1) !== expectedPath) return `${head}: the fixed dump path must be one argv item under the state`;
+        if (head === "splice" && JSON.stringify(daemon.slice(daemon.indexOf("daemon"))) !== JSON.stringify(argv)) {
+          return "the admin daemon argv must remain unchanged";
+        }
+      }
+      return null;
+    },
+  },
+  {
+    // The daemon's heap ceiling (Marcos, 2026-10-25, approving a cap near 16 GB: "I dont want the cap to be the only
+    // way we keep things under control"). The heap may grow to 16 GiB, or to 75% of the memory the machine or its
+    // limit holds where that is less, and where the 16 GiB ceiling applies G1 keeps the 32 MB regions it picked for the
+    // old 75% ceiling on a big machine, so only an object of 16 MB or more is humongous. The real JVM is asked, with the flags the shim gives the
+    // daemon, what ceiling it ends up with: what is checked is the heap the daemon gets, not the text of its flags.
+    name: HEAP_CEILING_ARM,
+    run: async (ctx) => {
+      // Under a memory limit the shim and both JVMs below run inside one systemd scope each, all holding the same limit.
+      const limit =
+        ctx.memoryMax === undefined ? [] : ["systemd-run", "--user", "--scope", "--quiet", "-p", `MemoryMax=${ctx.memoryMax}`, "--"];
+      ctx.cold();
+      const [runner, ...runnerArgs] = limit;
+      if (runner === undefined) await ctx.launch({ LAUNCHER_UNIT_PRESENT: "0" });
+      else await ctx.launch({ LAUNCHER_UNIT_PRESENT: "0" }, [...runnerArgs, ctx.shim], runner);
+      const runs = read(ctx.captures.javaArgv).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string[]);
+      const daemon = runs.find((javaArgv) => javaArgv.includes("daemon"));
+      if (daemon === undefined) return `the raw spawn never ran the daemon: ${JSON.stringify(runs)}`;
+      if ("error" in REAL_JDK) return REAL_JDK.error;
+      const java = join(REAL_JDK.javaHome, "bin", "java");
+      // -Xlog would open the sandbox's GC log; everything else the daemon is given goes to the JVM as it is.
+      const flags = daemon.slice(0, daemon.indexOf("-jar")).filter((flag) => !flag.startsWith("-Xlog"));
+      const daemonHeap = await finalFlags(java, flags, limit);
+      // 75% of the memory the JVM sees, the machine's or its limit's, by the JVM's own reading of it.
+      const machine = await finalFlags(java, ["-XX:+UseG1GC", "-XX:MaxRAMPercentage=75"], limit);
+      if (daemonHeap.MaxHeapSize === undefined || machine.MaxHeapSize === undefined) {
+        return `the JVM did not report MaxHeapSize: ${JSON.stringify({ daemonHeap, machine })}`;
+      }
+      const ceiling = Math.min(SIXTEEN_GIB, machine.MaxHeapSize);
+      if (daemonHeap.MaxHeapSize !== ceiling) {
+        return `the daemon's heap ceiling is ${daemonHeap.MaxHeapSize} bytes, want ${ceiling} (16 GiB, or 75% of the memory: ${machine.MaxHeapSize})`;
+      }
+      if (ceiling === SIXTEEN_GIB && daemonHeap.G1HeapRegionSize !== THIRTY_TWO_MIB) {
+        return `under the 16 GiB ceiling G1's regions are ${daemonHeap.G1HeapRegionSize} bytes, want 32 MiB`;
+      }
+      return null;
+    },
+  },
+  {
+    // V4-218: the jar resolves ~ from HOME first (splice.core.config.UserHome), and every JVM the shim
+    // starts is given that same home as -Duser.home, so the JDK and any library that reads user.home agree
+    // with it instead of naming the passwd entry's home. All three paths: a CLI verb, `<head> login`, and
+    // the daemon's raw spawn. Next to the console arm at the end, and for the same reason: the java mock
+    // marks the daemon "new".
+    name: "V4-218 every java the shim starts runs under the launch's HOME",
+    run: async (ctx) => {
+      const home = `-Duser.home=${ctx.env.HOME}`;
+      const javaRuns = () => read(ctx.captures.javaArgv).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string[]);
+      ctx.cold();
+      await ctx.launch({ LAUNCHER_UNIT_PRESENT: "0" });
+      const daemon = javaRuns().find((javaArgv) => javaArgv.includes("daemon"));
+      if (daemon === undefined) return `the raw spawn never ran the daemon: ${JSON.stringify(javaRuns())}`;
+      if (!daemon.includes(home)) return `the daemon's java ran without ${home}: ${JSON.stringify(daemon)}`;
+      const paths: readonly (readonly [string, readonly string[]])[] = [["splice", ["status"]], ["test", ["login"]]];
+      for (const [head, argv] of paths) {
+        rmSync(ctx.captures.javaArgv, { force: true });
+        await ctx.launch({ SPLICE_HEAD: head }, argv);
+        const runs = javaRuns();
+        const label = `${head} ${argv.join(" ")}`;
+        if (runs.length === 0) return `${label}: java never ran`;
+        if (!runs.every((javaArgv) => javaArgv.includes(home))) {
+          return `${label}: java ran without ${home}: ${JSON.stringify(runs)}`;
+        }
+      }
+      return null;
+    },
+  },
+  {
+    // V4-218: another HOME is another profile. Even if the service answers the same version, it
+    // owns a different config and key. The shim must refuse the service's port before probing it;
+    // a different configured port must raw-spawn, not start the service under the old HOME.
+    name: "V4-218 another HOME never borrows the unit's daemon",
+    run: async (ctx) => {
+      const otherHome = join(ctx.dir, "other-home");
+      const config = join(otherHome, ".config", "splice", "splice.toml");
+      mkdirSync(join(otherHome, ".local", "share", "splice"), { recursive: true });
+      mkdirSync(join(otherHome, ".splice", "state"), { recursive: true });
+      mkdirSync(join(otherHome, ".config", "splice"), { recursive: true });
+      writeFileSync(join(otherHome, ".local", "share", "splice", "splice.jar"), "");
+      writeFileSync(join(otherHome, ".splice", "state", "mgmt-key"), "test-key\n");
+      writeFileSync(config, `[daemon]\ncontrol_port = ${ctx.daemon.toml}\n`);
+      ctx.cold();
+      const readsBefore = ctx.daemon.healthReads;
+      const conflict = await ctx.launch({ HOME: otherHome });
+      if (ctx.daemon.healthReads !== readsBefore) return "another HOME contacted the unit's daemon before refusing";
+      if (conflict.code !== 1 || !conflict.stderr.includes("SPLICE_CONTROL_PORT")) {
+        return `a second HOME on the unit's port must refuse before health: ${conflict.output}`;
+      }
+      if (existsSync(ctx.captures.unit) || existsSync(ctx.captures.java)) {
+        return "the conflicting HOME must neither start the unit nor spawn java";
+      }
+      ctx.cold();
+      const aliasReads = ctx.daemon.healthReads;
+      const aliased = await ctx.launch({
+        HOME: otherHome,
+        SPLICE_CONTROL_PORT: String(ctx.daemon.toml).padStart(6, "0"),
+      });
+      if (ctx.daemon.healthReads !== aliasReads || aliased.code !== 1) {
+        return "a zero-padded spelling of the unit's port must also refuse before health";
+      }
+      writeFileSync(config, `[daemon]\ncontrol_port = ${ctx.daemon.state}\n`);
+      ctx.cold();
+      const isolated = await ctx.launch({ HOME: otherHome });
+      if (isolated.code !== 0) return `a second HOME on its own port must launch: ${isolated.output}`;
+      if (existsSync(ctx.captures.unit)) return "a second HOME must never start the first HOME's unit";
+      if (!existsSync(ctx.captures.java)) return "a second HOME on its own port must raw-spawn";
+      return ctx.daemon.lastLaunch?.url === `http://127.0.0.1:${ctx.daemon.state}/launch/test`
+        ? null
+        : "the second HOME did not reach its own port";
+    },
+  },
+  {
+    name: "wrapped Claude under another HOME runs unwrapped without contacting splice",
+    run: async (ctx) => {
+      const otherHome = join(ctx.dir, "wrapped-other-home");
+      const state = join(ctx.dir, "home", ".splice", "state", "claude-head-wrap.json");
+      const binary = join(ctx.dir, "real-claude");
+      const capture = join(ctx.dir, "real-claude-capture");
+      const wrapped = join(ctx.dir, "claude");
+      symlinkSync(ctx.shim, wrapped);
+      mkdirSync(join(otherHome, ".config", "splice"), { recursive: true });
+      writeFileSync(join(otherHome, ".config", "splice", "splice.toml"), `[daemon]\ncontrol_port = ${ctx.daemon.toml}\n`);
+      writeStub(binary,
+        'import { writeFileSync } from "node:fs";\n' +
+        `writeFileSync(${JSON.stringify(capture)}, JSON.stringify({ argv: process.argv.slice(2), home: process.env.HOME, marker: process.env.SYNTHETIC_KEEP, config: process.env.CLAUDE_CONFIG_DIR }));\n` +
+        "process.exit(23);\n",
+      );
+      const argv = ["plugin", "validate", "--strict", "synthetic plugin dir", "", "line one\nline two"];
+      const launches = [[undefined, argv], [String(ctx.daemon.state), argv], [undefined, ["login", "--label", "synthetic"]]] as const;
+      for (const [port, words] of launches) {
+        writeFileSync(state, JSON.stringify({ real_binary_path: binary, shim_path: ctx.shim }));
+        const unitState = port === undefined ? undefined : join(ctx.dir, "unit selected state");
+        if (unitState !== undefined) {
+          mkdirSync(unitState, { recursive: true });
+          writeFileSync(join(unitState, "claude-head-wrap.json"), readFileSync(state));
+          writeFileSync(state, JSON.stringify({ real_binary_path: join(ctx.dir, "wrong-default") }));
+        }
+        ctx.cold();
+        const reads = ctx.daemon.healthReads;
+        const run = await ctx.launch({
+          HOME: otherHome, SPLICE_HEAD: undefined, SPLICE_CONTROL_PORT: port,
+          LAUNCHER_UNIT_STATE_DIR: unitState,
+          SYNTHETIC_KEEP: "unchanged", CLAUDE_CONFIG_DIR: join(otherHome, "synthetic-config"),
+        }, words, wrapped);
+        if (run.code !== 23) return `wrapped Claude must propagate the real binary's exit: ${run.output}`;
+        const expected = { argv: words, home: otherHome, marker: "unchanged", config: join(otherHome, "synthetic-config") };
+        if (read(capture) !== JSON.stringify(expected)) return "unwrapped argv or caller environment changed";
+        if (ctx.daemon.healthReads !== reads || ctx.daemon.lastLaunch || ctx.daemon.lastShutdown ||
+            existsSync(ctx.captures.unit) || existsSync(ctx.captures.javaArgv)) {
+          return "foreign-HOME wrapped Claude contacted or started splice";
+        }
+        if (run.stderr.trim().split("\n").length !== 1 || !run.stderr.includes("unwrapped")) {
+          return `unwrapped Claude must print only its one explanatory line: ${run.stderr}`;
+        }
+      }
+      ctx.cold();
+      const reads = ctx.daemon.healthReads;
+      const named = await ctx.launch({ HOME: otherHome, SPLICE_HEAD: "synthetic-named" });
+      if (named.code !== 1 || ctx.daemon.healthReads !== reads) return "a foreign-HOME named head must still refuse";
+      rmSync(capture, { force: true });
+      const same = await ctx.launch({ SPLICE_HEAD: undefined }, [], wrapped);
+      if (same.code !== 0 || ctx.daemon.lastLaunch?.url !== `http://127.0.0.1:${ctx.daemon.toml}/launch/claude` ||
+          existsSync(capture)) return "same-HOME wrapped Claude must still route through splice";
+      return null;
+    },
+  },
+  {
+    name: "wrapped Claude keeps its owner when the caller's user bus is unreachable",
+    run: async (ctx) => {
+      const share = join(ctx.dir, "bus-owner-share");
+      const state = join(ctx.dir, "bus-owner-state");
+      const otherHome = join(ctx.dir, "bus-other-home");
+      const installed = join(share, "splice-launch");
+      const wrapped = join(ctx.dir, "bus-wrapped", "claude");
+      const binary = join(ctx.dir, "bus-real-claude");
+      const capture = join(ctx.dir, "bus-real-capture");
+      for (const dir of [share, state, otherHome, join(ctx.dir, "bus-wrapped")]) mkdirSync(dir, { recursive: true });
+      copyFileSync(ctx.shim, installed);
+      chmodSync(installed, 0o755);
+      symlinkSync(installed, wrapped);
+      const customConfig = join(ctx.dir, "owner-custom.toml");
+      writeFileSync(customConfig, `[daemon]\ncontrol_port = ${ctx.daemon.state}\n`);
+      writeFileSync(join(share, "splice-launch-owner.json"), JSON.stringify({
+        home: ctx.env.HOME, state_dir: state, selectors: { SPLICE_CONFIG: customConfig },
+      }));
+      writeFileSync(join(state, "claude-head-wrap.json"), JSON.stringify({ real_binary_path: binary, shim_path: installed }));
+      writeStub(binary,
+        'import { writeFileSync } from "node:fs";\n' +
+        `writeFileSync(${JSON.stringify(capture)}, JSON.stringify({ argv: process.argv.slice(2), home: process.env.HOME, runtime: process.env.XDG_RUNTIME_DIR, bus: process.env.DBUS_SESSION_BUS_ADDRESS }));\n` +
+        "process.exit(23);\n",
+      );
+      const environments = [
+        { XDG_RUNTIME_DIR: join(otherHome, "isolated-runtime"), DBUS_SESSION_BUS_ADDRESS: undefined },
+        { XDG_RUNTIME_DIR: undefined, DBUS_SESSION_BUS_ADDRESS: "unix:path=/synthetic-dead-bus" },
+        { XDG_RUNTIME_DIR: join(otherHome, "isolated-runtime"), DBUS_SESSION_BUS_ADDRESS: "unix:path=/synthetic-dead-bus" },
+      ];
+      const argv = ["--print", "--output-format", "json", "synthetic peer request", "", "line one\nline two"];
+      const problems: string[] = [];
+      for (const [index, environment] of environments.entries()) {
+        ctx.cold();
+        rmSync(capture, { force: true });
+        const reads = ctx.daemon.healthReads;
+        const run = await ctx.launch({
+          ...environment, HOME: otherHome, SPLICE_HEAD: undefined, SPLICE_CONTROL_PORT: String(ctx.daemon.toml),
+        }, argv, wrapped);
+        const expected = { argv, home: otherHome, runtime: environment.XDG_RUNTIME_DIR, bus: environment.DBUS_SESSION_BUS_ADDRESS };
+        if (run.code !== 23 || read(capture) !== JSON.stringify(expected)) problems.push(`bus case ${index}: unwrapped launch failed: ${run.output}`);
+        if (ctx.daemon.healthReads !== reads || ctx.daemon.lastLaunch || existsSync(ctx.captures.javaArgv)) {
+          problems.push(`bus case ${index}: foreign HOME contacted or started splice`);
+        }
+        ctx.cold();
+        const namedReads = ctx.daemon.healthReads;
+        const named = await ctx.launch({
+          ...environment, HOME: otherHome, SPLICE_HEAD: "synthetic-named", SPLICE_CONTROL_PORT: String(ctx.daemon.toml),
+        }, ["--version"], installed);
+        if (named.code !== 1 || !named.stderr.includes("no daemon was contacted") || ctx.daemon.healthReads !== namedReads) {
+          problems.push(`bus case ${index}: a foreign locator must not authorize an unowned named head: ${named.output}`);
+        }
+      }
+      const ownHome = join(ctx.dir, "bus-owned-other-profile");
+      const ownState = join(ownHome, ".splice", "state");
+      mkdirSync(ownState, { recursive: true });
+      mkdirSync(join(ownHome, ".local", "share", "splice"), { recursive: true });
+      writeFileSync(join(ownHome, ".local", "share", "splice", "splice.jar"), "");
+      writeFileSync(join(ownState, "mgmt-key"), "test-key\n");
+      writeFileSync(join(ownState, "config.json"), JSON.stringify({ controlPort: ctx.daemon.state }));
+      ctx.cold();
+      const conflictReads = ctx.daemon.healthReads;
+      const conflict = await ctx.launch({
+        HOME: ownHome, SPLICE_HEAD: "synthetic-named", XDG_RUNTIME_DIR: join(ownHome, "isolated-runtime"),
+      }, ["--version"], installed);
+      if (conflict.code !== 1 || ctx.daemon.healthReads !== conflictReads) {
+        problems.push(`the owner's selected topology port must refuse a named-head collision: ${conflict.output}`);
+      }
+      ctx.cold();
+      rmSync(capture, { force: true });
+      const same = await ctx.launch({
+        HOME: `${ctx.env.HOME}/.`, SPLICE_HEAD: "claude", XDG_RUNTIME_DIR: join(otherHome, "isolated-runtime"),
+      }, ["--version"], installed);
+      if (same.code !== 0 || ctx.daemon.lastLaunch?.url !== `http://127.0.0.1:${ctx.daemon.toml}/launch/claude` || existsSync(capture)) {
+        problems.push(`an equivalent owner HOME spelling must keep splice routing: ${same.output}`);
+      }
+      writeFileSync(join(ownState, "config.json"), JSON.stringify({ controlPort: ctx.daemon.toml }));
+      ctx.cold();
+      const own = await ctx.launch({
+        HOME: ownHome, SPLICE_HEAD: "synthetic-named", XDG_RUNTIME_DIR: join(ownHome, "isolated-runtime"),
+      }, ["--version"], installed);
+      if (own.code !== 0 || ctx.daemon.lastLaunch?.url !== `http://127.0.0.1:${ctx.daemon.toml}/launch/synthetic-named`) {
+        problems.push(`a named head with its own state must launch despite a foreign locator: ${own.output}`);
+      }
+      return problems.length === 0 ? null : problems.join("\n");
+    },
+  },
+  {
+    name: "an unreachable bus and absent owner refuse plain and named heads before daemon contact",
+    run: async (ctx) => {
+      const otherHome = join(ctx.dir, "bus-unowned-home");
+      mkdirSync(join(otherHome, ".config", "splice"), { recursive: true });
+      writeFileSync(join(otherHome, ".config", "splice", "splice.toml"), `[daemon]\ncontrol_port = ${ctx.daemon.toml}\n`);
+      const environments = [
+        { XDG_RUNTIME_DIR: join(otherHome, "isolated-runtime"), DBUS_SESSION_BUS_ADDRESS: undefined },
+        { XDG_RUNTIME_DIR: undefined, DBUS_SESSION_BUS_ADDRESS: "unix:path=/synthetic-dead-bus" },
+      ];
+      const problems: string[] = [];
+      for (const environment of environments) {
+        for (const head of ["claude", "synthetic-named"]) {
+          ctx.cold();
+          const reads = ctx.daemon.healthReads;
+          const run = await ctx.launch({ ...environment, HOME: otherHome, SPLICE_HEAD: head }, ["--version"]);
+          if (run.code !== 1 || !run.stderr.includes("no daemon was contacted")) problems.push(`${head}: missing owner must refuse: ${run.output}`);
+          if (ctx.daemon.healthReads !== reads || ctx.daemon.lastLaunch || existsSync(ctx.captures.javaArgv)) {
+            problems.push(`${head}: an unowned HOME contacted or started splice`);
+          }
+        }
+      }
+      return problems.length === 0 ? null : problems.join("\n");
+    },
+  },
+  {
+    // A new user's first claudex: `splice install` put the launcher inside this HOME, no daemon has ever run (no
+    // mgmt-key) and no wrapped claude has written an owner record. The launcher's own HOME owns it, so the launch goes
+    // on to start the daemon; the refusal above is for a launcher that is NOT inside the HOME it is run under.
+    name: "a launcher installed inside the HOME starts the first launch before any key or owner record exists",
+    run: async (ctx) => {
+      const home = join(ctx.dir, "first-launch-home");
+      const installed = join(home, ".local", "share", "splice", "splice-launch");
+      mkdirSync(join(home, ".local", "share", "splice"), { recursive: true });
+      mkdirSync(join(home, ".config", "splice"), { recursive: true });
+      writeFileSync(join(home, ".config", "splice", "splice.toml"), `[daemon]\ncontrol_port = ${ctx.daemon.toml}\n`);
+      copyFileSync(ctx.shim, installed);
+      chmodSync(installed, 0o755);
+      ctx.cold();
+      const reads = ctx.daemon.healthReads;
+      const run = await ctx.launch(
+        { HOME: home, SPLICE_HEAD: "test", LAUNCHER_UNIT_PRESENT: "0", XDG_RUNTIME_DIR: join(home, "no-bus"), DBUS_SESSION_BUS_ADDRESS: undefined },
+        ["--version"],
+        installed,
+      );
+      if (run.stderr.includes("cannot establish")) return `a launcher inside its HOME must not be refused: ${run.output}`;
+      return ctx.daemon.healthReads > reads || existsSync(ctx.captures.javaArgv) ? null : `the first launch never reached for the daemon: ${run.output}`;
+    },
+  },
+  {
+    name: "no user manager or owner locator still launches this HOME's existing splice state",
+    run: async (ctx) => {
+      // Includes the first plain-claude launch after upgrade, before reconcile backfills its locator.
+      for (const head of ["test", "claude"]) {
+        ctx.cold();
+        const run = await ctx.launch({
+          SPLICE_HEAD: head, LAUNCHER_UNIT_PRESENT: "0",
+          XDG_RUNTIME_DIR: join(ctx.dir, "isolated-runtime"), DBUS_SESSION_BUS_ADDRESS: "unix:path=/synthetic-dead-bus",
+        }, ["--version"]);
+        if (run.code !== 0 || ctx.daemon.lastLaunch?.url !== `http://127.0.0.1:${ctx.daemon.toml}/launch/${head}`) {
+          return `own-HOME ${head} must keep working without a locator or bus: ${run.output}`;
+        }
+      }
+      return null;
+    },
+  },
+  {
+    name: "wrapped Claude refuses missing or recursive recorded binaries before daemon contact",
+    run: async (ctx) => {
+      const otherHome = join(ctx.dir, "wrapped-other-home");
+      const state = join(ctx.dir, "home", ".splice", "state", "claude-head-wrap.json");
+      const alias = join(ctx.dir, "recursive-claude");
+      symlinkSync(ctx.shim, alias);
+      const cases: readonly (readonly [string | null, string])[] = [
+        [null, "wrap state"],
+        ["not json", "wrap state"],
+        [JSON.stringify({}), "real binary"],
+        [JSON.stringify({ real_binary_path: join(ctx.dir, "gone") }), "real binary"],
+        [JSON.stringify({ real_binary_path: ctx.dir }), "real binary"],
+        [JSON.stringify({ real_binary_path: alias }), "launcher"],
+      ];
+      for (const [body, reason] of cases) {
+        if (body === null) rmSync(state, { force: true });
+        else writeFileSync(state, body);
+        ctx.cold();
+        const reads = ctx.daemon.healthReads;
+        const run = await ctx.launch({ HOME: otherHome, SPLICE_HEAD: "claude" });
+        if (run.code !== 1 || !run.stderr.includes(reason)) return `invalid wrap state must name ${reason}: ${run.output}`;
+        if (ctx.daemon.healthReads !== reads || ctx.daemon.lastLaunch || ctx.daemon.lastShutdown ||
+            existsSync(ctx.captures.unit) || existsSync(ctx.captures.javaArgv)) {
+          return "a missing or recursive binary contacted or started splice";
+        }
+      }
+      return null;
+    },
+  },
+  {
+    // Blank and whitespace-only HOME are not directories. The shim and JVM must agree on the
+    // passwd fallback, including when an explicit config and jar point into a test sandbox.
+    name: "V4-218 an unset or blank HOME uses the JVM's fallback home",
+    run: async (ctx) => {
+      // The passwd home, which the JVM's user.home falls back to. Bun's userInfo() can echo the sandbox HOME. macOS has
+      // no getent: its passwd database is Directory Services, which dscl reads.
+      const user = execFileSync("id", ["-un"], { encoding: "utf8" }).trim();
+      const fallback =
+        process.platform === "darwin"
+          ? (execFileSync("dscl", [".", "-read", `/Users/${user}`, "NFSHomeDirectory"], { encoding: "utf8" })
+              .trim()
+              .split(/\s+/)[1] ?? "")
+          : (execFileSync("getent", ["passwd", user], { encoding: "utf8" }).trim().split(":")[5] ?? "");
+      const expected = `-Duser.home=${fallback}`;
+      for (const home of [undefined, "", "  "]) {
+        rmSync(ctx.captures.javaArgv, { force: true });
+        await ctx.launch({ ...ctx.harness, SPLICE_HEAD: "splice", HOME: home }, ["status"]);
+        const runs = read(ctx.captures.javaArgv).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string[]);
+        if (runs.length !== 1 || !runs[0]?.includes(expected)) {
+          return `HOME=${JSON.stringify(home)} must use ${expected}, got ${JSON.stringify(runs)}`;
+        }
+      }
+      return null;
+    },
+  },
+  {
+    // A body with no Content-Length is sent chunked, and the daemon's ingress charges a chunked body at its
+    // whole cap: six launches at once were five 529s on a 2 GB daemon (console-lead, Oct 11). The stand-in
+    // below charges a body with a length 1 and a chunked one 4 against a budget of 6, so six concurrent launches
+    // fit only when every one states its length.
+    name: "concurrent launches all reach the daemon without being refused",
+    run: async (ctx) => {
+      ctx.daemon.forget();
+      ctx.daemon.ingressBudget = 6;
+      const runs = await Promise.all([0, 1, 2, 3, 4, 5].map(() => ctx.launch(ctx.harness)));
+      const refused = ctx.daemon.refused;
+      const received = ctx.daemon.launches;
+      ctx.daemon.forget();
+      const failed = runs.filter((run) => run.code !== 0);
+      if (failed.length > 0) return `${failed.length} of 6 concurrent launches failed: ${failed[0]?.output ?? ""}`;
+      if (refused !== 0 || received !== 6) {
+        return `six concurrent launches must be six requests and no 529, got ${received} requests and ${refused} refused`;
+      }
+      return null;
+    },
+  },
+  {
+    name: "a launch refused 529 is tried again and then succeeds",
+    run: async (ctx) => {
+      ctx.daemon.forget();
+      ctx.daemon.refuseLaunches = 2;
+      const run = await ctx.launch(ctx.harness);
+      const received = ctx.daemon.launches;
+      const length = ctx.daemon.lastLaunch?.contentLength;
+      ctx.daemon.forget();
+      if (run.code !== 0) return `a busy daemon must not fail the launch: ${run.output}`;
+      if (received !== 3) return `two 529s must be two more tries, got ${received} launch requests`;
+      return length === undefined || length === "" ? "the retried launch must still carry its Content-Length" : null;
+    },
+  },
+  {
+    // The recipe is read with `read`, one record per line, and a value's backslash, newline and carriage return are
+    // written \\, \n and \r (LaunchRecipeLines.kt). An empty word, a trailing newline, a word that curl would read as
+    // a file name and a word with spaces at both ends are the ones a shell loses first.
+    name: "a recipe's argv and environment reach the launched program byte for byte",
+    run: async (ctx) => {
+      const capture = join(ctx.dir, "exec-capture");
+      const stub = join(ctx.dir, "exec-stub");
+      writeStub(stub,
+        'import { writeFileSync } from "node:fs";\n' +
+        "writeFileSync(process.argv[2], JSON.stringify({ argv: process.argv.slice(3), foo: process.env.FOO ?? null, gone: process.env.GONE ?? null }));\n",
+      );
+      const escape = (value: string): string => value.replaceAll("\\", "\\\\").replaceAll("\n", "\\n").replaceAll("\r", "\\r");
+      const words = ["", "back\\slash", "trailing\n", "line one\nline two", "@/etc/hostname", "  padded  ", "cr\rhere"];
+      rmSync(capture, { force: true });
+      ctx.daemon.forget();
+      ctx.daemon.recipe = ["U GONE", `E FOO=${escape("a\nb\\c")}`, ...[stub, capture, ...words].map((word) => `A ${escape(word)}`)].join("\n") + "\n";
+      const run = await ctx.launch({ ...ctx.harness, GONE: "set by the caller" });
+      ctx.daemon.recipe = undefined;
+      if (run.code !== 0) return `the recipe must launch: ${run.output}`;
+      const got = JSON.stringify(JSON.parse(read(capture)));
+      const want = JSON.stringify({ argv: words, foo: "a\nb\\c", gone: null });
+      return got === want ? null : `the launched program saw ${got}, wanted ${want}`;
+    },
+  },
+  {
+    // LAN share: a node's session carries ANTHROPIC_AUTH_TOKEN=splice-lan, the word its launch plants for the server
+    // (RemoteLaunches.kt, NODE_TOKEN). A command launched from inside that session, such as plain `claude` through a
+    // head that forwards the caller's own login, must not send the word ahead of that login: Anthropic refuses it 401
+    // and Claude Code retries. A token the person set themselves rides on.
+    name: "a LAN node's token inherited from its session is dropped, and the caller's own token kept",
+    run: async (ctx) => {
+      const lan = await inheritedTokenSeen(ctx, "splice-lan");
+      if (lan !== null) return `an inherited splice-lan must be dropped, the launched program saw ${JSON.stringify(lan)}`;
+      const own = await inheritedTokenSeen(ctx, "sk-ant-the-person");
+      return own === "sk-ant-the-person" ? null : `the caller's own token must ride on, it saw ${JSON.stringify(own)}`;
+    },
+  },
+  {
+    // Key rotation (Oct 26, 2026): a session launched before the key helper holds the turn key a rotation retired. A
+    // command launched from inside it, such as plain `claude` through a head that forwards the caller's own login, must
+    // not send that key ahead of the login: it opens nothing, Anthropic refuses it 401 and Claude Code retries (PR #247,
+    // review round 4). The daemon keeps each retired key's SHA-256 beside the management key, and the shim drops an
+    // inherited token whose digest is there. A token the person set themselves rides on.
+    name: "a key a rotation retired, inherited from a session launched before it, is dropped",
+    run: async (ctx) => {
+      const retired = `retired-turn-key-${"5".repeat(48)}`;
+      const digests = join(ctx.stateDir, "retired-keys");
+      writeFileSync(digests, `${createHash("sha256").update(retired).digest("hex")}\n`, { mode: 0o600 });
+      try {
+        const old = await inheritedTokenSeen(ctx, retired);
+        if (old !== null) return `an inherited retired key must be dropped, the launched program saw ${JSON.stringify(old)}`;
+        const own = await inheritedTokenSeen(ctx, "sk-ant-the-person");
+        return own === "sk-ant-the-person" ? null : `the caller's own token must ride on, it saw ${JSON.stringify(own)}`;
+      } finally {
+        rmSync(digests, { force: true });
+      }
+    },
+  },
+  {
+    // curl is the one tool the shim needs that the machine may not have; it says what to install instead of failing
+    // inside a request. The PATH holds only what the shim runs before it needs curl.
+    name: "a missing curl is named, with what to install",
+    run: async (ctx) => {
+      const bare = join(ctx.dir, "no-curl-bin");
+      mkdirSync(bare, { recursive: true });
+      for (const tool of ["awk", "sed", "head", "tr", "cat", "dirname", "id"]) {
+        const found = execFileSync("sh", ["-c", `command -v ${tool}`], { encoding: "utf8" }).trim();
+        if (found) symlinkSync(found, join(bare, tool), "file");
+      }
+      copyFileSync(join(ctx.dir, "bin", "systemctl"), join(bare, "systemctl"));
+      ctx.daemon.forget();
+      const run = await ctx.launch({ ...ctx.harness, PATH: bare });
+      if (run.code !== 1 || !run.stderr.includes("needs curl") || !run.stderr.includes("Install curl")) {
+        return `a missing curl must exit 1 and say what to install, got ${run.code}: ${run.output}`;
+      }
+      return ctx.daemon.lastLaunch === undefined ? null : "a launch was sent with no curl";
+    },
+  },
+  {
+    // v0.4.0 review: the CLI asks System.console() whether a person is at a terminal, and on JDK 22-24
+    // it answers yes into a pipe unless java runs with -Djdk.console=java.base, and a verb that prints to
+    // a terminal only then prints into an agent's transcript. Both paths that run the CLI must carry it.
+    // LAST on purpose: the java mock marks the daemon "new", which no arm after this one may inherit.
+    name: "the CLI's java runs with the terminal-only console",
+    run: async (ctx) => {
+      const paths: readonly (readonly [string, readonly string[]])[] = [["splice", ["status"]], ["test", ["login"]]];
+      for (const [head, argv] of paths) {
+        rmSync(ctx.captures.javaArgv, { force: true });
+        await ctx.launch({ SPLICE_HEAD: head }, argv);
+        const runs = read(ctx.captures.javaArgv).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string[]);
+        const label = `${head} ${argv.join(" ")}`;
+        if (runs.length === 0) return `${label}: java never ran`;
+        if (!runs.every((javaArgv) => javaArgv[0] === "-Djdk.console=java.base")) {
+          return `${label}: java ran without -Djdk.console=java.base: ${JSON.stringify(runs)}`;
+        }
+      }
+      return null;
+    },
+  },
+];
+
+/** What a program the shim launches sees in ANTHROPIC_AUTH_TOKEN when the shell that ran the shim held [inherited], as a
+ *  session's environment hands it on to a command started inside it: null when it saw none, or why nothing launched. */
+async function inheritedTokenSeen(ctx: Ctx, inherited: string): Promise<unknown> {
+  const capture = join(ctx.dir, "token-capture");
+  const stub = join(ctx.dir, "token-stub");
+  writeStub(stub,
+    'import { writeFileSync } from "node:fs";\n' +
+    "writeFileSync(process.argv[2], JSON.stringify(process.env.ANTHROPIC_AUTH_TOKEN ?? null));\n",
+  );
+  rmSync(capture, { force: true });
+  ctx.daemon.forget();
+  ctx.daemon.recipe = [stub, capture].map((word) => `A ${word}`).join("\n") + "\n";
+  const run = await ctx.launch({ ...ctx.harness, ANTHROPIC_AUTH_TOKEN: inherited });
+  ctx.daemon.recipe = undefined;
+  return run.code === 0 ? JSON.parse(read(capture)) : `no launch: ${run.output}`;
+}
+
+/** Every arm's name, in order — the rehearsal's inventory, for a count that cannot drift from it. */
+export const ARM_NAMES: readonly string[] = ARMS.map((arm) => arm.name);
+
+/**
+ * Run every arm, in order, against `shim`, or only the arms `options` names. Returns the first problem, or null — the
+ * script exited at the first failing arm and a later arm's premise is the earlier one's outcome.
+ */
+export async function launcherRehearsal(shim: string, options: RehearsalOptions = {}): Promise<string | null> {
+  const markers = shimMarkers(shim);
+  if (markers instanceof Error) return markers.message;
+  const arms = options.arms === undefined ? ARMS : ARMS.filter((arm) => options.arms?.includes(arm.name));
+  const unknown = options.arms?.filter((name) => !ARM_NAMES.includes(name)) ?? [];
+  if (unknown.length > 0) return `launcher test: no arm is named ${JSON.stringify(unknown)}`;
+
+  const sandbox = makeSandbox("release-launcher-");
+  const dir = sandbox.dir;
+  const stateDir = join(dir, "state");
+  mkdirSync(stateDir, { recursive: true });
+  const daemonState = join(dir, "daemon-state");
+  const captures = {
+    java: join(dir, "java-spawns"),
+    javaArgv: join(dir, "java-argv"),
+    unit: join(dir, "unit-starts"),
+    pwned: join(dir, "pwned"),
+    // the shim's LOGS_DIR is <state dir>/../logs
+    bootLog: join(dir, "logs", "daemon-boot.log"),
+  };
+  const daemon = startDaemon(daemonState, markers.gateway, markers.shim, captures.pwned);
+  try {
+    writeFileSync(join(dir, "share", "splice.jar"), "");
+    writeFileSync(join(stateDir, "mgmt-key"), "test-key\n");
+    writeFileSync(join(dir, "splice.toml"), `[daemon]\ncontrol_port = ${daemon.toml} # custom\n`);
+    writeFileSync(daemonState, "up\n");
+    writeMocks(sandbox.bin);
+
+    // The operator's shape: the sandbox HOME carries the same config, jar and mgmt-key at their
+    // DEFAULT paths, so the arms with no selector resolve everything from $HOME (V4-189).
+    mkdirSync(join(dir, "home", ".config", "splice"), { recursive: true });
+    mkdirSync(join(dir, "home", ".local", "share", "splice"), { recursive: true });
+    mkdirSync(join(dir, "home", ".splice", "state"), { recursive: true });
+    writeFileSync(join(dir, "home", ".config", "splice", "splice.toml"), readFileSync(join(dir, "splice.toml")));
+    writeFileSync(join(dir, "home", ".local", "share", "splice", "splice.jar"), "");
+    writeFileSync(join(dir, "home", ".splice", "state", "mgmt-key"), "test-key\n");
+
+    // A SCRUBBED environment: this rehearsal runs on a machine with a real splice install, and an
+    // ambient SPLICE_* would aim the shim at the operator's own daemon (or, through unitDefaults,
+    // decide the unit arms). Only what the harness sets survives.
+    const base: Record<string, string> = {};
+    for (const [key, value] of Object.entries(Bun.env)) {
+      if (typeof value !== "string") continue;
+      if (SELECTORS.some((selector) => selector === key) || /^(SPLICE_|CLAUDEX_|CONTROL_|LAUNCHER_)/.test(key)) continue;
+      base[key] = value;
+    }
+    base.HOME = join(dir, "home");
+    base.PATH = `${sandbox.bin}:${Bun.env.PATH ?? ""}`;
+    base.SPLICE_HEAD = "test";
+    base.LAUNCHER_DAEMON_STATE = daemonState;
+    base.LAUNCHER_JAVA_CAPTURE = captures.java;
+    base.LAUNCHER_JAVA_ARGV = captures.javaArgv;
+    base.LAUNCHER_START_CAPTURE = captures.unit;
+    base.LAUNCHER_UNIT_PRESENT = "1";
+    base.LAUNCHER_UNIT_BOOTS = "1";
+    base.LAUNCHER_UNIT_HOME = base.HOME;
+
+    const ctx: Ctx = {
+      dir,
+      shim,
+      daemon,
+      env: base,
+      harness: {
+        SPLICE_CONFIG: join(dir, "splice.toml"),
+        SPLICE_SHARE_DIR: join(dir, "share"),
+        CLAUDEX_STATE_DIR: stateDir,
+      },
+      captures,
+      stateDir,
+      daemonState,
+      memoryMax: options.memoryMax,
+      async launch(overrides, argv = [], command = shim) {
+        const env: Record<string, string> = { ...base };
+        for (const [key, value] of Object.entries(overrides)) {
+          if (value === undefined) delete env[key];
+          else env[key] = value;
+        }
+        const proc = Bun.spawn([command, ...argv], { cwd: dir, env, stdout: "pipe", stderr: "pipe" });
+        const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+        await proc.exited;
+        return { code: exitStatusOf(proc), stderr, output: `${stdout}${stderr}` };
+      },
+      cold() {
+        writeFileSync(daemonState, "down\n");
+        rmSync(captures.java, { force: true });
+        rmSync(captures.javaArgv, { force: true });
+        rmSync(captures.unit, { force: true });
+        daemon.forget();
+      },
+    };
+
+    for (const arm of arms) {
+      // A throw inside an arm (an unparseable recipe body, a capture that is not there) is that
+      // arm's RED, not a stack trace out of the rehearsal: `release verify` reports a verdict.
+      let problem: string | null;
+      try {
+        problem = await arm.run(ctx);
+      } catch (failure) {
+        problem = `threw: ${failure instanceof Error ? failure.message : String(failure)}`;
+      }
+      if (problem) return `launcher test: ${arm.name}: ${problem}`;
+    }
+    return null;
+  } finally {
+    daemon.stop();
+    rmSync(sandbox.dir, { recursive: true, force: true });
+  }
+}
+
+function selectorValue(selector: string, ctx: Ctx): string {
+  switch (selector) {
+    case "SPLICE_CONFIG":
+      return join(ctx.dir, "home", ".config", "splice", "splice.toml");
+    case "XDG_CONFIG_HOME":
+      return join(ctx.dir, "home", ".config");
+    case "SPLICE_JAR":
+      return join(ctx.dir, "home", ".local", "share", "splice", "splice.jar");
+    case "SPLICE_SHARE_DIR":
+      return join(ctx.dir, "home", ".local", "share", "splice");
+    case "SPLICE_STATE_DIR":
+    case "CLAUDEX_STATE_DIR":
+      return join(ctx.dir, "home", ".splice", "state");
+    default:
+      return String(ctx.daemon.toml);
+  }
+}
+
+/**
+ * The mock daemon: ONE handler on TWO loopback ports, so "which port did the shim resolve" is
+ * answered by which listener received the request rather than by a URL a stub wrote down. The
+ * ports are the kernel's (port 0) — a fixed 4567 would bind whatever this machine already runs
+ * there. `down` answers an EMPTY body, which is what the shim reads as "no daemon" (request()
+ * returns the body on any status, and health() maps null and "" alike to "").
+ */
+function startDaemon(statePath: string, gateway: string, shimVersion: string, pwnedFile: string): Daemon {
+  const handler = async (request: Request): Promise<Response> => {
+    const url = new URL(request.url);
+    const authorization = request.headers.get("authorization") ?? "";
+    const state = existsSync(statePath) ? readFileSync(statePath, "utf8").trim() : "down";
+    if (url.pathname === "/health") {
+      daemon.healthReads += 1;
+      if (state === "up" || state === "new") {
+        return new Response(
+          `{"ok":true,"version":"${gateway}","wantShimVersion":"${shimVersion}","topologyStale":${daemon.topologyStale}}\n`,
+        );
+      }
+      if (state === "old") return new Response('{"ok":true,"version":"0.0.9","wantShimVersion":"shim-1"}\n');
+      // The same release number from an earlier build: it answers a version handshake but not the line form.
+      if (state === "earlier") return new Response(`{"ok":true,"version":"${gateway}","wantShimVersion":"shim-1"}\n`);
+      return new Response(""); // down
+    }
+    if (url.pathname === "/api/daemon/shutdown") {
+      daemon.lastShutdown = { url: request.url, body: await request.text(), authorization, contentLength: "" };
+      writeFileSync(statePath, "down\n");
+      return new Response('{"ok":true}\n');
+    }
+    if (url.pathname.startsWith("/launch/")) {
+      daemon.launches += 1;
+      const contentLength = request.headers.get("content-length") ?? "";
+      const busy = (): Response => {
+        daemon.refused += 1;
+        return new Response('{"type":"error","error":{"type":"overloaded_error","message":"gateway busy; retry"}}', { status: 529 });
+      };
+      if (daemon.refuseLaunches > 0) {
+        daemon.refuseLaunches -= 1;
+        return busy();
+      }
+      const cost = contentLength === "" ? 4 : 1;
+      if (daemon.ingressBudget > 0) {
+        if (daemon.charged + cost > daemon.ingressBudget) return busy();
+        daemon.charged += cost;
+      }
+      daemon.lastLaunch = { url: request.url, body: await request.text(), authorization, contentLength };
+      if (daemon.ingressBudget > 0) {
+        await Bun.sleep(150);
+        daemon.charged -= cost;
+      }
+      // the daemon's line form (LaunchRecipeLines.kt), as the shim asks for it in Accept
+      const hostile = daemon.injectEnvKey ? `E X$(touch ${daemon.pwnedFile})=v\n` : "";
+      return new Response(`splice-launch 1\n${hostile}${daemon.recipe ?? "A true\n"}end\n`, { headers: { "content-type": "text/x-splice-launch" } });
+    }
+    return new Response(`unexpected daemon URL: ${request.url}\n`, { status: 404 });
+  };
+  const servers = [
+    Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: handler }),
+    Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: handler }),
+  ];
+  const ports = servers.map((server) => server.port);
+  if (ports.some((port) => typeof port !== "number")) throw new Error("launcher test: the mock daemon took no TCP port");
+  const daemon: Daemon = {
+    toml: ports[0] as number,
+    state: ports[1] as number,
+    topologyStale: false,
+    refuseLaunches: 0,
+    ingressBudget: 0,
+    refused: 0,
+    launches: 0,
+    charged: 0,
+    injectEnvKey: false,
+    pwnedFile,
+    healthReads: 0,
+    forget() {
+      daemon.lastLaunch = undefined;
+      daemon.lastShutdown = undefined;
+      daemon.refuseLaunches = 0;
+      daemon.ingressBudget = 0;
+      daemon.refused = 0;
+      daemon.launches = 0;
+    },
+    stop() {
+      for (const server of servers) server.stop(true);
+    },
+  };
+  return daemon;
+}
+
+/** The two processes the shim genuinely spawns: the JVM and the supervisor. */
+function writeMocks(bin: string): void {
+  writeStub(
+    join(bin, "java"),
+    'import { appendFileSync, writeFileSync } from "node:fs";\n' +
+      // The short ownership writer is not a daemon boot or an administrative CLI invocation.
+      'if (process.argv.includes("record-launch")) process.exit(0);\n' +
+      // fail-closed boot: the new jar's findings pass, asked before the stale daemon is stopped.
+      'if (process.argv.includes("check-config")) {\n' +
+      '  if (process.env.LAUNCHER_CONFIG_REFUSES === "1") { process.stdout.write("splice: splice.toml has 1 finding: heads.one.provider (line 9)\\n"); process.exit(3); }\n' +
+      // A jar that cannot give a verdict (an older build's unknown verb exits 2, as does a crash).
+      '  if (process.env.LAUNCHER_CONFIG_UNCHECKABLE === "1") { process.stderr.write("usage: splice <command>\\n"); process.exit(2); }\n' +
+      "  process.exit(0);\n" +
+      "}\n" +
+      'if (process.env.LAUNCHER_JAVA_BOOT_FAILS === "1") {\n' +
+      // JW-01: a boot-dead daemon — the stack trace goes to stderr, which the shim must be
+      // redirecting into daemon-boot.log (pre-fix it went to /dev/null).
+      '  process.stderr.write("Exception in thread main: kaboom-at-boot\\n");\n' +
+      "  process.exit(1);\n" +
+      "}\n" +
+      'if (process.env.LAUNCHER_JAVA_ARGV) appendFileSync(process.env.LAUNCHER_JAVA_ARGV, JSON.stringify(process.argv.slice(2)) + "\\n");\n' +
+      'if (process.env.LAUNCHER_JAVA_CAPTURE) appendFileSync(process.env.LAUNCHER_JAVA_CAPTURE, "spawned\\n");\n' +
+      // The captures are written before the daemon answers, as a real JVM's argv is fixed before it can: the shim
+      // returns at its first good health read, and on Oct 25, under a load of 150, it returned before the mock
+      // that had already answered wrote its argv, so an arm read "java never ran the daemon".
+      'writeFileSync(process.env.LAUNCHER_DAEMON_STATE, "new\\n");\n',
+  );
+  // V4-189: the supervisor unit, mocked. `cat <unit>` answers "the unit exists" only when
+  // LAUNCHER_UNIT_PRESENT=1; `start <unit>` records the unit name and, when LAUNCHER_UNIT_BOOTS=1,
+  // brings the mock daemon up the way the real unit would.
+  writeStub(
+    join(bin, "systemctl"),
+    'import { appendFileSync, writeFileSync } from "node:fs";\n' +
+      "const argv = process.argv.slice(2);\n" +
+      'if (argv[0] !== "--user") { process.stderr.write(`unexpected systemctl args: ${argv.join(" ")}\\n`); process.exit(2); }\n' +
+      'if (process.env.XDG_RUNTIME_DIR?.endsWith("isolated-runtime") || process.env.DBUS_SESSION_BUS_ADDRESS?.includes("synthetic-dead-bus")) process.exit(1);\n' +
+      'if (argv[1] === "cat") process.exit(process.env.LAUNCHER_UNIT_PRESENT === "1" ? 0 : 1);\n' +
+      'if (argv[1] === "show-environment") {\n' +
+      '  process.stdout.write(`HOME=${process.env.LAUNCHER_UNIT_HOME}\\n`);\n' +
+      '  if (process.env.LAUNCHER_UNIT_STATE_DIR) process.stdout.write(`SPLICE_STATE_DIR=${process.env.LAUNCHER_UNIT_STATE_DIR}\\n`);\n' +
+      '  process.exit(0);\n' +
+      '}\n' +
+      'if (argv[1] === "start") {\n' +
+      '  appendFileSync(process.env.LAUNCHER_START_CAPTURE, `${argv[2] ?? ""}\\n`);\n' +
+      '  if (process.env.LAUNCHER_UNIT_BOOTS === "1") { writeFileSync(process.env.LAUNCHER_DAEMON_STATE, "new\\n"); process.exit(0); }\n' +
+      "  process.exit(1);\n" +
+      "}\n" +
+      'process.stderr.write(`unexpected systemctl verb: ${argv.join(" ")}\\n`);\n' +
+      "process.exit(2);\n",
+  );
+}

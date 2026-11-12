@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en" data-theme="night">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>splice · Claude Code on GPT, Grok, Kimi and Muse · Torad Labs</title>
+  <meta name="description" content="Keep your Claude Code, with its sessions, hooks and skills, and run it on your ChatGPT, Grok, Kimi or Muse plan, OpenRouter or your own GPU. The sessions hand work to each other. Free and open source.">
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+  <meta name="author" content="Marcos Damasceno">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FBF1DF">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1D2140">
+  <link rel="canonical" href="https://splice.torad.ai/">
+  <meta property="og:site_name" content="Torad Labs">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:title" content="splice · Claude Code on GPT, Grok, Kimi and Muse · Torad Labs">
+  <meta property="og:description" content="Keep your Claude Code, with its sessions, hooks and skills, and run it on your ChatGPT, Grok, Kimi or Muse plan, OpenRouter or your own GPU. The sessions hand work to each other. Free and open source.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://splice.torad.ai/">
+  <meta property="og:image" content="https://splice.torad.ai/splice-og.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:alt" content="splice. Use all your AI plans in Claude Code. Switch between ChatGPT, Grok, Kimi, Muse, API keys, OpenRouter and your own GPU. github.com/torad-labs/splice. Beside it, five drawn command cards with their models and meters: claude-splice on opus-5.5, claudex on gpt-6-sol, claude-grok on grok-4.7, claude-kimi on kimi-k3 and claude-muse on muse-spark-1.3.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="splice · Claude Code on GPT, Grok, Kimi and Muse · Torad Labs">
+  <meta name="twitter:description" content="Keep your Claude Code, with its sessions, hooks and skills, and run it on your ChatGPT, Grok, Kimi or Muse plan, OpenRouter or your own GPU. The sessions hand work to each other. Free and open source.">
+  <meta name="twitter:image" content="https://splice.torad.ai/splice-og.jpg">
+  <meta name="twitter:image:alt" content="splice. Use all your AI plans in Claude Code. Switch between ChatGPT, Grok, Kimi, Muse, API keys, OpenRouter and your own GPU. github.com/torad-labs/splice. Beside it, five drawn command cards with their models and meters: claude-splice on opus-5.5, claudex on gpt-6-sol, claude-grok on grok-4.7, claude-kimi on kimi-k3 and claude-muse on muse-spark-1.3.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://torad.ai/#org","name":"Torad Labs","url":"https://torad.ai/","logo":{"@type":"ImageObject","url":"https://torad.ai/icon-512.png"},"description":"Torad Labs develops model systems and multi-agent software for technical work.","founder":{"@type":"Person","name":"Marcos Damasceno"},"sameAs":["https://blog.torad.ai"]},{"@type":"WebSite","@id":"https://torad.ai/#website","url":"https://torad.ai/","name":"Torad Labs","publisher":{"@id":"https://torad.ai/#org"},"inLanguage":"en"},{"@type":"WebPage","@id":"https://splice.torad.ai/#webpage","url":"https://splice.torad.ai/","name":"splice · Claude Code on GPT, Grok, Kimi and Muse · Torad Labs","description":"Keep your Claude Code, with its sessions, hooks and skills, and run it on your ChatGPT, Grok, Kimi or Muse plan, OpenRouter or your own GPU. The sessions hand work to each other. Free and open source.","isPartOf":{"@id":"https://torad.ai/#website"},"about":{"@id":"https://torad.ai/#org"},"breadcrumb":{"@id":"https://splice.torad.ai/#breadcrumb"},"inLanguage":"en"},{"@type":"BreadcrumbList","@id":"https://splice.torad.ai/#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://torad.ai/"},{"@type":"ListItem","position":2,"name":"splice","item":"https://splice.torad.ai/"}]},{"@type":"SoftwareApplication","@id":"https://splice.torad.ai/#app","name":"splice","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS, Windows (WSL2)","description":"Keep your Claude Code, with its sessions, hooks and skills, and run it on your ChatGPT, Grok, Kimi or Muse plan, OpenRouter or your own GPU. The sessions hand work to each other. Free and open source.","publisher":{"@id":"https://torad.ai/#org"},"url":"https://splice.torad.ai/"}]}</script>
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <script>
+    // Before the first paint: the theme the visitor chose (or the system's), and pg-js, under which a band's "before
+    // reveal" state applies, so a page without scripts shows everything at rest.
+    (function () {
+      var r = document.documentElement, c = "auto";
+      try { c = localStorage.getItem("splice-site-theme") || "auto"; } catch (e) {}
+      var day = c === "day" || (c === "auto" && window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches);
+      r.setAttribute("data-theme", day ? "day" : "night");
+      r.classList.add("pg-js");
+    })();
+  </script>
+  <link rel="stylesheet" href="/console/tokens.css">
+  <link rel="stylesheet" href="/console/console.css">
+  <!-- console sheets -->
+  <link rel="stylesheet" href="/site.css">
+</head>
+<body id="top">
+  <a class="fr-skip" href="#main">Skip to content</a>
+  <!--PG-SPRITE--><svg class="pg-sprite" width="0" height="0" aria-hidden="true" focusable="false"><defs>
+<symbol id="pg-m-tower" viewBox="0 0 56 80"><rect x="6" y="2" width="44" height="76" rx="5"/><path d="M6 16h44"/><rect x="13" y="22" width="30" height="6" rx="1.5"/><rect x="13" y="33" width="30" height="6" rx="1.5"/><path d="M14 60h28M14 66h28M14 72h28"/><circle cx="42" cy="9" r="3"/><circle cx="15" cy="9" r="2.5"/><circle cx="22.5" cy="9" r="2.5"/><circle cx="30" cy="9" r="2.5"/></symbol>
+<symbol id="pg-m-laptop" viewBox="0 0 112 76"><rect x="14" y="2" width="84" height="54" rx="4"/><path d="M24 20l8 6-8 6M38 32h18"/><path d="M2 62h108l-6 10H8z"/><path d="M46 66h20"/></symbol>
+<symbol id="pg-m-term" viewBox="0 0 132 84"><rect x="2" y="2" width="128" height="80" rx="5"/><path d="M2 18h128"/><circle cx="12" cy="10" r="2"/><circle cx="20" cy="10" r="2"/><circle cx="28" cy="10" r="2"/><path d="M14 34h52M14 46h80M14 58h34"/></symbol>
+<symbol id="pg-m-gpu" viewBox="0 0 160 64"><rect x="2" y="8" width="150" height="44" rx="4"/><path d="M152 14h6v34h-6M18 52v7M26 52v7M34 52v7M42 52v7"/><circle cx="50" cy="30" r="14"/><circle cx="106" cy="30" r="14"/><circle cx="136" cy="16" r="2.5"/></symbol>
+<symbol id="pg-m-router" viewBox="0 0 120 56"><rect x="2" y="22" width="116" height="30" rx="5"/><path d="M24 22V4M96 22V4"/><rect x="14" y="38" width="12" height="8" rx="1.5"/><rect x="32" y="38" width="12" height="8" rx="1.5"/><rect x="50" y="38" width="12" height="8" rx="1.5"/><rect x="68" y="38" width="12" height="8" rx="1.5"/><circle cx="92" cy="32" r="2.5"/><circle cx="102" cy="32" r="2.5"/></symbol>
+<symbol id="pg-m-monitor" viewBox="0 0 120 88"><rect x="2" y="2" width="116" height="66" rx="5"/><rect x="14" y="38" width="14" height="20" rx="1.5"/><rect x="34" y="26" width="14" height="32" rx="1.5"/><rect x="54" y="44" width="14" height="14" rx="1.5"/><rect x="74" y="20" width="14" height="38" rx="1.5"/><rect x="94" y="32" width="14" height="26" rx="1.5"/><path d="M46 68v12M74 68v12M34 82h52"/></symbol>
+</defs></svg><!--/PG-SPRITE-->
+  <header class="fr-hdr">
+    <div class="fr-wrap fr-hdr-in">
+      <a class="fr-brand" href="#top" aria-label="splice"><img class="fr-logo n" src="/console/brand/splice-horizontal-night.svg" alt="splice" width="107" height="36"><img class="fr-logo d" src="/console/brand/splice-horizontal-day.svg" alt="splice" width="107" height="36"></a>
+      <nav class="fr-nav" aria-label="Page"><a href="#commands">Commands</a><a href="#share">Share</a><a href="#teams">Teams</a><a href="#console">Console</a><a href="#questions">Questions</a><a href="https://github.com/torad-labs/splice">GitHub</a></nav>
+      <div class="switch fr-theme" role="group" aria-label="Theme"><button type="button" data-theme-choice="auto" aria-pressed="true">Auto</button><button type="button" data-theme-choice="day" aria-pressed="false">Daylight</button><button type="button" data-theme-choice="night" aria-pressed="false">Candlelight</button></div>
+      <a class="act primary fr-cta" href="#setup-install">Install</a>
+      <button class="act fr-menubtn" type="button" data-menu aria-expanded="false" aria-controls="fr-menu" aria-label="Open menu"><svg class="fr-mb-i" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span class="fr-mb-t">Close menu</span><svg class="fr-mb-x" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="fr-sheet" id="fr-menu" role="dialog" aria-label="Menu" hidden>
+      <div class="fr-wrap fr-sheet-in">
+        <nav class="fr-mnav" aria-label="Page"><a href="#commands"><span>Commands</span></a><a href="#share"><span>Share</span></a><a href="#teams"><span>Teams</span></a><a href="#console"><span>Console</span></a><a href="#questions"><span>Questions</span></a><a href="https://github.com/torad-labs/splice"><span>GitHub</span><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="go"><path d="M7 17L17 7M9 7h8v8"/></svg></a></nav>
+        <div class="fr-mrow"><span class="fr-mk">Theme</span><div class="switch fr-theme" role="group" aria-label="Theme"><button type="button" data-theme-choice="auto" aria-pressed="true">Auto</button><button type="button" data-theme-choice="day" aria-pressed="false">Daylight</button><button type="button" data-theme-choice="night" aria-pressed="false">Candlelight</button></div></div>
+        <div class="fr-mtor"><a class="fr-tor" href="https://torad.ai/"><span>Torad.</span><small>LAB / 001</small></a>
+          <nav class="fr-mtl" aria-label="Torad"><a href="https://downloads.torad.ai">Temple</a><a href="https://torad.ai/technology">Technology</a><a href="https://torad.ai/research">Research</a><a href="https://torad.ai/apps/kandi">Apps</a><a href="https://torad.ai/company">Company</a></nav>
+          <a class="act fr-talk" href="https://torad.ai/company#contact">Talk to us</a></div>
+      </div>
+    </div>
+  </header>
+  <main id="main">
+  <!-- console: sessions.css knobs.css accounts.css models.css teams.css -->
+    <section class="fr-first" aria-labelledby="fr-h1">
+      <div class="fr-hero">
+        <h1 class="fr-h1" id="fr-h1">Use all your AI plans in Claude Code.</h1>
+          <p class="fr-lead">Switch between ChatGPT, Grok, Kimi, Muse, API keys, OpenRouter and your own GPU without changing how you work.</p>
+          <div class="fr-r"><div class="fr-copy" role="group" aria-label="Install"><div class="fr-lines"><p class="fr-cl"><span class="fr-ps" aria-hidden="true">$</span><code>curl -fsSL https://splice.torad.ai<wbr>/download<wbr>/install.sh | bash</code></p><p class="fr-cl"><span class="fr-ps" aria-hidden="true">$</span><code>splice add codex</code></p><p class="fr-cl"><span class="fr-ps" aria-hidden="true">$</span><code>claudex</code></p></div><button class="act primary fr-copybtn" type="button" data-copy="curl -fsSL https://splice.torad.ai/download/install.sh | bash" title="Copy the install command" aria-live="polite" hidden><span class="fr-cb fr-cb-a" data-copy-label><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg><span>Copy</span></span><span class="fr-cb fr-cb-b" data-copied-label aria-hidden="true"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>Copied</span></span></button></div><p class="fr-plat">macOS, Linux, WSL2<span aria-hidden="true"> · </span>Java 21 or newer</p></div>
+          <a class="fr-film" href="/landing/products/splice/assets/splice-0.4.0.mp4" data-film aria-haspopup="dialog" aria-label="Watch the tour, 53 seconds"><video class="fr-pv" src="/landing/products/splice/assets/splice-0.4.0.mp4#t=7" muted loop playsinline preload="metadata" aria-hidden="true" tabindex="-1"></video><span class="fr-pt"><span class="fr-pl"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M8 5.4v13.2L19 12z"/></svg></span><span>Watch the tour</span><b>53 s</b></span></a>
+        <ul class="fr-facts" aria-label="Facts" data-reveal><li>Free</li><li>MIT</li><li>open source</li><li><span>version <b>0.4.0</b></span></li><li class="fr-go"><a class="act" href="https://github.com/torad-labs/splice">GitHub<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="go"><path d="M7 17L17 7M9 7h8v8"/></svg></a></li></ul>
+        <!--PG-ART:hero--><div class="fr-heroart pg-art" aria-hidden="true"><svg class="fr-art-t" viewBox="0 0 480 440" aria-hidden="true" focusable="false"><path class="pg-cab" d="M115 66H164"/><path class="pg-flow" pathLength="100" style="--c:var(--claude);--d:0s;--t:7s" d="M115 66H164"/><path class="pg-cab" d="M316 66H372"/><path class="pg-flow" pathLength="100" style="--c:var(--gpt);--d:-2.4s;--t:8s" d="M316 66H372"/><path class="pg-cab" d="M240 115V185"/><path class="pg-flow" pathLength="100" style="--c:var(--gpt);--d:-1.6s;--t:9s" d="M240 115V185"/><path class="pg-cab" d="M240 258C240 300 68 292 68 330"/><path class="pg-flow" pathLength="100" style="--c:var(--grok);--d:-3s;--t:11s" d="M240 258C240 300 68 292 68 330"/><path class="pg-cab" d="M240 258V345"/><path class="pg-flow" pathLength="100" style="--c:var(--muse);--d:-5s;--t:9s" d="M240 258V345"/><path class="pg-cab" d="M240 258C240 300 396 292 396 334"/><path class="pg-flow" pathLength="100" style="--c:var(--kimi);--d:-2s;--t:10s" d="M240 258C240 300 396 292 396 334"/><path class="pg-cab" d="M24 424H456"/><use href="#pg-m-laptop" x="14" y="32" width="100.8" height="68.4"/><use href="#pg-m-term" x="164" y="18" width="152" height="96.7"/><use href="#pg-m-monitor" x="372" y="31" width="96" height="70.4"/><use href="#pg-m-router" x="162" y="185" width="156" height="72.8"/><use href="#pg-m-tower" x="40" y="330" width="56" height="80"/><use href="#pg-m-gpu" x="164" y="345" width="152" height="60.8"/><use href="#pg-m-laptop" x="340" y="334" width="112" height="76"/><circle class="pg-lamp" style="--c:var(--claude);--d:0s" cx="55" cy="339" r="1.8"/><circle class="pg-lamp" style="--c:var(--gpt);--d:1.1s" cx="62.5" cy="339" r="1.8"/><circle class="pg-lamp" style="--c:var(--grok);--d:2.2s" cx="70" cy="339" r="1.8"/><circle class="pg-lamp" style="--c:var(--kimi);--d:3.3s" cx="281.6" cy="226.6" r="1.8"/><circle class="pg-lamp" style="--c:var(--muse);--d:4.4s" cx="294.6" cy="226.6" r="1.8"/><circle class="pg-lamp" style="--c:var(--local);--d:1.6s" cx="293.2" cy="360.2" r="1.8"/><rect class="pg-caret" x="223.9" y="79" width="5.8" height="9.5"/></svg><svg class="fr-art-w" viewBox="0 0 480 230" aria-hidden="true" focusable="false"><path class="pg-cab" d="M70 57H170"/><path class="pg-flow" pathLength="100" style="--c:var(--gpt);--d:0s;--t:9s" d="M70 57H170"/><path class="pg-cab" d="M282 57C327 57 327 64 372 64"/><path class="pg-flow" pathLength="100" style="--c:var(--muse);--d:-2.7s;--t:11s" d="M282 57C327 57 327 64 372 64"/><path class="pg-cab" d="M47 90C47 125 105 115 105 150"/><path class="pg-flow" pathLength="100" style="--c:var(--claude);--d:-4s;--t:10s" d="M47 90C47 125 105 115 105 150"/><path class="pg-cab" d="M226 93C226 130 364 120 364 156"/><path class="pg-flow" pathLength="100" style="--c:var(--grok);--d:-1.5s;--t:12s" d="M226 93C226 130 364 120 364 156"/><path class="pg-cab" d="M24 222H456"/><use href="#pg-m-tower" x="24" y="24" width="46" height="65.7"/><use href="#pg-m-term" x="170" y="21" width="112.2" height="71.4"/><use href="#pg-m-router" x="372" y="33" width="102" height="47.6"/><use href="#pg-m-laptop" x="60" y="150" width="89.6" height="60.8"/><use href="#pg-m-gpu" x="300" y="156" width="128" height="51.2"/><circle class="pg-lamp" style="--c:var(--claude);--d:0s" cx="36.3" cy="31.4" r="1.8"/><circle class="pg-lamp" style="--c:var(--gpt);--d:1.1s" cx="42.5" cy="31.4" r="1.8"/><circle class="pg-lamp" style="--c:var(--grok);--d:2.2s" cx="48.6" cy="31.4" r="1.8"/><circle class="pg-lamp" style="--c:var(--kimi);--d:3.3s" cx="450.2" cy="60.2" r="1.8"/><circle class="pg-lamp" style="--c:var(--muse);--d:4.4s" cx="458.7" cy="60.2" r="1.8"/><circle class="pg-lamp" style="--c:var(--local);--d:1.6s" cx="408.8" cy="168.8" r="1.8"/><rect class="pg-caret" x="214.2" y="66" width="4.5" height="8"/></svg></div><!--/PG-ART-->
+      </div>
+    </section>
+    <!-- band commands -->
+    <!-- band same-setup -->
+    <!-- band accounts -->
+    <!-- band share -->
+    <!-- band resume -->
+    <!-- band team -->
+    <!-- band dashboard -->
+    <!-- band more -->
+    <!-- band setup -->
+    <!-- band questions -->
+  <section class="pg-band fr-close" id="install" aria-labelledby="fr-h">
+      <div class="pg-in fr-close-in" data-reveal>
+        <div class="fr-close-l"><h2 class="pg-h2" id="fr-h">Install splice</h2>
+          <ul class="fr-links"><li><a class="act" href="https://github.com/torad-labs/splice">GitHub</a></li><li><a class="act" href="https://github.com/torad-labs/splice/blob/main/CHANGELOG.md">Changelog</a></li><li><a class="act" href="https://github.com/torad-labs/splice/blob/main/.github/SECURITY.md">Security</a></li></ul>
+          <p class="fr-maker">Built by Marcos Damasceno at Torad Labs</p></div>
+        <div class="fr-close-r"><div class="fr-copy" role="group" aria-label="Install"><div class="fr-lines"><p class="fr-cl"><span class="fr-ps" aria-hidden="true">$</span><code>curl -fsSL https://splice.torad.ai<wbr>/download<wbr>/install.sh | bash</code></p><p class="fr-cl"><span class="fr-ps" aria-hidden="true">$</span><code>splice add codex</code></p><p class="fr-cl"><span class="fr-ps" aria-hidden="true">$</span><code>claudex</code></p></div><button class="act primary fr-copybtn" type="button" data-copy="curl -fsSL https://splice.torad.ai/download/install.sh | bash" title="Copy the install command" aria-live="polite" hidden><span class="fr-cb fr-cb-a" data-copy-label><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg><span>Copy</span></span><span class="fr-cb fr-cb-b" data-copied-label aria-hidden="true"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>Copied</span></span></button></div></div>
+        <!--PG-ART:close--><div class="pg-art fr-close-art" aria-hidden="true"><svg class="fr-art-c" viewBox="0 0 480 170" aria-hidden="true" focusable="false"><path class="pg-cab" d="M122 78.4C159 78.4 159 86 196 86"/><path class="pg-flow" pathLength="100" style="--c:var(--gpt);--d:0s;--t:9s" d="M122 78.4C159 78.4 159 86 196 86"/><path class="pg-cab" d="M300 86C350.5 86 350.5 85.3 401 85.3"/><path class="pg-flow" pathLength="100" style="--c:var(--claude);--d:-2.7s;--t:11s" d="M300 86C350.5 86 350.5 85.3 401 85.3"/><use href="#pg-m-laptop" x="10" y="48" width="112" height="76"/><use href="#pg-m-term" x="196" y="52.9" width="104" height="66.2"/><use href="#pg-m-tower" x="401" y="49.1" width="46" height="65.7"/><rect class="pg-caret" x="70" y="73" width="6" height="12"/><rect class="pg-caret" x="238.5" y="93.9" width="5.5" height="10.2"/><circle class="pg-lamp" style="--c:var(--claude);--d:0s" cx="413.3" cy="56.5" r="1.8"/><circle class="pg-lamp" style="--c:var(--gpt);--d:1.1s" cx="419.5" cy="56.5" r="1.8"/><circle class="pg-lamp" style="--c:var(--grok);--d:2.2s" cx="425.6" cy="56.5" r="1.8"/></svg><svg class="fr-art-x" viewBox="0 16 1400 90" aria-hidden="true" focusable="false"><path class="pg-cab" d="M112 52.4C336 52.4 336 60 560 60"/><path class="pg-flow" pathLength="100" style="--c:var(--gpt);--d:0s;--t:11s" d="M112 52.4C336 52.4 336 60 560 60"/><path class="pg-cab" d="M664 60C1009 60 1009 59.3 1354 59.3"/><path class="pg-flow" pathLength="100" style="--c:var(--claude);--d:-3.4s;--t:14s" d="M664 60C1009 60 1009 59.3 1354 59.3"/><use href="#pg-m-laptop" x="0" y="22" width="112" height="76"/><use href="#pg-m-term" x="560" y="26.9" width="104" height="66.2"/><use href="#pg-m-tower" x="1354" y="23.1" width="46" height="65.7"/><rect class="pg-caret" x="60" y="47" width="6" height="12"/><rect class="pg-caret" x="602.5" y="67.9" width="5.5" height="10.2"/><circle class="pg-lamp" style="--c:var(--claude);--d:0s" cx="1366.3" cy="30.5" r="1.8"/><circle class="pg-lamp" style="--c:var(--gpt);--d:1.1s" cx="1372.5" cy="30.5" r="1.8"/><circle class="pg-lamp" style="--c:var(--grok);--d:2.2s" cx="1378.6" cy="30.5" r="1.8"/></svg></div><!--/PG-ART-->
+      </div>
+    </section>
+  </main>
+  <footer class="fr-foot">
+    <div class="fr-wrap fr-foot-in">
+      <div class="fr-fb"><a class="fr-tor" href="https://torad.ai/"><span>Torad.</span><small>LAB / 001</small></a><p class="fr-claim">Torad builds tools for working with AI and publishes model-system measurements.</p></div>
+      <div class="fr-fcols"><nav class="fr-fl" aria-label="Torad"><a href="https://downloads.torad.ai">Temple</a><a href="https://torad.ai/technology">Technology</a><a href="https://torad.ai/research">Research</a><a href="https://torad.ai/apps/kandi">Apps</a><a href="https://torad.ai/company">Company</a><a href="https://torad.ai/changelog">Changelog</a><a href="https://torad.ai/manifesto">Manifesto</a><a href="https://blog.torad.ai">Blog<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="go"><path d="M7 17L17 7M9 7h8v8"/></svg></a></nav>
+        <nav class="fr-fleg" aria-label="Legal"><a href="https://torad.ai/privacy">Privacy</a><a href="https://torad.ai/terms">Terms</a><a href="https://torad.ai/accessibility">Accessibility</a><a href="https://torad.ai/company#contact">Contact</a></nav>
+        <div class="fr-fact"><a class="act" href="https://torad.ai/company#contact">Talk to us</a><div class="switch fr-theme" role="group" aria-label="Theme"><button type="button" data-theme-choice="auto" aria-pressed="true">Auto</button><button type="button" data-theme-choice="day" aria-pressed="false">Daylight</button><button type="button" data-theme-choice="night" aria-pressed="false">Candlelight</button></div></div></div>
+    </div>
+  </footer>
+  <dialog class="fr-dlg" id="fr-film" aria-label="The splice film, 53 seconds">
+    <div class="fr-dlg-bar"><button class="act fr-close-btn" type="button" data-film-close><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg><span>Close</span></button></div>
+    <div class="fr-vid"><video controls preload="none" width="1920" height="1080"><source src="/landing/products/splice/assets/splice-0.4.0.mp4" type="video/mp4"><track kind="captions" srclang="en" label="English" src="/landing/products/splice/assets/splice-0.4.0.en.vtt" default></video></div>
+    <p class="fr-cue" aria-hidden="true"></p>
+    <p class="sr">Claude Code only runs Claude models. splice. Your subscriptions. any API key. hundreds of models on OpenRouter. or your own GPU. Your hooks, skills and permissions, on every model. Write your own system prompt for each agent and each project. Claude: splits up the work. Grok: writing the rate limiter. Muse: writing the tests. GPT: found a bug. src/server.js:24 can crash a worker. Grok: fixed it, 18 tests pass. Watch and steer every session from one console. splice. Free and open source. Runs on your computer. github.com/torad-labs/splice.</p>
+  </dialog>
+  <script src="/site.js" defer onerror="document.documentElement.classList.remove('pg-js')"></script>
+</body>
+</html>

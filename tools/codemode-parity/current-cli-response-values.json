@@ -1,0 +1,486 @@
+{
+  "schema": 1,
+  "sourceRevision": "360319d8dee62d87e2d59fc0c21805d79519cfed",
+  "sourceTree": "307e4fa207fe563a11f3f7af09cee6fccd2d8376",
+  "inventoryDenominator": "5b879c34671df6533210cd7d6222cbcfae6ab891a5a13c657b641afdce85c790",
+  "status": "PROPOSED exact typed observation roots, not execution PASS",
+  "roots": [
+    {
+      "path": "codex-rs/core/src/client_common.rs",
+      "gitBlob": "a19431c5de830ca7a06c79e0a7c40a1f9dd79561",
+      "sha256": "cdc103174fee2fc87a72dff4af4d20d3f963b4d3f495729bca6aa7d310e6be22",
+      "bytes": 4824,
+      "excerpts": [
+        {
+          "startLine": 21,
+          "endLine": 29,
+          "sha256": "b40d1adfc4f60e85be057b62c409ec92fb357844b01a1536c5144534abbfe1b4",
+          "text": "/// API request payload for a single model turn\n#[derive(Debug, Clone)]\npub struct Prompt {\n    /// Conversation context input items.\n    pub input: Vec<ResponseItem>,\n\n    /// Tool definitions to inject into this request, empty when supplied by history.\n    pub(crate) tools: Arc<[ToolSpec]>,\n\n"
+        }
+      ]
+    },
+    {
+      "path": "codex-rs/core/src/client.rs",
+      "gitBlob": "99550cb20c42e35db54bdc7f7d3aa11014577875",
+      "sha256": "a8f9374064bd24cc421c3266f39f105aa8d287e350c72541f9dcde544665fae2",
+      "bytes": 126926,
+      "excerpts": [
+        {
+          "startLine": 1112,
+          "endLine": 1130,
+          "sha256": "2ec843f4e32e5415a81a727338c584e8c23a7792e91795fe09419ddbf91ff1ac",
+          "text": "        let client_metadata = responses_metadata.client_metadata(include_internal);\n        let request = ResponsesApiRequest {\n            model: model_info.slug.clone(),\n            input,\n            tools,\n            tool_choice: \"auto\".to_string(),\n            parallel_tool_calls: prompt.parallel_tool_calls && !model_info.use_responses_lite,\n            reasoning: Some(reasoning),\n            store: false,\n            stream: true,\n            stream_options,\n            include,\n            service_tier,\n            prompt_cache_key: self.prompt_cache_key(responses_metadata),\n            text,\n            client_metadata: Some(client_metadata),\n            access_programs: None,\n        };\n        Ok(request)\n"
+        }
+      ]
+    },
+    {
+      "path": "codex-rs/codex-api/src/common.rs",
+      "gitBlob": "1abc89c1b73f6d68619662745a7fda0d8192b227",
+      "sha256": "3ab2c9406e2e9b465b7b23756991bf7893bd884be9af3cff8c222bb26a8df4a0",
+      "bytes": 14718,
+      "excerpts": [
+        {
+          "startLine": 278,
+          "endLine": 290,
+          "sha256": "4925006b983351d7dad84ea22f399fa4f2aa64081ce5ff3508a07b8325d5d752",
+          "text": "#[derive(Debug, Serialize, Clone, PartialEq)]\npub struct ResponsesApiRequest {\n    // Keep routing fields first: serde serializes struct fields in declaration order, and\n    // gateways may inspect request bodies incrementally before potentially multi-megabyte input.\n    pub model: String,\n    pub stream: bool,\n    #[serde(skip_serializing_if = \"Option::is_none\")]\n    pub service_tier: Option<String>,\n    pub input: Vec<ResponseItem>,\n    #[serde(skip_serializing_if = \"Option::is_none\")]\n    pub tools: Option<ResponsesApiTools>,\n    pub tool_choice: String,\n    pub parallel_tool_calls: bool,\n"
+        }
+      ]
+    },
+    {
+      "path": "codex-rs/codex-api/src/endpoint/responses.rs",
+      "gitBlob": "9c41a802eadd57cf20ffc733121921d8d3ba9d08",
+      "sha256": "4f2fff3da4ca3ca9fcfa40ada8e98a0229af296094e03febb4d823f32ef932c8",
+      "bytes": 4961,
+      "excerpts": [
+        {
+          "startLine": 70,
+          "endLine": 96,
+          "sha256": "6638517c0a0e869b9c679c59d91911a38df053afc85fb1d205501656271296b7",
+          "text": "    pub async fn stream_request(\n        &self,\n        request: ResponsesApiRequest,\n        options: ResponsesOptions,\n    ) -> Result<ResponseStream, ApiError> {\n        let ResponsesOptions {\n            session_id,\n            thread_id,\n            session_source,\n            extra_headers,\n            compression,\n            turn_state,\n        } = options;\n        let body = EncodedJsonBody::encode(&request)\n            .map_err(|e| ApiError::Stream(format!(\"failed to encode responses request: {e}\")))?;\n\n        let mut headers = extra_headers;\n        if let Some(ref thread_id) = thread_id {\n            insert_header(&mut headers, \"x-client-request-id\", thread_id);\n        }\n        headers.extend(build_session_headers(session_id, thread_id));\n        if let Some(subagent) = subagent_header(&session_source) {\n            insert_header(&mut headers, \"x-openai-subagent\", &subagent);\n        }\n\n        self.stream_encoded(body, headers, compression, turn_state)\n            .await\n"
+        }
+      ]
+    },
+    {
+      "path": "codex-rs/protocol/src/models.rs",
+      "gitBlob": "351f45c03c943fac9bc9d2f195a5b927fa844ba2",
+      "sha256": "753498bc730ba21ded710d9aa2b2f9163e6bbe4eaa18f1c25d998c36138a54f7",
+      "bytes": 167602,
+      "excerpts": [
+        {
+          "startLine": 1050,
+          "endLine": 1052,
+          "sha256": "98362448fd4543efd17c8094c0742867a953c8067dbcc86ee4727927b0303571",
+          "text": "#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]\n#[serde(tag = \"type\", rename_all = \"snake_case\")]\npub enum ResponseItem {\n"
+        },
+        {
+          "startLine": 1124,
+          "endLine": 1148,
+          "sha256": "48107e124cf28e9e68e59124a735cc8b22ce52b0fe0e5a2b33f973b120c6e082",
+          "text": "    FunctionCall {\n        #[serde(default, skip_serializing_if = \"Option::is_none\")]\n        #[ts(optional)]\n        encrypted_content: Option<String>,\n        #[serde(default, skip_serializing_if = \"Option::is_none\")]\n        #[ts(optional)]\n        status: Option<String>,\n        #[serde(default, skip_serializing_if = \"Option::is_none\")]\n        #[ts(optional)]\n        id: Option<ResponseItemId>,\n        name: String,\n        #[serde(default, skip_serializing_if = \"Option::is_none\")]\n        #[ts(optional)]\n        namespace: Option<String>,\n        // The Responses API returns the function call arguments as a *string* that contains\n        // JSON, not as an already‑parsed object. We keep it as a raw string here and let\n        // Session::handle_function_call parse it into a Value.\n        arguments: String,\n        #[serde(default, skip_serializing_if = \"Option::is_none\")]\n        #[ts(optional)]\n        encrypted_function_args: Option<Vec<String>>,\n        call_id: String,\n        #[serde(default, skip_serializing_if = \"Option::is_none\")]\n        #[ts(optional)]\n        internal_chat_message_metadata_passthrough: Option<InternalChatMessageMetadataPassthrough>,\n"
+        },
+        {
+          "startLine": 1173,
+          "endLine": 1230,
+          "sha256": "bf0955abd02bb221a5b627aaa1bdbe5e646eaa10343e132e92beee4846646557",
+          "text": "    FunctionCallOutput {\n        #[serde(default, skip_serializing_if = \"Option::is_none\")]\n        #[ts(optional)]\n        id: Option<ResponseItemId>,\n        #[serde(default, skip_serializing_if = \"Option::is_none\")]\n        #[ts(optional)]\n        call_id: Option<String>,\n        #[serde(default, skip_serializing_if = \"Option::is_none\")]\n        #[ts(optional)]\n        name: Option<String>,\n        #[serde(default, skip_serializing_if = \"Option::is_none\")]\n        #[ts(optional)]\n        namespace: Option<String>,\n        #[ts(as = \"FunctionCallOutputBody\")]\n        #[schemars(with = \"FunctionCallOutputBody\")]\n        output: FunctionCallOutputPayload,\n        #[serde(default, skip_serializing_if = \"Option::is_none\")]\n        #[ts(optional)]\n        internal_chat_message_metadata_passthrough: Option<InternalChatMessageMetadataPassthrough>,\n    },\n    CustomToolCall {\n        #[serde(default, skip_serializing_if = \"Option::is_none\")]\n        #[ts(optional)]\n        encrypted_content: Option<String>,\n        #[serde(default, skip_serializing_if = \"Option::is_none\")]\n        #[ts(optional)]\n        id: Option<ResponseItemId>,\n        #[serde(default, skip_serializing_if = \"Option::is_none\")]\n        #[ts(optional)]\n        status: Option<String>,\n\n        call_id: String,\n        name: String,\n        #[serde(default, skip_serializing_if = \"Option::is_none\")]\n        #[ts(optional)]\n        namespace: Option<String>,\n        input: String,\n        #[serde(default, skip_serializing_if = \"Option::is_none\")]\n        #[ts(optional)]\n        internal_chat_message_metadata_passthrough: Option<InternalChatMessageMetadataPassthrough>,\n    },\n    // `custom_tool_call_output.output` uses the same wire encoding as\n    // `function_call_output.output` so freeform tools can return either plain\n    // text or structured content items.\n    CustomToolCallOutput {\n        #[serde(default, skip_serializing_if = \"Option::is_none\")]\n        #[ts(optional)]\n        id: Option<ResponseItemId>,\n        call_id: String,\n        #[serde(default, skip_serializing_if = \"Option::is_none\")]\n        #[ts(optional)]\n        name: Option<String>,\n        #[ts(as = \"FunctionCallOutputBody\")]\n        #[schemars(with = \"FunctionCallOutputBody\")]\n        output: FunctionCallOutputPayload,\n        #[serde(default, skip_serializing_if = \"Option::is_none\")]\n        #[ts(optional)]\n        internal_chat_message_metadata_passthrough: Option<InternalChatMessageMetadataPassthrough>,\n"
+        },
+        {
+          "startLine": 2340,
+          "endLine": 2355,
+          "sha256": "a867ccd79905b87924a88ed637cdfc9d03c4f7df2731c5cc4262dd096ff36660",
+          "text": "/// The payload we send back to OpenAI when reporting a tool call result.\n///\n/// `body` serializes directly as the wire value for `function_call_output.output`.\n/// `success` remains internal metadata for downstream handling.\n#[derive(Debug, Default, Clone, PartialEq, JsonSchema, TS)]\npub struct FunctionCallOutputPayload {\n    pub body: FunctionCallOutputBody,\n    pub success: Option<bool>,\n}\n\n#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]\n#[serde(untagged)]\npub enum FunctionCallOutputBody {\n    Text(String),\n    ContentItems(Vec<FunctionCallOutputContentItem>),\n}\n"
+        },
+        {
+          "startLine": 2415,
+          "endLine": 2428,
+          "sha256": "25d2df1a1ef9e86dd77107c6fe7eba14c76aab790afa7e68771b4bd420ee1415",
+          "text": "// `function_call_output.output` is encoded as either:\n//   - an array of structured content items\n//   - a plain string\nimpl Serialize for FunctionCallOutputPayload {\n    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>\n    where\n        S: Serializer,\n    {\n        match &self.body {\n            FunctionCallOutputBody::Text(content) => serializer.serialize_str(content),\n            FunctionCallOutputBody::ContentItems(items) => items.serialize(serializer),\n        }\n    }\n}\n"
+        }
+      ]
+    }
+  ],
+  "root": {
+    "wirePath": [
+      "input"
+    ],
+    "rustType": "Vec<codex_protocol::models::ResponseItem>",
+    "owner": {
+      "id": "codex-rs/protocol/src/models.rs#enum_item@37444",
+      "sha256": "cbba5625b2c7327cb08897cfd2781fb5792590767f95ee34393d0686f3f96999",
+      "start": 37444,
+      "end": 49021
+    }
+  },
+  "variants": [
+    {
+      "wireType": "function_call",
+      "unit": {
+        "id": "codex-rs/protocol/src/models.rs#enum_variant@40550",
+        "sha256": "67cd5c03a5c1619e2c069e9a6696f4d63566faa73deadf0b2b44ed25dfe066ec",
+        "start": 40550,
+        "end": 41739
+      },
+      "fields": [
+        {
+          "wireKey": "name",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@40957",
+            "sha256": "7d9c8471af736ddb1c5c05231fbc85aba0bb84760232950059c5b41189f90ad1",
+            "start": 40957,
+            "end": 40969
+          },
+          "required": true
+        },
+        {
+          "wireKey": "arguments",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@41354",
+            "sha256": "ef68e4a14e0952463e3cd20189efac5b4aa79bd91a1ad687c7352a3c2ee921ad",
+            "start": 41354,
+            "end": 41371
+          },
+          "required": true
+        },
+        {
+          "wireKey": "call_id",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@41526",
+            "sha256": "ff322153fc1c4aacbfdbec84ef1e2d1f38994bdebf516e06a89c0346bc1d16c7",
+            "start": 41526,
+            "end": 41541
+          },
+          "required": true
+        },
+        {
+          "wireKey": "encrypted_content",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@40664",
+            "sha256": "5adad6317caa73f5a85d89e1f1a580aef7b21d777f6c5d06dccfa526c1956c35",
+            "start": 40664,
+            "end": 40697
+          },
+          "required": false
+        },
+        {
+          "wireKey": "status",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@40798",
+            "sha256": "a0c3592743fd5e05acb1b181d0a73a4fb683e59775d44b422a568dd5dc316192",
+            "start": 40798,
+            "end": 40820
+          },
+          "required": false
+        },
+        {
+          "wireKey": "id",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@40921",
+            "sha256": "7e9516073c6238968b403aac9e8ce8bc083506d85e02cff5f434aed6ee822e2f",
+            "start": 40921,
+            "end": 40947
+          },
+          "required": false
+        },
+        {
+          "wireKey": "namespace",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@41070",
+            "sha256": "70a5211d28900de02bc3b161903afd4ef3f2bb7a6aa892efd2a5064ec7cb8c5c",
+            "start": 41070,
+            "end": 41095
+          },
+          "required": false
+        },
+        {
+          "wireKey": "encrypted_function_args",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@41472",
+            "sha256": "4f4db9064e9a3a59d46704aefbcaad24a0d2baf141b9b83b56ec7bbe7d790964",
+            "start": 41472,
+            "end": 41516
+          },
+          "required": false
+        },
+        {
+          "wireKey": "internal_chat_message_metadata_passthrough",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@41642",
+            "sha256": "cc057548feeabcb39fe238f7f8ef06dd1078c2ffc74ecfbcae6a473239dbe46a",
+            "start": 41642,
+            "end": 41732
+          },
+          "required": false
+        }
+      ]
+    },
+    {
+      "wireType": "function_call_output",
+      "unit": {
+        "id": "codex-rs/protocol/src/models.rs#enum_variant@42804",
+        "sha256": "466e19c616580690d4a36a6e0dd7f8228436a835ba22de58fd047d89fe0d69cb",
+        "start": 42804,
+        "end": 43660
+      },
+      "fields": [
+        {
+          "wireKey": "output",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@43429",
+            "sha256": "2eb4877cec24a4fb5d81fc2d07f23b1b06b38f8e59167eb4242340ff3911c7eb",
+            "start": 43429,
+            "end": 43462
+          },
+          "required": true
+        },
+        {
+          "wireKey": "call_id",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@43051",
+            "sha256": "c373dc75d1e10499215ba7e9ce3646c241ae21799f1a56e3837f40b23851cc1f",
+            "start": 43051,
+            "end": 43074
+          },
+          "required": false
+        },
+        {
+          "wireKey": "name",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@43175",
+            "sha256": "155bab159fc0ea748020f88b7b208ec0f7c38fcfde83a45a1b030a0cd8c7fc99",
+            "start": 43175,
+            "end": 43195
+          },
+          "required": false
+        },
+        {
+          "wireKey": "namespace",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@43296",
+            "sha256": "70a5211d28900de02bc3b161903afd4ef3f2bb7a6aa892efd2a5064ec7cb8c5c",
+            "start": 43296,
+            "end": 43321
+          },
+          "required": false
+        },
+        {
+          "wireKey": "internal_chat_message_metadata_passthrough",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@43563",
+            "sha256": "cc057548feeabcb39fe238f7f8ef06dd1078c2ffc74ecfbcae6a473239dbe46a",
+            "start": 43563,
+            "end": 43653
+          },
+          "required": false
+        }
+      ]
+    },
+    {
+      "wireType": "custom_tool_call",
+      "unit": {
+        "id": "codex-rs/protocol/src/models.rs#enum_variant@43666",
+        "sha256": "64ed920919732f80f1f9849d1a38066a4dc44e3b743a4e697e16038a3ba57580",
+        "start": 43666,
+        "end": 44460
+      },
+      "fields": [
+        {
+          "wireKey": "call_id",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@44076",
+            "sha256": "ff322153fc1c4aacbfdbec84ef1e2d1f38994bdebf516e06a89c0346bc1d16c7",
+            "start": 44076,
+            "end": 44091
+          },
+          "required": true
+        },
+        {
+          "wireKey": "name",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@44101",
+            "sha256": "7d9c8471af736ddb1c5c05231fbc85aba0bb84760232950059c5b41189f90ad1",
+            "start": 44101,
+            "end": 44113
+          },
+          "required": true
+        },
+        {
+          "wireKey": "input",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@44249",
+            "sha256": "9ef674c999f7266fa72f59fed51fb9d0e163e772f3d2cfe6af3d7089e68665bc",
+            "start": 44249,
+            "end": 44262
+          },
+          "required": true
+        },
+        {
+          "wireKey": "encrypted_content",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@43782",
+            "sha256": "5adad6317caa73f5a85d89e1f1a580aef7b21d777f6c5d06dccfa526c1956c35",
+            "start": 43782,
+            "end": 43815
+          },
+          "required": false
+        },
+        {
+          "wireKey": "id",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@43916",
+            "sha256": "7e9516073c6238968b403aac9e8ce8bc083506d85e02cff5f434aed6ee822e2f",
+            "start": 43916,
+            "end": 43942
+          },
+          "required": false
+        },
+        {
+          "wireKey": "status",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@44043",
+            "sha256": "a0c3592743fd5e05acb1b181d0a73a4fb683e59775d44b422a568dd5dc316192",
+            "start": 44043,
+            "end": 44065
+          },
+          "required": false
+        },
+        {
+          "wireKey": "namespace",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@44214",
+            "sha256": "70a5211d28900de02bc3b161903afd4ef3f2bb7a6aa892efd2a5064ec7cb8c5c",
+            "start": 44214,
+            "end": 44239
+          },
+          "required": false
+        },
+        {
+          "wireKey": "internal_chat_message_metadata_passthrough",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@44363",
+            "sha256": "cc057548feeabcb39fe238f7f8ef06dd1078c2ffc74ecfbcae6a473239dbe46a",
+            "start": 44363,
+            "end": 44453
+          },
+          "required": false
+        }
+      ]
+    },
+    {
+      "wireType": "custom_tool_call_output",
+      "unit": {
+        "id": "codex-rs/protocol/src/models.rs#enum_variant@44657",
+        "sha256": "e2a3b8bccca4a8561afe76b7e4cdc983e485591afbf15189afd7862e6a2e655c",
+        "start": 44657,
+        "end": 45290
+      },
+      "fields": [
+        {
+          "wireKey": "call_id",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@44815",
+            "sha256": "ff322153fc1c4aacbfdbec84ef1e2d1f38994bdebf516e06a89c0346bc1d16c7",
+            "start": 44815,
+            "end": 44830
+          },
+          "required": true
+        },
+        {
+          "wireKey": "output",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@45059",
+            "sha256": "2eb4877cec24a4fb5d81fc2d07f23b1b06b38f8e59167eb4242340ff3911c7eb",
+            "start": 45059,
+            "end": 45092
+          },
+          "required": true
+        },
+        {
+          "wireKey": "name",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@44931",
+            "sha256": "155bab159fc0ea748020f88b7b208ec0f7c38fcfde83a45a1b030a0cd8c7fc99",
+            "start": 44931,
+            "end": 44951
+          },
+          "required": false
+        },
+        {
+          "wireKey": "internal_chat_message_metadata_passthrough",
+          "unit": {
+            "id": "codex-rs/protocol/src/models.rs#field_declaration@45193",
+            "sha256": "cc057548feeabcb39fe238f7f8ef06dd1078c2ffc74ecfbcae6a473239dbe46a",
+            "start": 45193,
+            "end": 45283
+          },
+          "required": false
+        }
+      ]
+    }
+  ],
+  "outputProjection": {
+    "payload": {
+      "id": "codex-rs/protocol/src/models.rs#struct_item@85218",
+      "sha256": "4e55b33b0c0f5d131c1c6e95a16342feb93c564ccd4b927f60141b1df4360439",
+      "start": 85218,
+      "end": 85327
+    },
+    "bodyField": {
+      "id": "codex-rs/protocol/src/models.rs#field_declaration@85261",
+      "sha256": "cf8f221397be2107219ef68e3a0e83689aad6ec4ae8aac62b061b2619f804116",
+      "start": 85261,
+      "end": 85293
+    },
+    "body": {
+      "id": "codex-rs/protocol/src/models.rs#enum_item@85423",
+      "sha256": "95f9fb7f02f9c424115d00b7cf76f7785521f5564e741c41ce9c9fed9326f51e",
+      "start": 85423,
+      "end": 85530
+    },
+    "variants": [
+      {
+        "unit": {
+          "id": "codex-rs/protocol/src/models.rs#enum_variant@85461",
+          "sha256": "63b5dbf4cca6bd4304398a5458aab505e46d0d26506ac9d760b6a51b75a39956",
+          "start": 85461,
+          "end": 85473
+        },
+        "tuple": {
+          "id": "codex-rs/protocol/src/models.rs#ordered_field_declaration_list@85465",
+          "sha256": "1c10a1297a34000311bcfdef35203ebf28858f9090fac65b300b7bbc7ab52edd",
+          "start": 85465,
+          "end": 85473
+        },
+        "shape": "string"
+      },
+      {
+        "unit": {
+          "id": "codex-rs/protocol/src/models.rs#enum_variant@85479",
+          "sha256": "3c5b53f431a2970a370059e113765fe125d50d231283eb08a4515579afee3552",
+          "start": 85479,
+          "end": 85527
+        },
+        "tuple": {
+          "id": "codex-rs/protocol/src/models.rs#ordered_field_declaration_list@85491",
+          "sha256": "a49b46f19a6f10e5de2d7e9918802e123d45a8545f6a9ebf06fc31b2d6622993",
+          "start": 85491,
+          "end": 85527
+        },
+        "shape": "array"
+      }
+    ],
+    "predicate": "Exact hash-bound handwritten Serialize maps payload.body directly to wire output; success is not serialized"
+  },
+  "guards": [
+    "Use actual captured source model request items and candidate posted items, not scenario expected labels",
+    "Require exact tag plus raw field presence/value equality and observable JSON key order",
+    "Do not attribute normalized <measured> status headers as source values; whole output/body claims need raw equality",
+    "Output id fields are stripped by protocolSequence and cannot be claimed",
+    "Absent optional, encrypted and internal metadata fields remain unproved",
+    "ResponseInputItem is not this serialization root",
+    "ContentItem is not FunctionCallOutputContentItem; identical input_text JSON tags grant nothing across types",
+    "Messages/media/phase are filtered from existing comparison and remain unproved",
+    "FunctionCallOutputPayload.success is internal-only and remains unproved",
+    "No ordinary MCP frontend obligation is discharged by this typed model-wire observation"
+  ]
+}

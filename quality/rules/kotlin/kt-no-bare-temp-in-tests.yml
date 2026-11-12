@@ -1,0 +1,38 @@
+# V4-383 — a test never makes its own temp directory or file. `Files.createTempDirectory` and
+# `createTempFile` hand back a path under /tmp that nothing deletes: on the dev box /tmp is a tmpfs, so
+# every test run left its directories in RAM (427 leaked dirs on Sep 27, 11:15 PM CT: grok-*,
+# control-gate*, console-routes*, claudex-test-state*), and the tree held 227 such call sites in 107
+# test files. JUnit's `@TempDir` makes the same directory and deletes it when the test (or, on a
+# `@BeforeAll` parameter or a static field, the class) ends, so the compliant spelling costs nothing.
+#
+# Compliant forms: a `@TempDir dir: Path` parameter on the test or on `@BeforeAll`, or a
+# `@TempDir lateinit var dir: Path` field (lateinit is legal under src/test; kt-no-lateinit binds
+# src/main only). A file is `dir.resolve("name")`, never a second temp call.
+#
+# The match is the call, whatever its receiver: `Files.createTempDirectory(..)`,
+# `java.nio.file.Files.createTempFile(..)`, `File.createTempFile(..)` and the bare
+# `kotlin.io.path.createTempDirectory(..)` are one shape, a call whose callee is the name (or ends in
+# `.name`). `stopBy: neighbor` keeps the test on the callee: `Files.createTempDirectory("x").resolve("y")`
+# is caught by its inner call and `createTempDirectoryFor(..)` is not this wall's business.
+#
+# A deliberate exception (a test whose subject IS the temp-file API, or a directory that must outlive
+# its test) is `// ast-grep-ignore: kt-no-bare-temp-in-tests` with the reason on the same line.
+id: kt-no-bare-temp-in-tests
+language: kotlin
+severity: error
+message: "No bare createTempDirectory/createTempFile in a test — take a JUnit @TempDir, which is deleted for you."
+note: "Add `@TempDir dir: Path` to the test method (or an `@BeforeAll` parameter for a shared one) and use `dir.resolve(\"name\")` for a file; /tmp is RAM on the dev box and a bare temp call never deletes what it makes."
+files:
+  - "**/src/test/**/*.kt"
+  - "**/src/test/**/*.kts"
+  - "**/src/testFixtures/**/*.kt"
+  - "**/src/testFixtures/**/*.kts"
+rule:
+  kind: call_expression
+  has:
+    stopBy: neighbor
+    any:
+      - kind: simple_identifier
+        regex: '^createTemp(Directory|File)$'
+      - kind: navigation_expression
+        regex: '(^|\.)createTemp(Directory|File)$'

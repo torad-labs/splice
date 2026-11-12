@@ -1,0 +1,201 @@
+package splice.app.failure
+
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.app.provider.HeadReplies
+import splice.head.scripted.ClientRequest
+import splice.head.scripted.ScriptedLogin
+import splice.head.scripted.ScriptedReply
+import splice.head.scripted.VirtualTime
+import splice.head.scripted.reply
+import splice.head.scripted.withScriptedHeads
+import java.nio.file.Path
+import java.time.Instant
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.seconds
+
+/** Buffered requests may wait briefly for a limit without turning that allowance into a generation deadline. */
+class NonStreamHoldsThroughHeadsTest {
+    @Test
+    fun `a non-stream request waits ten seconds silently and returns the answer`(@TempDir tmp: Path) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(limited(START.plusSeconds(10)), reply { anthropicAnswer("after the short limit") })
+            val head = anthropic(replies = HeadReplies.claude)
+
+            val answer = head.client.send(ClientRequest(stream = false))
+
+            assertEquals(200, answer.status, answer.describe())
+            assertTrue("after the short limit" in answer.body, answer.describe())
+            assertTrue(answer.events.isEmpty(), "a buffered wait sends no streaming notice")
+            assertEquals(listOf(0.seconds, 10.seconds), provider.requests.map { it.at })
+        }
+    }
+
+    @Test
+    fun `a non-stream limit an hour away returns its true reset without scheduling a later send`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp, VirtualTime()) {
+            val reset = START.plusSeconds(1.hours.inWholeSeconds)
+            provider.script(limited(reset), reply { anthropicAnswer("must not be sent") })
+            val head = anthropic(replies = HeadReplies.claude)
+
+            val answer = head.client.send(ClientRequest(stream = false))
+            time.advanceBy(2.hours)
+            withContext(Dispatchers.Default) { delay(25) }
+
+            assertEquals(429, answer.status, answer.describe())
+            assertEquals("3600", answer.header("retry-after"))
+            assertEquals(reset.epochSecond.toString(), answer.header("anthropic-ratelimit-unified-reset"))
+            assertEquals(reset.epochSecond.toString(), answer.header("anthropic-ratelimit-unified-5h-reset"))
+            assertTrue(answer.error?.message?.startsWith("[splice] ") == true, answer.describe())
+            assertEquals(1, provider.requests.size, "a returned buffered request owns no future send")
+        }
+    }
+
+    @Test
+    fun `an exhausted pooled non-stream turn uses the earliest login and gives the client a thirty second recheck`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            val firstReset = START.plusSeconds(1.hours.inWholeSeconds)
+            provider.script(
+                limited(firstReset),
+                limited(START.plusSeconds(2.hours.inWholeSeconds)),
+                limited(firstReset),
+            )
+            val head = pooledAnthropic(listOf("first", "second"), replies = HeadReplies.claude)
+
+            val answer = head.client.send(ClientRequest(stream = false))
+
+            assertEquals(429, answer.status, answer.describe())
+            assertEquals("30", answer.header("retry-after"))
+            assertEquals((START.epochSecond + 30).toString(), answer.header("anthropic-ratelimit-unified-reset"))
+            assertEquals(firstReset.epochSecond.toString(), answer.header("anthropic-ratelimit-unified-5h-reset"))
+            assertEquals(
+                listOf("first", "second", "first").map(ScriptedLogin::of),
+                provider.requests.map { it.headers["authorization"].orEmpty().removePrefix("Bearer ") },
+            )
+        }
+    }
+
+    @Test
+    fun `non-stream generation can remain silent beyond its fifteen second wait allowance`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(reply { delay(20.seconds); anthropicAnswer("the generation finished") })
+            val head = anthropic(replies = HeadReplies.claude)
+
+            val answer = head.client.send(ClientRequest(stream = false))
+
+            assertEquals(200, answer.status, answer.describe())
+            assertTrue("the generation finished" in answer.body, answer.describe())
+        }
+    }
+
+    // Since 1ca21503b (Nov 9) a non-stream turn with a session runs on detached when its client hangs up: it waits
+    // out the limit, is sent once at the reset, and holds its answer for the same request asked again. Until Nov 11,
+    // 2026 this test said the opposite ("sends nothing at the reset") and passed by a race. It moved the clock an hour
+    // in one step, where the turn's idle watchdog and the reset's wake were both due, and the watchdog usually ran
+    // first and ended the turn as abandoned. On CI the reset's wake ran first once and the turn was sent, which is
+    // what the product does at a real reset.
+    @Test
+    fun `a non-stream client that leaves during a short limit finds its answer when it asks again`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp, VirtualTime()) {
+            provider.script(limited(START.plusSeconds(10)), reply { anthropicAnswer("after the short limit") })
+            val head = anthropic(replies = HeadReplies.claude)
+            val request = ClientRequest(stream = false)
+            val client = head.client.open(request)
+            withContext(Dispatchers.Default) {
+                withTimeout(10_000) { while (10.seconds !in time.parkedDues()) delay(5) }
+            }
+
+            client.hangUp()
+            // The head says when it has seen its client go, and the clock reaches the reset only after that.
+            withContext(Dispatchers.Default) {
+                withTimeout(10_000) { while (head.log.none { "client left mid-turn" in it }) delay(5) }
+            }
+            time.advanceBy(10.seconds)
+            val again = head.client.send(request)
+
+            assertEquals(200, again.status, again.describe())
+            assertTrue("after the short limit" in again.body, again.describe())
+            assertEquals(
+                listOf(0.seconds, 10.seconds),
+                provider.requests.map { it.at },
+                "the turn is sent once at the reset, and the request asked again reads its answer",
+            )
+        }
+    }
+
+    @Test
+    fun `a known reset is re-ranked when the oldest held client leaves`(@TempDir tmp: Path) = runTest {
+        withScriptedHeads(tmp, VirtualTime()) {
+            val spent = reply {
+                status(429)
+                header("Retry-After", "60")
+                anthropicErrorBody(
+                    "rate_limit_error",
+                    "You've reached your 5-hour usage limit. " +
+                        "Your quota will reset when the current 5-hour window ends.",
+                )
+            }
+            provider.script(spent, spent, reply { anthropicAnswer("the remaining turn continued") })
+            val head = anthropic(replies = HeadReplies.kimi)
+            val wall = mapOf("x-splice-client-wall-ms" to "606660000")
+            val first = head.client.open(ClientRequest(headers = wall))
+            withContext(Dispatchers.Default) {
+                withTimeout(10_000) { while (head.heldTurns().size != 1) delay(5) }
+            }
+            val second = head.client.open(ClientRequest(headers = wall))
+            withContext(Dispatchers.Default) {
+                withTimeout(10_000) { while (head.heldTurns().size != 2) delay(5) }
+            }
+
+            first.hangUp()
+            // Both finite Retry-After replies arrived at virtual t=0 and name reset t=60. Leaving wakes the remaining
+            // turn to re-rank without changing that reset; its existing two-second wake stagger moves the resend to t=62.
+            withContext(Dispatchers.Default) {
+                val settled = withTimeoutOrNull(10_000) {
+                    while (head.heldTurns().size != 1 || 62.seconds !in time.parkedDues()) delay(5)
+                }
+                assertTrue(settled != null, "held ${head.heldTurns().size}, parked waits due at ${time.parkedDues()}")
+            }
+            time.advanceBy(60.seconds)
+            assertEquals(2, provider.requests.size, "the known reset does not resend before the re-ranked t=62 wake")
+            assertTrue(
+                62.seconds in time.parkedDues(),
+                "the held request remains parked for the existing two-second stagger",
+            )
+            time.advanceBy(2.seconds)
+            withContext(Dispatchers.Default) {
+                withTimeout(10_000) { while (!second.finished) delay(5) }
+            }
+
+            assertEquals("the remaining turn continued", second.finish().text)
+            assertEquals(3, provider.requests.size, "one scheduled probe serves the remaining held turn")
+            assertEquals(62.seconds, provider.requests.last().at)
+        }
+    }
+
+    private fun limited(reset: Instant): ScriptedReply = reply {
+        status(429)
+        header("anthropic-ratelimit-unified-status", "rejected")
+        header("anthropic-ratelimit-unified-representative-claim", "five_hour")
+        header("anthropic-ratelimit-unified-reset", reset.epochSecond.toString())
+        anthropicErrorBody("rate_limit_error", "This request would exceed your account's rate limit.")
+    }
+}
+
+private val START: Instant = Instant.parse("2026-10-26T12:00:00Z")

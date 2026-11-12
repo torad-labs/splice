@@ -1,0 +1,98 @@
+// NEW: the Kimi (Moonshot) token-refresh HTTP call — POST grant_type=refresh_token to
+// auth.kimi.com's token URL, the network hop KimiAuthProvider injects. Lives in :app so
+// :providers-kimi stays HTTP-client-agnostic and unit-testable with a fake refreshCall (mirrors
+// GrokRefresh). Invariants: rotation is mandatory (a response missing refresh_token → Denied →
+// re-prompt); 401/403 and error=="invalid_grant" are terminal (auth dead → InvalidGrant);
+// 429/500/502/503/504 answer Unavailable; the X-Msh-* device identity headers ride on the refresh
+// POST too. JsonNull-safe extraction throughout.
+// Failure-handling slice 4: one call is one exchange. The loop of three POSTs it ran through RefreshRetry is the turn's
+// retry engine's now, which asks again 2 s and then 4 s later on an Unavailable answer (TokenEndpointReply).
+package splice.oauth.kimi
+
+import io.ktor.client.HttpClient
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.isSuccess
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import splice.core.auth.RefreshAttempt
+import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
+import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
+import splice.oauth.AuthHttpClientFactory
+import splice.oauth.TokenEndpointReply
+import splice.provider.kimi.KimiOAuth
+import splice.provider.kimi.KimiRefreshedTokens
+
+// The daemon log (LAYOUT-01): these lines went to bare stderr, which never reaches /mgmt/logs.
+public class KimiRefresh(private val log: LogSink) {
+
+    private val reply = TokenEndpointReply(kimiRefreshJson)
+    private val kimiOAuth = KimiOAuth()
+
+    /**
+     * One exchange of the kimi refresh token. Returns Granted rotated tokens, InvalidGrant when auth is confirmed dead
+     * (401/403/invalid_grant), Unavailable when the endpoint could not answer now (429/5xx), or Denied when a missing
+     * rotation field or another status makes re-prompt the honest outcome (NOT evidence the refresh token itself is
+     * dead). A send that throws reaches the caller, whose provider reads it as a transport failure.
+     */
+    public suspend fun refresh(
+        tokenUrl: String,
+        refreshToken: String,
+        identityHeaders: Map<String, String>,
+        client: HttpClient = kimiRefreshClient,
+    ): RefreshAttempt<KimiRefreshedTokens> = classify(postRefresh(client, tokenUrl, refreshToken, identityHeaders))
+
+    // Keep failed refreshes diagnosable without copying an untrusted vendor response into logs.
+    private suspend fun classify(resp: HttpResponse): RefreshAttempt<KimiRefreshedTokens> {
+        val status = resp.status.value
+        val body = resp.bodyAsText()
+        if (!resp.status.isSuccess()) {
+            log("[kimi] token refresh failed: HTTP $status\n")
+            return reply.failed(status, body)
+        }
+        return parseKimiRefresh(body)?.let { RefreshAttempt.Granted(it) }
+            ?: RefreshAttempt.Denied("refresh response missing rotation fields")
+    }
+
+    private suspend fun postRefresh(
+        client: HttpClient,
+        tokenUrl: String,
+        refreshToken: String,
+        identityHeaders: Map<String, String>,
+    ): HttpResponse = client.post(tokenUrl) {
+        header("Content-Type", "application/x-www-form-urlencoded")
+        header("Accept", "application/json")
+        identityHeaders.forEach { (k, v) -> header(k, v) }
+        setBody(kimiOAuth.kimiRefreshForm(refreshToken))
+    }
+
+    /** Rotation is mandatory: a response missing access_token OR refresh_token → null (re-prompt). */
+    private fun parseKimiRefresh(body: String): KimiRefreshedTokens? = Cancellables.runCatchingCancellable {
+        val obj = kimiRefreshJson.parseToJsonElement(body) as? JsonObject ?: return@runCatchingCancellable null
+        val access = JsonScalars.str(obj, "access_token") ?: return@runCatchingCancellable null
+        val refresh = JsonScalars.str(obj, "refresh_token") ?: return@runCatchingCancellable null
+        val expiresIn = JsonScalars.str(obj, "expires_in")?.toLongOrNull() ?: return@runCatchingCancellable null
+        KimiRefreshedTokens(
+            accessToken = access,
+            refreshToken = refresh,
+            expiresIn = expiresIn,
+            scope = JsonScalars.str(obj, "scope").orEmpty(),
+            tokenType = JsonScalars.str(obj, "token_type") ?: "Bearer",
+        )
+    }.onFailure { log("[kimi] refresh body did not parse: ${SafeFailureText.render(it)}\n") }
+        .getOrNull()
+}
+
+// JsonNull IS a JsonPrimitive whose content is "null"; treat an explicit null as absent.
+
+// FILE SCOPE ON PURPOSE (Kotlin style law relocation, 2026-08-15): the lazy client is the default
+// argument of [KimiRefresh.refresh], so it must stay a per-JVM singleton. Held as a member it would
+// become per-instance, and a caller that constructs KimiRefresh per refresh would open a new JDK
+// HttpClient every time.
+private val kimiRefreshClient by lazy { AuthHttpClientFactory().create() }
+private val kimiRefreshJson = Json { ignoreUnknownKeys = true }

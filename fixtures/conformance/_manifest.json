@@ -1,0 +1,48 @@
+{
+  "about": "V4-282 conformance corpus: synthetic request bodies shaped on Claude Code 2.1.283's, one corpus for splice's gate leg (tools/e2e conformance) and rig-lead's head-side half. No provider, no private data: every string here is invented. A class fixture is one Anthropic Messages request plus, per dialect, the checks its upstream request must pass. A string `@id` in a check or in the request is replaced by carriers[id] before use.",
+  "shapedOn": "Claude Code 2.1.283",
+  "classes": [
+    "task-notification",
+    "session-start-hook",
+    "cross-session-message",
+    "date-and-token-notices",
+    "free-form-tool-schema",
+    "reasoning-blocks"
+  ],
+  "clientSystem": "KEEP-ALPHA the client's opening instructions.\n\nSTRIP-TARGET a paragraph an operator's pattern removes.\n\nKEEP-OMEGA the client's closing instructions.",
+  "headPrompts": {
+    "append": "HEAD-PROMPT-APPEND standing instructions for this head.",
+    "replace": "HEAD-PROMPT-REPLACE standing instructions for this head.",
+    "strip": "^STRIP-TARGET"
+  },
+  "systemSeam": {
+    "append": {
+      "present": [
+        "KEEP-ALPHA",
+        "STRIP-TARGET",
+        "KEEP-OMEGA",
+        "HEAD-PROMPT-APPEND"
+      ],
+      "absent": []
+    },
+    "replace": {
+      "present": [
+        "HEAD-PROMPT-REPLACE"
+      ],
+      "absent": [
+        "KEEP-ALPHA",
+        "STRIP-TARGET",
+        "KEEP-OMEGA"
+      ]
+    },
+    "strip": {
+      "present": [
+        "KEEP-ALPHA",
+        "KEEP-OMEGA"
+      ],
+      "absent": [
+        "STRIP-TARGET"
+      ]
+    }
+  }
+}

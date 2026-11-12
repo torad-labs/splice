@@ -1,0 +1,56 @@
+# Type erasure at a parameter. A parameter typed `Any` or `Any?` discards the contract between caller and
+# callee: the compiler can no longer say what the function needs. Use a type parameter
+# (`fun <T : Any> f(owner: T)`) or the specific type.
+#
+# SOURCE: torad-toolkit resources/configs/kotlin-rules/ast-grep/rules-style/no-any-parameters.yaml (TENET).
+# ADAPTED for splice (2026-10-07). Each change, and why:
+#   - `Any?` matches too. The toolkit reads only the bare `user_type`; a nullable parameter is a
+#     `nullable_type` wrapping it, so `previous: Any? = null` walked through.
+#   - A plain constructor parameter (`class C(owner: Any)`, no `val`/`var`) matches too: it is a parameter the
+#     toolkit's `kind: parameter` misses. A `val`/`var` constructor parameter matches too: `class C(private val lock:
+#     Any)` erases its type exactly as a plain one does, so no exemption for properties (2026-10-08, zero live hits).
+#   - No `ignores:` block. The toolkit exempts test source sets. The operator's law is no exceptions, so tests
+#     are policed like production code.
+#   - `override` carve-out. An override's own parameter types are fixed by its supertype, and where the supertype
+#     is a library no compliant spelling exists. Three remain, measured 2026-10-08 with the carve-out removed:
+#     IngressResponseWatch.write (IngressHandler.kt:105), the one untyped outbound hook, since Netty has no typed
+#     outbound base. ClientWindowsTest.kt:93 overrides the JDK's FileSystemProvider.setAttribute, which takes Object.
+#     ClientVersion.kt:20 overrides Any.equals.
+#     A nested non-override function is still checked. A splice supertype's declaration is still checked (it has no
+#     `override` modifier), but a splice generic instantiated with Any in a subclass
+#     (`class X : Foo<Any> { override fun f(x: Any) }`) is not: the declaration reads `T`. Measured zero such hidden
+#     parameters on 2026-10-08; no rule covers that shape yet.
+id: kt-no-any-parameters
+language: kotlin
+severity: error
+message: "No Any or Any? parameter types. Use a type parameter (fun <T : Any> f(owner: T)) or the specific type."
+note: "An override whose supertype fixes Any is exempt; the supertype's own declaration is still checked."
+files:
+  - "**/*.kt"
+  - "**/*.kts"
+rule:
+  any:
+    - kind: parameter
+    - kind: class_parameter
+  has:
+    any:
+      - kind: user_type
+        has:
+          kind: type_identifier
+          regex: "^Any$"
+      - kind: nullable_type
+        has:
+          kind: user_type
+          has:
+            kind: type_identifier
+            regex: "^Any$"
+  not:
+    inside:
+      kind: function_value_parameters
+      inside:
+        kind: function_declaration
+        has:
+          kind: modifiers
+          has:
+            kind: member_modifier
+            regex: "^override$"

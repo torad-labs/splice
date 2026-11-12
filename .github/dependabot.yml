@@ -7,7 +7,7 @@ version: 2
 # human per dependabot-automerge.yml. github-actions gets default-days only — Dependabot's
 # validator rejects semver-*-days for that ecosystem (PR #52 check failure 2026-07-26).
 updates:
-  - package-ecosystem: "npm"
+  - package-ecosystem: "bun"
     directory: "/"
     schedule:
       interval: "weekly"
@@ -16,18 +16,24 @@ updates:
       semver-major-days: 30
     ignore:
       # plugin-react majors need a coherent webui tree first (phantom root vite 6 +
-      # ts7/typescript-eslint peer conflict, frozen by npm ci) — see issue #43. Unignore
+      # ts7/typescript-eslint peer conflict, frozen by bun.lock) — see issue #43. Unignore
       # after the lockfile regeneration lands.
       - dependency-name: "@vitejs/plugin-react"
         update-types: ["version-update:semver-major"]
+      # typescript 7 is the native compiler and exports no JS compiler API (its root export is the version
+      # alone): tools/gate's no-python leg (tools/gate/src/lib/no-python-sources.ts) parses sources with
+      # ts.createSourceFile from typescript 5, while tsc runs from @typescript/native, which already IS
+      # typescript 7. Lift this when that leg moves to the native API (PR #431 closed, 2026-11-02).
+      - dependency-name: "typescript"
+        versions: [">=7"]
     groups:
-      npm-minor-patch:
+      bun-minor-patch:
         applies-to: version-updates
         patterns: ["*"]
         update-types: ["minor", "patch"]
 
   - package-ecosystem: "gradle"
-    directory: "/gateway"
+    directory: "/"
     schedule:
       interval: "weekly"
     cooldown:
@@ -40,6 +46,17 @@ updates:
       # intentionally released into gradle-minor-patch.
       - dependency-name: "org.jetbrains.kotlin:*"   # group:artifact form: kotlin-stdlib, kotlin-compiler-embeddable (CodeQL kotlin-2.4.x block, #18/#37)
       - dependency-name: "org.jetbrains.kotlin.*"   # plugin-id + marker forms: org.jetbrains.kotlin.jvm, .plugin.serialization, and any future org.jetbrains.kotlin.* plugin (e.g. .plugin.compose)
+      # protobuf-java stays on its ABI-compatible 3.x line beside the current gRPC (gradle/libs.versions.toml,
+      # "protobuf stays on its ABI-compatible 3.x line"); 4.x changes the runtime ABI that code mode's
+      # DynamicMessage/Descriptors callers bind to (PR #433 closed, 2026-11-02).
+      - dependency-name: "com.google.protobuf:protobuf-java"
+        update-types: ["version-update:semver-major"]
+      # konsist 0.18.x compiles against kotlin-compiler-embeddable 2.4.21, which the Kotlin block above keeps
+      # out ("Extensions storage is not registered" in UnpackedParameterLawTest on 0.18.1, PR #432). Lift it
+      # with the Kotlin block. kotlinx-serialization 1.12.0 is held the same way in the catalog but cannot be
+      # ignored here: the gate's Dependabot scope guard forbids any glob that matches a kotlinx name.
+      - dependency-name: "com.lemonappdev:konsist"
+        versions: [">=0.18.0"]
     groups:
       gradle-minor-patch:
         applies-to: version-updates

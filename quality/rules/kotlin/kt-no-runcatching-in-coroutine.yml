@@ -1,0 +1,65 @@
+# WALL (#924 Phase 5): raw runCatching swallows CancellationException. On the turn/stream coroutine
+# path that means a cancelled turn keeps running upstream — the leaked-spinner / 600%-CPU class
+# (2026-07-18). Use runCatchingCancellable (splice.core.util), which rethrows CancellationException.
+# This is the runCatching complement to kt-catch-swallows-cancellation (which only sees try/catch).
+# Scoped to the coroutine-heavy modules; core/app/control keep raw runCatching for synchronous
+# best-effort work where there is no coroutine to cancel.
+# Widened: `pattern: runCatching { $$$BODY }` only matches the bare-call, trailing-lambda shape.
+# Package-qualified (`kotlin.runCatching`) and parenthesized-argument (`runCatching(::fn)`,
+# `kotlin.runCatching(::fn)`) forms are different node kinds and slipped through entirely. Added an
+# `any:` covering all three alternate shapes; `runCatchingCancellable` stays correctly unaffected
+# because every branch matches on the exact `runCatching` identifier, no prefix collision.
+#
+# WIDENED 2026-09-17 (ARCH-AUDIT, audit D cross-cutting: :daemon-control and :app sat outside most walls'
+# `files:` globs). :daemon-control serves the statusline route and the MCP host inside Ktor coroutines, and
+# :app runs the daemon supervisor, the OAuth callback server and the refresh loops — the 600%-CPU
+# incident's blast radius, not a place the law stops applying. Widened LITERALLY as the audit row
+# specifies, to all of `daemon/control/src/main` and `app/src/main`, with NO new ignores.
+# NEW RED AT WIDENING — 20, all pre-existing, none fixed here:
+#   :daemon-control StatuslineRenderer.kt:61,:71,:93,:203,:236, mcp/McpHost.kt:62, api/StatuslineRoute.kt:94
+#   :app     DaemonLock.kt:89,:93, LoginIo.kt:218, OAuthLoginFlow.kt:161,:167,:180,:230,
+#            cli/LoginMuse.kt:134, cli/AdminSupport.kt:79, cli/RestartCommand.kt:26,
+#            cli/KeyCommand.kt:62, cli/SetupCommand.kt:80, cli/DoctorRedaction.kt:77
+# READ THIS BEFORE FIXING, and it is a scoping question the wall row deliberately did NOT decide:
+# six of the twenty (`cli/LoginMuse`, `cli/AdminSupport`, `cli/RestartCommand`, `cli/KeyCommand`,
+# `cli/SetupCommand`, `cli/DoctorRedaction`) sit under `app/src/main/kotlin/**/cli/**`, which
+# kt-no-runblocking-in-daemon already `ignores:` BY NAME as the blocking-CLI boundary — no coroutine
+# there, so nothing to swallow. `runCatchingCancellable` is still correct and harmless in blocking
+# code, so the cheap fix is to convert all twenty uniformly; the alternative is to mirror
+# kt-no-runblocking-in-daemon's dated `cli/**` + `Main.kt` ignore pair here. The fix row picks one;
+# a wall row must not narrow its own census.
+# WIDENED 2026-10-09 (coverage burndown): every production root, no files list and no coverage exclusions. The
+# "synchronous best-effort" sites that kept raw runCatching in core, claude-code and codex moved to
+# Cancellables.runCatchingBestEffort, which also stops swallowing Errors. The combinators that capture and then
+# rethrow cancellation pass by structure (the not-inside condition below), and withCleanup is Kotlin's own
+# AutoCloseable.use, so it captures nothing. Law fixtures are test code and are ignored with src/test.
+id: kt-no-runcatching-in-coroutine
+language: kotlin
+severity: error
+message: "Use runCatchingCancellable, not raw runCatching, on the turn/stream path — runCatching swallows CancellationException and leaks cancelled turns."
+note: >
+  Replace runCatching { ... } with runCatchingCancellable { ... } (splice.core.util) — it rethrows
+  CancellationException so a cancelled coroutine actually stops. A swallowed cancellation here is how
+  a cancelled turn kept spinning upstream (the 600%-CPU incident).
+ignores:
+  - "**/src/test/**"
+  - "**/src/testFixtures/**"
+  - "**/src/lawFixtures/**"
+rule:
+  all:
+    - any:
+        - pattern: runCatching { $$$BODY }
+        - pattern: runCatching($$$ARGS)
+        - pattern: kotlin.runCatching { $$$BODY }
+        - pattern: kotlin.runCatching($$$ARGS)
+    # The safe shape by structure: the nearest enclosing function rethrows the CancellationException it captured
+    # (`if (failure is CancellationException) throw failure`), so nothing it captures can swallow a cancellation.
+    # That is how runCatchingCleanup and runCatchingBestEffort are built, and the condition names no file.
+    - not:
+        inside:
+          kind: function_declaration
+          stopBy:
+            kind: function_declaration
+          has:
+            stopBy: end
+            pattern: if ($F is CancellationException) throw $F

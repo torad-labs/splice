@@ -1,0 +1,17 @@
+# V4-117 — rule test for kt-failure-has-cause. The invalid cases are the exact SHAPES found on the
+# tree on 2026-09-18: a positional two-arg construction (PassthroughStreamTranslator's stall
+# outcome) and a named-args construction whose `permanent` is set but whose cause is not
+# (ResponsesTerminalDecision's refusal branch) — so a regression to either spelling is caught.
+# The valid cases pin BOTH orders and the trailing-argument position, because the cause may sit
+# anywhere in a wrapped argument list.
+id: kt-failure-has-cause
+valid:
+  - 'val o = TurnOutcome.Failure(ErrorType.API_ERROR, "x", cause = FailureCause.UPSTREAM_STALLED)'
+  - 'val o = TurnOutcome.Failure(type = ErrorType.API_ERROR, message = "x", cause = FailureCause.INTERNAL)'
+  - 'val o = TurnOutcome.Failure(cause = FailureCause.DIALECT_UNSUPPORTED, type = ErrorType.INVALID_REQUEST)'
+  - 'val o = other.Failure(ErrorType.API_ERROR, "x")'
+  - 'val o = SomeOtherFailure(ErrorType.API_ERROR, "x")'
+invalid:
+  - 'val o = TurnOutcome.Failure(ErrorType.OVERLOADED, "upstream stalled — aborted; retry")'
+  - 'val o = TurnOutcome.Failure(type = ErrorType.API_ERROR, message = "x", permanent = true)'
+  - 'val o = TurnOutcome.Failure()'

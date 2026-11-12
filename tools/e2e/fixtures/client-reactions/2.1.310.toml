@@ -1,0 +1,847 @@
+# What Claude Code 2.1.310 does with each answer splice can give: the client reaction record of the failure-handling
+# design (section 11, slice 0b). Slices 3 to 5 choose ClientWire's statuses from it, and its rows are the evidence in
+# ClientWire's KDoc. tools/e2e/src/client-reactions.ts loads and checks it.
+#
+# Built on 2026-10-26 without starting any Claude Code session (rulings.md, ruling 2), from three sources, in order:
+#   journal      splice's trace (<head>-<UTC date>.jsonl: each request, its answer and the chunk hashes of both bodies)
+#                and daemon log (daemon.log.1 until Oct 24 16:22 CT, daemon.log after), Oct 19 19:01 to Oct 26 06:31 CT.
+#   transcript   the clients' own session transcripts. Only non-interactive sessions write a system/api_error entry per
+#                retry; every session writes an assistant isApiErrorMessage entry for an error it prints.
+#   shipped-code the 2.1.310 file in Claude Code's versions folder, read as bytes and never run, for about 30 minutes.
+#                "at" is a byte offset in that file.
+# Times are CT. Every head plants CLAUDE_CODE_RETRY_WATCHDOG=1 (LaunchService.kt), which the shipped code reads as its
+# persistent retry, so every row is under it. A row's text marks a cause the sources could not show as a hypothesis.
+# Splice's own lines are quoted as the client printed them, with account detail and reset dates replaced by <...>.
+
+client = "claude-code"
+version = "2.1.310"
+built = "2026-10-26"
+
+# ---------------------------------------------------------------- HTTP answers, before any 200 goes out
+
+[[case]]
+id = "http-400-invalid-request"
+answer = "HTTP 400 invalid_request_error with no x-should-retry. The only ones a 2.1.310 client met carried splice's refusal line, on a request answered without streaming."
+did = "Did not end the turn. Within 0.1 s of each 400 it sent the request again with only its last 64 KB chunk changed: the first time at the same length, the second time 27 bytes shorter. After the second 400 it sent a request 32 KB shorter whose first chunk had changed, and that one succeeded. The shipped code's HTTP decision fails a 400 without a retry, so these requests came from another part of the client (hypothesis: its refusal fallback). Whether a 400 with any other line ends the turn is unobserved. The sequence began with an in-band refusal at 11:05:14 CT (case inband-invalid-request-before-content)."
+printed = "nothing: the transcript holds no API error entry for these"
+resent = "yes"
+after = "under 0.1 s"
+times = "2 changed requests, then a third that succeeded"
+identical = "no"
+
+[[case.evidence]]
+kind = "journal"
+at = "2026-10-24 11:05:19.657 CT"
+log = "daemon.log.1; trace claude-splice-2026-10-24.jsonl"
+note = "FAILURE type=invalid_request_error with the refusal line, answered 400 without streaming"
+
+[[case.evidence]]
+kind = "journal"
+at = "2026-10-24 11:05:23.944 CT"
+log = "daemon.log.1; trace claude-splice-2026-10-24.jsonl"
+note = "the second 400; the next request, 32 KB shorter, ended ok"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249444508"
+note = "HTTP error decision: 529 to the overload path, 408, 409, 429 and 5xx to the bounded retry, a 404 once without streaming, anything else fails"
+
+[[case]]
+id = "http-400-should-retry-false"
+answer = "HTTP 400 invalid_request_error with x-should-retry: false. The only one a 2.1.310 client met was the overflow answer before commit, whose line says prompt is too long."
+did = "Did not send the request again. 0.1 s later it sent a compaction of the conversation instead, as the line said prompt is too long; that compaction's own 400s are case compaction-400-prompt-too-long. A 400 with x-should-retry false and no such phrase is unobserved. The shipped code reads x-should-retry false as no retry, but only after three earlier rules: the watchdog's 429 and 529 rule, a message containing overloaded_error, and an OAuth login's 401 or 403."
+printed = "unobserved"
+resent = "no"
+identical = "n/a"
+
+[[case.evidence]]
+kind = "journal"
+at = "2026-10-24 10:56:21.724 CT"
+log = "trace claude-kimi-2026-10-24.jsonl"
+note = "overflow 400 with x-should-retry false; the client's next request, 0.1 s later, was a compaction"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249442358"
+note = "x-should-retry false returns no retry, read after the watchdog rule at @249441888"
+
+[[case]]
+id = "http-401"
+answer = "HTTP 401 authentication_error"
+did = "Unobserved in the journal: splice sent no 401 to a 2.1.310 client. The one 2.1.310 'Not logged in' entry, at 2026-10-25 23:26:00 CT, came with no request reaching splice, so it is not a reaction to a 401. The shipped code, given no x-should-retry, clears the client's own auth cache and retries the 401 within the retry limit. x-should-retry false stops that, except when the client holds an OAuth login, which retries a 401 or a revoked-token 403 before reading the header."
+printed = "unobserved"
+resent = "yes"
+times = "up to the retry limit LaunchService plants, 300 (shipped code)"
+identical = "unobserved"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249442665"
+note = "if(e.status===401)return fEt(),!0: clear the auth cache, then retry"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249441490"
+note = "the retry predicate: with an OAuth access token, a 401 or a revoked-token 403 retries before the x-should-retry check"
+
+[[case]]
+id = "http-403"
+answer = "HTTP 403 permission_error"
+did = "Unobserved in the journal: splice sent no 403 to a 2.1.310 client. The shipped code retries a 403 only when it reads as a revoked OAuth token. Any other 403 is not retried, with or without x-should-retry false. Whether 2.1.310 starts its own login flow on a 403 was not found."
+printed = "unobserved"
+resent = "no"
+identical = "n/a"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249441490"
+note = "the retry predicate: a 403 retries only as a revoked OAuth token; anything under 500 it does not name returns no retry"
+
+[[case]]
+id = "http-404"
+answer = "HTTP 404 not_found_error"
+did = "Unobserved in the journal. The shipped code sends a streamed request that met a 404 once more without streaming, logging 'Streaming endpoint returned 404, falling back to non-streaming mode'. A 404 to that request, or to any request already without streaming, fails the turn."
+printed = "unobserved"
+resent = "yes"
+times = "1, without streaming"
+identical = "no"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249444723"
+note = "if(e===404&&!r.triedWithoutStreaming)return kRe(r,s,!0)"
+
+[[case]]
+id = "http-408"
+answer = "HTTP 408 with no x-should-retry"
+did = "Unobserved in the journal. The shipped code retries a 408 within the retry limit, after its backoff."
+printed = "unobserved"
+resent = "yes"
+times = "up to the retry limit LaunchService plants, 300 (shipped code)"
+identical = "unobserved"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249442611"
+note = "if(e.status===408)return!0"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249444508"
+note = "408, 409, 429 and 5xx go to the bounded retry"
+
+[[case]]
+id = "http-413"
+answer = "HTTP 413 invalid_request_error, request too large"
+did = "Unobserved in the journal. The shipped code does not retry a 413: neither the retry predicate nor the HTTP decision names it."
+printed = "unobserved"
+resent = "no"
+identical = "n/a"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249441490"
+note = "the retry predicate returns no retry for a status under 500 it does not name"
+
+[[case]]
+id = "http-503-should-retry-false"
+answer = "HTTP 503 with x-should-retry: false"
+did = "Unobserved in the journal. The shipped code does not retry it: x-should-retry false returns no retry even for a 5xx. A 503 whose message contains \"type\":\"overloaded_error\" is the exception, retried by a rule read before the header."
+printed = "unobserved"
+resent = "no"
+identical = "n/a"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249442358"
+note = "x-should-retry false returns no retry for any status"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249441490"
+note = "a message containing \"type\":\"overloaded_error\" returns retry before the header is read"
+
+[[case]]
+id = "http-529-stream"
+answer = "HTTP 529 overloaded_error to a streamed request"
+did = "Unobserved in the journal: every 529 a 2.1.310 client met answered a request sent without streaming (case http-529-non-stream). The shipped code sends a 529 to its overload path, and under the watchdog it retries every 529 without counting it against the retry limit."
+printed = "unobserved"
+resent = "yes"
+times = "without end (shipped code)"
+identical = "unobserved"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249444508"
+note = "if(e===529)return Jet(...): the overload path"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249432185"
+note = "Oo=IMe()&&pkn(an): a 429 or 529 under the watchdog skips the retries-exhausted check"
+
+[[case]]
+id = "http-529-non-stream"
+answer = "HTTP 529 overloaded_error to a request sent without streaming: glml53's connection resets and claudex's code-mode start failures"
+did = "Sent the same body again each time, after a delay growing from 0.6 s to the 300 s cap, with jitter up to 375 s. It never gave up: attempts reached 169 against a limit that read 299."
+printed = "a retry line per attempt, for example: 529 [SPLICE-OVERLOADED] code-mode runtime failed to start; its unstarted source is retained for retry"
+resent = "yes"
+after = "0.6 s, growing to 300 to 375 s"
+times = "without end: 169 attempts seen, no give-up"
+identical = "yes"
+
+[[case.evidence]]
+kind = "journal"
+at = "2026-10-24 21:00 CT"
+until = "2026-10-25 14:15 CT"
+log = "trace glml53-2026-10-25.jsonl"
+note = "150 answers; 147 of the requests that followed were byte-identical"
+
+[[case.evidence]]
+kind = "journal"
+at = "2026-10-25 01:11 CT"
+until = "2026-10-25 01:58 CT"
+log = "trace claudex-2026-10-25.jsonl"
+note = "29 answers; all 29 requests that followed were byte-identical"
+
+[[case.evidence]]
+kind = "transcript"
+entry = "system/api_error"
+at = "2026-10-25 01:11:16 CT"
+until = "2026-10-25 01:59:39 CT"
+note = "103 entries with status 529: retryInMs 889 to 360,889, attempt up to 169, maxRetries 299"
+
+[[case]]
+id = "http-429-retry-after-30s"
+answer = "HTTP 429 rate_limit_error with Retry-After and anthropic-ratelimit-unified-reset at most 30 s away and the unified status rejected: splice's admission hold (ClientRecheck). A native head's relayed provider 429 carries x-should-retry true and the clamped reset."
+did = "Slept until the named time and sent the same body again, every 30 s, for hours, writing a retry line per attempt. It never gave up. The relayed provider 429 got the same sleep, 29.5 to 29.7 s."
+printed = "a retry line per attempt: 429 Rate limit exceeded: the upstream reports this plan's 7-day window is used up until <reset>. The session waits and resumes after the reset. Earlier answers carried a [SPLICE-RATE-LIMIT] prefix, and the relayed provider 429 read: 429 This request would exceed your account's rate limit. Please try again later. <account detail>"
+resent = "yes"
+after = "29.2 to 30.0 s"
+times = "without end: no give-up seen, and 429 retry lines reached attempt 160 against a limit that read 300, or 299 without streaming"
+identical = "yes"
+
+[[case.evidence]]
+kind = "journal"
+at = "2026-10-24 17:43:46.281 CT"
+log = "daemon.log"
+note = "a sample hold; 1,504 of the 1,533 traced requests that followed one were byte-identical, about 30.0 s apart. The trace writes these local answers as 200 with an empty body; the transcript shows the client got a 429"
+
+[[case.evidence]]
+kind = "transcript"
+entry = "system/api_error"
+at = "2026-10-24 19:02 CT"
+until = "2026-10-25 01:59 CT"
+note = "status 429, retryInMs 29,175 to 29,992, maxRetries 300 streaming or 299 without streaming"
+
+[[case.evidence]]
+kind = "transcript"
+entry = "system/api_error"
+at = "2026-10-24 18:38 CT"
+until = "2026-10-24 19:01 CT"
+note = "a native head's relayed 429: retryInMs about 29,500 to 29,700, rateLimits with its type and resetsAt, attempts 1 to 47"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249435156"
+note = "a 429 whose unified status is rejected waits until the unified reset, bounded only by CLAUDE_CODE_RETRY_WATCHDOG_MAX_USAGE_LIMIT_WAIT_MS, unset here"
+
+[[case]]
+id = "http-429-reset-hours-away"
+answer = "HTTP 429 rate_limit_error whose Retry-After and unified reset name the true reset, hours away"
+did = "Unobserved in the journal: splice clamps every limit answer's deadline to 30 s (ClientRecheck), so no 2.1.310 client met a reset hours away. The shipped code, given the unified status rejected, sleeps until that reset, up to 6 h per sleep with a retry line every 30 s, and sets no bound unless CLAUDE_CODE_RETRY_WATCHDOG_MAX_USAGE_LIMIT_WAIT_MS is set. A turn-path 429 that named no near reset was met: the client slept 300 to 375 s, its backoff cap, between byte-identical requests, wrote a retry line every 30 s, and never gave up."
+printed = "for the turn-path 429, a retry line every 30 s: 429 [SPLICE-RATE-LIMIT] Rate limit exceeded: the upstream reports this plan's 7-day window is used up until <reset>. The session waits and resumes after the reset."
+resent = "yes"
+after = "until the reset, up to 6 h per sleep (shipped code); 300 to 375 s when no near reset was named (journal)"
+times = "without end"
+identical = "yes"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249435156"
+note = "the wait until the unified reset for a rejected 429"
+
+[[case.evidence]]
+kind = "journal"
+at = "2026-10-24 19:29:07 CT"
+log = "trace claudex-2026-10-25.jsonl"
+note = "a turn-path 429 with the [SPLICE-RATE-LIMIT] line and no near reset"
+
+[[case.evidence]]
+kind = "transcript"
+entry = "system/api_error"
+at = "2026-10-24 19:02 CT"
+until = "2026-10-25 01:59 CT"
+note = "retryInMs up to 371,590 on the turn-path 429s, a heartbeat entry every 30 s, no give-up"
+
+[[case]]
+id = "http-429-should-retry-false"
+answer = "HTTP 429 rate_limit_error with x-should-retry: false"
+did = "Unobserved in the journal: splice sent none. The shipped code retries it anyway. Under CLAUDE_CODE_RETRY_WATCHDOG, which every head plants, its predicate returns retry for any 429 or 529 before it reads x-should-retry, and its loop does not count those against the retry limit."
+printed = "unobserved"
+resent = "yes"
+times = "without end (shipped code)"
+identical = "unobserved"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249441888"
+note = "if(IMe()&&pkn(e))return!0, read before the x-should-retry check at @249442358"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249432185"
+note = "Oo=IMe()&&pkn(an): a 429 or 529 under the watchdog skips the retries-exhausted check"
+
+[[case]]
+id = "persistent-retry-limit"
+answer = "Any answer the client retries, under the retry limit LaunchService plants, 300"
+did = "No give-up was seen. For 429 and 529 the limit never applies: the loop does not count them under the watchdog, and attempts reached 160 for 429 and 169 for 529 while the limit read 300, or 299 without streaming. Other retried errors stop at the limit (shipped code)."
+printed = "each retry line carries the attempt and maxRetries: 300 on a streamed request, 299 once the client sends without streaming"
+resent = "yes"
+times = "429 and 529 without end; other retried errors up to 300"
+identical = "yes"
+
+[[case.evidence]]
+kind = "transcript"
+entry = "system/api_error"
+at = "2026-10-24 19:02 CT"
+until = "2026-10-25 01:59 CT"
+note = "820 entries for 429 with attempts up to 160, 103 for 529 with attempts up to 169, none a give-up"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249432185"
+note = "Oo=IMe()&&pkn(an) holds the attempt budget for a 429 or 529 under the watchdog"
+
+# ---------------------------------------------------------------- in-band errors after a committed 200
+
+[[case]]
+id = "inband-invalid-request-before-content"
+answer = "200, then event: error invalid_request_error before any content block"
+did = "The shipped code sends the request once more without streaming when a stream fails this way before any block has finished. The one journal case of this shape, whose body is evicted, fits it: an in-band refusal after 2.8 s was followed at once by a request of the same length with only its last chunk changed, which splice answered with HTTP 400 rather than in-band (case http-400-invalid-request). Once a block has finished, splice's signed notice included, the same error fails the turn instead (case inband-signed-notice)."
+printed = "unobserved: the client went on to further requests and printed nothing"
+resent = "yes"
+after = "at once"
+times = "1, without streaming (shipped code)"
+identical = "no"
+
+[[case.evidence]]
+kind = "journal"
+at = "2026-10-24 11:05:14.033 CT"
+log = "daemon.log.1; trace claude-splice-2026-10-24.jsonl"
+note = "FAILURE type=invalid_request_error, the refusal line, latency 2,777 ms"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249444812"
+note = "the in-band decision: before a block finishes, badRequest, serverError and timedOut retry without streaming"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249449966"
+note = "the stream failure cause: overloaded, api_error as serverError, timeout_error as timedOut, every other error type as badRequest"
+
+[[case]]
+id = "inband-invalid-request-after-content"
+answer = "200, then event: error invalid_request_error after model content, thinking or text"
+did = "Printed the error and did not send the same body again. In 8 of 9 cases a request with a different body followed, 0 to 204 s later: some within 0.1 s and 5 KB smaller, others larger. Every one of these errors carried splice's refusal line, and the quick smaller requests fit the client's refusal fallback (hypothesis)."
+printed = "API Error: [SPLICE-INVALID-REQUEST] <splice's line>"
+resent = "no"
+identical = "n/a"
+
+[[case.evidence]]
+kind = "journal"
+at = "2026-10-25 15:30:23 CT"
+until = "2026-10-25 15:32:23 CT"
+log = "trace claude-splice-2026-10-25.jsonl"
+note = "four answers after thinking or text; no request that followed was byte-identical"
+
+[[case.evidence]]
+kind = "transcript"
+entry = "assistant isApiErrorMessage"
+at = "2026-10-25 15:30:23 CT"
+note = "the printed line, one per answer; 8 of the 9 answers had a different next request and 1 had none"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249444812"
+note = "the in-band decision: after output, badRequest fails; after thinking only, badRequest fails"
+
+[[case]]
+id = "inband-authentication-before-content"
+answer = "200, then event: error authentication_error before any content block"
+did = "Unobserved in the journal. The shipped code classes every in-band error type other than overloaded_error, api_error and timeout_error as badRequest, so this takes the invalid_request_error path: one more try without streaming before any block has finished. authentication_error is the one type splice never remaps (SseEmitter.kt)."
+printed = "unobserved"
+resent = "yes"
+times = "1, without streaming (shipped code)"
+identical = "no"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249449966"
+note = "authentication_error is classed badRequest"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249444812"
+note = "before a block finishes, badRequest retries without streaming"
+
+[[case]]
+id = "inband-authentication-after-content"
+answer = "200, then event: error authentication_error after model content"
+did = "Unobserved in the journal. The shipped code classes it as badRequest, which fails the turn once any block has finished, thinking included."
+printed = "unobserved"
+resent = "no"
+identical = "n/a"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249449966"
+note = "authentication_error is classed badRequest"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249444812"
+note = "after output or thinking only, badRequest fails"
+
+[[case]]
+id = "inband-permission-before-content"
+answer = "200, then event: error permission_error before any content block"
+did = "Unobserved in the journal. The shipped code classes it as badRequest: one more try without streaming before any block has finished."
+printed = "unobserved"
+resent = "yes"
+times = "1, without streaming (shipped code)"
+identical = "no"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249449966"
+note = "permission_error is classed badRequest"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249444812"
+note = "before a block finishes, badRequest retries without streaming"
+
+[[case]]
+id = "inband-permission-after-content"
+answer = "200, then event: error permission_error after model content"
+did = "Unobserved in the journal. The shipped code classes it as badRequest, which fails the turn once any block has finished."
+printed = "unobserved"
+resent = "no"
+identical = "n/a"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249449966"
+note = "permission_error is classed badRequest"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249444812"
+note = "after output or thinking only, badRequest fails"
+
+[[case]]
+id = "inband-not-found-before-content"
+answer = "200, then event: error not_found_error before any content block"
+did = "Unobserved in the journal. The shipped code classes it as badRequest: one more try without streaming before any block has finished."
+printed = "unobserved"
+resent = "yes"
+times = "1, without streaming (shipped code)"
+identical = "no"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249449966"
+note = "not_found_error is classed badRequest"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249444812"
+note = "before a block finishes, badRequest retries without streaming"
+
+[[case]]
+id = "inband-not-found-after-content"
+answer = "200, then event: error not_found_error after model content"
+did = "Unobserved in the journal. The shipped code classes it as badRequest, which fails the turn once any block has finished."
+printed = "unobserved"
+resent = "no"
+identical = "n/a"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249449966"
+note = "not_found_error is classed badRequest"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249444812"
+note = "after output or thinking only, badRequest fails"
+
+[[case]]
+id = "inband-rate-limit-before-content"
+answer = "200, then event: error rate_limit_error before any content block"
+did = "Unobserved in the journal: splice remaps rate_limit_error to overloaded_error before content (SseEmitter.kt). The shipped code classes an in-band rate_limit_error as badRequest, not as a 429, so it gets one more try without streaming and none of the persistent 429 sleep."
+printed = "unobserved"
+resent = "yes"
+times = "1, without streaming (shipped code)"
+identical = "no"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249449966"
+note = "rate_limit_error is classed badRequest"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249444812"
+note = "before a block finishes, badRequest retries without streaming"
+
+[[case]]
+id = "inband-rate-limit-after-content"
+answer = "200, then event: error rate_limit_error after model content"
+did = "Unobserved in the journal. The shipped code classes it as badRequest, which fails the turn once any block has finished."
+printed = "unobserved"
+resent = "no"
+identical = "n/a"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249449966"
+note = "rate_limit_error is classed badRequest"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249444812"
+note = "after output or thinking only, badRequest fails"
+
+[[case]]
+id = "inband-api-error-before-content"
+answer = "200, then event: error api_error before any content block"
+did = "Unobserved in the journal: splice remaps api_error to overloaded_error before content (SseEmitter.kt). The shipped code classes api_error as serverError, which before any block has finished gets one more try without streaming."
+printed = "unobserved"
+resent = "yes"
+times = "1, without streaming (shipped code)"
+identical = "no"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249449966"
+note = "api_error is classed serverError"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249444812"
+note = "before a block finishes, serverError retries without streaming"
+
+[[case]]
+id = "inband-api-error-after-content"
+answer = "200, then event: error api_error after model content"
+did = "Unobserved in the journal. The shipped code classes api_error as serverError, which after output keeps the partial answer rather than sending the request again. For overloaded_error in that spot the client printed the server-error line (case inband-overloaded-after-content); whether api_error prints the same is unobserved."
+printed = "unobserved"
+resent = "no"
+identical = "n/a"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249449966"
+note = "api_error is classed serverError"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249444812"
+note = "after output, anything but badRequest or unknown keeps the partial answer"
+
+[[case]]
+id = "inband-overloaded-before-content"
+answer = "200, then event: error overloaded_error before any content block"
+did = "Sent the same body again after 0.5 to 0.7 s, then again after 1.1 to 1.4 s. On the third failure it switched to a request without streaming, a different body whose retry count started over against a limit of 299."
+printed = "unobserved: interactive sessions keep no retry lines"
+resent = "yes"
+after = "0.5 to 0.7 s, then 1.1 to 1.4 s"
+times = "2 byte-identical, then one without streaming"
+identical = "yes"
+
+[[case.evidence]]
+kind = "journal"
+at = "2026-10-24 23:04:06 CT"
+log = "trace claude-deepseek-2026-10-25.jsonl"
+note = "one of 35 such answers; 25 of the requests that followed them were byte-identical"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249444812"
+note = "before a block finishes, overloaded goes to the overload path"
+
+[[case]]
+id = "inband-overloaded-after-content"
+answer = "200, then event: error overloaded_error after model content"
+did = "It depends on what had arrived. After the model's thinking alone, it sent the same body again after 0.6 to 20.3 s (16 of 16 cases, splice restarts among them). After text or a tool call, it printed the server-error line, kept the partial answer, and did not send the same body again (7 of 7)."
+printed = "after text or a tool call: API Error: Server error mid-response. The response above may be incomplete."
+resent = "mixed"
+after = "0.6 to 20.3 s after thinking alone"
+times = "1 after thinking alone; none after text"
+identical = "mixed"
+
+[[case.evidence]]
+kind = "journal"
+at = "2026-10-25 18:53:40 CT"
+log = "trace claude-splice-2026-10-25.jsonl"
+note = "a restart's overloaded_error after thinking; the same body came again 11.5 s later and ended ok"
+
+[[case.evidence]]
+kind = "transcript"
+entry = "assistant isApiErrorMessage, streamCutCause server_error"
+at = "2026-10-25 23:49:51 CT"
+note = "after thinking and tool calls; the next request had a different body"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249444812"
+note = "after output, anything but badRequest or unknown keeps the partial answer"
+
+[[case]]
+id = "inband-signed-notice"
+answer = "200 with message_start, then splice's notice as a thinking block signed splice-wait-notice-v1, then pings or an error"
+did = "Kept the notice in the conversation as a thinking block. The client counts the finished notice block as thinking progress, so an error after a notice alone gets the after-thinking reaction. overloaded_error brought the same body again after 0.5 to 1.2 s (7 of 7). invalid_request_error was printed and the client sent nothing more, where before any block it would have tried once more without streaming."
+printed = "the notice is stored as a thinking block; an invalid_request_error after it printed API Error: [SPLICE-INVALID-REQUEST] <splice's line>"
+resent = "mixed"
+after = "0.5 to 1.2 s for overloaded_error"
+times = "1 for overloaded_error; none for invalid_request_error"
+identical = "yes"
+
+[[case.evidence]]
+kind = "transcript"
+entry = "assistant thinking block signed splice-wait-notice-v1"
+at = "2026-10-23 19:11:12 CT"
+until = "2026-10-26 06:37:35 CT"
+note = "840 notice blocks kept in 2.1.310 transcripts"
+
+[[case.evidence]]
+kind = "journal"
+at = "2026-10-25 21:04:40 CT"
+log = "trace claude-muse-2026-10-26.jsonl"
+note = "overloaded_error after a notice alone; the same body came again 0.6 s later"
+
+[[case.evidence]]
+kind = "transcript"
+entry = "assistant isApiErrorMessage"
+at = "2026-10-26 06:29:34 CT"
+note = "invalid_request_error after a notice alone was printed; no request followed"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249449500"
+note = "progress: a finished block with no output shown is thinkingOnly"
+
+# ---------------------------------------------------------------- a held 200 and the stop reasons
+
+[[case]]
+id = "committed-200-two-hours"
+answer = "200 committed at once, message_start, then a ping every 30 s while the turn is held, with no model content until the end"
+did = "Kept the stream open and read it to the end. The longest a 2.1.310 client held was a compaction of 2,777.6 s, 46 min: message_start at 30 s, no gap over 30 s, model content only near the end. The client used its result and sent its next request the same second. That ran past the 1,860 s API timeout the head plants, so the timeout did not cut a stream that kept receiving pings. During it the client also sent the compaction without streaming (case compaction-timer). Two hours is unobserved."
+printed = "nothing"
+resent = "no"
+identical = "n/a"
+
+[[case.evidence]]
+kind = "journal"
+at = "2026-10-25 00:32:17 CT"
+until = "2026-10-25 01:18:35 CT"
+log = "trace glml53-2026-10-25.jsonl"
+note = "first frame at 30,047 ms, largest gap between frames 30,005 ms, outcome ok; a 2,370.2 s turn on the same head also ended ok"
+
+[[case]]
+id = "stop-pause-turn"
+answer = "200, then message_delta with stop_reason pause_turn"
+did = "No 2.1.310 client met it: splice relayed no stop_reason pause_turn, and the transcripts hold no stop entries. In the shipped file pause_turn appears only in lists of stop reasons (@241501820, @248470484) and in the SDK's tool runner, which resumes on it (@242066485). No branch of the CLI's own loop was found within the read."
+printed = "unobserved"
+resent = "unobserved"
+identical = "unobserved"
+unobserved = true
+
+[[case]]
+id = "stop-refusal"
+answer = "200, then message_delta with stop_reason refusal"
+did = "Not met as such: splice ends a refusal as invalid_request_error today, in-band or as HTTP 400 without streaming, and those cases record what the client did. The shipped code reads stop_reason refusal as a refusal and has a refusal-fallback flow, with events for a fallback triggered, a prompt shown to the user and the user's choice. What 2.1.310 prints and whether it sends the request again were not found."
+printed = "unobserved"
+resent = "unobserved"
+identical = "unobserved"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@248517726"
+note = "stop_reason refusal is read as refusal-like"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249227326"
+note = "a FallbackTriggeredError for refusal"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@117824008"
+note = "tengu_refusal_fallback_triggered, then _prompt_shown and _prompt_choice"
+
+# ---------------------------------------------------------------- what the client sends, and when
+
+[[case]]
+id = "note-during-retry-sleep"
+answer = "A message to the session over its messaging socket while the client sleeps in its own retry. A splice session note arrives this way, as a message from another session (SessionNoteRoute.kt)."
+did = "The sleep did not run its course. 22 s into a 30 s sleep after an admission 429, 24 messages were queued, the transcript recorded an interrupt, and in the same second the client sent a new request carrying the messages, 31 KB larger than the body it had been re-sending, 8 s before its scheduled wake. That request met the same 429, and the session sent nothing more for the next 4 hours. Whether the interrupt came from the client's own queue or from a person is not in the record. No message reached a session that was sleeping on a retry it logged."
+printed = "an interrupt entry in the transcript"
+resent = "yes"
+after = "at once, 8 s before the scheduled wake"
+times = "1"
+identical = "no"
+
+[[case.evidence]]
+kind = "journal"
+at = "2026-10-24 20:01:44 CT"
+log = "trace claudex-2026-10-25.jsonl"
+note = "byte-identical requests every 30 s from 19:59:22 to 20:01:22 CT, then a new body 31 KB larger at 20:01:44 CT"
+
+[[case.evidence]]
+kind = "transcript"
+entry = "queue-operation, user interrupt, cross-session messages, api-request"
+at = "2026-10-24 20:01:44 CT"
+note = "all in the same second, in that order"
+
+[[case]]
+id = "compaction-timer"
+answer = "A compaction answered slowly, on a 200 held open with pings"
+did = "The shipped code arms a recovery ceiling on a compaction of min(1 h, max(600 s, 1.5 ms per token)), counting the larger of its own estimate of the conversation and the last reported usage, and aborts the compaction with reason recovery-timeout when it fires. No 2.1.310 compaction was cut at that ceiling: the three that ran past 600 s, for 604.9 s, 1,047.4 s and 2,777.6 s, all ended ok. During the 2,777.6 s one, at 1,560.2 s, the client also sent the compaction without streaming. It cut that request after 354.3 s and sent it again, cut it after 359.7 s and sent it again, cut the third after 285.1 s, and took the streamed result. The non-stream copies were byte-identical to each other, not to the streamed request. 1,560 s is the ceiling for about 1.04 M tokens, while upstream counted 647,873 input tokens and splice reported 316,344 for it to the client, so tying that mark to this ceiling is a hypothesis."
+printed = "nothing"
+resent = "yes"
+after = "1,560.2 s into the streamed compaction, then about 1 s after each cut"
+times = "3 copies without streaming"
+identical = "mixed"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@240199786"
+note = "recoveryTimeoutForContextTokens: min(3,600,000, max(600,000, round(tokens * 1.5))) ms; on expiry the abort reason is recovery-timeout"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249270339"
+note = "the tokens are the larger of the client's estimate and the last usage's actual tokens"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249275525"
+note = "the ceiling is armed around the compaction on the automatic path"
+
+[[case.evidence]]
+kind = "journal"
+at = "2026-10-25 00:32:17 CT"
+until = "2026-10-25 01:18:35 CT"
+log = "trace glml53-2026-10-25.jsonl"
+note = "the streamed compaction ended ok; copies without streaming at 00:58:17, 01:04:12 and 01:10:13 CT, each cut by the client"
+
+[[case.evidence]]
+kind = "journal"
+at = "2026-10-24 02:23:04 CT"
+log = "trace claudex-2026-10-24.jsonl"
+note = "a 1,047.4 s compaction of 498,470 input tokens upstream ended ok"
+
+[[case.evidence]]
+kind = "journal"
+at = "2026-10-25 18:35:57 CT"
+log = "trace claude-splice-2026-10-25.jsonl"
+note = "a 604.9 s compaction of 231,550 input tokens upstream ended ok"
+
+[[case]]
+id = "compaction-429"
+answer = "HTTP 429 rate_limit_error to a compaction"
+did = "No 2.1.310 compaction was answered 429. Of its 653 compactions, 543 ended ok, 100 met the overflow 400, 4 an in-band invalid_request_error, 3 a restart, and the client cut 3."
+printed = "unobserved"
+resent = "unobserved"
+identical = "unobserved"
+unobserved = true
+
+[[case]]
+id = "compaction-400-prompt-too-long"
+answer = "HTTP 400 invalid_request_error with x-should-retry: false and a line saying prompt is too long, to a compaction"
+did = "Sent the compaction again within about 50 ms of each answer, 1 to 5 KB smaller each time and never byte-identical, 100 times in 3 minutes. The 101st succeeded."
+printed = "unobserved"
+resent = "yes"
+after = "about 50 ms"
+times = "100, then the 101st succeeded"
+identical = "no"
+
+[[case.evidence]]
+kind = "journal"
+at = "2026-10-24 10:56:24 CT"
+until = "2026-10-24 10:59:21.866 CT"
+log = "trace claude-kimi-2026-10-24.jsonl"
+note = "100 compactions answered 400, each request smaller than the last"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@256000290"
+note = "tengu_compact_after_prompt_too_long counts ptlAttempts: the compaction is retried after trimming"
+
+[[case]]
+id = "custom-header-reaches-splice"
+answer = "x-splice-client-wall-ms set through ANTHROPIC_CUSTOM_HEADERS"
+did = "Whether it reaches splice is unobserved: no head sets ANTHROPIC_CUSTOM_HEADERS, and the only header beyond the client's standard set that reached splice was x-claude-code-parent-agent-id. The shipped code parses the variable as newline-separated Name: value lines, and an invalid one makes the client print 'Invalid ANTHROPIC_CUSTOM_HEADERS · Fix the environment variable'. Which requests carry the headers was not traced in the code."
+printed = "unobserved"
+resent = "n/a"
+identical = "n/a"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@239563771"
+note = "ANTHROPIC_CUSTOM_HEADERS is split on newlines into Name: value pairs"
+
+[[case]]
+id = "base-url-path-kept"
+answer = "ANTHROPIC_BASE_URL with a path after the host"
+did = "Unobserved: no head sets a path in ANTHROPIC_BASE_URL (LaunchService.kt), and every request reached splice at /v1/messages?beta=true."
+printed = "unobserved"
+resent = "unobserved"
+identical = "unobserved"
+unobserved = true
+
+[[case]]
+id = "non-stream-requests"
+answer = "Any answer; this case records which requests the client sends without streaming"
+did = "The only requests without streaming were the client's fallback after a stream failed: the whole conversation from the main thread, max_tokens 64,000, sent after an in-band error before content or a cut stream, and the compaction copies of case compaction-timer. No quota check was seen. The client cut requests without streaming that it had waited on for 354 to 360 s; the shipped code's timeout for them is 300 s unless configured, 120 s when remote. Token counts go to count_tokens, which splice answers locally."
+printed = "n/a"
+resent = "n/a"
+identical = "n/a"
+
+[[case.evidence]]
+kind = "journal"
+at = "2026-10-24 19:00 CT"
+until = "2026-10-26 06:31 CT"
+log = "trace, every head's files for UTC Oct 25 and 26"
+note = "the stream flag and max_tokens of 65.6 thousand 2.1.310 request bodies"
+
+[[case.evidence]]
+kind = "journal"
+at = "2026-10-25 23:25:00.898 CT"
+log = "daemon.log"
+note = "count_tokens estimate=... (local; no upstream turn)"
+
+[[case.evidence]]
+kind = "shipped-code"
+at = "@249460020"
+note = "the timeout without streaming: 300,000 ms unless set, 120,000 when CLAUDE_CODE_REMOTE"
+
+[[case]]
+id = "resend-body-identical"
+answer = "Any answer the client sends again on its own"
+did = "Byte-identical when the client re-sends on its own: admission 429 holds (1,504 of 1,533), 529s to requests without streaming (147 of 150, and 29 of 29), in-band overloaded_error before content (25 of 35) and after thinking alone (16 of 23). Not identical when it switches to a request without streaming, compacts, trims after prompt is too long, or adds messages that arrived."
+printed = "n/a"
+resent = "yes"
+identical = "mixed"
+
+[[case.evidence]]
+kind = "journal"
+at = "2026-10-19 19:01 CT"
+until = "2026-10-26 06:31 CT"
+log = "trace, every head's files"
+note = "bodies compared by the ordered list of their chunk hashes"

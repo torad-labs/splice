@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "scope": "CodeMode-related metadata preservation; no downstream request-mode consumption claim",
+  "sourceModels": "result.models",
+  "candidateModels": [
+    "result.metadata",
+    "result.cached_metadata"
+  ],
+  "identity": "id",
+  "optionalMissingAsNull": true,
+  "fields": [
+    "supports_original",
+    "use_responses_lite",
+    "model_messages.tools.code_mode",
+    "model_messages.tools.functions_namespace_functions_description_prefixes",
+    "model_messages.tools.indirect_description_prefixes"
+  ],
+  "separateContextDifferences": [
+    {
+      "source_case_id": "api/model_metadata/7d73af543b564993e563",
+      "path": "visible",
+      "detail": "Codex ModelPreset hides visibility=none; Splice generic picker includes it. No CodeMode metadata difference."
+    },
+    {
+      "source_case_id": "api/model_metadata/2b82e8a9aac4c6c23764",
+      "path": "model_messages.instructions_template",
+      "detail": "Codex ModelsResponse promotes legacy base_instructions; Splice preserves raw model_messages. CodeMode tool message fields remain absent on both."
+    }
+  ]
+}

@@ -10,23 +10,7 @@
 # commit cde3ea1). Not a credential; no auth power; same class as the 13 fixture keys
 # above. The file at HEAD now carries redacted placeholders; this entry covers the
 # historical blob the scanner flags.
-561d7ec0eb8a2bef8d724832211a3896b2af3bd1:.dev/campaigns/proxy-hardening/oracle/fixtures/bigout.json:generic-api-key:29
-561d7ec0eb8a2bef8d724832211a3896b2af3bd1:.dev/campaigns/proxy-hardening/oracle/fixtures/failed.json:generic-api-key:29
-561d7ec0eb8a2bef8d724832211a3896b2af3bd1:.dev/campaigns/proxy-hardening/oracle/fixtures/basic.json:generic-api-key:29
-561d7ec0eb8a2bef8d724832211a3896b2af3bd1:.dev/campaigns/proxy-hardening/oracle/fixtures/overflow_sse.json:generic-api-key:29
-561d7ec0eb8a2bef8d724832211a3896b2af3bd1:.dev/campaigns/proxy-hardening/oracle/fixtures/prefill.json:generic-api-key:29
-561d7ec0eb8a2bef8d724832211a3896b2af3bd1:.dev/campaigns/proxy-hardening/oracle/fixtures/toolcall.json:generic-api-key:29
-561d7ec0eb8a2bef8d724832211a3896b2af3bd1:.dev/campaigns/proxy-hardening/oracle/fixtures/nonstream_tool.json:generic-api-key:29
-561d7ec0eb8a2bef8d724832211a3896b2af3bd1:.dev/campaigns/proxy-hardening/oracle/fixtures/compactish.json:generic-api-key:29
-561d7ec0eb8a2bef8d724832211a3896b2af3bd1:.dev/campaigns/proxy-hardening/oracle/fixtures/replaystream.json:generic-api-key:29
-561d7ec0eb8a2bef8d724832211a3896b2af3bd1:.dev/campaigns/proxy-hardening/oracle/fixtures/multipart.json:generic-api-key:29
-561d7ec0eb8a2bef8d724832211a3896b2af3bd1:.dev/campaigns/proxy-hardening/oracle/fixtures/truncated.json:generic-api-key:29
-c0a91614361f847917972c29c56a209286b5ce4c:gateway/dialect-openai-responses/src/test/resources/contract/responses-codex-profile.json:generic-api-key:42
-c0a91614361f847917972c29c56a209286b5ce4c:gateway/dialect-openai-responses/src/test/resources/contract/responses-tool-search.json:generic-api-key:55
-2c8f0a4d5074ca9a3525544e896770417390249f:gateway/dialect-openai-responses/src/test/resources/contract/responses-canonical.json:generic-api-key:14
-dd2a6783fd349d253b4e1fd70cd36f33471b4bc7:gateway/provider-grok/src/test/kotlin/grok/GrokProviderTest.kt:generic-api-key:73
-5910ee1866fa962cac25fd9c17b416b869a654f8:.dev/campaigns/manifest.py:generic-api-key:116
-cde3ea158f8f99962a1c3ae8c31fe72d793f185a:.dev/research/wire-compare/codex-0.145.0-responses-request.json:generic-api-key:1
+# (dead before the rewrite — its commit is on no branch; kept for the record)
 # 2026-09-01: DR-151 synthetic secret — the literal a test PLANTS inside a hostile
 # throwable's toString() to prove SafeFailureText WITHHOLDS it (RefreshOutcomeTest, arm
 # 'a non-allowlisted throwable carrying a secret is withheld at the persist sink'). Triaged
@@ -35,9 +19,130 @@ cde3ea158f8f99962a1c3ae8c31fe72d793f185a:.dev/research/wire-compare/codex-0.145.
 # credential-SHAPED on purpose — a low-entropy stand-in would not exercise the renderer the
 # way a real token does. gitleaks scans HISTORY, so redacting it at HEAD cannot clear commit
 # 5522ef3; the fingerprint is the only channel that closes it.
-5522ef38c19e701c337cabd7b8e75b6e18fe6598:gateway/core/src/test/kotlin/RefreshOutcomeTest.kt:generic-api-key:88
-
+# (dead before the rewrite — its commit is on no branch; kept for the record)
 # 2026-09-01 — the DR-151 canary in RefreshOutcomeTest ("sk-live-DR151-must-never-appear", a
 # deliberately secret-shaped literal that the test proves is WITHHELD from the log) was vetted on
 # feat/claude-head at 5522ef38; squash-merging PR #99 gave the same line a new commit SHA on main.
+# 2026-09-20: the history rewrite (dev/ -> .dev/, private paths and names out of history) renamed
+# every commit, so the fingerprints above were re-pointed through the rewrite's commit map — same
+# path, same rule, same line, new commit — which keeps the triage above instead of redoing it. The
+# four below were untriaged and already red before the rewrite (CI's v8.21.2 scans every branch
+# from a main checkout, so feat/v0.4.0's commits count here); each was opened at its commit:
+# DoctorRedactionTest builds a fake log line for a redaction test (the "key" is 20 characters, the
+# JWT's payload decodes to {"sub":"1"}); TranscriptSentTextsTest's token is the literal
+# abcdefgh12345678; the web-console ledger line is a git blob sha in a RECEIPT.
+# 2026-09-23: console/tests/doctor-gate.test.ts FIX_SECRET and DETAIL_SECRET (5d5cfd71, M4-07) —
+# the two literals that test PLANTS in a doctor report the redaction check refuses, to prove the
+# page renders nothing of it. Opened at the commit, values not copied here: each names itself as a
+# planted fixture and is used only inside that test. Credential-shaped on purpose, as DR-151's is.
+# 2026-09-24: app/.../DashboardKeyLineTest.kt KEY (d6d24563, PR #195) — a management-key-SHAPED
+# literal (32 hex, the digits 0-f twice) the test hands `splice dashboard`'s key line to prove it
+# never reaches output that is not a terminal. Opened at the commit: it is the only use, it grants
+# nothing, and a key of any other shape would not exercise the line the way the real one does.
+93a487193a3269cbeeffce7d9d0dd02e7a46859f:.dev/campaigns/manifest.py:generic-api-key:116
+6f2e64fd5c589eb5555e913936e5b569accb208a:.dev/campaigns/proxy-hardening/oracle/fixtures/basic.json:generic-api-key:29
+6f2e64fd5c589eb5555e913936e5b569accb208a:.dev/campaigns/proxy-hardening/oracle/fixtures/bigout.json:generic-api-key:29
+6f2e64fd5c589eb5555e913936e5b569accb208a:.dev/campaigns/proxy-hardening/oracle/fixtures/compactish.json:generic-api-key:29
+6f2e64fd5c589eb5555e913936e5b569accb208a:.dev/campaigns/proxy-hardening/oracle/fixtures/failed.json:generic-api-key:29
+6f2e64fd5c589eb5555e913936e5b569accb208a:.dev/campaigns/proxy-hardening/oracle/fixtures/multipart.json:generic-api-key:29
+6f2e64fd5c589eb5555e913936e5b569accb208a:.dev/campaigns/proxy-hardening/oracle/fixtures/nonstream_tool.json:generic-api-key:29
+6f2e64fd5c589eb5555e913936e5b569accb208a:.dev/campaigns/proxy-hardening/oracle/fixtures/overflow_sse.json:generic-api-key:29
+6f2e64fd5c589eb5555e913936e5b569accb208a:.dev/campaigns/proxy-hardening/oracle/fixtures/prefill.json:generic-api-key:29
+6f2e64fd5c589eb5555e913936e5b569accb208a:.dev/campaigns/proxy-hardening/oracle/fixtures/replaystream.json:generic-api-key:29
+6f2e64fd5c589eb5555e913936e5b569accb208a:.dev/campaigns/proxy-hardening/oracle/fixtures/toolcall.json:generic-api-key:29
+6f2e64fd5c589eb5555e913936e5b569accb208a:.dev/campaigns/proxy-hardening/oracle/fixtures/truncated.json:generic-api-key:29
+a063744f7aa65b01e9aa3d9778a3464141eb2cda:gateway/app/src/test/kotlin/DoctorRedactionTest.kt:generic-api-key:14
+a063744f7aa65b01e9aa3d9778a3464141eb2cda:gateway/app/src/test/kotlin/DoctorRedactionTest.kt:generic-api-key:15
+8c498e10918b72ee1dea9d0f1be49f2c7ea625b8:gateway/dialect-openai-responses/src/test/resources/contract/responses-codex-profile.json:generic-api-key:42
+8c498e10918b72ee1dea9d0f1be49f2c7ea625b8:gateway/dialect-openai-responses/src/test/resources/contract/responses-tool-search.json:generic-api-key:55
+9575a89adf3040e79b1803f443d96da816c08871:console/tests/doctor-gate.test.ts:generic-api-key:70
+9575a89adf3040e79b1803f443d96da816c08871:console/tests/doctor-gate.test.ts:generic-api-key:71
+b6b7743f36810c8d3e6b2f881a264bbcdcc1791a:.dev/campaigns/web-console.toml:generic-api-key:2361
+8e6f32caa12106603546c1f8f7e92c1a759d5c93:gateway/dialect-openai-responses/src/test/resources/contract/responses-canonical.json:generic-api-key:14
+3804d64a26802b5b2e08a299046115bfc0404d69:gateway/core/src/test/kotlin/RefreshOutcomeTest.kt:generic-api-key:88
+446d7fd1083cfb6333861b8babe02766a2037485:gateway/core/src/test/kotlin/console/v4131/TranscriptSentTextsTest.kt:generic-api-key:21
+38b02d5b6c2c963ddf2e036d40138f9af0d3257d:gateway/provider-grok/src/test/kotlin/grok/GrokProviderTest.kt:generic-api-key:73
+c361520c57ecdd3eb7c9ab2257a71f037f5a899d:app/src/test/kotlin/splice/app/cli/status/DashboardKeyLineTest.kt:generic-api-key:14
+# 2026-09-27: V4-344 redaction fixture. TranscriptHistoryIndexTest plants the alphabet run
+# `abcdefghijklmnopqrstuvwxyz123456` as api_key= to prove the history index redacts it
+# (asserts `api_key=[redacted]`). Test-source literal, grants nothing; triaged by hand.
+3d0eb88804977ccaa6bcfd9cb20b6fbc83a2a89e:integrations/claude-code/src/test/kotlin/splice/client/transcript/v4344/TranscriptHistoryIndexTest.kt:generic-api-key:46
+# 2026-09-28: V4-389 wire golden. CodexWireGoldenTest asserts the byte-exact Codex request and its
+# `prompt_cache_key: "splice-<md5>"` is the deterministic cache key of the test's synthetic session,
+# the same class as the 13 oracle fixture keys above. Test-source literal, grants nothing; triaged by
+# hand. The `.gitleaks.toml` regex for this shape does not clear it: gitleaks applies an allowlist
+# regex to the captured secret (the bare md5), never to the line that carries the `"prompt_cache_key":`
+# prefix the regex spells.
+a7b4b778b66231d69bdcc446229febdb5605130d:integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/v4389/CodexWireGoldenTest.kt:generic-api-key:67
+a7b4b778b66231d69bdcc446229febdb5605130d:integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/v4389/CodexWireGoldenTest.kt:generic-api-key:78
+# 2026-09-29: V4-340 legacy-store fixture. KeptFilesLifetimeTest.singleFileWithOneConversation writes the JSON a
+# daemon before V4-340 kept a head's code-mode records in, and generic-api-key matched its field NAME `key` beside
+# the conversation id `"key":"conversation-1"`. Test-source literal, grants nothing; triaged by hand after the
+# scan went red on f37280280 (the last green scan was 63dfafbb3).
+f37280280b4768cf6c9f825e7fdee98145ccffc4:app/src/test/kotlin/splice/app/KeptFilesLifetimeTest.kt:generic-api-key:172
+# 2026-09-29: the two findings the entry above caused. Its own comment and V4-340's ledger note quoted the
+# fixture's JSON field beside its value, which the same rule matches. Prose, grants nothing; triaged by hand.
+# The history is not rewritten, so each commit that carries the quote is fingerprinted here.
+5319b63131cfe0ff25ba6ad85264cd741ba92fbd:.gitleaksignore:generic-api-key:80
+36a22e1a5821273c4592a592bf474e6441f55e30:.dev/campaigns/v0.4.0.toml:generic-api-key:8297
+# 2026-09-29 CT: V4-427 transcript fixtures plant the same synthetic token as the
+# vetted TranscriptSentTextsTest above, to assert cached hand-offs stay redacted.
+# Opened all three test lines and their assertions. No credential or auth consumer.
+13ef90fbd2b1f075c37612db8e13166d0c4d4dde:integrations/claude-code/src/test/kotlin/splice/client/transcript/v4427/CachedEdgesTest.kt:generic-api-key:34
+13ef90fbd2b1f075c37612db8e13166d0c4d4dde:integrations/claude-code/src/test/kotlin/splice/client/transcript/v4427/SendLedgerTest.kt:generic-api-key:43
+13ef90fbd2b1f075c37612db8e13166d0c4d4dde:integrations/claude-code/src/test/kotlin/splice/client/transcript/v4427/SendLedgerBoundaryTest.kt:generic-api-key:58
+# 2026-09-30 CT (splice-lead): three fixtures red on secret-scan and org-secret-scan since
+# 3962a5897 (Sep 29, 6:46 PM CT). Opened each line: TranscriptLastTest's synthetic assistant
+# reply text carrying a token= phrase in a 1970 transcript fixture (message id synthetic-reply),
+# and doctor.test.ts's planted fix and detail values of the report-redaction test, both spelling
+# PLANTED. No credential and no auth consumer; the doctor fix value is also exempt in
+# .github/secret-scan-allow.toml for the supplementary pass.
+1cc6847d61fec3a81471fb798090aeb65eda5eb4:integrations/claude-code/src/test/kotlin/splice/client/v4444/TranscriptLastTest.kt:generic-api-key:14
+1755abd8e5b5b228cff12fccfe86e50a283ca7d5:console-next/tests/doctor.test.ts:generic-api-key:243
+1755abd8e5b5b228cff12fccfe86e50a283ca7d5:console-next/tests/doctor.test.ts:generic-api-key:244
+# Sep 30 CT, vetted by hand after secret-scan and org-secret-scan went red on 6dd4a6204: the two
+# bare-key inputs of the doctor redaction tests added in beba60d0f (V4-254, doctor --json redacts a
+# bare 32-character key). Both lines assign the alphabet run AbCdEf...Yz012345, the input the test
+# proves the report never prints; no credential and no auth consumer.
+beba60d0f1545cad1d5a6b89c0ccb78df8cd15a5:features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorRedactionTest.kt:generic-api-key:71
+beba60d0f1545cad1d5a6b89c0ccb78df8cd15a5:features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorReportHardeningTest.kt:generic-api-key:85
+# Oct 4 CT, vetted by hand after secret-scan and org-secret-scan went red on 568589466: the OAuth
+# client id of Claude Code's own public client, which ClaudeOAuthRefresh names to rotate a login
+# that client made. A public OAuth client is an app identifier with no secret (PKCE); the same id
+# is printed in third-party usage tools' docs. It grants nothing alone. The supplementary pass was
+# green on the same run.
+5685894667979261c2e1533302b571cc0c067af5:app/src/main/kotlin/splice/app/auth/claude/ClaudeOAuthRefresh.kt:generic-api-key:38
+# Oct 5 CT, vetted by hand after secret-scan went red on e0cb44ff2: a ledger install note names the
+# code-mode backup directory, a dated name ending in the installed short sha, a few words after the
+# phrase "management key answers". The flagged token is that backup name; no credential and no auth
+# consumer. Ledger notes now keep backup names away from the word "key".
+e0cb44ff2009e312b96027dacda6b1c30aec49ef:.dev/campaigns/v0.4.0.toml:generic-api-key:423
+# Oct 5 CT, gitleaks 8.30.1 historical triage: opened every exact blob. The ledger match is
+# narrative prose; the plan matches are an interpolated head log and a static beta-header list.
+# The remaining two are the already-vetted hostile-error and dummy Grok authentication fixtures,
+# appearing under additional historical commits. None is a credential; no broad rule is relaxed.
+e91074c9da1d6758c455ffb37dd6eda221a3d7a7:.dev/campaigns/v0.4.0.toml:generic-api-key:519
+3804d64a26802b5b2e08a299046115bfc0404d69:docs/superpowers/plans/2026-08-15-head-decoupling.md:generic-api-key:660
+3804d64a26802b5b2e08a299046115bfc0404d69:docs/superpowers/plans/2026-08-15-head-decoupling.md:generic-api-key:708
+646ce260dbd8e68618640eac4e39e12bf486e5c9:docs/superpowers/plans/2026-08-15-head-decoupling.md:generic-api-key:660
+646ce260dbd8e68618640eac4e39e12bf486e5c9:docs/superpowers/plans/2026-08-15-head-decoupling.md:generic-api-key:708
 646ce260dbd8e68618640eac4e39e12bf486e5c9:gateway/core/src/test/kotlin/RefreshOutcomeTest.kt:generic-api-key:88
+dd2a6783fd349d253b4e1fd70cd36f33471b4bc7:gateway/provider-grok/src/test/kotlin/grok/GrokProviderTest.kt:generic-api-key:73
+# Oct 22 CT, gitleaks v8.21.2 (the secret-scan workflow's pin) over the history the merge of PR #247 reaches: opened
+# each exact line. All three are test-source constants that are credential-SHAPED on purpose, so each test can prove
+# the value never reaches what it guards: AuthRouteFieldsTest's "sk-test" key (a masked auth route field),
+# ProviderFailureRowTest's SENT_TOKEN (a provider echoing a request header must not carry it onto the console row) and
+# TomlStructurePreflightTest's unquoted preamble key (a structural splice.toml finding must never quote it). Their
+# shapes ("sk-live-" plus 12 or 20 characters) are no provider's key format; none grants anything anywhere. No broad
+# rule is relaxed.
+4058eab90b469a671cf2f75d4a0e54e6a6b4fe46:app/src/test/kotlin/splice/app/control/AuthRouteFieldsTest.kt:generic-api-key:43
+dfd2d19585d17364e76e73a5aa23e9159348d42d:features/turns/src/test/kotlin/splice/head/perf/ProviderFailureRowTest.kt:generic-api-key:68
+7ad358edaa384536c446da53e12351539f0ddd99:integrations/topology/src/test/kotlin/splice/topology/TomlStructurePreflightTest.kt:generic-api-key:41
+
+# Oct 31 CT, gitleaks v8.21.2 (the secret-scan workflow's pin) and 8.30.1 over the full history of PR #247's head
+# 78bc4be2d: opened each exact line. ShareCertificateDamageTest's TEXT_PIECES lists PEM's BEGIN and END markers as
+# pieces a hand-edited tls.pem is damaged with; no key body sits between them, and the file was deleted later. The
+# Cargo.lock match is two crate names in a dependency list (crypto_secretbox and the crate after it) in the Codex API
+# reference's lockfile. Neither is a credential or grants anything. No broad rule is relaxed.
+f061db6b50b4c9600f775503a09fc706935b1f4e:features/share/src/test/kotlin/splice/share/ShareCertificateDamageTest.kt:private-key:54
+a647799d38d70d51ba0e324e720020deca2508e4:tools/codemode-parity/current-api-reference/Cargo.lock:generic-api-key:2259

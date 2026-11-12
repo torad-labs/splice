@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: '21'
@@ -100,7 +100,7 @@ jobs:
       - name: Run tier-1 live probe
         id: tier1
         if: steps.gate.outputs.should_skip == 'false'
-        run: checks/e2e/heads-e2e.sh --tier 1
+        run: bun tools/e2e heads --tier 1
       - name: Update live-probe issue
         if: always() && steps.gate.outputs.should_skip == 'false'
         env:

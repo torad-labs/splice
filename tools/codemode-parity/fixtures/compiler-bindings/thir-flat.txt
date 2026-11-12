@@ -1,0 +1,1469 @@
+DefId(0:7 ~ compiler_binding_fixture[243c]::alpha::{impl#0}::run):
+Thir {
+    body_type: Fn(
+        fn() -> u32,
+    ),
+    attributes: {},
+    arms: [],
+    blocks: [
+        Block {
+            targeted_by_break: false,
+            region_scope: Node(1),
+            span: probe.rs:4:39: 4:45 (#0),
+            stmts: [],
+            expr: Some(
+                e1,
+            ),
+            safety_mode: Safe,
+        },
+    ],
+    exprs: [
+        Expr {
+            kind: Literal {
+                lit: Spanned {
+                    node: Int(
+                        Pu128(
+                            11,
+                        ),
+                        Unsuffixed,
+                    ),
+                    span: probe.rs:4:41: 4:43 (#0),
+                },
+                neg: false,
+            },
+            ty: u32,
+            temp_scope_id: 2,
+            span: probe.rs:4:41: 4:43 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(2),
+                hir_id: HirId(DefId(0:7 ~ compiler_binding_fixture[243c]::alpha::{impl#0}::run).2),
+                value: e0,
+            },
+            ty: u32,
+            temp_scope_id: 2,
+            span: probe.rs:4:41: 4:43 (#0),
+        },
+        Expr {
+            kind: Block {
+                block: b0,
+            },
+            ty: u32,
+            temp_scope_id: 3,
+            span: probe.rs:4:39: 4:45 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(3),
+                hir_id: HirId(DefId(0:7 ~ compiler_binding_fixture[243c]::alpha::{impl#0}::run).3),
+                value: e2,
+            },
+            ty: u32,
+            temp_scope_id: 3,
+            span: probe.rs:4:39: 4:45 (#0),
+        },
+    ],
+    stmts: [],
+    params: [],
+}
+
+DefId(0:8 ~ compiler_binding_fixture[243c]::alpha::helper):
+Thir {
+    body_type: Fn(
+        fn() -> u32,
+    ),
+    attributes: {},
+    arms: [],
+    blocks: [
+        Block {
+            targeted_by_break: false,
+            region_scope: Node(1),
+            span: probe.rs:5:28: 5:33 (#0),
+            stmts: [],
+            expr: Some(
+                e1,
+            ),
+            safety_mode: Safe,
+        },
+    ],
+    exprs: [
+        Expr {
+            kind: Literal {
+                lit: Spanned {
+                    node: Int(
+                        Pu128(
+                            7,
+                        ),
+                        Unsuffixed,
+                    ),
+                    span: probe.rs:5:30: 5:31 (#0),
+                },
+                neg: false,
+            },
+            ty: u32,
+            temp_scope_id: 2,
+            span: probe.rs:5:30: 5:31 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(2),
+                hir_id: HirId(DefId(0:8 ~ compiler_binding_fixture[243c]::alpha::helper).2),
+                value: e0,
+            },
+            ty: u32,
+            temp_scope_id: 2,
+            span: probe.rs:5:30: 5:31 (#0),
+        },
+        Expr {
+            kind: Block {
+                block: b0,
+            },
+            ty: u32,
+            temp_scope_id: 3,
+            span: probe.rs:5:28: 5:33 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(3),
+                hir_id: HirId(DefId(0:8 ~ compiler_binding_fixture[243c]::alpha::helper).3),
+                value: e2,
+            },
+            ty: u32,
+            temp_scope_id: 3,
+            span: probe.rs:5:28: 5:33 (#0),
+        },
+    ],
+    stmts: [],
+    params: [],
+}
+
+DefId(0:13 ~ compiler_binding_fixture[243c]::beta::{impl#0}::run):
+Thir {
+    body_type: Fn(
+        fn() -> u32,
+    ),
+    attributes: {},
+    arms: [],
+    blocks: [
+        Block {
+            targeted_by_break: false,
+            region_scope: Node(1),
+            span: probe.rs:9:39: 9:45 (#0),
+            stmts: [],
+            expr: Some(
+                e1,
+            ),
+            safety_mode: Safe,
+        },
+    ],
+    exprs: [
+        Expr {
+            kind: Literal {
+                lit: Spanned {
+                    node: Int(
+                        Pu128(
+                            29,
+                        ),
+                        Unsuffixed,
+                    ),
+                    span: probe.rs:9:41: 9:43 (#0),
+                },
+                neg: false,
+            },
+            ty: u32,
+            temp_scope_id: 2,
+            span: probe.rs:9:41: 9:43 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(2),
+                hir_id: HirId(DefId(0:13 ~ compiler_binding_fixture[243c]::beta::{impl#0}::run).2),
+                value: e0,
+            },
+            ty: u32,
+            temp_scope_id: 2,
+            span: probe.rs:9:41: 9:43 (#0),
+        },
+        Expr {
+            kind: Block {
+                block: b0,
+            },
+            ty: u32,
+            temp_scope_id: 3,
+            span: probe.rs:9:39: 9:45 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(3),
+                hir_id: HirId(DefId(0:13 ~ compiler_binding_fixture[243c]::beta::{impl#0}::run).3),
+                value: e2,
+            },
+            ty: u32,
+            temp_scope_id: 3,
+            span: probe.rs:9:39: 9:45 (#0),
+        },
+    ],
+    stmts: [],
+    params: [],
+}
+
+DefId(0:17 ~ compiler_binding_fixture[243c]::outer):
+Thir {
+    body_type: Fn(
+        fn() -> u32,
+    ),
+    attributes: {},
+    arms: [],
+    blocks: [
+        Block {
+            targeted_by_break: false,
+            region_scope: Node(1),
+            span: probe.rs:13:23: 16:2 (#0),
+            stmts: [],
+            expr: Some(
+                e9,
+            ),
+            safety_mode: Safe,
+        },
+    ],
+    exprs: [
+        Expr {
+            kind: ZstLiteral {
+                user_ty: None,
+            },
+            ty: FnDef(
+                DefId(0:18 ~ compiler_binding_fixture[243c]::outer::nested),
+                Binder {
+                    value: [],
+                    bound_vars: [],
+                },
+            ),
+            temp_scope_id: 5,
+            span: probe.rs:15:5: 15:11 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(5),
+                hir_id: HirId(DefId(0:17 ~ compiler_binding_fixture[243c]::outer).5),
+                value: e0,
+            },
+            ty: FnDef(
+                DefId(0:18 ~ compiler_binding_fixture[243c]::outer::nested),
+                Binder {
+                    value: [],
+                    bound_vars: [],
+                },
+            ),
+            temp_scope_id: 5,
+            span: probe.rs:15:5: 15:11 (#0),
+        },
+        Expr {
+            kind: Call {
+                ty: FnDef(
+                    DefId(0:18 ~ compiler_binding_fixture[243c]::outer::nested),
+                    Binder {
+                        value: [],
+                        bound_vars: [],
+                    },
+                ),
+                fun: e1,
+                args: [],
+                from_hir_call: true,
+                fn_span: probe.rs:15:5: 15:13 (#0),
+            },
+            ty: u32,
+            temp_scope_id: 4,
+            span: probe.rs:15:5: 15:13 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(4),
+                hir_id: HirId(DefId(0:17 ~ compiler_binding_fixture[243c]::outer).4),
+                value: e2,
+            },
+            ty: u32,
+            temp_scope_id: 4,
+            span: probe.rs:15:5: 15:13 (#0),
+        },
+        Expr {
+            kind: ZstLiteral {
+                user_ty: None,
+            },
+            ty: FnDef(
+                DefId(0:8 ~ compiler_binding_fixture[243c]::alpha::helper),
+                Binder {
+                    value: [],
+                    bound_vars: [],
+                },
+            ),
+            temp_scope_id: 8,
+            span: probe.rs:15:16: 15:30 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(8),
+                hir_id: HirId(DefId(0:17 ~ compiler_binding_fixture[243c]::outer).8),
+                value: e4,
+            },
+            ty: FnDef(
+                DefId(0:8 ~ compiler_binding_fixture[243c]::alpha::helper),
+                Binder {
+                    value: [],
+                    bound_vars: [],
+                },
+            ),
+            temp_scope_id: 8,
+            span: probe.rs:15:16: 15:30 (#0),
+        },
+        Expr {
+            kind: Call {
+                ty: FnDef(
+                    DefId(0:8 ~ compiler_binding_fixture[243c]::alpha::helper),
+                    Binder {
+                        value: [],
+                        bound_vars: [],
+                    },
+                ),
+                fun: e5,
+                args: [],
+                from_hir_call: true,
+                fn_span: probe.rs:15:16: 15:32 (#0),
+            },
+            ty: u32,
+            temp_scope_id: 7,
+            span: probe.rs:15:16: 15:32 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(7),
+                hir_id: HirId(DefId(0:17 ~ compiler_binding_fixture[243c]::outer).7),
+                value: e6,
+            },
+            ty: u32,
+            temp_scope_id: 7,
+            span: probe.rs:15:16: 15:32 (#0),
+        },
+        Expr {
+            kind: Binary {
+                op: Add,
+                lhs: e3,
+                rhs: e7,
+            },
+            ty: u32,
+            temp_scope_id: 3,
+            span: probe.rs:15:5: 15:32 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(3),
+                hir_id: HirId(DefId(0:17 ~ compiler_binding_fixture[243c]::outer).3),
+                value: e8,
+            },
+            ty: u32,
+            temp_scope_id: 3,
+            span: probe.rs:15:5: 15:32 (#0),
+        },
+        Expr {
+            kind: Block {
+                block: b0,
+            },
+            ty: u32,
+            temp_scope_id: 11,
+            span: probe.rs:13:23: 16:2 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(11),
+                hir_id: HirId(DefId(0:17 ~ compiler_binding_fixture[243c]::outer).11),
+                value: e10,
+            },
+            ty: u32,
+            temp_scope_id: 11,
+            span: probe.rs:13:23: 16:2 (#0),
+        },
+    ],
+    stmts: [],
+    params: [],
+}
+
+DefId(0:18 ~ compiler_binding_fixture[243c]::outer::nested):
+Thir {
+    body_type: Fn(
+        fn() -> u32,
+    ),
+    attributes: {},
+    arms: [],
+    blocks: [
+        Block {
+            targeted_by_break: false,
+            region_scope: Node(1),
+            span: probe.rs:14:24: 14:48 (#0),
+            stmts: [],
+            expr: Some(
+                e3,
+            ),
+            safety_mode: Safe,
+        },
+    ],
+    exprs: [
+        Expr {
+            kind: ZstLiteral {
+                user_ty: None,
+            },
+            ty: FnDef(
+                DefId(0:7 ~ compiler_binding_fixture[243c]::alpha::{impl#0}::run),
+                Binder {
+                    value: [],
+                    bound_vars: [],
+                },
+            ),
+            temp_scope_id: 3,
+            span: probe.rs:14:26: 14:44 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(3),
+                hir_id: HirId(DefId(0:18 ~ compiler_binding_fixture[243c]::outer::nested).3),
+                value: e0,
+            },
+            ty: FnDef(
+                DefId(0:7 ~ compiler_binding_fixture[243c]::alpha::{impl#0}::run),
+                Binder {
+                    value: [],
+                    bound_vars: [],
+                },
+            ),
+            temp_scope_id: 3,
+            span: probe.rs:14:26: 14:44 (#0),
+        },
+        Expr {
+            kind: Call {
+                ty: FnDef(
+                    DefId(0:7 ~ compiler_binding_fixture[243c]::alpha::{impl#0}::run),
+                    Binder {
+                        value: [],
+                        bound_vars: [],
+                    },
+                ),
+                fun: e1,
+                args: [],
+                from_hir_call: true,
+                fn_span: probe.rs:14:26: 14:46 (#0),
+            },
+            ty: u32,
+            temp_scope_id: 2,
+            span: probe.rs:14:26: 14:46 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(2),
+                hir_id: HirId(DefId(0:18 ~ compiler_binding_fixture[243c]::outer::nested).2),
+                value: e2,
+            },
+            ty: u32,
+            temp_scope_id: 2,
+            span: probe.rs:14:26: 14:46 (#0),
+        },
+        Expr {
+            kind: Block {
+                block: b0,
+            },
+            ty: u32,
+            temp_scope_id: 8,
+            span: probe.rs:14:24: 14:48 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(8),
+                hir_id: HirId(DefId(0:18 ~ compiler_binding_fixture[243c]::outer::nested).8),
+                value: e4,
+            },
+            ty: u32,
+            temp_scope_id: 8,
+            span: probe.rs:14:24: 14:48 (#0),
+        },
+    ],
+    stmts: [],
+    params: [],
+}
+
+DefId(0:19 ~ compiler_binding_fixture[243c]::other):
+Thir {
+    body_type: Fn(
+        fn() -> u32,
+    ),
+    attributes: {},
+    arms: [],
+    blocks: [
+        Block {
+            targeted_by_break: false,
+            region_scope: Node(1),
+            span: probe.rs:17:23: 20:2 (#0),
+            stmts: [],
+            expr: Some(
+                e3,
+            ),
+            safety_mode: Safe,
+        },
+    ],
+    exprs: [
+        Expr {
+            kind: ZstLiteral {
+                user_ty: None,
+            },
+            ty: FnDef(
+                DefId(0:20 ~ compiler_binding_fixture[243c]::other::nested),
+                Binder {
+                    value: [],
+                    bound_vars: [],
+                },
+            ),
+            temp_scope_id: 4,
+            span: probe.rs:19:5: 19:11 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(4),
+                hir_id: HirId(DefId(0:19 ~ compiler_binding_fixture[243c]::other).4),
+                value: e0,
+            },
+            ty: FnDef(
+                DefId(0:20 ~ compiler_binding_fixture[243c]::other::nested),
+                Binder {
+                    value: [],
+                    bound_vars: [],
+                },
+            ),
+            temp_scope_id: 4,
+            span: probe.rs:19:5: 19:11 (#0),
+        },
+        Expr {
+            kind: Call {
+                ty: FnDef(
+                    DefId(0:20 ~ compiler_binding_fixture[243c]::other::nested),
+                    Binder {
+                        value: [],
+                        bound_vars: [],
+                    },
+                ),
+                fun: e1,
+                args: [],
+                from_hir_call: true,
+                fn_span: probe.rs:19:5: 19:13 (#0),
+            },
+            ty: u32,
+            temp_scope_id: 3,
+            span: probe.rs:19:5: 19:13 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(3),
+                hir_id: HirId(DefId(0:19 ~ compiler_binding_fixture[243c]::other).3),
+                value: e2,
+            },
+            ty: u32,
+            temp_scope_id: 3,
+            span: probe.rs:19:5: 19:13 (#0),
+        },
+        Expr {
+            kind: Block {
+                block: b0,
+            },
+            ty: u32,
+            temp_scope_id: 6,
+            span: probe.rs:17:23: 20:2 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(6),
+                hir_id: HirId(DefId(0:19 ~ compiler_binding_fixture[243c]::other).6),
+                value: e4,
+            },
+            ty: u32,
+            temp_scope_id: 6,
+            span: probe.rs:17:23: 20:2 (#0),
+        },
+    ],
+    stmts: [],
+    params: [],
+}
+
+DefId(0:20 ~ compiler_binding_fixture[243c]::other::nested):
+Thir {
+    body_type: Fn(
+        fn() -> u32,
+    ),
+    attributes: {},
+    arms: [],
+    blocks: [
+        Block {
+            targeted_by_break: false,
+            region_scope: Node(1),
+            span: probe.rs:18:24: 18:47 (#0),
+            stmts: [],
+            expr: Some(
+                e3,
+            ),
+            safety_mode: Safe,
+        },
+    ],
+    exprs: [
+        Expr {
+            kind: ZstLiteral {
+                user_ty: None,
+            },
+            ty: FnDef(
+                DefId(0:13 ~ compiler_binding_fixture[243c]::beta::{impl#0}::run),
+                Binder {
+                    value: [],
+                    bound_vars: [],
+                },
+            ),
+            temp_scope_id: 3,
+            span: probe.rs:18:26: 18:43 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(3),
+                hir_id: HirId(DefId(0:20 ~ compiler_binding_fixture[243c]::other::nested).3),
+                value: e0,
+            },
+            ty: FnDef(
+                DefId(0:13 ~ compiler_binding_fixture[243c]::beta::{impl#0}::run),
+                Binder {
+                    value: [],
+                    bound_vars: [],
+                },
+            ),
+            temp_scope_id: 3,
+            span: probe.rs:18:26: 18:43 (#0),
+        },
+        Expr {
+            kind: Call {
+                ty: FnDef(
+                    DefId(0:13 ~ compiler_binding_fixture[243c]::beta::{impl#0}::run),
+                    Binder {
+                        value: [],
+                        bound_vars: [],
+                    },
+                ),
+                fun: e1,
+                args: [],
+                from_hir_call: true,
+                fn_span: probe.rs:18:26: 18:45 (#0),
+            },
+            ty: u32,
+            temp_scope_id: 2,
+            span: probe.rs:18:26: 18:45 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(2),
+                hir_id: HirId(DefId(0:20 ~ compiler_binding_fixture[243c]::other::nested).2),
+                value: e2,
+            },
+            ty: u32,
+            temp_scope_id: 2,
+            span: probe.rs:18:26: 18:45 (#0),
+        },
+        Expr {
+            kind: Block {
+                block: b0,
+            },
+            ty: u32,
+            temp_scope_id: 8,
+            span: probe.rs:18:24: 18:47 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(8),
+                hir_id: HirId(DefId(0:20 ~ compiler_binding_fixture[243c]::other::nested).8),
+                value: e4,
+            },
+            ty: u32,
+            temp_scope_id: 8,
+            span: probe.rs:18:24: 18:47 (#0),
+        },
+    ],
+    stmts: [],
+    params: [],
+}
+
+DefId(0:21 ~ compiler_binding_fixture[243c]::qualified):
+Thir {
+    body_type: Fn(
+        fn() -> u32,
+    ),
+    attributes: {},
+    arms: [],
+    blocks: [
+        Block {
+            targeted_by_break: false,
+            region_scope: Node(1),
+            span: probe.rs:21:27: 21:73 (#0),
+            stmts: [],
+            expr: Some(
+                e9,
+            ),
+            safety_mode: Safe,
+        },
+    ],
+    exprs: [
+        Expr {
+            kind: ZstLiteral {
+                user_ty: None,
+            },
+            ty: FnDef(
+                DefId(0:7 ~ compiler_binding_fixture[243c]::alpha::{impl#0}::run),
+                Binder {
+                    value: [],
+                    bound_vars: [],
+                },
+            ),
+            temp_scope_id: 4,
+            span: probe.rs:21:29: 21:47 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(4),
+                hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).4),
+                value: e0,
+            },
+            ty: FnDef(
+                DefId(0:7 ~ compiler_binding_fixture[243c]::alpha::{impl#0}::run),
+                Binder {
+                    value: [],
+                    bound_vars: [],
+                },
+            ),
+            temp_scope_id: 4,
+            span: probe.rs:21:29: 21:47 (#0),
+        },
+        Expr {
+            kind: Call {
+                ty: FnDef(
+                    DefId(0:7 ~ compiler_binding_fixture[243c]::alpha::{impl#0}::run),
+                    Binder {
+                        value: [],
+                        bound_vars: [],
+                    },
+                ),
+                fun: e1,
+                args: [],
+                from_hir_call: true,
+                fn_span: probe.rs:21:29: 21:49 (#0),
+            },
+            ty: u32,
+            temp_scope_id: 3,
+            span: probe.rs:21:29: 21:49 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(3),
+                hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).3),
+                value: e2,
+            },
+            ty: u32,
+            temp_scope_id: 3,
+            span: probe.rs:21:29: 21:49 (#0),
+        },
+        Expr {
+            kind: ZstLiteral {
+                user_ty: None,
+            },
+            ty: FnDef(
+                DefId(0:13 ~ compiler_binding_fixture[243c]::beta::{impl#0}::run),
+                Binder {
+                    value: [],
+                    bound_vars: [],
+                },
+            ),
+            temp_scope_id: 10,
+            span: probe.rs:21:52: 21:69 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(10),
+                hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).10),
+                value: e4,
+            },
+            ty: FnDef(
+                DefId(0:13 ~ compiler_binding_fixture[243c]::beta::{impl#0}::run),
+                Binder {
+                    value: [],
+                    bound_vars: [],
+                },
+            ),
+            temp_scope_id: 10,
+            span: probe.rs:21:52: 21:69 (#0),
+        },
+        Expr {
+            kind: Call {
+                ty: FnDef(
+                    DefId(0:13 ~ compiler_binding_fixture[243c]::beta::{impl#0}::run),
+                    Binder {
+                        value: [],
+                        bound_vars: [],
+                    },
+                ),
+                fun: e5,
+                args: [],
+                from_hir_call: true,
+                fn_span: probe.rs:21:52: 21:71 (#0),
+            },
+            ty: u32,
+            temp_scope_id: 9,
+            span: probe.rs:21:52: 21:71 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(9),
+                hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).9),
+                value: e6,
+            },
+            ty: u32,
+            temp_scope_id: 9,
+            span: probe.rs:21:52: 21:71 (#0),
+        },
+        Expr {
+            kind: Binary {
+                op: Add,
+                lhs: e3,
+                rhs: e7,
+            },
+            ty: u32,
+            temp_scope_id: 2,
+            span: probe.rs:21:29: 21:71 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(2),
+                hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).2),
+                value: e8,
+            },
+            ty: u32,
+            temp_scope_id: 2,
+            span: probe.rs:21:29: 21:71 (#0),
+        },
+        Expr {
+            kind: Block {
+                block: b0,
+            },
+            ty: u32,
+            temp_scope_id: 15,
+            span: probe.rs:21:27: 21:73 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(15),
+                hir_id: HirId(DefId(0:21 ~ compiler_binding_fixture[243c]::qualified).15),
+                value: e10,
+            },
+            ty: u32,
+            temp_scope_id: 15,
+            span: probe.rs:21:27: 21:73 (#0),
+        },
+    ],
+    stmts: [],
+    params: [],
+}
+
+DefId(0:25 ~ compiler_binding_fixture[243c]::{impl#0}::pick):
+Thir {
+    body_type: Fn(
+        fn(&'{erased} alpha::Worker) -> u32,
+    ),
+    attributes: {},
+    arms: [],
+    blocks: [
+        Block {
+            targeted_by_break: false,
+            region_scope: Node(3),
+            span: probe.rs:23:55: 23:61 (#0),
+            stmts: [],
+            expr: Some(
+                e1,
+            ),
+            safety_mode: Safe,
+        },
+    ],
+    exprs: [
+        Expr {
+            kind: Literal {
+                lit: Spanned {
+                    node: Int(
+                        Pu128(
+                            13,
+                        ),
+                        Unsuffixed,
+                    ),
+                    span: probe.rs:23:57: 23:59 (#0),
+                },
+                neg: false,
+            },
+            ty: u32,
+            temp_scope_id: 4,
+            span: probe.rs:23:57: 23:59 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(4),
+                hir_id: HirId(DefId(0:25 ~ compiler_binding_fixture[243c]::{impl#0}::pick).4),
+                value: e0,
+            },
+            ty: u32,
+            temp_scope_id: 4,
+            span: probe.rs:23:57: 23:59 (#0),
+        },
+        Expr {
+            kind: Block {
+                block: b0,
+            },
+            ty: u32,
+            temp_scope_id: 5,
+            span: probe.rs:23:55: 23:61 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(5),
+                hir_id: HirId(DefId(0:25 ~ compiler_binding_fixture[243c]::{impl#0}::pick).5),
+                value: e2,
+            },
+            ty: u32,
+            temp_scope_id: 5,
+            span: probe.rs:23:55: 23:61 (#0),
+        },
+    ],
+    stmts: [],
+    params: [
+        Param {
+            pat: Some(
+                Pat {
+                    ty: &'{erased} alpha::Worker,
+                    span: probe.rs:23:41: 23:46 (#0),
+                    extra: None,
+                    kind: Binding {
+                        name: "self",
+                        mode: BindingMode(
+                            No,
+                            Not,
+                        ),
+                        var: LocalVarId(
+                            HirId(DefId(0:25 ~ compiler_binding_fixture[243c]::{impl#0}::pick).2),
+                        ),
+                        ty: &'{erased} alpha::Worker,
+                        subpattern: None,
+                        is_primary: true,
+                        is_shorthand: false,
+                    },
+                },
+            ),
+            ty: &'{erased} alpha::Worker,
+            ty_span: None,
+            self_kind: Some(
+                RefImm,
+            ),
+            hir_id: Some(
+                HirId(DefId(0:25 ~ compiler_binding_fixture[243c]::{impl#0}::pick).1),
+            ),
+        },
+    ],
+}
+
+DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic):
+Thir {
+    body_type: Fn(
+        fn(&'{erased} dyn [Binder { value: Trait(Choose), bound_vars: [] }] + '{erased}) -> u32,
+    ),
+    attributes: {},
+    arms: [],
+    blocks: [
+        Block {
+            targeted_by_break: false,
+            region_scope: Node(3),
+            span: probe.rs:24:43: 24:59 (#0),
+            stmts: [],
+            expr: Some(
+                e6,
+            ),
+            safety_mode: Safe,
+        },
+    ],
+    exprs: [
+        Expr {
+            kind: VarRef {
+                id: LocalVarId(
+                    HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).2),
+                ),
+            },
+            ty: &'{erased} dyn [Binder { value: Trait(Choose), bound_vars: [] }] + '{erased},
+            temp_scope_id: 6,
+            span: probe.rs:24:45: 24:50 (#0),
+        },
+        Expr {
+            kind: Deref {
+                arg: e0,
+            },
+            ty: dyn [Binder { value: Trait(Choose), bound_vars: [] }] + '{erased},
+            temp_scope_id: 6,
+            span: probe.rs:24:45: 24:50 (#0),
+        },
+        Expr {
+            kind: Borrow {
+                borrow_kind: Shared,
+                arg: e1,
+            },
+            ty: &'{erased} dyn [Binder { value: Trait(Choose), bound_vars: [] }] + '{erased},
+            temp_scope_id: 6,
+            span: probe.rs:24:45: 24:50 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(6),
+                hir_id: HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).6),
+                value: e2,
+            },
+            ty: &'{erased} dyn [Binder { value: Trait(Choose), bound_vars: [] }] + '{erased},
+            temp_scope_id: 6,
+            span: probe.rs:24:45: 24:50 (#0),
+        },
+        Expr {
+            kind: ZstLiteral {
+                user_ty: None,
+            },
+            ty: FnDef(
+                DefId(0:23 ~ compiler_binding_fixture[243c]::Choose::pick),
+                Binder {
+                    value: [
+                        dyn [Binder { value: Trait(Choose), bound_vars: [] }] + '{erased},
+                    ],
+                    bound_vars: [
+                        Region(
+                            BrNamed(DefId(0:37 ~ compiler_binding_fixture[243c]::Choose::pick::'_)),
+                        ),
+                    ],
+                },
+            ),
+            temp_scope_id: 4,
+            span: probe.rs:24:51: 24:55 (#0),
+        },
+        Expr {
+            kind: Call {
+                ty: FnDef(
+                    DefId(0:23 ~ compiler_binding_fixture[243c]::Choose::pick),
+                    Binder {
+                        value: [
+                            dyn [Binder { value: Trait(Choose), bound_vars: [] }] + '{erased},
+                        ],
+                        bound_vars: [
+                            Region(
+                                BrNamed(DefId(0:37 ~ compiler_binding_fixture[243c]::Choose::pick::'_)),
+                            ),
+                        ],
+                    },
+                ),
+                fun: e4,
+                args: [
+                    e3,
+                ],
+                from_hir_call: true,
+                fn_span: probe.rs:24:51: 24:57 (#0),
+            },
+            ty: u32,
+            temp_scope_id: 4,
+            span: probe.rs:24:45: 24:57 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(4),
+                hir_id: HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).4),
+                value: e5,
+            },
+            ty: u32,
+            temp_scope_id: 4,
+            span: probe.rs:24:45: 24:57 (#0),
+        },
+        Expr {
+            kind: Block {
+                block: b0,
+            },
+            ty: u32,
+            temp_scope_id: 8,
+            span: probe.rs:24:43: 24:59 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(8),
+                hir_id: HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).8),
+                value: e7,
+            },
+            ty: u32,
+            temp_scope_id: 8,
+            span: probe.rs:24:43: 24:59 (#0),
+        },
+    ],
+    stmts: [],
+    params: [
+        Param {
+            pat: Some(
+                Pat {
+                    ty: &'{erased} dyn [Binder { value: Trait(Choose), bound_vars: [] }] + '{erased},
+                    span: probe.rs:24:16: 24:21 (#0),
+                    extra: None,
+                    kind: Binding {
+                        name: "value",
+                        mode: BindingMode(
+                            No,
+                            Not,
+                        ),
+                        var: LocalVarId(
+                            HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).2),
+                        ),
+                        ty: &'{erased} dyn [Binder { value: Trait(Choose), bound_vars: [] }] + '{erased},
+                        subpattern: None,
+                        is_primary: true,
+                        is_shorthand: false,
+                    },
+                },
+            ),
+            ty: &'{erased} dyn [Binder { value: Trait(Choose), bound_vars: [] }] + '{erased},
+            ty_span: Some(
+                probe.rs:24:23: 24:34 (#0),
+            ),
+            self_kind: None,
+            hir_id: Some(
+                HirId(DefId(0:26 ~ compiler_binding_fixture[243c]::dynamic).1),
+            ),
+        },
+    ],
+}
+
+DefId(0:27 ~ compiler_binding_fixture[243c]::unicode):
+Thir {
+    body_type: Fn(
+        fn() -> u32,
+    ),
+    attributes: {},
+    arms: [],
+    blocks: [
+        Block {
+            targeted_by_break: false,
+            region_scope: Node(1),
+            span: probe.rs:25:25: 25:62 (#0),
+            stmts: [
+                s0,
+            ],
+            expr: Some(
+                e5,
+            ),
+            safety_mode: Safe,
+        },
+    ],
+    exprs: [
+        Expr {
+            kind: Literal {
+                lit: Spanned {
+                    node: Str(
+                        "💡é",
+                        Cooked,
+                    ),
+                    span: probe.rs:25:39: 25:43 (#0),
+                },
+                neg: false,
+            },
+            ty: &'{erased} str,
+            temp_scope_id: 3,
+            span: probe.rs:25:39: 25:43 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(3),
+                hir_id: HirId(DefId(0:27 ~ compiler_binding_fixture[243c]::unicode).3),
+                value: e0,
+            },
+            ty: &'{erased} str,
+            temp_scope_id: 3,
+            span: probe.rs:25:39: 25:43 (#0),
+        },
+        Expr {
+            kind: ZstLiteral {
+                user_ty: None,
+            },
+            ty: FnDef(
+                DefId(0:8 ~ compiler_binding_fixture[243c]::alpha::helper),
+                Binder {
+                    value: [],
+                    bound_vars: [],
+                },
+            ),
+            temp_scope_id: 7,
+            span: probe.rs:25:45: 25:58 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(7),
+                hir_id: HirId(DefId(0:27 ~ compiler_binding_fixture[243c]::unicode).7),
+                value: e2,
+            },
+            ty: FnDef(
+                DefId(0:8 ~ compiler_binding_fixture[243c]::alpha::helper),
+                Binder {
+                    value: [],
+                    bound_vars: [],
+                },
+            ),
+            temp_scope_id: 7,
+            span: probe.rs:25:45: 25:58 (#0),
+        },
+        Expr {
+            kind: Call {
+                ty: FnDef(
+                    DefId(0:8 ~ compiler_binding_fixture[243c]::alpha::helper),
+                    Binder {
+                        value: [],
+                        bound_vars: [],
+                    },
+                ),
+                fun: e3,
+                args: [],
+                from_hir_call: true,
+                fn_span: probe.rs:25:45: 25:60 (#0),
+            },
+            ty: u32,
+            temp_scope_id: 6,
+            span: probe.rs:25:45: 25:60 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(6),
+                hir_id: HirId(DefId(0:27 ~ compiler_binding_fixture[243c]::unicode).6),
+                value: e4,
+            },
+            ty: u32,
+            temp_scope_id: 6,
+            span: probe.rs:25:45: 25:60 (#0),
+        },
+        Expr {
+            kind: Block {
+                block: b0,
+            },
+            ty: u32,
+            temp_scope_id: 10,
+            span: probe.rs:25:25: 25:62 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(10),
+                hir_id: HirId(DefId(0:27 ~ compiler_binding_fixture[243c]::unicode).10),
+                value: e6,
+            },
+            ty: u32,
+            temp_scope_id: 10,
+            span: probe.rs:25:25: 25:62 (#0),
+        },
+    ],
+    stmts: [
+        Stmt {
+            kind: Let {
+                remainder_scope: Remainder { block: 1, first_statement_index: 0},
+                init_scope: Node(2),
+                pattern: Pat {
+                    ty: &'{erased} str,
+                    span: probe.rs:25:31: 25:36 (#0),
+                    extra: None,
+                    kind: Binding {
+                        name: "_text",
+                        mode: BindingMode(
+                            No,
+                            Not,
+                        ),
+                        var: LocalVarId(
+                            HirId(DefId(0:27 ~ compiler_binding_fixture[243c]::unicode).5),
+                        ),
+                        ty: &'{erased} str,
+                        subpattern: None,
+                        is_primary: true,
+                        is_shorthand: false,
+                    },
+                },
+                initializer: Some(
+                    e1,
+                ),
+                else_block: None,
+                hir_id: HirId(DefId(0:27 ~ compiler_binding_fixture[243c]::unicode).4),
+                span: probe.rs:25:27: 25:43 (#0),
+            },
+        },
+    ],
+    params: [],
+}
+
+DefId(0:35 ~ compiler_binding_fixture[243c]::generic):
+Thir {
+    body_type: Fn(
+        fn(&'{erased} T/#0) -> u32,
+    ),
+    attributes: {},
+    arms: [],
+    blocks: [
+        Block {
+            targeted_by_break: false,
+            region_scope: Node(3),
+            span: probe.rs:28:45: 28:61 (#0),
+            stmts: [],
+            expr: Some(
+                e6,
+            ),
+            safety_mode: Safe,
+        },
+    ],
+    exprs: [
+        Expr {
+            kind: VarRef {
+                id: LocalVarId(
+                    HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).2),
+                ),
+            },
+            ty: &'{erased} T/#0,
+            temp_scope_id: 6,
+            span: probe.rs:28:47: 28:52 (#0),
+        },
+        Expr {
+            kind: Deref {
+                arg: e0,
+            },
+            ty: T/#0,
+            temp_scope_id: 6,
+            span: probe.rs:28:47: 28:52 (#0),
+        },
+        Expr {
+            kind: Borrow {
+                borrow_kind: Shared,
+                arg: e1,
+            },
+            ty: &'{erased} T/#0,
+            temp_scope_id: 6,
+            span: probe.rs:28:47: 28:52 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(6),
+                hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).6),
+                value: e2,
+            },
+            ty: &'{erased} T/#0,
+            temp_scope_id: 6,
+            span: probe.rs:28:47: 28:52 (#0),
+        },
+        Expr {
+            kind: ZstLiteral {
+                user_ty: None,
+            },
+            ty: FnDef(
+                DefId(0:23 ~ compiler_binding_fixture[243c]::Choose::pick),
+                Binder {
+                    value: [
+                        T/#0,
+                    ],
+                    bound_vars: [
+                        Region(
+                            BrNamed(DefId(0:37 ~ compiler_binding_fixture[243c]::Choose::pick::'_)),
+                        ),
+                    ],
+                },
+            ),
+            temp_scope_id: 4,
+            span: probe.rs:28:53: 28:57 (#0),
+        },
+        Expr {
+            kind: Call {
+                ty: FnDef(
+                    DefId(0:23 ~ compiler_binding_fixture[243c]::Choose::pick),
+                    Binder {
+                        value: [
+                            T/#0,
+                        ],
+                        bound_vars: [
+                            Region(
+                                BrNamed(DefId(0:37 ~ compiler_binding_fixture[243c]::Choose::pick::'_)),
+                            ),
+                        ],
+                    },
+                ),
+                fun: e4,
+                args: [
+                    e3,
+                ],
+                from_hir_call: true,
+                fn_span: probe.rs:28:53: 28:59 (#0),
+            },
+            ty: u32,
+            temp_scope_id: 4,
+            span: probe.rs:28:47: 28:59 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(4),
+                hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).4),
+                value: e5,
+            },
+            ty: u32,
+            temp_scope_id: 4,
+            span: probe.rs:28:47: 28:59 (#0),
+        },
+        Expr {
+            kind: Block {
+                block: b0,
+            },
+            ty: u32,
+            temp_scope_id: 8,
+            span: probe.rs:28:45: 28:61 (#0),
+        },
+        Expr {
+            kind: Scope {
+                region_scope: Node(8),
+                hir_id: HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).8),
+                value: e7,
+            },
+            ty: u32,
+            temp_scope_id: 8,
+            span: probe.rs:28:45: 28:61 (#0),
+        },
+    ],
+    stmts: [],
+    params: [
+        Param {
+            pat: Some(
+                Pat {
+                    ty: &'{erased} T/#0,
+                    span: probe.rs:28:27: 28:32 (#0),
+                    extra: None,
+                    kind: Binding {
+                        name: "value",
+                        mode: BindingMode(
+                            No,
+                            Not,
+                        ),
+                        var: LocalVarId(
+                            HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).2),
+                        ),
+                        ty: &'{erased} T/#0,
+                        subpattern: None,
+                        is_primary: true,
+                        is_shorthand: false,
+                    },
+                },
+            ),
+            ty: &'{erased} T/#0,
+            ty_span: Some(
+                probe.rs:28:34: 28:36 (#0),
+            ),
+            self_kind: None,
+            hir_id: Some(
+                HirId(DefId(0:35 ~ compiler_binding_fixture[243c]::generic).1),
+            ),
+        },
+    ],
+}
+

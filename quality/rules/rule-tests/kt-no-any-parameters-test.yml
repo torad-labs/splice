@@ -1,0 +1,28 @@
+id: kt-no-any-parameters
+valid:
+  # the generic form: the parameter's type is the type parameter, not Any.
+  - 'fun <T : Any> reader(round: T): T = round'
+  # a type that merely contains Any is a different type, not an erased parameter.
+  - 'fun collect(items: List<Any>) {}'
+  - 'fun name(text: String, count: Int?) {}'
+  # the carve-out: an override's parameter types are fixed by its supertype.
+  - |
+    class Handler : ChannelInboundHandlerAdapter() {
+        override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {}
+    }
+invalid:
+  # a val constructor parameter erases its type the same way a plain one does.
+  - 'class Guard(private val lock: Any)'
+  - 'class Entry(val key: Any?)'
+  - 'fun f(owner: Any) {}'
+  - 'fun f(owner: Any?) {}'
+  - 'fun f(previous: Any? = null) {}'
+  - 'class Holder(value: Any)'
+  - 'class Holder(value: Any?)'
+  # the exemption does not reach a non-override function nested inside an override.
+  - |
+    class Handler : Base() {
+        override fun run(x: Int) {
+            fun inner(a: Any) {}
+        }
+    }

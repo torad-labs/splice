@@ -1,0 +1,122 @@
+// The two kept stores Settings > Your data counts and clears: code mode work and parked compaction summaries.
+// Each is counted, cleared and counted again, on files written the way their stores write them. The history cut that
+// reaches the files kept beside them (reasoning, assistant phases) is read here too, by what it leaves on the disk.
+package splice.app.control.kept
+
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.app.control.mount.KeptHistoryStores
+import splice.core.config.ASSISTANT_PHASES_DIR
+import splice.core.config.CODE_MODE_DIR
+import splice.core.config.CODE_MODE_STATE_SUFFIX
+import splice.core.config.REASONING_DIR
+import splice.core.config.StatePaths
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.attribute.FileTime
+
+class KeptStoresTest {
+    private fun write(file: Path, text: String, modifiedMs: Long): Path {
+        Files.createDirectories(file.parent)
+        Files.writeString(file, text)
+        Files.setLastModifiedTime(file, FileTime.fromMillis(modifiedMs))
+        return file
+    }
+
+    @Test
+    fun `code mode work is counted across heads, including a head no longer configured, then cleared`(
+        @TempDir tmp: Path,
+    ) {
+        val paths = StatePaths(baseOverride = tmp.resolve("state"))
+        write(paths.headsDir.resolve("claudex").resolve(CODE_MODE_DIR).resolve("a.json"), "12345", 2_000)
+        write(paths.headsDir.resolve("claudex").resolve(CODE_MODE_DIR).resolve("b.json"), "123", 5_000)
+        write(paths.headsDir.resolve("gone-head").resolve(CODE_MODE_DIR).resolve("c.json"), "12", 3_000)
+        write(paths.stateDir.resolve("claudex$CODE_MODE_STATE_SUFFIX"), "1234", 1_000)
+        // Not code mode work: the same head's other kept store must be left alone.
+        val reasoning = write(paths.headsDir.resolve("claudex").resolve("reasoning").resolve("r.json"), "zz", 1_000)
+        val store = CodeModeKept(paths)
+
+        assertEquals(StoreHeld(files = 4, bytes = 14, oldestMs = 1_000), store.held())
+        assertNull(store.clear())
+        assertEquals(StoreHeld(files = 0, bytes = 0, oldestMs = null), store.held())
+        assertTrue(Files.exists(reasoning), "clearing code mode work must not touch reasoning")
+    }
+
+    @Test
+    fun `clearing code mode work leaves the journals a running head holds`(@TempDir tmp: Path) {
+        val paths = StatePaths(baseOverride = tmp.resolve("state"))
+        val history = paths.headsDir.resolve("claudex").resolve(CODE_MODE_DIR).resolve("history")
+        val live = write(history.resolve("live.jsonl"), "12345", 2_000)
+        val idle = write(history.resolve("idle.jsonl"), "123", 2_000)
+        val store = CodeModeKept(paths) { setOf(live.toAbsolutePath().normalize()) }
+
+        assertNull(store.clear())
+        assertTrue(Files.exists(live), "a journal its head still appends to must survive the clear")
+        assertTrue(Files.notExists(idle))
+        assertEquals(StoreHeld(files = 1, bytes = 5, oldestMs = 2_000), store.held())
+    }
+
+    @Test
+    fun `a history cut removes the assistant phases it removes the reasoning of, and a clear leaves none`(
+        @TempDir tmp: Path,
+    ) {
+        val paths = StatePaths(baseOverride = tmp.resolve("state"))
+        val claudex = paths.headsDir.resolve("claudex")
+        val oldPhases = write(claudex.resolve(ASSISTANT_PHASES_DIR).resolve("splice-a.jsonl"), "12345", 1_000)
+        val oldLock = write(claudex.resolve(ASSISTANT_PHASES_DIR).resolve("splice-a.jsonl.lock"), "", 1_000)
+        val newPhases = write(claudex.resolve(ASSISTANT_PHASES_DIR).resolve("splice-b.jsonl"), "123", 9_000)
+        val oldReasoning = write(claudex.resolve(REASONING_DIR).resolve("splice-a.jsonl"), "12", 1_000)
+        val gone = paths.headsDir.resolve("gone-head").resolve(ASSISTANT_PHASES_DIR).resolve("c.jsonl")
+        val goneHead = write(gone, "1", 2_000)
+        val stores = KeptHistoryStores(paths)
+
+        assertNull(stores.trimBefore(5_000))
+        assertTrue(Files.notExists(oldPhases) && Files.notExists(oldLock), "phases last written before the cut go")
+        assertTrue(Files.notExists(goneHead), "a head no longer in splice.toml is cut too")
+        assertTrue(Files.notExists(oldReasoning))
+        assertTrue(Files.exists(newPhases), "phases written after the cut stay")
+
+        assertNull(stores.trimBefore(Long.MAX_VALUE))
+        assertTrue(Files.notExists(newPhases), "a clear leaves no phase file")
+    }
+
+    @Test
+    fun `a install that never used code mode holds nothing and clears without a failure`(@TempDir tmp: Path) {
+        val store = CodeModeKept(StatePaths(baseOverride = tmp.resolve("state")))
+
+        assertEquals(StoreHeld(0, 0, null), store.held())
+        assertNull(store.clear())
+    }
+
+    @Test
+    fun `parked compaction summaries are counted per head, then cleared`(@TempDir tmp: Path) {
+        val paths = StatePaths(baseOverride = tmp.resolve("state"))
+        write(paths.compactionRecordingsDir("claudex").resolve("one.json"), "abcd", 4_000)
+        write(paths.compactionRecordingsDir("claudex").resolve("two.json"), "ef", 9_000)
+        write(paths.compactionRecordingsDir("gone-head").resolve("three.json"), "ghi", 6_000)
+        val store = CompactionSummariesKept(paths)
+
+        assertEquals(StoreHeld(files = 3, bytes = 9, oldestMs = 4_000), store.held())
+        assertNull(store.clear())
+        assertEquals(StoreHeld(files = 0, bytes = 0, oldestMs = null), store.held())
+    }
+
+    @Test
+    fun `a store that cannot be read says so instead of counting part of it`(@TempDir tmp: Path) {
+        val paths = StatePaths(baseOverride = tmp.resolve("state"))
+        val dir = paths.compactionRecordingsDir("claudex")
+        write(dir.resolve("one.json"), "abcd", 1_000)
+        Files.setPosixFilePermissions(dir, emptySet())
+        try {
+            val store = CompactionSummariesKept(paths)
+            val failure = runCatching { store.held() }.exceptionOrNull()
+            assertTrue(failure != null, "an unreadable directory must throw, not count zero")
+            assertTrue(store.clear()?.startsWith("compaction summaries:") == true)
+        } finally {
+            Files.setPosixFilePermissions(dir, java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"))
+        }
+    }
+}

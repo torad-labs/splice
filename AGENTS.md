@@ -2,53 +2,75 @@
 
 ## The invariants (L1 retired; L2–L4 locked)
 
-Structural walls enforce these at write time (`.rules/kotlin-splice/` for the
-gateway, `.rules/rules/` for the webui, orchestrated by
-`.claude/hooks/orchestrator.py`) and permanent tests enforce the behavioral
-half (the `gateway/` module suites, plus the migration oracle's 11 byte-exact
+Structural walls enforce these at write time (`quality/rules/kotlin/` for the
+gateway, routed at write time by
+`bun tools/gate rules --stdin pretooluse`) and permanent tests enforce the behavioral
+half (the Kotlin module suites, plus the migration oracle's 11 byte-exact
 fixtures — `npm run oracle:replay`). Do not weaken either.
 
-1. **L1 — hard lock RETIRED (2026-07-14); replay DEFAULT-OFF (2026-07-15,
-   measured).** Was "no reasoning-item replay." Replay is now a supported,
-   config-gated behavior (`replayReasoning`): `codex/translate-request.mjs` can
-   set `include: ['reasoning.encrypted_content']` and decode `redacted_thinking`
-   blocks back into reasoning input items. But it ships **OFF**: measured, replay
-   makes the model REUSE its prior thinking instead of re-deriving fresh, which
-   suppressed the detailed-reasoning "wall" — output fell ~4× and the reasoning
-   went thin. So the default IS the pure distillation loop — **mirror on (L2),
-   replay off** — and `prompt_cache_key` (keyed on the first user message) warms
-   the INPUT cache independently of replay (66% hit, up to 99% on continuation,
-   with replay off). Opt into replay for extra cache warmth over reasoning depth
-   with `CLAUDEX_REPLAY_REASONING=1`.
-2. **L2 — the mirror never regresses.** ONE `mirrorInto()` in
-   `reasoning/mirror.mjs`, called by the stream path (`codex/stream.mjs`) and
-   the non-stream path (`codex-proxy.mjs`). Thresholds are named there:
-   mirror ≥20, promote ≥40, honesty <20 chars.
-3. **L3 — honest failures.** `anthropic/sse.mjs` is the only module that can
-   emit `message_stop`; clean stops only via `emitTerminal(...)` (which owns
-   stop_reason derivation), failures only via `emitError(...)`. A failed or
-   truncated stream can never masquerade as a clean `end_turn`.
+1. **L1 — hard lock RETIRED (2026-07-14); replay DEFAULT-ON (2026-10-23,
+   Marcos).** Replay is a supported, config-gated behavior (`replayReasoning`):
+   earlier turns' reasoning items ride back as input until the conversation
+   compacts, as Codex sends them. It shipped off from 2026-07-15 on a measurement
+   that replay thinned the detailed-reasoning "wall" (~4×). The 2026-10-22
+   claudex-vs-Codex comparison found the cost of off: only 26% of earlier tool
+   steps reached the model with their reasoning, against about 90% in Codex,
+   and a seat lost its reasoning at every peer message. Marcos: off "is a big
+   defect and it should not be off by default". **Replay ships on**;
+   `replay_reasoning = false` or `CLAUDEX_REPLAY_REASONING=0` turns it off.
+   Current launch defaults keep `mirror_reasoning` off under the standing
+   project ruling in `CLAUDE.md`; L2 still pins the mirror's implementation and
+   wire behavior when enabled. `prompt_cache_key` (keyed on the first user
+   message) warms the INPUT cache independently of replay.
+2. **L2 — the mirror never regresses.** ONE `mirrorInto()`, a member of `Mirror` in
+   `features/turns/src/main/kotlin/splice/head/reasoning/Mirror.kt` (wall
+   `kt-l2-single-mirror-definition`; `kt-l2-mirror-delegates-to-predicate` makes it ask the one
+   `willMirror` predicate instead of re-deriving the gate). It has ONE call site,
+   `StreamHonesty.mirrorGated` in `.../head/pipeline/StreamHonesty.kt`, which `StreamFinish` runs for
+   every turn that ends clean, so the stream turn (`SseEmitter`) and the non-stream turn
+   (`CollectingTerminal`) reach the same mirror. Thresholds are named in
+   `core/src/main/kotlin/splice/core/turn/ReasoningThresholds.kt`: mirror ≥20, promote ≥40. The
+   empty-turn honesty check keeps no count of its own (CX-09): it asks `willMirror`, so its floor is
+   the mirror's 20.
+3. **L3 — honest failures.** `SseEmitter` (`features/turns/src/main/kotlin/splice/head/wire/SseEmitter.kt`)
+   is the sole owner of how a turn ends: the only code that can write `message_stop` or
+   `message_delta`, and the only file that may hold the `end_turn` literal (walls
+   `kt-l3-sole-wire-terminals`, `kt-l3-end-turn-literal`). A clean stop is reachable only via
+   `emitTerminal(...)` (which owns stop_reason derivation), a failure only via `emitError(...)` (an SSE
+   error event, so Claude Code retries), and a client that is gone seals via `abandon()` with nothing on
+   the wire. The non-stream `CollectingTerminal` builds its one JSON body from
+   `SseEmitter.TerminalEnvelope`, so it holds no stop_reason of its own. A failed or truncated stream can
+   never masquerade as a clean `end_turn`.
 4. **L4 — no fake summaries.** Empty in, empty out. Promote-to-text promotes
    MODEL content (the reasoning summary) only; the only fabricated literals
    anywhere are error strings and `[… omitted …]` markers.
 
 ## External contracts (must not change)
 
-- State paths byte-identical: `~/.claude-codex/state/*` and
-  `~/.claude-codex/claudex-compact-stats.jsonl` (an out-of-repo HUD reads them).
-- Config dirs keep their names: `~/.claude-codex`, `~/.claude-splice`.
+- State FILENAMES are byte-identical: `<state>/codex-usage.json`,
+  `<state>/codex-ratelimit.json`, `<root>/claudex-compact-stats.jsonl`. The state ROOT is not a
+  frozen contract any more — V4-177 moved it to `~/.splice/state` and adopts a pre-0.4
+  `~/.claude-codex/state` in place when that is the only one on the box. Resolve it through
+  `StatePaths`, never by spelling either root (ast-grep wall: kt-state-paths-single-source).
+- Head CONFIG dirs keep their names, and are a different contract from the state root even where
+  they collide: `~/.claude-<headKey>` — `~/.claude-codex`, `~/.claude-splice`.
 - Ports: claudex 3099, control 3096. `/health` keeps `version`.
 - Discovery prefix `claude-codex--`; the pinned model is excluded from
   `/v1/models` (it rides `ANTHROPIC_CUSTOM_MODEL_OPTION`).
 - Effort precedence (v27): explicit body effort field, then the Claude
   `/effort` picker (`thinking.budget_tokens`), then config/env fallback, then
   `high`. Compact turns inherit the session's own model AND effort (a mismatch on
-  either invalidates the prompt cache and re-reads the whole transcript cold);
-  tools stripped.
+  either invalidates the prompt cache and re-reads the whole transcript cold), and
+  are built EXACTLY like a turn — same tools, same code-mode declaration and
+  guidance (2026-09-21: dropping `splice_exec` on compaction cost the whole
+  transcript's cache on every compaction, `cached_tokens=0`).
 - Mirror wire format: `\n[reasoning summary]\n<text>\n` (`mirrorWireText`).
-- Reasoning replay envelope (`reasoning/replay.mjs`): encrypted reasoning rides
-  as a `redacted_thinking` block tagged `splice-reasoning` v1; encode/decode
-  stay paired (a tag/version bump strands in-flight transcripts).
+- Legacy reasoning replay envelope (`ReasoningReplay` in
+  `core/src/main/kotlin/splice/core/reasoning/Replay.kt`): accept
+  `redacted_thinking` blocks tagged `splice-reasoning` v1; encode/decode stay
+  paired (a tag/version bump strands in-flight transcripts). New Responses
+  turns retain encrypted reasoning in ordered server-owned history and emit
+  only readable reasoning, so replay does not create empty client Thinking rows.
 - `prompt_cache_key`: `splice-<sha256(first user message)[:32]>`, stable per
   conversation. Changing the derivation cold-starts every live session's cache.
 
@@ -56,30 +78,46 @@ fixtures — `npm run oracle:replay`). Do not weaken either.
 
 > **Wire contract, Kotlin implementation.** The behaviour below is the contract; the `server/`
 > Node tree that first implemented it was **deleted on 2026-08-10** (P8-CUT). The live sources are
-> `gateway/control/.../ControlServer.kt`, `gateway/gateway/.../wire/SseEmitter.kt` and
-> `gateway/gateway/.../reasoning/Mirror.kt`. Where this section still reads as prose about a
+> `app/.../control/ControlServer.kt`, `features/turns/.../wire/SseEmitter.kt` and
+> `features/turns/.../reasoning/Mirror.kt`. Where this section still reads as prose about a
 > `.mjs` file, treat the contract as authoritative and the filename as history — the 11 byte-exact
 > oracle fixtures pin the wire itself.
 
-Bearer-guarded (`Authorization: Bearer $(cat ~/.claude-codex/state/mgmt-key)`),
-loopback-only, both proxies:
+There is NO `/mgmt` API any more. The Node proxies served `GET /mgmt/status`, `/mgmt/config` (and
+`PATCH`), `/mgmt/usage`, `/mgmt/compact`, `/mgmt/auth` (and `POST /mgmt/auth/refresh`), `/mgmt/logs` and
+`/mgmt/models` on every head; the Kotlin daemon registers none of them, so nothing answers them, and a tool or
+doctor check built on one fails. What they showed is the control plane's `/api/*` (next section), which reads the
+one JVM's state in process: `/api/status` and `/api/heads`, `/api/config`, `/api/usage`, `/api/compact`,
+`/api/auth` and `POST /api/auth/{head}/refresh`, `/api/logs` and `/api/logs/{head}?tail=N`, `/api/models`.
 
-| route | purpose |
-|---|---|
-| GET /mgmt/status | version, uptime, gate snapshot + live in-flight, mode/arm |
-| GET /mgmt/config | effective + all four layers + restart-required keys |
-| PATCH /mgmt/config | hot-apply runtime knobs; persists to state config.json |
-| GET /mgmt/usage | 5h output-token window + persisted ratelimit headers |
-| GET /mgmt/compact | compact outcomes + shadow-classifier tail |
-| GET /mgmt/auth, POST /mgmt/auth/refresh | token introspection (masked), refresh |
-| GET /mgmt/logs?tail=N | proxy log tail from ~/.claude-codex/logs/ |
-| GET /mgmt/models | catalog, windows, pinned, discovery ids |
+A head is a loopback listener per `[heads.<key>]` and serves five routes (`features/turns/.../head/HeadEngine.kt`,
+`routes`; the doors are `Door` in `ClientAuth.kt`):
 
-Config layering: defaults ← `[defaults]` TOML ← `[heads.<key>.overrides]` TOML ←
-state/config.json ← env ← runtime PATCH. Env is the boot authority (the launcher
-writes it); PATCH wins until restart and persists to the file layer. `port`,
-`grokPort`, `controlPort`, `upstreamTimeoutMs` need a restart; everything else
-hot-applies on the next request.
+| route | who may call | purpose |
+|---|---|---|
+| GET /health | anyone (open probe) | version and the head's state |
+| GET /v1/models | a caller who may run inference here | the head's model list |
+| GET /wire | the management key alone | the operator's view of what the head sent upstream; 404 naming the knob while capture is off |
+| POST /v1/messages | a caller, plus a credential to forward on a head that only forwards | a turn |
+| POST /v1/messages/count_tokens | a caller | a local token estimate |
+
+Config layering, lowest to highest (`core/.../config/ConfigService.kt`, `buildSnapshot`): defaults ←
+`[defaults]` and `[daemon]` TOML ← state/config.json ← env (each knob's own names) ← runtime PATCH ←
+`[heads.<key>.overrides]` TOML, which `getConfig(headKey)` folds in for that head. The per-head layer is the
+MOST specific and beats every shared layer, a runtime PATCH included: a console PATCH answers `applied` and moves
+the global `effective` view while a head whose overrides set the same key keeps its own value. A knob only the
+daemon-wide value reaches ignores a per-head value, and a global PATCH rejects a head-only knob. A PATCH beats
+every shared layer until restart, persists best-effort to state/config.json (the answer says `persisted`, or
+`not_persisted` with why), and that copy sits below env at the next boot. `PATCH /api/config?head=<key>` writes
+that head's overrides into splice.toml instead.
+
+Which keys need a restart is NOT a hand list here — a hand list is wrong the day a knob is added,
+and this one had been wrong for a long time (V4-109: it named four, while nearly every knob is
+snapshotted at `Daemon.start` and only the hot few apply live). Ask the machine instead:
+`restartRequiredKnobKeys` in `core/.../config/KnobKind.kt`, derived from the `Knob` enum's
+own flag. On the wire each knob in `GET /api/config`'s `knobs` carries `disposition` (`restart` or
+`live`), and a PATCH answers `restart_required` with the applied keys that wait for a restart.
+Everything else hot-applies on the next request.
 
 All heads share ONE `ConfigService` (one JVM — unlike the Node lineage's
 process-per-head), so a knob read via `getConfig()` governs EVERY head. Anything
@@ -89,49 +127,65 @@ timeouts — must be read via `getConfig(headKey)` and set under
 is the flat GLOBAL layer sourced from the topology file. The per-head map is
 `perHeadOverrides`.
 
+Standing system prompts are NOT knobs; they are three topology LAYERS, applied in this order:
+head (`[heads.<key>]` system_prompt / system_prompt_file / system_prompt_mode), project
+(`[projects."<root>"]`, same keys, a relative file resolves against the root) and project-head
+(`[projects."<root>".heads.<key>]`). The project is the deepest configured root containing the
+session's cwd (`SessionProject`). Appends stack as trailing blocks; a replace drops the client's
+field and every earlier layer. No projects table = V4-36's bytes. Resolver:
+`core/.../prompt/SystemPromptLayers.kt`; applied in `TurnPrompts.applySystemPrompt`.
+
 ## Control plane (spliced)
 
 > **Wire contract, Kotlin implementation.** Same caveat as above: the control plane is now
-> `gateway/control/src/main/kotlin/splice/control/ControlServer.kt`. The Node
+> `app/src/main/kotlin/splice/app/control/ControlServer.kt`. The Node
 > `src/control-server.mjs` it replaced was deleted on 2026-08-10.
 
-The dashboard is centralized. `spliced` (`src/control-server.mjs`, loopback
-`:3096`, `controlPort`) hosts the single webui at `/` and a bearer-guarded
-`/api/*` that AGGREGATES every head (same mgmt-key). It reads file-based truth
-(auth, usage, compact) directly so a DOWN head is still visible, and talks to
-RUNNING heads over `/mgmt` for live status + config.
+The control plane is centralized. `spliced` (`ControlServer.kt`, loopback
+`:3096`, `controlPort`) hosts a bearer-guarded `/api/*` that AGGREGATES every head
+(same mgmt-key). The console returned on Oct 10, 2026 and is served only by this
+central control plane through `ConsoleMount`; heads have no `/dashboard`.
+Console assets use the same authenticated `/api/*` surface. Every head runs inside the
+daemon's one JVM, so the control plane reads head state, config and file-based truth
+(auth, usage, compact) in process, and a DOWN head is still visible. The table lists the
+routes the old aggregate served; the full set is whatever the mounts under
+`app/src/main/kotlin/splice/app/control/mount/` register.
 
 | route | purpose |
 |---|---|
 | GET /api/heads · POST /api/heads/:head/{start,stop,restart} | live status + full lifecycle |
-| GET \| PATCH /api/config | effective + layers; PATCH fans out to running heads |
+| GET \| PATCH /api/config | effective + layers; PATCH goes to the one `ConfigService` (`?head=<key>` writes that head's overrides) |
 | GET /api/usage | per-head 5h usage + soft-warn (ok/warn/critical) |
 | GET /api/auth · POST /api/auth/:head/{refresh,login} | per-head auth; codex browser login |
 | GET /api/compact · GET /api/logs/:head | compact stats, per-head log tail |
 
-- **Head lifecycle is shared** (`launcher/heads.mjs`): the CLI launcher and spliced
-  call the SAME registry + spawn/kill primitives (never forked). Control-side
-  spawns strip `CONFIG_ENV_NAMES` so `config.json` wins over inherited env.
-- **Config PATCH fans out** to each running head's `/mgmt/config` (the runtime
-  layer, which beats the launcher's env pin); with no head up it writes the file.
-- **Soft-warn never blocks** (`usage/warn.mjs`, `usageWarnPct` / `usageWarnTokens5h`):
-  drives the dashboard banner and the statusline `⚠`.
-- Heads keep `/mgmt` but no longer serve `/dashboard`. `claudex dashboard` opens
-  spliced; every head launch best-effort-starts it.
+- **Head lifecycle is shared** (`HeadLifecycle`, `features/turns/src/main/kotlin/splice/head/lifecycle/`):
+  every head runs inside the daemon's one JVM, so start, drain, stop and restart exist once per head,
+  serialized under one mutex, behind the `Head` contract in `core/.../head/Head.kt`. The console's
+  `POST /api/heads/:head/{start,stop,restart}` (`FleetMount` → `HeadOperations`, `features/heads`) and
+  the daemon's own drain-and-stop reach that same object, never a forked copy. The CLI launcher holds no
+  head code: `app/src/main/dist/bin/splice-launch` cold-starts the daemon if it is down and POSTs
+  `/launch`, and `LaunchService` (`features/launch/.../recipe/`) returns the exec recipe. No head is
+  spawned as a child process, so there is no inherited environment to strip: a head reads config
+  through the one `ConfigService`, where env sits below a runtime PATCH (see "Config layering").
+- **Config PATCH needs no fan-out**: heads share the one `ConfigService`, so the PATCH
+  lands in its runtime layer once and persists to state/config.json. A head whose
+  `[heads.<key>.overrides]` sets the key keeps its own value (see "Config layering").
+- **Soft-warn never blocks** (`core/.../usage/UsageWarn.kt`, `usageWarnPct` / `usageWarnTokens5h`):
+  drives the statusline `⚠`.
+- Heads serve no `/mgmt` and no `/dashboard`; a launch cold-starts the daemon when it is
+  down (`splice-launch`).
 
 ## Gates
 
 ```
-npm run gate          # all Kotlin/Node/webui/release/OSS checks, ONE PASS/FAIL
+npm run gate          # all Kotlin/Node/release/OSS checks, ONE PASS/FAIL
 npm run gate:rules    # ast-grep scan (tree) + rule red/green tests
 npm run test:hooks    # orchestrator routing tests
-npm run lint -w webui # FSD boundaries — the architecture is lint-enforced
-npm test -w webui     # vitest
-npm run build -w webui# tsc strict + single-file dist (commit dist/index.html)
 ```
 
-The Kotlin gateway tier runs under `./gradlew check` (from `gateway/`, JDK 21): module-law
-(config-time), detekt (`maxIssues:0`), the Konsist arch-tests, every unit test, and the
+The Kotlin gateway tier runs under `./gradlew check` (from the repository root, JDK 21): module-law
+(config-time), detekt (`maxIssues:0`), the Konsist architecture laws (:quality-architecture), every unit test, and the
 1000-stream load test. It runs in CI (`gateway-gradle` job) and inside `npm run gate`. Before this
 existed it was authored but NEVER executed by automation — only the ast-grep walls ran.
 
@@ -140,12 +194,13 @@ Green means all of them. A wall block means fix the code, not the wall — never
 
 ## PR titles are linted; branch commits are not
 
-`.github/workflows/pr-title.yml` enforces Conventional Commits on the **PR title** via a REQUIRED
-check. Allowed types, and this is the complete list:
+The org-injected PR-title gate enforces Conventional Commits on the **PR title** via a REQUIRED
+check. This repo used to ship `.github/workflows/pr-title.yml`; that workflow is deleted. The
+allowed types live once, in `tools/gate/src/lib/conventional.ts`.
 
-    feat  fix  docs  test  build  ci  chore  perf  refactor  revert  release  codex
+    bun tools/gate title "feat(scope): subject"
 
-Scope optional (`fix(walls): ...`). Anything else fails `lint` and blocks the merge.
+Scope optional (`fix(walls): ...`). Anything else fails the org check and blocks the merge.
 
 WHY THIS IS EASY TO GET WRONG THREE TIMES IN A ROW (it happened, 2026-07-28/29): branch commit
 messages are NOT linted, so `harden(walls):` and `verify(x):` write and review fine locally, and the
@@ -162,7 +217,7 @@ and which one is not reliably predictable from the PR (#66 had 3 commits and use
 PRACTICAL RULE, and it costs nothing: make the BRANCH COMMIT SUBJECT use an allowed type too. Then
 whichever source the squash picks, `main` is compliant. Do not rely on the title check alone.
 
-Pick the type from the list above BEFORE opening the PR. `gh pr create --body ...` bypasses
+Pick the type by running that script BEFORE opening the PR. `gh pr create --body ...` bypasses
 `.github/PULL_REQUEST_TEMPLATE.md`, so the template's reminder never reaches an agent — this section
 is the one that does.
 
@@ -182,23 +237,25 @@ this), not the clean snapshot.
 | duplicated JSONL append + tail reader (perf/compact drift; `:perf` reached into `:compact`) | T1 `core/util/JsonlSink.appendLine`/`readTail` + wall `kt-jsonl-sink-single-source` |
 | `runCatching` swallowing cancellation → leaked turn (600% CPU) | T2 wall `kt-no-runcatching-in-coroutine` on the turn/stream path |
 | god class suppressed instead of split | T2 detekt `ForbiddenSuppress` + wall `kt-no-quality-suppress` |
-| config weakened to hide findings | T2 `checks/config-guard.sh` (no baseline, maxIssues:0, walls stay `severity:error`) |
-| the tiers never running | T0 `gateway-gradle` CI job + `bash checks/gate.sh` — everything above actually executes |
+| config weakened to hide findings | T2 `bun tools/gate rules` config guard (no baseline, maxIssues:0, walls stay `severity:error`) |
+| the tiers never running | T0 `gateway-gradle` CI job + `bun tools/gate run` — everything above actually executes |
 
-The gate reads **real** exit codes (`checks/gate.sh` → `GATE: PASS/FAIL`); a filtered `gradle|grep`
+The gate reads **real** exit codes (`bun tools/gate run` → `GATE: PASS/FAIL`); a filtered `gradle|grep`
 exit masked BUILD FAILED twice — never trust one.
 
 ## Compaction doctrine
 
 Detection is a POSITIVE marker only: the verbatim v2.1.207 summarizer prompt
 ("tasked with summarizing conversations"), tools-agnostic — real compaction
-requests carry tools; the builder strips them upstream. Never add size/content
+requests carry tools, and the builder keeps them: a compaction's upstream bytes
+must match the preceding turn's prefix (cache law). Never add size/content
 heuristics (the v13/v24 misfire class). The shadow classifier logs
 `{has_marker, tool_count, sys_len}` on every request; the marker canary test
-pins the sentence. On drift: update `COMPACT_MARKER` + fixture together.
+pins the sentence. On drift: update `compactMarkers` + fixture together.
 
 ## Out of scope (locked)
 
 No transcript shrinking. No fake summaries (L4). (Reasoning replay was formerly
 out of scope; as of 2026-07-14 it is supported, and as of 2026-07-15 it is
 default-off for the codex head — see "L1 — RETIRED" above.)
+

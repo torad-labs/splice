@@ -15,7 +15,7 @@
     <text x="404" y="124"><tspan fill="#3fb950">✓</tspan> python3  3.13.7</text>
     <text x="404" y="144"><tspan fill="#3fb950">✓</tspan> curl     8.14.1</text>
     <text x="404" y="164"><tspan fill="#3fb950">✓</tspan> bash     5.2.37</text>
-    <text x="24" y="188"><tspan fill="#d29922">!</tspan> gh       installed but not authenticated — release installs will abort</text>
+    <text x="24" y="188"><tspan fill="#8b949e">·</tspan> gh       installed, not signed in — release installs and upgrades skip the provenance check</text>
     <text x="24" y="206">           <tspan fill="#8b949e">fix:</tspan> <tspan fill="#58a6ff">gh auth login</tspan></text>
     <text x="24" y="230" fill="#8b949e">installation</text>
     <text x="24" y="250"><tspan fill="#3fb950">✓</tspan> jar      0.1.1   <tspan fill="#3fb950">✓</tspan> shim (shim-2)   <tspan fill="#3fb950">✓</tspan> wrapper 'claude-openrouter'   <tspan fill="#3fb950">✓</tspan> PATH</text>

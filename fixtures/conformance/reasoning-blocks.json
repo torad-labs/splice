@@ -1,0 +1,91 @@
+{
+  "class": "reasoning-blocks",
+  "about": "A prior assistant turn's reasoning: a thinking block with its signature and a redacted_thinking block. The Anthropic passthrough must return both byte for byte (an upstream verifies the signature). This suite's chat head is a self-served runtime by splice's own rule (openai-chat on a loopback address), and a self-served model gets each earlier turn's reasoning back as that turn's reasoning_content, which its chat template renders in the turn's think block (Marcos, 2026-10-23); the signature and the redacted block never reach it. The Responses dialect never sends visible thinking back, so neither block may leak into its upstream as text. Every dialect still delivers the assistant's visible answer.",
+  "request": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "CONF-U1 explain the outage"
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "CONF-THINK weighing the two causes",
+            "signature": "SIG-CONF-AAAA"
+          },
+          {
+            "type": "redacted_thinking",
+            "data": "REDACTED-CONF-BBBB"
+          },
+          {
+            "type": "text",
+            "text": "CONF-A1 it was the expired certificate."
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": "CONF-U2 and the fix?"
+      }
+    ]
+  },
+  "expect": {
+    "anthropic-passthrough": [
+      {
+        "kind": "thinking",
+        "text": "CONF-THINK weighing the two causes",
+        "signature": "SIG-CONF-AAAA"
+      },
+      {
+        "kind": "redacted",
+        "data": "REDACTED-CONF-BBBB"
+      },
+      {
+        "kind": "item",
+        "role": "assistant",
+        "text": "CONF-A1 it was the expired certificate."
+      }
+    ],
+    "openai-chat": [
+      {
+        "kind": "reasoning",
+        "role": "assistant",
+        "text": "CONF-THINK weighing the two causes"
+      },
+      {
+        "kind": "absent",
+        "text": "SIG-CONF-AAAA"
+      },
+      {
+        "kind": "absent",
+        "text": "REDACTED-CONF-BBBB"
+      },
+      {
+        "kind": "item",
+        "role": "assistant",
+        "text": "CONF-A1 it was the expired certificate."
+      }
+    ],
+    "openai-responses": [
+      {
+        "kind": "absent",
+        "text": "CONF-THINK"
+      },
+      {
+        "kind": "absent",
+        "text": "SIG-CONF-AAAA"
+      },
+      {
+        "kind": "absent",
+        "text": "REDACTED-CONF-BBBB"
+      },
+      {
+        "kind": "item",
+        "role": "assistant",
+        "text": "CONF-A1 it was the expired certificate."
+      }
+    ]
+  }
+}

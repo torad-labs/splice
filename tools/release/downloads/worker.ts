@@ -1,0 +1,142 @@
+// splice.torad.ai/download — where splice's releases are downloaded from since Oct 31, 2026 (Marcos: "I dont want the
+// release download to be there [GitHub] ... being at Cloudflare makes more sense", then "Splice.torad.ai should be
+// splices website ... Have tje download be splice.torad.ai/download"). A Cloudflare Worker in front of the
+// splice-releases R2 bucket, which `bun tools/release` publishes into (src/lib/downloads.ts):
+//
+//   /download/v<version>/<file>  a published file; a version never changes once published, so it is cached for a year
+//   /download/latest/<file>      302 to <file> in the newest stable release: one pointer, so every client of a run
+//                                lands on one version, the way GitHub's releases/latest/download did
+//   /download/install.sh         the newest stable release's installer, served directly for `curl … | bash`
+//   /download/releases.json      the published list the updater reads (ReleaseChannel.kt), newest first, never cached
+//
+// The rest of the host is splice's website (Marcos: "Yes, at splice.torad.ai, with downloads at /download"): every other
+// path is answered by the site's static files in ./site, and no site file ever answers for a /download path. Anything
+// but GET and HEAD is 405. The worker reads the bucket and never writes it.
+
+/** The part of an R2 bucket binding the worker uses. */
+export interface Bucket {
+  get(key: string): Promise<{ body: ReadableStream; size: number; httpEtag?: string; httpMetadata?: { contentType?: string } } | null>;
+  head(key: string): Promise<{ size: number; httpEtag?: string; httpMetadata?: { contentType?: string } } | null>;
+}
+
+/** The part of the static assets binding the worker uses: the website's files. */
+export interface Site {
+  fetch(request: Request): Promise<Response>;
+}
+
+interface Env {
+  RELEASES: Bucket;
+  ASSETS: Site;
+}
+
+const PREFIX = "/download";
+const LIST = "releases.json";
+const IMMUTABLE = "public, max-age=31536000, immutable";
+const REVALIDATE = "no-cache";
+const VERSION = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
+const FILE = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;
+const HOME =
+  "splice downloads\n\nInstall the newest release:\n\n  curl -fsSL https://splice.torad.ai/download/install.sh | bash\n\n" +
+  "Every release lives under /download/v<version>/, the newest stable under /download/latest/, and the list in " +
+  "/download/releases.json.\n";
+const NO_STABLE =
+  "no stable release is published yet. Pin one:\n\n" +
+  "  curl -fsSL https://splice.torad.ai/download/v<version>/install.sh | SPLICE_VERSION=v<version> bash\n";
+
+type Release = { tag_name?: unknown; prerelease?: unknown; draft?: unknown };
+
+/** The highest stable version in the list, by X.Y.Z: drafts, prereleases and non-version tags never count, and build
+ *  metadata never decides. Null when the list has no stable release. */
+export function newestStable(releases: readonly Release[]): string | null {
+  let best: { tag: string; key: readonly number[] } | null = null;
+  for (const r of releases) {
+    const tag = typeof r.tag_name === "string" ? r.tag_name : "";
+    const m = VERSION.exec(tag);
+    if (!m || r.draft === true || r.prerelease === true || m[4]) continue;
+    const key = [Number(m[1]), Number(m[2]), Number(m[3])];
+    if (!best || greater(key, best.key)) best = { tag, key };
+  }
+  return best?.tag ?? null;
+}
+
+function greater(a: readonly number[], b: readonly number[]): boolean {
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i]! > b[i]!;
+  return false;
+}
+
+async function list(env: Env): Promise<Release[]> {
+  const object = await env.RELEASES.get(LIST);
+  if (!object) return [];
+  const parsed: unknown = JSON.parse(await new Response(object.body).text());
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+function text(status: number, body: string): Response {
+  return new Response(body, { status, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": REVALIDATE } });
+}
+
+/** One object from the bucket, with its cache policy; HEAD reads metadata only. */
+async function object(env: Env, key: string, head: boolean, cacheControl: string, contentType?: string): Promise<Response> {
+  const full = head ? null : await env.RELEASES.get(key);
+  const found = full ?? (head ? await env.RELEASES.head(key) : null);
+  if (!found) return text(404, `not found: ${PREFIX}/${key}\n`);
+  const headers = new Headers({
+    "content-type": contentType ?? found.httpMetadata?.contentType ?? "application/octet-stream",
+    "content-length": String(found.size),
+    "cache-control": cacheControl,
+  });
+  if (found.httpEtag) headers.set("etag", found.httpEtag);
+  return new Response(full?.body ?? null, { status: 200, headers });
+}
+
+const RANGE = /^bytes=(\d*)-(\d*)$/;
+
+/** A file of the website. The assets binding answers the whole file, with no length the worker can read, and Safari
+ *  plays a film only from a server that answers byte ranges (Apple's media guidance). So a request for one range reads
+ *  the file, natively and once, and answers the bytes it names. A request without one streams the file as it is. */
+async function siteFile(request: Request, env: Env): Promise<Response> {
+  const reply = await env.ASSETS.fetch(request);
+  if (reply.status !== 200 || !reply.body) return reply;
+  const headers = new Headers(reply.headers);
+  headers.set("accept-ranges", "bytes");
+  const asked = RANGE.exec(request.headers.get("range")?.trim() ?? "");
+  if (!asked || (asked[1] === "" && asked[2] === "")) return new Response(reply.body, { status: 200, headers });
+  const bytes = new Uint8Array(await reply.arrayBuffer());
+  const size = bytes.length;
+  const [first, last] =
+    asked[1] === "" ? [Math.max(0, size - Number(asked[2])), size - 1] : [Number(asked[1]), asked[2] === "" ? size - 1 : Math.min(Number(asked[2]), size - 1)];
+  if (first >= size || first > last) return new Response(null, { status: 416, headers: { "content-range": `bytes */${size}` } });
+  headers.set("content-range", `bytes ${first}-${last}/${size}`);
+  headers.set("content-length", String(last - first + 1));
+  return new Response(bytes.subarray(first, last + 1), { status: 206, headers });
+}
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      return new Response("method not allowed\n", { status: 405, headers: { allow: "GET, HEAD" } });
+    }
+    const head = request.method === "HEAD";
+    const url = new URL(request.url);
+    if (url.pathname === PREFIX || url.pathname === `${PREFIX}/`) return text(200, HOME);
+    if (!url.pathname.startsWith(`${PREFIX}/`)) return siteFile(request, env);
+    const path = url.pathname.slice(PREFIX.length);
+    const parts = path.split("/").slice(1);
+
+    if (path === `/${LIST}`) {
+      const found = await object(env, LIST, head, REVALIDATE, "application/json");
+      return found.status === 404 ? new Response(head ? null : "[]", { headers: { "content-type": "application/json", "cache-control": REVALIDATE } }) : found;
+    }
+    if (path === "/install.sh" || (parts.length === 2 && parts[0] === "latest")) {
+      const newest = newestStable(await list(env));
+      if (!newest) return text(404, NO_STABLE);
+      if (path === "/install.sh") return object(env, `${newest}/install.sh`, head, REVALIDATE, "text/x-shellscript; charset=utf-8");
+      if (!FILE.test(parts[1]!)) return text(404, "not found\n");
+      return new Response(null, { status: 302, headers: { location: `${url.origin}${PREFIX}/${newest}/${parts[1]}`, "cache-control": "no-store" } });
+    }
+    if (parts.length === 2 && VERSION.test(parts[0]!) && FILE.test(parts[1]!)) {
+      return object(env, `${parts[0]}/${parts[1]}`, head, IMMUTABLE);
+    }
+    return text(404, "not found\n");
+  },
+};

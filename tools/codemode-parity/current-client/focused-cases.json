@@ -1,0 +1,649 @@
+[
+  {
+    "id": "rust-client/fault/wait-slot-cancel-delay",
+    "fault_mode": "wait-slot-cancel-delay",
+    "steps": [
+      {
+        "op": "execute",
+        "as": "held",
+        "source": "scripted peer request"
+      },
+      {
+        "op": "parallel_wait",
+        "cell": "held"
+      }
+    ],
+    "adapter": "wait"
+  },
+  {
+    "id": "rust-client/fault/wait-dispatch-return-cancel",
+    "fault_mode": "wait-slot-cancel-delay",
+    "steps": [
+      {
+        "op": "execute",
+        "as": "held",
+        "source": "scripted peer request"
+      },
+      {
+        "op": "parallel_wait",
+        "cell": "held"
+      }
+    ],
+    "dispatch_cancel": true,
+    "adapter": "wait"
+  },
+  {
+    "id": "rust-client/process-provider/host-loss-then-replacement",
+    "provider": "process",
+    "steps": [
+      {
+        "op": "execute",
+        "as": "lost",
+        "yield_time_ms": 2,
+        "source": "store('accepted',true);await new Promise(()=>{});"
+      },
+      {
+        "op": "crash_host"
+      },
+      {
+        "op": "sleep",
+        "ms": 30
+      },
+      {
+        "op": "wait",
+        "cell": "lost",
+        "yield_time_ms": 1
+      },
+      {
+        "op": "execute",
+        "as": "fresh",
+        "source": "text(load('accepted'));text('new module');"
+      },
+      {
+        "op": "wait",
+        "cell": "lost",
+        "yield_time_ms": 1
+      },
+      {
+        "op": "shutdown"
+      },
+      {
+        "op": "shutdown"
+      },
+      {
+        "op": "execute",
+        "source": "text('after-close');"
+      }
+    ],
+    "adapter": "logical"
+  },
+  {
+    "id": "rust-client/process-provider/keepalive-reaps-unresponsive-host",
+    "provider": "process",
+    "case_timeout_ms": 90000,
+    "steps": [
+      {
+        "op": "execute",
+        "as": "hung",
+        "yield_time_ms": 2,
+        "source": "store('old',true);await new Promise(()=>{});"
+      },
+      {
+        "op": "pause_host"
+      },
+      {
+        "op": "sleep",
+        "ms": 45000
+      },
+      {
+        "op": "wait",
+        "cell": "hung",
+        "yield_time_ms": 1
+      },
+      {
+        "op": "execute",
+        "as": "fresh",
+        "source": "text(load('old')??'fresh');"
+      },
+      {
+        "op": "shutdown"
+      }
+    ],
+    "adapter": "logical"
+  },
+  {
+    "id": "rust-client/process-provider/accepted-initial-host-loss",
+    "provider": "process",
+    "steps": [
+      {
+        "op": "execute",
+        "as": "lost",
+        "defer_initial": true,
+        "source": "store('accepted',true);await new Promise(()=>{});"
+      },
+      {
+        "op": "sleep",
+        "ms": 20
+      },
+      {
+        "op": "crash_host"
+      },
+      {
+        "op": "sleep",
+        "ms": 20
+      },
+      {
+        "op": "initial",
+        "cell": "lost"
+      },
+      {
+        "op": "execute",
+        "source": "store('must-not-run',true);"
+      },
+      {
+        "op": "execute",
+        "as": "fresh",
+        "source": "text(load('accepted'));text(load('must-not-run'));text('new module');"
+      },
+      {
+        "op": "wait",
+        "cell": "lost",
+        "yield_time_ms": 1
+      }
+    ],
+    "adapter": "logical"
+  },
+  {
+    "id": "rust-client/fault/wait-reopen-fails-once",
+    "fault_mode": "wait-reopen-fails-once",
+    "steps": [
+      {
+        "op": "execute",
+        "as": "old",
+        "source": "scripted first request"
+      },
+      {
+        "op": "wait",
+        "cell": "old",
+        "yield_time_ms": 1
+      },
+      {
+        "op": "execute",
+        "as": "failed-open",
+        "source": "scripted request never executed"
+      },
+      {
+        "op": "execute",
+        "as": "reset-warning",
+        "source": "scripted request never executed"
+      },
+      {
+        "op": "execute",
+        "as": "fresh",
+        "source": "scripted fresh request"
+      },
+      {
+        "op": "wait",
+        "cell": "old",
+        "yield_time_ms": 1
+      }
+    ],
+    "adapter": "logical"
+  },
+  {
+    "id": "rust-client/fault/wait-shutdown-blocked-reopen",
+    "fault_mode": "wait-shutdown-blocked-reopen",
+    "steps": [
+      {
+        "op": "execute",
+        "as": "old",
+        "source": "scripted first request"
+      },
+      {
+        "op": "wait",
+        "cell": "old",
+        "yield_time_ms": 1
+      },
+      {
+        "op": "shutdown_queued"
+      }
+    ],
+    "adapter": "logical"
+  },
+  {
+    "id": "rust-client/fault/open-timeout-before-headers",
+    "fault_mode": "open-timeout-before-headers",
+    "case_timeout_ms": 90000,
+    "steps": [],
+    "adapter": "connection"
+  },
+  {
+    "id": "rust-client/fault/open-timeout-after-headers",
+    "fault_mode": "open-timeout-after-headers",
+    "case_timeout_ms": 90000,
+    "steps": [],
+    "adapter": "connection"
+  },
+  {
+    "id": "rust-client/fault/execute-status-before-headers",
+    "fault_mode": "execute-status-before-headers",
+    "case_timeout_ms": 90000,
+    "steps": [
+      {
+        "op": "execute",
+        "source": "scripted rejected request"
+      }
+    ],
+    "adapter": "connection"
+  },
+  {
+    "id": "rust-client/fault/execute-status-after-headers",
+    "fault_mode": "execute-status-after-headers",
+    "case_timeout_ms": 90000,
+    "steps": [
+      {
+        "op": "execute",
+        "source": "scripted rejected request"
+      }
+    ],
+    "adapter": "connection"
+  },
+  {
+    "id": "rust-client/fault/execute-long-ascii",
+    "fault_mode": "execute-long-ascii",
+    "case_timeout_ms": 90000,
+    "steps": [
+      {
+        "op": "execute",
+        "source": "scripted rejected request"
+      }
+    ],
+    "adapter": "connection"
+  },
+  {
+    "id": "rust-client/fault/execute-long-multibyte",
+    "fault_mode": "execute-long-multibyte",
+    "case_timeout_ms": 90000,
+    "steps": [
+      {
+        "op": "execute",
+        "source": "scripted rejected request"
+      }
+    ],
+    "adapter": "connection"
+  },
+  {
+    "id": "rust-client/fault/callback-invalid-utf8-string",
+    "fault_mode": "callback-invalid-utf8-string",
+    "steps": [
+      {
+        "op": "execute",
+        "as": "bytes",
+        "source": "scripted peer request",
+        "enabled_tools": [
+          {
+            "name": "plain",
+            "tool_name": {
+              "name": "plain"
+            },
+            "description": "plain",
+            "kind": "function"
+          }
+        ]
+      }
+    ],
+    "adapter": "connection"
+  },
+  {
+    "id": "rust-client/fault/callback-invalid-utf8-trailing",
+    "fault_mode": "callback-invalid-utf8-trailing",
+    "steps": [
+      {
+        "op": "execute",
+        "as": "bytes",
+        "source": "scripted peer request",
+        "enabled_tools": [
+          {
+            "name": "plain",
+            "tool_name": {
+              "name": "plain"
+            },
+            "description": "plain",
+            "kind": "function"
+          }
+        ]
+      }
+    ],
+    "adapter": "connection"
+  },
+  {
+    "id": "rust-client/fault/callback-invalid-utf8-escape",
+    "fault_mode": "callback-invalid-utf8-escape",
+    "steps": [
+      {
+        "op": "execute",
+        "as": "bytes",
+        "source": "scripted peer request",
+        "enabled_tools": [
+          {
+            "name": "plain",
+            "tool_name": {
+              "name": "plain"
+            },
+            "description": "plain",
+            "kind": "function"
+          }
+        ]
+      }
+    ],
+    "adapter": "connection"
+  },
+  {
+    "id": "rust-client/fault/callback-invalid-utf8-whitespace",
+    "fault_mode": "callback-invalid-utf8-whitespace",
+    "steps": [
+      {
+        "op": "execute",
+        "as": "bytes",
+        "source": "scripted peer request",
+        "enabled_tools": [
+          {
+            "name": "plain",
+            "tool_name": {
+              "name": "plain"
+            },
+            "description": "plain",
+            "kind": "function"
+          }
+        ]
+      }
+    ],
+    "adapter": "connection"
+  },
+  {
+    "id": "rust-client/fault/callback-cancel-during-completion",
+    "fault_mode": "callback-cancel-during-completion",
+    "steps": [
+      {
+        "op": "execute",
+        "as": "call",
+        "source": "scripted peer request",
+        "enabled_tools": [
+          {
+            "name": "plain",
+            "tool_name": {
+              "name": "plain"
+            },
+            "description": "plain",
+            "kind": "function"
+          }
+        ]
+      },
+      {
+        "op": "execute",
+        "as": "after",
+        "source": "scripted later request"
+      }
+    ],
+    "adapter": "connection"
+  },
+  {
+    "id": "rust-client/fault/callback-repeated-after-completion",
+    "fault_mode": "callback-repeated-after-completion",
+    "steps": [
+      {
+        "op": "execute",
+        "as": "call",
+        "source": "scripted peer request",
+        "enabled_tools": [
+          {
+            "name": "plain",
+            "tool_name": {
+              "name": "plain"
+            },
+            "description": "plain",
+            "kind": "function"
+          }
+        ]
+      }
+    ],
+    "adapter": "connection"
+  },
+  {
+    "id": "rust-client/fault/callback-completion-below-limit",
+    "fault_mode": "callback-completion-boundary",
+    "callback_result_bytes": 67108802,
+    "steps": [
+      {
+        "op": "execute",
+        "as": "limit",
+        "source": "scripted peer request",
+        "enabled_tools": [
+          {
+            "name": "plain",
+            "tool_name": {
+              "name": "plain"
+            },
+            "description": "plain",
+            "kind": "function"
+          }
+        ]
+      },
+      {
+        "op": "execute",
+        "as": "after",
+        "source": "scripted recovery request"
+      }
+    ],
+    "adapter": "connection"
+  },
+  {
+    "id": "rust-client/fault/callback-completion-at-limit",
+    "fault_mode": "callback-completion-boundary",
+    "callback_result_bytes": 67108803,
+    "steps": [
+      {
+        "op": "execute",
+        "as": "limit",
+        "source": "scripted peer request",
+        "enabled_tools": [
+          {
+            "name": "plain",
+            "tool_name": {
+              "name": "plain"
+            },
+            "description": "plain",
+            "kind": "function"
+          }
+        ]
+      },
+      {
+        "op": "execute",
+        "as": "after",
+        "source": "scripted recovery request"
+      }
+    ],
+    "adapter": "connection"
+  },
+  {
+    "id": "rust-client/fault/callback-completion-above-limit",
+    "fault_mode": "callback-completion-boundary",
+    "callback_result_bytes": 67108804,
+    "steps": [
+      {
+        "op": "execute",
+        "as": "limit",
+        "source": "scripted peer request",
+        "enabled_tools": [
+          {
+            "name": "plain",
+            "tool_name": {
+              "name": "plain"
+            },
+            "description": "plain",
+            "kind": "function"
+          }
+        ]
+      },
+      {
+        "op": "execute",
+        "as": "after",
+        "source": "scripted recovery request"
+      }
+    ],
+    "adapter": "connection"
+  },
+  {
+    "id": "rust-client/fault/open-dispatch-return-cancel",
+    "adapter": "opening",
+    "fault_mode": "open-dispatch-return-cancel",
+    "manual_open": true,
+    "steps": [
+      {
+        "op": "open",
+        "session": "bootstrap"
+      },
+      {
+        "op": "open",
+        "session": "target",
+        "cancel_after_ms": 40
+      },
+      {
+        "op": "execute",
+        "session": "bootstrap",
+        "as": "healthy",
+        "source": "scripted bootstrap request"
+      },
+      {
+        "op": "shutdown",
+        "session": "bootstrap"
+      }
+    ]
+  },
+  {
+    "id": "rust-client/fault/execute-before-acceptance-cancel",
+    "adapter": "logical",
+    "fault_mode": "execute-start-delayed",
+    "steps": [
+      {
+        "op": "execute",
+        "as": "cancelled",
+        "source": "scripted abandoned request",
+        "cancel_after_ms": 40
+      },
+      {
+        "op": "sleep",
+        "ms": 100
+      },
+      {
+        "op": "execute",
+        "as": "healthy",
+        "source": "scripted recovery request"
+      }
+    ]
+  },
+  {
+    "id": "rust-client/fault/drop-accepted-initial-owner",
+    "adapter": "logical",
+    "fault_mode": "execute-held-until-terminate",
+    "steps": [
+      {
+        "op": "execute",
+        "as": "abandoned",
+        "source": "scripted abandoned request",
+        "drop_initial": true
+      },
+      {
+        "op": "sleep",
+        "ms": 30
+      },
+      {
+        "op": "execute",
+        "as": "healthy",
+        "source": "scripted recovery request"
+      }
+    ]
+  },
+  {
+    "id": "rust-client/fault/wait-terminate-yielded-g2",
+    "fault_mode": "wait-terminate-yielded-g2",
+    "adapter": "logical",
+    "case_timeout_ms": 5000,
+    "steps": [
+      {
+        "op": "execute",
+        "as": "old",
+        "source": "scripted first request"
+      },
+      {
+        "op": "wait",
+        "cell": "old",
+        "yield_time_ms": 1
+      },
+      {
+        "op": "execute",
+        "as": "reset-warning",
+        "source": "scripted request never executed"
+      },
+      {
+        "op": "execute",
+        "as": "fresh",
+        "source": "scripted fresh request"
+      },
+      {
+        "op": "terminate",
+        "cell": "fresh",
+        "owned": true
+      },
+      {
+        "op": "wait",
+        "cell": "fresh",
+        "retained_observe": true,
+        "yield_time_ms": 1
+      },
+      {
+        "op": "terminate",
+        "cell": "fresh"
+      },
+      {
+        "op": "wait",
+        "cell": "fresh",
+        "yield_time_ms": 1
+      }
+    ]
+  },
+  {
+    "id": "rust-client/fault/wait-missing-completed-notification",
+    "fault_mode": "wait-missing-completed-notification",
+    "adapter": "connection",
+    "case_timeout_ms": 5000,
+    "steps": [
+      {
+        "op": "execute",
+        "as": "held",
+        "source": "scripted peer request",
+        "notification_delay_ms": 800
+      },
+      {
+        "op": "wait",
+        "cell": "held",
+        "yield_time_ms": 1,
+        "cancel_after_ms": 100
+      },
+      {
+        "op": "terminate",
+        "cell": "held"
+      },
+      {
+        "op": "wait",
+        "cell": "held",
+        "yield_time_ms": 1
+      },
+      {
+        "op": "execute",
+        "as": "healthy",
+        "source": "scripted after settlement request"
+      }
+    ]
+  }
+]

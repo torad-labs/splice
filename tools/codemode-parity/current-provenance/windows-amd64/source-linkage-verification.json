@@ -1,0 +1,14 @@
+{
+  "schema": 2,
+  "checkedAt": "2026-10-28T00:18:01.072Z",
+  "verifier": "Fresh official completed Actions workflow/artifact metadata, archive SHA-256 and exact extracted executable byte equality",
+  "sourceRevision": "360319d8dee62d87e2d59fc0c21805d79519cfed",
+  "executableSha256": "c15b0ec7c44be4bef2516c251cc8b9f3f4ab9f8727cf2d567d1f183fd415ef2d",
+  "workflowRunId": 40558883763,
+  "artifactId": 12763408691,
+  "artifactDigest": "sha256:cedea5f1adf80f1952acbb0b46da27b470d426a10408312e7f17143ebc9a3f89",
+  "members": [
+    "openai_codex_cli_bin-0.165.0-py3-none-win_amd64.whl",
+    "codex_cli_bin/bin/codex-code-mode-host.exe"
+  ]
+}

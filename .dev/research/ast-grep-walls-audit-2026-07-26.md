@@ -1,6 +1,6 @@
 # SPLICE AST-GREP WALLS — IMPROVEMENT AUDIT
 
-Repo `/home/user/Documents/dev/projects/atlas/repo`, branch `fix/summary-turn-scoped-dedup`,
+Repo `<repo>`, branch `fix/summary-turn-scoped-dedup`,
 ast-grep 0.44.0, 2026-07-26. Every verdict below came from an actual `ast-grep` run against the
 real tree and against synthetic probes; nothing here is reasoned-from-the-YAML.
 
@@ -42,7 +42,7 @@ rule says `gateway/*/src/main/**/*.kt` and you scan a probe file in a scratch di
 
 ```bash
 # (a) real-tree counts — run from the repo root, where sgconfig.yml lives
-cd /home/user/Documents/dev/projects/atlas/repo
+cd <repo>
 ast-grep scan --rule /path/to/proposed.yml --json gateway | python3 -c 'import json,sys;print(len(json.load(sys.stdin)))'
 
 # (b) probe direction checks — build a scratch project with its own sgconfig.yml,

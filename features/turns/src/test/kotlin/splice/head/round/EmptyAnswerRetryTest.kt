@@ -1,0 +1,137 @@
+// An empty answer is re-sent once with the same body (empty_model class); a second empty ends as before.
+package splice.head.round
+
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertSame
+import org.junit.jupiter.api.Test
+import splice.core.index.WireBlockIndex
+import splice.core.perf.PerfKeys
+import splice.core.perf.TurnPerf
+import splice.core.reasoning.ReasoningReplay
+import splice.core.turn.ResponseShape
+import splice.core.turn.RoundText
+import splice.core.turn.TurnOutcome
+import splice.core.turn.Usage
+import splice.dialect.responses.responsesTestTranslator
+import splice.upstream.RoundResult
+import splice.upstream.sse.WireSink
+
+class EmptyAnswerRetryTest {
+    private val empty = success(RoundText(), usage = Usage(200_000, 0, 0))
+    private val answered = success(RoundText(bodyText = "hello", emittedText = true))
+
+    @Test
+    fun `retained encrypted reasoning with an empty terminal still retries without a thinking placeholder`() = runTest {
+        val frames = listOf(
+            """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""",
+            """{"type":"response.output_item.done","output_index":0,"item":
+                {"type":"reasoning","id":"rs_hidden","encrypted_content":"ciphertext","summary":[]}}""",
+            """{"type":"response.completed","response":{"id":"empty","usage":{"input_tokens":9,"output_tokens":3}}}""",
+        ).map { Json.parseToJsonElement(it).jsonObject }
+        val hidden = responsesTestTranslator(
+            emitEncryptedReasoning = true,
+            collectReasoningEnvelopes = true,
+            encode = { ReasoningReplay.encodeReasoningEnvelope(it) },
+        ).driveTurn(frames.asFlow(), QuietSink()) as TurnOutcome.Success
+        val envelope = ReasoningReplay.decodeReasoningEnvelope(hidden.handoffs.reasoningEnvelopes.single())
+        assertEquals("ciphertext", envelope?.get("encrypted_content")?.jsonPrimitive?.content)
+        assertEquals(RoundText(), hidden.text)
+        assertEquals(false, hidden.shape.messageClosed)
+        assertEquals(false, hidden.shape.endedInReasoning)
+        val run = drive(TurnPerf(), listOf(hidden, hidden, answered))
+        assertEquals(listOf(BODY, BODY), run.bodies)
+        assertEquals(RoundText(), (run.finished.single() as TurnOutcome.Success).text)
+    }
+
+    @Test
+    fun `an upstream that answers empty once and then with content ends on the content`() = runTest {
+        val perf = TurnPerf()
+        val run = drive(perf, listOf(empty, answered))
+
+        val ended = run.finished.single() as TurnOutcome.Success
+        assertEquals(answered.text, ended.text)
+        assertEquals(listOf(BODY, BODY), run.bodies, "the same bytes both times")
+        val billed = ended.usage
+        assertEquals(1, billed.absorbed.rounds, "the empty round is metered as a request of its own")
+        assertEquals(200_000L, billed.absorbed.inputTokens)
+        assertEquals(1L, perf.count(PerfKeys.EMPTY_RETRIES))
+    }
+
+    @Test
+    fun `an upstream that is always empty is asked exactly twice and ends empty`() = runTest {
+        val perf = TurnPerf()
+        val run = drive(perf, listOf(empty, empty, answered))
+
+        val ended = run.finished.single() as TurnOutcome.Success
+        assertEquals(empty.text, ended.text)
+        assertEquals(2, run.bodies.size)
+        assertEquals(200_000L, ended.usage.absorbed.inputTokens, "both empty requests are billed")
+        assertEquals(1L, perf.count(PerfKeys.EMPTY_RETRIES))
+    }
+
+    @Test
+    fun `a closed empty message is a finished answer and is asked once`() = runTest {
+        val closed = success(RoundText(), ResponseShape(messageClosed = true))
+        val run = drive(TurnPerf(), listOf(closed, answered))
+
+        assertSame(closed, run.finished.single())
+        assertEquals(1, run.bodies.size)
+    }
+
+    @Test
+    fun `a round that answered is asked once`() = runTest {
+        val run = drive(TurnPerf(), listOf(answered, empty))
+
+        assertSame(answered, run.finished.single())
+        assertEquals(1, run.bodies.size)
+    }
+
+    private data class Run(val finished: List<TurnOutcome>, val bodies: List<String>)
+
+    private suspend fun drive(perf: TurnPerf, replies: List<TurnOutcome>): Run {
+        val finished = mutableListOf<TurnOutcome>()
+        val bodies = mutableListOf<String>()
+        RoundStrategy(
+            emitter = QuietSink(),
+            runners = RoundRunners(
+                steps = testRoundSteps(),
+                key = "test",
+                log = {},
+                signals = RunnerSignals(),
+                finish = { finished += it },
+            ),
+            postRoundToSink = { _, _ -> error("single round must not buffer") },
+            postRound = { body ->
+                bodies += body.text
+                RoundResult.Outcome(replies[bodies.size - 1])
+            },
+        ).run(JsonObject(emptyMap()), fold = null, reanchor = null, perf = perf)
+        return Run(finished, bodies)
+    }
+
+    private fun success(text: RoundText, shape: ResponseShape = ResponseShape(), usage: Usage = Usage(10, 0, 0)) =
+        TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = usage, text = text, shape = shape)
+
+    private class QuietSink : WireSink {
+        override suspend fun openText(): WireBlockIndex = error("unexpected sink write")
+        override suspend fun openThinking(): WireBlockIndex = error("unexpected sink write")
+        override suspend fun openTool(id: String, name: String): WireBlockIndex = error("unexpected sink write")
+        override suspend fun textDelta(index: WireBlockIndex, text: String) = Unit
+        override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) = Unit
+        override suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String) = Unit
+        override suspend fun closeBlock(index: WireBlockIndex) = Unit
+        override suspend fun closeAll() = Unit
+        override suspend fun addTextBlock(text: String) = Unit
+        override suspend fun addRedactedThinking(data: String) = Unit
+    }
+
+    private companion object {
+        const val BODY = "{}"
+    }
+}

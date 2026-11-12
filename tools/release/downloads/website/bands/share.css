@@ -1,0 +1,334 @@
+/* The share band: one computer holds the logins, another runs on them after one command. Class prefix sh-. It sits on the
+   page's split shell: .pg-split on .pg-in, .pg-head holding the heading, the line, the other computer's one command and
+   what it keeps, and .sh-fig holding the tower with its logins, the cables and the commands they feed, and three tabs.
+   The figure answers to its own width (@container sh), so it composes the same in eight columns of 1,500 px and in a
+   phone's one. The band's steps are the page's: type --pg-t-1 (small), -2 (mono lines, card names), -3 (the phone's
+   command), -4 (the command), -5 (the heading); spacing --pg-sp-1 to -5. The console's card, chip, bar and ring keep the
+   console's markup, with their sizes set to those steps. */
+.sh-band {
+  --sh-g: var(--pg-sp-4);   /* the one gap between cards of a stack */
+  --sh-pad: var(--pg-sp-3);
+  --sh-block: var(--pg-sp-5);
+}
+@container pg (max-width: 640px) { .sh-band { --sh-g: var(--pg-sp-3); --sh-block: var(--pg-sp-4); } }
+
+.sh-fig { container: sh / inline-size; min-width: 0; display: grid; gap: var(--sh-block); }
+.sh-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* the small words: a label over a part */
+.sh-k { font: 600 var(--pg-t-1)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
+.sh-who { display: inline-flex; align-items: center; gap: var(--pg-sp-1); font: 600 var(--pg-t-2)/1.2 var(--font-name); color: var(--text); white-space: nowrap; }
+.sh-who svg { flex: none; width: 1.3em; height: 1.3em; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.sh-ps { flex: none; color: var(--text-mute); }
+.sh-band .chip { font-size: var(--pg-t-1); }
+
+/* ---------- the head: what the other computer types, and what it keeps ---------- */
+/* below 2,200 px the head is two columns (heading, line and what it keeps left; the command right); from 2,200 px it is a
+   column on the shell's four */
+.pg-split > .sh-head { grid-template-rows: auto auto 1fr; }
+.pg-split > .sh-head > .sh-one { grid-column: 2; grid-row: 1 / span 3; align-self: start; }
+.pg-split > .sh-head > .sh-keep { align-self: end; margin-top: var(--pg-sp-5); }
+@container pg (max-width: 899px) {
+  .pg-split > .sh-head > .sh-one { grid-column: 1; grid-row: auto; margin-top: var(--pg-sp-5); }
+}
+@container pg (min-width: 2200px) {
+  .pg-split > .sh-head > :is(.sh-one, .sh-keep) { align-self: stretch; margin-top: var(--pg-sp-5); }
+}
+
+.sh-term, .sh-keep {
+  box-sizing: border-box; min-width: 0; padding: var(--pg-sp-3) var(--pg-sp-4) var(--pg-sp-4);
+  background: var(--obj-sunk); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
+  box-shadow: var(--cast) var(--cast) 0 var(--tc, var(--ink)), var(--cast) var(--cast) 0 var(--ink-w) var(--ink);
+  font: 500 var(--pg-t-2)/1.5 var(--font-data); color: var(--text);
+}
+[data-theme="day"] :is(.sh-term, .sh-keep) { background: var(--obj); }
+.sh-one { --tc: var(--key-light); container: sho / inline-size; }
+.sh-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--pg-sp-1) var(--pg-sp-3); min-height: 44px; }
+.sh-bar .sh-copy { margin-left: auto; }
+.sh-copy { --ctl-h: 44px; gap: var(--pg-sp-1); font-size: var(--pg-t-2); cursor: pointer; display: inline-grid; grid-template-areas: "x"; place-items: center; padding: 0 var(--pg-sp-3); overflow: hidden; }
+.sh-copy[hidden] { display: none; }
+.sh-copy svg { width: 1.1em; height: 1.1em; }
+.sh-cb { grid-area: x; display: inline-flex; align-items: center; gap: var(--pg-sp-1); white-space: nowrap; transition: opacity var(--t-hover) var(--e-out), transform var(--t-hover) var(--e-out); }
+.sh-cb-b { opacity: 0; transform: translateY(26px); }
+.sh-copy.is-copied .sh-cb-a { opacity: 0; transform: translateY(-26px); }
+.sh-copy.is-copied .sh-cb-b { opacity: 1; transform: none; }
+
+/* the command is one line at every width the window allows: a step down as the window narrows, and on a phone it wraps
+   between its two parts */
+.sh-cmd { margin: var(--pg-sp-3) 0 0; display: flex; align-items: baseline; gap: .55em; font: 500 var(--pg-t-2)/1.3 var(--font-data); color: var(--text); min-width: 0; }
+.sh-cmd code { font: inherit; min-width: 0; display: flex; flex-wrap: wrap; column-gap: .6em; row-gap: 4px; }
+.sh-ty { display: block; white-space: nowrap; }
+@container sho (min-width: 580px) { .sh-cmd { font-size: var(--pg-t-3); } }
+@container sho (min-width: 860px) { .sh-cmd { font-size: var(--pg-t-4); } }
+@container sho (max-width: 400px) { .sh-cmd { font-size: var(--pg-t-3); } }
+.sh-done { list-style: none; margin: var(--pg-sp-4) 0 0; padding: var(--pg-sp-3) 0 0; border-top: 1px solid var(--hair); display: grid; gap: var(--pg-sp-1); font: 500 var(--pg-t-2)/1.4 var(--font-data); color: var(--text-body); }
+.sh-done li { display: flex; align-items: baseline; gap: var(--pg-sp-2); min-width: 0; flex-wrap: wrap; }
+.sh-done i { font-style: normal; color: var(--text-mute); flex: none; }
+.sh-done b { font-weight: 500; color: var(--text); box-shadow: inset 0 -.16em 0 var(--c); }
+.sh-pick { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pg-sp-2); margin-top: var(--pg-sp-3); padding-top: var(--pg-sp-3); border-top: 1px solid var(--hair); font: 500 var(--pg-t-2)/1.3 var(--font-data); color: var(--text); }
+.sh-pick code { font: inherit; }
+.sh-mchip { gap: var(--pg-sp-1); }
+
+.sh-keep { display: flex; flex-direction: column; gap: var(--pg-sp-3); }
+.sh-kh { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--pg-sp-1) var(--pg-sp-3); }
+.sh-file { font: 500 var(--pg-t-1)/1 var(--font-data); color: var(--text); }
+.sh-toml { margin: 0; padding: var(--pg-sp-2) var(--pg-sp-3); background: var(--track); border-radius: var(--r-in); font: 500 var(--pg-t-2)/1.5 var(--font-data); color: var(--text); white-space: pre-wrap; }
+.sh-toml code { font: inherit; }
+/* a phone: the terminal and the file's card take 16 px at their sides and the file's text 10, so the url line fits whole */
+@container pg (max-width: 640px) {
+  .sh-term, .sh-keep { padding-inline: var(--pg-sp-3); }
+  .sh-toml { font-size: var(--pg-t-1); padding-inline: 10px; }
+}
+.sh-none { margin: 0; font: 400 var(--pg-t-2)/1.4 var(--font-name); color: var(--text-body); }
+
+/* ---------- the map: the tower's logins, the cables, the commands on the other computers ---------- */
+.sh-map {
+  display: grid; grid-template-columns: minmax(0, 1.1fr) clamp(56px, 9cqw, 112px) minmax(0, 1fr);
+  grid-template-rows: auto repeat(4, auto); row-gap: var(--sh-g); position: relative;
+}
+.sh-tower, .sh-lane, .sh-machines { display: grid; grid-template-rows: subgrid; grid-row: 1 / -1; min-width: 0; }
+.sh-tower { grid-column: 1; position: relative; }
+.sh-lane { grid-column: 2; z-index: 2; }
+.sh-machines { grid-column: 3; }
+.sh-tower::before {
+  content: ""; position: absolute; inset: 0 0 calc(-1 * var(--sh-pad)) 0; z-index: 0; pointer-events: none;
+  background: var(--wall-low); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink);
+}
+.sh-tower > * { position: relative; z-index: 1; }
+.sh-th { display: flex; align-items: center; flex-wrap: wrap; gap: var(--pg-sp-1) var(--pg-sp-4); padding: var(--sh-pad) var(--sh-pad) 0; }
+.sh-th .sh-ln { margin-left: auto; }
+.sh-ln, .sh-cl { display: flex; align-items: baseline; gap: var(--pg-sp-2); min-width: 0; font: 500 var(--pg-t-2)/1.4 var(--font-data); color: var(--text); }
+.sh-ln code, .sh-cl code { font: inherit; min-width: 0; }
+.sh-live { display: inline-flex; align-items: center; gap: var(--pg-sp-1); font: 500 var(--pg-t-1)/1 var(--font-name); color: var(--text); }
+.sh-live i { width: 10px; height: 10px; border-radius: 50%; background: var(--live); box-shadow: 0 0 8px var(--live); }
+.sh-port { cursor: default; }
+
+.sh-cell { display: flex; align-items: stretch; padding-inline: var(--sh-pad); min-width: 0; }
+.sh-acc { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--pg-sp-2); padding: var(--pg-sp-3); }
+.sh-acc .top { min-height: 28px; }
+.sh-acc .name { font-size: var(--pg-t-2); }
+.sh-acc :is(.plan, .label, .used, .when) { font-size: var(--pg-t-1); }
+/* one column of figures: every card's percent sits right-aligned on the same edge, the card being served leads with the
+   one focal value */
+.sh-acc .pct { font-size: var(--pg-t-2); font-weight: 600; color: var(--text-body); }
+.sh-acc.serving .pct { font-size: var(--pg-t-3); color: var(--text); }
+.sh-acc .pct .used { font-size: var(--pg-t-1); }
+.sh-acc .windows { grid-template-columns: 4.6em minmax(0, 1fr) calc(var(--pg-t-3) * 1.8 + var(--pg-t-1) * 3.2); column-gap: var(--pg-sp-2); row-gap: var(--pg-sp-1); margin-top: 0; font-size: var(--pg-t-1); }
+.sh-acc .windows .when { grid-column: 1 / -1; min-width: 0; font-family: var(--font-name); }
+.sh-pv { margin-left: auto; display: inline-flex; align-items: center; gap: var(--pg-sp-1); font: 400 var(--pg-t-1)/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.sh-pv::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 2px var(--ink); }
+.sh-at { margin: auto 0 0; font: 500 var(--pg-t-1)/1.3 var(--font-data); color: var(--text-mute); }
+
+/* the cables: a provider's colour from a login to the command that uses it */
+.sh-lane .sh-cell { padding: 0; align-items: center; }
+.sh-cable { position: relative; flex: 1; height: 10px; margin-inline: calc(-1 * var(--sh-pad) - 2px); }
+.sh-cable::before { content: ""; position: absolute; inset: 0; background: var(--c); border: 2px solid var(--ink); border-radius: 5px; transform-origin: right center; }
+.sh-cable::after {
+  content: ""; position: absolute; left: 8px; top: 50%; width: 16px; height: 16px; margin-top: -8px; transform: rotate(45deg);
+  background: var(--c); border-left: 2px solid var(--ink); border-bottom: 2px solid var(--ink); border-radius: 2px 0 2px 2px; clip-path: polygon(0 0, 0 100%, 100% 100%);
+}
+.sh-pk { position: absolute; top: 50%; width: 14px; height: 14px; margin-top: -7px; right: 0; border-radius: 50%; background: var(--text); box-shadow: 0 0 0 2px var(--ink); opacity: 0; z-index: 1; }
+
+/* the commands on the other computers, one box per cable */
+.sh-mbox {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; align-items: stretch; gap: var(--pg-sp-3); padding: var(--pg-sp-3);
+  background: var(--obj-sunk); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
+  box-shadow: var(--cast) var(--cast) 0 var(--c, var(--ink)), var(--cast) var(--cast) 0 var(--ink-w) var(--ink);
+}
+[data-theme="day"] .sh-mbox { background: var(--obj); }
+.sh-chip { cursor: default; }
+.sh-chip i, .sh-mchip i { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 2px var(--ink); }
+.sh-mtop { align-self: stretch; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--pg-sp-1) var(--pg-sp-3); }
+.sh-on { font: 500 var(--pg-t-1)/1.2 var(--font-name); color: var(--text-mute); }
+/* the figure leads: the card's meter at the tower card's share, the percent a step above its neighbours, then who is
+   answering (a lamp, the login in words) and the model, both in muted ink */
+.sh-fg { display: grid; grid-template-columns: 4.6em minmax(0, 1fr) auto; column-gap: var(--pg-sp-2); align-items: center; min-width: 0; }
+.sh-wk { font: 400 var(--pg-t-1)/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
+.sh-fg .bar { min-width: 0; }
+.sh-n { min-width: 2.8em; text-align: right; font: 600 var(--pg-t-3)/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
+.sh-sl { display: flex; align-items: center; flex-wrap: wrap; gap: var(--pg-sp-1) var(--pg-sp-2); min-width: 0; color: var(--text-mute); }
+.sh-lamp { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 2px var(--ink), 0 0 8px var(--c); }
+.sh-lg { font: 400 var(--pg-t-1)/1.2 var(--font-name); color: var(--text-mute); }
+.sh-md { margin-left: auto; font: 500 var(--pg-t-1)/1.2 var(--font-data); color: var(--text-mute); }
+
+/* ---------- the rest, behind three tabs ---------- */
+.sh-tabs { --ctl-h: 44px; display: inline-flex; }
+.sh-tabs label { display: inline-flex; align-items: center; justify-content: center; cursor: pointer; white-space: nowrap; font: 500 var(--pg-t-2)/1 var(--font-name); color: var(--text-mute); padding: 0 var(--pg-sp-4); border-radius: calc(var(--r-obj) - 2px); transition: color var(--t-hover) var(--e-out), background-color var(--t-hover) var(--e-out); }
+.sh-tabs label:hover { color: var(--text-body); }
+.sh-more:has(.sh-rd1:checked) .sh-tab1, .sh-more:has(.sh-rd2:checked) .sh-tab2, .sh-more:has(.sh-rd3:checked) .sh-tab3 { background: var(--sel-face); color: var(--sel-ink); box-shadow: inset 0 0 0 2px var(--sel-line); }
+.sh-more:has(.sh-rd1:focus-visible) .sh-tab1, .sh-more:has(.sh-rd2:focus-visible) .sh-tab2, .sh-more:has(.sh-rd3:focus-visible) .sh-tab3 { outline: var(--ink-w) solid var(--text); outline-offset: 3px; }
+/* the three panes lie over each other in one cell, so the frame is as tall as the tallest and a tab click moves nothing below it;
+   only the open pane is drawn (the others are out of the page's reading and tab order). A shorter pane's content stands centred
+   in the frame, its boxes filling what the frame leaves. */
+.sh-panes { margin-top: var(--pg-sp-4); display: grid; }
+.sh-pane {
+  grid-area: 1 / 1; visibility: hidden; display: grid; box-sizing: border-box; min-width: 0; padding: var(--pg-sp-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17em), 1fr)); gap: var(--sh-g); align-content: center;
+  background: var(--wall-low); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--ink);
+}
+.sh-more:has(.sh-rd1:checked) .sh-p1, .sh-more:has(.sh-rd2:checked) .sh-p2, .sh-more:has(.sh-rd3:checked) .sh-p3 { visibility: visible; }
+/* an address breaks only at a slash, a question mark or a comma: each part is held whole */
+.sh-nb { white-space: nowrap; }
+.sh-p2 { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
+@container sh (max-width: 899px) { .sh-p2 { grid-template-columns: minmax(0, .9fr) minmax(0, 1fr); } }
+@container sh (max-width: 699px) { .sh-p2 { grid-template-columns: minmax(0, 1fr); } }
+/* the options are three objects of one height in a row; below 900 px they are a stack, each with its label and chip beside its address */
+.sh-p1 { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; align-content: stretch; }
+/* the stack's cards share two columns (the labels and chips, then the addresses), so every address starts on one edge */
+@container sh (min-width: 560px) and (max-width: 899px) {
+  .sh-p1 { grid-template-columns: max-content minmax(0, 1fr); column-gap: 0; }
+  .sh-p1 .sh-opt { grid-column: 1 / -1; grid-template-columns: subgrid; column-gap: var(--pg-sp-3); align-items: center; align-content: center; }
+  .sh-p1 .sh-opt > .sh-k { grid-column: 1; grid-row: 1; }
+  .sh-p1 .sh-opt > .sh-q { grid-column: 1; grid-row: 2; }
+  .sh-p1 .sh-opt > .sh-ex { grid-column: 2; grid-row: 2; }
+  .sh-p1 .sh-opt > .sh-refuse { grid-column: 1 / -1; }
+  .sh-p1 .sh-bad > .sh-ex { grid-row: 1; }
+}
+@container sh (max-width: 559px) {
+  .sh-p1 { grid-template-columns: minmax(0, 1fr); }
+}
+@container sh (max-width: 899px) { .sh-p1 .sh-opt { justify-items: start; } }
+.sh-p1 .sh-opt { padding: var(--pg-sp-3); background: var(--obj-sunk); border: 2px solid var(--ink); border-radius: var(--r-in); }
+.sh-p1 .sh-q { background: var(--track); }
+.sh-opts { display: grid; gap: var(--sh-g); min-width: 0; align-content: start; }
+.sh-p3 { grid-template-columns: minmax(0, 1fr); }
+.sh-opt { display: grid; gap: var(--pg-sp-3); min-width: 0; justify-items: start; align-content: start; }
+.sh-q { display: inline-block; white-space: nowrap; padding: 5px var(--pg-sp-2); background: var(--obj-sunk); border: 2px solid var(--ink); border-radius: var(--r-in); box-shadow: 2px 2px 0 var(--track-line); font: 500 var(--pg-t-2)/1.2 var(--font-data); color: var(--text); }
+.sh-ex { font: 500 var(--pg-t-1)/1.6 var(--font-data); color: var(--text-body); min-width: 0; }
+.sh-ex b { font-weight: 600; color: var(--text); background: color-mix(in oklab, var(--text) 14%, transparent); border-radius: 3px; padding: 0 3px; }
+.sh-refuse { margin: 0; display: flex; align-items: baseline; gap: var(--pg-sp-2); font: 500 var(--pg-t-1)/1.45 var(--font-data); color: var(--limit); }
+.sh-list { display: grid; gap: var(--pg-sp-3); min-width: 0; align-content: start; }
+.sh-ready { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--pg-sp-3); }
+/* the names stand two across wherever the list has the room (480 px); beside the options (700 to 899 px) and on a phone it is one column */
+@container sh (max-width: 579px) { .sh-ready { grid-template-columns: minmax(0, 1fr); } }
+@container sh (min-width: 700px) and (max-width: 899px) { .sh-ready { grid-template-columns: minmax(0, 1fr); } }
+.sh-ready li {
+  display: flex; align-items: center; gap: var(--pg-sp-2); min-width: 0; padding: var(--pg-sp-2) var(--pg-sp-3);
+  background: var(--obj-sunk); border: 2px solid var(--ink); border-radius: var(--r-in); box-shadow: 3px 3px 0 var(--c);
+  font: 500 var(--pg-t-2)/1.2 var(--font-data); color: var(--text);
+}
+.sh-ready b { font-weight: 500; color: var(--text); min-width: 0; white-space: nowrap; }
+.sh-rdot { flex: none; width: 1.5em; height: 1.5em; display: grid; place-items: center; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 2px var(--ink), 0 0 8px var(--c); font: 700 var(--pg-t-1)/1 var(--font-name); font-style: normal; color: var(--wall); }
+.sh-rc { --c: var(--text-mute); margin-left: auto; font-size: var(--pg-t-1); }
+.sh-pane .sh-cl { padding: var(--pg-sp-2) var(--pg-sp-3); background: var(--obj-sunk); border: 2px solid var(--ink); border-radius: var(--r-in); max-width: 100%; box-sizing: border-box; }
+[data-theme="day"] :is(.sh-pane .sh-cl, .sh-ready li, .sh-q, .sh-nets li, .sh-p1 .sh-opt) { background: var(--obj); }
+[data-theme="day"] .sh-p1 .sh-q { background: var(--track); }
+.sh-p3 { align-content: stretch; }
+.sh-nets { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: var(--sh-g); list-style: none; margin: 0; padding: 0; }
+.sh-nets li { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: var(--pg-sp-2); padding: var(--pg-sp-3) var(--pg-sp-3); background: var(--obj-sunk); border: 2px solid var(--ink); border-radius: var(--r-in); }
+.sh-nets code { font: 500 var(--pg-t-3)/1.2 var(--font-data); color: var(--text); }
+.sh-nets .state { font-size: var(--pg-t-1); }
+/* below 900 px the four networks are one column of rows, the network on the left and its answer on the right; on a phone each stands over its answer */
+@container sh (max-width: 899px) {
+  .sh-nets { grid-template-columns: minmax(0, 1fr); }
+  .sh-nets li { flex-direction: row; align-items: center; justify-content: space-between; }
+}
+@container sh (max-width: 559px) {
+  .sh-nets li { flex-direction: column; align-items: flex-start; justify-content: center; }
+}
+.sh-yes { display: inline-flex; align-items: center; gap: var(--pg-sp-1); font: 500 var(--pg-t-1)/1 var(--font-name); color: var(--text-body); }
+.sh-yes i { width: 10px; height: 10px; border-radius: 50%; background: var(--text-mute); }
+
+/* ---------- the figure's own width: the tower over the other computers, the cables standing between them ---------- */
+@container sh (max-width: 819px) {
+  .sh-map { display: flex; flex-direction: column; row-gap: 0; }
+  .sh-tower, .sh-lane, .sh-machines { display: flex; flex-direction: column; }
+  .sh-tower { gap: var(--sh-g); padding-bottom: var(--sh-pad); }
+  .sh-tower::before { inset: 0; }
+  .sh-lane { flex-direction: row; justify-content: space-around; align-items: stretch; height: 72px; padding-inline: var(--pg-sp-5); }
+  .sh-lane .sh-cell { flex: none; padding: 0; justify-content: center; }
+  .sh-cable { flex: none; width: 10px; height: auto; margin: 0; }
+  .sh-cable::before { transform-origin: center bottom; }
+  .sh-cable::after { left: 50%; top: -4px; margin: 0 0 0 -8px; transform: rotate(135deg); border-left: 2px solid var(--ink); border-bottom: 2px solid var(--ink); }
+  .sh-pk { right: auto; left: 50%; top: auto; bottom: 0; margin: 0 0 0 -7px; }
+  .sh-machines { gap: var(--sh-g); }
+  .sh-machines .sh-cell { padding-inline: 0 var(--cast); }
+  .sh-hd { display: none; }
+}
+@container sh (max-width: 520px) {
+  .sh-cell { padding-inline: var(--pg-sp-2); }
+  .sh-acc, .sh-mbox { padding: var(--pg-sp-2); gap: var(--pg-sp-1); }
+  .sh-pane { padding: var(--pg-sp-3); }
+  .sh-lane { height: 36px; }
+  .sh-tabs { display: flex; width: 100%; }
+  .sh-tabs label { flex: 1; padding-inline: 4px; }
+  .sh-rc { margin-left: auto; }
+  .sh-ready li { gap: var(--pg-sp-1); padding-inline: var(--pg-sp-2); }
+  /* a meter keeps its bar on a full row of its own: the label and the percent above it, the ring and its time (or the model)
+     under it, as the Studio card in Resume holds its two */
+  .sh-acc .windows { grid-template-columns: minmax(0, 1fr) auto; row-gap: var(--pg-sp-1); }
+  .sh-acc .windows > .label { grid-area: 1 / 1; }
+  .sh-acc .windows > .pct { grid-area: 1 / 2; }
+  .sh-acc .windows > .bar { grid-area: 2 / 1 / 3 / -1; }
+  .sh-acc .windows > .when { grid-area: 3 / 1 / 4 / -1; }
+  .sh-fg { grid-template-columns: minmax(0, 1fr) auto; row-gap: var(--pg-sp-1); }
+  .sh-fg > .sh-wk { grid-area: 1 / 1; }
+  .sh-fg > .sh-n { grid-area: 1 / 2; }
+  .sh-fg > .bar { grid-area: 2 / 1 / 3 / -1; }
+}
+/* a phone: the plates' hard cast ends clear of the page's cable line down the right edge */
+@container pg (max-width: 640px) { .sh-in { box-sizing: border-box; padding-right: var(--pg-sp-1); } }
+/* the head's drawing stands under what the other computer keeps, in the column beside the tall figure (from 2,200 px) */
+.pg-split > .sh-head > .sh-art { display: none; }
+@container pg (min-width: 2200px) {
+  /* the drawing keeps one size on every tab (the figure's height changes with the tab, so it is not stretched to it): it stands
+     at the column's foot, level with the figure's end */
+  .pg-split > .sh-head > .sh-art { display: block; flex: none; margin-top: auto; padding-top: var(--pg-sp-5); }
+  .pg-split > .sh-head > .sh-art::after { display: none; }
+  .pg-split > .sh-head > .sh-art > svg { width: 100%; height: auto; }
+}
+
+/* ---------- one sequence, once, when the band enters; then one slow loop while it is on screen ---------- */
+@keyframes sh-rise { from { opacity: 0; transform: translateY(18px); } }
+@keyframes sh-type { from { clip-path: inset(-.2em 100% -.2em 0); } to { clip-path: inset(-.2em 0 -.2em 0); } }
+@keyframes sh-line { from { opacity: 0; transform: translateY(7px); } }
+@keyframes sh-draw { from { transform: scaleX(0); } }
+@keyframes sh-draw-v { from { transform: scaleY(0); } }
+@keyframes sh-grow { from { transform: scaleX(0); } }
+@keyframes sh-arc { from { stroke-dasharray: 0 94.2; } }
+@keyframes sh-head { from { opacity: 0; } }
+@keyframes sh-pane-in { from { opacity: 0; transform: translateY(6px); } }
+/* the packet crosses the active cable in about a sixth of seven and a half seconds, then rests */
+@keyframes sh-loop { 0% { right: 0; opacity: 0; animation-timing-function: var(--e-io); } 2% { opacity: 1; } 15% { opacity: 1; } 17%, 100% { right: calc(100% - 14px); opacity: 0; } }
+@keyframes sh-loop-v { 0% { bottom: 0; opacity: 0; animation-timing-function: var(--e-io); } 2% { opacity: 1; } 15% { opacity: 1; } 17%, 100% { bottom: calc(100% - 14px); opacity: 0; } }
+/* the lamps of the cable's two ends brighten as the packet lands */
+@keyframes sh-glow { 0%, 100% { box-shadow: 0 0 0 2px var(--ink), 0 0 8px var(--c); } 17% { box-shadow: 0 0 0 2px var(--ink), 0 0 16px 3px var(--c); } }
+@keyframes sh-glow-live { 0%, 100% { box-shadow: 0 0 8px var(--live); } 17% { box-shadow: 0 0 16px 3px var(--live); } }
+@media (prefers-reduced-motion: no-preference) {
+  .sh-more:has(.sh-rd1:checked) .sh-p1, .sh-more:has(.sh-rd2:checked) .sh-p2, .sh-more:has(.sh-rd3:checked) .sh-p3 { animation: sh-pane-in 180ms var(--e-out) both; }
+
+  .pg-js .sh-head:not(.is-seen) .sh-ty { clip-path: inset(-.2em 100% -.2em 0); }
+  .pg-js .sh-head:not(.is-seen) :is(.sh-done li, .sh-pick) { opacity: 0; }
+  .sh-head.is-seen .sh-ty-a { animation: sh-type var(--t-snap) steps(17, end) 0ms both; }
+  .sh-head.is-seen .sh-ty-b { animation: sh-type calc(var(--t-snap) * 1.2) steps(21, end) 200ms both; }
+  .sh-head.is-seen .sh-done li { animation: sh-line var(--t-pop) var(--e-out) calc(480ms + var(--k) * 40ms) both; }
+  .sh-head.is-seen .sh-pick { animation: sh-line var(--t-pop) var(--e-out) 600ms both; }
+
+  .pg-js .sh-map:not(.is-seen) :is(.sh-tower, .sh-mbox) { opacity: 0; transform: translateY(18px); }
+  .pg-js .sh-map:not(.is-seen) .bar.grow > b { transform: scaleX(0); }
+  .pg-js .sh-map:not(.is-seen) .arc { stroke-dasharray: 0 94.2; }
+  .pg-js .sh-map:not(.is-seen) .sh-cable::before { transform: scaleX(0); }
+  .pg-js .sh-map:not(.is-seen) .sh-cable::after { opacity: 0; }
+  .sh-map.is-seen .sh-tower { animation: sh-rise var(--t-move) var(--e-out) both; }
+  .sh-map.is-seen .sh-mbox { animation: sh-rise var(--t-move) var(--e-out) calc(240ms + var(--i, 0) * 90ms) both; }
+  .sh-map.is-seen .sh-acc .bar.grow > b, .sh-map.is-seen .sh-mbox .bar.grow > b { transform-origin: left; animation: sh-grow var(--t-snap) var(--e-out) calc(260ms + var(--i) * 90ms) both; }
+  .sh-map.is-seen .sh-acc .arc { animation: sh-arc var(--t-snap) var(--e-out) calc(260ms + var(--i) * 90ms) both; }
+  .sh-map.is-seen .sh-cable::before { animation: sh-draw var(--t-move) var(--e-out) calc(520ms + var(--i) * 130ms) both; }
+  .sh-map.is-seen .sh-cable::after { animation: sh-head var(--t-pop) var(--e-out) calc(760ms + var(--i) * 130ms) both; }
+  /* the loop: one packet on the active cable every seven and a half seconds, only while the band is on screen */
+  .sh-map.is-seen .sh-pk { animation: sh-loop 7.5s linear 1500ms infinite both; animation-play-state: paused; }
+  .sh-map.is-seen .sh-lamp-on { animation: sh-glow 7.5s linear 1500ms infinite both; animation-play-state: paused; }
+  .sh-map.is-seen .sh-live i { animation: sh-glow-live 7.5s linear 1500ms infinite both; animation-play-state: paused; }
+  .sh-band.pg-on .sh-map.is-seen :is(.sh-pk, .sh-lamp-on, .sh-live i) { animation-play-state: running; }
+  .pg-away .sh-band .sh-map :is(.sh-pk, .sh-lamp-on, .sh-live i) { animation-play-state: paused !important; }
+
+  .pg-js .sh-more:not(.is-seen) :is(.sh-tabs, .sh-panes) { opacity: 0; transform: translateY(18px); }
+  .sh-more.is-seen :is(.sh-tabs, .sh-panes) { animation: sh-rise var(--t-move) var(--e-out) both; }
+}
+@container sh (max-width: 819px) {
+  @media (prefers-reduced-motion: no-preference) {
+    .pg-js .sh-map:not(.is-seen) .sh-cable::before { transform: scaleY(0); }
+    .sh-map.is-seen .sh-cable::before { animation-name: sh-draw-v; }
+    .sh-map.is-seen .sh-pk { animation-name: sh-loop-v; }
+  }
+}

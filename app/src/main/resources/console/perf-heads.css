@@ -1,0 +1,362 @@
+/* Usage › Results by command (perf-heads.js), beside Where it went and Tokens by command. One question: which
+   command is healthy and which one is hurting. A row is five columns on one line (the command, its requests, its failure
+   rate, the whole request's typical time and slowest 5%), numbers right-aligned in the data face, with generous height
+   so the table reads at a glance. Colour means one thing: the provider's colour is on the command's dot alone, and the
+   limit red and the Key Light are only for a problem; everything else is neutral ink on the plate. A row opens under
+   itself into a panel of shapes (the failure rate over one bar of every request, the cache and load as a ring and glyphs,
+   the stages as ticks on one axis, the compactions as a flow, the models as small multiples), collapsed by default. The
+   table fills its own column (container perf); where that column is too narrow for five, each figure carries its own
+   label instead and nothing is cut. Class names are prefixed (.prow, .pf, .pthead, .pd-): Usage also loads sessions.css,
+   whose .phead and .pc would land on plain ones.
+
+   THE PANEL'S DRAWINGS NOW LIVE IN THE KIT (console.css's drawings block, kit.js DRAW), because they are the Usage
+   drill-down's and every page needs them: the plate and its sections, the kicker, the hero figure, the stacked bar,
+   the ring and glyph tiles, the log axis and its range bars, the small-multiple cards and the "N more" pill. What is
+   left here is this table alone: its five columns, its rows and where the panel hangs under one. */
+
+.perf-heads { container: perf / inline-size; min-width: 0; display: flex; flex-direction: column; }
+/* The table fills the column the page gives it: at 3822 a 56rem cap held it to 849 px inside a 1991 px column. Its head
+   is the page's band head (usage.css .bandhead): the title, the note that it reads every project, its own window. */
+/* what the table ignores is a pill on its head, not a sentence */
+.perf-heads .hn { display: inline-flex; align-items: center; padding: .25rem .7rem; border-radius: 999px; box-shadow: inset 0 0 0 .1rem var(--track-line); font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); cursor: help; }
+.perf-heads .ptable { padding: .35rem 1rem .5rem; }
+
+/* the five columns, shared by the header and every row */
+.pcols { display: grid; grid-template-columns: minmax(0, 1fr) 9rem 8rem minmax(7rem, 1fr) 6.4rem 7.6rem; column-gap: 1rem; align-items: center; margin: 0 -0.667rem; padding-inline: .6rem; }
+.pthead { padding-block: .9rem .8rem; border-bottom: .12rem solid var(--track); font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
+.pthead .pf:nth-child(2), .pthead .pf:nth-child(3) { text-align: right; }
+.pthead .ure-time { text-align: left; }
+.pitem + .pitem { border-top: .12rem solid var(--track); }
+.prow { min-height: 3.7rem; padding-block: .6rem; border-radius: var(--r-in); cursor: pointer; font: 500 .95rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
+.prow:hover { background: color-mix(in oklab, var(--text) 4%, transparent); }
+.pf { min-width: 0; }
+.pf > em { display: none; }
+.pf.num, .pthead .pf.num { text-align: right; white-space: nowrap; }
+.pf.tm.slow { color: var(--text); font-weight: 600; }  /* slow today: the time takes the weight of a figure to look at, not a colour */
+
+/* the command: its place in the order, a disclosure (the kit's .disc and .chev), the provider's dot, its name */
+.pf.cmd { display: flex; align-items: center; gap: .667rem; }
+/* the whole request's time on one log axis: the solid bar to the typical, the line on to the slowest 5% and its tick */
+.ure-time { display: block; min-width: 0; }
+.ure-time .pd-trk { width: 100%; }
+.pd-trk.ure-none { background: none; box-shadow: inset 0 0 0 .1rem var(--track-line); }
+/* a command with no request keeps its row: its name, then the one line where its figures would stand */
+.pidle { min-height: 2.9rem; padding-block: .3rem; text-decoration: none; }
+.pidle .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 .95rem/1.2 var(--font-data); color: var(--text-body); }
+.ure-gap { flex: none; width: .8rem; }
+.pidle .upl-rank { box-shadow: none; }
+.pf.ure-say { grid-column: 2 / -1; display: inline-flex; align-items: center; gap: .333rem; font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
+.pf.ure-say .go { width: .85rem; height: .85rem; color: var(--text-mute); }
+.pidle:hover .ure-say { color: var(--text); }
+.gprow.pidle .ure-say { display: flex; }
+.ure-lead { margin: 0 0 calc(2 * var(--u)); }
+.ure-held { margin-top: calc(2 * var(--u)); }
+.ure-held .prow { cursor: default; }
+.ure-held .vbar.unread { display: block; flex: 1 1 auto; width: 100%; height: .4rem; background: none; box-shadow: inset 0 0 0 .1rem var(--track-line); }
+/* the two times a slow flag compares, marked on the stages' axis under its own tick labels */
+.pd-ax:has(.ure-mark) { height: 3.6rem; }
+.ure-mark { position: absolute; top: -.5rem; height: .5rem; width: 0; border-left: .16rem solid var(--text-mute); font: 500 .8rem/1.2 var(--font-name); font-style: normal; color: var(--text-mute); white-space: nowrap; }
+.ure-mark.now { border-left-color: var(--text); color: var(--text-body); }
+.ure-mark > b { position: absolute; left: .4rem; top: 2.1rem; font: 600 .85rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
+.ure-mark.end > b { left: auto; right: .4rem; }
+.ure-mark { text-indent: 0; }
+.plbl { display: inline-flex; align-items: center; gap: 0.667rem; min-width: 0; max-width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.plbl .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 .95rem/1.2 var(--font-data); color: var(--text); }
+
+/* the row's two bar cells (the kit draws the bar; these are this table's own widths and the one strong number) */
+.pf.req .v { min-width: 4.3rem; }
+.pf.fail .v { min-width: 2.9rem; font-size: 1.05rem; font-weight: 600; color: var(--text); }  /* the one strong number of the row */
+.pf.fail.lv-watch .vbar b { background: var(--key-ink); }
+.pf.fail.lv-watch .v { color: var(--key-ink); }
+.pf.fail.lv-bad .vbar b { background: var(--limit); }
+.pf.fail.lv-bad .v { color: var(--limit); }
+
+/* reading: the table's own rows, in the stripes that mean "still working", as many as it last held, so nothing under
+   the table moves when the window's figures land */
+.gprow { pointer-events: none; animation: ghost-in .45s var(--e-out) both; animation-delay: calc(var(--i, 0) * 50ms); }
+.gprow .pf { display: flex; align-items: center; }
+.gprow .pf > .ghost.track { flex: 1 1 auto; }
+.gprow .pf.num { justify-content: flex-end; }
+
+/* a window with no request at all keeps the table's frame and says so once inside it */
+.perf-heads .pnone { display: flex; align-items: center; min-height: 3.7rem; padding: .45rem 1.15rem; }
+/* a read that failed is the console's error row (console.css .errline), with the act that reads it again beside it */
+
+/* the panel a row opens: the kit's plate, hung under the row it belongs to */
+.pdetail { margin: 0 0 1rem 1.333rem; }
+.pnote { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.333rem 1rem; margin: 0 0 calc(4 * var(--u)); color: var(--text-mute); }
+.pnote .flag { margin: 0; display: inline-flex; flex-wrap: wrap; gap: 0.333rem 1rem; }
+.pnote .flag a { font-size: .95rem; }
+.pnote .flag .vs, .pnote .flag .vs b { font-size: .88rem; }
+.pd-hero { --bh: var(--stack-h); }
+/* what the record behind the counts could not cover, as quiet marks on the Outcomes kicker's line */
+.pgap { display: inline-flex; align-items: center; gap: 0.333rem; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.pgap > svg { flex: none; width: 1em; height: 1em; }
+/* stages: rows on one labelled log axis, filling their column; the heads over the two time columns are labels, muted serif,
+   never figures */
+/* the failure kinds past the third take patterns of the limit red, so no two blocks of one bar read alike */
+.pd-seg.f3, .pd-sw.f3 { background: repeating-linear-gradient(135deg, var(--limit) 0 .3rem, color-mix(in oklab, var(--limit) 55%, transparent) .3rem .6rem); }
+.pd-seg.f4, .pd-sw.f4 { background: repeating-linear-gradient(90deg, var(--limit) 0 .22rem, color-mix(in oklab, var(--limit) 45%, transparent) .22rem .5rem); }
+.pd-seg.f5, .pd-sw.f5 { background: color-mix(in oklab, var(--limit) 50%, transparent); }
+/* the model cards are as many as there are, up to four, and share the plate's width, so none stands alone in a row */
+@container perf (min-width: 56rem) {
+  .pd-cards { grid-template-columns: repeat(var(--k, 3), minmax(0, 1fr)); }
+}
+.perf-heads .pd-stages > .sechead .pd-n { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+
+/* a wide column: the name keeps the room a name needs and the two bars take the rest */
+@container perf (min-width: 60rem) {
+  .pcols { grid-template-columns: minmax(12rem, 20rem) minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1.3fr) 6.4rem 7.6rem; }
+}
+/* too narrow for five: each figure says its own label, the command leads its row */
+@container perf (max-width: 34rem) {
+  .pthead { display: none; }
+  .pcols { grid-template-columns: 1fr 1fr; row-gap: 0.667rem; }
+  .pcols .cmd { grid-column: 1 / -1; }
+  .pf.num { text-align: left; }
+  .pf > em { display: block; font: 500 .8rem/1.2 var(--font-name); font-style: normal; color: var(--text-mute); }
+  .pf.req, .pf.fail { flex-wrap: wrap; }
+  .pdetail { margin-left: 0; padding: calc(2 * var(--u)); }
+  .pd-grid { grid-template-columns: minmax(0, 6.4rem) minmax(0, 1fr) 3.8rem 4.4rem; column-gap: 0.667rem; }
+  .pd-cards { grid-template-columns: minmax(0, 1fr); }
+  .pd-rate { font-size: 2.4rem; }
+}
+@container perf (max-width: 34rem) {
+  .pf.ure-say { grid-column: 1 / -1; }
+  .pthead .ure-time { text-align: left; }
+}
+
+.ure-mark > b > span { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.pd-ax:has(.ure-mark) { margin-bottom: .6rem; }
+
+/* Performance extends the existing plate and type system, with table equivalents for every chart. */
+.perf-console { min-width: 0; width: 100%; color: var(--text); container: performance / inline-size; }
+#requests-performance { margin: 1.4rem 0 2rem; padding-bottom: 2rem; border-bottom: 1px solid var(--hair); }
+.perf-console .pc-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; margin-bottom: 1.4rem; }
+.perf-console .pc-heading h2 { margin: 0 auto 0 0; font: 400 1.5rem/1.2 var(--font-lead); }
+.perf-console .pc-heading a { font: 500 .9rem/1.3 var(--font-name); }
+.pc-query { margin: 0 0 1rem; }
+.pc-query-main, .pc-query-extra { display: flex; flex-wrap: wrap; gap: .8rem; align-items: end; }
+.pc-query-extra { margin-top: 1rem; padding: 1rem; border: 1px solid var(--hair); border-radius: var(--r-in); }
+.pc-query-extra[hidden] { display: none; }
+.perf-console label { display: flex; flex-direction: column; gap: .4rem; min-width: 0; font: 500 .82rem/1.3 var(--font-name); color: var(--text-mute); }
+.pc-query label { flex: 1 1 9rem; }
+.perf-console .field { display: block; width: 100%; min-width: 0; box-sizing: border-box; min-height: 2.6rem; padding: .55rem .7rem; background: var(--obj); color: var(--text); border: 1px solid var(--hair); border-radius: var(--r-in); font: 500 .9rem/1.3 var(--font-data); }
+.perf-console select { max-width: 100%; }
+.perf-console button { cursor: pointer; }
+.perf-console :is(button, input, select, textarea, summary, a):focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+.perf-console button:disabled { opacity: .5; cursor: default; }
+.pc-coverage { display: flex; flex-wrap: wrap; gap: .6rem 1.6rem; align-items: baseline; padding: .8rem 0; font: 500 .85rem/1.4 var(--font-name); color: var(--text-mute); }
+.pc-coverage strong { color: var(--text); text-transform: capitalize; }
+.pc-tabs { display: flex; flex-wrap: wrap; gap: .3rem; padding: .7rem 0; border-bottom: 1px solid var(--hair); margin-bottom: 1.4rem; }
+.pc-tabs button { border: 0; background: transparent; color: var(--text-mute); border-radius: var(--r-in); font: 500 .95rem/1.2 var(--font-name); padding: .75rem 1rem; }
+.pc-tabs button[aria-current=page] { background: var(--track); color: var(--text); box-shadow: inset 0 -2px var(--text); }
+.pc-content { min-height: 12rem; }
+.pc-meters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1.2rem; padding: .5rem 0 1.2rem; }
+.pc-meters > div { display: flex; flex-direction: column; gap: .65rem; padding: 1rem 1.4rem; border-left: 2px solid var(--track-line); }
+.pc-meters span { font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }
+.pc-meters strong { font: 500 clamp(1.8rem, 2.4cqw, 3.2rem)/1.15 var(--font-data); overflow-wrap: anywhere; }
+.pc-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2rem; margin: 1.6rem 0; }
+.pc-section { min-width: 0; }
+.pc-section h3 { font: 400 1.2rem/1.3 var(--font-lead); margin: 0 0 .8rem; }
+.pc-note { font: 500 .85rem/1.55 var(--font-name); color: var(--text-mute); margin: .7rem 0 1rem; overflow-wrap: anywhere; max-width: 110ch; }
+.pc-table-wrap { max-width: 100%; overflow: auto; margin: .8rem 0 1.4rem; border: 1px solid var(--hair); border-radius: var(--r-in); }
+.pc-table { border-collapse: collapse; width: 100%; font: 500 .9rem/1.5 var(--font-data); }
+.pc-table caption { text-align: left; padding: .8rem 1rem; font: 500 .85rem/1.3 var(--font-name); color: var(--text-mute); background: var(--obj); }
+.pc-table :is(th, td) { padding: .8rem 1rem; text-align: right; border-top: 1px solid var(--hair); overflow-wrap: anywhere; max-width: 35ch; vertical-align: top; }
+.pc-table th { font-weight: 500; }
+.pc-table th:first-child { text-align: left; min-width: 9rem; }
+.pc-table thead th { color: var(--text-mute); font-family: var(--font-name); font-size: .83rem; }
+.pc-table tbody tr:hover { background: var(--obj); }
+.pc-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .7rem 1.5rem; margin: .8rem 0 1.2rem; }
+.pc-facts > div { display: flex; flex-wrap: wrap; gap: .4rem 1rem; align-items: baseline; justify-content: space-between; padding-bottom: .5rem; border-bottom: 1px solid var(--hair); }
+.pc-facts dt { font: 500 .82rem/1.4 var(--font-name); color: var(--text-mute); }
+.pc-facts dd { margin: 0; font: 500 .95rem/1.4 var(--font-data); overflow-wrap: anywhere; max-width: 100%; }
+.pc-detail { margin: .7rem 0; }
+.perf-console summary { cursor: pointer; font: 500 .85rem/1.5 var(--font-name); padding: .5rem 0; }
+.pc-history { display: flex; gap: .3rem; align-items: end; height: 10rem; padding: 1rem .5rem 0; border-bottom: 1px solid var(--hair); margin: 1.3rem 0; }
+.pc-history > span { flex: 1; min-width: 0; height: 100%; display: flex; align-items: end; }
+.pc-history i { width: 100%; height: var(--height); background: var(--text-mute); border-radius: .2rem .2rem 0 0; }
+.pc-actions { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; margin: 1rem 0; }
+.pc-actions label { min-width: min(15rem, 100%); }
+.pc-json { resize: vertical; line-height: 1.6 !important; min-height: 18rem; }
+.pc-message { padding: .8rem 1rem; border-left: 3px solid var(--text-mute); font: 500 .9rem/1.4 var(--font-name); }
+@container performance (max-width: 70rem) { .pc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .pc-grid > :last-child { grid-column: 1 / -1; } }
+@container performance (max-width: 40rem) { .pc-grid { grid-template-columns: minmax(0, 1fr); gap: 1rem; } .pc-meters { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; } .pc-meters > div { padding: .6rem; } .pc-tabs button { padding: .6rem; } .pc-facts { grid-template-columns: minmax(0, 1fr); } }
+.pc-waterfall { display: grid; gap: .65rem; padding: 1.2rem 0; }
+.pc-waterfall > div { display: grid; grid-template-columns: minmax(10rem, 1fr) minmax(5rem, 2fr) 7rem; gap: 1rem; align-items: center; font: 500 .8rem/1.4 var(--font-data); }
+.pc-waterfall span { overflow-wrap: anywhere; }
+.pc-waterfall i { position: relative; height: .3rem; background: var(--track); }
+.pc-waterfall b { position: absolute; width: .45rem; height: .9rem; top: -.3rem; background: var(--text-mute); transform: translateX(-50%); }
+.pc-waterfall small { text-align: right; }
+@container performance (max-width: 40rem) { .pc-waterfall > div { grid-template-columns: minmax(6rem, 1fr) minmax(3rem, 1fr) 4.5rem; gap: .5rem; } }
+.pc-builder { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; padding: 1rem 0; }
+.pc-checkbox { flex-direction: row !important; align-items: center; }
+@container performance (max-width: 40rem) { .pc-builder { grid-template-columns: minmax(0, 1fr); } }
+.pc-results { margin: 1.6rem 0; }
+.pc-results h3 { font: 400 1.2rem/1.3 var(--font-lead); }
+.pc-commands { padding: 0; overflow: hidden; }
+.perf-console .pc-commands { background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--wall-low), var(--cast) var(--cast) 0 var(--ink-w) var(--ink); }
+.pc-command-grid { display: grid; grid-template-columns: minmax(12rem, 2fr) repeat(4, minmax(6rem, 1fr)) minmax(10rem, 1.4fr); gap: 1rem; align-items: baseline; padding: 1rem; }
+.pc-command-grid > span { min-width: 0; overflow-wrap: anywhere; font-family: var(--font-data); }
+.pc-command-grid > span:not(:first-child) { text-align: right; }
+.pc-command-labels { color: var(--text-mute); background: var(--obj); font: 500 .82rem/1.4 var(--font-name); }
+.pc-command-grid small { display: none; color: var(--text-mute); font: 500 .82rem/1.4 var(--font-name); }
+.pc-command { border-top: 1px solid var(--hair); }
+.perf-console .pc-command > summary { padding: 1rem; }
+.pc-command > summary::marker { content: ""; }
+.pc-command > summary > span:first-child::before { content: "+ "; }
+.pc-command[open] > summary > span:first-child::before { content: "− "; }
+.pc-command-detail { padding: 0 1rem 1rem; border-top: 1px solid var(--hair); }
+.pc-inactive-commands { border-top: 1px solid var(--hair); }
+.pc-inactive-commands > summary { display: flex; align-items: center; min-height: 3.7rem; padding: .6rem 1rem; color: var(--text-body); font: 600 1rem/1.4 var(--font-name); }
+.pc-inactive-commands > div { border-top: 1px solid var(--hair); }
+.pc-commands .ghost { width: 80%; height: 1rem; }
+/* a sentence standing in for the rows starts under the first column's name, not flush with the card's edge */
+.pc-commands > .pc-note { margin: 0; padding: 0 1rem 1rem; }
+@container performance (max-width: 70rem) {
+  .pc-command-labels { display: none; }
+  .pc-command-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pc-command-grid small { display: block; margin-bottom: .4rem; }
+  .pc-command-grid > span:not(:first-child) { text-align: left; }
+  .pc-command-detail .pc-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@container performance (max-width: 40rem) { .pc-command-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Inspection uses shared axes for like quantities; technical provenance opens in place. */
+.perf-console { font-size: 15px; }
+.perf-console :is(label, summary, .pc-note, .pc-coverage, .pc-table caption, .pc-table thead th, .pc-facts dt, .pc-command-labels, .pc-command-grid small, .pc-axis, .pc-readings dt) { font-size: 14px; color: var(--text-body); }
+.perf-console .pc-state { font-size: 14px; }
+.perf-console :is(.field, .pc-table, .pc-facts dd, .pc-waterfall, .pc-waterfall small) { font-size: 15px; }
+.perf-console .pc-waterfall > div { font-size: 14px; }
+.pc-grid, .pc-runtime-grid, .pc-comparisons, .pc-capabilities { align-items: start; gap: 24px; margin: 24px 0; }
+.perf-console .pc-section {
+  padding: 1rem 1.2rem 1.2rem;
+  background: var(--obj);
+  border: var(--ink-w) solid var(--ink);
+  border-radius: var(--r-obj);
+  box-shadow: var(--cast) var(--cast) 0 var(--wall-low), var(--cast) var(--cast) 0 var(--ink-w) var(--ink);
+}
+.perf-console .pc-section h3 { color: var(--text); }
+.pc-overview-grid { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 1fr); }
+.perf-console .pc-meters > div { padding: 1rem 1.2rem; background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--wall-low), var(--cast) var(--cast) 0 var(--ink-w) var(--ink); }
+.pc-runtime-grid { display: grid; grid-template-columns: repeat(var(--pc-columns, 4), minmax(0, 1fr)); }
+.pc-comparisons { display: grid; grid-template-columns: repeat(var(--pc-columns, 3), minmax(0, 1fr)); }
+.pc-runtime-grid > .pc-section, .pc-comparisons > .pc-section { padding: 16px; border-top: 2px solid var(--track-line); }
+.pc-axis { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px 24px; margin: 0 0 16px; color: var(--text-mute); font: 500 13px/1.5 var(--font-name); }
+.pc-bars, .pc-ranges { margin: 16px 0 24px; }
+.pc-bar-row { display: grid; grid-template-columns: minmax(7rem, 1fr) minmax(4rem, 2fr) minmax(5rem, auto); align-items: center; gap: 16px; margin: 16px 0; font: 500 14px/1.5 var(--font-name); }
+.pc-bar-row > span:first-child, .pc-range-row > span:first-child { overflow-wrap: anywhere; }
+.pc-bar-row > strong { text-align: right; font: 500 14px/1.5 var(--font-data); }
+.pc-track { display: block; position: relative; height: 8px; min-width: 0; background: var(--track); border-radius: 2px; }
+.pc-track > i { display: block; height: 100%; background: var(--text-mute); border-radius: inherit; }
+.pc-zero { position: absolute; bottom: 0; left: 0; width: 4px; height: 8px; background: var(--text); }
+.pc-meters .pc-track { width: 100%; margin-top: 8px; }
+.pc-range-row { display: grid; grid-template-columns: minmax(12rem, 1fr) minmax(8rem, 3fr) 8rem 10rem; gap: 24px; align-items: center; margin: 24px 0; font: 500 14px/1.5 var(--font-name); }
+.pc-range-row > strong, .pc-range-row > small { text-align: right; font: 500 14px/1.5 var(--font-data); }
+.pc-range { display: block; position: relative; height: 8px; background: var(--track); }
+.pc-range > b { display: block; height: 100%; background: var(--text-mute); }
+.pc-range > i { position: absolute; top: -5px; height: 18px; width: 2px; background: var(--text); transform: translateX(-1px); }
+.pc-range > em { position: absolute; top: 0; width: 8px; height: 8px; border-radius: 50%; background: var(--text); transform: translateX(-4px); }
+.pc-state { display: inline-flex; align-items: center; gap: 8px; padding: 4px 8px; border: 1px solid var(--hair); border-radius: 4px; font: 500 13px/1.5 var(--font-name); color: var(--text); }
+.pc-state > i { width: 8px; height: 8px; flex: none; border: 1px solid currentColor; border-radius: 50%; }
+.pc-state-bad { color: var(--limit); border-color: currentColor; }
+.pc-state-bad > i { background: currentColor; }
+.pc-state-unknown { border-style: dashed; color: var(--text-mute); }
+.pc-state-unknown > i { border-radius: 0; }
+.pc-empty { border: 1px dashed var(--track-line); padding: 16px; margin: 16px 0; border-radius: var(--r-in); background: var(--obj); box-shadow: var(--cast) var(--cast) 0 var(--wall-low), var(--cast) var(--cast) 0 var(--ink-w) var(--ink); }
+.pc-empty .pc-note { margin-bottom: 0; }
+.pc-readings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 16px 0; }
+.pc-readings > div { min-width: 0; padding-bottom: 16px; border-bottom: 1px solid var(--hair); }
+.pc-readings dt { font: 500 13px/1.5 var(--font-name); color: var(--text-mute); overflow-wrap: anywhere; }
+.pc-readings dd { margin: 8px 0; font: 500 20px/1.3 var(--font-data); overflow-wrap: anywhere; }
+.pc-history > span { position: relative; }
+.pc-history .pc-zero { left: 50%; bottom: -4px; width: 8px; height: 8px; border-radius: 50%; transform: translateX(-50%); }
+.pc-unknown-point { align-self: end; margin: 0 auto; color: var(--text-mute); }
+.pc-capabilities { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); }
+.pc-capabilities > div { display: flex; flex-direction: column; align-items: start; gap: 16px; padding: 16px; border-top: 2px solid var(--track-line); min-width: 0; overflow-wrap: anywhere; }
+.pc-profile-result { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; padding: 24px 0; }
+.pc-profile-result > strong { font: 500 24px/1.3 var(--font-data); }
+.pc-json { min-height: 0; resize: vertical; overflow-y: hidden; }
+.pc-alert-rail { list-style: none; margin: 24px 0; padding: 0 0 0 24px; border-left: 2px solid var(--track-line); }
+.pc-alert-rail > li { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 16px 24px; padding: 16px 0; border-bottom: 1px solid var(--hair); }
+.pc-alert-rail > li::before { content: ""; position: absolute; left: -30px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--text-mute); background: var(--bg); }
+.pc-alert-rail .pc-detail { width: 100%; }
+.pc-distributions { display: grid; gap: 8px; }
+@container performance (max-width: 90rem) {
+  .pc-runtime-grid, .pc-comparisons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pc-range-row { grid-template-columns: minmax(10rem, 1fr) minmax(6rem, 2fr) 7rem 9rem; gap: 16px; }
+  .pc-section .pc-range-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .pc-section .pc-range-row .pc-range { grid-column: 1 / -1; grid-row: auto; }
+}
+@container performance (max-width: 40rem) {
+  .pc-runtime-grid, .pc-comparisons, .pc-overview-grid { grid-template-columns: minmax(0, 1fr); }
+  .pc-range-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 16px; }
+  .pc-range-row .pc-range { grid-column: 1 / -1; grid-row: auto; }
+  .pc-bar-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 16px; }
+  .pc-bar-row > .pc-track { grid-column: 1 / -1; grid-row: 2; }
+  .pc-bar-row > strong { grid-column: 2; grid-row: 1; }
+  .pc-runtime-grid > .pc-section, .pc-comparisons > .pc-section { padding-inline: 0; }
+}
+.pc-runtime-grid:has(> :only-child), .pc-comparisons:has(> :only-child) { grid-template-columns: minmax(0, 1fr); }
+
+/* The fold: Performance as one heading line under Results (Usage) or above the request list (Requests), the views it holds
+   named once beside it, and one Show control at the line's end. The open console drops its own repeated title. */
+.pc-fold { margin-top: calc(4 * var(--u)); padding-top: calc(3 * var(--u)); border-top: 1px solid var(--hair); }
+.pc-fold-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(2 * var(--u)); width: 100%; min-height: var(--ctl-h); padding: 0; background: none; border: 0; color: inherit; text-align: left; cursor: pointer; }
+.pc-fold-head h2 { font: 400 1.4rem/1.1 var(--font-lead); letter-spacing: normal; margin: 0; }
+.pc-fold-says { min-width: 0; font: 500 .95rem/1.3 var(--font-name); color: var(--text-mute); }
+.pc-fold-go { margin-left: auto; display: inline-flex; align-items: center; gap: .4rem; padding: .45rem .8rem; border: 1px solid var(--hair); border-radius: var(--r-in); font: 500 .95rem/1.2 var(--font-name); color: var(--text); }
+.pc-fold-head:hover .pc-fold-go, .pc-fold-head:focus-visible .pc-fold-go { background: var(--obj); }
+.pc-fold-head:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+.pc-fold.open > .pc-fold-head { margin-bottom: calc(2 * var(--u)); }
+.pc-fold .perf-console .pc-heading h2 { display: none; }
+.pc-fold .perf-console .pc-heading { justify-content: flex-end; }
+#requests-performance:has(> .pc-fold:not(.open)) { margin: calc(2 * var(--u)) 0; padding-bottom: calc(2 * var(--u)); }
+#requests-performance > .pc-fold { margin-top: 0; padding-top: 0; border-top: 0; }
+
+/* The first step (Nov 10): one sentence that says whether anything is slower or failing more than usual right now, then
+   each command's last hour over its own last 7 days, on one card. The second step holds the measurement console. */
+.pc-pulse { margin: 0 0 calc(3 * var(--u)); }
+.pc-pulse-says { margin: 0 0 calc(2 * var(--u)); max-width: 64rem; font: 400 1.2rem/1.5 var(--font-name); color: var(--text-body); }
+.pc-pulse-says strong { color: var(--text); font-weight: 600; }
+.pc-pulse[aria-busy=true] .pc-pulse-says { color: var(--text-mute); }
+.perf-console .pc-pulse-wrap { background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--wall-low), var(--cast) var(--cast) 0 var(--ink-w) var(--ink); overflow-x: auto; }
+.pc-pulse-table { width: 100%; border-collapse: collapse; font-size: 15px; }
+.pc-pulse-table caption { caption-side: top; text-align: left; padding: 1rem 1.2rem .6rem; font: 500 14px/1.4 var(--font-name); color: var(--text-mute); }
+.pc-pulse-table th, .pc-pulse-table td { padding: .85rem 1.2rem; text-align: right; vertical-align: top; border-top: 1px solid var(--hair); white-space: nowrap; }
+.pc-pulse-table thead th { padding-block: .6rem; font: 500 14px/1.4 var(--font-name); color: var(--text-mute); }
+.pc-pulse-table :is(thead th, tbody th):first-child { text-align: left; width: 30%; }
+.pc-pulse-table tbody th { font: 500 15px/1.4 var(--font-name); }
+.pc-pulse-table tbody th a { color: var(--text); }
+.pc-pulse-table td b { display: block; font: 500 16px/1.3 var(--font-data); color: var(--text); }
+.pc-pulse-table td small { display: block; margin-top: .2rem; font: 500 13px/1.3 var(--font-name); color: var(--text-mute); }
+.pc-pulse-table td.pc-hot b { color: var(--key-ink); font-weight: 700; }
+.pc-pulse-table tr:has(.pc-state-bad) td.pc-hot b { color: var(--limit); }
+.pc-pulse-table td:last-child { width: 1%; }
+.pc-pulse .pc-note { margin: calc(1.5 * var(--u)) 0 0; }
+.pc-state-watch { color: var(--key-ink); border-color: currentColor; }
+.pc-state-watch > i { background: currentColor; }
+/* px, not rem: the console scales its root size with the window, so a rem bound moves with it */
+@container performance (max-width: 820px) {
+  .pc-pulse-table thead { display: none; }
+  .pc-pulse-table tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--hair); }
+  .pc-pulse-table tbody :is(th, td) { border-top: 0; text-align: left; white-space: normal; width: auto; }
+  .pc-pulse-table tbody td:last-child { width: auto; }
+  .pc-pulse-table tbody th { grid-column: 1 / -1; padding-bottom: 0; }
+  .pc-pulse-table tbody td[data-l]::before { content: attr(data-l); display: block; margin-bottom: .2rem; font: 500 13px/1.3 var(--font-name); color: var(--text-mute); }
+}
+.pc-deep { margin-top: calc(2 * var(--u)); border-top: 1px solid var(--hair); }
+.perf-console .pc-deep > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem 1.2rem; padding: calc(2 * var(--u)) 0; list-style: none; }
+.pc-deep > summary::-webkit-details-marker { display: none; }
+.pc-deep > summary::marker { content: ""; }
+.pc-deep-title { font: 500 1.1rem/1.3 var(--font-name); color: var(--text); }
+.pc-deep-title::before { content: "+ "; }
+.pc-deep[open] .pc-deep-title::before { content: "− "; }
+.pc-deep-says { min-width: 0; font: 500 .9rem/1.4 var(--font-name); color: var(--text-mute); }
+.pc-deep > summary:hover .pc-deep-title { text-decoration: underline; text-underline-offset: .2em; }
+.pc-deep-body { padding-top: var(--u); }
+.pc-meters strong small { font: 500 1rem/1.2 var(--font-name); color: var(--text-mute); }
+.pc-results > .pc-note { margin-top: calc(1.5 * var(--u)); }
+/* on a wide screen the comparison stays one readable block: figures sit near their command, not spread over 3,000 px */
+.perf-console .pc-pulse-wrap { max-width: 1600px; }

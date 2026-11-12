@@ -1,0 +1,258 @@
+/* commands band. Page parts use the console's tokens; every console component keeps the console's rem and classes. */
+
+.cm-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* the band's heading and line: the page's pg-h2 and pg-line, with the line's own gap and measure */
+.cm-in .pg-h2 { --d: 0ms; }
+
+
+/* ---------- the board: two columns of equal width; every card keeps its own rest height, so rows stay equal.
+   A card's panel is a drawer in its own grid row under the card's row, across both columns, so nothing stretches or leaves a void.
+   Cards carry the 2rem gap as a bottom margin (a closed drawer is 0 tall and adds no gap); the board takes the last one back. ---------- */
+.cm-in { --cm-gap: var(--pg-sp-4); }
+.cm-board {
+  margin: 0 0 calc(-1 * var(--cm-gap)); padding: 0; position: relative;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--cm-gap); row-gap: 0; align-items: stretch;
+}
+.cm-card { --d: calc(var(--i) * 40ms); grid-column: var(--cc); grid-row: var(--r); position: relative; margin-bottom: var(--cm-gap); min-height: 12rem; padding: calc(2 * var(--u)) calc(2 * var(--u)) calc(1.5 * var(--u)); display: flex; flex-direction: column; cursor: default; }
+.cm-card.card.h:hover { background: var(--obj); top: 0; left: 0; --cast: .5rem; }
+.cm-card.serving.card.h:hover { background: color-mix(in oklab, var(--obj) 88%, var(--key-light)); }
+.cm-card .top { min-height: 1.8rem; gap: .667rem; }
+.cm-card .top .chip { font-size: var(--fr-tm); }
+.cm-card .meta { display: flex; min-height: calc(var(--fig-focal) * 1.15); margin-top: calc(2 * var(--u)); flex-wrap: nowrap; align-items: center; }
+.cm-card .meta .cmodel { font: 600 var(--fig-focal)/1.15 var(--font-data); letter-spacing: -.01em; color: var(--text); white-space: nowrap; }
+/* a name that is words, not a model id: the body face (only ids and typed commands are mono) */
+.cm-card .meta .cmodel.cm-words { font: 500 var(--fig-focal)/1.15 var(--font-name); letter-spacing: 0; white-space: normal; }
+
+/* the numbered socket draws its ordinal from its data-n (a drawn number, not a word) */
+.cm-card .top > .msock::before { content: attr(data-n); }
+
+/* the kind of command (Plan, Key, GPU): the console's muted state word in the card's slot, as it says "Signed out" or "Not answering" */
+.cm-kind .state { font-size: var(--fr-tm); }
+
+/* the state of a command is drawn once: a lit numbered socket, a live dot and a warm card on the one that is serving; the rest keep a dark socket and a hollow dot */
+.cm-card:not(.serving) .chip i { background: transparent; box-shadow: inset 0 0 0 .14rem var(--text-mute); }
+.cm-newchip { border-style: dashed; border-color: var(--c); box-shadow: none; background: transparent; font-family: var(--font-name); font-size: var(--fr-tm); gap: .5rem; }
+.cm-newchip svg { width: .85rem; height: .85rem; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+
+/* the meter row: the console's own windows grid (label, 1.1rem bar, NN%, reset ring), four columns on every card so bars end on one x.
+   The reset time is not on the closed card: the ring draws it, and the time opens with the card (or reads on the ring). */
+.cm-card .windows.cm-win { grid-template-columns: 4.8rem minmax(0, 1fr) calc(var(--fig-hero) * 1.9) var(--ring-sz); margin-top: calc(2 * var(--u)); column-gap: var(--pg-sp-3); row-gap: 0; min-height: var(--ring-sz); }
+.cm-card .windows .label, .cm-card .windows .pct, .cm-card .windows .when, .cm-card.card .windows .cwin, .cm-card .windows .state { font-size: var(--fr-tm); }
+.cm-card .msock, .cm-step .msock { font-size: var(--fr-tm); }
+/* the card's focal figure: its limit, or the size of its context, at the console's hero step (2.9rem), well over the model's name above (1.7rem) */
+.cm-card .windows.cm-win > .pct, .cm-card .windows .cwin .cm-fig { font: 600 var(--fig-hero)/1 var(--font-data); letter-spacing: -.01em; font-variant-numeric: tabular-nums; color: var(--text); }
+.cm-card .windows .cwin .cm-fig { margin-right: .15em; }
+.cm-card .cm-win > .cwbar { display: block; flex: none; width: auto; min-width: 0; margin: 0; }
+.cm-card .cm-win .cwbar .wbar { height: var(--meter-h); }
+.cm-win > .pct { justify-self: end; text-align: right; }
+.cm-win > .when { justify-self: end; min-width: 0; justify-content: flex-end; }
+.cm-win > .cwin { justify-self: end; white-space: nowrap; }
+/* a card with no window to show (no limits reported, a context size) holds its bar and its words, side by side */
+.cm-card .windows.cm-win:is(.cm-none, .cm-ctx) { grid-template-columns: minmax(0, 1fr) auto; }
+.cm-win.cm-none > .bar, .cm-win.cm-ctx > .cwbar { grid-column: 1; }
+.cm-win.cm-none > .state { grid-column: 2; justify-self: end; white-space: nowrap; }
+.cm-win.cm-ctx > .cwin { grid-column: 2; }
+
+/* the foot: what it runs on, its marked facts, the door that opens it. It sits on the card's last line. */
+.cm-foot { display: flex; flex-wrap: wrap; align-items: center; align-content: flex-end; gap: var(--pg-sp-2) var(--pg-sp-3); margin-top: auto; padding-top: calc(2 * var(--u)); min-height: calc(1.8rem + 2 * var(--u)); }
+.cm-pdot { display: inline-block; width: .7rem; height: .7rem; border-radius: 50%; background: var(--c); margin-right: .5rem; vertical-align: -.05rem; }
+.cm-foot .prov { font: 500 var(--fr-tm)/1.25 var(--font-name); color: var(--text); }
+.cm-lab { display: inline-flex; align-items: center; gap: .5rem; font: 400 var(--fr-tm)/1.25 var(--font-name); color: var(--text-body); }
+.cm-facts-row .cm-lab { font-size: var(--fr-tm); }
+.cm-lab svg { flex: none; width: 1.05rem; height: 1.05rem; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+
+/* the door: the console's own disclosure (.disc and its .chev, no box), with the word of what it opens */
+.cm-door { margin-left: auto; cursor: pointer; gap: .5rem; font: 500 var(--fr-tm)/1.2 var(--font-name); color: var(--text-body); }
+.cm-door .chev { width: .8rem; height: .8rem; }
+
+/* two facts drawn, each with its words beside it: turns by the hour in the card's colour, and a sign-in that runs straight through splice */
+.cm-fact { display: inline-flex; align-items: center; gap: .5rem; }
+.cm-turns { flex: none; display: flex; align-items: flex-end; gap: .08rem; width: 5.6rem; height: 1.5rem; }
+.cm-turns > i { flex: 1 1 0; min-width: 0; background: var(--c); border-radius: .1rem .1rem 0 0; }
+.cm-route { flex: none; width: 4.4rem; height: 1.3rem; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.cm-route .cm-n { stroke: var(--text-body); stroke-width: 1.6; }
+.cm-route .cm-w { stroke: var(--text-body); stroke-width: 1.8; }
+.cm-route .cm-g { stroke: var(--text-mute); stroke-width: 1.3; stroke-dasharray: 2.4 2.2; fill: var(--obj-sunk); }
+
+/* ---------- a card opens as a drawer under its row: the drawer's height eases from 0fr to 1fr and its opacity rises over --t-snap (240 ms) on --e-out,
+   the chevron turns with it, and a rail runs from the door down to the drawer. The row below moves down with it. ---------- */
+.cm-drawer {
+  grid-column: 1 / -1; grid-row: var(--r); display: grid; grid-template-rows: 0fr; opacity: 0; visibility: hidden;
+  transition: grid-template-rows var(--t-snap) var(--e-out), opacity var(--t-snap) var(--e-out), visibility 0s linear var(--t-snap);
+}
+.cm-drawer-in { min-height: 0; overflow: hidden; margin-inline: -.75rem; }
+.cm-drawer-wrap { padding: 0 .75rem var(--cm-gap); }
+/* every open drawer is the board's full width, from its left edge to its right edge, with one padding and one gap to the cards above it;
+   its own content fills the columns (--cols, set per drawer below), so no column stands plain */
+.card.cm-dplate { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); grid-template-columns: var(--cols); width: 100%; margin-left: 0; padding: 0; min-height: 0; cursor: default; }
+.cm-drawer[data-k="or"] .cm-dplate { --cols: minmax(0, 1fr) minmax(0, 1.1fr) auto; }
+.cm-drawer[data-k="bo"] .cm-dplate { --cols: auto minmax(0, 1fr); }
+.cm-drawer[data-k="ow"] .cm-dplate { --cols: minmax(0, 1.2fr) minmax(0, 1fr); }
+.cm-dplate .cm-mods > .cm-mod { flex: 1 1 auto; justify-content: center; text-align: center; }
+.cm-dplate .cm-sl-row > .cm-sl { flex: 1 1 auto; }
+.cm-dplate .cm-own > .cm-mods { flex: 1 1 auto; }
+.cm-dplate .cm-sec > .cm-term { align-self: stretch; }
+.cm-dplate .cm-steps { flex: 1 1 auto; }
+.cm-dplate .cm-step { flex: 1 1 auto; justify-content: center; }
+.cm-dplate > .cm-sec { padding: calc(2 * var(--u)) calc(2.5 * var(--u)); border-left: .08rem solid var(--hair); justify-content: flex-start; }
+.cm-dplate > .cm-sec:first-child { border-left: 0; }
+
+.cm-card[data-k]::after {
+  content: ""; position: absolute; left: calc(100% - 2.5rem); top: 100%; width: .3rem; height: calc(var(--cm-gap) + .2rem); margin-left: -.15rem;
+  background: var(--rail); box-shadow: 0 0 0 .08rem var(--ink); opacity: 0; pointer-events: none; transition: opacity var(--t-snap) var(--e-out);
+}
+/* The toggle is the card's own first child (a click on the door focuses it, and a toggle at the board's top would scroll the page there). */
+.cm-card[data-k="or"]:has(> .cm-tg:checked) ~ .cm-drawer[data-k="or"] { grid-template-rows: 1fr; opacity: 1; visibility: visible; transition-delay: 0s; }
+.cm-card[data-k="or"]:has(> .cm-tg:checked) .cm-door .chev { transform: rotate(90deg); }
+.cm-card[data-k="or"]:has(> .cm-tg:checked) .cm-door { color: var(--text); border-color: var(--text-mute); }
+.cm-card[data-k="or"]:has(> .cm-tg:checked)::after { opacity: 1; }
+.cm-card[data-k="or"]:has(> .cm-tg:focus-visible) .cm-door { outline: var(--ink-w) solid var(--text); outline-offset: .18rem; }
+.cm-card[data-k="bo"]:has(> .cm-tg:checked) ~ .cm-drawer[data-k="bo"] { grid-template-rows: 1fr; opacity: 1; visibility: visible; transition-delay: 0s; }
+.cm-card[data-k="bo"]:has(> .cm-tg:checked) .cm-door .chev { transform: rotate(90deg); }
+.cm-card[data-k="bo"]:has(> .cm-tg:checked) .cm-door { color: var(--text); border-color: var(--text-mute); }
+.cm-card[data-k="bo"]:has(> .cm-tg:checked)::after { opacity: 1; }
+.cm-card[data-k="bo"]:has(> .cm-tg:focus-visible) .cm-door { outline: var(--ink-w) solid var(--text); outline-offset: .18rem; }
+.cm-card[data-k="ow"]:has(> .cm-tg:checked) ~ .cm-drawer[data-k="ow"] { grid-template-rows: 1fr; opacity: 1; visibility: visible; transition-delay: 0s; }
+.cm-card[data-k="ow"]:has(> .cm-tg:checked) .cm-door .chev { transform: rotate(90deg); }
+.cm-card[data-k="ow"]:has(> .cm-tg:checked) .cm-door { color: var(--text); border-color: var(--text-mute); }
+.cm-card[data-k="ow"]:has(> .cm-tg:checked)::after { opacity: 1; }
+.cm-card[data-k="ow"]:has(> .cm-tg:focus-visible) .cm-door { outline: var(--ink-w) solid var(--text); outline-offset: .18rem; }
+.cm-door:hover { color: var(--text); border-color: var(--text-mute); }
+
+.cm-sec { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); min-width: 0; }
+.cm-sec .kicker { margin: 0; font-size: var(--fr-ts); }
+.cm-mods { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--pg-sp-1); }
+.cm-mod { --c: var(--router); font: 500 var(--fr-tm)/1 var(--font-name); padding: .4rem .7rem; }
+.cm-own .cm-mod { --c: var(--local); }
+.cm-own { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--pg-sp-2) var(--pg-sp-4); }
+.cm-dwhen { display: inline-flex; align-items: center; gap: .6rem; white-space: nowrap; font: 500 var(--fr-tm)/1 var(--font-data); color: var(--text-body); }
+
+/* the status line, as Claude Code draws it */
+.cm-sl-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pg-sp-2) var(--pg-sp-4); }
+.cm-sl { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: var(--pg-sp-1) var(--pg-sp-3); padding: .7rem 1rem; background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); font: 500 var(--fr-tm)/1.3 var(--font-data); color: var(--text-body); }
+.cm-sl-p { font: 600 var(--fr-tm)/1.3 var(--font-data); color: var(--text); }
+
+/* bonsai: what it needs; then the command and its three steps (the console's numbered sockets on a rail) */
+.cm-facts-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pg-sp-1) var(--pg-sp-4); }
+.cm-setup { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pg-sp-3) var(--pg-sp-5); }
+.cm-term { display: inline-flex; align-items: baseline; gap: .8rem; padding: .7rem 1rem; background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); font: 500 var(--fr-tm)/1.3 var(--font-data); color: var(--text); }
+.cm-pr { color: var(--text-mute); }
+.cm-term code { font: inherit; }
+.cm-caret { align-self: center; flex: none; width: .14rem; height: 1.1rem; margin-left: -.5rem; background: var(--text); }
+.cm-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 0; }
+.cm-step { --c: var(--local); gap: .6rem; font: 500 var(--fr-tm)/1 var(--font-name); padding: .35rem .8rem .35rem .4rem; }
+.cm-seg { flex: none; width: var(--pg-sp-3); height: .3rem; background: var(--rail); box-shadow: 0 0 0 .08rem var(--ink); }
+
+/* ---------- reveal: heading, line and each card ease in once on --t-pop (260 ms) and --e-out, each starting 40 ms after the one before
+   (heading 0, line 40, card n at 40n ms); the eighth card is done at 540 ms. A card's meter fill grows and its ring draws over --t-snap (240 ms) with it.
+   One band plays once: page.js adds .is-seen the first time the band scrolls into view and never removes it. ---------- */
+/* the first frame (what a band that has not played yet shows) is at rest, so the band's first content stands where every other band's does */
+@keyframes cm-rise { 0% { opacity: 0; transform: none; } 1% { opacity: 0; transform: translateY(1.2rem); } 100% { opacity: 1; transform: none; } }
+@keyframes cm-grow { from { transform: scaleX(0); } }
+@keyframes cm-arc { from { stroke-dasharray: 0 94.2; } }
+@media (prefers-reduced-motion: no-preference) {
+  .pg-js .cm-in[data-reveal]:not(.is-seen) :is(.pg-h2, .pg-line, .cm-card) { opacity: 0; }
+  .cm-in.is-seen :is(.pg-h2, .pg-line, .cm-card) { animation: cm-rise var(--t-pop) var(--e-out) both; animation-delay: var(--d); }
+  .cm-in.is-seen .cm-card :is(.bar.grow > b, .wbar > i) { transform-origin: left; animation: cm-grow var(--t-snap) var(--e-out) both; animation-delay: var(--d); }
+  .cm-in.is-seen .cm-card .ring .arc { animation: cm-arc var(--t-snap) var(--e-out) both; animation-delay: var(--d); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cm-drawer, .chev, .cm-card[data-k]::after { transition: none; }
+}
+
+/* ---------- widths: the heading takes 48 px and the line 18 px at 1440 (the page's own sizes); phone widths take the one-column board ---------- */
+@container pg (max-width: 640px) {
+  .cm-card .meta .cmodel { white-space: normal; overflow-wrap: anywhere; }
+  /* the meter reflows: the label, NN% and the ring on one line, the bar across the full row under them */
+  .cm-card .windows.cm-win { grid-template-columns: minmax(0, 1fr) auto var(--ring-sz); row-gap: .5rem; }
+  .cm-win > .label { grid-column: 1; grid-row: 1; }
+  .cm-win > .pct { grid-column: 2; grid-row: 1; }
+  .cm-win > .when { grid-column: 3; grid-row: 1; }
+  .cm-win > :is(.bar, .capbox) { grid-column: 1 / -1; grid-row: 2; }
+  .cm-card .windows.cm-win.cm-ctx { grid-template-columns: minmax(0, 1fr) auto; row-gap: 0; }
+  .cm-win.cm-ctx > .cwbar { grid-column: 1; grid-row: 1; }
+  .cm-win.cm-ctx > .cwin { grid-column: 2; grid-row: 1; }
+  .cm-card .windows.cm-win.cm-none { grid-template-columns: minmax(0, 1fr); }
+  .cm-win.cm-none > .bar { grid-column: 1; grid-row: 1; }
+  .cm-win.cm-none > .state { grid-column: 1; grid-row: 2; justify-self: start; }
+  /* the setup command and its steps stand in one left-aligned column */
+  .cm-setup { flex-direction: column; align-items: flex-start; gap: .9rem; }
+  .cm-steps { flex-direction: column; align-items: flex-start; gap: 0; }
+  .cm-seg { width: .3rem; height: 1.7rem; margin-left: 1.12rem; }
+  .cm-sl { flex-direction: column; align-items: flex-start; }
+}
+/* two cards across: the steps wrap to a second line, so the needs stand one under the other and fill the column's height */
+@container pg (min-width: 881px) and (max-width: 2199px) {
+  .cm-dplate .cm-facts-row { flex-direction: column; align-items: flex-start; }
+}
+/* one column: each drawer follows its own card, under it */
+@container pg (max-width: 880px) {
+  .cm-board { grid-template-columns: minmax(0, 1fr); }
+  .cm-card, .cm-drawer { grid-column: 1; grid-row: auto; order: var(--o); }
+  .cm-card { min-height: 0; }
+  .card.cm-dplate { grid-auto-flow: row; grid-auto-columns: minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); width: auto; }
+  .cm-dplate .cm-mods > .cm-mod, .cm-dplate .cm-step { flex: 0 0 auto; justify-content: flex-start; text-align: left; }
+  .cm-dplate .cm-sl-row > .cm-sl, .cm-dplate .cm-own > .cm-mods, .cm-dplate .cm-steps { flex: 0 1 auto; }
+  .cm-dplate .cm-sec > .cm-term { align-self: flex-start; }
+  .cm-dplate > .cm-sec { border-left: 0; border-top: .08rem solid var(--hair); padding-inline: 1.2rem; }
+  .cm-dplate > .cm-sec:first-child { border-top: 0; }
+}
+
+/* ---------- the head beside the board from a 1,280 px container to 2,199 px (the page's split starts at 2,200 px): the head takes 4 of 12
+   columns on the left, as it does from 2,200 px, and the board 8, two cards across. The head's drawing and its cable follow the page's split. ---------- */
+@container pg (min-width: 1280px) and (max-width: 2199px) {
+  #commands .cm-in { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--pg-cg); align-items: start; }
+  #commands .cm-in > .pg-head { display: flex; flex-direction: column; align-self: stretch; grid-column: 1 / span 4; grid-row: 1; margin-bottom: 0; padding-right: clamp(0px, 1vw, 32px); }
+  #commands .cm-in > .cm-board { grid-column: 5 / -1; grid-row: 1; }
+}
+
+/* ---------- the head's drawing from a 1,280 px container up. The drawing's box takes the height the component leaves. Where that box is as tall as it is
+   wide (the head beside a tall component) it holds a taller drawing of the same objects, which shrinks to the box and stays under the
+   header while a taller component scrolls past, as the teams and console bands do; where the box is low and wide it holds the page's wide drawing
+   and its cable down the column. ---------- */
+#commands .pg-art > .cm-tall { display: none; }
+@container pg (min-width: 1280px) {
+  #commands .cm-in > .pg-head > .pg-art { container: pga / size; display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; justify-self: stretch; align-self: stretch; width: auto; margin-top: var(--pg-sp-6); }
+  #commands .cm-in > .pg-head > .pg-art .pg-stub { display: inline; }
+  #commands .cm-in > .pg-head > .pg-art::after { content: ""; flex: 1 1 auto; min-height: 0; width: 8px; margin-left: calc(var(--pg-ax, 9%) - 4px); background: linear-gradient(var(--pg-cable), var(--pg-cable)) 50% 0 / 1.5px 100% no-repeat, radial-gradient(circle, var(--pg-dot, var(--claude)) 0 2.6px, transparent 3.2px) 50% 0 / 8px 8px no-repeat; }
+}
+@container pga (max-aspect-ratio: 4/3) {
+  #commands .cm-in > .pg-head > .pg-art > svg:not(.cm-tall) { display: none; }
+  #commands .cm-in > .pg-head > .pg-art > .cm-tall { display: block; flex: 0 1 auto; min-height: 0; width: 100%; height: auto; position: static; }
+  #commands .cm-in > .pg-head > .pg-art::after { content: none; }
+}
+
+/* ---------- four across where the board's column is 1,400 px or wider: the 8 columns beside the head from 2,330 px. Below that the cards lie
+   two across, and one across on a phone. A card this narrow takes the phone's meter (label, NN% and ring on one line, the bar under
+   them). The eight cards fill two rows; each drawer opens full width under them, in the order its card sits. ---------- */
+@container pg (min-width: 2330px) {
+  .cm-board { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .cm-board > .cm-card:nth-of-type(1) { grid-column: 1; grid-row: 1; }
+  .cm-board > .cm-card:nth-of-type(2) { grid-column: 2; grid-row: 1; }
+  .cm-board > .cm-card:nth-of-type(3) { grid-column: 3; grid-row: 1; }
+  .cm-board > .cm-card:nth-of-type(4) { grid-column: 4; grid-row: 1; }
+  .cm-board > .cm-card:nth-of-type(5) { grid-column: 1; grid-row: 2; }
+  .cm-board > .cm-card:nth-of-type(6) { grid-column: 2; grid-row: 2; }
+  .cm-board > .cm-card:nth-of-type(7) { grid-column: 3; grid-row: 2; }
+  .cm-board > .cm-card:nth-of-type(8) { grid-column: 4; grid-row: 2; }
+  /* the two rows of cards share one height, and a card whose foot holds facts wraps them upward, so its provider leads the foot's
+     bottom line at the left, where every other card's sits, whether the facts fit beside it (3400) or wrap above it (2548) */
+  .cm-board { grid-template-rows: 1fr 1fr auto auto auto; }
+  .cm-foot { flex-wrap: wrap-reverse; align-content: flex-start; }
+  .cm-drawer[data-k="or"] { grid-row: 3; }
+  .cm-drawer[data-k="bo"] { grid-row: 4; }
+  .cm-drawer[data-k="ow"] { grid-row: 5; }
+  .cm-card .meta .cmodel { white-space: normal; overflow-wrap: anywhere; }
+  .cm-card .windows.cm-win { grid-template-columns: minmax(0, 1fr) auto var(--ring-sz); row-gap: .5rem; }
+  .cm-win > .label { grid-column: 1; grid-row: 1; }
+  .cm-win > .pct { grid-column: 2; grid-row: 1; }
+  .cm-win > .when { grid-column: 3; grid-row: 1; }
+  .cm-win > :is(.bar, .capbox) { grid-column: 1 / -1; grid-row: 2; }
+  .cm-card .windows.cm-win.cm-ctx { grid-template-columns: minmax(0, 1fr) auto; row-gap: 0; }
+  .cm-win.cm-ctx > .cwbar { grid-column: 1; grid-row: 1; }
+  .cm-win.cm-ctx > .cwin { grid-column: 2; grid-row: 1; }
+  .cm-card .windows.cm-win.cm-none { grid-template-columns: minmax(0, 1fr); }
+  .cm-win.cm-none > .bar { grid-column: 1; grid-row: 1; }
+  .cm-win.cm-none > .state { grid-column: 1; grid-row: 2; justify-self: start; }
+}

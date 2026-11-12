@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "objective": "Codex code-mode behavior through Claudex, including runtime lifecycle, authoritative history, and client delivery",
+  "reference": {
+    "repository": "openai/codex",
+    "sourceRevision": "17a9df60e420b58e3edc55efb1bb052e39492bbc",
+    "protocolVersion": 1
+  },
+  "policy": {
+    "missingCase": "fail",
+    "skippedCase": "fail",
+    "unverifiedReference": "fail",
+    "candidateIdentityMismatch": "fail",
+    "allowSubsetCompletion": false,
+    "sourceInspectionCountsAsExecution": false,
+    "benchmarkMeansProveParity": false
+  },
+  "cases": [
+    { "id": "runtime.module-semantics", "requirement": "Execute complete JavaScript modules with Codex semantics and no premature partial-source effects" },
+    { "id": "runtime.item-boundary", "requirement": "Admit each completed exec or wait item before response completion, process multiple outer items in native serial order with all model items before their ordered outputs, and preserve late failure honesty" },
+    { "id": "runtime.sequential-callbacks", "requirement": "Resume dependent callbacks as soon as their required results arrive" },
+    { "id": "runtime.partial-parallel-results", "requirement": "A fast callback can advance its dependent branch while an unrelated sibling is still pending" },
+    { "id": "runtime.explicit-yield", "requirement": "yield_control returns accumulated output while the same cell remains resumable" },
+    { "id": "runtime.timed-yield", "requirement": "The exec yield_time_ms directive returns control while work continues" },
+    { "id": "runtime.wait-suffix", "requirement": "wait resumes the same cell and returns only new output" },
+    { "id": "runtime.terminate", "requirement": "Termination ends the addressed cell without rerunning effects or stopping siblings" },
+    { "id": "runtime.notifications", "requirement": "notify delivers progress before cell completion" },
+    { "id": "runtime.timers", "requirement": "Timers execute and can be cancelled with Codex ordering" },
+    { "id": "runtime.session-store", "requirement": "store/load retain serializable values across cells in the same session and isolate other sessions" },
+    { "id": "runtime.output-content", "requirement": "text, image, audio and generatedImage preserve native output content semantics and output limits" },
+    { "id": "runtime.errors-and-cancellation", "requirement": "Tool errors, source errors, cancellation and host loss remain distinct and never repeat accepted effects" },
+    { "id": "history.append-only", "requirement": "Requests extend authoritative model history without reconstructing old model items from display text" },
+    { "id": "history.restart", "requirement": "A daemon restart restores authoritative model history and callback ownership" },
+    { "id": "history.replay-is-not-steering", "requirement": "The captured callback-only replay from splice-lead resumes its script rather than becoming unexpectedReplay steering" },
+    { "id": "history.real-steering", "requirement": "Actual new user steering, compaction, rewind and edited results retain their intended boundaries" },
+    { "id": "history.cleared-results", "requirement": "Verified client-cleared results retain their accepted native execution and reasoning history" },
+    { "id": "delivery.readable-reasoning", "requirement": "Deliver each real readable reasoning character once, retaining encrypted reasoning only in model history" },
+    { "id": "delivery.interactive-cadence", "requirement": "Measure item completion, callback issue, message stop, and interactive client delivery with bounded local holds" },
+    { "id": "delivery.late-failure-recovery", "requirement": "Real client recovery preserves exactly one effect through late source failure and restart" },
+    { "id": "packaging.native-host", "requirement": "The packaged candidate resolves a pinned supported native host rather than an accidental local Codex installation" },
+    { "id": "evidence.failing-baseline", "requirement": "The frozen old implementation demonstrably fails cases that the candidate fixes" },
+    { "id": "evidence.installed-identity", "requirement": "The running daemon open jar and native host match the qualified candidate artifacts" }
+  ]
+}

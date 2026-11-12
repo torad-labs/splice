@@ -1,12 +1,20 @@
-# Coverage visibility. Generates an aggregated Kotlin gateway coverage report on every PR
-# and posts it as a single comment (updated in place, not a thread). Fork PRs skip the
-# comment post because the default token is read-only there; the report artifact is still
-# produced so local checks are not red for external contributors. WebUI vitest coverage is
-# intentionally deferred to a follow-up (# TODO / PR body note).
+# Full Kotlin/JVM coverage is advisory. Its four independent workers each generate
+# Kover binary data for disjoint projects; the report job merges that data without
+# rerunning the tests. The required CI gate does not need or wait for this workflow.
 name: coverage
 
 on:
   pull_request:
+    paths:
+      - '**/src/**'
+      - '**/*.gradle.kts'
+      - 'gradle/**'
+      - 'gradle.properties'
+      - 'build-logic/**'
+      - 'fixtures/**'
+      - '.github/workflows/coverage.yml'
+      - '.github/actions/ci-setup/**'
+      - 'tools/gate/**'
 
 permissions:
   contents: read
@@ -16,26 +24,100 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  report:
+  coverage:
+    name: coverage shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     permissions:
       contents: read
-      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: '21'
           cache: gradle
-      - name: Generate aggregated kover report
-        run: cd gateway && ./gradlew :koverXmlReport --console=plain
-      - uses: mi-kas/kover-report@fe40bd3712cf57dd19bfb0c16ccb0472a0478dae # v2.6
-        if: github.event.pull_request.head.repo.full_name == github.repository
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          path: ${{ github.workspace }}/gateway/build/reports/kover/report.xml
+          bun-version: 1.4.2
+      - name: install workspaces
+        run: bun install --frozen-lockfile
+      - name: Generate instrumented shard data
+        env:
+          # The runner clears these again before it starts Gradle. Test execution
+          # must not receive the workflow token or an OIDC credential.
+          GITHUB_TOKEN: ""
+          GH_TOKEN: ""
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
+          ACTIONS_ID_TOKEN_REQUEST_URL: ""
+        run: bun tools/gate/src/ci-coverage/run.ts ${{ matrix.shard }}
+      - name: Keep Kover binary data
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-kover-binary-${{ matrix.shard }}
+          path: .ci/coverage/${{ matrix.shard }}/
+          include-hidden-files: true
+          retention-days: 1
+          if-no-files-found: error
+
+  report:
+    needs: coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-setup
+      - name: Download every binary coverage shard
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: coverage-kover-binary-*
+          path: coverage-binaries
+          merge-multiple: false
+      - name: Merge binary coverage into XML and HTML
+        env:
+          GITHUB_TOKEN: ""
+          GH_TOKEN: ""
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
+          ACTIONS_ID_TOKEN_REQUEST_URL: ""
+        run: bun tools/gate/src/ci-coverage/run.ts report
+      - name: Keep merged coverage report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-kover-report
+          path: |
+            build/reports/kover/report.xml
+            build/reports/kover/html/**
+          retention-days: 14
+          if-no-files-found: warn
+
+  comment:
+    needs: report
+    if: ${{ needs.report.result == 'success' && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Download merged coverage report
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: coverage-kover-report
+          path: coverage-report
+      - uses: mi-kas/kover-report@94d69bc9d417de89b808cd5fe846bca2840911bb # v2.7
+        with:
+          path: ${{ github.workspace }}/coverage-report/report.xml
           title: Gateway coverage report
           update-comment: true

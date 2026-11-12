@@ -1,0 +1,179 @@
+package splice.app.sources.observability
+
+import kotlinx.serialization.json.jsonObject
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.app.sources.PerfRowsFileSource
+import splice.app.sources.observability.cursor.PERF_CURSOR_TTL_MS
+import splice.app.sources.observability.cursor.PerfCommittedCursors
+import splice.core.perf.PerfArchiveName
+import splice.core.util.WallClock
+import splice.usage.perf.history.PerfCursorQuery
+import splice.usage.perf.history.PerfCursorRequest
+import splice.usage.perf.history.PerfRowPredicate
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardCopyOption
+import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.FileTime
+
+class PerfCommittedCursorTest {
+    private val query = PerfCursorQuery(0L, 10_000L, "all")
+    private val all = PerfRowPredicate { true }
+
+    @Test
+    fun `opaque start cursor replays the frozen first record after append and reader restart`(
+        @TempDir directory: Path,
+    ) {
+        val file = directory.resolve("head.jsonl")
+        Files.writeString(file, row(500, "ok"))
+        val request = PerfCursorRequest(query, all, pageSize = 1)
+        val start = PerfRowsFileSource(file).page(request).use { first ->
+            splice.core.util.JsonScalars.str(first.metadata, "start_cursor")
+        }
+        assertNotNull(start)
+        Files.writeString(file, row(100, "ok"), StandardOpenOption.APPEND)
+        PerfRowsFileSource(file).page(request.copy(cursor = start)).use { frozen ->
+            assertEquals(listOf(500L), frozen.rows.map { it.ts })
+            assertEquals("1", frozen.metadata["total_matching"].toString())
+        }
+    }
+
+    @Test
+    fun `fixed cursor counts all filters before paging and excludes late commits with older timestamps`(
+        @TempDir directory: Path,
+    ) {
+        val file = directory.resolve("head.jsonl")
+        Files.writeString(file, row(500, "ok") + row(500, "failed") + row(300, "ok"))
+        val source = PerfRowsFileSource(file)
+        val request = PerfCursorRequest(query, all, pageSize = 1)
+        source.page(request).use { first ->
+            assertEquals("3", first.metadata["total_matching"].toString())
+            assertEquals("\"complete\"", first.metadata["status"].toString())
+            Files.writeString(file, row(100, "ok"), StandardOpenOption.APPEND)
+            source.page(request.copy(cursor = first.nextCursor)).use { second ->
+                source.page(request.copy(cursor = second.nextCursor)).use { third ->
+                    assertEquals(listOf(500L, 500L, 300L), (first.rows + second.rows + third.rows).map { it.ts })
+                    assertEquals(3, (first.recordIds + second.recordIds + third.recordIds).distinct().size)
+                    assertNull(third.nextCursor)
+                }
+            }
+        }
+        source.page(
+            PerfCursorRequest(
+                query.copy(filterHash = "failed"),
+                PerfRowPredicate {
+                    it.outcome == "failed"
+                },
+            ),
+        ).use { filtered ->
+            assertEquals("1", filtered.metadata["total_matching"].toString())
+            assertEquals(listOf("failed"), filtered.rows.map { it.outcome })
+        }
+    }
+
+    @Test
+    fun `continuation survives restart and copied archive rotation without duplicating records`(
+        @TempDir directory: Path,
+    ) {
+        val file = directory.resolve("head.jsonl")
+        val archive = directory.resolve("archive")
+        Files.createDirectories(archive)
+        Files.writeString(file, row(500, "ok") + row(600, "ok"))
+        val request = PerfCursorRequest(query, all, pageSize = 1)
+        PerfRowsFileSource(file, archive).page(request).use { first ->
+            assertNotNull(first.nextCursor)
+            val rolled = file.resolveSibling("${file.fileName}.1")
+            Files.move(file, rolled)
+            Files.writeString(file, row(700, "ok"))
+            Files.copy(rolled, archive.resolve(PerfArchiveName(file.fileName.toString()).of(1_000L)))
+            Files.move(file, rolled, StandardCopyOption.REPLACE_EXISTING)
+            Files.writeString(file, row(800, "ok"))
+            PerfRowsFileSource(file, archive).page(request.copy(cursor = first.nextCursor)).use { second ->
+                assertEquals(listOf(600L), second.rows.map { it.ts })
+                assertNull(second.nextCursor)
+            }
+        }
+        PerfRowsFileSource(file, archive).page(request.copy(pageSize = 20)).use { fresh ->
+            assertEquals(4, fresh.rows.size)
+            assertEquals(4, fresh.recordIds.distinct().size)
+        }
+    }
+
+    @Test
+    fun `copied rolled alias counted once and changed filters missing segments and expired snapshots are explicit`(
+        @TempDir directory: Path,
+    ) {
+        val file = directory.resolve("head.jsonl")
+        val archive = directory.resolve("archive")
+        Files.createDirectories(archive)
+        val rolled = file.resolveSibling("${file.fileName}.1")
+        Files.writeString(rolled, row(500, "ok") + row(600, "ok"))
+        val saved = archive.resolve(PerfArchiveName(file.fileName.toString()).of(1_000L))
+        Files.copy(rolled, saved)
+        var now = System.currentTimeMillis()
+        val source = PerfCommittedCursors(file, archive, PerfSourceCosts(), WallClock { now })
+        val request = PerfCursorRequest(query, all, pageSize = 1)
+        source.page(request).use { first ->
+            assertEquals("2", first.metadata["known_matching"].toString())
+            assertEquals("\"incomplete\"", first.metadata["status"].toString())
+            source.page(
+                request.copy(cursor = first.nextCursor, query = query.copy(filterHash = "changed")),
+            ).use { changed ->
+                assertEquals("\"invalid\"", changed.metadata["status"].toString())
+            }
+            now += PERF_CURSOR_TTL_MS + 1
+            source.page(request.copy(cursor = first.nextCursor)).use { expired ->
+                assertEquals("\"expired\"", expired.metadata["status"].toString())
+            }
+            now -= PERF_CURSOR_TTL_MS + 1
+            Files.delete(rolled)
+            Files.delete(saved)
+            source.page(request.copy(cursor = first.nextCursor)).use { missing ->
+                assertEquals("\"expired\"", missing.metadata["status"].toString())
+                assertTrue(missing.rows.isEmpty())
+            }
+        }
+    }
+
+    @Test
+    fun `a period after every rolled generation returns its rows from the live one alone`(@TempDir directory: Path) {
+        val file = directory.resolve("head.jsonl")
+        val archive = directory.resolve("archive")
+        Files.createDirectories(archive)
+        val names = PerfArchiveName(file.fileName.toString())
+        // Two generations retired long before the period, and the rolled one last written before it.
+        Files.writeString(archive.resolve(names.of(1_000L)), row(500, "ok"))
+        Files.writeString(archive.resolve(names.of(5_000L)), row(2_000, "ok"))
+        val rolled = file.resolveSibling("${file.fileName}.1")
+        Files.writeString(rolled, row(6_000, "ok"))
+        Files.setLastModifiedTime(rolled, FileTime.fromMillis(7_000L))
+        Files.writeString(file, row(60_000, "ok") + row(61_000, "ok"))
+        val recent = PerfCursorQuery(50_000L, 70_000L, "all")
+
+        PerfRowsFileSource(file, archive).page(PerfCursorRequest(recent, all, pageSize = 10)).use { page ->
+            assertEquals(listOf(60_000L, 61_000L), page.rows.map { it.ts })
+            assertEquals("\"complete\"", page.metadata["status"].toString())
+            assertEquals("1", page.metadata.getValue("coverage").jsonObject["segments"].toString())
+        }
+    }
+
+    @Test
+    fun `malformed and uncommitted rows are explicit and never called complete`(@TempDir directory: Path) {
+        val file = directory.resolve("head.jsonl")
+        Files.writeString(file, row(500, "ok") + "{malformed\n" + "{\"ts\":600,\"outcome\":\"ok\"}")
+        PerfRowsFileSource(file).page(PerfCursorRequest(query, all)).use { page ->
+            assertEquals(1, page.rows.size)
+            assertEquals("\"incomplete\"", page.metadata["status"].toString())
+            assertEquals("null", page.metadata["total_matching"].toString())
+            assertEquals("1", page.metadata["malformed_rows"].toString())
+            assertTrue(page.metadata["read_errors"].toString().contains("uncommitted_tail"))
+        }
+    }
+
+    private fun row(ts: Long, outcome: String): String = "{\"ts\":$ts,\"model\":\"test\",\"outcome\":\"$outcome\"}\n"
+}

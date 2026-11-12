@@ -1,0 +1,418 @@
+/* questions: the band of ten questions, each a row that opens. Drawn with the console's own parts and made-up data. Class prefix qa-. */
+
+/* the band: heading and line on the page's own sizes (pg-h2, pg-line). Every size here is a step of the page's type scale (page.css):
+   label = step 1, data and answer text = step 2, name and question = step 3, focal figure = step 4. The console's size tokens
+   (--kicker, --fig-focal, --fig-hero) and its card gap take the same steps inside the band. */
+.qa-band{--kicker:var(--pg-t-1);--fig-focal:var(--pg-t-4);--fig-hero:var(--pg-t-4);--gap-card:var(--pg-sp-4);--ctl-h:calc(var(--pg-t-1) * 1.3 + var(--pg-sp-4));interpolate-size:allow-keywords}
+
+/* the width plan. One container (W). The list is one card at the full W, one column at every size. An opened row is one plate at the
+   full W: the answer's text takes 5/12 and its facts 7/12 of what is left, so neither stands alone. Under 820 px the facts go under the text. */
+
+.qa-list{container:qal / inline-size;--qa-rp:var(--pg-sp-4);--qa-cg:var(--pg-sp-3);padding:var(--pg-sp-1);background:var(--obj);border:var(--ink-w) solid var(--ink);border-radius:var(--r-obj);box-shadow:var(--cast) var(--cast) 0 var(--ink)}
+.qa-q + .qa-q{border-top:.12rem solid var(--track)}
+.qa-q{scroll-margin-top:calc(var(--fr-hh) + 16px)}
+.qa-q>summary{display:grid;grid-template-columns:14px minmax(0,1fr) auto;column-gap:var(--qa-cg);align-items:center;min-height:calc(var(--pg-t-3) * 1.3 + var(--pg-sp-4) + var(--pg-sp-2));padding:var(--pg-sp-2) var(--qa-rp);border-radius:var(--r-in);cursor:pointer;list-style:none;transition:background var(--t-hover) var(--e-out)}
+.qa-q>summary::-webkit-details-marker{display:none}
+.qa-q>summary:hover{background:color-mix(in oklab,var(--text) 4%,transparent)}
+.qa-q>summary:focus-visible{outline:var(--ink-w) solid var(--text);outline-offset:-.25rem}
+.qa-q .chev{width:14px;height:14px;stroke-width:1.6}
+.qa-q[open] .chev{transform:rotate(90deg)}
+.qa-qt{font:600 var(--pg-t-3)/1.3 var(--font-name);color:var(--text)}
+.qa-peek{display:inline-flex;justify-self:end;align-items:center;justify-content:flex-end;gap:var(--pg-sp-1);font:500 var(--pg-t-1)/1.3 var(--font-name);color:var(--text-mute);white-space:nowrap;transition:opacity var(--t-hover) var(--e-out)}
+.qa-peek b{font:500 1em/1.3 var(--font-data);font-variant-numeric:tabular-nums;color:var(--text-body)}
+.qa-pk-days,.qa-pk-dots{margin-right:var(--pg-sp-1)}
+.qa-q[open] .qa-peek{opacity:0}
+.qa-pk-days,.qa-pk-dots{display:inline-flex;gap:3px;align-items:center}
+.qa-pk-days i{width:6px;height:16px;border-radius:2px;background-image:linear-gradient(var(--text),var(--text));opacity:calc(var(--o) * .55)}
+.qa-pk-dots{gap:var(--pg-sp-1)}
+.qa-pk-dots i{width:10px;height:10px;border-radius:50%;background-image:linear-gradient(var(--c),var(--c))}
+.qa-mini{display:inline-flex;width:84px;height:.4rem;border-radius:.2rem;overflow:hidden;background:color-mix(in oklab,var(--text) 10%,transparent)}
+.qa-mini b{width:99.14%;background:color-mix(in oklab,var(--text) 66%,transparent)}
+.qa-mini i{width:max(.86%,3px);background:var(--limit)}
+
+
+/* the open: the answer comes down in place over --t-snap (240 ms) on --e-out, height, fade and a .4rem drop together; the chevron turns over the
+   same time and the row's peek fades out. Without motion preference the row simply opens. */
+@keyframes qa-wipe{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+@media (prefers-reduced-motion:no-preference){
+  .qa-q::details-content{block-size:0;opacity:0;transform:translateY(-.4rem);overflow:clip;transition:block-size var(--t-snap) var(--e-out),opacity var(--t-snap) var(--e-out),transform var(--t-snap) var(--e-out),content-visibility var(--t-snap) allow-discrete}
+  .qa-q[open]::details-content{block-size:auto;opacity:1;transform:none}
+  .qa-q[open] .qa-run .pd-bar.grow{animation:qa-wipe var(--t-snap) var(--e-out) both}
+  .qa-q[open] .qa-run .pd-bar.grow>.pd-seg{animation:none}
+}
+
+.qa-ans{padding:var(--pg-sp-1) 0 var(--pg-sp-3)}
+.qa-plate{--qa-pl:calc(var(--qa-rp) + 14px + var(--qa-cg));display:grid;grid-template-columns:minmax(0,5.8fr) minmax(0,6.2fr);column-gap:var(--pg-sp-5);align-items:start;padding:var(--pg-sp-4) var(--pg-sp-4) var(--pg-sp-4) var(--qa-pl)}
+.qa-t{max-width:none}
+.qa-t p{margin:0}
+.qa-tx{font:400 var(--pg-t-2)/1.55 var(--font-name);color:var(--text-body);text-wrap:balance}
+.qa-tx b{font-weight:600;color:var(--text)}
+.qa-c{font:500 var(--pg-t-1)/1.3 var(--font-data);color:var(--text)}
+
+/* facts: the console's own parts in the plate's rhythm: the page's gap between sections with a 1 px hairline, a smaller one inside */
+.qa-fx,.qa-wide{display:grid;gap:var(--pg-sp-4);min-width:0;align-content:start}
+.qa-fx>*,.qa-wide>*{min-width:0}
+:is(.qa-fx,.qa-wide) .psec{gap:var(--pg-sp-3)}
+.qa-cols{display:grid;grid-template-columns:var(--cols,1fr 1fr);column-gap:var(--pg-sp-4);row-gap:var(--pg-sp-4);align-items:start}
+.qa-cols>*+*{border-left:.08rem solid var(--hair);padding-left:var(--pg-sp-4)}
+.qa-sep{padding-top:var(--pg-sp-4);border-top:.08rem solid var(--hair)}
+.qa-chips,.qa-stack,.qa-pvs,.qa-tags,.qa-models,.qa-seats{display:flex;flex-wrap:wrap;gap:var(--pg-sp-2) var(--pg-sp-3);align-items:center}
+.qa-stack{flex-direction:column;align-items:flex-start;gap:var(--pg-sp-2)}
+.qa-stack.qa-g2{display:grid;grid-template-columns:repeat(2,max-content);align-items:center;gap:var(--pg-sp-2) var(--pg-sp-3)}
+.qa-pvs{display:grid;grid-template-columns:repeat(3,auto);justify-content:start;gap:var(--pg-sp-3) var(--pg-sp-5)}
+:is(.qa-fx,.qa-wide) .chip{font-size:var(--pg-t-1)}
+.qa-cmd i{width:max(.7rem,9px);height:max(.7rem,9px);background:var(--c);box-shadow:none}
+.qa-model{--c:var(--router);font:500 var(--pg-t-1)/1.3 var(--font-name)}
+.qa-pv{display:inline-flex;align-items:center;gap:var(--pg-sp-2);font:500 var(--pg-t-2)/1.3 var(--font-name);color:var(--text)}
+.qa-pv i{flex:none;width:max(.7rem,9px);height:max(.7rem,9px);border-radius:50%;background:var(--c)}
+.qa-lab{font:500 var(--pg-t-2)/1.35 var(--font-name);color:var(--text-body)}
+.qa-lab.qa-mute{color:var(--text-mute)}
+.qa-ico{display:inline-flex;align-items:center;gap:var(--pg-sp-2)}
+.qa-ic{flex:none;width:1.15rem;height:1.15rem;min-width:15px;min-height:15px;color:var(--text-mute)}
+.qa-unit{font:500 var(--pg-t-2)/1.3 var(--font-name);color:var(--text-mute)}
+:is(.qa-fx,.qa-wide) .fig-focal{font-size:var(--pg-t-4);line-height:1.3}
+:is(.qa-fx,.qa-wide) .fig-hero{font-size:var(--pg-t-4);line-height:1.3}
+.qa-sw button{font-size:var(--pg-t-1);line-height:1.3}
+.qa-band .socket{font-size:var(--pg-t-1)}
+.qa-link{display:inline-flex;align-items:baseline;flex-wrap:wrap;gap:var(--pg-sp-1) var(--pg-sp-2);font:600 var(--pg-t-2)/1.3 var(--font-name);color:var(--text);text-decoration:none}
+.qa-link .go{align-self:center;width:.85rem;height:.85rem;color:var(--text-mute)}
+.qa-link span{font-weight:500;color:var(--text-body)}
+.qa-link:hover{text-decoration:underline;text-underline-offset:.3em}
+/* the disk: what is kept on this computer */
+.qa-disk{padding:var(--pg-sp-3) var(--pg-sp-4);background:var(--obj-sunk);border:var(--ink-w) solid var(--ink);border-radius:var(--r-in);gap:var(--pg-sp-3)!important}
+.qa-cols>.qa-disk{border-left:var(--ink-w) solid var(--ink);padding-left:var(--pg-sp-4)}
+.qa-diskhead{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--pg-sp-1) var(--pg-sp-3)}
+.qa-lock{display:inline-flex;align-items:center;gap:var(--pg-sp-1);font:500 var(--pg-t-1)/1.3 var(--font-name);color:var(--text-body)}
+.qa-keep{display:grid;grid-template-columns:auto auto minmax(0,1fr);align-items:baseline;column-gap:var(--pg-sp-2)}
+.qa-days{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:var(--pg-sp-1);align-self:center;margin-left:var(--pg-sp-2)}
+.qa-keep-n{grid-column:1/-1;margin-top:var(--pg-sp-2)}
+.qa-days i{height:var(--meter-h);min-height:13px;border-radius:.2rem;background-image:linear-gradient(var(--text),var(--text));opacity:calc(var(--o) * .5)}
+.qa-offrow{display:flex;flex-wrap:wrap;align-items:center;gap:var(--pg-sp-2) var(--pg-sp-3)}
+.qa-store{display:flex;flex-direction:column;gap:var(--pg-sp-2);min-width:0}
+.qa-cols>.qa-store+.qa-store{border-left:.08rem solid var(--hair)}
+.qa-path{font:500 var(--pg-t-1)/1.3 var(--font-data);color:var(--text-body);white-space:nowrap}
+
+/* router */
+.qa-seat{display:inline-flex;align-items:center;gap:var(--pg-sp-2)}
+.qa-seat em{font:500 var(--pg-t-1)/1.3 var(--font-name);font-style:normal;color:var(--text-mute);min-width:5.4em}
+.qa-seats{flex-direction:column;align-items:flex-start;gap:var(--pg-sp-3)}
+.qa-model{padding:var(--pg-sp-1) var(--pg-sp-2)}
+.qa-stl{gap:var(--pg-sp-1)}
+.qa-wire{position:relative;flex:1 1 3rem;min-width:2.4rem;height:.24rem;margin:var(--pg-sp-3) 0;background:var(--text-mute);opacity:.7;border-radius:.12rem}
+.qa-sample{padding:var(--pg-sp-3);background:var(--obj-sunk);border:.12rem solid var(--ink);border-radius:var(--r-in);font:500 var(--pg-t-1)/1.5 var(--font-data);color:var(--text);display:flex;flex-direction:column;gap:var(--pg-sp-1)}
+.qa-sl{flex-direction:row;flex-wrap:wrap;align-items:center;gap:var(--pg-sp-1) var(--pg-sp-3)}
+.qa-sl>span+span{color:var(--text-body)}
+.qa-sl>span.qa-new{flex-basis:100%;color:var(--text)}
+.qa-dim{color:var(--text-mute)}
+.qa-hd b{font-weight:600;color:var(--text);box-shadow:inset 0 -.12rem 0 var(--text-mute)}
+.qa-cw{flex-direction:row;gap:var(--pg-sp-2)}
+.qa-ps{color:var(--text-mute)}
+
+/* billing */
+.qa-ledger{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--pg-sp-2) var(--pg-sp-3);align-items:center}
+.qa-ledger>.chip{justify-self:start}
+.qa-lh .qa-c{font-size:var(--pg-t-1)}
+.qa-lsep{margin-top:var(--pg-sp-3);padding-top:var(--pg-sp-3);border-top:.08rem solid var(--hair)}
+.qa-lh{display:inline-flex}
+.qa-lsep .qa-lab.qa-mute{grid-column:2}
+
+/* resume */
+.qa-diff{gap:var(--pg-sp-2)}
+.qa-dl{display:grid;grid-template-columns:4.6em auto minmax(0,1fr);align-items:baseline;gap:var(--pg-sp-1) var(--pg-sp-2)}
+.qa-dl b{font:600 var(--pg-t-1)/1.3 var(--font-name);letter-spacing:.06em;text-transform:uppercase;color:var(--text-mute)}
+.qa-md{display:inline-flex;align-items:center;gap:var(--pg-sp-1)}
+.qa-md i{width:max(.7rem,9px);height:max(.7rem,9px);border-radius:50%;background:var(--c)}
+.qa-why{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:var(--pg-sp-2)}
+.qa-arrow{width:2.2rem;min-width:26px;height:.24rem;background:var(--text-mute);opacity:.7;border-radius:.12rem;position:relative}
+.qa-arrow::after{content:"";position:absolute;right:-1px;top:50%;width:.6rem;height:.6rem;border-top:.2rem solid var(--text-mute);border-right:.2rem solid var(--text-mute);transform:translateY(-50%) rotate(45deg);opacity:.9}
+
+/* run: the console's stacked outcome bar, twice, the second on its own scale */
+.qa-run{gap:var(--pg-sp-3)!important}
+.qa-run .pd-top .pd-rate{font-size:var(--pg-t-4);line-height:1.3}
+.qa-run .cap{font-size:var(--pg-t-2);align-items:center;gap:var(--pg-sp-2)}
+.qa-run .pd-bar{--bh:calc(var(--pg-t-1) * 1.3 + var(--pg-sp-3))}
+.qa-run .pd-seg,.qa-run .pd-seg b{font-size:var(--pg-t-1)}
+.qa-run .pd-lb,.qa-run .pd-lb b{font-size:var(--pg-t-1)}
+.qa-run .pd-legend{margin-top:0}
+.qa-leg{gap:var(--pg-sp-1) var(--pg-sp-4)!important}
+.qa-zoom{position:relative;height:calc(var(--pg-t-1) * 1.3 + var(--pg-sp-4));margin:calc(-1 * var(--pg-sp-1)) 0}
+.qa-zoom::before{content:"";position:absolute;inset:0;background:color-mix(in oklab,var(--limit) 20%,transparent);clip-path:polygon(99.137% 0,100% 0,100% 100%,0 100%)}
+.qa-zoom span{position:absolute;right:var(--pg-sp-3);bottom:var(--pg-sp-1);font:500 var(--pg-t-1)/1.3 var(--font-name);color:var(--text-body)}
+
+/* replace */
+.qa-chain{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(1.6rem,.35fr) minmax(0,.7fr) minmax(1.6rem,.35fr) minmax(0,1.35fr);align-items:stretch;column-gap:0}
+.qa-node{display:flex;flex-direction:column;gap:var(--pg-sp-3);padding:var(--pg-sp-3);background:var(--obj-sunk);border:var(--ink-w) solid var(--ink);border-radius:var(--r-in);justify-content:center;min-width:0}
+.qa-chain .qa-wire{align-self:center;margin:0;min-width:0;flex:none;width:100%}
+.qa-n2{align-items:center;text-align:center;gap:var(--pg-sp-1)}
+.qa-n2 b{font:400 var(--pg-t-3)/1.2 var(--font-lead);color:var(--text)}
+.qa-n2 em{font:500 var(--pg-t-1)/1.3 var(--font-name);font-style:normal;color:var(--text-mute)}
+.qa-mod{font:500 var(--pg-t-2)/1.3 var(--font-name);color:var(--text-body)}
+
+/* versions */
+.qa-pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(2rem,.45fr) minmax(0,1fr);align-items:center}
+.qa-ver{display:flex;flex-direction:column;gap:var(--pg-sp-1);padding:var(--pg-sp-3);background:var(--obj-sunk);border:var(--ink-w) solid var(--ink);border-radius:var(--r-in);min-width:0}
+.qa-ver em{font:500 var(--pg-t-1)/1.3 var(--font-name);font-style:normal;color:var(--text-mute)}
+.qa-ver b{font:600 var(--pg-t-3)/1.3 var(--font-data);font-variant-numeric:tabular-nums;color:var(--text)}
+.qa-wc{display:grid;place-items:center;margin:0;background:none;opacity:1;height:auto}
+.qa-wc::before{content:"";position:absolute;left:0;right:0;top:50%;height:.24rem;margin-top:-.12rem;background:var(--text-mute);opacity:.7}
+.qa-wc .qa-ic{position:relative;z-index:1;width:1.7rem;height:1.7rem;padding:.3rem;border-radius:50%;background:var(--obj);box-shadow:0 0 0 .08rem var(--track-line);color:var(--text)}
+.qa-say{display:flex;flex-direction:column;gap:var(--pg-sp-2)}
+.qa-say em{font:500 var(--pg-t-1)/1.3 var(--font-name);font-style:normal;color:var(--text-mute)}
+
+/* reveal: the band's heading, line and list each rise 1.4 rem and fade up from 28% over --t-pop (260 ms) on --e-out, 40 ms apart, once, when
+   the band first scrolls into view (page.js adds is-seen); nothing below moves, since the band keeps its height while its parts wait. */
+@keyframes qa-rise{from{opacity:.28;transform:translateY(1.4rem)}}
+@keyframes qa-fade{from{opacity:.28}}
+@keyframes qa-lift{from{transform:translateY(1.4rem)}}
+@media (prefers-reduced-motion:no-preference){
+  .pg-js .qa-band [data-reveal]:not(.is-seen) .qa-ev:not(.qa-list){opacity:.28;transform:translateY(1.4rem)}
+  .qa-band [data-reveal].is-seen .qa-ev:not(.qa-list){animation:qa-rise var(--t-pop) var(--e-out) calc(var(--i) * 40ms) backwards}
+  /* the list's own box never moves, so it stands the same distance under the band top whether the band is seen or not (as the Setup window does):
+     the list fades up and its questions rise inside it */
+  .pg-js .qa-band [data-reveal]:not(.is-seen) .qa-list.qa-ev{opacity:.28}
+  .pg-js .qa-band [data-reveal]:not(.is-seen) .qa-list.qa-ev>.qa-q{transform:translateY(1.4rem)}
+  .qa-band [data-reveal].is-seen .qa-list.qa-ev{animation:qa-fade var(--t-pop) var(--e-out) calc(var(--i) * 40ms) backwards}
+  .qa-band [data-reveal].is-seen .qa-list.qa-ev>.qa-q{animation:qa-lift var(--t-pop) var(--e-out) calc(var(--i) * 40ms) backwards}
+}
+
+/* The answer is its text and one compact band at its right, both from the plate's top row; the heavier facts take a full-width band under them.
+   Every opened answer starts its text and its first band at the same offset, so the like parts share a row from answer to answer. */
+.qa-wide{grid-column:1/-1;margin-top:var(--pg-sp-4);padding-top:var(--pg-sp-4);border-top:.08rem solid var(--hair)}
+.qa-wide.qa-bare{padding-top:0;border-top:0}
+.qa-wide .qa-cols{--cols:minmax(0,1fr) minmax(0,1fr)}
+.qa-stack.qa-g2{display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;gap:var(--pg-sp-2) var(--pg-sp-3)}
+
+/* a provider as a small card: the console's ink outline and a cast in its own colour, a dot, its name and what it is, on one line */
+.qa-pcs{display:flex;flex-wrap:wrap;gap:var(--pg-sp-3);align-items:stretch}
+.qa-pc{display:inline-flex;align-items:center;gap:var(--pg-sp-2);min-width:0;padding:var(--pg-sp-1) var(--pg-sp-2);background:var(--obj-sunk);border:.12rem solid var(--ink);border-radius:var(--r-in);box-shadow:.14rem .14rem 0 var(--c);color:var(--text)}
+.qa-pc>i{flex:none;width:max(.7rem,9px);height:max(.7rem,9px);border-radius:50%;background:var(--c)}
+.qa-pc>span{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--pg-sp-1);min-width:0}
+.qa-pc b{display:block;font:500 var(--pg-t-2)/1.3 var(--font-name);white-space:nowrap}
+.qa-pc em{display:block;margin:0;font:500 var(--pg-t-1)/1.3 var(--font-name);font-style:normal;color:var(--text-mute)}
+
+/* the disk: Where do my prompts go? lays its parts across the full width */
+.qa-dcols{--cols:minmax(0,1fr) minmax(0,1.45fr) minmax(0,1fr)!important;align-items:center}
+.qa-file{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:var(--pg-sp-2);align-items:center}
+.qa-file .qa-store{gap:var(--pg-sp-2)}
+
+/* drawn notes: a glyph tile and a label of a few words, three across the band */
+.qa-gl{display:grid;place-items:center;flex:none;width:2.1rem;height:2.1rem;min-width:30px;min-height:30px;border-radius:50%;background:var(--obj);box-shadow:0 0 0 .08rem var(--track-line);color:var(--text)}
+.qa-gl .qa-ic{width:1.05rem;height:1.05rem;color:currentColor}
+
+/* Claude Code's own header, one node of the chain */
+.qa-ver{flex-direction:row;align-items:baseline;flex-wrap:wrap;gap:var(--pg-sp-1) var(--pg-sp-2)}
+.qa-mono{display:block;font:500 var(--pg-t-1)/1.4 var(--font-data);color:var(--text)}
+.qa-mono.qa-dim{color:var(--text-mute)}
+.qa-n1{align-items:flex-start}
+.qa-n1 .qa-hl{display:flex;flex-direction:column;gap:var(--pg-sp-1)}
+
+/* the cause and the effect, two boxes and the arrow between them */
+.qa-whys{display:grid;gap:var(--pg-sp-3)}
+.qa-bx{padding:var(--pg-sp-2) var(--pg-sp-3);background:var(--obj-sunk);border:var(--ink-w) solid var(--ink);border-radius:var(--r-in);font:500 var(--pg-t-2)/1.3 var(--font-name);color:var(--text-body);min-width:0}
+
+/* the outcome bar's long label: in the bar when it fits, in the legend under it when it does not */
+.qa-leg-f0{display:none!important}
+/* OpenRouter: the path a turn takes. Four boxes of one width on one row, a fixed wire between them, and a dashed lane under them that leaves
+   Claude Code and skips splice. Claude Code's box is as tall as both lanes. Every kicker sits a gap above its first row. */
+.qa-route{--qa-rw:clamp(40px,4.4cqw,72px);display:grid;grid-template-columns:minmax(0,1fr) var(--qa-rw) minmax(0,1fr) var(--qa-rw) minmax(0,1fr) var(--qa-rw) minmax(0,1fr);grid-template-areas:"cc w1 sp w2 or w3 md" "cc wl ll ll ll ll ll";row-gap:var(--pg-sp-4)}
+.qa-route .qa-node{padding:var(--pg-sp-3)}
+.qa-rcc{grid-area:cc;justify-content:space-between;gap:var(--pg-sp-4)}
+.qa-rp{display:flex;flex-direction:column;gap:var(--pg-sp-3)}
+.qa-tools{display:flex;flex-wrap:wrap;gap:var(--pg-sp-2)}
+.qa-tool{--c:var(--track-line);font:500 var(--pg-t-1)/1.3 var(--font-data)}
+.qa-rcc .qa-sample{white-space:normal;overflow-wrap:anywhere}
+.qa-rsp{grid-area:sp;justify-content:center}
+.qa-rtag{display:inline-flex;align-items:center;gap:var(--pg-sp-1);padding:var(--pg-sp-1) var(--pg-sp-2);border:.08rem solid var(--track-line);border-radius:var(--r-in);font:500 var(--pg-t-1)/1.3 var(--font-name);color:var(--text-body);white-space:nowrap}
+.qa-rtag .qa-ic{width:1rem;height:1rem;min-width:14px;min-height:14px}
+.qa-ror{grid-area:or;align-items:center;justify-content:center;box-shadow:.14rem .14rem 0 var(--router)}
+.qa-rdot{display:inline-flex;align-items:center;gap:var(--pg-sp-2)}
+.qa-rdot i{flex:none;width:max(.7rem,9px);height:max(.7rem,9px);border-radius:50%;background:var(--router)}
+.qa-rdot b{font:600 var(--pg-t-3)/1.3 var(--font-name);color:var(--text)}
+.qa-rmd{grid-area:md;align-items:center;justify-content:center}
+.qa-rmd .qa-models{justify-content:center}
+.qa-rll{grid-area:ll;flex-direction:row;align-items:center;justify-content:space-between;gap:var(--pg-sp-3);background:none;border-style:dashed;border-color:var(--track-line)}
+.qa-rlh{display:inline-flex;align-items:center;gap:var(--pg-sp-3)}
+.qa-rlh b{font:600 var(--pg-t-3)/1.3 var(--font-name);color:var(--text)}
+.qa-rw{align-self:center;position:relative;height:.24rem;background:var(--text-mute);opacity:.7;border-radius:.12rem}
+.qa-rw::after{content:"";position:absolute;right:-1px;top:50%;width:.6rem;height:.6rem;border-top:.2rem solid var(--text-mute);border-right:.2rem solid var(--text-mute);transform:translateY(-50%) rotate(45deg);opacity:.9}
+.qa-rw1{grid-area:w1}.qa-rw2{grid-area:w2}.qa-rw3{grid-area:w3}
+.qa-rwl{grid-area:wl;background:repeating-linear-gradient(90deg,var(--text-mute) 0 .6rem,transparent .6rem 1rem)}
+
+/* a command and the plan it runs on, one line across its cell */
+.qa-hop{display:flex;align-items:center;min-width:0}
+.qa-hop .qa-rw{flex:1 1 1.6rem;min-width:1.2rem;margin:0 var(--pg-sp-3)}
+.qa-hop .qa-pc{flex:none}
+.qa-cols.qa-q4{align-items:center}
+
+/* two steps on the console's rail, drawn across its cell; the second is not taken */
+.qa-hr{list-style:none;margin:0;padding:0;position:relative;display:flex;justify-content:space-between;gap:var(--pg-sp-4)}
+.qa-hr::before{content:"";position:absolute;left:1rem;right:1rem;top:1rem;height:.56rem;margin-top:-.28rem;background:var(--rail);border-radius:.28rem;box-shadow:0 0 0 var(--ink-w) var(--ink)}
+.qa-hr li{position:relative;display:flex;flex-direction:column;gap:var(--pg-sp-3);min-width:0;font:500 var(--pg-t-2)/1.3 var(--font-name);color:var(--text-body)}
+.qa-hr li:last-child{align-items:flex-end;text-align:right}
+.qa-hr .socket{position:relative;left:auto;top:auto;flex:none}
+.qa-hr .qa-x .socket{background:color-mix(in oklab,var(--text) 4%,var(--obj));color:var(--text-mute);box-shadow:0 0 0 .12rem var(--track-line)}
+.qa-hr em{font:600 var(--pg-t-1)/1.3 var(--font-name);font-style:normal;letter-spacing:.06em;text-transform:uppercase;color:var(--text-mute);margin-right:var(--pg-sp-1)}
+.qa-hr s{color:var(--text-mute);text-decoration-thickness:.1rem}
+
+/* the same rail, up and down: three steps, each beside its socket */
+.qa-vr{list-style:none;margin:0;gap:var(--pg-sp-4)}
+.qa-vs{position:relative;display:flex;align-items:center;min-height:2.2rem;font:500 var(--pg-t-2)/1.3 var(--font-name);color:var(--text-body)}
+.qa-vs .socket{top:50%;margin-top:-1rem}
+
+/* free: the zero is an empty track, the providers you still pay fill the row */
+.qa-zr{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;column-gap:var(--pg-sp-4)}
+.qa-zn{display:inline-flex;align-items:center;gap:var(--pg-sp-2);font:400 var(--pg-t-3)/1.2 var(--font-lead);color:var(--text)}
+.qa-zb{--c:var(--text-mute)}
+.qa-pcs6{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:var(--pg-sp-3)}
+.qa-pcs6 .qa-pc{min-width:0}
+
+/* billing: the two columns sit on shared rows, each row tall enough for a provider card and the page's gap under it */
+.qa-ledger.qa-lr{--qa-lp:calc(var(--pg-t-2) * 1.3 + var(--pg-sp-4) + var(--pg-sp-3));grid-auto-rows:var(--qa-lp);gap:0 var(--pg-sp-3)}
+.qa-lr .qa-pc{padding:var(--pg-sp-1) var(--pg-sp-2)}
+.qa-tn{position:relative;justify-self:start;margin-left:var(--pg-sp-4)}
+.qa-tn::before{content:"";position:absolute;left:calc(-1 * var(--pg-sp-3));width:var(--pg-sp-3);bottom:50%;height:calc(var(--qa-lp) - 1.2rem);border-left:.14rem solid var(--track-line);border-bottom:.14rem solid var(--track-line);border-bottom-left-radius:.5rem}
+.qa-tn+.qa-lab+.qa-tn::before{height:var(--qa-lp)}
+
+@container qal (max-width:981px){
+  .qa-pcs6{grid-template-columns:repeat(3,minmax(0,1fr))}
+  /* the chain in the facts column is under 380 px here: its boxes keep 12 px of air, so the path in Claude Code's box stays off the border */
+  .qa-chain{grid-template-columns:minmax(0,1.45fr) 1.1rem minmax(0,.7fr) 1.1rem minmax(0,1.2fr)}
+  .qa-chain .qa-node{padding:var(--pg-sp-2)}
+  /* the chain keeps its row: splice, OpenRouter and the models stand across the answer's width with Claude Code over them, the solid wire
+     drops from Claude Code to splice, the dashed lane runs down the right edge past the models into the gateway, which takes the full width */
+  .qa-route{grid-template-columns:minmax(0,1fr) var(--qa-rw) minmax(0,1fr) var(--qa-rw) minmax(0,1fr) var(--qa-rw);grid-template-areas:"cc cc cc cc cc cc" "w1 . . . . wl" "sp w2 or w3 md wl" "ll ll ll ll ll ll";row-gap:0}
+  .qa-route :is(.qa-rw1,.qa-rwl){align-self:stretch;justify-self:center;width:.24rem;height:auto;min-height:1.8rem}
+  .qa-route :is(.qa-rw1,.qa-rwl)::after{right:auto;left:50%;top:auto;bottom:-1px;transform:translateX(-50%) rotate(135deg)}
+  .qa-route .qa-rwl{background:repeating-linear-gradient(180deg,var(--text-mute) 0 .6rem,transparent .6rem 1rem);margin-bottom:calc(-1 * var(--pg-sp-4))}
+  .qa-route .qa-rll{margin-top:var(--pg-sp-4)}
+  .qa-rcc{margin-bottom:0}
+}
+/* Q3: the sign-in file and the API key file share rows. Each head is one line of one height (the kicker, and for the key the command
+   that uses it), so the two paths sit on one line, side by side or stacked. */
+.qa-fhead{display:flex;flex-wrap:wrap;align-items:center;gap:var(--pg-sp-1) var(--pg-sp-2);min-height:calc(var(--pg-t-1) * 1.3 + var(--pg-sp-4))}
+.qa-file{grid-template-columns:auto minmax(0,1fr);align-items:center}
+
+/* Q9: the second bar's grey parts (cancelled, empty from the model, no outcome) are the console's quiet outcome; neighbours of one
+   grey are divided by the page's own line, as the console divides two parts of one colour */
+.qa-run .pd-seg.nt + .pd-seg.nt{box-shadow:inset .16rem 0 0 var(--ink)}
+/* the parts of one bar are one drawing, so each part is painted as an image of the console's own colour, not a box of its own */
+.qa-run .pd-seg{--sg:var(--text-mute);background:transparent;background-image:linear-gradient(var(--sg),var(--sg))}
+.qa-run .pd-seg.ok{--sg:color-mix(in oklab,var(--text) 66%,transparent)}
+.qa-run .pd-seg.nt{--sg:color-mix(in oklab,var(--text) 52%,transparent)}
+.qa-run .pd-seg.f0{--sg:var(--limit)}
+.qa-run .pd-seg.f1{--sg:color-mix(in oklab,var(--limit) 80%,transparent)}
+
+/* motion off: the row opens and the chevron turns with no transition */
+@media (prefers-reduced-motion:reduce){
+  .qa-q>summary,.qa-peek,.qa-q .chev{transition:none}
+}
+
+/* narrow: read the page's own width */
+@container qal (max-width:981px){
+  .qa-cols{grid-template-columns:minmax(0,1fr)!important}
+  .qa-cols>*+*{border-left:0!important;padding-left:0!important;padding-top:var(--pg-sp-4);border-top:.08rem solid var(--hair)}
+  .qa-cols>.qa-disk{padding:var(--pg-sp-3) var(--pg-sp-4)!important;border:var(--ink-w) solid var(--ink)!important}
+  .qa-cols>.qa-store+.qa-store{border-top:.08rem solid var(--hair)}
+  .qa-dcols{--cols:minmax(0,1fr)!important}
+  .qa-wide .qa-cols{--cols:minmax(0,1fr)}
+  /* the dashed lane stands as tall as what it says, under the wire that leaves Claude Code */
+  .qa-rll{align-self:start}
+  /* stacked, the two files no longer share rows, so the sign-in head needs no height to match the key's */
+  .qa-fhead{min-height:0}
+}
+@container qal (max-width:726px){
+  .qa-tx{text-wrap:wrap}
+  .qa-q>summary{grid-template-columns:14px minmax(0,1fr);padding:var(--pg-sp-3) var(--qa-rp)}
+  .qa-peek{grid-column:2;grid-row:2;justify-content:flex-start;margin-top:var(--pg-sp-1);block-size:auto;transition:opacity var(--t-hover) var(--e-out),block-size var(--t-hover) var(--e-out),margin var(--t-hover) var(--e-out)}
+  .qa-q[open] .qa-peek{block-size:0;margin-top:0;overflow:hidden}
+  .qa-q[open]>summary{min-height:0}
+  .qa-run .qa-bar2 .pd-seg.f0>span{display:none}
+  .qa-leg-f0{display:inline-flex!important}
+  .qa-cols{row-gap:var(--pg-sp-3)}
+  .qa-plate{grid-template-columns:minmax(0,1fr);row-gap:var(--pg-sp-4);padding:var(--pg-sp-4) var(--pg-sp-2)}
+  .qa-chain{grid-template-columns:minmax(0,1fr);row-gap:0}
+  .qa-chain .qa-wire{width:.24rem;height:1.8rem;min-height:22px;justify-self:center}
+  .qa-pair{grid-template-columns:minmax(0,1fr)}
+  .qa-pair .qa-wc{height:calc(1.7rem + var(--pg-sp-4));margin:0}
+  .qa-wc::before{left:50%;right:auto;top:0;bottom:0;width:.24rem;height:auto;margin:0 0 0 -.12rem}
+  .qa-why{grid-template-columns:minmax(0,1fr);gap:var(--pg-sp-1)}
+  .qa-why .qa-arrow{width:.24rem;height:1.4rem;min-width:0;justify-self:start;margin-left:.6rem}
+  .qa-why .qa-arrow::after{right:auto;left:50%;top:auto;bottom:-1px;transform:translateX(-50%) rotate(135deg)}
+  .qa-dl{grid-template-columns:4.6em minmax(0,1fr)}
+  .qa-dl>span:last-child{grid-column:2}
+  .qa-keep{grid-template-columns:auto minmax(0,1fr);justify-content:start}
+  .qa-days{grid-column:1/-1;margin:var(--pg-sp-2) 0 0;max-width:12.5rem}
+  .qa-ledger{grid-template-columns:minmax(0,1fr);gap:var(--pg-sp-1)}
+  .qa-ledger .qa-lab{margin-bottom:var(--pg-sp-1)}
+  .qa-lsep .qa-lab.qa-mute{grid-column:1}
+  .qa-wide{margin-top:0;padding-top:var(--pg-sp-4)}
+  .qa-wide.qa-bare{padding-top:0}
+  .qa-file{column-gap:var(--pg-sp-2)}
+  .qa-pcs6{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .qa-route .qa-node{padding:var(--pg-sp-2)}
+  .qa-ledger.qa-lr{grid-auto-rows:auto;gap:var(--pg-sp-1)}
+  .qa-ledger .qa-e{display:none}
+  .qa-e+.qa-tn{margin-top:var(--pg-sp-1)}
+  .qa-tn{margin-left:0}
+  .qa-hr{flex-direction:column;gap:var(--pg-sp-3)}
+  .qa-hr::before{left:.72rem;right:auto;top:1.1rem;bottom:1.1rem;width:.56rem;height:auto;margin:0}
+  .qa-hr li{flex-direction:row;align-items:center;gap:var(--pg-sp-3);min-height:2.2rem}
+  .qa-hr li:last-child{align-items:center;text-align:left}
+  .qa-tn::before{display:none}
+  .qa-zr{column-gap:var(--pg-sp-3)}
+}
+
+/* the code in the versions answer is in the console's data face like every other command on the page */
+.qa-band code{font-family:var(--font-data)}
+.qa-cw code{font:inherit}
+
+/* the band's drawing: ten rows of the list, one open, a lamp for each answer. From 2,200 px a deck of answer cards stands at the foot of
+   the head column, where the cable from the rows ends */
+.qa-band .pg-art>.qa-deck,.qa-band .pg-art>.qa-mid{display:none}
+.qa-art .pg-stub{stroke-width:1.5}
+/* from a 1,280 px container the head stands beside the list, as the page does from 2,200 px and as the bands above and below do: the head takes
+   4 of 12 columns and the list the other 8, on the side the band's place gives it (odd places put the head right) */
+@container pg (min-width:1280px) and (max-width:2199px){
+  #questions>.pg-split{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:var(--pg-cg);align-items:start}
+  #questions>.pg-split>.pg-head{display:flex;flex-direction:column;align-self:stretch;grid-column:1/span 4;grid-row:1;margin-bottom:0;padding-right:clamp(0px,1vw,32px)}
+  #questions>.pg-split>:not(.pg-head){grid-column:5/-1;grid-row:1;margin-top:0}
+}
+/* The head column carries the whole drawing, the ten rows, the junction and the stack of answer cards, as one piece pinned under the header
+   (sticky), so the stack stays beside whichever part of an open answer is in view. questions.js sets its height (--qa-ah) to what the column
+   and the screen allow, so its foot is on screen when the band's top is, and no more than 280 px of cable lies between two parts, and the two
+   cable lengths (--qa-ga, --qa-gb); a short column holds it to the column's height. Without scripts the piece fills the column and the stack
+   stands at its foot. */
+@container pg (min-width:1280px){
+  .qa-band .pg-split>.pg-head>.pg-art{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;justify-self:stretch;align-self:stretch;width:auto;margin-top:var(--pg-sp-5);position:static}
+  .qa-band .pg-split>.pg-head>.pg-art.qa-follow{flex:none;height:var(--qa-ah)}
+  .qa-band .pg-split>.pg-head>.pg-art>svg:first-child{flex:0 1 auto;min-height:0}
+  .qa-band .pg-split>.pg-head>.pg-art .pg-stub{display:inline}
+  .qa-band .pg-split>.pg-head>.pg-art::before,.qa-band .pg-split>.pg-head>.pg-art::after{content:"";flex:1 1 auto;min-height:var(--pg-sp-4);width:8px;margin-left:calc(var(--pg-ax,9%) - 4px);background:linear-gradient(var(--pg-cable),var(--pg-cable)) 50% 0 / 1.5px 100% no-repeat,radial-gradient(circle,var(--pg-dot,var(--claude)) 0 2.6px,transparent 3.2px) 50% 0 / 8px 8px no-repeat}
+  .qa-band .pg-split>.pg-head>.pg-art::before{order:1}
+  .qa-band .pg-split>.pg-head>.pg-art>.qa-mid{display:block;order:2;flex:none}
+  .qa-band .pg-split>.pg-head>.pg-art::after{order:3}
+  .qa-band .pg-split>.pg-head>.pg-art>.qa-deck{display:block;order:4;flex:none}
+  .qa-band .pg-split>.pg-head>.pg-art.qa-follow::before{flex:none;height:var(--qa-ga)}
+  .qa-band .pg-split>.pg-head>.pg-art.qa-follow::after{flex:none;height:var(--qa-gb)}
+}
+@media (prefers-reduced-motion:no-preference){
+  @container pg (min-width:1280px){ .qa-art.pg-on::before{animation:pg-lane 11s linear infinite;animation-delay:-5s} }
+  .pg-away .qa-art::before{animation-play-state:paused!important}
+}
+
+/* the step's label is two words: it wraps inside its node when the node is narrow */
+.qa-band .qa-rtag{max-width:100%;white-space:normal;justify-content:center;text-align:center}
+
+/* a phone: the router's chain (splice, OpenRouter, the models) is one column of the full width, and the shared gateway is a full-width row under it */
+@container qal (max-width:640px){
+  .qa-route{grid-template-columns:minmax(0,1fr);grid-template-areas:"cc" "w1" "sp" "w2" "or" "w3" "md" "ll"}
+  .qa-route :is(.qa-rw2,.qa-rw3){align-self:stretch;justify-self:center;width:.24rem;height:auto;min-height:1.8rem}
+  .qa-route :is(.qa-rw2,.qa-rw3)::after{right:auto;left:50%;top:auto;bottom:-1px;transform:translateX(-50%) rotate(135deg)}
+  .qa-route .qa-rwl{display:none}
+}
+
+/* between a 982 px and a 1,100 px list the router answer's second column is under 200 px: each seat's role stands over its command */
+@container qal (min-width:982px) and (max-width:1100px){
+  .qa-seat{flex-wrap:wrap;gap:var(--pg-sp-1) var(--pg-sp-2)}
+  .qa-seat em{flex:0 0 100%;min-width:0}
+}

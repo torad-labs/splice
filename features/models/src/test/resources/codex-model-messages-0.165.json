@@ -1,0 +1,425 @@
+{
+  "schema": 1,
+  "sourceRevision": "360319d8dee62d87e2d59fc0c21805d79519cfed",
+  "sourceFile": {
+    "path": "codex-rs/protocol/src/openai_models.rs",
+    "gitBlob": "0b3a3d0e8659790786edd8c9e103cae0355affd1",
+    "sha256": "26c1127450a3b29efbdc094af8fa2218163a735a59ad1c10843cb89e4807cbf7",
+    "discovery": "dependency",
+    "units": 285
+  },
+  "sourceBinary": {
+    "path": "/home/me/.cache/splice/codemode-client-build/360319d8dee62d87e2d59fc0c21805d79519cfed/debug/splice-current-core-api-reference",
+    "sha256": "bfdf94d615dca1fed3ac4e992d62e751d5c1d6777f9f0f7f654b788be753b845",
+    "bytes": 596874280
+  },
+  "sourceCommand": {
+    "argv": [
+      "/home/me/.cache/splice/codemode-client-build/360319d8dee62d87e2d59fc0c21805d79519cfed/debug/splice-current-core-api-reference"
+    ],
+    "pid": 3007958,
+    "exitCode": 0,
+    "stdin": {
+      "sha256": "7d67dec480be5024668cf7b11a5e73c6ff13c37953669b1c23e5e9f356509572",
+      "bytes": 10360
+    }
+  },
+  "cases": [
+    {
+      "id": "model-message-prefix-0",
+      "input": {
+        "id": "model-message-prefix-0",
+        "operation": "model_metadata",
+        "provider": {
+          "dialect": "openai-responses",
+          "base_url": "https://fixture.invalid",
+          "auth": {
+            "kind": "api-key"
+          }
+        },
+        "models": [
+          {
+            "slug": "messages",
+            "display_name": "messages",
+            "description": null,
+            "supported_reasoning_levels": [],
+            "shell_type": "unified_exec",
+            "visibility": "list",
+            "supported_in_api": true,
+            "priority": 1,
+            "model_messages": {
+              "instructions_template": "Synthetic model instructions.",
+              "approvals": null,
+              "collaboration_modes": null,
+              "auto_review": null,
+              "permissions": null,
+              "multi_agent": null,
+              "tools": {
+                "functions_namespace_functions_description_prefixes": {
+                  "z": "  last ",
+                  "a": " first ",
+                  "🙂": "non-BMP",
+                  "": "private code point"
+                }
+              }
+            },
+            "support_verbosity": false,
+            "default_verbosity": null,
+            "apply_patch_tool_type": null,
+            "truncation_policy": {
+              "mode": "bytes",
+              "limit": 10000
+            },
+            "experimental_supported_tools": []
+          }
+        ]
+      },
+      "expected": {
+        "tools": {
+          "functions_namespace_functions_description_prefixes": {
+            "a": " first ",
+            "z": "  last ",
+            "": "private code point",
+            "🙂": "non-BMP"
+          }
+        },
+        "instructions_template": "Synthetic model instructions.",
+        "approvals": null,
+        "collaboration_modes": null,
+        "auto_review": null,
+        "permissions": null,
+        "multi_agent": null
+      }
+    },
+    {
+      "id": "model-message-prefix-1",
+      "input": {
+        "id": "model-message-prefix-1",
+        "operation": "model_metadata",
+        "provider": {
+          "dialect": "openai-responses",
+          "base_url": "https://fixture.invalid",
+          "auth": {
+            "kind": "api-key"
+          }
+        },
+        "models": [
+          {
+            "slug": "messages",
+            "display_name": "messages",
+            "description": null,
+            "supported_reasoning_levels": [],
+            "shell_type": "unified_exec",
+            "visibility": "list",
+            "supported_in_api": true,
+            "priority": 1,
+            "model_messages": {
+              "instructions_template": "Synthetic model instructions.",
+              "approvals": null,
+              "collaboration_modes": null,
+              "auto_review": null,
+              "permissions": null,
+              "multi_agent": null,
+              "tools": {
+                "indirect_description_prefixes": {
+                  "mcp_servers": {
+                    "zeta": " late ",
+                    "alpha": "early"
+                  },
+                  "namespaces": {
+                    "mcp__z": "last",
+                    "functions": "core"
+                  }
+                }
+              }
+            },
+            "support_verbosity": false,
+            "default_verbosity": null,
+            "apply_patch_tool_type": null,
+            "truncation_policy": {
+              "mode": "bytes",
+              "limit": 10000
+            },
+            "experimental_supported_tools": []
+          }
+        ]
+      },
+      "expected": {
+        "tools": {
+          "indirect_description_prefixes": {
+            "namespaces": {
+              "functions": "core",
+              "mcp__z": "last"
+            },
+            "mcp_servers": {
+              "alpha": "early",
+              "zeta": " late "
+            }
+          }
+        },
+        "instructions_template": "Synthetic model instructions.",
+        "approvals": null,
+        "collaboration_modes": null,
+        "auto_review": null,
+        "permissions": null,
+        "multi_agent": null
+      }
+    },
+    {
+      "id": "model-message-prefix-2",
+      "input": {
+        "id": "model-message-prefix-2",
+        "operation": "model_metadata",
+        "provider": {
+          "dialect": "openai-responses",
+          "base_url": "https://fixture.invalid",
+          "auth": {
+            "kind": "api-key"
+          }
+        },
+        "models": [
+          {
+            "slug": "messages",
+            "display_name": "messages",
+            "description": null,
+            "supported_reasoning_levels": [],
+            "shell_type": "unified_exec",
+            "visibility": "list",
+            "supported_in_api": true,
+            "priority": 1,
+            "model_messages": {
+              "instructions_template": "Synthetic model instructions.",
+              "approvals": null,
+              "collaboration_modes": null,
+              "auto_review": null,
+              "permissions": null,
+              "multi_agent": null,
+              "tools": {
+                "code_mode": null,
+                "indirect_description_prefixes": null,
+                "functions_namespace_functions_description_prefixes": null
+              }
+            },
+            "support_verbosity": false,
+            "default_verbosity": null,
+            "apply_patch_tool_type": null,
+            "truncation_policy": {
+              "mode": "bytes",
+              "limit": 10000
+            },
+            "experimental_supported_tools": []
+          }
+        ]
+      },
+      "expected": {
+        "tools": {},
+        "instructions_template": "Synthetic model instructions.",
+        "approvals": null,
+        "collaboration_modes": null,
+        "auto_review": null,
+        "permissions": null,
+        "multi_agent": null
+      }
+    },
+    {
+      "id": "model-message-prefix-3",
+      "input": {
+        "id": "model-message-prefix-3",
+        "operation": "model_metadata",
+        "provider": {
+          "dialect": "openai-responses",
+          "base_url": "https://fixture.invalid",
+          "auth": {
+            "kind": "api-key"
+          }
+        },
+        "models": [
+          {
+            "slug": "messages",
+            "display_name": "messages",
+            "description": null,
+            "supported_reasoning_levels": [],
+            "shell_type": "unified_exec",
+            "visibility": "list",
+            "supported_in_api": true,
+            "priority": 1,
+            "model_messages": {
+              "instructions_template": "Synthetic model instructions.",
+              "approvals": null,
+              "collaboration_modes": null,
+              "auto_review": null,
+              "permissions": null,
+              "multi_agent": null,
+              "tools": {
+                "code_mode": {
+                  "exec": {
+                    "parameters": null,
+                    "description": null
+                  },
+                  "wait": null,
+                  "deferred_nested_tools_guidance": null,
+                  "mcp_typescript_preamble": null
+                }
+              }
+            },
+            "support_verbosity": false,
+            "default_verbosity": null,
+            "apply_patch_tool_type": null,
+            "truncation_policy": {
+              "mode": "bytes",
+              "limit": 10000
+            },
+            "experimental_supported_tools": []
+          }
+        ]
+      },
+      "expected": {
+        "tools": {
+          "code_mode": {
+            "exec": {}
+          }
+        },
+        "instructions_template": "Synthetic model instructions.",
+        "approvals": null,
+        "collaboration_modes": null,
+        "auto_review": null,
+        "permissions": null,
+        "multi_agent": null
+      }
+    },
+    {
+      "id": "model-message-prefix-4",
+      "input": {
+        "id": "model-message-prefix-4",
+        "operation": "model_metadata",
+        "provider": {
+          "dialect": "openai-responses",
+          "base_url": "https://fixture.invalid",
+          "auth": {
+            "kind": "api-key"
+          }
+        },
+        "models": [
+          {
+            "slug": "messages",
+            "display_name": "messages",
+            "description": null,
+            "supported_reasoning_levels": [],
+            "shell_type": "unified_exec",
+            "visibility": "list",
+            "supported_in_api": true,
+            "priority": 1,
+            "model_messages": {
+              "instructions_template": "Synthetic model instructions.",
+              "approvals": null,
+              "collaboration_modes": null,
+              "auto_review": null,
+              "permissions": null,
+              "multi_agent": null,
+              "tools": {
+                "code_mode": {
+                  "wait": {
+                    "description": "Waiting instructions",
+                    "parameters": "{\"type\":\"object\",\"properties\":{\"cell_id\":{\"type\":\"string\"}},\"required\":[\"cell_id\"]}"
+                  }
+                },
+                "indirect_description_prefixes": {
+                  "mcp_servers": {
+                    "parity": " MCP guidance "
+                  },
+                  "namespaces": {
+                    "functions": " Function guidance "
+                  }
+                },
+                "functions_namespace_functions_description_prefixes": {
+                  "zed": "last",
+                  "Ping": "first"
+                }
+              }
+            },
+            "support_verbosity": false,
+            "default_verbosity": null,
+            "apply_patch_tool_type": null,
+            "truncation_policy": {
+              "mode": "bytes",
+              "limit": 10000
+            },
+            "experimental_supported_tools": []
+          }
+        ]
+      },
+      "expected": {
+        "tools": {
+          "functions_namespace_functions_description_prefixes": {
+            "Ping": "first",
+            "zed": "last"
+          },
+          "indirect_description_prefixes": {
+            "namespaces": {
+              "functions": " Function guidance "
+            },
+            "mcp_servers": {
+              "parity": " MCP guidance "
+            }
+          },
+          "code_mode": {
+            "wait": {
+              "description": "Waiting instructions",
+              "parameters": "{\"type\":\"object\",\"properties\":{\"cell_id\":{\"type\":\"string\"}},\"required\":[\"cell_id\"]}"
+            }
+          }
+        },
+        "instructions_template": "Synthetic model instructions.",
+        "approvals": null,
+        "collaboration_modes": null,
+        "auto_review": null,
+        "permissions": null,
+        "multi_agent": null
+      }
+    },
+    {
+      "id": "api/model_metadata/2b82e8a9aac4c6c23764",
+      "input": {
+        "id": "api/model_metadata/2b82e8a9aac4c6c23764",
+        "operation": "model_metadata",
+        "provider": {
+          "dialect": "openai-responses",
+          "base_url": "https://fixture.invalid",
+          "auth": {
+            "kind": "api-key"
+          }
+        },
+        "models": [
+          {
+            "slug": "legacy",
+            "display_name": "legacy",
+            "description": null,
+            "supported_reasoning_levels": [],
+            "shell_type": "unified_exec",
+            "visibility": "list",
+            "supported_in_api": true,
+            "priority": 1,
+            "model_messages": null,
+            "support_verbosity": false,
+            "default_verbosity": null,
+            "apply_patch_tool_type": null,
+            "truncation_policy": {
+              "mode": "bytes",
+              "limit": 10000
+            },
+            "experimental_supported_tools": [],
+            "base_instructions": "Legacy model instructions."
+          }
+        ]
+      },
+      "expected": {
+        "instructions_template": "Legacy model instructions.",
+        "approvals": null,
+        "collaboration_modes": null,
+        "auto_review": null,
+        "permissions": null,
+        "multi_agent": null
+      }
+    }
+  ]
+}

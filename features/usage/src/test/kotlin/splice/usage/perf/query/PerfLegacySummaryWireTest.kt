@@ -1,0 +1,125 @@
+package splice.usage.perf.query
+
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import splice.core.perf.PerfKeys
+import splice.core.util.JsonScalars
+import splice.core.util.JsonWire
+import splice.core.util.PerfWorkBudget
+import splice.core.util.WallClock
+import splice.usage.perf.PerfRow
+import splice.usage.perf.PerfRowsSource
+import splice.usage.perf.PerfRowsWindow
+
+class PerfLegacySummaryWireTest {
+    private val legacyRows = listOf(
+        PerfRow(100, "ok", mapOf(PerfKeys.TOTAL to 50L)),
+        PerfRow(125, "error:upstream-failed", mapOf(PerfKeys.TOTAL to 75L)),
+        PerfRow(150, "ok", mapOf(PerfKeys.LOCAL_STEP to 1L, PerfKeys.TOTAL to 0L)),
+    )
+
+    @Test
+    fun `selectors absent from legacy rows serialize an empty cohort with an undefined failure share`() {
+        listOf("transport" to "http", "streaming" to "true", "streaming" to "false").forEach { selector ->
+            val legacy = summary(PerfQuery(100, 200, filters = mapOf("head" to "h", selector)))
+            assertEquals("0", JsonScalars.str(legacy, "count"))
+            assertEquals("0", JsonScalars.str(legacy, "row_count"))
+            assertEquals("0", JsonScalars.str(legacy, "local_steps"))
+            assertEquals("true", JsonScalars.str(legacy, "empty"))
+            assertEmptyMetrics(legacy)
+        }
+    }
+
+    @Test
+    fun `completed idle window serializes an undefined failure share instead of zero traffic quality`() {
+        val legacy = summary(PerfQuery(200, 300))
+        assertEquals("0", JsonScalars.str(legacy, "count"))
+        assertEquals("0", JsonScalars.str(legacy, "row_count"))
+        assertEquals("true", JsonScalars.str(legacy, "empty"))
+        assertEmptyMetrics(legacy)
+    }
+
+    @Test
+    fun `local only rows retain their count without inventing a turn failure share`() {
+        val legacy = summary(PerfQuery(100, 200, filters = mapOf("local" to "true")))
+        assertEquals("0", JsonScalars.str(legacy, "count"))
+        assertEquals("1", JsonScalars.str(legacy, "local_steps"))
+        assertEquals("1", JsonScalars.str(legacy, "row_count"))
+        assertEquals("false", JsonScalars.str(legacy, "empty"))
+        assertEmptyMetrics(legacy)
+    }
+
+    @Test
+    fun `nonempty legacy turns retain their counts and finite failure shares on the wire`() {
+        val legacy = summary(PerfQuery(100, 200))
+        assertEquals("2", JsonScalars.str(legacy, "count"))
+        assertEquals("1", JsonScalars.str(legacy, "local_steps"))
+        assertEquals("3", JsonScalars.str(legacy, "row_count"))
+        assertEquals("0.5", JsonScalars.str(legacy, "failure_share"))
+        assertEquals("0.5", JsonScalars.str(legacy.getValue("failure_shares").jsonObject, "error:upstream-failed"))
+        assertEquals("2", JsonScalars.str(legacy.getValue("total_ms").jsonObject, "count"))
+    }
+
+    private fun assertEmptyMetrics(legacy: JsonObject) {
+        assertEquals(JsonNull, legacy.getValue("failure_share"))
+        assertEquals(JsonObject(emptyMap()), legacy.getValue("failure_shares"))
+        assertEquals(JsonObject(emptyMap()), legacy.getValue("outcomes"))
+        assertEquals(JsonObject(emptyMap()), legacy.getValue("models"))
+        assertFalse("total_ms" in legacy)
+    }
+
+    @Test
+    fun `a command with thousands of requests in the period keeps its failure share and its times`() {
+        // 10,000 requests, one failed in every hundred, the n-th taking n ms: exact figures a reader can check by hand
+        val busy = (0 until 10_000).map { n ->
+            PerfRow(100L + n, if (n % 100 == 0) "error:upstream-failed" else "ok", mapOf(PerfKeys.TOTAL to n + 1L))
+        }
+        val legacy = summary(PerfQuery(100, 20_000), busy)
+        assertEquals("10000", JsonScalars.str(legacy, "count"))
+        assertEquals("true", JsonScalars.str(legacy, "metrics_complete"))
+        assertEquals("0.01", JsonScalars.str(legacy, "failure_share"))
+        val total = legacy.getValue("total_ms").jsonObject
+        assertEquals("10000", JsonScalars.str(total, "count"))
+        assertEquals("5000", JsonScalars.str(total, "p50"))
+        assertEquals("9500", JsonScalars.str(total, "p95"))
+        assertEquals("10000", JsonScalars.str(total, "max"))
+    }
+
+    @Test
+    fun `a period that begins more than a week back lists no command and says the rows are not read`() {
+        val day = 24L * 3_600_000
+        val now = 30 * day
+        val recent = listOf(PerfRow(now - 1_000, "ok", mapOf(PerfKeys.TOTAL to 50L)))
+        val month = result(PerfQuery(now - 30 * day, now), recent, now)
+        assertEquals(JsonObject(emptyMap()), month.getValue("legacy"))
+        assertTrue("legacy_window_beyond_kept_rows" in month.toString())
+        // the same row is read once the period begins within the week
+        val week = result(PerfQuery(now - 7 * day, now), recent, now)
+        assertEquals("1", JsonScalars.str(week.getValue("legacy").jsonObject.getValue("h").jsonObject, "count"))
+        assertFalse("legacy_window_beyond_kept_rows" in week.toString())
+    }
+
+    private fun summary(query: PerfQuery, rows: List<PerfRow> = legacyRows): JsonObject =
+        result(query, rows, 1_000).getValue("legacy").jsonObject.getValue("h").jsonObject
+
+    private fun result(query: PerfQuery, rows: List<PerfRow>, now: Long): JsonObject {
+        val sources = object : PerfQuerySources {
+            override fun heads(): Set<String> = setOf("h")
+            override fun rows(head: String): PerfRowsSource = PerfRowsSource { PerfRowsWindow(rows) }
+        }
+        return PerfQueryService(sources, clock = WallClock { now }).use { service ->
+            val result = service.summary(query)
+            try {
+                Json.parseToJsonElement(JsonWire.bytes(result).decodeToString()).jsonObject
+            } finally {
+                PerfWorkBudget.release(result)
+            }
+        }
+    }
+}

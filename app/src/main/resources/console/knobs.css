@@ -1,0 +1,209 @@
+/* The settings kit's controls (knobs.js), the same on Settings, the gear on Requests and a command's pane on Models.
+   Every rule sits under .kn, the wrapper a page puts around what the kit draws, so none reaches a page's own
+   .pickbtn or .said. Class names checked against console.css, sessions.css, models.css and requests.css. */
+
+/* a setting: its name, its control, and what the change did. The name of one the search found keeps the text's full
+   ink, its matched words marked in neutral (the page's mark); the key light is never a search hit. */
+.kn .lbl.lit { color: var(--text); }
+.kn .ctl { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; min-width: 0; }
+.kn .ctl.col { flex-direction: column; align-items: flex-start; gap: 0.667rem; }
+.kn .line { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; }
+.kn .menuwrap { position: relative; display: inline-flex; }
+.kn .menuwrap > .menu { left: 0; right: auto; top: calc(100% + .5rem); z-index: 20; }
+.kn .menu button { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+/* the setting a menu is showing: the picked row's own rule, in the text's ink (console.css .picked), never the key */
+.kn .menu button[aria-current="true"] { box-shadow: inset .25rem 0 0 var(--sel-ink); }
+.kn .mmeta { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
+/* a menu's button casts in the rim's own ink: the key light is the one place to look or act next in a view, and a
+   settings pane holds a dozen of these buttons */
+.kn .pickbtn { --c: var(--track-line); justify-content: space-between; min-width: 10.5rem; transition: border-color var(--t-hover) var(--e-out); }
+.kn .pickbtn:hover, .kn .pickbtn[aria-expanded="true"] { border-color: var(--text-mute); }
+/* A MENU DROPS IN ONCE where it was asked for (knobs.js opening): a drawing while it is open finds it at the same point
+   of its arrival through --menu-at, so a read landing never makes it arrive again */
+/* a long Add setting menu is found by typing: the field and its count ride the menu's top */
+.kn .menu.kadd .kfind { display: flex; align-items: center; gap: calc(2 * var(--u)); padding: var(--u); border-bottom: .08rem solid var(--hair); }
+.kn .menu.kadd .kfind .field { width: 14rem; }
+.kn .menu.kadd .kfnone { margin: 0; padding: var(--u) calc(2 * var(--u)); font: 500 .9rem/1.3 var(--font-name); color: var(--text-mute); }
+.kn .custom { display: inline-flex; align-items: center; gap: 0.667rem; }
+.kn .custom .field { width: 6.5rem; text-align: right; font: 500 .95rem/1 var(--font-data); padding: .65rem .8rem; }
+/* A TEXT SETTING SHOWS ALL IT HOLDS (Oct 26): an address, a path or a service name in a number's 6.5rem box read
+   "https://(" and "~/.confi" (Version's and MCP servers' Advanced, at 1440 and 3822). It takes the room left on its
+   line and reads from the left, as text does. A blank number is as wide as the words that say what blank means. */
+/* A FIELD IS NEVER NARROWER THAN ITS VALUE READS (Oct 27): the same text fields stood in 26 to 56 px boxes inside a
+   pane's own grid of pairs, where the cell they land in may be narrower than the words, and clipped an address to two
+   characters. The box has a floor and the line wraps instead (.ctl wraps), so a value is read or the row grows. The floor
+   and the basis are the field's own and no more, so the mark or the way back after it shares its line in a column of
+   three settings and wraps beneath only where the line truly has no room. */
+.kn .custom.wide { flex: 1 1 9rem; min-width: min(100%, 8rem); }
+.kn .custom.wide .field { flex: 1 1 0; width: 0; min-width: min(100%, 8rem); text-align: left; }
+.kn .custom .field[size] { width: auto; }
+/* a blank that is a value ("Off", "Automatic", "Unlimited") is read as the value it is, in the body's ink, not as a greyed
+   box that looks switched off */
+.kn .custom .field[size]::placeholder { color: var(--text-body); opacity: 1; }
+.kn .custom em { font: 500 .9rem/1 var(--font-data); font-style: normal; color: var(--text-mute); }
+/* a blank field says what blank means ("Off", "Automatic") in its own box, and a unit after those words read
+   "Off tokens out": the unit shows only once there is a number for it to measure */
+.kn .custom .field:placeholder-shown + em { display: none; }
+.kn .said { display: inline-flex; align-items: center; gap: 0.333rem; font: 500 .9rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
+.kn .said .wait { width: 1.1rem; height: 1.1rem; --c: var(--text-body); }
+.kn .said.ok { color: var(--live); }
+.kn .owners { display: flex; flex-wrap: wrap; gap: 0.667rem; margin-top: 0.667rem; }  /* the commands holding their own value, which wrap and never truncate */
+.kn .chip.own .v { font-family: var(--font-data); }
+.kn .was { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); text-decoration: line-through; }  /* the value a pick replaced, shown for a few seconds with Undo (gap 458) */
+.kn .said.limit { color: var(--limit); }
+.kn .fixed { font: 500 .95rem/1 var(--font-data); color: var(--text); display: inline-flex; align-items: center; min-height: var(--ctl-h); }  /* a value with no control stands where one would */
+.kn .from { display: inline-flex; align-items: center; gap: 0.333rem; font: 500 .9rem/1.2 var(--font-name); color: var(--text-mute); }
+/* AN EXCEPTION IS A MARK, AND THE SECTION NAMES IT ONCE (Oct 26, from "show don't tell"): the ordinary row — splice's
+   default, changed live — carries nothing at its far end. A value that is changed, from the file, from the shell, gone
+   at the next start or read only at a start carries its glyph there, named in its title and in the section's legend. */
+.kn .ctl.col > .line { align-self: stretch; }
+.kn .marks { display: inline-flex; align-items: center; gap: 0.333rem; flex: none; }
+.kn .mk { display: inline-flex; color: var(--text-mute); transition: color var(--t-hover) var(--e-out); }
+.kn .mk svg { width: 1.05rem; height: 1.05rem; }
+.kn .mk.changed { color: var(--text-body); }
+.kn .mk.unsaved { color: var(--limit); }
+.kn .ctl:hover .mk, .kn .kin:hover .mk { color: var(--text-body); }
+.kn .ctl:hover .mk.unsaved { color: var(--limit); }
+.kn .legend { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0 1rem; }
+.kn .legend .lg { display: inline-flex; align-items: center; gap: 0.333rem; font: 500 .85rem/1.4 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.kn .legend .lg svg { width: 1rem; height: 1rem; stroke: currentColor; fill: none; }
+.kn .legend .lg svg[viewBox]:not([stroke]) circle[fill] { fill: currentColor; }
+.kn code { font: 500 .88rem/1 var(--font-data); color: var(--text-body); background: var(--obj-sunk); border-radius: .3rem; padding: .2rem .4rem; }
+/* the empty slot that makes an exception: dashed, like every "add" on the console, at a chip's own size, and quiet
+   until the row is under the eye (console.css sizes .add as a full-width tile, which a row's end is not) */
+/* THE SLOT IS JUST ITS PLUS AT REST AND SAYS ITS WORDS UNDER THE POINTER (Oct 28): the same dashed slot the legend names
+   once ("A value for one command"), so a list of settings repeats a shape and not a phrase. The row under the pointer, the
+   focused slot and an open menu open it to "One command"; a row that already holds a command's own value shows that value
+   drawn as its chip, and its slot is the plus after them. */
+.kn .chip.add.one {
+  width: auto; min-height: var(--ctl-h); min-width: var(--ctl-h); justify-content: center; gap: 0; padding: 0 .32rem; opacity: .72; cursor: pointer;
+  font: 500 .9rem/1 var(--font-name); color: var(--text-body); box-shadow: none; border-radius: var(--r-in);
+  transition: opacity var(--t-hover) var(--e-out), color var(--t-hover) var(--e-out), border-color var(--t-hover) var(--e-out), padding var(--t-hover) var(--e-out), gap var(--t-hover) var(--e-out);
+}
+.kn .chip.add.one .oc { display: inline-block; max-width: 0; overflow: hidden; opacity: 0; white-space: nowrap; transition: max-width var(--t-hover) var(--e-out), opacity var(--t-hover) var(--e-out); }
+.kn .ctl:hover .chip.add.one, .kn .krow:hover .chip.add.one, .kn .chip.add.one:focus-visible, .kn .chip.add.one[aria-expanded="true"] { opacity: 1; gap: 0.333rem; padding-right: .6rem; }
+.kn .ctl:hover .chip.add.one .oc, .kn .krow:hover .chip.add.one .oc, .kn .chip.add.one:focus-visible .oc, .kn .chip.add.one[aria-expanded="true"] .oc { max-width: 9rem; opacity: 1; }
+.kn .chip.add.one:hover { border-style: solid; border-color: var(--text-mute); color: var(--text); background: transparent; }
+.kn .chip.add.one svg { width: 1.1rem; height: 1.1rem; }
+/* the slot ends the line its control is on, so it stands at one x down a section */
+.kn .line > .chip.add.one { margin-left: auto; }
+/* the legend's own item for it, its ring dashed like the slot */
+.kn .legend .lg.one svg { color: var(--text-mute); }
+/* commands that agree read as one group: the value once, its commands under it */
+.kn .ogrp { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.333rem; padding: .2rem .5rem .2rem .2rem; border: .12rem solid var(--track-line); border-radius: var(--r-in); }
+.kn .ogrp > .v { font: 600 .9rem/1 var(--font-data); color: var(--text); margin: 0 0.333rem 0 0.333rem; }
+.kn .off { opacity: .62; }
+/* a value that is not in force is struck, so a cap the hub lifts or a poll that is off reads as set aside rather than as the limit it looks like */
+.kn .line.off .fixed { text-decoration: line-through; text-decoration-thickness: .08rem; }
+/* a locked row's exceptions follow its value and its marks on the same line, wrapping under them where the column is narrow */
+.kn .ctl:has(> .owners) { flex-wrap: wrap; align-items: center; }
+.kn .ctl > .owners { margin: 0 0 0 0.333rem; }
+/* the setting that turns a dimmed one on, named where the reason is: pressing it brings that row into view */
+.kn .note { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 0.333rem; font: 500 .92rem/1.3 var(--font-name); color: var(--text-mute); }
+.kn .seerow { padding: 0; border: 0; background: none; cursor: pointer; font: 500 .92rem/1.3 var(--font-name); color: var(--text-body); text-decoration: underline; text-decoration-color: var(--track-line); text-underline-offset: .2em; transition: color var(--t-hover) var(--e-out), text-decoration-color var(--t-hover) var(--e-out); }
+.kn .seerow:hover { color: var(--text); text-decoration-color: currentColor; }
+.kn .blot { width: .75rem; height: .75rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); flex: none; }
+.kn .menu button:has(.blot) { justify-content: flex-start; gap: 0.667rem; }
+/* the command picker, grouped by the value each command runs now: the group's value on its own line, and each command
+   in the data face a command wears on every chip */
+.kn .cmdmenu { min-width: 17rem; }
+.kn :is(.cmdmenu, .kadd) .mgroup + .mgroup { margin-top: 0.333rem; padding-top: .3rem; box-shadow: 0 -.1rem 0 var(--track-line); }
+.kn :is(.cmdmenu, .kadd) .mgh { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; padding: .55rem .75rem .3rem; font: 600 .78rem/1.2 var(--font-name); letter-spacing: .06em; text-transform: uppercase; color: var(--text-mute); }
+.kn .cmdmenu .mgh b { font: 500 .88rem/1 var(--font-data); letter-spacing: 0; text-transform: none; color: var(--text-body); }
+.kn .cmdmenu [role="menuitem"] { font-family: var(--font-data); font-size: .92rem; }
+/* a setting's value and its marks (takes a restart, locked) keep their own columns, so every value ends on one edge
+   whether or not its row carries a mark */
+.kn .kadd .mmeta { display: inline-grid; grid-template-columns: auto 1.05rem 1.05rem; column-gap: 0.333rem; align-items: center; justify-items: end; }
+/* A REFUSED VALUE SHAKES ONCE where he is looking (console.css's shake, 300 ms): only the drawing right after the
+   refusal carries the mark, so the field or the menu button moves once and "Not saved" stays beside it */
+.kn [data-shook] { animation: shake 300ms var(--e-out) 1; }
+/* applied and not written: the legend's own mark and words for it, so the row and the legend say one thing */
+.kn .said.gone svg { width: 1.05rem; height: 1.05rem; flex: none; }
+
+/* one command's own value, under the value every other command has, with the way back to it */
+.kn .over { display: flex; flex-wrap: wrap; align-items: center; gap: 0.667rem 0.667rem; padding-left: .85rem; border-left: .2rem solid var(--track-line); }
+.kn .over .act, .kn .over .back { white-space: nowrap; }
+.kn .only { display: inline-flex; align-items: center; gap: 0.333rem; }
+.kn .over .pickbtn, .kn .own .pickbtn { min-width: 9rem; }
+.kn .back {
+  display: inline-flex; align-items: center; gap: 0.333rem; padding: .45rem .7rem .45rem .55rem; cursor: pointer;
+  font: 500 .9rem/1 var(--font-data); color: var(--text-mute); background: transparent; border: .12rem dashed var(--track-line); border-radius: var(--r-in);
+  transition: color var(--t-hover) var(--e-out), border-color var(--t-hover) var(--e-out);
+}
+.kn .back svg { width: .95rem; height: .95rem; }
+.kn .back:hover { color: var(--text); border-style: solid; border-color: var(--text-mute); }
+/* THE WAY BACK AS ITS GLYPH: with nothing to say but "follow every command" it is the arrow alone, and its words open on the line
+   under the pointer or on the keyboard (a line that names a value to go back to keeps its words) */
+.kn .back .bw { white-space: nowrap; }
+.kn .back.bare { gap: 0; padding-inline: .5rem; border-color: transparent; }
+.kn .back.bare .bw { display: inline-block; max-width: 0; overflow: hidden; opacity: 0; transition: max-width var(--t-hover) var(--e-out), opacity var(--t-hover) var(--e-out); }
+.kn .over:hover .back.bare, .kn .back.bare:focus-visible { gap: 0.333rem; padding-right: .7rem; border-color: var(--track-line); }
+.kn .over:hover .back.bare .bw, .kn .back.bare:focus-visible .bw { max-width: 12rem; opacity: 1; }
+
+/* a per-command switch: the command, then On and Off, as every other switch on the console */
+.kn .cmdsw { display: grid; grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr)); gap: 0.667rem 1.333rem; }
+.kn .cs { display: flex; align-items: center; justify-content: space-between; gap: 0.667rem; padding: .3rem 0; }
+.kn .cs.off .chip { color: var(--text-mute); box-shadow: none; border-color: var(--track-line); }
+
+/* the models to keep thinking on */
+.kn .mlist { display: flex; flex-wrap: wrap; align-items: center; gap: 0.667rem; }
+.kn .mchip { display: inline-flex; align-items: center; gap: 0.333rem; padding: .25rem .25rem .25rem .7rem; font: 500 .9rem/1 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); }
+.kn .mchip .icon { width: 1.5rem; height: 1.5rem; }
+.kn .mchip .icon svg { width: .95rem; height: .95rem; }
+/* a list of folders (Git branch folders): a path is a long chip that wraps inside its own width, and the dashed tile that ends
+   the list is the chip's size, not the full-width tile of a rail */
+.kn .mchip.lchip { min-width: 0; max-width: 100%; }
+.kn .mchip.lchip .lp { min-width: 0; overflow-wrap: anywhere; line-height: 1.25; }
+.kn .mlist > .add.inline { width: auto; min-height: var(--ctl-h); padding: .4rem .8rem; font-size: .9rem; }
+.kn .mlist > .add.inline .plus { width: 1.25rem; height: 1.25rem; font-size: .9rem; }
+
+/* the commands a setting acts on at all */
+.kn .only .word { font: 500 .9rem/1.2 var(--font-name); color: var(--text-mute); }
+
+/* WHICH COMMANDS a setting holds for: one chip each in its provider's colour, a dot filled where the command is in the
+   set and hollow where it is not, so "9 of 11" is seen before it is read */
+.kn .hchips { display: inline-flex; flex-wrap: wrap; gap: 0.667rem; }
+.kn .chip.hpick { cursor: pointer; transition: color var(--t-hover) var(--e-out), box-shadow var(--t-hover) var(--e-out), border-color var(--t-hover) var(--e-out); }
+.kn .chip.hpick::before { content: ""; width: .55rem; height: .55rem; border-radius: 50%; background: var(--c); }
+.kn .chip.hpick[aria-pressed="false"] { color: var(--text-mute); border-color: transparent; background: transparent; box-shadow: inset 0 0 0 .12rem var(--track-line); }
+.kn .chip.hpick[aria-pressed="false"]::before { background: transparent; box-shadow: inset 0 0 0 .12rem var(--c); }
+.kn .chip.hpick:hover { color: var(--text); }
+.kn .chip.hpick:focus-visible { outline: .14rem solid var(--text-mute); outline-offset: .15rem; }
+/* a switch the daemon holds at one value draws both its words and presses neither */
+.kn .switch.held { opacity: .62; }
+.kn .switch.held button { cursor: default; }
+/* a value the daemon holds, drawn as the control it would be: a menu's button and a list's chips stand dimmed and press nothing
+   (the held switch is above) */
+.kn .menuwrap.held, .kn .mlist.held { opacity: .62; }
+.kn .menuwrap.held .pickbtn { cursor: default; min-width: 0; }
+.kn .mlist.held .mchip { padding-right: .7rem; }
+/* PROVIDER BEHAVIOUR: the plate leads with how many of its settings this command sets, then the memory budget as one bar, then
+   the behaviours in groups, each tile shaped by what it holds. */
+.qplate > .pd-sub { margin-bottom: calc(1.5 * var(--u)); }
+.qplate .rt-segs { margin-bottom: calc(2.5 * var(--u)); }
+/* the lead: how many it sets beside the strip of every one it could, a pip each, in the command's colour */
+.bh-lead { display: flex; align-items: center; gap: calc(2 * var(--u)); margin-bottom: calc(2.5 * var(--u)); }
+.bh-lead > .pd-sub { flex: none; margin: 0; }
+.bh-lead > .pd-sub b { color: var(--c); }
+.bh-lead.over > .pd-sub b { color: var(--limit); }
+.qplate .bh-lead .rt-segs.bh-pips { display: flex; flex-wrap: wrap; gap: .2rem; margin: 0 0 0 auto; justify-content: flex-end; }
+.bh-pips > i { width: .5rem; height: 1.05rem; border-radius: .1rem; background: transparent; box-shadow: inset 0 0 0 .08rem var(--track-line); }
+.bh-pips > i.on { background: var(--c); box-shadow: none; }
+.bh-group > .kicker { display: flex; align-items: center; gap: calc(1.2 * var(--u)); }
+.bh-group > .kicker::after { content: ""; flex: 1; height: .08rem; background: var(--hair); }
+.bh-groups { display: flex; flex-direction: column; gap: calc(3 * var(--u)); }
+.bh-group { display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); min-width: 0; }
+.bh-group > .kicker { margin: 0; }
+.qrest .bh-groups { margin-top: calc(1.5 * var(--u)); }
+.qrel { display: flex; flex-direction: column; gap: var(--u); min-width: 0; }
+.qrel .qhead { min-height: 0; }
+.qrel .qhead .lbl { font: 500 .9rem/1.25 var(--font-name); color: var(--text-body); }
+.qrel .qfig.over, .qrel .qfig.over b { color: var(--limit); }
+.qmem { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--gap-card); margin-top: calc(1.5 * var(--u)); }
+@container (max-width: 40rem) { .qmem { grid-template-columns: minmax(0, 1fr); } }
+.qhead .lbl { white-space: nowrap; }
+.bh-group > .kicker { text-align: left; }
+.qrel + .bh-groups { margin-top: calc(3 * var(--u)); }
+.qpic { display: inline-flex; flex: none; color: var(--text-body); }
+.qpic svg { width: 3.2rem; height: 3.2rem; margin-block: -.4rem; stroke-width: 1.3; }
+.qtile:not(.own) .qpic { color: var(--text-mute); }

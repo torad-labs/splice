@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "nativeExecutableSha256": "37703ae51e202c07681e205bc6a8f3c04e63aee4f8ddeb8d2fb09a4d69c00b48",
+  "observedRelease": "0.159.1-linux-musl",
+  "protocolVersion": 1,
+  "baselineJarSha256": "209be38e1d17141e8f7efdc7c653c51555d3db8c28bc50c7fa3035df7909d47d",
+  "sourceRevision": "17a9df60e420b58e3edc55efb1bb052e39492bbc",
+  "binaryToSourceLinkage": "unproven",
+  "oracleScope": "Runtime host protocol only. Gateway item admission, durable model history, native-core output formatting, and real interactive client delivery need additional executable evidence."
+}

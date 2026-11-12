@@ -1,0 +1,627 @@
+// Goal: a request goes out on a new gateway route whenever its conversation's previous request never finished, so it
+// never queues behind a generation that may still be running there. A request never finished when Muse's gateway gave
+// up on it, when its stream broke and splice sent it again or resumed it, or when its turn ended while Meta was still
+// generating it. A request whose connection failed before the whole request was written never reached Meta, so it
+// leaves nothing running there and moves nothing. A conversation also leaves a slow route: when a warm turn (at least
+// half its input read from Meta's cache) got Meta's headers more than 60 s after its request was written whole, the
+// next request goes out on a new route. A cold turn keeps its route, where it just wrote its cache, and so does a turn
+// whose time went into writing the request. Meta routes requests that share a prompt_cache_key together, so a
+// conversation that leaves a route also leaves its key: from the request that moves it on, it carries a new key with
+// the new route's header. A conversation that meets none of these keeps its one route and exactly its own key,
+// muse:<session>, so its cache stays pinned, and a restarted daemon keeps every conversation on the route and key it
+// last moved to.
+//
+// Oct 26, 02:37 to 02:55 CT: Meta answered a claude-muse turn 504 gateway_timeout after 184 s. splice re-sent the same
+// request on the same x-meta-ai-gateway-session-id within a second, and that request and the four after it waited
+// behind the generation for 18 minutes. After a turn the client aborted, the next warm turn of the session waited over
+// 30 s 6 times in 33, against 2 to 3% after a normal turn. After a warm turn that waited over 60 s for Meta's headers,
+// the session's next warm turn within 20 minutes was slow 34.7% of the time, against 1.3% after a fast one, while other
+// sessions on other routes ran fast. These drive a real claude-muse head, built from its topology the way the daemon
+// builds it, over a local gateway that answers each request by the route it rides.
+package splice.app.provider
+
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.engine.okhttp.OkHttpConfig
+import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.preparePost
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.client.statement.bodyAsText
+import io.ktor.utils.io.readLine
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.app.TokenUrlRefreshCall
+import splice.core.auth.RefreshAttempt
+import splice.core.config.ConfigService
+import splice.core.config.StatePaths
+import splice.core.turn.WatchdogBudget
+import splice.core.util.JsonScalars
+import splice.core.util.LogSink
+import splice.head.HeadDeps
+import splice.head.HeadServer
+import splice.head.awaitListening
+import splice.head.headDeps
+import splice.provider.muse.MuseHeaderWait
+import splice.provider.muse.MuseKeyMintCall
+import splice.provider.muse.MuseMintAttempt
+import splice.topology.TopologyLoader
+import splice.upstream.Provider
+import splice.upstream.Waiter
+import splice.upstream.transport.RetryPacing
+import splice.upstream.transport.UpstreamClient
+import splice.upstream.transport.UpstreamTransport
+import java.nio.file.Files
+import java.nio.file.Path
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.LockSupport
+import kotlin.time.Duration.Companion.seconds
+
+private const val MODEL = "muse-wonder-full-1.0-contributor"
+private const val CONVERSATION = "sess-flashing-lenovo"
+private const val CALM = "sess-calm"
+
+// One upstream post's whole budget. Meta's holds below pass on the clock the route reads, never in real time.
+private const val UPSTREAM_TIMEOUT_MS = 60_000L
+
+// A minute and a half: past the 60 s a warm request may wait for Meta's headers, inside the 30 to 180 s the slow warm
+// turns of Oct 17 to 26 waited.
+private const val SLOW_MS = 90_000L
+private const val TURN_WAIT_MS = 30_000L
+private const val IDLE_WAIT_S = 30L
+private const val IDLE_POLL_MS = 10L
+
+class MuseGatewayRouteTest {
+
+    @Test
+    fun `a conversation starts on the route it rode before its route could move`(@TempDir root: Path) = runBlocking {
+        museHead(root) { rig ->
+            // SHA-256 of "splice-muse:muse:sess-flashing-lenovo" in the UUID v4 layout, the pin every claude-muse
+            // conversation has carried since Sep 28: a deploy leaves a running conversation where its cache is.
+            assertEquals("4c446196-0c76-432e-a078-6c0acb57815a", rig.firstRoute(CONVERSATION))
+        }
+    }
+
+    @Test
+    fun `after a gateway timeout the retry rides a new route and the client gets the answer`(@TempDir root: Path) =
+        runBlocking {
+            museHead(root) { rig ->
+                val route = rig.firstRoute(CONVERSATION)
+                rig.gateway.stall(route)
+
+                val turn = rig.turn(CONVERSATION, 2)
+
+                assertEquals(route, turn.routes.first(), "the turn is sent on its conversation's route: ${turn.routes}")
+                val retry = turn.routes.getOrNull(1)
+                assertNotNull(retry, "the gateway timeout is re-sent: ${turn.routes}")
+                assertNotEquals(route, retry, "the re-send leaves the route Meta gave up on: ${turn.routes}")
+                assertTrue(turn.answered, "the client gets the answer: ${turn.sse}")
+            }
+        }
+
+    @Test
+    fun `every later turn of that conversation keeps the new route`(@TempDir root: Path) = runBlocking {
+        museHead(root) { rig ->
+            val route = rig.firstRoute(CONVERSATION)
+            rig.gateway.stall(route)
+            val moved = rig.turn(CONVERSATION, 2).routes.last()
+            assertNotEquals(route, moved, "the conversation left the route Meta gave up on")
+
+            for (n in 3..4) {
+                val later = rig.turn(CONVERSATION, n)
+                assertEquals(listOf(moved), later.routes, "turn $n rides the route the conversation moved to")
+                assertTrue(later.answered, "turn $n is answered: ${later.sse}")
+            }
+        }
+    }
+
+    @Test
+    fun `a conversation that meets no timeout keeps one route across its turns and a restart`(@TempDir root: Path) =
+        runBlocking {
+            museHead(root) { rig ->
+                val calm = mutableListOf<String?>()
+                calm += rig.turn(CALM, 1).routes
+                // Meanwhile Meta gives up on another conversation's route on the same head.
+                rig.gateway.stall(rig.firstRoute(CONVERSATION))
+                rig.turn(CONVERSATION, 2)
+                for (n in 2..3) {
+                    val turn = rig.turn(CALM, n)
+                    assertTrue(turn.answered, "turn $n is answered: ${turn.sse}")
+                    calm += turn.routes
+                }
+                rig.restart()
+                val after = rig.turn(CALM, 4)
+                assertTrue(after.answered, "turn 4, after the restart, is answered: ${after.sse}")
+                calm += after.routes
+
+                assertEquals(1, calm.toSet().size, "every request of the conversation rides one route: $calm")
+                assertNotNull(calm.first(), "the route is named on every request: $calm")
+            }
+        }
+
+    @Test
+    fun `a turn the client abandons while Meta is still generating moves its conversation to a new route`(
+        @TempDir root: Path,
+    ) = runBlocking {
+        museHead(root) { rig ->
+            val route = rig.firstRoute(CONVERSATION)
+            rig.gateway.generateWithoutEnd(route)
+            val abandoned = rig.startTurn(CONVERSATION, 2)
+            abandoned.awaitMidGeneration()
+
+            // The user stops the turn: Claude Code closes its connection while Meta is still generating.
+            abandoned.job.cancelAndJoin()
+            rig.awaitTurnsEnded()
+
+            val next = rig.turn(CONVERSATION, 3)
+            val moved = next.routes.first()
+            assertNotEquals(route, moved, "the next turn leaves the route Meta is still generating on: ${next.routes}")
+            assertEquals(listOf(moved), next.routes, "it is sent once, on the new route: ${next.routes}")
+            assertTrue(next.answered, "the next turn is answered: ${next.sse}")
+            val later = rig.turn(CONVERSATION, 4)
+            assertEquals(listOf(moved), later.routes, "turn 4 rides the route the conversation moved to")
+            assertTrue(later.answered, "turn 4 is answered: ${later.sse}")
+        }
+    }
+
+    @Test
+    fun `a turn a restart cuts while Meta is still generating moves its conversation and the restarted head keeps it`(
+        @TempDir root: Path,
+    ) = runBlocking {
+        museHead(root) { rig ->
+            val route = rig.firstRoute(CONVERSATION)
+            rig.gateway.generateWithoutEnd(route)
+            val cut = rig.startTurn(CONVERSATION, 2)
+            cut.awaitMidGeneration()
+
+            rig.restart()
+
+            val next = rig.turn(CONVERSATION, 3)
+            val moved = next.routes.first()
+            assertNotEquals(route, moved, "after the restart the turn leaves the route Meta is still generating on")
+            assertEquals(listOf(moved), next.routes, "it is sent once, on the new route: ${next.routes}")
+            assertTrue(next.answered, "the turn after the restart is answered: ${next.sse}")
+        }
+    }
+
+    @Test
+    fun `a request sent again in its turn after its stream broke rides a new route`(@TempDir root: Path) =
+        runBlocking {
+            museHead(root) { rig ->
+                val route = rig.firstRoute(CONVERSATION)
+                rig.gateway.breakBeforeAnswer(route)
+
+                val turn = rig.turn(CONVERSATION, 2)
+
+                assertEquals(route, turn.routes.first(), "the turn is sent on its conversation's route: ${turn.routes}")
+                val resent = turn.routes.getOrNull(1)
+                assertNotNull(resent, "the broken stream is sent again in its turn: ${turn.routes}")
+                assertNotEquals(route, resent, "the re-send leaves the route Meta still generates on: ${turn.routes}")
+                assertTrue(turn.answered, "the client gets the answer: ${turn.sse}")
+                val later = rig.turn(CONVERSATION, 3)
+                assertEquals(listOf(resent), later.routes, "turn 3 rides the route the conversation moved to")
+            }
+        }
+
+    @Test
+    fun `a turn resumed after its stream broke mid-answer rides a new route`(@TempDir root: Path) = runBlocking {
+        museHead(root) { rig ->
+            val route = rig.firstRoute(CONVERSATION)
+            rig.gateway.breakMidAnswer(route)
+            val streaming = rig.startTurn(CONVERSATION, 2)
+            // The client has been streamed the start of the answer when the connection to Meta breaks.
+            streaming.awaitMidGeneration()
+            rig.gateway.breakHeld()
+
+            val turn = rig.seen(streaming)
+
+            assertEquals(route, turn.routes.first(), "the turn is sent on its conversation's route: ${turn.routes}")
+            val resumed = turn.routes.getOrNull(1)
+            assertNotNull(resumed, "the broken answer is resumed in its turn: ${turn.routes}")
+            assertNotEquals(route, resumed, "the resumed request leaves the route Meta still generates on")
+            assertTrue(turn.answered, "the client gets the answer: ${turn.sse}")
+        }
+    }
+
+    @Test
+    fun `a request sent again in its turn after Meta finished the one before keeps its route`(@TempDir root: Path) =
+        runBlocking {
+            museHead(root) { rig ->
+                val route = rig.firstRoute(CONVERSATION)
+                rig.gateway.answerEmptyOnce(route)
+
+                val turn = rig.turn(CONVERSATION, 2)
+
+                // Meta finished the empty answer, so nothing is running there and the cache is where it was.
+                assertEquals(listOf(route, route), turn.routes, "the re-send of an empty answer keeps its route")
+                assertTrue(turn.answered, "the client gets the answer: ${turn.sse}")
+            }
+        }
+
+    @Test
+    fun `a conversation that left a timed-out route keeps its new route after a restart`(@TempDir root: Path) =
+        runBlocking {
+            museHead(root) { rig ->
+                val route = rig.firstRoute(CONVERSATION)
+                rig.gateway.stall(route)
+                val moved = rig.turn(CONVERSATION, 2).routes.last()
+                assertNotEquals(route, moved, "the conversation left the route Meta gave up on")
+
+                rig.restart()
+
+                val later = rig.turn(CONVERSATION, 3)
+                assertEquals(listOf(moved), later.routes, "after the restart the conversation rides its new route")
+                assertTrue(later.answered, "the turn after the restart is answered: ${later.sse}")
+            }
+        }
+
+    @Test
+    fun `after a gateway timeout the conversation carries a new cache key from the re-send on, across a restart`(
+        @TempDir root: Path,
+    ) = runBlocking {
+        museHead(root) { rig ->
+            val own = "muse:$CONVERSATION"
+            val calm = "muse:$CALM"
+            assertEquals(listOf(calm), rig.turn(CALM, 1).keys, "a conversation starts on its own cache key")
+            rig.gateway.stall(rig.firstRoute(CONVERSATION))
+
+            val timedOut = rig.turn(CONVERSATION, 2)
+
+            assertEquals(own, timedOut.keys.first(), "the turn goes out on its conversation's key: ${timedOut.keys}")
+            val moved = timedOut.keys.getOrNull(1)
+            assertNotNull(moved, "the gateway timeout is re-sent: ${timedOut.keys}")
+            assertNotEquals(own, moved, "Meta routes by the key, so the re-send leaves $own: ${timedOut.keys}")
+            val reSend = timedOut.requests[1]
+            assertEquals(
+                "muse:${reSend.route}",
+                reSend.cacheKey,
+                "the key and the header name one place: ${timedOut.requests}",
+            )
+            assertTrue(timedOut.answered, "the client gets the answer: ${timedOut.sse}")
+            val next = rig.turn(CONVERSATION, 3)
+            assertEquals(listOf(moved), next.keys, "turn 3 carries the key the conversation moved to")
+            assertEquals(listOf(calm), rig.turn(CALM, 2).keys, "a conversation that never moved keeps its own key")
+
+            rig.restart()
+
+            val later = rig.turn(CONVERSATION, 4)
+            assertEquals(listOf(moved), later.keys, "after the restart the conversation carries its new key")
+            assertTrue(later.answered, "the turn after the restart is answered: ${later.sse}")
+            assertEquals(listOf(calm), rig.turn(CALM, 3).keys, "after the restart the calm one keeps its own key")
+        }
+    }
+
+    @Test
+    fun `a request whose connection was refused before it was written keeps its route, and so does the next turn`(
+        @TempDir root: Path,
+    ) = runBlocking {
+        museHead(root) { rig ->
+            val route = rig.firstRoute(CONVERSATION)
+            // Meta's address stops taking connections, and takes them again while splice waits to retry.
+            rig.gateway.refuseConnections()
+
+            val turn = rig.turn(CONVERSATION, 2)
+
+            // The refused request never reached Meta, so nothing of it runs on the route.
+            val retried = turn.routes
+            assertEquals(listOf(route), retried, "the retry reaches Meta on the conversation's route: $retried")
+            assertTrue(turn.answered, "the client gets the answer: ${turn.sse}")
+            val later = rig.turn(CONVERSATION, 3)
+            assertEquals(listOf(route), later.routes, "turn 3 rides the route the conversation never had to leave")
+        }
+    }
+
+    @Test
+    fun `a warm turn whose headers Meta held past a minute moves its conversation to a new route`(@TempDir root: Path) =
+        runBlocking {
+            museHead(root) { rig ->
+                val route = rig.firstRoute(CONVERSATION)
+                // Turn 2 reads most of its input from Meta's cache on the route, and Meta holds its headers 90 s.
+                rig.gateway.waits.holdNextHeaders(SLOW_MS)
+
+                val slow = rig.turn(CONVERSATION, 2)
+
+                assertEquals(listOf(route), slow.routes, "the slow turn is sent once, on its route: ${slow.routes}")
+                assertTrue(slow.answered, "the slow turn is answered: ${slow.sse}")
+                val next = rig.turn(CONVERSATION, 3)
+                val moved = next.routes.singleOrNull()
+                assertNotNull(moved, "turn 3 is sent once: ${next.routes}")
+                assertNotEquals(route, moved, "turn 3 leaves the route where Meta held a warm turn: ${next.routes}")
+                assertTrue(next.answered, "turn 3 is answered: ${next.sse}")
+                val later = rig.turn(CONVERSATION, 4)
+                assertEquals(listOf(moved), later.routes, "turn 4 rides the route the conversation moved to")
+            }
+        }
+
+    @Test
+    fun `a cold turn whose headers Meta held past a minute keeps the route where it wrote its cache`(
+        @TempDir root: Path,
+    ) = runBlocking {
+        museHead(root) { rig ->
+            // The conversation's first turn reads none of its input from Meta's cache, and Meta holds its headers 90 s.
+            rig.gateway.waits.holdNextHeaders(SLOW_MS)
+            val route = rig.firstRoute(CONVERSATION)
+
+            val next = rig.turn(CONVERSATION, 2)
+
+            assertEquals(listOf(route), next.routes, "turn 2 rides the route turn 1 wrote its cache on: ${next.routes}")
+            assertTrue(next.answered, "turn 2 is answered: ${next.sse}")
+        }
+    }
+
+    @Test
+    fun `a warm turn whose request took past a minute to write and was answered at once keeps its route`(
+        @TempDir root: Path,
+    ) = runBlocking {
+        museHead(root) { rig ->
+            val route = rig.firstRoute(CONVERSATION)
+            // Turn 2's request takes 90 s to write, and Meta answers it the moment it has all of it.
+            rig.gateway.waits.slowNextWrite(SLOW_MS)
+            val slow = rig.turn(CONVERSATION, 2)
+            assertEquals(listOf(route), slow.routes, "turn 2 is sent once, on its route: ${slow.routes}")
+            assertTrue(slow.answered, "the slowly written turn is answered: ${slow.sse}")
+
+            val next = rig.turn(CONVERSATION, 3)
+
+            assertEquals(listOf(route), next.routes, "Meta answered at once, so turn 3 keeps the route: ${next.routes}")
+        }
+    }
+
+    /** A claude-muse head over a fresh [MetaGatewayUpstream], up for [block] and torn down after it. */
+    private suspend fun museHead(root: Path, block: suspend (MuseRig) -> Unit) {
+        val gateway = MetaGatewayUpstream()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val client = HttpClient(CIO) { expectSuccess = false }
+        val rig = MuseRig(gateway, client, scope) { startHead(root, gateway, scope) }
+        try {
+            rig.start()
+            block(rig)
+        } finally {
+            rig.stop()
+            client.close()
+            gateway.stop()
+            scope.cancel()
+        }
+    }
+
+    /** A claude-muse head started over [root]'s state the way the daemon starts it, with a provider of its own: what a
+     *  restarted daemon builds. The daemon drains for 45 s before it cuts a turn that is still running; the cut is the
+     *  same at any length, so this head cuts at once. Its upstream client is the daemon's, with Meta's waits played on
+     *  the head's clock inside its transport, and every wait splice makes before a retry ends at once, with Meta's
+     *  address listening again if it had stopped. */
+    private suspend fun startHead(root: Path, gateway: MetaGatewayUpstream, scope: CoroutineScope): HeadServer {
+        val transport = UpstreamTransport().defaultClient(UPSTREAM_TIMEOUT_MS)
+        val engine = transport.engine.config
+        check(engine is OkHttpConfig) { "the head's upstream client runs on OkHttp" }
+        engine.addNetworkInterceptor(gateway.waits)
+        val deps = headDeps(
+            tmp = root,
+            upstream = UpstreamClient(
+                totalTimeoutMs = UPSTREAM_TIMEOUT_MS,
+                client = transport,
+                pacing = RetryPacing(waiter = Waiter { gateway.listen() }),
+            ),
+        )
+        val head = HeadServer(
+            provider = provider(root, gateway, scope),
+            listenPort = 0,
+            deps = deps.copy(policy = HeadDeps.HeadPolicy(stopDrainMs = 0)),
+        )
+        head.start()
+        awaitListening(head.port)
+        return head
+    }
+
+    /** The Muse provider the daemon builds for a claude-muse head pointed at [gateway], signed in with a minted key,
+     *  timing Meta's answers by the clock [MetaWaits] moves against the default 60 s. The key mint is never reached:
+     *  every answer here is a gateway's, never a refused key's. */
+    private fun provider(root: Path, gateway: MetaGatewayUpstream, scope: CoroutineScope): Provider {
+        val paths = StatePaths(baseOverride = root.resolve("state"))
+        val authFile = root.resolve("muse-auth.json")
+        Files.writeString(authFile, """{"access_token":"account-primary","api_key":"key-primary"}""")
+        val topology = TopologyLoader.parse(
+            """
+            [providers.muse]
+            dialect = "openai-responses"
+            base_url = "${gateway.baseUrl}"
+            auth = { kind = "muse-oauth", file = "${authFile.toString().replace("\\", "/")}" }
+
+            [[providers.muse.models]]
+            id = "$MODEL"
+            context_window = 1000000
+
+            [heads.claude-muse]
+            provider = "muse"
+            port = 31393
+            discovery_prefix = "claude-muse--"
+            pinned_model = "$MODEL"
+            """.trimIndent(),
+        )
+        val head = topology.heads.getValue("claude-muse")
+        val muse = topology.providers.getValue("muse")
+        val log = LogSink { }
+        val noMint = MuseKeyMintCall { _, _ -> MuseMintAttempt.Denied("no mint in this test") }
+        return ProviderAssembly(
+            paths,
+            scope,
+            log = log,
+            refreshCall = TokenUrlRefreshCall { _, _ -> RefreshAttempt.Denied("synthetic") },
+            museArm = MuseResponsesArm(paths, log, scope, noMint, MuseHeaderWait(clock = gateway.waits.clock)),
+        ).buildProvider(
+            ProviderBuild(
+                key = "claude-muse",
+                head = head,
+                providerCfg = muse,
+                catalog = muse.catalogFor(head),
+                faultPlan = UpstreamFaultPlan(
+                    watchdog = WatchdogBudget(30.seconds, 30.seconds, 60.seconds),
+                    loginCommand = "claude-muse login",
+                ),
+                cfg = ConfigService(paths).getConfig("claude-muse"),
+            ),
+        ).provider
+    }
+}
+
+/** What one turn looked like from both ends: the requests the gateway read, and what the client was streamed. */
+private data class SeenTurn(val requests: List<MetaRequest>, val sse: String) {
+    /** The route each request rode. */
+    val routes: List<String?> = requests.map(MetaRequest::route)
+
+    /** The prompt_cache_key each request carried. */
+    val keys: List<String?> = requests.map(MetaRequest::cacheKey)
+
+    private val events: List<JsonObject> = sse.lineSequence()
+        .filter { it.startsWith("data: ") }
+        .mapNotNull { JsonScalars.objectOrNull(Json, it.removePrefix("data: ")) }
+        .toList()
+
+    private val text: String = events
+        .filter { JsonScalars.str(it, "type") == "content_block_delta" }
+        .mapNotNull { JsonScalars.str(it["delta"] as? JsonObject, "text") }
+        .joinToString("")
+
+    /** The client was streamed Meta's answer, and its stream ended with message_stop, never an error. */
+    val answered: Boolean
+        get() = META_ANSWER in text &&
+            events.any { JsonScalars.str(it, "type") == "message_stop" } &&
+            events.none { JsonScalars.str(it, "type") == "error" }
+}
+
+/** A turn the client is still reading: [job] is the client's request, [midGeneration] completes once the client has
+ *  been streamed the start of Meta's answer, and [sse] is what it has been streamed so far. [requestsBefore] counts the
+ *  requests the gateway had seen before the turn began. */
+private class StreamingTurn(
+    val job: Job,
+    val requestsBefore: Int,
+    private val midGeneration: CompletableDeferred<Unit>,
+    private val sse: StringBuffer,
+) {
+    suspend fun awaitMidGeneration() {
+        withTimeout(TURN_WAIT_MS) { midGeneration.await() }
+    }
+
+    /** Everything the client was streamed, once the turn has ended. */
+    suspend fun ended(): String {
+        withTimeout(TURN_WAIT_MS) { job.join() }
+        return sse.toString()
+    }
+}
+
+/** Starts a claude-muse head, as the daemon does on boot and again on a restart. */
+private fun interface HeadStart {
+    suspend fun start(): HeadServer
+}
+
+/** A running claude-muse head, the gateway behind it, and a client that speaks to it the way Claude Code does. */
+private class MuseRig(
+    val gateway: MetaGatewayUpstream,
+    private val client: HttpClient,
+    private val scope: CoroutineScope,
+    private val heads: HeadStart,
+) {
+    private var head: HeadServer? = null
+
+    private val running: HeadServer get() = checkNotNull(head) { "no head is running" }
+
+    suspend fun start() {
+        head = heads.start()
+    }
+
+    /** The daemon restarts: the head stops, cutting any turn still running, and a new one starts over the same
+     *  state. */
+    suspend fun restart() {
+        stop()
+        start()
+    }
+
+    suspend fun stop() {
+        head?.stop()
+        head = null
+    }
+
+    /** Turn [n] of [session]: every earlier question and its answer, then the next question, as Claude Code sends
+     *  it. */
+    suspend fun turn(session: String, n: Int): SeenTurn {
+        val before = gateway.requests.size
+        val sse = withTimeout(TURN_WAIT_MS) {
+            client.post(messagesUrl()) { ask(session, n) }.bodyAsText()
+        }
+        return SeenTurn(gateway.requests.drop(before), sse)
+    }
+
+    /** Turn [n] of [session], read as it streams, the way Claude Code reads a turn the user may stop. */
+    fun startTurn(session: String, n: Int): StreamingTurn {
+        val midGeneration = CompletableDeferred<Unit>()
+        val sse = StringBuffer()
+        val url = messagesUrl()
+        val before = gateway.requests.size
+        val job = scope.launch {
+            client.preparePost(url) { ask(session, n) }.execute { response ->
+                val body = response.bodyAsChannel()
+                while (true) {
+                    val line = body.readLine() ?: break
+                    sse.append(line).append('\n')
+                    if (META_PARTIAL in line) midGeneration.complete(Unit)
+                }
+            }
+        }
+        return StreamingTurn(job, before, midGeneration, sse)
+    }
+
+    /** What [turn] looked like from both ends, once it has ended. */
+    suspend fun seen(turn: StreamingTurn): SeenTurn {
+        val sse = turn.ended()
+        return SeenTurn(gateway.requests.drop(turn.requestsBefore), sse)
+    }
+
+    /** Turn 1 of [session], answered on the route the conversation starts on, and that route. */
+    suspend fun firstRoute(session: String): String {
+        val turn = turn(session, 1)
+        assertTrue(turn.answered, "turn 1 is answered: ${turn.sse}")
+        return requireNotNull(turn.routes.singleOrNull()) { "turn 1 rides one named route: ${turn.routes}" }
+    }
+
+    /** The head has ended every turn it was running, as its in-flight count shows. Polls the count with a deadline,
+     *  never a sleep for a duration (kt-tests-no-wall-clock). */
+    fun awaitTurnsEnded() {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(IDLE_WAIT_S)
+        while (running.healthSnapshot().gate.inflight > 0) {
+            check(System.nanoTime() < deadline) { "the head still runs a turn after $IDLE_WAIT_S s" }
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(IDLE_POLL_MS))
+        }
+    }
+
+    private fun messagesUrl(): String = "http://127.0.0.1:${running.port}/v1/messages"
+
+    private fun HttpRequestBuilder.ask(session: String, n: Int) {
+        bearerAuth("test-inference-token")
+        header("Content-Type", "application/json")
+        header("x-claude-code-session-id", session)
+        setBody("""{"model":"claude-muse--$MODEL","stream":true,"max_tokens":64,"messages":[${history(n)}]}""")
+    }
+
+    private fun history(n: Int): String = (1..n).joinToString(",") { k ->
+        val question = """{"role":"user","content":"question $k"}"""
+        if (k < n) """$question,{"role":"assistant","content":"$META_ANSWER"}""" else question
+    }
+}

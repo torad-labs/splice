@@ -1,0 +1,271 @@
+package splice.codemode
+
+import kotlinx.coroutines.async
+import kotlinx.coroutines.yield
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import splice.codemode.host.PoolLimits
+import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeStep
+import splice.upstream.codemode.NativeCodeModeOptions
+import splice.upstream.failure.CodeModeCapacityException
+
+class NativeCodeModeRuntimeTest {
+    @Test
+    fun `explicit yield retains one cell and wait returns only its suffix`() = nativeProcessTest {
+        NativeCodeModeRuntime().use { runtime ->
+            val cell = runtime.startNativeSession(
+                "yield",
+                "text('before'); yield_control(); text('after');",
+                emptySet(),
+                emptyMap(),
+                NativeCodeModeOptions(),
+            )
+            val yielded = cell.advance() as CodeModeStep.Yielded
+            assertEquals(cell.cellId, yielded.cellId)
+            assertEquals("before", yielded.output)
+            val completed = cell.observe(NATIVE_TEST_WAIT_MS) as CodeModeStep.Completed
+            assertEquals("after", completed.output)
+            assertEquals(null, completed.error)
+        }
+    }
+
+    @Test
+    fun `stored values survive cells and remain isolated between sessions`() = nativeProcessTest {
+        NativeCodeModeRuntime().use { runtime ->
+            runtime.startSession("a", "store('value', {count: 7});", emptySet()).advance()
+            val retained = runtime.startSession("a", "text(load('value'));", emptySet()).advance()
+            assertEquals("{\"count\":7}", (retained as CodeModeStep.Completed).output)
+            val isolated = runtime.startSession("b", "text(load('value'));", emptySet()).advance()
+            assertEquals("undefined", (isolated as CodeModeStep.Completed).output)
+        }
+    }
+
+    @Test
+    fun `simultaneous session callbacks retain separate results when returned in reverse order`() = nativeProcessTest {
+        NativeCodeModeRuntime().use { runtime ->
+            val alpha = runtime.startSession("alpha", "text(await tools.Read({key:'alpha'}));", setOf("Read"))
+            val beta = runtime.startSession("beta", "text(await tools.Read({key:'beta'}));", setOf("Read"))
+            val alphaCall = async { (alpha.advance() as CodeModeStep.Calls).calls.single() }
+            val betaCall = async { (beta.advance() as CodeModeStep.Calls).calls.single() }
+            val a = alphaCall.await()
+            val b = betaCall.await()
+            assertEquals("{\"key\":\"alpha\"}", a.arguments.toString())
+            assertEquals("{\"key\":\"beta\"}", b.arguments.toString())
+            val betaResult = beta.advance(
+                listOf(
+                    CodeModeResult(b.id, "", payload = buildJsonObject { put("delegate", "beta"); put("value", 202) }),
+                ),
+            ) as CodeModeStep.Completed
+            val alphaResult = alpha.advance(
+                listOf(
+                    CodeModeResult(a.id, "", payload = buildJsonObject { put("delegate", "alpha"); put("value", 101) }),
+                ),
+            ) as CodeModeStep.Completed
+            assertEquals("{\"delegate\":\"beta\",\"value\":202}", betaResult.output)
+            assertEquals("{\"delegate\":\"alpha\",\"value\":101}", alphaResult.output)
+        }
+    }
+
+    @Test
+    fun `parallel callbacks retain independent promises and fast dependent branch advances`() = nativeProcessTest {
+        NativeCodeModeRuntime().use { runtime ->
+            val source = """
+                const fast = tools.Read({key: 'fast'}).then(value => tools.Read({key: value}));
+                const slow = tools.Read({key: 'slow'});
+                text(await fast); text(await slow);
+            """.trimIndent()
+            val cell = runtime.startSession("callbacks", source, setOf("Read"))
+            val issued = (cell.advance() as CodeModeStep.Calls).calls.toMutableList()
+            if (issued.size == 1) issued.addAll((cell.advance() as CodeModeStep.Calls).calls)
+            val fast = issued.single { it.arguments.toString().contains("fast") }
+            val slow = issued.single { it.id != fast.id }
+            val dependent = cell.advance(listOf(CodeModeResult(fast.id, "next"))) as CodeModeStep.Calls
+            assertEquals("{\"key\":\"next\"}", dependent.calls.single().arguments.toString())
+            val done = cell.advance(
+                listOf(
+                    CodeModeResult(dependent.calls.single().id, "fast-finished"),
+                    CodeModeResult(slow.id, "slow-finished"),
+                ),
+            ) as CodeModeStep.Completed
+            assertEquals("fast-finished\nslow-finished", done.output)
+        }
+    }
+
+    @Test
+    fun `notification arrives while the native cell remains available for completion`() = nativeProcessTest {
+        NativeCodeModeRuntime().use { runtime ->
+            val cell = runtime.startSession("notify", "notify('working'); text('done');", emptySet())
+            assertEquals("working", (cell.advance() as CodeModeStep.Notified).text)
+            assertEquals("done", (cell.advance() as CodeModeStep.Completed).output)
+        }
+    }
+
+    @Test
+    fun `invalid module source causes no prefix effects`() = nativeProcessTest {
+        NativeCodeModeRuntime().use { runtime ->
+            val failed = runtime.startSession("parse", "store('bad', true); const = ;", emptySet()).advance()
+            assertNotNull((failed as CodeModeStep.Completed).error)
+            val observed = runtime.startSession("parse", "text(load('bad'));", emptySet()).advance()
+            assertEquals("undefined", (observed as CodeModeStep.Completed).output)
+        }
+    }
+
+    @Test
+    fun `timed yield and termination address only their own running cell`() = nativeProcessTest {
+        NativeCodeModeRuntime().use { runtime ->
+            val cell = runtime.startNativeSession(
+                "terminate",
+                "text('started'); yield_control(); await new Promise(() => {});",
+                emptySet(),
+                emptyMap(),
+                NativeCodeModeOptions(),
+            )
+            val started = cell.advance() as CodeModeStep.Yielded
+            assertEquals("started", started.output)
+            assertEquals(cell.cellId, started.cellId)
+            val timed = cell.observe(1) as CodeModeStep.Yielded
+            assertEquals(cell.cellId, timed.cellId)
+            assertEquals("", timed.output)
+            assertTrue((cell.terminate() as CodeModeStep.Completed).terminated)
+            val sibling = runtime.startSession("terminate", "text('sibling');", emptySet()).advance()
+            assertEquals("sibling", (sibling as CodeModeStep.Completed).output)
+        }
+    }
+
+    @Test
+    fun `media content stays typed through native completion`() = nativeProcessTest {
+        NativeCodeModeRuntime().use { runtime ->
+            val source = "audio('data:audio/wav;base64,AAAA'); image('data:image/png;base64,YQ==');"
+            val completed = runtime.startSession("media", source, emptySet()).advance() as CodeModeStep.Completed
+            assertEquals("", completed.output)
+            assertEquals(
+                listOf(
+                    buildJsonObject {
+                        put("type", "input_audio")
+                        put("audio_url", "data:audio/wav;base64,AAAA")
+                    },
+                    buildJsonObject {
+                        put("type", "input_image")
+                        put("image_url", "data:image/png;base64,YQ==")
+                        put("detail", "high")
+                    },
+                ),
+                completed.content,
+            )
+        }
+    }
+
+    @Test
+    fun `simultaneous sessions with the same native cell id keep their callbacks isolated`() = nativeProcessTest {
+        NativeCodeModeRuntime().use { runtime ->
+            val a = runtime.startSession("a", "text(await tools.Read({key:'a'}));", setOf("Read"))
+            val b = runtime.startSession("b", "text(await tools.Read({key:'b'}));", setOf("Read"))
+            val aCall = (a.advance() as CodeModeStep.Calls).calls.single()
+            val bCall = (b.advance() as CodeModeStep.Calls).calls.single()
+            assertEquals("{\"key\":\"a\"}", aCall.arguments.toString())
+            assertEquals("{\"key\":\"b\"}", bCall.arguments.toString())
+            val aDone = a.advance(listOf(CodeModeResult(aCall.id, "answer-a"))) as CodeModeStep.Completed
+            val bDone = b.advance(listOf(CodeModeResult(bCall.id, "answer-b"))) as CodeModeStep.Completed
+            assertEquals("answer-a", aDone.output)
+            assertEquals("answer-b", bDone.output)
+        }
+    }
+
+    @Test
+    fun `callback results can arrive while a separate observation is pending`() = nativeProcessTest {
+        NativeCodeModeRuntime().use { runtime ->
+            val cell = runtime.startNativeSession(
+                "independent",
+                "text(await tools.Read({key:'a'}));",
+                setOf("Read"),
+                emptyMap(),
+                NativeCodeModeOptions(),
+            )
+            val call = (cell.advance() as CodeModeStep.Calls).calls.single()
+            val observation = async { cell.observe(NATIVE_TEST_WAIT_MS) }
+            yield()
+            cell.submitResults(listOf(CodeModeResult(call.id, "accepted")))
+            assertEquals("accepted", (observation.await() as CodeModeStep.Completed).output)
+        }
+    }
+
+    @Test
+    fun `client text results retain JSON-looking text as strings`() = nativeProcessTest {
+        NativeCodeModeRuntime().use { runtime ->
+            val cell = runtime.startSession(
+                "text-result",
+                "text(await tools.Read({})); " +
+                    "const result = await tools.Read({}); text(typeof result); text(JSON.parse(result).count);",
+                setOf("Read"),
+            )
+            val call = (cell.advance() as CodeModeStep.Calls).calls.single()
+            val next = cell.advance(listOf(CodeModeResult(call.id, "accepted"))) as CodeModeStep.Calls
+            val result = cell.advance(
+                listOf(CodeModeResult(next.calls.single().id, "{\"count\":7}")),
+            ) as CodeModeStep.Completed
+            assertEquals(null, result.error)
+            assertEquals("accepted\nstring\n7", result.output)
+        }
+    }
+
+    @Test
+    fun `an explicitly typed delegate value reaches the native promise as an object`() = nativeProcessTest {
+        NativeCodeModeRuntime().use { runtime ->
+            val cell = runtime.startSession("typed-result", "text((await tools.Read({})).count);", setOf("Read"))
+            val call = (cell.advance() as CodeModeStep.Calls).calls.single()
+            val result = cell.advance(
+                listOf(CodeModeResult(call.id, "legacy text", payload = buildJsonObject { put("count", 7) })),
+            ) as CodeModeStep.Completed
+            assertEquals(null, result.error)
+            assertEquals("7", result.output)
+        }
+    }
+
+    @Test
+    fun `malformed client function input rejects its promise without issuing a callback`() = nativeProcessTest {
+        NativeCodeModeRuntime().use { runtime ->
+            val source = "try { await tools.Read('wrong'); } catch(e) { text(String(e)); }"
+            val result = runtime.startSession("invalid-input", source, setOf("Read")).advance()
+            assertEquals(
+                "tool `Read` expects a JSON object for arguments",
+                (result as CodeModeStep.Completed).output,
+            )
+        }
+    }
+
+    @Test
+    fun `yielded cells retain configured capacity until their termination is acknowledged`() = nativeProcessTest {
+        NativeCodeModeRuntime(
+            limits = PoolLimits(memoryBudgetMb = NATIVE_TEST_MEMORY_MB),
+            cellHeapMb = NATIVE_TEST_HEAP_MB,
+        ).use { runtime ->
+            val cell = runtime.startNativeSession(
+                "capacity",
+                "yield_control(); await new Promise(()=>{});",
+                emptySet(),
+                emptyMap(),
+                NativeCodeModeOptions(),
+            )
+            assertTrue(cell.advance() is CodeModeStep.Yielded)
+            var refused = false
+            try {
+                runtime.startSession("capacity", "text('must not start');", emptySet())
+            } catch (_: CodeModeCapacityException) {
+                refused = true
+            }
+            assertTrue(refused)
+            cell.terminate()
+            val resumed = runtime.startSession("capacity", "text('after release');", emptySet()).advance()
+            assertEquals("after release", (resumed as CodeModeStep.Completed).output)
+        }
+    }
+}
+
+private const val NATIVE_TEST_WAIT_MS: Long = 1_000
+private const val NATIVE_TEST_MEMORY_MB: Long = 224
+private const val NATIVE_TEST_HEAP_MB: Int = 16

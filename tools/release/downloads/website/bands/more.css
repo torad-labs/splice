@@ -1,0 +1,354 @@
+/* more: the band of other features. System prompts, compaction instructions, shared MCP servers, local models and upgrades,
+   five tabs in one window, drawn with the console's own parts and made-up data. Class prefix mo-. */
+
+/* the band's type ladder is the page's: label = step 1, data = step 2, name = step 3, focal figure = step 4 (page.css). The console's
+   own size tokens (--kicker, --fig-focal) and its card gap take the same steps inside this band, so a console part that reads them
+   lands on the scale without its own rule. --mo-row is one row pitch for a list of objects; --ctl-h is a control that holds one line
+   of data text with 4 px or more of air above and below it. */
+.mo-band{--mo-ts:var(--pg-t-1);--mo-tm:var(--pg-t-2);--mo-tl:var(--pg-t-3);--mo-fig:var(--pg-t-4);--kicker:var(--pg-t-1);--fig-focal:var(--pg-t-4);--gap-card:var(--pg-sp-4);--ctl-h:calc(var(--pg-t-2) * 1.3 + var(--pg-sp-3) + 6px);--mo-row:calc(var(--pg-t-3) + 2.3rem);interpolate-size:allow-keywords}
+.mo-win{--mo-pad:var(--pg-sp-5);position:relative;padding:var(--mo-pad);background:var(--obj);border:var(--ink-w) solid var(--ink);border-radius:var(--r-obj);box-shadow:var(--cast) var(--cast) 0 var(--ink)}
+
+/* band reveal: once, when the band first scrolls into view. Heading, line and window each rise 1.4rem and fade up from 28% over --t-pop (260 ms)
+   on --e-out, 30 ms apart (--d). The band keeps its height while it waits, so nothing below it moves. is-seen is added once and never removed. */
+@keyframes mo-rise{from{opacity:.28;transform:translateY(1.4rem)}}
+@keyframes mo-fade{from{opacity:.28}}
+@keyframes mo-lift{from{transform:translateY(1.4rem)}}
+@keyframes mo-panel{from{opacity:0;transform:translateY(.8rem)}}
+@keyframes mo-fill{from{transform:scaleX(0)}}
+@keyframes mo-ring{from{stroke-dasharray:0 100.53}}
+@keyframes mo-type{from{clip-path:inset(0 100% 0 0)}}
+@keyframes mo-line{from{opacity:0}}
+@keyframes mo-swap{from{opacity:0}}
+
+/* tabs: the console's topic cards in a row, the open one raised in neutral ink (settings.css .card.job).
+   The five panels share one cell, so the window keeps the tallest panel's height on every tab and nothing below the band moves. Each panel is as
+   tall as its own content and its content stands centred in that height, so a shorter panel leaves its bare plate half above and half below.
+   The panel that opens eases in over --t-snap (240 ms): it rises .8rem and fades up. The panel that closes fades out over --t-hit (90 ms)
+   first, so the two never read on top of each other. Fills grow, rings draw and terminals type over the same tokens. */
+.mo-tabs{position:relative;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));column-gap:var(--gap-card);align-items:stretch}
+.mo-r,.mo-sr{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;margin:0}
+.mo-tab{grid-row:1;grid-column:var(--n);display:flex;flex-direction:column;justify-content:center;min-width:0;cursor:pointer;--c:var(--track-line);box-shadow:none}
+.mo-tab .top{min-height:2rem;gap:var(--pg-sp-2)}
+.mo-tab .jname{font-size:var(--mo-ts);line-height:1.25;min-width:0;white-space:nowrap}
+.mo-tab .jglyph svg{width:var(--mo-ts);height:var(--mo-ts)}
+.mo-tab:hover{background:var(--obj-high)}
+.mo-r:checked + .mo-tab{--c:var(--text-mute);border-color:var(--sel-ink);background:var(--sel-face);box-shadow:inset .22rem 0 0 var(--sel-ink),inset 0 0 0 .1rem var(--sel-line)}
+.mo-r:checked + .mo-tab .jglyph{color:var(--text)}
+.mo-r:focus-visible + .mo-tab{outline:var(--ink-w) solid var(--text);outline-offset:.18rem}
+/* the five labels each stand on one line. Where the window cannot hold five in a row (under a 1,900 px container) the tabs are three over two
+   on a six-column grid, the second row's two tabs half the width each; from 1,900 px the five share the row by their own widths. */
+@container pg (min-width:821px) and (max-width:1899px){
+  .mo-tabs{grid-template-columns:repeat(6,minmax(0,1fr))}
+  .mo-tab:nth-of-type(1){grid-row:1;grid-column:1/span 2}
+  .mo-tab:nth-of-type(2){grid-row:1;grid-column:3/span 2}
+  .mo-tab:nth-of-type(3){grid-row:1;grid-column:5/span 2}
+  .mo-tab:nth-of-type(4){grid-row:2;grid-column:1/span 3;margin-top:var(--gap-card)}
+  .mo-tab:nth-of-type(5){grid-row:2;grid-column:4/span 3;margin-top:var(--gap-card)}
+  .mo-tabs>.mo-panel{grid-row:3}
+}
+@container pg (min-width:1900px){
+  .mo-tabs{grid-template-columns:repeat(5,auto)}
+  .mo-tab{min-width:auto}
+}
+.mo-chev{display:none;width:var(--mo-ts);height:var(--mo-ts);margin-left:auto;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;color:var(--text-mute);transition:transform var(--t-snap) var(--e-out)}
+.mo-r:checked + .mo-tab .mo-chev{transform:rotate(90deg)}
+.mo-panel{grid-row:2;grid-column:1/-1;min-width:0;display:grid;opacity:0;visibility:hidden;pointer-events:none;transition:opacity var(--t-hit) var(--e-out),visibility 0s linear var(--t-hit)}
+.mo-pin{min-width:0;display:flex;flex-direction:column}
+.mo-pc{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;justify-content:center;margin-top:var(--pg-sp-4);padding-top:var(--pg-sp-4);border-top:1px solid var(--hair)}
+.mo-pc>.mo-fill{flex:0 0 auto}
+.mo-r:checked + .mo-tab + .mo-panel{opacity:1;visibility:visible;pointer-events:auto;transition:none}
+@media (prefers-reduced-motion:no-preference){
+  .pg-js [data-reveal]:not(.is-seen) .mo-ev:not(.mo-win){opacity:.28;transform:translateY(1.4rem)}
+  [data-reveal].is-seen .mo-ev:not(.mo-win){animation:mo-rise var(--t-pop) var(--e-out) calc(var(--d) * 1ms) backwards}
+  /* the window's own box never moves, so it stands at the same offset under the band top whether the band is seen or not (as the Setup window does):
+     its frame fades up and its content rises inside it */
+  .pg-js [data-reveal]:not(.is-seen) .mo-win.mo-ev{opacity:.28}
+  .pg-js [data-reveal]:not(.is-seen) .mo-win.mo-ev>.mo-tabs{transform:translateY(1.4rem)}
+  [data-reveal].is-seen .mo-win.mo-ev{animation:mo-fade var(--t-pop) var(--e-out) calc(var(--d) * 1ms) backwards}
+  [data-reveal].is-seen .mo-win.mo-ev>.mo-tabs{animation:mo-lift var(--t-pop) var(--e-out) calc(var(--d) * 1ms) backwards}
+  .mo-r:checked + .mo-tab + .mo-panel{animation:mo-panel var(--t-snap) var(--e-out) backwards}
+  /* what grows inside the open panel plays when the band is first seen and again on each tab change */
+  [data-reveal].is-seen .mo-r:checked + .mo-tab + .mo-panel :is(.wbar>i,.pd-seg){transform-origin:left center;animation:mo-fill var(--t-snap) var(--e-out) calc(var(--i,0) * 14ms) backwards}
+  [data-reveal].is-seen .mo-r:checked + .mo-tab + .mo-panel .pd-ring .rv{animation:mo-ring var(--t-snap) var(--e-out) calc(var(--i,0) * 14ms) backwards}
+  [data-reveal].is-seen .mo-r:checked + .mo-tab + .mo-panel .rail-sock.run{animation:pop var(--t-pop) var(--e-out) 1 backwards}
+  /* a terminal types its command over --t-snap, then each answer fades in over --t-hover and a bar grows over --t-move */
+  [data-reveal].is-seen .mo-r:checked + .mo-tab + .mo-panel .mo-typed{animation:mo-type var(--t-snap) steps(var(--mo-n),end) calc(var(--mo-d,0) * 1ms) backwards}
+  [data-reveal].is-seen .mo-r:checked + .mo-tab + .mo-panel .mo-tl{animation:mo-line var(--t-hover) var(--e-out) calc(var(--mo-d,0) * 1ms) backwards}
+  [data-reveal].is-seen .mo-r:checked + .mo-tab + .mo-panel .mo-prog .bar>b{transform-origin:left center;animation:mo-fill var(--t-move) var(--e-out) calc(var(--mo-d,0) * 1ms) backwards}
+}
+
+/* panels: a 12-column grid inside the window; the page's gap between neighbours */
+.mo-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:var(--pg-sp-4)}
+.mo-s5{grid-column:span 5;min-width:0}
+.mo-s6{grid-column:span 6;min-width:0}
+.mo-s7{grid-column:span 7;min-width:0}
+.mo-k{margin:0 0 var(--pg-sp-3)}
+
+/* the console's components on the band's ladder: label (step 1), data (step 2), name (step 3), focal figure (step 4). Plain selector
+   lists, so the console's own sizes lose on specificity and no :is() list raises a rule above its neighbours */
+.mo-band .mo-win .chip,.mo-band .mo-win .state,.mo-band .mo-win .pd-sub,.mo-band .mo-win .pd-stat small,.mo-band .mo-win .rail-sk em,.mo-band .mo-win .mo-exlab,.mo-band .mo-win .act.door,.mo-band .mo-win .kicker,.mo-band .mo-win .mo-ttl,.mo-band .mo-win .mo-lab,.mo-band .mo-win .mo-note,.mo-band .mo-win .mo-plus{font-size:var(--mo-ts)}
+.mo-band .mo-win .card .name,.mo-band .mo-win .card.h .cmodel,.mo-band .mo-win .rl-num,.mo-band .mo-win .term .tx,.mo-band .mo-win .field,.mo-band .mo-win .rail-sk b,.mo-band .mo-win .sdoor,.mo-band .mo-win .sdoor span,.mo-band .mo-win .mo-pct,.mo-band .mo-win .mo-scope label,.mo-band .mo-win .rail-sock,.mo-band .mo-win .pd-stat b,.mo-band .mo-win .jname{font-size:var(--mo-tm)}
+.mo-band .mo-win .lmc-name,.mo-band .mo-win .provider h2{font-size:var(--mo-tl)}
+.mo-band .mo-win .pd-sub b,.mo-band .mo-win .pd-stat.focal b{font-size:var(--mo-fig)}
+.mo-band .mo-win .mo-tab .jname{font-size:var(--mo-ts)}
+.mo-band .mo-win .pd-sub,.mo-band .mo-win .pd-stat.focal b{line-height:1.3}
+.mo-band .mo-win .pd-stat small{line-height:1.3;max-width:24em}
+.mo-band .mo-win .rail-sk b,.mo-band .mo-win .rail-sk em{line-height:1.3}
+
+/* system prompts */
+.mo-term .mo-ttl{margin-left:var(--pg-sp-2);font:500 var(--mo-ts)/1.3 var(--font-data);color:var(--text-mute);letter-spacing:0}
+.mo-term .tbar{align-items:center}
+.mo-term .tx{white-space:pre-wrap;width:100%;justify-self:stretch}
+.mo-code{min-width:0;overflow-wrap:anywhere}
+.mo-term .tl.think .tx,.mo-cm{color:var(--text-mute)}
+.mo-term .tl{min-height:calc(var(--mo-tm) * 1.3 + var(--pg-sp-2))}
+.mo-repocard .top .jglyph svg{width:var(--mo-tm);height:var(--mo-tm)}
+.mo-pline{margin-top:var(--pg-sp-2)}
+/* a prompt is prose and Claude Code is a product name, so both chips take the name face; mono stays on commands and config keys */
+.mo-pchip,.mo-cc,.mo-pn{font-family:var(--font-name);padding:var(--pg-sp-1) var(--pg-sp-2)}
+.mo-pchip{white-space:normal;min-width:0;max-width:100%;align-items:flex-start;line-height:1.3}
+.mo-pchip svg{margin-top:.2em}
+.mo-pr{gap:var(--pg-sp-2) var(--pg-sp-3);flex-wrap:wrap}
+.mo-cc{color:var(--text-mute);border-color:var(--track-line)}
+.mo-plus{font:600 var(--mo-tm)/1 var(--font-data);color:var(--text-mute)}
+.mo-cache{margin-left:auto;flex:0 1 auto;min-width:0}
+.mo-cache>span{min-width:0;flex-direction:row;align-items:center;gap:var(--pg-sp-2)}
+.mo-band .mo-win .mo-cache small{max-width:14em}
+/* the per-repo plate leads: wider, the name step on its chips, the focal figure beside the prompt chip. The two siblings step down to
+   the label step and a .3rem cast (the console's button cast). */
+.mo-s7>.mo-plate{height:100%}
+.mo-band .mo-win .mo-lead .mo-pchip,.mo-band .mo-win .mo-lead .mo-cc{font-size:var(--mo-tm)}
+.mo-band .mo-win .mo-lead .mo-cmd .chip{font-size:var(--mo-tl)}
+.mo-sibs{display:flex;flex-direction:column;justify-content:space-between;gap:var(--pg-sp-3);padding-block:var(--pg-sp-3)}
+.mo-sibs>div:first-child{flex:1 1 auto;display:flex;flex-direction:column}
+.mo-sibs>div:first-child>.mo-term{align-content:start}
+.mo-sibs .mo-k{display:flex;align-items:center;min-height:var(--mo-ts);margin:0 0 var(--pg-sp-2)}
+.mo-band .mo-win .mo-sibs .term .tx{font-size:var(--mo-ts)}
+.mo-sibs .mo-term .tl{min-height:calc(var(--mo-ts) * 1.3 + var(--pg-sp-2))}
+.mo-sibs .mo-repocard{--cast:.3rem;padding:var(--pg-sp-2) var(--pg-sp-3) var(--pg-sp-3)}
+.mo-band .mo-win .mo-sibs .card .name{color:var(--text-body)}
+.mo-rail.rail{--gap-card:var(--pg-sp-3);margin-top:0;padding-bottom:0}
+.mo-lead .sechead{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:var(--pg-sp-2) var(--pg-sp-4)}
+/* the rail's bar runs from the middle of the first row to the middle of the last card, and every socket sits on its row's middle */
+.mo-rail.rail::before{top:calc(var(--mo-row) / 2);bottom:calc(var(--mo-row) / 2)}
+.mo-pr{position:relative;display:flex;align-items:center;min-height:var(--mo-row)}
+.mo-pr .lamp{top:50%;margin-top:-1rem}
+.mo-pchips{display:flex;flex-wrap:wrap;align-items:center;gap:var(--pg-sp-2);min-width:0}
+.mo-keysock{color:var(--obj)!important;background:var(--text)!important;box-shadow:0 0 0 var(--ink-w) var(--ink)!important}
+.mo-keysock svg{width:1rem;height:1rem;stroke-width:2.4}
+.mo-cmd{min-height:var(--mo-row);display:flex;flex-direction:column;justify-content:center;padding-block:var(--pg-sp-1)}
+.mo-cmd .lamp{top:50%;margin-top:-1rem}
+.mo-cmd .top{min-height:0}
+.mo-got{margin-left:auto;display:grid;place-items:center;width:1.6rem;height:1.6rem;border-radius:50%;color:var(--text);background:color-mix(in oklab,var(--text) 8%, transparent);box-shadow:inset 0 0 0 .1rem var(--track-line)}
+.mo-got svg{width:.95rem;height:.95rem;stroke-width:2.4}
+
+/* compaction: one plate, the setting row over the sessions it reaches. The switch is three radios, so each scope shows what it reaches. */
+.mo-plate{min-width:0}
+.mo-s5>.mo-plate,.mo-s6>.mo-plate{height:100%}
+.mo-s5>.mo-plate>.psec{height:100%;justify-content:center}
+.mo-setrow{display:flex;flex-wrap:wrap;align-items:center;gap:var(--pg-sp-3) var(--pg-sp-4)}
+.mo-win textarea.mo-field{resize:none}
+/* the plate takes the page's step 4 inside, so the two sections stand as tall as their own lines; from a 2,200 px container the window has room for the
+   taller field and the roomier cards, which keeps this panel near the height of the others there */
+.mo-comp.plate{padding:var(--pg-sp-4)}
+.mo-comp>.psec+.psec{margin-top:var(--pg-sp-4);padding-top:var(--pg-sp-4)}
+@container pg (max-width:2199px){ .mo-comp .mo-reaches{gap:var(--pg-sp-3)} }
+@container pg (min-width:2200px){
+  .mo-win textarea.mo-field{min-height:calc(4.6 * 1.4 * var(--mo-tm) + 2 * var(--pg-sp-2))}
+  .mo-reach{padding:var(--pg-sp-3)}
+}
+.mo-field{flex:1 1 22rem;width:auto;min-width:min(100%,14rem);line-height:1.4;font-family:var(--font-name);font-weight:500}
+.mo-scope{position:relative;flex:none;max-width:100%}
+.mo-scope label{display:inline-flex;align-items:center;white-space:nowrap;font:500 var(--mo-tm)/1.3 var(--font-name);color:var(--text-mute);padding:0 var(--pg-sp-2);border-radius:calc(var(--r-obj) - .15rem);cursor:pointer;transition:color var(--t-hover) var(--e-out),background-color var(--t-hover) var(--e-out)}
+.mo-scope .mo-sr:checked + label{background:var(--sel-face);color:var(--sel-ink);box-shadow:inset 0 0 0 .1rem var(--sel-line)}
+.mo-scope .mo-sr:not(:checked) + label:hover{color:var(--text-body)}
+.mo-scope .mo-sr:focus-visible + label{outline:var(--ink-w) solid var(--text);outline-offset:.18rem}
+.mo-count{display:flex;align-items:center;gap:var(--pg-sp-4)}
+.mo-count .pd-sub{flex:none}
+.mo-n{display:none;white-space:nowrap}
+.mo-pips{flex:1 1 auto;display:flex;gap:var(--pg-sp-1);margin:0}
+.mo-pips>i{flex:1 1 0;height:.9rem;border-radius:.2rem;background:transparent;box-shadow:inset 0 0 0 .1rem var(--track-line);transition:background-color var(--t-snap) var(--e-out),box-shadow var(--t-snap) var(--e-out)}
+.mo-comp>.psec:last-child{flex:1 1 auto}
+.mo-reaches{flex:1 1 auto;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--pg-sp-4);align-content:start}
+.mo-reach{display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:var(--pg-sp-2);min-width:0;padding:var(--pg-sp-2) var(--pg-sp-3);border:.1rem solid var(--track-line);border-radius:var(--r-in);background:var(--obj-sunk);transition:opacity var(--t-snap) var(--e-out),background-color var(--t-snap) var(--e-out)}
+.mo-reach .chip.edge{padding-left:calc(.55rem + .12rem - 1px)}
+.mo-host.card{display:block;padding:0;border:0;background:none;box-shadow:none;top:auto;left:auto}
+.mo-host .onlogin{margin:0!important;padding:0!important;border:0!important;box-shadow:none!important}
+.mo-band .mo-win .mo-host .sdoor{white-space:nowrap;gap:var(--pg-sp-2)}
+.mo-win .sdoor .lamp{width:1.5rem;height:1.5rem}
+/* the sessions fall three and two on cells of one width, so the second row's cards match the first row's; the longest card (name, lamp and
+   padding) is under 170 px, and five across leave each card at least that only from a 2,300 px container */
+@container pg (min-width:2300px){ .mo-reaches{grid-template-columns:repeat(5,minmax(0,1fr))} }
+/* from 821 to 2,299 px the sessions sit on six columns: the first three take two each and the last two take three each, so the second row
+   fills the plate as the tabs' second row does (the stacked layout at 820 and under is unchanged) */
+@container pg (min-width:821px) and (max-width:2299px){
+  .mo-reaches{grid-template-columns:repeat(6,minmax(0,1fr))}
+  .mo-reach{grid-column:span 2}
+  .mo-reach:nth-child(n+4){grid-column:span 3}
+}
+/* the scope in force lights the sessions it reaches and dims the rest, over --t-snap */
+.mo-comp:has(.mo-sr[value="all"]:checked) .mo-n-all,.mo-comp:has(.mo-sr[value="model"]:checked) .mo-n-model,.mo-comp:has(.mo-sr[value="project"]:checked) .mo-n-project{display:inline}
+@media (prefers-reduced-motion:no-preference){
+  .mo-comp:has(.mo-sr[value="all"]:checked) .mo-n-all,.mo-comp:has(.mo-sr[value="model"]:checked) .mo-n-model,.mo-comp:has(.mo-sr[value="project"]:checked) .mo-n-project{animation:mo-swap var(--t-snap) var(--e-out) backwards}
+}
+.mo-comp:has(.mo-sr[value="all"]:checked) .mo-reach:not([data-s~="all"]),.mo-comp:has(.mo-sr[value="model"]:checked) .mo-reach:not([data-s~="model"]),.mo-comp:has(.mo-sr[value="project"]:checked) .mo-reach:not([data-s~="project"]){opacity:.5;background-color:transparent}
+.mo-comp:has(.mo-sr[value="all"]:checked) .mo-pips>i[data-s~="all"],.mo-comp:has(.mo-sr[value="model"]:checked) .mo-pips>i[data-s~="model"],.mo-comp:has(.mo-sr[value="project"]:checked) .mo-pips>i[data-s~="project"]{background:var(--text-body);box-shadow:none}
+
+/* shared MCP servers: two plates with the same three rows, so three copies sit beside one. One focal figure: the 1. */
+.mo-sub{display:flex;align-items:flex-end;min-height:calc(var(--mo-fig) * 1.3)}
+.mo-lab{font:500 var(--mo-ts)/1.3 var(--font-name);color:var(--text-mute)}
+.mo-rows{--mo-rh:calc(var(--mo-tm) * 1.3 + var(--pg-sp-2));display:grid;grid-template-rows:repeat(3,var(--mo-rh));row-gap:calc(var(--pg-sp-4) + 6px)}
+.mo-pair{display:flex;align-items:center;min-width:0;height:var(--mo-rh)}
+.mo-pair>.mo-srv,.mo-pair>.mo-host{flex:none}
+.mo-w{display:block;flex:1 1 .8rem;min-width:.8rem;height:.24rem;border-radius:.12rem;background:var(--text-mute);opacity:.7}
+.mo-srv{--c:var(--text-mute)}
+.mo-srv svg{color:var(--text-mute)}
+.mo-fan{--mo-rh:calc(var(--mo-tm) * 1.3 + var(--pg-sp-2));display:grid;grid-template-columns:auto minmax(1rem,1fr) .56rem 2.4rem auto;grid-template-rows:repeat(3,var(--mo-rh));row-gap:calc(var(--pg-sp-4) + 6px);align-items:center}
+.mo-fsrv{grid-column:1;grid-row:1/4;align-self:center}
+.mo-w0{grid-column:2;grid-row:1/4;align-self:center}
+.mo-bar{grid-column:3;grid-row:1/4;align-self:stretch;margin-block:calc(var(--mo-rh) / 2);background:var(--rail);border-radius:.28rem;box-shadow:0 0 0 var(--ink-w) var(--ink)}
+.mo-w1,.mo-w2,.mo-w3{grid-column:4;flex:none;min-width:0}
+.mo-w1{grid-row:1}.mo-w2{grid-row:2}.mo-w3{grid-row:3}
+.mo-f1,.mo-f2,.mo-f3{grid-column:5}
+.mo-f1{grid-row:1}.mo-f2{grid-row:2}.mo-f3{grid-row:3}
+.mo-s12{grid-column:1/-1;min-width:0}
+.mo-apart{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--pg-sp-4);padding:var(--pg-sp-3) var(--pg-sp-4);border:.1rem dashed var(--track-line);border-radius:var(--r-in);height:100%}
+.mo-apart{align-items:center}
+.mo-ex{display:flex;flex-direction:column;gap:var(--pg-sp-2);min-width:0}
+.mo-exlab{margin:0;font:500 var(--mo-ts)/1.3 var(--font-name);color:var(--text-body)}
+
+/* local models */
+.mo-servers{display:flex;flex-wrap:wrap;gap:var(--pg-sp-2);margin-top:var(--pg-sp-1)}
+.mo-servers .chip{--c:var(--local)}
+.mo-prog{display:block;flex:1 1 auto;min-width:0}
+.mo-prog .bar{display:block;height:.7rem}
+.mo-prog .bar.sub{height:.7rem}
+.mo-bl{flex:none;min-width:19ch}
+.mo-pct{flex:none;min-width:3ch;text-align:right;font:600 var(--mo-tm)/1.3 var(--font-data);font-variant-numeric:tabular-nums;color:var(--text)}
+.mo-typed{display:inline-block;white-space:nowrap;width:calc(var(--mo-n) * 1ch);vertical-align:bottom}
+.mo-prov .card{--c:var(--local)}
+.mo-win .local-model.lmc-body{margin-top:var(--pg-sp-1)}
+.mo-lrail.rail{padding-left:0}
+.mo-lprov>.mo-prov{height:100%;display:flex;flex-direction:column}
+.mo-lrail.rail{flex:1 1 auto;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:1fr}
+.mo-lrail>.card{display:flex;flex-direction:column}
+.mo-lrail{--gap-card:var(--pg-sp-4)}
+.mo-local{grid-template-rows:auto auto}
+.mo-lterm>.term{width:100%}
+.mo-lrail .card .top{min-height:2rem}
+.mo-lrail .lmc-body{flex:1 1 auto;grid-template-columns:minmax(0,1fr) auto;align-content:center;align-items:center;gap:var(--pg-sp-2) var(--pg-sp-3)}
+.mo-lrail .lmc-foot{grid-column:2;grid-row:1}
+.mo-lrail .lmc-hold{display:none}
+.mo-lrail .mo-servers{grid-column:1/-1;margin-top:0}
+.mo-tall{display:flex;flex-direction:column}
+.mo-tall>.term{align-content:start}
+.mo-lterm{display:flex;flex-direction:column}
+/* the window holds the tallest panel's height; a shorter panel keeps each block as tall as its own content and stands centred in it */
+.mo-fit{align-content:start}
+.mo-tall .term .tl{min-height:calc(var(--mo-tm) * 1.3 + var(--pg-sp-4) + 3px)}
+/* the upgrade and rollback bars are neutral: the track is the console's, the fill is the text ink. The green stays on the cards. */
+.mo-ink .bar{--c:var(--text)}
+
+/* upgrades */
+.mo-socks{margin-top:var(--pg-sp-3);max-width:32rem}
+.mo-socks .rail-sock{width:2.4rem;height:2.4rem;padding:0}
+.mo-socks.rail-socks::before{top:1.2rem}
+.mo-socks .rail-sock.run{color:var(--splice-on-fill)}
+.mo-socks .rail-sk{gap:var(--pg-sp-1)}
+.mo-socks .rail-sk b{margin-top:var(--pg-sp-1)}
+
+/* narrow: read the page's own width */
+@container pg (max-width:1100px){
+  /* the five tabs stay one row of five and the five panels keep sharing one cell, so the window holds the tallest panel's height here too */
+  .mo-lrail.rail{grid-auto-rows:auto}
+}
+/* at 820 and under the tabs are rows that open in place. The height cannot be held there without padding, so it eases over --t-snap:
+   the open panel's row grows from 0 to its height while the closing one shuts and fades out. */
+@container pg (max-width:820px){
+  .mo-win{--mo-pad:var(--pg-sp-3)}
+  .mo-grid{grid-template-columns:minmax(0,1fr)}
+  .mo-s5,.mo-s6,.mo-s7,.mo-s12{grid-column:1/-1}
+  .mo-sibs{padding-block:0}
+  /* the version plate is a row once it has the window's width: the kicker and the running version on the left, the arc and the two sockets
+     across the right */
+  .mo-upg .mo-s5>.mo-plate>.psec{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);grid-template-rows:auto auto;column-gap:var(--pg-sp-5);align-items:end;align-content:center}
+  .mo-upg .mo-s5 .sechead{grid-column:1;grid-row:1;align-self:start}
+  .mo-upg .mo-s5 .pd-sub{grid-column:1;grid-row:2}
+  .mo-upg .mo-s5 .mo-back{grid-column:2;grid-row:1;max-width:none;align-self:end}
+  .mo-upg .mo-s5 .mo-socks{grid-column:2;grid-row:2;max-width:none;margin-top:0}
+  .mo-tabs{grid-template-columns:minmax(0,1fr);row-gap:0}
+  .mo-tab ~ .mo-tab{margin-top:var(--gap-card)}
+  .mo-tab{grid-row:auto;grid-column:auto}
+  .mo-chev{display:block}
+  .mo-panel,.mo-r:checked + .mo-tab + .mo-panel{display:block}
+  .mo-panel{grid-row:auto;transition:opacity var(--t-snap) var(--e-out),visibility 0s linear var(--t-snap)}
+  .mo-pin{display:block;height:0;min-height:0;overflow:hidden;transition:height var(--t-snap) var(--e-out)}
+  .mo-pc{margin-top:var(--gap-card);padding-top:var(--pg-sp-3)}
+  .mo-r:checked + .mo-tab + .mo-panel{transition:opacity var(--t-snap) var(--e-out)}
+  .mo-r:checked + .mo-tab + .mo-panel .mo-pin{height:auto}
+  .mo-win .plate{padding:var(--pg-sp-3)}
+  .mo-prov{padding:0 var(--cast) var(--cast) 0}
+  .mo-reaches{grid-template-columns:minmax(0,1fr)}
+  .mo-reach,.mo-reach:nth-child(n+4){grid-column:auto}
+  .mo-lrail.rail{grid-template-columns:minmax(0,1fr)}
+  .mo-reach{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--pg-sp-2) var(--pg-sp-3);padding:var(--pg-sp-2) var(--pg-sp-3)}
+  .mo-count{flex-wrap:wrap}
+  .mo-apart{grid-template-columns:minmax(0,1fr);padding:var(--pg-sp-3)}
+  .mo-fan{grid-template-columns:auto minmax(.6rem,1.4rem) .56rem 1rem auto}
+  .mo-band .mo-win .mo-lead .mo-pchip,.mo-band .mo-win .mo-lead .mo-cc{font-size:var(--mo-ts)}
+  .mo-cache{margin-left:0;flex:1 1 100%}
+  .mo-cache>span{flex-direction:column;align-items:flex-start;gap:var(--pg-sp-1)}
+  .mo-band .mo-win .mo-cache small{max-width:22em}
+  .mo-sibs>div{padding:0 var(--pg-sp-1) var(--pg-sp-1) 0}
+  .mo-lrail .card .top{flex-wrap:wrap;row-gap:var(--pg-sp-2)}
+}
+/* on a phone the three scopes share the switch's width, each label on one line; a terminal row that carries a bar puts its label on its own
+   line, so the bar and its percent share the row under it and the bar keeps its length */
+@container pg (max-width:640px){
+  .mo-scope{display:flex;width:100%;height:auto;min-height:var(--ctl-h)}
+  .mo-scope label{flex:1 1 auto;justify-content:center;white-space:nowrap;text-align:center;padding:var(--pg-sp-1) calc(var(--pg-sp-1) / 2);line-height:1.2}
+  .mo-tall .tx{flex-wrap:wrap}
+  .mo-tall .mo-bl{flex:1 1 100%;min-width:0}
+  .mo-tall .mo-prog{flex:1 1 8rem}
+  .mo-upg .mo-s5>.mo-plate>.psec{grid-template-columns:minmax(0,1fr);grid-template-rows:none;align-items:stretch;align-content:space-between}
+  .mo-upg .mo-s5 :is(.sechead,.pd-sub,.mo-back,.mo-socks){grid-column:1;grid-row:auto;align-self:auto}
+  .mo-upg .mo-s5 .mo-back{max-width:32rem}
+  .mo-upg .mo-s5 .mo-socks{max-width:32rem;margin-top:var(--pg-sp-3)}
+  .mo-reach{padding:var(--pg-sp-2) var(--pg-sp-1);gap:var(--pg-sp-1)}
+}
+/* where the longest card (name and command) no longer fits one row, all five stack the command under the name, so the five agree */
+@container pg (max-width:380px){
+  .mo-scope{flex-direction:column}
+  .mo-reach{flex-direction:column;align-items:flex-start;justify-content:flex-start}
+}
+.mo-plus::before{content:"+"}
+
+/* storefront: the prompt is a file in the repo, .splice/prompt.md, and the chip beside it is what it says */
+.mo-pfile{display:inline-flex;flex-direction:column;align-items:stretch;min-width:0;max-width:100%;overflow:hidden;background:var(--obj-sunk);border:.12rem solid var(--track-line);border-radius:var(--r-in)}
+.mo-pfn,.mo-pft{display:flex;align-items:center;gap:var(--pg-sp-1);min-width:0;padding:var(--pg-sp-1) var(--pg-sp-2)}
+.mo-pfn{border-bottom:.12rem solid var(--track-line);font:500 var(--mo-ts)/1.3 var(--font-data);color:var(--text-mute)}
+.mo-pfn code{font:inherit;color:var(--text-body)}
+.mo-pft{font:500 var(--mo-tm)/1.3 var(--font-name);color:var(--text)}
+.mo-pfn svg,.mo-pft svg{flex:none;width:var(--mo-ts);height:var(--mo-ts)}
+
+/* upgrades: the version plate runs its three parts down the plate, the rollback drawn as an arrow back to the version before */
+.mo-upg .mo-s5>.mo-plate>.psec{justify-content:space-between}
+.mo-upg .mo-tall>.term{align-content:start}
+.mo-back{display:block;width:100%;max-width:32rem;height:auto;margin:0;fill:none;stroke:var(--text-mute);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:5 5;vector-effect:non-scaling-stroke}
+.mo-back path{vector-effect:non-scaling-stroke}
+.mo-back path:last-child{stroke-dasharray:none}
+
+/* the drawings from a 1,280 px container: the head column stands beside the window (as the page's own split does from 2,200 px), the
+   head's drawing runs a cable down to a rack of two units, and a lamp row stands in the gutter */
+.mo-band .pg-art>.mo-rack,.mo-gut{display:none}
+@container pg (min-width:1280px){
+  .mo-band .pg-split{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:var(--pg-cg);align-items:start}
+  .mo-band .pg-split>.mo-head{display:flex;flex-direction:column;align-self:stretch;grid-column:1/span 4;grid-row:1;margin-bottom:0;padding-right:clamp(0px,1vw,32px);padding-left:0;contain:size}
+  .mo-band .pg-split>.mo-win{grid-column:5/-1;grid-row:1;margin-top:0}
+  .mo-band .pg-split>.mo-head>.pg-art{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;justify-self:stretch;align-self:stretch;width:auto;margin-top:var(--pg-sp-5)}
+  .mo-band .pg-split>.mo-head>.pg-art>svg{flex:0 1 auto;min-height:0}
+  .mo-band .pg-split>.mo-head>.pg-art .pg-stub{display:inline}
+  .mo-band .pg-split>.mo-head>.pg-art::after{content:"";flex:1 1 auto;min-height:0;width:8px;margin-left:calc(var(--pg-ax,9%) - 4px);background:linear-gradient(var(--pg-cable),var(--pg-cable)) 50% 0 / 1.5px 100% no-repeat,radial-gradient(circle,var(--pg-dot,var(--claude)) 0 2.6px,transparent 3.2px) 50% 0 / 8px 8px no-repeat}
+  .mo-band .pg-split>.mo-head>.pg-art>.mo-rack{display:block;order:2}
+  .mo-gut{display:block;position:absolute;z-index:0;left:calc(var(--pg-m) / 2 - 14px);top:calc(var(--pg-sp-7) + 120px);width:28px;pointer-events:none}
+}

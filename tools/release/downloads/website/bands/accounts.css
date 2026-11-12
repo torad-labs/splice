@@ -1,0 +1,325 @@
+/* accounts band. The plate is the console's own markup (accounts.css) with made-up data; the page's parts are pg-band, pg-in, pg-h2 and pg-line. */
+
+.ac-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* ---------- the band: one heading, one line, one component ---------- */
+.ac-hd-t { min-width: 0; }
+.ac-tabs { --ctl-h: 2.7rem; flex: none; justify-self: start; margin-top: var(--pg-sp-4); }
+.ac-tabs label {
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer; white-space: nowrap;
+  font: 500 var(--fr-tm)/1 var(--font-name); color: var(--text-mute); padding: 0 .8rem; border-radius: calc(var(--r-obj) - .15rem);
+  transition: color var(--t-hover) var(--e-out), background-color var(--t-hover) var(--e-out);
+}
+.ac-tabs label:hover { color: var(--text-body); }
+.ac-plate {
+  --ctl-h: 2.7rem; --gap-card: var(--pg-sp-4); --gap-col: var(--pg-sp-5);
+  background: var(--wall-low); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
+  box-shadow: var(--cast) var(--cast) 0 var(--ink); padding: calc(4 * var(--u));
+}
+.ac-plate .act { cursor: default; }
+.ac-pin { container: acw / inline-size; }
+
+/* ---------- type: the plate's console parts read the page's steps (--kicker, --fr-ts, --fr-tm, --fig-focal, --fig-hero) ---------- */
+.ac-plate .provider > header h2 { font-size: var(--fig-focal); line-height: 1.3; }
+.ac-plate .card .name, .ac-plate .add, .ac-plate .add .plus, .ac-win-l, .ac-tabs label,
+.ac-plate .windows .label, .ac-plate .windows .pct, .ac-plate .windows .when, .ac-plate .windows .heldline { font-size: var(--fr-tm); }
+/* the Budget and Usage views' rows read at the Accounts view's step: a row's name and figure (62%, Resets midnight, a preset, a button, 74%, 2d 21h,
+   Requests, Failed, At API prices) are --fr-tm; kickers, the hour axis and the chip that names the command stay --fr-ts */
+.ac-plate .meter.day, .ac-plate .meter.day .label, .ac-plate .meter.day .pct, .ac-plate .meter.day .pct .used, .ac-plate .meter.day .when, .ac-plate .meter.day .ads-unit, .ac-plate .meter.day .act.ac-bud,
+.ac-plate .editor, .ac-plate .editor button, .ac-plate .editor .field, .ac-plate .money-in,
+.ac-plate .ac-cmds .pct, .ac-plate .ac-cmds .when, .ac-plate .ac-cmds .chip, .ac-plate .ac-tiles .pd-stat small { font-size: var(--fr-tm); }
+.ac-plate .kicker, .ac-plate .act.ac-copy { font-size: var(--fr-ts); }
+.ac-plate .pct .used,
+.ac-plate .chip, .ac-plate .plan, .ac-plate .socket, .ac-plate .msock, .ac-plate .state, .ac-code, .ac-pchip,
+.ac-plate .dayrun .marks b,
+.ac-plate .moves, .ac-plate .moveline { font-size: var(--fr-ts); }
+
+/* ---------- parts of the plate ---------- */
+.ac-board { --when-n: 20; }
+.ac-note { margin-left: auto; font: 600 var(--fr-ts)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
+.ac-plate .provider > header { margin-bottom: 1rem; }
+.ac-plate .provider > header .chip { margin-left: .333rem; }
+.ac-plate .card .top .grip, .ac-plate .card .top .icon.more { display: inline-grid; place-items: center; }
+.ac-plate .card .top .grip { pointer-events: none; }
+.ac-plate .card .top .icon.more { pointer-events: none; color: var(--text-mute); }
+.ac-lock { transform-origin: 50% 50%; }
+.ac-plate .socket { transition: color var(--t-hover) var(--e-out), background-color var(--t-hover) var(--e-out), box-shadow var(--t-hover) var(--e-out); }
+.ac-plate .card { transition: background-color var(--t-hover) var(--e-out); }
+/* the page also loads the models sheet, whose .held dims a model row; a held login is drawn at full strength, as the accounts sheet draws it */
+.ac-plate .card.held { opacity: 1; }
+.ac-plate .heldline { display: block; gap: normal; align-items: normal; }
+/* the page also loads the teams sheet, whose .lead is a badge and whose .blot is not shrinkable; the accounts sheet draws neither */
+.ac-plate .pd-stat.lead { background: none; border: 0; border-radius: 0; padding: 0; font: inherit; letter-spacing: normal; }
+.ac-plate .blot { flex-shrink: 1; }
+
+/* the add-account row: the Claude one opens (a details) and shows the two commands; the ChatGPT one names the other providers */
+.ac-add { flex-wrap: wrap; row-gap: var(--pg-sp-2); min-height: var(--ctl-h); }
+.ac-pchips { display: inline-flex; flex-wrap: wrap; gap: var(--pg-sp-2); margin-left: auto; }
+.ac-plate .add .plus { line-height: 1; }
+.ac-pchip { gap: .5rem; padding: .32rem .55rem; box-shadow: inset 0 0 0 1px var(--c); font: 500 var(--fr-ts)/1 var(--font-name); color: var(--text-body); }
+.ac-pdot { width: .7rem; height: .7rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); flex: none; }
+.ac-code { margin-left: auto; font: 500 var(--fr-ts)/1.3 var(--font-data); color: var(--text-body); white-space: nowrap; overflow-wrap: anywhere; }
+.ac-chev { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.ac-chev-box { display: inline-flex; color: var(--text-mute); }
+.ac-chev-box .ac-chev { transition: transform var(--t-snap) var(--e-out); }
+details.ac-add { display: block; padding: 0 calc(2 * var(--u)); cursor: default; }
+details.ac-add > summary {
+  display: flex; align-items: center; flex-wrap: wrap; gap: .667rem; row-gap: .5rem; list-style: none; cursor: pointer;
+  min-height: calc(var(--ctl-h) - 2 * var(--ink-w)); border-radius: calc(var(--r-obj) - .2rem);
+}
+details.ac-add > summary::-webkit-details-marker { display: none; }
+details.ac-add > summary:focus-visible { outline: var(--ink-w) solid var(--text); outline-offset: .18rem; }
+details.ac-add[open] { border-style: solid; border-color: var(--c); background: var(--obj); padding-bottom: 1rem; }
+details.ac-add[open] > summary { min-height: calc(var(--ctl-h) - .32rem); }
+details.ac-add[open] > summary .ac-code { display: none; }
+details.ac-add[open] > summary .ac-chev-box { margin-left: auto; }
+details.ac-add[open] > summary .ac-chev { transform: rotate(90deg); }
+.ac-win { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: .667rem; padding: calc(2 * var(--u)); background: var(--obj-sunk); border: var(--ink-w) solid var(--ink); border-radius: var(--r-in); }
+.ac-ls { display: flex; flex-direction: column; gap: .333rem; }
+.ac-l { display: flex; gap: .8rem; }
+.ac-win-l { display: flex; gap: .8rem; min-width: 0; font: 500 var(--fr-tm)/1.4 var(--font-data); color: var(--text); }
+.ac-win-l code { font: inherit; overflow-wrap: anywhere; }
+.ac-p { color: var(--text-mute); }
+.ac-copy { gap: .5rem; flex: none; cursor: pointer; font-size: var(--fr-ts); }
+.ac-plate .act.ac-copy { cursor: pointer; }
+.ac-copy[hidden] { display: none; }
+.ac-copy svg { width: 1rem; height: 1rem; }
+.ac-cbs { display: inline-grid; overflow: hidden; padding-block: .1em; margin-block: -.1em; }
+.ac-cbs > * { grid-area: 1 / 1; white-space: nowrap; transition: opacity var(--t-hover) var(--e-out), transform var(--t-hover) var(--e-out); }
+.ac-cbs > [data-copied-label] { opacity: 0; transform: translateY(1.4rem); }
+.ac-copy.is-copied .ac-cbs > [data-copy-label] { opacity: 0; transform: translateY(-1.4rem); }
+.ac-copy.is-copied .ac-cbs > [data-copied-label] { opacity: 1; transform: none; }
+.ac-win:has(.is-copied) .ac-win-l code { background: var(--track); box-shadow: -.5rem 0 0 var(--track), .5rem 0 0 var(--track); border-radius: .2rem; }
+
+/* the budget: the console's day strip filling the plate, its editor open (drawn, not edited here) */
+.ac-one .provider > header { margin-bottom: 1.4rem; }
+.ac-one { --when-n: 16; }
+/* the reset column takes its text's own width: the console sizes it from a character count at its 12 px step, and the page sets
+   the reset at 14 to 16 px, so the counted column ended 11 to 17 px short of "Resets midnight" and the text ran onto the border */
+.ac-budget { margin: 1rem 0 0; --bar-w: 70rem; --lab-w: 7rem; --when-w: max-content; }
+.ac-plate .meter.day.ac-budget > .chip.tag { position: static; transform: none; grid-column: 1 / -1; justify-self: start; margin-block: 0 calc(-.5 * var(--u)); }
+.ac-plate .meter.day.ac-budget > .editor { grid-column: 1 / -1; }
+.ac-budget .editor .edrow { column-gap: var(--pg-sp-3); row-gap: var(--pg-sp-2); }
+.ac-plate .meter.day .editor :is(.presets, .mode) { gap: var(--pg-sp-2); }
+.ac-budget .field { cursor: default; }
+.ac-budget .editor :is(button, input) { pointer-events: none; }
+.ac-budget .editor .mode button, .ac-budget .editor .presets button { cursor: default; }
+.ac-budget .editor .mode button { align-items: center; }
+.ac-budget .editor .mode .glyph { width: 1.05rem; height: 1.05rem; color: currentColor; }
+.ac-budget .dayrun > .hours > .hr { text-decoration: none; }
+/* the day's bars stand 8 px apart; a narrow plate draws it in two-hour bars */
+.ac-plate .dayrun > .hours { gap: var(--pg-sp-1); }
+.ac-budget .dayrun > .hours > .hn { display: none; }
+.ac-bud svg { width: 1rem; height: 1rem; }
+
+.ac-one > .col > .provider > .ac-budget { flex: 1; grid-template-rows: repeat(4, auto) minmax(0, 1fr); }
+.ac-plate .meter.day.ac-budget > .dayrun { --track-h: calc(100% - var(--above) - var(--below)); height: auto; align-self: stretch; min-height: calc(var(--above) + 2.2rem + var(--below)); }
+
+/* each command against its limit */
+.ac-pair .col { align-self: stretch; }
+.ac-pair .titled, .ac-pair .card { height: 100%; }
+.ac-cmds { display: flex; flex-direction: column; }
+.ac-cmds-h, .ac-cmd-row { display: grid; grid-template-columns: 11rem minmax(0, 1fr) 3.4rem 7rem; column-gap: 1rem; align-items: center; }
+.ac-cmds-h { padding-bottom: .667rem; border-bottom: 1px solid var(--hair); }
+.ac-cmd-row { flex: 1 0 auto; min-height: var(--row-h); }
+.ac-cmd-row + .ac-cmd-row { border-top: 1px solid var(--hair); }
+.ac-cmd-row .chip { justify-self: start; }
+.ac-cmd-row .when { min-width: 0; }
+.ac-cmds-h .ac-note { margin-left: 0; }
+.ac-rs { display: none; }
+.ac-tiles { display: flex; flex-direction: column; gap: calc(2 * var(--u)); }
+.ac-tiles .pd-stats { flex-direction: column; align-items: stretch; gap: 0; flex: 1; }
+.ac-tiles .pd-stat { flex: 1 0 auto; min-height: var(--row-h); gap: 1rem; padding-block: calc(1.5 * var(--u)); }
+.ac-tiles .pd-stat + .pd-stat { border-top: 1px solid var(--hair); }
+.ac-tiles .pd-stat > svg { width: 2.6rem; height: 2.6rem; padding: .6rem; }
+.ac-tiles .pd-stat b { font: 600 var(--fig-focal)/1.25 var(--font-data); letter-spacing: -.01em; }
+.ac-tiles .pd-stat.lead b { font-size: var(--fig-hero); }
+.ac-tiles .pd-stat > span { gap: calc(.75 * var(--u)); }
+.ac-tiles .pd-stat b { line-height: 1.25; }
+
+/* ---------- the plate picks its shape from its own width: two columns where each card keeps its 45 rem, one where it cannot ---------- */
+@container acw (max-width: 91rem) {
+  .ac-board { flex-direction: column; align-items: stretch; }
+  .ac-board > .col { width: 100%; flex: none; }
+  /* the Usage and Budget views share the Accounts view's height (one grid cell from 1,280 px), so their column takes the room */
+  .ac-pair > .col, .ac-one > .col { flex: 1 1 auto; }
+  /* one wide column: the bar takes the room the console's capped bar leaves, so the figure and the reset stay beside its end */
+  .ac-board .windows { grid-template-columns: var(--lab-w) minmax(0, 1fr) var(--pct-w) var(--when-w); }
+  /* the first Usage row's label keeps its room above the hairline (the console's lead badge reset took the row's padding) */
+  .ac-tiles .pd-stat.lead { padding-bottom: calc(2 * var(--u)); }
+}
+/* the Budget's label column keeps 12 px before its bar */
+@container acw (width > 48rem) {
+  .ac-plate .meter.day.ac-budget { column-gap: var(--pg-sp-2); }
+  /* the hour chart spans the card's inner width, its hour labels under all of it (the room on its right is the peak figure's) */
+  .ac-plate .meter.day.ac-budget > .dayrun { grid-column: 1 / -1; margin-right: 1.6rem; }
+}
+/* one column of cards (the plate narrower than 91 rem): the Accounts view is the tall one, so the Budget card shares its height; the
+   card's rows keep their own spacing at the top and the hour chart takes the rest of the room, at least 37% of the plate's width */
+@container acw (width > 48rem) and (max-width: 91rem) {
+  .ac-one > .col > .provider > .ac-budget { grid-template-rows: repeat(4, auto) minmax(37cqw, 1fr); align-content: stretch; }
+  .ac-plate .meter.day.ac-budget > .chip.tag { grid-row: 1; }
+  .ac-plate .meter.day.ac-budget > :is(.label:not(.ads-k), .dayline, .when) { grid-row: 2; }
+  .ac-plate .meter.day.ac-budget > .editor { grid-row: 3; }
+  .ac-plate .meter.day.ac-budget > :is(.ads-k, .capbox, .pct) { grid-row: 4; }
+  .ac-plate .meter.day.ac-budget > :is(.ads-k, .capbox, .pct) { align-self: start; }
+  .ac-plate .meter.day.ac-budget > .capbox { margin-bottom: 2.2rem; }
+  .ac-plate .meter.day.ac-budget > .ads-k, .ac-plate .meter.day.ac-budget > .pct { margin-top: 0; padding-top: 0; }
+  .ac-plate .meter.day.ac-budget > .dayrun { grid-row: 5; height: auto; align-self: stretch; }
+}
+@container acw (width > 91rem) {
+  .ac-plate .meter.day.ac-budget > .dayrun { max-height: 34cqw; }
+}
+@container acw (max-width: 48rem) {
+  .ac-budget .dayrun > .hours > .hr:not(.hn) { display: none; }
+  .ac-budget .dayrun > .hours > .hn { display: flex; }
+  .ac-board .windows { grid-template-columns: minmax(0, 1fr) auto; row-gap: .333rem; margin-top: var(--u); }
+  .ac-board .windows > .label { grid-column: 1; grid-row: var(--r); min-height: 0; padding-top: var(--u); }
+  .ac-board .windows > .pct { grid-column: 2; grid-row: var(--r); align-self: end; padding-top: var(--u); }
+  .ac-board .windows > .bar { grid-column: 1 / -1; grid-row: calc(var(--r) + 1); }
+  .ac-board .windows > .when { grid-column: 1 / -1; grid-row: calc(var(--r) + 2); justify-content: flex-start; padding-bottom: .333rem; }
+  .ac-board .windows > .heldline { grid-row: 1; padding-block: 0 var(--u); }
+  .ac-add-cmd .ac-code { order: 3; flex-basis: 100%; }
+  .ac-add-cmd .ac-chev-box { order: 2; margin-left: auto; }
+  .ac-plate .provider > header { flex-wrap: wrap; row-gap: var(--pg-sp-1); }
+  .ac-plate .provider > header h2 { overflow: visible; flex: none; }
+  .ac-note { margin-left: 0; flex-basis: 100%; }
+  .ac-code { white-space: normal; }
+  .ac-pchips { margin-left: 0; }
+  .ac-code { margin-left: 0; }
+  .ac-win { flex-direction: column; align-items: stretch; }
+  .ac-plate .meter.day.ac-budget { grid-template-columns: minmax(0, 1fr) auto; row-gap: 1rem; padding-inline: 1rem; --bar-w: 100%; }
+  .ac-plate .meter.day.ac-budget > .label { grid-column: 1; }
+  .ac-plate .meter.day.ac-budget > .chip.tag { margin-block: 0 calc(.5 * var(--u)); }
+  .ac-plate .meter.day.ac-budget { grid-template-rows: repeat(5, auto) minmax(0, 1fr); }
+  .ac-plate .meter.day.ac-budget > .when { grid-column: 2; grid-row: 2; justify-self: end; min-width: 0; }
+  .ac-plate .meter.day.ac-budget > .dayline { grid-column: 1 / -1; }
+  .ac-plate .meter.day.ac-budget .ads-fig { width: auto; text-align: left; }
+  .ac-plate .meter.day.ac-budget > .ads-k { display: none; }
+  .ac-plate .meter.day.ac-budget > .capbox { grid-column: 1; }
+  .ac-plate .meter.day.ac-budget > .pct { grid-column: 2; }
+  .ac-plate .meter.day.ac-budget > .dayrun { grid-column: 1 / -1; }
+  .ac-budget .editor .mode { flex-wrap: wrap; }
+  /* a label that wraps grows the button to its text, with room above and below it */
+  .ac-plate .meter.day.ac-budget .editor .mode button { height: auto; min-height: var(--ctl-h); padding-block: .7rem; line-height: 1.25; text-align: left; }
+  /* the figure and its button on one line, the figure's words under them */
+  .ac-plate .meter.day.ac-budget .dayline > .ads-of { order: 3; flex: 1 0 100%; white-space: normal; }
+  .ac-cmds-h, .ac-cmd-row { grid-template-columns: minmax(0, 1fr) 3.2rem; row-gap: var(--pg-sp-2); }
+  .ac-cmd-row { padding-block: var(--u); }
+  .ac-cmd-row .bar { grid-column: 1 / -1; grid-row: 2; }
+  .ac-cmd-row .pct { grid-column: 2; grid-row: 1; }
+  .ac-cmd-row .when { grid-column: 1 / -1; grid-row: 3; }
+  .ac-cmds-h { grid-template-columns: minmax(0, 1fr); padding-bottom: .333rem; }
+  .ac-cmds-h > :not(:nth-child(2)) { display: none; }
+  .ac-rs { display: inline; }
+}
+@container pg (max-width: 640px) {
+  .ac-plate { padding: calc(2.5 * var(--u)); }
+  .ac-tabs { width: 100%; --ctl-h: 2.6rem; }
+  .ac-tabs label { flex: 1; padding-inline: .4rem; }
+}
+
+/* ---------- the head beside the plate from a 1,280 px container to 2,199 px (the page's split starts at 2,200 px): the head (heading, line, the
+   three tabs, the drawing and its cable) takes 4 of 12 columns on the left, as it does from 2,200 px, and the plate 8. The plate's own
+   width then picks its shape: the two providers stand in one column until the plate is 91 rem wide. ---------- */
+@container pg (min-width: 1280px) and (max-width: 2199px) {
+  #accounts .ac-in { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--pg-cg); align-items: start; }
+  #accounts .ac-in > .ac-hd { display: flex; flex-direction: column; align-self: stretch; grid-column: 1 / span 4; grid-row: 1; margin-bottom: 0; padding-right: clamp(0px, 1vw, 32px); }
+  #accounts .ac-in > .ac-plate { grid-column: 5 / -1; grid-row: 1; margin-top: 0; }
+  #accounts .ac-hd > .ac-tabs { align-self: flex-start; }
+}
+
+/* ---------- the head's drawing from a 1,280 px container up. The drawing's box takes the height the component leaves. Where that box is as tall as it is
+   wide (the head beside a tall component) it holds a taller drawing of the same objects, which shrinks to the box and stays under the
+   header while a taller component scrolls past, as the teams and console bands do; where the box is low and wide it holds the page's wide drawing
+   and its cable down the column. ---------- */
+#accounts .pg-art > .ac-tall { display: none; }
+@container pg (min-width: 1280px) {
+  #accounts .ac-in > .ac-hd > .pg-art { container: pga / size; display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; justify-self: stretch; align-self: stretch; width: auto; margin-top: var(--pg-sp-6); }
+  #accounts .ac-in > .ac-hd > .pg-art .pg-stub { display: inline; }
+  #accounts .ac-in > .ac-hd > .pg-art::after { content: ""; flex: 1 1 auto; min-height: 0; width: 8px; margin-left: calc(var(--pg-ax, 9%) - 4px); background: linear-gradient(var(--pg-cable), var(--pg-cable)) 50% 0 / 1.5px 100% no-repeat, radial-gradient(circle, var(--pg-dot, var(--claude)) 0 2.6px, transparent 3.2px) 50% 0 / 8px 8px no-repeat; }
+}
+@container pga (max-aspect-ratio: 4/3) {
+  #accounts .ac-in > .ac-hd > .pg-art > svg:not(.ac-tall) { display: none; }
+  #accounts .ac-in > .ac-hd > .pg-art > .ac-tall { display: block; flex: 0 1 auto; min-height: 0; width: 100%; height: auto; position: static; }
+  #accounts .ac-in > .ac-hd > .pg-art::after { content: none; }
+}
+
+/* ---------- the three views: radios hold the choice, :has() shows the chosen one in place ----------
+   Where the Accounts board lies in two columns (the page's container 1,280 px and wider) the three views stand in one grid cell, so the
+   plate keeps the height of the tallest in every view and the band below never moves as the tab changes; the chosen view stretches to
+   that height (the Budget's hour strip and the Usage rows take the room). Narrower, each view is its own height and the closed ones
+   leave the page. The chosen view fades in over --t-snap (240 ms) on --e-out and settles .5rem. A closed view leaves the tab order. */
+.ac-panes { display: block; }
+.ac-in:has(.ac-rd-acc:checked) .ac-tab-acc, .ac-in:has(.ac-rd-bud:checked) .ac-tab-bud, .ac-in:has(.ac-rd-cmd:checked) .ac-tab-cmd { background: var(--sel-face); color: var(--sel-ink); box-shadow: inset 0 0 0 .1rem var(--sel-line); }
+.ac-in:has(.ac-rd-acc:focus-visible) .ac-tab-acc, .ac-in:has(.ac-rd-bud:focus-visible) .ac-tab-bud, .ac-in:has(.ac-rd-cmd:focus-visible) .ac-tab-cmd { outline: var(--ink-w) solid var(--text); outline-offset: .18rem; }
+.ac-pane { display: none; grid-area: 1 / 1; flex-direction: column; min-width: 0; visibility: hidden; opacity: 0; transform: translateY(.5rem); transition: opacity var(--t-snap) var(--e-out), transform var(--t-snap) var(--e-out), visibility 0s linear var(--t-snap); }
+.ac-pin { flex: 1; display: flex; flex-direction: column; }
+.ac-pin > .board { flex: 1; align-items: stretch; }
+.ac-pin > .board > .col { display: flex; flex-direction: column; }
+.ac-pin > .board > .col > section { flex: 1; display: flex; flex-direction: column; }
+.ac-in:has(.ac-rd-acc:checked) .ac-p-acc, .ac-in:has(.ac-rd-bud:checked) .ac-p-bud, .ac-in:has(.ac-rd-cmd:checked) .ac-p-cmd { display: flex; visibility: visible; opacity: 1; transform: none; transition-delay: 0s; }
+
+@container pg (min-width: 1280px) {
+  .ac-panes { display: grid; }
+  .ac-pane { display: flex; }
+}
+@keyframes ac-pane { from { opacity: 0; transform: translateY(.5rem); } }
+@media (prefers-reduced-motion: no-preference) {
+  @container pg (max-width: 1279px) {
+    .ac-in:has(.ac-rd-acc:checked) .ac-p-acc, .ac-in:has(.ac-rd-bud:checked) .ac-p-bud, .ac-in:has(.ac-rd-cmd:checked) .ac-p-cmd { animation: ac-pane var(--t-snap) var(--e-out) both; }
+  }
+}
+
+/* ---------- the focal figure: the serving account's week, 1.7rem; every other row figure stays at the console's .95rem ---------- */
+.ac-p-acc .ac-board { --pct-w: 6.2rem; }
+/* "used" is said once, on the figure that leads; the other rows' bars carry it */
+.ac-plate .windows .pct:not(.ac-fig) .used { display: none; }
+.ac-p-acc .pct.ac-fig { font: 600 var(--fig-focal)/1 var(--font-data); letter-spacing: -.01em; }
+.ac-p-acc .pct.ac-fig .used { font: 400 var(--fr-ts)/1 var(--font-data); letter-spacing: 0; }
+
+/* ---------- room: every line inside a card or tile keeps 2u from its edge ---------- */
+.ac-plate .card { padding-inline: calc(2 * var(--u)); }
+.ac-plate .ac-add { padding-inline: calc(2 * var(--u)); }
+.ac-tiles, .ac-cmds { padding-top: calc(2 * var(--u)); }
+.ac-plate .meter.day.ac-budget { padding: calc(2 * var(--u)) calc(2 * var(--u)) 1.45rem; }
+@container acw (max-width: 48rem) {
+  .ac-plate .ac-add { padding-block: calc(2 * var(--u)); }
+  details.ac-add > summary { min-height: 0; }
+  details.ac-add[open] { padding-top: calc(2 * var(--u)); }
+  .ac-plate .meter.day.ac-budget { padding: calc(2 * var(--u)) calc(2 * var(--u)) 1.45rem; }
+  .ac-plate .meter.day.ac-budget > .dayrun { margin-right: 1.1rem; }
+}
+
+/* ---------- the console's own motion is replaced by the band's: the moves line and the day strip play when they are shown, not at load ---------- */
+.ac-in .card > .moves > .moveline.fresh, .ac-in .card > .moves > .moveline.fresh .msock { animation: none; }
+.ac-in .dayrun.grow > .hours, .ac-in .dayrun.grow > .hours > * > b { animation: none; }
+
+/* ---------- reveal: one motion per part, each under 600 ms, on the console's tokens ----------
+   The heading, line and tabs rise 1.5rem over --t-move (420 ms) on --e-out; the plate follows 90 ms later; each meter grows over --t-snap
+   (240 ms) once the plate is up. Then the rotation plays once, as accounts.js sets it: at 440 ms the first ChatGPT login locks (the lock pops
+   over --t-pop, its line rises over --t-snap), at 700 ms the next socket lights over --t-hover and the moves line is drawn. A view opened
+   later grows its own meters again. ---------- */
+@keyframes ac-rise { 0% { opacity: 0; transform: none; } 1% { opacity: 0; transform: translateY(1.5rem); } 100% { opacity: 1; transform: none; } }
+@keyframes ac-grow { from { transform: scaleX(0); } }
+@keyframes ac-light { from { color: var(--socket-ink); background: var(--socket); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .15rem var(--rail); } }
+@media (prefers-reduced-motion: no-preference) {
+  .pg-js .ac-in[data-reveal]:not(.is-seen) :is(.ac-hd, .ac-plate) { opacity: 0; }
+  .pg-js .ac-in[data-reveal]:not(.is-seen) .bar.grow > b { transform: scaleX(0); }
+  .ac-in.is-seen .ac-hd { animation: ac-rise var(--t-move) var(--e-out) both; }
+  .ac-in.is-seen .ac-plate { animation: ac-rise var(--t-move) var(--e-out) 90ms both; }
+  .ac-in.is-seen:where(:has(.ac-rd-acc:checked)) .ac-p-acc .bar.grow > b { animation: ac-grow var(--t-snap) var(--e-out) 180ms both; }
+  .ac-in.is-seen:where(:has(.ac-rd-bud:checked)) .ac-p-bud .bar.grow > b,
+  .ac-in.is-seen:where(:has(.ac-rd-cmd:checked)) .ac-p-cmd .bar.grow > b { animation: ac-grow var(--t-snap) var(--e-out) 60ms both; }
+  .ac-in:has(.ac-rd-bud:checked) .ac-p-bud .dayrun.grow > .hours { animation: acc-sweep var(--t-move) var(--e-out) 60ms both; }
+  .ac-in:has(.ac-rd-bud:checked) .ac-p-bud .dayrun.grow > .hours > * > b { animation: acc-hour var(--t-move) var(--e-out) 60ms both; }
+  .ac-in.is-seen .ac-lock { animation: pop var(--t-pop) var(--e-out) 440ms both; }
+  .ac-in.is-seen .ac-rise { animation: acc-rise var(--t-snap) var(--e-out) 440ms both; }
+  .ac-in.is-seen .ac-lit .socket { animation: ac-light var(--t-hover) var(--e-out) 700ms both; }
+  .ac-in.is-seen .card > .moves > .moveline.fresh { animation: acc-rise var(--t-snap) var(--e-out) 700ms both; }
+  .ac-in.is-seen .card > .moves > .moveline.fresh .msock { animation: pop var(--t-pop) var(--e-out) 700ms 1; }
+  /* a card accounts.js puts in at its moment plays from that moment, and its meters stay where they are */
+  .ac-in.is-seen .ac-sw .bar.grow > b { animation: none; }
+  .ac-in.is-seen .ac-sw .ac-lock, .ac-in.is-seen .ac-sw .ac-rise { animation-delay: 0ms; }
+  .ac-in.is-seen .ac-sw.ac-lit .socket, .ac-in.is-seen .ac-sw.card > .moves > .moveline.fresh, .ac-in.is-seen .ac-sw.card > .moves > .moveline.fresh .msock { animation-delay: 0ms; }
+}

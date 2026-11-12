@@ -1,0 +1,65 @@
+id: kt-control-route-guarded
+valid:
+  # the compliant form — 20 of the 25 routes already read this way
+  - 'get("/api/status") { guarded(call) { respond(call, payloads.statusJson()) } }'
+  - 'post("/api/heads/{head}/{action}") { guarded(call) { headRoutes.headAction(call) } }'
+  - 'patch("/api/config") { guarded(call) { configRoutes.patchConfig(call) } }'
+  - 'delete("/mcp/{name}") { guarded(call, mcp = true) { mcpRoutes.delete(call) } }'
+  # guarded deep inside a multi-statement handler still counts
+  - |
+    post("/api/daemon/shutdown") {
+        guarded(call) {
+            call.respondText(payloads.okJson(), ContentType.Application.Json, HttpStatusCode.Accepted)
+            shutdownDaemon()
+        }
+    }
+  # a head's route names its own door, ClientAuth, at the registration
+  - |
+    post("/v1/messages") {
+        withContext(callDispatcher) {
+            clientAuth.guarded(call, Door.UPSTREAM) { admission.handleMessages(call, arrivalAt) }
+        }
+    }
+  - 'get("/wire") { clientAuth.guarded(call, Door.OPERATOR) { wire(call) } }'
+  # a path passed by name is the same registration
+  - 'get(path = "/api/status") { guarded(call) { respond(call, payloads.statusJson()) } }'
+  - 'route.get(path = "/health") { call.respondText(payloads.controlHealthJson(), ContentType.Application.Json) }'
+  # dated allowlist: the unauthenticated liveness probe
+  - 'get("/health") { call.respondText(payloads.controlHealthJson(), ContentType.Application.Json) }'
+  # dated allowlist: the console's pages, which carry no data (Oct 10, 2026)
+  - 'route.get("/") { call.respondRedirect("/accounts.html") }'
+  - 'route.get("/{asset...}") { serve(call) }'
+  # kotlinx buildJsonObject `put` is not a route registration — the path literal is what separates them
+  - 'put("total", summaries.sumOf { (_, summary) -> summary.total })'
+  - 'put("sessions", buildJsonArray { listing.sessions.forEach { add(row(it)) } })'
+  - 'put(KEY, m.head.key)'
+  # a route helper call with no handler lambda is not a registration
+  - 'val path = get("/api/status")'
+invalid:
+  # a path passed by name is a registration too, guarded or not
+  - 'get(path = "/x") { respond(call, thing()) }'
+  - 'route.post(path = "/api/thing") { respond(call, thing()) }'
+  # an authorize verdict nobody reads is no door: only the guarding call runs a handler
+  - 'post("/v1/messages") { clientAuth.authorizeUpstream(call); admission.handleMessages(call, arrivalAt) }'
+  - 'get("/wire") { if (clientAuth.authorizeOperator(call)) wire(call) }'
+  # a head route whose check sits inside the helper it calls reads exactly like an open route
+  - 'post("/v1/messages") { withContext(callDispatcher) { admission.handleMessages(call, arrivalAt) } }'
+  # the census
+  - 'post("/statusline/{head}") { statuslineRoute.statusline(call) }'
+  - 'get("/statusline/{head}") { statuslineRoute.statusline(call) }'
+  # the console page left the allowlist on Oct 7, 2026, and came back on Oct 10 at / and /{asset...} only
+  - 'get("/dashboard") { call.respondText(dashboardHtml(), ContentType.Text.Html) }'
+  # the allowlist is anchored per path: a near-miss of an allowlisted route is still red
+  - 'get("/healthz") { call.respondText(payloads.controlHealthJson(), ContentType.Application.Json) }'
+  # every verb the rule names
+  - 'put("/api/thing") { respond(call, thing()) }'
+  - 'patch("/api/thing") { respond(call, thing()) }'
+  - 'delete("/api/thing") { respond(call, thing()) }'
+  - 'route("/api/sub") { respond(call, thing()) }'
+  # the allowlist is ANCHORED to the exact path: a prefix must not inherit /health's exemption
+  - 'get("/health/detail") { call.respondText(secrets()) }'
+  - 'get("/api/{asset...}") { call.respondText(secrets()) }'
+  - 'get("/{asset...}/x") { call.respondText(secrets()) }'
+  - 'get("/healthz") { call.respondText(secrets()) }'
+  # a trailing comment is not an authorization decision the build can see
+  - 'post("/launch/{head}") { launchRoutes.launch(call) } // stdin-piped per tick; no bearer'

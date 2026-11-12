@@ -1,0 +1,71 @@
+package splice.dispatchprototype
+
+import io.grpc.netty.shaded.io.netty.buffer.Unpooled
+import io.grpc.netty.shaded.io.netty.handler.codec.http2.DefaultHttp2HeadersDecoder
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlinx.serialization.json.*
+import splice.codemode.nativehost.grpc.NativeGrpcWire
+import splice.core.util.JsonWire
+
+/** Offline decoding only. Reads original captured HTTP/2 bytes using the packaged HPACK and official protobuf schema. */
+object NativeStreamDecoder {
+    @JvmStatic fun main(arguments: Array<String>) {
+        val directory=Path.of(arguments.single())
+        val methods=mutableMapOf<Int,String>()
+        val rows=mutableListOf<JsonObject>()
+        for(direction in listOf("client-to-host","host-to-client")) {
+            val data=Files.readAllBytes(directory.resolve("native-$direction.raw"))
+            var cursor=if(direction=="client-to-host") {
+                val preface="PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".toByteArray()
+                check(data.take(preface.size).toByteArray().contentEquals(preface));preface.size
+            } else 0
+            val decoder=DefaultHttp2HeadersDecoder()
+            val headers=mutableMapOf<Int,ByteArrayOutputStream>()
+            val messages=mutableMapOf<Int,ByteArrayOutputStream>()
+            while(cursor<data.size) {
+                check(cursor+9<=data.size)
+                val length=((data[cursor].toInt() and 255) shl 16) or ((data[cursor+1].toInt() and 255) shl 8) or (data[cursor+2].toInt() and 255)
+                val type=data[cursor+3].toInt() and 255;val flags=data[cursor+4].toInt() and 255
+                val stream=((data[cursor+5].toInt() and 127) shl 24) or ((data[cursor+6].toInt() and 255) shl 16) or ((data[cursor+7].toInt() and 255) shl 8) or (data[cursor+8].toInt() and 255)
+                check(cursor+9+length<=data.size)
+                var payload=data.copyOfRange(cursor+9,cursor+9+length)
+                cursor+=9+length
+                if(type in listOf(0,1)&&flags and 8!=0) {
+                    val padding=payload[0].toInt() and 255;payload=payload.copyOfRange(1,payload.size-padding)
+                }
+                if(type==1&&flags and 32!=0) payload=payload.copyOfRange(5,payload.size)
+                if(type==1||type==9) {
+                    val block=headers.getOrPut(stream){ByteArrayOutputStream()};block.write(payload)
+                    if(flags and 4!=0) {
+                        val buffer=Unpooled.wrappedBuffer(block.toByteArray())
+                        val decoded=try{decoder.decodeHeaders(stream,buffer)}finally{buffer.release()}
+                        val values=decoded.map{it.key.toString() to it.value.toString()}
+                        values.firstOrNull{it.first==":path"}?.let{methods[stream]=it.second.substringAfterLast('/')}
+                        rows+=buildJsonObject{put("direction",direction);put("stream",stream);put("kind","headers");put("headers",JsonArray(values.map{buildJsonObject{put("name",it.first);put("value",it.second)}}))}
+                        headers.remove(stream)
+                    }
+                } else if(type==0) messages.getOrPut(stream){ByteArrayOutputStream()}.write(payload)
+                else rows+=buildJsonObject{put("direction",direction);put("stream",stream);put("kind","control");put("frameType",type);put("flags",flags);put("bytes",length)}
+            }
+            check(headers.isEmpty())
+            for((stream,buffer) in messages) {
+                val bytes=buffer.toByteArray();var offset=0
+                while(offset<bytes.size) {
+                    check(offset+5<=bytes.size&&bytes[offset].toInt()==0)
+                    val length=((bytes[offset+1].toInt() and 255) shl 24) or ((bytes[offset+2].toInt() and 255) shl 16) or ((bytes[offset+3].toInt() and 255) shl 8) or (bytes[offset+4].toInt() and 255)
+                    check(length>=0&&offset+5+length<=bytes.size)
+                    val name=checkNotNull(methods[stream]);val method=NativeGrpcWire.method(name)
+                    val payload=ByteArrayInputStream(bytes,offset+5,length)
+                    val value=if(direction=="client-to-host")method.requestMarshaller.parse(payload)else method.responseMarshaller.parse(payload)
+                    rows+=buildJsonObject{put("direction",direction);put("stream",stream);put("kind","protobuf");put("method",name);put("type",value.descriptorForType.fullName);put("value",value.toString());put("bytes",length)}
+                    offset+=5+length
+                }
+            }
+        }
+        Files.writeString(directory.resolve("native-decoded.json"),JsonWire.string(JsonArray(rows)))
+        println("Decoded actual HTTP/2/gRPC streams: ${methods.size} RPCs, ${rows.count{it["kind"]?.jsonPrimitive?.content=="protobuf"}} protobuf messages")
+    }
+}

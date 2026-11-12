@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "vocabulary": {
+    "version": "1.2.0",
+    "sha256": "ee41dc46a87d1564f96711c4f442ea6eb37eeca7877987e269df5f9d02c22b20",
+    "lines": 29417
+  },
+  "generatorSha256": "959078e1d8a00fdaca1c5eeaa79d67243995aa9a9bd9dda6c78b8ebd8241e284",
+  "dependencyLockSha256": "e6f4cce8a1e1c6c8f44f0f8141338dd7a83598d4d745d98ad7f3eb17ec1df22f",
+  "corpus": {
+    "count": 37547,
+    "sha256": "080396225bb2a50c4714002487d9f9924fbb78e80d3fe6666d51a504684b26d0"
+  }
+}

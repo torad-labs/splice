@@ -1,0 +1,1807 @@
+// PORT-OF: the stream-machine pins from server/test/codex-proxy.test.mjs @ pre-public-port-baseline at unit
+// level — multipart one-block joins, lazy/eager opens, args routing, failure capture with
+// continued reading, truncated vs client-gone, watchdog outcome, harvest merge, replay
+// in-position, usage extraction.
+package splice.dialect.responses.stream
+
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertInstanceOf
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import splice.core.failure.ClientWire
+import splice.core.failure.FailureCause
+import splice.core.index.WireBlockIndex
+import splice.core.turn.ErrorType
+import splice.core.turn.SharedSummaryParts
+import splice.core.turn.TurnOutcome
+import splice.core.util.LogSink
+import splice.dialect.responses.ReasoningCapture
+import splice.dialect.responses.StreamTurnContext
+import splice.dialect.responses.SummaryHandling
+import splice.dialect.responses.WatchdogCaps
+import splice.dialect.responses.reasoning.EmitEncryptedReasoning
+import splice.upstream.TurnSignals
+import splice.upstream.retry.WatchdogFired
+import splice.upstream.sse.WireSink
+import splice.upstream.transport.BufferCapacity
+
+internal class RecordingSink : WireSink {
+    val calls = mutableListOf<String>()
+    private var next = 0
+
+    override suspend fun openText(): WireBlockIndex =
+        WireBlockIndex(next++).also { calls.add("openText#${it.value}") }
+
+    override suspend fun openThinking(): WireBlockIndex =
+        WireBlockIndex(next++).also { calls.add("openThinking#${it.value}") }
+
+    override suspend fun openTool(id: String, name: String): WireBlockIndex =
+        WireBlockIndex(next++).also { calls.add("openTool#${it.value}($id,$name)") }
+
+    override suspend fun textDelta(index: WireBlockIndex, text: String) {
+        calls.add("text#${index.value}:$text")
+    }
+
+    override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) {
+        calls.add("think#${index.value}:$thinking")
+    }
+
+    override suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String) {
+        calls.add("json#${index.value}:$partialJson")
+    }
+
+    override suspend fun closeBlock(index: WireBlockIndex) {
+        calls.add("close#${index.value}")
+    }
+
+    override suspend fun closeAll() {
+        calls.add("closeAll")
+    }
+
+    override suspend fun addTextBlock(text: String) {
+        calls.add("addText:$text")
+    }
+
+    override suspend fun addRedactedThinking(data: String) {
+        calls.add("redacted:$data")
+    }
+}
+
+/** A round whose client stays, with its own summary parts and no dedupe: a test that needs otherwise says so
+ *  through copy. */
+internal fun ctx(
+    compact: Boolean = false,
+    emit: Boolean = false,
+    fired: WatchdogFired? = null,
+    collect: Boolean = false,
+    capture: ((List<String>, List<String>) -> Unit)? = null,
+) = StreamTurnContext(
+    compact = compact,
+    emitEncryptedReasoning = EmitEncryptedReasoning(emit),
+    encodeReasoningEnvelope = { "env:" + it["id"]?.toString().orEmpty() },
+    signals = TurnSignals(
+        clientGone = { false },
+        watchdogFired = { fired },
+    ),
+    caps = WatchdogCaps(
+        streamIdleMs = 180_000,
+        upstreamTimeoutMs = 900_000,
+    ),
+    reasoningCapture = ReasoningCapture(
+        collectEnvelopes = collect,
+        onTurn = capture ?: { _, _ -> },
+    ),
+    summary = SummaryHandling(
+        dedupeRepeatedParts = false,
+        partsShared = SharedSummaryParts(),
+    ),
+)
+
+private fun ev(json: String): JsonObject = Json.parseToJsonElement(json).jsonObject
+
+private val completed = ev(
+    """{"type":"response.completed","response":{"id":"r1","usage":{"input_tokens":100,"output_tokens":7}}}""",
+)
+
+class ResponsesStreamTranslatorTest {
+
+    @Test
+    fun `a completed response beats a late watchdog fire - Success not Failure`() = runTest {
+        // The watchdog can trip while the reader is suspended on socket-EOF AFTER response.completed
+        // was parsed. A fully-received turn must NOT be discarded as OVERLOADED (that retries a
+        // successful compaction — the quota waste the watchdog exists to prevent).
+        val outcome = ResponsesStreamTranslator(
+            ctx(fired = WatchdogFired.Idle(idleMs = 200_000, sawClientFrame = true, limitMs = 180_000)),
+        ).driveTurn(listOf(completed).asFlow(), RecordingSink())
+        val success = outcome as TurnOutcome.Success
+        assertEquals(100, success.usage.inputTokens)
+    }
+
+    @Test
+    fun `multipart reasoning joins into ONE thinking block with paragraph breaks`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}"""),
+                ev("""{"type":"response.reasoning_summary_part.added","output_index":0}"""),
+                ev("""{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"part one"}"""),
+                ev("""{"type":"response.reasoning_summary_part.done","output_index":0}"""),
+                ev("""{"type":"response.reasoning_summary_part.added","output_index":0}"""),
+                ev("""{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"part two"}"""),
+                ev("""{"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning"}}"""),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        val success = outcome as TurnOutcome.Success
+        assertEquals("part one\n\npart two", success.text.thinkingText)
+        // exactly ONE thinking block opened; part boundaries are deltas, not closes
+        assertEquals(1, sink.calls.count { it.startsWith("openThinking") })
+        assertEquals(1, sink.calls.count { it.startsWith("close#") })
+        assertTrue(sink.calls.contains("think#0:\n\n"))
+    }
+
+    // sequential_cutoff rendering (codex-parity port 2026-08-26) lives in
+    // SequentialCutoffRenderTest — in that mode summary DELTAS are dropped entirely and the
+    // reasoning_summary_text.done events of the ACTIVE item are the render surface. The three
+    // delta-path dedup pins that lived here died with the delta path.
+
+    // Cross-TURN recap suppression (2026-08-26) lives in SummaryDedupCrossTurnTest — this class
+    // sits at detekt's LargeClass ceiling.
+
+    @Test
+    fun `tool flow - eager open on item added, args stream to same index, done closes`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,
+                       "item":{"type":"function_call","call_id":"toolu_1","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"c\":"}"""),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"1}"}"""),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":1,
+                       "item":{"type":"function_call"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        assertTrue((outcome as TurnOutcome.Success).hasToolUse)
+        assertEquals(
+            listOf("openTool#0(toolu_1,run)", "json#0:{\"c\":", "json#0:1}", "close#0", "closeAll"),
+            sink.calls,
+        )
+    }
+
+    @Test
+    fun `a null call_id falls back to id and a null name opens with an empty name`() = runTest {
+        // The Responses call_id -> id -> synthetic chain is distinct from the Chat null-id path.
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":0,
+                       "item":{"type":"function_call","call_id":null,"id":"resp_abc","name":null}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":0,"delta":"{\"a\":1}"}"""),
+                ev("""{"type":"response.function_call_arguments.done","output_index":0}"""),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        assertTrue((outcome as TurnOutcome.Success).hasToolUse)
+        // call_id JsonNull -> id fallback; name JsonNull -> empty (strOrEmpty filters both).
+        assertEquals("openTool#0(resp_abc,)", sink.calls.first())
+        assertFalse(sink.calls.any { it.contains("null") }, "literal null must never reach the wire: ${sink.calls}")
+        assertTrue(sink.calls.contains("json#0:{\"a\":1}"), "args must route to the resolved tool block")
+    }
+
+    @Test
+    fun `both call_id and id null get a nonempty synthetic id, never the literal null`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":2,
+                       "item":{"type":"function_call","call_id":null,"id":null,"name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":2,"delta":"{}"}"""),
+                ev("""{"type":"response.function_call_arguments.done","output_index":2}"""),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        assertTrue((outcome as TurnOutcome.Success).hasToolUse)
+        val open = sink.calls.first { it.startsWith("openTool") }
+        assertTrue(open.startsWith("openTool#0(toolu_synth"), "expected a synthetic id: $open")
+        assertFalse(open.contains("null"), "synthetic id must be nonempty, never \"null\": $open")
+    }
+
+    @Test
+    fun `done-only tool arguments (no deltas) are emitted once before close`() = runTest {
+        // Small tools can arrive with the COMPLETE arguments only on .done and no delta frames —
+        // the !sawDelta branch must harvest them once so the client does not get input {}.
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,
+                       "item":{"type":"function_call","call_id":"t1","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1,"arguments":"{\"x\":1}"}"""),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        assertTrue((outcome as TurnOutcome.Success).hasToolUse)
+        assertEquals(listOf("openTool#0(t1,run)", "json#0:{\"x\":1}", "close#0", "closeAll"), sink.calls)
+    }
+
+    @Test
+    fun `done arguments are NOT re-appended when deltas already streamed them`() = runTest {
+        // .done repeats the consolidated arguments; having streamed the fragments (sawDelta), the
+        // translator must NOT append the whole JSON again (that would corrupt the tool input).
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,
+                       "item":{"type":"function_call","call_id":"t2","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"y\":"}"""),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"2}"}"""),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1,"arguments":"{\"y\":2}"}"""),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        assertTrue((outcome as TurnOutcome.Success).hasToolUse)
+        // Only the two streamed fragments — the consolidated {"y":2} on .done is NOT re-emitted.
+        assertEquals(
+            listOf("openTool#0(t2,run)", "json#0:{\"y\":", "json#0:2}", "close#0", "closeAll"),
+            sink.calls,
+        )
+    }
+
+    @Test
+    fun `text opens lazily on first delta and usage lands`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}"""),
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"hel"}"""),
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"lo"}"""),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        val success = outcome as TurnOutcome.Success
+        assertEquals("hello", success.text.bodyText)
+        assertTrue(success.text.emittedText)
+        assertEquals(100, success.usage.inputTokens)
+        assertEquals(7, success.usage.outputTokens)
+        assertEquals("openText#0", sink.calls.first())
+    }
+
+    @Test
+    fun `failure event is captured, reading continues, and an overflow reads as the overflow it is`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.failed",
+                       "response":{"error":{"code":"context_length_exceeded","message":"too many tokens"}}}""",
+                ),
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"still read"}"""),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        val failure = outcome as TurnOutcome.Failure
+        // v29 P0: an in-band overflow is the overflow its HTTP twin is, which the client compacts on. Failure-handling
+        // slice 3 reads it by the head's own reader, by its code; a code that names an overload is read as one.
+        assertInstanceOf(FailureCause.Provider.TooLong::class.java, failure.cause)
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(failure.cause))
+        assertTrue(sink.calls.contains("text#0:still read"))
+    }
+
+    // DR-130: a compact turn takes the single-round path (fold/reanchor/toolSearch are all null
+    // when meta.compact), and partialOrNull returned null for compact — so the usage this very
+    // reducer harvests from response.failed "so the salvage is not permanently zero" was thrown
+    // away on the ONE turn class the cost doctrine is written about. The buffer copies stay
+    // skipped (nothing re-anchors a compaction); only the billed burn rides.
+    @Test
+    fun `a failed compact turn still carries its billed usage`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx(compact = true)).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.failed","response":{"error":{"code":"server_error","message":"boom"},
+                       "usage":{"input_tokens":9000,"output_tokens":120}}}""",
+                ),
+            ).asFlow(),
+            sink,
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(9000, failure.partial?.usage?.inputTokens, "the compaction's billed input must survive")
+        assertEquals(120, failure.partial?.usage?.outputTokens, "the compaction's billed output must survive")
+        assertEquals("", failure.partial?.text?.bodyText, "no buffer copies for a turn that never re-anchors")
+    }
+
+    @Test
+    fun `truncated stream without terminal is an honest overloaded failure`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"partial"}"""),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.OVERLOADED, ClientWire.ownType(failure.cause))
+        assertTrue(failure.evidence.message.contains("truncated"))
+    }
+
+    @Test
+    fun `client gone without terminal is ClientAbandoned - never an error frame`() = runTest {
+        val gone = ctx().run { copy(signals = signals.copy(clientGone = { true })) }
+        val outcome = ResponsesStreamTranslator(gone).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"x"}"""),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertEquals(TurnOutcome.ClientAbandoned(), outcome)
+    }
+
+    @Test
+    fun `watchdog fired maps to overloaded with the idle cap message`() = runTest {
+        val outcome = ResponsesStreamTranslator(
+            ctx(fired = WatchdogFired.Idle(idleMs = 200_000, sawClientFrame = true, limitMs = 180_000)),
+        ).driveTurn(emptyList<JsonObject>().asFlow(), RecordingSink())
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.OVERLOADED, ClientWire.ownType(failure.cause))
+        assertTrue(failure.evidence.message.contains("180s idle cap"))
+    }
+
+    @Test
+    fun `harvest fallback fills sparse deltas from the terminal object`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.completed","response":{"id":"r1","output":[
+                        {"type":"reasoning","summary":[{"type":"summary_text","text":"deep thought"}]},
+                        {"type":"message","content":[{"type":"output_text","text":"harvested body"}]}
+                    ],"usage":{"input_tokens":5,"output_tokens":2}}}""",
+                ),
+            ).asFlow(),
+            sink,
+        )
+        val success = outcome as TurnOutcome.Success
+        assertEquals("harvested body", success.text.bodyText)
+        assertEquals("deep thought", success.text.thinkingText)
+        // harvest fills BUFFERS only; no wire blocks were opened for them
+        assertEquals(listOf("closeAll"), sink.calls)
+    }
+
+    @Test
+    fun `terminal text completes a sparse streamed prefix exactly once`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"The answer starts"}"""),
+                ev("""{"type":"response.output_text.done","output_index":0,"text":"The answer starts here."}"""),
+                ev(
+                    """{"type":"response.completed","response":{"id":"r1","output":[
+                        {"type":"message","role":"assistant","content":[
+                            {"type":"output_text","text":"The answer starts here."}
+                        ]}
+                    ]}}""",
+                ),
+            ).asFlow(),
+            sink,
+        )
+
+        val success = outcome as TurnOutcome.Success
+        assertEquals("The answer starts here.", success.text.bodyText)
+        assertEquals(
+            listOf("openText#0", "text#0:The answer starts", "text#0: here.", "closeAll"),
+            sink.calls,
+        )
+    }
+
+    @Test
+    fun `terminal text cannot retract a visible stream`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_text.delta","output_index":0,
+                        "delta":"no model text returned"}""",
+                ),
+                ev(
+                    """{"type":"response.completed","response":{"id":"r1","output":[
+                        {"type":"message","content":[{"type":"output_text","text":"replacement"}]}
+                    ]}}""",
+                ),
+            ).asFlow(),
+            sink,
+        )
+
+        assertEquals("no model text returned", (outcome as TurnOutcome.Success).text.bodyText)
+        assertEquals(listOf("openText#0", "text#0:no model text returned", "closeAll"), sink.calls)
+    }
+
+    @Test
+    fun `replay stays off the visible wire while the complete summary precedes its tool`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx(emit = true)).driveTurn(
+            listOf(
+                ev("""{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"sum"}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,
+                       "item":{"type":"reasoning","id":"rs_1","encrypted_content":"blob"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,
+                       "item":{"type":"function_call","call_id":"t1","name":"run"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        assertEquals("sum", (outcome as TurnOutcome.Success).text.thinkingText)
+        assertEquals(
+            listOf("openThinking#0", "think#0:sum", "close#0", "openTool#1(t1,run)", "closeAll"),
+            sink.calls,
+        )
+    }
+
+    @Test
+    fun `fold-eligible turn collects reasoning envelopes and reasoning_tokens`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx(collect = true)).driveTurn(
+            listOf(
+                ev("""{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"deep"}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,
+                       "item":{"type":"reasoning","id":"rs_1","encrypted_content":"blob"}}""",
+                ),
+                ev(
+                    """{"type":"response.completed","response":{"usage":{"input_tokens":100,
+                       "output_tokens":600,"output_tokens_details":{"reasoning_tokens":516}}}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val success = outcome as TurnOutcome.Success
+        assertEquals(516, success.usage.reasoningTokens)
+        assertEquals(1, success.handoffs.reasoningEnvelopes.size)
+        assertTrue(success.handoffs.reasoningEnvelopes.first().contains("rs_1"))
+    }
+
+    @Test
+    fun `non-fold turn never collects envelopes - reasoningEnvelopes stays empty (parity)`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx(collect = false)).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,
+                       "item":{"type":"reasoning","id":"rs_1","encrypted_content":"blob"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertTrue((outcome as TurnOutcome.Success).handoffs.reasoningEnvelopes.isEmpty())
+    }
+
+    // L3 honesty hole (BS-1): a content-filtered response.incomplete must not masquerade as a
+    // clean max_tokens stop — mirrors ChatStreamTranslator's contentFiltered branch (line 97-105).
+    @Test
+    fun `response incomplete with reason content_filter is an honest failure, not a clean stop`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"partial"}"""),
+                ev(
+                    """{"type":"response.incomplete","response":{"status":"incomplete",
+                       "incomplete_details":{"reason":"content_filter"}}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(failure.cause))
+        assertTrue(failure.cause.providerReported)
+        assertTrue(failure.evidence.message.contains("content filter"))
+    }
+
+    @Test
+    fun `response incomplete with reason max_output_tokens stays a clean incomplete success`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"partial"}"""),
+                ev(
+                    """{"type":"response.incomplete","response":{"status":"incomplete",
+                       "incomplete_details":{"reason":"max_output_tokens"}}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val success = outcome as TurnOutcome.Success
+        assertTrue(success.incomplete)
+    }
+
+    @Test
+    fun `replay stays off on compact turns even when enabled`() = runTest {
+        val sink = RecordingSink()
+        ResponsesStreamTranslator(ctx(emit = true, compact = true)).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,
+                       "item":{"type":"reasoning","id":"rs_1","encrypted_content":"blob"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        assertTrue(sink.calls.none { it.startsWith("redacted:") })
+    }
+}
+
+class ResponsesTextCompletionTest {
+    @Test
+    fun `generated text partitions reconcile optional done and terminal suffixes once`() = runTest {
+        for (case in completionCases()) {
+            val sink = RecordingSink()
+            val outcome = ResponsesStreamTranslator(ctx()).driveTurn(events(case).asFlow(), sink)
+            assertCompletion(case, outcome, sink.calls)
+        }
+    }
+
+    private fun completionCases(): List<TextCompletionCase> =
+        listOf("done", "é\"\\\n").flatMap { answer ->
+            (0..answer.length).flatMap { prefixLength -> casesForPrefix(answer, prefixLength) }
+        }
+
+    private fun casesForPrefix(answer: String, prefixLength: Int): List<TextCompletionCase> {
+        val doneLengths = listOf<Int?>(null) + (prefixLength..answer.length).toList()
+        val terminalTypes = listOf("response.completed", "response.done", "response.incomplete")
+        return partitions(answer.take(prefixLength)).flatMap { chunks ->
+            doneLengths.flatMap { doneLength ->
+                terminalTypes.map { terminalType ->
+                    TextCompletionCase(answer, prefixLength, chunks, doneLength, terminalType)
+                }
+            }
+        }
+    }
+
+    private fun partitions(prefix: String): List<List<String>> {
+        if (prefix.isEmpty()) return listOf(emptyList())
+        return (0 until (1 shl (prefix.length - 1))).map { cuts ->
+            buildList {
+                var start = 0
+                for (index in 1 until prefix.length) {
+                    if ((cuts and (1 shl (index - 1))) != 0) {
+                        add(prefix.substring(start, index))
+                        start = index
+                    }
+                }
+                add(prefix.substring(start))
+            }
+        }
+    }
+
+    private fun events(case: TextCompletionCase): List<JsonObject> = buildList {
+        case.chunks.forEach { chunk ->
+            val delta = JsonPrimitive(chunk)
+            add(ev("""{"type":"response.output_text.delta","output_index":0,"delta":$delta}"""))
+        }
+        case.doneLength?.let { doneLength ->
+            val doneText = JsonPrimitive(case.answer.take(doneLength))
+            // Repeated snapshots must not repeat either the prefix or the recovered suffix.
+            repeat(2) {
+                add(ev("""{"type":"response.output_text.done","output_index":0,"text":$doneText}"""))
+            }
+        }
+        val text = JsonPrimitive(case.answer)
+        val terminalType = case.terminalType
+        add(
+            ev(
+                """{"type":"$terminalType","response":{"id":"r1","output":[
+                    {"type":"message","content":[{"type":"output_text","text":$text}]}
+                ],"incomplete_details":{"reason":"max_output_tokens"}}}""",
+            ),
+        )
+    }
+
+    private fun assertCompletion(case: TextCompletionCase, outcome: TurnOutcome, calls: List<String>) {
+        val expectedStreamPieces = case.chunks + listOfNotNull(case.doneSuffix.takeIf(String::isNotEmpty))
+        val terminalSuffix = case.terminalSuffix
+        val expectedClientPieces =
+            expectedStreamPieces + listOfNotNull(terminalSuffix.takeIf(String::isNotEmpty))
+        val textPieces = calls.filter { it.startsWith("text#") }.map { it.substringAfter(':') }
+        val clientPieces = clientPieces(calls)
+        val label = case.label
+
+        assertEquals(case.answer, (outcome as TurnOutcome.Success).text.bodyText, label)
+        assertEquals(expectedStreamPieces, textPieces, label)
+        assertEquals(expectedClientPieces, clientPieces, label)
+        if (expectedClientPieces.isNotEmpty()) {
+            assertEquals(case.answer, clientPieces.joinToString(""), label)
+        }
+        if (terminalSuffix.isEmpty()) {
+            assertEquals("closeAll", calls.last(), label)
+        } else {
+            val suffixIndex = calls.indexOf("addText:$terminalSuffix")
+            assertEquals("closeAll", calls[suffixIndex - 1], label)
+        }
+    }
+
+    private fun clientPieces(calls: List<String>): List<String> = calls.mapNotNull { call ->
+        when {
+            call.startsWith("text#") -> call.substringAfter(':')
+            call.startsWith("addText:") -> call.substringAfter(':')
+            else -> null
+        }
+    }
+
+    private data class TextCompletionCase(
+        val answer: String,
+        val prefixLength: Int,
+        val chunks: List<String>,
+        val doneLength: Int?,
+        val terminalType: String,
+    ) {
+        val doneSuffix: String
+            get() = doneLength?.let { answer.substring(prefixLength, it) }.orEmpty()
+
+        val terminalSuffix: String
+            get() {
+                val deliveredLength = doneLength ?: prefixLength
+                return if (deliveredLength in 1 until answer.length) answer.substring(deliveredLength) else ""
+            }
+
+        val label: String get() = "terminal=$terminalType done=$doneLength chunks=$chunks"
+    }
+}
+
+// RC-1 walls (reasoning-cache campaign, 2026-07-24): the capture sink fires exactly when a
+// successful tool-use round produced envelopes keyed by REAL upstream ids — synthetic ids and
+// non-tool rounds never seed the cache.
+class TurnReasoningCaptureTest {
+
+    @Test
+    fun `a successful tool round with envelopes fires the capture with real ids`() = runTest {
+        var captured: Pair<List<String>, List<String>>? = null
+        val outcome = ResponsesStreamTranslator(
+            ctx(collect = true, capture = { ids, envs -> captured = ids to envs }),
+        ).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,""" +
+                        """"item":{"type":"reasoning","id":"rs_1","encrypted_content":"blob"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"call_abc","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1,"arguments":"{}"}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertTrue(outcome is TurnOutcome.Success)
+        assertEquals(listOf("call_abc"), captured?.first)
+        assertEquals(1, captured?.second?.size)
+    }
+
+    @Test
+    fun `the captured envelope carries the exact encrypted content, not just an id-derived value`() = runTest {
+        // review 2026-07-24 (thread on :529): size==1 stayed green if encrypted_content was
+        // dropped or mutated — the wall must assert the full payload through a content-aware encoder
+        var captured: List<String>? = null
+        val base = ctx(collect = true, capture = { _, envs -> captured = envs })
+        ResponsesStreamTranslator(
+            base.copy(
+                encodeReasoningEnvelope = { item ->
+                    val id = item["id"]?.jsonPrimitive?.content.orEmpty()
+                    val cipher = item["encrypted_content"]?.jsonPrimitive?.content.orEmpty()
+                    "$id|$cipher"
+                },
+            ),
+        ).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,""" +
+                        """"item":{"type":"reasoning","id":"rs_abc","encrypted_content":"cipher-sentinel-9f2"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"call_abc","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1,"arguments":"{}"}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertEquals(listOf("rs_abc|cipher-sentinel-9f2"), captured)
+    }
+
+    @Test
+    fun `a failed terminal after reasoning and a real call id never seeds the capture`() = runTest {
+        // review 2026-07-24: the capture must stay gated on the SUCCESS terminal — a regression
+        // moving onTurnReasoning ahead of terminal classification would reinject a rejected turn
+        var fired = false
+        val outcome = ResponsesStreamTranslator(
+            ctx(collect = true, capture = { _, _ -> fired = true }),
+        ).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,""" +
+                        """"item":{"type":"reasoning","id":"rs_1","encrypted_content":"blob"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"call_real","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1,"arguments":"{}"}"""),
+                ev("""{"type":"response.failed","response":{"error":{"message":"upstream rejected"}}}"""),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertTrue(outcome is TurnOutcome.Failure)
+        assertTrue(!fired, "a rejected turn must not seed the cache")
+    }
+
+    @Test
+    fun `a truncated stream (EOF without terminal) never seeds the capture`() = runTest {
+        var fired = false
+        val outcome = ResponsesStreamTranslator(
+            ctx(collect = true, capture = { _, _ -> fired = true }),
+        ).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,""" +
+                        """"item":{"type":"reasoning","id":"rs_1","encrypted_content":"blob"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"call_real","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1,"arguments":"{}"}"""),
+                // stream closes here without response.completed
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertTrue(outcome !is TurnOutcome.Success)
+        assertTrue(!fired, "a truncated turn must not seed the cache")
+    }
+
+    @Test
+    fun `a synthetic-id tool round never seeds the cache`() = runTest {
+        var fired = false
+        ResponsesStreamTranslator(
+            ctx(collect = true, capture = { _, _ -> fired = true }),
+        ).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,""" +
+                        """"item":{"type":"reasoning","id":"rs_1","encrypted_content":"blob"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","name":"run"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertFalse(fired, "toolu_synth ids repeat across turns — they must never key the cache")
+    }
+
+    @Test
+    fun `a text-only round never fires the capture`() = runTest {
+        var fired = false
+        ResponsesStreamTranslator(
+            ctx(collect = true, capture = { _, _ -> fired = true }),
+        ).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"hello"}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertFalse(fired)
+    }
+}
+
+// Tool-search capture walls (ToolSurface deferral, the search round). A tool_search_call opens NO
+// wire block and must never touch hasToolUse/turnToolIds — a synthetic/foreign id there would
+// mis-key the reasoning cache (a known prior bug class this pins against).
+class ToolSearchCaptureTest {
+
+    @Test
+    fun `a tool_search_call opens no block, leaves hasToolUse false, lands in toolSearches`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"tool_search_call",""" +
+                        """"call_id":"ts_1","execution":"client","arguments":{"query":"web search exa"}}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        val success = outcome as TurnOutcome.Success
+        assertFalse(success.hasToolUse)
+        val opened = setOf("openTool", "openText", "openThinking")
+        assertTrue(sink.calls.none { call -> opened.any { call.startsWith(it) } }, "no wire block opens")
+        assertEquals(1, success.handoffs.toolSearches.size)
+        assertEquals("ts_1", success.handoffs.toolSearches.single().callId.v)
+        assertEquals("web search exa", success.handoffs.toolSearches.single().query)
+    }
+
+    @Test
+    fun `execution server is not captured`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"tool_search_call",""" +
+                        """"call_id":"ts_1","execution":"server","arguments":{"query":"x"}}}""",
+                ),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val success = outcome as TurnOutcome.Success
+        assertTrue(success.handoffs.toolSearches.isEmpty())
+    }
+
+    @Test
+    fun `arguments as a JSON string parses`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"tool_search_call",""" +
+                        """"call_id":"ts_1","execution":"client",""" +
+                        """"arguments":"{\"query\":\"exa search\",\"limit\":3}"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val success = outcome as TurnOutcome.Success
+        assertEquals("exa search", success.handoffs.toolSearches.single().query)
+        assertEquals(3, success.handoffs.toolSearches.single().limit)
+    }
+
+    @Test
+    fun `malformed arguments yields empty query and does not throw`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"tool_search_call",""" +
+                        """"call_id":"ts_1","execution":"client","arguments":"not valid json {"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val success = outcome as TurnOutcome.Success
+        assertEquals(1, success.handoffs.toolSearches.size)
+        assertEquals("", success.handoffs.toolSearches.single().query)
+    }
+
+    @Test
+    fun `empty call_id is dropped`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"tool_search_call",""" +
+                        """"call_id":"","execution":"client","arguments":{"query":"x"}}}""",
+                ),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val success = outcome as TurnOutcome.Success
+        assertTrue(success.handoffs.toolSearches.isEmpty())
+    }
+
+    @Test
+    fun `terminal-only delivery is recovered by the harvest fallback`() = runTest {
+        // No output_item.done for the search call — only the terminal response object carries it.
+        val terminal = ev(
+            """{"type":"response.completed","response":{"id":"r1","usage":{"input_tokens":10,"output_tokens":1},
+                "output":[{"type":"tool_search_call","call_id":"ts_9","execution":"client",
+                    "arguments":{"query":"harvested"}}]}}""",
+        )
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(listOf(terminal).asFlow(), RecordingSink())
+        val success = outcome as TurnOutcome.Success
+        assertEquals(1, success.handoffs.toolSearches.size)
+        assertEquals("ts_9", success.handoffs.toolSearches.single().callId.v)
+    }
+
+    @Test
+    fun `streamed capture present - the harvest fallback does not duplicate`() = runTest {
+        val terminal = ev(
+            """{"type":"response.completed","response":{"id":"r1","usage":{"input_tokens":10,"output_tokens":1},
+                "output":[{"type":"tool_search_call","call_id":"ts_1","execution":"client",
+                    "arguments":{"query":"streamed"}}]}}""",
+        )
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"tool_search_call",""" +
+                        """"call_id":"ts_1","execution":"client","arguments":{"query":"streamed"}}}""",
+                ),
+                terminal,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val success = outcome as TurnOutcome.Success
+        assertEquals(1, success.handoffs.toolSearches.size, "the streamed capture wins; the harvest never re-adds it")
+    }
+
+    // The dispatch-after-search wall: a function_call for a tool absent from THIS turn's
+    // declared set (i.e. a tool the model only learned about via a prior search) still opens an
+    // ordinary tool_use block — splice never validates names against the declared set.
+    @Test
+    fun `a function_call for an undeclared tool still opens a tool_use block`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":0,""" +
+                        """"item":{"type":"function_call","call_id":"call_1","name":"mcp__exa__web_search_exa"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        val success = outcome as TurnOutcome.Success
+        assertTrue(success.hasToolUse)
+        assertTrue(sink.calls.any { it.startsWith("openTool") && it.contains("mcp__exa__web_search_exa") })
+    }
+}
+
+// NF-06 lives in its own class: ResponsesStreamTranslatorTest sits at detekt's LargeClass ceiling.
+class ResponsesRunawayGuardTest {
+
+    private fun toolAdded(outputIndex: Int): JsonObject = buildJsonObject {
+        put("type", JsonPrimitive("response.output_item.added"))
+        put("output_index", JsonPrimitive(outputIndex))
+        put(
+            "item",
+            buildJsonObject {
+                put("type", JsonPrimitive("function_call"))
+                put("call_id", JsonPrimitive("call_$outputIndex"))
+                put("name", JsonPrimitive("run"))
+            },
+        )
+    }
+
+    private fun toolArgs(outputIndex: Int, delta: String): JsonObject = buildJsonObject {
+        put("type", JsonPrimitive("response.function_call_arguments.delta"))
+        put("output_index", JsonPrimitive(outputIndex))
+        put("delta", JsonPrimitive(delta))
+    }
+
+    @Test
+    fun `retained tool block count trips the shared capacity guard`() = runTest {
+        val sink = RecordingSink()
+        var emitted = 0
+        val events = kotlinx.coroutines.flow.flow {
+            repeat(BufferCapacity.MAX_TOOL_INDEX_ENTRIES + 10) { outputIndex ->
+                emitted += 1
+                emit(toolAdded(outputIndex))
+            }
+        }
+
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(events, sink)
+        val failure = outcome as TurnOutcome.Failure
+        assertTrue(failure.evidence.message.contains("exceeded max buffered size"), failure.evidence.message)
+        assertEquals(BufferCapacity.MAX_TOOL_INDEX_ENTRIES, sink.calls.count { it.startsWith("openTool") })
+        assertEquals(BufferCapacity.MAX_TOOL_INDEX_ENTRIES + 1, emitted, "guard must stop collection")
+    }
+
+    @Test
+    fun `aggregate arguments across open tool blocks trip the shared capacity guard`() = runTest {
+        val chunk = "x".repeat(1_000_000)
+        val sink = RecordingSink()
+        val events = kotlinx.coroutines.flow.flow {
+            repeat(25) { outputIndex ->
+                emit(toolAdded(outputIndex))
+                emit(toolArgs(outputIndex, chunk))
+            }
+        }
+
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(events, sink)
+        val failure = outcome as TurnOutcome.Failure
+        assertTrue(failure.evidence.message.contains("exceeded max buffered size"), failure.evidence.message)
+        assertEquals(20, sink.calls.count { it.startsWith("json#") })
+    }
+
+    @Test
+    fun `runaway upstream trips the shared buffer cap into an honest local failure`() = runTest {
+        // 25 x 1M-char text deltas, never a response.completed — the misbehaving-upstream shape.
+        // The guard must latch at the shared cap, stop feeding the buffers, and end the turn as a
+        // non-provider-reported API_ERROR (never a crash, never a provider attribution).
+        val chunk = "x".repeat(1_000_000)
+        val sink = RecordingSink()
+        var emitted = 0
+        val events = kotlinx.coroutines.flow.flow {
+            repeat(25) {
+                emitted += 1
+                emit(
+                    kotlinx.serialization.json.buildJsonObject {
+                        put("type", kotlinx.serialization.json.JsonPrimitive("response.output_text.delta"))
+                        put("output_index", kotlinx.serialization.json.JsonPrimitive(0))
+                        put("delta", kotlinx.serialization.json.JsonPrimitive(chunk))
+                    },
+                )
+            }
+        }
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(events, sink)
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, ClientWire.ownType(failure.cause))
+        assertFalse(failure.cause.providerReported, "the runaway verdict is LOCAL — never provider-attributed")
+        assertTrue(failure.evidence.message.contains("exceeded max buffered size"), failure.evidence.message)
+        // consumption stopped at the latch: 20 x 1M reaches the cap, later deltas never emit
+        val deltas = sink.calls.count { it.startsWith("text#") }
+        assertTrue(deltas in 20..21, "expected the guard to stop the stream at the cap, saw $deltas deltas")
+        assertTrue(emitted < 25, "the guard must unwind the upstream, not drain it; emitted=$emitted")
+    }
+
+    // PR #247 review round 6, Oct 30: the reasoning fold refuses thinking text that would cross the cap and latches the
+    // budget's failure, so the refused text never reaches the thinking buffer. A guard that judged the buffers alone
+    // kept answering "within", and a reasoning stream that never ends was read to its end instead of unwound.
+    @Test
+    fun `a runaway reasoning stream trips the shared buffer cap and unwinds the upstream`() = runTest {
+        for (type in listOf("response.reasoning_text.delta", "response.reasoning_summary_text.delta")) {
+            val (outcome, emitted) = runawayReasoning(type)
+            val failure = outcome as TurnOutcome.Failure
+            assertEquals(ErrorType.API_ERROR, ClientWire.ownType(failure.cause), type)
+            assertFalse(failure.cause.providerReported, "$type: the runaway verdict is local")
+            assertTrue(failure.evidence.message.contains("exceeded max buffered size"), failure.evidence.message)
+            assertTrue(emitted < 25, "$type: the guard must unwind the upstream, not drain it; emitted=$emitted")
+        }
+    }
+
+    /** 25 reasoning deltas of 1M chars of [type] on one reasoning item, and never a terminal; the outcome and how many
+     *  deltas the upstream emitted before the translator stopped reading. */
+    private suspend fun runawayReasoning(type: String): Pair<TurnOutcome, Int> {
+        val chunk = "x".repeat(1_000_000)
+        var emitted = 0
+        val events = kotlinx.coroutines.flow.flow {
+            emit(ev("""{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}"""))
+            emit(ev("""{"type":"response.reasoning_summary_part.added","output_index":0}"""))
+            repeat(25) {
+                emitted += 1
+                emit(
+                    buildJsonObject {
+                        put("type", JsonPrimitive(type))
+                        put("output_index", JsonPrimitive(0))
+                        put("delta", JsonPrimitive(chunk))
+                    },
+                )
+            }
+        }
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(events, RecordingSink())
+        return outcome to emitted
+    }
+}
+
+// CX-01 in its own class: ResponsesStreamTranslatorTest sits at detekt's LargeClass ceiling.
+class ResponsesToolArgsValidationTest {
+    @Test
+    fun `truncated tool arguments plus a terminal is a Failure, not corrupt Success`() = runTest {
+        // .done arrives with a mid-string-truncated buffer; pre-fix the block closed as Success.
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,
+                       "item":{"type":"function_call","call_id":"toolu_1","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"c\":"}"""),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, ClientWire.ownType(failure.cause))
+        assertTrue(failure.evidence.message.contains("malformed JSON"), failure.evidence.message)
+    }
+
+    @Test
+    fun `an opened tool with zero argument deltas is a Failure`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,
+                       "item":{"type":"function_call","call_id":"toolu_1","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertTrue(failure.evidence.message.contains("empty arguments"), failure.evidence.message)
+    }
+
+    @Test
+    fun `valid tool arguments still succeed`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,
+                       "item":{"type":"function_call","call_id":"toolu_1","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"c\":"}"""),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"1}"}"""),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertTrue((outcome as TurnOutcome.Success).hasToolUse)
+    }
+}
+
+// W4-A (WIDENED past the item's two named dialects): openai-responses carries the SAME hole. Its
+// contentFiltered gate only fires on `status: incomplete`, but an OpenAI refusal arrives with
+// `status: completed`, and both refusal carriers fell into `else -> Unit` — so a refused turn ended
+// `finished = true` with zero text. This dialect serves 2 of the 4 providers (codex + grok).
+class ResponsesRefusalHonestyTest {
+    // Round-2 review (UNVERIFIED_CLAIM): the artifact claimed the refusal-vs-content_filter
+    // co-occurrence was "pinned by test in BOTH dialects". It was pinned in chat only; a mutation
+    // reversing the elvis at ResponsesStreamTranslator.kt:232 stayed green here. This is the twin
+    // of chat's `a refusal on the content_filter frame carries the model's words` test. The
+    // model's stated reason IS the verdict — the generic content-filter phrase discards it.
+    @Test
+    fun `a refusal that also trips the content filter carries the model's words`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.refusal.delta","output_index":0,"delta":"Refusing: policy."}"""),
+                ev(
+                    """{"type":"response.incomplete","response":{"id":"r1",
+                       "incomplete_details":{"reason":"content_filter"}}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(f.cause))
+        assertTrue(f.cause.providerReported)
+        assertTrue(f.evidence.message.contains("Refusing: policy."), f.evidence.message)
+        assertTrue(!f.evidence.message.contains("stopped by content filter"), f.evidence.message)
+        assertEquals(null, f.partial)
+    }
+
+    /** V4-122 item 11. THE ARGUMENT WAS LOST WHILE ITS COMMENT SURVIVED: `refusalFailure` documents
+     *  `permanent = true` as load-bearing and records the consequence of omitting it — the
+     *  pre-content rule relabelled the refusal `overloaded_error` and the client re-sent the
+     *  identical bytes up to 300 times — yet the call passed only `providerReported`, so `permanent`
+     *  silently defaulted false. Its siblings at ResponsesTerminalDecision.kt:49 and :95 pass it.
+     *
+     *  Decided from the BEHAVIOUR rather than the comment: a refusal is deterministic, so a retry
+     *  re-sends identical bytes for an identical verdict and the client cannot fix it by retrying.
+     *  The test above pins `partial` but never pinned `permanent`, which is why the loss went
+     *  unnoticed. MUTATION: delete `permanent = true` from refusalFailure and this reddens. */
+    @Test
+    fun `a refusal is permanent, so the client is not invited to re-send identical bytes`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.refusal.delta","output_index":0,"delta":"Refusing: policy."}"""),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertTrue(f.cause.providerReported, "the model's own refusal is provider-reported, not a local verdict")
+        assertTrue(f.cause.permanent, "a deterministic refusal must be permanent — see V4-122 item 11")
+    }
+
+    @Test
+    fun `a streamed refusal delta is a provider-reported failure, not a clean completed turn`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.refusal.delta","output_index":0,"delta":"I won't "}"""),
+                ev("""{"type":"response.refusal.delta","output_index":0,"delta":"do that."}"""),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(failure.cause))
+        assertTrue(failure.cause.providerReported, "the BACKEND sent the refusal — G20 provenance is upstream")
+        assertTrue(failure.evidence.message.contains("I won't do that."), failure.evidence.message)
+        // A refusal is deterministic: no salvage may ride it, or the re-anchor loop re-POSTs it.
+        assertEquals(null, failure.partial)
+    }
+
+    // The second carrier: a `refusal`-typed content part on the completed response's output. This
+    // is the only one a backend that streams no refusal deltas uses.
+    @Test
+    fun `a refusal content part on the completed response fails the turn`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.completed","response":{"id":"r1","status":"completed",
+                       "output":[{"type":"message","content":[{"type":"refusal",
+                       "refusal":"Refusing: policy."}]}]}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(failure.cause))
+        assertTrue(failure.cause.providerReported)
+        assertTrue(failure.evidence.message.contains("Refusing: policy."), failure.evidence.message)
+    }
+
+    @Test
+    fun `the streamed and completed carriers of one refusal do not double-append`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.refusal.delta","output_index":0,"delta":"Nope."}"""),
+                ev(
+                    """{"type":"response.completed","response":{"id":"r1","status":"completed",
+                       "output":[{"type":"message","content":[{"type":"refusal","refusal":"Nope."}]}]}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(1, Regex("Nope\\.").findAll(failure.evidence.message).count(), failure.evidence.message)
+    }
+
+    // must_not: an empty refusal part, and an ordinary text turn, must be completely unaffected.
+    @Test
+    fun `an empty refusal part leaves an ordinary completed turn a Success`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"hello"}"""),
+                ev(
+                    """{"type":"response.completed","response":{"id":"r1","status":"completed",
+                       "output":[{"type":"message","content":[{"type":"output_text","text":"hello"},
+                       {"type":"refusal","refusal":""}]}]}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val success = outcome as TurnOutcome.Success
+        assertEquals("hello", success.text.bodyText)
+    }
+
+    // ---- repair round 2 -------------------------------------------------------------------
+    // Same two axes as chat (TYPE of the carrier, ACCUMULATION over the incremental one), plus the
+    // carrier this dialect was missing outright.
+
+    // TYPE AXIS. ResponseOutputRefusal.refusal and ResponseRefusalDoneEvent.refusal are typed
+    // `string`; a boolean/number is a vendor flag, and strOrEmpty turned `false` into the non-blank
+    // string "false" — failing a working turn and blaming the backend for it (G20 inverted).
+    @Test
+    fun `a boolean refusal delta riding a working stream is not a refusal`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.refusal.delta","output_index":0,"delta":false}"""),
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"hello"}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertEquals("hello", (outcome as TurnOutcome.Success).text.bodyText)
+    }
+
+    @Test
+    fun `a boolean refusal content part beside real output is not a refusal`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.completed","response":{"id":"r1","status":"completed",
+                       "output":[{"type":"message","content":[{"type":"output_text","text":"hello"},
+                       {"type":"refusal","refusal":false}]}]}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertEquals("hello", (outcome as TurnOutcome.Success).text.bodyText)
+    }
+
+    // ACCUMULATION AXIS. onTextDelta appends verbatim in the very same reducer; only the refusal
+    // arm deduped, so a token-streamed refusal lost every repeated token.
+    @Test
+    fun `a token-streamed refusal keeps every word, repeats included`() = runTest {
+        val tokens = listOf(
+            "I", " won", "'t", " do", " that", ".",
+            " I", " won", "'t", " do", " anything", " illegal", ".",
+        )
+        val frames = tokens.map {
+            ev("""{"type":"response.refusal.delta","output_index":0,"delta":"$it"}""")
+        } + completed
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(frames.asFlow(), RecordingSink())
+        val f = outcome as TurnOutcome.Failure
+        assertTrue(f.evidence.message.contains("I won't do that. I won't do anything illegal."), f.evidence.message)
+    }
+
+    // THE MISSING CARRIER. ResponseRefusalDoneEvent ("emitted when refusal text is finalized")
+    // carries the COMPLETE refusal string, and the documented order is refusal.delta xN ->
+    // refusal.done -> content_part.done -> output_item.done. A backend that finalizes without
+    // streaming deltas reached the client as a clean, zero-text Success.
+    @Test
+    fun `a refusal delivered only on response refusal done fails the turn`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.refusal.done","output_index":0,"refusal":"I won't do that."}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(f.cause))
+        assertTrue(f.cause.providerReported, "the BACKEND finalized the refusal — G20 provenance is upstream")
+        assertTrue(f.evidence.message.contains("I won't do that."), f.evidence.message)
+        assertEquals(null, f.partial)
+    }
+
+    // Three carriers, one refusal: the guard that dropping the dedup did not regress into
+    // duplication. delta-wins means the two whole-copy carriers are both no-ops here.
+    @Test
+    fun `all three carriers of one refusal appear exactly once`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.refusal.delta","output_index":0,"delta":"Nope."}"""),
+                ev("""{"type":"response.refusal.done","output_index":0,"refusal":"Nope."}"""),
+                ev(
+                    """{"type":"response.completed","response":{"id":"r1","status":"completed",
+                       "output":[{"type":"message","content":[{"type":"refusal","refusal":"Nope."}]}]}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertEquals(1, Regex("Nope\\.").findAll(f.evidence.message).count(), f.evidence.message)
+    }
+
+    // A NON-EMPTY refusal part beside real prose. HEAD returned Success with the text; failing the
+    // turn is correct under L3 and matches the pre-existing contentFiltered shape — pin the
+    // deliberate choice so it cannot silently reverse. (The EMPTY-part control above is its twin.)
+    @Test
+    fun `a non-empty refusal part beside real prose fails the turn`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"here is some prose"}"""),
+                ev(
+                    """{"type":"response.completed","response":{"id":"r1","status":"completed",
+                       "output":[{"type":"message","content":[{"type":"output_text","text":"prose"},
+                       {"type":"refusal","refusal":"but I stop here"}]}]}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(f.cause))
+        assertTrue(f.cause.providerReported)
+        assertTrue(f.evidence.message.contains("but I stop here"), f.evidence.message)
+        assertEquals(null, f.partial)
+    }
+}
+
+// DR-77 (fresh-eyes sweep): CX-01's corrupt-args latch lived ONLY in the arguments.done handler,
+// but a backend can close a function_call via output_item.done alone — truncated args then ended
+// the turn as a clean Success dispatching garbage, and done-only args on the ITEM were dropped
+// entirely ({} input). Sibling class: the main class sits at detekt's LargeClass ceiling.
+class ResponsesItemDoneToolArgsTest {
+
+    @Test
+    fun `truncated args closed by output_item done latch`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t9","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"p\":"}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t9","name":"run"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, ClientWire.ownType(f.cause))
+        assertTrue(f.evidence.message.contains("tool call"), f.evidence.message)
+    }
+
+    @Test
+    fun `item-done-only complete args are emitted and stay a clean success`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t9","name":"run"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.done","output_index":1,"item":{"type":"function_call",""" +
+                        """"call_id":"t9","name":"run","arguments":"{\"x\":1}"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        assertTrue(outcome is TurnOutcome.Success, "complete late args are an honest tool call: $outcome")
+        assertTrue(sink.calls.contains("""json#0:{"x":1}"""), sink.calls.toString())
+    }
+
+    @Test
+    fun `the streamed-then-args-done flow is untouched`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t9","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"p\":1}"}"""),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t9","name":"run"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertTrue(outcome is TurnOutcome.Success, "$outcome")
+    }
+
+    // DR-106 (sweep-2): end-of-turn sink.closeAll() was a THIRD tool-block close path bypassing
+    // CX-01 — added(function_call) + a partial arguments.delta, then response.completed with NO
+    // arguments.done and NO output_item.done left the block for the sweep: toolArgsInvalid never
+    // latched, TerminalStates graded a clean Success, and the client received tool_use carrying
+    // truncated JSON. Same latch, same first-reason-wins, now applied before the sweep.
+    @Test
+    fun `truncated args left for the end-of-turn sweep still latch`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t9","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"p\":"}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val f = assertInstanceOf(TurnOutcome.Failure::class.java, outcome, "swept truncated args must not grade clean")
+        assertEquals(ErrorType.API_ERROR, ClientWire.ownType(f.cause))
+        assertTrue(f.evidence.message.contains("tool call"), f.evidence.message)
+    }
+
+    // DR-107 (sweep-2): a second output_item.added(function_call) at an already-open output_index
+    // EVICTED the live BlockState map-only — the first block's wire stayed open (start, no stop),
+    // its args never validated, and the client saw two content_block_start(tool_use) with the
+    // first dangling. The occupant now closes and validates through closeOpenBlocks first.
+    @Test
+    fun `a duplicate added at one output_index closes and validates the evicted block`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t1","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"p\":"}"""),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t2","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"x\":1}"}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t2","name":"run"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        // Wire hygiene: the evicted block closes BEFORE the replacement opens.
+        val firstClose = sink.calls.indexOf("close#0")
+        val secondOpen = sink.calls.indexOfFirst { it.startsWith("openTool#1") }
+        assertTrue(firstClose in 0 until secondOpen, "evicted block must close before the new open: ${sink.calls}")
+        // Validation: the evicted block's truncated args latch CX-01 — the turn must not grade clean.
+        val f = assertInstanceOf(TurnOutcome.Failure::class.java, outcome, "evicted truncated args must latch")
+        assertTrue(f.evidence.message.contains("tool call"), f.evidence.message)
+    }
+
+    // DR-107 rider: the same eviction orphaned an open TEXT block when a function_call reused its
+    // output_index — the text block's wire never closed. With clean tool args the turn stays a
+    // Success; the assertion is pure wire hygiene.
+    @Test
+    fun `a function_call reusing a text block's index closes the text block first`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":1,"delta":"hi"}"""),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t2","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"x\":1}"}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t2","name":"run"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        val textClose = sink.calls.indexOf("close#0")
+        val toolOpen = sink.calls.indexOfFirst { it.startsWith("openTool#1") }
+        assertTrue(textClose in 0 until toolOpen, "orphaned text block must close before the tool opens: ${sink.calls}")
+        assertTrue(outcome is TurnOutcome.Success, "clean args after an index reuse stay honest: $outcome")
+    }
+
+    // DR-108: a wire output_index was trusted without a block-type check — an output_text.delta
+    // carrying an OPEN function_call block's index emitted text_delta INSIDE tool_use on the wire
+    // (protocol-corrupt) and polluted the emittedText/textBuf honesty state. Mistargeted deltas
+    // drop, the same fate as the passthrough's PT-001 unmapped-index deltas.
+    @Test
+    fun `a text delta aimed at an open tool block's index is dropped`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t1","name":"run"}}""",
+                ),
+                ev("""{"type":"response.output_text.delta","output_index":1,"delta":"leak"}"""),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"x\":1}"}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t1","name":"run"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        assertTrue(sink.calls.none { it.startsWith("text#") }, "no text_delta may enter a tool block: ${sink.calls}")
+        val s = assertInstanceOf(TurnOutcome.Success::class.java, outcome, "clean tool args stay a Success")
+        assertTrue(!s.text.emittedText, "a dropped mistarget must not claim emitted text")
+        assertTrue(
+            s.text.bodyText.isEmpty(),
+            "a dropped mistarget must not pollute the text buffer: '${s.text.bodyText}'",
+        )
+    }
+
+    // DR-108 mirror: an arguments delta aimed at an open TEXT block's index emitted
+    // input_json_delta inside a text block, and the .done shape could even CLOSE the text block
+    // through the args path. Dropped the same way.
+    @Test
+    fun `an args delta aimed at an open text block's index is dropped`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"hello"}"""),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":0,"delta":"{\"x\":1}"}"""),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        assertTrue(sink.calls.none { it.startsWith("json#") }, "no args delta may enter a text block: ${sink.calls}")
+        val s = assertInstanceOf(TurnOutcome.Success::class.java, outcome, "the text turn stays a Success")
+        assertTrue(s.text.bodyText == "hello", "the real text survives untouched: '${s.text.bodyText}'")
+    }
+
+    // DR-134: the THIRD args-emitting path. DR-108 guarded onTextDelta and onArgs, but the DR-77
+    // late harvest checks only that the ITEM is a function_call — never that the BLOCK sitting at
+    // that output_index is one. Text blocks are built with sawDelta=false and only emitToolArgText
+    // ever flips it, so `!b.sawDelta` is permanently true for a text block and the harvest always
+    // fired: a text delta followed by an item-done carrying a function_call at the SAME index wrote
+    // input_json_delta into the open text block, and closeOpenBlocks then skipped the CX-01 latch
+    // (b.tool false), so the turn graded a clean Success while the client got a corrupt wire. No
+    // output_item.added arrives here, so DR-107's eviction never runs and cannot cover this.
+    @Test
+    fun `a late tool-args harvest aimed at an open text block is dropped`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"Hello"}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"function_call",""" +
+                        """"call_id":"t1","name":"run","arguments":"{\"x\":1}"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        assertTrue(
+            sink.calls.none { it.startsWith("json#") },
+            "no harvested args may enter a text block: ${sink.calls}",
+        )
+        val s = assertInstanceOf(TurnOutcome.Success::class.java, outcome, "the text turn stays a Success")
+        assertTrue(s.text.bodyText == "Hello", "the real text survives untouched: '${s.text.bodyText}'")
+    }
+}
+
+// DR-109: a proxy/gateway shape ships `error` as a PLAIN STRING — both object casts fell
+// through to the event itself, so code/message read empty and the placeholder replaced the
+// vendor's text: the rate-limit/transient signal never reached the classifier and the
+// operator-visible line hid the vendor reason.
+class ResponsesStringErrorTest {
+
+    @Test
+    fun `a string-typed error payload keeps the vendor's text`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"error","error":"rate limit exceeded, slow down"}"""),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val failure = assertInstanceOf(TurnOutcome.Failure::class.java, outcome)
+        assertTrue(
+            failure.evidence.message.contains("rate limit exceeded, slow down"),
+            "the vendor's text must survive to the journal: ${failure.evidence.message}",
+        )
+        // Failure-handling slice 3: the head's reader reads a kind from a code or a status, and words alone name
+        // neither, so this is an error no table names, which slice 4's engine sends once more.
+        val unrecognized = assertInstanceOf(FailureCause.Provider.Unrecognized::class.java, failure.cause)
+        assertEquals("rate limit exceeded, slow down.", unrecognized.said?.text, "and to the line a person reads")
+    }
+
+    @Test
+    fun `a string-typed error under response also keeps its text`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.failed","response":{"error":"backend proxy timeout"}}"""),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val failure = assertInstanceOf(TurnOutcome.Failure::class.java, outcome)
+        assertTrue(failure.evidence.message.contains("backend proxy timeout"), failure.evidence.message)
+    }
+
+    @Test
+    fun `an object error payload is unchanged - control`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.failed","response":{"error":{"code":"server_error","message":"boom"}}}"""),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val failure = assertInstanceOf(TurnOutcome.Failure::class.java, outcome)
+        assertTrue(failure.evidence.message.contains("boom"), failure.evidence.message)
+    }
+
+    @Test
+    fun `an empty message the backend closed marks the outcome messageClosed without any text on the wire`() = runTest {
+        // gpt-6-astra, 2026-09-05: encrypted reasoning, then a message item whose one output_text
+        // part is empty, then a terminal with an empty output array. The model's finished answer
+        // is "nothing" — the gateway must be able to tell that from a round with no message at all.
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning",""" +
+                        """"encrypted_content":"zzz","summary":[]}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,"item":{"type":"message"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.done","output_index":1,"item":{"type":"message","content":[{""" +
+                        """"type":"output_text","text":""}]}}""",
+                ),
+                ev(
+                    """{"type":"response.completed","response":{"status":"completed","output":[],"usage":{""" +
+                        """"input_tokens":100,"output_tokens":9}}}""",
+                ),
+            ).asFlow(),
+            sink,
+        )
+        val success = assertInstanceOf(TurnOutcome.Success::class.java, outcome)
+        assertTrue(success.shape.messageClosed, "the message item completed, so the answer is a deliberate empty")
+        assertFalse(success.text.emittedText, "no text was produced")
+        assertTrue(sink.calls.none { it.startsWith("text") }, "nothing may be invented on the wire: ${sink.calls}")
+    }
+
+    @Test
+    fun `a round with no message item is not messageClosed`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning",""" +
+                        """"encrypted_content":"zzz","summary":[]}}""",
+                ),
+                ev(
+                    """{"type":"response.completed","response":{"status":"completed","output":[],"usage":{""" +
+                        """"input_tokens":100,"output_tokens":9}}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertFalse(
+            (outcome as TurnOutcome.Success).shape.messageClosed,
+            "no message item, so the honest error still applies",
+        )
+    }
+}
+
+/** Oct 4: five code-mode rounds ended on an error-family terminal and daemon.log kept no trace of which event, status
+ *  or vendor code it was, so whether splice provoked them could not be answered. A round that ends failed or
+ *  incomplete now leaves one line of protocol vocabulary, and never the backend's message text or an id. */
+class ResponsesEndingLineTest {
+    private suspend fun endingLines(vararg events: String): List<String> {
+        val lines = mutableListOf<String>()
+        ResponsesStreamTranslator(ctx(), log = LogSink(lines::add)).driveTurn(
+            events.map(::ev).asFlow(),
+            RecordingSink(),
+        )
+        return lines
+    }
+
+    @Test
+    fun `a websocket error names its event, status, vendor code and error type`() = runTest {
+        val lines = endingLines(
+            """{"type":"error","status":400,"error":{"type":"invalid_request_error",
+               "code":"websocket_connection_limit_reached","message":"synthetic words resp_secret"}}""",
+        )
+        assertEquals(
+            listOf(
+                "upstream round ended on error status=400 code=websocket_connection_limit_reached " +
+                    "type=invalid_request_error",
+            ),
+            lines,
+        )
+    }
+
+    @Test
+    fun `a failed response names its code, and a field holding text reads as unknown`() = runTest {
+        assertEquals(
+            listOf("upstream round ended on response.failed status=- code=server_error type=-"),
+            endingLines(
+                """{"type":"response.failed","response":{"id":"resp_1",
+                   "error":{"code":"server_error","message":"boom"}}}""",
+            ),
+        )
+        val lines = endingLines("""{"type":"error","code":"synthetic words here","error":"rate limit exceeded"}""")
+        assertEquals(listOf("upstream round ended on error status=- code=? type=-"), lines)
+        assertFalse(lines.single().contains("synthetic") || lines.single().contains("rate limit"), lines.single())
+    }
+
+    @Test
+    fun `an incomplete response names its reason, and a completed one leaves no line`() = runTest {
+        assertEquals(
+            listOf("upstream round ended on response.incomplete reason=max_output_tokens"),
+            endingLines(
+                """{"type":"response.incomplete","response":{"id":"r1","status":"incomplete",
+                   "incomplete_details":{"reason":"max_output_tokens"}}}""",
+            ),
+        )
+        assertEquals(emptyList<String>(), endingLines(completed.toString()))
+    }
+}

@@ -1,0 +1,100 @@
+// NEW: compact cached perf-row facts and the seams between decoding, retention and selection.
+package splice.app.sources
+
+import splice.app.sources.dense.PerfGenerationRef
+import splice.app.sources.dense.PerfLineSpot
+import splice.usage.perf.PerfRow
+import java.io.IOException
+
+// Conservative retained-string charge: object/array headers and alignment, plus UTF-16 storage.
+internal const val PERF_STRING_OVERHEAD_BYTES = 64L
+
+// UTF-16 is the worst-case String backing width, even when compact strings are enabled.
+internal const val PERF_CHAR_BYTES = 2L
+
+// Covers the facts, row, entry, boxed scalars, linked queue node and 32-byte identity value with 64-bit references.
+internal const val PERF_RECORD_OVERHEAD_BYTES = 352L
+
+/** What a line's text shows of its model: a legacy probe row has an empty one, a work row names one. */
+internal enum class PerfModelHint { EMPTY, NAMED, UNSEEN }
+
+/** What a retention decided about a line it kept: the descriptions it charged once in the source's bounded sharing
+ *  pool, the object charge of the record (a compact one holds far less than a whole one), and, for a compact
+ *  retention that reads the whole row back, whether the line is [located] and where. */
+internal data class PerfRetention(
+    val textBytes: Long? = null,
+    val overheadBytes: Long = PERF_RECORD_OVERHEAD_BYTES,
+    val located: Boolean = false,
+    val spot: PerfLineSpot? = null,
+)
+
+/** Parsed facts plus the original skip hints; window selection never changes timestamp authority. */
+internal data class PerfCachedLine(
+    val row: PerfRow?,
+    val numericBytes: Long,
+    val leadingTs: Long?,
+    val model: PerfModelHint,
+    val drops: PerfDropsHint,
+    val probe: Boolean,
+    /** How a retention charges this line and where it lies. */
+    val retention: PerfRetention = PerfRetention(),
+) {
+    val spot: PerfLineSpot? get() = retention.spot
+
+    /** The line with its place in [generation], when its retention reads the whole row back by it. */
+    fun placed(generation: PerfGenerationRef, start: Long, end: Long): PerfCachedLine =
+        if (retention.located) copy(retention = retention.copy(spot = PerfLineSpot(generation, start, end))) else this
+
+    val emptyModel: Boolean get() = model == PerfModelHint.EMPTY
+
+    /** Upper-bound charge for object/queue overhead, primitive field storage and descriptive strings. */
+    val retainedBytes: Long
+        get() {
+            val value = row ?: return retention.overheadBytes
+            val text = listOf(
+                value.outcome,
+                value.cause,
+                value.facts.model,
+                value.facts.session,
+                value.transcript.sessionId,
+                value.transcript.responseMessageId,
+                value.transcript.messagesHash,
+                value.facts.account,
+                value.turn,
+                value.turnId,
+            ).sumOf { if (it == null) 0L else PERF_STRING_OVERHEAD_BYTES + it.length * PERF_CHAR_BYTES }
+            return retention.overheadBytes + numericBytes + (retention.textBytes ?: text)
+        }
+}
+
+internal fun interface PerfLineDecode {
+    fun decode(line: String): PerfCachedLine
+}
+
+/** An aggregate snapshot cannot authorize reading different bytes for its displayed row. */
+internal class PerfProjectionChanged : IOException("perf generation changed while reading display rows")
+
+/** Transform retained facts, not the parser or its timestamp/probe/error authority. */
+internal fun interface PerfLineKeep {
+    fun keep(line: PerfCachedLine, names: PerfFieldNames): PerfCachedLine
+}
+
+/** Older evicted input keeps its original on-demand parser; retained input supplies only compact facts. */
+internal interface PerfLineVisit {
+    /** A canonical pre-cutoff hint, or null when JSON decoding is needed to establish this row. */
+    fun beforeCutoff(line: String): Long? = null
+
+    /** The range still lies above known retention evidence and wholly below this window. */
+    fun canSkip(minimum: Long, maximum: Long): Boolean = false
+
+    /** Validated evicted rows establish time evidence without treating raw header hints as truth. */
+    fun knownSpan(minimum: Long, maximum: Long) = Unit
+    fun raw(line: String)
+    fun kept(line: PerfCachedLine)
+}
+
+/** The cumulative-drops evidence of one perf line: whether it may carry the counter, and the value if parsed. */
+internal data class PerfDropsHint(
+    val candidate: Boolean,
+    val count: Long?,
+)

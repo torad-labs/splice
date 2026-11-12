@@ -1,0 +1,289 @@
+package splice.dispatchprototype
+
+import java.io.FilterInputStream
+import java.io.FilterOutputStream
+import java.io.InputStream
+import java.io.OutputStream
+import java.math.BigInteger
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardOpenOption
+import java.security.MessageDigest
+import java.util.HexFormat
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.job
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.*
+import splice.app.diagnostics.CodeModeHttpInterruptProbe
+import splice.codemode.NativeCodeModeRuntime
+import splice.codemode.WorkerSpawn
+import splice.core.index.WireBlockIndex
+import splice.core.turn.GatewayCustomCall
+import splice.core.turn.RoundHandoffs
+import splice.core.turn.TurnOutcome
+import splice.core.turn.noRequestUsage
+import splice.core.util.JsonScalars
+import splice.core.util.JsonWire
+import splice.provider.codex.CodeModeBridgeConfig
+import splice.provider.codex.CodeModeStateLocation
+import splice.provider.codex.CodexCodeModeBridge
+import splice.upstream.RoundResult
+import splice.upstream.codemode.*
+import splice.upstream.sse.WireSink
+
+/** Fixture only: delays a real notification at the public runtime port; every native value remains unchanged. */
+object PendingDeliveryPrototype {
+    @JvmStatic
+    fun main(arguments: Array<String>): Unit = runBlocking {
+        val directory = Path.of(arguments.single())
+        Files.createDirectories(directory)
+        val trace = Trace(directory)
+        val recipe = Json.parseToJsonElement(Files.readString(directory.resolve("recipe.json"))).jsonObject
+        val scripts = recipe.getValue("scripts").jsonArray.map { it.jsonPrimitive.content }
+        val notice = recipe.getValue("notice").jsonPrimitive.content
+        val forbidden = recipe.getValue("forbidden").jsonPrimitive.content
+        val expectedJar = Path.of(recipe.getValue("candidateJar").jsonObject.getValue("path").jsonPrimitive.content)
+        check(digest(expectedJar) == recipe.getValue("candidateJar").jsonObject.getValue("sha256").jsonPrimitive.content)
+        val spawn = WorkerSpawn { builder ->
+            val executable = Path.of(builder.command().first())
+            check(digest(executable) == "522935d4392ec9674fab60b239b5495992c6a93e4deb65113a216b6f5451ccd4")
+            val child = builder.start()
+            val proc = Path.of("/proc/${child.pid()}")
+            trace.event("native_process", buildJsonObject {
+                put("pid", child.pid()); put("argv", JsonArray(builder.command().map(::JsonPrimitive)))
+                put("exe", Files.readSymbolicLink(proc.resolve("exe")).toString())
+                put("exeSha256", digest(proc.resolve("exe")))
+                put("stat", Files.readString(proc.resolve("stat")))
+            })
+            CapturedProcess(child, directory, trace)
+        }
+        val actual = NativeCodeModeRuntime(spawn = spawn)
+        val barrier = PendingRuntime(actual, "pre-ready-exec-1-${recipe.getValue("nonce").jsonPrimitive.content}", trace)
+        val bridge = CodexCodeModeBridge(CodeModeBridgeConfig(
+            { barrier },
+            CodeModeStateLocation(directory.resolve("records"), directory.resolve("legacy.json")),
+            log = { trace.event("head_log", buildJsonObject { put("message", it) }) },
+        ))
+        val sink = CapturedSink(trace)
+        val session = "pre-ready-session-${recipe.getValue("nonce").jsonPrimitive.content}"
+        val conversation = "pre-ready-conversation-${recipe.getValue("nonce").jsonPrimitive.content}"
+        val ids = (0..2).map { "pre-ready-exec-$it-${recipe.getValue("nonce").jsonPrimitive.content}" }
+        val posted = CopyOnWriteArrayList<JsonArray>()
+        val sequence = AtomicInteger()
+        val initialPrompt = "Run the fixed local dispatch-gate probe in this disposable workspace."
+        val resumePrompt = recipe.getValue("resumePrompt").jsonPrimitive.content
+        suspend fun invoke(resumed: Boolean): RoundResult {
+            val user = buildJsonObject { put("role", "user"); put("content", initialPrompt) }
+            val input = if (resumed) listOf(user, buildJsonObject { put("role", "user"); put("content", resumePrompt) }) else listOf(user)
+            val request = buildJsonObject { put("input", JsonArray(input)) }
+            val turn = CodexCodeModeBridge.Turn(session, conversation, "fixture-pre-ready-model", emptySet())
+            return bridge.interceptor(turn, disableParallel = false).intercept(JsonWire.string(request), sink) { body ->
+                val history = Json.parseToJsonElement(body).jsonObject.getValue("input").jsonArray
+                posted += history
+                val index = sequence.getAndIncrement()
+                trace.event("scripted_model_post", buildJsonObject { put("sequence", index); put("input", history) })
+                check(index in 0..3) { "Unexpected extra scripted model request $index" }
+                val call = if (index < scripts.size) GatewayCustomCall(
+                    ids[index], "exec", scripts[index], buildJsonObject {
+                        put("type", "custom_tool_call"); put("call_id", ids[index]); put("name", "exec"); put("input", scripts[index])
+                    },
+                ) else null
+                RoundResult.Outcome(TurnOutcome.Success(false, false, noRequestUsage,
+                    handoffs = RoundHandoffs(customCalls = listOfNotNull(call))))
+            }
+        }
+        try {
+            withTimeout(45_000) {
+                coroutineScope {
+                    val request = async { invoke(false) }
+                    val pending = barrier.pending.await()
+                    val observed = barrier.observing.await()
+                    check(pending.callId == ids[1] && pending.cellId == observed)
+                    check(pending.text == notice)
+                    check(!barrier.cancelled.isCompleted && !barrier.permit.isCompleted)
+                    trace.event("both_owned_boundaries_observed", buildJsonObject {
+                        put("session", session); put("conversation", conversation); put("nativeSession", pending.sessionKey)
+                        put("cellId", pending.cellId); put("callId", pending.callId)
+                        put("noticeAlreadyDelivered", sink.text.any { notice in it })
+                    })
+                    check(sink.text.none { notice in it })
+                    request.cancelAndJoin()
+                    check(request.isCancelled)
+                    trace.event("ordinary_request_cancelled", buildJsonObject { put("pendingDeliveryJobActive", barrier.deliveryJob?.isActive == true) })
+                    check(barrier.deliveryJob?.isActive == true) { "Request cancellation prematurely retired the session-owned native callback" }
+                    val control = CodeModeHttpInterruptProbe(directory).interrupt(bridge, session, conversation)
+                    trace.event("production_http_interrupt", control)
+                    check(JsonScalars.int(control, "status") == 200)
+                    val response = control.getValue("response").jsonObject
+                    val cells = response.getValue("cells").jsonArray
+                    check(cells.size == 1)
+                    check(JsonScalars.str(cells[0].jsonObject, "cell_id") == pending.cellId)
+                    check(cells[0].jsonObject.getValue("terminated").jsonPrimitive.boolean)
+                    barrier.cancelled.await()
+                    check(barrier.deliveryJob?.isCancelled == true)
+                    check(barrier.forwarded.get() == 0)
+                    trace.event("delivery_cancelled_before_permit", buildJsonObject { put("cellId", pending.cellId) })
+                    val result = invoke(true)
+                    check(result is RoundResult.Outcome && result.outcome is TurnOutcome.Success)
+                    trace.event("resumed_native_success", buildJsonObject { put("outcome", "Success") })
+                    check(barrier.permit.complete(Unit))
+                    barrier.deliveryJob?.join()
+                    trace.event("late_permit_released", buildJsonObject { put("forwarded", barrier.forwarded.get()); put("cancelled", barrier.deliveryJob?.isCancelled == true) })
+                    check(barrier.forwarded.get() == 0)
+                    check(sequence.get() == 4)
+                    check(sink.text.none { notice in it || forbidden in it })
+                    val finalInput = posted.last()
+                    val output = finalInput.filterIsInstance<JsonObject>().single {
+                        JsonScalars.str(it, "call_id") == ids[2] && JsonScalars.str(it, "type") == "custom_tool_call_output"
+                    }.getValue("output").toString()
+                    check("completed-before-pre-ready-cancellation" in output)
+                    check("uncommitted-before-pre-ready-cancellation" !in output)
+                    check("after-pre-ready-cancellation" in output)
+                    val resumeValue = finalInput.filterIsInstance<JsonObject>().lastOrNull {
+                        JsonScalars.str(it, "role") == "user" && JsonScalars.str(it, "content") == resumePrompt
+                    }
+                    check(resumeValue != null) { "The actual resumed request did not retain its new user prompt" }
+                    Files.writeString(directory.resolve("posted.json"), JsonWire.string(JsonArray(posted)))
+                    Files.writeString(directory.resolve("result.json"), JsonWire.string(buildJsonObject {
+                        put("schema", 1); put("qualified", false); put("candidateEquivalent", false); put("scope", "development-prototype-only")
+                        put("candidateJar", recipe.getValue("candidateJar")); put("pid", ProcessHandle.current().pid())
+                        put("classOrigins", buildJsonObject {
+                            for (type in listOf(NativeCodeModeRuntime::class.java, CodexCodeModeBridge::class.java, CodeModeHttpInterruptProbe::class.java)) {
+                                put(type.name, Path.of(type.protectionDomain.codeSource.location.toURI()).toString())
+                            }
+                        })
+                        put("session", session); put("conversation", conversation); put("nativeNotification", buildJsonObject {
+                            put("sessionKey", pending.sessionKey); put("cellId", pending.cellId); put("callId", pending.callId); put("text", pending.text)
+                        })
+                        put("interruptControl", control); put("outcomes", JsonArray(listOf(JsonPrimitive("Cancelled"), JsonPrimitive("Success"))))
+                        put("pendingDeliveryCancelled", true); put("latePermitForwarded", barrier.forwarded.get())
+                        put("deliveredText", JsonArray(sink.text.map(::JsonPrimitive))); put("finalOutput", finalInput)
+                        put("boundaryDifference", "Candidate public notification delivery with registered foreground owner; source watch readiness gate is separate")
+                    }))
+                }
+            }
+        } finally {
+            bridge.onProviderStop()
+            actual.close()
+            trace.event("closed", buildJsonObject { put("candidateJarSha256", digest(expectedJar)) })
+        }
+    }
+
+    private fun digest(path: Path): String {
+        val hash = MessageDigest.getInstance("SHA-256")
+        Files.newInputStream(path).use { input ->
+            val buffer = ByteArray(128 * 1024)
+            while (true) { val size = input.read(buffer); if (size < 0) break; hash.update(buffer, 0, size) }
+        }
+        return HexFormat.of().formatHex(hash.digest())
+    }
+}
+
+private class PendingRuntime(private val actual: NativeCodeModeLifecycle, private val expectedCallId: String, private val trace: Trace) : NativeCodeModeLifecycle by actual {
+    val pending = CompletableDeferred<NativeCodeModeNotification>()
+    val observing = CompletableDeferred<String>()
+    val cancelled = CompletableDeferred<Unit>()
+    val permit = CompletableDeferred<Unit>()
+    val forwarded = AtomicInteger()
+    @Volatile var deliveryJob: Job? = null
+    override suspend fun startNativeSession(sessionKey: String, source: String, tools: Set<String>, descriptions: Map<String, String>, options: NativeCodeModeOptions): NativeCodeModeCell =
+        startNativeSession(sessionKey, source, CodeModeManual.nestedNames(tools).map { CodeModeManual.NestedTool(it, descriptions[it].orEmpty(), null) }, options)
+    override suspend fun startNativeSession(sessionKey: String, source: String, definitions: List<CodeModeManual.NestedTool>, options: NativeCodeModeOptions): NativeCodeModeCell {
+        val target = options.toolCallId == expectedCallId
+        val receiver = checkNotNull(options.notifications)
+        val guarded = if (!target) options else options.copy(notifications = NativeCodeModeNotifications { value ->
+            deliveryJob = currentCoroutineContext().job
+            trace.event("actual_notification_pending", buildJsonObject {
+                put("sessionKey", value.sessionKey); put("cellId", value.cellId); put("callId", value.callId); put("text", value.text)
+            })
+            pending.complete(value)
+            try {
+                permit.await()
+                forwarded.incrementAndGet()
+                receiver.deliver(value)
+            } catch (error: CancellationException) {
+                trace.event("actual_notification_delivery_cancelled", buildJsonObject { put("cellId", value.cellId); put("callId", value.callId) })
+                cancelled.complete(Unit)
+                throw error
+            }
+        })
+        val cell = actual.startNativeSession(sessionKey, source, definitions, guarded)
+        trace.event("native_started", buildJsonObject { put("sessionKey", sessionKey); put("cellId", cell.cellId); put("callId", options.toolCallId); put("target", target); put("source", source); put("toolDefinitions", JsonArray(definitions.map { JsonPrimitive(it.toString()) })) })
+        return object : NativeCodeModeCell by cell {
+            override suspend fun observe(yieldTimeMs: Long): CodeModeStep {
+                trace.event("native_observe_entry", buildJsonObject { put("cellId", cellId); put("yieldTimeMs", yieldTimeMs); put("target", target) })
+                if (target) observing.complete(cellId)
+                return cell.observe(yieldTimeMs).also { trace.step(cellId, it) }
+            }
+            override suspend fun observe(yieldTimeMs: BigInteger): CodeModeStep {
+                trace.event("native_observe_entry", buildJsonObject { put("cellId", cellId); put("yieldTimeMs", yieldTimeMs.toString()); put("target", target) })
+                if (target) observing.complete(cellId)
+                return cell.observe(yieldTimeMs).also { trace.step(cellId, it) }
+            }
+        }
+    }
+}
+
+private class CapturedSink(private val trace: Trace) : WireSink {
+    val text = CopyOnWriteArrayList<String>()
+    override suspend fun openText() = WireBlockIndex(0)
+    override suspend fun openThinking() = WireBlockIndex(0)
+    override suspend fun openTool(id: String, name: String): WireBlockIndex = error("No client tools declared")
+    override suspend fun textDelta(index: WireBlockIndex, text: String) { this.text += text; trace.event("client_text_delta", buildJsonObject { put("text", text) }) }
+    override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) = Unit
+    override suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String) = Unit
+    override suspend fun closeBlock(index: WireBlockIndex) = Unit
+    override suspend fun closeAll() = Unit
+    override suspend fun addTextBlock(text: String) { this.text += text; trace.event("client_text_block", buildJsonObject { put("text", text) }) }
+    override suspend fun addRedactedThinking(data: String) = Unit
+}
+
+private class Trace(private val directory: Path) {
+    @Synchronized fun event(kind: String, value: JsonObject) {
+        Files.writeString(directory.resolve("events.jsonl"), JsonWire.string(buildJsonObject {
+            put("atMs", System.currentTimeMillis()); put("kind", kind); put("value", value)
+        }) + "\n", StandardOpenOption.CREATE, StandardOpenOption.APPEND)
+    }
+    fun step(cell: String, value: CodeModeStep) = event("actual_native_step", buildJsonObject { put("cellId", cell); put("step", value.toString()) })
+}
+
+/** Transparent byte capture of the existing grpc+stdio stream; this neither decodes nor changes packets. */
+private class CapturedProcess(private val child: Process, directory: Path, private val trace: Trace) : Process() {
+    private val incoming = Files.newOutputStream(directory.resolve("native-host-to-client.raw"))
+    private val outgoing = Files.newOutputStream(directory.resolve("native-client-to-host.raw"))
+    private val input = object : FilterInputStream(child.inputStream) {
+        override fun read(): Int = `in`.read().also { if (it >= 0) incoming.write(it) }
+        override fun read(bytes: ByteArray, offset: Int, length: Int): Int = `in`.read(bytes, offset, length).also { if (it > 0) { incoming.write(bytes, offset, it); incoming.flush() } }
+    }
+    private val output = object : FilterOutputStream(child.outputStream) {
+        override fun write(value: Int) { out.write(value); outgoing.write(value); outgoing.flush() }
+        override fun write(bytes: ByteArray, offset: Int, length: Int) { out.write(bytes, offset, length); outgoing.write(bytes, offset, length); outgoing.flush() }
+    }
+    override fun getInputStream(): InputStream = input
+    override fun getOutputStream(): OutputStream = output
+    override fun getErrorStream(): InputStream = child.errorStream
+    override fun waitFor(): Int = child.waitFor()
+    override fun waitFor(timeout: Long, unit: TimeUnit): Boolean = child.waitFor(timeout, unit)
+    override fun exitValue(): Int = child.exitValue()
+    override fun destroy() = child.destroy()
+    override fun destroyForcibly(): Process { child.destroyForcibly(); return this }
+    override fun isAlive(): Boolean = child.isAlive
+    override fun pid(): Long = child.pid()
+    override fun toHandle(): ProcessHandle = child.toHandle()
+    override fun onExit(): CompletableFuture<Process> = child.onExit().thenApply {
+        incoming.close(); outgoing.close()
+        trace.event("native_process_exit", buildJsonObject { put("pid", child.pid()); put("exitCode", child.exitValue()) })
+        this
+    }
+}

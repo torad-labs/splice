@@ -32,20 +32,24 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         if: matrix.language == 'java-kotlin'
         with:
           distribution: temurin
           java-version: '21'
           cache: gradle
       - name: initialize CodeQL
-        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
       - name: build Kotlin
         if: matrix.language == 'java-kotlin'
-        working-directory: gateway
-        run: ./gradlew classes --no-daemon --stacktrace
+        # CodeQL's extractor sees only the sources the compiler compiles in this job. gradle.properties turns the build cache on, and
+        # setup-java's gradle cache carries ~/.gradle/caches, the build cache included, between runs under a key hashed from the gradle
+        # files: a head that changes none of them after one that did restored every compileKotlin FROM-CACHE (34 of 34 on dev head
+        # b53104d18, Nov 2 2026), and the analysis failed with "could not process any code written in Java/Kotlin". So this build
+        # compiles with the build cache off; the dependency cache it restores is still what makes it fast.
+        run: ./gradlew classes --no-daemon --stacktrace --no-build-cache
       - name: analyze
-        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1

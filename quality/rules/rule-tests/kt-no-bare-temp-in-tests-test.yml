@@ -1,0 +1,40 @@
+id: kt-no-bare-temp-in-tests
+valid:
+  # the compliant spelling: JUnit makes the directory and deletes it
+  - |
+    @Test
+    fun `writes a file`(@TempDir dir: Path) {
+        Files.writeString(dir.resolve("a.txt"), "x")
+    }
+  # a shared one: the parameter of a @BeforeAll is scoped to the class
+  - |
+    @BeforeAll
+    fun setUp(@TempDir shared: Path) {
+        Files.createDirectory(shared.resolve("state"))
+    }
+  # a field
+  - |
+    @TempDir
+    lateinit var dir: Path
+  # exact names only: a helper that merely starts with the words is not the JDK call
+  - 'val d = createTempDirectoryFor("x")'
+  - 'val d = Files.createDirectory(base.resolve("x"))'
+invalid:
+  - 'val dir = Files.createTempDirectory("grok-")'
+  - 'val f = Files.createTempFile("p", ".json")'
+  # a directory argument does not make it compliant: the file is still one nothing deletes by itself
+  - 'val f = Files.createTempFile(dir, "p", ".json")'
+  - 'val f = java.nio.file.Files.createTempFile("p", ".json")'
+  - 'val f = File.createTempFile("p", ".json")'
+  # kotlin.io.path spelling, imported bare
+  - 'val d = createTempDirectory("x")'
+  - 'val f = createTempFile("p", ".s")'
+  # a temp call chained into a resolve is caught by its inner call
+  - 'val f = Files.createTempDirectory("x").resolve("y")'
+  # and one passed as an argument
+  - 'val s = State(Files.createTempDirectory("x"))'
+  # a class-level field initialiser (the @BeforeAll shape) is the same call
+  - |
+    class T {
+        private val tmp = Files.createTempDirectory("t")
+    }

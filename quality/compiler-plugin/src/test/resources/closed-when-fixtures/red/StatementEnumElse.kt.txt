@@ -1,0 +1,8 @@
+enum class Color { RED, GREEN }
+
+fun use(c: Color) {
+    when (c) {
+        Color.RED -> println("red")
+        else -> Unit
+    }
+}

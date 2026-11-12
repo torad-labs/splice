@@ -1,0 +1,106 @@
+{
+  "class": "date-and-token-notices",
+  "about": "The date line and the <total_tokens> budget notice Claude Code refreshes mid-conversation as role=system messages. Two separate messages, each of which must arrive whole and in place.",
+  "carriers": {
+    "date": "Today's date is 2026-09-28. CONF-DATE",
+    "tokens": "<total_tokens>184232 tokens left CONF-TOKENS</total_tokens>"
+  },
+  "request": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "CONF-U1 plan the migration"
+      },
+      {
+        "role": "system",
+        "content": "@date",
+        "clear_at": "next_user_message"
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "CONF-A1 here is the plan."
+          }
+        ]
+      },
+      {
+        "role": "system",
+        "content": "@tokens"
+      },
+      {
+        "role": "user",
+        "content": "CONF-U2 go"
+      }
+    ]
+  },
+  "expect": {
+    "anthropic-passthrough": [
+      {
+        "kind": "item",
+        "role": "system",
+        "text": "@date"
+      },
+      {
+        "kind": "item",
+        "role": "system",
+        "text": "@tokens"
+      },
+      {
+        "kind": "order",
+        "texts": [
+          "CONF-U1",
+          "@date",
+          "CONF-A1",
+          "@tokens",
+          "CONF-U2"
+        ]
+      }
+    ],
+    "openai-chat": [
+      {
+        "kind": "item",
+        "role": "system",
+        "text": "@date"
+      },
+      {
+        "kind": "item",
+        "role": "system",
+        "text": "@tokens"
+      },
+      {
+        "kind": "order",
+        "texts": [
+          "CONF-U1",
+          "@date",
+          "CONF-A1",
+          "@tokens",
+          "CONF-U2"
+        ]
+      }
+    ],
+    "openai-responses": [
+      {
+        "kind": "item",
+        "role": "system",
+        "text": "@date"
+      },
+      {
+        "kind": "item",
+        "role": "system",
+        "text": "@tokens"
+      },
+      {
+        "kind": "order",
+        "texts": [
+          "CONF-U1",
+          "@date",
+          "CONF-A1",
+          "@tokens",
+          "CONF-U2"
+        ]
+      }
+    ]
+  }
+}

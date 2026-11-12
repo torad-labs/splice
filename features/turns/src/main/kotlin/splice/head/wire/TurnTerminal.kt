@@ -1,0 +1,150 @@
+// NEW: the gateway-side sink that CAN end a turn. WireSink (:upstream) is deliberately
+// terminal-less (L3: a provider translator cannot fake a clean stop); the two terminal verbs live
+// only on the gateway's own sinks. Both the streaming SseEmitter and the non-stream
+// CollectingTerminal implement this, so the honesty pipeline (promote/mirror/terminal) and the
+// fold runner drive EITHER shape through one interface — the stream:false path reuses the exact
+// same machinery as the stream:true path instead of a drifting parallel copy.
+package splice.head.wire
+
+import kotlinx.serialization.json.JsonObject
+import splice.core.failure.FailureCause
+import splice.core.failure.SpliceLine
+import splice.core.failure.WaitLine
+import splice.core.turn.Usage
+import splice.upstream.sse.WireSink
+import java.util.concurrent.atomic.AtomicLong
+
+/**
+ * Builds the (non-standard) usage payload Claude Code reads from gateways.
+ *
+ * Injected so the emitter stays hud-agnostic. Was a `typealias` for the raw function type, which is
+ * a NAME for a shape and not a type of its own: any `(Usage?) -> JsonObject` satisfied it, and the
+ * alias bought documentation without buying non-transposability (HD-22). Null usage is the ordinary
+ * "no usage known for this turn" case, not an error.
+ *
+ * Held here (both terminal implementations already live in this file's package) rather than
+ * duplicated per sink, the same reasoning [MessageIds] below states for the message-id minter.
+ */
+internal fun interface UsagePayloadBuilder {
+    public operator fun invoke(usage: Usage?): JsonObject
+}
+
+/** One status line, composed at the instant the wire takes it. A seam rather than a String because
+ *  composing a line CONSUMES the caller's ticker state and reads its live clock — see
+ *  [TurnTerminal.progress]. [fresh] says no notice block is open, so the line opens one and must read
+ *  on its own; null says this beat stays silent (V4-451). `operator fun invoke` keeps every call site
+ *  a plain lambda. Failure-handling slice 2: the line is a [SpliceLine], so only a turn's voice can say
+ *  one, and the wire puts the break between two lines of one block. */
+internal fun interface ProgressLine {
+    public operator fun invoke(fresh: Boolean): SpliceLine?
+}
+
+internal interface TurnTerminal : WireSink {
+    /** True once this turn's ending is SETTLED — a terminal or error durably reached the wire,
+     *  abandon sealed it, or a failed error write made retrying pointless. NOT merely "attempted":
+     *  implementations keep it false after a cancelled/failed terminal so the cancellation seal
+     *  (TurnDriver.driveSealingCancellation) can still end the turn honestly (stranded-terminal /
+     *  truncated-200 fix, review 2026-07-22 round 3). */
+    public val hasEnded: Boolean
+
+    /** True once [emitTerminal] delivered the clean ending — never for an error or an abandon.
+     *  What tells a detached compaction's recording (TurnStreamer) apart from a truncated or
+     *  failed one without any consumer reading terminal literals off the frames (L3). Default
+     *  false: the collecting sink has no detached consumer. */
+    public val endedCleanly: Boolean get() = false
+
+    /** The ONLY clean ending — implementors derive the stop_reason literal internally (L3). */
+    public suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage)
+
+    /** The ONLY failure ending — an honestly-typed error the client can act on. [cause] decides what the client
+     *  reads, through ClientWire at the moment this terminal stands in (V4-81: a cause no retry can change keeps
+     *  its real type before content), and the line it says, which this terminal's turn voice composes from the
+     *  same cause, position and answer (failure-handling slice 2: no caller spells a word of it). */
+    public suspend fun emitError(cause: FailureCause)
+
+    /** The line [emitError] would write for [cause] at this moment, for a record that closes before the error
+     *  frame is written (DR-128: a perf row lands ahead of its error frame). Null for a terminal with no voice. */
+    public fun lineFor(cause: FailureCause): SpliceLine? = null
+
+    /** The line this terminal's error ending wrote, once one did; null before, and for a clean ending. */
+    public val lineWritten: SpliceLine? get() = null
+
+    /** Client vanished before any ending: seal with nothing emitted (never an error/terminal). */
+    public fun abandon()
+
+    /** DR-87: non-null when THIS terminal downgraded a Success emit into an error envelope at
+     *  emit time (the collect-path malformed-tool/capacity rewrite) — the short reason tag the
+     *  perf row carries. Default null: the streaming emitter never rewrites at the terminal, and
+     *  a downgrade the caller cannot see is exactly how a client-facing 502 read "ok" in every
+     *  instrument. */
+    public val degradedReason: String? get() = null
+
+    /** The id on the response Claude Code actually received, for joining its own transcript to a
+     *  perf row. Null only for a test or terminal that cannot supply one; real stream and collect
+     *  terminals expose the same id they put on the wire (V4-354). */
+    public val responseMessageId: String? get() = null
+
+    /** Open the turn on the wire NOW, before any content exists.
+     *
+     * message_start needs nothing from upstream — the id, model and a zeroed usage payload are all
+     * known at build time — so holding it until the first content block buys nothing and costs the
+     * whole upstream reasoning phase in dead air. Measured on the codex head (perf jsonl,
+     * 2026-07-26): first_byte -> first_frame p50 2840ms / p90 5819ms, i.e. 37% of a median 7658ms
+     * turn spent writing NOTHING to a client that renders a frozen screen. kimi and grok measure
+     * 0ms because their upstreams emit a content-bearing first event; only the Responses dialect
+     * has a long content-free reasoning phase in front of it.
+     *
+     * Frame ORDER is unchanged (message_start + ping were always first) — only their timing moves,
+     * so the golden differential byte-diffs still hold. Idempotent: later content/terminal paths
+     * still call it, and re-anchor rounds are no-ops. No-op by default for the non-stream sink,
+     * which has no incremental wire to open. */
+    public suspend fun ensureStarted() {}
+
+    /** A `ping` event on a wire that has gone silent (ClientChannel's pinger, every 30 s without a
+     *  frame): the one frame Claude Code's query loop yields as progress that carries no content,
+     *  so its async-agent stall watchdog (600 s of no yielded event) cannot fire under a long
+     *  reasoning phase or a slow compaction. Written only after message_start and only while the
+     *  turn is still open; the non-stream sink has no incremental wire, so its default is a no-op. */
+    public suspend fun heartbeat() {}
+
+    /** A round failed and the turn is recovering it: [wait] is the failure it met and what the turn does next, which
+     *  this terminal's turn voice says (failure-handling slice 2, final-design.md section 8). The streaming emitter
+     *  shows one line per recovery episode; the non-stream sink has no incremental wire, so its default says nothing. */
+    public suspend fun recovering(wait: WaitLine) {}
+
+    /** The turn holds for its cause to lift ([on]), or goes on ([on] false) (failure-handling slice 5): its hold line
+     *  already says when it continues, so a quiet wire carries only pings while it holds, never a status line. */
+    public fun holding(on: Boolean) {}
+
+    /** splice's own status line for a turn that has gone quiet: a short sentence about the wait,
+     *  appended to one thinking block per quiet stretch so a user watching a long silent turn can see
+     *  it is being HELD rather than hung (gpt-6-astra reasons for 5-12 minutes before its first
+     *  token); the stretch's block ends before the model's next block opens or closes. It is
+     *  the proxy speaking, not the model, and it is never counted as model output — the pinger's
+     *  write port decides that. Written only after message_start and only while the turn is open;
+     *  the non-stream sink has no incremental wire, so its default is a no-op.
+     *
+     *  [line] is a PRODUCER, not a string, because composing the line CONSUMES state — the caller's
+     *  ticker only says "holding this turn open" once, and reads elapsed and whether the model has
+     *  output yet as it goes. Building it for a write that the guards then drop spends the intro on
+     *  a line no client ever sees, and the next tick silently degrades to the ticker form. So the
+     *  producer runs where the write happens and nowhere else, and this default never runs it. */
+    public suspend fun progress(line: ProgressLine) {}
+}
+
+// HEAD-001/HEAD-002: a bare "msg_${System.currentTimeMillis()}" collides whenever two turns start
+// within the same millisecond, violating the unique-id invariant the client relies on. A
+// process-wide monotonic sequence appended to the timestamp makes every id distinct regardless of
+// concurrency; shared here (both terminal implementations already live in this file's package)
+// rather than duplicated per sink.
+// FILE SCOPE ON PURPOSE: the sequence must be PROCESS-wide. Held on MessageIds it would restart at
+// 0 per instance, and the two sinks below each construct their own — reintroducing HEAD-001.
+private val messageIdSeq = AtomicLong(0)
+
+/** The message-id minter. A class, not a file-scope function: both terminal sinks read it from a
+ *  constructor DEFAULT (so it cannot be a member of either), and it stays stateless — the
+ *  process-wide sequence above is what actually carries the uniqueness. */
+internal class MessageIds {
+    /** A fresh Anthropic-shaped message id, unique even across turns starting in the same ms. */
+    public fun generateMessageId(): String = "msg_${System.currentTimeMillis()}_${messageIdSeq.incrementAndGet()}"
+}

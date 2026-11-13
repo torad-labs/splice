@@ -237,6 +237,7 @@ internal class ControlServer(
 
     /** Set by the first [stop] and never cleared: a server stopped at any point, before its bind included, refuses to bind. */
     private var stopRequested = false
+    private var resourcesStopped = false
 
     /** What the connector actually bound in the current [start]; null while stopped. */
     @Volatile
@@ -338,12 +339,28 @@ internal class ControlServer(
             channelPipelineConfig = { pipeline -> guard.admit(pipeline) }
         }
 
+    /** #525: stops what rides on the listener and leaves the listener up. A hand-over calls it before the heads stop
+     *  taking turns, because a hosted MCP child takes up to two seconds to die and that wait used to fall between the
+     *  heads closing admission and the next daemon serving. [stop] then finds the resources stopped. */
+    @Synchronized
+    public fun quiet() {
+        stopRequested = true
+        stopResources()
+    }
+
     @Synchronized
     public fun stop() {
         stopRequested = true
-        resources.forEach { it.stop() }
+        stopResources()
         server?.stop(STOP_GRACE_MS, STOP_TIMEOUT_MS)
         server = null
         boundPort = null
+    }
+
+    /** Once, under this server's monitor: [quiet] may have stopped them before [stop]. */
+    private fun stopResources() {
+        if (resourcesStopped) return
+        resourcesStopped = true
+        resources.forEach { it.stop() }
     }
 }

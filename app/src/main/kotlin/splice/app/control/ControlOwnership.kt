@@ -61,6 +61,12 @@ internal class ControlOwnership(
         synchronized(gate) { closed = true }
     }
 
+    /** #525: the first step of a hand-over. What rides on the adopted listener stops and the listener stays up
+     *  ([ControlServer.quiet]); nothing is fenced, so the daemon serves until its heads retire. */
+    fun quiet() {
+        synchronized(gate) { owned }?.quiet()
+    }
+
     /** The stop boundary: closes what was adopted, and refuses anything adopted after. Safe to call twice. */
     fun close() {
         val server = synchronized(gate) {

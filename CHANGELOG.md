@@ -212,6 +212,10 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   command's windows.
 
 ### Changed
+- **A restart stops new requests for about 2.4 seconds less when splice is running an MCP server.** The retiring
+  daemon waited for its MCP server processes to end after its commands had stopped taking turns, so that wait was
+  part of the pause before the next daemon serves. It now ends them first, while turns are still answered. On
+  Nov 12, 2026 eight of thirteen restarts on one machine spent 2.4 to 2.5 seconds there.
 - **splice is tested against Claude Code 2.1.323.** The fresh-machine, upgrade, plan-limit and runtime-head runs
   pass with it. A session on a newer Claude Code is told so in `splice doctor`, `splice status` and the status
   line, as before.

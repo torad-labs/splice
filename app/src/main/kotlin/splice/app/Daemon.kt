@@ -309,9 +309,10 @@ public class Daemon(
 
     /** #523: the hand-over to the next daemon, which is the stop below with one difference: a head whose provider
      *  can finish an answer beside another daemon keeps the turns already answering. Everything else this process
-     *  holds that the next daemon needs is closed here, in the stop's own order: the share listener, the control
-     *  server, the probes and sign-ins, the performance recorder. When this returns the caller releases the daemon
-     *  lock and the next daemon boots; [finish] then waits for the kept turns. Returns how many were kept.
+     *  holds that the next daemon needs is closed here, in the stop's own order (the share listener, the control
+     *  server, the probes and sign-ins, the performance recorder), but for what rides on the control server, which
+     *  stops first. When this returns the caller releases the daemon lock and the next daemon boots; [finish] then
+     *  waits for the kept turns. Returns how many were kept.
      *
      *  The probe scope ends here although kept turns are still streaming, which the stop never allows. It has to: a
      *  login's renewal and an open sign-in are the next daemon's from the hand-over on, and two daemons renewing one
@@ -319,6 +320,10 @@ public class Daemon(
      *  to only for a second upstream attempt after its token ran out, and that attempt fails here. */
     public suspend fun retire(): Int = stopLock.withLock {
         if (stopped || retired) return@withLock 0
+        // A hosted MCP child takes up to two seconds to die. It dies first, while the heads still take turns: after
+        // them, that wait was part of the stretch in which no daemon serves (2.4 to 2.5 s of it in eight of the
+        // thirteen hand-overs of Nov 12, 2026).
+        controlPlane.ownership.quiet()
         headProbes.fenceStarts()
         controlPlane.ownership.fence()
         share.close()

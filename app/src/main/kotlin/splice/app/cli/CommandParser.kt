@@ -144,6 +144,7 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
     ),
     "status" to CommandRegistration("", CommandFactory.Alone(Command.Status)),
     "console" to CommandRegistration(CONSOLE_PILOT_USAGE, CommandFactory { a -> Command.Console(a.drop(1)) }),
+    // Kept for the machines that use it. Not in the usage text and not in the docs (Nov 13, 2026).
     "mcp" to CommandRegistration(
         splice.app.cli.mcp.MCP_SERVICE_USAGE,
         CommandFactory { a -> Command.Mcp(a.drop(1)) },

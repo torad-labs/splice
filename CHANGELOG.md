@@ -70,10 +70,10 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   once a minute. On Nov 13, 2026, in a wait of more than four hours, the provider's usage endpoint began to
   refuse a read a minute, and after each refusal splice did not read that login for five minutes: for half of
   every ten minutes a reset could not be heard. A refused read now doubles the gap between reads, to two minutes
-  at what that endpoint allowed, and the reads go on. And a login's hold ended only when its window read lower
-  than splice had read it before. A restart keeps the hold and forgets the earlier figure, so a login reset
-  around a restart read 0% from its first reading on, never fell, and stayed out of the pool until the reset its
-  refusal had named, days later. A hold with no earlier figure now ends at the first reading below full.
+  at what that endpoint allowed, and the reads go on. And a login's hold ends when its window reads lower than
+  splice read it before. A restart kept the hold and forgot that earlier figure, so a login reset around a
+  restart read 0% from its first reading on, never fell, and stayed out of the pool until the reset its refusal
+  had named, days later. The figure is now kept beside the hold and comes back with it.
 - **Sessions waiting on a plan limit go on within about a minute of a reset.** When every login of a command is
   out of a model, its turns wait. A login reset at the provider before its time ends that wait, and splice heard
   of the reset only from the login's usage reading, which it asked for every five minutes or when someone opened

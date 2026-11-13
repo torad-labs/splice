@@ -26,11 +26,14 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /** The provider's word, as wall instants in epoch seconds; any part may be absent. [plan] holds the whole login and
- *  each of [models] one model's week (PlanLimit.oneModel, Nov 3, 2026). */
+ *  each of [models] one model's week (PlanLimit.oneModel, Nov 3, 2026). [read] is splice's own beside it: the usage
+ *  figure each held window last read, by the window's name, which a later reading has to fall from to end the hold
+ *  before its time (PlanHold.weigh, Nov 13, 2026). */
 public data class ProviderHold(
     val providerResetAtEpochSeconds: Long?,
     val plan: PlanLimit?,
     val models: List<PlanLimit> = emptyList(),
+    val read: Map<String, Double> = emptyMap(),
 ) {
     public var rateLimitReply: NativeReply? = null
         internal set
@@ -114,7 +117,10 @@ public class FileProviderHoldStore(
         return Cancellables.runCatchingCancellable {
             val root = Json.parseToJsonElement(Files.readString(path)).jsonObject
             val models = (root[MODEL_WEEKS] as? JsonArray).orEmpty().mapNotNull { plan(it as? JsonObject) }
-            ProviderHold(JsonScalars.long(root, RESET_AT), plan(root[PLAN] as? JsonObject), models).also { hold ->
+            val read = (root[READ] as? JsonObject).orEmpty()
+                .mapNotNull { (window, percent) -> JsonScalars.str(percent)?.toDoubleOrNull()?.let { window to it } }
+                .toMap()
+            ProviderHold(JsonScalars.long(root, RESET_AT), plan(root[PLAN] as? JsonObject), models, read).also { hold ->
                 root[REPLY]?.let { hold.rateLimitReply = Json.decodeFromJsonElement(NativeReply.serializer(), it) }
             }
         }.onFailure {
@@ -147,6 +153,9 @@ public class FileProviderHoldStore(
             if (hold.models.isNotEmpty()) {
                 putJsonArray(MODEL_WEEKS) { hold.models.forEach { limit -> addJsonObject { planFields(this, limit) } } }
             }
+            if (hold.read.isNotEmpty()) {
+                putJsonObject(READ) { hold.read.forEach { (window, percent) -> put(window, percent) } }
+            }
         },
     )
 
@@ -164,6 +173,7 @@ private const val CLAIM = "claim"
 private const val MODEL_WEEKS = "models"
 private const val WEEK_MODEL = "model"
 private const val REPLY = "rate_limit_reply"
+private const val READ = "read_percent"
 
 // why: SHA-256 has 32 digest bytes and two hexadecimal characters per byte.
 private const val CREDENTIAL_KEY_HEX_CHARS = 64
@@ -180,6 +190,7 @@ internal class ProviderHolds(private val store: ProviderHoldStore?) {
     private var resetAt: Long? = null
     private var plan: PlanLimit? = null
     private var models: List<PlanLimit> = emptyList()
+    private var read: Map<String, Double> = emptyMap()
     private var reply: NativeReply? = null
     private var generation = 0L
 
@@ -216,6 +227,7 @@ internal class ProviderHolds(private val store: ProviderHoldStore?) {
         resetAt,
         plan,
         models,
+        read,
     ).also { it.rateLimitReply = rateLimitReply }
 
     /** What was stored, read once at construction; consumers keep only what has not passed. */
@@ -234,10 +246,12 @@ internal class ProviderHolds(private val store: ProviderHoldStore?) {
      *  beside the provider's reset, and writes them all. A new refusal is counted by [refusing], which the hold runs
      *  this inside: an answer that ends one model's week leaves another's standing and must not read as a refusal. */
     @Synchronized
-    fun plans(whole: PlanLimit?, weeks: List<PlanLimit>) {
-        if (plan == whole && models == weeks) return
+    fun plans(whole: PlanLimit?, weeks: List<PlanLimit>, figures: Map<String, Double>) {
+        // The same windows with the same figures are already in the file.
+        if (listOf(plan, models, read) == listOf(whole, weeks, figures)) return
         plan = whole
         models = weeks
+        read = figures
         store?.save(snapshot())
     }
 
@@ -248,6 +262,7 @@ internal class ProviderHolds(private val store: ProviderHoldStore?) {
         resetAt = kept.providerResetAtEpochSeconds
         plan = kept.plan
         models = kept.models
+        read = kept.read
         reply = stored.rateLimitReply.takeUnless { kept.isEmpty }
         if (kept != stored || reply != stored.rateLimitReply) store?.save(snapshot())
     }

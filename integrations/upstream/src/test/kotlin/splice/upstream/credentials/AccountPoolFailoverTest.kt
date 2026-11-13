@@ -152,18 +152,19 @@ class AccountPoolFailoverTest {
     ) {
         val fixture = AccountPoolTest.Fixture()
         val kept = FileProviderHoldStore(dir.resolve("one-provider-hold.json")) {}
-        val before = fixture.keeping(fixture.account("one", primary = true), kept)
+        val read = fixture.account("one", primary = true, quota = fixture.fableAt(100.0, at = 1L))
+        val before = fixture.keeping(read, kept)
         val two = fixture.account("two")
         spendFable(before)
         val held = fixture.pool(before, two).also { it.order = listOf("one", "two") }
         assertEquals("two", held.chosenFor(FABLE, "first"), "one's Fable week is used up until tomorrow")
 
-        // The person resets the login, and the next daemon starts with the refusal and no figure from before it.
+        // The person resets the login, and the next daemon is the first to read it since.
         fixture.setQuota(before, fixture.fableAt(0.0, at = 2L))
         val after = fixture.keeping(before, kept)
         val pool = fixture.pool(after, two).also { it.order = listOf("one", "two") }
 
-        assertEquals("one", pool.chosenFor(FABLE, "second"), "a refused week was a full one, and it reads reset")
+        assertEquals("one", pool.chosenFor(FABLE, "second"), "the figure its week fell from came back with the hold")
     }
 
     @Test

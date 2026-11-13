@@ -262,7 +262,7 @@ internal class ManagedHeadFactory(
         primaryQuota: QuotaTracker,
         accountQuotas: Map<String, QuotaTracker>,
     ): HeadStores {
-        val pool = accountPools.build(wired, accountQuotas, providerHolds.forAccounts(ctx.key, wired), primaryQuota)
+        val pool = accountPools.build(wired, accountQuotas, providerHolds.forPool(ctx.key, wired), primaryQuota)
         return headStoresOf(ctx, primaryQuota, accountQuotas, pool)
     }
 

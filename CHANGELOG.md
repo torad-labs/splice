@@ -170,6 +170,14 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   back. The hold is now kept in the state folder, beside what the provider said about that login's limits, and put
   back at the start: on the same account where the provider blocked the account, and on the same credential file
   otherwise. A sign-in made while the daemon was down ends it, as one made while it runs does.
+- **A removed or renamed ChatGPT, Grok, Kimi or Muse login takes its hold with it.** A hold a provider puts on a
+  login is kept in a file named by the login's label, and the file outlived the login. An account signed in
+  later under the same label started out held until the removed account's reset, and a renamed login left its
+  hold under the old label for whoever took it next. Such a command starts again when the console removes,
+  renames or signs in a login, and it now drops the file of every label that left or joined its logins since it
+  last started. A renamed login starts with no hold: if its provider still refuses it, the first turn sent to
+  it learns so again and moves to the next login. A Claude login already let go of its file (#527). Not
+  covered: a login filed with `splice login` while the daemon is stopped (#528).
 - **A session's cost on the status line survives a stop nothing closed.** Each session's running total is written
   at most a second behind its turns, and a daemon stopped by a kill, a crash or a power cut used to throw those
   totals away at the next start, because the last second's turns might be missing from them. A session days long

@@ -19,6 +19,23 @@ internal class ProviderHoldFiles(
     private val statePaths: StatePaths,
     private val log: LogSink,
 ) {
+    private val pooled = HashMap<String, Set<String>>()
+
+    /** The holds of [key]'s pool as the head builds it. #528: a ChatGPT, Grok, Kimi or Muse head builds its pool when
+     *  it starts, and starts again when the console removes, renames or signs in a login. A hold file is named by its
+     *  login's label, so the file of a label that left the pool since this daemon last built it goes, and so does the
+     *  file of a label that joined: whatever it says was said about an earlier login. Before, an account signed in
+     *  under a removed login's label started out held until that login's reset, and a renamed login left its hold
+     *  under the old label for whoever took it next. A renamed login starts with no hold; if its provider still
+     *  refuses it, the first turn sent to it learns so again and moves on. The first build of a daemon forgets
+     *  nothing, so a hold still outlives a restart. */
+    fun forPool(key: String, wired: Wired): Map<String, ProviderHoldStore> {
+        val labels = wired.accounts.filter { it.auth !is ClaudeNativeAuth }.mapTo(HashSet()) { it.label }
+        val before = synchronized(pooled) { pooled.put(key, labels) }
+        if (before != null) ((before - labels) + (labels - before)).forEach { forget(key, it) }
+        return forAccounts(key, wired)
+    }
+
     fun forHead(key: String): ProviderHoldStore =
         FileProviderHoldStore(statePaths.stateDir.resolve("$key-provider-hold.json"), log)
 

@@ -44,7 +44,7 @@ class ModelMissingNotRetriedTest {
             replies = Replies(OpenAiReplies),
             observers = PostObservers(onRetry = RetryNotice { log += it }),
         )
-        val ended = assertEnds<UpstreamFailed> { clientOver(engine).posted(ctx, "{}") { "ok" } }
+        val ended = assertEnds<UpstreamFailed> { clientOver(engine).posted(ctx, "{}") {} }
         return Answered(ended.cause, engine.requestHistory.size, log)
     }
 

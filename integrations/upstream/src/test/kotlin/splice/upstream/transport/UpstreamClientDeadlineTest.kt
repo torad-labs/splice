@@ -83,7 +83,7 @@ class UpstreamClientDeadlineTest {
                     observers = PostObservers(perf = perf),
                 ),
                 "{}",
-            ) { "ok" }
+            ) {}
         }
 
         assertEquals(503, failure.evidence.status)
@@ -125,7 +125,7 @@ class UpstreamClientDeadlineTest {
                     observers = PostObservers(perf = perf),
                 ),
                 "{}",
-            ) { "ok" }
+            ) {}
         }
 
         assertEquals(listOf(OVERLOAD_FIRST_WAIT_MS), waits)

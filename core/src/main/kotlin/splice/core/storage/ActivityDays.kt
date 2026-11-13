@@ -142,7 +142,9 @@ public class ActivityDays(
     public fun append(line: String): Unit = append(DayRecord { (line + "\n").toByteArray(Charsets.UTF_8) })
 
     /** Queues an immutable record, encoded only when its day is ready on the file lane. */
-    public fun append(record: DayRecord): Unit = appendAccepted(record).let { Unit }
+    public fun append(record: DayRecord) {
+        appendAccepted(record)
+    }
 
     /** Acceptance is distinct from persistence; a refused callback will never run. */
     public fun appendAccepted(record: DayRecord): Boolean {

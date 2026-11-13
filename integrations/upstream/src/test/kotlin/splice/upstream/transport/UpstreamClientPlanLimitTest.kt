@@ -120,7 +120,9 @@ class UpstreamClientPlanLimitTest {
         val notices = mutableListOf<String>()
         val client = client(engine)
 
-        val failure = assertEnds<UpstreamFailed> { client.posted(ctx(forwarded, notices), "{}") { "unreachable" } }
+        val failure = assertEnds<UpstreamFailed> {
+            client.posted(ctx(forwarded, notices), "{}") { error("unreachable") }
+        }
 
         assertEquals(1, calls.get(), "a spent plan window is not re-sent before the reset it named")
         assertEquals(429, failure.evidence.status)
@@ -148,7 +150,7 @@ class UpstreamClientPlanLimitTest {
             val client = client(engine)
 
             val failure = assertEnds<UpstreamFailed> {
-                client.posted(ctx(fakeAuth, mutableListOf(), Replies(OpenAiReplies)), "{}") { "unreachable" }
+                client.posted(ctx(fakeAuth, mutableListOf(), Replies(OpenAiReplies)), "{}") { error("unreachable") }
             }
 
             assertEquals(PLAN_BODY, failure.evidence.body, "the upstream's words pass through unchanged")
@@ -174,7 +176,7 @@ class UpstreamClientPlanLimitTest {
             val client = client(engine)
 
             val failure = assertEnds<UpstreamFailed> {
-                client.posted(ctx(forwarded, mutableListOf()), "{}") { "unreachable" }
+                client.posted(ctx(forwarded, mutableListOf()), "{}") { error("unreachable") }
             }
 
             assertEquals(1, calls.get(), "a window without a reset is terminal rather than retried")
@@ -199,10 +201,10 @@ class UpstreamClientPlanLimitTest {
         }
         val notices = mutableListOf<String>()
         val client = client(engine)
-        assertEnds<UpstreamFailed> { client.posted(ctx(forwarded, notices), "{}") { "unreachable" } }
+        assertEnds<UpstreamFailed> { client.posted(ctx(forwarded, notices), "{}") { error("unreachable") } }
 
         val next = assertEnds<UpstreamFailed> {
-            client.posted(ctx(forwarded, notices), "{}") { "unreachable" }
+            client.posted(ctx(forwarded, notices), "{}") { error("unreachable") }
         }
         assertEquals(2, calls.get(), "the next turn reaches the provider, held by nothing the first one armed")
         assertTheLine(next, reset)
@@ -218,7 +220,7 @@ class UpstreamClientPlanLimitTest {
     fun `a restart clears the horizon but the provider's plan hold outlives it`() = runTest {
         val engine = MockEngine { respond(PLAN_BODY, HttpStatusCode.TooManyRequests, planHeaders(resetInAnHour())) }
         val client = client(engine)
-        assertEnds<UpstreamFailed> { client.posted(ctx(forwarded, mutableListOf()), "{}") { "unreachable" } }
+        assertEnds<UpstreamFailed> { client.posted(ctx(forwarded, mutableListOf()), "{}") { error("unreachable") } }
         assertTrue(client.planHoldForMs > 0L, "precondition: the hold is live")
 
         client.clearRateLimitCooldown()

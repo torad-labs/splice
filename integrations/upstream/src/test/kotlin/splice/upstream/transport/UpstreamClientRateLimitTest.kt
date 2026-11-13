@@ -61,7 +61,7 @@ class NativeRateLimitHeadersTest {
                 val older = async { client.posted(context(), "{}") { "ok" } }
                 posted.await()
                 elapsed += advance
-                assertEnds<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
+                assertEnds<UpstreamFailed> { client.posted(context(), "{}") { error("unreachable") } }
                 val horizon = cooldown.remainingMs()
                 val selection = cooldown.unavailableForMs()
                 val reset = cooldown.providerUnavailableForMs()
@@ -118,7 +118,7 @@ class NativeRateLimitHeadersTest {
             extraHeaders = { emptyMap() },
             replies = Replies(OpenAiReplies),
         )
-        val failure = assertEnds<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
+        val failure = assertEnds<UpstreamFailed> { client.posted(context(), "{}") { error("unreachable") } }
         assertEquals(429, failure.evidence.status)
         assertEquals(native, failure.evidence.body)
         // 60 s is past the 15 s floor: the turn is held to the stated reset, which ends it at once until slice 5 holds it.
@@ -150,7 +150,7 @@ class UpstreamClientRateLimitTest {
         ).also {
             it.providerAnswerObserver = ProviderAnswerObserver { status, at -> answers += status to at }
         }
-        val failure = assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
+        val failure = assertEnds<UpstreamFailed> { client.posted(context, "{}") { error("unreachable") } }
         assertEquals(403, failure.evidence.status)
         assertTrue(answers.isNotEmpty())
         assertTrue(answers.all { it.first == 403 && it.second > 0L })
@@ -195,7 +195,7 @@ class UpstreamClientRateLimitTest {
         }
         accepted.await()
         assertEquals(listOf(200), answers.map { it.first }, "header acceptance is visible while its body is held")
-        assertEnds<UpstreamFailed> { client.posted(observedContext(), "{}") { "unreachable" } }
+        assertEnds<UpstreamFailed> { client.posted(observedContext(), "{}") { error("unreachable") } }
         release.complete(Unit)
         assertEquals("ok", older.await())
         assertEquals(
@@ -239,12 +239,12 @@ class UpstreamClientRateLimitTest {
             replies = Replies(OpenAiReplies),
         ).also { context -> context.upstreamAccepted = StreamStart { accepted += key } }
         val first = assertEnds<UpstreamFailed> {
-            client.posted(context("synthetic-refused"), "{}") { "unreachable" }
+            client.posted(context("synthetic-refused"), "{}") { error("unreachable") }
         }
         assertEquals("ok", client.posted(context("synthetic-healthy"), "{}") { "ok" })
         assertEquals("ok", client.posted(context("synthetic-new"), "{}") { "ok" })
         val again = assertEnds<UpstreamFailed> {
-            client.posted(context("synthetic-refused"), "{}") { "unreachable" }
+            client.posted(context("synthetic-refused"), "{}") { error("unreachable") }
         }
         assertEquals(first.cause, again.cause, "both refusals identify the same temporary throttle")
         assertEquals(1, again.layers, "a later turn asks this credential's provider again")
@@ -339,7 +339,7 @@ class UpstreamClientRateLimitTest {
             ),
         )
 
-        val observer = assertEnds<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
+        val observer = assertEnds<UpstreamFailed> { client.posted(context(), "{}") { error("unreachable") } }
         assertEquals(429, observer.evidence.status)
         assertEquals("slow down", observer.evidence.body)
         // V4-48: a pushback at or under the 15s ceiling is WAITED OUT and retried, not surrendered.

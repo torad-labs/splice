@@ -236,7 +236,7 @@ class RateLimitCooldownBudgetTest {
             limits = PostLimits(remainingTurnWait = RemainingTurnWait { 100L }),
         )
 
-        assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
+        assertEnds<UpstreamFailed> { client.posted(context, "{}") { error("unreachable") } }
 
         assertEquals(1, calls.get())
         assertTrue(waiter.waits.isEmpty())
@@ -267,7 +267,7 @@ class RateLimitCooldownBudgetTest {
             limits = PostLimits(remainingTurnWait = RemainingTurnWait { 60_000L }),
         )
 
-        assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
+        assertEnds<UpstreamFailed> { client.posted(context, "{}") { error("unreachable") } }
 
         assertEquals(1, calls.get(), "a reset past the floor is never waited out on the login")
         assertTrue(waiter.waits.isEmpty(), waiter.waits.toString())
@@ -340,7 +340,7 @@ class RateLimitCooldownBudgetTest {
                 ),
             )
 
-            assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
+            assertEnds<UpstreamFailed> { client.posted(context, "{}") { error("unreachable") } }
             assertEquals(1, calls.get())
             assertEquals(30_000L, cooldown.remainingMs(), "$status marks its login limited")
             assertEquals(0L, cooldown.unavailableForMs(), "$status must not remove the account from selection")
@@ -374,7 +374,7 @@ class RateLimitCooldownBudgetTest {
                 ),
             )
 
-            assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
+            assertEnds<UpstreamFailed> { client.posted(context, "{}") { error("unreachable") } }
             assertEquals(1, calls.get(), "Retry-After $retryAfter must not outlive the turn budget")
             assertTrue(waiter.waits.isEmpty(), "Retry-After $retryAfter must not start the shipped backoff")
             assertEquals(0L, cooldown.unavailableForMs())
@@ -473,7 +473,7 @@ class RateLimitCooldownOuterTurnTest {
             observers = PostObservers(onRetry = RetryNotice(notices::add)),
         )
 
-        val failure = assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
+        val failure = assertEnds<UpstreamFailed> { client.posted(context, "{}") { error("unreachable") } }
 
         assertEquals(503, failure.evidence.status)
         assertEquals("provider-specific failure", failure.evidence.message)
@@ -518,7 +518,7 @@ class RateLimitCooldownOuterTurnTest {
                 )
                 assertEquals(1, calls.get(), "round two must make zero calls after the turn cap is spent")
             } else {
-                val failure = assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
+                val failure = assertEnds<UpstreamFailed> { client.posted(context, "{}") { error("unreachable") } }
                 assertEquals(2, calls.get(), "round two may attempt once but cannot spend a new retry budget")
                 assertEquals(503, failure.evidence.status)
                 assertEquals("round two unavailable", failure.evidence.message)

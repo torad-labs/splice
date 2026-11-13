@@ -74,7 +74,9 @@ internal object TranscriptMetadata {
         val buffer = ByteBuffer.wrap(into, at, length)
         Files.newByteChannel(file, StandardOpenOption.READ).use { channel ->
             channel.position(offset)
-            while (buffer.hasRemaining() && channel.read(buffer) > 0) Unit
+            do {
+                val read = channel.read(buffer)
+            } while (read > 0 && buffer.hasRemaining())
         }
         return buffer.position() - at
     }

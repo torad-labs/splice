@@ -122,7 +122,7 @@ class UpstreamClientWireObserverTest {
         val wire = Recording()
 
         assertThrows<IOException> {
-            runBlocking { client(engine, ONE_UNREACHABLE_WAIT_MS).posted(context(wire), "{}") { "never" } }
+            runBlocking { client(engine, ONE_UNREACHABLE_WAIT_MS).posted(context(wire), "{}") { error("never") } }
         }
 
         assertEquals(listOf(1, 2), wire.attempts.map { it.attempt }, "every send, the retried one included")
@@ -139,7 +139,7 @@ class UpstreamClientWireObserverTest {
         val wire = Recording()
 
         assertEnds<UpstreamFailed> {
-            runBlocking { client(engine, ONE_OVERLOAD_WAIT_MS).posted(context(wire), "{}") { "never" } }
+            runBlocking { client(engine, ONE_OVERLOAD_WAIT_MS).posted(context(wire), "{}") { error("never") } }
         }
 
         assertEquals(listOf(503, 503), wire.attempts.map { it.response.status })

@@ -60,7 +60,9 @@ internal class PromptPreview {
         else -> Cancellables.runCatchingCancellable {
             val bytes = ByteBuffer.allocate(PREVIEW_BYTES + 1)
             Files.newByteChannel(path, setOf(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)).use { channel ->
-                while (bytes.hasRemaining() && channel.read(bytes) > 0) Unit
+                do {
+                    val read = channel.read(bytes)
+                } while (read > 0 && bytes.hasRemaining())
             }
             bytes.flip()
             if (bytes.limit() > PREVIEW_BYTES) {

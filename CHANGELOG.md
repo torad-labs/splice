@@ -238,6 +238,10 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   event list said Restored for any log line holding the word, and the only lines that hold it report a
   failure; that event is gone, and Settings re-read now appears when an edit to `splice.toml` changes a
   command's windows.
+- **The last-login warning counts accounts, not logins.** A plan limit belongs to an account. When Claude Code's own
+  login was signed in to the same account as a saved login, the command read as having two logins that could serve
+  where it had one account, so going down to that account brought no warning at 80% or 95%, only the line that no
+  login could serve once it ran out. Two logins the roster shows as one account now count as one.
 
 ### Changed
 - **A restart stops new requests for about 2.4 seconds less when splice is running an MCP server.** The retiring

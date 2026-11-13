@@ -50,6 +50,11 @@ public sealed class AccountPoolsRead {
         /** Per head, each login's name as Accounts shows it (its display_name), by its pool label. */
         public var accountNames: Map<String, Map<String, String>> = emptyMap()
             internal set
+
+        /** Per head, the account each login is a login of (the roster's ref for it), by its pool label. Two logins
+         *  of one account carry the same one. A login whose credential proved no account has none. */
+        public var accountRefs: Map<String, Map<String, String>> = emptyMap()
+            internal set
     }
 
     public data class Unread(public val reason: String, public val fix: String?) : AccountPoolsRead()

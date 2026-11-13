@@ -252,10 +252,15 @@ class HeadServerStopDrainTest {
          *  content delta arrives, so a test that cuts the turn cuts one whose content the client holds. A slot held
          *  says only that the turn was admitted: the line a cut writes names where the stream stood (content reached
          *  or not), and the upstream's first delta may still be on its way when the slot is first seen taken. */
-        suspend fun heldStream(reached: CompletableDeferred<Unit>): Pair<Int, String> =
+        suspend fun heldStream(
+            reached: CompletableDeferred<Unit>,
+            body: String = heldBody(stream = true),
+            session: String? = null,
+        ): Pair<Int, String> =
             client.preparePost("http://127.0.0.1:$port/v1/messages") {
                 header("Content-Type", "application/json")
-                setBody(heldBody(stream = true))
+                session?.let { header("x-claude-code-session-id", it) }
+                setBody(body)
             }.execute { response ->
                 val channel = response.bodyAsChannel()
                 val body = StringBuilder()
@@ -266,6 +271,16 @@ class HeadServerStopDrainTest {
                 }
                 response.status.value to body.toString()
             }
+
+        /** [heldStream] for a compaction: Claude Code's summarizer marker makes the turn one (CompactClassifier), and
+         *  with a session it runs off its client's call, as every compaction does. */
+        suspend fun heldCompaction(reached: CompletableDeferred<Unit>): Pair<Int, String> = heldStream(
+            reached,
+            """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,""" +
+                """"system":"SCENARIO:hold You are tasked with summarizing conversations for another agent.",""" +
+                """"messages":[{"role":"user","content":"compact"}]}""",
+            session = "sess-compaction",
+        )
 
         suspend fun awaitUpstreamAsked(asked: AtomicBoolean): Boolean {
             repeat(50) {
@@ -397,6 +412,34 @@ class HeadServerStopDrainTest {
             assertTrue(body.contains("message_stop"), "the client reads its answer to the end: ${body.takeLast(300)}")
             assertTrue(!body.contains("event: error"), "no error replaces the rest of the answer")
             assertTrue(!body.contains(RESTART_SAID), "the turn was not cut")
+            withTimeout(TAKEOVER_BOUND_MS) { rig.head.finish(TAKEOVER_BOUND_MS) }
+        } finally {
+            rig.mock.releaseHold()
+            rig.close()
+        }
+    }
+
+    // #525: a compaction runs off its client's call, on the head's detached scope, and a retiring head ended that
+    // whole scope: on Nov 12, 2026 a restart cancelled a compaction 77 seconds into its answer, and the client's retry
+    // took 402 seconds. One that is answering a client still connected is kept like any other turn.
+    @Test
+    fun `a retiring head finishes a compaction that is already answering its client`(
+        @TempDir tmp: Path,
+    ): Unit = runBlocking {
+        val rig = Rig(tmp, WatchdogBudget(600.seconds, 600.seconds, 900.seconds), finishing = true)
+        rig.start()
+        try {
+            val reached = CompletableDeferred<Unit>()
+            val turn = async(Dispatchers.IO) { rig.heldCompaction(reached).second }
+            withTimeout(CONTENT_WAIT_MS) { reached.await() }
+
+            assertEquals(1, rig.head.retire(), "the compaction already answering is kept")
+
+            rig.mock.releaseHold()
+            val body = turn.await()
+            assertTrue(body.contains("message_stop"), "the client reads its summary to the end: ${body.takeLast(300)}")
+            assertTrue(!body.contains("event: error"), "no error replaces the rest of the summary")
+            assertTrue(!body.contains(RESTART_SAID), "the compaction was not cut")
             withTimeout(TAKEOVER_BOUND_MS) { rig.head.finish(TAKEOVER_BOUND_MS) }
         } finally {
             rig.mock.releaseHold()

@@ -5,6 +5,7 @@ package splice.head.wire
 import kotlinx.coroutines.CoroutineScope
 import splice.core.util.LogSink
 import splice.head.compaction.CompactionReplay
+import splice.head.turn.detached.DetachedTurns
 import kotlin.coroutines.CoroutineContext
 
 /** A named value bundle (V4-134 style) rather than four constructor parameters riding together:
@@ -16,4 +17,6 @@ internal data class DetachOwner(
     /** The detachment owner both shapes share (TurnStreamer): head stop cancels every child once. */
     val scope: CoroutineScope,
     val context: CoroutineContext,
+    /** #525: the turns running on [scope], each with its drive, for a retiring head to choose among. */
+    val turns: DetachedTurns,
 )

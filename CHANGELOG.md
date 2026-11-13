@@ -69,6 +69,13 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   the model is told once that it was lost and runs it again. Still cut, as before: a Muse command (it keeps where
   each conversation runs in a file two daemons would write over), and a local runtime with `slot_affinity` on
   (the next daemon would hand the answer's slot to another conversation).
+- **A restart no longer cancels a compaction that is already answering.** A compaction, and every non-streaming
+  turn of a session, runs apart from its client's request so that a client hanging up does not end it. At a
+  restart the retiring daemon ended all of them together, including the ones a restart is meant to keep: on
+  Nov 12, 2026 a restart cancelled a compaction 77 seconds into its answer, and the retry Claude Code sent took
+  402 seconds. The retiring daemon now ends only the ones whose client has gone (the retry reaches the next
+  daemon) and the ones their provider has not begun answering; one that is answering a client still connected
+  finishes, as any other answer does (#525).
 - **Accounts and `splice status` show a login out of a model from the moment its provider refuses it there.**
   splice keeps two records about a login: the usage its provider last reported, and a hold it sets when the
   provider refuses a turn, which lasts until the reset the refusal named and decides where the next turn goes.

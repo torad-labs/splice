@@ -26,6 +26,10 @@ import splice.upstream.credentials.AccountResetText
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 
+/** How the key of the notice that no login can serve ends, and the key of the notice that one can again. */
+public const val LOGIN_NOTICE_NONE: String = "none"
+public const val LOGIN_NOTICE_BACK: String = "back"
+
 // why: leaves time to act: at the pace of Nov 12, 2026, eleven sessions on one login, about 45 minutes.
 private const val NEAR_MARK = 80
 
@@ -40,17 +44,33 @@ public class LoginNotices(private val now: WallClock = WallClock { System.curren
 
     /** The notice each command of [accountsJson], the daemon's own /api/accounts body, calls for now: none for a
      *  command with two or more logins that can serve, and none for a body this build cannot read. */
-    public fun of(accountsJson: String): List<LoginNotice> {
+    public fun of(accountsJson: String): List<LoginNotice> = each(accountsJson) { asked, blockedUntil, names ->
+        asked.notice(blockedUntil, names)
+    }
+
+    /** For each command and model [accountsJson] shows a login able to serve now, the notice that says so. It is for a
+     *  command that was told it had none (Nov 12, 2026: a login was reset while sessions waited, and nothing said
+     *  the sessions had gone on, so the person logged in again by hand). Its key is the [LOGIN_NOTICE_NONE] notice's
+     *  with [LOGIN_NOTICE_BACK] in that place. */
+    public fun back(accountsJson: String): List<LoginNotice> =
+        each(accountsJson) { asked, _, names -> asked.back(names) }
+
+    private fun each(accountsJson: String, said: NoticeOf): List<LoginNotice> {
         val read = roster.read(accountsJson) as? AccountPoolsRead.Read ?: return emptyList()
         val atSeconds = now().milliseconds.inWholeSeconds
         return read.pools.flatMap { (head, view) ->
             val logins = view.accounts.filter { it.credential.present }
             (view.next.asked + listOfNotNull(view.usualModel)).distinct().mapNotNull { model ->
-                AskedOfLogins(head, model, atSeconds, logins)
-                    .notice(view.blockedUntilEpochSecondsByLabel, read.accountNames[head].orEmpty())
+                val asked = AskedOfLogins(head, model, atSeconds, logins)
+                said.of(asked, view.blockedUntilEpochSecondsByLabel, read.accountNames[head].orEmpty())
             }
         }.distinctBy { it.key }
     }
+}
+
+/** What is said of one command's logins for one model, given the pool's hold times and the logins' names. */
+private fun interface NoticeOf {
+    fun of(asked: AskedOfLogins, blockedUntil: Map<String, Long>, names: Map<String, String>): LoginNotice?
 }
 
 /** A window of the last login, by the words a person knows it by. */
@@ -79,6 +99,16 @@ private class AskedOfLogins(
             last == null -> none(blockedUntil)
             else -> near(last, names[last.label] ?: last.label)
         }
+    }
+
+    /** That a login can serve again, named by the first that can; null while none can. */
+    fun back(names: Map<String, String>): LoginNotice? = logins.firstOrNull(::servedBy)?.let { login ->
+        LoginNotice(
+            head,
+            "$head|$modelWords|$LOGIN_NOTICE_BACK",
+            "$head has a login that can serve $modelWords again: ${names[login.label] ?: login.label}. " +
+                "Sessions that waited for it go on.",
+        )
     }
 
     private fun servedBy(login: HeadAccountView): Boolean {
@@ -112,7 +142,7 @@ private class AskedOfLogins(
         val first = back?.let { " The first comes back ${AccountResetText.forPerson(it)}." }.orEmpty()
         return LoginNotice(
             head,
-            "$head|$modelWords|none",
+            "$head|$modelWords|$LOGIN_NOTICE_NONE",
             "$head has no login that can serve $modelWords, so sessions asking for it are waiting.$first",
         )
     }

@@ -5,6 +5,11 @@
 Changes on main since v0.4.0. They take a version's heading when that version is cut.
 
 ### Added
+- **splice tells you when a command that had no login has one again.** The notice that no login can serve a model
+  said that sessions were waiting, and nothing said when they went on. On Nov 12, 2026 a login was reset while
+  seven sessions waited; they went on, and the person, with no word of it, logged in again by hand. The alert
+  command and the webhook now get one more line when a command that was told it had no login for a model has
+  one: which login, and that the sessions that waited for it go on.
 - **Settings says when saved prompts and answers were removed.** When the store of prompts and answers runs past
   its budget it removes the oldest day's, and keeps that day's request records. Only the daemon's log said so:
   on one machine the prompts and answers of fourteen days, Oct 29 to Nov 11, 2026, were gone and nothing on a

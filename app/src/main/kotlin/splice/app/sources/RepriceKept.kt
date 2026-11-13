@@ -75,11 +75,21 @@ internal data class SavedReprice(
  *  rows into a priced hour ([PRICING_CLASSES]), so an install that changes none of them keeps its prices: keying on the
  *  jar file's own identity, size and time dropped them at every install (four on Oct 22), and each boot after one
  *  repriced about 1 GB of request records for claudex and 1.35 GB for claude-splice, 14 s and 21 s of their starts. A
- *  class directory, as tests run, keeps each entry's identity, size and time. */
-internal class RunningBuild {
-    fun id(): String = System.getProperty("java.class.path").orEmpty().split(File.pathSeparator)
-        .filter(String::isNotEmpty)
-        .joinToString("|") { entry -> "$entry:${of(Path.of(entry))}" }
+ *  class directory, as tests run, keeps each entry's identity, size and time.
+ *
+ *  Made once for the process (#525, Nov 13, 2026): what a daemon runs does not change under it. Every command asked
+ *  for its own while it was assembled, and making one walks every entry of the jar, 49,000 in a release, and digests
+ *  3 MB of classes: 30 to 110 ms measured alone, thirteen times at each start, on the thread that builds the commands
+ *  one after another while their requests wait. The start makes it while it waits for the daemon lock
+ *  (DaemonBoundary.beginAheadOfLock). */
+internal object RunningBuild {
+    private val made by lazy {
+        System.getProperty("java.class.path").orEmpty().split(File.pathSeparator)
+            .filter(String::isNotEmpty)
+            .joinToString("|") { entry -> "$entry:${of(Path.of(entry))}" }
+    }
+
+    fun id(): String = made
 
     private fun of(path: Path): String =
         path.takeIf { it.fileName?.toString()?.endsWith(".jar") == true }?.let(::pricing) ?: mark(path)
@@ -115,7 +125,7 @@ internal class RunningBuild {
 internal class RepriceCards(
     private val price: TurnPrice,
     private val plans: AccountOnPlan,
-    private val build: String = RunningBuild().id(),
+    private val build: String = RunningBuild.id(),
 ) {
     fun key(models: Set<String>, accounts: Set<String?>): String {
         val text = buildString {

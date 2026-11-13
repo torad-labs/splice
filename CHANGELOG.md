@@ -296,6 +296,11 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   Measured once with both changes, on that machine on Nov 13, 2026: a restart held a Claude command's requests for
   1.95 seconds, where it had held them for 7.6. The ChatGPT command's pause did not get shorter, because it is the
   read of its saved conversations: 9.0 seconds at that restart.
+- **A start digests its own jar once, not once for every command.** Each command, while it was assembled, made
+  the digest that says whether the prices kept from the last run still hold: a walk over every entry of the jar,
+  49,000 in a release, and a hash of 3 MB of classes. Thread samples of a restart on Nov 13, 2026 caught the next
+  daemon in it twice in a row, on the thread that builds the commands one after another while their requests wait.
+  It is made once now, while the next daemon waits for the running one to hand over.
 - **A start reads a ChatGPT command's saved code-mode conversations with four readers.** Every command waits for
   that read at each start and restart, and it went through the conversations one after another on one core: 4.6 to
   6.2 seconds on a busy machine that held 369 MB of them in 54 files. Four readers now work ahead of the

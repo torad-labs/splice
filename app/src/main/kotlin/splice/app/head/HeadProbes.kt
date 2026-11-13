@@ -12,6 +12,7 @@ import splice.app.DaemonBoundary
 import splice.app.auth.AuthProbeLoop
 import splice.app.control.ManagedHead
 import splice.app.probe.DaemonDraining
+import splice.app.probe.HeldLoginReads
 import splice.app.probe.LocalRuntimeWatch
 import splice.app.probe.LocalWindowRefresh
 import splice.app.probe.TurnPathProbe
@@ -73,6 +74,8 @@ internal class HeadProbes : HeadProbeReadings {
                 startAuthProbeIfRefreshable(key, managed.auth, probeScope, log)
                 val probe = TurnPathProbe(managed.head.port, draining = DaemonDraining { !startsOpen })
                 TurnPathProbeLoop(key, probe, turnPathStalled, log).start(probeScope)
+                // A login reset at its provider while turns wait is heard within about a minute (HeldLoginReads).
+                HeldLoginReads(managed.head, managed.sources.usage).start(probeScope)
                 true
             }
             if (!admitted) return

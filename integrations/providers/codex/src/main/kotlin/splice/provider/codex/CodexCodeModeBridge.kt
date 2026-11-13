@@ -77,6 +77,13 @@ public class CodexCodeModeBridge(
         )
     internal val resume = CodexCodeModeResume(registry, wire, validation, machine, driver)
     internal val controller = CodexCodeModeTurn(registry, wire, driver, resume, machine, validation, config)
+    private val ending = Any()
+
+    /** #525: the head retired and has not had its last stop yet ([onProviderStop]). */
+    private var finishing = false
+
+    /** #525: the provider's stop arrived while the head was finishing its kept turns; the head's stop makes it. */
+    private var providerStopDue = false
     private val handover = CodeModeHandover(
         registry,
         controller.locks,
@@ -138,12 +145,21 @@ public class CodexCodeModeBridge(
      *  conversations those turns belong to run on here until their last turn ends; every other one is stopped now
      *  and is the next daemon's from here on ([CodeModeHandover]). */
     public fun onHeadRetire() {
+        synchronized(ending) { finishing = true }
         historySweep.stop()
         val held = handover.retire()
         (history.kept.hot() - held).forEach(history::forget)
     }
 
     public fun onHeadStop() {
+        val last = synchronized(ending) {
+            finishing = false
+            providerStopDue.also { providerStopDue = false }
+        }
+        if (last) registry.timed.finish { stopHead() } else stopHead()
+    }
+
+    private fun stopHead() {
         driver.streams.stop()
         try {
             registry.onHeadStop()
@@ -154,9 +170,15 @@ public class CodexCodeModeBridge(
         }
     }
 
-    /** Ends daemon ownership, unlike a reusable head stop. Unsaved evidence retains its retry owner. */
+    /** Ends daemon ownership, unlike a reusable head stop. Unsaved evidence retains its retry owner.
+     *
+     *  #525: a hand-over ends the daemon's probe scope, and the provider with it, as soon as the heads have retired
+     *  (Daemon.retire), while this head is still finishing the turns it kept. Stopping here ended every one of them:
+     *  on Nov 12, 2026 a retiring daemon kept two turns and failed both 18 ms after its control plane closed. So
+     *  after a retire the provider's stop waits for the head's own last stop, which then ends ownership. */
     public fun onProviderStop() {
         historySweep.stop()
-        registry.timed.finish { onHeadStop() }
+        val waits = synchronized(ending) { finishing.also { if (it) providerStopDue = true } }
+        if (!waits) registry.timed.finish { stopHead() }
     }
 }

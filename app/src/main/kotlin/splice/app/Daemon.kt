@@ -59,6 +59,7 @@ import splice.topology.TopologyLoader
 import splice.usage.quota.ClientUserAgent
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentSkipListMap
+import java.util.concurrent.TimeUnit
 
 public class Daemon(
     private val topology: Topology,
@@ -357,7 +358,14 @@ public class Daemon(
         val kept = headShutdown.retireHeads(heads.values.map { it.head }, HEAD_STOP_BUDGET_MS, log) {
             controlPlane.ownership.close()
         }
+        val handedOver = System.nanoTime()
         closeBackground()
+        // #525 (2026-11-13): the lock is freed when this returns, and the next daemon boots from there. No line said
+        // how long this daemon still held it: the stretch from the heads' hand-over to the next daemon's first line
+        // read 0.22 s at one restart of that day and 0.44 s at the next two, and nothing told this daemon's part of
+        // it from the next one's.
+        val closedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - handedOver)
+        log("[daemon] retire: background work closed ${closedMs}ms after the heads; the lock is freed next\n")
         retired = true
         kept
     }

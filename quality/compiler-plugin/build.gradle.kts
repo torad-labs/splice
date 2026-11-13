@@ -23,11 +23,6 @@ plugins {
 
 kotlin {
     jvmToolchain(21)
-    compilerOptions {
-        // The FIR checker API (FirExpressionChecker.check) is declared with context parameters in
-        // Kotlin 2.3.x; overriding it requires the feature flag (not on by default at 2.3.21).
-        freeCompilerArgs.add("-Xcontext-parameters")
-    }
 }
 
 ktlint {

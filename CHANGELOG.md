@@ -293,6 +293,12 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   answered with the sessions still here alone, 25 KiB of that 2.3 MB, and `gone_held: true`, until an ended row is
   added, changed or removed. Every console page reads the list this way and shows what it showed. A read with no
   mark is answered with every row, as before.
+- **splice is built with Kotlin 2.4.21.** The compiler, the Kotlin Gradle plugin and the standard library inside
+  the jar move from 2.3.21. Kotlin 2.4.20 fixed CVE-2026-53914 (GHSA-r937-wjx7-w2jp), where a poisoned kapt
+  incremental cache could run code during a build, and the 2.3 line never got that fix. splice's build does not
+  use kapt, so the flaw was not reachable here; the version was still the one the advisory names. Kotlin had
+  been held on 2.3 since July 24 because CodeQL could not read 2.4, which it can now. konsist moves to 0.18.1
+  with it.
 
 ## splice v0.4.0: teams across models, resume on another model, and one-command setup - 2026-11-11
 

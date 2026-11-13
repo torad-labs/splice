@@ -2,17 +2,17 @@
 # Versions verified against repo1.maven.org maven-metadata 2026-07-16 (the solrsearch
 # index was stale — always check metadata <latest>, not search "latestVersion").
 [versions]
-kotlin = "2.3.21"
+kotlin = "2.4.21"
 ktor = "3.6.1"
 coroutines = "1.11.0"
-# kotlinx-serialization 1.12.0's klibs carry ABI 2.4.0 (built by Kotlin 2.4.10), which the 2.3.21 compiler the MCP hub
-# links with cannot consume, and its JVM parser caps nesting at 400 (JsonLineShapeFuzzTest). Held until kotlin moves to
-# 2.4.x, the CodeQL block in .github/dependabot.yml (PR #432, 2026-11-02).
+# kotlinx-serialization 1.12.0's JVM parser caps nesting at 400 (JsonLineShapeFuzzTest), which changes what a request
+# body may hold. Held for that. The other reason of PR #432 (2026-11-02), klibs of ABI 2.4.0 that the 2.3.21 compiler
+# could not link into the MCP hub, went with Kotlin 2.3.
 serialization = "1.11.0"
 ktoml = "0.7.1"
-# konsist 0.18.x needs kotlin-compiler-embeddable 2.4.21 (0.17.3 asks 2.0.21); against 2.3.21 its PSI setup fails with
-# "Extensions storage is not registered" (UnpackedParameterLawTest). Held by the same Kotlin 2.4 block (PR #432, 2026-11-02).
-konsist = "0.17.3"
+# konsist 0.18.x is built against kotlin-compiler-embeddable 2.4.21 (0.17.3 asks 2.0.21), so it moves with the Kotlin
+# version above: against 2.3.21 its PSI setup failed with "Extensions storage is not registered" (PR #432).
+konsist = "0.18.1"
 detekt = "1.23.8"
 ktlint = "1.8.0"
 ktlint-gradle = "14.2.0"

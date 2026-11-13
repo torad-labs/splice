@@ -101,7 +101,9 @@ class UpstreamClientBodyPlanLimitTest {
         val notices = mutableListOf<String>()
         val client = client(engine)
 
-        val failure = assertEnds<UpstreamFailed> { client.posted(ctx(bodyReader, notices), "{}") { "unreachable" } }
+        val failure = assertEnds<UpstreamFailed> {
+            client.posted(ctx(bodyReader, notices), "{}") { error("unreachable") }
+        }
 
         assertEquals(1, calls.get(), "today this is 4 attempts and about 45 s of holds")
         assertEquals(429, failure.evidence.status)
@@ -128,7 +130,7 @@ class UpstreamClientBodyPlanLimitTest {
         val client = client(engine)
 
         val failure = assertEnds<UpstreamFailed> {
-            client.posted(ctx(bodyReader, mutableListOf()), "{}") { "unreachable" }
+            client.posted(ctx(bodyReader, mutableListOf()), "{}") { error("unreachable") }
         }
 
         assertEquals(burst, failure.evidence.body)

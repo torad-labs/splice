@@ -90,7 +90,9 @@ class UpstreamFailurePlanLimitTest {
         val reset = secondsNow() + SIX_DAYS_S
         val engine = MockEngine { respond(usageLimitBody(reset), HttpStatusCode.TooManyRequests, headersOf()) }
 
-        val failure = assertEnds<UpstreamFailed> { client(engine).posted(ctx(bodyReader), "{}") { "unreachable" } }
+        val failure = assertEnds<UpstreamFailed> {
+            client(engine).posted(ctx(bodyReader), "{}") { error("unreachable") }
+        }
 
         assertEquals(429, failure.evidence.status)
         assertEquals(PlanLimit("seven_day", reset), failure.planLimit)
@@ -112,7 +114,7 @@ class UpstreamFailurePlanLimitTest {
         }
 
         val failure = assertEnds<UpstreamFailed> {
-            client(engine).posted(ctx(unifiedHeaders), "{}") { "unreachable" }
+            client(engine).posted(ctx(unifiedHeaders), "{}") { error("unreachable") }
         }
 
         assertEquals(PlanLimit("five_hour", reset), failure.planLimit)
@@ -124,7 +126,9 @@ class UpstreamFailurePlanLimitTest {
             respond(BURST_BODY, HttpStatusCode.TooManyRequests, headersOf())
         }
 
-        val failure = assertEnds<UpstreamFailed> { client(engine).posted(ctx(bodyReader), "{}") { "unreachable" } }
+        val failure = assertEnds<UpstreamFailed> {
+            client(engine).posted(ctx(bodyReader), "{}") { error("unreachable") }
+        }
 
         assertEquals(429, failure.evidence.status)
         assertNull(failure.planLimit)

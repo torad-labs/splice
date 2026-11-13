@@ -78,7 +78,7 @@ class NeedsPaymentHoldsTheLoginTest {
         val client = clientOver(402)
 
         val ended = assertEnds<UpstreamFailed> {
-            client.posted(ctx(Replies(OpenAiReplies), refreshes), "{}") { "unreachable" }
+            client.posted(ctx(Replies(OpenAiReplies), refreshes), "{}") { error("unreachable") }
         }
 
         assertTrue(ended.cause is FailureCause.Provider.NeedsPayment, "deepseek answers Insufficient Balance as 402")
@@ -93,7 +93,7 @@ class NeedsPaymentHoldsTheLoginTest {
         val client = clientOver(403)
 
         val ended = assertEnds<UpstreamFailed> {
-            client.posted(ctx(Replies(OpenAiReplies, spentAccount403), refreshes), "{}") { "unreachable" }
+            client.posted(ctx(Replies(OpenAiReplies, spentAccount403), refreshes), "{}") { error("unreachable") }
         }
 
         assertTrue(ended.cause is FailureCause.Provider.NeedsPayment, "${ended.cause}")
@@ -108,7 +108,7 @@ class NeedsPaymentHoldsTheLoginTest {
         val client = clientOver(403)
 
         val ended = assertEnds<UpstreamFailed> {
-            client.posted(ctx(Replies(OpenAiReplies), refreshes), "{}") { "unreachable" }
+            client.posted(ctx(Replies(OpenAiReplies), refreshes), "{}") { error("unreachable") }
         }
 
         assertTrue(ended.cause is FailureCause.Provider.Forbidden, "${ended.cause}")

@@ -437,7 +437,9 @@ class HubFiles(private val dir: String) {
         if (fd < 0) return null
         val out = Bytes()
         val sys = Sys()
-        while (sys.readInto(fd, out) > 0) Unit
+        do {
+            val read = sys.readInto(fd, out)
+        } while (read > 0)
         close(fd)
         return out.text(0, out.size)
     }

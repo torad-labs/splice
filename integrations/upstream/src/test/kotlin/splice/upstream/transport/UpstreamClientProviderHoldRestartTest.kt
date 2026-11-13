@@ -105,7 +105,7 @@ class UpstreamClientProviderHoldRestartTest {
             respond(native, HttpStatusCode.TooManyRequests, headersOf("x-should-retry", listOf("true", "false")))
         }
         val original = client(dir, refusing)
-        assertEnds<UpstreamFailed> { original.posted(context("synthetic-a"), "{}") { "unreachable" } }
+        assertEnds<UpstreamFailed> { original.posted(context("synthetic-a"), "{}") { error("unreachable") } }
         assertEquals(1, refusing.requestHistory.size, "a named plan window is never re-sent before its reset (V4-233)")
         val key = requireNotNull(CredentialKey.fromHeaders(mapOf("x-api-key" to "synthetic-a")))
         assertTrue(Files.exists(dir.resolve("hold-$key.json")))
@@ -171,7 +171,7 @@ class UpstreamClientProviderHoldRestartTest {
                 headersOf(),
             )
         }
-        assertEnds<UpstreamFailed> { client(dir, refusing).posted(ctx(mutableListOf()), "{}") { "unreachable" } }
+        assertEnds<UpstreamFailed> { client(dir, refusing).posted(ctx(mutableListOf()), "{}") { error("unreachable") } }
 
         val calls = AtomicInteger()
         val recovered = MockEngine {

@@ -44,9 +44,9 @@ abstract class NormalizedBom : DefaultTask() {
     abstract val output: RegularFileProperty
 
     private val graalJsCommunityIsolates = setOf(
-        "org.graalvm.js:js-isolate-darwin-aarch64-community:25.4.4.1.1",
-        "org.graalvm.js:js-isolate-linux-aarch64-community:25.4.4.1.1",
-        "org.graalvm.js:js-isolate-windows-amd64-community:25.4.4.1.1",
+        "org.graalvm.js:js-isolate-darwin-aarch64-community:25.5.5.0.3",
+        "org.graalvm.js:js-isolate-linux-aarch64-community:25.5.5.0.3",
+        "org.graalvm.js:js-isolate-windows-amd64-community:25.5.5.0.3",
     )
 
     private val graalJsCommunityIsolateLicenses = listOf(

@@ -186,8 +186,8 @@ nothing and watches nothing. The shape:
 ```
 
 `next` is the login the command's next request goes to, where the command has several; which login a running
-session is on is that session's own fact and is not here. `label` is splice's name for a login where the command
-has several, and null for a command with one. A window is null where the provider gave no reading of it, and its
+session is on is that session's own fact and is not here. `label` is the name the command's pool knows a login by,
+which is what `next` holds, and null for a command with one login. A window is null where the provider gave no reading of it, and its
 `current` is false once its reset has passed with no newer reading. `models` holds a plan's per-model weeks,
 `held` the models a login cannot serve yet and until when, `observed_at_epoch_seconds` when the login was last
 heard. A command with no login is left out. Within one `version`, fields are only added. When the daemon gave no

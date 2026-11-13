@@ -86,14 +86,15 @@ internal class UsageJson(private val output: TerminalOutput, private val errors:
             put("head", head)
             put("command", typed)
             put("next", field(pool, "next_target_label"))
-            put("accounts", buildJsonArray { logins.forEach { add(account(it)) } })
+            put("accounts", buildJsonArray { logins.forEach { add(account(it, head)) } })
         }
     }
 
-    /** One login: `label` is splice's name for it where the command has several (null for a command with one),
-     *  `name` the one the console shows. `held` lists the models it cannot serve yet, and until when. */
-    private fun account(row: JsonObject): JsonObject = buildJsonObject {
-        put("label", field(row, "label"))
+    /** One login of [head]: `label` is the name the command's pool knows it by, which is what `next` holds (null for
+     *  a command with one login), `name` the one the console shows. `held` lists the models it cannot serve yet, and
+     *  until when. */
+    private fun account(row: JsonObject, head: String): JsonObject = buildJsonObject {
+        put("label", label(row, head))
         put("name", field(row, "display_name"))
         put("kind", field(row, "kind"))
         put("plan", field(row, "plan"))
@@ -102,6 +103,14 @@ internal class UsageJson(private val output: TerminalOutput, private val errors:
         put("models", buildJsonArray { objects(row, "seven_day_models").forEach { add(modelWeek(it)) } })
         put("held", buildJsonArray { objects(row, "models_held").forEach { add(hold(it)) } })
         put("observed_at_epoch_seconds", field(row, "observed_at_epoch_seconds"))
+    }
+
+    /** The name [head]'s pool knows this login by: the head's own label for a login several commands share, then
+     *  the selector of the login Claude Code itself signed in (`native:<place>`), then the row's label. Until Nov 13,
+     *  2026 the row's label stood alone, and `next` named a login no account of the command carried. */
+    private fun label(row: JsonObject, head: String): JsonElement {
+        val own = (row["account_labels"] as? JsonObject)?.get(head)
+        return listOf(own, row["selector_key"], row["label"]).firstOrNull { it != null && it !is JsonNull } ?: JsonNull
     }
 
     /** One plan window of [row], or null where its provider gave no reading of it. `current` is false once the

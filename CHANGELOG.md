@@ -5,6 +5,14 @@
 Changes on main since v0.4.0. They take a version's heading when that version is cut.
 
 ### Added
+- **Settings says when saved prompts and answers were removed.** When the store of prompts and answers runs past
+  its budget it removes the oldest day's, and keeps that day's request records. Only the daemon's log said so:
+  on one machine the prompts and answers of fourteen days, Oct 29 to Nov 11, 2026, were gone and nothing on a
+  screen showed it. "Your data" now says it on the figure of what is kept: how many days, from which to which,
+  and that their request records are kept. The line stays while those days' records do. Each command's
+  `/api/heads/<command>/trace/kept` answer gains `bodies_removed_days`, the days as dates, oldest first. A whole day
+  removed under the 16 GB of request records, records and all, is now a line in the daemon's log, where it
+  left with nothing said.
 - **Prices follow the project between releases.** splice priced a turn from the table of vendor prices in its
   build, so a model released after the build had no price, and a changed price was wrong, until the next
   release. Once an hour the daemon now fetches that table from the project's main branch on

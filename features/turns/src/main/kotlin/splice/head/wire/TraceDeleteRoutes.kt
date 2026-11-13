@@ -2,8 +2,10 @@
 package splice.head.wire
 
 import io.ktor.http.HttpStatusCode
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import splice.core.config.ConfigService
 import splice.core.storage.DayFileRemoval
 import splice.core.storage.DayFiles
@@ -76,6 +78,9 @@ public class TraceDeleteRoutes @JvmOverloads constructor(
         val why = TraceCapacityReason(stopped?.reason)
         put("saving_stopped_code", why.cause()?.wire)
         put("saving_stopped_floor_bytes", why.floorBytes())
+        // The UTC days still kept whose prompts and answers were removed to make room, oldest first. Their records are
+        // counted above; this is how the page can say the bodies went, which until Nov 12, 2026 only the log did.
+        putJsonArray("bodies_removed_days") { inventory.bodiesRemoved.forEach { add(it.toString()) } }
     }.let(JsonWire::string)
 
     private fun refuse(status: HttpStatusCode, message: String): JsonReply =

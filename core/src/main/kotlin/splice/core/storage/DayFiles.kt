@@ -36,11 +36,13 @@ internal val daySiblings = listOf(
 private const val DELETE_WAIT_MS = 120_000L
 
 /** What one store physically holds, including rolled-only days: its rows, its bytes, and its oldest day holding data
- *  (null when none does). */
+ *  (null when none does). [bodiesRemoved] are the days still held whose prompts and answers the body budget removed
+ *  to make room, oldest first: their records stay, and nothing else on a screen says the bodies went. */
 public data class DayInventory(
     val rows: Long,
     val bytes: Long,
     val oldest: LocalDate?,
+    val bodiesRemoved: List<LocalDate> = emptyList(),
 )
 
 /** A store's delete state is a sibling of its day files, not itself a day file. */

@@ -502,6 +502,11 @@ a.mam-tile:hover { background: var(--obj-high); }
 .dstop .dwho { display: inline-flex; flex-wrap: wrap; gap: 0.333rem; }
 .dstop .dwhy { font: 500 .92rem/1.3 var(--font-name); color: var(--text-body); }
 .dstop .dthen { font: 500 .88rem/1.3 var(--font-name); color: var(--text-mute); }
+/* DAYS WHOSE PROMPTS AND ANSWERS WERE REMOVED TO MAKE ROOM are said on the same figure, in the body's ink: it is
+   something that happened, and nothing to act on */
+.dgone { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--u) calc(2 * var(--u)); }
+.dgone > b { font: 500 .92rem/1.3 var(--font-name); color: var(--text-body); }
+.dgone > span { font: 500 .88rem/1.3 var(--font-name); color: var(--text-mute); }
 /* the group's own line: "Word for word" said once for every store under it, the group's size and its share of all, and its marks */
 .gaside { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 0.333rem calc(2 * var(--u)); }
 .gaside > .hn { font: 500 .92rem/1.2 var(--font-data); color: var(--text-body); font-variant-numeric: tabular-nums; }

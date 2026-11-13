@@ -1,6 +1,8 @@
 // NEW: #525 (2026-11-13): what a retiring daemon tells the next one of the conversations it lets go, so a start does
 // not read every journal to learn what the retiring daemon already knew.
-package splice.provider.codex.state.handover
+// CREDENTIAL-WRITE-EXEMPT[2026-11-13]: the list of code-mode conversations a retiring daemon lets go (keys, times,
+// expiry markers and journal file facts), never a credential, written whole each time by the daemon that owns it.
+package splice.provider.codex.state.letgo
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -65,8 +67,8 @@ internal class CodeModeLetGoFile(private val dir: Path, private val json: Json, 
     fun write(conversations: List<CodeModeLetGo>) {
         try {
             SecureFile.writeAtomic0600(
-                dir.resolve(NAME),
-                json.encodeToString(Told.serializer(), Told(VERSION, conversations)),
+                dir.resolve(LET_GO_FILE),
+                json.encodeToString(Told.serializer(), Told(LET_GO_VERSION, conversations)),
             )
         } catch (failure: IOException) {
             log(
@@ -87,11 +89,11 @@ internal class CodeModeLetGoFile(private val dir: Path, private val json: Json, 
     }
 
     private fun read(): List<CodeModeLetGo> {
-        val file = dir.resolve(NAME)
+        val file = dir.resolve(LET_GO_FILE)
         val why = try {
             if (Files.notExists(file)) return emptyList()
             val told = json.decodeFromString(Told.serializer(), Files.readString(file))
-            if (told.version == VERSION) return told.conversations
+            if (told.version == LET_GO_VERSION) return told.conversations
             "it is of version ${told.version}"
         } catch (failure: IOException) {
             SafeFailureText.render(failure)
@@ -104,7 +106,7 @@ internal class CodeModeLetGoFile(private val dir: Path, private val json: Json, 
 }
 
 // why: every other file of the folder is named by a conversation's hash, so this name is never one of them.
-private const val NAME = "let-go.json"
+private const val LET_GO_FILE = "let-go.json"
 
 // why: a list written in another shape is not read, and its conversations are read from their journals.
-private const val VERSION = 1
+private const val LET_GO_VERSION = 1

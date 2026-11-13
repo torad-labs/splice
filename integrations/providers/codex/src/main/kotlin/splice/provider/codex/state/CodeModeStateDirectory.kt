@@ -10,11 +10,11 @@ import splice.core.util.SafeFailureText
 import splice.provider.codex.CodeModeExpiredSnapshot
 import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.CodeModeRecordSnapshot
-import splice.provider.codex.state.handover.CodeModeColdEntry
 import splice.provider.codex.state.handover.CodeModeHeldJournals
-import splice.provider.codex.state.handover.CodeModeLetGo
-import splice.provider.codex.state.handover.CodeModeLetGoFile
 import splice.provider.codex.state.handover.CodeModeWriteScope
+import splice.provider.codex.state.letgo.CodeModeColdEntry
+import splice.provider.codex.state.letgo.CodeModeLetGo
+import splice.provider.codex.state.letgo.CodeModeLetGoFile
 import splice.upstream.memory.JvmHeap
 import java.io.IOException
 import java.nio.file.Files

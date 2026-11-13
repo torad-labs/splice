@@ -20,7 +20,6 @@ import splice.provider.codex.state.CodeModeKeyLocks
 import splice.provider.codex.state.CodeModeRegistryAccess
 import splice.provider.codex.state.CodeModeStateDirectory
 import splice.provider.codex.state.CodeModeStateText
-import splice.provider.codex.state.handover.CodeModeColdEntry
 import splice.provider.codex.state.save.CodeModeJournalWrite
 import splice.provider.codex.state.save.CodeModePreparedWrite
 import splice.provider.codex.state.save.CodeModeSaveHeap
@@ -91,7 +90,7 @@ internal class CodexCodeModeStore(
     private val kept = ConcurrentHashMap<String, CodeModeKeptState>()
 
     /** Journal-backed conversations whose payloads have no in-memory owner in this store. */
-    val cold = CodeModeColdRecords(files, kept, registryLock, heap)
+    val cold = CodeModeColdRecords(files, kept, registryLock, heap, listOf(failedKeys, uncertainKeys))
 
     private val capacity = CodeModeSaveHeap(heap)
     private val snapshots = CodeModeSaveSnapshots(kept, uncertainKeys, capacity)
@@ -115,22 +114,6 @@ internal class CodexCodeModeStore(
             listOf(files.path(key), files.lockPath(key), files.olderPath(key), files.olderLockPath(key))
                 .map { it.toAbsolutePath().normalize() }
         } + files.held.inUse()
-
-    /** #525 (2026-11-13): the conversations this store has let go at the retire whose journals it knows whole, for
-     *  the list the next daemon's start reads ([CodeModeStateDirectory.tell]). Asked once the write scope has
-     *  retired: no write of such a conversation begins after that, and one still under way has its key among the
-     *  failed ones until its journal and the copy kept here agree. The registry's monitor makes that key visible
-     *  here, and the keys are read before the copies, so a write that ends in between leaves its conversation out. */
-    val letGo: Map<String, CodeModeColdEntry>
-        get() {
-            registryLock?.lock()
-            try {
-                val unsettled = failedKeys + uncertainKeys
-                return cold.known().filterKeys { !files.writes.allows(it) } - unsettled
-            } finally {
-                registryLock?.unlock()
-            }
-        }
 
     /** Terminal disposal may drop hot snapshots only after every write and failed purge settles. While the journal is
      *  off, a write it owes does not hold disposal: nothing is kept then, and the owed marks wait for it to come back. */
@@ -285,14 +268,10 @@ internal class CodexCodeModeStore(
 
     private fun readDirectory(maxBytes: Long): List<CodeModeExpiredSnapshot> {
         var held = 0L
-        val markers = mutableListOf<CodeModeExpiredSnapshot>()
         // #525: only a store that keeps conversations on the disk alone takes them from the retiring daemon's list. A
         // count policy bounds what is in memory, so there every conversation is read.
         val (told, read) = files.load(told = maxBytes != Long.MAX_VALUE)
-        told.forEach { (key, entry) ->
-            cold.told(key, entry)
-            markers.addAll(entry.expired)
-        }
+        val markers = cold.told(told).toMutableList()
         read.forEach { (key, selected) ->
             val state = selected.state
             kept[key] = CodeModeKeptState(state.version, state, heap)

@@ -10,7 +10,7 @@ import splice.provider.codex.CodeModeRecordSnapshot
 import splice.provider.codex.CodeModeStorageException
 import splice.provider.codex.CodeModeStorageOperation
 import splice.provider.codex.CodeModeStorageProblem
-import splice.provider.codex.state.handover.CodeModeColdEntry
+import splice.provider.codex.state.letgo.CodeModeColdEntry
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantLock
@@ -21,6 +21,8 @@ internal class CodeModeColdRecords(
     private val kept: MutableMap<String, CodeModeKeptState>,
     private val monitor: ReentrantLock?,
     private val heap: HeapReservations,
+    /** The store's keys whose journal and kept copy may not agree: a write failed, or is under way. */
+    private val unsettled: List<Set<String>> = emptyList(),
 ) {
     private val entries = ConcurrentHashMap<String, CodeModeColdEntry>()
     val keys: Set<String> get() = entries.keys.toSet()
@@ -46,16 +48,32 @@ internal class CodeModeColdRecords(
         return true
     }
 
-    /** #525 (2026-11-13): a conversation the retiring daemon told this start of. Its records wait in its journal,
-     *  unread, for the turn that restores them. */
-    fun told(key: String, entry: CodeModeColdEntry) {
-        entries[key] = entry
+    /** #525 (2026-11-13): the conversations the retiring daemon told this start of. Their records wait in their
+     *  journals, unread, for the turn that restores them; their expiry markers are returned for the registry's
+     *  history, as a start that reads a journal returns them. */
+    fun told(conversations: Map<String, CodeModeColdEntry>): List<CodeModeExpiredSnapshot> {
+        entries.putAll(conversations)
+        return conversations.values.flatMap(CodeModeColdEntry::expired)
     }
 
-    /** #525: every conversation a start keeps on the disk alone, as its journal holds it: the cold ones, and each
-     *  kept one whose records are all completed. What a retiring daemon tells the next one of. */
-    fun known(): Map<String, CodeModeColdEntry> = entries + kept.mapNotNull { (key, state) ->
-        entry(state)?.takeIf { state.records.values.all { it.phase == CodeModePhase.COMPLETED } }?.let { key to it }
+    /** #525: the conversations this store has let go at the retire whose journals it knows whole, for the list the
+     *  next daemon's start reads: the cold ones, and each kept one whose records are all completed, which is what a
+     *  start keeps on the disk alone. Asked once the write scope has retired. No write of such a conversation begins
+     *  after that, and one still under way has its key in one of [unsettled] until its journal and the copy kept
+     *  here agree. The registry's monitor makes that key visible here, and the keys are read before the copies, so a
+     *  write that ends in between leaves its conversation out. */
+    fun letGo(): Map<String, CodeModeColdEntry> {
+        monitor?.lock()
+        try {
+            val open = unsettled.flatMapTo(HashSet()) { it }
+            val known = entries + kept.mapNotNull { (key, state) ->
+                entry(state)?.takeIf { state.records.values.all { it.phase == CodeModePhase.COMPLETED } }
+                    ?.let { key to it }
+            }
+            return known.filterKeys { !files.writes.allows(it) } - open
+        } finally {
+            monitor?.unlock()
+        }
     }
 
     /** What is kept of [state] once its records leave memory; null when it holds no record. */

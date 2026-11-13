@@ -141,7 +141,7 @@ internal class CodexCodeModeRegistry(
     val files get() = store.files
 
     /** #525 (2026-11-13): the conversations let go at the retire, for the list the next daemon's start reads. */
-    val letGo get() = store.letGo
+    val letGo get() = store.cold.letGo()
 
     /** V4-337: where each code-mode turn starts, before its history is built. */
     val turnStart = CodeModeTurnStart(access, sweepRecords, store, config.clock, retainedCells, cache)

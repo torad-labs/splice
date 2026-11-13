@@ -277,8 +277,7 @@ internal class CodexCodeModeStore(
             kept[key] = CodeModeKeptState(state.version, state, heap)
             val committed = !selected.checkpoint || checkpoint(key, state, "the selected conversation stays")
             val bytes = state.records.sumOf { it.retainedBytes ?: 0L }
-            val completed = state.records.isNotEmpty() && state.records.all { it.phase == CodeModePhase.COMPLETED }
-            val cacheable = committed && completed
+            val cacheable = committed && cold.waits(state.records)
             if (held + bytes > maxBytes && cacheable) {
                 cold.evict(key)
                 markers.addAll(state.expired)

@@ -3,6 +3,7 @@ package splice.app.provider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -102,16 +103,18 @@ class LocalHeadBootTest {
         val topology = Topology(providers = mapOf("local" to cfg), heads = mapOf("local" to head))
         val arm = arm()
 
-        val failed = HeadBoot().assembleDaemonHeads(
-            topology,
-            StatePaths(baseOverride = tempDir.resolve("state")),
-            mutableMapOf(),
-            { logs += it },
-            HeadAssembly { key, h, c ->
-                arm.chatProvider(build.providerContext(key, h, c, legacyKnobsGovern = false), key)
-                error("the row was supposed to be refused before a head existed")
-            },
-        )
+        val failed = runBlocking {
+            HeadBoot().assembleDaemonHeads(
+                topology,
+                StatePaths(baseOverride = tempDir.resolve("state")),
+                mutableMapOf(),
+                { logs += it },
+                HeadAssembly { key, h, c ->
+                    arm.chatProvider(build.providerContext(key, h, c, legacyKnobsGovern = false), key)
+                    error("the row was supposed to be refused before a head existed")
+                },
+            )
+        }
 
         assertEquals(setOf("local"), failed.keys, "the refused head is degraded")
         assertTrue(logs.any { it.contains("[local][boot] SKIPPED (build failed)") }, "$logs")

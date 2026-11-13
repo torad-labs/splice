@@ -47,6 +47,14 @@ public fun interface HeadAssembly {
 }
 
 /**
+ * Starts a group of heads the assembly loop has just built, so they serve while a later group is still being
+ * assembled (#525). A start that fails is recorded in `failed`, as an assembly that throws is.
+ */
+public fun interface HeadsStart {
+    public suspend operator fun invoke(heads: Map<String, ManagedHead>, failed: MutableMap<String, String>)
+}
+
+/**
  * Stops the control plane — run AFTER the heads, and run even when the head-stop budget tripped.
  *
  * The ordering is the contract: the control plane is what an operator's `splice stop` is talking

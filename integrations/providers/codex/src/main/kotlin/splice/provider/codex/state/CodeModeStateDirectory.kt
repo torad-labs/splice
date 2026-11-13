@@ -56,9 +56,11 @@ internal class CodeModeStateDirectory(
         val free = held.scan(listed)
         dropOrphanLocks(free)
         val files = free.filter { FILE_NAME.matches(it.fileName.toString()) }
-        // Decode one conversation at a time: cold journals must not all become resident at boot.
-        return files.groupBy { it.fileName.toString().substringBefore('.') }.values.asSequence().mapNotNull { paths ->
-            val versions = paths.mapNotNull(::read)
+        // Decode a few conversations at a time: cold journals must not all become resident at boot, and one at a
+        // time kept every head waiting on this folder at each start (3 to 7 seconds on Nov 12, 2026, when it held
+        // 442 MB in 51 journals).
+        val conversations = files.groupBy { it.fileName.toString().substringBefore('.') }.values
+        return conversations.chunked(DECODE_WINDOW).asSequence().flatMap { decoded(it) }.mapNotNull { versions ->
             if (versions.isEmpty()) return@mapNotNull null
             val key = versions.first().key
             // A downgraded jar can create newer .json state beside the .jsonl it cannot discover.
@@ -71,6 +73,16 @@ internal class CodeModeStateDirectory(
             val migration = versions.size > 1 || selected.path != path(key)
             key to Loaded(selected.state, migration || CodeModeStateJournal.outgrown(selected.path, selected.liveBytes))
         }
+    }
+
+    /** The files of each conversation in [window], read at the same time and given back in the window's order. Read
+     *  together they can ask the heap for more than it has while each alone fits: they are then read one at a time,
+     *  as every start read them before. */
+    private fun decoded(window: List<List<Path>>): List<List<OnDisk>> = try {
+        window.parallelStream().map { paths -> paths.mapNotNull(::read) }.toList()
+    } catch (_: HeapCapacityException) {
+        // A file the first read found invalid is already removed, and is not read again.
+        window.map { paths -> paths.filter(Files::exists).mapNotNull(::read) }
     }
 
     /** Reload a cold conversation honestly; a failed read must never turn a retry into new execution. */
@@ -184,6 +196,10 @@ internal class CodeModeStateDirectory(
         return null
     }
 }
+
+// why: a start read every journal one after another on one core; four at a time use four cores while no more than
+// four conversations are decoded in memory at once.
+private const val DECODE_WINDOW = 4
 
 private val FILE_NAME = Regex("[0-9a-f]{64}\\.jsonl?")
 private val LOCK_NAME = Regex("[0-9a-f]{64}\\.jsonl?\\.lock")

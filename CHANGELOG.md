@@ -47,6 +47,14 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   the file. A command with one login says nothing: it has no last one to be down to.
 
 ### Fixed
+- **Sessions waiting on a plan limit go on within about a minute of a reset.** When every login of a command is
+  out of a model, its turns wait. A login reset at the provider before its time ends that wait, and splice heard
+  of the reset only from the login's usage reading, which it asked for every five minutes or when someone opened
+  a console page. On Nov 12, 2026 a login was reset while seven turns waited and the sessions went on showing
+  "loading" until the next five-minute reading (Marcos: "my limit just freed up, and the sessions were all still
+  loading"). While a command holds any turn, the daemon now reads every one of its logins' usage as often as the
+  provider's usage endpoint is asked for a page, once a minute, so the waiting turns move to the reset login
+  without anyone logging in again or opening a page.
 - **A daemon start no longer clears another daemon's session moves.** Continue on keeps a short record while a
   session moves to another command, and the moved session's launch reads it to carry the trust you gave its
   folder. Every start cleared those records before it held the daemon lock, so a start beside a running daemon (a

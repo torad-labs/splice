@@ -42,7 +42,10 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   reset"). The daemon now checks each command's logins once a minute, for every model a turn of the command
   asked for in the last hour, so the turns of helpers on a small model never hide the model the sessions wait
   on. When only one login can serve a model and it has used 80% of a limit, splice says so, with the login, the
-  limit and when it resets, and says it again at 95%. When no login can serve, it says that and when the first
+  limit and when it resets, and says it again at 95%. Below 80% it reads the pace too: when the last login is being
+  used fast enough to run out within an hour and a half, splice says so, with the time it runs out at. On Nov 13,
+  2026 the sessions of a busy machine took the last login that could serve Fable from 16% to 50% of its week in an
+  hour, and the first mark would have come about 35 minutes before the end. When no login can serve, it says that and when the first
   comes back. A command with one login is always on its last one: it is read by its plan's own limits (the 5-hour
   limit, the weekly limit, a model's week) and told of at the same two marks, when it has used one up, and when it
   is back. An API key or a local runtime reports no such limit, so nothing is said of one. Each

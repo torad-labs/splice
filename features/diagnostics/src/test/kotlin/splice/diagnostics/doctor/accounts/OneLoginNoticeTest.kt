@@ -56,6 +56,32 @@ class OneLoginNoticeTest {
     }
 
     @Test
+    fun `below the first mark a login that fills fast says when it runs out, and one that fills slowly says nothing`() {
+        var at = ONE_LOGIN_AT
+        val paced = LoginNotices(WallClock { at * 1_000L })
+        assertEquals(emptyList<LoginNotice>(), paced.of(roster(week(40))), "one reading shows no pace")
+        at += 300L
+        assertEquals(emptyList<LoginNotice>(), paced.of(roster(week(43))), "five minutes of readings are too few")
+        at += 300L
+        // Seven points in ten minutes: the 53 that are left go in about an hour and a quarter.
+        val soon = paced.of(roster(week(47))).single()
+        assertTrue(
+            soon.text.startsWith(
+                "solo has one login, and Work has used 47% of its weekly limit. At the pace it is being used it " +
+                    "runs out around ",
+            ),
+            soon.text,
+        )
+        assertTrue(soon.text.endsWith(". When it does, sessions on solo wait."), soon.text)
+
+        at = ONE_LOGIN_AT
+        val slow = LoginNotices(WallClock { at * 1_000L })
+        slow.of(roster(week(40)))
+        at += 600L
+        assertEquals(emptyList<LoginNotice>(), slow.of(roster(week(41))), "a point in ten minutes leaves ten hours")
+    }
+
+    @Test
     fun `a week that has already reset is not read, and a login with no window says nothing`() {
         val past = ""","seven_day_used_percent":100,"seven_day_reset_epoch_seconds":${ONE_LOGIN_AT - 60L}"""
         assertEquals(emptyList<LoginNotice>(), notices.of(roster(past)))

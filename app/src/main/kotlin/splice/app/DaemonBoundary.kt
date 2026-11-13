@@ -211,7 +211,8 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
 
     /** Oct 11, 2026: no move is in flight across a start. A move in flight says which folder its launch may carry
      *  the operator's trust for (MovingTrust); a daemon that died between the press and the launch would leave that
-     *  standing, and the grant would outlive the move it was for. Returns one line when it cleared any, else none. */
+     *  standing, and the grant would outlive the move it was for. Returns one line when it cleared any, else none.
+     *  Called by the start once it holds the lock: the records are the running daemon's until then. */
     internal fun clearMovesInFlight(statePaths: StatePaths): List<String> =
         Cancellables.runCatchingCancellable { MovingTrust(statePaths.movingTrustDir).sweep() }
             .fold(

@@ -124,7 +124,10 @@ internal class DaemonProcess(
         DaemonLog.install(log)
         // The launcher's heap flags, set here too, so a daemon started without splice-launch returns its heap the same way.
         HeapFlags(log).apply()
-        start.ownerOnlyLines.forEach { log(it) }
+        // #525: the moves in flight are cleared once this process holds the lock. Until Nov 12, 2026 the sweep ran
+        // before it, so a start that waits for a running daemon to hand over, or loses to one, deleted the records
+        // of moves that daemon was still carrying out.
+        (start.ownerOnlyLines + boundary.clearMovesInFlight(statePaths)).forEach { log(it) }
         // Oct 15: the splice manager's folder, refreshed from this release, because auto-update never reruns init. Best
         // effort: a failure is logged and never refuses boot.
         ManagerHome(start.topologyPath, statePaths.stateDir, log).ensureBestEffort()
@@ -284,8 +287,7 @@ internal class DaemonProcess(
         // v0.4.0: the state splice owns is owner-only BEFORE the first write into it (the lock), and
         // (V4-278) so are splice.toml and its backups, which can hold header secrets and which an older
         // splice left at the umask. What they say is logged once the logger exists.
-        val ownerOnlyLines = secureStateDirs(statePaths) + secureConfig(topologyPath) +
-            boundary.clearMovesInFlight(statePaths)
+        val ownerOnlyLines = secureStateDirs(statePaths) + secureConfig(topologyPath)
         return StartState(topologyPath, loaded, statePaths, ownerOnlyLines)
     }
 

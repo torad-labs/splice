@@ -21,7 +21,9 @@ trap finish EXIT
 
 RUNTIME_TS="$(dirname "${BASH_SOURCE[0]}")/runtime_head.ts"
 RUNTIME_HEAD_PORT=3108
-RUNTIME_MODEL="bonsai-2-27b"
+# RUNTIME_MODEL is the row's own id. Spelled claude-… with RUNTIME_CLIENT_MODEL=none it makes an id the client does
+# not know the session's model, which is how each pin reads the window the client assumes for one (#545).
+RUNTIME_MODEL="${RUNTIME_MODEL:-bonsai-2-27b}"
 # The live bonsai row's window: over 200k, so scaling carries the client past its table's number.
 RUNTIME_SERVED=245760
 RUNTIME_CLIENT_MODEL="${RUNTIME_CLIENT_MODEL:-claude-sonnet-4-6}"

@@ -147,6 +147,27 @@ class AccountPoolFailoverTest {
     }
 
     @Test
+    fun `a login reset at its provider takes the model's turns again after a restart forgot what it read`(
+        @TempDir dir: Path,
+    ) {
+        val fixture = AccountPoolTest.Fixture()
+        val kept = FileProviderHoldStore(dir.resolve("one-provider-hold.json")) {}
+        val read = fixture.account("one", primary = true, quota = fixture.fableAt(100.0, at = 1L))
+        val before = fixture.keeping(read, kept)
+        val two = fixture.account("two")
+        spendFable(before)
+        val held = fixture.pool(before, two).also { it.order = listOf("one", "two") }
+        assertEquals("two", held.chosenFor(FABLE, "first"), "one's Fable week is used up until tomorrow")
+
+        // The person resets the login, and the next daemon is the first to read it since.
+        fixture.setQuota(before, fixture.fableAt(0.0, at = 2L))
+        val after = fixture.keeping(before, kept)
+        val pool = fixture.pool(after, two).also { it.order = listOf("one", "two") }
+
+        assertEquals("one", pool.chosenFor(FABLE, "second"), "the figure its week fell from came back with the hold")
+    }
+
+    @Test
     fun `a login whose whole week reads reset comes back for every model`() {
         val fixture = AccountPoolTest.Fixture()
         val one = fixture.account("one", primary = true, quota = fixture.quota(weekly = 100.0))

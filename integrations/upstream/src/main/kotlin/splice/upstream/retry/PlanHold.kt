@@ -18,9 +18,15 @@
 // named. That morning one login read 0% of its Fable week after such a reset, and the pool would have passed it over
 // until the next Wednesday while the last open login ran out (Marcos: "I have 12 resets ... let me know when we're on
 // the last account close to hit limit and I'll call a reset").
+//
+// Nov 13, 2026: the figure each held window last read is kept beside its hold, where a restart finds it. The figures
+// lived in memory alone, so a restart, and a login stood up again after its credential changed, brought the hold back
+// without them. A login whose week had been reset by then read 0% from its first reading on, which is no fall from
+// 0%, and it stayed held for the five days its refusal had named.
 package splice.upstream.retry
 
 import splice.core.usage.FIVE_HOUR_CLAIM
+import splice.core.usage.ModelQuota
 import splice.core.usage.PlanLimit
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.SEVEN_DAY_CLAIM
@@ -46,8 +52,9 @@ public class PlanHold internal constructor(
 ) {
     /** Each window's figure as last read: a model's week under the provider's name for it, the login's own five hours
      *  and week under their claims. Kept whether or not a hold is live, since the figure a reset falls from is most
-     *  often read before the refusal that holds the login. A restart forgets them, and the reading saved before it
-     *  is the first one weighed after it, so a reset that happens across a restart is still seen to fall. */
+     *  often read before the refusal that holds the login. The figures of the held windows are written beside the
+     *  holds ([figures]) and come back with them ([recall]): a hold that comes back without its figure cannot tell a
+     *  window reset in between from one it has never read. */
     private val read = ConcurrentHashMap<String, Double>()
 
     /** The held windows by the model each holds the login for, the whole login's under null. */
@@ -116,7 +123,10 @@ public class PlanHold internal constructor(
             .filter { (claim, window) -> window != null && fell(claim, window.usedPercent) && !window.usedUp }
             .map { it.first }
         val models = models().mapNotNull { it.model }.filter { model -> weeks.any { it.weekOf(model) } }
-        if (models.isNotEmpty()) write(held.updateAndGet { current -> current - models.toSet() })
+        val kept = held.updateAndGet { current -> current - models.toSet() }
+        // Written when no hold ended too: a window still held keeps the figure this reading gave it. The same holds
+        // with the same figures are not written again (ProviderHolds.plans).
+        if (models.isNotEmpty() || kept.isNotEmpty()) write(kept)
         val login = live()?.takeIf { it.claim in own }
         if (login != null) opened()
         return models + listOfNotNull(login?.windowWords)
@@ -134,8 +144,22 @@ public class PlanHold internal constructor(
         }
     }
 
+    /** Brings back the figures a restart kept beside its holds. One read since then stands. */
+    internal fun recall(figures: Map<String, Double>) {
+        figures.forEach { (window, percent) -> read.putIfAbsent(window, percent) }
+    }
+
     private fun write(kept: Map<String?, Held>) {
-        holds.plans(kept[null]?.limit, kept.filterKeys { it != null }.values.map(Held::limit))
+        holds.plans(kept[null]?.limit, kept.filterKeys { it != null }.values.map(Held::limit), figures(kept))
+    }
+
+    /** What [read] holds of the windows [kept] holds: the figure each hold falls from, written beside it. */
+    private fun figures(kept: Map<String?, Held>): Map<String, Double> {
+        val claim = kept[null]?.limit?.claim
+        val models = kept.keys.filterNotNull()
+        return read.filter { (window, percent) ->
+            window == claim || models.any(ModelQuota(window, percent)::weekOf)
+        }
     }
 }
 

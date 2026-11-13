@@ -120,7 +120,10 @@ public class RateLimitCooldown public constructor(
         }
         plan?.let(planHold::restore)
         models.forEach(planHold::restore)
-        holds.restored(stored, ProviderHold(resetAt, plan, models))
+        // The figures belong to the holds: with none left to fall from them, they are dropped from the file too.
+        val read = stored.read.takeIf { plan != null || models.isNotEmpty() }.orEmpty()
+        planHold.recall(read)
+        holds.restored(stored, ProviderHold(resetAt, plan, models, read))
         if (rateLimitReply != null) arm(providerUnavailableForMs())
     }
 

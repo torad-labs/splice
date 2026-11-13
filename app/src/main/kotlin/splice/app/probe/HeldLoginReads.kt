@@ -7,7 +7,8 @@
 // waiting until the next five-minute reading, at 8:57:44 PM; by then he had logged in again by hand ("my limit just
 // freed up, and the sessions were all still loading"). While a head holds any turn, this asks every login's poller
 // for a reading each time the poller's own floor allows one, so a reset is heard within about a minute and no one has
-// to open a page for it.
+// to open a page for it. In a hold of hours the provider refuses a read a minute (Nov 13, 2026); the poller then reads
+// each login every two minutes, where it used to fall silent for five (QuotaReadGap).
 package splice.app.probe
 
 import kotlinx.coroutines.CoroutineScope

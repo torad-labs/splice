@@ -65,6 +65,18 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   none comes while a request is open. Sessions started before this version show it once they are started again.
 
 ### Fixed
+- **A reset at the provider is heard through a long wait, after a restart, and by a turn that was just refused.**
+  Three things could keep waiting turns from moving to a login that was reset before its time. While turns wait, splice reads each login's usage
+  once a minute. On Nov 13, 2026, in a wait of more than four hours, the provider's usage endpoint began to
+  refuse a read a minute, and after each refusal splice did not read that login for five minutes: for half of
+  every ten minutes a reset could not be heard. A refused read now doubles the gap between reads, to two minutes
+  at what that endpoint allowed, and the reads go on. And a login's hold ends when its window reads lower than
+  splice read it before. A restart kept the hold and forgot that earlier figure, so a login reset around a
+  restart read 0% from its first reading on, never fell, and stayed out of the pool until the reset its refusal
+  had named, days later. The figure is now kept beside the hold and comes back with it. And a login that came
+  back reached only the turns already waiting: a turn refused a moment earlier, which had been told no login could
+  take it and had not yet taken its place among the waiting, heard nothing and waited out its whole limit. It is
+  now told as it takes its place.
 - **Sessions waiting on a plan limit go on within about a minute of a reset.** When every login of a command is
   out of a model, its turns wait. A login reset at the provider before its time ends that wait, and splice heard
   of the reset only from the login's usage reading, which it asked for every five minutes or when someone opened

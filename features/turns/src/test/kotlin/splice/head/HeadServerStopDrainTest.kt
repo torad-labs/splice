@@ -231,6 +231,13 @@ class HeadServerStopDrainTest {
                 setBody(heldBody(stream))
             }
 
+        /** [heldTurn] as the bytes of one HTTP/1.1 request, for a test that holds the connection itself. */
+        fun heldRequest(): String = heldBody(stream = true).let { body ->
+            "POST /v1/messages HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n" +
+                "Authorization: Bearer test-inference-token\r\nContent-Type: application/json\r\n" +
+                "Content-Length: ${body.toByteArray().size}\r\n\r\n$body"
+        }
+
         private fun heldBody(stream: Boolean, scenario: String = "hold") =
             """{"model":"claude-codex--gpt-5.6-sol","stream":$stream,"max_tokens":64,
                 "system":"You are a test. SCENARIO:$scenario",
@@ -412,6 +419,39 @@ class HeadServerStopDrainTest {
             assertTrue(body.contains("message_stop"), "the client reads its answer to the end: ${body.takeLast(300)}")
             assertTrue(!body.contains("event: error"), "no error replaces the rest of the answer")
             assertTrue(!body.contains(RESTART_SAID), "the turn was not cut")
+            withTimeout(TAKEOVER_BOUND_MS) { rig.head.finish(TAKEOVER_BOUND_MS) }
+        } finally {
+            rig.mock.releaseHold()
+            rig.close()
+        }
+    }
+
+    // #525: the answer a retiring head finishes went out on a connection its client keeps open, and the client's next
+    // request arrived on it, at the head that was leaving: turned away unanswered, sent again, and only then served by
+    // the next daemon (five such requests at one restart, Nov 13, 2026). The head closes the connection when the
+    // answer has ended, so the next request opens a new one.
+    @Test
+    fun `a retiring head closes the connection of an answer it finished`(@TempDir tmp: Path): Unit = runBlocking {
+        val rig = Rig(tmp, WatchdogBudget(600.seconds, 600.seconds, 900.seconds), finishing = true)
+        rig.start()
+        try {
+            Socket("127.0.0.1", rig.port).use { socket ->
+                socket.soTimeout = RAW_READ_TIMEOUT_MS
+                socket.getOutputStream().apply {
+                    write(rig.heldRequest().toByteArray())
+                    flush()
+                }
+                val answer = socket.getInputStream().bufferedReader()
+                val began = generateSequence(answer::readLine).first { it.startsWith("event: content_block_delta") }
+                assertTrue(began.isNotEmpty(), "the answer is on its way before the head retires")
+
+                assertEquals(1, rig.head.retire(), "the turn already answering is kept")
+                rig.mock.releaseHold()
+
+                // Reads to the end of the connection: one the head left open ends this read on the socket's timeout.
+                val rest = answer.readText()
+                assertTrue(rest.contains("message_stop"), "the answer is read to its end: ${rest.takeLast(300)}")
+            }
             withTimeout(TAKEOVER_BOUND_MS) { rig.head.finish(TAKEOVER_BOUND_MS) }
         } finally {
             rig.mock.releaseHold()

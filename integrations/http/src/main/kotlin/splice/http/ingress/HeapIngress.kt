@@ -52,10 +52,11 @@ public class HeapIngress(
 ) {
     private val requests = NettyIngressRequest()
     private val stopping = AtomicBoolean()
+    private val leaving = AtomicBoolean()
     private var connections = DefaultChannelGroup(GlobalEventExecutor.INSTANCE, true)
 
     public fun install(pipeline: ChannelPipeline) {
-        val ownership = IngressOwnership(heap.reserve(HeapWeights.CONNECTION_BYTES, HeapCategory.CONNECTION))
+        val ownership = IngressOwnership(heap.reserve(HeapWeights.CONNECTION_BYTES, HeapCategory.CONNECTION), leaving)
         pipeline.channel().attr(connectionKey).set(ownership)
         // A read requested by the decoder also crosses this guard.
         pipeline.addBefore(CODEC_HANDLER, "splice-heap-read", IngressReadGuard(ownership))
@@ -78,14 +79,17 @@ public class HeapIngress(
 
     /** The start of a drain: a connection with no request on it is closed now, so the client's next request opens a new
      *  one and waits in the kernel for the next daemon, instead of reaching this one on the connection it kept open and
-     *  being refused. A connection that still owes a response is left alone and finishes it. */
+     *  being refused. A connection that still owes a response finishes it, and is closed behind the last one it owes
+     *  (IngressOwnership.responded). */
     public fun closeIdleConnections() {
+        leaving.set(true)
         connections.filter { it.attr(connectionKey).get()?.idle == true }.forEach { it.close() }
     }
 
     /** Bind the original request identity before routing wraps it. No injected header crosses the wire. */
     public fun install(application: Application) {
         stopping.set(false)
+        leaving.set(false)
         connections = DefaultChannelGroup(GlobalEventExecutor.INSTANCE, true)
         // Stop accepted sockets while their event loops still run. Shutdown cancels scheduled drain tasks.
         application.monitor.subscribe(ApplicationStopPreparing) {

@@ -38,6 +38,10 @@ private const val NO_ANSWER = "no answer"
 /** `doctor --json` shipped in 0.4.0. */
 private const val JSON_DOCTOR_MINOR = 4
 
+/** A release file by the name it is published under and the name it takes in staging. Only the jar has two: a
+ *  platform's own jar lands as the one jar every later step reads. */
+private data class Published(val name: String, val lands: String = name)
+
 /** A validated candidate. [provenanceGap] says why its attestation was not checked ("is not
  *  installed", "is not signed in"), or is null when it was checked or the base is a local mirror. */
 internal data class Staged(val version: String, val provenanceGap: String?)
@@ -47,6 +51,7 @@ internal class UpgradeRelease(
     private val fetch: UpgradeFetch,
     private val process: UpgradeProcess,
     private val java: String,
+    private val platform: PlatformJarName = PlatformJarName(),
 ) {
     /** The line of the published launch shim that names its release; the workflow tags the release from the same line. */
     private val launchVersion = Regex("SPLICE_GATEWAY_VERSION=\"(\\d+\\.\\d+\\.\\d+[-+.0-9A-Za-z]*)\"")
@@ -82,7 +87,7 @@ internal class UpgradeRelease(
         val gap = if (remote) attestationGap() else null
         return fetched(base, SUMS_ASSET).then { sums ->
             Files.createDirectories(staging)
-            stageAsset(Fetching(base, staging, String(sums), remote, gap), SHIM_ASSET).then {
+            stageAsset(Fetching(base, staging, String(sums), remote, gap), Published(SHIM_ASSET)).then {
                 val version = Files.readAllLines(staging.resolve(SHIM_ASSET))
                     .firstNotNullOfOrNull { launchVersion.matchEntire(it)?.groupValues?.get(1) }
                 version?.let { Upgraded.Ok(it) } ?: Upgraded.Refused("no version line in the published $SHIM_ASSET")
@@ -102,30 +107,40 @@ internal class UpgradeRelease(
         /** A remote asset is attested when the run asks for it and gh can check it. */
         private val asked: Boolean get() = remote && attest
         val attests: Boolean get() = asked && gap == null
+
+        /** Whether the release's sums list [name]. */
+        fun lists(name: String): Boolean = sums.lineSequence().any { it.trim().endsWith(" $name") }
     }
 
     /** The jar and shim, then the MCP hub's holder and front the way install.sh gets them: on Linux x86-64 only,
      *  and only when the release's sums list both, each checked against them and attested like the jar. A release
-     *  without the pair stages neither, and the installed pair stays as it is (UpgradeHub). */
+     *  without the pair stages neither, and the installed pair stays as it is (UpgradeHub).
+     *
+     *  THE JAR IS THIS PLATFORM'S OWN WHEN THE RELEASE LISTS ONE (Nov 12, 2026): about 210 MB where splice.jar, which
+     *  holds the code-mode isolate of all four platforms, is about 476 MB. A release before that, and a platform no
+     *  jar is cut for, take splice.jar as every upgrade did. */
     private fun stageAssets(fetching: Fetching): Upgraded<Unit> {
         val hub = listOf(HUB_HOLDER, HUB_FRONT)
         val os = System.getProperty("os.name").orEmpty()
         val arch = System.getProperty("os.arch").orEmpty()
         val onPlatform = os == "Linux" && arch in setOf("amd64", "x86_64")
-        val listed = hub.all { name -> fetching.sums.lineSequence().any { it.trim().endsWith(" $name") } }
+        val listed = hub.all(fetching::lists)
         if (onPlatform && !listed) {
             val label = "mcp hub".padEnd(UPGRADE_PAD)
             output.line("  $YELLOW!$RESET $label not in this release; the installed pair stays as it is")
         }
-        for (asset in listOf(JAR_ASSET, SHIM_ASSET) + hub.takeIf { onPlatform && listed }.orEmpty()) {
+        val jar = Published(platform.jar()?.takeIf(fetching::lists) ?: JAR_ASSET, lands = JAR_ASSET)
+        val rest = listOf(SHIM_ASSET) + hub.takeIf { onPlatform && listed }.orEmpty()
+        for (asset in listOf(jar) + rest.map { Published(it) }) {
             val refused = stageAsset(fetching, asset)
             if (refused is Upgraded.Refused) return refused
         }
         return Upgraded.Ok(Unit)
     }
 
-    private fun stageAsset(fetching: Fetching, asset: String): Upgraded<Unit> =
-        downloaded(fetching, asset).then { file ->
+    private fun stageAsset(fetching: Fetching, published: Published): Upgraded<Unit> =
+        downloaded(fetching, published).then { file ->
+            val asset = published.name
             val attested = if (fetching.attests) {
                 attest(file, asset)
             } else {
@@ -165,11 +180,12 @@ internal class UpgradeRelease(
 
     /** The asset's published sum, then the asset in staging, hashed as it streamed in: bytes whose sha256 is not that
      *  sum never land there. Absent and failed are different refusals, as for [fetched]. */
-    private fun downloaded(fetching: Fetching, asset: String): Upgraded<Path> {
+    private fun downloaded(fetching: Fetching, published: Published): Upgraded<Path> {
+        val asset = published.name
         val expected = fetching.sums.lineSequence().map { it.trim() }.firstOrNull { it.endsWith(" $asset") }
             ?.substringBefore(' ')
             ?: return Upgraded.Refused("no $asset entry in $SUMS_ASSET")
-        val target = fetching.staging.resolve(asset)
+        val target = fetching.staging.resolve(published.lands)
         return try {
             when (val got = fetch.download("${fetching.base}/$asset", target, expected, ProgressLines(output, asset))) {
                 Downloaded.Landed -> Upgraded.Ok(target)

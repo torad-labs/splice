@@ -159,6 +159,26 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# platform_jar — the name a release gives this platform's own jar: splice-linux-amd64.jar, splice-linux-aarch64.jar or
+# splice-darwin-aarch64.jar. Prints nothing where no code-mode isolate is published for the platform (an Intel Mac),
+# which then takes splice.jar, the jar of all four.
+platform_jar() {
+  local system machine
+  case "$(uname -s)" in
+    Linux) system=linux ;;
+    Darwin) system=darwin ;;
+    *) return 0 ;;
+  esac
+  case "$(uname -m)" in
+    x86_64 | amd64) machine=amd64 ;;
+    arm64 | aarch64) machine=aarch64 ;;
+    *) return 0 ;;
+  esac
+  if [ "${system}-${machine}" != darwin-amd64 ]; then
+    echo "splice-${system}-${machine}.jar"
+  fi
+}
+
 # verify_sum <file> <sums-file> <asset-name> — sha256 must match the published entry.
 verify_sum() {
   local file="$1" sums="$2" name="$3" line expected actual escaped_name
@@ -369,18 +389,26 @@ else
   else
     RELEASE_BASE="${RELEASE_SITE}/latest"
   fi
-  JAR_URL="${RELEASE_BASE}/splice.jar"
   SUMS_URL="${RELEASE_BASE}/sha256sums.txt"
+  SUMS_TMP="$(mktemp)"
+  download "$SUMS_URL" "$SUMS_TMP"
+  # ONE JAR PER PLATFORM (Nov 12, 2026). splice.jar holds the code-mode isolate of all four platforms, about 476 MB;
+  # a release also lists each platform's own jar, about 210 MB. This platform's is taken when the release lists it. A
+  # release before that, and a platform with no jar of its own, take splice.jar as every install did.
+  JAR_ASSET="splice.jar"
+  PLATFORM_JAR="$(platform_jar)"
+  if [ -n "$PLATFORM_JAR" ] && grep -Eq "[[:space:]]${PLATFORM_JAR//./\\.}\$" "$SUMS_TMP"; then
+    JAR_ASSET="$PLATFORM_JAR"
+  fi
+  JAR_URL="${RELEASE_BASE}/${JAR_ASSET}"
   echo "splice: downloading $JAR_URL"
   download "$JAR_URL" "$JAR_TMP"
   echo "splice: verifying sha256 against $SUMS_URL"
-  SUMS_TMP="$(mktemp)"
-  download "$SUMS_URL" "$SUMS_TMP"
-  verify_sum "$JAR_TMP" "$SUMS_TMP" splice.jar
+  verify_sum "$JAR_TMP" "$SUMS_TMP" "$JAR_ASSET"
 
   # A checksum binds the asset to sha256sums.txt; the attestation independently binds the
   # candidate bytes to this repository's release workflow.
-  verify_attestation "$JAR_TMP" splice.jar "$RELEASE_BASE"
+  verify_attestation "$JAR_TMP" "$JAR_ASSET" "$RELEASE_BASE"
 
   # The launch shim is a release asset too — without it every wrapper symlink dangles.
   SHIM_URL="${RELEASE_BASE}/splice-launch"

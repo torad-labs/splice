@@ -40,6 +40,7 @@ import java.nio.file.Path
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
+import java.util.Collections
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 
@@ -73,8 +74,9 @@ abstract class CodeModeBridgeTestSupport {
     @TempDir
     protected lateinit var tempDir: Path
 
-    /** Every line the bridge logged through its head-scoped sink, across every bridge built here. */
-    protected val logLines = mutableListOf<String>()
+    /** Every line the bridge logged through its head-scoped sink, across every bridge built here. A start reads
+     *  journals on several threads, and each logs the file it could not read: the list takes lines from all of them. */
+    protected val logLines: MutableList<String> = Collections.synchronizedList(mutableListOf<String>())
     protected val deadSessions = mutableSetOf<String>()
 
     /** The code-mode state [bridge] keeps: one file per conversation (V4-340). */

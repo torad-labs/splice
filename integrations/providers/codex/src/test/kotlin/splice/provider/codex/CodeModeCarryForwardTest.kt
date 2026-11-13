@@ -19,6 +19,7 @@ import java.nio.file.Path
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+import java.util.Collections
 import kotlin.time.Duration.Companion.minutes
 
 private const val NOW = 1_790_000_000_000L
@@ -29,7 +30,9 @@ class CodeModeCarryForwardTest {
     @TempDir
     lateinit var tempDir: Path
 
-    private val logs = mutableListOf<String>()
+    // A start reads journals on several threads, and each logs the file it could not read: the list takes lines
+    // from all of them.
+    private val logs = Collections.synchronizedList(mutableListOf<String>())
     private val state by lazy { CodeModeStateFiles(tempDir.resolve("code-mode")) }
     private val legacyFile by lazy { tempDir.resolve("claudex-code-mode.json") }
 

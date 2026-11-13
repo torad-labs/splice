@@ -58,6 +58,7 @@ import splice.share.RemoteTrees
 import splice.topology.TopologyLoader
 import splice.usage.quota.ClientUserAgent
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentSkipListMap
 
 public class Daemon(
     private val topology: Topology,
@@ -159,7 +160,10 @@ public class Daemon(
     // The collaborators the file-level/same-file helpers became (Kotlin style law, 2026-08-15;
     // diffused into splice.app.head / splice.app.provider, 2026-08-17). All are stateless or hold
     // only their own probe bookkeeping; one instance each keeps the wiring readable.
-    private val headBoot = HeadBoot()
+    // #525: each group of heads is started as soon as it is assembled (HeadBoot).
+    private val headBoot = HeadBoot(
+        HeadsStart { built, failed -> headProbes.startDaemonHeads(built, failed, controlPlane.probeScope, log) },
+    )
     private val performance = splice.app.observability.PerfTelemetry(
         config,
         topology.heads.keys,
@@ -224,7 +228,12 @@ public class Daemon(
         perfSources = controlPlane.perfRows,
     )
 
-    private val heads = LinkedHashMap<String, ManagedHead>()
+    // #525 (Nov 13, 2026): the heads in splice.toml's order whatever order they were assembled in, and safe to read
+    // while a later group is still being added, since a head now serves before the last one is assembled.
+    private val headOrder = topology.heads.keys.withIndex().associate { (index, key) -> key to index }
+    private val heads = ConcurrentSkipListMap<String, ManagedHead>(
+        compareBy<String> { headOrder[it] ?: Int.MAX_VALUE }.thenBy { it },
+    )
 
     /** LAN share: the commands this machine runs on another's heads, and the listener that offers its own. */
     private val share = DaemonShare(topology, config, TurnKey(mgmtKey), log, statePaths.stateDir)
@@ -263,24 +272,19 @@ public class Daemon(
         TranscriptOriginals(statePaths).sweep(log)
         // 2026-09-22: every head's endpoint is asked what it serves — all at once, bounded, before any
         // catalog exists — so each picker is its declared rows plus what its provider lists.
+        // #525 (Nov 13, 2026): a head whose list was kept within two hours begins with it and is asked in the
+        // background, so a restart no longer holds new requests while every provider answers.
         val rosterProviders = topology.heads.mapNotNull { (key, head) ->
             val declared = topology.providers[head.provider] ?: return@mapNotNull null
             key to buildInputs.effectiveProvider(key, declared, legacyKnobsGovern = key in legacySolo)
         }.toMap()
-        controlPlane.modelRosters.resolve(rosterProviders)
+        controlPlane.modelRosters.begin(rosterProviders)
         controlPlane.modelRosters.start(controlPlane.probeScope, rosterProviders)
-        val failed = headBoot.assembleDaemonHeads(topology, statePaths, heads, log) { key, head, providerCfg ->
-            val legacy = key in legacySolo
-            val ctx = buildInputs.providerContext(key, head, providerCfg, legacyKnobsGovern = legacy)
-            // V4-162: attached before assembly, so every holder of the catalog (provider, launch spec,
-            // statusline) reads the windows splice.toml declares NOW.
-            managedHeadFactory.assembleHead(topologyWindows.attach(ctx, legacy), controlPort)
-        }
         // Start heads BEFORE opening the control plane so a launch-shim that sees /health and
         // immediately POSTs /launch/<head> does not race a still-binding head (503 head is not
-        // running) — headProbes.startDaemonHeads binds every head's port; controlPlane.start below
-        // binds the control port, so it must run after.
-        headProbes.startDaemonHeads(heads, failed, controlPlane.probeScope, log)
+        // running) — the assembly starts each group through headProbes.startDaemonHeads, which binds
+        // every head's port; controlPlane.start below binds the control port, so it must run after.
+        val failed = assembleHeads(controlPort, legacySolo)
         headProbes.startRuntimeWatch(
             topology,
             controlPlane.probeScope,
@@ -310,6 +314,23 @@ public class Daemon(
         prices.start()
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
+    }
+
+    /** Assembles every head and starts each group as it is built (HeadBoot). #525: the first heads serve before the
+     *  last is assembled, and no re-read of splice.toml runs until every head has attached to it. */
+    private suspend fun assembleHeads(controlPort: Int, legacySolo: Set<String>): Map<String, String> {
+        topologyWindows.assembling = true
+        try {
+            return headBoot.assembleDaemonHeads(topology, statePaths, heads, log) { key, head, providerCfg ->
+                val legacy = key in legacySolo
+                val ctx = buildInputs.providerContext(key, head, providerCfg, legacyKnobsGovern = legacy)
+                // V4-162: attached before assembly, so every holder of the catalog (provider, launch spec,
+                // statusline) reads the windows splice.toml declares NOW.
+                managedHeadFactory.assembleHead(topologyWindows.attach(ctx, legacy), controlPort)
+            }
+        } finally {
+            topologyWindows.assembling = false
+        }
     }
 
     /** #523: the hand-over to the next daemon, which is the stop below with one difference: a head whose provider

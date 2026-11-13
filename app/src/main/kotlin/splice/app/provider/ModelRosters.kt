@@ -13,6 +13,12 @@
 // failure stops a head from starting: an endpoint that does not answer is replaced by the list it
 // published last (RosterCache), and with neither the head boots on splice.toml's rows exactly as it did
 // before discovery existed. One daemon.log line per head says which of the three happened.
+//
+// A START BEGINS WITH THE LIST KEPT (#525, 2026-11-13). Every start asked every provider before a head was assembled,
+// so each restart held new requests about two seconds longer, for lists the daemon before it had asked for within the
+// hour. A head whose list was kept within [RESUME_MAX_AGE_MS] now begins with it and is asked again in the
+// background ([begin]). No credential is recorded for a list begun that way, so a turn still waits for its own
+// head's ask, and only for that one.
 package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
@@ -54,6 +60,11 @@ private const val NONE_KEPT = "no list was kept, so the picker is splice.toml's 
 // why: a provider release joins every running head within an hour, without polling its endpoint per turn.
 private const val REFRESH_INTERVAL_MS = 3_600_000L
 
+// why: how old a kept list may be for a start to begin with it. A running daemon asks every hour, so a list kept
+// within two is the one a daemon that was serving until now held, with room for one ask that was late or failed. A
+// start after the machine was off finds older lists and asks first, as every start did.
+private const val RESUME_MAX_AGE_MS = 2 * REFRESH_INTERVAL_MS
+
 // why: a sign-in or a key lands as a file the daemon is never told about, so each head's credential is reread on this
 // beat. A reread is one small file read per head, and two seconds is less than a person takes from a sign-in to a
 // first prompt. A turn does not wait for the beat: it rereads its head's credential as it arrives (awaitCurrent).
@@ -91,6 +102,9 @@ internal class ModelRosters(
     /** One ask per head at a time, so an hourly refresh and a recheck never publish out of order. */
     private val asking = ConcurrentHashMap<String, Mutex>()
 
+    /** The heads [begin] started with a kept list, which [start] asks again as it begins. */
+    private val begunWithKept = ConcurrentHashMap.newKeySet<String>()
+
     /** Each head's last fallback line: the hourly refresh says it again only when it changed. A forwarded Claude login
      *  and a local runtime are never asked, so their line printed every hour (the field audit, Oct 13). */
     private val said = ConcurrentHashMap<String, String>()
@@ -107,6 +121,27 @@ internal class ModelRosters(
      *  answers. Returns when every head has one; never throws for a provider's sake. */
     suspend fun resolve(heads: Map<String, ProviderConfig>) {
         coroutineScope { heads.forEach { (key, provider) -> launch { refresh(key, provider, always = true) } } }
+    }
+
+    /** A start's lists. A head whose list was kept within [RESUME_MAX_AGE_MS] begins with it, and [start] asks it
+     *  again in the background; every other head is asked now, as [resolve] asks. Returns when every head has a
+     *  list. A head begun with a kept list has no credential recorded, so its first turn waits for its own ask
+     *  ([awaitCurrent]) and no turn runs on a list its credential was not asked with. */
+    suspend fun begin(heads: Map<String, ProviderConfig>) {
+        val kept = runInterruptible(ProcessDispatchers().io()) {
+            heads.mapNotNull { (key, provider) ->
+                cache.recent(key, provider, RESUME_MAX_AGE_MS)?.let { key to it }
+            }.toMap()
+        }
+        kept.forEach { (key, roster) ->
+            providers[key] = heads.getValue(key)
+            byHead[key] = roster
+            begunWithKept += key
+        }
+        if (kept.isNotEmpty()) {
+            log("[daemon] models: ${kept.size} command(s) begin with the list kept at the last ask; asking again\n")
+        }
+        resolve(heads - kept.keys)
     }
 
     /** Ask again, at once, each head whose credential changed since its list was asked: a sign-in, another account's,
@@ -128,7 +163,11 @@ internal class ModelRosters(
     /** Start after the initial [resolve]: the hourly refresh, and the recheck of every head's credential. Cancelling
      *  the daemon scope stops both. */
     fun start(scope: CoroutineScope, heads: Map<String, ProviderConfig>): Job = scope.launch {
-        launch { while (isActive && credentialTicker.awaitTick(CREDENTIAL_RECHECK_MS)) recheck(heads) }
+        launch {
+            // A head that began with a kept list has no credential recorded, so this asks each of them once.
+            recheck(heads.filterKeys { it in begunWithKept })
+            while (isActive && credentialTicker.awaitTick(CREDENTIAL_RECHECK_MS)) recheck(heads)
+        }
         while (isActive && ticker.awaitTick(REFRESH_INTERVAL_MS)) resolve(heads)
     }
 
@@ -161,7 +200,10 @@ internal class ModelRosters(
         } ?: Discovery.Unavailable(provider.rosterUrl, "no answer within $deadline")
         return when (answer) {
             is Discovery.Found -> KeptRoster.Kept(answer.models, answer.metadata).also {
-                keep(key, answer)
+                said.remove(key)
+                Cancellables.runCatchingCancellable { cache.write(key, answer) }.onFailure {
+                    log("[$key] models: could not keep the discovered list (${SafeFailureText.render(it)})\n")
+                }
                 log("[$key] models: ${listed(answer, provider)}\n")
             }
             is Discovery.Unavailable -> fallback(key, provider, answer)
@@ -203,11 +245,5 @@ internal class ModelRosters(
         KeptRoster.None -> NONE_KEPT
         is KeptRoster.OtherUrl -> "the list kept was published at ${kept.url}, so the picker is splice.toml's rows"
         is KeptRoster.Unreadable -> "${kept.reason}, so the picker is splice.toml's rows"
-    }
-
-    private fun keep(key: String, found: Discovery.Found) {
-        said.remove(key)
-        Cancellables.runCatchingCancellable { cache.write(key, found) }
-            .onFailure { log("[$key] models: could not keep the discovered list (${SafeFailureText.render(it)})\n") }
     }
 }

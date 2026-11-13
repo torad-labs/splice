@@ -3,6 +3,7 @@
 // SAID, because a dropped row the log never names is a picker entry that silently vanished.
 package splice.app.head
 
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -53,13 +54,15 @@ class HeadBootUnlistedModelTest {
 
     private fun boot(head: HeadConfig): List<String> {
         val logs = mutableListOf<String>()
-        val failed = HeadBoot().assembleDaemonHeads(
-            Topology(providers = mapOf("xai" to provider), heads = mapOf("xai" to head)),
-            StatePaths(baseOverride = tmp.resolve("state")),
-            mutableMapOf(),
-            logs::add,
-            assembly,
-        )
+        val failed = runBlocking {
+            HeadBoot().assembleDaemonHeads(
+                Topology(providers = mapOf("xai" to provider), heads = mapOf("xai" to head)),
+                StatePaths(baseOverride = tmp.resolve("state")),
+                mutableMapOf(),
+                logs::add,
+                assembly,
+            )
+        }
         assertEquals(emptyMap<String, String>(), failed, "a model the endpoint did not list never fails the head")
         return logs
     }

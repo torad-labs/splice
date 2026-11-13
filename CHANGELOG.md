@@ -265,6 +265,14 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   login could serve once it ran out. Two logins the roster shows as one account now count as one.
 
 ### Changed
+- **A restart no longer holds every command behind the model lists and the ChatGPT command's saved
+  conversations.** The next daemon asked every provider for its model list, and then read the ChatGPT command's
+  saved code-mode conversations, before any command took a request. On Nov 13, 2026 a restart on one machine held
+  new requests for 7.6 seconds: 2.8 of them for the lists and 2.9 for that read. A command whose list was kept
+  within the last two hours now begins with it and is asked again in the background, and a command's first turn
+  waits for that command's own list, no longer for every provider's. The commands that keep no code-mode state
+  are assembled and start serving first; a command that reads saved conversations starts when its read is done.
+  A start after the machine was off finds no recent list and asks first, as before.
 - **A start reads a ChatGPT command's saved code-mode conversations with four readers.** Every command waits for
   that read at each start and restart, and it went through the conversations one after another on one core: 4.6 to
   6.2 seconds on a busy machine that held 369 MB of them in 54 files. Four readers now work ahead of the

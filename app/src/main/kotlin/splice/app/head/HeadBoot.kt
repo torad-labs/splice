@@ -2,10 +2,16 @@
 // ed5c868 — invariants unchanged: the port-collision/invalid-port pre-checks and the per-head
 // try-build loop, split from HeadLifecycle's other two boot/shutdown phases into their own class
 // (2026-08-17 decomposition).
+//
+// HEADS SERVE GROUP BY GROUP (#525, 2026-11-13). Every head was assembled before any was started. A head that keeps
+// code-mode state reads all of it while it is assembled, about three seconds where a few hundred MiB are saved, and
+// each restart held every other head's requests behind that read. The heads that keep none are now assembled and
+// started first, and the ones that read are the last group.
 package splice.app.head
 
 import splice.app.DaemonBoundary
 import splice.app.HeadAssembly
+import splice.app.HeadsStart
 import splice.app.control.ManagedHead
 import splice.core.config.StatePaths
 import splice.core.topology.AuthCompatibility
@@ -14,11 +20,15 @@ import splice.core.topology.Topology
 import splice.core.topology.TopologyMessages
 import splice.core.util.LogSink
 
-internal class HeadBoot {
+internal class HeadBoot(
+    /** Starts each group once it is assembled. A caller that only assembles hands none. */
+    private val start: HeadsStart = HeadsStart { _, _ -> },
+) {
 
     private val boundary = DaemonBoundary()
 
-    internal fun assembleDaemonHeads(
+    /** [heads] is filled group by group, so a caller that lists it hands a map that keeps its own order. */
+    internal suspend fun assembleDaemonHeads(
         topology: Topology,
         statePaths: StatePaths,
         heads: MutableMap<String, ManagedHead>,
@@ -42,7 +52,32 @@ internal class HeadBoot {
         }
         // Invalid-port and colliding heads already failed above with a named reason — filter them
         // out so the assembly loop keeps a single continue (detekt LoopWithTooManyJumpStatements).
-        for ((key, head) in topology.heads.filterKeys { it !in collidingHeads && it !in invalidPorts.keys }) {
+        val bootable = topology.heads.filterKeys { it !in collidingHeads && it !in invalidPorts.keys }
+        // A stable split: each group keeps splice.toml's order.
+        val (reading, quick) = bootable.entries.partition { (_, head) ->
+            topology.providers[head.provider]?.codeModeEnabled == true
+        }
+        for (group in listOf(quick, reading)) {
+            val built = assembleGroup(topology, group, failed, log, assemble)
+            heads.putAll(built)
+            start(built, failed)
+        }
+        // IO-006: heads above that alias to the same legacy usage file (deliberate migration
+        // continuity, not a bug on its own — see [logUsageKeyCollisions]) share it with no
+        // cross-process coordination if both run at once.
+        logUsageKeyCollisions(statePaths, heads.keys, log)
+        return failed
+    }
+
+    private fun assembleGroup(
+        topology: Topology,
+        group: List<Map.Entry<String, HeadConfig>>,
+        failed: MutableMap<String, String>,
+        log: LogSink,
+        assemble: HeadAssembly,
+    ): Map<String, ManagedHead> {
+        val built = LinkedHashMap<String, ManagedHead>()
+        for ((key, head) in group) {
             val providerCfg = topology.providers[head.provider]
             val unbootable = if (providerCfg == null) {
                 "unknown provider '${head.provider}'"
@@ -56,7 +91,7 @@ internal class HeadBoot {
             }
             boundary.runCatchingDaemonBoundary { assemble(key, head, checkNotNull(providerCfg)) }
                 .onSuccess {
-                    heads[key] = it
+                    built[key] = it
                     logUnlisted(key, head, it, log)
                 }
                 .onFailure {
@@ -65,11 +100,7 @@ internal class HeadBoot {
                     log("[$key][boot] SKIPPED (build failed): $reason\n")
                 }
         }
-        // IO-006: heads above that alias to the same legacy usage file (deliberate migration
-        // continuity, not a bug on its own — see [logUsageKeyCollisions]) share it with no
-        // cross-process coordination if both run at once.
-        logUsageKeyCollisions(statePaths, heads.keys, log)
-        return failed
+        return built
     }
 
     /** 2026-09-23: a model the head's `models` list names that its catalog does not carry was not

@@ -346,6 +346,10 @@ public class StatePaths(
      *  discovered model. */
     public fun modelRosterFile(headKey: String): Path = stateDir.resolve("$headKey-models.json")
 
+    /** Nov 12, 2026: the price table as the project's main branch last served it (PriceRefresh), read at a start
+     *  ahead of the copy in the build when it is not older. */
+    public val publishedRatesFile: Path = stateDir.resolve("published-rates.tsv")
+
     /** V4-260: the directory holding every head's [compactionRecordingsDir], one per head key. */
     public val compactionsDir: Path = stateDir.resolve("compactions")
 

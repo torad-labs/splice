@@ -40,6 +40,11 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # The daemon re-reads both keys at each check.
 # update_channel = "stable"      # "stable" follows releases only; "beta" follows prereleases too
 # auto_update = true
+# Prices (absent reads as on). Once an hour the daemon fetches splice's price table from the project's main branch
+# on raw.githubusercontent.com: one anonymous request that carries nothing about this machine, its accounts or its
+# sessions. A new model is then priced, and a changed price is right, without waiting for a release. With false the
+# table in the build stays in use, or the last one fetched. The daemon re-reads the key at each look.
+# refresh_prices = false
 # A program of yours the daemon runs to tell you what cannot wait for the console. Today that is one thing: a command
 # with two or more logins is on the last one that can serve the model its sessions ask for, and that login has used
 # 80% of a limit (said again at 95%); or no login can serve it at all. Each is said once, and again only when it

@@ -4,8 +4,11 @@ package splice.app.provider
 import splice.core.model.DiscoveredModel
 import splice.core.model.LiveWindows
 import splice.core.model.ModelCatalog
+import splice.core.model.PublishedRates
+import splice.core.model.RateTable
 
-/** The same provider/head join as boot, cached until either input changes. No endpoint or disk I/O here. */
+/** The same provider/head join as boot, cached until an input changes: the roster, the declared windows, or the
+ *  price table in use, which a row with no card of its own takes its price from. No endpoint or disk I/O here. */
 internal class LiveRosterCatalog(
     private val ctx: ProviderBuild,
     private val windows: LiveWindows,
@@ -15,12 +18,11 @@ internal class LiveRosterCatalog(
     override fun current(): ModelCatalog {
         val declared = windows.current()
         val models = ctx.roster.discovered.forHead(ctx.key)
-        val previous = snapshot
-        if (previous != null) {
-            if (previous.models === models && previous.windows === declared) return previous.catalog
-        }
+        val rates = PublishedRates.table()
+        val previous = snapshot?.takeIf { it.models === models && it.windows === declared && it.rates === rates }
+        if (previous != null) return previous.catalog
         val catalog = catalog(models, declared)
-        snapshot = Snapshot(models, declared, catalog)
+        snapshot = Snapshot(models, declared, rates, catalog)
         return catalog
     }
 
@@ -44,6 +46,7 @@ internal class LiveRosterCatalog(
     private data class Snapshot(
         val models: List<DiscoveredModel>,
         val windows: ModelCatalog?,
+        val rates: RateTable,
         val catalog: ModelCatalog,
     )
 }

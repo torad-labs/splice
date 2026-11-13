@@ -312,6 +312,12 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   by size, time and file identity, and reads its records at its next request, as it always read a conversation
   kept on the disk alone. Every other conversation is read at the start as before: one whose answer the retiring
   daemon is still finishing, one written since the list, and all of them after a stop that was not a restart.
+  A conversation waits on the disk this way when none of its scripts runs: each is completed, or was lost when a
+  daemon stopped while it waited for its client. The first form asked for every script to be completed, and the
+  first restart with a list showed what that left out: 22 of 82 conversations, 420 of 701 MiB, each held one or
+  two lost scripts among about a hundred completed, so the start still read most of the bytes and the pause did
+  not get shorter. A start that reads such a conversation itself, after a stop that left no list, also keeps it on
+  the disk once the head is past its memory bound, where it held every one of them in memory whatever the bound.
 - **A start digests its own jar once, not once for every command.** Each command, while it was assembled, made
   the digest that says whether the prices kept from the last run still hold: a walk over every entry of the jar,
   49,000 in a release, and a hash of 3 MB of classes. Thread samples of a restart on Nov 13, 2026 caught the next

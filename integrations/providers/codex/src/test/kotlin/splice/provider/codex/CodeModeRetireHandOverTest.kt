@@ -78,4 +78,29 @@ internal class CodeModeRetireHandOverTest : CodeModeBridgeTestSupport() {
         assertFalse(id in sent, "the call that script made of the client stays out of it: $sent")
         next.onHeadStop()
     }
+
+    @Test
+    fun `a script the restart stopped is told to that conversation's next request to the next daemon`() = runTest {
+        // The script asked its client for a read and waits for the answer when the daemon retires. No turn of the
+        // conversation is answering, so the retiring daemon lets it go, and the script is lost with its process.
+        val steps = listOf(CodeModeStep.Calls(listOf(call("read", "Read"))), CodeModeStep.Completed("done"))
+        val retiring = bridge(ScriptedRuntime(ArrayDeque(steps)), retention = CodeModeRetention())
+        val first = RecordingSink()
+        retiring.interceptor(turn(), disableParallel = false)
+            .intercept(BASE_REQUEST, first) { RoundResult.Outcome(outerOutcome()) }
+        val id = first.tools.single().id
+        retiring.onHeadRetire()
+        retiring.onProviderStop()
+
+        val next = bridge(QueuedRuntime(ArrayDeque()), retention = CodeModeRetention())
+        assertTrue(logLines.any { "1 conversation(s) taken from the retiring daemon's list" in it }, "$logLines")
+        var sent = ""
+        next.interceptor(turn(id, "X"), disableParallel = false)
+            .intercept(requestWithResult(id, "X"), RecordingSink()) {
+                sent = it
+                RoundResult.Outcome(completedOutcome())
+            }
+        assertTrue("source was not rerun" in sent, "the model is told its script stopped and was not rerun: $sent")
+        next.onHeadStop()
+    }
 }

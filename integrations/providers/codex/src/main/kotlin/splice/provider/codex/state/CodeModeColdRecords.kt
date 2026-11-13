@@ -56,9 +56,18 @@ internal class CodeModeColdRecords(
         return conversations.values.flatMap(CodeModeColdEntry::expired)
     }
 
+    /** Whether a conversation with [records] can wait on the disk alone from a start to its next turn: it has records
+     *  and none of them runs. A completed record is read when a turn asks for it. So is a lost one, whose script
+     *  stopped with a daemon and whose turn is told so: nothing of it changes while it waits, and a turn restores it
+     *  as a start does. Nov 13, 2026: a start read 22 conversations of 82, 420 of 701 MiB, for one or two lost
+     *  records among a hundred completed in each, and held them all in memory past the head's bound. A record lost
+     *  in this process is another matter: it may still hold a lease, so a running head keeps its conversation. */
+    fun waits(records: Collection<CodeModeRecordSnapshot>): Boolean =
+        records.isNotEmpty() && records.all { it.phase == CodeModePhase.COMPLETED || it.phase == CodeModePhase.LOST }
+
     /** #525: the conversations this store has let go at the retire whose journals it knows whole, for the list the
-     *  next daemon's start reads: the cold ones, and each kept one whose records are all completed, which is what a
-     *  start keeps on the disk alone. Asked once the write scope has retired. No write of such a conversation begins
+     *  next daemon's start reads: the cold ones, and each kept one that [waits], which is what a start keeps on the
+     *  disk alone. Asked once the write scope has retired. No write of such a conversation begins
      *  after that, and one still under way has its key in one of [unsettled] until its journal and the copy kept
      *  here agree. The registry's monitor makes that key visible here, and the keys are read before the copies, so a
      *  write that ends in between leaves its conversation out. */
@@ -67,8 +76,7 @@ internal class CodeModeColdRecords(
         try {
             val open = unsettled.flatMapTo(HashSet()) { it }
             val known = entries + kept.mapNotNull { (key, state) ->
-                entry(state)?.takeIf { state.records.values.all { it.phase == CodeModePhase.COMPLETED } }
-                    ?.let { key to it }
+                entry(state)?.takeIf { waits(state.records.values) }?.let { key to it }
             }
             return known.filterKeys { !files.writes.allows(it) } - open
         } finally {

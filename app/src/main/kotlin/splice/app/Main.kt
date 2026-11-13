@@ -12,6 +12,7 @@ import splice.app.daemon.DaemonLockWait
 import splice.app.daemon.HeapFlags
 import splice.app.daemon.Launcher
 import splice.app.daemon.LockOutcome
+import splice.app.daemon.StartAhead
 import splice.app.daemon.Succession
 import splice.app.diagnostics.CODE_MODE_PARITY_COMMAND
 import splice.app.diagnostics.CodeModeParityProbe
@@ -116,6 +117,8 @@ internal class DaemonProcess(
         val err = TerminalOutput(System.err::println)
         // #523: a daemon the launcher started beside a running one asks it to hand over, then waits for the lock.
         val succession = Succession(EnvReader(System::getenv), lockWait, err)
+        // #525: what this start can make without the lock is begun before the wait for it, not after.
+        StartAhead().begin()
         if (lockLost(start, succession.acquire(lock, controlPort), lost, err)) return
         val log = persistentLogger(statePaths.logsDir)
         // Components that would otherwise fall back to bare stderr (auth providers, ConfigService,

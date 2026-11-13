@@ -145,9 +145,11 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gate-timings-${{ github.run_attempt }}-${{ matrix.worker }}
+          # A load test that is about to fail writes a dump of every thread beside its report (*-threads.json).
           path: |
             build/reports/profile/
             **/build/test-results/**/*.xml
+            **/build/reports/tests/*-threads.json
           retention-days: 3
           if-no-files-found: ignore
 

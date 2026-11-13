@@ -71,6 +71,10 @@ private class HoldingSseUpstream {
     val peak = AtomicInteger(0)
     private val parked = ConcurrentHashMap<Int, ParkedConnection>()
 
+    /** How many requests carried each turn's marker. More than one for a turn left parked means the gateway asked
+     *  upstream again for it, and the connection left open is not the one its client was reading (Nov 13, 2026). */
+    private val requests = ConcurrentHashMap<String, AtomicInteger>()
+
     @Volatile
     var release = CountDownLatch(1)
 
@@ -102,7 +106,7 @@ private class HoldingSseUpstream {
         val now = System.nanoTime()
         return parked.values.sortedBy { it.remotePort }.joinToString("; ") {
             "marker=${it.marker} cancelled=${it.marker != null && it.marker in cancelledMarkers} " +
-                "remote_port=${it.remotePort} " +
+                "remote_port=${it.remotePort} requests_with_marker=${requests[it.marker.orEmpty()]?.get() ?: 0} " +
                 "accepted_age_ms=${TimeUnit.NANOSECONDS.toMillis(now - it.acceptedAtNanos)} " +
                 "after_cancel_ms=${TimeUnit.NANOSECONDS.toMillis(now - maxOf(cancelledAtNanos, it.acceptedAtNanos))}"
         }
@@ -132,6 +136,7 @@ private class HoldingSseUpstream {
         val input = BufferedReader(InputStreamReader(sock.getInputStream(), Charsets.ISO_8859_1))
         val body = drainRequest(input) ?: return
         val connection = ParkedConnection(HOLD_MARKER.find(body)?.value, acceptedAtNanos, sock.port)
+        connection.marker?.let { requests.computeIfAbsent(it) { AtomicInteger() }.incrementAndGet() }
 
         val out = sock.getOutputStream()
         fun sse(json: String) {

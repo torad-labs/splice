@@ -205,6 +205,9 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   command's windows.
 
 ### Changed
+- **splice is tested against Claude Code 2.1.323.** The fresh-machine, upgrade, plan-limit and runtime-head runs
+  pass with it. A session on a newer Claude Code is told so in `splice doctor`, `splice status` and the status
+  line, as before.
 - **The console reads names, not sentences.** Twelve replies of the daemon's API now carry a short name beside
   the sentence they always sent (why saving stopped, why a command cannot carry the manager, what a check
   found, why a team's repo was refused, and so on), and the console's pages choose their words by those names.

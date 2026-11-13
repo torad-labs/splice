@@ -22,6 +22,8 @@
 #                adds one, the real Claude Code through it in print mode (V4-232).
 #   --client-model ID  the runtime row's client_model (default claude-sonnet-4-6, what setup writes);
 #                `none` writes the row as setup wrote it before V4-232.
+#   --runtime-model ID  the runtime row's own id (default bonsai-2-27b). With `--client-model none` and an id
+#                spelled claude-… the client does not know, the window step prints what the client assumes for it.
 #   --scenario no-node  run tools/e2e/docker/no-node.sh on a machine with Java and a natively installed Claude Code and no
 #                Node anywhere: install.sh, `splice add codex`, claudex, four sessions, doctor, and curl missing.
 #   --keep       keep the artifacts scratch dir and print its path
@@ -36,7 +38,7 @@ TESTED_CLAUDE_CODE="$(sed -nE 's/^((public|internal) )?const val TESTED_CLAUDE_C
 IMAGE="splice-e2e-fresh:local"
 IMAGE_TARGET="fresh"
 RELEASE=""; JAR=""; SHIM=""; KEEP=0; BUILD=1; UPGRADE_FROM=""; SCENARIO_NAME=""; PLAN_RESET_S=""; PROBE_MESSAGE=""
-CLIENT_MODEL=""
+CLIENT_MODEL=""; RUNTIME_MODEL_ID=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --release) RELEASE="$2"; shift 2 ;;
@@ -47,9 +49,10 @@ while [ $# -gt 0 ]; do
     --plan-reset-s) PLAN_RESET_S="$2"; shift 2 ;;
     --probe-message) PROBE_MESSAGE="$2"; shift 2 ;;
     --client-model) CLIENT_MODEL="$2"; shift 2 ;;
+    --runtime-model) RUNTIME_MODEL_ID="$2"; shift 2 ;;
     --keep) KEEP=1; shift ;;
     --no-build) BUILD=0; shift ;;
-    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,29p' "$0"; exit 0 ;;
     *) echo "run.sh: unknown arg $1" >&2; exit 2 ;;
   esac
 done
@@ -63,6 +66,10 @@ fi
 if [ -n "$CLIENT_MODEL" ]; then
   [ "$SCENARIO_NAME" = "runtime-head" ] || { echo "run.sh: --client-model belongs to --scenario runtime-head" >&2; exit 2; }
   [[ "$CLIENT_MODEL" =~ ^(none|claude-[a-z0-9.-]+)$ ]] || { echo "run.sh: --client-model takes claude-… or none, got '$CLIENT_MODEL'" >&2; exit 2; }
+fi
+if [ -n "$RUNTIME_MODEL_ID" ]; then
+  [ "$SCENARIO_NAME" = "runtime-head" ] || { echo "run.sh: --runtime-model belongs to --scenario runtime-head" >&2; exit 2; }
+  [[ "$RUNTIME_MODEL_ID" =~ ^[a-z0-9][a-z0-9.-]*$ ]] || { echo "run.sh: --runtime-model takes a model id, got '$RUNTIME_MODEL_ID'" >&2; exit 2; }
 fi
 
 command -v docker >/dev/null || { echo "run.sh: docker is required" >&2; exit 2; }
@@ -122,6 +129,7 @@ if [ -n "$SCENARIO_NAME" ]; then
   [ -z "$PLAN_RESET_S" ] || MODE_ARGS+=(-e "PLAN_RESET_S=$PLAN_RESET_S")
   [ -z "$PROBE_MESSAGE" ] || MODE_ARGS+=(-e "PLAN_PROBE_MESSAGE=$PROBE_MESSAGE")
   [ -z "$CLIENT_MODEL" ] || MODE_ARGS+=(-e "RUNTIME_CLIENT_MODEL=$CLIENT_MODEL")
+  [ -z "$RUNTIME_MODEL_ID" ] || MODE_ARGS+=(-e "RUNTIME_MODEL=$RUNTIME_MODEL_ID")
 fi
 if [ -n "$UPGRADE_FROM" ]; then
   FROM_ART="$(mktemp -d "${TMPDIR:-/tmp}/splice-e2e-from.XXXXXX")"

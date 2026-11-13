@@ -232,6 +232,7 @@ splice sessions       # the Claude Code sessions on this machine, joined to thei
 splice sessions --json  # the same sessions as one JSON document, for a program to read
 splice sessions relaunch  # relaunch each session that still holds one of splice's keys, in its environment or its hosted MCP servers, on its own head, resumed
 splice perf           # per-head latency, failure and cache summary (--window 1h|24h|7d)
+splice usage --json   # every command's logins and their plan windows as one JSON document, for a program to read
 splice wire <head>    # the request bodies a head sent upstream; only once you opt that head in
 splice trace <head>   # a head's full request/response trace from disk (--turn ID, --purge); on for every head
 splice restart        # restart, after waiting for running compactions; --now skips the wait; a supervising systemd unit supplies its own environment, and under it an answer already arriving finishes (see Long-session reliability)

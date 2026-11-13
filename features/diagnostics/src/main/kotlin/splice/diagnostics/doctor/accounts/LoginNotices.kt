@@ -6,7 +6,7 @@
 // ONE NOTICE PER COMMAND AND MODEL, read from the roster /api/accounts serves, so it never says what Accounts and
 // `splice status` do not show. A login can serve when the pool would send it a turn of that model: it is open, the
 // pool holds no refusal of that model on it, and that model's week does not read used up. A command with one login
-// has no last one to be down to, and says nothing.
+// has no pool that knows its models: OneLoginNotice reads it by its plan's own windows.
 //
 // EVERY MODEL THE COMMAND'S TURNS ASKED FOR IN THE LAST HOUR IS READ, not only the one most turns asked for. The
 // first form read that one alone, and on the afternoon it shipped the Claude command's was Haiku: sessions hand
@@ -34,10 +34,10 @@ public const val LOGIN_NOTICE_BACK: String = "back"
 private const val NO_READING = -1.0
 
 // why: leaves time to act: at the pace of Nov 12, 2026, eleven sessions on one login, about 45 minutes.
-private const val NEAR_MARK = 80
+internal const val NEAR_MARK = 80
 
 // why: says it again for someone who missed the first, about ten minutes before the end at that pace.
-private const val LAST_MARK = 95
+internal const val LAST_MARK = 95
 
 /** One command's notice. [key] names the command and what the notice says of it, and changes when that changes. */
 public data class LoginNotice(public val head: String, public val key: String, public val text: String)
@@ -47,19 +47,33 @@ public class LoginNotices(private val now: WallClock = WallClock { System.curren
 
     /** The notice each command of [accountsJson], the daemon's own /api/accounts body, calls for now: none for a
      *  command with two or more logins that can serve, and none for a body this build cannot read. */
-    public fun of(accountsJson: String): List<LoginNotice> = each(accountsJson) { asked, blockedUntil, names ->
-        asked.notice(blockedUntil, names)
-    }
+    public fun of(accountsJson: String): List<LoginNotice> = read(accountsJson)?.let { read ->
+        pooled(read) { asked, blockedUntil, names -> asked.notice(blockedUntil, names) } +
+            alone(read).mapNotNull(OneLoginNotice::notice)
+    }.orEmpty()
 
     /** For each command and model [accountsJson] shows a login able to serve now, the notice that says so. It is for a
      *  command that was told it had none (Nov 12, 2026: a login was reset while sessions waited, and nothing said
      *  the sessions had gone on, so the person logged in again by hand). Its key is the [LOGIN_NOTICE_NONE] notice's
      *  with [LOGIN_NOTICE_BACK] in that place. */
-    public fun back(accountsJson: String): List<LoginNotice> =
-        each(accountsJson) { asked, _, names -> asked.back(names) }
+    public fun back(accountsJson: String): List<LoginNotice> = read(accountsJson)?.let { read ->
+        pooled(read) { asked, _, names -> asked.back(names) } + alone(read).mapNotNull(OneLoginNotice::back)
+    }.orEmpty()
 
-    private fun each(accountsJson: String, said: NoticeOf): List<LoginNotice> {
-        val read = roster.read(accountsJson) as? AccountPoolsRead.Read ?: return emptyList()
+    private fun read(accountsJson: String): AccountPoolsRead.Read? =
+        roster.read(accountsJson) as? AccountPoolsRead.Read
+
+    /** The commands with one login, each read by its plan's windows. */
+    private fun alone(read: AccountPoolsRead.Read): List<OneLoginNotice> {
+        val atSeconds = now().milliseconds.inWholeSeconds
+        return read.pools.mapNotNull { (head, view) ->
+            view.accounts.singleOrNull { it.credential.present }?.let { login ->
+                OneLoginNotice(head, login, read.accountNames[head].orEmpty()[login.label] ?: login.label, atSeconds)
+            }
+        }
+    }
+
+    private fun pooled(read: AccountPoolsRead.Read, said: NoticeOf): List<LoginNotice> {
         val atSeconds = now().milliseconds.inWholeSeconds
         return read.pools.flatMap { (head, view) ->
             val logins = view.accounts.filter { it.credential.present }
@@ -77,7 +91,7 @@ private fun interface NoticeOf {
 }
 
 /** A window of the last login, by the words a person knows it by. */
-private data class LimitWindow(val words: String, val percent: Double, val resetsAt: Long?)
+internal data class LimitWindow(val words: String, val percent: Double, val resetsAt: Long?)
 
 /** What a command's turns ask of its [logins] at one moment: turns of [model]. */
 private class AskedOfLogins(

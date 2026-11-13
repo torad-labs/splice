@@ -37,6 +37,7 @@ internal class DetachedCompaction(
     private val replay: CompactionReplay,
     private val scope: CoroutineScope,
     private val context: CoroutineContext,
+    private val turns: DetachedTurns,
 ) {
     /** Captured state is allocated before handoff; launch allocation failures still settle ownership. */
     @OptIn(DelicateCoroutinesApi::class)
@@ -72,6 +73,7 @@ internal class DetachedCompaction(
                 }
             }
             launched = true
+            turns.track(job, drive)
             job
         }
     }
@@ -146,6 +148,7 @@ internal class DetachedCompaction(
                 }
             }
             launched = true
+            turns.track(job, drive)
             job
         }
     }

@@ -110,7 +110,7 @@ internal class HeadLifecycle(
     }
 
     /** #523: the cut of a restart that keeps the answers in progress. Admission closes first, as in a drain; then
-     *  only the turns whose upstream has not begun answering are cut, and the detached compactions with them. The
+     *  only the turns whose upstream has not begun answering are cut, and the turns whose client is gone with them. The
      *  books close HERE, before the daemon hands over: from [splice.head.perf.RetiredRows.retire] on, a row this
      *  process records is left for the next daemon to count, and the flushes after it are the last writes this
      *  process makes to the usage, hourly and session-total files. A provider that cannot finish a turn beside

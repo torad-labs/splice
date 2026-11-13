@@ -37,6 +37,7 @@ import splice.head.HeadDeps
 import splice.head.compaction.CompactionReplay
 import splice.head.turn.delivery.CollectedReply
 import splice.head.turn.detached.DetachedCompaction
+import splice.head.turn.detached.DetachedTurns
 import splice.head.turn.stream.PendingSse
 import splice.head.wire.ContentReached
 import splice.head.wire.FrameRecording
@@ -80,6 +81,9 @@ internal class TurnStreamer(
      *  HD-24 style: TurnDriver passes these into CollectTurn's launcher. */
     internal val detachScope: CoroutineScope get() = detachedScope
     internal val detachContext: CoroutineContext get() = detachedContext
+
+    /** #525: the turns running on [detachedScope], each with its drive ([retireDetached]). */
+    internal val detachTurns: DetachedTurns = DetachedTurns()
 
     /** The emitter whose pinger frames go through the pending response's progress port and whose
      *  content-reached answer reads what this turn has actually written to the client. */
@@ -235,8 +239,9 @@ internal class TurnStreamer(
         recording: FrameRecording,
         pending: PendingSse,
     ) {
-        val job = DetachedCompaction(provider.key, deps.log, sealedDrive, replay, detachedScope, detachedContext)
-            .launch(drive, inputs, key, recording)
+        val launcher =
+            DetachedCompaction(provider.key, deps.log, sealedDrive, replay, detachedScope, detachedContext, detachTurns)
+        val job = launcher.launch(drive, inputs, key, recording)
         try {
             job.join()
         } catch (e: CancellationException) {
@@ -259,4 +264,8 @@ internal class TurnStreamer(
     fun stopDetached() {
         detachedScope.coroutineContext.cancelChildren()
     }
+
+    /** #525: a retiring head ends only the detached turns it will not finish, and says how many of them were
+     *  answering ([DetachedTurns.retire]). */
+    fun retireDetached(): Int = detachTurns.retire()
 }

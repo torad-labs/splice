@@ -26,6 +26,11 @@ afterAll(() => {
 const JAR = "synthetic splice jar bytes\n";
 const SHIM = '#!/usr/bin/env node\n// synthetic splice-launch\nconst SPLICE_SHIM_VERSION = "shim-test";\nconst SPLICE_GATEWAY_VERSION = "9.9.9";\n';
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
+/** Whether a logged URL asks github.com or a host under it. The host is compared: the name can stand anywhere in a URL. */
+const onGithub = (url: string) => {
+  const host = new URL(url).hostname;
+  return host === "github.com" || host.endsWith(".github.com");
+};
 
 function exe(path: string, body: string) {
   writeFileSync(path, body);
@@ -143,11 +148,11 @@ describe("install.sh downloads from splice.torad.ai", () => {
 
   test("a default install asks github.com for nothing", () => {
     const run = install({});
-    expect(run.urls.filter((url) => url.includes("github.com"))).toEqual([]);
+    expect(run.urls.filter(onGithub)).toEqual([]);
   });
 
   test("a pinned install asks github.com for nothing", () => {
     const run = install({ SPLICE_VERSION: "v9.9.9" });
-    expect(run.urls.filter((url) => url.includes("github.com"))).toEqual([]);
+    expect(run.urls.filter(onGithub)).toEqual([]);
   });
 });

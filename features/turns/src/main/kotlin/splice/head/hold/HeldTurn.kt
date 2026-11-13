@@ -52,6 +52,11 @@ internal class HeldTurn(
     /** The order the registry first saw this turn in, which breaks a tie between turns held in the same millisecond. */
     var joinedAs: Long = 0L
 
+    /** How many logins had joined the head when this turn began, or last heard of one. A turn that takes its place
+     *  among the held behind the registry's count missed a join while it was not waiting. Read and written under the
+     *  registry's lock, but for this first value. */
+    var loginsHeard: Long = registry.loginsJoined()
+
     /** True while the turn waits; false while it sends, so a 2xx on its login takes it off the held list. */
     @Volatile var waiting: Boolean = false
         private set

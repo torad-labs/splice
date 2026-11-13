@@ -116,6 +116,8 @@ internal class DaemonProcess(
         val err = TerminalOutput(System.err::println)
         // #523: a daemon the launcher started beside a running one asks it to hand over, then waits for the lock.
         val succession = Succession(EnvReader(System::getenv), lockWait, err)
+        // #525: what this start can make without the lock is begun before the wait for it, not after.
+        boundary.beginAheadOfLock()
         if (lockLost(start, succession.acquire(lock, controlPort), lost, err)) return
         val log = persistentLogger(statePaths.logsDir)
         // Components that would otherwise fall back to bare stderr (auth providers, ConfigService,

@@ -160,7 +160,7 @@ public class Daemon(
     // The collaborators the file-level/same-file helpers became (Kotlin style law, 2026-08-15;
     // diffused into splice.app.head / splice.app.provider, 2026-08-17). All are stateless or hold
     // only their own probe bookkeeping; one instance each keeps the wiring readable.
-    // #525: each group of heads is started as soon as it is assembled (HeadBoot).
+    // #525: each head is started as soon as it is assembled (HeadBoot).
     private val headBoot = HeadBoot(
         HeadsStart { built, failed -> headProbes.startDaemonHeads(built, failed, controlPlane.probeScope, log) },
     )
@@ -229,7 +229,7 @@ public class Daemon(
     )
 
     // #525 (Nov 13, 2026): the heads in splice.toml's order whatever order they were assembled in, and safe to read
-    // while a later group is still being added, since a head now serves before the last one is assembled.
+    // while a later head is still being added, since a head now serves before the last one is assembled.
     private val headOrder = topology.heads.keys.withIndex().associate { (index, key) -> key to index }
     private val heads = ConcurrentSkipListMap<String, ManagedHead>(
         compareBy<String> { headOrder[it] ?: Int.MAX_VALUE }.thenBy { it },
@@ -282,8 +282,8 @@ public class Daemon(
         controlPlane.modelRosters.start(controlPlane.probeScope, rosterProviders)
         // Start heads BEFORE opening the control plane so a launch-shim that sees /health and
         // immediately POSTs /launch/<head> does not race a still-binding head (503 head is not
-        // running) — the assembly starts each group through headProbes.startDaemonHeads, which binds
-        // every head's port; controlPlane.start below binds the control port, so it must run after.
+        // running) — the assembly starts each head through headProbes.startDaemonHeads, which binds
+        // that head's port; controlPlane.start below binds the control port, so it must run after.
         val failed = assembleHeads(controlPort, legacySolo)
         headProbes.startRuntimeWatch(
             topology,
@@ -316,7 +316,7 @@ public class Daemon(
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
     }
 
-    /** Assembles every head and starts each group as it is built (HeadBoot). #525: the first heads serve before the
+    /** Assembles every head and starts each one as it is built (HeadBoot). #525: the first heads serve before the
      *  last is assembled, and no re-read of splice.toml runs until every head has attached to it. */
     private suspend fun assembleHeads(controlPort: Int, legacySolo: Set<String>): Map<String, String> {
         topologyWindows.assembling = true

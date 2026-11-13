@@ -3,10 +3,11 @@
 // try-build loop, split from HeadLifecycle's other two boot/shutdown phases into their own class
 // (2026-08-17 decomposition).
 //
-// HEADS SERVE GROUP BY GROUP (#525, 2026-11-13). Every head was assembled before any was started. A head that keeps
-// code-mode state reads all of it while it is assembled, about three seconds where a few hundred MiB are saved, and
-// each restart held every other head's requests behind that read. The heads that keep none are now assembled and
-// started first, and the ones that read are the last group.
+// A HEAD SERVES AS SOON AS IT IS BUILT (#525, 2026-11-13). Every head was assembled before any was started. A head
+// that keeps code-mode state reads all of it while it is assembled, about three seconds where a few hundred MiB are
+// saved, and each restart held every other head's requests behind that read. The heads that keep none are assembled
+// first and the ones that read last, and each is started the moment it is built: started group by group, a head
+// still waited for every head of its group, a second for ten of them on the machine this was measured on.
 package splice.app.head
 
 import splice.app.DaemonBoundary
@@ -21,13 +22,13 @@ import splice.core.topology.TopologyMessages
 import splice.core.util.LogSink
 
 internal class HeadBoot(
-    /** Starts each group once it is assembled. A caller that only assembles hands none. */
+    /** Starts each head once it is assembled. A caller that only assembles hands none. */
     private val start: HeadsStart = HeadsStart { _, _ -> },
 ) {
 
     private val boundary = DaemonBoundary()
 
-    /** [heads] is filled group by group, so a caller that lists it hands a map that keeps its own order. */
+    /** [heads] is filled head by head, so a caller that lists it hands a map that keeps its own order. */
     internal suspend fun assembleDaemonHeads(
         topology: Topology,
         statePaths: StatePaths,
@@ -53,14 +54,14 @@ internal class HeadBoot(
         // Invalid-port and colliding heads already failed above with a named reason — filter them
         // out so the assembly loop keeps a single continue (detekt LoopWithTooManyJumpStatements).
         val bootable = topology.heads.filterKeys { it !in collidingHeads && it !in invalidPorts.keys }
-        // A stable split: each group keeps splice.toml's order.
+        // A stable split: each half keeps splice.toml's order.
         val (reading, quick) = bootable.entries.partition { (_, head) ->
             topology.providers[head.provider]?.codeModeEnabled == true
         }
-        for (group in listOf(quick, reading)) {
-            val built = assembleGroup(topology, group, failed, log, assemble)
-            heads.putAll(built)
-            start(built, failed)
+        for (entry in quick + reading) {
+            val built = assembled(topology, entry, failed, log, assemble) ?: continue
+            heads[entry.key] = built
+            start(mapOf(entry.key to built), failed)
         }
         // IO-006: heads above that alias to the same legacy usage file (deliberate migration
         // continuity, not a bug on its own — see [logUsageKeyCollisions]) share it with no
@@ -69,38 +70,38 @@ internal class HeadBoot(
         return failed
     }
 
-    private fun assembleGroup(
+    /** The head [entry] names, or null with its reason in [failed]. */
+    private fun assembled(
         topology: Topology,
-        group: List<Map.Entry<String, HeadConfig>>,
+        entry: Map.Entry<String, HeadConfig>,
         failed: MutableMap<String, String>,
         log: LogSink,
         assemble: HeadAssembly,
-    ): Map<String, ManagedHead> {
-        val built = LinkedHashMap<String, ManagedHead>()
-        for ((key, head) in group) {
-            val providerCfg = topology.providers[head.provider]
-            val unbootable = if (providerCfg == null) {
-                "unknown provider '${head.provider}'"
-            } else {
-                AuthCompatibility.refusal(key, head.provider, providerCfg)
-            }
-            if (unbootable != null) {
-                failed[key] = unbootable
-                log("[$key][boot] SKIPPED: $unbootable\n")
-                continue
-            }
-            boundary.runCatchingDaemonBoundary { assemble(key, head, checkNotNull(providerCfg)) }
-                .onSuccess {
-                    built[key] = it
-                    logUnlisted(key, head, it, log)
-                }
-                .onFailure {
-                    val reason = boundary.reason(it)
-                    failed[key] = reason
-                    log("[$key][boot] SKIPPED (build failed): $reason\n")
-                }
+    ): ManagedHead? {
+        val (key, head) = entry
+        val providerCfg = topology.providers[head.provider]
+        val unbootable = if (providerCfg == null) {
+            "unknown provider '${head.provider}'"
+        } else {
+            AuthCompatibility.refusal(key, head.provider, providerCfg)
         }
-        return built
+        if (unbootable != null) {
+            failed[key] = unbootable
+            log("[$key][boot] SKIPPED: $unbootable\n")
+            return null
+        }
+        return boundary.runCatchingDaemonBoundary { assemble(key, head, checkNotNull(providerCfg)) }.fold(
+            onSuccess = {
+                logUnlisted(key, head, it, log)
+                it
+            },
+            onFailure = {
+                val reason = boundary.reason(it)
+                failed[key] = reason
+                log("[$key][boot] SKIPPED (build failed): $reason\n")
+                null
+            },
+        )
     }
 
     /** 2026-09-23: a model the head's `models` list names that its catalog does not carry was not

@@ -117,7 +117,7 @@ internal class TopologyWindows(
     @Volatile
     private var share: Boolean? = boot.daemon.mcpShare
 
-    /** #525 (Nov 13, 2026): heads attach in groups, and the first group serves while the last is still assembled.
+    /** #525 (Nov 13, 2026): heads attach one by one, and the first serves while the last is still assembled.
      *  A re-read in between would publish to the heads attached so far and never reach the rest, so the daemon
      *  holds re-reads until every head has attached. A read meanwhile answers what the daemon booted with. */
     @Volatile

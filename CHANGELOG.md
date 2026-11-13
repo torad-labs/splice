@@ -273,6 +273,14 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   waits for that command's own list, no longer for every provider's. The commands that keep no code-mode state
   are assembled and start serving first; a command that reads saved conversations starts when its read is done.
   A start after the machine was off finds no recent list and asks first, as before.
+- **A restart's pause is shorter again: each command serves the moment it is built, and the next daemon prepares
+  while it waits.** After the change above, a restart on the same machine still held a Claude command's requests
+  for 2.6 to 3.7 seconds. Thread samples of the next daemon showed where they went. It waited 3.5 seconds for the
+  running daemon to hand over with nothing to do, and then spent its first second hashing its own jar for the
+  code-mode worker and loading what its first HTTP client needs. It built all ten commands that keep no code-mode
+  state before it started any of them. And it looked for the freed lock four times a second. Now the work that
+  needs no lock is done during the wait, each command takes requests as soon as it is built (the ones that keep no
+  code-mode state first, in splice.toml's order), and the hand-over asks for the lock forty times a second.
 - **A start reads a ChatGPT command's saved code-mode conversations with four readers.** Every command waits for
   that read at each start and restart, and it went through the conversations one after another on one core: 4.6 to
   6.2 seconds on a busy machine that held 369 MB of them in 54 files. Four readers now work ahead of the

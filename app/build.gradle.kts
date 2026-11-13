@@ -678,8 +678,9 @@ tasks.register("stageRelease") {
                 }
             }
             check(held == listOf(platform)) {
-                "release stage: ${platformJarAssets.getValue(platform)} holds ${held.joinToString().ifEmpty { "no platform" }}, " +
-                    "where it should hold $platform alone"
+                val asset = platformJarAssets.getValue(platform)
+                val found = held.joinToString().ifEmpty { "no platform" }
+                "release stage: $asset holds $found, where it should hold $platform alone"
             }
         }
 

@@ -244,7 +244,8 @@ internal class ProviderHolds(private val store: ProviderHoldStore?) {
 
     /** Records the plan windows, the whole login's [whole] (null when none is held) and each model's week in [weeks],
      *  beside the provider's reset, and writes them all. A new refusal is counted by [refusing], which the hold runs
-     *  this inside: an answer that ends one model's week leaves another's standing and must not read as a refusal. */
+     *  this inside: an answer that ends one model's week leaves another's standing and must not read as a refusal.
+     *  [figures] is what each of those windows last read (ProviderHold.read). */
     @Synchronized
     fun plans(whole: PlanLimit?, weeks: List<PlanLimit>, figures: Map<String, Double>) {
         // The same windows with the same figures are already in the file.

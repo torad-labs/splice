@@ -29,6 +29,7 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.head.Head
 import splice.core.head.HeadHealth
+import splice.core.head.HeldTurnReading
 import splice.core.version.ClientVersionTracker
 import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.CompactView
@@ -80,6 +81,33 @@ class ClientVersionSurfaceTest {
         }
     }
 
+    @Test
+    fun `the status line of a session whose turn waits on a limit leads with that`(@TempDir tempDir: Path) = runTest {
+        val paths = StatePaths(baseOverride = tempDir.resolve("state"))
+        val mgmt = MgmtKey(paths)
+        key = mgmt.get()
+        val waits = HeldTurnReading(1_794_542_400L, "work", "limit", 0L, session = "session-waits")
+        val server = controlServerFor(
+            // the OS assigns the port at bind time; it is read back below, so nothing can take it first
+            port = 0,
+            heads = mapOf("test" to managedHead(listOf(waits))),
+            config = ConfigService(paths),
+            runtime = ControlRuntime(clientVersions = ClientVersionTracker(testedVersion = "2.1.257")),
+            auth = ControlAuth(mgmtKey = mgmt, log = {}),
+        )
+        server.start()
+        try {
+            val waiting = statusline(server.listeningPort, "session-waits")
+            val running = statusline(server.listeningPort, "session-runs")
+            val said = Regex("plan limit reached: waiting until \\w{3} \\d\\d:\\d\\d or a reset")
+            assertTrue(said.containsMatchIn(waiting), waiting)
+            assertTrue(waiting.indexOf("plan limit reached") < waiting.indexOf("Model"), waiting)
+            assertFalse(running.contains("waiting"), running)
+        } finally {
+            server.stop()
+        }
+    }
+
     private suspend fun healthWarning(port: Int): String? {
         val body = client.get("http://127.0.0.1:$port/health").bodyAsText()
         return Json.parseToJsonElement(body).jsonObject["clientVersionWarning"]?.jsonPrimitive?.content
@@ -92,7 +120,7 @@ class ClientVersionSurfaceTest {
             setBody("""{"session_id":"$session","model":{"id":"model","display_name":"Model"}}""")
         }.bodyAsText()
 
-    private fun managedHead() = ManagedHead(
+    private fun managedHead(held: List<HeldTurnReading> = emptyList()) = ManagedHead(
         head = object : Head {
             override val key: String = "test"
             override val label: String = "Test"
@@ -100,6 +128,7 @@ class ClientVersionSurfaceTest {
             override suspend fun start() = Unit
             override suspend fun stop() = Unit
             override fun healthSnapshot() = HeadHealth(true, true, port, "test")
+            override fun heldTurns() = held
         },
         auth = object : AuthProvider {
             override suspend fun credentials() = null

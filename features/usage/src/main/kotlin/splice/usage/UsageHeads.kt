@@ -4,6 +4,7 @@
 package splice.usage
 
 import splice.accounts.pool.HeadAccountPoolSource
+import splice.core.head.HeldTurnReading
 import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
 import splice.usage.economics.HeadEconomicsSource
@@ -50,7 +51,15 @@ public data class UsageHeadStatusline(
     val catalog: ModelCatalog? = null,
     /** Where the statusline records each session's real window. Null = a head that never learns. */
     val clientWindows: ClientWindows? = null,
+    /** The turns the head holds now, so the session whose turn waits reads so on its bar. Null = a head that holds
+     *  none. */
+    val held: HeldTurnsSource? = null,
 )
+
+/** The turns a head holds in their own requests until their cause lifts, read at each tick of a status line. */
+public fun interface HeldTurnsSource {
+    public fun now(): List<HeldTurnReading>
+}
 
 /** Every configured head, in topology order, read at CALL time. */
 public fun interface UsageHeads {

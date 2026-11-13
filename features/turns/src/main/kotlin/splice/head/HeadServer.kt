@@ -212,9 +212,11 @@ public class HeadServer(
 
     /** The turns this head holds until their cause lifts (failure-handling slice 5), oldest first. */
     override fun heldTurns(): List<HeldTurnReading> = deps.traffic.liveTurns.list()
-        .mapNotNull { it.state as? TurnState.Held }
-        .sortedBy { it.since }
-        .map { HeldTurnReading(it.until?.epochSecond, it.login, it.cause, it.heapBytes) }
+        .mapNotNull { turn -> (turn.state as? TurnState.Held)?.let { turn.session to it } }
+        .sortedBy { (_, held) -> held.since }
+        .map { (session, held) ->
+            HeldTurnReading(held.until?.epochSecond, held.login, held.cause, held.heapBytes, session)
+        }
 
     /** Degraded while it refuses every request before any upstream turn (2026-11-09 audit), null while it admits. */
     override fun refusing(): splice.core.head.RefusingReading? = admission.refusing()

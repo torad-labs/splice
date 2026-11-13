@@ -62,7 +62,9 @@ public class StatuslineRoute(
         // V4-274: the usage a post carries is another head's last turn until this head answers the session.
         val unanswered = usageOwner.unanswered(managed.key, sessionId, managed.sinks.perf as? HeadSessionPerfSource)
         val warn = StatuslineWarn(managed.warn.warnPct, managed.warn.warnTokens5h)
-        val line = renderer.render(stdin, managed.usage, warn, sessionId, unanswered)
+        // A turn held in its own request shows the session its spinner alone, so its bar says what it waits for.
+        val waiting = sessionId?.let { own -> managed.statusline.held?.now()?.firstOrNull { it.session == own } }
+        val line = renderer.led(renderer.render(stdin, managed.usage, warn, sessionId, unanswered), waiting)
         JsonScalars.objectOrNull(json, stdin)?.let {
             lines.record(sessionId, StatuslineFacts(managed.statusline.catalog).read(it, unanswered))
         }

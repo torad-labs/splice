@@ -65,6 +65,12 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   none comes while a request is open. Sessions started before this version show it once they are started again.
 
 ### Fixed
+- **A session whose answer a restart let finish no longer has its next request turned away.** A restart starts
+  the next daemon beside the running one, which finishes the answers already arriving and takes nothing new. A
+  client keeps the connection its answer came on, so that session's next request went to the daemon that was
+  leaving, which closed it unanswered; the client sent it again and only then reached the next daemon. Five
+  requests took that detour at one restart on Nov 13, 2026, and two at the next. The leaving daemon now closes a
+  connection when the last answer on it has ended, so the next request opens a new one and is served at once.
 - **A reset at the provider is heard through a long wait, after a restart, and by a turn that was just refused.**
   Three things could keep waiting turns from moving to a login that was reset before its time. While turns wait, splice reads each login's usage
   once a minute. On Nov 13, 2026, in a wait of more than four hours, the provider's usage endpoint began to

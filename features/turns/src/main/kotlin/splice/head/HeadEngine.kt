@@ -206,7 +206,8 @@ internal class HeadEngine(
     /** The start of a drain: no new turn is admitted, and a head on an inherited socket stops taking new connections,
      *  which wait in the kernel for the next daemon. A head that bound its own port has nothing to pause. Connections
      *  already open and idle are closed after that, so a client's next request opens one that waits for the next daemon
-     *  and never meets the refusal (the 6:34 AM CT restart refused 13 requests that arrived on kept-open connections). */
+     *  and never meets the refusal (the 6:34 AM CT restart refused 13 requests that arrived on kept-open connections).
+     *  A connection with an answer still on it is closed when that answer ends, for the same reason. */
     fun closeAdmission(window: AdmissionWindow) {
         window.close()
         listen.adopted?.pauseAccepting()

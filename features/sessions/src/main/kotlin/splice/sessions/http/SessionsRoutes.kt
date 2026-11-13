@@ -33,6 +33,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.JsonScalars
 import splice.http.JsonReply
+import splice.sessions.listing.GoneSessionRows
+import splice.sessions.listing.ListedRow
 import splice.sessions.note.PeerVersions
 import splice.sessions.projects.SessionProjects
 import splice.sessions.registry.RepoResolver

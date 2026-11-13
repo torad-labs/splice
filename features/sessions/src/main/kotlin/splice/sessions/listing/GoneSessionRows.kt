@@ -6,7 +6,7 @@
 // one read to the next (two reads seven seconds apart: 3,227 rows, the same bytes both times), so the answer names
 // the gone rows by a mark of their bytes, and a reader that sends back the mark it holds gets them again only once
 // the mark differs. A reader that sends no mark gets every row, as before.
-package splice.sessions.http
+package splice.sessions.listing
 
 import kotlinx.serialization.json.JsonObject
 import java.security.MessageDigest

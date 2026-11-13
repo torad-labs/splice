@@ -212,6 +212,10 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   command's windows.
 
 ### Changed
+- **A restart stops new requests for about 2.4 seconds less when splice is running an MCP server.** The retiring
+  daemon waited for its MCP server processes to end after its commands had stopped taking turns, so that wait was
+  part of the pause before the next daemon serves. It now ends them first, while turns are still answered. On
+  Nov 12, 2026 five of seven restarts on one machine spent 2.4 of their 8 to 9 seconds there.
 - **The console reads names, not sentences.** Twelve replies of the daemon's API now carry a short name beside
   the sentence they always sent (why saving stopped, why a command cannot carry the manager, what a check
   found, why a team's repo was refused, and so on), and the console's pages choose their words by those names.

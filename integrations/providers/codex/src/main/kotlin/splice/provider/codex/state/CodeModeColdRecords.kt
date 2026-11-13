@@ -4,11 +4,13 @@ import splice.core.memory.HeapReservations
 import splice.provider.codex.CodeModeExpiredSnapshot
 import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.CodeModePersistenceException
+import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRecordSnapshot
 import splice.provider.codex.CodeModeStorageException
 import splice.provider.codex.CodeModeStorageOperation
 import splice.provider.codex.CodeModeStorageProblem
+import splice.provider.codex.state.handover.CodeModeColdEntry
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantLock
@@ -20,8 +22,7 @@ internal class CodeModeColdRecords(
     private val monitor: ReentrantLock?,
     private val heap: HeapReservations,
 ) {
-    private data class Entry(val updatedAt: Long, val conversations: Set<String>)
-    private val entries = ConcurrentHashMap<String, Entry>()
+    private val entries = ConcurrentHashMap<String, CodeModeColdEntry>()
     val keys: Set<String> get() = entries.keys.toSet()
     val retained: Boolean get() = entries.isNotEmpty()
 
@@ -40,11 +41,33 @@ internal class CodeModeColdRecords(
 
     /** The caller has committed and owns this key. Remove the store's snapshot owner too. */
     fun evict(key: String): Boolean {
-        val records = kept[key]?.records?.values.orEmpty()
-        val updatedAt = records.maxOfOrNull(CodeModeRecordSnapshot::updatedAt) ?: return false
-        entries[key] = Entry(updatedAt, records.mapNotNullTo(mutableSetOf()) { it.conversationId })
+        entries[key] = kept[key]?.let(::entry) ?: return false
         kept.remove(key)
         return true
+    }
+
+    /** #525 (2026-11-13): a conversation the retiring daemon told this start of. Its records wait in its journal,
+     *  unread, for the turn that restores them. */
+    fun told(key: String, entry: CodeModeColdEntry) {
+        entries[key] = entry
+    }
+
+    /** #525: every conversation a start keeps on the disk alone, as its journal holds it: the cold ones, and each
+     *  kept one whose records are all completed. What a retiring daemon tells the next one of. */
+    fun known(): Map<String, CodeModeColdEntry> = entries + kept.mapNotNull { (key, state) ->
+        entry(state)?.takeIf { state.records.values.all { it.phase == CodeModePhase.COMPLETED } }?.let { key to it }
+    }
+
+    /** What is kept of [state] once its records leave memory; null when it holds no record. */
+    private fun entry(state: CodeModeKeptState): CodeModeColdEntry? {
+        val records = state.records.values
+        val updatedAt = records.maxOfOrNull(CodeModeRecordSnapshot::updatedAt) ?: return null
+        return CodeModeColdEntry(
+            updatedAt,
+            state.liveBytes,
+            records.mapNotNullTo(mutableSetOf()) { it.conversationId },
+            state.expired,
+        )
     }
 
     /** Under the key lock and registry monitor. A read failure is never a replay cache miss. */

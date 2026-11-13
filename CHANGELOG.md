@@ -301,7 +301,17 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   code-mode state first, in splice.toml's order), and the hand-over asks for the lock forty times a second.
   Measured once with both changes, on that machine on Nov 13, 2026: a restart held a Claude command's requests for
   1.95 seconds, where it had held them for 7.6. The ChatGPT command's pause did not get shorter, because it is the
-  read of its saved conversations: 9.0 seconds at that restart.
+  read of its saved conversations: about 8 seconds at that restart.
+- **A start no longer reads every saved code-mode conversation of a ChatGPT command.** At each start the command
+  read all of its conversations whole, to learn of each one when it was last used, which client conversations it
+  answers and which of its scripts have expired. Then it kept a part of them in memory, a quarter of the heap and
+  256 MiB at most, and left the rest on the disk, to be read again at that conversation's next request. On Nov 13,
+  2026, 676 MiB in 82 conversations held the command 5.8 of the 8.3 seconds a restart paused it, and that read
+  grows with every day of use. A daemon that restarts now leaves a list of the conversations it lets go, with those
+  few things of each. The next daemon takes a conversation from the list where its file is still the one listed,
+  by size, time and file identity, and reads its records at its next request, as it always read a conversation
+  kept on the disk alone. Every other conversation is read at the start as before: one whose answer the retiring
+  daemon is still finishing, one written since the list, and all of them after a stop that was not a restart.
 - **A start digests its own jar once, not once for every command.** Each command, while it was assembled, made
   the digest that says whether the prices kept from the last run still hold: a walk over every entry of the jar,
   49,000 in a release, and a hash of 3 MB of classes. Thread samples of a restart on Nov 13, 2026 caught the next

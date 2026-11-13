@@ -10,7 +10,10 @@ import splice.core.util.SafeFailureText
 import splice.provider.codex.CodeModeExpiredSnapshot
 import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.CodeModeRecordSnapshot
+import splice.provider.codex.state.handover.CodeModeColdEntry
 import splice.provider.codex.state.handover.CodeModeHeldJournals
+import splice.provider.codex.state.handover.CodeModeLetGo
+import splice.provider.codex.state.handover.CodeModeLetGoFile
 import splice.provider.codex.state.handover.CodeModeWriteScope
 import splice.upstream.memory.JvmHeap
 import java.io.IOException
@@ -43,6 +46,9 @@ internal class CodeModeStateDirectory(
      *  ([splice.provider.codex.CodexCodeModeStore]). */
     val writes = CodeModeWriteScope()
 
+    /** #525 (2026-11-13): the list a retiring daemon leaves of the conversations it lets go, and a start reads. */
+    private val letGo = CodeModeLetGoFile(dir, json, log)
+
     private data class OnDisk(val path: Path, val key: String, val state: CodeModePersistedState, val liveBytes: Long) {
         val updatedAt: Long = maxOf(
             state.records.maxOfOrNull(CodeModeRecordSnapshot::updatedAt) ?: 0L,
@@ -51,13 +57,16 @@ internal class CodeModeStateDirectory(
         val modifiedAt: Long = Files.getLastModifiedTime(path).toMillis()
     }
 
-    fun load(): Sequence<Pair<String, Loaded>> {
-        if (!Files.isDirectory(dir)) return emptySequence()
+    /** Every conversation the folder holds that no other daemon holds. With [told], a conversation the retiring
+     *  daemon listed comes first, as its entry, where its journal is still the file listed and does not need a
+     *  checkpoint: that journal is not read here. Every other conversation is read, in the sequence. */
+    fun load(told: Boolean = false): Pair<Map<String, CodeModeColdEntry>, Sequence<Pair<String, Loaded>>> {
+        if (!Files.isDirectory(dir)) return emptyMap<String, CodeModeColdEntry>() to emptySequence()
         val listed = try {
             Files.list(dir).use { entries -> entries.toList() }
         } catch (failure: IOException) {
             log("[code-mode] $dir not listed (${SafeFailureText.render(failure)}): its conversations are not restored")
-            return emptySequence()
+            return emptyMap<String, CodeModeColdEntry>() to emptySequence()
         }
         // #525: a conversation another daemon still holds is not read, rewritten or deleted, nor its lock dropped.
         val free = held.scan(listed)
@@ -67,7 +76,9 @@ internal class CodeModeStateDirectory(
         // are read ahead of that, a few at once: read one after another they kept every head waiting on this folder
         // at each start.
         val conversations = files.groupBy { it.fileName.toString().substringBefore('.') }.values.toList()
-        return Ahead(conversations).all().mapNotNull { versions ->
+        val unread = if (told) unread(conversations) else emptyMap()
+        val entries = unread.values.associate { it.key to it.entry }
+        return entries to Ahead(conversations.filterNot { it.singleOrNull() in unread }).all().mapNotNull { versions ->
             if (versions.isEmpty()) return@mapNotNull null
             val key = versions.first().key
             // A downgraded jar can create newer .json state beside the .jsonl it cannot discover.
@@ -80,6 +91,19 @@ internal class CodeModeStateDirectory(
             val migration = versions.size > 1 || selected.path != path(key)
             key to Loaded(selected.state, migration || CodeModeStateJournal.outgrown(selected.path, selected.liveBytes))
         }
+    }
+
+    /** #525: of [conversations], the journals the retiring daemon listed that this start does not read. A
+     *  conversation with two files is a migration, and one whose journal has outgrown its live bytes is rewritten at
+     *  a start: both are read. */
+    private fun unread(conversations: List<List<Path>>): Map<Path, CodeModeLetGo> {
+        val unread = letGo.told(conversations.mapNotNull { it.singleOrNull() }).filter { (journal, line) ->
+            journal == path(line.key) && !CodeModeStateJournal.outgrown(journal, line.entry.liveBytes)
+        }
+        if (unread.isNotEmpty()) {
+            log("[code-mode] ${unread.size} conversation(s) taken from the retiring daemon's list: journals not read")
+        }
+        return unread
     }
 
     private data class Pending(val paths: List<Path>, val bytes: Long, val read: Future<List<OnDisk>>)
@@ -204,6 +228,12 @@ internal class CodeModeStateDirectory(
     /** The lock file a jar before .jsonl kept beside [olderPath]. Nothing takes it now, so it goes with that
      *  journal. */
     fun olderLockPath(key: String): Path = olderPath(key).let { it.resolveSibling("${it.fileName}.lock") }
+
+    /** #525: at the retire, lists [conversations] for the next daemon, each with its journal as the disk holds it
+     *  now. The caller hands only conversations this daemon has let go and whose journal it knows whole. */
+    fun tell(conversations: Map<String, CodeModeColdEntry>) {
+        letGo.write(conversations.mapNotNull { (key, entry) -> letGo.of(key, path(key), entry) })
+    }
 
     /** Until Oct 23 a removed conversation left its journal's lock file behind: 11,103 empty ones on one
      *  machine, back to Oct 1. A lock whose journal is gone guards nothing, and nothing appends while the

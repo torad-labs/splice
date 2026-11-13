@@ -10,6 +10,7 @@ import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.retry.InflightGate
 import splice.usage.alerts.AlertStore
+import java.util.concurrent.TimeUnit
 
 /** The daemon's single composition owner. Construction happens before head producers; no profile starts here. */
 internal class PerfTelemetry(
@@ -86,18 +87,25 @@ internal class PerfTelemetry(
     }
 
     /** Called after heads/MCP stop. Flush while source data is still alive, then release dependent owners. */
-    suspend fun close() = shutdown.close(
-        { alerting.stopDelivery(cleanup) },
-        PerfExportStop { timeoutMs ->
-            var completed = false
-            cleanup.run("export_flush") {
-                completed = exports.closeAndFlushWithin(timeoutMs)
-                if (!completed) cleanup.failed("export_flush_incomplete")
-            }
-            completed
-        },
-        ::closeOwners,
-    )
+    suspend fun close() {
+        val began = System.nanoTime()
+        try {
+            shutdown.close(
+                { alerting.stopDelivery(cleanup) },
+                PerfExportStop { timeoutMs ->
+                    var completed = false
+                    cleanup.run("export_flush") {
+                        completed = exports.closeAndFlushWithin(timeoutMs)
+                        if (!completed) cleanup.failed("export_flush_incomplete")
+                    }
+                    completed
+                },
+                ::closeOwners,
+            )
+        } finally {
+            cleanup.said(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - began))
+        }
+    }
 
     private fun closeOwners(phase: PerfWorkPhase.Lease) = cleanup.finish(
         { finalCheckpoints(phase) },

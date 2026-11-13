@@ -178,6 +178,11 @@ public class DayBodyBudget(
                 ?: return INDEX_CAP_REACHED
             hold.changed()
             removeDay(day.parent, oldest)
+            // Until Nov 12, 2026 a whole day left here with nothing said anywhere; a day's bodies have had their line.
+            log(
+                "[trace] everything saved on $oldest (UTC), its request records with its prompts and answers, was " +
+                    "removed to keep the request records inside their $indexMaxBytes B budget\n",
+            )
         }
         hold.lined(active, bytes)
         return null

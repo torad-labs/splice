@@ -4,6 +4,7 @@ import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -172,6 +173,23 @@ class TraceDeleteRoutesTest {
         assertEquals("{}\n", Files.readString(day))
         assertEquals("synthetic pack", Files.readString(pack))
         assertFalse(DayFiles(dir, "alpha").deleted(), "a refused purge is never marked deleted")
+    }
+
+    @Test
+    fun `the kept answer names the days whose prompts and answers were removed to make room, oldest first`(
+        @TempDir root: Path,
+    ) {
+        val dir = Files.createDirectory(root.resolve("trace"))
+        listOf("2026-09-17", "2026-09-18", "2026-09-19").forEach { day ->
+            Files.writeString(dir.resolve("alpha-$day.jsonl"), "{}\n")
+        }
+        listOf("alpha-2026-09-18", "alpha-2026-09-17", "beta-2026-09-19").forEach { day ->
+            Files.writeString(dir.resolve("$day.jsonl.bodies-evicted"), "evicted by the body budget\n")
+        }
+        val body = route(root, dir).kept("alpha").body
+        val removed = Json.parseToJsonElement(body).jsonObject.getValue("bodies_removed_days").jsonArray
+        assertEquals(listOf("2026-09-17", "2026-09-18"), removed.map { it.jsonPrimitive.content }, body)
+        assertEquals("3", field(body, "records"), "the records of a day whose bodies went are still counted")
     }
 
     @Test

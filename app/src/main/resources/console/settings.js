@@ -626,6 +626,16 @@ function traceStopped() {
   const heads = stops.length < ui.heads.filter(traceOn).length ? stops.map(({ h }) => h) : [];
   return { when: whenWord(at), words: known || shortWhy(why), known: !!known, heads };
 }
+/** The days whose prompts and answers the store removed to make room, from each command's trace/kept answer
+ *  (bodies_removed_days): how many, and the first and the last. Null when none were. The store removed fourteen days
+ *  of them on one machine, Oct 29 to Nov 11, 2026, and only the daemon's log said so. */
+function traceRemoved() {
+  const days = [...new Set(ui.heads.flatMap((_, i) => ui.kept.trace?.[i]?.bodies_removed_days ?? []))].sort();
+  if (!days.length) return null;
+  // a store day is a UTC date; noon of it words the same date in every zone the page is read in
+  const word = (day) => dateWord(new Date(`${day}T12:00:00`));
+  return { n: days.length, span: days.length === 1 ? word(days[0]) : `${word(days[0])} to ${word(days[days.length - 1])}` };
+}
 /** How long prompts and answers stay: the longest any command keeps them, and the caps that can end it sooner. */
 function traceDays() {
   const w = ui.hist.window, windowDays = w.forever ? Infinity : w.nothing ? 0 : w.days;
@@ -718,8 +728,13 @@ function keptHtml() {
   const stopped = stop ? `<div class="dstop" role="status">${DRAW.lamp("stalled")}<b>Saving stopped ${esc(stop.when)}</b>`
     + `${stop.heads.length ? `<span class="dwho">${stop.heads.map((h) => cmdChip(h)).join("")}</span>` : ""}${stop.words ? `<span class="dwhy">${esc(stop.words)}</span>` : ""}`
     + (stop.known ? `<button class="act quiet small" data-act="tofree">Free up space</button><span class="dthen">Saves again on the next request</span>` : "") + `</div>` : "";
+  // WHAT WAS REMOVED IS SAID WHERE WHAT IS KEPT IS COUNTED (Nov 12): the days, and that their records stayed. Nothing
+  // is wrong now, so it wears no lamp and no red.
+  const gone = reading ? null : traceRemoved();
+  const removed = gone ? `<div class="dgone" role="note"><b>Prompts and answers of ${gone.n === 1 ? esc(gone.span) : `${gone.n} days`} were removed to make room</b>`
+    + `${gone.n === 1 ? "" : `<span>${esc(gone.span)}</span>`}<span>Their request records are kept</span></div>` : "";
   const bar = reading ? GHOST.stack() : all ? splitBar(held.map((p, i) => ({ n: p.x.bytes, text: mbWord(p.x.bytes), word: p.r.name, ink: storeInk(i) })), all, { id: "data" }) : "";
-  return DRAW.section("On this computer", `${hero}${stopped}${bar}`, { cls: "tally" });
+  return DRAW.section("On this computer", `${hero}${stopped}${removed}${bar}`, { cls: "tally" });
 }
 // the knobs each group's rows carry, so the marks on their values are named once on the group's own line
 const GROUP_KNOBS = {

@@ -36,6 +36,7 @@ import {
   failingInstallJava,
   fakeNetwork,
   makeSandbox,
+  platformJar,
   runInstall,
   runInstalled,
   sandboxEnv,
@@ -209,7 +210,11 @@ export async function accept(argv: readonly string[], repoRoot: string): Promise
     process.platform === "linux" && process.arch === "x64" && manifest.assets.includes("splice-mcp-holder")
       ? ["splice-mcp-holder", "splice-mcp-front"]
       : [];
-  const attested = ["splice.jar", "splice-launch", ...hubAssets];
+  // The jar install.sh takes since Nov 12, 2026: this platform's own where the bundle lists one, splice.jar where it
+  // does not. The sums are asked for first, since they say which jars the release has.
+  const ownJar = platformJar();
+  const jarAsset = ownJar !== null && manifest.assets.includes(ownJar) ? ownJar : "splice.jar";
+  const attested = [jarAsset, "splice-launch", ...hubAssets];
   const attestations = (): number =>
     (existsSync(network.ghLog) ? readFileSync(network.ghLog, "utf8") : "")
       .split("\n")
@@ -242,7 +247,7 @@ export async function accept(argv: readonly string[], repoRoot: string): Promise
   const stableRun = runInstall(distDir, stable, fakeEnv(stable));
   if (!stableRun.ok) return fail(stableRun.output);
   const stableBase = `${RELEASE_SITE}/latest`;
-  const expectedStable = [`${stableBase}/splice.jar`, `${stableBase}/sha256sums.txt`, `${stableBase}/splice-launch`, ...hubAssets.map((asset) => `${stableBase}/${asset}`)];
+  const expectedStable = [`${stableBase}/sha256sums.txt`, `${stableBase}/${jarAsset}`, `${stableBase}/splice-launch`, ...hubAssets.map((asset) => `${stableBase}/${asset}`)];
   if (urls().join("\n") !== expectedStable.join("\n")) {
     return fail("release accept: default install did not use the exact stable latest URLs");
   }
@@ -263,7 +268,7 @@ export async function accept(argv: readonly string[], repoRoot: string): Promise
     const run = runInstall(distDir, versioned, { ...fakeEnv(versioned), SPLICE_VERSION: pinned });
     if (!run.ok) return fail(run.output);
     const base = `${RELEASE_SITE}/${pinned}`;
-    const expectedVersioned = [`${base}/splice.jar`, `${base}/sha256sums.txt`, `${base}/splice-launch`, ...hubAssets.map((asset) => `${base}/${asset}`)];
+    const expectedVersioned = [`${base}/sha256sums.txt`, `${base}/${jarAsset}`, `${base}/splice-launch`, ...hubAssets.map((asset) => `${base}/${asset}`)];
     if (urls().join("\n") !== expectedVersioned.join("\n")) {
       return fail(`release accept: ${pinned} install did not use the exact version-pinned URLs`);
     }
@@ -303,7 +308,8 @@ export async function accept(argv: readonly string[], repoRoot: string): Promise
   // ── bundles that must NOT install ────────────────────────────────────────────────────────────
   const corrupt = mkdtempSync(join(tmpdir(), "release-accept-corrupt-"));
   copyBundle(distDir, corrupt);
-  writeFileSync(join(corrupt, "splice.jar"), "\ncorrupt\n", { flag: "a" });
+  // The jar the install takes is the one whose bytes must be refused; a changed splice.jar is not read here.
+  writeFileSync(join(corrupt, jarAsset), "\ncorrupt\n", { flag: "a" });
   const corruptProblem = assertFailedWithoutSuccess(corrupt, "checksum mismatch");
   rmSync(corrupt, { recursive: true, force: true });
   if (corruptProblem) return fail(corruptProblem);

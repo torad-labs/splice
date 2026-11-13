@@ -54,6 +54,14 @@ export function sandboxEnv(sandbox: Sandbox): Record<string, string> {
 }
 
 /** `bash -s < <assets>/install.sh` from the sandbox's work directory, output merged. */
+/** The name a release gives this machine's own jar, or null where it publishes none (an Intel Mac). It is
+ *  install.sh's `platform_jar`, for the code that says what an install must have asked for. */
+export function platformJar(): string | null {
+  const system = process.platform === "linux" ? "linux" : process.platform === "darwin" ? "darwin" : null;
+  const machine = process.arch === "x64" ? "amd64" : process.arch === "arm64" ? "aarch64" : null;
+  return system && machine && `${system}-${machine}` !== "darwin-amd64" ? `splice-${system}-${machine}.jar` : null;
+}
+
 export function runInstall(assets: string, sandbox: Sandbox, env: Record<string, string>): InstallResult {
   const script = readFileSync(join(assets, "install.sh"));
   const proc = Bun.spawnSync(["bash", "-s"], {

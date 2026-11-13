@@ -7,6 +7,7 @@ package splice.app
 import io.ktor.client.plugins.HttpTimeout
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import splice.app.sources.RunningBuild
 import splice.client.resume.MovingTrust
 import splice.codemode.WorkerArtifacts
 import splice.core.config.StatePaths
@@ -137,10 +138,11 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
      *  was measured on, while the running one serves every request. After the hand-over each command's requests
      *  wait for this start, and thread samples of one showed its first second going to three things: a hash of this
      *  jar to pin the code-mode worker's copy of it, the JVM's management server that HeapFlags asks, and
-     *  kotlin-reflect's built-ins, which the first Ktor plugin a process loads reads. None of them reads what the
-     *  retiring daemon still writes: a pin lives in a folder of the process's own.
+     *  kotlin-reflect's built-ins, which the first Ktor plugin a process loads reads. Samples of a later start showed
+     *  a fourth: the digest of this jar's pricing classes, which every command made for itself (RunningBuild). None of
+     *  them reads what the retiring daemon still writes: a pin lives in a folder of the process's own.
      *
-     *  Each piece is kept by the process (the pin by WorkerArtifacts' lazy, the server by the JVM, the plugin by
+     *  Each piece is kept by the process (the pin and the digest by a lazy, the server by the JVM, the plugin by
      *  its class), so the start takes one that is made, waits for one that is still being made, and makes one that
      *  failed here itself, where it fails with its own reason as it always did. A start with no daemon to wait
      *  for gets the lock at once and loses nothing: the pieces run beside it. */
@@ -148,6 +150,7 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
         ahead(scope) { WorkerArtifacts.pinAtBoot() }
         ahead(scope) { val _ = ManagementFactory.getPlatformMBeanServer() }
         ahead(scope) { val _ = HttpTimeout.key }
+        ahead(scope) { val _ = RunningBuild.id() }
     }
 
     private inline fun ahead(scope: CoroutineScope, crossinline piece: () -> Unit) {

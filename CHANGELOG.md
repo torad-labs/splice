@@ -306,6 +306,9 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   use kapt, so the flaw was not reachable here; the version was still the one the advisory names. Kotlin had
   been held on 2.3 since July 24 because CodeQL could not read 2.4, which it can now. konsist moves to 0.18.1
   with it.
+- **splice is built with Gradle 9.9.1.** Gradle brings a Kotlin of its own for the build's scripts, and 9.8
+  brought 2.4.10, a second copy of the version the same advisory names. 9.9 brings 2.4.21, so no Kotlin below the
+  fix is left in the build.
 
 ## splice v0.4.0: teams across models, resume on another model, and one-command setup - 2026-11-11
 

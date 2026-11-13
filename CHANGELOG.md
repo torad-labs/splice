@@ -29,6 +29,11 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   the file. A command with one login says nothing: it has no last one to be down to.
 
 ### Fixed
+- **A daemon start no longer clears another daemon's session moves.** Continue on keeps a short record while a
+  session moves to another command, and the moved session's launch reads it to carry the trust you gave its
+  folder. Every start cleared those records before it held the daemon lock, so a start beside a running daemon (a
+  restart's next daemon, or a second start that then gives way to the running one) cleared the records of moves
+  the running daemon was still carrying out. The start now clears them once it holds the lock.
 - **A script call that is cancelled as its worker dies is cancelled, not failed.** On a ChatGPT command with code
   mode, a call into a script's worker that was cancelled (the turn was stopped, or its client left) could end
   with "Code-mode worker was stopped; source was not rerun" when the worker died of something else at the same

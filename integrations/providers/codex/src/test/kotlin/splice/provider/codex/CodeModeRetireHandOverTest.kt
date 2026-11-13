@@ -30,6 +30,8 @@ internal class CodeModeRetireHandOverTest : CodeModeBridgeTestSupport() {
             }
             answering.await()
             retiring.onHeadRetire()
+            // The hand-over ends the daemon's probe scope right after the heads retire, which is the provider's stop.
+            retiring.onProviderStop()
             // The next daemon starts while the retiring one is still answering that turn.
             val next = bridge(QueuedRuntime(ArrayDeque()))
             upstreamAnswers.complete(Unit)

@@ -88,12 +88,14 @@ public data class RefusingReading(val reason: String, val inRow: Int, val sinceE
 
 /** One held turn as status and the console show it: the reset it waits for (epoch seconds, null where none was
  *  stated), the login it waits on, what it met ("limit", "overload", "credit") and the bytes its request keeps in
- *  memory while it waits. */
+ *  memory while it waits. [session] is the client's session id when it sent one, which is how that session's status
+ *  line finds its own turn; /health does not carry it. */
 public data class HeldTurnReading(
     val untilEpochSeconds: Long?,
     val login: String,
     val cause: String,
     val heapBytes: Long,
+    val session: String? = null,
 )
 
 /** HTTP headers or a WebSocket response frame, never body completion or a local failure. No identifiers. */

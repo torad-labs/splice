@@ -50,6 +50,12 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   what the program prints is discarded. The first time a command is set it is sent one line saying what it will
   be used for, so a wrong command shows that day. The key is read at the daemon's start and can be set only in
   the file. A command with one login says nothing: it has no last one to be down to.
+- **A session waiting on a limit says so in its status line.** A turn that met a plan limit waits in its own
+  request until a login can serve it, and Claude Code showed its spinner and nothing else for as long as that
+  took. The session's status line now leads with what the turn met and the reset it waits for, such as
+  `plan limit reached: waiting until Thu 22:00 or a reset`, and says the same of an overloaded provider and of an
+  account out of credit. The status line is also run every 30 seconds between Claude Code's own updates, since
+  none comes while a request is open. Sessions started before this version show it once they are started again.
 
 ### Fixed
 - **Sessions waiting on a plan limit go on within about a minute of a reset.** When every login of a command is

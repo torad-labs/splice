@@ -352,14 +352,7 @@ public class ClaudeConfigMaterializer(
         val merged = buildJsonObject {
             base.forEach { (key, value) -> put(key, value) }
             launch.keyHelper?.let { put(Keys.API_KEY_HELPER, it) }
-            put(
-                Keys.STATUS_LINE,
-                buildJsonObject {
-                    put("type", "command")
-                    put("command", spec.statuslineCommand)
-                    put("padding", 0)
-                },
-            )
+            put(Keys.STATUS_LINE, StatusLineSetting(spec.statuslineCommand).json())
             hooks.hooks?.let { put(Keys.HOOKS, it) }
             ClaudeModelSettings.overrides(global, launch.modelOverrides)?.let { put(Keys.MODEL_OVERRIDES, it) }
         }

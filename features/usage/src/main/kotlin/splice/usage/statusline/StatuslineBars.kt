@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
+import splice.core.head.HeldTurnReading
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindowView
 import splice.usage.ApiCostText
@@ -114,6 +115,18 @@ internal class StatuslineBars(private val zone: ZoneId = ZoneId.systemDefault())
         return "$DIM$label$RESET $c${bar(pct)}$RESET $c$pct%$RESET$reset"
     }
 
+    /** What the bar leads with while the session's turn waits in its own request, where Claude Code shows its
+     *  spinner alone: what the turn met and the reset it waits for, spelled as the limit bars spell a reset. Null
+     *  for a session with no waiting turn. */
+    fun heldSegment(turn: HeldTurnReading?): String? {
+        turn ?: return null
+        val met = HeldCause.entries.firstOrNull { it.word == turn.cause } ?: HeldCause.LIMIT
+        val wait = turn.untilEpochSeconds
+            ?.let { "until ${resetFormat.format(Instant.ofEpochSecond(it).atZone(zone))}${met.orSooner}" }
+            ?: met.unstated
+        return "$YELLOW⏸ ${met.said}: waiting $wait$RESET"
+    }
+
     /** green under 60, yellow 60-84, bold red 85 and up — the operator's own thresholds. */
     fun color(pct: Int): String = when {
         pct >= CRITICAL_PCT -> BOLD_RED
@@ -137,6 +150,15 @@ internal class StatuslineBars(private val zone: ZoneId = ZoneId.systemDefault())
  *  [clientPriced]: the head's upstream is Anthropic, so Claude Code's own `total_cost_usd`, which it
  *  prices at Anthropic's API card, is priced at this upstream's card. */
 internal data class CostFallback(val rated: Boolean, val clientPriced: Boolean)
+
+/** What a held turn met, as its session's bar says it. [word] is the cause as the head reports it, [said] names it,
+ *  [orSooner] is what can end the wait before the stated reset, and [unstated] what the turn waits for where no
+ *  reset was stated. A cause the bar does not know reads as a plan limit, which is what most held turns met. */
+private enum class HeldCause(val word: String, val said: String, val orSooner: String, val unstated: String) {
+    LIMIT("limit", "plan limit reached", " or a reset", "for a reset"),
+    OVERLOAD("overload", "provider overloaded", "", "for it to answer"),
+    CREDIT("credit", "out of credit", "", "for credit"),
+}
 
 private const val RESET = "[0m"
 private const val DIM = "[2m"

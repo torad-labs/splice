@@ -24,6 +24,7 @@ import java.security.MessageDigest
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+import java.util.Collections
 import java.util.HexFormat
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutionException
@@ -44,7 +45,9 @@ internal open class CodeModeFilesTestSupport {
     @TempDir
     lateinit var tempDir: Path
 
-    protected val logs = mutableListOf<String>()
+    // A start reads journals on several threads, and each logs the file it could not read: the list takes lines
+    // from all of them.
+    protected val logs: MutableList<String> = Collections.synchronizedList(mutableListOf<String>())
     protected val state by lazy { CodeModeStateFiles(tempDir.resolve("code-mode")) }
 
     protected fun registry(

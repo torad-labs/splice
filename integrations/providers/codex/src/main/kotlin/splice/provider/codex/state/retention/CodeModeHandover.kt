@@ -54,6 +54,9 @@ internal class CodeModeHandover(
         registry.timed.retire()
         (registry.changes.conversations() - held).forEach(::stop)
         registry.files.writes.retire(held)
+        // The next daemon's start takes what this one knows of each conversation it has just let go from this list,
+        // and reads only the journals the list does not cover.
+        registry.files.tell(registry.letGo)
         log("[code-mode] retire: ${held.size} conversation(s) finish here; the next daemon takes the rest")
         held
     }

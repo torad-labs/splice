@@ -90,7 +90,7 @@ internal class CodexCodeModeStore(
     private val kept = ConcurrentHashMap<String, CodeModeKeptState>()
 
     /** Journal-backed conversations whose payloads have no in-memory owner in this store. */
-    val cold = CodeModeColdRecords(files, kept, registryLock, heap)
+    val cold = CodeModeColdRecords(files, kept, registryLock, heap, listOf(failedKeys, uncertainKeys))
 
     private val capacity = CodeModeSaveHeap(heap)
     private val snapshots = CodeModeSaveSnapshots(kept, uncertainKeys, capacity)
@@ -268,8 +268,11 @@ internal class CodexCodeModeStore(
 
     private fun readDirectory(maxBytes: Long): List<CodeModeExpiredSnapshot> {
         var held = 0L
-        val markers = mutableListOf<CodeModeExpiredSnapshot>()
-        files.load().forEach { (key, selected) ->
+        // #525: only a store that keeps conversations on the disk alone takes them from the retiring daemon's list. A
+        // count policy bounds what is in memory, so there every conversation is read.
+        val (told, read) = files.load(told = maxBytes != Long.MAX_VALUE)
+        val markers = cold.told(told).toMutableList()
+        read.forEach { (key, selected) ->
             val state = selected.state
             kept[key] = CodeModeKeptState(state.version, state, heap)
             val committed = !selected.checkpoint || checkpoint(key, state, "the selected conversation stays")

@@ -87,7 +87,9 @@ internal class SessionsMount(
     /** v0.4.0 /api/sessions and V4-130's three session reads beside it. */
     private fun sessionRoutes(route: Route, routes: SessionsRoutes) {
         route.get("/api/sessions") {
-            guard.guarded(call) { ControlReplies.respond(call, withContext(fileIo) { routes.sessionsJson() }) }
+            // ?gone= is the mark of the gone sessions' rows the reader holds; with it they are sent only when changed.
+            val held = call.request.queryParameters["gone"]
+            guard.guarded(call) { ControlReplies.respond(call, withContext(fileIo) { routes.sessionsJson(held) }) }
         }
         historyRoutes?.let { history ->
             route.get("/api/sessions/history") {

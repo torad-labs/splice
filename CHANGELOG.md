@@ -239,6 +239,14 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   found, why a team's repo was refused, and so on), and the console's pages choose their words by those names.
   A page's wording no longer depends on how a sentence in the daemon happens to be phrased. The sentences are
   unchanged, and so is every reply's existing field.
+- **An open console page no longer re-reads every ended session every five seconds.** A machine keeps the row of
+  every session it has seen, and `GET /api/sessions` answered with all of them each time. On one machine that was
+  3,259 rows, 3,227 of them sessions that had ended, 2.3 MB an answer, and an open Sessions page asked every five
+  seconds: about 600 KiB a second from the daemon for one open tab. An ended session's row does not change. The
+  answer now names the ended rows by `gone_mark`, and a read that sends that mark back as `?gone=<mark>` is
+  answered with the sessions still here alone, 25 KiB of that 2.3 MB, and `gone_held: true`, until an ended row is
+  added, changed or removed. Every console page reads the list this way and shows what it showed. A read with no
+  mark is answered with every row, as before.
 
 ## splice v0.4.0: teams across models, resume on another model, and one-command setup - 2026-11-11
 

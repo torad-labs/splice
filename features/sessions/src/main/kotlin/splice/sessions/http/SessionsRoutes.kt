@@ -37,6 +37,7 @@ import splice.sessions.note.PeerVersions
 import splice.sessions.projects.SessionProjects
 import splice.sessions.registry.RepoResolver
 import splice.sessions.registry.RepoRoot
+import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRoute
 import splice.sessions.registry.SessionSource
@@ -166,9 +167,10 @@ public class SessionsRoutes(
     /** Each row's last, model and title, kept against its transcript file's stamp. */
     private val transcriptFields = RowTranscriptFields(transcripts, viewEnabled, titleOf)
 
-    public fun sessionsJson(): String = asks.listing().use { listingJson() }
+    /** [held] is the mark of the gone sessions' rows the reader already holds, from an earlier answer's `gone_mark`. */
+    public fun sessionsJson(held: String? = null): String = asks.listing().use { listingJson(held) }
 
-    private fun listingJson(): String = buildJsonObject {
+    private fun listingJson(held: String?): String = buildJsonObject {
         val listing = registry.list()
         val rowFacts = facts.forRecords(listing.sessions)
         val bound = BoundTeams(teams())
@@ -180,10 +182,13 @@ public class SessionsRoutes(
         put("note_versions", buildJsonArray { noteVersions.forEach { add(JsonPrimitive(it)) } })
         // An unreadable directory is not an empty one: the error rides beside the (empty) list.
         listing.error?.let { put("error", it) }
-        put(
-            "sessions",
-            buildJsonArray { listing.sessions.forEach { add(row(it, rowFacts, bound)) } },
+        val rows = GoneSessionRows(
+            listing.sessions.map { ListedRow(it.availability == SessionAvailability.GONE, row(it, rowFacts, bound)) },
         )
+        // A reader that holds the gone sessions' rows under this mark is sent the sessions still here alone.
+        put("gone_mark", rows.mark)
+        if (rows.heldBy(held)) put("gone_held", true)
+        put("sessions", buildJsonArray { rows.owed(held).forEach { add(it) } })
     }.toString()
 
     /** GET /api/sessions/{id}/transcript?cursor=&limit= reads forward from the start. `before=` reads the newest messages

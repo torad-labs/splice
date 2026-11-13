@@ -57,6 +57,16 @@ jobs:
           ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
           ACTIONS_ID_TOKEN_REQUEST_URL: ""
         run: bun tools/gate/src/ci-coverage/run.ts ${{ matrix.shard }}
+      # A load test that is about to fail writes a dump of every thread beside its report. On Nov 13, 2026 a shard
+      # failed in one and the dump went with the runner.
+      - name: Keep a failed test's thread dump
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-thread-dumps-${{ github.run_attempt }}-${{ matrix.shard }}
+          path: "**/build/reports/tests/*-threads.json"
+          retention-days: 3
+          if-no-files-found: ignore
       - name: Keep Kover binary data
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

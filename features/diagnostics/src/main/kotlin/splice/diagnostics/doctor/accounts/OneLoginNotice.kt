@@ -16,7 +16,7 @@ import splice.upstream.credentials.AccountResetText
 import kotlin.math.roundToInt
 
 // why: a provider reports a window that is spent as 100.
-private const val USED_UP_PERCENT = 100.0
+internal const val USED_UP_PERCENT = 100.0
 
 /** What is said of [head]'s one [login], which a person knows as [name], at [atSeconds]. */
 internal class OneLoginNotice(
@@ -39,6 +39,20 @@ internal class OneLoginNotice(
 
     /** That the login is out, or near a limit past a mark; null below the first mark and with no window. */
     fun notice(): LoginNotice? = fullest?.let { if (it.percent >= USED_UP_PERCENT) out(it) else near(it) }
+
+    /** Below the first mark: that the login's fullest window fills fast enough to be used up soon ([LoginPace]). */
+    fun soon(pace: LoginPace): LoginNotice? = fullest?.takeIf { it.percent < NEAR_MARK }?.let { window ->
+        val key = "$head|login|${window.words}"
+        pace.usedUpSoon(key, window, atSeconds)?.let { usedUpAt ->
+            LoginNotice(
+                head,
+                "$key|$LOGIN_NOTICE_SOON",
+                "$head has one login, and $name has used ${window.percent.roundToInt()}% of its ${window.words}. " +
+                    "At the pace it is being used it runs out around ${AccountResetText.forPerson(usedUpAt)}. " +
+                    "When it does, sessions on $head wait.",
+            )
+        }
+    }
 
     /** That the login can serve again; null while a window reads used up. */
     fun back(): LoginNotice? = LoginNotice(

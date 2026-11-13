@@ -30,6 +30,9 @@ import kotlin.time.Duration.Companion.milliseconds
 public const val LOGIN_NOTICE_NONE: String = "none"
 public const val LOGIN_NOTICE_BACK: String = "back"
 
+/** How the key ends of the notice that the last login runs out soon at the pace it is being used. */
+internal const val LOGIN_NOTICE_SOON = "soon"
+
 // why: below any reading a provider gives, so a login with a reading of the week is the one an account is read by.
 private const val NO_READING = -1.0
 
@@ -45,11 +48,14 @@ public data class LoginNotice(public val head: String, public val key: String, p
 public class LoginNotices(private val now: WallClock = WallClock { System.currentTimeMillis() }) {
     private val roster = AccountRosterProjection()
 
+    /** The readings of each last login's window, one a call of [of]: what a notice about the time left is read from. */
+    private val pace = LoginPace()
+
     /** The notice each command of [accountsJson], the daemon's own /api/accounts body, calls for now: none for a
      *  command with two or more logins that can serve, and none for a body this build cannot read. */
     public fun of(accountsJson: String): List<LoginNotice> = read(accountsJson)?.let { read ->
-        pooled(read) { asked, blockedUntil, names -> asked.notice(blockedUntil, names) } +
-            alone(read).mapNotNull(OneLoginNotice::notice)
+        pooled(read) { asked, blockedUntil, names -> asked.notice(blockedUntil, names, pace) } +
+            alone(read).mapNotNull { it.notice() ?: it.soon(pace) }
     }.orEmpty()
 
     /** For each command and model [accountsJson] shows a login able to serve now, the notice that says so. It is for a
@@ -115,13 +121,13 @@ private class AskedOfLogins(
         login.quota.sevenDayModels.firstOrNull { it.weekOf(model) && it.runsAt(atSeconds) }
 
     /** What the logins call for saying: nothing while two or more accounts can serve, or for a command with one. */
-    fun notice(blockedUntil: Map<String, Long>, names: Map<String, String>): LoginNotice? {
+    fun notice(blockedUntil: Map<String, Long>, names: Map<String, String>, pace: LoginPace): LoginNotice? {
         val open = accounts.filter(::serves)
         val last = open.singleOrNull()?.let(::read)
         return when {
             accounts.size < 2 || open.size > 1 -> null
             last == null -> none(blockedUntil)
-            else -> near(last, names[last.label] ?: last.label)
+            else -> near(last, names[last.label] ?: last.label, pace)
         }
     }
 
@@ -150,8 +156,9 @@ private class AskedOfLogins(
         return !held && week(login)?.usedUp != true
     }
 
-    /** [login] is the last that can serve: a notice once its fullest running window has passed a mark. */
-    private fun near(login: HeadAccountView, name: String): LoginNotice? {
+    /** [login] is the last that can serve: a notice once its fullest running window has passed a mark, and below
+     *  the first mark one when that window fills fast enough to be used up soon ([LoginPace]). */
+    private fun near(login: HeadAccountView, name: String, pace: LoginPace): LoginNotice? {
         val quota = login.quota
         val windows = listOfNotNull(
             week(login)?.let { LimitWindow("${it.model} week", it.usedPercent, it.resetsAt) },
@@ -159,16 +166,27 @@ private class AskedOfLogins(
             quota.fiveHour.usedPercent?.let { LimitWindow("5-hour limit", it, quota.fiveHour.resetEpochSeconds) },
         ).filter { it.resetsAt == null || it.resetsAt > atSeconds }
         val fullest = windows.maxByOrNull { it.percent } ?: return null
-        val mark = listOf(NEAR_MARK, LAST_MARK).lastOrNull { fullest.percent >= it } ?: return null
+        val key = "$head|$modelWords|${login.label}|${fullest.words}"
+        val mark = listOf(NEAR_MARK, LAST_MARK).lastOrNull { fullest.percent >= it }
+            ?: return pace.usedUpSoon(key, fullest, atSeconds)?.let { soon(name, fullest, key, it) }
         val resets = fullest.resetsAt?.let { ", which resets ${AccountResetText.forPerson(it)}" }.orEmpty()
         return LoginNotice(
             head,
-            "$head|$modelWords|${login.label}|${fullest.words}|$mark",
+            "$key|$mark",
             "$head is on its last login that can serve $modelWords: $name has used " +
                 "${fullest.percent.roundToInt()}% of its ${fullest.words}$resets. When it runs out, sessions asking " +
                 "for $modelWords wait.",
         )
     }
+
+    /** The last login that can serve, [name], runs out at [usedUpAt] at the pace its [fullest] window is filling. */
+    private fun soon(name: String, fullest: LimitWindow, key: String, usedUpAt: Long): LoginNotice = LoginNotice(
+        head,
+        "$key|$LOGIN_NOTICE_SOON",
+        "$head is on its last login that can serve $modelWords: $name has used " +
+            "${fullest.percent.roundToInt()}% of its ${fullest.words}. At the pace it is being used it runs out " +
+            "around ${AccountResetText.forPerson(usedUpAt)}. When it does, sessions asking for $modelWords wait.",
+    )
 
     /** No login can serve: said with when the first comes back, by the pool's own hold times and the model's weeks. */
     private fun none(blockedUntil: Map<String, Long>): LoginNotice {

@@ -40,14 +40,20 @@ updates:
       default-days: 7
       semver-major-days: 30
     ignore:
+      # Dependabot does not bump the Kotlin compiler/toolchain: a Kotlin release that CodeQL's Kotlin extractor does
+      # not read yet fails CodeQL (KotlinVersionTooRecentError, see #18/#37), a required check, and Kotlin releases
+      # run ahead of it. Kotlin is bumped by hand, after reading the versions the pinned CodeQL bundle lists
+      # (github/codeql java/kotlin-extractor/versions.bzl): 2.3.21 to 2.4.21 on 2026-11-13, when 2.27.3 listed 2.4.20.
+      # The gate's scope guard (tools/gate/src/lib/dependabot.ts) requires these two lines.
+      # The block is group-scoped to the Kotlin compiler/toolchain only; org.jetbrains.kotlinx.* is
+      # intentionally released into gradle-minor-patch.
+      - dependency-name: "org.jetbrains.kotlin:*"   # group:artifact form: kotlin-stdlib, kotlin-compiler-embeddable (CodeQL Kotlin block, #18/#37)
+      - dependency-name: "org.jetbrains.kotlin.*"   # plugin-id + marker forms: org.jetbrains.kotlin.jvm, .plugin.serialization, and any future org.jetbrains.kotlin.* plugin (e.g. .plugin.compose)
       # protobuf-java stays on its ABI-compatible 3.x line beside the current gRPC (gradle/libs.versions.toml,
       # "protobuf stays on its ABI-compatible 3.x line"); 4.x changes the runtime ABI that code mode's
       # DynamicMessage/Descriptors callers bind to (PR #433 closed, 2026-11-02).
       - dependency-name: "com.google.protobuf:protobuf-java"
         update-types: ["version-update:semver-major"]
-      # Kotlin was held on 2.3.x here from 2026-07-24 to 2026-11-13, while CodeQL's Kotlin extractor refused 2.4
-      # (KotlinVersionTooRecentError, #18/#37). CodeQL reads 2.4.0 since 2.26.0, and its 2.27.3 lists 2.4.20. A hold like
-      # that one names the CodeQL version that ends it, so the next reader can check it in one look.
       # kotlinx-serialization 1.12.0 is held in the catalog (its JVM parser caps nesting at 400) and cannot be
       # ignored here: the gate's Dependabot scope guard forbids any glob that matches a kotlinx name.
     groups:

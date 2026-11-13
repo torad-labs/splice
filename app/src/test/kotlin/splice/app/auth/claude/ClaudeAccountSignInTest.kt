@@ -15,6 +15,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -57,20 +58,37 @@ class ClaudeAccountSignInTest {
 
     private fun folders(): ClaudeAccountFolders = ClaudeAccountFolders(state, WallClock { clock })
 
-    /** The sign-in under test, with a fixture child that writes [account] into whatever folder it is pointed at. */
-    private fun signIn(scope: CoroutineScope, child: NativeLoginTestProcess, account: String?): ClaudeAccountSignIn {
+    /** The next sign-in's fixture child, and the account it writes into whatever folder it is pointed at. */
+    @Volatile
+    private var child: NativeLoginTestProcess? = null
+
+    @Volatile
+    private var account: String? = null
+
+    private val scope = CoroutineScope(SupervisorJob() + ProcessDispatchers().io())
+
+    /** One sign-in store for every [add] of a test, as a daemon has one. A sign-in on a label waits there for the
+     *  one before it to let go of the label's pending folder. With a store of its own for each sign-in nothing
+     *  ordered them: the first one's folder goes after its job is over, which is after a join on it answers, and it
+     *  could take the folder the second had just written into. On Nov 13, 2026 main's CI read "expected:
+     *  <OTHER_ACCOUNT> but was: <NOT_COMPLETED>" for a second sign-in on one label (verify jvm-1). */
+    private val owner by lazy {
         val auth = NativeClaudeAuth(
             WrapStateRead { ClaudeToRun.Wrapped("fixture-native") },
             emptyMap(),
             ProcessDispatchers().io(),
             NativeAuthStart { builder ->
                 val dir = builder.environment()["CLAUDE_CONFIG_DIR"]?.let(Path::of)
-                if (dir != null && account != null) write(dir, account)
-                child
+                val signedIn = account
+                if (dir != null && signedIn != null) write(dir, signedIn)
+                checkNotNull(child)
             },
         )
-        return ClaudeAccountSignIn(folders(), auth, scope)
+        ClaudeAccountSignIn(folders(), auth, scope)
     }
+
+    @AfterEach
+    fun stop() = runBlocking { scope.coroutineContext[Job]!!.cancelAndJoin() }
 
     private fun write(directory: Path, account: String, token: String = "synthetic-$account") {
         Files.createDirectories(directory)
@@ -88,23 +106,15 @@ class ClaudeAccountSignInTest {
 
     /** Runs one sign-in to its end and returns its final status. */
     private fun add(head: String, label: String?, account: String?): LoginStatus = runBlocking {
-        val scope = CoroutineScope(SupervisorJob() + ProcessDispatchers().io())
-        val child = NativeLoginTestProcess(BROWSER)
-        try {
-            val started = signIn(scope, child, account).let { owner ->
-                val status = owner.start(head, label)
-                withTimeout(5_000) { while (owner.poll(status.id)?.state == LoginState.STARTING) yield() }
-                child.finish(0)
-                withTimeout(5_000) {
-                    while (owner.poll(status.id)?.state == LoginState.WAITING) yield()
-                }
-                owner.poll(status.id)!!
-            }
-            clock += 1
-            started
-        } finally {
-            scope.coroutineContext[Job]!!.cancelAndJoin()
-        }
+        val next = NativeLoginTestProcess(BROWSER)
+        child = next
+        this@ClaudeAccountSignInTest.account = account
+        val status = owner.start(head, label)
+        withTimeout(5_000) { while (owner.poll(status.id)?.state == LoginState.STARTING) yield() }
+        next.finish(0)
+        withTimeout(5_000) { while (owner.poll(status.id)?.state == LoginState.WAITING) yield() }
+        clock += 1
+        owner.poll(status.id)!!
     }
 
     /** A sign-in store whose sign-ins each run the next of [children], open for [check] and torn down after it. */

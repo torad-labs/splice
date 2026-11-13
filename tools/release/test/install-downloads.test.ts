@@ -3,6 +3,8 @@
 // release from splice.torad.ai/download, never from github.com.
 // A default install takes the newest stable from /latest, a pinned SPLICE_VERSION takes that version's own folder,
 // and a prebuilt jar with no launcher beside it fetches the launcher of its own release from that release's folder.
+// A release that lists a jar for the machine's platform is installed from that jar (about 210 MB where splice.jar,
+// which holds all four platforms, is about 476 MB); the sums are read first, since they say which jars a release has.
 //
 // The network is faked the way `release accept` fakes it: a `curl` that serves the release's files by name and logs
 // every URL, so the URLs are the assertion. The release is synthetic, as in install-provenance.test.ts.
@@ -41,6 +43,23 @@ function release(): string {
   return dir;
 }
 
+/** The name a release gives this machine's own jar, or null where it publishes none (an Intel Mac). */
+function platformJar(): string | null {
+  const system = process.platform === "linux" ? "linux" : process.platform === "darwin" ? "darwin" : null;
+  const machine = process.arch === "x64" ? "amd64" : process.arch === "arm64" ? "aarch64" : null;
+  return system && machine && `${system}-${machine}` !== "darwin-amd64" ? `splice-${system}-${machine}.jar` : null;
+}
+
+/** A release that also lists a jar for each platform an installer runs on. */
+function perPlatformRelease(): string {
+  const dir = release();
+  const names = ["splice-linux-amd64.jar", "splice-linux-aarch64.jar", "splice-darwin-aarch64.jar"];
+  for (const name of names) writeFileSync(join(dir, name), JAR);
+  const lines = names.map((name) => `${sha(JAR)}  ${name}\n`).join("");
+  writeFileSync(join(dir, "sha256sums.txt"), `${sha(JAR)}  splice.jar\n${lines}${sha(SHIM)}  splice-launch\n`);
+  return dir;
+}
+
 /** java, node and claude as the installer needs them, ahead of the machine's own. */
 function fakes(): string {
   const dir = mkdtempSync(join(tmpdir(), "install-downloads-fakes-"));
@@ -67,14 +86,14 @@ const NETWORK = fakeNetwork();
 cleanup.push(NETWORK.dir);
 
 /** One install with the fake network; the URLs curl was asked for, in order. */
-function install(env: Record<string, string>): { urls: string[]; output: string; ok: boolean } {
+function install(env: Record<string, string>, assets: string = ASSETS): { urls: string[]; output: string; ok: boolean } {
   const box = makeSandbox("install-downloads-");
   cleanup.push(box.dir);
   const curlLog = join(box.dir, "curl.log");
   const ghLog = join(box.dir, "gh.log");
-  const result = runInstall(ASSETS, box, {
+  const result = runInstall(assets, box, {
     ...sandboxEnv(box),
-    SPLICE_FAKE_RELEASE_ASSETS: ASSETS,
+    SPLICE_FAKE_RELEASE_ASSETS: assets,
     SPLICE_FAKE_CURL_LOG: curlLog,
     SPLICE_FAKE_GH_LOG: ghLog,
     SPLICE_RELEASE_BASE_URL: "",
@@ -89,21 +108,28 @@ describe("install.sh downloads from splice.torad.ai", () => {
   test("a default install takes the newest stable release from /latest", () => {
     const run = install({});
     expect(run.ok, run.output).toBe(true);
-    expect(run.urls).toEqual([`${HOST}/latest/splice.jar`, `${HOST}/latest/sha256sums.txt`, `${HOST}/latest/splice-launch`]);
+    expect(run.urls).toEqual([`${HOST}/latest/sha256sums.txt`, `${HOST}/latest/splice.jar`, `${HOST}/latest/splice-launch`]);
+  });
+
+  test("a release that lists this platform's jar is installed from it, not from the jar of all four", () => {
+    const run = install({}, perPlatformRelease());
+    expect(run.ok, run.output).toBe(true);
+    const jar = platformJar() ?? "splice.jar";
+    expect(run.urls).toEqual([`${HOST}/latest/sha256sums.txt`, `${HOST}/latest/${jar}`, `${HOST}/latest/splice-launch`]);
   });
 
   test("a pinned stable SPLICE_VERSION takes every file from that version's folder", () => {
     const pinned = "v9.9.9";
     const run = install({ SPLICE_VERSION: pinned });
     expect(run.ok, run.output).toBe(true);
-    expect(run.urls).toEqual([`${HOST}/${pinned}/splice.jar`, `${HOST}/${pinned}/sha256sums.txt`, `${HOST}/${pinned}/splice-launch`]);
+    expect(run.urls).toEqual([`${HOST}/${pinned}/sha256sums.txt`, `${HOST}/${pinned}/splice.jar`, `${HOST}/${pinned}/splice-launch`]);
   });
 
   test("a pinned prerelease SPLICE_VERSION takes every file from that version's folder", () => {
     const pinned = "v9.8.7-beta.6";
     const run = install({ SPLICE_VERSION: pinned });
     expect(run.ok, run.output).toBe(true);
-    expect(run.urls).toEqual([`${HOST}/${pinned}/splice.jar`, `${HOST}/${pinned}/sha256sums.txt`, `${HOST}/${pinned}/splice-launch`]);
+    expect(run.urls).toEqual([`${HOST}/${pinned}/sha256sums.txt`, `${HOST}/${pinned}/splice.jar`, `${HOST}/${pinned}/splice-launch`]);
   });
 
   test("a prebuilt jar with no launcher beside it fetches its own release's launcher", () => {

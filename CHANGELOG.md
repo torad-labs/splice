@@ -235,6 +235,15 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   command's windows.
 
 ### Changed
+- **A release publishes one jar per platform beside `splice.jar`.** `splice.jar` holds the code-mode isolate and
+  the native code-mode host of all four platforms, about 476 MB. Each platform's own jar
+  (`splice-linux-amd64.jar`, `splice-linux-aarch64.jar`, `splice-darwin-aarch64.jar`,
+  `splice-windows-amd64.jar`) is that jar with the other three cut out, about 210 MB: entry for entry what a
+  build for that platform alone holds, its bill of materials and license list included. `install.sh` and
+  `splice upgrade` take their platform's jar when the release lists one and `splice.jar` when it does not, so a
+  release before this one, and a platform with no jar of its own (an Intel Mac), install as they did.
+  `splice.jar` stays: every install up to 0.4.0 upgrades by that name. A release's files take about 1.3 GB where
+  they took about 0.5 GB.
 - **A restart stops new requests for about 2.4 seconds less when splice is running an MCP server.** The retiring
   daemon waited for its MCP server processes to end after its commands had stopped taking turns, so that wait was
   part of the pause before the next daemon serves. It now ends them first, while turns are still answered. On

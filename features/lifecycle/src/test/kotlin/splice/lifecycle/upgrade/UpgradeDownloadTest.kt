@@ -6,6 +6,7 @@ package splice.lifecycle.upgrade
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -247,5 +248,45 @@ internal class UpgradeDownloadTest {
         assertTrue(reason.startsWith("sha256 verification FAILED for splice.jar (expected "), reason)
         assertEquals(emptyList<String>(), files(staging), "no jar and no part file in staging")
         assertTrue(printed.any { it.endsWith("downloading 1.0 MB") }, "$printed")
+    }
+
+    @Test
+    fun `a stage takes this platform's jar when the release lists it, and the jar of all four when it does not`(
+        @TempDir dir: Path,
+    ) {
+        server.executor = pool
+        val own = "this platform's jar".toByteArray()
+        val asked = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val sums = "${sha(body)}  splice.jar\n${sha(own)}  splice-linux-amd64.jar\n${sha(body)}  splice-launch\n"
+        val files = mapOf(
+            "/v9/sha256sums.txt" to sums.toByteArray(),
+            "/v9/splice-linux-amd64.jar" to own,
+            "/v9/splice.jar" to body,
+            "/v9/splice-launch" to body,
+        )
+        files.forEach { (path, bytes) ->
+            server.createContext(path) { exchange ->
+                asked += exchange.requestURI.path
+                exchange.sendResponseHeaders(200, bytes.size.toLong())
+                exchange.responseBody.write(bytes)
+                exchange.close()
+            }
+        }
+        server.start()
+        val base = "http://127.0.0.1:${server.address.port}/v9"
+        val process = UpgradeProcess { _, _ -> UpgradeExit(0, "splice 0.3.9") }
+        val quiet = TerminalOutput { }
+        val listed = dir.resolve("listed")
+        UpgradeRelease(quiet, JdkUpgradeFetch(pacing), process, "java", PlatformJarName("Linux", "amd64"))
+            .stage(base, listed, attest = false)
+        assertEquals(own.decodeToString(), Files.readString(listed.resolve("splice.jar")), "it lands as the one jar")
+        assertFalse("/v9/splice.jar" in asked, "the jar of all four is not downloaded: $asked")
+
+        asked.clear()
+        val unlisted = dir.resolve("unlisted")
+        UpgradeRelease(quiet, JdkUpgradeFetch(pacing), process, "java", PlatformJarName("Mac OS X", "x86_64"))
+            .stage(base, unlisted, attest = false)
+        assertArrayEquals(body, Files.readAllBytes(unlisted.resolve("splice.jar")), "a platform with no jar of its own")
+        assertTrue("/v9/splice.jar" in asked, "$asked")
     }
 }

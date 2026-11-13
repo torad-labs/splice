@@ -28,6 +28,7 @@ daemon.mcp_hosting
 daemon.mcp_hosting_exclude	
 daemon.mcp_share	
 daemon.mirror_reasoning	
+daemon.refresh_prices	
 daemon.replay_reasoning	
 daemon.show_reasoning	
 daemon.state_dir	

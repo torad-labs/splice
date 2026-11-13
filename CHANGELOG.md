@@ -5,6 +5,16 @@
 Changes on main since v0.4.0. They take a version's heading when that version is cut.
 
 ### Added
+- **Prices follow the project between releases.** splice priced a turn from the table of vendor prices in its
+  build, so a model released after the build had no price, and a changed price was wrong, until the next
+  release. Once an hour the daemon now fetches that table from the project's main branch on
+  `raw.githubusercontent.com` and uses it in place of the copy in the build. It is one anonymous request: no
+  token, and nothing about the machine, its accounts or its sessions. A file that does not read as the table, is
+  larger than a price table can be, or is older than the one in use is ignored. A past hour that had turns with
+  no price is priced again once the table has one. `[daemon] refresh_prices = false` turns it off.
+  `splice status` says which table is in use and when it was fetched, and setup's last screen names the
+  request. The table can also name a newer Claude Code that a release was run against, so the "newer than the
+  version splice was tested with" line goes away for that release without a new build.
 - **splice tells you when a command is on its last login.** A command with several logins moves to the next when
   a plan limit is reached, and nothing said when it reached the last. On Nov 12, 2026 every Claude login on one
   machine ran out of Fable one after another and eleven sessions waited three hours, while the person had resets

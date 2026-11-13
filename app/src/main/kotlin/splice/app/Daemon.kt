@@ -97,6 +97,10 @@ public class Daemon(
     private val mgmtKey = MgmtKey(statePaths)
     private val clientVersions = ClientVersionTracker()
 
+    // Nov 12, 2026: the price table follows the project's main branch between releases (PriceRefresh). The table the
+    // last refresh kept is taken here, before any catalog below takes a price, when it is not older than this build's.
+    private val prices = LifecycleWiring.priceRefresh(statePaths, topologyPath, log).also { it.seed() }
+
     /** The topology's directory: a relative `system_prompt_file` or `[compaction] file =` resolves
      *  against it. Hoisted above [controlPlane] (V4-136) because the shared compaction resolver
      *  below needs it, and that resolver is handed to the control plane. */
@@ -303,6 +307,7 @@ public class Daemon(
         ) ?: return share.close()
         // MCP hub step 6: each installed Claude Code version's --plugin-dir-no-mcp verdict, checked in the background.
         controlPlane.pluginFlagChecks.request()
+        prices.start()
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
     }
@@ -376,6 +381,7 @@ public class Daemon(
      *  means a SingleFlight token refresh raised by a turn still streaming inside the drain is cancelled by a job
      *  that turn does not own — a foreign CancellationException in a live turn. */
     private suspend fun closeBackground() {
+        prices.close()
         headProbes.stop()
         managedHeadFactory.closeEvidenceLoads()
         controlPlane.cancelProbes()

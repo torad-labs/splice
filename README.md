@@ -294,6 +294,24 @@ the budget can read low.
   saved in the alert settings, if there is one. On Accounts, the command's Day meter fills and shows its
   bell. Nothing else announces it: desktop alerts are not delivered, and the status line shows no budget.
 
+### Where a price comes from
+
+A turn is priced with the first of these that exists: the rate card you declared for the model or the command in
+`splice.toml`, the price the provider's own model list publishes, and splice's table of each vendor's published
+price. A model with none of the three is counted as unpriced.
+
+The table ships in the build. Once an hour the daemon also fetches it from the project's main branch on
+`raw.githubusercontent.com`, so a new model is priced and a changed price is right without waiting for a release.
+That is one anonymous request: no token, and nothing about your machine, your accounts or your sessions. A file
+that does not read as the table, or is older than the one in use, is ignored. To turn it off:
+
+```toml
+[daemon]
+refresh_prices = false
+```
+
+`splice status` says which table is in use: the copy in the build, or the one fetched, with when it was fetched.
+
 ## The splice manager
 
 The composer at the bottom of the console is the door to one Claude Code session, the splice manager. It runs in `manager/`, a folder inside splice's global settings folder (the one that holds `splice.toml`, usually `~/.config/splice`), and its job is to help you run splice: read its status and logs, explain what it sees, change its configuration when you ask, and message your other sessions for you through Claude Code's own `ListAgents` and `SendMessage`. The composer itself never messages other sessions. There is one manager: the console resumes it when it exists, and asks before starting it the first time, along with the head it runs on. Changing the head later keeps the conversation.
@@ -697,6 +715,7 @@ These files hold settings and statistics. Custom compaction instructions and tea
 | `~/.splice/state/account-names.json` | The names you gave logins on Accounts, each against its ref (the first 8 hex of a hash of the account id, which cannot be read back); never an email, an account id or a credential | Only you (0600) | Until you rename the login or clear its name | `AccountNameStore.kt` |
 | `<primary directory>/<kind>/<primary file>/primary.name` | The name you gave a command's first ChatGPT, Grok, Kimi or Muse account on Accounts; no credentials. It sits beside the pool rather than in the credential, which can be the vendor CLI's own file | Only you (0600) | Until you rename the account again or remove it | `OAuthPrimaryAccount.kt` |
 | `~/.config/splice/key-ledger.json` and `key-ledger.json.unreadable-<epoch>` | Each API key variable's keys by a short fingerprint, never the key, with the day splice first saw each one, so Accounts can mark a key you replaced. A ledger splice cannot read is moved to the `.unreadable-<epoch>` copy, once, and a new one starts | Only you (0600) | Grows by one entry each time a variable's key changes; an `.unreadable-<epoch>` copy stays until you delete it | `KeyLedger.kt` |
+| `~/.splice/state/published-rates.tsv` | splice's price table as the project's main branch last served it: each vendor's published price per model, and the day the table last changed. Public data; nothing of yours | Only you (0600) | Replaced at each hourly look that fetched a table splice could read; kept when `refresh_prices = false`, and read at a start unless it is older than the table in the build | `PriceRefresh.kt` |
 | `~/.splice/state/login-alerts.json` | Which notices about a command's last login were already sent, so each is sent once: a short key per notice naming the command, the model, the login's pool label, the limit and the mark (such as `claude-splice\|claude-fable-5-2\|account-5\|Fable week\|80`), and a short hash of the `alert_command` that was sent its first line; no credentials, no account names | Only you (0600) | Written at the first check once an alert command or webhook is set, then when a notice is sent, and when one is forgotten half an hour after it stops applying | `LoginAlerting.kt` |
 | `~/.splice/state/budgets.json`, `alerts.json` (and their `.bak`) | Daily API-rate estimate budgets per head; alert settings, including a webhook URL, which can carry its own secret | Only you (0600) | Until changed; `.bak` is the version before | `BudgetStore.kt`, `AlertStore.kt` |
 | `~/.splice/state/activity/edges-<day>.jsonl`, `.jsonl.lock` and `.jsonl.1` | Which session sent a message to which, and when; never the message's text. `messageEdges = "false"` stops new edges after restart | Only you | `activityRetentionDays` (default 90, at least 2): a day is deleted at the UTC midnight it leaves that window (within 10 minutes of waking, if the computer slept through it), or at the next daemon start if splice was stopped. `DELETE /api/kept/edges` deletes retained rows now. A history-window cut deletes the edges observed before the moment you are reading, which is not a whole number of UTC days, so the one day that straddles it is rewritten to a `.cut` sibling and moved over the original in one step: a reader sees the whole old day or the whole new one, a row splice cannot read is kept, and a session bound to a team that is still going keeps its edges | `ActivityStores.kt`, `DayLinesKept.kt` |

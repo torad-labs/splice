@@ -6,6 +6,8 @@ import splice.core.GATEWAY_VERSION
 import splice.core.TESTED_CLAUDE_CODE
 import splice.core.client.ClientVersion
 import splice.core.client.ClientVersionParser
+import splice.core.model.PublishedRates
+import splice.core.model.TestedClient
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicReference
@@ -14,16 +16,33 @@ import java.util.concurrent.atomic.AtomicReference
  *  and the oldest are the ones whose warning was long since shown or moot (review 2026-09-14). */
 private const val MAX_SESSIONS = 4_096
 
+/** The newest Claude Code a release was run against since this build was made, as the price table in use names it
+ *  (published-rates.tsv), or null when it names none. A test hands its own. */
+public fun interface LaterTested {
+    public fun named(): TestedClient?
+}
+
 /** Daemon-lifetime observations of the Claude Code versions sending message requests. */
 public class ClientVersionTracker(
     testedVersion: String = TESTED_CLAUDE_CODE,
     private val parser: ClientVersionParser = ClientVersionParser(),
+    private val later: LaterTested = LaterTested { PublishedRates.table().tested },
 ) {
     private data class SeenClient(val version: ClientVersion, val userAgent: String?)
 
-    private val tested = requireNotNull(parser.parse(testedVersion)) {
+    private val builtWith = requireNotNull(parser.parse(testedVersion)) {
         "tested Claude Code version must be dotted numeric: $testedVersion"
     }
+    private val release = parser.parse(GATEWAY_VERSION)
+
+    /** The version this build was run against, or a later one the price table says this release passed with. A line
+     *  that names a release after this one says nothing of this one. */
+    private val tested: ClientVersion
+        get() = later.named()
+            ?.takeIf { named -> release != null && parser.parse(named.fromSplice)?.let { release >= it } == true }
+            ?.let { parser.parse(it.claudeCode) }
+            ?.takeIf { it > builtWith }
+            ?: builtWith
     private val observed = ConcurrentHashMap<String, ClientVersion>()
     private val newest = AtomicReference<SeenClient?>()
 

@@ -370,6 +370,9 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // Nov 12, 2026: which notices about a command's last login were already sent, owner-only, in the login-alerts
     // README row.
     "app/src/main/kotlin/splice/app/LoginAlerting.kt" to mapOf("writeAtomic0600(" to 1),
+    // Nov 12, 2026: the price table as the project's main branch last served it, owner-only, in the
+    // published-rates.tsv README row.
+    "features/lifecycle/src/main/kotlin/splice/lifecycle/prices/PriceRefresh.kt" to mapOf("writeAtomic0600(" to 1),
     // The hourly view's settled repricing kept across restarts, documented in the reprice README row.
     "app/src/main/kotlin/splice/app/sources/RepriceKept.kt" to mapOf("writeAtomic0600(" to 1),
     // The non-secret launcher declaration documented in the launch-owners README row.

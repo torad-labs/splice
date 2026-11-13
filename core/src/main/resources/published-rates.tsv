@@ -1,3 +1,11 @@
+# Lines that start with "#!" are read by splice; every other "#" line is for people.
+#   updated: the day this file last changed. Change it with every change to a row. A running daemon fetches this
+#     file from the main branch once an hour and uses it in place of the copy in its build unless the fetched copy's
+#     day is before its own. So a change here reaches every daemon within the hour: it is a release.
+#   tested_claude_code VERSION from_splice RELEASE (optional): the newest Claude Code that splice RELEASE was run
+#     against (tools/e2e/docker) and passed. That release and later ones then say they were tested with it.
+#   The header and its columns are read by daemons in the field: a new column goes in a new file, never here.
+#! updated 2026-11-12
 # Each vendor's own published API price, USD per million tokens, read Oct 10, 2026 (console-lead).
 # Re-read Oct 10, 2026 (splice-builder2) against each vendor page below, every row, every column: OpenAI, xAI, Meta, Kimi and
 #   DeepSeek all matched, so no price changed. GPT-5.6 Sol's price is a PROMOTION the OpenAI page says holds "at least through

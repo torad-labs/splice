@@ -121,6 +121,7 @@ Source: core/src/main/kotlin/splice/core/topology/LanShareConfig.kt; splice.exam
 | `mcp_share` | bool | absent reads as true | one shared copy of each server, or one per session | live |
 | `update_channel` | string | absent reads as `"stable"` | `"stable"` or `"beta"` (prereleases too) | live |
 | `auto_update` | bool | absent reads as false | install newer releases on the channel by itself | live |
+| `refresh_prices` | bool | absent reads as true | fetch splice's price table from the project's main branch on `raw.githubusercontent.com` once an hour (one anonymous request); false keeps the table in the build, or the last one fetched | live |
 | `alert_command` | array of strings | empty | a program of the person's own, run with no shell, the message on its standard input and its output discarded. It runs when a command with two or more logins is on the last one that can serve the model its sessions ask for and that login passes 80% and then 95% of a limit, and when no login can serve it; each is said once, and again only when it returns after half an hour of not applying; a command set for the first time is sent one line saying so. Set only in this file: no route or console page writes it | restart |
 
 `fold_reasoning_models`, `fold_max_continue`, `fold_marker_text` and `fold_max_tier` were retired in 0.4.0: splice

@@ -18,6 +18,7 @@ import splice.daemonclient.DaemonProbe.HealthView
 import splice.diagnostics.doctor.AccountPoolRead
 import splice.diagnostics.doctor.JdkAccountPoolRead
 import splice.topology.TopologyLoader
+import splice.topology.TopologyStatePaths
 
 /** The `status` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources
  *  carry no top-level functions). Also the home of the two credential-presence predicates doctor
@@ -78,6 +79,13 @@ internal class StatusCommand(
         // them knows they are here. Above the heads they read as though something were wrong.
         println("  " + palette.paint(palette.quiet, "config   ${TopologyLoader.configPath()}"))
         println("  " + palette.paint(palette.quiet, "jar      ${jarLine()}"))
+        // Nov 12, 2026: the daemon fetches its price table once an hour, so the table in use and where it came from
+        // are said where a person looks.
+        val prices = PriceTableLine(
+            TopologyStatePaths(envReader).of(topology).publishedRatesFile,
+            on = topology.daemon.refreshPrices != false,
+        )
+        println("  " + palette.paint(palette.quiet, prices.line()))
         // The console is named here because nothing a person runs on a new install named it (Nov 11, 2026): the
         // installer, setup's last screen and this one all left `splice console` to be found in the usage line.
         val console = "console  splice console opens accounts, models and usage in a browser"

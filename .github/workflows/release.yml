@@ -64,7 +64,7 @@ jobs:
 
       - name: setup java
         # Cache derives from reviewed main code; the attestation chain is the integrity control.
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0 # zizmor: ignore[cache-poisoning]
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
           distribution: temurin
           java-version: '21'
@@ -244,7 +244,7 @@ jobs:
         # Draft first, as before: attestations complete before anything goes public. The draft stays a draft here.
         # `bun tools/release publish` publishes it once splice.torad.ai serves every file, so the notes never name a
         # release nobody can download yet.
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.2 # zizmor: ignore[superfluous-actions]
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.2 # zizmor: ignore[superfluous-actions]
         with:
           draft: true
           prerelease: ${{ contains(needs.build.outputs.version, '-') }}

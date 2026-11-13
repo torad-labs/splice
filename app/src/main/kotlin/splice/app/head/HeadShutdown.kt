@@ -10,6 +10,7 @@ package splice.app.head
 
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
@@ -80,7 +81,7 @@ internal class HeadShutdown(
 
     /** #523: the hand-over's head phase. Every head at once stops taking turns, cuts the ones its upstream has not
      *  begun answering and closes its books; a head that can finish its answers beside the next daemon keeps them
-     *  running. Then control stops. Returns how many turns are still being answered. */
+     *  running. Control stops beside them. Returns how many turns are still being answered. */
     internal suspend fun retireHeads(
         heads: Collection<Head>,
         budgetMs: Long,
@@ -90,11 +91,21 @@ internal class HeadShutdown(
         val kept = AtomicInteger(0)
         val began = System.nanoTime()
         withContext(stopDispatcher) {
-            withTimeoutOrNull(budgetMs) {
-                eachHead(heads, failureHandler(log), "retire", HeadStopStep { kept.addAndGet(it.retire()) })
+            supervisorScope {
+                // #525 (2026-11-13): the control server's stop waits out its grace, 100 ms, for the requests it is
+                // answering. It began once every head had retired, so each hand-over kept the daemon lock that much
+                // longer with nothing left to hand over, and every command's requests waited with it (106 to 130 ms
+                // after the last head's line at three restarts that day). It runs beside the heads' retire now. The
+                // next daemon's ask was answered, and what rides on the control listener was stopped, before the
+                // heads were asked to retire (Daemon.retire), so the hand-over itself has no request among them.
+                val control = async { stopControl() }
+                withTimeoutOrNull(budgetMs) {
+                    eachHead(heads, failureHandler(log), "retire", HeadStopStep { kept.addAndGet(it.retire()) })
+                }
+                // A control stop that failed is thrown here, once the heads have retired, as it was after them.
+                control.await()
             }
         }
-        stopControl()
         val tookMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - began)
         log("[daemon] retire: heads handed over and control closed at ${tookMs}ms, ${kept.get()} turn(s) finishing\n")
         return kept.get()

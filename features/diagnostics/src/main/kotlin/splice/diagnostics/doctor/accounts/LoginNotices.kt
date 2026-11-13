@@ -26,6 +26,13 @@ import splice.upstream.credentials.AccountResetText
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 
+/** How the key of the notice that no login can serve ends, and the key of the notice that one can again. */
+public const val LOGIN_NOTICE_NONE: String = "none"
+public const val LOGIN_NOTICE_BACK: String = "back"
+
+// why: below any reading a provider gives, so a login with a reading of the week is the one an account is read by.
+private const val NO_READING = -1.0
+
 // why: leaves time to act: at the pace of Nov 12, 2026, eleven sessions on one login, about 45 minutes.
 private const val NEAR_MARK = 80
 
@@ -40,17 +47,33 @@ public class LoginNotices(private val now: WallClock = WallClock { System.curren
 
     /** The notice each command of [accountsJson], the daemon's own /api/accounts body, calls for now: none for a
      *  command with two or more logins that can serve, and none for a body this build cannot read. */
-    public fun of(accountsJson: String): List<LoginNotice> {
+    public fun of(accountsJson: String): List<LoginNotice> = each(accountsJson) { asked, blockedUntil, names ->
+        asked.notice(blockedUntil, names)
+    }
+
+    /** For each command and model [accountsJson] shows a login able to serve now, the notice that says so. It is for a
+     *  command that was told it had none (Nov 12, 2026: a login was reset while sessions waited, and nothing said
+     *  the sessions had gone on, so the person logged in again by hand). Its key is the [LOGIN_NOTICE_NONE] notice's
+     *  with [LOGIN_NOTICE_BACK] in that place. */
+    public fun back(accountsJson: String): List<LoginNotice> =
+        each(accountsJson) { asked, _, names -> asked.back(names) }
+
+    private fun each(accountsJson: String, said: NoticeOf): List<LoginNotice> {
         val read = roster.read(accountsJson) as? AccountPoolsRead.Read ?: return emptyList()
         val atSeconds = now().milliseconds.inWholeSeconds
         return read.pools.flatMap { (head, view) ->
             val logins = view.accounts.filter { it.credential.present }
             (view.next.asked + listOfNotNull(view.usualModel)).distinct().mapNotNull { model ->
-                AskedOfLogins(head, model, atSeconds, logins)
-                    .notice(view.blockedUntilEpochSecondsByLabel, read.accountNames[head].orEmpty())
+                val asked = AskedOfLogins(head, model, atSeconds, logins, read.accountRefs[head].orEmpty())
+                said.of(asked, view.blockedUntilEpochSecondsByLabel, read.accountNames[head].orEmpty())
             }
         }.distinctBy { it.key }
     }
+}
+
+/** What is said of one command's logins for one model, given the pool's hold times and the logins' names. */
+private fun interface NoticeOf {
+    fun of(asked: AskedOfLogins, blockedUntil: Map<String, Long>, names: Map<String, String>): LoginNotice?
 }
 
 /** A window of the last login, by the words a person knows it by. */
@@ -62,7 +85,14 @@ private class AskedOfLogins(
     private val model: String,
     private val atSeconds: Long,
     private val logins: List<HeadAccountView>,
+    accountOf: Map<String, String>,
 ) {
+    /** The logins by the account each is a login of. A LIMIT IS AN ACCOUNT'S, so the notices count accounts: on Nov
+     *  12, 2026 Claude Code's own login was signed in to the account of a saved login, and the command read as
+     *  having two logins that could serve when it had one account. A login that proved no account stands alone. */
+    private val accounts: List<List<HeadAccountView>> =
+        logins.groupBy { accountOf[it.label] ?: "login:${it.label}" }.values.toList()
+
     /** The model as a person names it: its week's name on a login that reports one ("Fable"), else its id. */
     private val modelWords: String = logins.firstNotNullOfOrNull { login -> week(login)?.model } ?: model
 
@@ -70,20 +100,40 @@ private class AskedOfLogins(
     private fun week(login: HeadAccountView): ModelQuota? =
         login.quota.sevenDayModels.firstOrNull { it.weekOf(model) && it.runsAt(atSeconds) }
 
-    /** What the logins call for saying: nothing while two or more can serve, or for a command with one login. */
+    /** What the logins call for saying: nothing while two or more accounts can serve, or for a command with one. */
     fun notice(blockedUntil: Map<String, Long>, names: Map<String, String>): LoginNotice? {
-        val open = logins.filter(::servedBy)
-        val last = open.singleOrNull()
+        val open = accounts.filter(::serves)
+        val last = open.singleOrNull()?.let(::read)
         return when {
-            logins.size < 2 || open.size > 1 -> null
+            accounts.size < 2 || open.size > 1 -> null
             last == null -> none(blockedUntil)
             else -> near(last, names[last.label] ?: last.label)
         }
     }
 
+    /** An account can serve when a login of it is open and no login of it shows the model spent. */
+    private fun serves(account: List<HeadAccountView>): Boolean =
+        account.any { it.available } && account.all(::servedBy)
+
+    /** The login an account is read by: the one whose reading of the model's week is fullest, else its first. */
+    private fun read(account: List<HeadAccountView>): HeadAccountView =
+        account.maxByOrNull { week(it)?.usedPercent ?: NO_READING } ?: account.first()
+
+    /** That a login can serve again, named by the first that can; null while none can. */
+    fun back(names: Map<String, String>): LoginNotice? = accounts.firstOrNull(::serves)?.let(::read)?.let { login ->
+        LoginNotice(
+            head,
+            "$head|$modelWords|$LOGIN_NOTICE_BACK",
+            "$head has a login that can serve $modelWords again: ${names[login.label] ?: login.label}. " +
+                "Sessions that waited for it go on.",
+        )
+    }
+
+    /** Whether [login] shows the model open: no hold of it on the login, and its week not used up. A login that is
+     *  closed for another reason (a credential to renew) says nothing of its account's limits. */
     private fun servedBy(login: HeadAccountView): Boolean {
         val held = login.quota.holds.models.any { it.model == model && it.resetEpochSeconds > atSeconds }
-        return login.available && !held && week(login)?.usedUp != true
+        return !held && week(login)?.usedUp != true
     }
 
     /** [login] is the last that can serve: a notice once its fullest running window has passed a mark. */
@@ -112,7 +162,7 @@ private class AskedOfLogins(
         val first = back?.let { " The first comes back ${AccountResetText.forPerson(it)}." }.orEmpty()
         return LoginNotice(
             head,
-            "$head|$modelWords|none",
+            "$head|$modelWords|$LOGIN_NOTICE_NONE",
             "$head has no login that can serve $modelWords, so sessions asking for it are waiting.$first",
         )
     }

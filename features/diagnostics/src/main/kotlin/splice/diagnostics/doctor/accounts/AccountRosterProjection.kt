@@ -53,6 +53,7 @@ internal class AccountRosterProjection {
         return AccountPoolsRead.Read(views, native, refusals.unkeyed(byHead)).also {
             it.accountRefusals = refusals.keyed(byHead)
             it.accountNames = byHead.mapValues { (head, roster) -> names(head, roster) }
+            it.accountRefs = byHead.mapValues { (head, roster) -> refs(head, roster) }
         }
     }
 
@@ -84,6 +85,12 @@ internal class AccountRosterProjection {
     private fun names(head: String, rows: List<JsonObject>): Map<String, String> = rows.mapNotNull { row ->
         val shown = JsonScalars.str(row, "display_name")?.filterNot(Char::isISOControl)?.trim()?.take(NAME_CHARS)
         selector(head, row)?.let { label -> shown?.takeIf(String::isNotEmpty)?.let { label to it } }
+    }.toMap()
+
+    /** The account each login is a login of, by its pool label: the ref its credential proved, where it proved one. */
+    private fun refs(head: String, rows: List<JsonObject>): Map<String, String> = rows.mapNotNull { row ->
+        val ref = JsonScalars.str(row, "ref")?.takeIf(String::isNotEmpty)
+        selector(head, row)?.let { label -> ref?.let { label to it } }
     }.toMap()
 
     private fun unsafeSelection(head: String, rows: List<JsonObject>): Boolean =

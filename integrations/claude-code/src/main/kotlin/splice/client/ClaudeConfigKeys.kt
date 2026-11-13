@@ -45,6 +45,12 @@ internal object Keys {
     const val AVAILABLE_MODELS = "availableModels"
     const val MODEL_OVERRIDES = "modelOverrides"
     const val STATUS_LINE = "statusLine"
+    const val STATUS_LINE_REFRESH = "refreshInterval"
+
+    // why: Claude Code runs the bar's command on its own events, and none comes while a request is open, so a session
+    // whose turn waits on a limit could not say so; a half-minute timer costs one small local request a tick.
+    const val STATUS_LINE_REFRESH_S = 30
+
     const val API_KEY_HELPER = "apiKeyHelper"
     const val MCP_SERVERS = "mcpServers"
     const val CUSTOM_API_KEY_RESPONSES = "customApiKeyResponses"

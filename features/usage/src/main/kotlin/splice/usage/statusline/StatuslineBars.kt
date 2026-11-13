@@ -153,7 +153,7 @@ internal data class CostFallback(val rated: Boolean, val clientPriced: Boolean)
 
 /** What a held turn met, as its session's bar says it. [word] is the cause as the head reports it, [said] names it,
  *  [orSooner] is what can end the wait before the stated reset, and [unstated] what the turn waits for where no
- *  reset was stated. A cause the bar does not know reads as a plan limit, which is what most held turns met. */
+ *  reset was stated. A cause the bar does not know reads as a plan limit. */
 private enum class HeldCause(val word: String, val said: String, val orSooner: String, val unstated: String) {
     LIMIT("limit", "plan limit reached", " or a reset", "for a reset"),
     OVERLOAD("overload", "provider overloaded", "", "for it to answer"),

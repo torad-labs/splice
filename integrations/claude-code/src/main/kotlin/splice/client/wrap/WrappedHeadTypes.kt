@@ -10,8 +10,8 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import splice.client.Keys
-import splice.client.StatusLineSetting
 import splice.sessions.registry.LaunchMarker
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -109,7 +109,12 @@ public class WrappedLaunch internal constructor(public val configDir: Path) {
                 putJsonArray(Keys.AVAILABLE_MODELS) { availableModelIds.forEach { add(it) } }
                 put("enforceAvailableModels", true)
             }
-            put(Keys.STATUS_LINE, StatusLineSetting(statuslineCommand).json())
+            putJsonObject(Keys.STATUS_LINE) {
+                put("type", "command")
+                put("command", statuslineCommand)
+                put("padding", 0)
+                put(Keys.STATUS_LINE_REFRESH, Keys.STATUS_LINE_REFRESH_S)
+            }
             if (marked) put(LaunchMarker.SPLICE_LAUNCH_KEY, true)
             if (hooks.isNotEmpty()) put(Keys.HOOKS, JsonObject(hooks.mapValues { (_, entries) -> JsonArray(entries) }))
         }.toString()

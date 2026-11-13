@@ -258,10 +258,12 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   login could serve once it ran out. Two logins the roster shows as one account now count as one.
 
 ### Changed
-- **A start reads a ChatGPT command's saved code-mode conversations four at a time.** Every command waits for that
-  read at each start and restart, and it went through the conversations one after another on one core: 3 to 7
-  seconds on a machine that held 442 MB of them. They are decoded four at a time, in the same order, and one at a
-  time again where four together do not fit the heap.
+- **A start reads a ChatGPT command's saved code-mode conversations with four readers.** Every command waits for
+  that read at each start and restart, and it went through the conversations one after another on one core: 4.6 to
+  6.2 seconds on a busy machine that held 369 MB of them in 54 files. Four readers now work ahead of the
+  conversation being handed on, in the same order, so a large one no longer holds up the small ones behind it: 2.0
+  to 3.2 seconds for the same files on the same machine. A conversation is read by itself again where the heap
+  refuses the readers together.
 - **A release publishes one jar per platform beside `splice.jar`.** `splice.jar` holds the code-mode isolate and
   the native code-mode host of all four platforms, about 476 MB. Each platform's own jar
   (`splice-linux-amd64.jar`, `splice-linux-aarch64.jar`, `splice-darwin-aarch64.jar`,

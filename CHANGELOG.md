@@ -58,7 +58,7 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   The list is the program and its arguments, run with no shell. The message arrives on its standard input and
   what the program prints is discarded. The first time a command is set it is sent one line saying what it will
   be used for, so a wrong command shows that day. The key is read at the daemon's start and can be set only in
-  the file. A command with one login says nothing: it has no last one to be down to.
+  the file.
 - **A session waiting on a limit says so in its status line.** A turn that met a plan limit waits in its own
   request until a login can serve it, and Claude Code showed its spinner and nothing else for as long as that
   took. The session's status line now leads with what the turn met and the reset it waits for, such as
@@ -320,6 +320,10 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   two lost scripts among about a hundred completed, so the start still read most of the bytes and the pause did
   not get shorter. A start that reads such a conversation itself, after a stop that left no list, also keeps it on
   the disk once the head is past its memory bound, where it held every one of them in memory whatever the bound.
+  At the first restart under that rule, the same day, the next daemon took from the list all 59 conversations that
+  hold a script, 701 MiB, and read only the 22 that hold none. Its control plane was bound 6.6 seconds after the
+  hand-over began, where a restart two minutes earlier, under the first rule and the same load on the machine,
+  took 14.1.
 - **A start digests its own jar once, not once for every command.** Each command, while it was assembled, made
   the digest that says whether the prices kept from the last run still hold: a walk over every entry of the jar,
   49,000 in a release, and a hash of 3 MB of classes. Thread samples of a restart on Nov 13, 2026 caught the next
@@ -331,7 +335,9 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   is answering. The daemon lock is held until it returns, and every command's requests wait for the lock: at three
   restarts on Nov 13, 2026 it was freed 106 to 130 ms after the last command had said it handed over. The control
   server now stops beside the commands. The next daemon's request for the hand-over is answered before either
-  begins, as it was.
+  begins, as it was. At the first restart that carried it, control closed 4 ms after the last command's line. The
+  retiring daemon also says how long it still held the lock after its commands handed over, closing its
+  background work: 145 ms at that restart, a stretch no line told from the next daemon's own start before.
 - **A start reads a ChatGPT command's saved code-mode conversations with four readers.** Every command waits for
   that read at each start and restart, and it went through the conversations one after another on one core: 4.6 to
   6.2 seconds on a busy machine that held 369 MB of them in 54 files. Four readers now work ahead of the

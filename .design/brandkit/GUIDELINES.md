@@ -5,12 +5,12 @@ Rules for using the Splice logo, colours, type, components, motion and copy. Val
 ## 1. About Splice
 Splice is a free, open-source proxy that runs on the user's computer. It lets Claude Code use models and accounts the user already has, and exposes settings for tool calls, compaction, caching and usage. The audience is developers who already use Claude Code.
 
-Splice and Temple are both Torad Labs projects. They share:
+Splice is a Torad Labs project. It shares with Torad's other products:
 - dark backgrounds by default
 - monospace type for numbers, commands and code
 - the ease-out curve `cubic-bezier(.22,1,.36,1)`
 
-Do not use Temple's teal, glass effects or Temple Rounded in Splice assets. Do not put the Splice mark on Temple assets.
+Do not use teal, glass effects or another product's display typeface in Splice assets. Do not put the Splice mark on another product's assets.
 
 ## 2. Name and wordmark
 - Write **Splice** in sentences. Write `splice` for the command and in the wordmark.

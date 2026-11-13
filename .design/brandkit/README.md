@@ -76,4 +76,4 @@ Requires Python 3 with fontTools, uharfbuzz and playwright (using a local Chrome
 - Colours are sRGB only. There are no print (CMYK) values.
 - Type has been checked for Latin script only.
 - Provider and model names (Claude, GPT, Grok, Kimi, Muse, DeepSeek) appear as plain text with Splice's own colours. No provider logos are used. Splice is not affiliated with any model provider.
-- Splice is a Torad Labs project. The Temple kit is a separate kit with its own colours and type; this kit shares only the ease curve and some layout conventions with it.
+- Splice is a Torad Labs project. Torad's other products have kits of their own, with their own colours and type; this kit shares only the ease curve and some layout conventions with them.

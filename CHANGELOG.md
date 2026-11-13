@@ -5,6 +5,13 @@
 Changes on main since v0.4.0. They take a version's heading when that version is cut.
 
 ### Added
+- **`splice usage --json` prints every command's logins and their plan windows for a program to read.** A
+  program beside splice that shows how much of each plan is used (a menu bar, a dashboard) had nothing of splice's
+  to read: it read files Claude Code's status line kept, which a session on splice has not written since Nov 10,
+  2026. The verb asks the running daemon once and prints one JSON document on one line: each command with the
+  login its next request goes to and, for each of its logins, the name, the plan, the 5-hour and 7-day windows
+  (percent used, when it resets, whether the reading is current), any per-model week, the models it cannot serve
+  yet and when it was last heard. The document carries a `version`; within one version fields are only added.
 - **splice tells you when a command that had no login has one again.** The notice that no login can serve a model
   said that sessions were waiting, and nothing said when they went on. On Nov 12, 2026 a login was reset while
   seven sessions waited; they went on, and the person, with no word of it, logged in again by hand. The alert

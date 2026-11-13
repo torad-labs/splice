@@ -182,6 +182,12 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
         },
     ),
     "perf" to CommandRegistration("[--window 1h|24h|7d]", CommandFactory { a -> Command.Perf(a.drop(1)) }),
+    // Nov 13, 2026: `usage --json` prints every command's logins and their plan windows as one JSON document
+    // (UsageJson). The bare verb is refused: only the document exists yet.
+    "usage" to CommandRegistration(
+        "--json",
+        CommandFactory { a -> Command.UsageAsJson.takeIf { a.drop(1) == listOf("--json") } },
+    ),
     "wire" to CommandRegistration(
         "<head> [--last N] [--json]",
         CommandFactory { a -> Command.Wire(a.drop(1)) },

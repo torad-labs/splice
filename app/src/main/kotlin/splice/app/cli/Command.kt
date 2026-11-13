@@ -215,6 +215,15 @@ public sealed class Command {
             return outcomeExitCode(SessionsJson(TerminalOutput(::println)).print(registry))
         }
     }
+
+    /** Nov 13, 2026: `splice usage --json`, every command's logins and their plan windows as one JSON document, for
+     *  a program to read. */
+    internal data object UsageAsJson : Command() {
+        override suspend fun run(): Int {
+            val verb = UsageJson(TerminalOutput(::println), TerminalOutput(System.err::println))
+            return outcomeExitCode(verb.print(EnvReader(System::getenv)))
+        }
+    }
     public data class Perf(val args: List<String>) : Command() {
         override suspend fun run(): Int = outcomeExitCode(PerfWiring.run(args, EnvReader(System::getenv)))
     }

@@ -14,7 +14,7 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { layout } from "../../gate/src/lib/repo.ts";
-import { fakeNetwork, makeSandbox, runInstall, sandboxEnv } from "../src/lib/sandbox.ts";
+import { fakeNetwork, makeSandbox, platformJar, runInstall, sandboxEnv } from "../src/lib/sandbox.ts";
 
 const { repoRoot } = layout();
 const HOST = "https://splice.torad.ai/download";
@@ -46,13 +46,6 @@ function release(): string {
   writeFileSync(join(dir, "sha256sums.txt"), `${sha(JAR)}  splice.jar\n${sha(SHIM)}  splice-launch\n`);
   copyFileSync(join(repoRoot, "install.sh"), join(dir, "install.sh"));
   return dir;
-}
-
-/** The name a release gives this machine's own jar, or null where it publishes none (an Intel Mac). */
-function platformJar(): string | null {
-  const system = process.platform === "linux" ? "linux" : process.platform === "darwin" ? "darwin" : null;
-  const machine = process.arch === "x64" ? "amd64" : process.arch === "arm64" ? "aarch64" : null;
-  return system && machine && `${system}-${machine}` !== "darwin-amd64" ? `splice-${system}-${machine}.jar` : null;
 }
 
 /** A release that also lists a jar for each platform an installer runs on. */

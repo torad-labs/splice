@@ -18,6 +18,13 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.HexFormat
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 /** Discovers conversation files and selects the current state across an upgrade and downgrade. */
 internal class CodeModeStateDirectory(
@@ -56,11 +63,11 @@ internal class CodeModeStateDirectory(
         val free = held.scan(listed)
         dropOrphanLocks(free)
         val files = free.filter { FILE_NAME.matches(it.fileName.toString()) }
-        // Decode a few conversations at a time: cold journals must not all become resident at boot, and one at a
-        // time kept every head waiting on this folder at each start (3 to 7 seconds on Nov 12, 2026, when it held
-        // 442 MB in 51 journals).
-        val conversations = files.groupBy { it.fileName.toString().substringBefore('.') }.values
-        return conversations.chunked(DECODE_WINDOW).asSequence().flatMap { decoded(it) }.mapNotNull { versions ->
+        // Cold journals must not all become resident at boot, so they are handed on one conversation at a time. They
+        // are read ahead of that, a few at once: read one after another they kept every head waiting on this folder
+        // at each start.
+        val conversations = files.groupBy { it.fileName.toString().substringBefore('.') }.values.toList()
+        return Ahead(conversations).all().mapNotNull { versions ->
             if (versions.isEmpty()) return@mapNotNull null
             val key = versions.first().key
             // A downgraded jar can create newer .json state beside the .jsonl it cannot discover.
@@ -75,14 +82,74 @@ internal class CodeModeStateDirectory(
         }
     }
 
-    /** The files of each conversation in [window], read at the same time and given back in the window's order. Read
-     *  together they can ask the heap for more than it has while each alone fits: they are then read one at a time,
-     *  as every start read them before. */
-    private fun decoded(window: List<List<Path>>): List<List<OnDisk>> = try {
-        window.parallelStream().map { paths -> paths.mapNotNull(::read) }.toList()
-    } catch (_: HeapCapacityException) {
-        // A file the first read found invalid is already removed, and is not read again.
-        window.map { paths -> paths.filter(Files::exists).mapNotNull(::read) }
+    private data class Pending(val paths: List<Path>, val bytes: Long, val read: Future<List<OnDisk>>)
+
+    /** Reads [conversations]' files ahead of the one being handed on and hands them on in their order. [DECODERS]
+     *  reads run at a time, on threads that end by themselves once no read is left. The files read ahead or being
+     *  read stay under a bound of bytes, so a large journal does not hold up the small ones behind it and a start
+     *  holds a bounded amount it has not handed on yet. */
+    private inner class Ahead(private val conversations: List<List<Path>>) {
+        // Named, so a stack dump of a slow start says which lane reads; daemon threads, so a read never holds a dying
+        // JVM; and none at all once the start is over.
+        private val threads = Executors.defaultThreadFactory()
+        private val pool =
+            ThreadPoolExecutor(DECODERS, DECODERS, IDLE_SECONDS, TimeUnit.SECONDS, LinkedBlockingQueue()) { task ->
+                threads.newThread(task).apply {
+                    name = "splice-code-mode-read"
+                    isDaemon = true
+                }
+            }.apply { allowCoreThreadTimeOut(true) }
+        private val bound = minOf(AHEAD_BYTES, heap.limitBytes / AHEAD_HEAP_PARTS)
+        private val waiting = ArrayDeque<Pending>()
+        private var pendingBytes = 0L
+        private var next = 0
+
+        fun all(): Sequence<List<OnDisk>> = sequence {
+            while (next < conversations.size || waiting.isNotEmpty()) {
+                while (next < conversations.size && room()) submit(conversations[next++])
+                yield(taken())
+            }
+        }
+
+        /** One read at least is always under way; more are started while what waits stays under the bound. */
+        private fun room(): Boolean = waiting.isEmpty() || pendingBytes < bound
+
+        private fun submit(paths: List<Path>) {
+            val bytes = paths.sumOf(::sizeOf)
+            waiting.addLast(Pending(paths, bytes, pool.submit(Callable { paths.mapNotNull(::read) })))
+            pendingBytes += bytes
+        }
+
+        private fun taken(): List<OnDisk> {
+            val pending = waiting.removeFirst()
+            pendingBytes -= pending.bytes
+            return try {
+                pending.read.get()
+            } catch (failure: ExecutionException) {
+                if (failure.cause !is HeapCapacityException) throw failure.cause ?: failure
+                alone(pending.paths)
+            }
+        }
+
+        /** Read at the same time, the journals asked the heap for more than it has. Once the reads ahead have ended
+         *  this one is read again by itself, as every start read it before. A file its first read found invalid is
+         *  already removed, and is not read twice. */
+        private fun alone(paths: List<Path>): List<OnDisk> {
+            waiting.forEach { pending ->
+                try {
+                    pending.read.get()
+                } catch (_: ExecutionException) {
+                    // Its own turn meets it again.
+                }
+            }
+            return paths.filter(Files::exists).mapNotNull(::read)
+        }
+
+        private fun sizeOf(file: Path): Long = try {
+            Files.size(file)
+        } catch (_: IOException) {
+            0L
+        }
     }
 
     /** Reload a cold conversation honestly; a failed read must never turn a retry into new execution. */
@@ -197,9 +264,20 @@ internal class CodeModeStateDirectory(
     }
 }
 
-// why: a start read every journal one after another on one core; four at a time use four cores while no more than
-// four conversations are decoded in memory at once.
-private const val DECODE_WINDOW = 4
+// why: a start read every journal one after another on one core; four readers use four cores and leave the rest to
+// the turns the retiring daemon is still answering.
+private const val DECODERS = 4
+
+// why: a few journals are tens of megabytes among many small ones; 256 MiB read ahead lets three readers go on through
+// the small ones while the fourth is in the largest.
+private const val AHEAD_BYTES = 256L * 1024 * 1024
+
+// why: what is read ahead is decoded and not yet handed on; a thirty-second part of the heap keeps it small where the
+// heap is.
+private const val AHEAD_HEAP_PARTS = 32
+
+// why: the readers are needed for the seconds of a start; five idle seconds end their threads.
+private const val IDLE_SECONDS = 5L
 
 private val FILE_NAME = Regex("[0-9a-f]{64}\\.jsonl?")
 private val LOCK_NAME = Regex("[0-9a-f]{64}\\.jsonl?\\.lock")

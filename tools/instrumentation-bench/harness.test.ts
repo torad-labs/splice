@@ -183,7 +183,7 @@ test('upstream accepts reordered objects but rejects changed fields, values, arr
     changed(value => { delete value.max_tokens; }), changed(value => { value.extra = true; }),
     changed(value => { value.messages[0].extra = null; }), changed(value => { value.stream = false; }),
     text.replace('"max_tokens":4', '"max_tokens":4.0000000000000001'),
-    text.replace('{', '{"model":"fixture-model",'), text.replace('{', '{"mo\\u0064el":"fixture-model",'),
+    '{"model":"fixture-model",' + text.slice(1), '{"mo\\u0064el":"fixture-model",' + text.slice(1),
     text.replace('"messages":[{', '"messages":[{"role":"user",'),
     text.replace('"messages":[{', '"messages":[{"ro\\u006ce":"user",'),
     'null', '[]', '{', new Uint8Array([0xff]),

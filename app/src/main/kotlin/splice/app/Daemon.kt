@@ -321,7 +321,7 @@ public class Daemon(
     public suspend fun retire(): Int = stopLock.withLock {
         if (stopped || retired) return@withLock 0
         // A hosted MCP child takes up to two seconds to die. It dies first, while the heads still take turns: after
-        // them, that wait was part of the stretch in which no daemon serves (2.4 s or more of it in eight of the
+        // them, that wait was part of the stretch in which no daemon serves (2.4 to 2.5 s of it in eight of the
         // thirteen hand-overs of Nov 12, 2026).
         controlPlane.ownership.quiet()
         headProbes.fenceStarts()

@@ -281,6 +281,9 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   state before it started any of them. And it looked for the freed lock four times a second. Now the work that
   needs no lock is done during the wait, each command takes requests as soon as it is built (the ones that keep no
   code-mode state first, in splice.toml's order), and the hand-over asks for the lock forty times a second.
+  Measured once with both changes, on that machine on Nov 13, 2026: a restart held a Claude command's requests for
+  1.95 seconds, where it had held them for 7.6. The ChatGPT command's pause did not get shorter, because it is the
+  read of its saved conversations: 9.0 seconds at that restart.
 - **A start reads a ChatGPT command's saved code-mode conversations with four readers.** Every command waits for
   that read at each start and restart, and it went through the conversations one after another on one core: 4.6 to
   6.2 seconds on a busy machine that held 369 MB of them in 54 files. Four readers now work ahead of the

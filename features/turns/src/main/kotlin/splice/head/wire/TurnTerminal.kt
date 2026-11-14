@@ -56,6 +56,11 @@ internal interface TurnTerminal : WireSink {
     /** The ONLY clean ending — implementors derive the stop_reason literal internally (L3). */
     public suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage)
 
+    /** The answer was cut at [sequence], one of the client's own stop strings, by a dialect whose backend has none
+     *  (TurnOutcome.Success.stopSequence). Told before [emitTerminal], whose ending then names it. Default no-op: a
+     *  terminal that writes no ending of its own has nothing to name. */
+    public fun stoppedAt(sequence: String) {}
+
     /** The ONLY failure ending — an honestly-typed error the client can act on. [cause] decides what the client
      *  reads, through ClientWire at the moment this terminal stands in (V4-81: a cause no retry can change keeps
      *  its real type before content), and the line it says, which this terminal's turn voice composes from the

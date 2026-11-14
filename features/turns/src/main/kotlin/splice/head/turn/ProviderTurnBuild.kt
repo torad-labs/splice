@@ -12,6 +12,7 @@ import splice.core.perf.TurnPerf
 import splice.core.turn.TurnCompaction
 import splice.head.HeadDeps
 import splice.head.compaction.CompactionReplay
+import splice.head.turn.review.AutoModeReview
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
 
@@ -21,6 +22,7 @@ internal class ProviderTurnBuild(
     private val replay: CompactionReplay,
 ) {
     private val prompts = TurnPrompts(provider, deps)
+    private val review = AutoModeReview()
 
     fun build(parsed: AnthropicTurnBody, compact: Boolean, sessionId: String?, perf: TurnPerf): BuiltTurn {
         val effective = deps.seams.session.compactionTail.resolve(
@@ -28,8 +30,19 @@ internal class ProviderTurnBuild(
             provider.catalog.stripSuffixes(parsed.typed.model),
             sessionId,
         )
+        // Claude Code's auto-mode review goes upstream with the policy it wrote and nothing of the head's.
+        val reviewing = review.recognized(parsed.typed, perf)
         val base = provider.buildTurn(parsed, compact, sessionId)
-        return endingOnFailure(base) { shaped(base, effective, compact, sessionId, perf) }
+        return endingOnFailure(base) {
+            val withTail = tailed(base, effective, compact)
+            // AFTER the tail, so the compaction request hash and its applied check keep reading the
+            // provider body BEFORE any tail — a retry must still match its recording byte for byte.
+            if (reviewing) {
+                withTail
+            } else {
+                prompts.applySlotPrompt(prompts.applySystemPrompt(withTail, sessionId, perf), sessionId, perf)
+            }
+        }
     }
 
     /** What [turn] holds (BuiltTurn.onEnd) ends here unless [block] hands the turn on — a build
@@ -43,13 +56,8 @@ internal class ProviderTurnBuild(
         }
     }
 
-    private fun shaped(
-        base: BuiltTurn,
-        effective: EffectiveCompactionInstructions?,
-        compact: Boolean,
-        sessionId: String?,
-        perf: TurnPerf,
-    ): BuiltTurn {
+    /** [base] with the compaction tail placed, and the compaction meta that says whether it was. */
+    private fun tailed(base: BuiltTurn, effective: EffectiveCompactionInstructions?, compact: Boolean): BuiltTurn {
         val tailed = effective?.tailText?.let { provider.withCompactionTail(base, it) } ?: base
         // A dialect that cannot place the tail (no user text to extend) returns the request as it
         // was: the meta then says so instead of claiming instructions the wire never carried.
@@ -60,7 +68,7 @@ internal class ProviderTurnBuild(
         } else {
             null
         }
-        val withTail = effective?.let { eff ->
+        return effective?.let { eff ->
             tailed.copy(
                 meta = tailed.meta.copy(
                     compaction = TurnCompaction(
@@ -71,8 +79,5 @@ internal class ProviderTurnBuild(
                 ),
             )
         } ?: tailed.copy(meta = tailed.meta.copy(compaction = tailed.meta.compaction.copy(requestHash = hash)))
-        // AFTER the tail, so the compaction request hash and its applied check keep reading the
-        // provider body BEFORE any tail — a retry must still match its recording byte for byte.
-        return prompts.applySlotPrompt(prompts.applySystemPrompt(withTail, sessionId, perf), sessionId, perf)
     }
 }

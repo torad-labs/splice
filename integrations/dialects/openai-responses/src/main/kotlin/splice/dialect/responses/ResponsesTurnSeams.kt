@@ -82,6 +82,7 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
                 outputToolName = meta.tools.outputToolName,
                 answerSchema = meta.tools.answerSchema,
                 reading = deps.services.reading,
+                stopSequences = meta.route.stopSequences,
             )
         }
 

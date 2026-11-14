@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- **Claude Code's auto mode reviews actions on every head.** Before an action runs in auto mode, Claude Code asks
+  the session's model whether a policy blocks it, and asks for the answer to stop at `</block>`. The OpenAI
+  Responses heads refused that request, because the Responses API has no stop parameter, so Claude Code could not
+  get a verdict. The chat heads let the answer run on past the stop. Both now cut the answer at the client's stop
+  strings themselves and end the turn with `stop_reason: "stop_sequence"` and the string it matched, as
+  Anthropic's API does. The upstream still generates until it ends on its own; only what reaches the client is
+  cut.
+- **The auto-mode review reaches the model with its own policy.** A head's standing prompt and a team slot's
+  text were added to the review like any turn, and a head whose prompt replaces Claude Code's put its own prompt
+  where the policy was. The review is recognized by the policy's opening sentence and goes upstream as Claude
+  Code wrote it. Its perf row carries `auto_mode_review=1`, and a request that only resembles it carries
+  `auto_mode_review_near_miss=1`, so a reworded policy in a later Claude Code shows up instead of going unseen.
+
 ## splice v0.4.1: limit resets from splice, a fallback model per session, and an installer that brings its own Java - 2026-11-14
 
 ### Highlights

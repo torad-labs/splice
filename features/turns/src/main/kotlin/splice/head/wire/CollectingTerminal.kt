@@ -87,6 +87,8 @@ internal class CollectingTerminal(
         content.source.native.deliver(event, this, action)
     }
 
+    override fun stoppedAt(sequence: String): Unit = envelope.acceptStop(sequence)
+
     override suspend fun relayEvent(event: JsonObject, index: WireBlockIndex?) {
         val type = JsonScalars.strOrEmpty(event["type"])
         if (type.isEmpty() || type in nativeProtocolEvents) return

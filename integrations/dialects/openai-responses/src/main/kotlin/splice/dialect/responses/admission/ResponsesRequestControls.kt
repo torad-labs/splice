@@ -1,7 +1,6 @@
 package splice.dialect.responses.admission
 
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -16,6 +15,7 @@ import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesServiceTierSupport
 import splice.dialect.responses.request.ResponsesCacheHints
 import splice.upstream.RequestRefusal
+import splice.upstream.sse.RequestedStops
 import java.security.MessageDigest
 import java.util.HexFormat
 
@@ -25,6 +25,9 @@ internal data class ResponsesWireRequestControls(
     val topP: JsonElement? = null,
     val serviceTier: String? = null,
     val safetyIdentifier: String? = null,
+    /** The client's stop strings. Responses has no stop parameter, so they never reach the wire: the stream is cut
+     *  at the first one on its way to the client (splice.upstream.sse.StopSequenceCut). */
+    val stopSequences: List<String> = emptyList(),
 )
 
 // A top-level field is carried, refused here, dropped and said once, or refused as unknown: the rule is
@@ -34,9 +37,9 @@ internal val sourceOnlyControls = mapOf(
     SOURCE_REQUEST_INFERENCE_GEO to RequestFeature.INFERENCE_GEO,
     SOURCE_REQUEST_USER_PROFILE_ID to RequestFeature.USER_PROFILE_ID,
     SOURCE_REQUEST_WORKSPACE_ID to RequestFeature.WORKSPACE_ID,
-    // Responses has no native top-k or stop-sequence controls.
+    // Responses has no native top-k control. It has no stop-sequence control either, and the dialect cuts the answer
+    // at the client's stop strings itself (ResponsesWireRequestControls.stopSequences).
     SOURCE_REQUEST_TOP_K to RequestFeature.TOP_K,
-    SOURCE_REQUEST_STOP_SEQUENCES to RequestFeature.STOP_SEQUENCES,
 )
 
 /** Admission and wire projection stay together so an unrepresentable raw control is never dropped. */
@@ -57,6 +60,7 @@ internal class ResponsesRequestControls(private val quirks: ResponsesQuirks) {
         topP = value(raw, SOURCE_REQUEST_TOP_P),
         serviceTier = serviceTier(raw),
         safetyIdentifier = safetyIdentifier(raw),
+        stopSequences = RequestedStops().of(raw),
     )
 
     private fun safetyIdentifier(raw: JsonObject): String? {
@@ -86,12 +90,7 @@ internal class ResponsesRequestControls(private val quirks: ResponsesQuirks) {
     }
 
     private fun refusedFeature(raw: JsonObject): RequestFeature? =
-        sourceOnlyControls.entries.firstOrNull { unsupportedSourceControl(raw, it.key) }?.value ?: refusedPolicy(raw)
-
-    private fun unsupportedSourceControl(raw: JsonObject, key: String): Boolean {
-        val control = value(raw, key) ?: return false
-        return key != SOURCE_REQUEST_STOP_SEQUENCES || (control as? JsonArray)?.isEmpty() != true
-    }
+        sourceOnlyControls.entries.firstOrNull { value(raw, it.key) != null }?.value ?: refusedPolicy(raw)
 
     private fun refusedPolicy(raw: JsonObject): RequestFeature? = when {
         !ResponsesCacheHints.accepts(value(raw, SOURCE_REQUEST_CACHE_CONTROL)) -> RequestFeature.CACHE_CONTROL
@@ -129,7 +128,6 @@ internal class ResponsesRequestControls(private val quirks: ResponsesQuirks) {
 private const val SOURCE_REQUEST_TEMPERATURE = "temperature"
 private const val SOURCE_REQUEST_TOP_P = "top_p"
 private const val SOURCE_REQUEST_TOP_K = "top_k"
-private const val SOURCE_REQUEST_STOP_SEQUENCES = "stop_sequences"
 private const val SOURCE_REQUEST_SERVICE_TIER = "service_tier"
 private const val SOURCE_REQUEST_SPEED = "speed"
 private const val SOURCE_REQUEST_CONTAINER = "container"

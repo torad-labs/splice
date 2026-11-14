@@ -119,6 +119,8 @@ internal class SseEmitter(
         blocks.withSourceFrame(event) { action.deliver(this) }
     }
 
+    override fun stoppedAt(sequence: String): Unit = envelope.acceptStop(sequence)
+
     // The pinger's seam is single-access-at-a-time: its writers and its open notice block sit behind
     // ProgressWire.lock, which TWO coroutines reach — the keepalive pinger for [heartbeat]/[progress],
     // the turn's own at its block boundaries and its ending. The turn's own writers stay lock-free.
@@ -295,12 +297,19 @@ internal class SseEmitter(
         private var nativeStop: JsonObject? = null
         private var futureFields = JsonObject(emptyMap())
 
+        /** The client's stop string a dialect cut the answer at (TurnTerminal.stoppedAt); null when none did. */
+        private var stopped: String? = null
+
         internal fun acceptSource(event: JsonObject) {
             when (JsonScalars.strOrEmpty(event[TYPE])) {
                 "message_start" -> nativeStart = event
                 MESSAGE_DELTA -> nativeDelta = fields.merge(nativeDelta, event)
                 MESSAGE_STOP -> nativeStop = event
             }
+        }
+
+        internal fun acceptStop(sequence: String) {
+            stopped = sequence
         }
 
         internal fun acceptFuture(event: JsonObject) {
@@ -373,11 +382,13 @@ internal class SseEmitter(
         // the upstream's own ending where it wrote one in this grammar. Its max_tokens outranks a tool block: that
         // block's arguments streamed live and were cut with the output, so calling it tool_use would hand the client
         // a call whose input stops mid-string and hide the cap it hit. Its stop_sequence, which no splice flag
-        // outranks, rides through with the sequence it matched instead of reading as an end_turn.
+        // outranks, rides through with the sequence it matched instead of reading as an end_turn. A translated
+        // dialect that cut the answer at a stop string itself says which one ([stopped]), and it ends the same way.
         private fun derive(hasToolUse: Boolean, incomplete: Boolean): Ending = when {
             cutByUpstream(incomplete) -> Ending(CAP_ENDING)
             hasToolUse -> Ending("tool_use")
             incomplete -> Ending(CAP_ENDING)
+            stopped != null -> Ending(ENDING_SEQUENCE, stopped)
             nativeReason() == ENDING_SEQUENCE ->
                 Ending(ENDING_SEQUENCE, JsonScalars.strIfString(nativeEnding()?.get(ENDING_SEQUENCE)).ifEmpty { null })
             else -> Ending(END_TURN)

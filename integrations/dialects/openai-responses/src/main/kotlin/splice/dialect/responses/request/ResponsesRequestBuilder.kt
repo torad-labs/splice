@@ -160,6 +160,7 @@ internal class ResponsesRequestBuilder(
                 originalModel = opts.models.original,
                 upstreamModel = opts.models.upstream,
                 clientMaxTokens = body.maxTokens?.takeIf { it > 0 },
+                stopSequences = parts.controls.stopSequences,
             ),
             scope = TurnScope(
                 // The reasoning cache's conversation scope — the SAME derivation the provider's

@@ -15,6 +15,7 @@ import splice.core.turn.TurnReasoning
 import splice.core.turn.TurnRoute
 import splice.core.wire.AnthropicRequest
 import splice.upstream.memory.MessageFragmentContext
+import splice.upstream.sse.RequestedStops
 
 public class ChatRequestBuilder(
     private val quirks: ChatQuirks,
@@ -71,6 +72,7 @@ public class ChatRequestBuilder(
                 originalModel = body.model,
                 upstreamModel = upstreamModel,
                 clientMaxTokens = body.maxTokens?.takeIf { it > 0 },
+                stopSequences = RequestedStops().of(raw),
             ),
         )
         return BuiltChatRequest(req, meta, lease)

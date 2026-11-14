@@ -13,6 +13,15 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   it cleared go on. The routes are `GET /api/auth/{head}/resets` and `POST /api/auth/{head}/reset`. splice never
   spends a reset by itself, and a spend whose answer was lost is sent again as the same request, so it is never
   spent twice.
+- **The installer brings Java 21 when the machine has none.** Installing with `curl … | bash` stopped on a machine
+  without Java 21 and printed a package command to run by hand, since a piped install cannot ask, and it stopped
+  again where the default `java` stayed 11 or 17 after that, or where a Mac's Homebrew JDK sat behind an older one.
+  The installer now takes the first Java 21 or newer the machine has (`SPLICE_JAVA`, the `java` on PATH,
+  `JAVA_HOME`, macOS's `java_home`, and the folders JDKs install to). On a machine with none it downloads Eclipse
+  Temurin's Java 21 runtime, checks it against a sha256 pinned in `install.sh`, and unpacks it under
+  `~/.local/share/splice/runtime/`. The Java it chose is linked at `~/.local/share/splice/java`, which the launcher
+  runs (launcher shim-26); PATH and the system's Java are left as they are. `SPLICE_NO_JAVA_DOWNLOAD=1` keeps the
+  old stop-and-print behavior.
 - **`splice usage --json` prints every command's logins and their plan windows for a program to read.** A
   program beside splice that shows how much of each plan is used (a menu bar, a dashboard) had nothing of splice's
   to read: it read files Claude Code's status line kept, which a session on splice has not written since Nov 10,

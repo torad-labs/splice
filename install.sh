@@ -93,23 +93,82 @@ echo "splice: checking this machine's prerequisites…"
 # Java 21+ is the one HARD requirement — the installer itself runs the jar. Everything else is
 # a runtime dependency: verified here with its fix (and an offer to install), re-checked by
 # `splice doctor` at the end, but never a reason to abort an otherwise-working install.
-JAVA_MAJOR=0
-if command -v java >/dev/null 2>&1; then
-  JAVA_MAJOR="$(java -version 2>&1 | sed -nE 's/.*version "([0-9]+).*/\1/p' | head -1)"
-  case "$JAVA_MAJOR" in '' | *[!0-9]*) JAVA_MAJOR=0 ;; esac
-fi
-if [ "$JAVA_MAJOR" -ge 21 ]; then
-  echo "splice: ✓ java $JAVA_MAJOR"
-else
-  if [ "$JAVA_MAJOR" = 0 ]; then
-    echo "splice: ✗ java not found — the splice daemon runs on the JVM (Java 21+)"
-  else
-    echo "splice: ✗ java $JAVA_MAJOR found, but splice needs Java 21+"
+#
+# ANY JAVA 21, OR SPLICE'S OWN (Nov 13, 2026). People installing with `curl … | bash` met a wall: a piped install
+# cannot ask, so a machine with no Java 21 stopped with a package command to run by hand, and it stopped again where
+# the default java stayed 11 or 17 after that, or where a Mac's Homebrew JDK sat behind an older one. The installer
+# now takes the first Java 21 or newer the machine has, wherever it is, and on a machine with none it downloads Eclipse
+# Temurin's Java 21 runtime for splice alone (SPLICE_NO_JAVA_DOWNLOAD=1 stops it there and prints the fix instead). The
+# one it takes is linked at $SHARE_DIR/java, which the launcher runs (shim-26); the java on PATH is never changed.
+JAVA_LINK="${SHARE_DIR}/java"
+JAVA_RUNTIMES="${SHARE_DIR}/runtime"
+# The first launcher that runs the link; an older one runs SPLICE_JAVA or the java on PATH, and nothing else.
+LINKED_JAVA_SHIM=26
+# Temurin's Java 21 runtime release, pinned with each platform's sha256 as Adoptium's API lists it and as Adoptium's
+# sums beside each archive on GitHub read. A new pin is a reviewed change to these lines and temurin_archive's.
+TEMURIN_RELEASE="jdk-21.0.13+9"
+TEMURIN_BASE="https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13%2B9"
+
+# java_major <java> — the feature release a java reports (21 for 21.0.13), 0 when it does not run.
+java_major() {
+  local said major
+  if ! said="$("$1" -version 2>&1)"; then
+    echo 0
+    return 0
   fi
+  major="$(printf '%s\n' "$said" | sed -nE 's/.*version "([0-9]+).*/\1/p' | head -1)"
+  case "$major" in '' | *[!0-9]*) major=0 ;; esac
+  echo "$major"
+}
+
+# java_candidates — every java this machine may have, one per line, in the order the launcher takes them: the one
+# SPLICE_JAVA names, the one an earlier install linked, the one on PATH, then where JDKs are installed. A Mac's
+# /usr/bin/java is skipped: it only forwards to the JDK java_home picks, and with none it opens an install dialog.
+java_candidates() {
+  local j
+  [ -z "${SPLICE_JAVA:-}" ] || printf '%s\n' "$SPLICE_JAVA"
+  printf '%s\n' "$JAVA_LINK"
+  if j="$(command -v java 2>/dev/null)" && { [ "$(uname -s)" != Darwin ] || [ "$j" != /usr/bin/java ]; }; then
+    printf '%s\n' "$j"
+  fi
+  [ -z "${JAVA_HOME:-}" ] || printf '%s\n' "$JAVA_HOME/bin/java"
+  if [ -x /usr/libexec/java_home ] && j="$(/usr/libexec/java_home -v 21+ 2>/dev/null)"; then
+    printf '%s\n' "$j/bin/java"
+  fi
+  for j in /usr/lib/jvm/*/bin/java /Library/Java/JavaVirtualMachines/*/Contents/Home/bin/java \
+    /opt/homebrew/opt/openjdk*/bin/java /usr/local/opt/openjdk*/bin/java \
+    "$HOME"/.sdkman/candidates/java/*/bin/java "$HOME"/.jdks/*/bin/java \
+    "$HOME"/.local/share/mise/installs/java/*/bin/java "$HOME"/.asdf/installs/java/*/bin/java; do
+    printf '%s\n' "$j"
+  done
+}
+
+# pick_java — the first candidate that runs as Java 21 or newer; nothing when none does.
+pick_java() {
+  local j
+  while IFS= read -r j; do
+    if [ -n "$j" ] && [ -x "$j" ] && [ "$(java_major "$j")" -ge 21 ]; then
+      printf '%s\n' "$j"
+      return 0
+    fi
+  done < <(java_candidates)
+  return 0
+}
+
+JAVA_BIN="$(pick_java)"
+if [ -n "$JAVA_BIN" ]; then
+  echo "splice: ✓ java $(java_major "$JAVA_BIN") ($JAVA_BIN)"
+elif [ -n "$REPO_ROOT" ] && [ -z "${SPLICE_JAR:-}" ] || [ "${SPLICE_NO_JAVA_DOWNLOAD:-0}" = 1 ]; then
+  # A checkout builds the jar, which takes a whole JDK; a runtime downloaded for splice is only a JRE.
+  echo "splice: ✗ no Java 21+ found — the splice daemon runs on the JVM (Java 21+)"
   if ! offer_fix "Java 21" "$(java_fix)"; then
     echo "splice: Java 21+ is required to continue — install it and re-run" >&2
     exit 1
   fi
+  JAVA_BIN="$(pick_java)"
+  [ -n "$JAVA_BIN" ] || { echo "splice: Java 21+ is still not found — open a new shell and re-run" >&2; exit 1; }
+else
+  echo "splice: no Java 21+ on this machine; splice will download its own (Eclipse Temurin $TEMURIN_RELEASE)"
 fi
 
 RUNTIME_GAPS=0
@@ -156,6 +215,7 @@ cleanup() {
   [ "$KEEP_BACKUPS" = 1 ] || rm -f "$JAR_BACKUP" "$SHIM_BACKUP"
   [ -z "$HUB_TMP_DIR" ] || [ "$KEEP_BACKUPS" = 1 ] || rm -rf "$HUB_TMP_DIR"
   [ -z "$SUMS_TMP" ] || rm -f "$SUMS_TMP"
+  [ -z "${JAVA_FETCH_TMP:-}" ] || rm -rf "$JAVA_FETCH_TMP"
 }
 trap cleanup EXIT
 
@@ -276,14 +336,14 @@ release_marker() {
 # Empty when the jar cannot say.
 jar_release() {
   local said
-  if said="$(java -jar "$1" version 2>/dev/null)"; then printf '%s\n' "$said" | awk '/^splice / { print $2; exit }'; fi
+  if said="$("$JAVA_BIN" -jar "$1" version 2>/dev/null)"; then printf '%s\n' "$said" | awk '/^splice / { print $2; exit }'; fi
 }
 
 # jar_shim <jar> — the launcher version the jar needs (its `shim-version` verb). Empty when the jar
 # cannot say, which no launcher pairs with: the check before the commit refuses it by name.
 jar_shim() {
   local named
-  if named="$(java -jar "$1" shim-version 2>/dev/null)"; then printf '%s' "$named"; fi
+  if named="$("$JAVA_BIN" -jar "$1" shim-version 2>/dev/null)"; then printf '%s' "$named"; fi
 }
 
 # gh_attestation_gap — empty when gh can verify a build provenance attestation (installed and
@@ -341,6 +401,84 @@ verify_attestation() {
   fi
   echo "${name} attestation: OK"
 }
+
+# 0. Java. On a machine with no Java 21+, splice's own runtime: this platform's Temurin JRE, checked against its pinned
+#    sha256 and unpacked under $JAVA_RUNTIMES. Then the java chosen is linked at $JAVA_LINK for the launcher, unless it
+#    is the java on PATH, which the launcher runs when no link is there.
+
+# temurin_archive — this platform's Temurin JRE archive and its sha256, or nothing where splice takes none: a CPU
+# Temurin does not build for, or a musl Linux (Alpine), which the glibc JRE does not run on.
+temurin_archive() {
+  local musl
+  for musl in /lib/ld-musl-*; do
+    [ ! -e "$musl" ] || return 0
+  done
+  case "$(uname -s)/$(uname -m)" in
+    Linux/x86_64 | Linux/amd64)
+      echo "OpenJDK21U-jre_x64_linux_hotspot_21.0.13_9.tar.gz a535a1df9c6284d9618872984e026ae0352d1f7e9e0605425c0e6114f47351dd" ;;
+    Linux/aarch64 | Linux/arm64)
+      echo "OpenJDK21U-jre_aarch64_linux_hotspot_21.0.13_9.tar.gz b1734db7ade49c3f6acc6ae06233b8c2dd90e3e2f00f67000ae1c972aaa64d8c" ;;
+    Darwin/x86_64)
+      echo "OpenJDK21U-jre_x64_mac_hotspot_21.0.13_9.tar.gz c909674b1c10c261b9a3fb7e9c0efebd303e33f88a4fe84be7135b5e2d711f89" ;;
+    Darwin/arm64)
+      echo "OpenJDK21U-jre_aarch64_mac_hotspot_21.0.13_9.tar.gz 225bab0a09491ef06835488cd942f5d2befa9a0410a2484f0c8bbcf7506ec09a" ;;
+  esac
+}
+
+# fetch_java — download, check and unpack this platform's runtime, and set JAVA_BIN to its java. A runtime this release already
+# unpacked is taken as it is. Exits with the fix when this platform has none, or when the archive holds no java.
+JAVA_FETCH_TMP=""
+fetch_java() {
+  local spec archive home java
+  spec="$(temurin_archive)"
+  if [ -z "$spec" ]; then
+    echo "splice: ✗ there is no Java 21 runtime splice can download for $(uname -s) $(uname -m)" >&2
+    echo "splice:   fix: $(java_fix), then re-run" >&2
+    exit 1
+  fi
+  archive="${spec%% *}"
+  home="${JAVA_RUNTIMES}/${TEMURIN_RELEASE}-jre"
+  java="$home/bin/java"
+  [ "$(uname -s)" != Darwin ] || java="$home/Contents/Home/bin/java"
+  if [ -x "$java" ] && [ "$(java_major "$java")" -ge 21 ]; then
+    JAVA_BIN="$java"
+    return 0
+  fi
+  echo "splice: downloading Java 21 for splice (Eclipse Temurin ${TEMURIN_RELEASE}, about 50 MB) into $JAVA_RUNTIMES"
+  echo "splice:   only splice runs it; the java on your PATH, if any, stays as it is"
+  mkdir -p "$JAVA_RUNTIMES"
+  JAVA_FETCH_TMP="$(mktemp -d "${JAVA_RUNTIMES}/.fetch.XXXXXX")"
+  download "${TEMURIN_BASE}/${archive}" "$JAVA_FETCH_TMP/$archive"
+  printf '%s  %s\n' "${spec##* }" "$archive" >"$JAVA_FETCH_TMP/sha256sums.txt"
+  verify_sum "$JAVA_FETCH_TMP/$archive" "$JAVA_FETCH_TMP/sha256sums.txt" "$archive"
+  mkdir "$JAVA_FETCH_TMP/unpacked"
+  tar -xzf "$JAVA_FETCH_TMP/$archive" -C "$JAVA_FETCH_TMP/unpacked"
+  if [ ! -d "$JAVA_FETCH_TMP/unpacked/${TEMURIN_RELEASE}-jre" ]; then
+    echo "splice: the Java archive holds no ${TEMURIN_RELEASE}-jre folder; install Java 21+ yourself: $(java_fix)" >&2
+    exit 1
+  fi
+  rm -rf "$home"
+  mv "$JAVA_FETCH_TMP/unpacked/${TEMURIN_RELEASE}-jre" "$home"
+  rm -rf "$JAVA_FETCH_TMP"
+  JAVA_FETCH_TMP=""
+  if [ ! -x "$java" ] || [ "$(java_major "$java")" -lt 21 ]; then
+    echo "splice: the downloaded Java at $java does not run; install Java 21+ yourself: $(java_fix)" >&2
+    exit 1
+  fi
+  JAVA_BIN="$java"
+}
+
+if [ -z "$JAVA_BIN" ]; then
+  fetch_java
+  echo "splice: ✓ java $(java_major "$JAVA_BIN") ($JAVA_BIN)"
+fi
+if [ -z "${SPLICE_JAVA:-}" ] && [ "$JAVA_BIN" = "$(command -v java 2>/dev/null)" ]; then
+  # The java on PATH runs splice; a link left by an earlier install, which no longer runs, would stand in front of it.
+  if [ -L "$JAVA_LINK" ]; then rm -f "$JAVA_LINK"; fi
+elif [ "$JAVA_BIN" != "$JAVA_LINK" ]; then
+  ln -sfn "$JAVA_BIN" "$JAVA_LINK"
+  echo "splice: splice runs on $JAVA_BIN (linked at $JAVA_LINK)"
+fi
 
 # 1. Obtain the jar. Prefer an explicit SPLICE_JAR, else build from the checkout, else (release
 #    mode) download from splice.torad.ai/download — the repo intentionally ships no binaries. Releases
@@ -454,7 +592,7 @@ if [ "$HUB_PLATFORM" = 1 ]; then
   fi
 fi
 
-JAR_VERSION_OUTPUT="$(java -jar "$JAR_TMP" version)"
+JAR_VERSION_OUTPUT="$("$JAVA_BIN" -jar "$JAR_TMP" version)"
 case "$JAR_VERSION_OUTPUT" in
   "splice "*) ;;
   *) echo "splice: candidate jar failed validation: ${JAR_VERSION_OUTPUT:-<empty>}" >&2; exit 1 ;;
@@ -471,6 +609,20 @@ if [ -z "$WANT_SHIM" ] || [ "$HAVE_SHIM" != "$WANT_SHIM" ] || [ -z "$WANT_RELEAS
   echo "splice: the launcher $SHIM_SRC is ${HAVE_SHIM:-unmarked} for release ${HAVE_RELEASE:-<unmarked>}," \
     "but this jar needs ${WANT_SHIM:-a launcher it did not name} for release ${WANT_RELEASE:-<unnamed>};" \
     "install the launcher built with this jar (SPLICE_SHIM=<path>)" >&2
+  exit 1
+fi
+
+# A release whose launcher is older than shim-${LINKED_JAVA_SHIM} never runs the link above, so where the Java this
+# install chose is neither SPLICE_JAVA nor the java on PATH, that release would land and then fail to start its daemon.
+# Refused here, before anything goes live, with the fix.
+HAVE_SHIM_NUMBER="${HAVE_SHIM#shim-}"
+case "$HAVE_SHIM_NUMBER" in '' | *[!0-9]*) HAVE_SHIM_NUMBER=0 ;; esac
+if [ "$HAVE_SHIM_NUMBER" -lt "$LINKED_JAVA_SHIM" ] && [ -z "${SPLICE_JAVA:-}" ] \
+  && [ "$JAVA_BIN" != "$(command -v java 2>/dev/null)" ]; then
+  echo "splice: release ${WANT_RELEASE}'s launcher ($HAVE_SHIM) runs only SPLICE_JAVA or the java on PATH," \
+    "and the java on PATH is not Java 21+" >&2
+  echo "splice:   fix: add  export SPLICE_JAVA=\"$JAVA_BIN\"  to your shell rc and re-run with it set," \
+    "or install a release whose launcher is shim-${LINKED_JAVA_SHIM} or newer" >&2
   exit 1
 fi
 
@@ -571,7 +723,7 @@ fi
 # --all` wrote into the passwd home while step 4 checked $BIN_DIR, and doctor checked that other
 # install (V4-231, 2026-09-25). `version` reads only the jar, so it runs bare.
 run_jar() {
-  SPLICE_BIN_DIR="$BIN_DIR" SPLICE_SHARE_DIR="$SHARE_DIR" java -Duser.home="$HOME" -jar "$@"
+  SPLICE_BIN_DIR="$BIN_DIR" SPLICE_SHARE_DIR="$SHARE_DIR" "$JAVA_BIN" -Duser.home="$HOME" -jar "$@"
 }
 
 # 3. Materialize the topology + atomically link the wrapper commands (+ the `splice` command).
@@ -624,7 +776,7 @@ elif [ ! -L "$CURRENT_LINK" ] && [ "$HAD_JAR" = 1 ]; then
   # A flat install (before 0.4.0) is being replaced: its jar and shim are still in hand as the
   # backups, so record them under their version and make them `previous` — otherwise the first
   # install.sh run that introduces releases/ leaves nothing to roll back to (review 2026-09-14).
-  OLD_VERSION="$(java -jar "$JAR_BACKUP" version 2>/dev/null | sed -n 's/^splice //p' | head -1)"
+  OLD_VERSION="$("$JAVA_BIN" -jar "$JAR_BACKUP" version 2>/dev/null | sed -n 's/^splice //p' | head -1)"
   if [ -n "$OLD_VERSION" ] && [ "$OLD_VERSION" != "$JAR_VERSION" ] &&
     grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)([-+][0-9A-Za-z.-]+)?$' <<<"$OLD_VERSION"; then
     OLD_DIR="${SHARE_DIR}/releases/${OLD_VERSION}"

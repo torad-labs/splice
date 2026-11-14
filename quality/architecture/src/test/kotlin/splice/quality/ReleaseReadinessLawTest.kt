@@ -374,7 +374,7 @@ private const val INSTALL_JAR = "verify_attestation \"\$JAR_TMP\" \"\$JAR_ASSET\
 private const val INSTALL_SHIM = "verify_attestation \"\$SHIM_TMP\" splice-launch\n"
 private const val INSTALL_PREVIOUS = "  $ALLOWED_LINK\n  $ALLOWED_PREVIOUS\n"
 private const val INSTALL_RUN_JAR =
-    "SPLICE_BIN_DIR=\"\$BIN_DIR\" SPLICE_SHARE_DIR=\"\$SHARE_DIR\" java -Duser.home=\"\$HOME\" -jar \"\$@\""
+    "SPLICE_BIN_DIR=\"\$BIN_DIR\" SPLICE_SHARE_DIR=\"\$SHARE_DIR\" \"\$JAVA_BIN\" -Duser.home=\"\$HOME\" -jar \"\$@\""
 private const val INSTALL_HOME = "run_jar() {\n  $INSTALL_RUN_JAR\n}\n" +
     "run_jar \"\$JAR_DST\" init\nrun_jar \"\$JAR_DST\" install --all\nrun_jar \"\$JAR_DST\" doctor\n"
 

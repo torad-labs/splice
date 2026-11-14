@@ -193,6 +193,19 @@ jobs:
         run: |
           mkdir -p test-results
           bun tools/e2e conformance --artifact app/build/libs/app-all.jar --json test-results/macos-conformance.json
+      # The installer as a person runs it on a Mac: install.sh alone, an empty home, and nothing on PATH but the system's
+      # folders, where /usr/bin/java is the stub that asks to install Java. It takes a Java 21 the Mac has, or downloads
+      # Temurin's, and splice runs on it.
+      - name: installer on a Mac with no Java on PATH
+        run: |
+          work="$(mktemp -d)"
+          mkdir "$work/home"
+          cp install.sh "$work/install.sh"
+          env -i HOME="$work/home" PATH=/usr/bin:/bin:/usr/sbin:/sbin TMPDIR="$RUNNER_TEMP" \
+            SPLICE_JAR="$PWD/app/build/libs/app-all.jar" SPLICE_SHIM="$PWD/app/src/main/dist/bin/splice-launch" \
+            /bin/bash "$work/install.sh"
+          ls -la "$work/home/.local/share/splice/java"
+          env -i HOME="$work/home" PATH=/usr/bin:/bin "$work/home/.local/bin/splice" version
       - name: keep macOS proof
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

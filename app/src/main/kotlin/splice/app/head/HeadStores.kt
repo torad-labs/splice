@@ -6,6 +6,7 @@ package splice.app.head
 import splice.core.model.ClientWindows
 import splice.head.compact.CompactStats
 import splice.head.perf.PerfStats
+import splice.head.turn.fallback.SessionFallbacks
 import splice.head.usage.EconomicsStore
 import splice.head.usage.QuotaTracker
 import splice.head.usage.UsageStore
@@ -39,8 +40,10 @@ internal data class HeadTelemetryStores(
     val economics: EconomicsStore,
 )
 
-/** The OAuth account pool a head draws from and the quota tracker kept for each of its accounts. */
+/** The OAuth account pool a head draws from, the quota tracker kept for each of its accounts, and the model each of
+ *  its sessions named to fall back to while the one it asks for is held on every login. */
 internal data class HeadAccountStores(
     val pool: AccountPool? = null,
     val quotas: Map<String, QuotaTracker> = emptyMap(),
+    val fallbacks: SessionFallbacks = SessionFallbacks { null },
 )

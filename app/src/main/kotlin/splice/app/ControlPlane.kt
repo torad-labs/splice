@@ -141,6 +141,7 @@ internal class ControlPlane(
     internal val alerts = stores.alerts
     internal val perfRows = stores.perfRows
     internal val foregroundTools = stores.foregroundTools
+    internal val sessionFallbacks = stores.sessionFallbacks
     internal val playgroundProviders = stores.playgroundProviders
     internal val playground = stores.playground
     internal val console = stores.console
@@ -258,6 +259,7 @@ internal class ControlPlane(
         srv.ports.compaction = compactionInstructions
         srv.ports.claudeLogins = claudeLogin.owner
         srv.ports.quotaReadFailures = quotaReadFailures
+        srv.ports.sessionFallbacks = sessionFallbacks
         srv.ports.lifecycle.keyRotation = KeyRotation(daemon.mgmtKey, daemon.mcpAccess, statePaths, log)
         srv.ports.lifecycle.handOver = handOver
         providerAssembly.claudePoolChanges.onJoined = LoginJoined { head -> srv.sessionWake?.joined(head) }

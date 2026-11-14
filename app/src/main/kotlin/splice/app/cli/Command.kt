@@ -216,6 +216,15 @@ public sealed class Command {
         }
     }
 
+    /** Nov 13, 2026: `splice fallback`, the model a session runs on while every login is held on the one it asks for:
+     *  listed, set or taken away on the person's word (FallbackCommand). */
+    internal data class Fallback(val args: List<String>) : Command() {
+        override suspend fun run(): Int {
+            val verb = FallbackCommand(TerminalOutput(::println), TerminalOutput(System.err::println))
+            return outcomeExitCode(verb.run(args, EnvReader(System::getenv)))
+        }
+    }
+
     /** Nov 13, 2026: `splice usage --json`, every command's logins and their plan windows as one JSON document, for
      *  a program to read. */
     internal data object UsageAsJson : Command() {

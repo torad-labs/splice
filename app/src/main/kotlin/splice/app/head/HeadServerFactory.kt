@@ -120,6 +120,7 @@ internal class HeadServerFactory(
                         ?.forHead(key, ctx.catalog, BudgetPlans { stores.telemetry.economics.plans(it) })
                         ?: NoHeadBudget,
                     credentialAccountNames = HeadCredentialNames(key, credentialAccountNames, sentCredentials),
+                    sessionFallbacks = stores.accounts.fallbacks,
                 ),
                 seams = seams(key),
                 policy = HeadDeps.HeadPolicy(

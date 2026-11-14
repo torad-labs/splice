@@ -5,6 +5,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -28,7 +29,11 @@ class PerfCancelledShutdownTest {
         val first = telemetry(directory)
         first.start()
         val until = System.currentTimeMillis()
+        val room = PerfWorkBudget.snapshot()
         val reply = first.inspection.query.summary(PerfQuery(until - 60_000L, until, source = "history"))
+        // why: the budget is one total for the whole JVM, so a summary refused for room is no reply to own; the message
+        // says what held the budget when it was asked.
+        val refused = reply["error"]?.let { "the summary was refused: $reply; the budget before it read $room" }
         var cancellationPreserved = false
         launch {
             currentCoroutineContext().cancel()
@@ -44,6 +49,7 @@ class PerfCancelledShutdownTest {
         val held = PerfWorkBudget.retainedBytes()
         PerfWorkBudget.release(reply)
         val givenBack = held - PerfWorkBudget.retainedBytes()
+        assertNull(refused, refused)
         assertTrue(cancellationPreserved)
         assertEquals("1", schema)
         assertTrue(givenBack > 0, "the caller still owned its returned reply until it released it")

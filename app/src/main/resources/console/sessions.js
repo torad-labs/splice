@@ -30,10 +30,10 @@ const NAMES_KEY = "splice.sessions.names";
 // `screens`: what a session's own prompt shows, by session id, read only for sessions splice opened (GET .../screen
 // answers 200 for those and refuses the rest). A session with a screen is one splice can drive: it gets the Message
 // field and its answers are buttons. One it can't keeps what its transcript says and draws no act it couldn't carry.
-const state = { rows: [], past: new Map(), heads: [], retired: [], providerOf: {}, modelLabel: {}, window: {}, live: {}, logs: {}, screens: {}, usage: {}, error: null, readAt: null, loading: true };
+const state = { rows: [], past: new Map(), heads: [], retired: [], providerOf: {}, modelLabel: {}, headModels: {}, fallbacks: {}, window: {}, live: {}, logs: {}, screens: {}, usage: {}, error: null, readAt: null, loading: true };
 const ui = { ending: new Map(), armedEnd: new Map(), armedStop: new Set(), open: null, missing: null, q: "", ended: false, endedBySearch: false, results: new Set(), full: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {}, menu: null, choices: {}, moving: new Map(), held: {}, logInfo: new Map(), noted: new Map(), logins: {}, pinning: null,
   // what a press just opened, so only that lands with motion on the next draw, and figures that changed move to their new value
-  shown: new Map(), landing: new Set(), figs: new Map(), grow: new Set(), lopen: new Set(), canSwitch: {},
+  shown: new Map(), landing: new Set(), figs: new Map(), grow: new Set(), lopen: new Set(), fbopen: new Set(), fbBusy: null, canSwitch: {},
   // which groups he has folded, and whose Ended line he has opened: his, across a reload, until he closes the tab
   shut: new Set(JSON.parse(sessionStorage.getItem("splice.shut") || "[]")), rest: new Set(JSON.parse(sessionStorage.getItem("splice.rest") || "[]")),
   idle: new Set(JSON.parse(sessionStorage.getItem("splice.idle") || "[]")), grouped: false, gorder: null, project: PICK.get(), by: sessionStorage.getItem("splice.by") || "project", pmenu: false,
@@ -73,8 +73,10 @@ function refusedAs(answer, word, what) {
 // ---------- reading ----------
 async function read() {
   tick();
-  const [sessions, heads, models, retired] = await Promise.all([API.get("/api/sessions"), API.get("/api/heads"), API.get("/api/models"),
-    API.get("/api/heads/retired")]);
+  const [sessions, heads, models, retired, fallbacks] = await Promise.all([API.get("/api/sessions"), API.get("/api/heads"), API.get("/api/models"),
+    API.get("/api/heads/retired"), API.get("/api/sessions/fallbacks")]);
+  // the model each session runs on while no login has its own (splice fallback); a failed read keeps what it had
+  if (fallbacks.ok) state.fallbacks = fallbacks.body?.sessions || {};
   state.reading = sessions.body?.reading !== false; // off: no question text, no choices, answered in the terminal
   state.noteVersions = new Set(sessions.body?.note_versions || []); // the Claude Code versions a note is known to reach
   // A FAILED READ KEEPS THE ROWS IT HAD (gap: the last rows read were dropped, and the list he was reading vanished
@@ -87,6 +89,8 @@ async function read() {
   for (const row of models.body?.heads || []) {
     state.providerOf[row.head] = PROVIDER_FAMILY[row.provider] ?? row.provider;
     learnModels(state.modelLabel, row);
+    // each command's models once each, by the spelling a fallback is set in (a tier suffix names the same model)
+    state.headModels[row.head] = [...new Set((row.models || []).map((m) => m.id && modelKey(m.id)).filter(Boolean))];
     // the room a model's conversation has, for the open session's context meter: the window the catalog declares for it
     for (const m of row.models || []) if (m.id && m.context_window) state.window[m.id] = m.context_window;
   }
@@ -1734,6 +1738,7 @@ function foldTop() {
   ui.topShut = !ui.topShut;
   localStorage.setItem("splice.sessions.top", ui.topShut ? "shut" : "open");
   ui.lopen.clear(); // the logins close with the details
+  ui.fbopen.clear();
   render();
 }
 /** THE ROW'S TRACKS ARE AS WIDE AS WHAT THEY HOLD (Marcos, Oct 26: "we're wasting a lot of horizontal space"): the name
@@ -1932,7 +1937,44 @@ function accountHtml(s) {
   const line = more ? DRAW.disc({ open, controls: `logins-${esc(s.id)}`, inner: name, act: "logins", data: ` data-s="${esc(s.id)}"`, cls: "lhead-row" }) : name;
   const pinned = own ? `<span class="state">Pinned here</span>` : pin ? `<span class="state">Pinned on ${esc(s.cmd)}</span>` : "";
   return `<div class="lline">${line}${pinned}</div><div class="meterline" data-meter="l:${esc(s.id)}:${esc(r.account)}">${windowHtml(now?.windows?.[0] ?? null)}</div>`
-    + switchHtml(s, r) + (open ? loginRows(s, logins, r, own) : "");
+    + switchHtml(s, r) + (open ? loginRows(s, logins, r, own) : "") + fallbackHtml(s);
+}
+/** WHAT IT DOES WHEN NO LOGIN HAS ITS MODEL (splice fallback): one line under its logins, Waits or Runs on a model, that opens
+ *  the command's other models, each with Use, and the one in force with Remove. His word alone sets it; splice never picks a
+ *  model for a session. Its turns go to that model only while every login is held on its own, and back on the first turn a
+ *  login can serve it (HeldModelFallback). */
+function fallbackHtml(s) {
+  const fb = state.fallbacks[s.id] ?? null, open = ui.fbopen.has(s.id), busy = ui.fbBusy === s.id;
+  const seen = modelKey(s.turn?.model ?? s.row.model ?? s.row.served_model ?? "");
+  // A turn sent on its fallback reads the fallback as its model, and nothing names the model it asked for then (review
+  // of #595): the card names no model it cannot know, and the fallback keeps its row and its Remove.
+  const asked = fb != null && seen === modelKey(fb) ? "" : seen;
+  const others = (state.headModels[s.head] || []).filter((id) => id !== asked);
+  if (!seen || others.length === 0) return "";
+  const label = (id) => modelName(state.modelLabel, id);
+  const its = asked ? label(asked) : "the model it asks for";
+  const inner = `<span class="fbtext"><span class="fbq">When no login has ${esc(its)}</span>`
+    + `<span class="state${fb ? " on" : ""}">${esc(fb ? `Runs on ${label(fb)}` : "Waits")}</span></span>`;
+  const line = DRAW.disc({ open, controls: `fb-${esc(s.id)}`, inner, act: "fb", data: ` data-s="${esc(s.id)}"`, cls: "fbhead" });
+  if (!open) return `<div class="fbline">${line}</div>`;
+  const rows = others.map((id) => {
+    const on = fb != null && modelKey(fb) === id;
+    const act = busy ? `<span class="state">${ICON.wait}Saving</span>`
+      : on ? `<button class="act quiet small" data-act="fb-off" data-s="${esc(s.id)}">Remove</button>`
+      : `<button class="act small" data-act="fb-use" data-s="${esc(s.id)}" data-model="${esc(id)}">Use</button>`;
+    return `<div class="fbrow${on ? " on" : ""}"><span class="lname">${esc(label(id))}</span><span class="lact">${act}</span></div>`;
+  }).join("");
+  const why = `Used only while every login is held on ${its}.`;
+  return `<div class="fbline">${line}<div class="fbrows unfold" id="fb-${esc(s.id)}"><p class="fbwhy">${esc(why)}</p>${rows}</div></div>`;
+}
+/** Give the session its fallback, or take it away, then read the page again. */
+async function setFallback(s, model) {
+  ui.fbBusy = s.id; render();
+  const path = `/api/sessions/${encodeURIComponent(s.id)}/fallback`;
+  const res = model ? await API.put(path, { model }) : await API.del(path);
+  ui.fbBusy = null;
+  if (!res.ok) ui.failed.set(s.id, refusedAs(res, model ? "Not set" : "Not removed", `fallback ${s.id}`));
+  await reload();
 }
 /** WHERE ITS TURNS MOVED (gap: "Moved from native:claude-splice to Apple 6:53 PM: previous login needs sign-in"): the
  *  two logins by name with a caret between, then splice's own reason and when, on a line of its own. */
@@ -2283,6 +2325,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && ui.open != null && ui.held[ui.open]) { delete ui.held[ui.open]; render(); return; }
   if (e.key === "Escape" && ui.menu) { ui.menu = null; render(); return; }
   if (e.key === "Escape" && ui.lopen.size) { ui.lopen.clear(); render(); return; }
+  if (e.key === "Escape" && ui.fbopen.size) { ui.fbopen.clear(); render(); return; }
   if (e.key !== "Escape" || ui.open == null || ui.leftover[ui.open] == null) return;
   delete ui.leftover[ui.open]; ui.focusSay = true; render();
 });
@@ -2375,6 +2418,9 @@ document.addEventListener("click", (e) => {
     case "end-keep": if (s) { ui.armedEnd.delete(s.id); render(); } break;
     case "menu": if (s) openChoices(s); break;
     case "pin-login": if (s && !ui.pinning) pinLogin(s, el.dataset.label); break;
+    case "fb": if (s) { ui.fbopen.has(s.id) ? ui.fbopen.delete(s.id) : ui.fbopen.add(s.id); render(); } break;
+    case "fb-use": if (s && !ui.fbBusy) setFallback(s, el.dataset.model); break;
+    case "fb-off": if (s && !ui.fbBusy) setFallback(s, null); break;
     case "unpin-login": if (s && !ui.pinning) pinLogin(s, null); break;
     case "continue": if (s && !ui.moving.has(s.id)) continueOn(s, el.dataset.head, el.dataset.model, el.dataset.label); break;
     case "copy-r": if (s) copy("copy-r", s, resumeLine(s)); break;

@@ -227,7 +227,7 @@ public class Daemon(
             readFailures = controlPlane.quotaReadFailures,
         ),
         perfSources = controlPlane.perfRows,
-    )
+    ).also { it.sessionFallbacks = controlPlane.sessionFallbacks }
 
     // #525 (Nov 13, 2026): the heads in splice.toml's order whatever order they were assembled in, and safe to read
     // while a later head is still being added, since a head now serves before the last one is assembled.

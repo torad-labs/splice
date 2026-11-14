@@ -169,6 +169,11 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
         "[--head <key>] [--tail N] [--follow]",
         CommandFactory { a -> Command.Logs(a.drop(1)) },
     ),
+    // Nov 13, 2026: a session's fallback model while every login is held on the one it asks for (FallbackCommand).
+    "fallback" to CommandRegistration(
+        "[<session> <model>|off]",
+        CommandFactory { a -> Command.Fallback(a.drop(1)).takeIf { it.args.size in setOf(0, FALLBACK_SET_WORDS) } },
+    ),
     // Oct 26, 2026: `sessions relaunch` relaunches each session holding a planted turn key (SessionsRelaunchCommand).
     // Oct 27, 2026: `sessions --json` prints the same sessions as one JSON document (SessionsJson).
     "sessions" to CommandRegistration(

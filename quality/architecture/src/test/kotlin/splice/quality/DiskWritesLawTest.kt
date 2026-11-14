@@ -308,6 +308,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // Registration replacement and its content-addressed backup are owned by the extracted registration writer.
     "app/src/main/kotlin/splice/app/cli/mcp/McpServiceRegistration.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/head/HeadTraceStores.kt" to mapOf("ActivityDays(" to 1),
+    // The per-session fallback models, in the session-fallbacks.json README row.
+    "app/src/main/kotlin/splice/app/head/SessionFallbackStore.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/mcp/NativeCodexMcpFiles.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/mcp/NativeCodexSocketProxy.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeAccountFolders.kt" to mapOf("writeAtomic0600(" to 4),

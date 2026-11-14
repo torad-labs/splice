@@ -2,7 +2,7 @@
    One world with the launch film and the splice page: night wall, cel objects with an ink outline and a hard
    shadow in their model's colour, Fraunces for names that lead, Source Serif for names, Plex Mono for numbers,
    times and commands. Dark first. Type grows a little with the screen, so 3828 px never reads smaller than 1440.
-   The type is flat, as the Temple's is (Marcos, Oct 15: "now everything shows up way too big in the ui"): a page
+   The type is flat, as the Temple's is (Oct 15: everything showed up too big in the UI): a page
    title 2.1rem, a section 1.4, a sub-heading and a card's name about 1.1, body 1, rows .95, buttons .92, labels .88;
    hierarchy comes from weight, colour and place more than from size. */
 
@@ -24,7 +24,7 @@
   --font-data: "IBM Plex Mono", monospace;
 
   /* scale: the root grows with the screen, and every size below is in rem, so one factor sizes the whole page: text,
-     spacing, borders, radii and shadows together. Marcos, Oct 8: everything 25% smaller (12 px at 1440, 18 px at 3828).
+     spacing, borders, radii and shadows together. Oct 8: everything was made 25% smaller (12 px at 1440, 18 px at 3828).
      Oct 15: still too big on his wide screen, so the root keeps 12 px at 1440 and now grows slower (14.6 px at 3394,
      15.2 px at 3828), close to the Temple's 14 px text at its 1.25 zoom. */
   --scale: .75;
@@ -151,8 +151,8 @@ button { font: inherit; color: inherit; }
    the page's lower edge, a divider for nothing. Every control inside it keeps its own. */
 main.page:focus { outline: none; }
 
-/* ---------- the frame: the nav across the top, the page on the wall under it (Marcos, Oct 15: "let's also move the
-   navigation from the left to the top") ---------- */
+/* ---------- the frame: the nav across the top, the page on the wall under it (Oct 15: the navigation moved from the
+   left to the top) ---------- */
 .app { position: relative; z-index: 1; min-height: 100vh; }
 /* the bar: the wordmark, the pages inline after it, the stale mark and the theme toggle at the right end. It stays in
    view, on the wall's own colour with a thin ink line under it, and an anchor scrolls to just under it, never behind it.
@@ -911,8 +911,8 @@ input.field { height: var(--ctl-h); }
 .tlamp.needs svg { width: 1.05rem; height: 1.05rem; }
 .tlamp.stalled { color: var(--limit); }
 
-/* ---------- reading: a page arriving, never an empty one (Marcos, Oct 12: "we can do better than that reading
-   indicator") ----------
+/* ---------- reading: a page arriving, never an empty one (Oct 12: the plain reading indicator
+   was not good enough) ----------
    What is not read yet draws as its own shape: a figure or a line is a bar in the stripes a meter draws while it reads
    (.bar.reading), sized like what will land there, and a card is drawn like a real one, outline and edge, its words
    such bars. Ghost cards rise in and fade down the page. GHOST in kit.js writes the markup. */

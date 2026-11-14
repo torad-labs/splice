@@ -1,6 +1,5 @@
-// Marcos, Oct 28: "summary detailed always by default, effort at high by default, but these should be configurable
-// by users in the console and in the toml file", then: "claude code picks should also be considered, for all heads and
-// all adapters we do. Always. WHy one or the other, why can't it be both?" So a Responses head sends the effort Claude
+// Oct 28: summary is detailed and effort high by default, both configurable by users in the console and in the toml
+// file, and Claude Code's own picks count for all heads and all adapters, always: both, not one or the other. So a Responses head sends the effort Claude
 // Code picked when its request names one (/effort, --effort, its settings), and only a request that names none falls
 // to the setting in splice.toml (or the console, which writes the same layers), else high. Summary is detailed unless
 // a setting says otherwise.

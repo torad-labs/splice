@@ -200,7 +200,7 @@ class WsTearReserveTest(@param:TempDir private val tmp: Path) {
         }
 
     // Since 2026-10-27 a pre-output tear is the socket's failure: the head sends the round once more on a fresh
-    // socket before HTTP (Marcos: "a limit error or close mid-request reconnects at once"), so it leaves marked so.
+    // socket before HTTP (a limit error or close mid-request reconnects at once), so it leaves marked so.
     @Test
     fun `a tear before any client frame is re-served on a fresh socket, named by the close beneath it`() = runTest {
         assertEquals(

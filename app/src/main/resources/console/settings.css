@@ -36,7 +36,7 @@
 .jobs.open .pane { display: flex; }
 @container (min-width: 84rem) {
   .jobs, .jobs.open { display: flex; align-items: flex-start; gap: var(--gap-col); }
-  /* THE RAIL RIDES, THE PANE FILLS, THE PAGE SCROLLS ONCE (Marcos, Oct 25: "proper spacing, avoid cramping"). The
+  /* THE RAIL RIDES, THE PANE FILLS, THE PAGE SCROLLS ONCE (Oct 25: proper spacing, avoid cramping). The
      pane took a max-width and a scrollbar of its own inside the page's, which at 3822 left a 1,000 px band of wash
      beside it and put every setting behind two scrolls. The rail sticks so a topic is always one click away. */
   .jobs .list, .jobs.open .list { display: flex; flex: 0 0 28rem; position: sticky; top: 4.6rem; }
@@ -126,7 +126,7 @@
 /* a state or a time on the hero's own line: when today's busiest moment was, when a plan rolls over */
 .hat { font: 500 1rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
 
-/* ---------- TWO PARTS OF A TOPIC SIDE BY SIDE (Marcos, Oct 25: "proper spacing, avoid cramping") ----------
+/* ---------- TWO PARTS OF A TOPIC SIDE BY SIDE (Oct 25: proper spacing, avoid cramping) ----------
    What happened and the settings that decide it are one thought, so they are read together: the figures at the left,
    the settings that act on them at the right. They stack below 110rem of plate. THE LAYOUT IS THE KIT'S (Oct 28,
    console.css .topic, DRAW.topic): balanced columns, a section that belongs to neither side under the shorter one. What
@@ -136,7 +136,7 @@
 .pcol > .psec + .psec { margin-top: calc(4 * var(--u)); padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); }
 
 /* ---------- a setting is a row, and what it does is drawn on it ----------
-   (Oct 27, from Marcos's "show don't tell".) One grid a section: the name, the control, and the drawing of what the
+   (Oct 27, from the show-rather-than-tell rule.) One grid a section: the name, the control, and the drawing of what the
    value does, each in a column of its own, so the names, the controls and the drawings start at one x down a section
    and a value is read against the figures it acts on. A section whose rows draw nothing is two columns. */
 /* A NAME READS ON ONE LINE (Oct 27): the name column is as wide as the section's longest name, up to 28rem, so "Check
@@ -375,7 +375,7 @@ a.mam-tile:hover { background: var(--obj-high); }
 
 /* ---------- Reasoning: the terminal it lands in ----------
    Nothing on the wire counts what a reasoning setting did, so this topic opens on the thing itself, drawn from the
-   live values as shapes and never as sample words (Marcos, Oct 25: "no made-up data"). Each line a setting decides
+   live values as shapes and never as sample words (Oct 25: no made-up data). Each line a setting decides
    carries that setting's number in the margin, the same number that stands on its row, and pointing at either lights the
    other, so a choice is read as the line it adds, moves or takes away. A line a setting takes away keeps its place,
    dashed, with the value that took it. THE THREE KINDS OF LINE LOOK APART: the model's thinking is hatched, the reply

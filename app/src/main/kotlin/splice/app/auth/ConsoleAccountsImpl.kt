@@ -58,8 +58,8 @@ internal class ConsoleAccountsImpl(
 
     /** A ChatGPT, Grok, Kimi or Muse head builds its pool once, when it starts, so it went on holding a login whose
      *  file was just removed or renamed: the roster listed it as signed out, with a Sign in that would file it again
-     *  under the label just removed, until the daemon next restarted (Marcos, Nov 11, 2026: "I had issues before like
-     *  this adding new accounts, removing"). The head starts again and finds its pool as it is on disk, the way it
+     *  under the label just removed, until the daemon next restarted (Nov 11, 2026: adding and removing accounts had
+     *  left stale rosters before). The head starts again and finds its pool as it is on disk, the way it
      *  does when a sign-in lands ([LoginSessions]). A head's first login is read where it is, so it needs none, and
      *  a Claude head never answers Ok here: it follows its folders by itself. A head that does not come back is its
      *  own start's to report: the file is gone either way. */

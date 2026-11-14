@@ -1,7 +1,7 @@
 // The open request, one card of sections: its login and what the provider said, Timing with its sends on one rail, where
 // this model's requests land, Tokens and cost, and the Record whose bodies open both ways as trees (Sent, Attempts,
 // Returned). Requests draws every request this way, and Compare models opens each answer's request in the same view
-// (Marcos, Oct 9: "reuse the same component we use for the requests page"). One file, so the two never drift. The page
+// (Oct 9: it reuses the same component as the requests page). One file, so the two never drift. The page
 // that draws it loads first and declares esc, ICON, md, colorOf and NOW (kit.js, once it lands, is where those live); a
 // row carries its own provider id, so this view keeps no table of its own.
 "use strict";

@@ -21,9 +21,8 @@
 // deliberate cap (grok-4.3 is declared 256k against a 1M ceiling). So a declared window under the
 // published one is reported as CAPPED — a fact, not a fault — and only a window OVER it is red.
 //
-// AND THE DAEMON NOW ACTS ON THE ANSWER (later on 2026-09-22). The operator: "make sure that splice
-// probes the head endpoint for available models instead of having to hardcode them on the toml
-// file". At start the daemon asks the same URL (splice.models.discovery.ModelDiscovery) and every
+// AND THE DAEMON NOW ACTS ON THE ANSWER (later on 2026-09-22). The operator wanted splice to probe
+// the head endpoint for available models instead of having them hardcoded in the toml file. At start the daemon asks the same URL (splice.models.discovery.ModelDiscovery) and every
 // NEW model below joins the picker with no row — still never overwriting a declared one, for the
 // reasons above. EXCLUDED is what stays out, and says why.
 package splice.models.list

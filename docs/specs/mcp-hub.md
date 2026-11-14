@@ -163,8 +163,7 @@ choice, sharing yes or no, lives in splice.toml as the answer `splice setup` sav
 
 ### Registered local service
 
-Marcos, October 18: "Could we make it so the MCP is installed on Codex and Claude
-via Splice, and that it starts together with Splice please."
+Marcos wants (October 18) the MCP installed on Codex and Claude through Splice and started together with Splice.
 
 An app on the same machine provisions its already-resolved local launch through the CLI's install command, as a
 launch file with its URL or in the compatible script form. A launch file is JSON with a

@@ -657,9 +657,9 @@
 
 /* ============================================================================================================
    THE OPEN SESSION, IN PLACE (round 2, Oct 27): a plate under its own row, inside its block. Its title bar is the
-   row's own line, raised in the selection's ink, and its name folds it away. Marcos, Oct 26: "scrolling on the chat
-   gets crampped, so ideally we should be able to collapse the top component in it, and the tool call ui is very busy,
-   it also seems like we're wasting a lot of horizontal space, the row style just does not look good".
+   row's own line, raised in the selection's ink, and its name folds it away. Oct 26: scrolling in the chat got
+   cramped, so the top component can collapse, the tool call UI was too busy, horizontal space was wasted and the row
+   style did not look good.
    ============================================================================================================ */
 .sessions .pane.s {
   display: block; height: auto; min-height: var(--row-h, 3.7rem); overflow: visible; cursor: default;
@@ -703,7 +703,7 @@
 .sessions .ask .tname { font-weight: 500; color: var(--text-mute); }
 .sessions .ask .morepill, .sessions .toolout + .morepill { margin-top: 0.333rem; }
 
-/* ---------- the details, folding to nothing over 240 ms (Marcos: "collapse the top component") ---------- */
+/* ---------- the details, folding to nothing over 240 ms (the top component collapses) ---------- */
 .sessions .panetop { display: grid; grid-template-rows: 1fr; transition: grid-template-rows var(--t-snap) var(--e-out); }
 .sessions .panetop.shut { grid-template-rows: 0fr; }
 .sessions .panetop-in { container: sxrail / inline-size; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
@@ -878,7 +878,7 @@
 .sessions .call { gap: 0.667rem; }
 .sessions .call .morepill { margin-left: 0.333rem; }
 .sessions .tool .nothing { font-size: .88rem; }
-/* A RUN OF CALLS IS ONE QUIET TRAIL (Marcos, Oct 26: "the tool call ui is very busy"): one line per call on one grid,
+/* A RUN OF CALLS IS ONE QUIET TRAIL (Oct 26: the tool call UI was too busy): one line per call on one grid,
    the tool word's track as wide as the calls it shows, one hairline at the run's left as its one edge, and no call with
    a box, a fill, a shadow or a coloured edge. */
 /* THE CALLS A SESSION MADE stand in the rail beside its conversation, a run to a block on one grid, the tool word's track as wide as the calls it shows */

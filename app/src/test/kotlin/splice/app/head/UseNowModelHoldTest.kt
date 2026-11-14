@@ -1,4 +1,4 @@
-// NEW: Use now on a login held for one model's week (Marcos, Nov 3, 2026: "clicking 'use now' also didnt work"). That
+// NEW: Use now on a login held for one model's week (Nov 3, 2026: clicking Use now did not work). That
 // night accounts 2, 3 and 6 showed their week at 65 to 73% and a Use now button, Anthropic having refused Fable alone on
 // them; splice held them for every model, so the pin he set fell through to the policy and nothing changed.
 //

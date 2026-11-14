@@ -1,5 +1,5 @@
-// NEW: Oct 28, 2026 (Marcos: "add the ability for anyone or anything to register to send and receive messages via
-// splice peer"): a program that registers by hand registers at every start, so a register for a peer already there
+// NEW: Oct 28, 2026 (anyone or anything can register to send and receive messages via
+// splice peer): a program that registers by hand registers at every start, so a register for a peer already there
 // answers that peer rather than refusing it.
 package splice.sessions.peer.store
 

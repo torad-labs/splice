@@ -1,4 +1,4 @@
-// Goal (Marcos, 2026-10-25, "both"): when Claude Code loads a tool in the middle of a code-mode conversation, the
+// Goal (2026-10-25): when Claude Code loads a tool in the middle of a code-mode conversation, the
 // request's first item (the additional_tools declaration that carries exec's manual) stays byte for byte what the
 // conversation's earlier requests sent, so the provider's prompt cache still covers the whole conversation. The live
 // case, 2:05 CT on Oct 25 (turn 9e239a563d4d): a cell ran `tools.ToolSearch({query:"select:Monitor"})`, the next

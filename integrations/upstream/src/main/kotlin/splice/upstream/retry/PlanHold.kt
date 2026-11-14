@@ -5,7 +5,7 @@
 //
 // It sits beside RateLimitCooldown, which owns one and clears it on restart, rather than inside it,
 // because that class is at detekt's function ceiling. It holds no turn: each turn asks the provider
-// itself (Marcos, Oct 26), so the next one notices a top-up. What this adds is only the deadline the
+// itself, so the next one notices a top-up. What this adds is only the deadline the
 // CLIENT is told and the window status reads.
 //
 // Nov 3, 2026: a window of one model's week holds the login for that model alone (PlanLimit.oneModel), beside the one
@@ -16,8 +16,8 @@
 // ([PlanHold.weigh]). Until then only an answered turn ended one sooner, and no turn is sent to a held login while
 // another is open, so a login a person reset at the provider stayed out of the pool until the reset its refusal had
 // named. That morning one login read 0% of its Fable week after such a reset, and the pool would have passed it over
-// until the next Wednesday while the last open login ran out (Marcos: "I have 12 resets ... let me know when we're on
-// the last account close to hit limit and I'll call a reset").
+// until the next Wednesday while the last open login ran out (he has many resets in hand and wants to hear when the
+// pool is on its last account close to a limit, so he can call a reset).
 //
 // Nov 13, 2026: the figure each held window last read is kept beside its hold, where a restart finds it. The figures
 // lived in memory alone, so a restart, and a login stood up again after its credential changed, brought the hold back

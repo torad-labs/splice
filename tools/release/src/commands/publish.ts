@@ -1,6 +1,6 @@
 // `release publish <version> (--dist <dir> | --run <id>)` — put an accepted release on splice.torad.ai/download, where
-// install.sh and `splice upgrade` download it since Oct 31, 2026 (Marcos: "I dont want the release download to be there
-// [GitHub] ... being at Cloudflare makes more sense"). It runs on the maintainer's machine, through R2's S3 API with a
+// install.sh and `splice upgrade` download it since Oct 31, 2026 (the download does not belong on GitHub,
+// and Cloudflare suits it better). It runs on the maintainer's machine, through R2's S3 API with a
 // token scoped to the bucket that the keyring holds, because a Cloudflare token is never set in the shell or in the
 // repository's secrets.
 //

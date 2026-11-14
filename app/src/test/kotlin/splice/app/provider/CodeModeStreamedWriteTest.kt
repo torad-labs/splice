@@ -1,4 +1,4 @@
-// Goal (Marcos, Nov 3, 2026, option 1: "like native claude code"): when GPT's code-mode script starts by writing a
+// Goal (Nov 3, 2026: it should behave like native Claude Code): when GPT's code-mode script starts by writing a
 // file with tools.Write, Claude Code shows Write(path) as soon as the path is written, and the file's content streams
 // into it while GPT writes it, as a native Write does. The file Claude Code writes is exactly the one the script asks
 // for, and its result carries the script on. When the script turns out not to ask for that Write as streamed, Claude

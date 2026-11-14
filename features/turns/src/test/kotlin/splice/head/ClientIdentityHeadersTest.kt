@@ -22,6 +22,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.topology.ForwardHeaders
 import splice.core.turn.WatchdogBudget
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
@@ -58,6 +59,33 @@ private val CLIENT_IDENTITY = mapOf(
 )
 
 class ClientIdentityHeadersTest {
+    /** The provider's forward_headers for the head [withHead] builds; JUnit makes a fresh instance per test. */
+    private var forwarded = ForwardHeaders(emptyList())
+
+    @Test
+    fun `a header the provider names in forward_headers rides on from the caller on a head with its own login`(
+        @TempDir tmp: Path,
+    ) {
+        forwarded = ForwardHeaders(listOf("X-Acme-Team"))
+        withHead(tmp, clientAuth = false, staticHeaders = emptyMap()) { rig ->
+            assertEquals(HttpStatusCode.OK, rig.turn(CLIENT_IDENTITY + ("X-Acme-Team" to "platform")).first)
+            val sent = rig.requests.single()
+            assertEquals(listOf("platform"), sent["x-acme-team"])
+            assertFalse(sent.containsKey("x-unrelated-client-header"), "only the named header rides on")
+            assertFalse(sent.containsKey("x-app"), "naming one header forwards no other client identity")
+            assertEquals(listOf("provider-owned-key"), sent["x-api-key"])
+        }
+    }
+
+    @Test
+    fun `a named header carrying splice's own key stays on the machine and the turn still runs`(@TempDir tmp: Path) {
+        forwarded = ForwardHeaders(listOf("X-Acme-Team"))
+        withHead(tmp, clientAuth = false, staticHeaders = emptyMap()) { rig ->
+            assertEquals(HttpStatusCode.OK, rig.turn(mapOf("X-Acme-Team" to "team $TURN_KEY")).first)
+            assertFalse(rig.requests.single().containsKey("x-acme-team"))
+        }
+    }
+
     @Test
     fun `client identity reaches the upstream verbatim and once including SDK family members`(@TempDir tmp: Path) {
         withHead(tmp, clientAuth = true) { rig ->
@@ -219,6 +247,7 @@ class ClientIdentityHeadersTest {
             ).copy(
                 policy = HeadDeps.HeadPolicy(forwardClientAuth = clientAuth),
             ).copy(tokens = HeadDeps.HeadTokens(turnKey = { TURN_KEY }, managementKey = { MANAGEMENT_KEY })),
+            forwarded = forwarded,
         )
         val client = HttpClient(CIO)
         try {

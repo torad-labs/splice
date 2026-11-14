@@ -18,6 +18,7 @@ import splice.core.config.LAUNCH_PROOF_HEADER
 import splice.core.failure.Decline
 import splice.core.failure.FailureCause
 import splice.core.perf.LivenessProbe
+import splice.core.topology.ForwardHeaders
 import splice.head.admission.AdmissionResponses
 import splice.head.transport.ListValuedHeaders
 import java.security.MessageDigest
@@ -76,14 +77,12 @@ internal class ClientAuth(
     /** Where a refused local credential is said (Oct 26, 2026). HeadServer's writes under the head's key; this default
      *  writes the same lines to [deps]'s log as they are, for a ClientAuth a test builds around a seam. */
     private val refusedKeys: RefusedKeyLog = RefusedKeyLog(deps.log, deps.seams.clock),
+    /** The headers this head's provider names in forward_headers (Nov 14, 2026), which ride on from the caller on any
+     *  head, whether or not it forwards the caller's login. None by default. */
+    private val forwarded: ForwardHeaders = ForwardHeaders(emptyList()),
 ) {
-    // Splits each forwarded value into scheme/credential/parameter tokens for the own-key check.
-    // The FULL RFC 7235 delimiter class, not just whitespace (third DR-30 redo): auth-params
-    // delimit with "=", DQUOTE and "," — `Digest response=<key>` hid the key from a whitespace
-    // split while the raw header still forwarded verbatim. ";" and "'" ride along for legacy
-    // scheme syntax. The mgmt key is splice-authored hex, so no delimiter can occur INSIDE it:
-    // this split can surface the key but never break it.
-    private val authDelimiterRe = Regex("[\\s,=;'\"]+")
+    /** splice's own keys, found in what a caller sends (OwnKeys). */
+    private val ownKeys = OwnKeys(deps.tokens)
 
     /** Who a head that holds logins of its own serves them to (PR #247 review, Oct 29). */
     private val heldLogins = HeldLoginDoor(deps, responses, refusedKeys)
@@ -111,7 +110,7 @@ internal class ClientAuth(
         // The turn key is what a launched client holds; the management key still runs a turn so a
         // session launched before the v0.4.0 split keeps working until it is relaunched.
         val presented = presentedCredential(call)
-        if (matchesInferenceToken(presented) || matchesOperatorToken(presented)) return true
+        if (ownKeys.isTurnKey(presented) || ownKeys.isManagementKey(presented)) return true
         // Said, with why and never with the key (Oct 26, 2026): this refusal wrote nothing, and a session that day's
         // key rotation stranded was refused for 19 minutes while daemon.log stayed quiet.
         val why = when {
@@ -157,7 +156,7 @@ internal class ClientAuth(
     private suspend fun authorizeOperator(call: ApplicationCall): Boolean {
         // The OPERATOR key alone (v0.4.0): the turn key is in every launched session's environment,
         // so accepting it here handed any session every other session's upstream bodies.
-        if (matchesOperatorToken(presentedCredential(call))) return true
+        if (ownKeys.isManagementKey(presentedCredential(call))) return true
         responses.respondUnauthorized(call)
         return false
     }
@@ -221,11 +220,7 @@ internal class ClientAuth(
         CREDENTIAL_HEADERS.any { !call.request.headers[it].isNullOrBlank() }
 
     private suspend fun allowUnlessOwnKey(call: ApplicationCall): Boolean {
-        val carriers = forwardedClientHeaders(call).filterValues { value ->
-            value.split(authDelimiterRe).any {
-                matchesInferenceToken(it) || matchesOperatorToken(it) || deps.tokens.retired(it)
-            }
-        }.keys
+        val carriers = forwardedClientHeaders(call).filterValues(ownKeys::carriedIn).keys
         // PR #247 review, Oct 29: past splice's own keys, a head holding logins of its own asks who the caller is.
         if (carriers.isEmpty()) return heldLogins.opens(call, forwardedClientHeaders(call))
         val headers = carriers.joinToString(", ")
@@ -241,21 +236,6 @@ internal class ClientAuth(
         return false
     }
 
-    private fun matchesInferenceToken(presented: String?): Boolean =
-        constantTimeEquals(presented, deps.tokens.inferenceToken)
-
-    private fun matchesOperatorToken(presented: String?): Boolean =
-        constantTimeEquals(presented, deps.tokens.operatorToken)
-
-    /** Constant-time compare against one of this head's own keys. Length is checked first because
-     *  [MessageDigest.isEqual] is only constant-time for equal-length inputs. */
-    private fun constantTimeEquals(presented: String?, expected: String): Boolean {
-        val presentedBytes = presented?.toByteArray(Charsets.UTF_8) ?: return false
-        val expectedBytes = expected.toByteArray(Charsets.UTF_8)
-        if (presentedBytes.size != expectedBytes.size) return false
-        return MessageDigest.isEqual(presentedBytes, expectedBytes)
-    }
-
     /** The inbound headers a client-auth head forwards upstream, by EXPLICIT allowlist.
      *
      *  An allowlist, never "forward everything": Host, Content-Length, Accept-Encoding and friends
@@ -269,6 +249,27 @@ internal class ClientAuth(
         return (FORWARDED_CLIENT_HEADERS.keys + identity).mapNotNull { name ->
             forwardedValue(call, name)?.let { name to it }
         }.toMap()
+    }
+
+    /** Every header of [call] that rides upstream on this head: the ones its provider's forward_headers names, on any
+     *  head, and on a head that forwards the caller's login, that login and its wire knobs too
+     *  ([forwardedClientHeaders]), which win over a named header of the same name. */
+    fun upstreamHeaders(call: ApplicationCall): Map<String, String> {
+        val login = if (deps.policy.forwardClientAuth) forwardedClientHeaders(call) else emptyMap()
+        return namedClientHeaders(call) + login
+    }
+
+    /** The headers the provider's forward_headers names, as the caller sent them (Nov 14, 2026). A company gateway
+     *  in front of the provider reads them: the tags a person's Claude Code adds through ANTHROPIC_CUSTOM_HEADERS. One
+     *  that carries one of splice's own keys stays here, and the log names the header: splice's keys never leave the
+     *  machine, and dropping the one header lets the turn go on where refusing it would stop the session. */
+    private fun namedClientHeaders(call: ApplicationCall): Map<String, String> {
+        val sent = forwarded.carried.mapNotNull { name -> forwardedValue(call, name)?.let { name to it } }
+        val (own, rest) = sent.partition { (_, value) -> ownKeys.carriedIn(value) }
+        if (own.isNotEmpty()) {
+            deps.log("[auth] did not forward ${own.joinToString { it.first }}: it carried one of splice's own keys\n")
+        }
+        return rest.toMap()
     }
 
     /** One allowlisted header's value as it should ride upstream.

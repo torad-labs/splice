@@ -1,5 +1,5 @@
-// + Add account adds a login beside the ones a command has (Marcos, Nov 11, 2026: "I had issues before like this adding
-// new accounts, removing"). A sign-in splice is sent with no label is the command's FIRST login signing in again, and it
+// + Add account adds a login beside the ones a command has (Nov 11, 2026: adding and removing accounts had gone wrong
+// like this before). A sign-in splice is sent with no label is the command's FIRST login signing in again, and it
 // lands over that login's file (LoginIo.persistIfSignedIn); a place of its own is asked for as "auto"
 // (OAuthAccountFiles.loginAccount). Since Oct 13 only Muse and Kimi commands asked for one, so on a ChatGPT or Grok
 // command + Add account, signed in as another account, left one card holding the new account where the first had been.

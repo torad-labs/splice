@@ -1,6 +1,6 @@
-// Goal (Marcos, Oct 31, 2026, through the President): "redo the website for Spllice, so it uses latest console ui ...
-// instead of showing full screenshots maybe we can show actually components with fake data just to highlight features
-// ... looked like a real product page ... show dont tell ... Progressive disclosure as people scroll through the website."
+// Goal (Oct 31, 2026, through the President): redo the website so it uses the latest console UI. Instead of full
+// screenshots it shows the actual components with fake data to highlight features, looks like a real product page,
+// shows rather than tells, and discloses progressively as people scroll.
 //
 // So splice.torad.ai is one page whose product parts are the console's own markup on the console's own stylesheets,
 // with made-up data, and a visitor can tell it works by opening it:
@@ -163,7 +163,7 @@ describe("splice.torad.ai's website", () => {
 
   // A link to the page shared in a chat or a post shows the social card the site itself serves, a JPEG at the size the
   // head gives, so a preview draws it whole. (Rewritten Nov 1, 2026: the old card, held with the film in the torad
-  // repository, drew "Runs on your computer", the line Marcos struck; the new card lives beside the page.)
+  // repository, drew "Runs on your computer", the line that was struck; the new card lives beside the page.)
   test("a shared link shows the social card the site serves, at the size the head gives", () => {
     const meta = (p: string) => new RegExp(`<meta property="${p}" content="([^"]*)"`).exec(page)?.[1];
     const url = meta("og:image") ?? "";
@@ -283,9 +283,8 @@ describe("splice.torad.ai's website", () => {
     expect([...words(answer).matchAll(/\b(\d+) days\b/g)].map((m) => m[1]).filter((n) => n !== days)).toEqual([]);
   });
 
-  // Marcos, Nov 1, 2026: "one feature I want us to highlight with its own section, which is the ability to connect
-  // another computer to a running splice on another computer, like we do with our mac that uses the subscriptions and
-  // heads from this computer by running one command to set things up." Its band shows the machine with the logins
+  // Nov 1, 2026: one feature gets its own section, the ability to connect another computer to a running splice on
+  // another computer, the way the Mac uses the subscriptions and heads of this computer after one setup command. Its band shows the machine with the logins
   // sharing them, the one command the other machine runs (its Copy button copies that line alone), and what the address
   // can add (docs/specs/lan-share.md), and the header links to it. Every `splice share` and `splice remote` the page draws
   // is a verb those commands take today, and every address it draws is on the port splice shares on.
@@ -328,7 +327,7 @@ describe("splice.torad.ai's website", () => {
     expect(band).toMatch(new RegExp(`claudex on tower ${refusal![1]} '([a-z0-9._-]+)'; ${refusal![2]} [a-z0-9._-]+(, [a-z0-9._-]+)*`));
   });
 
-  // Marcos, Nov 1, 2026: "things like "runs on your computer" is AI slop, of course it runs in the persons computer."
+  // Nov 1, 2026: a line like "runs on your computer" is filler, since of course it runs on the person's computer.
   // A shared link shows the page in small: its picture, described by the alt text, says what the page's headline says,
   // and neither the picture's description nor anything a visitor reads on the page carries the line he struck. (The
   // film window keeps the film's own captions, which are the film's words.)

@@ -1,5 +1,5 @@
-// Goal (Marcos, Oct 31: "I dont want the release download to be there [GitHub] ... being at Cloudflare makes more
-// sense"; then "Have tje download be splice.torad.ai/download"): someone who runs install.sh gets every file of the
+// Goal (Oct 31: the download does not belong on GitHub, and Cloudflare suits it better, at
+// splice.torad.ai/download): someone who runs install.sh gets every file of the
 // release from splice.torad.ai/download, never from github.com.
 // A default install takes the newest stable from /latest, a pinned SPLICE_VERSION takes that version's own folder,
 // and a prebuilt jar with no launcher beside it fetches the launcher of its own release from that release's folder.

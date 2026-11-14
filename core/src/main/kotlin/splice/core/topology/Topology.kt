@@ -142,7 +142,7 @@ public data class DaemonConfig(
     // MCP hub step 3: the setup answer, share MCP servers between sessions or start one copy per session. Absent reads
     // as shared. Read live (TopologyWindows), so a change applies to the next connection.
     @SerialName("mcp_share") val mcpShare: Boolean? = null,
-    // Auto-update (Marcos, Oct 13): which releases this install follows, "stable" (absent) or "beta", and whether the
+    // Auto-update (Oct 13): which releases this install follows, "stable" (absent) or "beta", and whether the
     // daemon installs a newer one itself. Absent auto_update reads as off. Read live by the daemon's updater.
     @SerialName("update_channel") val updateChannel: String? = null,
     @SerialName("auto_update") val autoUpdate: Boolean? = null,
@@ -151,8 +151,8 @@ public data class DaemonConfig(
     // Read live at each look.
     @SerialName("refresh_prices") val refreshPrices: Boolean? = null,
     // Nov 12, 2026: the operator's own program for what cannot wait for the console, such as a command down to the last
-    // login that can serve its sessions (Marcos: "just let me know when we're on the last account close to hit limit
-    // and I'll call a reset"). The program and its arguments, run with no shell, the message on its standard input.
+    // login that can serve its sessions, so a person with resets to spend is told when the last account is close to its
+    // limit and can call a reset. The program and its arguments, run with no shell, the message on its standard input.
     // Set in this file and nowhere else: it names a program the daemon runs, so no route or console page writes it.
     @SerialName("alert_command") val alertCommand: List<String>? = null,
 )
@@ -167,6 +167,11 @@ public data class ProviderConfig(
      *  owned and pure TOML, so an anthropic-compatible vendor needs no provider code at all. On a
      *  head that forwards the client's own headers, a forwarded value WINS over these defaults. */
     @SerialName("extra_headers") val extraHeaders: Map<String, String> = emptyMap(),
+    /** Headers a caller sends that ride on to this provider, by exact name ([ForwardHeaders]). Empty = none. */
+    @SerialName("forward_headers") val forwardHeaders: List<String> = emptyList(),
+    /** True = every request to this provider carries a Via line naming splice and its version ([SPLICE_VIA]). Off by
+     *  default, so a provider sees nothing of splice unless its table asks. */
+    @SerialName("send_version") val sendVersion: Boolean = false,
     val models: List<ModelEntry> = emptyList(),
     @SerialName("extra_windows") val extraWindows: List<ExtraWindow> = emptyList(),
     @SerialName("window_rules") val windowRules: List<WindowRule> = emptyList(),
@@ -241,7 +246,7 @@ public data class ProviderConfig(
     private val codeModeShape: Boolean
         get() = AuthKindRegistry.from(auth.kind)?.codeModeDialect == dialect
 
-    /** Code mode graduated in 0.4.0 (Marcos, 2026-09-13): ON by default for the registry shape,
+    /** Code mode graduated in 0.4.0 (2026-09-13): ON by default for the registry shape,
      *  `code_mode = false` still turns it off, and every other provider shape stays off. */
     public val codeModeEnabled: Boolean
         get() = quirks.codeModeEnabled(codeModeShape)
@@ -256,8 +261,16 @@ public data class ProviderConfig(
         return "code_mode is only supported with $named"
     }
 
+    /** Every header this table sets on each request: the Via line when [sendVersion] is on, then [extraHeaders] with
+     *  key quoting removed, so a Via written in extra_headers is the one that rides. */
     public val staticHeaders: Map<String, String>
-        get() = extraHeaders.mapKeys { (key, _) -> key.trim('"') }
+        get() = via + extraHeaders.mapKeys { (key, _) -> key.trim('"') }
+
+    /** [forwardHeaders] as the list a head forwards from. */
+    public val forwarded: ForwardHeaders get() = ForwardHeaders(forwardHeaders)
+
+    /** The Via line [sendVersion] adds, or nothing. */
+    private val via: Map<String, String> get() = if (sendVersion) mapOf("Via" to SPLICE_VIA) else emptyMap()
 
     /** V4-162: this provider without its windows (see [Topology.withoutWindows]). extra_windows and
      *  window_rules declare windows and nothing else, so they are dropped whole: a row added to or

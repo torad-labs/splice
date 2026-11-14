@@ -1,7 +1,7 @@
 // NEW: Nov 13, 2026: a login's limit resets, listed and spent on a person's word. That evening every Fable login on one
 // machine ran out at about 6:24 PM CT with turns held until Sunday, and the only way to call a reset was by hand, in
-// Claude Code, on each login. Marcos: "implement the reset feature (there are two, a fable reset and a weekly reset,
-// lets make sure we support both)". These routes list how many of each kind a login has left and spend one; splice
+// Claude Code, on each login. He wanted the reset feature built, supporting both
+// kinds: a Fable reset and a weekly reset. These routes list how many of each kind a login has left and spend one; splice
 // never spends one by itself.
 package splice.accounts.pool
 

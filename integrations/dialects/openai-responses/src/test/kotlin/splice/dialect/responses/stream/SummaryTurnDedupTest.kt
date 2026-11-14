@@ -1,6 +1,6 @@
 // NEW: the 2026-07-26 mirror-duplication fix, turn-scoped. Continuation rounds (fold / reanchor /
-// tool_search) re-request the detailed reasoning summary (operator: "always show the reasoning,
-// detailed"), and the backend restates already-summarized sections under FRESH item ids — which
+// tool_search) re-request the detailed reasoning summary (operator: the reasoning is always shown,
+// in detail), and the backend restates already-summarized sections under FRESH item ids — which
 // the codex-parity active-item filter cannot catch (the fresh item IS active in its round).
 // Per-round translators each had their own dedup state, so the repeat passed every round.
 // SharedSummaryParts makes the dedup shared across rounds: exact repeats die, genuinely-new

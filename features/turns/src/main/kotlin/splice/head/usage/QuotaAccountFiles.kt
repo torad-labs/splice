@@ -1,5 +1,5 @@
-// NEW: a quota reading names its account, and an account keeps its own file (Marcos, Oct 15, 2026: "usage tracks the
-// wrong account"). A head's file holds whichever account its credential named at the last reading, so a sign-in moved
+// NEW: a quota reading names its account, and an account keeps its own file (Oct 15, 2026: usage tracked the
+// wrong account). A head's file holds whichever account its credential named at the last reading, so a sign-in moved
 // to another account overwrote the first one's windows and left nothing saying whose they were.
 package splice.head.usage
 

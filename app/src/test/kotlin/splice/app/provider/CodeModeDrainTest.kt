@@ -1,7 +1,7 @@
 // NEW: a real HeadServer restart ends a code-mode turn with its restart line before it closes the worker.
 //
-// Since Oct 29, 2026 a restart does not wait for a running turn (Marcos: "we already send a message saying the server
-// is restarting and so the user knows about it, then we just have the new daemon take over"). The order still
+// Since Oct 29, 2026 a restart does not wait for a running turn (the client is already sent a message saying the
+// server is restarting, so the user knows, and the new daemon just takes over). The order still
 // matters: the client reads the restart line, and only then is the code-mode child closed.
 package splice.app.provider
 

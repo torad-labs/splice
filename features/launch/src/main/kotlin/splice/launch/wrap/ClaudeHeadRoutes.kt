@@ -24,7 +24,7 @@ import java.nio.file.Path
 
 /** The one head wrap targets (app/src/main/resources/splice.example.toml): the splice-owned Claude head, which a
  *  launch through the wrapped `claude` runs over the operator's own config. Keyed `claude` since Nov 13, 2026
- *  (Marcos: "THERE SHOULD NOT BE SUCH A THING AS CLAUDE-SPLICE. IT'S CLAUDE ONLY IN THIS COMPUTER"): it was
+ *  (there is no such thing as claude-splice on this computer, only Claude): it was
  *  `claude-splice`, a second name for the one Claude every session runs, and the console drew Claude Code's own
  *  login under it as one more account to remove.
  *  V4-129 review: internal, because a launch THROUGH the wrapped `claude` (LaunchRoutes) runs this

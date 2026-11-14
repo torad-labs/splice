@@ -244,8 +244,8 @@ internal class ClaudeAccountFolders(
      *
      *  An account the head already holds files nothing, and the login that holds it is asked again on the next turn
      *  ([ClaudePoolChanges.signedIn]): the person just finished a sign-in for that account, which is the one act a
-     *  blocked card's menu offers, so it never ends with the card still held (Marcos, Nov 11, 2026: "I did sign in
-     *  again because it said it was blocked"). */
+     *  blocked card's menu offers, so it never ends with the card still held (Nov 11, 2026: a person signed in again
+     *  because the card said it was blocked). */
     private fun file(pending: ClaudePendingAccount, identity: ClaudeAccountIdentity): ClaudeAccountLanding {
         val added = accounts(pending.head)
         val same = added.firstOrNull { it.identity?.uuid == identity.uuid }

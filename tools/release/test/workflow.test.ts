@@ -73,7 +73,7 @@ describe("release.yml, parsed", () => {
     expect(prereleaseProblem(parsed(hardcoded))).toContain("prerelease input is");
   });
 
-  // Since Oct 31, 2026 the downloads live on splice.torad.ai (Marcos: "I dont want the release download to be there"):
+  // Since Oct 31, 2026 the downloads live on splice.torad.ai (the download does not belong on GitHub):
   // the GitHub release carries the notes and nothing to download, and the whole accepted dist/ is what the publisher
   // takes to the site, so no asset can be dropped on the way by a hand list.
   test("a file attached to the GitHub release fails", () => {

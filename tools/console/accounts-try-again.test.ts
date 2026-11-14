@@ -1,5 +1,5 @@
-// A login its provider blocked has an act of its own on its card: Try again (Marcos, Nov 11, 2026: "I did sign in again
-// because it said it was blocked, I realized my payument failed, so I paid again"). Until that day the card read
+// A login its provider blocked has an act of its own on its card: Try again (Nov 11, 2026: a login read as blocked, so
+// he signed in again, then found his payment had failed and paid again). Until that day the card read
 // "Blocked until its organization allows subscription access" and offered only Sign in again, in its menu, which lifts
 // no block. Through the real page against a stub daemon in the routes' own shapes (AskAgainRoute.kt, AccountsRoute.kt):
 // the blocked card offers Try again, pressing it has splice end that login's hold, and the card goes on reading Blocked,

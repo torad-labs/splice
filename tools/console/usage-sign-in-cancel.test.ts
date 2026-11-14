@@ -1,5 +1,5 @@
-// Usage's own sign-in box ends a sign-in on splice when it is cancelled (Marcos, Nov 11, 2026: "it said it canceled, then
-// when I tried sign in again, it said it was already in progress, so it didnt really cancelled"). A signed-out login's
+// Usage's own sign-in box ends a sign-in on splice when it is cancelled (Nov 11, 2026: the page said it canceled, then a
+// new sign-in was refused as already in progress). A signed-out login's
 // card on Usage signs it in again in place, with its own Cancel, and until that day that Cancel only forgot the sign-in
 // in the page, as Accounts' did: splice held it for up to ten minutes, and a sign-in page finished later still filed the
 // login. The box runs the steps every page shares now (SIGNIN, api.js), so it also says in a word how a sign-in failed,

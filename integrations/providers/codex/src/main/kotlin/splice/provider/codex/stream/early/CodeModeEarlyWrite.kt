@@ -1,6 +1,6 @@
 // NEW: the Write a code-mode script opens with, read while the script still streams.
 //
-// Nov 3, 2026 (Marcos, choosing option 1, "like native claude code"): a script that writes one large file showed the
+// Nov 3, 2026 (Marcos, choosing option 1, to behave like native Claude Code): a script that writes one large file showed the
 // client nothing until GPT finished it, five and a half minutes on the Mac session's 52 KB stylesheet, because the
 // runtime only reads a script once it is whole. This reader finds the path and the file's text in the script as it
 // streams, so the client's Write block can open at the path and fill as GPT writes, as a native Write does.

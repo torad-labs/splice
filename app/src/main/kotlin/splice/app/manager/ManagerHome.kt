@@ -1,4 +1,4 @@
-// NEW (Oct 15, 2026): the splice manager's folder. Marcos: "Make sure this folder is installed with the installer".
+// NEW (Oct 15, 2026): the splice manager's folder. The installer must install this folder.
 // The folder is `manager/` inside splice's global settings folder (the folder that holds splice.toml), where the
 // console's composer runs its one resident Claude Code session. It is a subfolder because the settings folder holds the
 // secrets (keys.toml, auth/, key-ledger.json): a session whose working folder held them read them to the person's

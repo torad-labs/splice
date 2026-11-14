@@ -14,8 +14,8 @@ name: release
 #
 #   tag push (the plumbing):  git push origin v0.3.0-beta.1     — still works, unchanged.
 #
-# Where the release lands (Oct 31, 2026, Marcos: "I dont want the release download to be there [GitHub] ... being at
-# Cloudflare makes more sense"): this workflow builds, accepts and attests, and leaves the GitHub release as an
+# Where the release lands (Oct 31, 2026: the release download does not belong on GitHub, and being at
+# Cloudflare makes more sense): this workflow builds, accepts and attests, and leaves the GitHub release as an
 # unpublished draft carrying the notes and no file. The downloads are served from splice.torad.ai/download, which is
 # written from the maintainer's machine with a token scoped to the release bucket that its keyring holds, never with a
 # Cloudflare token in this repository:

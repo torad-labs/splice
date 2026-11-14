@@ -1,6 +1,6 @@
-// `release beta <version>` — a beta cut on this machine, outside release.yml, so it carries no attestation (Marcos,
-// 2026-10-13: local betas, no attestation; written while GitHub Actions was locked, and still how this verb works now
-// that it runs). Releases are built from main only (Marcos, 2026-10-13), so this command bumps and pushes nothing: the
+// `release beta <version>` — a beta cut on this machine, outside release.yml, so it carries no attestation (2026-10-13:
+// local betas, no attestation; written while GitHub Actions was locked, and still how this verb works now
+// that it runs). Releases are built from main only (2026-10-13), so this command bumps and pushes nothing: the
 // version bump reaches main through a pull request like any other change. The command
 //
 //   1. checks    that origin/main says <version> in the launcher, core's Versions and package.json, and that
@@ -11,8 +11,8 @@
 //   3. publishes the accepted dist/ on splice.torad.ai/download (`release publish`, the keyring's bucket token), where the beta
 //                channel's updater and install.sh download it since Oct 31, 2026, and then
 //                `gh release create v<version> --prerelease --target <main sha>` with the notes alone, saying the
-//                build was local and unattested. The GitHub release carries no file (Marcos: "I dont want the release
-//                download to be there").
+//                build was local and unattested. The GitHub release carries no file (the download does not
+//                belong on GitHub).
 //
 // The MCP hub pair is never linked in the tree: Kotlin/Native writes each source file's absolute path into the
 // binary, so a tree build cannot hash to the qualified pair (lead-install.sh). The kept folder under

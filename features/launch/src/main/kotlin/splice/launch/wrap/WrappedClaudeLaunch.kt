@@ -24,7 +24,7 @@ public class WrappedClaudeLaunch(private val wrap: WrappedHead) {
     /** The name a person types to reach [head] when it is not the head's own command: `claude` for the Claude head
      *  while his `claude` is wrapped. Null for every other head, and while it is not wrapped. A person who uses
      *  Claude only through splice types `claude`, and a screen that names the command `claude-splice` shows him
-     *  a second Claude he never starts (Marcos, Nov 12, 2026: "why ... is claude and claude-splice two identities?"). */
+     *  a second Claude he never starts (Nov 12, 2026: Claude is not two identities). */
     public fun typed(head: String): String? =
         if (head == CLAUDE_HEAD_KEY) wrap.command()?.fileName?.toString() else null
 }

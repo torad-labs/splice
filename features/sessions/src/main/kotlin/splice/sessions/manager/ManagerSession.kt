@@ -1,7 +1,7 @@
 // NEW: Oct 15, 2026 (the splice manager) — the one resident Claude Code session the console's composer is the door to.
-// Marcos (Oct 15): "You should always check if a session exists already, if yes it should resume it. The first time
-// the console runs, the composer should ask permission to start the claude code session with it and the user should
-// pick which head they wanna use. They should also be able to later change the head without changing the transcript".
+// Oct 15: always check whether a session exists already, and if so resume it. The first time the console runs, the
+// composer asks permission to start the Claude Code session and the user picks which head to use. The head can be
+// changed later without changing the transcript.
 //
 //   GET  /api/manager          the state (ManagerReplies), read only: nothing is created or written
 //   POST /api/manager/start    {"head"?}  make the folder ready, then find, adopt, resume or start it (ManagerStart)

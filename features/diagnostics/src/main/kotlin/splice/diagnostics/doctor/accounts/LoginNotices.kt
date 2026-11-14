@@ -1,7 +1,7 @@
 // NEW: what the daemon tells the operator about a command's logins before they open the console (Nov 12, 2026).
 // That morning every Claude login ran out of Fable one after another and eleven sessions waited three hours. The
-// operator had resets to spend, and nothing told him the last login was nearly out (Marcos: "just let me know when
-// we're on the last account close to hit limit and I'll call a reset").
+// operator had resets to spend, and nothing told him the last login was nearly out (he wanted to be told
+// when the last account was close to its limit, so he could call a reset).
 //
 // ONE NOTICE PER COMMAND AND MODEL, read from the roster /api/accounts serves, so it never says what Accounts and
 // `splice status` do not show. A login can serve when the pool would send it a turn of that model: it is open, the

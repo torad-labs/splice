@@ -315,13 +315,14 @@ internal class TurnPreparation(
         }
         val prepared = fromProvider.copy(meta = fromProvider.meta.copy(scope = scope))
         toolLoop.join(prepared.meta, parsed, parsed.agentId)
-        // Per-turn headers already outrank the provider's own in TurnDriver's merge, so a forwarded
-        // value REPLACES a configured default (e.g. the caller's anthropic-version wins over the
-        // provider's), and UpstreamClient folds the casing.
-        val built = if (deps.policy.forwardClientAuth) {
-            prepared.copy(extraHeaders = prepared.extraHeaders + clientAuth.forwardedClientHeaders(call))
-        } else {
+        // The caller's headers that ride upstream (ClientAuth.upstreamHeaders). Per-turn headers already outrank the
+        // provider's own in TurnDriver's merge, so a forwarded value REPLACES a configured default (e.g. the caller's
+        // anthropic-version wins over the provider's), and UpstreamClient folds the casing.
+        val forwarded = clientAuth.upstreamHeaders(call)
+        val built = if (forwarded.isEmpty()) {
             prepared
+        } else {
+            prepared.copy(extraHeaders = prepared.extraHeaders + forwarded)
         }
         perf.mark(PerfKeys.BUILD)
         // A compaction retry whose bytes match a compaction that outlived its first client is answered from

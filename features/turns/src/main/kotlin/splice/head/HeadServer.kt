@@ -25,6 +25,7 @@ import splice.core.head.CompactionHold
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 import splice.core.head.HeldTurnReading
+import splice.core.topology.ForwardHeaders
 import splice.core.usage.QuotaFull
 import splice.core.util.HeadScopedLogs
 import splice.core.util.WallClockTime
@@ -56,6 +57,8 @@ public class HeadServer(
      *  provider, on the machine's own zone; HeadServerFactory names the provider per head, and a test names a zone so
      *  the line it reads is the line every machine reads. */
     voiceFacts: VoiceFacts = VoiceFacts(),
+    /** The caller's headers its provider's forward_headers names, which ride upstream on every turn (Nov 14, 2026). */
+    forwarded: ForwardHeaders = ForwardHeaders(emptyList()),
 ) : Head {
 
     internal val compactionReplay = CompactionReplay(
@@ -100,6 +103,7 @@ public class HeadServer(
         forwardsOnly = provider.auth is ClientAuthProvider,
         // Under the head's key, so `splice logs --head` and the console's per-head log show which head refused whom.
         refusedKeys = RefusedKeyLog(HeadScopedLogs.headScopedLog(provider.key, deps.log), deps.seams.clock),
+        forwarded = forwarded,
     )
     private val bodyReader = RequestBodyReader(deps.policy.requestReadTimeoutMs)
     private val bodyParse = AnthropicBodyParse()

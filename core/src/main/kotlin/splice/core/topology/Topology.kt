@@ -167,6 +167,11 @@ public data class ProviderConfig(
      *  owned and pure TOML, so an anthropic-compatible vendor needs no provider code at all. On a
      *  head that forwards the client's own headers, a forwarded value WINS over these defaults. */
     @SerialName("extra_headers") val extraHeaders: Map<String, String> = emptyMap(),
+    /** Headers a caller sends that ride on to this provider, by exact name ([ForwardHeaders]). Empty = none. */
+    @SerialName("forward_headers") val forwardHeaders: List<String> = emptyList(),
+    /** True = every request to this provider carries a Via line naming splice and its version ([SPLICE_VIA]). Off by
+     *  default, so a provider sees nothing of splice unless its table asks. */
+    @SerialName("send_version") val sendVersion: Boolean = false,
     val models: List<ModelEntry> = emptyList(),
     @SerialName("extra_windows") val extraWindows: List<ExtraWindow> = emptyList(),
     @SerialName("window_rules") val windowRules: List<WindowRule> = emptyList(),
@@ -256,8 +261,14 @@ public data class ProviderConfig(
         return "code_mode is only supported with $named"
     }
 
+    /** Every header this table sets on each request: the Via line when [sendVersion] is on, then [extraHeaders] with
+     *  key quoting removed, so a Via written in extra_headers is the one that rides. */
     public val staticHeaders: Map<String, String>
-        get() = extraHeaders.mapKeys { (key, _) -> key.trim('"') }
+        get() = (if (sendVersion) mapOf("Via" to SPLICE_VIA) else emptyMap()) +
+            extraHeaders.mapKeys { (key, _) -> key.trim('"') }
+
+    /** [forwardHeaders] as the list a head forwards from. */
+    public val forwarded: ForwardHeaders get() = ForwardHeaders(forwardHeaders)
 
     /** V4-162: this provider without its windows (see [Topology.withoutWindows]). extra_windows and
      *  window_rules declare windows and nothing else, so they are dropped whole: a row added to or

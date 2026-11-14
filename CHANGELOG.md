@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+- **Headers for a gateway in front of a provider.** A provider's table can name headers that ride on from Claude
+  Code (`forward_headers`, such as the ones `ANTHROPIC_CUSTOM_HEADERS` adds), on any head, and can add a
+  `Via: 1.1 splice (splice/<version>)` line to every request (`send_version = true`), so a company gateway can see
+  which splice a request came through and refuse an old one. Both are off by default. A login or connection header
+  can't be forwarded: naming one refuses boot. The README's
+  [Headers for a gateway](#headers-for-a-gateway-in-front-of-a-provider) section explains them with
+  `extra_headers`, which already set fixed headers.
+
 ### Fixed
 - **Claude Code's auto mode reviews actions on every head.** Before an action runs in auto mode, Claude Code asks
   the session's model whether a policy blocks it, and asks for the answer to stop at `</block>`. The OpenAI

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.GATEWAY_VERSION
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.model.ModelEntry
@@ -228,6 +229,44 @@ class TopologyConfigOverridesTest {
         val bare = quoted.copy(extraHeaders = mapOf("anthropic-version" to "2023-06-01"))
         assertEquals(mapOf("anthropic-version" to "2023-06-01"), quoted.staticHeaders)
         assertEquals(quoted.staticHeaders, bare.staticHeaders)
+    }
+
+    // Nov 14, 2026: a company gateway in front of a provider reads which splice, and which version, a request came
+    // through, from RFC 9110's Via line. Off unless the table asks; a Via the table writes itself is the one that
+    // rides.
+    @Test
+    fun `send_version adds splice's Via line and a Via in extra_headers replaces it`() {
+        val plain = ProviderConfig(
+            dialect = Dialect.ANTHROPIC_PASSTHROUGH,
+            baseUrl = "https://gateway.example.test",
+            auth = AuthConfig("api-key"),
+            extraHeaders = mapOf("x-team" to "platform"),
+        )
+        assertEquals(mapOf("x-team" to "platform"), plain.staticHeaders)
+        val announced = plain.copy(sendVersion = true)
+        assertEquals(
+            mapOf("Via" to "1.1 splice (splice/$GATEWAY_VERSION)", "x-team" to "platform"),
+            announced.staticHeaders,
+        )
+        val own = announced.copy(extraHeaders = mapOf("Via" to "1.1 acme-edge"))
+        assertEquals(mapOf("Via" to "1.1 acme-edge"), own.staticHeaders)
+    }
+
+    @Test
+    fun `forward_headers naming a login or a connection header refuses boot, and a tag passes`(@TempDir tmp: Path) {
+        val provider = ProviderConfig(
+            dialect = Dialect.ANTHROPIC_PASSTHROUGH,
+            baseUrl = "https://gateway.example.test",
+            auth = AuthConfig("api-key"),
+            forwardHeaders = listOf("X-Acme-Team", "Authorization"),
+        )
+        val head = HeadConfig("acme", 3107, "acme--")
+        val refused = Topology(providers = mapOf("acme" to provider), heads = mapOf("acme" to head))
+        val findings = TopologyFindings.of(refused, stateBase = tmp, rosters = false)
+        assertEquals(listOf("providers.acme.forward_headers"), findings.map { it.path }.filter { "forward" in it })
+        val tagOnly = refused.copy(providers = mapOf("acme" to provider.copy(forwardHeaders = listOf("X-Acme-Team"))))
+        assertTrue(TopologyFindings.of(tagOnly, stateBase = tmp, rosters = false).none { "forward" in it.path })
+        assertEquals(listOf("x-acme-team"), provider.forwarded.carried)
     }
 
     @Test

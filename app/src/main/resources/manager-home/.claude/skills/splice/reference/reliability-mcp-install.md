@@ -468,7 +468,7 @@ Source: `install.sh` lines 7-16, 93-147, 273-352, 397-417, 488-521, 569-592.
 |---|---|
 | `splice init` | writes the starter `splice.toml` only if absent, on Linux writes `mcp-front.env`, and places the manager's folder (`CLAUDE.md`, `.claude/settings.json`, the skill) in `manager/` beside `splice.toml`. A file the person edited is kept as they left it. The daemon does the same at every start, because auto-update swaps the jar and never reruns init |
 | `splice install [<head>\|--all]` | links the wrapper symlinks in `~/.local/bin`, and with `--all` or no word on Linux lays splice's systemd user units in `~/.local/share/systemd/user`: `splice.service` (the daemon) and the hub's units when the hub front is installed. Enables and starts nothing. Never prunes a link |
-| `splice setup` | guided, needs a terminal: which plans to connect, plain `claude` or `claude-splice`, MCP sharing. Writes nothing until confirmed |
+| `splice setup` | guided, needs a terminal: which plans to connect (ticking Claude wraps plain `claude`), MCP sharing. Writes nothing until confirmed |
 | `splice doctor [--live] [--json [--with-logs] [--out FILE]]` | seven sections: prerequisites, installation, configuration, daemon, auth, accounts, runtime. Every failing check prints its fix. `--live` sends one tiny tool call per local-runtime row and nothing else. `--json` is a redacted, shareable report |
 | `splice check-config` | the boot findings pass, no daemon. Exit 0 clean, exit 3 on any finding, all listed |
 

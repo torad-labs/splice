@@ -13,6 +13,7 @@
 // throws when called is how that is stated without standing up two servers.
 package splice.app.head
 
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -66,13 +67,15 @@ class HeadBootPortCollisionTest {
     ): Pair<Map<String, String>, List<String>> {
         val logs = mutableListOf<String>()
         val heads = mutableMapOf<String, ManagedHead>()
-        val failed = HeadBoot().assembleDaemonHeads(
-            topology,
-            StatePaths(baseOverride = tmp.resolve("state")),
-            heads,
-            logs::add,
-            assembly,
-        )
+        val failed = runBlocking {
+            HeadBoot().assembleDaemonHeads(
+                topology,
+                StatePaths(baseOverride = tmp.resolve("state")),
+                heads,
+                logs::add,
+                assembly,
+            )
+        }
         return failed to logs
     }
 

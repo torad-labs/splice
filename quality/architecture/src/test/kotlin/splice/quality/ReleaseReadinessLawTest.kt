@@ -294,7 +294,11 @@ internal object ReleaseReadiness {
             repo.contains(INSTALL, "sha256 verification FAILED")
                 ?: repo.contains(INSTALL, "attestation verification FAILED")
         },
-        Rule("install-attests-jar") { repo -> repo.contains(INSTALL, "verify_attestation \"\$JAR_TMP\" splice.jar") },
+        // Nov 12: an install takes its platform's own jar when the release lists one, so it attests the jar it
+        // downloaded, by the name it downloaded it under.
+        Rule("install-attests-jar") { repo ->
+            repo.contains(INSTALL, "verify_attestation \"\$JAR_TMP\" \"\$JAR_ASSET\"")
+        },
         Rule("install-attests-shim") { repo ->
             repo.contains(INSTALL, "verify_attestation \"\$SHIM_TMP\" splice-launch")
         },
@@ -366,11 +370,11 @@ private const val STAGE_BUILD = "app/build.gradle.kts"
 private const val RELEASE_SITE = "https://splice.torad.ai/download"
 private const val INSTALL_RELEASE = "RELEASE_SITE=\"$RELEASE_SITE\"\n"
 private const val INSTALL_REFUSALS = "echo 'sha256 verification FAILED'; echo 'attestation verification FAILED'\n"
-private const val INSTALL_JAR = "verify_attestation \"\$JAR_TMP\" splice.jar\n"
+private const val INSTALL_JAR = "verify_attestation \"\$JAR_TMP\" \"\$JAR_ASSET\"\n"
 private const val INSTALL_SHIM = "verify_attestation \"\$SHIM_TMP\" splice-launch\n"
 private const val INSTALL_PREVIOUS = "  $ALLOWED_LINK\n  $ALLOWED_PREVIOUS\n"
 private const val INSTALL_RUN_JAR =
-    "SPLICE_BIN_DIR=\"\$BIN_DIR\" SPLICE_SHARE_DIR=\"\$SHARE_DIR\" java -Duser.home=\"\$HOME\" -jar \"\$@\""
+    "SPLICE_BIN_DIR=\"\$BIN_DIR\" SPLICE_SHARE_DIR=\"\$SHARE_DIR\" \"\$JAVA_BIN\" -Duser.home=\"\$HOME\" -jar \"\$@\""
 private const val INSTALL_HOME = "run_jar() {\n  $INSTALL_RUN_JAR\n}\n" +
     "run_jar \"\$JAR_DST\" init\nrun_jar \"\$JAR_DST\" install --all\nrun_jar \"\$JAR_DST\" doctor\n"
 
@@ -521,7 +525,7 @@ private fun installerMutations(): List<Mutation> = listOf(
         append(INSTALL, "  download \"\$JAR_URL\" \"\$JAR_TMP\" || true\n")
     },
     Mutation("install.sh swallowing on a continuation line", "install-no-or-true", OR_TRUE) {
-        append(INSTALL, "  verify_attestation \"\$JAR_TMP\" splice.jar \\\n    || true\n")
+        append(INSTALL, "  verify_attestation \"\$JAR_TMP\" \"\$JAR_ASSET\" \\\n    || true\n")
     },
     Mutation("install.sh not refusing bad bytes", "install-refuses-bad-bytes", "verification FAILED") {
         file(INSTALL, INSTALL_RELEASE + INSTALL_JAR + INSTALL_SHIM)
@@ -529,7 +533,7 @@ private fun installerMutations(): List<Mutation> = listOf(
     Mutation("install.sh installing a failed attestation", "install-refuses-bad-bytes", "attestation verification") {
         file(INSTALL, INSTALL_RELEASE + "echo 'sha256 verification FAILED'\n" + INSTALL_JAR + INSTALL_SHIM)
     },
-    Mutation("install.sh not attesting the jar", "install-attests-jar", "splice.jar") {
+    Mutation("install.sh not attesting the jar", "install-attests-jar", "JAR_ASSET") {
         file(INSTALL, INSTALL_RELEASE + INSTALL_REFUSALS + INSTALL_SHIM)
     },
     Mutation("install.sh not attesting the shim", "install-attests-shim", "splice-launch") {

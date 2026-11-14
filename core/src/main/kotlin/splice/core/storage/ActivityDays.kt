@@ -142,7 +142,9 @@ public class ActivityDays(
     public fun append(line: String): Unit = append(DayRecord { (line + "\n").toByteArray(Charsets.UTF_8) })
 
     /** Queues an immutable record, encoded only when its day is ready on the file lane. */
-    public fun append(record: DayRecord): Unit = appendAccepted(record).let { Unit }
+    public fun append(record: DayRecord) {
+        appendAccepted(record)
+    }
 
     /** Acceptance is distinct from persistence; a refused callback will never run. */
     public fun appendAccepted(record: DayRecord): Boolean {
@@ -190,6 +192,10 @@ public class ActivityDays(
     /** Retained generations in the same oldest-first order as [lines], using this store's clock. */
     @Throws(IOException::class)
     public fun retainedFiles(): List<Path> = files.files(oldestKept(day(clock()))).asReversed()
+
+    /** A file of this store's own beside its day files, named after the store as its delete marker is
+     *  ("<prefix>.<name>") and never read as a day file. Handed out here because the directory and prefix live here. */
+    public fun beside(name: String): Path = dir.resolve("$prefix.$name")
 
     /** The row-exact cut over this store's days (Oct 10, 2026): the same family as [sweep], which
      *  drops whole days the window has passed, for a save that has to delete exactly what a person

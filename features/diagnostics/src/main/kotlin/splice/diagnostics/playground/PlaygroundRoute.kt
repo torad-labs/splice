@@ -2,7 +2,7 @@
 // and response back, never recorded".
 //
 // Deviation (Oct 12, 2026, marlin): the send IS recorded now, because it is real spend. The head's budget weighs it
-// first and a block answers 429 {error, outcome: "error:budget-blocked", blocked: "budget", detail, head}; an answered
+// first and a block answers 429 {error, outcome: "error:budget-blocked", blocked: "budget", head, spent_usd, limit_usd}; an answered
 // send leaves a Requests row flagged Compare, its economics entry and its budget spend, written by the head from
 // :app (UpstreamPlaygroundProbe). What stays true below: the send does not go through the head's turn pipeline.
 //
@@ -33,6 +33,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.budget.BudgetAmounts
 import splice.core.perf.OutcomeTag
 import splice.http.JsonReply
 
@@ -52,13 +53,36 @@ public sealed class PlaygroundOutcome
  *  never interprets a field of either side, it only carries what [PlaygroundSource] returns. */
 public data class PlaygroundResult(val request: JsonElement, val response: JsonElement) : PlaygroundOutcome()
 
-/** One playground run failed before or during the upstream call (no credential, a refused dialect,
- *  a network failure). */
-public data class PlaygroundFailure(val message: String) : PlaygroundOutcome()
+/** Why a playground run failed before a provider answered, by name. Compare chooses its word by [wire], where it
+ *  used to match the words of the failure's sentence. */
+public enum class PlaygroundFailureKind(public val wire: String) {
+    /** The head has no running provider to send through. */
+    NO_PROVIDER("no_provider"),
 
-/** The head's budget refused this send, as it refuses a turn: [message] is its sentence. Nothing was sent; the
- *  refusal has left its row on Requests. */
-public data class PlaygroundBlocked(val head: String, val message: String) : PlaygroundOutcome()
+    /** The head has no credential configured. */
+    NO_CREDENTIAL("no_credential"),
+
+    /** The head forwards its caller's own auth, and the playground has none to send. */
+    CALLER_AUTH("caller_auth"),
+
+    /** The call was cut by its connect or whole-request timeout. */
+    TIMED_OUT("timed_out"),
+
+    /** The call failed on the way to the provider for any other reason. */
+    CALL_FAILED("call_failed"),
+}
+
+/** One playground run failed before or during the upstream call (no credential, a refused dialect,
+ *  a network failure). [kind] names the failures a page words on its own; null for the rest. */
+public data class PlaygroundFailure(val message: String, val kind: PlaygroundFailureKind? = null) : PlaygroundOutcome()
+
+/** The head's budget refused this send, as it refuses a turn: [message] is its sentence and [amounts] the spend and
+ *  the limit it names. Nothing was sent; the refusal has left its row on Requests. */
+public data class PlaygroundBlocked(
+    val head: String,
+    val message: String,
+    val amounts: BudgetAmounts? = null,
+) : PlaygroundOutcome()
 
 /** The daemon's one upstream probe, implemented in :app where the heads' providers and credentials
  *  already live. [PlaygroundHead] is enough for it to resolve the rest itself: the head's key names
@@ -69,6 +93,9 @@ public fun interface PlaygroundProbe {
 }
 
 internal const val PLAYGROUND_UNWIRED = "the daemon wired no playground probe; /api/playground cannot run"
+
+/** The name a send to a head splice does not have carries beside its sentence. */
+private const val UNKNOWN_HEAD_CODE = "unknown_head"
 
 private const val BAD_PLAYGROUND_BODY = "the body must be {\"head\": string, \"prompt\": string, \"model\"?: string}"
 
@@ -100,10 +127,10 @@ public class PlaygroundRoute(
     private suspend fun runValidated(probe: PlaygroundProbe, parsed: PlaygroundBody): JsonReply {
         if (parsed.prompt.isBlank()) return refuse(HttpStatusCode.BadRequest, "prompt must not be blank")
         val head = heads.byName(parsed.head).firstOrNull()
-            ?: return refuse(HttpStatusCode.BadRequest, "unknown head: ${parsed.head}")
+            ?: return refuse(HttpStatusCode.BadRequest, "unknown head: ${parsed.head}", UNKNOWN_HEAD_CODE)
         return when (val outcome = probe.run(head, parsed.prompt, parsed.model?.takeIf { it.isNotBlank() })) {
             is PlaygroundResult -> JsonReply(HttpStatusCode.OK, resultJson(outcome))
-            is PlaygroundFailure -> refuse(HttpStatusCode.BadGateway, outcome.message)
+            is PlaygroundFailure -> refuse(HttpStatusCode.BadGateway, outcome.message, outcome.kind?.wire)
             is PlaygroundBlocked -> JsonReply(HttpStatusCode.TooManyRequests, blockedJson(outcome))
         }
     }
@@ -114,6 +141,11 @@ public class PlaygroundRoute(
         put("outcome", OutcomeTag.BUDGET_BLOCKED.wire)
         put("blocked", "budget")
         put("head", blocked.head)
+        // The two amounts the sentence says, as numbers: what Compare draws its meter from.
+        blocked.amounts?.let {
+            put("spent_usd", it.spentUsd)
+            put("limit_usd", it.limitUsd)
+        }
     }.toString()
 
     private fun resultJson(result: PlaygroundResult): String = buildJsonObject {
@@ -121,6 +153,12 @@ public class PlaygroundRoute(
         put("response", result.response)
     }.toString()
 
-    private fun refuse(status: HttpStatusCode, message: String) =
-        JsonReply(status, buildJsonObject { put("error", message) }.toString())
+    private fun refuse(status: HttpStatusCode, message: String, code: String? = null) = JsonReply(
+        status,
+        buildJsonObject {
+            put("error", message)
+            // The refusal by name, beside its sentence: what Compare reads to choose its word.
+            code?.let { put("code", it) }
+        }.toString(),
+    )
 }

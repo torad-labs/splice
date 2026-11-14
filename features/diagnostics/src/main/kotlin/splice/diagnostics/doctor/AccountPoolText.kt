@@ -16,6 +16,9 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 public class AccountPoolText(private val now: WallClock = WallClock { System.currentTimeMillis() }) {
+    // A model's name on a usage row is the provider's text and goes to a terminal: letters, digits, spaces, dots and
+    // hyphens only.
+    private val plainModel = Regex("[A-Za-z0-9][A-Za-z0-9 .-]{0,39}")
 
     /** `on Work (1 of 2 open) · pinned to Work · 5h 12% · 7d 40%; switched from Max to Work 3m ago: 7d window exhausted`.
      *  [names] are the logins' Accounts names by pool label; a label with none is printed as it is. A command nobody
@@ -37,7 +40,7 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
         val switch = safe.lastSwitch?.let {
             "; switched from ${shown(it.from, names)} to ${shown(it.to, names)} ${ago(it.atEpochMillis)}: ${it.reason}"
         }
-        val parts = listOfNotNull(head, lastLeft(safe), pin, missing, selected?.let(::windows))
+        val parts = listOfNotNull(head, lastLeft(safe), modelWeeks(safe), pin, missing, selected?.let(::windows))
         return parts.joinToString(" · ") + switch.orEmpty()
     }
 
@@ -74,7 +77,7 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
             CheckStatus.WARN,
             "every account is out ($at): $detail",
             if (safe.accounts.all { it.label.startsWith(NATIVE_LABEL) }) {
-                "Wait for the earliest reset above, or run another of the native login places and use /login."
+                "Wait for the earliest reset above, or sign Claude Code in to another account with /login."
             } else {
                 "splice login $headKey --label <name>"
             },
@@ -102,6 +105,43 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
             },
             selectionUnknown = view.selectionUnknown || missingSelection || droppedSelected,
         )
+    }
+
+    /** Each model whose own week some logins have used up, and on how many: `Fable used up on 6 of 8 logins`, and once
+     *  every login has, when the first comes back. `(7 of 9 open)` counts a login open while any model has room on
+     *  it, so on Nov 12, 2026 it read that way for three hours while every login had used up the model all eleven
+     *  sessions ran, and nothing in status said so. Null where no login reads a model's week used up. */
+    private fun modelWeeks(safe: HeadAccountPoolView): String? {
+        val atSeconds = now().milliseconds.inWholeSeconds
+        val logins = safe.accounts.filter { it.credential.present }
+        val usedUp = logins.flatMap { login -> usedUp(login, atSeconds) }.groupBy({ it.first }, { it.second })
+        return usedUp.entries.joinToString(", ") { (model, resets) ->
+            val every = resets.size == logins.size
+            val back = resets.filterNotNull().filter { it > atSeconds }.minOrNull()?.takeIf { every }
+                ?.let { ", first back ${AccountResetText.forPerson(it)}" }.orEmpty()
+            val where = if (every) "every login" else "${resets.size} of ${logins.size} logins"
+            "$model used up on $where$back"
+        }.takeIf { it.isNotEmpty() }
+    }
+
+    /** The models [login] is out of, each with when it serves that model again. A model the pool holds the login out
+     *  of counts whatever its reading says, until the reset the provider named: that hold is what a turn's routing
+     *  reads, and on Nov 12, 2026 a login just refused still read 99%. A model with no hold counts when its reading is
+     *  all used, until its own reset, else the login's week's. The name is the provider's, so only a plain one is
+     *  printed; a held model no reading names goes by the name its turns ask for. */
+    private fun usedUp(login: HeadAccountView, atSeconds: Long): List<Pair<String, Long?>> {
+        val held = login.quota.holds.models.filter { it.resetEpochSeconds > atSeconds }
+        val weeks = login.quota.sevenDayModels.filter { it.runsAt(atSeconds) && plainModel.matches(it.model) }
+        val read = weeks.mapNotNull { week ->
+            val hold = held.firstOrNull { it.model?.let(week::weekOf) == true }
+            val until = hold?.resetEpochSeconds ?: week.resetsAt ?: login.quota.sevenDay.resetEpochSeconds
+            (week.model to until).takeIf { hold != null || week.usedUp }
+        }
+        val unread = held.mapNotNull { hold ->
+            val id = hold.model?.takeIf { id -> plainModel.matches(id) && weeks.none { it.weekOf(id) } }
+            id?.let { Pair<String, Long?>(it, hold.resetEpochSeconds) }
+        }
+        return read + unread
     }
 
     /** A pool down to its last usable login says so, with the earliest reset among the held ones (splice-lead, Oct 13:

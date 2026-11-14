@@ -49,6 +49,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.dialect.responses.ReasoningSettings
+import splice.upstream.Provider
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
@@ -116,6 +117,12 @@ private class DrainFakeAuth : RefreshableAuthProvider {
     override suspend fun describe(): AuthDescription = AuthDescription(true, "fake")
 }
 
+/** The rig's provider, declared able to finish a turn beside the next daemon (#523), as the Anthropic passthrough
+ *  is: what a retiring head keeps is decided by that one answer, whatever dialect the turn speaks. */
+private class FinishingProvider(base: Provider) : Provider by base {
+    override val finishesTurnsWhenRetired: Boolean get() = true
+}
+
 /** An upstream that answers every request with one burst of small text deltas and its completion, then ends.
  *  The head paces a burst out to its client over up to a second, so the client write outlives the turn. */
 private class BurstUpstream : AutoCloseable {
@@ -161,6 +168,7 @@ class HeadServerStopDrainTest {
         waiter: Waiter = ProcessWaiter(),
         stopDrainMs: Long = DEFAULT_STOP_DRAIN_MS,
         upstreamUrl: String? = null,
+        finishing: Boolean = false,
     ) {
         val mock = MockChatGptUpstream()
         val cutAt = AtomicLong(0L)
@@ -171,22 +179,8 @@ class HeadServerStopDrainTest {
         }
         val port: Int get() = head.port
         val head = HeadServer(
-            provider = TestResponsesProvider(
-                tuning = ProviderTuning(
-                    name = ProviderName(key = "codex", label = "claudex"),
-                    catalog = ModelCatalog(
-                        discoveryPrefix = "claude-codex--",
-                        models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
-                        defaultContextWindow = 272_000,
-                    ),
-                    pinnedModel = "gpt-5.6-sol",
-                    auth = DrainFakeAuth(),
-                    locations = ProviderLocations(baseUrl = upstreamUrl ?: mock.baseUrl),
-                    watchdog = watchdog,
-                    loginCommand = "claudex login",
-                ),
-                reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
-            ),
+            provider = responses(watchdog, upstreamUrl ?: mock.baseUrl)
+                .let { if (finishing) FinishingProvider(it) else it },
             listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
@@ -198,6 +192,24 @@ class HeadServerStopDrainTest {
                 },
             ).copy(policy = HeadDeps.HeadPolicy(stopDrainMs = stopDrainMs)),
         )
+
+        private fun responses(watchdog: WatchdogBudget, baseUrl: String): Provider =
+            TestResponsesProvider(
+                tuning = ProviderTuning(
+                    name = ProviderName(key = "codex", label = "claudex"),
+                    catalog = ModelCatalog(
+                        discoveryPrefix = "claude-codex--",
+                        models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
+                        defaultContextWindow = 272_000,
+                    ),
+                    pinnedModel = "gpt-5.6-sol",
+                    auth = DrainFakeAuth(),
+                    locations = ProviderLocations(baseUrl = baseUrl),
+                    watchdog = watchdog,
+                    loginCommand = "claudex login",
+                ),
+                reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
+            )
 
         suspend fun start() {
             mock.resetHold()
@@ -219,10 +231,24 @@ class HeadServerStopDrainTest {
                 setBody(heldBody(stream))
             }
 
-        private fun heldBody(stream: Boolean) =
+        /** [heldTurn] as the bytes of one HTTP/1.1 request, for a test that holds the connection itself. */
+        fun heldRequest(): String = heldBody(stream = true).let { body ->
+            "POST /v1/messages HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n" +
+                "Authorization: Bearer test-inference-token\r\nContent-Type: application/json\r\n" +
+                "Content-Length: ${body.toByteArray().size}\r\n\r\n$body"
+        }
+
+        private fun heldBody(stream: Boolean, scenario: String = "hold") =
             """{"model":"claude-codex--gpt-5.6-sol","stream":$stream,"max_tokens":64,
-                "system":"You are a test. SCENARIO:hold",
+                "system":"You are a test. SCENARIO:$scenario",
                 "messages":[{"role":"user","content":"go"}]}"""
+
+        /** A streamed turn whose upstream has sent nothing yet (SCENARIO:holdstart), read to its end. */
+        suspend fun unansweredStream(): String =
+            client.post("http://127.0.0.1:$port/v1/messages") {
+                header("Content-Type", "application/json")
+                setBody(heldBody(stream = true, scenario = "holdstart"))
+            }.bodyAsText()
 
         /** The held turn read to its END as its status and body: a streamed one through [heldStream], a buffered one
          *  through [heldTurn]. */
@@ -233,10 +259,15 @@ class HeadServerStopDrainTest {
          *  content delta arrives, so a test that cuts the turn cuts one whose content the client holds. A slot held
          *  says only that the turn was admitted: the line a cut writes names where the stream stood (content reached
          *  or not), and the upstream's first delta may still be on its way when the slot is first seen taken. */
-        suspend fun heldStream(reached: CompletableDeferred<Unit>): Pair<Int, String> =
+        suspend fun heldStream(
+            reached: CompletableDeferred<Unit>,
+            body: String = heldBody(stream = true),
+            session: String? = null,
+        ): Pair<Int, String> =
             client.preparePost("http://127.0.0.1:$port/v1/messages") {
                 header("Content-Type", "application/json")
-                setBody(heldBody(stream = true))
+                session?.let { header("x-claude-code-session-id", it) }
+                setBody(body)
             }.execute { response ->
                 val channel = response.bodyAsChannel()
                 val body = StringBuilder()
@@ -247,6 +278,16 @@ class HeadServerStopDrainTest {
                 }
                 response.status.value to body.toString()
             }
+
+        /** [heldStream] for a compaction: Claude Code's summarizer marker makes the turn one (CompactClassifier), and
+         *  with a session it runs off its client's call, as every compaction does. */
+        suspend fun heldCompaction(reached: CompletableDeferred<Unit>): Pair<Int, String> = heldStream(
+            reached,
+            """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,""" +
+                """"system":"SCENARIO:hold You are tasked with summarizing conversations for another agent.",""" +
+                """"messages":[{"role":"user","content":"compact"}]}""",
+            session = "sess-compaction",
+        )
 
         suspend fun awaitUpstreamAsked(asked: AtomicBoolean): Boolean {
             repeat(50) {
@@ -351,6 +392,117 @@ class HeadServerStopDrainTest {
             held.await()
         } finally {
             rig.mock.releaseHold()
+            rig.close()
+        }
+    }
+
+    // #523: a restart used to cut every running turn. Claude Code does not send again a turn cut after its answer
+    // began, so that session stopped until someone typed into it: 8 of the 14 such cuts on one machine, Nov 10 to 12,
+    // 2026. A retiring head now finishes the answers in progress while the next daemon takes everything else.
+    @Test
+    fun `a retiring head finishes the answer in progress and turns a new request away`(
+        @TempDir tmp: Path,
+    ): Unit = runBlocking {
+        val rig = Rig(tmp, WatchdogBudget(600.seconds, 600.seconds, 900.seconds), finishing = true)
+        rig.start()
+        try {
+            val reached = CompletableDeferred<Unit>()
+            val turn = async(Dispatchers.IO) { rig.heldStream(reached).second }
+            withTimeout(CONTENT_WAIT_MS) { reached.await() }
+
+            assertEquals(1, rig.head.retire(), "the turn already answering is kept")
+            val answer = rawRequest(rig.port)
+            assertEquals("", answer, "a retired head answers a new request with no status: ${answer.take(200)}")
+
+            rig.mock.releaseHold()
+            val body = turn.await()
+            assertTrue(body.contains("message_stop"), "the client reads its answer to the end: ${body.takeLast(300)}")
+            assertTrue(!body.contains("event: error"), "no error replaces the rest of the answer")
+            assertTrue(!body.contains(RESTART_SAID), "the turn was not cut")
+            withTimeout(TAKEOVER_BOUND_MS) { rig.head.finish(TAKEOVER_BOUND_MS) }
+        } finally {
+            rig.mock.releaseHold()
+            rig.close()
+        }
+    }
+
+    // #525: the answer a retiring head finishes went out on a connection its client keeps open, and the client's next
+    // request arrived on it, at the head that was leaving: turned away unanswered, sent again, and only then served by
+    // the next daemon (five such requests at one restart, Nov 13, 2026). The head closes the connection when the
+    // answer has ended, so the next request opens a new one.
+    @Test
+    fun `a retiring head closes the connection of an answer it finished`(@TempDir tmp: Path): Unit = runBlocking {
+        val rig = Rig(tmp, WatchdogBudget(600.seconds, 600.seconds, 900.seconds), finishing = true)
+        rig.start()
+        try {
+            Socket("127.0.0.1", rig.port).use { socket ->
+                socket.soTimeout = RAW_READ_TIMEOUT_MS
+                socket.getOutputStream().apply {
+                    write(rig.heldRequest().toByteArray())
+                    flush()
+                }
+                val answer = socket.getInputStream().bufferedReader()
+                val began = generateSequence(answer::readLine).first { it.startsWith("event: content_block_delta") }
+                assertTrue(began.isNotEmpty(), "the answer is on its way before the head retires")
+
+                assertEquals(1, rig.head.retire(), "the turn already answering is kept")
+                rig.mock.releaseHold()
+
+                // Reads to the end of the connection: one the head left open ends this read on the socket's timeout.
+                val rest = answer.readText()
+                assertTrue(rest.contains("message_stop"), "the answer is read to its end: ${rest.takeLast(300)}")
+            }
+            withTimeout(TAKEOVER_BOUND_MS) { rig.head.finish(TAKEOVER_BOUND_MS) }
+        } finally {
+            rig.mock.releaseHold()
+            rig.close()
+        }
+    }
+
+    // #525: a compaction runs off its client's call, on the head's detached scope, and a retiring head ended that
+    // whole scope: on Nov 12, 2026 a restart cancelled a compaction 77 seconds into its answer, and the client's retry
+    // took 402 seconds. One that is answering a client still connected is kept like any other turn.
+    @Test
+    fun `a retiring head finishes a compaction that is already answering its client`(
+        @TempDir tmp: Path,
+    ): Unit = runBlocking {
+        val rig = Rig(tmp, WatchdogBudget(600.seconds, 600.seconds, 900.seconds), finishing = true)
+        rig.start()
+        try {
+            val reached = CompletableDeferred<Unit>()
+            val turn = async(Dispatchers.IO) { rig.heldCompaction(reached).second }
+            withTimeout(CONTENT_WAIT_MS) { reached.await() }
+
+            assertEquals(1, rig.head.retire(), "the compaction already answering is kept")
+
+            rig.mock.releaseHold()
+            val body = turn.await()
+            assertTrue(body.contains("message_stop"), "the client reads its summary to the end: ${body.takeLast(300)}")
+            assertTrue(!body.contains("event: error"), "no error replaces the rest of the summary")
+            assertTrue(!body.contains(RESTART_SAID), "the compaction was not cut")
+            withTimeout(TAKEOVER_BOUND_MS) { rig.head.finish(TAKEOVER_BOUND_MS) }
+        } finally {
+            rig.mock.releaseHold()
+            rig.close()
+        }
+    }
+
+    @Test
+    fun `a retiring head still cuts a turn its upstream has not begun answering, which its client sends again`(
+        @TempDir tmp: Path,
+    ): Unit = runBlocking {
+        val rig = Rig(tmp, WatchdogBudget(600.seconds, 600.seconds, 900.seconds), finishing = true)
+        rig.mock.resetStartHold()
+        rig.start()
+        try {
+            val turn = async(Dispatchers.IO) { rig.unansweredStream() }
+            assertTrue(rig.awaitInflight(), "precondition: the turn holds a slot and waits on its upstream")
+
+            assertEquals(0, rig.head.retire(), "a turn with no answer yet is not kept")
+            val body = withTimeout(TAKEOVER_BOUND_MS) { turn.await() }
+            assertTrue(body.contains("$RESTART_SAID $CLIENT_RESENDS"), "the client is told it sends again: $body")
+        } finally {
+            rig.mock.startHoldRelease.countDown()
             rig.close()
         }
     }

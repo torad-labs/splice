@@ -72,7 +72,7 @@
   /* space: 4px rhythm */
   --splice-space-1: 4px; --splice-space-2: 8px; --splice-space-3: 12px; --splice-space-4: 16px;
   --splice-space-6: 24px; --splice-space-8: 32px; --splice-space-12: 48px; --splice-space-16: 64px;
-  /* motion (the ease-out curve is the same one Temple uses) */
+  /* motion (the ease-out curve is the one Torad's other products use) */
   --splice-t-hit: 90ms;   /* button press */
   --splice-t-snap: 240ms; /* small UI change */
   --splice-t-move: 420ms; /* large or full-screen move */

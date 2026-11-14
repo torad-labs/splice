@@ -43,11 +43,16 @@ public object DaemonProbe {
         public val topology: HealthTopology = HealthTopology(),
         public val client: HealthClient = HealthClient(),
         public val turns: HealthTurns = HealthTurns(),
+        public val process: HealthProcess = HealthProcess(),
     ) {
         public val turnPathStalled: List<String> get() = turns.stalled
         public val quota: HealthQuota get() = turns.quota
         public val held: Map<String, List<HeldTurnReading>> get() = turns.held
     }
+
+    /** #523: which process answered, and the marker of the launcher supervising it, which can start a next daemon
+     *  beside it; null under no such launcher. [pid] is null from a daemon that does not say. */
+    public data class HealthProcess(public val pid: Long? = null, public val launcher: String? = null)
 
     /** Per-head current turn health: stalled paths, quota readings, retained holds, and (2026-11-09 audit) each head
      *  refusing every request, keyed to the reason it last refused one (`refusingHeads`). */

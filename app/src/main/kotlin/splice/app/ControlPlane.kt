@@ -19,6 +19,7 @@ import splice.app.control.ControlReadings
 import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
 import splice.app.control.FailedHeads
+import splice.app.control.HandOver
 import splice.app.control.KeyRotation
 import splice.app.control.ManagedHead
 import splice.app.control.ProcessReads
@@ -140,6 +141,7 @@ internal class ControlPlane(
     internal val alerts = stores.alerts
     internal val perfRows = stores.perfRows
     internal val foregroundTools = stores.foregroundTools
+    internal val sessionFallbacks = stores.sessionFallbacks
     internal val playgroundProviders = stores.playgroundProviders
     internal val playground = stores.playground
     internal val console = stores.console
@@ -175,6 +177,9 @@ internal class ControlPlane(
      *  default binds the control port itself, which is every start without a socket manager. */
     internal var adopted: AdoptedServing = AdoptedServing()
 
+    /** #523: the hand-over's two requests, assigned by Daemon before [start] and published to the lifecycle routes. */
+    internal var handOver: HandOver? = null
+
     /** Constructs and binds the control plane. Returns null (having already called
      *  [shutdownDaemon] and logged) when the bind fails — defense in depth for the
      *  restart-into-a-still-bound-port race (BS-4 DEFECT B): unlike a per-head start, an uncaught
@@ -206,10 +211,11 @@ internal class ControlPlane(
         val mcpServices = mcp.services(mcpHost, home)
         // One session source serves the sessions routes and the heads route's client pids.
         val sessions = sessionWiring.source(home, heads, console, foregroundTools)
-        val signals = health.signals(heads, sessions, probes)
+        val signals = health.signals(heads, sessions, probes, home)
         val guard = parts.guard()
+        val listen = adopted.control(controlPort)
         val srv = ControlServer(
-            adopted.control(controlPort),
+            listen,
             heads,
             config,
             guard,
@@ -229,7 +235,7 @@ internal class ControlPlane(
         // Oct 19, 2026: the peer helpers and their journals, over the same store the guard admits peer keys from.
         srv.peerServices = PeersWiring().services(guard.peers, statePaths.stateDir, probeScope, log)
         parts.wireRestartSuccessor(srv, controlPort)
-        return if (ownership.bind(srv, controlPort)) srv.also { mcpServices.refresh() } else null
+        return if (ownership.bind(srv, controlPort, listen.handOn(guard))) srv.also { mcpServices.refresh() } else null
     }
 
     /** Every port [srv] takes after construction, extracted out of [start] (LongMethod — the same
@@ -253,7 +259,9 @@ internal class ControlPlane(
         srv.ports.compaction = compactionInstructions
         srv.ports.claudeLogins = claudeLogin.owner
         srv.ports.quotaReadFailures = quotaReadFailures
+        srv.ports.sessionFallbacks = sessionFallbacks
         srv.ports.lifecycle.keyRotation = KeyRotation(daemon.mgmtKey, daemon.mcpAccess, statePaths, log)
+        srv.ports.lifecycle.handOver = handOver
         providerAssembly.claudePoolChanges.onJoined = LoginJoined { head -> srv.sessionWake?.joined(head) }
         providerAssembly.claudePoolChanges.watch(probeScope, log)
         srv.ports.budgetSpending = console.budgets
@@ -266,6 +274,7 @@ internal class ControlPlane(
         srv.ports.sessionDriver = sessionWiring.driver()
         srv.ports.processes = ProcessReads { sessionWiring.processes() }
         ConsoleWiring.wireV4133(srv, budgets, alerts, playground)
+        stores.loginAlerting(srv, topology).watch(probeScope)
         ConsoleWiring.wireVerbReads(srv, topology, statePaths, console)
         // A Claude head's add and remove go through folders splice owns, which the generic accounts port refuses
         // by kind. Wrapped AFTER ConsoleWiring.wire assigns that port, and reading the arm per call, so a daemon

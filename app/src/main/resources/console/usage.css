@@ -137,6 +137,8 @@
 .upb-hero { margin: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: .9rem; }
 .upb-hero b { font: 600 var(--fig-hero)/1 var(--font-data); font-variant-numeric: tabular-nums; letter-spacing: -.02em; color: var(--text); }
 .upb-hero b.lim { color: var(--limit); }
+/* a second count in the same line (the logins out of one model) stands a step apart from the first */
+.upb-hero span + b { margin-left: calc(2 * var(--u)); }
 .upb-hero span { font: 500 .95rem/1.3 var(--font-name); color: var(--text-mute); }
 /* what the board's two kinds of bar are: a login's limits come from its provider, the counts under them are splice's own */
 .upb-key { margin: 0; display: flex; flex-wrap: wrap; gap: calc(2 * var(--u)) calc(3 * var(--u)); font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }

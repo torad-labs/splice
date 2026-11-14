@@ -47,10 +47,22 @@ public fun interface HeadAssembly {
 }
 
 /**
+ * Starts the heads the assembly loop has just built, one at a time as it runs, so each serves while the later
+ * ones are still being assembled (#525). A start that fails is recorded in `failed`, as an assembly that throws is.
+ */
+public fun interface HeadsStart {
+    public suspend operator fun invoke(heads: Map<String, ManagedHead>, failed: MutableMap<String, String>)
+}
+
+/**
  * Stops the control plane — run AFTER the heads, and run even when the head-stop budget tripped.
  *
  * The ordering is the contract: the control plane is what an operator's `splice stop` is talking
  * to, so it outlives the heads it reports on and goes down last.
+ *
+ * A hand-over is the one exception (#525, 2026-11-13): no operator's request waits on it, the next daemon's ask
+ * was answered before it began, and the daemon lock is held until the control server's stop returns. There it runs
+ * beside the heads' retire ([splice.app.head.HeadShutdown.retireHeads]).
  */
 public fun interface StopControl {
     public operator fun invoke()

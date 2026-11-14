@@ -10,17 +10,22 @@ StartLimitIntervalSec=0
 [Service]
 Type=simple
 # The JDK `splice install` ran on. The shell puts it ahead of the user manager's PATH without replacing that PATH, for
-# the daemon and everything it starts, and execs the launcher, which execs java, so the daemon keeps this unit's first
-# pid. The `splice` link makes the launcher's head splice, so no SPLICE_HEAD reaches what the daemon starts.
+# the daemon and everything it starts, and execs the launcher, which keeps this unit's first pid and the sockets
+# systemd holds for it, and runs the daemon as its child. The `splice` link makes the launcher's head splice, so no
+# SPLICE_HEAD reaches what the daemon starts.
 Environment="JAVA_HOME=@JAVA_HOME@"
 ExecStart=/bin/sh -c 'PATH="$$JAVA_HOME/bin:$$PATH" exec "@SPLICE@" daemon'
+# A reload starts the next daemon beside the running one, on the same sockets: the running one hands over, finishes
+# the answers it is in the middle of and exits. `splice restart` and an upgrade take this road; a restart of the unit
+# stops the daemon first and cuts them.
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
 RestartSec=2
 # The retry backs off from 2 s to 5 min, so a daemon that can't stay up costs one start every 5 min, not every 2 s.
 RestartSteps=8
 RestartMaxDelaySec=300
-# A stop signals the daemon alone: it drains its workers and exits, and only the timeout kills the rest of its group.
-# 75 s covers the drain, and Java's 143 on SIGTERM is a clean stop.
+# A stop signals the launcher alone, which signals each daemon it runs: they drain their workers and exit, and only
+# the timeout kills the rest of the group. 75 s covers the drain, and 143 on SIGTERM is a clean stop.
 KillMode=mixed
 TimeoutStopSec=75
 SuccessExitStatus=143

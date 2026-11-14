@@ -7,11 +7,13 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import io.ktor.server.routing.put
 import kotlinx.coroutines.withContext
 import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
 import splice.app.control.ProcessReads
 import splice.app.control.RelaunchCommands
+import splice.app.control.mount.fallback.SessionFallbackRoute
 import splice.core.config.ConfigService
 import splice.core.config.UserHome
 import splice.launch.recipe.LaunchService
@@ -80,6 +82,9 @@ internal class SessionsMount(
     /** V4-444: the console's note to one live session, written to its inbox socket. */
     private val noteRoute = sessions?.let { SessionNoteRoute(it, PeerNoteSocket(fileIo)) }
 
+    /** Nov 13, 2026: the model a session falls back to while the one it asks for is held on every login. */
+    private val fallbackRoute = sessions?.let { SessionFallbackRoute(it, heads, ports) }
+
     fun register(route: Route) {
         wiring.routes?.let { sessionRoutes(route, it) }
     }
@@ -87,7 +92,9 @@ internal class SessionsMount(
     /** v0.4.0 /api/sessions and V4-130's three session reads beside it. */
     private fun sessionRoutes(route: Route, routes: SessionsRoutes) {
         route.get("/api/sessions") {
-            guard.guarded(call) { ControlReplies.respond(call, withContext(fileIo) { routes.sessionsJson() }) }
+            // ?gone= is the mark of the gone sessions' rows the reader holds; with it they are sent only when changed.
+            val held = call.request.queryParameters["gone"]
+            guard.guarded(call) { ControlReplies.respond(call, withContext(fileIo) { routes.sessionsJson(held) }) }
         }
         historyRoutes?.let { history ->
             route.get("/api/sessions/history") {
@@ -116,6 +123,7 @@ internal class SessionsMount(
                 guard.guarded(call) { notes.post(call.parameters["id"].orEmpty(), call.receiveText()).send(call) }
             }
         }
+        fallbackRoute?.let { fallbacks -> fallbackRoutes(route, fallbacks) }
         driveRoutes(route)
         route.get("/api/sessions/{id}/transcript") {
             guard.guarded(call) {
@@ -125,6 +133,19 @@ internal class SessionsMount(
                     routes.transcript(id, query["cursor"], query["limit"]?.toIntOrNull(), query["before"])
                 }.send(call)
             }
+        }
+    }
+
+    private fun fallbackRoutes(route: Route, fallbacks: SessionFallbackRoute) {
+        route.get("/api/sessions/fallbacks") { guard.guarded(call) { fallbacks.list().send(call) } }
+        route.put("/api/sessions/{id}/fallback") {
+            guard.guarded(call) {
+                val body = call.receiveText()
+                withContext(fileIo) { fallbacks.set(call.parameters["id"].orEmpty(), body) }.send(call)
+            }
+        }
+        route.delete("/api/sessions/{id}/fallback") {
+            guard.guarded(call) { withContext(fileIo) { fallbacks.clear(call.parameters["id"].orEmpty()) }.send(call) }
         }
     }
 

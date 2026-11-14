@@ -35,11 +35,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      # No `cache: gradle` here. The submission action below caches Gradle's home itself, and when the job ends it moves
+      # the dependencies, the wrapper and the transforms into entries of its own and takes them out of that home. setup-java
+      # saved what was left, 3 MB and a 567-byte wrapper folder, under the key codeql, coverage and e2e-docker restore
+      # (setup-java-<os>-gradle-<hash of the gradle files>), and this job ends minutes before any of them, so it always
+      # wrote that key first. Every one of those jobs then "hit" the cache and downloaded Gradle and every dependency
+      # again: on Nov 13, 2026 the codeql build on main failed on one such download, 17 s in.
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: '21'
-          cache: gradle
       - name: submit Gradle dependency graph
         uses: gradle/actions/dependency-submission@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with:

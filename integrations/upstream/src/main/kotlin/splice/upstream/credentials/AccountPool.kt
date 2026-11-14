@@ -75,22 +75,25 @@ public class AccountPool(
             return current
         }
 
-    /** Hears a login join the pool: the head's held turns may move to it (failure-handling slice 5). */
-    @Volatile
-    public var onJoined: Runnable? = null
+    /** The pool's word that a login became one a waiting turn may take, and who hears it: the head's held turns may
+     *  move to that login (failure-handling slice 5). */
+    public val joins: PoolJoins = PoolJoins().also { it.hears(accounts) }
 
     /** Hears the pins that let go at a limit reading, so the saved pins let go too and a restart does not restore them. */
     @Volatile
     public var onPinsLetGo: PinsLetGo? = null
 
     /** Publishes membership only. Existing session choices, order, cooldown objects and leased turns survive. A label
-     *  the pool did not hold before is a login that joined, and [onJoined] hears it. */
+     *  the pool did not hold before is a login that joined, and so is a label that now sends another credential: on
+     *  Nov 12, 2026 Claude Code was signed in to an account with room while eleven turns waited on a spent model, the
+     *  label stayed native:claude, and no waiting turn moved. [joins] hears both. */
     public var members: List<PoolAccount>
         get() = membership.get().accounts
         set(accounts) {
             val updated = AccountMembership(accounts)
+            joins.hears(accounts)
             val before = synchronized(membershipMonitor) { membership.getAndSet(updated) }
-            if (updated.byLabel.keys.any { it !in before.byLabel }) onJoined?.run()
+            if (updated.accounts.any { before.byLabel[it.label]?.auth !== it.auth }) joins.joined()
         }
 
     /** A forwarded caller alone is the legacy path, not a choice between stored logins. */
@@ -146,14 +149,18 @@ public class AccountPool(
         select(sessionId, excluded, null)
 
     /** A changed caller login takes precedence over automatic stickiness, but never an operator pin. [model] is the
-     *  model the turn asks for: a login whose provider refused another model for the week serves it (Nov 3, 2026). */
+     *  model the turn asks for: a login whose provider refused another model for the week serves it (Nov 3, 2026).
+     *  [own] is a session's own turn at its admission, the only kind with a say in the command's usual model
+     *  ([AskedModels]). */
     public fun select(
         sessionId: String?,
         excluded: Set<String>,
         callerCredentialKey: String?,
         model: String? = null,
+        own: Boolean = true,
     ): Selection {
         require(sessionId == null || sessionId.isNotBlank()) { "session id must not be blank" }
+        asked.asked(model, own)
         while (true) {
             val current = liveMembership
             current.accounts.forEach { it.refreshCredentialEvidence() }
@@ -165,6 +172,9 @@ public class AccountPool(
 
     private val selectionCommit = SelectionCommit()
 
+    /** The model this command's turns ask for, for a preview that has no turn of its own ([nextTargetLabel]). */
+    public val asked: AskedModels = AskedModels()
+
     /** Suspending turn admission shares raw reads; synchronous control callers retain [select]. */
     public val awaitingEvidence: AwaitingEvidence = AwaitingEvidence()
 
@@ -175,10 +185,13 @@ public class AccountPool(
             excluded: Set<String> = emptySet(),
             callerCredentialKey: String? = null,
             model: String? = null,
+            own: Boolean = true,
         ): Selection {
             require(sessionId == null || sessionId.isNotBlank()) { "session id must not be blank" }
             currentCoroutineContext().ensureActive()
-            val loads = evidenceLoads ?: return this@AccountPool.select(sessionId, excluded, callerCredentialKey, model)
+            val loads = evidenceLoads
+                ?: return this@AccountPool.select(sessionId, excluded, callerCredentialKey, model, own)
+            asked.asked(model, own)
             while (true) {
                 loads.ensureActive()
                 val current = runInterruptible(loads.ioDispatcher) { liveMembership }
@@ -254,7 +267,11 @@ public class AccountPool(
         // The head switched only when the login it serves new or moved sessions on changed: once per change, never
         // once per session that starts on a backup while the primary is held (about 10,000 a day on claude-splice,
         // Oct 12). A session staying on its login, and the first login served after a start, are no switch of the head.
-        val headFrom = if (previous == null || moved != null) headServing.getAndSet(chosen.account.label) else null
+        // And only a turn of the model the command's turns ask for: a helper turn on a small model starts on a login
+        // that is out of the sessions' model, and that is not the command moving back to it (Nov 12, 2026: "switched
+        // from Seek Apps to Ethan: primary account reset" a minute after Ethan ran out of Fable).
+        val turned = if (previous == null || moved != null) headServing.takeIf { asked.leads(caller.model) } else null
+        val headFrom = turned?.getAndSet(chosen.account.label)
         val headSwitch = headFrom?.takeIf { it != chosen.account.label }?.let {
             val reason = AccountSwitchReason.of(current.byLabel[it], chosen.account, at, policy)
             AccountSwitch(it, chosen.account.label, reason, at)
@@ -347,10 +364,12 @@ public class AccountPool(
      *  until that answer serves a turn ([AccountCredentialEligibility.askAgain]). A limit it read stays: that is the
      *  account's, not the credential's. A credential file the client rewrites by itself does none of this; only the
      *  person's own act does. Until Nov 11, 2026 a login whose organization's payment was fixed was not asked again,
-     *  signed in again or not, until its hold ran out. False when [label] names no account here. */
+     *  signed in again or not, until its hold ran out. The turns waiting on other logins hear it as a login that
+     *  joined ([joins]). False when [label] names no account here. */
     public fun askAgain(label: String): Boolean {
         val account = liveMembership.byLabel[label] ?: return false
         account.askCredentialAgain(now())
+        joins.joined()
         return true
     }
 
@@ -387,16 +406,17 @@ public class AccountPool(
      *  a credential lease — a read-only probe for an operator surface (GET /api/accounts "the next
      *  target by the real selector order"). Walks the exact same [candidates] order [choose] does,
      *  testing only [available]: [acquireIfAvailable] takes a probe lease, which this must not. */
-    public fun nextTargetLabel(sessionId: String? = null): String? {
+    public fun nextTargetLabel(sessionId: String? = null, model: String? = null): String? {
         val previous = synchronized(sessions) { sessionId?.let { sessions[it] } }
         val current = liveMembership
         current.accounts.forEach { it.refreshCredentialEvidence() }
         val pinLabel = pins.forSession(sessionId)
         val at = now()
         // A warm session keeps its login through a short hold, so the preview names it first, as [choose] does.
-        val stay = CallerLogin(null, sessionId, current.accounts).previewStay(previous, current.byLabel, pinLabel, at)
-        val order = candidates(previous?.label, current, pinLabel)
-        return AccountAvailability.upNext(order, at, stay).firstOrNull()?.label
+        val stay = CallerLogin(null, sessionId, current.accounts, model)
+            .previewStay(previous, current.byLabel, pinLabel, at)
+        val order = candidates(previous?.label, current, pinLabel, model)
+        return AccountAvailability.upNext(order, at, stay, model).firstOrNull()?.label
     }
 
     /** Session listings read every listed session through ONE membership read. A property, not a function: the class

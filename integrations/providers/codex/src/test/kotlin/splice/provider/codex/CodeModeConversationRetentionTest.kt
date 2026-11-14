@@ -19,6 +19,7 @@ import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
+import java.util.Collections
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
 
@@ -38,7 +39,10 @@ class CodeModeConversationRetentionTest {
     lateinit var tempDir: Path
 
     private val clock = HandClock(START)
-    private val logs = mutableListOf<String>()
+
+    // A start reads journals on several threads, and each logs the file it could not read: the list takes lines
+    // from all of them.
+    private val logs = Collections.synchronizedList(mutableListOf<String>())
 
     private fun registry(retention: CodeModeRetention = CodeModeRetention()) =
         CodexCodeModeRegistry(

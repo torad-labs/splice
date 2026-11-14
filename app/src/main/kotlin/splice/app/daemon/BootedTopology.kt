@@ -39,6 +39,9 @@ internal data class BootedTopology(
     /** V4-162: the version the daemon RUNS, which a window-only edit moves (TopologyWindows). Null =
      *  nothing re-reads the file, so the booted [digest] is the running one and any change is stale. */
     val running: RunningTopology? = null,
+    /** Nov 12, 2026: `[daemon] alert_command` as booted: the operator's own program for what cannot wait for the
+     *  console. Empty when none is set. */
+    val alertCommand: List<String> = emptyList(),
 )
 
 /** V4-162: which splice.toml version the daemon runs, and whether the file has moved past it in a way

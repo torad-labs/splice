@@ -99,6 +99,30 @@ const API = (() => {
     if (kept && Date.now() - kept.at < ms) return kept.answer;
     return call("GET", path);
   }
+  // THE SESSIONS THAT ARE GONE ARE READ ONCE (Nov 12). A machine keeps the row of every session it has seen: on the one
+  // this was measured on, 3,259 rows, 3,227 of them sessions that are gone, 2.3 MB an answer, and the Sessions page asks
+  // every five seconds. A gone session's row does not change, so the daemon's answer names the gone rows by a mark, and
+  // a read that sends that mark back gets the rows of the sessions still here alone until the mark changes. Every read
+  // of /api/sessions goes through call(), so every reader is handed the whole list, as before.
+  const SESSIONS = "/api/sessions";
+  const goneRows = new Map();
+  let goneMark = null;
+  /** The whole list the answer [body] stands for; null when it leaves out gone rows this page does not hold. */
+  function wholeSessions(body) {
+    if (typeof body?.gone_mark !== "string" || !Array.isArray(body.sessions)) return body;
+    if (!body.gone_held) {
+      goneRows.delete(body.gone_mark);
+      goneRows.set(body.gone_mark, body.sessions.filter((s) => s.availability === "gone"));
+      for (const old of [...goneRows.keys()].slice(0, -2)) goneRows.delete(old);
+      goneMark = body.gone_mark;
+      return body;
+    }
+    const held = goneRows.get(body.gone_mark);
+    if (!held) return null;
+    // The registry lists newest activity first; the sort is stable, so each half keeps its own order.
+    const at = (s) => (typeof s.updated_at === "number" ? s.updated_at : Date.parse(s.updated_at) || 0);
+    return { ...body, sessions: [...body.sessions, ...held].sort((a, b) => at(b) - at(a)) };
+  }
   // All console performance calls share the daemon's two-running/two-waiting admission budget.
   // Keep sent calls in their slots until the response body drains: aborting fetch is not proof the
   // server released its admission. A stale generation may stop queued work and ignore sent results.
@@ -167,10 +191,17 @@ const API = (() => {
       if (!maySend()) return { ok: false, status: 0, body: null };
       const init = { method, signal, keepalive, headers: { Authorization: `Bearer ${localStorage.getItem(STORE) || ""}`, ...extra } };
       if (body !== undefined) { init.headers["Content-Type"] = "application/json"; init.body = JSON.stringify(body); }
-      const res = await fetch(path, init);
+      const listing = method === "GET" && path === SESSIONS;
+      const res = await fetch(listing && goneMark ? `${SESSIONS}?gone=${goneMark}` : path, init);
       const text = await res.text();
       let parsed = null;
       try { parsed = text ? JSON.parse(text) : null; } catch { parsed = null; }
+      if (listing && res.ok) {
+        const whole = wholeSessions(parsed);
+        // The daemon left out rows this page no longer holds: ask once more with no mark, which sends them all.
+        if (whole === null) { goneMark = null; return call(method, path, body, extra, signal, keepalive, maySend); }
+        parsed = whole;
+      }
       if (res.status === 401 && !signal?.aborted) lock();
       const answer = { ok: res.ok, status: res.status, body: parsed };
       if (method === "GET") hear(path, answer);

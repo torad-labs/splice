@@ -86,6 +86,11 @@ public class PerfStats(
      *  the file's tail so a restart does not turn a session at its limit into an idle one. */
     public val endings: SessionEndings = SessionEndings()
 
+    /** #523: where a retiring head leaves each row it still records, for the next daemon to count, and the one
+     *  switch that says this process has stopped counting. Beside the request log, under the same name. */
+    internal val retired: RetiredRows =
+        RetiredRows(file.resolveSibling("${file.fileName.toString().removeSuffix(".jsonl")}-retired"), log)
+
     private val archiveName = PerfArchiveName(file.fileName.toString())
 
     private val archive: RotationArchive =
@@ -151,28 +156,30 @@ public class PerfStats(
                 snap.upstreamGapEnd?.let { put(PerfKeys.UP_GAP_END, it.wire) }
             },
         )
-        meta.session?.let { session ->
-            val reset = snap.counters[PerfKeys.EARLIEST_RESET_EPOCH_SECONDS]
-            val resume = snap.counters[PerfKeys.RESUME_AT_EPOCH_SECONDS]
-            val retries = snap.counters.getOrDefault(PerfKeys.RETRIES, 0L)
-            endings.note(
-                meta.transcript.sessionId ?: session,
-                SessionEnding(
-                    meta.outcome,
-                    meta.account.label,
-                    reset,
-                    ts,
-                    meta.model,
-                    retries,
-                    SessionEndingRecovery(resumeEpochSeconds = resume),
-                ),
-            )
-            Cancellables.discard(
-                Cancellables.runCatchingCancellable { meta.model?.let { totals?.add(session, it, snap.counters, ts) } },
-                "telemetry is best-effort; a turn must never fail on its session's running total",
-            )
+        // #523: a serving head counts the row here; a retired head leaves it for the next daemon and counts nothing.
+        val counted = retired.settle(row, whole) {
+            meta.session?.let { session ->
+                endings.note(
+                    meta.transcript.sessionId ?: session,
+                    SessionEnding(
+                        meta.outcome,
+                        meta.account.label,
+                        resetEpochSeconds = snap.counters[PerfKeys.EARLIEST_RESET_EPOCH_SECONDS],
+                        ts,
+                        meta.model,
+                        retries = snap.counters.getOrDefault(PerfKeys.RETRIES, 0L),
+                        SessionEndingRecovery(resumeEpochSeconds = snap.counters[PerfKeys.RESUME_AT_EPOCH_SECONDS]),
+                    ),
+                )
+                Cancellables.discard(
+                    Cancellables.runCatchingCancellable {
+                        meta.model?.let { totals?.add(session, it, snap.counters, ts) }
+                    },
+                    "telemetry is best-effort; a turn must never fail on its session's running total",
+                )
+            }
         }
-        lane.append(row, whole)
+        lane.append(row, counted)
         return ts
     }
 

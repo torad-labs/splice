@@ -30,6 +30,7 @@ import splice.provider.codex.state.collection.CodeModeRecordList
 import splice.provider.codex.state.query.CodeModeQueryPreparation
 import splice.provider.codex.state.query.CodeModeRecordQueries
 import splice.provider.codex.state.query.CodeModeResultOwners
+import splice.provider.codex.state.retention.CodeModeAdoption
 import splice.provider.codex.state.retention.CodeModeRecordCache
 import splice.provider.codex.state.retention.CodeModeRecordRetention
 import splice.provider.codex.state.retention.CodeModeRegistrySweep
@@ -132,6 +133,15 @@ internal class CodexCodeModeRegistry(
         config,
         sweepInterval,
     ).also { it.nativeOwned = CodeModeSweepOwnership(nativeCells.services::hasSessions) }
+
+    /** #525 (2026-11-12): a conversation another daemon held at boot is read here at its first turn. */
+    val adoption = CodeModeAdoption(access, store, history, timed)
+
+    /** #525: each conversation's files, where a retiring head keeps its holds. */
+    val files get() = store.files
+
+    /** #525 (2026-11-13): the conversations let go at the retire, for the list the next daemon's start reads. */
+    val letGo get() = store.cold.letGo()
 
     /** V4-337: where each code-mode turn starts, before its history is built. */
     val turnStart = CodeModeTurnStart(access, sweepRecords, store, config.clock, retainedCells, cache)

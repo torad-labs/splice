@@ -33,14 +33,18 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.JsonScalars
 import splice.http.JsonReply
+import splice.sessions.listing.GoneSessionRows
+import splice.sessions.listing.ListedRow
 import splice.sessions.note.PeerVersions
 import splice.sessions.projects.SessionProjects
 import splice.sessions.registry.RepoResolver
 import splice.sessions.registry.RepoRoot
+import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRoute
 import splice.sessions.registry.SessionSource
 import splice.sessions.teams.Team
+import splice.sessions.teams.TeamStore
 import splice.sessions.transcript.DEFAULT_TRANSCRIPT_PAGE
 import splice.sessions.transcript.ModelMove
 import splice.sessions.transcript.RowTranscriptFields
@@ -119,11 +123,22 @@ private class TranscriptAsk(
     }
 }
 
+/** The team each session is bound to, with the store read once for a listing. Asked once a row it cost a look at the
+ *  store's file and a sort of every team for each of 3,201 rows (Nov 12, 2026). A session bound in several teams
+ *  reports the earliest created that is not archived, ties broken by id. */
+private class BoundTeams(store: TeamStore?) {
+    private val open: List<Team> by lazy {
+        store?.teams().orEmpty().filterNot { it.archived }.sortedWith(compareBy({ it.createdAt }, { it.id }))
+    }
+
+    fun of(session: String): Team? = open.firstOrNull { team -> team.slots.any { it.session == session } }
+}
+
 public class SessionsRoutes(
     private val registry: SessionSource,
     private val transcripts: SessionTranscripts,
     private val roots: TranscriptRoots = TranscriptRoots(),
-    private val settings: SessionSettings = NoSessionSettings,
+    settings: SessionSettings = NoSessionSettings,
     private val activity: ActivitySource = ActivitySource { null },
     /** V4-131: the team store the `team` key reads, per request. */
     private val teams: TeamSource = TeamSource { null },
@@ -134,13 +149,16 @@ public class SessionsRoutes(
     /** What Settings > Your data lists and deletes of the activity stores. */
     public val edgeRoutes: ActivityRoutes = ActivityRoutes(activity)
 
+    /** The settings every row asks, read once for a listing ([ListingSettings]). */
+    private val asks = ListingSettings(settings)
+
     /** One resolver per distinct root set: statuslineGitRoots is per-head overridable. */
     private val resolvers = ConcurrentHashMap<List<String>, RepoResolver>()
 
     /** Which project a session, a working directory or a request belongs to: the one answer every screen shares. */
-    public val projects: SessionProjects = SessionProjects(settings)
+    public val projects: SessionProjects = SessionProjects(asks)
 
-    private val viewEnabled = SessionTranscriptViewEnabled(settings::transcriptView)
+    private val viewEnabled = SessionTranscriptViewEnabled(asks::transcriptView)
 
     /** A session with no name is called by the first line of its first message; the request rows ask here too. */
     public val titleOf: SessionTitleOf = SessionTitleOf { record ->
@@ -151,9 +169,13 @@ public class SessionsRoutes(
     /** Each row's last, model and title, kept against its transcript file's stamp. */
     private val transcriptFields = RowTranscriptFields(transcripts, viewEnabled, titleOf)
 
-    public fun sessionsJson(): String = buildJsonObject {
+    /** [held] is the mark of the gone sessions' rows the reader already holds, from an earlier answer's `gone_mark`. */
+    public fun sessionsJson(held: String? = null): String = asks.listing().use { listingJson(held) }
+
+    private fun listingJson(held: String?): String = buildJsonObject {
         val listing = registry.list()
         val rowFacts = facts.forRecords(listing.sessions)
+        val bound = BoundTeams(teams())
         // whether splice reads the conversations: off, the console shows no question a session waits on (Marlin, p180)
         put("reading", viewEnabled())
         // The versions among these sessions a note is sent to, by the peer wire rule (peer messaging 1.4), not a fixed list.
@@ -162,10 +184,13 @@ public class SessionsRoutes(
         put("note_versions", buildJsonArray { noteVersions.forEach { add(JsonPrimitive(it)) } })
         // An unreadable directory is not an empty one: the error rides beside the (empty) list.
         listing.error?.let { put("error", it) }
-        put(
-            "sessions",
-            buildJsonArray { listing.sessions.forEach { add(row(it, rowFacts)) } },
+        val rows = GoneSessionRows(
+            listing.sessions.map { ListedRow(it.availability == SessionAvailability.GONE, row(it, rowFacts, bound)) },
         )
+        // A reader that holds the gone sessions' rows under this mark is sent the sessions still here alone.
+        put("gone_mark", rows.mark)
+        if (rows.heldBy(held)) put("gone_held", true)
+        put("sessions", buildJsonArray { rows.owed(held).forEach { add(it) } })
     }.toString()
 
     /** GET /api/sessions/{id}/transcript?cursor=&limit= reads forward from the start. `before=` reads the newest messages
@@ -206,6 +231,7 @@ public class SessionsRoutes(
     private fun row(
         s: SessionRecord,
         rowFacts: SessionRowFacts = facts,
+        teamOf: BoundTeams = BoundTeams(teams()),
     ): JsonObject = buildJsonObject {
         put("session_id", s.sessionId)
         put("name", if (viewEnabled()) s.name else null)
@@ -227,9 +253,8 @@ public class SessionsRoutes(
         put("availability", JsonPrimitive(s.availability.name.lowercase()))
         repoOf(s)?.let { put("repo", repoJson(it)) }
         projects.put(this, s)
-        val bound = s.sessionId?.let { teamOf(it) }
         // the card names the team a person reads, never its id; no reader joins a row to its team by id
-        put("team_name", bound?.name)
+        put("team_name", s.sessionId?.let(teamOf::of)?.name)
         rowFacts.write(s, this)
     }
 
@@ -262,18 +287,16 @@ public class SessionsRoutes(
         return transcripts.sentTexts(session, roots.treesFor(head), ids)
     }
 
-    private fun teamOf(session: String): Team? =
-        teams()?.bindingsOf(session)?.firstOrNull { (team, _) -> !team.archived }?.first
-
     private fun repoJson(repo: RepoRoot) = buildJsonObject {
         put("root", repo.root)
         repo.worktree?.let { put("worktree", it) }
         // why the folder gets no project (an untrusted or outside root), so Sessions can say it under No project
         repo.reason?.let { put("reason", it) }
+        repo.gap?.let { put("reason_code", it.wire) }
     }
 
     private fun resolverFor(head: String?): RepoResolver {
-        return resolvers.computeIfAbsent(settings.gitRoots(head)) { RepoResolver(it) }
+        return resolvers.computeIfAbsent(asks.gitRoots(head)) { RepoResolver(it) }
     }
 
     private fun pageJson(page: TranscriptPage, fromEnd: Boolean, after: Boolean): String = buildJsonObject {

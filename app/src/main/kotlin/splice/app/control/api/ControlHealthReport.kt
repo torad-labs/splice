@@ -24,6 +24,8 @@ internal class ControlHealthReport(
     private val topologyStale: TopologyStale,
     private val clientVersions: ClientVersionTracker,
     private val mcpHub: McpHubVerdict? = null,
+    /** #523: the process that answers. Null, every report a test builds, leaves both fields out. */
+    private val process: ServingProcess? = null,
 ) {
     /** The /health body, read at the current instant. */
     fun json(): String = json(System.currentTimeMillis())
@@ -41,6 +43,12 @@ internal class ControlHealthReport(
             }
             put("version", GATEWAY_VERSION)
             put("wantShimVersion", SHIM_VERSION)
+            // #523: a restart that starts the next daemon beside this one tells the two apart by pid, and takes
+            // that road only under a launcher of the build it restarts into, which is named here.
+            process?.let {
+                put("pid", it.pid)
+                it.launcher?.let { marker -> put("launcher", marker) }
+            }
             clientVersions.aggregateWarning()?.let { put("clientVersionWarning", it) }
             // Configured total, NOT heads.size (assembled only) — see the ControlServer ctor comment.
             put(ControlFields.HEADS, head.configured)
@@ -126,3 +134,7 @@ internal class ControlHealthReport(
 /** Whether this daemon runs the MCP hub, as McpHubGate decided at boot: [offReason] is why not, in the words the hub
  *  routes' 503 gives, or null when it is on. Doctor reads it off /health (`mcpHub`, `mcpHubOffReason`). */
 internal data class McpHubVerdict(val offReason: String?)
+
+/** #523: which process serves, and the marker of the launcher supervising it, the one that can start a next daemon
+ *  beside it; null where no launcher does. */
+internal data class ServingProcess(val pid: Long, val launcher: String?)

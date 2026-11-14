@@ -22,6 +22,7 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
 import splice.diagnostics.playground.PlaygroundFailure
+import splice.diagnostics.playground.PlaygroundFailureKind
 import splice.diagnostics.playground.PlaygroundHead
 import splice.diagnostics.playground.PlaygroundResult
 import splice.upstream.transport.HeaderRedaction
@@ -74,12 +75,15 @@ class UpstreamPlaygroundProbeTest {
 
         val unknown = probe.run(playgroundHead("chatty").copy(key = "no-such-head"), "hi", null)
         assertTrue((unknown as PlaygroundFailure).message.contains("has no running provider"), unknown.message)
+        assertEquals(PlaygroundFailureKind.NO_PROVIDER, unknown.kind, "the page reads the name, not the sentence")
 
         val forwarded = probe.run(playgroundHead("anthropicy", Credentials.ClientForwarded), "hi", null)
         assertTrue((forwarded as PlaygroundFailure).message.contains("forwards the caller's own auth"))
+        assertEquals(PlaygroundFailureKind.CALLER_AUTH, forwarded.kind)
 
         val noCred = probe.run(playgroundHead("anthropicy", null), "hi", null)
         assertTrue((noCred as PlaygroundFailure).message.contains("has no credential configured"))
+        assertEquals(PlaygroundFailureKind.NO_CREDENTIAL, noCred.kind)
 
         val unreadable = PlaygroundHead(
             "chatty",
@@ -98,5 +102,6 @@ class UpstreamPlaygroundProbeTest {
         val probe = UpstreamPlaygroundProbe(registered(root), HttpClient(engine))
         val outcome = probe.run(playgroundHead("chatty"), "hi", null)
         assertTrue((outcome as PlaygroundFailure).message.contains("upstream call"), outcome.message)
+        assertEquals(PlaygroundFailureKind.CALL_FAILED, outcome.kind)
     }
 }

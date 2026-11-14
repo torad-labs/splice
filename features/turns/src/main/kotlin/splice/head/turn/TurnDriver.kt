@@ -62,7 +62,7 @@ internal class TurnDriver(
             deps.stores.perfStats,
             deps.log,
             deps.seams.clock,
-            TurnSpend(deps.stores.economicsStore, deps.quotaBundle.budget),
+            TurnSpend(deps.stores.economicsStore, deps.quotaBundle.budget, deps.stores.perfStats.retired),
             deps.seams.events,
         )
     private val health = HeadHealthCounters()
@@ -135,7 +135,8 @@ internal class TurnDriver(
     private val streamer = TurnStreamer(provider, deps, driveFactory, sealedDrive, compactionReplay)
 
     /** The detachment seams both transport shapes share; built once, handed down whole. */
-    private val detachOwner = DetachOwner(log, compactionReplay, streamer.detachScope, streamer.detachContext)
+    private val detachOwner =
+        DetachOwner(log, compactionReplay, streamer.detachScope, streamer.detachContext, streamer.detachTurns)
 
     /** What a compaction retry is served from without an upstream turn (CompactionReplay): a streamed replay, a
      *  collect hold, or a streamed recording collected for a stream:false fallback. HeadAdmission calls it. */
@@ -209,14 +210,20 @@ internal class TurnDriver(
     }
 
     /** Head restart = fresh diagnostic baseline (the HeadHealth doc's promised behavior; the
-     *  counters lived through control-plane restarts before — review 2026-07-19). */
+     *  counters lived through control-plane restarts before — review 2026-07-19). The counters only: the logins' holds
+     *  are HeadLifecycle.restart's to clear, and a head's first start keeps them. */
     internal fun resetHealth() {
         health.reset()
-        deps.quotaBundle.activePool?.reset()
     }
 
     /** Cancel active turns with a head-owned cause while their client sockets are still open. */
     internal fun stopActive() = oneDrive.stopActive()
+
+    /** #523: a retiring head's cut, which keeps the turns already answering ([TurnOneDrive.retireActive]). A
+     *  compaction or a collect turn whose client is gone has no stream left to finish for, so it ends here with the
+     *  rest of what is cut, and the retry its client sends reaches the next daemon. #525: one that is answering a
+     *  client still connected is kept like any other turn; until Nov 12, 2026 every one of them ended here. */
+    internal fun retireActive(): Int = (oneDrive.retireActive() - streamer.retireDetached()).coerceAtLeast(0)
 
     /** A restarted head reuses this driver. */
     internal fun headStarted() = oneDrive.headStarted()

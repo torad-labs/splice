@@ -40,11 +40,13 @@ const answers: Record<string, unknown> = {
     },
   },
 };
+// the UTC days whose prompts and answers every command's store says it removed; a test sets them and puts none back
+let removedDays: string[] = [];
 const server = Bun.serve({
   port: 0,
   fetch(req) {
     const path = new URL(req.url).pathname;
-    if (/^\/api\/heads\/[^/]+\/trace\/kept$/.test(path)) return Response.json({ records: 100_155, bytes: 2_550 * MiB });
+    if (/^\/api\/heads\/[^/]+\/trace\/kept$/.test(path)) return Response.json({ records: 100_155, bytes: 2_550 * MiB, bodies_removed_days: removedDays });
     if (path in answers) return Response.json(answers[path]);
     if (path.startsWith("/api/")) return Response.json({});
     const file = join(consoleDir, path === "/" ? "settings.html" : path.slice(1));
@@ -111,6 +113,19 @@ test("a store that holds something shows its size, its count and its share; one 
     await expect(empty.locator(".dmeta")).toHaveCount(0);
     await expect(bar).not.toContainText("Compaction summaries");
   } finally {
+    await page.close();
+  }
+}, 30_000);
+
+// the store removed fourteen days of prompts and answers on one machine, Oct 29 to Nov 11, and only the daemon's log said so
+test("days whose prompts and answers were removed to make room are said where what is kept is counted", async () => {
+  removedDays = ["2026-10-29", "2026-10-30", "2026-11-11"];
+  const page = await open(1440, 900);
+  try {
+    const whole = page.locator("section.psec", { has: page.locator('.sechead > .kicker:text-is("On this computer")') });
+    await expect(whole.locator(".dgone")).toHaveText(/^Prompts and answers of 3 days were removed to make room\s*Oct 29 to Nov 11\s*Their request records are kept$/);
+  } finally {
+    removedDays = [];
     await page.close();
   }
 }, 30_000);

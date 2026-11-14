@@ -5,6 +5,7 @@ package splice.app.control
 
 import splice.accounts.claude.ClaudeLoginPlaces
 import splice.accounts.signin.ConsoleAccounts
+import splice.app.head.SessionFallbackStore
 import splice.app.sources.mcp.McpAttached
 import splice.client.mcp.McpInventory
 import splice.client.mcp.McpSharing
@@ -125,6 +126,10 @@ public class ConsolePorts {
 
     /** Each login's last failed limits read, assigned by ControlPlane; null reads as no failure on any login. */
     public var quotaReadFailures: QuotaReadFailureSource? = null
+
+    /** Nov 13, 2026: the model each session falls back to while the one it asks for is held on every login, the store
+     *  every head's turns read. Assigned by ControlPlane; null answers the fallback routes with a named 503. */
+    internal var sessionFallbacks: SessionFallbackStore? = null
 
     /** V4-133 (FEATURES.md §5/§6): the daemon's ONE budget store, assigned by ControlPlane after
      *  construction like [teams]. Null answers GET/PUT /api/budgets with a named 503 — an

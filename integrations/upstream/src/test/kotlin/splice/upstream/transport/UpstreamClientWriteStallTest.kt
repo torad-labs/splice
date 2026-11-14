@@ -186,9 +186,9 @@ class UpstreamClientWriteStallTest(@TempDir tmp: Path) {
 
         val (tlsCut, plainCut) = runBlocking(Dispatchers.IO) {
             val first =
-                async { timedFailure { tls.posted(context(tlsUpstream, tls = true, sends = 1), BIG_BODY) { "ok" } } }
+                async { timedFailure { tls.posted(context(tlsUpstream, tls = true, sends = 1), BIG_BODY) {} } }
             delay(HOLD_MS)
-            val second = async { timedFailure { plain.posted(context(plainUpstream, sends = 1), BIG_BODY) { "ok" } } }
+            val second = async { timedFailure { plain.posted(context(plainUpstream, sends = 1), BIG_BODY) {} } }
             awaitAll(first, second)
         }
 
@@ -244,9 +244,9 @@ class UpstreamClientWriteStallTest(@TempDir tmp: Path) {
         val plain = client(totalMs = SHORT_TOTAL_MS, sockets = UpstreamSockets(queues = missing))
 
         val waiting =
-            runBlocking { timedFailure { tls.posted(context(tlsUpstream, tls = true, sends = 1), BIG_BODY) { "ok" } } }
+            runBlocking { timedFailure { tls.posted(context(tlsUpstream, tls = true, sends = 1), BIG_BODY) {} } }
         val buffered =
-            runBlocking { timedFailure { plain.posted(context(plainUpstream, sends = 1), BUFFERED_BODY) { "ok" } } }
+            runBlocking { timedFailure { plain.posted(context(plainUpstream, sends = 1), BUFFERED_BODY) {} } }
 
         assertTrue(waiting.stalled && waiting.ms < HANG_BOUND_MS, "a waiting TLS write is cut: $waiting")
         assertTrue(!buffered.stalled && buffered.ms >= SHORT_TOTAL_MS, "no cut on a guess: $buffered")

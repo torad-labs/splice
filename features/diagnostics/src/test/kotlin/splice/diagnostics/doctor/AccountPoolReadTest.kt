@@ -117,57 +117,22 @@ class AccountPoolReadTest {
         val port = daemonAnswering(200, nativeRoster)
         val read = assertInstanceOf(AccountPoolsRead.Read::class.java, JdkAccountPoolRead()(port, env(true, port)))
         val view = read.pools.getValue("claude-splice")
-        assertEquals(listOf("native:claude", "native:claude-splice"), view.accounts.map { it.label })
+        assertEquals(listOf("native:claude"), view.accounts.map { it.label })
         assertEquals(
-            "on claude's login (1 of 2 open) · $lastLeft",
+            "on claude's login (1 of 1 open)",
             AccountPoolText().summary(view),
         )
     }
 
     @Test
-    fun `Accounts carrying login and present credential override stale native pool reporting`() {
-        val roster = """
-            {"accounts":[
-              {"heads":["claude-splice"],"selector_key":"native:claude","credential_present":true,
-               "login_place":{"id":"claude","command":"claude"},"available":true,"carrying_request":true,
-               "five_hour_used_percent":4.0,"five_hour_current":true,
-               "seven_day_used_percent":1.0,"seven_day_current":true},
-              {"heads":["claude-splice"],"selector_key":"native:claude-splice","credential_present":true,
-               "login_place":{"id":"claude-splice","command":"claude-splice"},"available":false,
-               "carrying_request":false,"five_hour_used_percent":22.0,"five_hour_current":false,
-               "seven_day_used_percent":59.0,"seven_day_current":false,
-               "refusal":"Access token expired. Sign in again: run claude-splice and use /login."}],
-             "head_pools":{"claude-splice":{"account_pool":{"selected_label":"native:claude-splice",
-               "accounts":[
-                 {"label":"native:claude","available":true,"credential_present":true,
-                  "five_hour_used_percent":15.0,"seven_day_used_percent":30.0},
-                 {"label":"native:claude-splice","primary":true,"selected":true,"available":false,
-                  "credential_present":false,"five_hour_used_percent":22.0,"seven_day_used_percent":59.0}]}}}}
-        """.trimIndent()
-        val port = daemonAnswering(200, roster)
-        val read = JdkAccountPoolRead()(port, env(true, port)) as AccountPoolsRead.Read
-        val view = read.pools.getValue("claude-splice")
-        assertEquals("native:claude", view.selectedLabel, "the login that carried the request is current")
-        val expired = view.accounts.single { it.label == "native:claude-splice" }
-        assertTrue(expired.credential.present, "expired does not mean absent")
-        assertEquals(4.0, view.selectedAccount()?.quota?.fiveHour?.usedPercent)
-        assertEquals(1.0, view.selectedAccount()?.quota?.sevenDay?.usedPercent)
-        val detail = AccountPoolText().summary(view)
-        assertTrue(detail.contains("claude's login"), detail)
-        assertTrue(detail.contains("5h 4%") && detail.contains("7d 1%"), detail)
-        assertTrue(!detail.contains("native:") && !detail.contains("credential missing"), detail)
-    }
-
-    @Test
     fun `an expired native login with a present credential reads expired with one advice remedy`() {
-        val roster = nativeRoster.replace("\"credential_present\":false", "\"credential_present\":true")
-        val port = daemonAnswering(200, roster)
+        val port = daemonAnswering(200, expiredRoster)
         val run = DoctorTestPorts.doctor().collect(env(true, port))
         val checks = run.sections.toMap().getValue("accounts")
         val expired = checks.single { it.detail.contains("claude-splice") && it.detail.contains("expired") }
         assertEquals(CheckStatus.WARN, expired.status)
         assertTrue(expired.detail.contains("cannot take over"), expired.detail)
-        assertEquals("Sign in again: run claude-splice and use /login.", expired.fix)
+        assertEquals("Sign in again: run claude and use /login.", expired.fix)
         assertEquals(FixKind.ADVICE, expired.fixKind, "native login expiry is never a splice credential action")
         assertEquals(null, expired.fixId)
         assertTrue(checks.none { it.detail.contains("credential missing") }, checks.toString())
@@ -184,12 +149,12 @@ class AccountPoolReadTest {
 
     @Test
     fun `doctor names the expired native place without suggesting a splice credential refresh`() {
-        val port = daemonAnswering(200, nativeRoster)
+        val port = daemonAnswering(200, expiredRoster)
         val run = DoctorTestPorts.doctor().collect(env(true, port))
         val checks = run.sections.toMap().getValue("accounts")
         val expired = checks.single { it.detail.contains("claude-splice") && it.detail.contains("expired") }
         assertEquals(CheckStatus.WARN, expired.status)
-        assertTrue(expired.fix.orEmpty().contains("claude-splice"), expired.toString())
+        assertTrue(expired.fix.orEmpty().contains("run claude and"), expired.toString())
         assertTrue(!expired.fix.orEmpty().contains("splice login"), "native credentials have one writer")
     }
 
@@ -335,15 +300,18 @@ class AccountPoolReadTest {
         )
     }
 
-    private val lastLeft = "one login left; the next plan limit has no fallback"
-
     private val nativeRoster = """
         {"accounts":[
           {"heads":["claude-splice"],"kind":"client","label":"claude","selector_key":"native:claude",
-           "login_place":{"id":"claude","command":"claude"},"credential_present":true,"available":true,"selected":true},
-          {"heads":["claude-splice"],"kind":"client","label":"claude-splice","selector_key":"native:claude-splice",
-           "login_place":{"id":"claude-splice","command":"claude-splice"},"credential_present":false,"available":false,
-           "refusal":"Access token expired. Sign in again: run claude-splice and use /login."}
+           "login_place":{"id":"claude","command":"claude"},"credential_present":true,"available":true,"selected":true}
+        ]}
+    """.trimIndent()
+
+    private val expiredRoster = """
+        {"accounts":[
+          {"heads":["claude-splice"],"kind":"client","label":"claude","selector_key":"native:claude",
+           "login_place":{"id":"claude","command":"claude"},"credential_present":true,"available":false,
+           "selected":true,"refusal":"Access token expired. Sign in again: run claude and use /login."}
         ]}
     """.trimIndent()
 

@@ -4,6 +4,7 @@
 package splice.app.head
 
 import splice.core.config.InstallPaths
+import splice.core.topology.CLAUDE_COMMAND
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import java.nio.file.Files
@@ -15,7 +16,9 @@ internal fun interface WrapperBinSource {
     operator fun invoke(): Path?
 }
 
-/** A command's wrapper link in the bin dir, removed only when it is splice's own link there. */
+/** A command's wrapper link in the bin dir, removed only when it is splice's own link there. `claude` never is: it is
+ *  Claude Code's own link, which only the wrap and its undo move, and a wrapped `claude` whose head is gone runs Claude
+ *  Code directly (the launch shim's direct path). */
 internal class WrapperLinks(private val wrapperBin: WrapperBinSource, private val log: LogSink) {
     /** A link that is not splice's own, or that will not go, stays; the second is said in the log. */
     fun unlink(command: String) {
@@ -28,5 +31,6 @@ internal class WrapperLinks(private val wrapperBin: WrapperBinSource, private va
     }
 
     private fun isOwnLink(bin: Path, link: Path, command: String): Boolean =
-        command.isNotEmpty() && link.normalize().parent == bin.normalize() && link.isSymbolicLink()
+        command.isNotEmpty() && command != CLAUDE_COMMAND && link.normalize().parent == bin.normalize() &&
+            link.isSymbolicLink()
 }

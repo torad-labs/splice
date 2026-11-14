@@ -17,9 +17,9 @@ import splice.upstream.RetryNotice
 import splice.upstream.RoundResult
 import splice.upstream.TurnSignals
 import splice.upstream.credentials.AccountSelection
+import splice.upstream.retry.OtherLoginFree
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.transport.AuthRefreshObserver
-import splice.upstream.transport.OtherLoginFree
 import splice.upstream.transport.PostContext
 import splice.upstream.transport.PostLimits
 import splice.upstream.transport.PostObservers

@@ -4,7 +4,12 @@
 // and DaemonTest already reference it unqualified and need no edit for this move.
 package splice.app
 
+import io.ktor.client.plugins.HttpTimeout
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import splice.app.sources.RunningBuild
 import splice.client.resume.MovingTrust
+import splice.codemode.WorkerArtifacts
 import splice.core.config.StatePaths
 import splice.core.topology.TopologyBackupName
 import splice.core.util.AsyncFileIo
@@ -20,7 +25,10 @@ import splice.core.util.SecureFile
 import splice.core.util.TopologyRefusal
 import splice.core.util.TopologyTypeFailure
 import splice.oauth.OAuthAccountRefused
+import splice.upstream.LifecycleScope
+import splice.upstream.codemode.ProcessDispatchers
 import java.io.IOException
+import java.lang.management.ManagementFactory
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
@@ -125,6 +133,36 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
         Result.failure(failure)
     }
 
+    /** #525 (Nov 13, 2026): begins, before the wait for the daemon lock, what the start needs and can make without
+     *  it. A daemon the launcher starts beside a running one waits for it to hand over, 3.5 s on the machine this
+     *  was measured on, while the running one serves every request. After the hand-over each command's requests
+     *  wait for this start, and thread samples of one showed its first second going to three things: a hash of this
+     *  jar to pin the code-mode worker's copy of it, the JVM's management server that HeapFlags asks, and
+     *  kotlin-reflect's built-ins, which the first Ktor plugin a process loads reads. Samples of a later start showed
+     *  a fourth: the digest of this jar's pricing classes, which every command made for itself (RunningBuild). None of
+     *  them reads what the retiring daemon still writes: a pin lives in a folder of the process's own.
+     *
+     *  Each piece is kept by the process (the pin and the digest by a lazy, the server by the JVM, the plugin by
+     *  its class), so the start takes one that is made, waits for one that is still being made, and makes one that
+     *  failed here itself, where it fails with its own reason as it always did. A start with no daemon to wait
+     *  for gets the lock at once and loses nothing: the pieces run beside it. */
+    internal fun beginAheadOfLock(scope: CoroutineScope = LifecycleScope(ProcessDispatchers().io())) {
+        ahead(scope) { WorkerArtifacts.pinAtBoot() }
+        ahead(scope) { val _ = ManagementFactory.getPlatformMBeanServer() }
+        ahead(scope) { val _ = HttpTimeout.key }
+        ahead(scope) { val _ = RunningBuild.id() }
+    }
+
+    private inline fun ahead(scope: CoroutineScope, crossinline piece: () -> Unit) {
+        val _ = scope.launch {
+            Cancellables.discard(
+                Cancellables.runCatchingBestEffort { piece() },
+                "a piece that failed ahead of the lock is made again where the start uses it, and fails there " +
+                    "with its reason",
+            )
+        }
+    }
+
     /** The operator-facing reason a boundary-captured failure carries: rendered as [SafeFailureText] does, with the
      *  splice line it came from, because its message may quote the credential file it was parsing.
      *  A refused OAuth account carries a sentence the pool wrote itself, never file bytes or the label, so that
@@ -211,7 +249,8 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
 
     /** Oct 11, 2026: no move is in flight across a start. A move in flight says which folder its launch may carry
      *  the operator's trust for (MovingTrust); a daemon that died between the press and the launch would leave that
-     *  standing, and the grant would outlive the move it was for. Returns one line when it cleared any, else none. */
+     *  standing, and the grant would outlive the move it was for. Returns one line when it cleared any, else none.
+     *  Called by the start once it holds the lock: the records are the running daemon's until then. */
     internal fun clearMovesInFlight(statePaths: StatePaths): List<String> =
         Cancellables.runCatchingCancellable { MovingTrust(statePaths.movingTrustDir).sweep() }
             .fold(

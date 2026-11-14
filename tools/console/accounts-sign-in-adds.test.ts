@@ -45,10 +45,6 @@ const answers: Record<string, unknown> = {
     // the console never uses as a title, so its card reads "Account"
     login("me@example.invalid", { ...windows, label: "claude", selector_key: "native:claude", email: "me@example.invalid",
       refusal: noToken("claude"), login_place: { id: "claude" }, edit_target: { kind: "native", id: "claude" } }),
-    // claude-splice's own login: its file is there with no token in it, and no profile ever proved an account
-    login("Account", { label: "claude-splice", selector_key: "native:claude-splice", ref: null, label_default: true,
-      identity_verified: false, can_rename: false, refusal: noToken("claude-splice"), login_place: { id: "claude-splice" },
-      edit_target: { kind: "native", id: "claude-splice" } }),
   ] },
 };
 const failed = (kind: string, reason: string, label: string | null) =>
@@ -100,10 +96,10 @@ async function onPage(check: (page: Page) => Promise<void>, width = 1440) {
 }
 const card = (page: Page, name: string) => page.locator("article.card").filter({ has: page.locator(".name", { hasText: new RegExp(`^${name}(?: \\d+)?$`) }) });
 
-test("a command's own login that is signed out and never proved an account draws no card; one that proved its account keeps its card", () => onPage(async (page) => {
+test("the command's one login that proved its account keeps its card when its token is gone", () => onPage(async (page) => {
   await expect(card(page, "Account")).toContainText("Signed out");
   await expect(card(page, "Account").getByRole("button", { name: "Sign in" })).toBeVisible();
-  // the unproved login draws no card: of the two logins the daemon names Account, exactly one is drawn
+  // the one login place the daemon sends is drawn once
   await expect(card(page, "Account")).toHaveCount(1);
   await expect(page.locator("article.card", { hasText: "Signed out" })).toHaveCount(1);
 }), 30_000);

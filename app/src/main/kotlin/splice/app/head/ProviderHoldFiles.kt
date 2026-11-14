@@ -6,14 +6,36 @@ package splice.app.head
 import splice.app.auth.claude.ClaudeNativeAuth
 import splice.app.provider.Wired
 import splice.core.config.StatePaths
+import splice.core.util.Cancellables
 import splice.core.util.LogSink
+import splice.upstream.retry.FileLoginHoldStore
 import splice.upstream.retry.FileProviderHoldStore
 import splice.upstream.retry.ProviderHoldStore
+import splice.upstream.retry.ProviderHoldWithLogin
+import java.nio.file.Files
+import java.nio.file.Path
 
 internal class ProviderHoldFiles(
     private val statePaths: StatePaths,
     private val log: LogSink,
 ) {
+    private val pooled = HashMap<String, Set<String>>()
+
+    /** The holds of [key]'s pool as the head builds it. #528: a ChatGPT, Grok, Kimi or Muse head builds its pool when
+     *  it starts, and starts again when the console removes, renames or signs in a login. A hold file is named by its
+     *  login's label, so the file of a label that left the pool since this daemon last built it goes, and so does the
+     *  file of a label that joined: whatever it says was said about an earlier login. Before, an account signed in
+     *  under a removed login's label started out held until that login's reset, and a renamed login left its hold
+     *  under the old label for whoever took it next. A renamed login starts with no hold; if its provider still
+     *  refuses it, the first turn sent to it learns so again and moves on. The first build of a daemon forgets
+     *  nothing, so a hold still outlives a restart. */
+    fun forPool(key: String, wired: Wired): Map<String, ProviderHoldStore> {
+        val labels = wired.accounts.filter { it.auth !is ClaudeNativeAuth }.mapTo(HashSet()) { it.label }
+        val before = synchronized(pooled) { pooled.put(key, labels) }
+        if (before != null) ((before - labels) + (labels - before)).forEach { forget(key, it) }
+        return forAccounts(key, wired)
+    }
+
     fun forHead(key: String): ProviderHoldStore =
         FileProviderHoldStore(statePaths.stateDir.resolve("$key-provider-hold.json"), log)
 
@@ -21,10 +43,26 @@ internal class ProviderHoldFiles(
         wired.accounts.associate { account ->
             val native = account.auth as? ClaudeNativeAuth
             val store = if (native != null) {
-                forHead(key)
+                // Claude Code's own logins share the head's file for the provider's word, one entry per credential.
+                // Each keeps its own hold by its place, named as its quota file is (native%<place>).
+                val place = account.label.replace(':', '%')
+                val login = statePaths.stateDir.resolve("$key-$place-provider-hold-login.json")
+                ProviderHoldWithLogin(forHead(key), FileLoginHoldStore(login, log))
             } else {
-                FileProviderHoldStore(statePaths.stateDir.resolve("$key-${account.label}-provider-hold.json"), log)
+                FileProviderHoldStore(added(key, account.label), log)
             }
             account.label to (native?.credentialKey?.let(store::forCredential) ?: store)
         }
+
+    /** Drops the hold kept under an added account's [label]. A hold is its account's, and the file is named by the
+     *  label: a removed login left its file behind, and whichever account took the label next read it as its own
+     *  (Nov 12, 2026: a removed login's file still said one model was used up until the next morning). */
+    fun forget(key: String, label: String) {
+        Cancellables.discard(
+            Cancellables.runCatchingCleanup { Files.deleteIfExists(added(key, label)) },
+            "the file repeats the provider's word: left behind, it holds the label only until its own reset",
+        )
+    }
+
+    private fun added(key: String, label: String): Path = statePaths.stateDir.resolve("$key-$label-provider-hold.json")
 }

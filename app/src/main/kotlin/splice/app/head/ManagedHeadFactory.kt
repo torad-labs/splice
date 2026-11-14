@@ -41,6 +41,7 @@ import splice.head.compaction.FileCompactionRecordings
 import splice.head.compaction.KeepingRecordings
 import splice.head.perf.PerfStats
 import splice.head.perf.SessionTotals
+import splice.head.turn.fallback.SessionFallbacks
 import splice.head.usage.AccountOnPlan
 import splice.head.usage.CredentialQuotaFiles
 import splice.head.usage.EconomicsStore
@@ -160,6 +161,10 @@ internal class ManagedHeadFactory(
     private val perfSources: splice.app.sources.PerfSourceFiles = splice.app.sources.PerfSourceFiles(statePaths),
 ) {
     internal var quotaProbes: QuotaProbes = QuotaProbes(AuthHttpClientFactory().create())
+
+    /** The model each session named to fall back to while the one it asks for is held on every login: the daemon's one
+     *  store, read at each turn. Unassigned, no session has one. */
+    internal var sessionFallbacks: SessionFallbacks = SessionFallbacks { null }
     private val accountPools = HeadAccountPools(HeadAccountPools.EvidenceLoadFactory(quotaSeams::evidenceLoads))
     private val accountOrders = AccountOrderStore(statePaths.stateDir.resolve(ACCOUNT_ORDER_FILE))
     private val accountPins = AccountPinStore(statePaths.stateDir.resolve(ACCOUNT_PINS_FILE))
@@ -187,8 +192,8 @@ internal class ManagedHeadFactory(
             ?: QuotaTracker(statePaths.quotaFile(key), extraFamily = CodexQuotaHeaderFamily())
         quotaSeams.primaryWired(primaryQuota)
         val stores = headStores(ctx, wired, primaryQuota, accountQuotas)
-        val quotaPollers = quotaSeams.pollingFor(ctx, quotaProbes, accountOrders)
-            .start(wired, stores, accountQuotas, providerAssembly, providerHolds)
+        val polling = quotaSeams.pollingFor(ctx, quotaProbes, accountOrders)
+        val quotaPollers = polling.start(wired, stores, accountQuotas, providerAssembly, providerHolds)
         // Derived from the CREDENTIAL, never from the declared string. The bypass is safe only
         // because splice holds nothing for this head, so it reads the artifact that IS that fact:
         // `wired.auth`. ProviderAssembly rejects registered client auth on non-passthrough dialects
@@ -213,7 +218,8 @@ internal class ManagedHeadFactory(
                 authKind = ctx.providerCfg.auth.kind,
                 dialect = DialectWires.name(ctx.providerCfg.dialect),
                 keyPresence = keyPresence,
-                accountPool = accountPools.source(stores.accounts.pool, key, accountOrders, accountPins),
+                accountPool = accountPools
+                    .source(stores.accounts.pool, key, accountOrders, accountPins, polling.limitResets(wired, log)),
                 accountAuth = accountPools.authSource(wired),
                 plans = stores.telemetry.economics.plans,
             ),
@@ -262,7 +268,7 @@ internal class ManagedHeadFactory(
         primaryQuota: QuotaTracker,
         accountQuotas: Map<String, QuotaTracker>,
     ): HeadStores {
-        val pool = accountPools.build(wired, accountQuotas, providerHolds.forAccounts(ctx.key, wired), primaryQuota)
+        val pool = accountPools.build(wired, accountQuotas, providerHolds.forPool(ctx.key, wired), primaryQuota)
         return headStoresOf(ctx, primaryQuota, accountQuotas, pool)
     }
 
@@ -310,6 +316,7 @@ internal class ManagedHeadFactory(
         accounts = HeadAccountStores(
             pool = pool,
             quotas = accountQuotas,
+            fallbacks = SessionFallbacks { session -> sessionFallbacks.of(session) },
         ),
         clientWindows = ClientWindows(store = statePaths.clientWindowsFile(ctx.key), log = log),
         trace = traceStores.forHead(ctx.key, ctx.cfg),

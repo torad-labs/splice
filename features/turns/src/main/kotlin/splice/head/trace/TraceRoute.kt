@@ -37,6 +37,10 @@ internal const val TRACE_NO_TURN = "a trace read names one turn: ?turn=ID"
 internal const val TRACE_DELETED_STATE = "deleted"
 internal const val TRACE_DELETED_REASON = "trace deleted"
 
+/** What a refused read carries beside the sentence when the person deleted this command's trace: the console reads
+ *  this name to say "Deleted" where it used to look for the sentence. */
+internal const val TRACE_DELETED_CODE = "trace_deleted"
+
 /** The daemon's trace directory, where every head's TraceStore writes; read per request because the
  *  control plane is handed it after construction. */
 public fun interface TraceDirPort {
@@ -124,11 +128,11 @@ public class TraceRoute(
             }
         }.getOrElse { return unreadable(key, traceDir, it) }
         if (turns.isEmpty()) {
-            val reason = when {
-                DayFiles(traceDir, key).deleted() -> TRACE_DELETED_REASON
-                else -> "no turn $turn in $key's trace"
+            if (DayFiles(traceDir, key).deleted()) {
+                refuse(HttpStatusCode.BadRequest, TRACE_DELETED_REASON, TRACE_DELETED_CODE)
+            } else {
+                refuse(HttpStatusCode.BadRequest, "no turn $turn in $key's trace")
             }
-            refuse(HttpStatusCode.BadRequest, reason)
         } else if (document != null) {
             document(turns.single(), traceDir, document, share)
         } else {
@@ -159,6 +163,11 @@ public class TraceRoute(
         return refuse(HttpStatusCode.InternalServerError, "cannot read $key's trace under $traceDir: $why")
     }
 
-    private fun refuse(status: HttpStatusCode, message: String) =
-        JsonReply(status, buildJsonObject { put("error", message) }.let(JsonWire::string))
+    private fun refuse(status: HttpStatusCode, message: String, code: String? = null) = JsonReply(
+        status,
+        buildJsonObject {
+            put("error", message)
+            code?.let { put("code", it) }
+        }.let(JsonWire::string),
+    )
 }

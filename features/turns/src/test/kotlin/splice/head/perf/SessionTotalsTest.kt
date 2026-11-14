@@ -233,9 +233,10 @@ class SessionTotalsTest {
     }
 
     /** The coalesced write marks the file not clean; only a head stop's write marks it clean. A file no
-     *  stop closed may be short of the rows its last second counted, so it claims nothing. */
+     *  stop closed may be short of the rows its last second counted, so its totals are kept but begin at
+     *  this start: the session reads as a lower bound with what it had spent, not as a new one. */
     @Test
-    fun `a file no head stop closed starts over, and says so`(@TempDir tmp: Path) {
+    fun `a file no head stop closed keeps its totals from this start, and says so`(@TempDir tmp: Path) {
         val file = tmp.resolve("t.json")
         val first = store(file)
         first.add(TAG, OPUS, COLD, 2_000L)
@@ -246,8 +247,8 @@ class SessionTotalsTest {
         val second = store(file)
         second.add(TAG, OPUS, COLD, 9_500L)
         val total = second.totalFor(SESSION)!!
-        val fresh = total.models.getValue(OPUS).turns to total.fromMs
-        assertEquals(1L to 9_000L, fresh, "a fresh total that claims nothing older")
+        val kept = total.models.getValue(OPUS).turns to total.fromMs
+        assertEquals(2L to 9_000L, kept, "the turn the file held and the new one, with no claim on rows before now")
         assertTrue(lines.single().contains("not closed by a head stop"), lines.toString())
     }
 

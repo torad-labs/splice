@@ -39,6 +39,18 @@ internal class DaemonLockWait(
         return if (lock.tryAcquire()) LockOutcome.WON else LockOutcome.EXPIRED
     }
 
+    /** #523: the wait of a daemon whose predecessor agreed to hand over. That predecessor answers /health until
+     *  its control server closes, so a live peer is no reason to yield here: the lock alone decides. The window is
+     *  the same one, which covers the predecessor's whole stop ladder, asked at [HAND_OVER_POLL_MS]. */
+    fun awaitHandOver(lock: DaemonLock): LockOutcome {
+        val step = minOf(HAND_OVER_POLL_MS, pollIntervalMs)
+        repeat((windowMs() / step).toInt()) {
+            if (lock.tryAcquire()) return LockOutcome.WON
+            Thread.sleep(step)
+        }
+        return if (lock.tryAcquire()) LockOutcome.WON else LockOutcome.EXPIRED
+    }
+
     fun windowMs(): Long = polls * pollIntervalMs
 }
 
@@ -53,3 +65,8 @@ internal class DaemonLockWait(
 // STARTUP_POLLS) so the wait still fits inside the startup it is part of.
 internal const val LOCK_WAIT_POLLS = 228
 internal const val LOCK_POLL_INTERVAL_MS = 250L
+
+// why: between the retiring daemon's release of the lock and this poll's next try at it, no daemon serves, and every
+// command's requests wait. At the lock loser's 250 ms that was an eighth of a second on average and a quarter at
+// worst, on each restart. A try at the lock is one system call, so the hand-over asks ten times as often (#525).
+internal const val HAND_OVER_POLL_MS = 25L

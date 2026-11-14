@@ -19,11 +19,13 @@ import splice.core.topology.ProviderConfig
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
+import splice.core.util.WallClock
 import java.nio.file.Files
 
 public class RosterCache(
     private val statePaths: StatePaths,
     private val json: Json = Json { ignoreUnknownKeys = true },
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
 
     /** Keep [found] as [headKey]'s last answer. Throws what the write throws: the caller logs it. */
@@ -43,6 +45,20 @@ public class RosterCache(
             onSuccess = { it },
             onFailure = { KeptRoster.Unreadable("$file could not be read (${SafeFailureText.render(it)})") },
         )
+    }
+
+    /** [headKey]'s list when it was kept within [maxAgeMs] of now, for a start that takes over from a daemon that
+     *  was serving it: such a start begins with the list and asks again in the background. Null when the list is
+     *  older, when its time cannot be read, and wherever [read] answers with no list. */
+    public fun recent(headKey: String, provider: ProviderConfig, maxAgeMs: Long): KeptRoster.Kept? {
+        val file = statePaths.modelRosterFile(headKey)
+        // No list was kept, or its time cannot be read now: the start asks first, which is what every start did.
+        val keptAt = try {
+            Files.getLastModifiedTime(file).toMillis()
+        } catch (_: java.io.IOException) {
+            return null
+        }
+        return if (clock() - keptAt in 0..maxAgeMs) read(headKey, provider) as? KeptRoster.Kept else null
     }
 
     /** Old picker rows remain usable, while absent versioned metadata is explicitly unknown. */

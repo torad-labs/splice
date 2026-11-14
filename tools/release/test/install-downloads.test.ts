@@ -3,6 +3,8 @@
 // release from splice.torad.ai/download, never from github.com.
 // A default install takes the newest stable from /latest, a pinned SPLICE_VERSION takes that version's own folder,
 // and a prebuilt jar with no launcher beside it fetches the launcher of its own release from that release's folder.
+// A release that lists a jar for the machine's platform is installed from that jar (about 210 MB where splice.jar,
+// which holds all four platforms, is about 476 MB); the sums are read first, since they say which jars a release has.
 //
 // The network is faked the way `release accept` fakes it: a `curl` that serves the release's files by name and logs
 // every URL, so the URLs are the assertion. The release is synthetic, as in install-provenance.test.ts.
@@ -12,7 +14,7 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { layout } from "../../gate/src/lib/repo.ts";
-import { fakeNetwork, makeSandbox, runInstall, sandboxEnv } from "../src/lib/sandbox.ts";
+import { fakeNetwork, makeSandbox, platformJar, runInstall, sandboxEnv } from "../src/lib/sandbox.ts";
 
 const { repoRoot } = layout();
 const HOST = "https://splice.torad.ai/download";
@@ -24,6 +26,11 @@ afterAll(() => {
 const JAR = "synthetic splice jar bytes\n";
 const SHIM = '#!/usr/bin/env node\n// synthetic splice-launch\nconst SPLICE_SHIM_VERSION = "shim-test";\nconst SPLICE_GATEWAY_VERSION = "9.9.9";\n';
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
+/** Whether a logged URL asks github.com or a host under it. The host is compared: the name can stand anywhere in a URL. */
+const onGithub = (url: string) => {
+  const host = new URL(url).hostname;
+  return host === "github.com" || host.endsWith(".github.com");
+};
 
 function exe(path: string, body: string) {
   writeFileSync(path, body);
@@ -38,6 +45,16 @@ function release(): string {
   writeFileSync(join(dir, "splice-launch"), SHIM);
   writeFileSync(join(dir, "sha256sums.txt"), `${sha(JAR)}  splice.jar\n${sha(SHIM)}  splice-launch\n`);
   copyFileSync(join(repoRoot, "install.sh"), join(dir, "install.sh"));
+  return dir;
+}
+
+/** A release that also lists a jar for each platform an installer runs on. */
+function perPlatformRelease(): string {
+  const dir = release();
+  const names = ["splice-linux-amd64.jar", "splice-linux-aarch64.jar", "splice-darwin-aarch64.jar"];
+  for (const name of names) writeFileSync(join(dir, name), JAR);
+  const lines = names.map((name) => `${sha(JAR)}  ${name}\n`).join("");
+  writeFileSync(join(dir, "sha256sums.txt"), `${sha(JAR)}  splice.jar\n${lines}${sha(SHIM)}  splice-launch\n`);
   return dir;
 }
 
@@ -67,14 +84,14 @@ const NETWORK = fakeNetwork();
 cleanup.push(NETWORK.dir);
 
 /** One install with the fake network; the URLs curl was asked for, in order. */
-function install(env: Record<string, string>): { urls: string[]; output: string; ok: boolean } {
+function install(env: Record<string, string>, assets: string = ASSETS): { urls: string[]; output: string; ok: boolean } {
   const box = makeSandbox("install-downloads-");
   cleanup.push(box.dir);
   const curlLog = join(box.dir, "curl.log");
   const ghLog = join(box.dir, "gh.log");
-  const result = runInstall(ASSETS, box, {
+  const result = runInstall(assets, box, {
     ...sandboxEnv(box),
-    SPLICE_FAKE_RELEASE_ASSETS: ASSETS,
+    SPLICE_FAKE_RELEASE_ASSETS: assets,
     SPLICE_FAKE_CURL_LOG: curlLog,
     SPLICE_FAKE_GH_LOG: ghLog,
     SPLICE_RELEASE_BASE_URL: "",
@@ -89,21 +106,28 @@ describe("install.sh downloads from splice.torad.ai", () => {
   test("a default install takes the newest stable release from /latest", () => {
     const run = install({});
     expect(run.ok, run.output).toBe(true);
-    expect(run.urls).toEqual([`${HOST}/latest/splice.jar`, `${HOST}/latest/sha256sums.txt`, `${HOST}/latest/splice-launch`]);
+    expect(run.urls).toEqual([`${HOST}/latest/sha256sums.txt`, `${HOST}/latest/splice.jar`, `${HOST}/latest/splice-launch`]);
+  });
+
+  test("a release that lists this platform's jar is installed from it, not from the jar of all four", () => {
+    const run = install({}, perPlatformRelease());
+    expect(run.ok, run.output).toBe(true);
+    const jar = platformJar() ?? "splice.jar";
+    expect(run.urls).toEqual([`${HOST}/latest/sha256sums.txt`, `${HOST}/latest/${jar}`, `${HOST}/latest/splice-launch`]);
   });
 
   test("a pinned stable SPLICE_VERSION takes every file from that version's folder", () => {
     const pinned = "v9.9.9";
     const run = install({ SPLICE_VERSION: pinned });
     expect(run.ok, run.output).toBe(true);
-    expect(run.urls).toEqual([`${HOST}/${pinned}/splice.jar`, `${HOST}/${pinned}/sha256sums.txt`, `${HOST}/${pinned}/splice-launch`]);
+    expect(run.urls).toEqual([`${HOST}/${pinned}/sha256sums.txt`, `${HOST}/${pinned}/splice.jar`, `${HOST}/${pinned}/splice-launch`]);
   });
 
   test("a pinned prerelease SPLICE_VERSION takes every file from that version's folder", () => {
     const pinned = "v9.8.7-beta.6";
     const run = install({ SPLICE_VERSION: pinned });
     expect(run.ok, run.output).toBe(true);
-    expect(run.urls).toEqual([`${HOST}/${pinned}/splice.jar`, `${HOST}/${pinned}/sha256sums.txt`, `${HOST}/${pinned}/splice-launch`]);
+    expect(run.urls).toEqual([`${HOST}/${pinned}/sha256sums.txt`, `${HOST}/${pinned}/splice.jar`, `${HOST}/${pinned}/splice-launch`]);
   });
 
   test("a prebuilt jar with no launcher beside it fetches its own release's launcher", () => {
@@ -117,11 +141,11 @@ describe("install.sh downloads from splice.torad.ai", () => {
 
   test("a default install asks github.com for nothing", () => {
     const run = install({});
-    expect(run.urls.filter((url) => url.includes("github.com"))).toEqual([]);
+    expect(run.urls.filter(onGithub)).toEqual([]);
   });
 
   test("a pinned install asks github.com for nothing", () => {
     const run = install({ SPLICE_VERSION: "v9.9.9" });
-    expect(run.urls.filter((url) => url.includes("github.com"))).toEqual([]);
+    expect(run.urls.filter(onGithub)).toEqual([]);
   });
 });

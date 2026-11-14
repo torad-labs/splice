@@ -8,6 +8,7 @@ import splice.app.control.api.ControlAudit
 import splice.app.control.api.ControlHealthReport
 import splice.app.control.api.HeadReadiness
 import splice.app.control.api.HeadSignals
+import splice.app.control.api.TypedCommand
 import splice.app.control.mount.ConsoleKey
 import splice.app.control.mount.ControlGuard
 import splice.configuration.topology.TopologyStale
@@ -20,12 +21,14 @@ import splice.core.util.WallClock
 import splice.core.version.ClientVersionTracker
 import splice.head.admission.AdmissionErrorBody
 import splice.http.ingress.HeapIngress
+import splice.launch.wrap.WrappedClaudeLaunch
 import splice.upstream.memory.JvmHeap
 
 internal fun signalsFor(
     heads: Map<String, ManagedHead>,
     runtimeNotAnswering: RuntimeNotAnswering = RuntimeNotAnswering { emptyMap() },
-): HeadSignals = HeadSignals(heads, runtimeNotAnswering)
+    typed: TypedCommand = TypedCommand { null },
+): HeadSignals = HeadSignals(heads, runtimeNotAnswering, typed = typed)
 
 /** The readiness a rig reports: the heads it serves, how many failed, how many were configured, which are stalled. */
 internal fun readinessFor(
@@ -93,7 +96,9 @@ internal fun controlServerFor(
     auth: ControlAuth,
     runtime: ControlRuntime = ControlRuntime(),
 ): ControlServer {
-    val signals = signalsFor(heads)
+    // As ControlPlane wires it: the name a person types for the Claude head is read from the wrap a launch reads.
+    val typed = runtime.launchService?.let { TypedCommand(WrappedClaudeLaunch(it.wrap)::typed) }
+    val signals = signalsFor(heads, typed = typed ?: TypedCommand { null })
     return ControlServer(
         ControlListen(port),
         heads,

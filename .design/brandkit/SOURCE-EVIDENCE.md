@@ -11,7 +11,7 @@ Where each value in the kit came from. Sources are the existing Splice files on 
 | Dusk `#724C5E` | The end-card background at 0:50, sampled |
 | Fraunces, Source Serif 4, IBM Plex Mono | `console.css` (`--font-lead`, `--font-name`, `--font-data`) and `social/splice-grok46-card.html`. The "splice" title in the video matches Fraunces at about wght 450 to 500, opsz 144 |
 | Ink outline, offset shadow, 9 px corners, no pills, noise texture, diagonal light band | The header comment and `body::before` / `body::after` rules in `console.css` |
-| 240 ms and 420 ms durations, ease curves | `console.css` (`--t-snap`, `--t-move`, `--e-out`, `--e-io`). `--e-out` is the same curve Temple uses |
+| 240 ms and 420 ms durations, ease curves | `console.css` (`--t-snap`, `--t-move`, `--e-out`, `--e-io`). `--e-out` is the curve Torad's other products use |
 | Updating drawn objects every 2nd frame, holds on arrival, one move at a time, no fake progress, depth layers | Splice-Animator's motion notes (`Splice-Animator/me/CRAFT.md`) |
 | Terminal cards, the rail with sockets, labels on objects, row of five sessions | Frames from the video, 0:13 to 0:53 |
 | Copy lines | `/workspace/marketing/splice-v0.4.0-drafts.md` and the video's end card |

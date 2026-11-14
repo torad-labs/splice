@@ -5,6 +5,7 @@ package splice.accounts.pool
 
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -14,6 +15,7 @@ import splice.accounts.CredentialVerdictJson
 import splice.core.auth.ACCOUNT_REF_FIELD
 import splice.core.auth.AuthDescription
 import splice.core.head.ProviderAnswer
+import splice.core.usage.QuotaJson
 
 /** A newest answer, not refusal history. Later success, overload or server error therefore renders null. */
 internal object AccountAnswerJson {
@@ -44,6 +46,10 @@ public class AccountPoolJson {
                 putJsonArray("pin_models_held") { HeldWords().modelWeeks(this, weeks) }
             }
             put("next_target_label", view.nextTargetLabel)
+            view.usualModel?.let { put("usual_model", it) }
+            view.next.asked.takeIf { it.isNotEmpty() }?.let { asked ->
+                putJsonArray("asked_models") { asked.forEach { add(it) } }
+            }
             putJsonArray("accounts") {
                 view.accounts.forEach { account ->
                     addJsonObject {
@@ -60,6 +66,14 @@ public class AccountPoolJson {
                         put("five_hour_reset_epoch_seconds", account.quota.fiveHour.resetEpochSeconds)
                         put("seven_day_used_percent", account.quota.sevenDay.usedPercent)
                         put("seven_day_reset_epoch_seconds", account.quota.sevenDay.resetEpochSeconds)
+                        // Each model's own week, which `splice status` names when one is used up (Nov 12, 2026).
+                        QuotaJson().putModels(this, "seven_day_models", account.quota.sevenDayModels)
+                        // The models the pool holds this login out of, which is what a turn's routing reads. A reading
+                        // does not show it: on Nov 12, 2026 a login just refused read 99%, and one reset at its
+                        // provider read 0% while its refusal still stood.
+                        account.quota.holds.models.takeIf { it.isNotEmpty() }?.let { weeks ->
+                            putJsonArray("models_held") { HeldWords().modelWeeks(this, weeks) }
+                        }
                         descriptions[account.label]?.let { description -> auth(this, description) }
                     }
                 }

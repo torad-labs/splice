@@ -213,6 +213,21 @@
 .card > .armrow { display: flex; justify-content: flex-end; margin-top: 0.667rem; }
 .card > .armrow .cutask { justify-content: flex-end; }
 .card .cutask .said { font: 500 .92rem/1.3 var(--font-name); color: var(--text-body); }
+/* A LOGIN'S LIMIT RESETS (Nov 13), opened from its menu: a sunk block under the card's head, one row per kind with how
+   many are left and the act that spends one; the second press's note sits under its row, at the card's right */
+.card > .resets { display: grid; gap: calc(.5 * var(--u)); margin-top: 0.667rem; padding: var(--u) calc(1.5 * var(--u)) calc(1.25 * var(--u));
+  border-radius: .5rem; background: var(--obj-sunk); }
+.card > .resets .rs-head { display: flex; align-items: center; justify-content: space-between; min-height: var(--ctl-h); }
+.card > .resets .rs-title { font: 600 .92rem/1.3 var(--font-name); color: var(--text); }
+.card > .resets .rs-row { display: grid; grid-template-columns: minmax(0, 1fr) 6.5rem minmax(0, 1.6fr); align-items: center;
+  column-gap: calc(1.5 * var(--u)); min-height: var(--ctl-h); }
+.card > .resets .rs-row > .act, .card > .resets .rs-not { justify-self: end; }
+.card > .resets .rs-name { font: 500 .92rem/1.3 var(--font-name); color: var(--text-body); }
+.card > .resets .rs-left { font: 500 .85rem/1.3 var(--font-data); color: var(--text-body); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.card > .resets .rs-not { font: 400 .88rem/1.3 var(--font-name); color: var(--text-mute); text-align: right; }
+.card > .resets :is(.rs-arm, .rs-note) { margin: 0; font: 400 .9rem/1.35 var(--font-name); color: var(--text-body); }
+.card > .resets .rs-arm { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--u); text-align: right; }
+.card > .resets .rs-why { color: var(--text-mute); }
 /* THE MOVES ON A CARD, DRAWN ON THE RAIL'S OWN SOCKETS (Oct 28): a move is two sockets and the arrow between them, the one
    the traffic left and the one it came to, each with the number it has on the rail, the lit one being the login serving.
    The command's chip says which command moved where the provider serves two or more, a lamp and a count say how many

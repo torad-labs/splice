@@ -13,6 +13,10 @@ public class TrackedAccountQuota(
 
     override fun snapshot(): QuotaSnapshot? = if (read == null) tracker.snapshot() else read.snapshot()
 
+    override fun onRead(listener: Runnable) {
+        tracker.onRecorded = listener
+    }
+
     /** What a turn reads when the account it selected carries no tracker: the session's sticky account, else the
      *  head's primary. */
     internal fun interface Fallback {

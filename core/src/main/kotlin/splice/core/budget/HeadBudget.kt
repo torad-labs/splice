@@ -15,8 +15,18 @@ import java.time.Instant
 
 /** A refused turn. The client's line says the budget's [limit], the operator's figure as splice spells it, and
  *  [resetsAt], when the budget's day ends (SpliceLines). [message] is the console's sentence for a Compare send it
- *  refuses, and [detail] is the log and perf-row detail. */
-public data class BudgetBlock(val message: String, val detail: String, val limit: String, val resetsAt: Instant)
+ *  refuses, and [detail] is the log and perf-row detail. [amounts] is what the refusal measured, for a page that draws
+ *  the spend against the limit; a refusal that measured nothing carries none. */
+public data class BudgetBlock(
+    val message: String,
+    val detail: String,
+    val limit: String,
+    val resetsAt: Instant,
+    val amounts: BudgetAmounts? = null,
+)
+
+/** The day's spend and the limit it met, in dollars: the two numbers [BudgetBlock.message] says in words. */
+public data class BudgetAmounts(val spentUsd: Double, val limitUsd: Double)
 
 /** One head's budget. EVERY METHOD RUNS ON THE TURN PATH and must never throw; an implementation
  *  that has to read history does it once per daemon lifetime, never per turn. */

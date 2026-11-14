@@ -10,6 +10,7 @@ import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.pool.HeadAccountQuota
 import splice.accounts.pool.HeadAccountView
+import splice.accounts.pool.HeadNextTarget
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.diagnostics.doctor.AccountPoolProjection
@@ -52,6 +53,7 @@ internal class AccountRosterProjection {
         return AccountPoolsRead.Read(views, native, refusals.unkeyed(byHead)).also {
             it.accountRefusals = refusals.keyed(byHead)
             it.accountNames = byHead.mapValues { (head, roster) -> names(head, roster) }
+            it.accountRefs = byHead.mapValues { (head, roster) -> refs(head, roster) }
         }
     }
 
@@ -70,16 +72,25 @@ internal class AccountRosterProjection {
                 unsafeSelection(head, rows) ||
                 (selected != null && accounts.none { it.label == selected }),
             pinnedLabel = metadata?.pinnedLabel,
-            nextTargetLabel = metadata?.nextTargetLabel,
+            next = next(metadata),
             blockedUntilEpochSecondsByLabel = metadata?.blockedUntilEpochSecondsByLabel.orEmpty(),
         )
     }
+
+    /** What the pool said of its next choice; a command whose pool sent nothing about itself has none. */
+    private fun next(metadata: HeadAccountPoolView?): HeadNextTarget = metadata?.next ?: HeadNextTarget()
 
     /** Each login's Accounts name by its pool label: a name a person gave or splice's default ("Max 2"), never an
      *  email. Control characters are dropped, since the name is printed to a terminal. */
     private fun names(head: String, rows: List<JsonObject>): Map<String, String> = rows.mapNotNull { row ->
         val shown = JsonScalars.str(row, "display_name")?.filterNot(Char::isISOControl)?.trim()?.take(NAME_CHARS)
         selector(head, row)?.let { label -> shown?.takeIf(String::isNotEmpty)?.let { label to it } }
+    }.toMap()
+
+    /** The account each login is a login of, by its pool label: the ref its credential proved, where it proved one. */
+    private fun refs(head: String, rows: List<JsonObject>): Map<String, String> = rows.mapNotNull { row ->
+        val ref = JsonScalars.str(row, "ref")?.takeIf(String::isNotEmpty)
+        selector(head, row)?.let { label -> ref?.let { label to it } }
     }.toMap()
 
     private fun unsafeSelection(head: String, rows: List<JsonObject>): Boolean =
@@ -118,6 +129,9 @@ internal class AccountRosterProjection {
                             resetEpochSeconds = account.quota.sevenDay.resetEpochSeconds,
                         ),
                         observedAtEpochSeconds = account.quota.observedAtEpochSeconds,
+                        sevenDayModels = account.quota.sevenDayModels,
+                        // what the provider refused here is the pool's to say, whichever reading is shown
+                        holds = pooled.quota.holds,
                     ),
                     credential = pooled.credential.copy(present = account.credential.present),
                 )

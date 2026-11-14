@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.SHIM_VERSION
 import splice.core.config.RunningJar
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
@@ -38,14 +39,18 @@ class RestartThroughUnitTest {
 
     /** A daemon that answers /health with [version], lists no heads, and stops listening when its
      *  shutdown route is called, as a stopping daemon frees its port. [serveAgain] is the new
-     *  process a unit start brings up on the same port. */
+     *  process a unit start brings up on the same port. [process] is what /health says of the process serving: its
+     *  pid, and whether its launcher can start the next daemon beside it (#523). */
     private class FakeDaemon(@Volatile var version: String) {
         private var server: HttpServer = serve(0)
         val port: Int = server.address.port
         val shutdowns = AtomicInteger()
 
+        @Volatile
+        var process: String = ""
+
         private fun serve(on: Int): HttpServer = HttpServer.create(InetSocketAddress("127.0.0.1", on), 0).apply {
-            createContext("/health") { ex -> ex.reply("""{"ok":true,"version":"$version"}""") }
+            createContext("/health") { ex -> ex.reply("""{"ok":true,"version":"$version"$process}""") }
             createContext("/api/heads") { ex -> ex.reply("""{"heads":[]}""") }
             createContext("/api/daemon/shutdown") { ex ->
                 shutdowns.incrementAndGet()
@@ -71,12 +76,14 @@ class RestartThroughUnitTest {
         }
     }
 
-    /** `cat` finds the unit; `is-active` answers [active]; `restart` and `start` play systemd. */
+    /** `cat` finds the unit; `is-active` answers [active]; `restart` and `start` play systemd, and `kill` is the
+     *  signal that asks the unit's launcher for the next daemon. */
     private class FakeSystemctl(
         private val active: Boolean,
         private val restartOk: Boolean = true,
         private val onRestart: () -> Unit = {},
         private val onStart: () -> Unit = {},
+        private val onSignal: () -> Unit = {},
     ) : Systemctl {
         val calls = CopyOnWriteArrayList<List<String>>()
         override fun invoke(args: List<String>): Int {
@@ -86,6 +93,7 @@ class RestartThroughUnitTest {
                 "is-active" -> isActive()
                 "restart" -> restart()
                 "start" -> 0.also { onStart() }
+                "kill" -> 0.also { onSignal() }
                 else -> error("unexpected systemctl verb: $args")
             }
         }
@@ -145,6 +153,62 @@ class RestartThroughUnitTest {
             assertEquals(1, daemon.shutdowns.get(), "a daemon outside the unit is stopped by the verb")
             assertTrue(listOf("start", UNIT) in ctl.calls, "the unit was never started: ${ctl.calls}")
             assertFalse(ctl.calls.any { it[0] == "restart" }, "restarting a unit that runs no daemon: ${ctl.calls}")
+        } finally {
+            daemon.close()
+        }
+    }
+
+    // #523: a daemon under the launcher's supervisor says so on /health, and the verb then asks for the next daemon
+    // beside it instead of restarting the unit, so an answer in progress is not cut.
+    @Test
+    fun `a daemon whose launcher starts the next one beside it is not stopped, and the verb says what finishes`(
+        @TempDir tmp: Path,
+    ) {
+        val daemon = FakeDaemon(OLD).apply { process = ""","pid":101,"launcher":"$SHIM_VERSION"""" }
+        val ctl = FakeSystemctl(
+            active = true,
+            onSignal = {
+                daemon.version = NEW
+                daemon.process = ""","pid":202,"launcher":"$SHIM_VERSION""""
+            },
+        )
+        try {
+            val restarted = command(tmp, daemon.port, ctl).restart(NEW, waitForCompactions = false)
+            val said = lines.joinToString("\n")
+            assertTrue(restarted, "the restart must report the next daemon up:\n$said")
+            assertTrue("An answer already arriving finishes, except on a Muse command" in said, said)
+            assertFalse("restarting $UNIT" in said, "the unit was restarted whole:\n$said")
+        } finally {
+            daemon.close()
+        }
+    }
+
+    @Test
+    fun `a next daemon that never takes over ends in the unit's restart, and the verb says so`(@TempDir tmp: Path) {
+        val daemon = FakeDaemon(OLD).apply { process = ""","pid":101,"launcher":"$SHIM_VERSION"""" }
+        val ctl = FakeSystemctl(active = true, onRestart = { daemon.version = NEW })
+        try {
+            val restarted = command(tmp, daemon.port, ctl).restart(NEW, waitForCompactions = false)
+            val said = lines.joinToString("\n")
+            assertTrue(restarted, "the unit's restart must still bring the new daemon up:\n$said")
+            assertTrue("did not take over; restarting $UNIT instead" in said, said)
+        } finally {
+            daemon.close()
+        }
+    }
+
+    // An upgrade can leave an earlier build's launcher supervising: it keeps running what it was written to run, so
+    // the unit is restarted whole and the installed launcher starts.
+    @Test
+    fun `under a launcher from an earlier build the unit is restarted whole`(@TempDir tmp: Path) {
+        val daemon = FakeDaemon(OLD).apply { process = ""","pid":101,"launcher":"shim-0"""" }
+        val ctl = FakeSystemctl(active = true, onRestart = { daemon.version = NEW })
+        try {
+            val restarted = command(tmp, daemon.port, ctl).restart(NEW, waitForCompactions = false)
+            val said = lines.joinToString("\n")
+            assertTrue(restarted, "the unit's restart must bring the new daemon up:\n$said")
+            assertTrue("restarting $UNIT; a running turn ends with the restart line" in said, said)
+            assertFalse("beside the running one" in said, "an earlier launcher was asked for the next daemon:\n$said")
         } finally {
             daemon.close()
         }

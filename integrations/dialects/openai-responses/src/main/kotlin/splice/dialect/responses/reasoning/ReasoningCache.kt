@@ -40,6 +40,12 @@
 // one whose file could not be written, which lives in memory only. Writes are queued under the lock and
 // applied after it (ReasoningCacheWrites), so no request waits on the disk.
 //
+// TWO DAEMONS, ONE DIRECTORY (#525, 2026-11-12): at a restart the retiring daemon finishes the answers it was giving
+// beside the next one, and records their reasoning in the same files. The next daemon restored those conversations
+// before that, so each call that names a conversation first looks at its file ([ReasoningCache.adopt]): one that
+// another process wrote since is read again, and what it holds replaces what this process held. Without it the next
+// turn of that conversation was sent without the reasoning of the answer the client had just been given.
+//
 // REWORKED 2026-10-26 (fix 3): "after it" now means on the head's one background writer, never on the thread that
 // made the change. That thread is often a session's stream inside its upstream read loop, and it used to apply the
 // whole queue itself, every session's records forced to disk one by one. The head's stop drains that writer
@@ -73,7 +79,7 @@ internal class ReasoningCache(
 
     // Iteration order = least-recently-TOUCHED first (touch re-inserts). Bound pressure evicts from
     // the front.
-    private val convos = LinkedHashMap<String, ReasoningCacheConvo>()
+    private val convos = TouchOrdered()
 
     // The null-key class (first user message with no text to hash — image-first or tool_result-
     // first openers) has no grouping identity, so it keeps the ORIGINAL flat per-round insertion
@@ -98,33 +104,30 @@ internal class ReasoningCache(
     private val restored: Lazy<Unit> = lazy {
         val stored = writes.restore()
         synchronized(lock) {
-            stored.forEach { conversation ->
-                val convo = ReasoningCacheConvo()
-                val recorded = conversation.rounds.filter { it.ids.isNotEmpty() }
-                if (recorded.isEmpty()) {
-                    writes.drop(conversation.key)
-                    return@forEach
-                }
-                val normalized = positions.normalized(recorded)
-                normalized.forEach { round ->
-                    val rk = "r${seq++}"
-                    val bytes = round.envelopes.sumOf { it.length.toLong() } + round.ids.sumOf(positions::metadataBytes)
-                    convo.rounds[rk] = ReasoningCacheRound(round.ids, round.envelopes, bytes, clock())
-                    round.ids.forEach { convo.byToolId[it] = rk }
-                    positions.admitted(convo, rk, convo.rounds.getValue(rk))
-                    convo.bytes += bytes
-                    roundCount++
-                }
-                proofs.restore(convo, conversation.rounds)
-                totalBytes += convo.bytes
-                convos[conversation.key] = convo
-                if (normalized != recorded) totalBytes += persistence.rewrite(conversation.key, convo)
-                // A record written under an older, wider bound keeps serving what it holds and admits nothing more.
-                if (conversationBound.exceeded(convo)) {
-                    freezeWriterLocked(conversation.key, convo, offered = null, why = RESTORED_OVER_SHARE)
-                }
-            }
+            stored.forEach { holdLocked(it.key, it) }
             evictToBoundLocked(writing = null, writer = null, offered = null)
+        }
+        writes.wake()
+    }
+
+    /** #525: [key]'s file was written by another process since this one last read or wrote it, so what the file
+     *  holds replaces what this cache holds of the conversation. Every call that names a conversation comes through
+     *  here first. It costs one look at the file; the read happens only when the look says another process wrote.
+     *  That read runs under the cache's lock, the one place the lock is held across the disk, and only while no
+     *  write of this process's own is on its way to that file: such a write is queued under the same lock, so a
+     *  round admitted here is either in the file that is read or still to come, in which case the look says nothing
+     *  and the call after it lands looks again. */
+    private fun adopt(key: String?) {
+        if (key == null || !writes.writtenElsewhere(key)) return
+        synchronized(lock) {
+            if (!writes.writtenElsewhere(key)) return
+            val stored = writes.reread(key)
+            holdLocked(key, stored)
+            evictToBoundLocked(writing = null, writer = null, offered = null)
+            log(
+                "[reasoning-cache] conversation ${key.take(KEY_LOG_CHARS)}… was written by another daemon: read " +
+                    "again, ${stored?.rounds?.size ?: 0} record(s)",
+            )
         }
         writes.wake()
     }
@@ -142,6 +145,7 @@ internal class ReasoningCache(
     ) {
         if (toolIds.isEmpty() || envelopes.isEmpty()) return
         restored.value
+        adopt(conversationKey)
         val bytes = envelopes.sumOf { it.length.toLong() } + toolIds.sumOf(positions::metadataBytes)
         synchronized(lock) {
             sweepLocked()
@@ -173,10 +177,11 @@ internal class ReasoningCache(
      *  conversation: active conversations never partially expire. */
     fun lookup(conversationKey: String?, toolId: String): List<String>? {
         restored.value
+        adopt(conversationKey)
         return synchronized(lock) {
             sweepLocked()
             if (conversationKey == null) return nullByToolId[toolId]?.let { nullRounds[it]?.envelopes }
-            val convo = touchLocked(conversationKey) ?: return null
+            val convo = convos.touch(conversationKey) ?: return null
             convo.byToolId[toolId]?.let { convo.rounds[it]?.envelopes }
         }
     }
@@ -193,6 +198,7 @@ internal class ReasoningCache(
 
     fun view(conversationKey: String?, legacyConversationKey: String? = conversationKey): ReasoningCacheView {
         restored.value
+        listOfNotNull(legacyConversationKey, conversationKey).distinct().forEach(::adopt)
         return synchronized(lock) {
             sweepLocked()
             if (conversationKey == null) {
@@ -202,7 +208,7 @@ internal class ReasoningCache(
             }
             // Arrival order also orders private history-position indexes sharing a visible boundary.
             val rounds = listOfNotNull(legacyConversationKey, conversationKey).distinct().flatMap { key ->
-                touchLocked(key)?.rounds?.values.orEmpty()
+                convos.touch(key)?.rounds?.values.orEmpty()
             }
             ReasoningCacheView(
                 rounds.flatMap { round -> round.toolIds.map { it to round.envelopes } }.toMap(),
@@ -227,7 +233,8 @@ internal class ReasoningCache(
         synchronized(lock) {
             convos.filterValues { convo -> convo.rounds.values.any { match(it) } }.keys.toList().forEach {
                 log("[reasoning-cache] stale-400 evicted conversation ${it.take(KEY_LOG_CHARS)}… whole")
-                removeConvoLocked(it)
+                holdLocked(it, null)
+                writes.drop(it)
             }
             nullRounds.filterValues { match(it) }.keys.toList().forEach(::removeNullLocked)
         }
@@ -246,7 +253,8 @@ internal class ReasoningCache(
                 "[reasoning-cache] conversation ${conversationKey.take(KEY_LOG_CHARS)}… compacted: " +
                     "dropped whole (${convo.rounds.size} rounds)",
             )
-            removeConvoLocked(conversationKey)
+            holdLocked(conversationKey, null)
+            writes.drop(conversationKey)
         }
         writes.wake()
     }
@@ -255,6 +263,7 @@ internal class ReasoningCache(
     fun updateHistory(conversationKey: String, update: ReasoningHistoryUpdate) {
         if (update.aliases.isEmpty() && update.proofs.isEmpty()) return
         restored.value
+        adopt(conversationKey)
         synchronized(lock) {
             val conversation = convos[conversationKey] ?: ReasoningCacheConvo()
             val moved = positions.promote(conversation, update.aliases)
@@ -275,13 +284,8 @@ internal class ReasoningCache(
 
     // ── internals ────────────────────────────────────────────────────────────────────────────
 
-    /** Re-insert [key] at the most-recently-touched end, or null if the conversation is not held.
-     *  O(1): the whole point of conversation-primary records. */
-    private fun touchLocked(key: String): ReasoningCacheConvo? =
-        convos.remove(key)?.also { convos[key] = it }
-
     private fun putConvoLocked(key: String, toolIds: List<String>, envelopes: List<String>, bytes: Long) {
-        val convo = touchLocked(key) ?: ReasoningCacheConvo().also { convos[key] = it }
+        val convo = convos.touch(key) ?: ReasoningCacheConvo().also { convos[key] = it }
         val updated = positions.update(convo, toolIds, conversationBound.available(convo, maxTotalBytes - totalBytes))
         if (updated != null) {
             totalBytes += updated.bytes
@@ -341,7 +345,8 @@ internal class ReasoningCache(
                 oldestNull != null -> removeNullLocked(oldestNull)
                 neighbor != null -> {
                     log("[reasoning-cache] bound pressure evicted conversation ${neighbor.take(KEY_LOG_CHARS)}… whole")
-                    removeConvoLocked(neighbor)
+                    holdLocked(neighbor, null)
+                    writes.drop(neighbor)
                 }
                 else -> if (!freezeWriterLocked(writing, writer, offered, ALONE_OVER_BOUND)) return
             }
@@ -385,11 +390,23 @@ internal class ReasoningCache(
         // pressure, each wholesale.
     }
 
-    private fun removeConvoLocked(key: String) {
-        val convo = convos.remove(key) ?: return
-        totalBytes -= convo.bytes
-        roundCount -= convo.rounds.size
-        writes.drop(key)
+    /** What this cache holds of [key] becomes [stored], the conversation as the disk holds it; null, or one that
+     *  recorded no round, holds nothing of it. The file is the caller's to keep or remove. */
+    private fun holdLocked(key: String, stored: StoredConversation?) {
+        convos.remove(key)?.let {
+            totalBytes -= it.bytes
+            roundCount -= it.rounds.size
+        }
+        val rebuilt = stored?.let { persistence.rebuilt(it, seq, clock()) } ?: return
+        seq += rebuilt.convo.rounds.size
+        roundCount += rebuilt.convo.rounds.size
+        totalBytes += rebuilt.convo.bytes
+        convos[key] = rebuilt.convo
+        if (rebuilt.renormalized) totalBytes += persistence.rewrite(key, rebuilt.convo)
+        // A record written under an older, wider bound keeps serving what it holds and admits nothing more.
+        if (conversationBound.exceeded(rebuilt.convo)) {
+            freezeWriterLocked(key, rebuilt.convo, offered = null, why = RESTORED_OVER_SHARE)
+        }
     }
 
     private fun removeNullLocked(roundKey: String) {
@@ -404,53 +421,11 @@ internal class ReasoningCache(
     }
 }
 
-/** The first reasoning record makes pending proofs durable; later records append without rewriting history. */
-private class ReasoningRoundPersistence(
-    private val writes: ReasoningCacheWrites,
-    private val positions: ReasoningCachePositions,
-    private val proofs: ReasoningCacheProofs,
-    private val log: LogSink,
-) {
-    fun enqueue(key: String, conversation: ReasoningCacheConvo, round: ReasoningCacheRound) {
-        val firstWithProofs = conversation.rounds.size == 1 && conversation.resultProofs.isNotEmpty()
-        if (firstWithProofs) {
-            writes.append(key, emptyList(), emptyList(), conversation.resultProofs.toMap())
-        }
-        writes.append(key, round.toolIds, round.envelopes)
-    }
-
-    fun reclaimOrderMetadata(
-        key: String,
-        conversation: ReasoningCacheConvo,
-        offeredBytes: Long,
-        availableBytes: Long,
-    ): Long {
-        if (offeredBytes <= availableBytes) return 0L
-        val released = positions.releaseMetadata(conversation)
-        return released + if (released != 0L) rewrite(key, conversation) else 0L
-    }
-
-    /** Drop what other turns stored at [toolIds]' history position, file included, before it is admitted. This turn
-     *  reached that position through its own request or its own output, so the client kept nothing those turns
-     *  produced from there: their reasoning would ride upstream in front of history it never led to. The bytes
-     *  returned are what the cache's bound gets back, the rewrite's own change included. */
-    fun replaceAt(key: String, conversation: ReasoningCacheConvo, toolIds: List<String>): ReplacedRecords {
-        val index = toolIds.singleOrNull() ?: return ReplacedRecords(0, 0L)
-        val replaced = positions.replaceAt(conversation, index)
-        if (replaced.records == 0) return replaced
-        val rewritten = rewrite(key, conversation)
-        log(
-            "[reasoning-cache] conversation ${key.take(KEY_LOG_CHARS)}… re-sent at one history position: " +
-                "replaced ${replaced.records} records (${replaced.bytes}B) an earlier attempt left there",
-        )
-        return replaced.copy(bytes = replaced.bytes - rewritten)
-    }
-
-    fun rewrite(key: String, conversation: ReasoningCacheConvo): Long {
-        val released = proofs.compact(conversation)
-        writes.replace(key, positions.stored(conversation))
-        return released
-    }
+/** The keyed conversations, least recently touched first. */
+private class TouchOrdered : LinkedHashMap<String, ReasoningCacheConvo>() {
+    /** Re-insert [key] at the most-recently-touched end, or null if the conversation is not held.
+     *  O(1): the whole point of conversation-primary records. */
+    fun touch(key: String): ReasoningCacheConvo? = remove(key)?.also { this[key] = it }
 }
 
 // The ReasoningCache bounds, at file scope because Kotlin main sources carry no `companion` blocks.

@@ -29,7 +29,8 @@ internal class SessionAccountLabels(
     override fun forRecords(records: List<SessionRecord>): SessionAccountOf {
         val byHead = records.groupBy { it.head }
         val saved = byHead.mapNotNull { (head, sessions) ->
-            val managed = heads[head] ?: return@mapNotNull null
+            // a record with no head names no login, and the live heads map answers a null key with an NPE (Nov 13)
+            val managed = head?.let(heads::get) ?: return@mapNotNull null
             if (managed.authSurface.authKind != CLIENT_AUTH_KIND) return@mapNotNull null
             val source = managed.sources.perfRows as? PerfRowsFileSource ?: return@mapNotNull null
             val ids = sessions.mapNotNull { it.sessionId }
@@ -45,7 +46,7 @@ internal class SessionAccountLabels(
 
     override fun label(head: String?, sessionId: String): String? = head?.let {
         val surface = heads[it]?.authSurface?.takeUnless { auth -> auth.authKind == CLIENT_AUTH_KIND }
-        account(it, sessionId, null, surface?.accountPool?.view(sessionId)?.selectedLabel)
+        account(it, sessionId, null, surface?.accountPool?.view(sessionId)?.selectedLabel, HashMap())
     }
 
     override fun pin(head: String?, sessionId: String): String? = pinOf(head, sessionId)
@@ -84,8 +85,12 @@ internal class SessionAccountLabels(
         private fun choiceOf(head: String?, session: String): HeadAccountSessionChoice? =
             poolOf(head)?.bySession?.get(session)
 
+        /** Each saved account's name, read once for the listing: naming one decodes every Claude login on disk, and
+         *  asked once a row that was most of the 32,000 reads behind one /api/sessions reply (Nov 12, 2026). */
+        private val named = HashMap<String, String>()
+
         override fun label(head: String?, sessionId: String): String? =
-            head?.let { account(it, sessionId, saved[it], choiceOf(it, sessionId)?.selectedLabel) }
+            head?.let { account(it, sessionId, saved[it], choiceOf(it, sessionId)?.selectedLabel, named) }
 
         override fun pin(head: String?, sessionId: String): String? = choiceOf(head, sessionId)?.pinnedLabel
 
@@ -113,22 +118,30 @@ internal class SessionAccountLabels(
         session: String,
         saved: PerfSessionAccountIndex.Snapshot?,
         selected: String?,
+        named: MutableMap<String, String>,
     ): String? {
         val managed = heads[head] ?: return null
         val pool = managed.authSurface.accountPool
         return when {
-            managed.authSurface.authKind == CLIENT_AUTH_KIND -> clientAccount(head, session, saved)
+            managed.authSurface.authKind == CLIENT_AUTH_KIND -> clientAccount(head, session, saved, named)
             pool != null -> selected
             AuthKindRegistry.isOAuth(managed.authSurface.authKind) -> SINGLE_LOGIN_LABEL
             else -> null
         }
     }
 
-    private fun clientAccount(head: String, session: String, saved: PerfSessionAccountIndex.Snapshot?): String? {
+    /** [named] holds each saved account's name for whoever asks about many sessions at once; a head's key has no space
+     *  in it, so the key cannot be read two ways. */
+    private fun clientAccount(
+        head: String,
+        session: String,
+        saved: PerfSessionAccountIndex.Snapshot?,
+        named: MutableMap<String, String>,
+    ): String? {
         val logins = ports.claudeLogins
         val live = logins?.carryingAccount(head, session)
         if (live != null || logins?.hasCarryingProof(head, session) == true) return live
         val account = saved?.accounts?.get(session) ?: return null
-        return logins?.accountLabel(head, account) ?: account
+        return named.getOrPut("$head $account") { logins?.accountLabel(head, account) ?: account }
     }
 }

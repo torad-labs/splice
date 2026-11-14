@@ -2,17 +2,21 @@
 package splice.head.wire
 
 import io.ktor.http.HttpStatusCode
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import splice.core.config.ConfigService
 import splice.core.storage.DayFileRemoval
 import splice.core.storage.DayFiles
 import splice.core.storage.DayInventory
+import splice.core.storage.TraceCapacityReason
 import splice.core.util.Cancellables
 import splice.core.util.JsonWire
 import splice.core.util.SafeFailureText
 import splice.head.TurnsHeadLookup
 import splice.head.trace.TraceDirPort
+import splice.head.trace.body.TraceStop
 import splice.http.JsonReply
 import java.io.IOException
 import java.nio.file.Path
@@ -69,6 +73,14 @@ public class TraceDeleteRoutes @JvmOverloads constructor(
         // floor, the body budget spent); both null while they save whole. The size above stays what is kept.
         put("saving_stopped_at_epoch_ms", stopped?.atEpochMs)
         put("saving_stopped_reason", stopped?.reason)
+        // The reason by name, which is what the console reads to choose its words, and the free space the store
+        // leaves when the disk was the cause; both null for a reason the store did not write.
+        val why = TraceCapacityReason(stopped?.reason)
+        put("saving_stopped_code", why.cause()?.wire)
+        put("saving_stopped_floor_bytes", why.floorBytes())
+        // The UTC days still kept whose prompts and answers were removed to make room, oldest first. Their records are
+        // counted above; this is how the page can say the bodies went, which until Nov 12, 2026 only the log did.
+        putJsonArray("bodies_removed_days") { inventory.bodiesRemoved.forEach { add(it.toString()) } }
     }.let(JsonWire::string)
 
     private fun refuse(status: HttpStatusCode, message: String): JsonReply =

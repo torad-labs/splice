@@ -231,7 +231,7 @@ const REQVIEW = (() => {
     function unsavedHtml(body) {
       if (!body || typeof body !== "object" || body.unavailable !== true) return null;
       if (body.reason) console.info("request body not kept:", body.reason);
-      const disk = /free-space floor/.test(body.reason || "");
+      const disk = body.code === "disk_floor";  // the daemon's name for the cause, not the words of its reason
       return `<div class="gone"><span class="state">Not saved${disk ? " · Disk nearly full" : ""}</span>${disk ? `<a class="act quiet" href="settings.html#data">Your data</a>` : ""}</div>`;
     }
     function bodyTree(body, path) {

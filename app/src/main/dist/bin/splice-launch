@@ -14,9 +14,9 @@
 
 # Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 # — bump both together whenever this shim's behavior changes. No code generation.
-SPLICE_SHIM_VERSION="shim-24"
+SPLICE_SHIM_VERSION="shim-26"
 # Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
-SPLICE_GATEWAY_VERSION="0.4.0"
+SPLICE_GATEWAY_VERSION="0.4.1"
 
 NL='
 '
@@ -306,10 +306,19 @@ STATE_DIR=$(live_state_dir "$SHIM_HOME" "${SPLICE_STATE_DIR-}" "${CLAUDEX_STATE_
 CONTROL_PORT_FROM_ENV=${CONTROL_PORT:-}
 CONTROL_PORT=$(control_port_for "$SHIM_HOME" "$STATE_DIR" "${SPLICE_CONFIG-}" "${XDG_CONFIG_HOME-}" "${SPLICE_CONTROL_PORT-}" "${CONTROL_PROXY_PORT-}")
 CONTROL="http://127.0.0.1:$CONTROL_PORT"
-JAR=${SPLICE_JAR:-${SPLICE_SHARE_DIR:-$SHIM_HOME/.local/share/splice}/splice.jar}
+LAUNCH_SHARE=${SPLICE_SHARE_DIR:-$SHIM_HOME/.local/share/splice}
+JAR=${SPLICE_JAR:-$LAUNCH_SHARE/splice.jar}
 # shim-22: the java splice runs on. SPLICE_JAVA names one for a machine whose java on PATH is older than 21 for its own
 # work (an Android toolchain on 17); only splice's own JVM uses it, and the Claude Code this launcher execs keeps PATH.
-JAVA=${SPLICE_JAVA:-java}
+# shim-26: else the Java 21 install.sh linked at <share>/java, which it lays only when the java on PATH cannot run
+# splice: one it found elsewhere on the machine, or the runtime it downloaded for splice alone. Else the java on PATH.
+if [ -n "${SPLICE_JAVA-}" ]; then
+  JAVA=$SPLICE_JAVA
+elif [ -x "$LAUNCH_SHARE/java" ]; then
+  JAVA=$LAUNCH_SHARE/java
+else
+  JAVA=java
+fi
 # shim-23: the heap's ceiling flags for SPLICE_JVM_OPTS below. 16 GiB where 75% of the memory the daemon may use
 # reaches it, otherwise the JVM's own 75%. That memory is the machine's RAM, MemTotal from /proc/meminfo on Linux or
 # hw.memsize on macOS, or the memory limit of this process's control group or of a group above it where one is lower:
@@ -403,6 +412,57 @@ gc_log_flag() {
   printf '%s' "-Xlog:gc:file=$LOGS_DIR/gc.log:time,uptime:filecount=5,filesize=20m"
 }
 
+# shim-25 (#523): the daemon's generations. A daemon started with a socket manager's sockets (systemd's, through
+# splice.service) does not replace this shell: the shell keeps the sockets and stays the unit's main process, and each
+# daemon runs as its child. SIGHUP starts the next daemon beside the running one, on the same sockets. That daemon asks
+# the running one to hand over, and the running one finishes the answers it is in the middle of and exits, where a
+# restart used to cut them. SIGTERM stops every daemon, as a stop of the unit always did. When its newest daemon ends,
+# the shell stops any older one and ends with that daemon's status, so the unit restarts whole.
+#
+# A pid in sd_all may have ended long ago and been given to another process, so a daemon is signalled only while its
+# parent is this shell.
+sd_ours() {
+  [ "$(ps -o ppid= -p "$1" 2>/dev/null | tr -d ' ')" = "$$" ]
+}
+sd_signal_all() {
+  for sd_pid in $sd_all; do
+    if sd_ours "$sd_pid"; then kill -TERM "$sd_pid" 2>/dev/null; fi
+  done
+}
+# Runs from the HUP trap too, where the positional parameters are whatever the interrupted code had: the daemon's
+# java arguments are kept as quoted words and rebuilt here.
+sd_start() {
+  eval "set -- $sd_argv"
+  # LISTEN_PID has to name the process that becomes java: the inner shell sets it to its own pid, and exec keeps
+  # that pid. SPLICE_SUCCEEDS tells a daemon started beside another which one it takes over from, and
+  # SPLICE_GENERATIONS which launcher supervises it: a daemon from a later build hands over only under its own.
+  SPLICE_GENERATIONS=$SPLICE_SHIM_VERSION SPLICE_SUCCEEDS=$sd_newest \
+    sh -c 'LISTEN_PID=$$; export LISTEN_PID; exec "$@"' sh "$JAVA" "$@" &
+  sd_newest=$!
+  sd_all="$sd_all $sd_newest"
+}
+supervise_daemon() {
+  sd_newest=""
+  sd_all=""
+  sd_argv=$(quote_words "$@")
+  trap 'sd_start' HUP
+  trap 'trap "" HUP TERM INT; sd_signal_all; wait; exit 143' TERM INT
+  sd_start
+  while :; do
+    sd_watched=$sd_newest
+    wait "$sd_watched"
+    sd_code=$?
+    # A trapped signal ends the wait early, with the daemon still running: wait again, for the newest one.
+    if sd_ours "$sd_watched"; then continue; fi
+    if [ "$sd_watched" = "$sd_newest" ]; then
+      trap "" HUP TERM INT
+      sd_signal_all
+      wait
+      exit "$sd_code"
+    fi
+  done
+}
+
 # Required daemon diagnostics follow the caller's options, so a custom heap does not disable them. The resolved dump
 # and GC log paths are one argv item each, never split with the caller's whitespace-delimited options. Runs in a
 # function: it rebuilds the positional parameters, and the caller's are not its own.
@@ -414,6 +474,14 @@ exec_cli() {
     set -- -Djdk.console=java.base "-Duser.home=$SHIM_HOME" $SPLICE_JVM_OPTS -XX:+ExitOnOutOfMemoryError \
       -XX:+HeapDumpOnOutOfMemoryError "-XX:HeapDumpPath=$STATE_DIR/splice-oom.hprof" ${ec_gc:+"$ec_gc"} -jar "$JAR" "$@"
     set +f
+    # Only where the sockets were handed to this very process and the tools the supervisor needs are here; every
+    # other start replaces this shell with the daemon, as before. SPLICE_HANDOVER=off keeps it that way for a machine
+    # whose own tools take the unit's first process for the daemon (an out-of-memory keeper that protects a service's
+    # first process and not its children would then protect this shell and leave the daemon exposed).
+    if [ "${SPLICE_HANDOVER-}" != off ] && [ -n "${LISTEN_FDS-}" ] && [ "${LISTEN_PID-}" = "$$" ] &&
+      command -v ps >/dev/null 2>&1 && command -v "$JAVA" >/dev/null 2>&1; then
+      supervise_daemon "$@"
+    fi
   else
     set -- -Djdk.console=java.base "-Duser.home=$SHIM_HOME" -jar "$JAR" "$@"
   fi
@@ -645,7 +713,7 @@ cold_start() {
   if ! command -v "$JAVA" >/dev/null 2>&1; then
     # A java that cannot be run leaves no JVM output, so the boot log says so itself (nohup used to): the handshake
     # below shows the tail, and this line is what it has to show.
-    printf "splice: failed to run command 'java': not found on PATH\n" >>"$cs_log" 2>/dev/null || true
+    printf "splice: failed to run command '%s': not found\n" "$JAVA" >>"$cs_log" 2>/dev/null || true
   else
     cold_start_java "$cs_log" "$cs_flag"
   fi

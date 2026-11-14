@@ -1,7 +1,7 @@
 // NEW: V4-129 — GET /api/claude-head, POST /api/claude-head/{wrap,unwrap} (FEATURES.md §6, 4.12).
 // The wrap/unwrap MECHANICS (the shim swap and its state file) live in splice.client.wrap.WrappedHead; this
 // file is the HTTP surface plus the one check only the daemon can make — that the splice-owned Claude head
-// (claude-splice) is configured, since a wrapped `claude` launches exactly that head (V4-445: the launch
+// (`claude`) is configured, since a wrapped `claude` launches exactly that head (V4-445: the launch
 // carries its settings; wrap itself writes nothing into ~/.claude). "no pool, no isolation, no un-link on a
 // wrapped head" (the row title): this route reads no head state beyond whether that one head exists, through
 // the LaunchHeads port (LAYOUT-01).
@@ -22,12 +22,14 @@ import splice.launch.LaunchHeads
 import splice.launch.LaunchReplies
 import java.nio.file.Path
 
-/** The one head wrap targets (app/src/main/resources/splice.example.toml): the splice-owned Claude head
- *  whose command is deliberately NOT `claude` (its own comment says why), which a launch through the wrapped
- *  `claude` runs over the operator's own config.
+/** The one head wrap targets (app/src/main/resources/splice.example.toml): the splice-owned Claude head, which a
+ *  launch through the wrapped `claude` runs over the operator's own config. Keyed `claude` since Nov 13, 2026
+ *  (Marcos: "THERE SHOULD NOT BE SUCH A THING AS CLAUDE-SPLICE. IT'S CLAUDE ONLY IN THIS COMPUTER"): it was
+ *  `claude-splice`, a second name for the one Claude every session runs, and the console drew Claude Code's own
+ *  login under it as one more account to remove.
  *  V4-129 review: internal, because a launch THROUGH the wrapped `claude` (LaunchRoutes) runs this
  *  same head, and the two must never name different ones. */
-internal const val CLAUDE_HEAD_KEY = "claude-splice"
+internal const val CLAUDE_HEAD_KEY = "claude"
 
 public class ClaudeHeadRoutes(
     private val heads: LaunchHeads,

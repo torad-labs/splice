@@ -8,9 +8,9 @@ plugins {
 dependencies {
     testImplementation(libs.konsist)
     testImplementation(testFixtures(project(":core")))
-    // The Kotlin PSI the unpack law parses initializers with. Konsist already puts this exact compiler on the test
-    // runtime classpath (2.0.21 at konsist 0.17.3), so compile against that version and add nothing to the runtime.
-    testCompileOnly("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.0.21")
+    // The Kotlin PSI the unpack law parses initializers with. Konsist already puts this compiler on the test runtime
+    // classpath (2.4.21 at konsist 0.18.1, the catalog's Kotlin), so compile against it and add nothing to the runtime.
+    testCompileOnly(libs.kotlin.compiler.embeddable)
     // Restructure PR 6 §4.3: the two ratchet laws (silent constants, public surface) read their
     // recorded census off a JSON resource on the test classpath — the same document their checkers
     // read off disk. The tree's own JSON reader, rather than a hand parser per law: a second reading

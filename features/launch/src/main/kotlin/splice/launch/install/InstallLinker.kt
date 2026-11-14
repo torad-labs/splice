@@ -5,6 +5,7 @@
 package splice.launch.install
 
 import splice.core.terminal.TerminalOutput
+import splice.core.topology.CLAUDE_COMMAND
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
@@ -16,6 +17,11 @@ import java.nio.file.Path
 import kotlin.io.path.isSymbolicLink
 
 internal const val SELF_COMMAND = "splice"
+
+// why: what install and add say when they name the head plain `claude` runs while `claude` is not wrapped yet.
+internal const val CLAUDE_UNWRAPPED =
+    "plain `claude` is not wrapped, so it runs Claude Code directly and not through splice; " +
+        "`splice setup` wraps it, or POST /api/claude-head/wrap on the control plane"
 
 /** The one wrapper name-claiming primitive. A seam (SymlinkOp precedent): the DR-67 safety
  *  property — a foreign file that appears AFTER the precheck wins, never gets eaten — is only
@@ -47,7 +53,9 @@ internal class InstallLinker(
         val bin = layout.localBin(env)
         Files.createDirectories(bin)
         val selected = selected(topology, headArg) ?: return InstallResult.Declined
-        val refusal = collisionRefusal(topology) ?: linkRefusal(bin, selected, launchShim)
+        val refusal = unwrappedClaude(topology, headArg, env)
+            ?: collisionRefusal(topology)
+            ?: linkRefusal(bin, selected, launchShim)
         // Said only when it is true: doctor, a few lines later, grades the same fact.
         val onPath = env("PATH").orEmpty().split(':').any { it == bin.toString() }
         if (refusal == null && !onPath) output.line("splice: add $bin to your PATH to use the wrappers")
@@ -71,6 +79,15 @@ internal class InstallLinker(
         return link.isSymbolicLink() && Files.readSymbolicLink(link) == layout.launchShimPath(env)
     }
 
+    /** [CLAUDE_UNWRAPPED] when [headArg] names the head plain `claude` runs while `claude` is not wrapped: that
+     *  head has no link of its own to lay, so reporting it linked would send its person to a command that bypasses
+     *  splice. */
+    private fun unwrappedClaude(topology: Topology, headArg: String?, env: EnvReader): String? {
+        val head = headArg?.let(topology.heads::get) ?: return null
+        val isClaude = (head.claude.command ?: headArg) == CLAUDE_COMMAND
+        return CLAUDE_UNWRAPPED.takeIf { isClaude && !runsShim(CLAUDE_COMMAND, env) }
+    }
+
     /** Every command for --all/no-arg, else the one named: a remote command (LAN share) by its name, a head by
      *  topology key OR wrapper command. Null when [headArg] names nothing, which has already printed why (unknown vs
      *  ambiguous). */
@@ -85,7 +102,10 @@ internal class InstallLinker(
     /** Each command the topology links, with what runs it: a head's wrapper command (or its key) with the head's
      *  key, and a remote command (LAN share, `[remote.<command>]`) with its own name, `claude` aside. */
     private fun commands(topology: Topology): List<Pair<String, String>> =
-        topology.heads.map { (key, head) -> key to (head.claude.command ?: key) } +
+        topology.heads.map { (key, head) -> key to (head.claude.command ?: key) }
+            // `claude` is Claude Code's own link: only the wrap points it at the shim, recording the real binary
+            // first. A head keyed `claude` with no command of its own is reached through that wrap, never linked here.
+            .filterNot { (_, command) -> command == CLAUDE_COMMAND } +
             topology.remoteLinks.map { it to it }
 
     /** Validate the WHOLE topology's commands (+ `splice`) on EVERY install, not just this

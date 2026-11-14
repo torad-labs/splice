@@ -78,7 +78,7 @@ class OverflowNotRetriedTest {
             replies = Replies(OpenAiReplies),
             observers = PostObservers(onRetry = RetryNotice { notices += it }),
         )
-        assertThrows<Exception> { clientOver(engine).posted(ctx, "{}") { "ok" } }
+        assertThrows<Exception> { clientOver(engine).posted(ctx, "{}") {} }
 
         assertTrue(notices.isNotEmpty(), "the rate-limit path spoke")
         assertTrue(notices.none { "context overflow" in it }, "$notices")

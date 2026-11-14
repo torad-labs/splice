@@ -9,6 +9,7 @@ import kotlinx.serialization.json.put
 import splice.app.control.ManagedHead
 import splice.app.control.RuntimeNotAnswering
 import splice.app.control.RuntimeUnread
+import splice.core.head.Head
 import splice.core.head.HeldTurnReading
 import splice.core.head.RefusingReading
 import splice.core.usage.QuotaFull
@@ -16,13 +17,25 @@ import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionSource
 import java.util.concurrent.TimeUnit
 
+/** The name a person types for the head keyed [key] when it is not that head's own command, or null. */
+internal fun interface TypedCommand {
+    fun typed(key: String): String?
+}
+
 internal class HeadSignals(
     private val heads: Map<String, ManagedHead>,
     private val runtimeNotAnswering: RuntimeNotAnswering,
     /** Who runs on which head now; null names no client pids. */
     private val sessions: SessionSource? = null,
     private val runtimeUnread: RuntimeUnread = RuntimeUnread { emptySet() },
+    /** The name a person types for a head where that is not the head's own command. */
+    private val typed: TypedCommand = TypedCommand { null },
 ) {
+    /** The command a person types to reach [head], which is what a screen names it by: the head's own command, or
+     *  `claude` for the Claude head while plain `claude` goes through splice. A display name only: a route still
+     *  finds a head by its key or its own command (HeadResolver). */
+    fun shown(head: Head): String = typed.typed(head.key) ?: head.label
+
     /** For each head, the pids of the Claude Code clients its live sessions run in, from the session registry. */
     fun clientPids(): Map<String, List<Long>> = sessions?.read().orEmpty()
         .filter { it.availability == SessionAvailability.LIVE }

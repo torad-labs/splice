@@ -236,8 +236,8 @@ function readFrames(frames) {
 const DOWN = "Not answering"; // a command whose runtime is not up, as Accounts and the board's card say it
 const SPLICE_GONE = "Splice not reachable"; // splice itself did not answer the page, which is not a command that is not answering
 const LIMIT = "Limit reached"; // a spent plan window, the lock's own word, on the pane and in its request alike
-// What went wrong, in the console's word for its kind: the provider's status or error type, else the sentence splice answered.
-function failWord(status, body, said) {
+// What went wrong, in the console's word for its kind: the provider's status or error type, else the name splice sent for its own refusal.
+function failWord(status, body, code) {
   const type = body?.error?.type ?? body?.error?.code ?? body?.type ?? "";
   if (status === 429 || /rate_limit|usage_limit/.test(type)) return OUTCOME_WORD["error:rate-limited"];
   if (status === 529 || /overloaded/.test(type)) return OUTCOME_WORD["failure:overloaded_error"];
@@ -247,14 +247,15 @@ function failWord(status, body, said) {
   if (status >= 400 && status < 500) return OUTCOME_WORD["failure:invalid_request_error"];
   // Compare's own word: its send runs under a connect and a whole-request timeout, and a model still answering is cut
   // with no silence at all, so the kit's "Given up after a silence" is not its fact
-  if (/timed? ?out|HttpRequestTimeout/i.test(said)) return "Timed out";
-  if (/no credential|forwards the caller/.test(said)) return OUTCOME_WORD["error:auth-missing"];
+  // splice's own refusals, by the name it sends beside its sentence (the reply's code), never by the sentence's words
+  if (code === "timed_out") return "Timed out";
+  if (code === "no_credential" || code === "caller_auth") return OUTCOME_WORD["error:auth-missing"];
   // a command whose runtime is not up: Accounts' word for the same fact, so one thing keeps one name
-  if (/no running provider/.test(said)) return DOWN;
+  if (code === "no_provider") return DOWN;
   // a command splice no longer has (its 400 "unknown head"): the kit's word for a name the far end does not know, and
   // the pane's Read again takes the list again, which drops it
-  if (/unknown head/.test(said)) return OUTCOME_WORD["failure:not_found_error"];
-  if (/failed:/.test(said)) return OUTCOME_WORD["error:conn-reset"];
+  if (code === "unknown_head") return OUTCOME_WORD["failure:not_found_error"];
+  if (code === "call_failed") return OUTCOME_WORD["error:conn-reset"];
   return OUTCOME_WORD["error:unexpected"];
 }
 const SIGNED = new Set([OUTCOME_WORD["error:auth-missing"], OUTCOME_WORD["failure:authentication_error"]]);
@@ -275,15 +276,10 @@ function spentWindow(body) {
   const secs = Number(e.limit_window_minutes) * 60 || null;
   return { until: new Date(at * 1000), word: WINDOW[secs] ?? "", secs };
 }
-// What a budget refusal measured, spent and cap, read off the refusal's own sentence ("... $5.12 ... against its $5.00 daily
-// budget ..."): the daemon's reply carries them nowhere else. The sentence itself stays off the page; only its two amounts
-// are drawn. A refusal worded another way draws no meter (the word and its door stand alone) rather than a guess.
-const AMOUNT = "\\$([\\d,]+(?:\\.\\d+)?)";
-const budgetOf = (said) => {
-  const m = new RegExp(`${AMOUNT}[^$]*?against its ${AMOUNT}`).exec(said ?? "");
-  const n = (s) => Number(s.replace(/,/g, ""));
-  return m && n(m[2]) > 0 ? { spent: n(m[1]), cap: n(m[2]) } : null;
-};
+// What a budget refusal measured, spent and cap: the two amounts the daemon sends beside its sentence (spent_usd,
+// limit_usd). The sentence itself stays off the page. A refusal that carries no amounts draws no meter (the word and
+// its door stand alone) rather than a guess.
+const budgetOf = (reply) => (typeof reply?.spent_usd === "number" && reply.limit_usd > 0 ? { spent: reply.spent_usd, cap: reply.limit_usd } : null);
 // a reply with no price, in Requests' words for why (requests.js REASON), said once beside the table's legend
 const NO_COST = { plan: "On your plan", uncounted: "Uncounted" };
 // a cost in the console's one money form (kit dollars) without its "≈" on every cell: the column's header says
@@ -316,7 +312,7 @@ async function ask(p) {
   if (res.status === 429 && reply?.blocked === "budget") { // the command's budget refused it as it refuses a turn, leaving an Over budget row
     // the daemon's sentence names its files, so the pane says Over budget with the door to that command's budget instead
     console.warn(`compare: ${reply.error ?? "the budget refused the send"}`);
-    Object.assign(p, { st: "failed", fail: { word: OUTCOME_WORD[reply.outcome] ?? OUTCOME_WORD["error:budget-blocked"], door: reply.head || p.key, splice: true, budget: budgetOf(reply.error) } });
+    Object.assign(p, { st: "failed", fail: { word: OUTCOME_WORD[reply.outcome] ?? OUTCOME_WORD["error:budget-blocked"], door: reply.head || p.key, splice: true, budget: budgetOf(reply) } });
     readBudgetDay(p).then(() => { if (ui.panes.includes(p) && p.st === "failed") paintPane(p); });
     return;
   }
@@ -324,7 +320,7 @@ async function ask(p) {
     if (res.status === 0) { Object.assign(p, { st: "failed", fail: { word: SPLICE_GONE, splice: true, retry: true, said: "The page could not reach splice." } }); return; }
     const said = typeof reply?.error === "string" ? reply.error : "";
     if (!said) console.warn(`compare: /api/playground answered ${res.status}`);
-    const word = failWord(0, null, said);
+    const word = failWord(0, null, reply?.code);
     Object.assign(p, { st: "failed", fail: { word, retry: res.status !== 400, reread: res.status === 400, splice: true, code: said ? null : res.status, said: TOLD.has(word) ? "" : cut(said) } });
     return;
   }
@@ -337,7 +333,7 @@ async function ask(p) {
   if (status >= 400 || got.error) {
     const type = errBody?.error?.type ?? errBody?.error?.code ?? "";
     const told = errBody?.error?.message ?? errBody?.message, spent = spentWindow(errBody);
-    const word = spent ? LIMIT : /overloaded/.test(type) ? OUTCOME_WORD["failure:overloaded_error"] : failWord(got.error ? 0 : status, errBody, "");
+    const word = spent ? LIMIT : /overloaded/.test(type) ? OUTCOME_WORD["failure:overloaded_error"] : failWord(got.error ? 0 : status, errBody);
     // a spent window's sentence says what its lock already draws ("try again after the window resets"); it stays in the
     // request's own record
     const said = !spent && typeof told === "string" ? cut(told) : "";

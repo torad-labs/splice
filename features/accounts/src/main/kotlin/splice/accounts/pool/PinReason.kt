@@ -55,11 +55,13 @@ internal class HeldWords {
         return "'$label' reads its $window window at 100% until $until, so logins with room go first"
     }
 
-    /** Each of [weeks] as the JSON the console reads: the model, and when the login serves it again. */
+    /** Each of [weeks] as the JSON the console and `splice status` read: the model, when the login serves it again,
+     *  and the window the provider named spent, in its own word for it. */
     fun modelWeeks(into: JsonArrayBuilder, weeks: List<PlanLimit>) = weeks.forEach { week ->
         into.addJsonObject {
             put("model", week.model)
             put("until_epoch_seconds", week.resetEpochSeconds)
+            put("claim", week.claim)
         }
     }
 }

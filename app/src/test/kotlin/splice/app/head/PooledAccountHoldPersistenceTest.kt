@@ -97,6 +97,27 @@ class PooledAccountHoldPersistenceTest {
         assertTrue(remaining in SIX_DAYS_MS - 60_000..SIX_DAYS_MS, "$remaining")
         assertEquals(0L, unstored.providerResetForMs, "no store, no memory")
     }
+
+    /** #528: the hold file is named by the label, so it outlived a removed login and held whoever took the label. */
+    @Test
+    fun `an account signed in under a removed login's label does not start out held`(@TempDir tmp: Path) {
+        val state = StatePaths(baseOverride = tmp.resolve("state"))
+        val wired = wired(tmp)
+        val files = ProviderHoldFiles(state, quiet)
+        val pools = HeadAccountPools()
+        val pool = requireNotNull(pools.build(wired, trackers(tmp), files.forPool("head", wired)))
+        listOf("primary", "backup").forEach { label ->
+            pool.pin(label)
+            chosen(pool).cooldown.markUnavailable(SIX_DAYS_MS)
+        }
+
+        // The console removes "backup" and the head starts again without it; then another account signs in under
+        // that label and the head starts once more.
+        files.forPool("head", wired.copy(accounts = wired.accounts.filter { it.label != "backup" }))
+        val again = requireNotNull(pools.build(wired, trackers(tmp), files.forPool("head", wired)))
+
+        assertEquals(0L, again.providerResetForMs, "the new login is not held, so the command is not out of logins")
+    }
 }
 
 private class PooledTestAuth : RefreshableAuthProvider {

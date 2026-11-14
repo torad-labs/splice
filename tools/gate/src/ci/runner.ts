@@ -11,6 +11,12 @@ interface CandidatePlan extends Plan { candidate: string; digest: string; main: 
 interface FileRecord { path: string; hash: string; }
 interface WorkerReceipt extends Receipt { files: FileRecord[]; products?: FileRecord[]; }
 const PRODUCTS = ["app/build/libs/app-all.jar", "app/src/main/dist/bin/splice-launch", "integrations/mcp-hub/build/bin/linuxX64/holderReleaseExecutable/splice-mcp-holder.kexe", "integrations/mcp-hub/build/bin/linuxX64/frontReleaseExecutable/splice-mcp-front.kexe"];
+// What `release verify` reads beyond the built jar: the installer, the launcher, the release workflow and the release
+// tooling. A pull request that changes one of them runs the rehearsal, as every push to main does. Until Nov 13, 2026 it
+// ran on main only: a pull request changed which jar install.sh takes under green checks (#552), and the rehearsal
+// failed on main through the nine merges after it before anyone read it.
+const REHEARSAL_INPUTS = ["install.sh", "app/src/main/dist/bin/splice-launch", ".github/workflows/release.yml"];
+const rehearsalInput = (path: string) => REHEARSAL_INPUTS.includes(path) || path.startsWith("tools/release/");
 const root = () => layout().repoRoot;
 const location = () => join(root(), ".ci", "plan.json");
 const sha = () => {
@@ -28,7 +34,8 @@ const planRead = (): CandidatePlan => {
 
 export async function prepare(base?: string): Promise<number> {
   const main = base === undefined;
-  const scope = base === undefined ? undefined : ciSelection(root(), pathsSince(root(), base));
+  const changed = base === undefined ? undefined : pathsSince(root(), base);
+  const scope = changed === undefined ? undefined : ciSelection(root(), changed);
   const tasks = scope ? [...scope.gradle] : ["gateOfRecord"];
   const graphPath = join(root(), ".ci", "graph.json");
   let graph: TaskNode[] = [];
@@ -42,7 +49,7 @@ export async function prepare(base?: string): Promise<number> {
   const external = main ? ["build-logic:test", "build-logic:detekt", "build-logic:ktlintCheck"] : tasks.filter((task) => task.startsWith("build-logic:"));
   const plan = partitionGraph(graph, scope?.direct.map((leg) => leg.task) ?? [], 4);
   plan.workers.find((worker) => worker.id === "source")!.tasks.push(...external);
-  if (main) plan.workers.push({ id: "rehearsal", tasks: [], direct: [] });
+  if (changed === undefined || changed.some(rehearsalInput)) plan.workers.push({ id: "rehearsal", tasks: [], direct: [] });
   const body = { ...plan, candidate: sha(), main, graph };
   const bound = { ...body, digest: hash(JSON.stringify(body)) };
   save(location(), bound);

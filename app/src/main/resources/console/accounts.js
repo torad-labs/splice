@@ -347,8 +347,16 @@ function planAccount(row) {
   // account, no reading. Its Sign in only adds an account, as Add account does, and the place still read Signed out
   // after it. One that was signed in and expired keeps its account, and shows.
   if (row.login_place && out && !row.identity_verified && !row.observed_at_epoch_seconds) return null;
-  const models = (row.seven_day_models || []).map((m) => ({ name: m.model,
+  // the models the pool holds this login out of until the provider's reset (models_held): the provider refused a turn of
+  // that model here, and that hold is what a turn's routing reads. A reading does not show it: on Nov 12, 2026 a login
+  // just refused read 99%, and one reset at its provider read 0% while its refusal still stood.
+  const heldIds = (row.models_held || []).filter((m) => m?.model && m.until_epoch_seconds * 1000 > Date.now());
+  const heldMs = (name) => { const h = heldIds.find((m) => weekOf(name, m.model)); return h ? h.until_epoch_seconds * 1000 : null; };
+  const models = (row.seven_day_models || []).map((m) => ({ name: m.model, heldMs: heldMs(m.model),
     ...windowOf(m.used_percent, m.resets_at, LEN.Week * 60, "long", modelCurrent(row.seven_day_current, m)) }));
+  // a held model no reading names yet, by the name its turns ask for
+  const heldOnly = heldIds.filter((h) => !models.some((m) => weekOf(m.name, h.model)))
+    .map((h) => ({ name: modelName({}, h.model), heldMs: h.until_epoch_seconds * 1000 }));
   // a session names its login by the label the pool gave it on its head; a login answers to that, its selector or its
   // own label, and a single login with none is the primary
   const namesOn = (head) => { const n = [row.account_labels?.[head], row.selector_key, row.label].filter(Boolean); return n.length ? n : ["primary"]; };
@@ -368,7 +376,7 @@ function planAccount(row) {
     // the provider answered with no usage for this account: no bars, never an older reading drawn as today's
     noUsage: !windows.length && !!row.no_usage_at_epoch_seconds,
     // each model's own weekly window, drawn under the week (Claude's Opus and Sonnet)
-    models };
+    models, heldOnly };
 }
 
 let data = [];
@@ -384,7 +392,7 @@ function askAgainSoon() {
   againTimer = setTimeout(async () => { await load(); render({ flip: true }); }, 5000);
 }
 const FRESH_UI = () => ({ lane: {}, signin: {}, editor: null, addProv: null, menu: null, armed: null, removeErr: null, rename: null, renameErr: null, renameDraft: null, replace: null, pulse: null, naming: null,
-  moving: null, slotErr: null, orderErr: null, keyErr: null, orderSaving: null, removing: null });
+  moving: null, slotErr: null, orderErr: null, keyErr: null, orderSaving: null, removing: null, resets: null });
 // why: the Day rows whose Not read reason is open; reasons: the refusals whose reason splice gave is open under their
 // word; doors: the logins whose every session door is out; enter: the one form or menu just opened, which rises into
 // place once and never again on a later redraw; shook: the refusal just drawn, which shakes once and then stands still
@@ -416,6 +424,18 @@ const atLimit = (w) => w.used >= 100 && !ended(w);
 // sign-in changes that, so it is held, with the step as its line, and never signed out
 const held = (a) => !!a.blocked || (a.windows || []).some(atLimit);
 const room = (a) => !a.out && !a.renews && !held(a);
+// USED UP FOR ONE MODEL: the login has room and serves every other model, and not this one until its week resets. It
+// says so where a held login says its limit: on Nov 12, 2026 eleven sessions waited on Fable while six cards read
+// "Use now" over a half-used week, each with only a thin full bar to say why no turn went to it.
+// A model the pool holds the login out of counts whatever its bar reads, until the reset the provider named.
+const spentModels = (a) => { if (held(a) || a.out) return [];
+  const weekRuns = (a.windows || []).some((w) => w.label === "Week" && !ended(w));
+  return [...(a.models || []).filter((m) => m.heldMs || (weekRuns && m.used >= 100 && !ended(m))), ...(a.heldOnly || [])]; };
+const LIST = new Intl.ListFormat("en", { style: "long", type: "conjunction" });
+const spentUntil = (a) => { const ms = spentModels(a), last = ms.map((m) => m.heldMs ?? m.resetMs).filter((t) => t != null).sort((x, y) => y - x)[0];
+  return `${LIST.format(ms.map((m) => m.name))} used up${last != null ? ` until ${at(last)}` : ""}`; };
+// a card's one line of standing over its bars: its limit, or the models it has used up
+const standing = (a) => (held(a) ? heldUntil(a) : spentModels(a).length ? esc(spentUntil(a)) : "");
 const backAt = (a) => Math.max(0, ...a.windows.filter(atLimit).map((w) => w.left ?? 0));
 const laneAccts = (p, c) => c.order.map((id) => p.accounts.find((a) => a.id === id)).filter(Boolean);
 function ruled(p, c) { // the rule alone: his order, or the soonest reset among the accounts with room
@@ -548,7 +568,8 @@ const loginDoor = (name, id, sock) => (id ? `<button class="mlogin" type="button
   + `${sock ? `<span class="msock" aria-hidden="true">${sock}</span>` : ""}<b class="nname">${esc(name)}</b></button>` : `<b class="nname">${esc(name)}</b>`);
 function windowsHtml(a, next = null, left = null, door = null, nextSock = 0) {
   // a held login says so on its own line under the header, where a narrow card wraps it instead of cutting its name
-  let rows = held(a) ? `<span class="heldline">${heldUntil(a)}</span>` : "";
+  const stands = standing(a);
+  let rows = stands ? `<span class="heldline">${stands}</span>` : "";
   for (const w of a.windows) {
     const full = atLimit(w), to = door?.(w.label);
     // each bar is marked from ITS OWN reading, never the account's: a current 5-hour window beside a week
@@ -1015,7 +1036,46 @@ function menuItems(p, a) {
   if (p.kind === "local") return [];
   if (p.kind === "key") return a.has && keyActs(a) ? [["replace", "Replace key"], ["remove", "Remove key"]] : [];
   return [...(a.canRename === false ? [] : [["rename", "Rename"]]), ...(a.out ? [] : [["resign", "Sign in again"]]),
+    ...(p.id === "claude" && !a.out ? [["resets", "Limit resets"]] : []),
     ...(a.canRemove === false ? [] : [["remove", "Remove"]])];
+}
+// A CLAUDE LOGIN'S LIMIT RESETS (Nov 13, 2026), opened from its menu: each kind it has, how many are left, and one act to
+// spend one. A spend cannot be taken back, so it takes two presses on the same act, and the second says what it clears.
+// splice never spends one by itself (LimitResetRoutes.kt). The head and label are the login's own, as signing in again
+// sends them (howFor).
+const resetHead = (a) => a.row.heads[0];
+function resetsHtml(p, a, spot) {
+  const r = ui.resets;
+  if (!r || r.spot !== spot) return "";
+  const close = DRAW.act({ word: "Close", act: "reset-close", cls: "quiet small", disabled: !!r.spending });
+  const head = `<div class="rs-head"><span class="rs-title">Limit resets</span>${close}</div>`;
+  if (r.state === "reading") return `<div class="resets${ui.enter === "resets" ? " enter" : ""}" aria-busy="true">${head}<p class="rs-note">Reading…</p></div>`;
+  if (r.state === "failed") return `<div class="resets">${head}<p class="rs-note">${DRAW.result(r.word, "bad")}${r.why ? ` <span class="rs-why">${esc(r.why)}</span>` : ""}</p></div>`;
+  const login = r.login;
+  const why = login.refusal || login.not_offered;
+  const rows = (login.kinds || []).map((k) => {
+    const armed = r.arm === k.kind, spending = r.spending === k.kind;
+    // splice names a kind "Fable reset", "weekly reset", "full reset" or "5-hour reset" (ResetKinds.name)
+    const word = k.name.replace(/ reset$/i, ""), limit = k.kind === "full" ? "every limit" : `the ${word} limit`;
+    const left = k.left > 0 ? `${k.left} of ${k.total} left` : "None left";
+    const act = !k.usable_now || k.left < 1 ? `<span class="rs-not">${esc(k.left < 1 ? "" : k.not_now || "Not now")}</span>`
+      : DRAW.act({ word: spending ? "Resetting…" : armed ? `Reset ${word} now` : "Use one", act: "reset-use",
+        cls: armed ? "danger small" : "quiet small", busy: spending, disabled: !!r.spending, data: ` data-a="${esc(a.id)}" data-k="${esc(k.kind)}"` });
+    const note = armed && !spending ? `<p class="rs-arm">Clears ${esc(limit)} on ${esc(shownName(p, a))} now, ${k.left - 1} left after. It can't be undone.`
+      + ` ${DRAW.act({ word: "Cancel", act: "reset-keep", cls: "quiet small" })}</p>` : "";
+    return `<div class="rs-row"><span class="rs-name">${esc(k.name.charAt(0).toUpperCase() + k.name.slice(1))}</span><span class="rs-left">${left}</span>${act}</div>${note}`;
+  }).join("");
+  const said = r.said ? `<p class="rs-note">${DRAW.result(r.said.text, r.said.ok ? "good" : "bad")}</p>` : "";
+  const none = !rows && !said ? `<p class="rs-note">${esc(why || "No resets on this login")}</p>` : "";
+  return `<div class="resets${ui.enter === "resets" ? " enter" : ""}">${head}${rows}${none}${said}</div>`;
+}
+async function readResets(a, spot, said = null) {
+  const head = resetHead(a), label = labelOn(a, head);
+  const res = await API.get(`/api/auth/${encodeURIComponent(head)}/resets?label=${encodeURIComponent(label)}`);
+  if (ui.resets?.spot !== spot) return;
+  const login = res.ok ? res.body?.logins?.[0] : null;
+  ui.resets = login ? { spot, state: "read", login, said } : { spot, state: "failed", ...mutationError(res, "Resets not read") };
+  render();
 }
 // Remove is in the text's ink like every other item, and armed it fills in that ink and names what it cuts: the limit red
 // is for limits and failures, never for an act. A refusal says so in plain words under it, its reason one press away,
@@ -1256,7 +1316,7 @@ function cardHtml(p, c, a, i, serves) {
     + `${nameHtml(p, a, spot)}${nameIt}${sub}${src}<div class="slot${slotErr && ui.shook === slotKey(a, c) ? " failed" : ""}">${slotHtml(p, c, a, serves)}</div>${more}</div>`
     + `${slotErr ? reasonHtml(slotErr, slotKey(a, c), "onslot") : pinNote ? reasonHtml(pinNote, null, "onslot") : ""}${armRow(p, c, a)}`
     + `${mail}${renameErr ? `<div class="rename-err${ui.shook === "rename" ? " failed" : ""}" id="rename-err">${refusalHtml(renameErr, "rename")}${reasonHtml(renameErr, "rename")}</div>` : ""}`
-    + `${ui.menu === spot ? menuHtml(p, a, spot) : ""}${body}${sessionsHtml(p, a, i + 1, !!live)}</article>`;
+    + `${ui.menu === spot ? menuHtml(p, a, spot) : ""}${resetsHtml(p, a, spot)}${body}${sessionsHtml(p, a, i + 1, !!live)}</article>`;
 }
 const KEY_FROM = { environment: "Environment", file: "File" };
 // A LOCAL MODEL AS ITS HEAD LABELS IT, "Name 7B (local, 1.72bpw)": the name he would say, the words that tell two
@@ -1427,7 +1487,7 @@ function loginRem(a, next) {
   if (a.out) return top + REM.outbox;
   if (a.noUsage) return top + REM.line;
   if (!a.windows.length) return top + 3 * REM.row; // not read: its line and the provider's windows drawn empty
-  const rows = a.windows.length + (a.windows.some((w) => w.label === "Week") ? a.models.length : 0) + (held(a) ? 1 : 0) + (a.staleAt != null ? 1 : 0) + (next ? 1 : 0);
+  const rows = a.windows.length + (a.windows.some((w) => w.label === "Week") ? a.models.length : 0) + (standing(a) ? 1 : 0) + (a.staleAt != null ? 1 : 0) + (next ? 1 : 0);
   // the sessions it serves, as the last visit saw them (none before there was one), and what the serving login adds: the hairline, its moves
   const doors = a.sessions === null ? DOORS_SEEN.get(a.id) ?? 0 : a.sessions?.length || 0;
   return top + rows * REM.row + (doors > SESS_SHOWN - 1 ? REM.doors2 : doors ? REM.doors : 0) + (next ? REM.serving : 0);
@@ -1640,7 +1700,7 @@ function shapeOf(L) {
     doors: Object.fromEntries(data.flatMap((p) => p.accounts).map((a) => [a.id, doors(a)]).filter(([, k]) => k > 0)) };
 }
 // the board at rest: an open form, menu, reason or list of doors is not the shape the next visit lands on
-const atRest = () => !(ui.menu || ui.rename || ui.replace || ui.editor || ui.naming || ui.addProv || ui.moving || Object.keys(ui.signin).length || ui.why.size || ui.doors.size || ui.moves.size);
+const atRest = () => !(ui.menu || ui.rename || ui.replace || ui.editor || ui.naming || ui.addProv || ui.moving || ui.resets || Object.keys(ui.signin).length || ui.why.size || ui.doors.size || ui.moves.size);
 const tall = (h) => (h ? `;min-height:${h}rem` : "");
 const ghostDoors = (n) => (n ? `<div class="onlogin" aria-hidden="true">${Array.from({ length: n }, (_, j) => `<span class="sdoor gdoor"><i class="ghost lampg"></i>${GHOST.bar(4.2 + (j % 3) * 1.3)}</span>`).join("")}</div>` : "");
 function ghostCard(kind, [rows, doors, h, over = 0, moves = 0], k) {
@@ -1687,7 +1747,7 @@ function ghostRail(p) {
     const next = i === 0 && rail.length > 1;
     const wins = a.windows.length + (a.windows.some((w) => w.label === "Week") ? a.models.length : 0);
     const rows = a.out ? 0 : wins ? wins + (next ? 1 : 0) : -1;
-    return [rows, 0, 0, (a.email ? 1 : 0) + (held(a) ? 1 : 0), 0, loginRem(a, next)];
+    return [rows, 0, 0, (a.email ? 1 : 0) + (standing(a) ? 1 : 0), 0, loginRem(a, next)];
   });
 }
 function shapeFromRegistry(n, kept = new Map()) {
@@ -2275,8 +2335,8 @@ board.addEventListener("focusout", (e) => {
 });
 const closeAll = () => Object.assign(ui, { menu: null, armed: null, removeErr: null, rename: null, renameErr: null, renameDraft: null, replace: null, keyErr: null, editor: null, naming: null });
 document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape" || !(ui.menu || ui.rename || ui.replace || ui.editor || ui.naming)) return;
-  closeAll(); render();
+  if (e.key !== "Escape" || !(ui.menu || ui.rename || ui.replace || ui.editor || ui.naming || (ui.resets && !ui.resets.spending))) return;
+  closeAll(); if (!ui.resets?.spending) ui.resets = null; render();
 });
 // Enter on a name splice won't take keeps the field open with the reason; leaving the field keeps the old name.
 async function saveRename(field, enter) {
@@ -2396,6 +2456,25 @@ document.addEventListener("click", async (e) => {
     case "resign": ui.menu = null; ui.enter = "sign"; startSignin(`re:${a.id}`, howFor(p, a, null), t.dataset.s); break;
     case "replace": ui.menu = null; ui.replace = t.dataset.s; ui.enter = "key"; render(); break;
     case "cancel-replace": ui.replace = null; render(); break;
+    // a login's limit resets open under its head, read from its provider now; Use one asks once more before it spends
+    case "resets": {
+      const spot = t.dataset.s; ui.menu = null; ui.armed = null; ui.enter = "resets";
+      ui.resets = { spot, state: "reading" }; render(); await readResets(a, spot); break;
+    }
+    case "reset-use": {
+      const r = ui.resets, kind = t.dataset.k;
+      if (!r || r.spending || r.state !== "read") break;
+      if (r.arm !== kind) { r.arm = kind; r.said = null; render(); board.querySelector(".resets .act.danger")?.focus(); break; }
+      r.spending = kind; render();
+      const head = resetHead(a), res = await API.post(`/api/auth/${encodeURIComponent(head)}/reset`, { label: labelOn(a, head), kind });
+      if (ui.resets !== r) break;
+      const text = typeof res.body?.said === "string" ? res.body.said : mutationError(res, "Not used").why || "Not used";
+      await readResets(a, r.spot, { text, ok: res.ok });
+      if (res.ok) await refresh();
+      break;
+    }
+    case "reset-keep": if (ui.resets) { ui.resets.arm = null; render(); } break;
+    case "reset-close": if (!ui.resets?.spending) { ui.resets = null; render(); } break;
     // Remove takes two presses on the same item; removal deletes the sign-in, so nothing comes back from it.
     case "remove": {
       if (ui.removing || ui.orderSaving) break;

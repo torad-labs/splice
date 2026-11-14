@@ -1,13 +1,16 @@
 package splice.provider.codex.state
 
 import splice.core.memory.HeapReservations
+import splice.provider.codex.CodeModeExpiredSnapshot
 import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.CodeModePersistenceException
+import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRecordSnapshot
 import splice.provider.codex.CodeModeStorageException
 import splice.provider.codex.CodeModeStorageOperation
 import splice.provider.codex.CodeModeStorageProblem
+import splice.provider.codex.state.letgo.CodeModeColdEntry
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantLock
@@ -18,9 +21,10 @@ internal class CodeModeColdRecords(
     private val kept: MutableMap<String, CodeModeKeptState>,
     private val monitor: ReentrantLock?,
     private val heap: HeapReservations,
+    /** The store's keys whose journal and kept copy may not agree: a write failed, or is under way. */
+    private val unsettled: List<Set<String>> = emptyList(),
 ) {
-    private data class Entry(val updatedAt: Long, val conversations: Set<String>)
-    private val entries = ConcurrentHashMap<String, Entry>()
+    private val entries = ConcurrentHashMap<String, CodeModeColdEntry>()
     val keys: Set<String> get() = entries.keys.toSet()
     val retained: Boolean get() = entries.isNotEmpty()
 
@@ -39,11 +43,57 @@ internal class CodeModeColdRecords(
 
     /** The caller has committed and owns this key. Remove the store's snapshot owner too. */
     fun evict(key: String): Boolean {
-        val records = kept[key]?.records?.values.orEmpty()
-        val updatedAt = records.maxOfOrNull(CodeModeRecordSnapshot::updatedAt) ?: return false
-        entries[key] = Entry(updatedAt, records.mapNotNullTo(mutableSetOf()) { it.conversationId })
+        entries[key] = kept[key]?.let(::entry) ?: return false
         kept.remove(key)
         return true
+    }
+
+    /** #525 (2026-11-13): the conversations the retiring daemon told this start of. Their records wait in their
+     *  journals, unread, for the turn that restores them; their expiry markers are returned for the registry's
+     *  history, as a start that reads a journal returns them. */
+    fun told(conversations: Map<String, CodeModeColdEntry>): List<CodeModeExpiredSnapshot> {
+        entries.putAll(conversations)
+        return conversations.values.flatMap(CodeModeColdEntry::expired)
+    }
+
+    /** Whether a conversation with [records] can wait on the disk alone from a start to its next turn: it has records
+     *  and none of them runs. A completed record is read when a turn asks for it. So is a lost one, whose script
+     *  stopped with a daemon and whose turn is told so: nothing of it changes while it waits, and a turn restores it
+     *  as a start does. Nov 13, 2026: a start read 22 conversations of 82, 420 of 701 MiB, for one or two lost
+     *  records among a hundred completed in each, and held them all in memory past the head's bound. A record lost
+     *  in this process is another matter: it may still hold a lease, so a running head keeps its conversation. */
+    fun waits(records: Collection<CodeModeRecordSnapshot>): Boolean =
+        records.isNotEmpty() && records.all { it.phase == CodeModePhase.COMPLETED || it.phase == CodeModePhase.LOST }
+
+    /** #525: the conversations this store has let go at the retire whose journals it knows whole, for the list the
+     *  next daemon's start reads: the cold ones, and each kept one that [waits], which is what a start keeps on the
+     *  disk alone. Asked once the write scope has retired. No write of such a conversation begins
+     *  after that, and one still under way has its key in one of [unsettled] until its journal and the copy kept
+     *  here agree. The registry's monitor makes that key visible here, and the keys are read before the copies, so a
+     *  write that ends in between leaves its conversation out. */
+    fun letGo(): Map<String, CodeModeColdEntry> {
+        monitor?.lock()
+        try {
+            val open = unsettled.flatMapTo(HashSet()) { it }
+            val known = entries + kept.mapNotNull { (key, state) ->
+                entry(state)?.takeIf { waits(state.records.values) }?.let { key to it }
+            }
+            return known.filterKeys { !files.writes.allows(it) } - open
+        } finally {
+            monitor?.unlock()
+        }
+    }
+
+    /** What is kept of [state] once its records leave memory; null when it holds no record. */
+    private fun entry(state: CodeModeKeptState): CodeModeColdEntry? {
+        val records = state.records.values
+        val updatedAt = records.maxOfOrNull(CodeModeRecordSnapshot::updatedAt) ?: return null
+        return CodeModeColdEntry(
+            updatedAt,
+            state.liveBytes,
+            records.mapNotNullTo(mutableSetOf()) { it.conversationId },
+            state.expired,
+        )
     }
 
     /** Under the key lock and registry monitor. A read failure is never a replay cache miss. */
@@ -63,6 +113,26 @@ internal class CodeModeColdRecords(
         } finally {
             monitor?.lock()
         }
+    }
+
+    /** #525 (2026-11-12): a conversation another daemon held at boot, read from its journal now that the hold is free,
+     *  as the boot reads one: its records wait here, cold, for the turn that restores them, and its expiry markers
+     *  are returned for the registry's history. A conversation with no journal yet has neither. */
+    fun adopt(key: String): List<CodeModeExpiredSnapshot> {
+        val state = try {
+            files.reload(key)
+        } catch (failure: IOException) {
+            throw CodeModePersistenceException(failure, diskFull = false, CodeModeStorageOperation.RESTORE)
+        } catch (failure: IllegalArgumentException) {
+            throw CodeModePersistenceException(
+                CodeModeStorageException.Invalid(CodeModeStorageProblem.COLD_STATE, failure),
+                diskFull = false,
+                CodeModeStorageOperation.RESTORE,
+            )
+        } ?: return emptyList()
+        kept[key] = CodeModeKeptState(state.version, state, heap)
+        if (state.records.isNotEmpty()) evict(key)
+        return state.expired
     }
 
     /** Publish only after the registry has successfully materialized every live record. */

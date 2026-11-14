@@ -87,6 +87,12 @@ internal object DiskWrites {
                 "the locked JSONL append; it also keeps the file's `.lock` and one rolled `.1` beside it",
             ),
             Helper(
+                "core/src/main/kotlin/splice/core/util/JsonlLocks.kt",
+                Regex("""\bJsonlWhole\s*\.\s*replace\s*\("""),
+                "a JSONL file replaced whole under the lock its appends hold (#525: two daemons keep records in " +
+                    "one file while one retires); the lock is the same `.lock` JsonlSink keeps beside the file",
+            ),
+            Helper(
                 "core/src/main/kotlin/splice/core/storage/ActivityDays.kt",
                 Regex("""\bActivityDays\s*\("""),
                 "one JSONL file per UTC day in a store's directory, through JsonlSink",
@@ -302,11 +308,12 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // Registration replacement and its content-addressed backup are owned by the extracted registration writer.
     "app/src/main/kotlin/splice/app/cli/mcp/McpServiceRegistration.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/head/HeadTraceStores.kt" to mapOf("ActivityDays(" to 1),
+    // The per-session fallback models, in the session-fallbacks.json README row.
+    "app/src/main/kotlin/splice/app/head/SessionFallbackStore.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/mcp/NativeCodexMcpFiles.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/mcp/NativeCodexSocketProxy.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeAccountFolders.kt" to mapOf("writeAtomic0600(" to 4),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeCredentialProfiles.kt" to mapOf("writeAtomic0600(" to 1),
-    "app/src/main/kotlin/splice/app/auth/claude/ClaudeLoginEdits.kt" to mapOf("writeAtomic0600(" to 1),
     // The console launch page, 0600, documented in the console-open.html README row.
     "app/src/main/kotlin/splice/app/cli/status/ConsoleCommand.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/config/ConfigService.kt" to mapOf("writeAtomic0600(" to 1),
@@ -361,6 +368,12 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/sources/EconomicsBackfill.kt" to mapOf("writeAtomic0600(" to 1),
     // The hourly view's judged hours kept across restarts, documented in the probe judgments README row.
     "app/src/main/kotlin/splice/app/sources/ProbeJudgments.kt" to mapOf("writeAtomic0600(" to 1),
+    // Nov 12, 2026: which notices about a command's last login were already sent, owner-only, in the login-alerts
+    // README row.
+    "app/src/main/kotlin/splice/app/LoginAlerting.kt" to mapOf("writeAtomic0600(" to 1),
+    // Nov 12, 2026: the price table as the project's main branch last served it, owner-only, in the
+    // published-rates.tsv README row.
+    "features/lifecycle/src/main/kotlin/splice/lifecycle/prices/PriceRefresh.kt" to mapOf("writeAtomic0600(" to 1),
     // The hourly view's settled repricing kept across restarts, documented in the reprice README row.
     "app/src/main/kotlin/splice/app/sources/RepriceKept.kt" to mapOf("writeAtomic0600(" to 1),
     // The non-secret launcher declaration documented in the launch-owners README row.
@@ -587,7 +600,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "reasoning/ReasoningCacheFiles.kt" to mapOf(
             "JsonlSink.appendLine(" to 1,
             "createNew0600(" to 1,
-            "writeAtomic0600(" to 1,
+            "JsonlWhole.replace(" to 1,
         ),
     "integrations/oauth/src/main/kotlin/splice/oauth/LoginIo.kt" to mapOf("writeAtomic0600(" to 1),
     "integrations/oauth/src/main/kotlin/splice/oauth/OAuthAccountFiles.kt" to mapOf("Files.move(" to 1),
@@ -598,6 +611,14 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // The first OAuth account's name, documented in the primary.name README row.
     "integrations/oauth/src/main/kotlin/splice/oauth/OAuthPrimaryAccount.kt" to mapOf("writeAtomic0600(" to 1),
     "integrations/oauth/src/main/kotlin/splice/oauth/OAuthLoginReservation.kt" to mapOf("FileChannel.open(" to 1),
+    // #525 (2026-11-12): the empty hold file a retiring daemon keeps an OS lock on beside each conversation it
+    // still answers.
+    "integrations/providers/codex/src/main/kotlin/splice/provider/codex/state/handover/CodeModeHoldFiles.kt" to
+        mapOf("FileChannel.open(" to 1),
+    // #525 (2026-11-13): the list a retiring daemon leaves of the conversations it lets go, in the let-go.json
+    // README row.
+    "integrations/providers/codex/src/main/kotlin/splice/provider/codex/state/letgo/CodeModeLetGoFile.kt" to
+        mapOf("writeAtomic0600(" to 1),
     // The same per-conversation file now has an atomic checkpoint plus forced cell-delta appends.
     // A torn tail is compacted to its last committed state before another append.
     "integrations/providers/codex/src/main/kotlin/splice/provider/codex/state/CodeModeStateJournal.kt" to mapOf(
@@ -645,6 +666,21 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "integrations/upstream/src/main/kotlin/splice/upstream/credentials/RetainedCredentialWrite.kt" to
         mapOf("writeAtomic0600(" to 1),
     "integrations/upstream/src/main/kotlin/splice/upstream/retry/ProviderHoldStore.kt" to mapOf(
+        "writeAtomic0600(" to 1,
+    ),
+    // Nov 12, 2026 (#518): when a head's trace stopped saving, a time and a fixed reason, owner-only and atomic, in
+    // the trace directory beside the head's day files, so a restart still shows when saving first stopped.
+    "features/turns/src/main/kotlin/splice/head/trace/body/TraceStopFile.kt" to mapOf(
+        "writeAtomic0600(" to 1,
+    ),
+    // Nov 12, 2026: the hold a refusal put on one login, owner-only and atomic, beside that login's provider-hold file,
+    // so a restart does not send a refused login to its provider again before the hold ends.
+    "integrations/upstream/src/main/kotlin/splice/upstream/retry/LoginHoldStore.kt" to mapOf(
+        "writeAtomic0600(" to 1,
+    ),
+    // Nov 12, 2026 (#523): the request row of an answer a restarting daemon finished after the next one started, one
+    // owner-only file per row beside the request log, removed once the running daemon has counted it.
+    "features/turns/src/main/kotlin/splice/head/perf/RetiredRows.kt" to mapOf(
         "writeAtomic0600(" to 1,
     ),
     // The numeric performance ledger, request evidence and explicit objective settings are in their

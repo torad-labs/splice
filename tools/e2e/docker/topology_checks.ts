@@ -84,14 +84,36 @@ const LOGIN_FLOWS: Record<string, { words: string[]; all: boolean }> = {
   "kimi-oauth": { words: ["login error", "could not start device login", "enter this code"], all: false },
   "muse-oauth": { words: ["login error", "could not start device login", "enter this code"], all: false },
   "api-key": { words: ["pipe it instead", "splice key set"], all: true },
-  // A Claude head (claude-splice) signs in with Claude Code's own /login, and its verb says so (V4-276).
-  client: { words: ["no browser login for that kind", "signs in with Claude Code's own /login"], all: false },
+  // A Claude head signs in with Claude Code's own /login, and its verb says so (V4-276): the Claude command of
+  // the one login in ~/.claude, a second Claude command declared under another name of its own folder's.
+  client: {
+    words: ["no browser login for that kind", "signs in with Claude Code's own /login", "runs on Claude Code's own login"],
+    all: false,
+  },
 };
 
 // A window the client would compact too early on is presented as a `[1m]` selector (V4-358, ClientSpelling:
 // grok-4.7 launches as grok-4.7[1m]); the row is the same, so the model is compared without that hint and the
 // window, which the hint never moves, exactly.
 const selectorFree = (model: unknown) => String(model ?? "").replace(/\[1m\]$/i, "");
+
+// The Claude command runs Claude Code over its own home, ~/.claude: one Claude login, not one per command. Until
+// Nov 12, 2026 it ran over a second home, ~/.claude-claude-splice, with a sign-in of its own. Since Nov 13 the head is
+// keyed `claude`, and its one command is Claude Code's own `claude`, which the wrap takes over (POST
+// /api/claude-head/wrap): splice lays no command of its own for it, and its sign-in is Claude Code's /login.
+const CLAUDE_HEAD = "claude";
+
+/** The settings a launch hands Claude Code on its command line, which is where an own-home launch carries the
+ *  head's: nothing is written into ~/.claude for it. Null when the launch carries none. */
+const settingsOverlay = (argv: unknown): Json | null => {
+  const args = Array.isArray(argv) ? argv.map(String) : [];
+  const at = args.indexOf("--settings");
+  return at >= 0 && at + 1 < args.length ? obj(JSON.parse(args[at + 1]!)) : null;
+};
+
+/** A client-login head leaves Claude Code its own model list: these settings name none. */
+const pickerFree = (settings: Json) =>
+  !["availableModels", "enforceAvailableModels", "modelOverrides"].some((k) => k in settings);
 
 const isLink = (path: string) => {
   try {
@@ -141,20 +163,27 @@ async function exampleHeads(example: string, headsFile: string, port: string, ho
     const pinned: string = h["pinned_model"] ?? "";
     const want = h["context_window"] || windows.get(pinned) || prov["context_window"];
     const command: string = obj(h["claude"])["command"] ?? head;
-    const wrapper = executable(join(home, ".local", "bin", command));
+    // the Claude head's command is Claude Code's own, wrapped or not; every other head's is the link splice laid
+    const wrapper = head === CLAUDE_HEAD || executable(join(home, ".local", "bin", command));
     let env: Json;
+    let argv: unknown;
     try {
-      env = obj((await launch(port, key, head))["env"]);
+      const reply = await launch(port, key, head);
+      env = obj(reply["env"]);
+      argv = reply["argv"];
     } catch (e) {
       // the receipt wants the reason, whatever it is
       console.log(`${head.padEnd(14)} ${command.padEnd(18)} launch FAILED: ${e}`);
       bad.push(head);
       continue;
     }
+    // The Claude command's sessions land in the registry itself: it names no folder of its own, so there is nothing
+    // to link. Every other head keeps a folder whose sessions link there.
+    const ownHome = head === CLAUDE_HEAD;
     const sessions = join(env["CLAUDE_CONFIG_DIR"] ?? "", "sessions");
     let linked = false;
     try {
-      linked = isLink(sessions) && realpathSync(sessions) === registry;
+      linked = ownHome ? !("CLAUDE_CONFIG_DIR" in env) : isLink(sessions) && realpathSync(sessions) === registry;
     } catch {
       linked = false;
     }
@@ -165,13 +194,17 @@ async function exampleHeads(example: string, headsFile: string, port: string, ho
     if (String(obj(prov["auth"])["kind"] ?? "").toLowerCase() === "client") {
       windowOk = !("CLAUDE_CODE_MAX_CONTEXT_TOKENS" in env || "CLAUDE_CODE_AUTO_COMPACT_WINDOW" in env);
       tierOk = !Object.keys(env).some((k) => k.startsWith("ANTHROPIC_DEFAULT_"));
-      const config = env["CLAUDE_CONFIG_DIR"];
-      check(config, `${head}: the launch recipe names no CLAUDE_CONFIG_DIR`);
-      const settings = JSON.parse(readFileSync(join(config, "settings.json"), "utf8")) as Json;
-      const state = JSON.parse(readFileSync(join(config, ".claude.json"), "utf8")) as Json;
-      pickerOk =
-        !["availableModels", "enforceAvailableModels", "modelOverrides"].some((k) => k in settings) &&
-        !("additionalModelOptionsCache" in state);
+      if (ownHome) {
+        const overlay = settingsOverlay(argv);
+        check(overlay, `${head}: the launch carries no --settings, where it hands Claude Code the head's settings`);
+        pickerOk = pickerFree(overlay);
+      } else {
+        const config = env["CLAUDE_CONFIG_DIR"];
+        check(config, `${head}: the launch recipe names no CLAUDE_CONFIG_DIR`);
+        const settings = JSON.parse(readFileSync(join(config, "settings.json"), "utf8")) as Json;
+        const state = JSON.parse(readFileSync(join(config, ".claude.json"), "utf8")) as Json;
+        pickerOk = pickerFree(settings) && !("additionalModelOptionsCache" in state);
+      }
     } else {
       windowOk = env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] === String(want);
     }
@@ -190,6 +223,7 @@ async function exampleHeads(example: string, headsFile: string, port: string, ho
   // on the unreachable network AFTER trying, api-key names the pipe path, client auth says so.
   const failed: string[] = [];
   for (const [head, h] of Object.entries<Json>(t["heads"])) {
+    if (head === CLAUDE_HEAD) continue; // `claude login` is Claude Code's own, not a verb splice answers
     const kind: string = t["providers"][h["provider"]]["auth"]["kind"];
     const command: string = obj(h["claude"])["command"] ?? head;
     const proc = Bun.spawnSync(["timeout", "10", join(home, ".local", "bin", command), "login"], {

@@ -43,6 +43,7 @@ import splice.head.turn.TurnState
 import splice.http.ingress.HeapIngress
 import splice.http.listen.AdoptedBootstrap
 import splice.upstream.Provider
+import splice.upstream.credentials.EarlyResetHeard
 
 public class HeadServer(
     private val provider: Provider,
@@ -75,7 +76,18 @@ public class HeadServer(
     init {
         // Failure-handling slice 5: a login joining the head and a quota reading turned allowed each wake its held turns.
         val holds = deps.traffic.liveTurns.holds
-        deps.quotaBundle.accountPool?.onJoined = Runnable { holds.joined() }
+        // The journal says when it happened: on Nov 12, 2026 a login was added while eleven turns waited, and no line
+        // told whether any of them had heard it.
+        val joins = deps.quotaBundle.accountPool?.joins
+        joins?.onJoined = Runnable {
+            val waiting = holds.joined()
+            if (waiting > 0) deps.log("[${provider.key}] a login joined: $waiting waiting turn(s) asked to move\n")
+        }
+        // A login reset at its provider comes back at once, and the journal says which one and why.
+        joins?.onEarlyReset = EarlyResetHeard { label, ended ->
+            val windows = ended.joinToString(" and ")
+            deps.log("[${provider.key}] login $label reads $windows reset before its time: its hold ended\n")
+        }
         deps.quotaBundle.onAllowed { holds.allowed() }
     }
 
@@ -155,6 +167,10 @@ public class HeadServer(
 
     override suspend fun stop(): Unit = lifecycle.stop()
 
+    override suspend fun retire(): Int = lifecycle.retire()
+
+    override suspend fun finish(withinMs: Long): Unit = lifecycle.finish(withinMs)
+
     override suspend fun restart(): Unit = lifecycle.restart()
 
     override fun healthSnapshot(): HeadHealth = diagnostics.healthSnapshot(engine.isRunning, engine.port)
@@ -196,9 +212,11 @@ public class HeadServer(
 
     /** The turns this head holds until their cause lifts (failure-handling slice 5), oldest first. */
     override fun heldTurns(): List<HeldTurnReading> = deps.traffic.liveTurns.list()
-        .mapNotNull { it.state as? TurnState.Held }
-        .sortedBy { it.since }
-        .map { HeldTurnReading(it.until?.epochSecond, it.login, it.cause, it.heapBytes) }
+        .mapNotNull { turn -> (turn.state as? TurnState.Held)?.let { turn.session to it } }
+        .sortedBy { (_, held) -> held.since }
+        .map { (session, held) ->
+            HeldTurnReading(held.until?.epochSecond, held.login, held.cause, held.heapBytes, session)
+        }
 
     /** Degraded while it refuses every request before any upstream turn (2026-11-09 audit), null while it admits. */
     override fun refusing(): splice.core.head.RefusingReading? = admission.refusing()

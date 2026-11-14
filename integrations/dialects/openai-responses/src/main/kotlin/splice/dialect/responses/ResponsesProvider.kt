@@ -95,19 +95,9 @@ public abstract class ResponsesProvider(
         return BuiltTurn(
             built.req,
             built.meta,
-            perTurnHeaders(built.meta) + liteHeader(built.meta),
+            perTurnHeaders(built.meta) + liteShape.header(built.meta.route.upstreamModel),
             toolSearch = built.toolSearch,
         )
-    }
-
-    /** The lite header rides only when this provider declared [ResponsesLiteQuirks.responsesLiteHeader]
-     *  and the turn's model is lite by the one gate the body's shape follows ([ResponsesLiteShape.isLiteModel]:
-     *  the backend's list where one is known, the name pattern where none is). Compaction included — lite is a
-     *  property of the model, so a compaction built without the header would share no prefix with
-     *  the session's lite turns. */
-    private fun liteHeader(meta: TurnMeta): Map<String, String> {
-        val name = quirks.lite.responsesLiteHeader ?: return emptyMap()
-        return if (liteShape.isLiteModel(meta.route.upstreamModel)) mapOf(name to "true") else emptyMap()
     }
 
     final override fun withCompactionTail(turn: BuiltTurn, instructions: String): BuiltTurn =
@@ -164,6 +154,17 @@ public abstract class ResponsesProvider(
     final override fun onHeadStop() {
         cancelTurnResources()
         parts.onHeadStop()
+    }
+
+    /** #525: what a Responses turn keeps across turns is its conversation's reasoning, on disk, and the next daemon
+     *  reads again a conversation this one wrote (ReasoningCache.adopt). So a head finishes the answers it is giving
+     *  beside the next daemon. Codex's code mode keeps more, and hands it over in [onHeadRetire] (2026-11-12). */
+    override val finishesTurnsWhenRetired: Boolean get() = true
+
+    /** From here each reasoning record lands on disk before its turn goes on, since the next daemon reads the file
+     *  when the conversation's next turn reaches it. A subclass that overrides this calls it first. */
+    override fun onHeadRetire() {
+        parts.onHeadRetire()
     }
 
     /** A subclass's per-turn resources to cancel when the head stops ([onHeadStop]); none by default. */

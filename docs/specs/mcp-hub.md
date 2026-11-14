@@ -161,16 +161,16 @@ sweeps refresh both claim and exact candidate-drain state while holding the sock
 For Claude Code, the plan reads his files and writes only splice's own state folder. The one stored
 choice, sharing yes or no, lives in splice.toml as the answer `splice setup` saved.
 
-### Registered Temple service
+### Registered local service
 
-Marcos, through the-temple, October 18: "Could we make it so the MCP is installed on Codex and Claude
+Marcos, October 18: "Could we make it so the MCP is installed on Codex and Claude
 via Splice, and that it starts together with Splice please."
 
-Temple provisions its already-resolved local launch with either `splice mcp install temple --launch-file FILE --url URL`
-or the compatible `splice mcp install temple --script FILE --url URL` form. A launch file is JSON with a
+An app on the same machine provisions its already-resolved local launch through the CLI's install command, as a
+launch file with its URL or in the compatible script form. A launch file is JSON with a
 nonblank `command`, string-array `args`, and optional existing-directory `cwd` and string-valued `env`.
 The optional script-form `--command` names its Bun executable, and `--codex-home` selects the native Codex
-home. Splice keeps the registration under its canonical state directory, independently of Temple's process or
+home. Splice keeps the registration under its canonical state directory, independently of the app's process or
 temporary files. Reinstalling keeps an existing native home when none is supplied and backs up a changed
 registration. The CLI refreshes a running daemon; otherwise the next daemon boot starts the registered service.
 A registered service's `cwd` is a fixed launch directory, not a per-client session directory. That registration
@@ -178,21 +178,20 @@ provenance permits sharing its exact command, arguments, environment and directo
 `cwd` retain their per-session classification. Descriptor paths are resolved before persistence; invalid process
 strings and environment names are refused before the prior registration is replaced.
 
-A Temple that serves MCP itself, on one HTTP endpoint for every session, registers that endpoint with
-`splice mcp install temple --endpoint URL`, alone or with `--codex-home` (Nov 11, 2026: the rebuilt Temple answers
-at `http://127.0.0.1:7740/mcp`, and the registered stdio server's files were gone, so no session held a Temple
-tool). The registration then holds `{"type":"http","url":URL}` and no process. Splice starts and hosts nothing for
+An app that serves MCP itself, on one HTTP endpoint for every session, registers that endpoint with the install
+command's `--endpoint URL`, alone or with `--codex-home` (Nov 11, 2026: the rebuilt app answers on a port of its
+own, and the registered stdio server's files were gone, so no session held one of its tools). The registration then holds `{"type":"http","url":URL}` and no process. Splice starts and hosts nothing for
 it: every Claude launch plan and the native Codex entry carry the address as it is, with no Splice access key. A
 launch-form install replaces an endpoint whole, and an endpoint replaces a launch whole. Tool definitions then come
-from the Temple's own endpoint, so a stopped Temple fails initialization and tool discovery until it answers again.
+from the app's own endpoint, so a stopped app fails initialization and tool discovery until it answers again.
 
-Every Claude launch plan includes this service under `temple`, with its tools still named `mcp__temple__*`.
-The current Temple contract is its six fixed tools; dispatch remains available through `act`, not a legacy
-`dispatch_send` alias. Definitions come from Temple's local stdio process, never the app's root URL.
+Every Claude launch plan includes this service under its registered name, with its tools still named after it.
+The app's current contract is its six fixed tools; dispatch remains available through `act`, not a legacy
+`dispatch_send` alias. Definitions come from the service's local stdio process, never the app's root URL.
 A missing app therefore fails an app-dependent tool call, not initialization or tool discovery.
 
 Native Codex is a separate client, not the Claude Code head backed by the Codex Responses API. Splice
-updates only its user-scoped `mcp_servers.temple` entry through Codex's versioned configuration API, preserving
+updates only its user-scoped entry of that name under `mcp_servers` through Codex's versioned configuration API, preserving
 other settings and server restrictions. This is the exception to the original no-client-file-write design.
 The entry carries MCP-scoped access only. Config backups and any file containing that access are owner-only.
 An existing shared app-server reloads MCP configuration without being stopped or restarted.

@@ -16,4 +16,15 @@ public class WrappedClaudeLaunch(private val wrap: WrappedHead) {
     /** Where `splice install` links the person's `claude`, while it is wrapped and launches [head]; null while it is
      *  not wrapped, and for every other head. */
     public fun of(head: String): Path? = wrap.command()?.takeIf { head == CLAUDE_HEAD_KEY }
+
+    /** Whether [head]'s own command runs Claude Code in the person's own folder, as his wrapped `claude` does: the
+     *  Claude head does under either name, wrapped or not (Nov 12, 2026), and no other head does. */
+    public fun ownHome(head: String): Boolean = head == CLAUDE_HEAD_KEY
+
+    /** The name a person types to reach [head] when it is not the head's own command: `claude` for the Claude head
+     *  while his `claude` is wrapped. Null for every other head, and while it is not wrapped. A person who uses
+     *  Claude only through splice types `claude`, and a screen that names the command `claude-splice` shows him
+     *  a second Claude he never starts (Marcos, Nov 12, 2026: "why ... is claude and claude-splice two identities?"). */
+    public fun typed(head: String): String? =
+        if (head == CLAUDE_HEAD_KEY) wrap.command()?.fileName?.toString() else null
 }

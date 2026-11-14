@@ -40,6 +40,20 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # The daemon re-reads both keys at each check.
 # update_channel = "stable"      # "stable" follows releases only; "beta" follows prereleases too
 # auto_update = true
+# Prices (absent reads as on). Once an hour the daemon fetches splice's price table from the project's main branch
+# on raw.githubusercontent.com: one anonymous request that carries nothing about this machine, its accounts or its
+# sessions. A new model is then priced, and a changed price is right, without waiting for a release. With false the
+# table in the build stays in use, or the last one fetched. The daemon re-reads the key at each look.
+# refresh_prices = false
+# A program of yours the daemon runs to tell you what cannot wait for the console. Today that is one thing: a command
+# with two or more logins is on the last one that can serve the model its sessions ask for, and that login has used
+# 80% of a limit (said again at 95%); or no login can serve it at all. Each is said once, and again only when it
+# returns after half an hour of not applying. The list is the program and its arguments, run as they stand with no
+# shell. The message, one or two sentences of plain text, arrives on its standard input, and what the program prints
+# is discarded. The first time a command is set it is sent one line saying what it will be used for, so a wrong
+# command shows that day. The same notice is posted to the webhook saved in the console's alert settings, when there
+# is one. Read at the daemon's start.
+# alert_command = ["/usr/local/bin/notify-me", "--from", "splice"]
 
 # ── LAN share: this machine's heads, run from your other machines (docs/specs/lan-share.md) ──
 # `splice share on` writes this table and restarts; `splice share status` prints each command's address. Sharing opens
@@ -694,7 +708,7 @@ maxInflight = "8"
 
 [heads.claude-muse]
 provider = "muse"
-port = 3106                    # 3103 is fireworks; 3104 is claude-splice; 3105 is commented ollama
+port = 3106                    # 3103 is fireworks; 3104 is claude; 3105 is commented ollama
 discovery_prefix = "claude-muse--"
 pinned_model = "muse-spark-1.3[1m]"
 # No models line: Spark 1.3 is the only catalog model worth pinning, and a models list names each
@@ -805,29 +819,21 @@ id = "claude-haiku-5-5"
 label = "Claude Haiku 5.5"
 context_window = 1000000
 
-[heads.claude-splice]
+[heads.claude]
+# The Claude head. Its key is `claude`, the command every session of it runs as once `claude` is wrapped.
 provider = "anthropic"
 port = 3104                    # 3103 is fireworks above
-discovery_prefix = "claude-splice--"
+discovery_prefix = "claude--"
 # No pinned_model and no models list: Claude Code shows its own models and starts on its own default, so a
 # model Anthropic releases tomorrow is there without an edit here. A pinned_model, if you add one, only
 # chooses the model a new session starts on.
 context_window = 1000000
-[heads.claude-splice.claude]
-# The SEPARATE lane: a command of its own, beside the `claude` you already run. Nothing in
-# ~/.claude is touched, and this is what `splice setup` preselects.
-#
-# The other lane is WRAP, and it is not spelled here — do not set `command = "claude"` to get it.
-# Wrapping is an ACTION, not a config value: `splice setup` offers it, and the console's Settings
-# page posts it to /api/claude-head/wrap. The daemon then shadows `claude` with a shim and carries
-# your settings.json and .claude.json across, backing both up first, so there is a way back.
-#
-# A wrapped `claude`
-# ON PATH *is* the shim, so a head launching the bare name would invoke itself — the launch instead
-# execs the real binary path the wrap recorded, and falls back to the bare name only when nothing is
-# wrapped. Setting `command = "claude"` by hand still gets you a second command named `claude` with
-# none of that bookkeeping: no backups, no recorded real binary, nothing for an unwrap to restore.
-command = "claude-splice"
+# Plain `claude` runs this head once it is wrapped, and no second command is laid beside it. Wrapping is an
+# ACTION, not a config value: `splice setup` does it when the Claude plan is ticked, and the console posts it to
+# /api/claude-head/wrap. The daemon then points `claude` at its launch shim, recording the real binary so an
+# unwrap can put it back, and the launch execs that recorded binary. Every session runs over Claude Code's own home,
+# ~/.claude: one login, and splice writes nothing there; it hands Claude Code this head's settings on the
+# command line.
 
 # ── KNOB REFERENCE: every key the config layers accept ──────────────────────────
 # A knob is settable in `[defaults]` (every head), in `[heads.<key>.overrides]` (that head), in the
@@ -1076,6 +1082,19 @@ command = "claude-splice"
 #                           listeners BY NAME (`splice listeners` prints the names, `splice capabilities` the
 #                           contract). A hand-off that fails any check refuses boot with every reason at once;
 #                           unset, every listener binds its own port exactly as before
+#   SPLICE_GENERATIONS / SPLICE_SUCCEEDS  set by the launcher (splice-launch), never by an operator, on each daemon
+#                           it starts under a socket manager: there the launcher keeps the unit's first process
+#                           and the sockets, and runs the daemon as its child. SPLICE_GENERATIONS carries that
+#                           launcher's marker (shim-N) and says a restart can start the next daemon beside this
+#                           one, so an answer in progress finishes on the old one while the next serves new
+#                           requests. SPLICE_SUCCEEDS is the pid of the daemon the new one takes over from, empty
+#                           on the first. Set by hand, either makes a daemon wait for a hand-over nothing will run
+#   SPLICE_HANDOVER         read by the launcher, in the unit's environment: `off` keeps the daemon as the unit's
+#                           first process, as it was before the launcher ran daemons side by side, and a restart
+#                           then ends every running turn with the restart line. For a machine whose own tools
+#                           take a unit's first process for the service: an out-of-memory keeper that protects
+#                           that process and not its children would protect the launcher and expose the daemon.
+#                           Unset, or any other value, the launcher runs the daemon as its child
 #   HOME                    the home every ~/ path resolves against: config, key store, credentials,
 #                           state and install paths. Unset or blank falls back to the JVM's user.home;
 #                           the launch shim passes its HOME to every JVM it starts as -Duser.home
@@ -1092,12 +1111,13 @@ command = "claude-splice"
 #                           depth: NO_COLOR at any value, the empty string included, turns colour
 #                           off (no-color.org); a dumb or empty TERM is no colour; a 256color TERM
 #                           or any COLORTERM is the extended palette
-#   Temple MCP discovery: a saved registration wins, then a declared Claude MCP entry, then environment discovery.
-#   TEMPLE_TOOLS_SERVER  environment-discovery script path; wins over the path derived from TEMPLE_ROOT
+#   A registered local MCP service is found by its saved registration, then a declared Claude MCP entry, then:
+#   TEMPLE_TOOLS_SERVER  script path of the service; wins over the path derived from TEMPLE_ROOT
 #   TEMPLE_ROOT          fallback root when TEMPLE_TOOLS_SERVER is unset; appends slices/screen/bin/tools-server.ts
-#   TEMPLE_URL           optional URL forwarded to the server; environment discovery uses it when nonblank,
-#                        and `splice mcp install temple --url` persists its explicit value
-#   Native Codex home: --codex-home wins, then saved codex_home, then TEMPLE_CODEX_HOME, then CODEX_HOME.
+#   TEMPLE_URL           optional URL forwarded to the service; used when nonblank, and a saved registration
+#                        keeps its own explicit value
+#   Native Codex home: a choice made at registration wins, then saved codex_home, then TEMPLE_CODEX_HOME, then
+#                        CODEX_HOME.
 #   TEMPLE_CODEX_HOME    preferred environment fallback Codex home; takes precedence over CODEX_HOME
 #   CODEX_HOME           last environment fallback; the selected home is passed to the native Codex process
 #   CODEX_OAUTH_AUTHORIZE_URL / CODEX_OAUTH_TOKEN_URL / CODEX_OAUTH_CLIENT_ID / CODEX_OAUTH_ISSUER /

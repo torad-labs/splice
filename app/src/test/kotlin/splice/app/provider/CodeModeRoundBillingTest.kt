@@ -345,7 +345,9 @@ private class FirstStepBillingRuntime(private val failure: Exception) : CodeMode
      *  once this returns can no longer cut a source that finished. */
     suspend fun sourceEnded() {
         val source = held.await()
-        while (source.read().let { it !is CodeModeSourcePart.Complete && it !is CodeModeSourcePart.Failed }) Unit
+        do {
+            val part = source.read()
+        } while (part !is CodeModeSourcePart.Complete && part !is CodeModeSourcePart.Failed)
     }
 
     override suspend fun start(source: String, tools: Set<String>, descriptions: Map<String, String>): CodeModeCell =

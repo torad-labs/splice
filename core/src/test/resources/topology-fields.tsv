@@ -20,6 +20,7 @@ compaction.project[].instructions
 compaction.project[].model	
 compaction.project[].path	
 daemon	
+daemon.alert_command	
 daemon.auto_update	
 daemon.control_port	
 daemon.effort	
@@ -27,6 +28,7 @@ daemon.mcp_hosting
 daemon.mcp_hosting_exclude	
 daemon.mcp_share	
 daemon.mirror_reasoning	
+daemon.refresh_prices	
 daemon.replay_reasoning	
 daemon.show_reasoning	
 daemon.state_dir	

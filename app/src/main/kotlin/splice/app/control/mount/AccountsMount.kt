@@ -20,6 +20,7 @@ import splice.accounts.pool.AccountNameStore
 import splice.accounts.pool.AccountsRoute
 import splice.accounts.pool.AskAgainRoute
 import splice.accounts.pool.FirstAccounts
+import splice.accounts.pool.LimitResetRoutes
 import splice.accounts.pool.SwitchRoute
 import splice.accounts.signin.ConsoleAccountsSource
 import splice.accounts.signin.LoginRoutes
@@ -59,6 +60,7 @@ internal class AccountsMount(
     private val loginRoutes = LoginRoutes(accountResolver, ConsoleAccountsSource { ports.accounts })
     private val switchRoute = SwitchRoute(accountResolver)
     private val askAgainRoute = AskAgainRoute(accountResolver)
+    private val limitResetRoutes = LimitResetRoutes(accountResolver)
     private val accountEditRoutes = AccountEditRoutes(
         accountResolver,
         ConsoleAccountsSource { ports.accounts },
@@ -123,6 +125,8 @@ internal class AccountsMount(
         route.post("/api/auth/{head}/switch") { guard.guarded(call) { switchRoute.switchAccount(call) } }
         route.delete("/api/auth/{head}/switch") { guard.guarded(call) { switchRoute.unpinAccount(call) } }
         route.post("/api/auth/{head}/ask") { guard.guarded(call) { askAgainRoute.askAgain(call) } }
+        route.get("/api/auth/{head}/resets") { guard.guarded(call) { limitResetRoutes.list(call) } }
+        route.post("/api/auth/{head}/reset") { guard.guarded(call) { limitResetRoutes.spend(call) } }
         route.delete("/api/auth/{head}/accounts/{label}") {
             guard.guarded(call) { accountEditRoutes.removeAccount(call) }
         }

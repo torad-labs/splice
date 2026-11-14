@@ -10,6 +10,7 @@ package splice.app.head
 
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
@@ -21,6 +22,7 @@ import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.upstream.codemode.ProcessDispatchers
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 // The whole head-stop phase's deadline (see [HeadShutdown.stopHeads]). Kept below Main's
 // STOP_DEADLINE_MS so the graceful stop + control shutdown finish before Main's hard halt
@@ -51,9 +53,7 @@ internal class HeadShutdown(
         log: LogSink,
         stopControl: StopControl,
     ) {
-        val stopFailureHandler = CoroutineExceptionHandler { _, e ->
-            log("[daemon] head stop failed uncaught: ${e::class.simpleName}: ${e.message}\n")
-        }
+        val stopFailureHandler = failureHandler(log)
         val began = System.nanoTime()
         val elapsedMs = { TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - began) }
         withContext(stopDispatcher) {
@@ -77,6 +77,64 @@ internal class HeadShutdown(
         }
         stopControl()
         log("[daemon] stop: control closed at ${elapsedMs()}ms\n")
+    }
+
+    /** #523: the hand-over's head phase. Every head at once stops taking turns, cuts the ones its upstream has not
+     *  begun answering and closes its books; a head that can finish its answers beside the next daemon keeps them
+     *  running. Control leaves beside them ([leaveControl]). Returns how many turns are still being answered. */
+    internal suspend fun retireHeads(
+        heads: Collection<Head>,
+        budgetMs: Long,
+        log: LogSink,
+        leaveControl: StopControl,
+    ): Int {
+        val kept = AtomicInteger(0)
+        val began = System.nanoTime()
+        withContext(stopDispatcher) {
+            supervisorScope {
+                // #525 (2026-11-13): the daemon lock is held until this returns, and every command's requests wait for
+                // it. The control server's whole stop was part of it: after the heads at first, then beside them. That
+                // stop waits out its grace, 100 ms, and up to its timeout, 500 ms, for a call still answering, and the
+                // heads retire faster than either: at three restarts that day the last head had said it retired 16 to
+                // 27 ms in, and the hand-over ended at 107, 160 and 522 ms, when control had closed. Control now only
+                // leaves here: it stops taking connections, so a request sent from here on waits for the next daemon,
+                // and its engine stops in finishHeads, once the lock is freed. The next daemon's ask was answered, and
+                // what rides on the control listener was stopped, before the heads were asked to retire
+                // (Daemon.retire).
+                val control = async { leaveControl() }
+                withTimeoutOrNull(budgetMs) {
+                    eachHead(heads, failureHandler(log), "retire", HeadStopStep { kept.addAndGet(it.retire()) })
+                }
+                // A control server that failed to leave is thrown here, once the heads have retired.
+                control.await()
+            }
+        }
+        val tookMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - began)
+        log("[daemon] retire: heads handed over and control left at ${tookMs}ms, ${kept.get()} turn(s) finishing\n")
+        return kept.get()
+    }
+
+    /** #523: waits up to [withinMs] for the answers [retireHeads] kept, every head at once, and stops each head as
+     *  its last one ends. The control server's engine stops beside them (#525): the hand-over only had it stop taking
+     *  connections, so the lock was not held for that stop. Cancelling it leaves the heads to the stop that follows. */
+    internal suspend fun finishHeads(heads: Collection<Head>, withinMs: Long, log: LogSink, stopControl: StopControl) {
+        val began = System.nanoTime()
+        val elapsedMs = { TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - began) }
+        withContext(stopDispatcher) {
+            supervisorScope {
+                val control = async {
+                    stopControl()
+                    log("[daemon] retire: control closed ${elapsedMs()}ms after the lock was freed\n")
+                }
+                eachHead(heads, failureHandler(log), "finish", HeadStopStep { it.finish(withinMs) })
+                control.await()
+            }
+        }
+        log("[daemon] retire: every kept turn ended at ${elapsedMs()}ms\n")
+    }
+
+    private fun failureHandler(log: LogSink) = CoroutineExceptionHandler { _, e ->
+        log("[daemon] head stop failed uncaught: ${e::class.simpleName}: ${e.message}\n")
     }
 
     private suspend fun eachHead(

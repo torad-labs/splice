@@ -72,14 +72,16 @@ public class Cli {
     }
 }
 
-/** Every verb: the answer to a command splice cannot read, and the end of the start screen. Broken into lines a
+/** Every verb splice lists (`mcp` is kept for the machines that use it and is listed nowhere, Nov 13, 2026): the
+ *  answer to a command splice cannot read, and the end of the start screen. Broken into lines a
  *  terminal of 80 columns shows whole; as one line of 470 characters it wrapped in the middle of a word. */
 private const val VERBS_USAGE =
     "usage: splice [setup|add <profile>|add-model|models [provider]|upgrade|status|\n" +
-        "  sessions [relaunch]|perf|wire <head> [--last N] [--json]|peer <verb>|\n" +
+        "  sessions [relaunch]|perf|usage --json|wire <head> [--last N] [--json]|\n" +
+        "  peer <verb>|\n" +
         "  share [on|off|status]|remote [add|remove]|restart [--now]|console [<action>]|\n" +
         "  trace <head> [--last N] [--session S] [--turn ID] [--json] [--purge]|\n" +
-        "  mcp install temple [options]|login <head> [--label <name> [--discard]]|\n" +
+        "  login <head> [--label <name> [--discard]]|\n" +
         "  key <set|list|unset>|rotate-key|logs [--head <key>] [--tail N] [--follow]|\n" +
         "  install|uninstall|init|doctor [--json [--with-logs] [--out FILE]]|\n" +
         "  daemon|version]"

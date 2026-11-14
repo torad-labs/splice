@@ -1,5 +1,468 @@
 # Changelog
 
+## splice v0.4.1: limit resets from splice, a fallback model per session, and an installer that brings its own Java - 2026-11-14
+
+### Highlights
+- **The installer brings Java 21 when the machine has none.** The install command takes the first Java 21 or newer
+  it finds (the `java` on PATH, `JAVA_HOME`, macOS's `java_home`, and the
+  folders JDKs install to). On a machine with none it downloads Eclipse Temurin's Java 21 runtime, checks it against
+  a pinned sha256 and keeps it for splice alone, so an install no longer stops to ask for a package command.
+- **A Claude login's limit resets are listed and spent from splice.** `splice limit-reset <command>` lists the
+  resets each login has left and `splice limit-reset <command> <login> <kind>` spends one. splice never spends a
+  reset by itself.
+- **A session can be given a model to run on while every login is held on the one it asks for.**
+  `splice fallback <session> <model>`, or the line under each session's account on the console. The session goes
+  back to its own model on the first turn a login can serve it, and a session with no fallback waits as before.
+- **The Claude head is `claude`.** splice's Claude head is Claude Code's own `claude`, wrapped; there is no second
+  command beside it. Removing that head, uninstalling splice, or removing its login card never deletes Claude
+  Code's own `claude` or its login.
+- **`splice usage --json`** prints every command's logins and their plan windows on one line, for a menu bar or a
+  dashboard to read.
+
+### Upgrading from 0.4.0
+- Run the install command again, or `splice upgrade`. The launcher moves to shim-26, which runs the Java the
+  installer chose (linked at `~/.local/share/splice/java`); an install whose `java` on PATH is already 21 or newer
+  keeps running on it.
+
+### Added
+- **A session can be given a model to run on while every login is held on the one it asks for.** On Nov 13, 2026
+  every login of one machine ran out of its week of Fable, and every session that asked for Fable waited until
+  the week turned. `splice fallback <session> <model>` (a session's id, or its name while it runs) gives one
+  session a model of its own command; its turns go up on that model while no login can serve the one it asks for
+  for longer than a rate limit's wait, and some login can serve the fallback. The first turn a login can serve
+  the asked model again goes to it. Only the request's model changes: thinking blocks are left for the API to
+  read or drop, and the effort the client asked for stays. A session with no fallback waits as before, and
+  splice never gives one by itself. `splice fallback` lists the sessions that have one, and
+  `splice fallback <session> off` takes it away. The setting is kept in `session-fallbacks.json` beside the
+  daemon's other state, so a restart keeps it; the routes are `GET /api/sessions/fallbacks` and `PUT` and
+  `DELETE /api/sessions/{id}/fallback`.
+- **A Claude login's limit resets can be listed and spent from splice.** Some Claude plans come with a few resets
+  (Fable, weekly, full, 5-hour) that until now could only be spent in Claude Code, one login at a time. `splice
+  limit-reset <command>` lists how many of each kind every login of that command has left, and whether one can be
+  spent now or why not; `splice limit-reset <command> <login> <kind>` spends one. Right after a spend splice reads
+  that login's usage again instead of waiting up to two minutes for the next reading, so turns held for the limits
+  it cleared go on. The routes are `GET /api/auth/{head}/resets` and `POST /api/auth/{head}/reset`. splice never
+  spends a reset by itself, and a spend whose answer was lost is sent again as the same request, so it is never
+  spent twice.
+- **The installer brings Java 21 when the machine has none.** Installing with `curl … | bash` stopped on a machine
+  without Java 21 and printed a package command to run by hand, since a piped install cannot ask, and it stopped
+  again where the default `java` stayed 11 or 17 after that, or where a Mac's Homebrew JDK sat behind an older one.
+  The installer now takes the first Java 21 or newer the machine has (`SPLICE_JAVA`, the `java` on PATH,
+  `JAVA_HOME`, macOS's `java_home`, and the folders JDKs install to). On a machine with none it downloads Eclipse
+  Temurin's Java 21 runtime, checks it against a sha256 pinned in `install.sh`, and unpacks it under
+  `~/.local/share/splice/runtime/`. The Java it chose is linked at `~/.local/share/splice/java`, which the launcher
+  runs (launcher shim-26); PATH and the system's Java are left as they are. `SPLICE_NO_JAVA_DOWNLOAD=1` keeps the
+  old stop-and-print behavior.
+- **`splice usage --json` prints every command's logins and their plan windows for a program to read.** A
+  program beside splice that shows how much of each plan is used (a menu bar, a dashboard) had nothing of splice's
+  to read: it read files Claude Code's status line kept, which a session on splice has not written since Nov 10,
+  2026. The verb asks the running daemon once and prints one JSON document on one line: each command with the
+  login its next request goes to and, for each of its logins, the name, the plan, the 5-hour and 7-day windows
+  (percent used, when it resets, whether the reading is current), any per-model week, the models it cannot serve
+  yet and when it was last heard. The document carries a `version`; within one version fields are only added.
+- **splice tells you when a command that had no login has one again.** The notice that no login can serve a model
+  said that sessions were waiting, and nothing said when they went on. On Nov 12, 2026 a login was reset while
+  seven sessions waited; they went on, and the person, with no word of it, logged in again by hand. The alert
+  command and the webhook now get one more line when a command that was told it had no login for a model has
+  one: which login, and that the sessions that waited for it go on.
+- **Settings says when saved prompts and answers were removed.** When the store of prompts and answers runs past
+  its budget it removes the oldest day's, and keeps that day's request records. Only the daemon's log said so:
+  on one machine the prompts and answers of fourteen days, Oct 29 to Nov 11, 2026, were gone and nothing on a
+  screen showed it. "Your data" now says it on the figure of what is kept: how many days, from which to which,
+  and that their request records are kept. The line stays while those days' records do. Each command's
+  `/api/heads/<command>/trace/kept` answer gains `bodies_removed_days`, the days as dates, oldest first. A whole day
+  removed under the 16 GB of request records, records and all, is now a line in the daemon's log, where it
+  left with nothing said.
+- **Prices follow the project between releases.** splice priced a turn from the table of vendor prices in its
+  build, so a model released after the build had no price, and a changed price was wrong, until the next
+  release. Once an hour the daemon now fetches that table from the project's main branch on
+  `raw.githubusercontent.com` and uses it in place of the copy in the build. It is one anonymous request: no
+  token, and nothing about the machine, its accounts or its sessions. A file that does not read as the table, is
+  larger than a price table can be, or is older than the one in use is ignored. A past hour that had turns with
+  no price is priced again once the table has one. `[daemon] refresh_prices = false` turns it off.
+  `splice status` says which table is in use and when it was fetched, and setup's last screen names the
+  request. The table can also name a newer Claude Code that a release was run against, so the "newer than the
+  version splice was tested with" line goes away for that release without a new build.
+- **splice tells you when a command is on its last login.** A command with several logins moves to the next when
+  a plan limit is reached, and nothing said when it reached the last. On Nov 12, 2026 every Claude login on one
+  machine ran out of Fable one after another and eleven sessions waited three hours, while the person had resets
+  to spend (Marcos: "just let me know when we're on the last account close to hit limit and I'll call a
+  reset"). The daemon now checks each command's logins once a minute, for every model a turn of the command
+  asked for in the last hour, so the turns of helpers on a small model never hide the model the sessions wait
+  on. When only one login can serve a model and it has used 80% of a limit, splice says so, with the login, the
+  limit and when it resets, and says it again at 95%. Below 80% it reads the pace too: when the last login is being
+  used fast enough to run out within an hour and a half, splice says so, with the time it runs out at. On Nov 13,
+  2026 the sessions of a busy machine took the last login that could serve Fable from 16% to 50% of its week in an
+  hour, and the first mark would have come about 35 minutes before the end. When no login can serve, it says that and when the first
+  comes back. A command with one login is always on its last one: it is read by its plan's own limits (the 5-hour
+  limit, the weekly limit, a model's week) and told of at the same two marks, when it has used one up, and when it
+  is back. An API key or a local runtime reports no such limit, so nothing is said of one. Each
+  is said once, a restart included, and again only when it returns after half an hour of not applying, so a
+  login that drops out for a few minutes repeats nothing. It is posted to the webhook saved in the alert settings, and handed to a
+  program of your own set in `splice.toml`:
+
+  ```toml
+  [daemon]
+  alert_command = ["/usr/local/bin/notify-me", "--from", "splice"]
+  ```
+
+  The list is the program and its arguments, run with no shell. The message arrives on its standard input and
+  what the program prints is discarded. The first time a command is set it is sent one line saying what it will
+  be used for, so a wrong command shows that day. The key is read at the daemon's start and can be set only in
+  the file.
+- **A session waiting on a limit says so in its status line.** A turn that met a plan limit waits in its own
+  request until a login can serve it, and Claude Code showed its spinner and nothing else for as long as that
+  took. The session's status line now leads with what the turn met and the reset it waits for, such as
+  `plan limit reached: waiting until Thu 22:00 or a reset`, and says the same of an overloaded provider and of an
+  account out of credit. The status line is also run every 30 seconds between Claude Code's own updates, since
+  none comes while a request is open. Sessions started before this version show it once they are started again.
+
+### Fixed
+- **Remove never deletes Claude Code's own login.** The Claude command's own login card offered Remove, and
+  since that login became Claude Code's own (`~/.claude`), a Remove deleted the file every `claude` session on the
+  machine signs in with: each one said "Not logged in" until someone ran `/login`. The card no longer offers Remove,
+  and the route refuses it, saying to run `/logout` in Claude Code to sign it out. Logins added to a command are
+  still removed from the pool as before.
+- **The console's session list loads when a session record names no command.** Such a record made every listing
+  fail with an error instead of showing the sessions.
+- **Request evidence keeps its coverage record on a day with many restarts.** The record of which stretches of
+  request evidence are complete (`coverage.json`) was refused by its writer at a third of the size its reader
+  accepts, because the writer counted three bytes for every character of a file that is plain ASCII. A record at
+  the format's own limits, 256 intervals and 128 segments, could not be written at all. On Nov 13, 2026 it was
+  last written at 4:23 PM CT, with 253 intervals and 71 segments, and every restart from then logged
+  `[perf] cleanup failed: evidence_unsettled`, as 14 restarts had the day before. Nothing else said so. The writer
+  now counts the bytes.
+- **A session whose answer a restart let finish no longer has its next request turned away.** A restart starts
+  the next daemon beside the running one, which finishes the answers already arriving and takes nothing new. A
+  client keeps the connection its answer came on, so that session's next request went to the daemon that was
+  leaving, which closed it unanswered; the client sent it again and only then reached the next daemon. Five
+  requests took that detour at one restart on Nov 13, 2026, and two at the next. The leaving daemon now closes a
+  connection when the last answer on it has ended, so the next request opens a new one and is served at once.
+- **A reset at the provider is heard through a long wait, after a restart, and by a turn that was just refused.**
+  Three things could keep waiting turns from moving to a login that was reset before its time. While turns wait, splice reads each login's usage
+  once a minute. On Nov 13, 2026, in a wait of more than four hours, the provider's usage endpoint began to
+  refuse a read a minute, and after each refusal splice did not read that login for five minutes: for half of
+  every ten minutes a reset could not be heard. A refused read now doubles the gap between reads, to two minutes
+  at what that endpoint allowed, and the reads go on. And a login's hold ends when its window reads lower than
+  splice read it before. A restart kept the hold and forgot that earlier figure, so a login reset around a
+  restart read 0% from its first reading on, never fell, and stayed out of the pool until the reset its refusal
+  had named, days later. The figure is now kept beside the hold and comes back with it. And a login that came
+  back reached only the turns already waiting: a turn refused a moment earlier, which had been told no login could
+  take it and had not yet taken its place among the waiting, heard nothing and waited out its whole limit. It is
+  now told as it takes its place.
+- **Sessions waiting on a plan limit go on within about a minute of a reset.** When every login of a command is
+  out of a model, its turns wait. A login reset at the provider before its time ends that wait, and splice heard
+  of the reset only from the login's usage reading, which it asked for every five minutes or when someone opened
+  a console page. On Nov 12, 2026 a login was reset while seven turns waited and the sessions went on showing
+  "loading" until the next five-minute reading (Marcos: "my limit just freed up, and the sessions were all still
+  loading"). While a command holds any turn, the daemon now reads every one of its logins' usage as often as the
+  provider's usage endpoint is asked for a page, once a minute, so the waiting turns move to the reset login
+  without anyone logging in again or opening a page.
+- **A daemon start no longer clears another daemon's session moves.** Continue on keeps a short record while a
+  session moves to another command, and the moved session's launch reads it to carry the trust you gave its
+  folder. Every start cleared those records before it held the daemon lock, so a start beside a running daemon (a
+  restart's next daemon, or a second start that then gives way to the running one) cleared the records of moves
+  the running daemon was still carrying out. The start now clears them once it holds the lock.
+- **A script call that is cancelled as its worker dies is cancelled, not failed.** On a ChatGPT command with code
+  mode, a call into a script's worker that was cancelled (the turn was stopped, or its client left) could end
+  with "Code-mode worker was stopped; source was not rerun" when the worker died of something else at the same
+  moment. The cancelled call now ends as cancelled.
+- **Usage counts the logins that have used up a model.** The head of Plans and keys read "0 of 10 logins at their
+  limit" on Nov 12, 2026 while six of eight Claude logins had used up Fable, the model every session was asking
+  for: it counted a login's own windows and left each model's week out. It now also says, for a model some login
+  cannot serve, on how many ("6 of 8 with Fable used up"), the model out on most logins first and at most two. A
+  login counts when that model's week reads full or when its provider refused the model there and the reset has
+  not come, the two records Accounts and `splice status` read.
+- **The session list no longer rereads every ended session from disk each time it is asked for.** The console
+  asks for the list every five seconds on Sessions, Models and Teams, and so do `splice status` and anything
+  else that reads `/api/sessions`. On Nov 12, 2026 one reply on a machine with 3,141 ended sessions read
+  14.8 MiB in about 32,000 reads from disk. The record of ended sessions kept in memory held 2,048, fewer than
+  the machine had, and the list is walked in one fixed order, so each record was dropped just before it was
+  asked for again. Every row also checked the settings file five times and the teams file once, and, for an
+  ended session on a Claude login, read every Claude login's files to find that login's name. The memory now
+  holds 32,768 records, and one reply reads the settings, the teams and each login's name once. The reply is
+  unchanged.
+- **The session list no longer hashes a command's whole perf file each time a turn ends.** To name the login
+  behind each session the list keeps an index over the command's perf file and reads only what was appended
+  since its last look. Beside that it hashed the file again, from the index's start to its end, after every
+  append, for a proof that is read only on a filesystem that reports no change time. On Nov 12, 2026, with the
+  fix above installed, half the replies on a busy machine still read 33 MiB: the Claude command's perf file
+  was 32 MiB and grew about every three seconds. The hash now goes on from where the last one ended and reads
+  only what was appended.
+- **A restart no longer cuts an answer that is already arriving on a Grok, OpenAI or OpenRouter command, on any
+  other command that speaks the chat-completions API, or on a ChatGPT command, whether or not it runs code mode.**
+  Only a command that speaks Anthropic's API kept such an answer until now (#523). A chat-completions turn keeps
+  nothing on disk, so it only had to be allowed. A Responses turn (Grok, OpenAI, ChatGPT) keeps its
+  conversation's reasoning on disk, and the next daemon read that directory once, at its first request: an
+  answer finished after that would have left the conversation's next turn without its reasoning. The retiring
+  daemon now writes each record to disk before it hands the client the end of the answer, and the next daemon
+  reads a conversation's file again when another daemon has written it. A ChatGPT command that runs code mode
+  keeps each conversation it is answering in the retiring daemon until that answer ends, and the next daemon
+  reads the conversation from disk at its next request, so that request carries the scripts the answer ran (#525).
+  A script that was still running, or waiting on Claude Code, when the answer ended does not survive the restart:
+  the model is told once that it was lost and runs it again. Still cut, as before: a Muse command (it keeps where
+  each conversation runs in a file two daemons would write over), and a local runtime with `slot_affinity` on
+  (the next daemon would hand the answer's slot to another conversation).
+- **A restart no longer cancels a compaction that is already answering.** A compaction, and every non-streaming
+  turn of a session, runs apart from its client's request so that a client hanging up does not end it. At a
+  restart the retiring daemon ended all of them together, including the ones a restart is meant to keep: on
+  Nov 12, 2026 a restart cancelled a compaction 77 seconds into its answer, and the retry Claude Code sent took
+  402 seconds. The retiring daemon now ends only the ones whose client has gone (the retry reaches the next
+  daemon) and the ones their provider has not begun answering; one that is answering a client still connected
+  finishes, as any other answer does (#525).
+- **Accounts and `splice status` show a login out of a model from the moment its provider refuses it there.**
+  splice keeps two records about a login: the usage its provider last reported, and a hold it sets when the
+  provider refuses a turn, which lasts until the reset the refusal named and decides where the next turn goes.
+  The screens drew only the first. On Nov 12, 2026 a login refused for Fable went on reading 99%, so its card
+  showed room and `splice status` counted Fable used up on six logins of eight when seven could not serve it,
+  and a login reset at its provider read 0% and looked open while its hold still stood (Marcos: "after I reset
+  it I saw it showing upo in SPlice right away"). The accounts reply now carries each login's held models
+  (`models_held`, each with its claim and the reset the provider named). A card says "Fable used up until ..."
+  for a held model whatever its bar reads, and `splice status` counts that login among the ones the model is
+  used up on. `splice status` names the login the command's next turn goes to for the model its turns ask
+  for, and "switched from ... to ..." is recorded only for a turn of that model: a new session's first turn on
+  a small model starts on a login that is out of the sessions' model, which read as "switched from Seek Apps to
+  Ethan: primary account reset" a minute after Ethan ran out of Fable.
+- **A `claude` that goes through splice is named `claude`.** With plain `claude` wrapped, the console and
+  `splice status` still named its command `claude-splice`, the name of its table in `splice.toml`, so a person
+  who only ever types `claude` saw a second Claude he never starts (Marcos, Nov 12, 2026: "why ... is claude and
+  claude-splice two identities? We use Claude only via splice"). While `claude` is wrapped, `/api/heads` and
+  `/api/status` answer `claude` as that command's name, so Sessions, Accounts, Usage, Requests and Models show
+  it, a session's resume line reads `claude -r <id>`, and the command column of `splice status` reads `claude`.
+  Unwrapped, they name `claude-splice` as before. The head's key, its table in `splice.toml` and the
+  `claude-splice` command itself do not change.
+- **A login reset at its provider is used again at once.** When a provider refuses a login for a spent plan
+  window, splice holds that login until the reset the refusal named, and only an answered turn ended the hold
+  sooner. No turn is sent to a held login while another is open, so a login reset early at the provider stayed
+  out of use: on Nov 12, 2026 one read 0% of its Fable week after a reset and would have been passed over for
+  six more days while the last open login ran out. A usage reading that shows a held window lower than it last
+  read, and below full, now ends that hold, for one model's week or for the whole login. The waiting turns are
+  asked to move to it, and the daemon's log names the login and the window. A figure that reads below full
+  without having fallen ends nothing: a week read at 99% a few minutes before its refusal reads 99% after it
+  too.
+- **Accounts marks where a command's next turn goes for the model its turns ask for.** A plan can use up one
+  model's week while its own week has room. The page asked the daemon where the command's next turn would go
+  without naming a model, so the mark could sit on a login that refuses the model every session of the command
+  uses: on Nov 12, 2026 it sat on a login with Fable at 100% while the sessions ran on the one login that had
+  Fable left. The daemon now answers `next_target` and `following_target` for the model most of the last 64
+  turns of the command's sessions asked for. A turn Claude Code sends for a subagent is not counted: sessions
+  that hand their reading to helpers on a smaller model send more helper turns than their own, and the mark
+  would have followed the helpers' model.
+- **The Claude command has one login: Claude Code's own.** Started by its own name, `claude-splice` ran Claude
+  Code over a second home, `~/.claude-claude-splice`, with a sign-in of its own, and the command counted that
+  home as its first login beside the one in `~/.claude`. A machine that signs in to `claude` and nowhere else
+  carried a second, empty Claude login in the pool, in `splice status` and in the daemon's choice of where a
+  session starts (Marcos, Nov 12, 2026: "why ... is claude and claude-splice two identities? We use Claude only
+  via splice"). `claude-splice` now launches over `~/.claude`, as a `claude` that goes through splice does and
+  whether or not it does: the same login, settings and sessions under either name. The second login is gone
+  from Accounts, Usage, `splice status`, `splice doctor` and `/api/claude-logins`. If you signed in inside
+  `claude-splice` and never in `claude`, sign in once more with `/login`; the old sign-in stays on disk in
+  `~/.claude-claude-splice` and nothing reads it. `splice login claude-splice --label <name>` saved and switched
+  copies of that second sign-in; it now changes nothing and says where to sign in. It still works on a second
+  Claude command declared under another name.
+- **A turn waiting on a used-up model goes the moment a login can take it.** On Nov 12, 2026 Anthropic answered
+  429 for one model on the Claude command's logins from 5:58 AM CT, and eleven sessions on one machine each
+  held one request open for about three hours. A waiting turn woke only for an account added under a new name.
+  Signing Claude Code in to an account with room at 9:05 AM kept the login's name, so none of them heard it:
+  the first answer on that account went to a new request, and each waiting one ended when its client closed
+  it. A waiting turn is now asked to move when an account is added, when a login's credential changes to
+  another account under the same name, and when Try again is pressed on a login's card. At that moment it
+  forgets which logins refused it earlier and asks them again. A turn that no login can take keeps waiting; it
+  used to end on its limit when a login joined that could not serve it. The command's log says how many
+  waiting turns were asked: `a login joined: 11 waiting turn(s) asked to move`.
+- **A session waiting on every login says so, and so do `splice status` and the Accounts page.** The line a
+  waiting session printed named one login's limit. With more than one login it now reads "Every Claude login
+  is at its usage limit for this model, the first until 1:00 PM. This turn waits and continues then, or as soon
+  as a login frees or one is added." A plan can use up one model's week while the plan's own week has room, and
+  nothing said so: `splice status` counted such a login as open, and its card showed only the percentage.
+  `splice status` now adds "Fable used up on 6 of 9 logins", or "on every login, first back" with the time,
+  and each such card reads "Fable used up until Sun 12:00 PM".
+- **Removing an added Claude login is written to the daemon's log, and takes its hold with it.** A folder under
+  `~/.splice/state/claude-accounts/<head>/` left no line when it was removed: on Nov 12, 2026 a login signed in
+  again at 9:04:59 AM was gone 18 seconds later, and the log could not say what took it. What the login was
+  held for stayed on disk under its label, so the next account filed as `account-8` would have read as out of
+  one model until the removed login's reset. The file now goes with the login, and a login filed under a label
+  starts with none.
+- **A restart no longer cuts an answer that is already arriving.** A restart stopped the daemon and then started
+  the next, so every answer in progress ended with the restart line. Claude Code sends a request again when none
+  of its answer has arrived, but not one cut partway: it shows "API Error: Server error mid-response" and the
+  session stops until someone types. On one machine, 8 of the 14 answers cut that way between Nov 10 and
+  Nov 12, 2026 left their session stopped, for two to five minutes in seven cases and for two hours in one.
+  Under splice's systemd unit the launcher now keeps the unit's first process and the listening
+  sockets and runs the daemon as its child, and a restart starts the next daemon beside the running one. The
+  running one stops taking requests, writes its books, hands over, and finishes the answers already arriving,
+  for up to 15 minutes, while the next daemon serves every new request on the same ports. `splice restart`,
+  `splice upgrade`, the console's Restart and a console save that restarts all go this way, and each finished
+  answer's request row, tokens and cost are counted by the next daemon, once. Still ended with the restart line:
+  a request its provider had not begun answering, which Claude Code sends again; a turn on a command that does
+  not speak Anthropic's API (ChatGPT, Grok, Muse, OpenAI-compatible and local models); every turn on a daemon
+  started outside the unit or on macOS; and the first restart into this build. An upgrade that brings a newer
+  launcher restarts the unit whole, once, so that launcher starts. The daemon is now the launcher's child, not
+  the unit's first process, and `/health` names its `pid`. On a machine whose own tools take a unit's first
+  process for the service (an out-of-memory keeper that protects that process and not its children),
+  `SPLICE_HANDOVER=off` in the unit's environment keeps the daemon first, and restarts as they were (#523).
+- **A daemon stopping on a machine with no `~/.local/bin` no longer logs an uncaught failure.** The watch that
+  keeps a wrapped `claude` wrapped waits on a timer where that folder is missing, and the stop interrupted the
+  wait, which the daemon's log reported as `UNCAUGHT on wrap-guard` with a stack trace.
+- **A login its provider refused stays held across a restart.** A login refused for its credential, or blocked by
+  its account's organization, was held only in the daemon's memory. Each restart forgot the hold, so the next turns
+  went to that login again and were refused again: on Nov 11, 2026 a blocked login met four to six refusals after
+  each of the day's restarts, and its card on Accounts read as one a turn could take until the first answer came
+  back. The hold is now kept in the state folder, beside what the provider said about that login's limits, and put
+  back at the start: on the same account where the provider blocked the account, and on the same credential file
+  otherwise. A sign-in made while the daemon was down ends it, as one made while it runs does.
+- **A removed or renamed ChatGPT, Grok, Kimi or Muse login takes its hold with it.** A hold a provider puts on a
+  login is kept in a file named by the login's label, and the file outlived the login. An account signed in
+  later under the same label started out held until the removed account's reset, and a renamed login left its
+  hold under the old label for whoever took it next. Such a command starts again when the console removes,
+  renames or signs in a login, and it now drops the file of every label that left or joined its logins since it
+  last started. A renamed login starts with no hold: if its provider still refuses it, the first turn sent to
+  it learns so again and moves to the next login. A Claude login already let go of its file (#527). Not
+  covered: a login filed with `splice login` while the daemon is stopped (#528).
+- **A session's cost on the status line survives a stop nothing closed.** Each session's running total is written
+  at most a second behind its turns, and a daemon stopped by a kill, a crash or a power cut used to throw those
+  totals away at the next start, because the last second's turns might be missing from them. A session days long
+  was then priced from the last rows of its command's request log alone: the daemon's log shows the totals
+  starting over after each of two machine stops, on Nov 10 and Nov 11, 2026. The totals are now kept and marked
+  as counting from that start, so the session reads the figure it had with the ≥ mark. A session that began
+  before its total reads the larger of that total and the log's last rows, where it read only the rows.
+- **"Saving stopped" on Settings keeps its time across a restart.** When prompts and answers stop being saved (the
+  disk at its free-space floor, or the size budget spent), the card says since when. That time lived in the
+  daemon's memory, so after a restart the card showed the first refusal since that start: on Nov 11, 2026 it
+  read "Saving stopped 6:37 PM" a minute after a restart, while nothing had been saved since 6:00 PM. The time
+  is now kept beside the saved requests and removed when a request saves whole again (#518).
+- **A full disk no longer costs the prompts and answers already saved.** Saved requests live inside a 32 GiB
+  budget, and a full budget removes the oldest day to make room for the newest. The free-space floor on the
+  disk removed days the same way, so on a disk that other data kept under the floor, a day's saved prompts and
+  answers went soon after the day ended, to save the next ones. On one machine every day from Oct 29 to
+  Nov 11, 2026 went within three days of its end, half of them within four hours, and nothing said so. Under
+  the floor a new request is now refused, with the floor for its reason on Settings, and every saved day stays.
+  When the budget does remove a day, the daemon's log names it.
+- **Models shows each model its own compaction rule.** The page found a model's rule by looking for the model's
+  id inside the rule's label, so with rules for two models whose ids begin alike (`claude-opus-5` and
+  `claude-opus-5-5`), one could be shown the other's. Each rule now carries its model. On the same page, the
+  event list said Restored for any log line holding the word, and the only lines that hold it report a
+  failure; that event is gone, and Settings re-read now appears when an edit to `splice.toml` changes a
+  command's windows.
+- **The last-login warning counts accounts, not logins.** A plan limit belongs to an account. When Claude Code's own
+  login was signed in to the same account as a saved login, the command read as having two logins that could serve
+  where it had one account, so going down to that account brought no warning at 80% or 95%, only the line that no
+  login could serve once it ran out. Two logins the roster shows as one account now count as one.
+
+### Changed
+- **The Claude head is `claude`, the one command that runs it.** The head that forwards Claude Code's own login was
+  keyed `claude-splice`, and `splice setup` offered it as a second command beside `claude`. Both ran on the same
+  login and the same ~/.claude, so a session, a login card and a status line could each name the one Claude by
+  either word. The head is now keyed `claude`: plain `claude`, wrapped, runs it, `splice add claude` adds it
+  under that name, and `splice setup` wraps `claude` when the Claude plan is ticked instead of asking. No
+  second command is linked. A `[remote.claude]` from a LAN share is still asked before the Claude head here. A
+  splice.toml that keys it `claude-splice` renames `[heads.claude-splice]` to `[heads.claude]` and drops its
+  `[heads.claude-splice.claude]` command: under the old key the head is no longer the one on Claude Code's own login.
+- **A restart no longer holds every command behind the model lists and the ChatGPT command's saved
+  conversations.** The next daemon asked every provider for its model list, and then read the ChatGPT command's
+  saved code-mode conversations, before any command took a request. On Nov 13, 2026 a restart on one machine held
+  new requests for 7.6 seconds: 2.8 of them for the lists and 2.9 for that read. A command whose list was kept
+  within the last two hours now begins with it and is asked again in the background, and a command's first turn
+  waits for that command's own list, no longer for every provider's. The commands that keep no code-mode state
+  are assembled and start serving first; a command that reads saved conversations starts when its read is done.
+  A start after the machine was off finds no recent list and asks first, as before.
+- **A restart's pause is shorter again: each command serves the moment it is built, and the next daemon prepares
+  while it waits.** After the change above, a restart on the same machine still held a Claude command's requests
+  for 2.6 to 3.7 seconds. Thread samples of the next daemon showed where they went. It waited 3.5 seconds for the
+  running daemon to hand over with nothing to do, and then spent its first second hashing its own jar for the
+  code-mode worker and loading what its first HTTP client needs. It built all ten commands that keep no code-mode
+  state before it started any of them. And it looked for the freed lock four times a second. Now the work that
+  needs no lock is done during the wait, each command takes requests as soon as it is built (the ones that keep no
+  code-mode state first, in splice.toml's order), and the hand-over asks for the lock forty times a second.
+  Measured once with both changes, on that machine on Nov 13, 2026: a restart held a Claude command's requests for
+  1.95 seconds, where it had held them for 7.6. The ChatGPT command's pause did not get shorter, because it is the
+  read of its saved conversations: about 8 seconds at that restart.
+- **A start no longer reads every saved code-mode conversation of a ChatGPT command.** At each start the command
+  read all of its conversations whole, to learn of each one when it was last used, which client conversations it
+  answers and which of its scripts have expired. Then it kept a part of them in memory, a quarter of the heap and
+  256 MiB at most, and left the rest on the disk, to be read again at that conversation's next request. On Nov 13,
+  2026, 676 MiB in 82 conversations held the command 5.8 of the 8.3 seconds a restart paused it, and that read
+  grows with every day of use. A daemon that restarts now leaves a list of the conversations it lets go, with those
+  few things of each. The next daemon takes a conversation from the list where its file is still the one listed,
+  by size, time and file identity, and reads its records at its next request, as it always read a conversation
+  kept on the disk alone. Every other conversation is read at the start as before: one whose answer the retiring
+  daemon is still finishing, one written since the list, and all of them after a stop that was not a restart.
+  A conversation waits on the disk this way when none of its scripts runs: each is completed, or was lost when a
+  daemon stopped while it waited for its client. The first form asked for every script to be completed, and the
+  first restart with a list showed what that left out: 22 of 82 conversations, 420 of 701 MiB, each held one or
+  two lost scripts among about a hundred completed, so the start still read most of the bytes and the pause did
+  not get shorter. A start that reads such a conversation itself, after a stop that left no list, also keeps it on
+  the disk once the head is past its memory bound, where it held every one of them in memory whatever the bound.
+  At the first restart under that rule, the same day, the next daemon took from the list all 59 conversations that
+  hold a script, 701 MiB, and read only the 22 that hold none. Its control plane was bound 6.6 seconds after the
+  hand-over began, where a restart two minutes earlier, under the first rule and the same load on the machine,
+  took 14.1.
+- **A start digests its own jar once, not once for every command.** Each command, while it was assembled, made
+  the digest that says whether the prices kept from the last run still hold: a walk over every entry of the jar,
+  49,000 in a release, and a hash of 3 MB of classes. Thread samples of a restart on Nov 13, 2026 caught the next
+  daemon in it twice in a row, on the thread that builds the commands one after another while their requests wait.
+  It is made once now, while the next daemon waits for the running one to hand over. The restart that carried it
+  held a Claude command's requests for 1.68 seconds, where the one before held them for 1.76.
+- **A hand-over no longer waits for the control server.** A retiring daemon stopped its control server once every
+  command had handed over, and that stop waits a tenth of a second for the requests it is answering, and up to
+  half a second. The daemon lock is held until the hand-over returns, and every command's requests wait for the
+  lock: at three restarts on Nov 13, 2026 it was freed 106 to 130 ms after the last command had said it handed
+  over. The control server first stopped beside the commands, which removed the wait only where the commands took
+  longer than the stop: under a full load control closed 4 ms after the last command's line, and at three later
+  restarts that day the commands had handed over 16 to 27 ms in and the hand-over ended at 107, 160 and 522 ms.
+  At a hand-over the control server now only stops taking connections, and closes the ones with no request on
+  them, so a request sent from then on waits for the next daemon. Its own stop runs once the lock is freed, beside
+  the turns the retiring daemon is still answering, and a line says how long it took. A daemon that bound its own
+  control port, with no socket manager holding it, still stops the server whole before it frees the lock, because
+  the next daemon binds that port. The next daemon's request for the hand-over is answered before any of this
+  begins, as it was. The retiring daemon also says how long it still held the lock after its commands handed over,
+  closing its background work: 145 ms at the first restart that carried the line, a stretch no line told from the
+  next daemon's own start before.
+- **A start reads a ChatGPT command's saved code-mode conversations with four readers.** Every command waits for
+  that read at each start and restart, and it went through the conversations one after another on one core: 4.6 to
+  6.2 seconds on a busy machine that held 369 MB of them in 54 files. Four readers now work ahead of the
+  conversation being handed on, in the same order, so a large one no longer holds up the small ones behind it: 2.0
+  to 3.2 seconds for the same files on the same machine. A conversation is read by itself again where the heap
+  refuses the readers together.
+- **A release publishes one jar per platform beside `splice.jar`.** `splice.jar` holds the code-mode isolate and
+  the native code-mode host of all four platforms, about 476 MB. Each platform's own jar
+  (`splice-linux-amd64.jar`, `splice-linux-aarch64.jar`, `splice-darwin-aarch64.jar`,
+  `splice-windows-amd64.jar`) is that jar with the other three cut out, about 210 MB: entry for entry what a
+  build for that platform alone holds, its bill of materials and license list included. `install.sh` and
+  `splice upgrade` take their platform's jar when the release lists one and `splice.jar` when it does not, so a
+  release before this one, and a platform with no jar of its own (an Intel Mac), install as they did.
+  `splice.jar` stays: every install up to 0.4.0 upgrades by that name. A release's files take about 1.3 GB where
+  they took about 0.5 GB.
+- **A restart stops new requests for about 2.4 seconds less when splice is running an MCP server.** The retiring
+  daemon waited for its MCP server processes to end after its commands had stopped taking turns, so that wait was
+  part of the pause before the next daemon serves. It now ends them first, while turns are still answered. On
+  Nov 12, 2026 eight of thirteen restarts on one machine spent 2.4 to 2.5 seconds there.
+- **splice is tested against Claude Code 2.1.323.** The fresh-machine, upgrade, plan-limit and runtime-head runs
+  pass with it. A session on a newer Claude Code is told so in `splice doctor`, `splice status` and the status
+  line, as before.
+- **The console reads names, not sentences.** Twelve replies of the daemon's API now carry a short name beside
+  the sentence they always sent (why saving stopped, why a command cannot carry the manager, what a check
+  found, why a team's repo was refused, and so on), and the console's pages choose their words by those names.
+  A page's wording no longer depends on how a sentence in the daemon happens to be phrased. The sentences are
+  unchanged, and so is every reply's existing field.
+- **An open console page no longer re-reads every ended session every five seconds.** A machine keeps the row of
+  every session it has seen, and `GET /api/sessions` answered with all of them each time. On one machine that was
+  3,259 rows, 3,227 of them sessions that had ended, 2.3 MB an answer, and an open Sessions page asked every five
+  seconds: about 600 KiB a second from the daemon for one open tab. An ended session's row does not change. The
+  answer now names the ended rows by `gone_mark`, and a read that sends that mark back as `?gone=<mark>` is
+  answered with the sessions still here alone, 25 KiB of that 2.3 MB, and `gone_held: true`, until an ended row is
+  added, changed or removed. Every console page reads the list this way and shows what it showed. A read with no
+  mark is answered with every row, as before.
+- **splice is built with Kotlin 2.4.21.** The compiler, the Kotlin Gradle plugin and the standard library inside
+  the jar move from 2.3.21. Kotlin 2.4.20 fixed CVE-2026-53914 (GHSA-r937-wjx7-w2jp), where a poisoned kapt
+  incremental cache could run code during a build, and the 2.3 line never got that fix. splice's build does not
+  use kapt, so the flaw was not reachable here; the version was still the one the advisory names. Kotlin had
+  been held on 2.3 since July 24 because CodeQL could not read 2.4, which it can now. konsist moves to 0.18.1
+  with it.
+- **splice is built with Gradle 9.9.1.** Gradle brings a Kotlin of its own for the build's scripts, and 9.8
+  brought 2.4.10, a second copy of the version the same advisory names. 9.9 brings 2.4.21, so no Kotlin below the
+  fix is left in the build.
+
 ## splice v0.4.0: teams across models, resume on another model, and one-command setup - 2026-11-11
 
 ### Highlights

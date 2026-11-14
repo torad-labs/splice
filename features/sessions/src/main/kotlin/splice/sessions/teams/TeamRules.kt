@@ -82,24 +82,28 @@ internal class TeamRules {
      *  the write that SETS a repo, not every write a team's row ever takes. */
     fun validate(team: Team, repoProbe: RepoProbe) {
         val ids = team.slots.map { it.id }
-        val reason = when {
-            team.name.isBlank() -> "a team needs a name"
-            ids.any { it.isBlank() } -> "every slot needs an id"
-            ids.toSet().size != ids.size -> "slot ids repeat in ${team.name}"
-            team.slots.any { it.head.isBlank() } -> "every slot needs a head"
-            team.repo.isBlank() && team.slots.any { it.bindByRule } ->
-                "repo is needed when a member joins by rule: it takes the sessions started inside it"
-            else -> repoReason(team, repoProbe)
+        val refusal = when {
+            team.name.isBlank() -> TeamRefusal("a team needs a name")
+            ids.any { it.isBlank() } -> TeamRefusal("every slot needs an id")
+            ids.toSet().size != ids.size -> TeamRefusal("slot ids repeat in ${team.name}")
+            team.slots.any { it.head.isBlank() } -> TeamRefusal("every slot needs a head")
+            team.repo.isBlank() && team.slots.any { it.bindByRule } -> TeamRefusal(
+                "repo is needed when a member joins by rule: it takes the sessions started inside it",
+                TeamRefusalCode.REPO_NEEDED,
+            )
+            else -> repoRefusal(team, repoProbe)
         }
-        if (reason != null) throw TeamRefusal(reason)
+        if (refusal != null) throw refusal
     }
 
     /** Why [team]'s repo is refused, or null when it is blank (unset) or a real directory. */
-    private fun repoReason(team: Team, repoProbe: RepoProbe): String? {
+    private fun repoRefusal(team: Team, repoProbe: RepoProbe): TeamRefusal? {
         if (team.repo.isBlank()) return null
         return when (repoProbe(team.repo)) {
-            RepoPathCheck.MISSING -> "repo '${team.repo}' does not exist"
-            RepoPathCheck.NOT_A_DIRECTORY -> "repo '${team.repo}' is not a directory"
+            RepoPathCheck.MISSING ->
+                TeamRefusal("repo '${team.repo}' does not exist", TeamRefusalCode.REPO_MISSING)
+            RepoPathCheck.NOT_A_DIRECTORY ->
+                TeamRefusal("repo '${team.repo}' is not a directory", TeamRefusalCode.REPO_NOT_A_DIRECTORY)
             RepoPathCheck.DIRECTORY -> null
         }
     }

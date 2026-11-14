@@ -40,6 +40,10 @@ public class CodexCodeModeWiring(
     internal fun turnBuilder(media: ResponsesToolResultMedia): CodexCodeModeTurnBuilder =
         CodexCodeModeTurnBuilder(bridge, media, models, onlyModels, originalImageModels, settings)
 
+    internal fun onHeadRetire() {
+        bridge?.onHeadRetire()
+    }
+
     internal fun onHeadStop() {
         bridge?.onHeadStop()
     }

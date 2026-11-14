@@ -21,6 +21,7 @@ import splice.core.usage.QuotaWindow
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialPresence
+import splice.upstream.retry.ProviderHoldStore
 import splice.upstream.retry.RateLimitCooldown
 import java.util.concurrent.atomic.AtomicReference
 
@@ -541,6 +542,17 @@ class AccountPoolTest {
                 presences[it] = presence
                 named[it] = names
             }
+        }
+
+        /** [account] with [store] keeping what outlasts a restart, as a head gives every login one. Its copy stands
+         *  for the same login after a restart: the same credential and store, and nothing a daemon keeps in memory. */
+        fun keeping(account: PoolAccount, store: ProviderHoldStore): PoolAccount = account.copy(
+            cooldown = RateLimitCooldown(ElapsedClock { elapsed }, store = store),
+        ).also {
+            quotas[it] = quotas.getValue(account)
+            identities[it] = identities.getValue(account)
+            presences[it] = presences.getValue(account)
+            named[it] = named.getValue(account)
         }
 
         fun setQuota(account: PoolAccount, quota: QuotaSnapshot) {

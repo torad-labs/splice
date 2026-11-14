@@ -36,6 +36,9 @@ public class RequestEvidenceFiles(
     public val coverageSink: FileIoSink = FileIoSink("request_evidence_coverage", clock)
     private val current = LinkedHashMap<String, Path>()
     private var retention: RequestEvidenceRetention? = null
+
+    // Guarded by [admission].
+    private var closed = false
     private val retentionWriter = RequestEvidenceRetentionWriter(
         this.directory.resolve(RequestEvidenceFormat.RETENTION_FILE),
         EVIDENCE_MANIFEST_BYTES,
@@ -80,7 +83,11 @@ public class RequestEvidenceFiles(
 
     public fun faultCoverage(head: String? = null): Unit = synchronized(admission) { coverage.fault(head) }
 
-    internal fun admit(record: RequestEvidenceAdmission): Boolean = synchronized(admission) { record.record() }
+    /** #523: nothing is admitted once the store is closed. A daemon that handed over to the next one still finishes
+     *  the answers it was in the middle of, and the files, their manifest and the coverage lock are the next daemon's
+     *  from the hand-over on: a line written here would be one its manifest does not know. */
+    internal fun admit(record: RequestEvidenceAdmission): Boolean =
+        synchronized(admission) { closed || record.record() }
 
     internal fun submit(head: String, sink: FileIoSink, write: FileIoWrite): Boolean = synchronized(admission) {
         val queued = AsyncFileIo.submitFor(lane, sink) {
@@ -97,6 +104,7 @@ public class RequestEvidenceFiles(
     }
 
     override fun close() {
+        synchronized(admission) { closed = true }
         if (AsyncFileIo.awaitDirectory(directory)) {
             coverage.close()
         } else {

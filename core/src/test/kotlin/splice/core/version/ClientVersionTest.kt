@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.GATEWAY_VERSION
 import splice.core.client.ClientVersionParser
+import splice.core.model.TestedClient
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -86,6 +87,20 @@ class ClientVersionTest {
         }
 
         assertEquals(warning("2.0.100", "1.0.0"), versions.aggregateWarning())
+    }
+
+    @Test
+    fun `a Claude Code the price table says this release passed with is not warned about`() {
+        val passed = ClientVersionTracker("2.1.300", later = { TestedClient("2.1.305", GATEWAY_VERSION) })
+        passed.observe("first", "claude-cli/2.1.305")
+        assertNull(passed.aggregateWarning())
+        passed.observe("second", "claude-cli/2.1.306")
+        assertEquals(warning("2.1.306", "2.1.305"), passed.aggregateWarning())
+
+        // A line about a release after this one says nothing of this one.
+        val notThisRelease = ClientVersionTracker("2.1.300", later = { TestedClient("2.1.305", "99.0.0") })
+        notThisRelease.observe("first", "claude-cli/2.1.305")
+        assertEquals(warning("2.1.305", "2.1.300"), notThisRelease.aggregateWarning())
     }
 
     private fun warning(version: String, tested: String) =

@@ -2,6 +2,7 @@ package splice.head.lifecycle
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import splice.core.util.AsyncFileIo
 import splice.head.HeadDeps
 import splice.head.HeadEngine
 import splice.head.StopSeal
@@ -36,14 +37,32 @@ internal class HeadLifecycle(
 ) {
     private val mutex = Mutex()
     private var drained = false
+
+    // #523: set once this head has handed its books to the next daemon; from then on it writes none of them.
+    private var retired = false
     private val gate get() = deps.traffic.gate
     private val log get() = deps.log
 
     suspend fun start(): Unit = mutex.withLock { startLocked() }
     suspend fun drain(): Unit = mutex.withLock { drainLocked() }
     suspend fun stop(): Unit = mutex.withLock { stopLocked() }
+    suspend fun retire(): Int = mutex.withLock { retireLocked() }
+
+    /** #523: waits for the answers a retired head kept, then stops it. The wait is outside the lock, so a stop that
+     *  arrives meanwhile (the service being stopped) is not held behind it: that stop cuts what is still running with
+     *  the restart line, as any stop does, and this then finds a head already closed. */
+    suspend fun finish(withinMs: Long) {
+        StopSeal(gate, engine, deps.seams.waiter).settle(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(withinMs))
+        mutex.withLock { if (engine.isRunning) stopLocked() }
+    }
     suspend fun restart(): Unit = mutex.withLock {
         stopLocked()
+        // NF-01: restart clears whichever cooldown authority the turn path actually uses. Pooled
+        // turns bypass the client-owned legacy cooldown, so reset every account instead.
+        // Only a restart does: a head's first start keeps what its logins brought back from disk, a hold its provider
+        // put on a login and the provider's word on its limits. On 0.4.1's promotion review (Nov 14, 2026) the reset
+        // sat in every start, so the daemon's own boot undid the login holds #521 had just made survive a restart.
+        deps.quotaBundle.activePool?.reset() ?: deps.traffic.upstream.clearRateLimitCooldown()
         startLocked()
     }
 
@@ -56,9 +75,6 @@ internal class HeadLifecycle(
         // restart() is stop-then-start, so this reset alone suffices — a bare stop keeps counters intact.
         driver.resetHealth()
         driver.headStarted()
-        // NF-01: restart clears whichever cooldown authority the turn path actually uses. Pooled
-        // turns bypass the client-owned legacy cooldown, so reset every account instead.
-        deps.quotaBundle.activePool?.reset() ?: deps.traffic.upstream.clearRateLimitCooldown()
         engine.start()
         window.open()
     }
@@ -96,15 +112,47 @@ internal class HeadLifecycle(
         drained = true
     }
 
+    /** #523: the cut of a restart that keeps the answers in progress. Admission closes first, as in a drain; then
+     *  only the turns whose upstream has not begun answering are cut, and the turns whose client is gone with them. The
+     *  books close HERE, before the daemon hands over: from [splice.head.perf.RetiredRows.retire] on, a row this
+     *  process records is left for the next daemon to count, and the flushes after it are the last writes this
+     *  process makes to the usage, hourly and session-total files. A provider that cannot finish a turn beside
+     *  another daemon stops whole, here, so its own last flush lands before the hand-over too. */
+    private suspend fun retireLocked(): Int {
+        // A head already drained or already retired has no answer left to keep.
+        val nothingToKeep = drained || retired
+        if (nothingToKeep || !provider.finishesTurnsWhenRetired) {
+            stopLocked()
+            return 0
+        }
+        engine.closeAdmission(window)
+        provider.onHeadRetire()
+        val kept = driver.retireActive()
+        deps.stores.perfStats.retired.retire()
+        // A row recorded before that moment counts its hour on the file lane, behind its own append: the lane runs
+        // what it holds, and then the books are written once, whole.
+        val _ = AsyncFileIo.drain()
+        deps.stores.usageStore.freeze()
+        deps.stores.economicsStore?.flushNow()
+        deps.stores.perfStats.totals?.flushNow()
+        retired = true
+        log("[${provider.key}] retire: finishing $kept turn(s) already answering; the next daemon takes the rest\n")
+        return kept
+    }
+
     /** The half that closes the port and settles this head's books. Everything here is what a client
      *  can no longer be served through, so it runs as late as the daemon's stop can leave it. */
     private fun closeLocked() {
         engine.stop()
         provider.onHeadStop()
         driver.flushHeldRows()
-        deps.stores.usageStore.flushNow()
-        deps.stores.economicsStore?.flushNow()
-        deps.stores.perfStats.totals?.flushNow()
+        // #523: a retired head's books are the next daemon's since the hand-over; writing them here would put this
+        // process's older copy over what the next daemon has counted since.
+        if (!retired) {
+            deps.stores.usageStore.flushNow()
+            deps.stores.economicsStore?.flushNow()
+            deps.stores.perfStats.totals?.flushNow()
+        }
         // Spent: a head that starts again, or is stopped again, drains afresh.
         drained = false
     }

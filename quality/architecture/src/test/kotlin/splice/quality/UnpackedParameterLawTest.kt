@@ -31,13 +31,15 @@ package splice.quality
 import com.lemonappdev.konsist.api.Konsist
 import com.lemonappdev.konsist.api.declaration.KoClassDeclaration
 import com.lemonappdev.konsist.api.declaration.KoPropertyDeclaration
-import org.jetbrains.kotlin.cli.common.messages.MessageCollector
+import org.jetbrains.kotlin.CoreEnvironmentDeprecation
+import org.jetbrains.kotlin.cli.extensionsStorage
 import org.jetbrains.kotlin.cli.jvm.compiler.EnvironmentConfigFiles
 import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment
 import org.jetbrains.kotlin.com.intellij.openapi.util.Disposer
 import org.jetbrains.kotlin.com.intellij.psi.PsiErrorElement
 import org.jetbrains.kotlin.com.intellij.psi.util.PsiTreeUtil
-import org.jetbrains.kotlin.config.CommonConfigurationKeys
+import org.jetbrains.kotlin.compiler.plugin.CompilerPluginRegistrar
+import org.jetbrains.kotlin.compiler.plugin.ExperimentalCompilerApi
 import org.jetbrains.kotlin.config.CompilerConfiguration
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
 import org.jetbrains.kotlin.psi.KtExpression
@@ -53,10 +55,12 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 
 internal object UnpackedParameters {
-    /** The compiler's parser, started once: initializers are parsed, never matched as text. */
+    /** The compiler's parser, started once: initializers are parsed, never matched as text. From Kotlin 2.4 an
+     *  environment asks its configuration for the compiler extensions, so an empty store of them is registered. */
+    @OptIn(ExperimentalCompilerApi::class, CoreEnvironmentDeprecation::class, CompilerConfiguration.Internals::class)
     private val psi: KtPsiFactory by lazy {
         val configuration = CompilerConfiguration().apply {
-            put(CommonConfigurationKeys.MESSAGE_COLLECTOR_KEY, MessageCollector.NONE)
+            extensionsStorage = CompilerPluginRegistrar.ExtensionStorage()
         }
         val environment = KotlinCoreEnvironment.createForProduction(
             Disposer.newDisposable("unpack-law"),

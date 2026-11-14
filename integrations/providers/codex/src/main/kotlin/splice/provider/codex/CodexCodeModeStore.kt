@@ -75,7 +75,9 @@ internal class CodexCodeModeStore(
     private val keyLocks = access?.keys ?: CodeModeKeyLocks()
     private val journal = CodeModeJournalText(json)
     private val dir = location.dir
-    private val files = CodeModeStateDirectory(dir, json, log, heap)
+
+    /** The directory's files by conversation key; #525's hand-over finds a conversation's journal through it. */
+    val files = CodeModeStateDirectory(dir, json, log, heap)
 
     @Volatile private var needsSave = false
     private val pendingWrites = AtomicInteger()
@@ -88,7 +90,7 @@ internal class CodexCodeModeStore(
     private val kept = ConcurrentHashMap<String, CodeModeKeptState>()
 
     /** Journal-backed conversations whose payloads have no in-memory owner in this store. */
-    val cold = CodeModeColdRecords(files, kept, registryLock, heap)
+    val cold = CodeModeColdRecords(files, kept, registryLock, heap, listOf(failedKeys, uncertainKeys))
 
     private val capacity = CodeModeSaveHeap(heap)
     private val snapshots = CodeModeSaveSnapshots(kept, uncertainKeys, capacity)
@@ -111,7 +113,7 @@ internal class CodexCodeModeStore(
         get() = (kept.keys + cold.keys).flatMapTo(HashSet()) { key ->
             listOf(files.path(key), files.lockPath(key), files.olderPath(key), files.olderLockPath(key))
                 .map { it.toAbsolutePath().normalize() }
-        }
+        } + files.held.inUse()
 
     /** Terminal disposal may drop hot snapshots only after every write and failed purge settles. While the journal is
      *  off, a write it owes does not hold disposal: nothing is kept then, and the owed marks wait for it to come back. */
@@ -131,7 +133,9 @@ internal class CodexCodeModeStore(
     fun load(maxBytes: Long = Long.MAX_VALUE): CodeModePersistedState {
         val coldMarkers = readDirectory(maxBytes)
         val legacy = readLegacy()
-        val carried = legacy.orEmpty().filterKeys { !kept.containsKey(it) && it !in cold }
+        val carried = legacy.orEmpty().filterKeys {
+            !kept.containsKey(it) && it !in cold && !files.held.holds(files.path(it))
+        }
         val stays = "${location.legacyFile.fileName} stays"
         val written = carried.count { (key, conversation) -> checkpoint(key, conversation, stays) }
         if (legacy != null && written == carried.size) {
@@ -177,7 +181,9 @@ internal class CodexCodeModeStore(
             return
         }
         // Absence from the hot list is not deletion: a cold conversation still lives in its journal.
-        val selected = (if (retryOnly) keys.intersect(failedKeys) else keys) - cold.keys
+        // #525: a conversation a retiring daemon let go is the next daemon's; this one never writes it again.
+        val asked = (if (retryOnly) keys.intersect(failedKeys) else keys) - cold.keys
+        val selected = asked.filterTo(HashSet(), files.writes::allows)
         val retryKeys = selected.intersect(failedKeys)
         pendingWrites.incrementAndGet()
         failedKeys.addAll(selected)
@@ -203,6 +209,8 @@ internal class CodexCodeModeStore(
     }
 
     private fun persist(item: Prepared) {
+        // #525: the same fence as [save], at the one place every write and removal of a conversation passes.
+        if (!files.writes.allows(item.key)) return
         val progress = WriteProgress()
         try {
             val conversation = item.conversation
@@ -260,14 +268,16 @@ internal class CodexCodeModeStore(
 
     private fun readDirectory(maxBytes: Long): List<CodeModeExpiredSnapshot> {
         var held = 0L
-        val markers = mutableListOf<CodeModeExpiredSnapshot>()
-        files.load().forEach { (key, selected) ->
+        // #525: only a store that keeps conversations on the disk alone takes them from the retiring daemon's list. A
+        // count policy bounds what is in memory, so there every conversation is read.
+        val (told, read) = files.load(told = maxBytes != Long.MAX_VALUE)
+        val markers = cold.told(told).toMutableList()
+        read.forEach { (key, selected) ->
             val state = selected.state
             kept[key] = CodeModeKeptState(state.version, state, heap)
             val committed = !selected.checkpoint || checkpoint(key, state, "the selected conversation stays")
             val bytes = state.records.sumOf { it.retainedBytes ?: 0L }
-            val completed = state.records.isNotEmpty() && state.records.all { it.phase == CodeModePhase.COMPLETED }
-            val cacheable = committed && completed
+            val cacheable = committed && cold.waits(state.records)
             if (held + bytes > maxBytes && cacheable) {
                 cold.evict(key)
                 markers.addAll(state.expired)

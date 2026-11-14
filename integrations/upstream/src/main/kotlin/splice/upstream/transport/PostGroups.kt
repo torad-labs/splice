@@ -9,6 +9,7 @@ import splice.upstream.RetryNotice
 import splice.upstream.TurnRetry
 import splice.upstream.VendorRoute
 import splice.upstream.retry.HOLD_FLOOR_MS
+import splice.upstream.retry.OtherLoginFree
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.retry.WarmLoginWait
 import splice.upstream.sse.WireObserver
@@ -65,11 +66,6 @@ public data class PostLimits(
      *  2026). Null holds and ends only what the whole login's windows say. */
     val model: String? = null,
 )
-
-/** Whether another login can take this failure before content is committed. */
-public fun interface OtherLoginFree {
-    public operator fun invoke(cause: splice.core.failure.FailureCause): Boolean
-}
 
 /** What listens to a post without changing it: the turn's timing row, the wire recorder, the refresh observer and
  *  the retry notice. */

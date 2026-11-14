@@ -66,7 +66,7 @@
     ],
     "COLLISION LOCK_WAIT_MS": [
       "core/src/main/kotlin/splice/core/config/KeyStore.kt",
-      "core/src/main/kotlin/splice/core/util/JsonlSink.kt"
+      "core/src/main/kotlin/splice/core/util/JsonlLocks.kt"
     ],
     "COLLISION LOG_TAG": [
       "integrations/providers/codex/src/main/kotlin/splice/provider/codex/auth/CodexAuthProvider.kt",
@@ -354,7 +354,7 @@
     ],
     "COPY LOCK_POLL_MS": [
       "core/src/main/kotlin/splice/core/config/KeyStore.kt",
-      "core/src/main/kotlin/splice/core/util/JsonlSink.kt"
+      "core/src/main/kotlin/splice/core/util/JsonlLocks.kt"
     ],
     "COPY MASK_KEEP": [
       "integrations/providers/codex/src/main/kotlin/splice/provider/codex/auth/CodexAuthDescribe.kt",

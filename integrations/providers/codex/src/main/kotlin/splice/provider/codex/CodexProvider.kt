@@ -71,6 +71,14 @@ public class CodexProvider(
         codeMode.onHeadStop()
     }
 
+    /** #525 (2026-11-12): a head that runs code mode finishes its answers at a restart too. Each conversation it is
+     *  answering stays this daemon's until its last turn here ends, and the next daemon reads it from the disk at its
+     *  next turn; every other conversation is stopped now and is the next daemon's (CodeModeHandover). */
+    override fun onHeadRetire() {
+        super.onHeadRetire()
+        codeMode.onHeadRetire()
+    }
+
     /** codex-rs 14a477ea8 codex-api/src/sse/responses.rs:65-71 captures the first HTTP token. */
     override fun observeResponseHeaders(meta: TurnMeta, response: UpstreamResponse) {
         meta.upstreamHeaders.capture(CODEX_TURN_STATE_HEADER, response.header(CODEX_TURN_STATE_HEADER))

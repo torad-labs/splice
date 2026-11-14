@@ -95,7 +95,7 @@ class HttpFailureCauseTest {
                 respond(body, HttpStatusCode.fromValue(status), headersOf())
             },
         )
-        val failure = assertEnds<UpstreamFailed> { client.posted(ctx(replies), "{}") { "unreachable" } }
+        val failure = assertEnds<UpstreamFailed> { client.posted(ctx(replies), "{}") { error("unreachable") } }
         return Ended(failure, calls.get(), client.rateLimitedForMs)
     }
 

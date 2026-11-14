@@ -133,20 +133,30 @@ internal class CodeModeRecordChanges(
             startup.stop()
             records.map(CodeModeRecord::key).distinct()
         }
-        keys.forEach { key ->
-            access.withKey(key) {
-                CodeModeRecordKeys.of(records, key).filter { it.phase != CodeModePhase.COMPLETED && !it.terminal() }
-                    .filter { it.phase != CodeModePhase.STARTING }.forEach { record ->
-                        cells.remove(record.id)?.close()
-                        record.phase = CodeModePhase.LOST
-                        record.cellStartedAt = null
-                        CodeModeRecordErrors.replace(
-                            record,
-                            "completed client call ids=${record.results.keys}; source was not rerun",
-                        )
-                    }
-                store.save(records, history.entries, dirtyKeys = setOf(key))
-            }
+        keys.forEach { stopConversation(it) }
+    }
+
+    /** #525: the conversations whose records this head holds in memory now. */
+    fun conversations(): Set<String> = access.monitor.withLock { records.mapTo(HashSet(), CodeModeRecord::key) }
+
+    /** What a stop gives one conversation: its live cells close and its unfinished records are lost, then it is
+     *  saved. #525 (2026-11-12): a retiring head gives it to each conversation as it lets that one go, and closes
+     *  with [close] what else of each record runs (a native cell handed to the pool), which a whole stop closes at
+     *  once afterwards. */
+    fun stopConversation(key: String, close: CodeModeRecordChange = CodeModeRecordChange {}) {
+        access.withKey(key) {
+            CodeModeRecordKeys.of(records, key).filter { it.phase != CodeModePhase.COMPLETED && !it.terminal() }
+                .filter { it.phase != CodeModePhase.STARTING }.forEach { record ->
+                    cells.remove(record.id)?.close()
+                    close(record)
+                    record.phase = CodeModePhase.LOST
+                    record.cellStartedAt = null
+                    CodeModeRecordErrors.replace(
+                        record,
+                        "completed client call ids=${record.results.keys}; source was not rerun",
+                    )
+                }
+            store.save(records, history.entries, dirtyKeys = setOf(key))
         }
     }
 

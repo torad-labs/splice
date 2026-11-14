@@ -17,6 +17,7 @@ import splice.core.terminal.RESET
 import splice.core.terminal.TerminalOutput
 import splice.core.terminal.YELLOW
 import splice.core.topology.AuthKind
+import splice.core.topology.CLAUDE_COMMAND
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
@@ -118,16 +119,23 @@ internal class AddCommand(
             }
         }
         output.line("")
-        if (activated) {
-            output.line("  Launch      $CYAN${c.command}$RESET")
-        } else {
-            val then = "run ${CYAN}splice restart$RESET, then $CYAN${c.command}$RESET"
-            output.line("  $RED✗$RESET $daemonLabel restart failed. The head is saved; $then")
-        }
+        launchLine(c, activated, linked, daemonLabel)
         if (live) checkWrittenHead(c, env, activated, linked)
         output.line("  ${"checkup".padEnd(ADD_PAD)} ${CYAN}splice doctor$RESET")
         ports.doctor(env)
         return activated
+    }
+
+    /** How to run the head now, or what to run first when the restart failed. */
+    private fun launchLine(c: AddCandidate, activated: Boolean, linked: Boolean, daemonLabel: String) {
+        when {
+            !activated -> {
+                val then = "run ${CYAN}splice restart$RESET, then $CYAN${c.command}$RESET"
+                output.line("  $RED✗$RESET $daemonLabel restart failed. The head is saved; $then")
+            }
+            // an unwrapped `claude` runs Claude Code directly, which the wrapper line above already said
+            linked || c.command != CLAUDE_COMMAND -> output.line("  Launch      $CYAN${c.command}$RESET")
+        }
     }
 
     private fun checkWrittenHead(c: AddCandidate, env: EnvReader, activated: Boolean, linked: Boolean) {
@@ -151,9 +159,10 @@ internal class AddCommand(
     private fun linkWrapper(c: AddCandidate, env: EnvReader): Boolean {
         val link = AddWrapperLink(ports.install).link(c.key, env)
         if (link is AddLinked.NotLinked) {
-            val fix = "${CYAN}splice install ${c.key}$RESET"
+            // `claude` is Claude Code's own command, linked by the wrap the reason names, never by `splice install`
+            val fix = if (c.command == CLAUDE_COMMAND) "" else "; run: ${CYAN}splice install ${c.key}$RESET"
             val why = link.why?.let { " ($it)" }.orEmpty()
-            output.line("  $YELLOW!$RESET ${"wrapper".padEnd(ADD_PAD)} not linked$why; run: $fix")
+            output.line("  $YELLOW!$RESET ${"wrapper".padEnd(ADD_PAD)} not linked$why$fix")
         }
         return link is AddLinked.Linked
     }

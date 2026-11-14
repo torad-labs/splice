@@ -358,6 +358,7 @@ public class ClaudeConfigMaterializer(
                     put("type", "command")
                     put("command", spec.statuslineCommand)
                     put("padding", 0)
+                    put(Keys.STATUS_LINE_REFRESH, Keys.STATUS_LINE_REFRESH_S)
                 },
             )
             hooks.hooks?.let { put(Keys.HOOKS, it) }

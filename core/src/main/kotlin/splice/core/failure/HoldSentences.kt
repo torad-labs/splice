@@ -38,10 +38,24 @@ internal class HoldSentences(private val spoken: Spoken) {
             "$head reached ${window ?: "its usage limit"} without saying when it resets",
             next = Next.Then(CONTINUES_AS_IT_LIFTS),
         )
-        if (!hold.soft) return Said(reached, next = Next.Then(until(hold, facts.now)))
-        val what = if (window == null) "$reached until ${spoken.at(at)}" else "$reached, which resets ${spoken.at(at)}"
-        return Said(what, next = Next.Then("This turn waits and continues then, or sooner if the limit lifts."))
+        return when {
+            facts.request.otherLogin -> everyLogin(head, at)
+            !hold.soft -> Said(reached, next = Next.Then(until(hold, facts.now)))
+            else -> Said(
+                if (window == null) "$reached until ${spoken.at(at)}" else "$reached, which resets ${spoken.at(at)}",
+                next = Next.Then("This turn waits and continues then, or sooner if the limit lifts."),
+            )
+        }
     }
+
+    /** A limit held on a command with more than one login. A turn is held there only once no login can serve it (a
+     *  free one takes it instead), so the line says that, and not one login's window: on Nov 12, 2026 eleven sessions
+     *  waited three hours on a model every login had spent, each told only that the command "reached its weekly
+     *  limit" while most logins' weeks read half used. */
+    private fun everyLogin(head: String, at: Instant): Said = Said(
+        "Every $head login is at its usage limit for this model, the first until ${spoken.at(at)}",
+        next = Next.Then("This turn waits and continues then, or as soon as a login frees or one is added."),
+    )
 
     /** A spent account or an inactive subscription, which the person settles with the provider they pay. */
     private fun credit(cause: FailureCause.Provider.NeedsPayment, facts: LineFacts, then: String): Said {

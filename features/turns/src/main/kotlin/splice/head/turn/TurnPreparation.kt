@@ -59,6 +59,7 @@ import splice.head.RequestBodyReader
 import splice.head.compact.CompactClassifier
 import splice.head.compaction.CompactionReplay
 import splice.head.compaction.HeldReply
+import splice.head.turn.fallback.HeldModelFallback
 import splice.head.wire.ClientInbound
 import splice.head.wire.FrameRecording
 import splice.upstream.BuiltTurn
@@ -77,6 +78,9 @@ internal sealed class Preparation {
         val messagesHash: String?,
         /** The installed client can only compact after at least one assistant exchange exists. */
         val hasPriorExchange: Boolean,
+        /** Whether a session sent this turn itself. A turn Claude Code sends for a subagent is served like any other
+         *  and has no say in the model the command's logins are named for (AskedModels, Nov 12, 2026). */
+        val own: Boolean = true,
     ) : Preparation() {
         /** Transfers the raw request to its trace without retaining a second post-handoff owner. */
         fun takeInbound(): ClientInbound? = inbound.also { inbound = null }
@@ -139,6 +143,9 @@ internal class TurnPreparation(
     private val messageEdges = MessageEdges(deps.seams.events)
     private val providerTurns = ProviderTurnBuild(provider, deps, replay)
 
+    /** A session's own fallback model while the one it asks for is held on every login (Nov 13, 2026). */
+    private val heldFallback = HeldModelFallback(deps.quotaBundle, provider.catalog, deps.log)
+
     /** Fix 4 of the Oct 27 Responses fixes: which earlier request of the same Claude Code turn each request
      *  continues, so the turn state its backend returned rides every request of that turn (ToolLoopTurns). */
     private val toolLoop = ToolLoopTurns()
@@ -189,9 +196,12 @@ internal class TurnPreparation(
     private fun preparedParsed(
         call: ApplicationCall,
         perf: TurnPerf,
-        parsed: AnthropicTurnBody,
-        asked: RefusedRequest,
+        received: AnthropicTurnBody,
+        named: RefusedRequest,
     ): Preparation {
+        // Before anything reads the model: a refusal past here names the model the turn would have gone upstream as.
+        val parsed = heldFallback.applied(received, named.sessionId)
+        val asked = named.copy(model = parsed.typed.model)
         val sessionId = asked.sessionId
         val inbound = asked.inbound
         refusalOf(parsed, asked)?.let { return it }
@@ -331,6 +341,7 @@ internal class TurnPreparation(
             // V4-319: what a stop of this turn marks. A collect is never listed, so only a stream carries it there.
             messagesHash.takeIf { parsed.typed.stream },
             hasPriorExchange = parsed.typed.messages.any { it.role == "assistant" },
+            own = parsed.agentId == null,
         )
     }
 

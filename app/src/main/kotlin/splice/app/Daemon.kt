@@ -15,6 +15,7 @@ package splice.app
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import splice.app.control.FailedHeads
+import splice.app.control.HandOver
 import splice.app.control.ManagedHead
 import splice.app.daemon.BootedTopology
 import splice.app.daemon.HeadCatalogs
@@ -57,6 +58,8 @@ import splice.share.RemoteTrees
 import splice.topology.TopologyLoader
 import splice.usage.quota.ClientUserAgent
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentSkipListMap
+import java.util.concurrent.TimeUnit
 
 public class Daemon(
     private val topology: Topology,
@@ -78,6 +81,11 @@ public class Daemon(
      *  until [start] opens the listeners. The default binds every port itself, which is every start without one. */
     internal var adopted: AdoptedServing = AdoptedServing()
 
+    /** #523: how the control plane asks this process to hand over to the next daemon (POST /api/daemon/retire) and
+     *  asks the launcher for one, assigned by Main before [start]. Null, every daemon a test builds, answers that
+     *  route with a named 503. */
+    internal var handOver: HandOver? = null
+
     // Topology TOML ([daemon] + [defaults]) feeds the headOverrides layer so reasoning
     // display is operator-editable without recompiling. Env and runtime PATCH still win.
     // [heads.<key>.overrides] rides the per-head layer: heads share ONE ConfigService (one JVM,
@@ -90,6 +98,10 @@ public class Daemon(
     ).also { it.observeSnapshots(splice.upstream.memory.JvmHeap.budget) }
     private val mgmtKey = MgmtKey(statePaths)
     private val clientVersions = ClientVersionTracker()
+
+    // Nov 12, 2026: the price table follows the project's main branch between releases (PriceRefresh). The table the
+    // last refresh kept is taken here, before any catalog below takes a price, when it is not older than this build's.
+    private val prices = LifecycleWiring.priceRefresh(statePaths, topologyPath, log).also { it.seed() }
 
     /** The topology's directory: a relative `system_prompt_file` or `[compaction] file =` resolves
      *  against it. Hoisted above [controlPlane] (V4-136) because the shared compaction resolver
@@ -138,6 +150,7 @@ public class Daemon(
                 }
             },
             running = topologyWindows,
+            alertCommand = topology.daemon.alertCommand.orEmpty(),
         ),
         refreshCall,
         mcpHosting = McpHostingSettings(share = McpShareChoice { topologyWindows.mcpShare }).with(topology.daemon),
@@ -148,7 +161,10 @@ public class Daemon(
     // The collaborators the file-level/same-file helpers became (Kotlin style law, 2026-08-15;
     // diffused into splice.app.head / splice.app.provider, 2026-08-17). All are stateless or hold
     // only their own probe bookkeeping; one instance each keeps the wiring readable.
-    private val headBoot = HeadBoot()
+    // #525: each head is started as soon as it is assembled (HeadBoot).
+    private val headBoot = HeadBoot(
+        HeadsStart { built, failed -> headProbes.startDaemonHeads(built, failed, controlPlane.probeScope, log) },
+    )
     private val performance = splice.app.observability.PerfTelemetry(
         config,
         topology.heads.keys,
@@ -211,19 +227,28 @@ public class Daemon(
             readFailures = controlPlane.quotaReadFailures,
         ),
         perfSources = controlPlane.perfRows,
-    )
+    ).also { it.sessionFallbacks = controlPlane.sessionFallbacks }
 
-    private val heads = LinkedHashMap<String, ManagedHead>()
+    // #525 (Nov 13, 2026): the heads in splice.toml's order whatever order they were assembled in, and safe to read
+    // while a later head is still being added, since a head now serves before the last one is assembled.
+    private val headOrder = topology.heads.keys.withIndex().associate { (index, key) -> key to index }
+    private val heads = ConcurrentSkipListMap<String, ManagedHead>(
+        compareBy<String> { headOrder[it] ?: Int.MAX_VALUE }.thenBy { it },
+    )
 
     /** LAN share: the commands this machine runs on another's heads, and the listener that offers its own. */
     private val share = DaemonShare(topology, config, TurnKey(mgmtKey), log, statePaths.stateDir)
     private val stopLock = Mutex()
     private var stopped = false
 
+    // #523: set once this daemon has handed over to the next one; its stop then closes only its heads.
+    private var retired = false
+
     public suspend fun start() {
         performance.start()
         // Before anything binds: the control plane and every head serve on a handed-over socket where there is one.
         controlPlane.adopted = adopted
+        controlPlane.handOver = handOver
         headServerFactory.adopted = adopted
         val cfg = config.getConfig()
         // TOML feeds ConfigService's topology layer; state/env/runtime override it consistently.
@@ -248,24 +273,19 @@ public class Daemon(
         TranscriptOriginals(statePaths).sweep(log)
         // 2026-09-22: every head's endpoint is asked what it serves — all at once, bounded, before any
         // catalog exists — so each picker is its declared rows plus what its provider lists.
+        // #525 (Nov 13, 2026): a head whose list was kept within two hours begins with it and is asked in the
+        // background, so a restart no longer holds new requests while every provider answers.
         val rosterProviders = topology.heads.mapNotNull { (key, head) ->
             val declared = topology.providers[head.provider] ?: return@mapNotNull null
             key to buildInputs.effectiveProvider(key, declared, legacyKnobsGovern = key in legacySolo)
         }.toMap()
-        controlPlane.modelRosters.resolve(rosterProviders)
+        controlPlane.modelRosters.begin(rosterProviders)
         controlPlane.modelRosters.start(controlPlane.probeScope, rosterProviders)
-        val failed = headBoot.assembleDaemonHeads(topology, statePaths, heads, log) { key, head, providerCfg ->
-            val legacy = key in legacySolo
-            val ctx = buildInputs.providerContext(key, head, providerCfg, legacyKnobsGovern = legacy)
-            // V4-162: attached before assembly, so every holder of the catalog (provider, launch spec,
-            // statusline) reads the windows splice.toml declares NOW.
-            managedHeadFactory.assembleHead(topologyWindows.attach(ctx, legacy), controlPort)
-        }
         // Start heads BEFORE opening the control plane so a launch-shim that sees /health and
         // immediately POSTs /launch/<head> does not race a still-binding head (503 head is not
-        // running) — headProbes.startDaemonHeads binds every head's port; controlPlane.start below
-        // binds the control port, so it must run after.
-        headProbes.startDaemonHeads(heads, failed, controlPlane.probeScope, log)
+        // running) — the assembly starts each head through headProbes.startDaemonHeads, which binds
+        // that head's port; controlPlane.start below binds the control port, so it must run after.
+        val failed = assembleHeads(controlPort, legacySolo)
         headProbes.startRuntimeWatch(
             topology,
             controlPlane.probeScope,
@@ -292,8 +312,70 @@ public class Daemon(
         ) ?: return share.close()
         // MCP hub step 6: each installed Claude Code version's --plugin-dir-no-mcp verdict, checked in the background.
         controlPlane.pluginFlagChecks.request()
+        prices.start()
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
+    }
+
+    /** Assembles every head and starts each one as it is built (HeadBoot). #525: the first heads serve before the
+     *  last is assembled, and no re-read of splice.toml runs until every head has attached to it. */
+    private suspend fun assembleHeads(controlPort: Int, legacySolo: Set<String>): Map<String, String> {
+        topologyWindows.assembling = true
+        try {
+            return headBoot.assembleDaemonHeads(topology, statePaths, heads, log) { key, head, providerCfg ->
+                val legacy = key in legacySolo
+                val ctx = buildInputs.providerContext(key, head, providerCfg, legacyKnobsGovern = legacy)
+                // V4-162: attached before assembly, so every holder of the catalog (provider, launch spec,
+                // statusline) reads the windows splice.toml declares NOW.
+                managedHeadFactory.assembleHead(topologyWindows.attach(ctx, legacy), controlPort)
+            }
+        } finally {
+            topologyWindows.assembling = false
+        }
+    }
+
+    /** #523: the hand-over to the next daemon, which is the stop below with one difference: a head whose provider
+     *  can finish an answer beside another daemon keeps the turns already answering. Everything else this process
+     *  holds that the next daemon needs is closed here, in the stop's own order (the share listener, the control
+     *  server, the probes and sign-ins, the performance recorder), but for what rides on the control server, which
+     *  stops first, and the control server's engine: here it stops taking connections, and it stops in [finish]. When
+     *  this returns the caller releases the daemon lock and the next daemon boots; [finish] then waits for the kept
+     *  turns. Returns how many were kept.
+     *
+     *  The probe scope ends here although kept turns are still streaming, which the stop never allows. It has to: a
+     *  login's renewal and an open sign-in are the next daemon's from the hand-over on, and two daemons renewing one
+     *  login would spend its refresh token twice. So a kept turn cannot renew its login in this process. It needs
+     *  to only for a second upstream attempt after its token ran out, and that attempt fails here. */
+    public suspend fun retire(): Int = stopLock.withLock {
+        if (stopped || retired) return@withLock 0
+        // A hosted MCP child takes up to two seconds to die. It dies first, while the heads still take turns: after
+        // them, that wait was part of the stretch in which no daemon serves (2.4 to 2.5 s of it in eight of the
+        // thirteen hand-overs of Nov 12, 2026).
+        controlPlane.ownership.quiet()
+        headProbes.fenceStarts()
+        controlPlane.ownership.fence()
+        share.close()
+        headProbes.closeStarts()
+        val kept = headShutdown.retireHeads(heads.values.map { it.head }, HEAD_STOP_BUDGET_MS, log) {
+            controlPlane.ownership.leave()
+        }
+        val handedOver = System.nanoTime()
+        closeBackground()
+        // #525 (2026-11-13): the lock is freed when this returns, and the next daemon boots from there. No line said
+        // how long this daemon still held it: the stretch from the heads' hand-over to the next daemon's first line
+        // read 0.22 s at one restart of that day and 0.44 s at the next two, and nothing told this daemon's part of
+        // it from the next one's.
+        val closedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - handedOver)
+        log("[daemon] retire: background work closed ${closedMs}ms after the heads; the lock is freed next\n")
+        retired = true
+        kept
+    }
+
+    /** #523: waits up to [withinMs] for the turns [retire] kept, and stops each head when its last one ends. The
+     *  control server's engine, which [retire] left running with its listener handed on, stops beside them. It holds
+     *  no lock, so a [stop] that arrives meanwhile is not held behind it and cuts what is still running. */
+    public suspend fun finish(withinMs: Long) {
+        headShutdown.finishHeads(heads.values.map { it.head }, withinMs, log) { controlPlane.ownership.close() }
     }
 
     public suspend fun stop(): Unit = stopLock.withLock {
@@ -304,7 +386,7 @@ public class Daemon(
             headProbes.fenceStarts()
             controlPlane.ownership.fence()
             // No other machine's turn starts on a head that is about to drain.
-            share.close()
+            if (!retired) share.close()
 
             // Heads stop in PARALLEL under a phase DEADLINE, then control stops — see
             // [HeadShutdown.stopHeads]. The supervisor scope + stopFailureHandler live there so an
@@ -319,16 +401,22 @@ public class Daemon(
                 log,
             ) { controlPlane.ownership.close() }
 
-            // Probe cancellation runs AFTER the heads have drained: the probe scope is the scope
-            // ProviderAssembly hands every provider, so cancelling it first means a SingleFlight
-            // token refresh raised by a turn still streaming inside the 45s drain is cancelled by a
-            // job that turn does not own — a foreign CancellationException in a live turn.
-            headProbes.stop()
-            managedHeadFactory.closeEvidenceLoads()
-            controlPlane.cancelProbes()
-            performance.close()
-            topologyWindows.close()
+            // A daemon that handed over closed these then, before the next daemon opened its own.
+            if (!retired) closeBackground()
             stopped = true
         }
+    }
+
+    /** What runs beside the heads, closed once the heads no longer take turns. Probe cancellation runs AFTER the
+     *  heads have drained: the probe scope is the scope ProviderAssembly hands every provider, so cancelling it first
+     *  means a SingleFlight token refresh raised by a turn still streaming inside the drain is cancelled by a job
+     *  that turn does not own — a foreign CancellationException in a live turn. */
+    private suspend fun closeBackground() {
+        prices.close()
+        headProbes.stop()
+        managedHeadFactory.closeEvidenceLoads()
+        controlPlane.cancelProbes()
+        performance.close()
+        topologyWindows.close()
     }
 }

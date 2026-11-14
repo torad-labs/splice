@@ -32,18 +32,18 @@ class ClaudeNativeHeadVerdictTest {
     @Test
     fun `a successful native-only request verifies the client head, no failover or credential writes`() = runBlocking {
         val fixture = ClaudeNativePoolFixture(home)
-        fixture.seed("splice")
-        val file = home.resolve(".claude-splice/.credentials.json")
+        fixture.seed("native")
+        val file = home.resolve(".claude/.credentials.json")
         val before = Files.readAllBytes(file)
         val sent = CopyOnWriteArrayList<String?>()
-        val upstream = fixture.nativeUpstream(sent, CopyOnWriteArrayList()).start()
+        val upstream = fixture.nativeUpstream(sent, CopyOnWriteArrayList(), refusedCredential = null).start()
         val port = upstream.engine.resolvedConnectors().single().port
         val rig = fixture.rig(upstreamUrl = "http://127.0.0.1:$port")
         try {
             assertInstanceOf(ClientAuthProvider::class.java, rig.head.auth)
             val accounts = requireNotNull(rig.head.authSurface.accountPool).view(null).accounts
             assertTrue(accounts.all { it.label.startsWith("native:") }, "no added Claude account")
-            assertEquals(listOf(SPLICE_SELECTOR), accounts.filter { it.available }.map { it.label })
+            assertEquals(listOf(NATIVE_SELECTOR), accounts.filter { it.available }.map { it.label })
             HttpClient(Java).use { client ->
                 val response = client.post("http://127.0.0.1:${rig.head.head.port}/v1/messages") {
                     bearerAuth("synthetic-caller")
@@ -56,7 +56,7 @@ class ClaudeNativeHeadVerdictTest {
                 }
                 assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
             }
-            assertEquals(listOf("Bearer synthetic-splice"), sent, "one native send, no added account or failover")
+            assertEquals(listOf("Bearer synthetic-native"), sent, "one native send, no added account or failover")
             assertInstanceOf(CredentialVerdict.Accepted::class.java, rig.head.auth.describe().verdict)
             assertArrayEquals(
                 before,

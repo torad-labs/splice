@@ -1,12 +1,19 @@
 // NEW: the daemon's run and its ordered stop: the shutdown hook, the startup job beside the signal wait, the halt
 // watchdog armed when the signal fires, and the stop, which closes the control server startup owns, waits for startup to
 // finish, drains the file lane and releases the daemon lock last.
+//
+// #523: a second signal, the hand-over. The next daemon asks this one to retire; it stops taking requests, releases
+// the lock so the next daemon boots, and keeps running until the answers it was in the middle of have ended. Then,
+// or at a stop signal, the ordered stop above runs as it always has.
 package splice.app
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import splice.app.daemon.DaemonLock
@@ -25,7 +32,12 @@ internal class DaemonRun(
 
     /** Registers the JVM shutdown hook and serves until the signal: the whole process-level stop path, as one seam so a
      *  test JVM can drive the real hook and the real ordered stop with a daemon it holds in startup. */
-    internal suspend fun serve(daemon: Daemon, lock: DaemonLock, shutdownSignal: CompletableDeferred<Unit>) {
+    internal suspend fun serve(
+        daemon: Daemon,
+        lock: DaemonLock,
+        shutdownSignal: CompletableDeferred<Unit>,
+        retireSignal: CompletableDeferred<Unit> = CompletableDeferred(),
+    ) {
         // `addShutdownHook` takes an unstarted Thread — the one place in this process where the JVM
         // API itself demands the type. It comes from the platform factory rather than an ad-hoc
         // `Thread(...)` so that thread creation has a single seam here as it does in every executor.
@@ -38,7 +50,7 @@ internal class DaemonRun(
                 stopped.await(stopDeadlineMs + TEARDOWN_TAIL_GRACE_MS, TimeUnit.MILLISECONDS)
             },
         )
-        serveUntilShutdown(daemon, lock, shutdownSignal, stopped)
+        serveUntilShutdown(daemon, lock, DaemonSignals(shutdownSignal, retireSignal), stopped)
     }
 
     /** Serves until the signal completes (a control plane that could not bind, or the shutdown hook), then runs the
@@ -51,9 +63,10 @@ internal class DaemonRun(
     private suspend fun serveUntilShutdown(
         daemon: Daemon,
         lock: DaemonLock,
-        shutdownSignal: CompletableDeferred<Unit>,
+        signals: DaemonSignals,
         stopped: CountDownLatch,
     ) {
+        val shutdownSignal = signals.shutdown
         // Its own scope and a real dispatch: a startup blocked in a call that cannot be cancelled must neither hold
         // main off the wait below nor keep this function from returning once the stop has run.
         val startup = LifecycleScope(ProcessDispatchers().background()).async {
@@ -63,7 +76,7 @@ internal class DaemonRun(
         }
         startup.invokeOnCompletion { cause -> if (cause != null) shutdownSignal.completeExceptionally(cause) }
         try {
-            shutdownSignal.await()
+            if (signals.retireAsked()) handOver(daemon, lock, startup, shutdownSignal)
         } finally {
             try {
                 withContext(NonCancellable) {
@@ -100,11 +113,56 @@ internal class DaemonRun(
         // with startup over and the fences set nothing more can open, so the second pass stops what it opened. A
         // stop that finished is `stopped`, and this pass does nothing.
         if (cooperative == null) boundary.runCatchingDaemonBoundary { daemon.stop() }
-        // The file lane's flush is the last reportable signal before lock.close() and the halt
-        // watchdog: a false means daemon.log / usage / economics writes were lost on the way out.
+        release(lock)
+    }
+
+    /** #523: this daemon hands over to the next one and finishes what it was answering. Startup is waited for first:
+     *  the request arrives over the control server, which startup opens last, so the wait is over or nearly so. The
+     *  lock is released once the heads' books are written and the control server has stopped taking connections, and
+     *  the next daemon, which has been waiting on it, boots from there. A stop signal ends the wait for the kept answers, and the
+     *  ordered stop that follows cuts what is still running. */
+    private suspend fun handOver(
+        daemon: Daemon,
+        lock: DaemonLock,
+        startup: Job,
+        shutdownSignal: CompletableDeferred<Unit>,
+    ) {
+        startup.join()
+        boundary.runCatchingDaemonBoundary { daemon.retire() }
+        release(lock)
+        coroutineScope {
+            val finishing = launch { boundary.runCatchingDaemonBoundary { daemon.finish(RETIRED_FINISH_MS) } }
+            select<Unit> {
+                shutdownSignal.onAwait { }
+                finishing.onJoin { }
+            }
+            finishing.cancel()
+        }
+    }
+
+    /** The lock is the last thing released, after the file lane's flush: a daemon waiting on it reads what this one
+     *  wrote. That flush is the last reportable signal before the halt watchdog: a false means daemon.log, usage or
+     *  economics writes were lost on the way out. Called at a hand-over and again at the stop, where it finds the
+     *  lock already released. */
+    private fun release(lock: DaemonLock) {
         if (!AsyncFileIo.drain()) {
             System.err.println("[daemon] file lane did not flush before halt; telemetry writes may be lost\n")
         }
         lock.close()
     }
 }
+
+/** The two things a serving daemon waits for: a stop, and (#523) the next daemon's request to hand over. */
+internal class DaemonSignals(val shutdown: CompletableDeferred<Unit>, private val retire: CompletableDeferred<Unit>) {
+    /** Waits for whichever comes first, and says whether it was the hand-over. A startup that failed completes
+     *  [shutdown] exceptionally, which rethrows here as its await did. */
+    suspend fun retireAsked(): Boolean = select {
+        shutdown.onAwait { false }
+        retire.onAwait { true }
+    }
+}
+
+// How long a daemon that handed over waits for the answers it kept. A long answer on the largest models runs for
+// several minutes, and one that is still running after this is cut with the restart line, as every running turn
+// was before #523.
+internal const val RETIRED_FINISH_MS = 15 * 60_000L

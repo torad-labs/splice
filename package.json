@@ -1,7 +1,7 @@
 {
   "name": "splice",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.4.1",
   "engines": {
     "node": ">=24"
   },
@@ -33,10 +33,10 @@
     "promote": "bun tools/release promote"
   },
   "devDependencies": {
-    "@ast-grep/cli": "0.51.0",
+    "@ast-grep/cli": "0.51.1",
     "@grpc/grpc-js": "1.14.7",
     "@grpc/proto-loader": "0.8.1",
-    "@playwright/test": "1.64.1",
+    "@playwright/test": "1.65.0",
     "@types/bun": "^1.4.4",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@xterm/headless": "6.0.0",

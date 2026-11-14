@@ -154,7 +154,7 @@ class UpstreamClientTransportTest {
         val waits = mutableListOf<Long>()
         assertThrows<ConnectException> {
             clientOver(engine, RetryPacing(waiter = Waiter { waits.add(it) }), totalTimeoutMs = WHOLE_SCHEDULE_MS)
-                .posted(ctx(), "{}") { "unreachable" }
+                .posted(ctx(), "{}") { error("unreachable") }
         }
         assertEquals(listOf(1_000L, 2_000L, 4_000L, 8_000L, 16_000L, 30_000L, 30_000L, 30_000L), waits)
         assertEquals(waits.size + 1, calls.get(), "one send after each wait, then the real exception surfaces")
@@ -171,7 +171,7 @@ class UpstreamClientTransportTest {
             clientOver(engine).posted(
                 ctx(),
                 "{}",
-            ) { "unreachable" }
+            ) { error("unreachable") }
         }
         assertEquals(1, calls.get())
     }
@@ -417,7 +417,7 @@ class UpstreamClientTransportTest {
         val retries = mutableListOf<String>()
         val thrown = assertThrows<IOException> {
             clientOver(engine, totalTimeoutMs = WHOLE_SCHEDULE_MS)
-                .posted(ctx(onRetry = { retries.add(it) }), "{}") { "unreachable" }
+                .posted(ctx(onRetry = { retries.add(it) }), "{}") { error("unreachable") }
         }
         assertEquals("HTTP/1.1 header parser received no bytes", thrown.message)
         assertEquals(

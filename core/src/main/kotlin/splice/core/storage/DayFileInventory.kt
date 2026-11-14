@@ -35,6 +35,11 @@ internal class DayFileInventory(prefix: String) {
             },
             bytes = kept.sumOf { (_, content) -> content.sumOf { (_, size) -> size } },
             oldest = kept.firstOrNull()?.first,
+            // The budget's marker beside a day is the one thing that says its bodies went (DayBodyBudget.evict); it
+            // leaves with the day.
+            bodiesRemoved = days.filter { (_, file) ->
+                regularSize(file.resolveSibling("${file.fileName}$DAY_BODY_EVICTED_SUFFIX")) != null
+            }.map { (date, _) -> date },
         )
     }
 

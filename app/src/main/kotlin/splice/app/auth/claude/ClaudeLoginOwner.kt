@@ -18,6 +18,12 @@ import splice.launch.recipe.LaunchLoginGuard
 import java.nio.file.Path
 import java.util.UUID
 
+// why: what a Remove on Claude Code's own login is answered with. That file is the login every `claude` session on the
+// machine runs on: on Nov 13, 2026 a Remove on it deleted it and every session said "Not logged in" until a /login.
+private const val OWN_LOGIN_KEPT =
+    "This is Claude Code's own login, the one every claude session on this machine runs on, so splice never removes " +
+        "it. To sign it out, run /logout in Claude Code."
+
 internal class ClaudeLoginOwner(
     private val locations: List<ClaudeLoginLocation>,
     private val reads: ClaudeLoginRead,
@@ -61,11 +67,11 @@ internal class ClaudeLoginOwner(
         return signIn.start(head, label)
     }
 
-    override suspend fun remove(place: ClaudeLoginPlaceId): AccountMutation = edit(place, null)
+    /** Never removes it: a place is Claude Code's own login, which splice neither writes nor refreshes (see
+     *  ClaudeAccountFolders), and every session of its command runs on it. Added accounts are removed in the pool. */
+    override suspend fun remove(place: ClaudeLoginPlaceId): AccountMutation = AccountMutation.Refused(OWN_LOGIN_KEPT)
 
-    override suspend fun relabel(place: ClaudeLoginPlaceId, label: String): AccountMutation = edit(place, label)
-
-    private fun edit(place: ClaudeLoginPlaceId, label: String?): AccountMutation {
+    override suspend fun relabel(place: ClaudeLoginPlaceId, label: String): AccountMutation {
         val location = synchronized(lock) {
             val found = locations.singleOrNull { it.id == place }
                 ?: return AccountMutation.Refused("native login place is not configured")
@@ -76,12 +82,7 @@ internal class ClaudeLoginOwner(
             found
         }
         return try {
-            val store = logins.getValue(place)
-            if (label == null) {
-                edits.remove(location, store)
-            } else {
-                edits.relabel(location, store, label)
-            }
+            edits.relabel(location, logins.getValue(place), label)
         } finally {
             changes?.publish(location.target.head.key)
             synchronized(lock) { mutating -= place }

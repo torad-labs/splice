@@ -70,7 +70,14 @@ public class WrapGuard(
     private fun awaitChange() {
         val service = watcher ?: register()
         if (service == null) {
-            stopped.await(tickSeconds, TimeUnit.SECONDS)
+            // close() counts the latch down and then interrupts this thread, and either ends the wait: an interrupt
+            // that lands first is the stop, not a failure to report (it was logged as UNCAUGHT at every daemon stop
+            // on a machine with no bin folder to watch).
+            try {
+                stopped.await(tickSeconds, TimeUnit.SECONDS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
             return
         }
         try {

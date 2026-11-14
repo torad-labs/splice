@@ -10,6 +10,7 @@ import org.gradle.api.tasks.PathSensitivity
 import org.gradle.language.jvm.tasks.ProcessResources
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import splice.release.IsolatePlatforms
+import splice.release.PlatformJar
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermissions
@@ -521,8 +522,15 @@ val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
 // and the compliance reports' presence. The jar and the reports are declared INPUTS rather than
 // probed by path, so `:app:stageRelease` builds what it stages; the "expected fat jar missing"
 // refusal stays as the floor for a dist staged against a deleted artifact.
-val releaseAssets = listOf(
-    "splice.jar", "splice-launch", "install.sh", "splice-mcp-holder", "splice-mcp-front",
+//
+// ONE JAR PER PLATFORM BESIDE THE JAR OF ALL FOUR (Nov 12, 2026). splice.jar holds every platform's code-mode isolate
+// and native host, about 476 MB; a platform's own jar, splice-<platform>.jar, is that jar with the other three cut out
+// (PlatformJar), about 210 MB. install.sh and `splice upgrade` take their platform's jar when the release lists one
+// and splice.jar when it does not, so a release before this one, and a platform no isolate is published for, install
+// as they did. splice.jar stays: every install up to 0.4.0 upgrades by that name.
+val platformJarAssets = IsolatePlatforms.every.associateWith { "splice-$it.jar" }
+val releaseAssets = listOf("splice.jar") + platformJarAssets.values + listOf(
+    "splice-launch", "install.sh", "splice-mcp-holder", "splice-mcp-front",
     "LICENSE", "THIRD_PARTY_NOTICES.md", "THIRD_PARTY_LICENSES.txt", "PROVENANCE.md",
     "bom.cdx.json", "dependency-licenses.json",
 )
@@ -536,6 +544,16 @@ val releaseTagPattern =
     )
 
 val releaseJar = tasks.named<ShadowJar>("shadowJar").flatMap { it.archiveFile }
+val platformJars = IsolatePlatforms.every.associateWith { platform ->
+    val named = platform.split('-').joinToString("") { part -> part.replaceFirstChar(Char::uppercase) }
+    tasks.register<PlatformJar>("platformJar$named") {
+        group = "release"
+        description = "Cuts $platform's jar from the fat jar of all four platforms."
+        universal.set(releaseJar)
+        this.platform.set(platform)
+        jar.set(layout.buildDirectory.file("platform-jars/splice-$platform.jar"))
+    }.flatMap { it.jar }
+}
 // A real pushed tag is the authority; SPLICE_RELEASE_TAG is how the promotion path threads the
 // resolved version in (release.yml), and an empty value means "no tag gate", as in the script.
 val releaseTag =
@@ -573,12 +591,15 @@ tasks.register("stageRelease") {
     val thirdPartyLicenses = thirdPartyLicenses
     val provenance = provenance
     val releaseAssets = releaseAssets
+    val platformJarAssets = platformJarAssets
+    val platformJars = platformJars
     val hubHolder = hubHolder
     val hubFront = hubFront
     group = "release"
     description =
         "Stages dist/: the published asset set and sha256sums.txt over it (checks/release/stage.sh until PR 6)."
     inputs.file(releaseJar).withPropertyName("fatJar")
+    inputs.files(platformJars.values).withPropertyName("platformJars")
     inputs.files(bom, licenses, thirdPartyLicenses).withPropertyName("complianceReports")
     inputs.files(licenseFile, thirdPartyNotices, provenance, launchShim, installScript)
         .withPropertyName("publishedRepositoryFiles")
@@ -633,21 +654,40 @@ tasks.register("stageRelease") {
             check(file.isFile) { "release stage: compliance report missing at $file" }
         }
         val javaBin = launcher.get().executablePath.asFile.absolutePath
-        val versionProcess = ProcessBuilder(javaBin, "-jar", jar.absolutePath, "version")
-            .redirectErrorStream(true)
-            .start()
-        val jarOutput = versionProcess.inputStream.bufferedReader().use { it.readText() }.trim()
-        val jarExit = versionProcess.waitFor()
-        check(jarExit == 0) { "release stage: the jar's version command exited $jarExit: '$jarOutput'" }
-        check(jarOutput == "splice $version") {
-            "release stage: package version $version does not match '$jarOutput'"
+        // The jar of all four and each platform's cut of it answer `version` alike: a cut that lost an entry the
+        // launcher needs, or its manifest, fails here and not on someone's machine.
+        val jars = mapOf("splice.jar" to jar) +
+            platformJars.map { (platform, file) -> platformJarAssets.getValue(platform) to file.get().asFile }
+        jars.forEach { (name, file) ->
+            val versionProcess = ProcessBuilder(javaBin, "-jar", file.absolutePath, "version")
+                .redirectErrorStream(true)
+                .start()
+            val jarOutput = versionProcess.inputStream.bufferedReader().use { it.readText() }.trim()
+            val jarExit = versionProcess.waitFor()
+            check(jarExit == 0) { "release stage: $name's version command exited $jarExit: '$jarOutput'" }
+            check(jarOutput == "splice $version") {
+                "release stage: package version $version does not match $name's '$jarOutput'"
+            }
+        }
+        // A platform's jar holds its own isolate and native host and no other platform's.
+        platformJars.forEach { (platform, file) ->
+            val held = ZipFile(file.get().asFile).use { zip ->
+                IsolatePlatforms.every.filter { other ->
+                    zip.getEntry(IsolatePlatforms.marker(other)) != null ||
+                        zip.getEntry("splice/codemode/native/$other/host.properties") != null
+                }
+            }
+            check(held == listOf(platform)) {
+                val asset = platformJarAssets.getValue(platform)
+                val found = held.joinToString().ifEmpty { "no platform" }
+                "release stage: $asset holds $found, where it should hold $platform alone"
+            }
         }
 
         val dist = distDir.asFile
         dist.deleteRecursively()
         dist.mkdirs()
-        val sources = mapOf(
-            "splice.jar" to jar,
+        val sources = jars + mapOf(
             "splice-launch" to launchShim.asFile,
             "install.sh" to installScript.asFile,
             "splice-mcp-holder" to hubHolder.asFile,
@@ -672,8 +712,13 @@ tasks.register("stageRelease") {
                 staged.toPath(),
                 PosixFilePermissions.fromString(if (asset in executable) "rwxr-xr-x" else "rw-r--r--"),
             )
-            val digest = MessageDigest.getInstance("SHA-256").digest(staged.readBytes())
-                .joinToString("") { byte -> "%02x".format(byte) }
+            // read in pieces: five jars of 210 to 476 MB each do not belong in the build's heap whole
+            val sha = MessageDigest.getInstance("SHA-256")
+            staged.inputStream().use { input ->
+                val piece = ByteArray(1 shl 20)
+                generateSequence { input.read(piece).takeIf { it >= 0 } }.forEach { sha.update(piece, 0, it) }
+            }
+            val digest = sha.digest().joinToString("") { byte -> "%02x".format(byte) }
             "$digest  $asset\n"
         }
         dist.resolve("sha256sums.txt").writeText(sums)

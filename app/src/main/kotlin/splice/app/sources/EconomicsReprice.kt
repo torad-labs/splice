@@ -10,6 +10,7 @@
 // re-derived from rows that are not the same turns would be a different hour's answer wearing this one's label.
 package splice.app.sources
 
+import splice.core.model.PublishedRates
 import splice.core.model.TurnPrice
 import splice.head.usage.AccountOnPlan
 import splice.head.usage.BucketCost
@@ -48,6 +49,10 @@ internal class EconomicsReprice(
     private val models = HashSet<String>()
     private val accounts = HashSet<String?>()
 
+    // The settled answers hold while the price table they were made under is in use. A refreshed table can price a
+    // turn that had no price, so every hour that still has one is asked again under it.
+    private var pricedUnder = PublishedRates.table()
+
     init {
         kept.load()?.let { saved ->
             settled.putAll(saved.settled)
@@ -60,6 +65,13 @@ internal class EconomicsReprice(
      *  the plan split, whose plan and key requests the rows tell apart by account. [buckets] unchanged where the rows
      *  cannot be read. The deduction has already run, so [buckets] holds no probe turns. */
     fun priced(buckets: List<EconomicsBucket>): List<EconomicsBucket> {
+        val table = PublishedRates.table()
+        if (table !== pricedUnder) {
+            pricedUnder = table
+            settled.clear()
+            models.clear()
+            accounts.clear()
+        }
         val wanted = buckets.filter { needs(it) && settled[it.hour]?.recorded != recorded(it) }
         val fresh = if (wanted.isEmpty()) emptyMap() else answer(wanted)
         return buckets.map { bucket ->

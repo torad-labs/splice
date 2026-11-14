@@ -4,7 +4,8 @@
 // until it recovers — the bars simply keep the last snapshot.
 //
 // A probe that cannot reach the endpoint retries after 10 s, doubling up to the interval; an HTTP
-// refusal is an answer and waits the full interval. The daemon starts at boot before
+// refusal is an answer and waits the full interval, except a 429, which doubles the gap between
+// reads (QuotaReadGap). The daemon starts at boot before
 // the network is up, so its first probe is refused; waiting the whole interval after that left the
 // GPT head with no 7d bar for five minutes after every reboot (2026-10-01, 2026-10-03).
 package splice.usage.quota
@@ -54,12 +55,8 @@ public class QuotaPoller(
     private var lastSnapshot: QuotaSnapshot? = null
     private var lastProbeAtMs: Long? = null
     private var lastAnswered = true
-    private var reuseMs = floorMs()
-
-    /** The shortest gap this poller allows between two reads of the endpoint: the poll cadence, or the probe floor
-     *  when the cadence is the longer of the two. Asked for rather than captured at construction, so a cadence an
-     *  operator changes governs the gap the next attempt sets (QuotaIntervalMs). */
-    private fun floorMs(): Long = minOf(cadence.intervalMs(), QUOTA_PROBE_FLOOR_MS)
+    private val gap = QuotaReadGap(cadence)
+    private var reuseMs = gap.floorMs()
 
     /** Refresh without a turn. Concurrent opens share the active read, and reuse never changes observation time. */
     public suspend fun probeNow(): QuotaSnapshot? {
@@ -68,6 +65,15 @@ public class QuotaPoller(
             if (observedAttempt == completedAttempts && !insideFloor()) attempt()
             lastSnapshot
         }
+    }
+
+    /** One reading now, past the floor between reads: the person just reset this login's limits at its provider, and
+     *  the floor would keep the turns that reset frees waiting up to two minutes more (Nov 13, 2026). The new reading,
+     *  or null when the provider gave none. */
+    public suspend fun readNow(): QuotaSnapshot? = admission.withLock {
+        val before = lastSnapshot
+        attempt()
+        lastSnapshot?.takeIf { it !== before }
     }
 
     private fun insideFloor(): Boolean =
@@ -155,6 +161,7 @@ public class QuotaPoller(
     }
 
     private suspend fun attempt(): Boolean {
+        val quietForMs = lastProbeAtMs?.let { clocks.elapsedSince(it) }
         val result = Cancellables.runCatchingBestEffort { probe.probe() }
             .onSuccess { snapshot -> snapshot?.let(::accept) }
             .onFailure { failure ->
@@ -172,9 +179,8 @@ public class QuotaPoller(
         lastProbeAtMs = clocks.mark()
         // A login splice cannot read at all is an answer too: retrying it in seconds would not change it.
         val failure = result.exceptionOrNull()
-        val refused = failure is QuotaEndpointRefused || failure is QuotaUnreadable
-        lastAnswered = result.isSuccess || refused
-        reuseMs = if (refused) maxOf(cadence.intervalMs(), floorMs()) else floorMs()
+        lastAnswered = result.isSuccess || failure is QuotaEndpointRefused || failure is QuotaUnreadable
+        reuseMs = gap.after(failure, quietForMs)
         completedAttempts++
         return lastAnswered
     }
@@ -200,9 +206,6 @@ public class QuotaPoller(
         }
     }
 }
-
-// why: navigation cannot issue more than one successful probe per minute; a configured shorter poll interval stays its floor.
-private const val QUOTA_PROBE_FLOOR_MS = 60_000L
 
 private const val MAX_RESTARTS = 5
 private const val RESTART_WINDOW_MS = 600_000L

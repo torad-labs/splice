@@ -117,6 +117,12 @@ internal class TopologyWindows(
     @Volatile
     private var share: Boolean? = boot.daemon.mcpShare
 
+    /** #525 (Nov 13, 2026): heads attach one by one, and the first serves while the last is still assembled.
+     *  A re-read in between would publish to the heads attached so far and never reach the rest, so the daemon
+     *  holds re-reads until every head has attached. A read meanwhile answers what the daemon booted with. */
+    @Volatile
+    var assembling: Boolean = false
+
     private val heads = ConcurrentHashMap<String, Head>()
     private val lock = Any()
 
@@ -159,7 +165,7 @@ internal class TopologyWindows(
     }
 
     private fun refresh() {
-        val file = path ?: return
+        val file = path?.takeUnless { assembling } ?: return
         val stamp = stampOf(file) ?: return
         if (stamp == published.get().stamp || !refreshing.compareAndSet(false, true)) return
         try {

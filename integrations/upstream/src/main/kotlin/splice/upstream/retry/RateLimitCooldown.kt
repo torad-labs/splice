@@ -73,6 +73,9 @@ public class RateLimitCooldown public constructor(
     private val providerUnavailableUntilMs = AtomicLong(0L)
 
     private val holds = ProviderHolds(store)
+
+    /** Where the hold a refusal put on this login itself is kept between restarts; none without a store. */
+    public val loginHold: LoginHoldStore? = store?.loginHold()
     private var terminalCause: FailureCause.Provider.Limited? = null
     private var terminalUntilMs = 0L
 
@@ -97,7 +100,7 @@ public class RateLimitCooldown public constructor(
 
     /** V4-233: the plan window the upstream named as spent, held until the reset it named. Its own
      *  class, so this one keeps its function budget; a newer accepted request ends it ([acceptance]). */
-    public val planHold: PlanHold = PlanHold(clock, wallClock, holds)
+    public val planHold: PlanHold = PlanHold(clock, wallClock, holds, StreamStart { acceptance().invoke() })
 
     init {
         val stored = holds.stored()
@@ -117,7 +120,10 @@ public class RateLimitCooldown public constructor(
         }
         plan?.let(planHold::restore)
         models.forEach(planHold::restore)
-        holds.restored(stored, ProviderHold(resetAt, plan, models))
+        // The figures belong to the holds: with none left to fall from them, they are dropped from the file too.
+        val read = stored.read.takeIf { plan != null || models.isNotEmpty() }.orEmpty()
+        planHold.recall(read)
+        holds.restored(stored, ProviderHold(resetAt, plan, models, read))
         if (rateLimitReply != null) arm(providerUnavailableForMs())
     }
 

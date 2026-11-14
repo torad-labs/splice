@@ -12,6 +12,7 @@ import splice.core.wire.ControlFields.LABEL
 import splice.sessions.http.StartCommand
 import splice.sessions.http.StartCommands
 import splice.sessions.manager.ManagerFolder
+import splice.sessions.manager.ManagerHeadBlock
 import splice.sessions.manager.ManagerHeadChoice
 import splice.sessions.manager.ManagerHeads
 import java.nio.file.Path
@@ -32,17 +33,31 @@ internal class FleetHeadChoices(
 ) : ManagerHeads {
     override fun heads(): List<ManagerHeadChoice> = resolver.headStatuses().mapNotNull { status ->
         val key = JsonScalars.str(status, KEY)?.takeIf { heads[it]?.launchSpec != null } ?: return@mapNotNull null
-        val why = why(key, status)
-        ManagerHeadChoice(key, JsonScalars.str(status, LABEL) ?: key, ready = why == null, why = why)
+        val block = block(key, status)
+        ManagerHeadChoice(
+            key,
+            JsonScalars.str(status, LABEL) ?: key,
+            ready = block == null,
+            why = block?.let { words(it, key) },
+            whyCode = block,
+        )
     }
 
-    /** Why [key] cannot carry the manager now, in his words, or null when it can: its command is not linked, its
-     *  window is full or its provider said to wait, its local runtime did not answer, or it is stopped. */
-    private fun why(key: String, status: JsonObject): String? = when {
-        commands.forHead(key) is StartCommand.Refused -> "not installed as a command: run splice install $key"
-        status["quotaFull"] != null || status["quotaResetAtEpochSeconds"] != null -> "out of quota"
-        status["runtimeNotAnswering"] != null -> "down: its runtime is not answering"
-        JsonScalars.str(status, "running") == "false" -> "down: it is stopped"
+    /** Why [key] cannot carry the manager now, or null when it can: its command is not linked, its window is full
+     *  or its provider said to wait, its local runtime did not answer, or it is stopped. */
+    private fun block(key: String, status: JsonObject): ManagerHeadBlock? = when {
+        commands.forHead(key) is StartCommand.Refused -> ManagerHeadBlock.NOT_INSTALLED
+        status["quotaFull"] != null || status["quotaResetAtEpochSeconds"] != null -> ManagerHeadBlock.OUT_OF_QUOTA
+        status["runtimeNotAnswering"] != null -> ManagerHeadBlock.NOT_ANSWERING
+        JsonScalars.str(status, "running") == "false" -> ManagerHeadBlock.STOPPED
         else -> null
+    }
+
+    /** [block] in his words, for a reader of the reply; the composer reads the name. */
+    private fun words(block: ManagerHeadBlock, key: String): String = when (block) {
+        ManagerHeadBlock.NOT_INSTALLED -> "not installed as a command: run splice install $key"
+        ManagerHeadBlock.OUT_OF_QUOTA -> "out of quota"
+        ManagerHeadBlock.NOT_ANSWERING -> "down: its runtime is not answering"
+        ManagerHeadBlock.STOPPED -> "down: it is stopped"
     }
 }

@@ -44,7 +44,9 @@ import splice.core.topology.Topology
 import splice.core.turn.WatchdogBudget
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
+import splice.core.util.WallClock
 import splice.head.usage.CredentialQuotaFiles
+import splice.head.usage.QuotaTracker
 import splice.models.roster.DeclaredHead
 import splice.models.roster.DeclaredHeads
 import splice.topology.TopologyLoader
@@ -68,7 +70,7 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
     val paths = StatePaths(baseOverride = home.resolve(".splice/state"))
 
     fun seed(place: String, expiresAt: Long = NATIVE_ACCESS_EXPIRY, quota: QuotaSnapshot? = null) {
-        val directory = home.resolve(if (place == "native") ".claude" else ".claude-splice")
+        val directory = home.resolve(".claude")
         Files.createDirectories(directory)
         val token = "synthetic-$place"
         Files.writeString(
@@ -82,9 +84,29 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
             key,
             quota ?: QuotaSnapshot(
                 plan = "synthetic",
-                fiveHour = QuotaWindow(10.0, if (place == "native") 4_102_000_000L else 4_102_100_000L, 18_000L),
+                fiveHour = QuotaWindow(10.0, 4_102_000_000L, 18_000L),
                 updatedAt = System.currentTimeMillis(),
             ),
+        )
+    }
+
+    /** A second login, labelled "added", landed in the command's account folders the way a finished sign-in lands. */
+    fun addLogin() {
+        val folders = ClaudeAccountFolders(paths.stateDir, now = WallClock { 1000 })
+        val pending = folders.pending(NATIVE_HEAD, "added")
+        Files.createDirectories(pending.directory)
+        Files.writeString(
+            pending.directory.resolve(".credentials.json"),
+            """{"claudeAiOauth":{"accessToken":"synthetic-added",""" +
+                """"refreshToken":"must-not-be-used","expiresAt":4102444800000}}""",
+        )
+        Files.writeString(pending.directory.resolve(".claude.json"), """{"oauthAccount":{"accountUuid":"stale"}}""")
+        val credential = requireNotNull(CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer synthetic-added")))
+        ClaudeCredentialProfiles(paths.stateDir, {}).observed(credential, ClaudeAccountIdentity("added-account", null))
+        assertEquals(ClaudeAccountLanding.Added("added"), folders.land(pending))
+        val account = folders.accounts(NATIVE_HEAD).single()
+        QuotaTracker(account.directory.resolve("quota.json")).record(
+            QuotaSnapshot(fiveHour = QuotaWindow(27.0, 4_102_000_000L, 18_000L), updatedAt = 1000),
         )
     }
 
@@ -132,12 +154,10 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
             base_url = "$upstreamUrl"
             [providers.native.auth]
             kind = "client"
-            [heads.claude-splice]
+            [heads.claude]
             provider = "native"
             port = 3100
             discovery_prefix = "synthetic--"
-            [heads.claude-splice.claude]
-            config_dir = "~/.claude-splice"
             """.trimIndent(),
         )
         return file
@@ -209,13 +229,15 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
         val plane = plane(file, config, key)
         plane.performance = performance
         val model = ModelEntry("synthetic-model", contextWindow = 4_000)
+        // A second model, as a session's helpers ask for: no login has a week of its own for it.
+        val helper = ModelEntry("small-helper", contextWindow = 4_000)
         val factory = factory(plane, topology, config, key, probes)
         probes?.let { factory.quotaProbes = it }
         val ctx = ProviderBuild(
             NATIVE_HEAD,
             topology.heads.getValue(NATIVE_HEAD).copy(port = 0),
             topology.providers.getValue("native"),
-            ModelCatalog("synthetic--", listOf(model), defaultContextWindow = 4_000),
+            ModelCatalog("synthetic--", listOf(model, helper), defaultContextWindow = 4_000),
             config.getConfig(NATIVE_HEAD),
             UpstreamFaultPlan(WatchdogBudget(60.seconds, 60.seconds, 600.seconds), "synthetic login"),
         )
@@ -231,6 +253,7 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
         sent: MutableList<String?>,
         bodies: MutableList<String>,
         refusedCredential: String? = "Bearer synthetic-native",
+        claim: String = "seven_day",
     ) =
         embeddedServer(Netty, host = "127.0.0.1", port = 0) {
             routing {
@@ -240,7 +263,7 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
                     bodies.add(call.receiveText())
                     if (credential == refusedCredential) {
                         call.response.header("anthropic-ratelimit-unified-status", "rejected")
-                        call.response.header("anthropic-ratelimit-unified-representative-claim", "seven_day")
+                        call.response.header("anthropic-ratelimit-unified-representative-claim", claim)
                         call.response.header(
                             "anthropic-ratelimit-unified-reset",
                             (System.currentTimeMillis() / 1_000L + 3_600L).toString(),

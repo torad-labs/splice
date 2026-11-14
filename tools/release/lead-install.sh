@@ -19,6 +19,13 @@ case "$why" in beta|milestone|live-fix) [ -n "$what" ] || { echo "REFUSED: say w
 R=$(cd "$(dirname "$0")/../.." && pwd); T=/tmp/splice-build-$sha-lead; D=~/.local/share/splice
 M=~/.local/state/splice-lead/last-restart-epoch
 ct(){ TZ=America/Chicago date '+%-I:%M %p CT'; }
+# The daemon's JVM. Since launcher shim-25 the unit's first process is the launcher, which runs the daemon as its
+# child (the newest one, when a restart has two side by side); before shim-25 the JVM was that first process.
+daemon_pid(){
+  local main; main=$(systemctl --user show -p MainPID --value splice.service)
+  [ -n "$main" ] && [ "$main" != 0 ] || return 0
+  case $(readlink /proc/$main/exe 2>/dev/null) in */java) echo $main ;; *) pgrep -n -P $main -x java || true ;; esac
+}
 echo "start $(ct) — $why: $what"
 cd $R
 [ -d $T ] && git worktree remove --force $T 2>/dev/null || true
@@ -66,7 +73,7 @@ if [ -n "$hub" ]; then
 fi
 J=$T/app/build/libs/app-all.jar; L=$T/app/src/main/dist/bin/splice-launch
 a=$(sha256sum $J | cut -d' ' -f1); echo "artifact $a"
-rp=$(systemctl --user show -p MainPID --value splice.service); [ "$rp" = 0 ] && rp=
+rp=$(daemon_pid)
 if [ -n "$rp" ]; then
   rfd=$(ls -l /proc/$rp/fd 2>/dev/null | awk '/splice\.jar/ && !f {print $9; f=1}')
   ro=$(sha256sum /proc/$rp/fd/$rfd | cut -d' ' -f1)
@@ -103,7 +110,7 @@ fi
 splice restart --now
 date +%s > $M
 sleep 8
-pid=$(systemctl --user show -p MainPID --value splice.service)
+pid=$(daemon_pid)
 fd=$(ls -l /proc/$pid/fd | awk '/splice\.jar$/ {print $9}' | sort -n | head -1)  # the classloader holds the lowest; a later fd on the jar can close mid-read
 o=$(sha256sum /proc/$pid/fd/$fd | cut -d' ' -f1)
 echo "open     $o (pid $pid fd $fd)"

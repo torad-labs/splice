@@ -3,6 +3,12 @@
 // others wait for its answer, so ten turns held on one spent window send one probe, not ten. A probe served, another
 // turn's answer on the login, a quota reading turned allowed, a login joining the head and the console's try-now each
 // wake the held turns before their timer.
+//
+// Nov 13, 2026: a login that joins reaches the turns that are waiting, and a turn is not waiting between its refusal
+// and its place here: it has asked which login can take it, been told none, and written its line. A login that joined
+// in that moment signalled no one, and the turn then waited out its whole limit beside a login that could serve it.
+// The registry counts the joins, a turn carries the count it last heard, and a turn that takes its place behind the
+// count is told at once ([HoldRegistry.join]).
 package splice.head.hold
 
 import kotlinx.coroutines.Deferred
@@ -26,6 +32,9 @@ public class HoldRegistry : HoldWakes {
     private val lock = Any()
     private val byLogin = LinkedHashMap<String, LoginHolds>()
     private var joined = 0L
+
+    /** How many times a login has joined the head. */
+    private var logins = 0L
 
     override fun wake(wake: HoldWake) {
         when (wake) {
@@ -54,10 +63,17 @@ public class HoldRegistry : HoldWakes {
         }
     }
 
-    /** A login joined the head: every held turn moves to it, or to whichever login the pool chooses. */
-    public fun joined() {
-        synchronized(lock) { byLogin.values.flatMap { it.turns }.forEach { it.signal(HoldWake.Joined) } }
+    /** A login joined the head: every held turn that it, or another login, can serve moves there, and the rest go on
+     *  waiting. Answers how many turns were waiting to hear it. */
+    public fun joined(): Int = synchronized(lock) {
+        logins++
+        byLogin.values.flatMap { it.turns }.count { turn ->
+            turn.signal(HoldWake.Joined).also { heard -> if (heard) turn.loginsHeard = logins }
+        }
     }
+
+    /** How many times a login has joined the head so far: where a new turn starts counting from. */
+    internal fun loginsJoined(): Long = synchronized(lock) { logins }
 
     /** A request on [login] was answered 2xx: the turns sending on it are no longer held, and the ones still waiting go
      *  on, a second apart. */
@@ -81,6 +97,12 @@ public class HoldRegistry : HoldWakes {
                 holds.turns += turn
                 holds.turns.sortWith(compareBy<HeldTurn>({ it.heldSinceMs }, { it.joinedAs }))
                 holds.turns.filter { it !== turn }.forEach(HeldTurn::changed)
+            }
+            // A login that joined while the turn was on its way here signalled no one: the turn was not waiting yet.
+            // It is told now, and decides as a waiting turn does.
+            if (turn.loginsHeard != logins) {
+                turn.loginsHeard = logins
+                turn.signal(HoldWake.Joined)
             }
         }
     }

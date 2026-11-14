@@ -9,6 +9,7 @@ import splice.app.cli.ConfigFixOffer
 import splice.app.provider.LocalRowBootFindings
 import splice.core.GATEWAY_VERSION
 import splice.core.config.RunningJar
+import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
@@ -16,6 +17,8 @@ import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.launch.install.InstallLayout
+import splice.lifecycle.prices.PriceRefresh
+import splice.lifecycle.prices.PriceRefreshSettings
 import splice.lifecycle.restart.ConfigRepair
 import splice.lifecycle.restart.RestartCommand
 import splice.lifecycle.start.DaemonColdStart
@@ -80,6 +83,23 @@ internal object LifecycleWiring {
      *  applies to the next one. A file that will not parse skips that look; the boot findings already refuse a bad one. */
     fun autoUpdate(runs: UpgradeRuns, path: Path, log: LogSink): UpgradeAuto =
         UpgradeAuto(EnvReader(System::getenv), runs, updateSettings(path, log), log)
+
+    /** The daemon's price table refresh, its copy in [statePaths] and its switch read from the booted splice.toml at
+     *  [path] at every look. A daemon with no splice.toml on disk, which is every daemon a test builds, never looks. */
+    fun priceRefresh(statePaths: StatePaths, path: Path?, log: LogSink): PriceRefresh =
+        PriceRefresh(statePaths.publishedRatesFile, priceRefreshSettings(path, log), log)
+
+    /** `[daemon] refresh_prices` from the splice.toml at [path]: on unless the file says false. Null, which skips a
+     *  look, when there is no file or it does not parse; the boot findings already refuse a bad one. */
+    fun priceRefreshSettings(path: Path?, log: LogSink): PriceRefreshSettings = PriceRefreshSettings {
+        path?.let { file ->
+            Cancellables.runCatchingCancellable { TopologyLoader.parse(Files.readString(file)).daemon }
+                .onFailure {
+                    log("[prices] splice.toml unread this look: ${LogSafe.str(SafeFailureText.render(it))}\n")
+                }
+                .getOrNull()?.let { it.refreshPrices != false }
+        }
+    }
 
     /** `[daemon] auto_update` and `update_channel` from the splice.toml at [path], read fresh at every ask. */
     fun updateSettings(path: Path, log: LogSink): AutoUpdateSettings = AutoUpdateSettings { policy(path, log) }

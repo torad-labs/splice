@@ -12,12 +12,16 @@ import splice.accounts.pool.HeadAccountPinSource
 import splice.accounts.pool.HeadAccountPoolSource
 import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.pool.HeadAccountQuota
+import splice.accounts.pool.HeadAccountResetSource
 import splice.accounts.pool.HeadAccountSessionChoice
 import splice.accounts.pool.HeadAccountSessionSource
 import splice.accounts.pool.HeadAccountSessions
 import splice.accounts.pool.HeadAccountSwitchView
 import splice.accounts.pool.HeadAccountView
 import splice.accounts.pool.HeadAccountWindow
+import splice.accounts.pool.HeadNextTarget
+import splice.accounts.pool.LoginResetSpend
+import splice.accounts.pool.LoginResets
 import splice.app.provider.Wired
 import splice.app.provider.WiredAccount
 import splice.core.auth.AuthDescription
@@ -100,6 +104,7 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
         head: String,
         orders: AccountOrderStore,
         pins: AccountPinStore? = null,
+        resets: HeadAccountResetSource? = null,
     ): HeadAccountPoolSource? = pool?.let {
         val labels = it.effectiveOrder().toSet()
         it.order = orders.order(head).filter(labels::contains)
@@ -108,7 +113,7 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
             // A pin lets go at its login's first limit reading, and the saved one with it, so no restart restores it.
             it.onPinsLetGo = PinsLetGo { gone, over -> pins.release(head, gone, over) }
         }
-        PoolSource(it, head, orders, pins)
+        PoolSource(it, head, orders, pins, resets)
     }
 
     fun authSource(wired: Wired): HeadAccountAuthSource? =
@@ -179,12 +184,20 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
         private val head: String? = null,
         private val orders: AccountOrderStore? = null,
         private val pins: AccountPinStore? = null,
+        private val limitResets: HeadAccountResetSource? = null,
     ) : HeadAccountPoolSource,
         HeadAccountPinSource,
         HeadAccountAskSource,
         HeadAccountOrderSource,
-        HeadAccountSessionSource {
+        HeadAccountSessionSource,
+        HeadAccountResetSource {
         override val active: Boolean get() = pool.active
+
+        override fun resetLabels(): List<String> = limitResets?.resetLabels().orEmpty()
+
+        override suspend fun resets(label: String): LoginResets? = limitResets?.resets(label)
+
+        override suspend fun reset(label: String, kind: String): LoginResetSpend? = limitResets?.reset(label, kind)
 
         override fun askAgain(label: String): Boolean = pool.askAgain(label)
 
@@ -202,7 +215,11 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
         override fun view(sessionId: String?): HeadAccountPoolView = controlView(pool.view(sessionId)).copy(
             pinnedLabel = pool.pinned(sessionId),
             // The session's own next login: a session pinned before its first turn shows that pin, not the head's pick.
-            nextTargetLabel = pool.nextTargetLabel(sessionId),
+            // For the model the command's turns ask for, as the order route answers: asked with none, `splice status`
+            // read "on" a login whose week had room and that had used up the model every session ran (Nov 12, 2026).
+            next = pool.asked.usual().let { model ->
+                HeadNextTarget(pool.nextTargetLabel(sessionId, model), model, pool.asked.lately())
+            },
         )
 
         // Synchronized so two presses save in the order they pinned: each save writes the pins as they stand.
@@ -235,9 +252,11 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
 
         override fun effectiveOrder(): List<String> = pool.effectiveOrder()
 
-        override fun nextTarget(): String? = pool.nextTargetLabel()
+        // For the model the command's turns ask for: a login whose week for that model is used up is not where the
+        // next turn goes, whatever room its own week has (Nov 12, 2026).
+        override fun nextTarget(): String? = pool.nextTargetLabel(model = pool.asked.usual())
 
-        override fun followingTarget(): String? = pool.view(null).followingLabel
+        override fun followingTarget(): String? = pool.view(null, pool.asked.usual()).followingLabel
 
         @Synchronized
         override fun setOrder(labels: List<String>): Boolean {

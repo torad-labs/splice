@@ -12,12 +12,18 @@ import splice.app.control.TurnPathStalled
 import splice.app.control.api.ControlHealthReport
 import splice.app.control.api.HeadReadiness
 import splice.app.control.api.HeadSignals
+import splice.app.control.api.ServingProcess
+import splice.app.control.api.TypedCommand
 import splice.app.daemon.BootedTopology
+import splice.app.daemon.Generations
 import splice.app.daemon.TopologyStaleness
 import splice.app.head.HeadProbeReadings
+import splice.client.wrap.WrappedHead
 import splice.configuration.topology.TopologyStale
 import splice.core.version.ClientVersionTracker
+import splice.launch.wrap.WrappedClaudeLaunch
 import splice.sessions.registry.SessionSource
+import java.nio.file.Path
 
 internal class ControlHealth(
     /** JW-04 + V4-127: the booted config's identity and what it declared. */
@@ -27,13 +33,23 @@ internal class ControlHealth(
     private val mcp: ControlMcpWiring,
 ) {
     /** The per-head readings the heads route and /health share, read from the daemon's probes per request. */
-    fun signals(heads: Map<String, ManagedHead>, sessions: SessionSource, probes: HeadProbeReadings) =
-        HeadSignals(
+    /** [home] is where the wrap of plain `claude` is kept: the name a person types for the Claude head is read
+     *  from it per request, the same file a launch reads, so a wrap or an unwrap shows at the next reply. */
+    fun signals(
+        heads: Map<String, ManagedHead>,
+        sessions: SessionSource,
+        probes: HeadProbeReadings,
+        home: Path,
+    ): HeadSignals {
+        val claude = WrappedClaudeLaunch(WrappedHead(home))
+        return HeadSignals(
             heads,
             RuntimeNotAnswering { probes.runtimeNotAnswering() },
             sessions,
             RuntimeUnread { probes.runtimeUnread() },
+            TypedCommand(claude::typed),
         )
+    }
 
     /** The /health body: the head set's verdict, the per-head readings, and the booted config's identity. */
     fun report(
@@ -54,6 +70,7 @@ internal class ControlHealth(
                 ?: TopologyStaleness.probe(topology.path, topology.digest),
             clientVersions = clientVersions,
             mcpHub = mcp.hub,
+            process = ServingProcess(ProcessHandle.current().pid(), Generations().launcher()),
         )
     }
 }

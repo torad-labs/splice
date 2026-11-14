@@ -107,7 +107,7 @@ internal class PublicSurfaceWalk(
     private fun property(declaration: FirProperty) {
         val owner = ownerOf(declaration) ?: return
         // visit() never opens a body, so no local property reaches here: only an enum's generated entries are skipped
-        if (declaration.source?.kind == KtFakeSourceElementKind.EnumGeneratedDeclaration) return
+        if (declaration.source?.kind is KtFakeSourceElementKind.EnumGeneratedDeclaration) return
         declareIfTopLevel(owner, declaration.symbol.callableId?.classId == null, declaration.effectiveVisibility)
         if (reachable(declaration.effectiveVisibility)) callable(declaration, owner, true)
     }

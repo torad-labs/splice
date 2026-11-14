@@ -66,6 +66,8 @@ public class CompactionInstructionsRoute(
             buildJsonObject {
                 put("scope", rule.scope.wire)
                 put("source", rule.source)
+                // the model a model or project-model rule is for, absent on a rule for every model
+                rule.model?.let { put("model", it) }
                 // live length: 0 for an explicit opt-out (empty text), null when the text is
                 // unavailable (an unreadable file, which the source label already says).
                 put("chars", rule.text?.length)
@@ -78,13 +80,8 @@ public class CompactionInstructionsRoute(
     }
 
     /** A model rule applies to a head only if that head's roster carries the model; every other
-     *  scope is head-independent and always reported.
-     *
-     *  The model is read from the SOURCE LABEL core composes (`model:<id>`, CompactionInstructions
-     *  .kt:76). File-backed rules append their provenance to that label, including unreadable files. */
+     *  scope is head-independent and always reported. The model is the rule's own (its [model]), never a
+     *  reading of its source label. */
     private fun belongsToHead(rule: EffectiveCompactionInstructions, roster: Set<String>): Boolean =
-        rule.scope != CompactionScope.MODEL || roster.any { model ->
-            val source = "${CompactionScope.MODEL.wire}:$model"
-            rule.source == source || rule.source.startsWith("$source file:")
-        }
+        rule.scope != CompactionScope.MODEL || rule.model in roster
 }

@@ -144,6 +144,7 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
     ),
     "status" to CommandRegistration("", CommandFactory.Alone(Command.Status)),
     "console" to CommandRegistration(CONSOLE_PILOT_USAGE, CommandFactory { a -> Command.Console(a.drop(1)) }),
+    // Kept for the machines that use it. Not in the usage text and not in the docs (Nov 13, 2026).
     "mcp" to CommandRegistration(
         splice.app.cli.mcp.MCP_SERVICE_USAGE,
         CommandFactory { a -> Command.Mcp(a.drop(1)) },
@@ -168,6 +169,11 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
         "[--head <key>] [--tail N] [--follow]",
         CommandFactory { a -> Command.Logs(a.drop(1)) },
     ),
+    // Nov 13, 2026: a session's fallback model while every login is held on the one it asks for (FallbackCommand).
+    "fallback" to CommandRegistration(
+        "[<session> <model>|off]",
+        CommandFactory { a -> Command.Fallback(a.drop(1)).takeIf { it.args.size in setOf(0, FALLBACK_SET_WORDS) } },
+    ),
     // Oct 26, 2026: `sessions relaunch` relaunches each session holding a planted turn key (SessionsRelaunchCommand).
     // Oct 27, 2026: `sessions --json` prints the same sessions as one JSON document (SessionsJson).
     "sessions" to CommandRegistration(
@@ -182,6 +188,17 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
         },
     ),
     "perf" to CommandRegistration("[--window 1h|24h|7d]", CommandFactory { a -> Command.Perf(a.drop(1)) }),
+    // Nov 13, 2026: `usage --json` prints every command's logins and their plan windows as one JSON document
+    // (UsageJson). The bare verb is refused: only the document exists yet.
+    "usage" to CommandRegistration(
+        "--json",
+        CommandFactory { a -> Command.UsageAsJson.takeIf { a.drop(1) == listOf("--json") } },
+    ),
+    // Nov 13, 2026: a Claude command's limit resets, listed, or one spent on the person's word (LimitResetCommand).
+    "limit-reset" to CommandRegistration(
+        "<command> [<login> [fable|weekly|full|5-hour]]",
+        CommandFactory { a -> Command.LimitReset(a.drop(1)).takeIf { it.args.size in 1..LIMIT_RESET_SPEND_WORDS } },
+    ),
     "wire" to CommandRegistration(
         "<head> [--last N] [--json]",
         CommandFactory { a -> Command.Wire(a.drop(1)) },

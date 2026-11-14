@@ -21,6 +21,7 @@ import splice.app.provider.Wired
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.budget.BudgetAmounts
 import splice.core.budget.BudgetBlock
 import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
@@ -92,7 +93,9 @@ class PlaygroundCompareRecordTest {
     fun `a blocked budget refuses a Compare send before anything is posted`() = runTest {
         val fixture = fixture(backgroundScope)
         val registry = fixture.second
-        val block = BudgetBlock("head spent its budget", "spent_usd=2.00 limit_usd=2.00", "\$2.00", Instant.EPOCH)
+        val spent = BudgetAmounts(spentUsd = 2.0, limitUsd = 2.0)
+        val detail = "spent_usd=2.00 limit_usd=2.00"
+        val block = BudgetBlock("head spent its budget", detail, "\$2.00", Instant.EPOCH, spent)
         val refusing = object : CompareSends {
             override fun admit(model: String, account: String?) = block
 
@@ -111,7 +114,7 @@ class PlaygroundCompareRecordTest {
         HttpClient(MockEngine { error("a refused send never reaches the upstream") }).use { client ->
             val probe = UpstreamPlaygroundProbe(registry, client)
             val outcome = probe.run(playgroundHead("claudex"), "synthetic prompt", null)
-            assertEquals(PlaygroundBlocked("claudex", block.message), outcome)
+            assertEquals(PlaygroundBlocked("claudex", block.message, spent), outcome)
         }
         fixture.first.head.stop()
     }

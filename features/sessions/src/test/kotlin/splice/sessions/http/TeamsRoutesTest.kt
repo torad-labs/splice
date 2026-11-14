@@ -120,7 +120,7 @@ class TeamsRoutesTest {
         val routes = routes()
         val badCreate = routes.create("""{"name":"walk","repo":"/no/such/repo","slots":$B1}""", "k-repo")
         assertEquals(HttpStatusCode.BadRequest, badCreate.status)
-        assertEquals("""{"error":"repo '/no/such/repo' does not exist"}""", badCreate.body)
+        assertEquals("""{"error":"repo '/no/such/repo' does not exist","code":"repo_missing"}""", badCreate.body)
 
         val created = routes.create("""{"name":"walk","repo":"${rig.repo}","slots":$B1}""", "k-repo-ok")
         assertEquals(HttpStatusCode.Created, created.status, created.body)
@@ -128,7 +128,7 @@ class TeamsRoutesTest {
 
         val badReplace = routes.replace(id, """{"name":"walk","repo":"/no/such/repo","slots":$B1}""")
         assertEquals(HttpStatusCode.BadRequest, badReplace.status)
-        assertEquals("""{"error":"repo '/no/such/repo' does not exist"}""", badReplace.body)
+        assertEquals("""{"error":"repo '/no/such/repo' does not exist","code":"repo_missing"}""", badReplace.body)
         assertEquals(rig.repo.toString(), rig.store.team(id)?.repo, "the refused replace never touched the team")
     }
 

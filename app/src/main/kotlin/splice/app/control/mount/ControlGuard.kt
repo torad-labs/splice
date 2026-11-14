@@ -124,6 +124,13 @@ internal class ControlGuard(
         ingress.install(pipeline)
     }
 
+    /** A hand-over on a socket a manager holds: a connection with no request on it is closed now, and one that still
+     *  owes an answer is closed behind it, so a client's next request opens a connection that waits in the kernel for
+     *  the next daemon and never reaches this one on a connection it kept open (HeapIngress.closeIdleConnections). */
+    fun closeIdleConnections() {
+        ingress.closeIdleConnections()
+    }
+
     /** Mints the management key now, before the port opens, so a dashboard load never races the minting. */
     fun mintKey(): String = mgmtKey.get()
 

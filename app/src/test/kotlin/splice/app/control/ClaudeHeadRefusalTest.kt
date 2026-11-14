@@ -75,7 +75,7 @@ class ClaudeHeadRefusalTest {
         val error = body["error"]!!.jsonPrimitive
         assertTrue(error.isString, "error must be a string sentence, got ${body["error"]}")
         assertTrue(
-            "claude-splice" in error.content && "not configured" in error.content,
+            "claude" in error.content && "not configured" in error.content,
             "the refusal must name the head and say what is wrong: ${error.content}",
         )
         // The wizard prints this verbatim, so it has to read as a sentence to a person, not as a

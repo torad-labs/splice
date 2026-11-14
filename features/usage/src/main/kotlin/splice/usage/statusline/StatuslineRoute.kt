@@ -17,6 +17,10 @@ import splice.usage.UsageHeadLookup
 import splice.usage.perf.HeadPerfSkipSource
 import splice.usage.perf.HeadSessionPerfSource
 
+// why: what a session started under a head splice no longer has (renamed or removed) sees as its status line.
+private const val UNKNOWN_HEAD_LINE =
+    "splice: this session's command is no longer configured; start it again for its status line"
+
 public class StatuslineRoute(
     private val heads: UsageHeadLookup,
     private val config: ConfigService,
@@ -32,7 +36,10 @@ public class StatuslineRoute(
         val key = call.parameters["head"].orEmpty()
         val managed = heads.byName(key).singleOrNull()
         if (managed == null) {
-            call.respondText(key, ContentType.Text.Plain)
+            // A session launched under a command splice no longer has (the Claude head was keyed `claude-splice` until
+            // Nov 13, 2026) keeps that name in its status-line command until it is started again: say so, rather than
+            // print a name nothing else uses.
+            call.respondText(UNKNOWN_HEAD_LINE, ContentType.Text.Plain)
             return
         }
         val stdin = StatuslineBodyRead.readOrRespond(call) ?: return
@@ -62,7 +69,9 @@ public class StatuslineRoute(
         // V4-274: the usage a post carries is another head's last turn until this head answers the session.
         val unanswered = usageOwner.unanswered(managed.key, sessionId, managed.sinks.perf as? HeadSessionPerfSource)
         val warn = StatuslineWarn(managed.warn.warnPct, managed.warn.warnTokens5h)
-        val line = renderer.render(stdin, managed.usage, warn, sessionId, unanswered)
+        // A turn held in its own request shows the session its spinner alone, so its bar says what it waits for.
+        val waiting = sessionId?.let { own -> managed.statusline.held?.now()?.firstOrNull { it.session == own } }
+        val line = renderer.led(renderer.render(stdin, managed.usage, warn, sessionId, unanswered), waiting)
         JsonScalars.objectOrNull(json, stdin)?.let {
             lines.record(sessionId, StatuslineFacts(managed.statusline.catalog).read(it, unanswered))
         }

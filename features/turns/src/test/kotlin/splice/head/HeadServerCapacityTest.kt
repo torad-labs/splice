@@ -249,6 +249,24 @@ class HeadServerCapacityTest {
         assertEquals(0L, upstreamClient.rateLimitedForMs, "restart must clear the armed horizon")
     }
 
+    // A head's first start is the daemon's boot, and a login comes to it holding what its provider said before the
+    // restart. On 0.4.1's promotion review the boot reset every login and undid that, login holds included.
+    @Test
+    fun `a first start keeps the hold a login brought back, and a restart clears it`() = runBlocking {
+        val cooldown = RateLimitCooldown(ProcessElapsedNow())
+        cooldown.markUnavailable(THREE_DAYS_MS)
+        val pooled = pooledHead(cooldown)
+        pooled.start()
+        try {
+            awaitListening(pooled.port)
+            assertTrue(cooldown.unavailableForMs() > 0L, "the boot must keep the login held")
+            pooled.restart()
+            assertEquals(0L, cooldown.unavailableForMs(), "a restart must clear the hold")
+        } finally {
+            pooled.stop()
+        }
+    }
+
     // A locally held login remains eligible when no login is free. The provider's actual answer decides the turn.
     @Test
     fun `a pool with every eligible login held still asks the provider`() = runBlocking {
@@ -258,7 +276,6 @@ class HeadServerCapacityTest {
         val pooledPort = pooled.port
         try {
             awaitListening(pooledPort)
-            // Start clears cooldowns, so install the provider hold after the head is listening.
             cooldown.markUnavailable(THREE_DAYS_MS)
             assertTrue(cooldown.providerUnavailableForMs() > 0L, "the login is held before admission")
             val upstreamBefore = mock.upstreamBodies.size
@@ -280,7 +297,7 @@ class HeadServerCapacityTest {
         }
     }
 
-    /** One pooled OAuth account whose local provider hold the caller sets after start(). */
+    /** One pooled OAuth account whose local provider hold the caller sets on [cooldown]. */
     private fun pooledHead(cooldown: RateLimitCooldown): HeadServer {
         val account = PoolAccount(
             label = "only",

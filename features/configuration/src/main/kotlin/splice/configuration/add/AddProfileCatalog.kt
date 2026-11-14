@@ -403,8 +403,10 @@ internal class AddProfileCatalog {
                 extra = listOf("""extra_headers = { anthropic-version = "2023-06-01" }"""),
             ),
             head = AddHeadSpec(
-                key = "claude-splice",
-                command = "claude-splice",
+                // The head and its command are `claude` (Nov 13, 2026): one Claude head, under Claude Code's own name.
+                // Plain `claude`, wrapped, runs it; the linker leaves `claude` to the wrap and lays no second command.
+                key = "claude",
+                command = "claude",
             ),
             labels = AddLabels(
                 summary = "Anthropic with your own Claude login, forwarded untouched",

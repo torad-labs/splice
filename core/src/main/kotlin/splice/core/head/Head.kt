@@ -29,6 +29,23 @@ public interface Head {
      *  the stopping refusal its client retries against the next daemon. Null on a head that runs no turns. */
     public val compactionHold: CompactionHold? get() = null
 
+    /** #523: the first half of a restart that cuts no answer in the middle. The head stops taking turns and cuts the
+     *  ones whose upstream has not begun answering, which their clients send again; it KEEPS the ones already
+     *  answering, closes its books so the next daemon reads them whole, and returns how many turns it kept. Its
+     *  listener stops accepting and its accepted connections stay open. A head that cannot finish a turn beside
+     *  another daemon stops whole, as [stop] does, and keeps none: whatever it writes at its stop is written before
+     *  the next daemon reads it. */
+    public suspend fun retire(): Int {
+        stop()
+        return 0
+    }
+
+    /** The second half: waits up to [withinMs] for the turns [retire] kept, then stops the head as [stop] does,
+     *  cutting what is still running. */
+    public suspend fun finish(withinMs: Long) {
+        stop()
+    }
+
     public suspend fun stop()
 
     public suspend fun restart() {
@@ -71,12 +88,14 @@ public data class RefusingReading(val reason: String, val inRow: Int, val sinceE
 
 /** One held turn as status and the console show it: the reset it waits for (epoch seconds, null where none was
  *  stated), the login it waits on, what it met ("limit", "overload", "credit") and the bytes its request keeps in
- *  memory while it waits. */
+ *  memory while it waits. [session] is the client's session id when it sent one, which is how that session's status
+ *  line finds its own turn; /health does not carry it. */
 public data class HeldTurnReading(
     val untilEpochSeconds: Long?,
     val login: String,
     val cause: String,
     val heapBytes: Long,
+    val session: String? = null,
 )
 
 /** HTTP headers or a WebSocket response frame, never body completion or a local failure. No identifiers. */

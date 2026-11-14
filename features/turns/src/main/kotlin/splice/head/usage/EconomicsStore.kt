@@ -83,9 +83,16 @@ public class EconomicsStore(
     private val json = Json { ignoreUnknownKeys = true }
 
     /** Fold one finished turn into its hour. Memory-only plus an enqueue — never blocks the turn. [account] is the label
-     *  that carried it, asked of the head's plans to say whether a plan or a key paid. */
-    public fun record(turn: TurnEconomics, account: String? = null, outcome: String = OutcomeTag.OK.wire) {
-        val now = clock()
+     *  that carried it, asked of the head's plans to say whether a plan or a key paid. [atMs] is when the turn
+     *  finished, for one counted later than that (a turn a retired head finished); a turn counted as it ends leaves
+     *  it to the clock. The hour and the price are both taken at that moment. */
+    public fun record(
+        turn: TurnEconomics,
+        account: String? = null,
+        outcome: String = OutcomeTag.OK.wire,
+        atMs: Long? = null,
+    ) {
+        val now = atMs ?: clock()
         val hour = now / HOUR_MS * HOUR_MS
         val localStep = turn.localStep
         val usd = price.usd(turn.model, turn.counters(), now)

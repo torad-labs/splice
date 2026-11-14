@@ -319,7 +319,7 @@ class QuotaPollerTest {
         assertEquals(observation, poller.probeNow())
         advanceTimeBy(60_000)
         assertEquals(observation, poller.probeNow())
-        assertEquals(2, calls, "page-open cannot retry a refusal inside the full poll interval")
+        assertEquals(2, calls, "page-open cannot retry a 429 a minute later: the gap doubled")
         assertTrue(poller.pollOnce(), "the scheduled path shares the same refusal cooldown")
         assertEquals(2, calls)
         assertEquals(listOf(observation), recorded, "a refusal must never write or retimestamp a reading")

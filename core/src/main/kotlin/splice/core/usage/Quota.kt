@@ -14,7 +14,10 @@ public data class QuotaWindow(
     /** Epoch SECONDS. Null when the provider gave no reset at all. */
     val resetsAt: Long?,
     val windowSeconds: Long?,
-)
+) {
+    /** Whether the provider reads this window as all used: the next request it counts is refused. */
+    public val usedUp: Boolean get() = usedPercent >= FULLY_USED_PERCENT
+}
 
 /** One model's own share of the weekly window (Claude's Opus and Sonnet weeks): the model as the provider names it
  *  and how much of it is used. [resetsAt] is the epoch second the provider says this model's week refills, null when
@@ -23,6 +26,18 @@ public data class ModelQuota(val model: String, val usedPercent: Double, val res
     /** Whether this model's week is still running at [nowSeconds]. A week past its own reset is the usage of a week
      *  that ended, whatever the account's week is doing; a row with no reset of its own rides the account's. */
     public fun runsAt(nowSeconds: Long): Boolean = resetsAt == null || resetsAt > nowSeconds
+
+    /** Whether the provider reads this model's week as all used: its next request on this login is refused. */
+    public val usedUp: Boolean get() = usedPercent >= FULLY_USED_PERCENT
+
+    /** Whether this is the week of the model a request names [modelId]. The provider names a week by the model's
+     *  display name (`Fable`) and a request names the model by its id (`claude-fable-5-2`), which carries each word
+     *  of that name. A week whose name the id does not carry is another model's. */
+    public fun weekOf(modelId: String): Boolean {
+        val parts = modelId.lowercase().split('-', '.', '_', ' ', '[', ']').toSet()
+        val words = model.lowercase().split(' ', '-', '.').filter(String::isNotEmpty)
+        return words.isNotEmpty() && parts.containsAll(words)
+    }
 }
 
 /** Whose reading a quota file holds: the account's [ref] (splice.core.auth.AccountRef, the `ref` /api/accounts shows,

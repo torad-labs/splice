@@ -113,6 +113,7 @@ public class WrappedLaunch internal constructor(public val configDir: Path) {
                 put("type", "command")
                 put("command", statuslineCommand)
                 put("padding", 0)
+                put(Keys.STATUS_LINE_REFRESH, Keys.STATUS_LINE_REFRESH_S)
             }
             if (marked) put(LaunchMarker.SPLICE_LAUNCH_KEY, true)
             if (hooks.isNotEmpty()) put(Keys.HOOKS, JsonObject(hooks.mapValues { (_, entries) -> JsonArray(entries) }))

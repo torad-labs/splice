@@ -37,6 +37,7 @@ import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.lifecycle.restart.DaemonSupervised
+import splice.lifecycle.restart.ShutdownDaemon
 import splice.lifecycle.upgrade.UpgradeChecks
 import splice.lifecycle.upgrade.UpgradeRuns
 import splice.lifecycle.upgrade.UpgradeStatus
@@ -71,6 +72,31 @@ internal class LifecyclePorts {
     /** Key rotation (Oct 26, 2026): `splice rotate-key`'s replacement of the management key. Null answers a named
      *  503, and the key stays as it was. */
     var keyRotation: KeyRotation? = null
+
+    /** #523: what this daemon can do when its launcher runs daemons side by side, assigned only there. Null answers
+     *  POST /api/daemon/retire with a named 503, so the daemon that asked starts the way a restart always has, and
+     *  leaves a restart this daemon takes on as the drain it always was. */
+    var handOver: HandOver? = null
+
+    /** #523: what a restart this daemon takes on runs when its turn comes (the console's Restart, a save that needs
+     *  one). Under the launcher's supervisor, in a unit systemd owns, that is a request for the next daemon, which
+     *  takes over beside this one while the answers in progress finish. Anywhere else, or when the launcher could
+     *  not be asked, it is [shutdown], and the unit or the armed successor brings the daemon back. A daemon systemd
+     *  does not own armed that successor for this restart (DaemonRestarts.take): it waits for this process to end
+     *  and restarts whatever then serves, so a next daemon from the launcher as well would be stopped by it.
+     *  [supervised] and [handOver] are read when it runs. */
+    fun restartBy(shutdown: ShutdownDaemon): ShutdownDaemon =
+        ShutdownDaemon { if (supervised?.invoke() != true || handOver?.next?.start() != true) shutdown() }
+}
+
+/** #523: the two halves of a hand-over as the control plane holds them. [retire] is what the next daemon asks of
+ *  this one: stop taking requests, release the daemon lock and finish the answers in progress. [next] asks the
+ *  launcher to start that next daemon. */
+internal data class HandOver(val retire: ShutdownDaemon, val next: NextDaemon)
+
+/** Asks for the next daemon, and says whether it was asked. */
+internal fun interface NextDaemon {
+    fun start(): Boolean
 }
 
 /** Replaces the management key and everything made from it, in one call (`POST /api/mgmt-key/rotate`). */

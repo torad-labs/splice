@@ -17,8 +17,9 @@ public sealed class StartCommand {
     /** The argv that starts the head's Claude Code, before the flags a member adds. */
     public data class Ready(val argv: List<String>) : StartCommand()
 
-    /** The sentence the person reads, including the fix when there is one. */
-    public data class Refused(val reason: String) : StartCommand()
+    /** The sentence the person reads, including the fix when there is one, and [fix] on its own: the command that
+     *  makes the head startable, which a page draws to be copied. It used to be cut out of the sentence by the page. */
+    public data class Refused(val reason: String, val fix: String? = null) : StartCommand()
 }
 
 /** The launch command of a head, by its key. */

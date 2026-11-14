@@ -7,6 +7,7 @@ import splice.core.budget.HeadBudget
 import splice.core.budget.NoHeadBudget
 import splice.core.perf.PerfSnapshot
 import splice.core.util.Cancellables
+import splice.head.perf.RetiredRows
 
 /** The two places a served turn's spend is told: the hourly quota rollup and the head's daily budget. */
 internal class TurnSpend(
@@ -17,6 +18,8 @@ internal class TurnSpend(
      *  Defaulted because tests build TurnTelemetry directly; the one production site (TurnDriver)
      *  passes the head's own, and HeadBudgetTest fails if a served turn stops reaching it. */
     private val budget: HeadBudget = NoHeadBudget,
+    /** #523: once the head has retired, the day's spend is the next daemon's to count, from the row left for it. */
+    private val retired: RetiredRows? = null,
 ) {
     /** V4-133 review: the day's spend moves by THIS row — its own ts, model and counters, the same
      *  facts a restarted daemon reads back from the file. Best-effort like [economics]: a
@@ -29,6 +32,7 @@ internal class TurnSpend(
         account: String?,
         outcome: String,
     ) {
+        if (retired?.isRetired == true) return
         Cancellables.discard(
             Cancellables.runCatchingCancellable { budget.spentOn(account, rowTs, model, counters, outcome) },
             "telemetry is best-effort; a turn must never fail on its budget",
@@ -45,11 +49,21 @@ internal class TurnSpend(
         account: String?,
         outcome: String,
     ) {
+        rollup(SnapshotEconomics().of(snap, model, rateLimited), account, outcome, null)
+    }
+
+    /** A turn a retired head finished, counted by this daemon: it goes into the hour of [rowTs], its row's time, at
+     *  that hour's price. The next daemon counts it only when one of its own turns ends, which on a quiet head can be
+     *  hours later. A turn that finished after its head retired was already answering, so it was never refused at a
+     *  limit. */
+    fun retiredEconomics(rowTs: Long, snap: PerfSnapshot, model: String, account: String?, outcome: String) {
+        rollup(SnapshotEconomics().of(snap, model, false), account, outcome, rowTs)
+    }
+
+    private fun rollup(turn: TurnEconomics, account: String?, outcome: String, atMs: Long?) {
         val store = economics ?: return
         Cancellables.discard(
-            Cancellables.runCatchingCancellable {
-                store.record(SnapshotEconomics().of(snap, model, rateLimited), account, outcome)
-            },
+            Cancellables.runCatchingCancellable { store.record(turn, account, outcome, atMs) },
             "telemetry is best-effort; a turn must never fail on the quota rollup",
         )
     }

@@ -8,6 +8,7 @@
 package splice.lifecycle.start
 
 import splice.core.GATEWAY_VERSION
+import splice.core.SHIM_VERSION
 import splice.core.terminal.TerminalOutput
 import splice.daemonclient.DaemonHealth
 import java.nio.file.Path
@@ -117,6 +118,11 @@ internal class DaemonLaunch(
      *  start reached a unit still active in its shutdown tail, a no-op, and the exit then waited
      *  46 s at the sixth automatic restart (2026-09-25). */
     internal fun restartUnit(unit: String, port: Int, expectedVersion: String): Boolean {
+        // #523: the next daemon starts beside the running one only under a launcher of this build. One from an
+        // earlier build keeps running whatever it was written to run, so the unit is restarted whole and the
+        // installed launcher takes its place.
+        val serving = health.healthView(port)?.process
+        if (serving?.launcher == SHIM_VERSION && rolled(unit, port, expectedVersion, serving.pid)) return true
         output.line(
             "splice: restarting $unit; a running turn ends with the restart line, and new requests wait for " +
                 "the next daemon…",
@@ -150,6 +156,35 @@ internal class DaemonLaunch(
             Thread.sleep(POLL_INTERVAL_MS)
         }
         return health.daemonUp(port, expectedVersion)
+    }
+
+    /** #523: the restart that cuts no answer in the middle. The daemon on [port] runs under the launcher's
+     *  supervisor, so [unit] is signalled to start the next daemon beside it; the running one hands over and
+     *  finishes what it is answering. Done when another process than [from] answers /health with
+     *  [expectedVersion]. False, having said so, when the next daemon did not take over: the caller then restarts
+     *  the unit the way it always has. */
+    private fun rolled(unit: String, port: Int, expectedVersion: String, from: Long?): Boolean {
+        output.line(
+            "splice: starting the next daemon beside the running one. An answer already arriving finishes, except " +
+                "on a Muse command or a local runtime that pins conversations to slots. A turn not yet answering " +
+                "ends with the restart line and Claude Code sends it again; new requests go to the next daemon…",
+        )
+        val up = supervised.roll(unit) && waitUntilNext(port, expectedVersion, from)
+        if (!up) output.line("splice: the next daemon did not take over; restarting $unit instead")
+        return up
+    }
+
+    private fun waitUntilNext(port: Int, expectedVersion: String, from: Long?): Boolean {
+        repeat(startupPolls) {
+            if (nextAnswers(port, expectedVersion, from)) return true
+            Thread.sleep(POLL_INTERVAL_MS)
+        }
+        return nextAnswers(port, expectedVersion, from)
+    }
+
+    private fun nextAnswers(port: Int, expectedVersion: String, from: Long?): Boolean {
+        val view = health.healthView(port) ?: return false
+        return view.version == expectedVersion && view.process.pid != null && view.process.pid != from
     }
 }
 

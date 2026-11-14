@@ -13,7 +13,8 @@ import java.time.Instant
 /** One hold to keep: the [cause] the turn met at [at], held until [until] where its cause stated a time, probed as
  *  [probes] says, on the login [login] the turn's sends go out on ("" for a head with one). [heldSinceMs] is when this
  *  turn's first hold began, on the wall clock, so a hold that is entered again keeps its place among the login's
- *  held turns and its seven days. */
+ *  held turns and its seven days. [moves] answers whether another login could take the turn now, which a login that
+ *  joins asks before the hold ends for it: a turn no login can serve keeps waiting. Null ends the hold on any join. */
 public data class HoldAsk(
     val cause: FailureCause,
     val at: Position,
@@ -21,14 +22,20 @@ public data class HoldAsk(
     val probes: Probes,
     val login: String,
     val heldSinceMs: Long,
+    val moves: OtherLoginFree? = null,
 )
+
+/** Whether another login can take this failure before content is committed. */
+public fun interface OtherLoginFree {
+    public operator fun invoke(cause: FailureCause): Boolean
+}
 
 /** How a hold ended. */
 public enum class HoldEnd {
     /** The timer, a probe or a wake came: the request goes again on the same login. */
     RESUME,
 
-    /** A login joined the head: the turn moves to another login. */
+    /** A login joined the head that can take the turn: the turn moves to it. */
     LOGIN_JOINED,
 
     /** The session's wall came first: the turn ends, and the client is told the reset and waits itself. */
@@ -52,7 +59,8 @@ public sealed class HoldWake {
     /** A quota reading says the head's limit lifted: its window reads allowed again. */
     public data object Allowed : HoldWake()
 
-    /** A login joined the head, so a turn held on another login can move to it. */
+    /** A login joined the head, or one already there became another account's or was signed in again: a turn held on
+     *  another login moves to it where it can serve the turn, and goes on waiting where it cannot. */
     public data object Joined : HoldWake()
 
     /** The console asked to try a held login now ([login] null: every login of the head). */

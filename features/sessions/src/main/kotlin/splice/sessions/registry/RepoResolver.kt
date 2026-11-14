@@ -54,9 +54,21 @@ internal const val REASON_UNTRUSTED: String =
     "the cwd is outside the trusted roots (\$HOME, /tmp, statuslineGitRoots), so it was not probed"
 internal const val REASON_NO_REPO: String = "the cwd is not inside a git repository"
 
+/** Why a session's folder groups under no project: [wire] is its name on the wire (a row's `repo.reason_code`),
+ *  beside the sentence the row has always carried. */
+public enum class RepoGap(public val wire: String, internal val sentence: String) {
+    NOT_ABSOLUTE("not_absolute", REASON_NOT_ABSOLUTE),
+    MISSING("missing", REASON_MISSING),
+    UNTRUSTED("untrusted", REASON_UNTRUSTED),
+    NO_REPO("no_repo", REASON_NO_REPO),
+}
+
 /** Where a session groups. [root] is always set: the shared repo when one was found, else the cwd
  *  itself with [reason] saying why. [worktree] is set only for a linked worktree of [root]. */
-public data class RepoRoot(val root: String, val worktree: String? = null, val reason: String? = null)
+public data class RepoRoot(val root: String, val worktree: String? = null, val reason: String? = null) {
+    /** [reason] by name, for a page that words it itself. */
+    public val gap: RepoGap? get() = RepoGap.entries.firstOrNull { it.sentence == reason }
+}
 
 private data class CachedRoot(val root: RepoRoot, val expiresAtMs: Long)
 

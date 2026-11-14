@@ -58,7 +58,7 @@ Source: `gateway/control/src/main/kotlin/splice/control/ControlServer.kt` on `fe
 | `GET /api/auth` | per head: present, verdict, display name, refusal, the key's variable and masked key, a read failure in fixed words, plus the account pool (v0.4.0); kind, login, account ref, last refresh and the other provider fields were removed 2026-10-12, since no reader took them | Compare, Teams, Accounts, doctor |
 | `POST /api/auth/{head}/{refresh,login}` | refresh a token; login is "manual" for OAuth kinds | none: the refresh button is not on today's console, removed with console-next on Oct 7, 2026 (6a8342d4e); the route stays for scripts |
 | `GET /api/compact` | outcome totals and event tail | compaction page |
-| `GET /api/sessions` | Claude Code session registry joined to heads (v0.4.0) | none |
+| `GET /api/sessions` | Claude Code session registry joined to heads (v0.4.0); since 2026-11-12 the answer names the rows of the sessions that are gone by `gone_mark`, and a read with `?gone=<mark>` is answered without them, with `gone_held: true`, while they are the same | none |
 | `GET /api/logs/{head}?tail=` | log tail | logs page |
 | `GET /api/mcp` | hosted MCP servers: eligible, hosted, sessions, last error, plus the hub's step-1 plans (v0.4.0); pid, streams, restarts and class were removed 2026-10-12, since no reader took them | Settings MCP |
 | `POST /launch/{head}`, `/statusline/{head}` | used by the shim and the status line, not by the console | n/a |

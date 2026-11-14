@@ -37,35 +37,6 @@ private val LOCAL_RUNTIME_ENDPOINTS = listOf(
     "http://localhost:8000/v1",
 )
 
-internal data class AddCheck(val name: String, val ok: Boolean, val detail: String)
-
-/** What GET /models yielded: the dialect has no list, the endpoint could not serve it, or the ids. */
-internal sealed class ListedModels {
-    data object Absent : ListedModels()
-
-    /** [blocking] false is a list the add could not read but goes on without (the models the person entered stand). */
-    data class Unreadable(val detail: String, val blocking: Boolean = true) : ListedModels() {
-        fun asCheck(): AddCheck = if (blocking) {
-            AddCheck(MODELS_CHECK, false, "$detail; the model list could not be checked")
-        } else {
-            AddCheck(MODELS_CHECK, true, "WARNING: $detail; the models you entered are used as given")
-        }
-    }
-
-    /** The dialect has a list but splice holds no credential of its own to ask for it with. */
-    data object NoCredential : ListedModels()
-    data class Listed(val ids: List<String>, val windows: Map<String, Long> = emptyMap()) : ListedModels()
-
-    /** These windows with a local runtime's own [served] ones over them: Ollama and LM Studio leave the window out of
-     *  /v1/models, so without them every local row read "unchecked" (splice-providers' spec pass, Oct 12). */
-    fun withServed(served: Map<String, Long>): ListedModels = if (served.isEmpty()) {
-        this
-    } else {
-        val known = this as? Listed ?: Listed(emptyList())
-        known.copy(windows = known.windows + served)
-    }
-}
-
 /** [output] takes the one line an unreadable credential file raises (CredentialPresence, DR-70). */
 internal class AddChecks(
     output: TerminalOutput,
@@ -148,7 +119,8 @@ internal class AddChecks(
     fun reachable(baseUrl: String): AddCheck {
         val reply = http("GET", baseUrl, null, null)
         val detail = if (reply != null) "reachable at $baseUrl" else "nothing answers at $baseUrl"
-        return AddCheck("base url", reply != null, detail)
+        val silent = AddFinding(AddCause.NO_ANSWER, at = baseUrl).takeIf { reply == null }
+        return AddCheck("base url", reply != null, detail, silent)
     }
 
     /** The endpoint's model list where the dialect publishes one and splice can read it: openai-chat and openai-responses
@@ -166,10 +138,15 @@ internal class AddChecks(
         val url = provider.rosterUrl
         val reply = http("GET", url, credentials.bearer(provider, key, env), null)
         return when {
-            reply == null -> ListedModels.Unreadable("nothing answers at $url", blocking = false)
+            reply == null -> ListedModels.Unreadable(
+                "nothing answers at $url",
+                blocking = false,
+                AddFinding(AddCause.NO_ANSWER, at = url),
+            )
             reply.status != HTTP_OK -> ListedModels.Unreadable(
                 "HTTP ${reply.status} from $url",
                 blocking = refusesCredential && reply.status in listOf(HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN),
+                AddFinding(AddCause.HTTP_STATUS, reply.status, url),
             )
             else -> parsedList(reply.body, url)
         }
@@ -191,7 +168,10 @@ internal class AddChecks(
             ListedModels.Listed(entries.mapNotNull { rowId(it.jsonObject) }, windows)
         }.fold(
             onSuccess = { it },
-            onFailure = { ListedModels.Unreadable("$url did not answer with a model list", blocking = false) },
+            onFailure = {
+                val finding = AddFinding(AddCause.NO_LIST, at = url)
+                ListedModels.Unreadable("$url did not answer with a model list", blocking = false, finding)
+            },
         )
 
     private fun rowId(row: JsonObject): String? =
@@ -228,7 +208,8 @@ internal class AddChecks(
         }
         val reply = http("POST", provider.baseUrl.trimEnd('/') + "/chat/completions", bearer, body.toString())
         val detail = reply?.let { "HTTP ${it.status} (${it.body.length} bytes)" } ?: "no answer from the endpoint"
-        return AddCheck("live turn", reply?.status == HTTP_OK, detail)
+        val finding = reply?.let { AddFinding(AddCause.HTTP_STATUS, it.status) } ?: AddFinding(AddCause.NO_ANSWER)
+        return AddCheck("live turn", reply?.status == HTTP_OK, detail, finding.takeIf { reply?.status != HTTP_OK })
     }
 
     /** [StoredCredential] owns this too (2026-09-22), for the same reason [oauthPath] delegates. */

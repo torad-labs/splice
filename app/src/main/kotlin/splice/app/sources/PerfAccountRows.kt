@@ -76,9 +76,8 @@ internal class PerfAccountRows(private val scanBytes: Long) {
             if (skipPartial(before, start, channel)) reader.next()
             scanLines(reader, start, decode)
         }
-        val proofStart = proofStart(before, start)
-        val suffix = FileChannel.open(after.path, READ).use { channel ->
-            fingerprint(channel, proofStart, version.size)
+        val proof = FileChannel.open(after.path, READ).use { channel ->
+            suffixProof(channel, before?.proof, proofStart(before, start), version.size)
         }
         if (version(after.path) != version) throw IOException("perf generation changed during account indexing")
         return after.copy(
@@ -86,11 +85,23 @@ internal class PerfAccountRows(private val scanBytes: Long) {
             complete = end,
             digest = if (wholePrefix) prefix.fingerprint() else null,
             prefix = if (wholePrefix) prefix.save() else null,
-            proof = PerfSuffixProof(start = proofStart, suffix = suffix),
+            proof = proof,
         )
     }
 
     private fun proofStart(before: Generation?, start: Long): Long = before?.proof?.start ?: start
+
+    /** The hash of [start] to [end]. After an append it goes on from the state the last scan left ([last]) and reads
+     *  only what was appended: a scan with a cursor follows [appendable], which has shown the bytes before it are the
+     *  ones last read. Made from [start] each time, it reread the whole generation at every append: 32 MiB per
+     *  session list on a 32 MiB perf file (Nov 12, 2026). */
+    private fun suffixProof(channel: FileChannel, last: PerfSuffixProof?, start: Long, end: Long): PerfSuffixProof {
+        val known = last?.takeIf { it.tail != null && it.start == start && it.end in start..end }
+        val digest = known?.tail?.resume() ?: MessageDigest.getInstance("SHA-256")
+        hash(digest, channel, known?.end ?: start, end)
+        val tail = PerfPrefixState(requireNotNull(digest.clone() as? MessageDigest))
+        return PerfSuffixProof(start, digest.digest(), tail, end)
+    }
 
     private fun wholePrefix(before: Generation?, start: Long): Boolean = start == 0L || before?.prefix != null
 
@@ -118,6 +129,11 @@ internal class PerfAccountRows(private val scanBytes: Long) {
 
     private fun fingerprint(channel: FileChannel, start: Long, end: Long): ByteArray {
         val digest = MessageDigest.getInstance("SHA-256")
+        hash(digest, channel, start, end)
+        return digest.digest()
+    }
+
+    private fun hash(digest: MessageDigest, channel: FileChannel, start: Long, end: Long) {
         val buffer = ByteBuffer.allocate(VALIDATION_BUFFER_BYTES)
         var at = start
         while (at < end) {
@@ -129,7 +145,6 @@ internal class PerfAccountRows(private val scanBytes: Long) {
             digest.update(buffer)
             at += count
         }
-        return digest.digest()
     }
 
     fun fingerprint(archives: List<Path>): ByteArray {
@@ -154,4 +169,7 @@ internal class PerfAccountRows(private val scanBytes: Long) {
 internal data class PerfSuffixProof(
     val start: Long = 0L,
     val suffix: ByteArray? = null,
+    /** The digest's state after [end], so the proof of an appended file hashes only what was appended. */
+    val tail: PerfPrefixState? = null,
+    val end: Long = 0L,
 )

@@ -35,6 +35,16 @@ internal class ResponsesLiteShape(private val quirks: ResponsesQuirks) {
     fun isLiteModel(model: String): Boolean = quirks.lite.listedModels?.marks(model)
         ?: (quirks.lite.responsesLiteModelRegex?.containsMatchIn(model) == true)
 
+    /** The lite header rides only when this provider declared [ResponsesLiteQuirks.responsesLiteHeader]
+     *  and the turn's model is lite by the one gate the body's shape follows ([isLiteModel]:
+     *  the backend's list where one is known, the name pattern where none is). Compaction included — lite is a
+     *  property of the model, so a compaction built without the header would share no prefix with
+     *  the session's lite turns. */
+    fun header(model: String): Map<String, String> {
+        val name = quirks.lite.responsesLiteHeader ?: return emptyMap()
+        return if (isLiteModel(model)) mapOf(name to "true") else emptyMap()
+    }
+
     fun wireShape(lite: Boolean, input: JsonArray, instructions: String, tools: JsonArray?): WireShape =
         if (lite) {
             // Current codex-rs omits empty instructions in both transports:

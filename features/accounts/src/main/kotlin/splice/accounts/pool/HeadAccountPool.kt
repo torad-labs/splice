@@ -47,6 +47,16 @@ public fun interface HeadAccountAskSource {
     public fun askAgain(label: String): Boolean
 }
 
+/** The login a pool would send its next turn to, by the real selector order, and the model that answer is for: the
+ *  one most of the command's recent turns asked for, null until a turn has asked for one. [asked] is every model the
+ *  command's turns asked for in the last hour, the latest first: [model] is one answer, and what is said about the
+ *  command's logins has to hold for each model someone is waiting on. */
+public data class HeadNextTarget(
+    val label: String? = null,
+    val model: String? = null,
+    val asked: List<String> = emptyList(),
+)
+
 public data class HeadAccountPoolView(
     val selectedLabel: String?,
     val accounts: List<HeadAccountView>,
@@ -55,12 +65,18 @@ public data class HeadAccountPoolView(
     val selectionUnknown: Boolean = false,
     /** V4-132: the operator-pinned label, or null when nothing is pinned. */
     val pinnedLabel: String? = null,
-    /** V4-132: the label [splice.upstream.credentials.AccountPool.select] would choose next, by the real selector
-     *  order — GET /api/accounts "the next target by the real selector order" (FEATURES.md §4.5). */
-    val nextTargetLabel: String? = null,
+    /** V4-132: what [splice.upstream.credentials.AccountPool.select] would choose next, by the real selector order —
+     *  GET /api/accounts "the next target by the real selector order" (FEATURES.md §4.5) — and for which model. */
+    val next: HeadNextTarget = HeadNextTarget(),
     /** Authoritative per-account hold deadlines from pool selection, not raw quota window resets. */
     val blockedUntilEpochSecondsByLabel: Map<String, Long> = emptyMap(),
 ) {
+    /** The label of [next]. */
+    val nextTargetLabel: String? get() = next.label
+
+    /** The model [nextTargetLabel] is answered for: the one most of the command's recent turns asked for. */
+    val usualModel: String? get() = next.model
+
     /** Null when the selection is unknown: a rejected selection never names the primary, on any
      *  surface (status line, usage payload, CLI text, doctor report alike). A head-wide view, which has no
      *  session's choice, names the login the next turn goes to by the real selector order, and the primary

@@ -22,6 +22,7 @@ internal class DoctorAuthVerdict {
                     missingStatus,
                     "upstream rejected the forwarded Claude login${at(auth.observed.daemonVerdict)}",
                     "run ${auth.command}, then /login inside it",
+                    notes = DoctorCheckNotes(cause = CheckCause.LOGIN_REJECTED),
                 )
                 // Only genuine OAuth heads have a `<command> login` flow; api-key heads (env var known)
                 // must never be sent to that dead end, so the guard is isOAuth, not envVar == null.
@@ -31,6 +32,7 @@ internal class DoctorAuthVerdict {
                     "not signed in",
                     "${auth.command} login",
                     fixKind = FixKind.COMMAND,
+                    notes = DoctorCheckNotes(cause = CheckCause.NOT_SIGNED_IN),
                 )
                 // V4-220: `splice key set` stores the key where the head reads it on its next request, prompts
                 // for the value masked and keeps it out of shell history; `export VAR=…` was a placeholder the
@@ -41,6 +43,7 @@ internal class DoctorAuthVerdict {
                     "${auth.envVar} is not set",
                     "splice key set ${auth.envVar}",
                     fixKind = FixKind.COMMAND,
+                    notes = DoctorCheckNotes(cause = CheckCause.KEY_NOT_SET),
                 )
             }
         }

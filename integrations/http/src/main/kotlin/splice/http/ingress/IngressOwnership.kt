@@ -14,7 +14,12 @@ internal const val SMALL_BODY_BYTES = 64 * 1024L
 /** How long that read waits for the rest of a small body on a listener with no read-idle bound of its own. */
 internal const val SMALL_BODY_WAIT_MS = 2_000L
 
-internal class IngressOwnership(private val connectionLease: HeapLease?) {
+internal class IngressOwnership(
+    private val connectionLease: HeapLease?,
+    /** Whether the listener is leaving (HeapIngress.closeIdleConnections): it takes no new request, and each connection
+     *  closes behind the last reply it owes ([responded]). */
+    private val leaving: AtomicBoolean = AtomicBoolean(),
+) {
     val halted = AtomicBoolean()
     val draining = AtomicBoolean()
     private val lock = Any()
@@ -59,16 +64,29 @@ internal class IngressOwnership(private val connectionLease: HeapLease?) {
             // The response can finish before application cleanup: its close must already be staged.
             halted.set(true)
         }
+        // A leaving listener closes behind the last reply it owes, and says so where that reply's headers are still
+        // to go out.
+        if (leaving.get() && responses.size == 1) entry.closeAnnounced = true
         entry.closeAnnounced
     }
 
     /** Whether [entry]'s unread body is read to its end: it is all in, or it is small and this connection still reads. */
     fun drainable(entry: IngressRequest): Boolean = entry.arrived || (entry.small && !halted.get())
 
+    /** The oldest owed reply has gone out. Answers whether its connection closes now: its request's body was left
+     *  unread, its reply said so, or the listener is leaving and this was the last reply the connection owed.
+     *
+     *  #525 (Nov 13, 2026): a leaving listener closed the connections that were idle when it began to leave, and left
+     *  the others open after their answers ended. A client keeps its connection, so the next request of a session
+     *  whose answer the leaving daemon had finished went to that daemon, which turned it away unanswered: five
+     *  requests at one restart and two at the next, each a failed attempt and a retry before it reached the daemon
+     *  that had taken over. The close is staged like any other (IngressShutdown), which [halted] asks for. */
     fun responded(): Boolean = synchronized(lock) {
         val entry = responses.removeFirstOrNull() ?: return@synchronized false
         entry.responded()
-        entry.shouldClose
+        val last = leaving.get() && responses.isEmpty()
+        if (last) halted.set(true)
+        entry.shouldClose || last
     }
 
     fun unread(entry: IngressRequest) {

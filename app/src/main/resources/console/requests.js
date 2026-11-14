@@ -1899,8 +1899,7 @@ async function readTrace(r) {
 /** Which state a refused read is in, from the daemon's own answer: the files he deleted, or the days the command no
  *  longer keeps. Anything else is "No records": a cause this page cannot establish is not worded. */
 function refusedState(res, r) {
-  const why = res.body?.error || "";
-  if (why.includes("trace deleted")) return "deleted";
+  if (res.body?.code === "trace_deleted") return "deleted";
   const days = state.capture[r.head]?.days;
   if (days != null && +r.ts < +NOW - days * 24 * 3600e3) return "expired";
   return "norecords";

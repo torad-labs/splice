@@ -44,6 +44,11 @@ public fun interface AccountQuotaSource {
 
     /** A provider-proved refusal shared by credentials of the same account, never inferred from a full reading. */
     public val held: Boolean get() = false
+
+    /** Asks to hear each new reading as it arrives, where this source can tell. A login's hold may end on one
+     *  (PlanHold.weigh) while every turn waits and none is being selected; a source that cannot tell is read at the
+     *  next selection. */
+    public fun onRead(listener: Runnable): Unit = Unit
 }
 
 // V4-101: AccountNow IS GONE. This module names [splice.core.util.WallClock] directly — the same role
@@ -75,25 +80,37 @@ public data class PoolAccount(
     internal val quotaSnapshot: QuotaSnapshot? get() = quotaObservation.snapshot
     internal val quotaHeld: Boolean get() = quotaObservation.held
     private val identitySource = TtlCredentialIdentitySource(auth as? AccountCredentialIdentitySource)
-    private val credentialEligibility = AccountCredentialEligibility(identitySource, credentialPresent)
+    private val credentialEligibility =
+        AccountCredentialEligibility(identitySource, credentialPresent, cooldown.loginHold)
+
+    /** Hears a hold of this login end because its reading shows the window reset before its time ([PoolJoins]). */
+    @Volatile
+    internal var onEarlyReset: EarlyResetHeard? = null
 
     init {
         require(AccountLabelPolicy.isSelector(label)) { "invalid OAuth account label" }
+        quota.onRead(Runnable(::observeQuota))
     }
 
     /** Re-reads credential, quota and proved standing OFF the sticky-session monitor; [AccountPool.select]
      *  calls it for every account before taking the lock, so the in-monitor selection reads only cached facts. */
     internal fun refreshCredentialEvidence() {
         identitySource.refresh()
-        quotaObservation = QuotaObservation(quota.snapshot(), quota.held)
+        observeQuota()
     }
 
     /** Shares only the raw observation. Quota and standing remain a fresh read for this caller. */
     internal suspend fun refreshCredentialEvidence(loads: AccountEvidenceLoads) {
         loads.refresh(identitySource)
-        runInterruptible(loads.ioDispatcher) {
-            quotaObservation = QuotaObservation(quota.snapshot(), quota.held)
-        }
+        runInterruptible(loads.ioDispatcher, ::observeQuota)
+    }
+
+    /** Reads the login's usage, and ends each plan hold the reading shows reset before its time (PlanHold.weigh). */
+    private fun observeQuota() {
+        val snapshot = quota.snapshot()
+        quotaObservation = QuotaObservation(snapshot, quota.held)
+        val ended = snapshot?.let(cooldown.planHold::weigh).orEmpty()
+        if (ended.isNotEmpty()) onEarlyReset?.heard(label, ended)
     }
 
     internal fun acquireCredential(at: Long, now: WallClock): AccountCredentialEligibility.Lease? =

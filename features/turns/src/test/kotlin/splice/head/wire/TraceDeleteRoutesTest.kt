@@ -4,6 +4,7 @@ import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -143,6 +144,7 @@ class TraceDeleteRoutesTest {
         val missing = reader.read("alpha", "turn-alpha-1")
         assertEquals(HttpStatusCode.BadRequest, missing.status)
         assertEquals("trace deleted", field(missing.body, "error"))
+        assertEquals("trace_deleted", field(missing.body, "code"), "the console reads the name, not the sentence")
 
         assertDeletedCli(dir)
 
@@ -171,6 +173,41 @@ class TraceDeleteRoutesTest {
         assertEquals("{}\n", Files.readString(day))
         assertEquals("synthetic pack", Files.readString(pack))
         assertFalse(DayFiles(dir, "alpha").deleted(), "a refused purge is never marked deleted")
+    }
+
+    @Test
+    fun `the kept answer names the days whose prompts and answers were removed to make room, oldest first`(
+        @TempDir root: Path,
+    ) {
+        val dir = Files.createDirectory(root.resolve("trace"))
+        listOf("2026-09-17", "2026-09-18", "2026-09-19").forEach { day ->
+            Files.writeString(dir.resolve("alpha-$day.jsonl"), "{}\n")
+        }
+        listOf("alpha-2026-09-18", "alpha-2026-09-17", "beta-2026-09-19").forEach { day ->
+            Files.writeString(dir.resolve("$day.jsonl.bodies-evicted"), "evicted by the body budget\n")
+        }
+        val body = route(root, dir).kept("alpha").body
+        val removed = Json.parseToJsonElement(body).jsonObject.getValue("bodies_removed_days").jsonArray
+        assertEquals(listOf("2026-09-17", "2026-09-18"), removed.map { it.jsonPrimitive.content }, body)
+        assertEquals("3", field(body, "records"), "the records of a day whose bodies went are still counted")
+    }
+
+    @Test
+    fun `the kept answer names why saving stopped, and the free space the store leaves when it was the disk`(
+        @TempDir root: Path,
+    ) {
+        val dir = Files.createDirectory(root.resolve("trace"))
+        val stopped = TraceSwitch(true).also {
+            it.refused("trace volume free-space floor reached: splice leaves 4096 B free")
+        }
+        val routes = TraceDeleteRoutes(
+            TurnsHeadLookup { name -> listOf(TurnsHead(name, noCompaction, trace = stopped)) },
+            TraceDirPort { dir },
+            ConfigService(StatePaths(baseOverride = root.resolve("state")), envReader = EnvReader { null }),
+        )
+        val kept = routes.kept("alpha").body
+        assertEquals("disk_floor", field(kept, "saving_stopped_code"))
+        assertEquals("4096", field(kept, "saving_stopped_floor_bytes"))
     }
 
     @Test

@@ -12,6 +12,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.accounts.pool.HeadAccountPoolSource
 import splice.accounts.pool.HeadAccountPoolView
+import splice.core.head.HeldTurnReading
 import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
 import splice.core.usage.RateLimitState
@@ -90,6 +91,11 @@ internal class StatuslineRenderer(
             )
         return if (segments.isEmpty()) dim(label) else segments.joinToString(SEPARATOR)
     }
+
+    /** [line] led by what [waiting], the session's own held turn, waits for: ahead of every other segment, where a
+     *  narrow terminal still shows it. [line] as it is for a session with no held turn. */
+    fun led(line: String, waiting: HeldTurnReading?): String =
+        bars.heldSegment(waiting)?.let { "$it$SEPARATOR$line" } ?: line
 
     private fun modelSegment(root: JsonObject): String? {
         val model = blob.obj(root, MODEL_FIELD) ?: return null

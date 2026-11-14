@@ -22,6 +22,7 @@ import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
+import splice.lifecycle.prices.PRICE_REFRESH_HOST
 import splice.terminal.ConsoleConfirm
 
 /** [loginHead] is SetupCommand's own sign-in seam, passed through so tests keep constructing one
@@ -128,6 +129,11 @@ internal class SetupSignIn(
         verb("splice console", "accounts, models and usage, in a browser")
         verb("splice status", "see what's running")
         verb("splice doctor", "anything wrong prints its fix")
+        // Nov 12, 2026: the one request the daemon makes that nobody asked it for is said here, with its host and
+        // the line that turns it off.
+        println()
+        note("Once an hour splice fetches its price table from $PRICE_REFRESH_HOST:")
+        note("one anonymous request. refresh_prices = false under [daemon] turns it off.")
         // Room before the frame's outro, which renders at column 0 and would otherwise read as one
         // more row of this list.
         println()
@@ -137,6 +143,11 @@ internal class SetupSignIn(
     private fun credentialed(key: String, provider: ProviderConfig): Boolean =
         AuthKindRegistry.from(provider.auth.kind) == AuthKind.Client ||
             signIn.credentialConfigured(key, provider, env)
+
+    /** A sentence under the commands, in the quiet tone. */
+    private fun note(text: String) {
+        println("  " + palette.paint(palette.quiet, text))
+    }
 
     /** One command and what it is for, the command padded so the descriptions form a column. */
     private fun verb(command: String, purpose: String) {

@@ -44,6 +44,7 @@ You: `free` (run it), `ask` (person's yes first), `person` (the person runs it i
 | `models` | Compares each provider's published model list with the rows in `splice.toml` | `[provider]`, `--all` | no | no | free |
 | `version` | Prints `splice <version>` | none | no | no | free |
 | `perf` | Per-head latency, failure share, retries, cache hit ratio from the perf files | `--window 1h\|24h\|7d` | no | no | ask (read-only, not on your free list) |
+| `usage` | Every command's logins with their plan windows, as one JSON document for a program | `--json` | yes | yes | ask (read-only, not on your free list) |
 | `trace` | A head's full request/response trace from day files | `<head>`, `--last N`, `--session S`, `--turn ID`, `--json`, `--purge` | no | no | ask (prints prompts; `--purge` deletes) |
 | `wire` | Upstream request bodies a head sent, only if wireTap is on for that head | `<head>`, `--last N`, `--json` | yes | yes | ask (prints prompts) |
 | `listeners` | The ports this build would listen on, for a socket manager | none | no | no | ask (read-only) |
@@ -59,7 +60,6 @@ You: `free` (run it), `ask` (person's yes first), `person` (the person runs it i
 | `add-model` | Picks OpenRouter catalog rows through a prompt and writes them | none | no | no | person |
 | `setup` | Guided first-run flow; writes TOML, installs commands, may restart | none | no | yes | person, never you |
 | `init` | Writes the starter `splice.toml` if absent, and the MCP hub env file on Linux | none | no | no | ask |
-| `mcp install temple` | Persists Temple's local MCP service and refreshes Claude/native Codex entries | `--script FILE` (with optional `--command COMMAND`) or `--launch-file FILE`, with `--url URL`; or `--endpoint URL` alone; `--codex-home DIR` | optional | optional | ask |
 | `peer` | Named peers every Claude Code session can message: register, list, revoke, rotate, webhooks, per-peer send limits, send and read as one, and a Codex thread's hooks | `register <name>`, `list`, `revoke <name>`, `rotate <name>`, `webhook set\|clear\|test`, `limit <name> <per-minute> <burst>\|--default`, `send --as`, `inbox --as`, `status --as`, `codex attach\|detach` | yes | yes (`--as` verbs use the peer's own key file) | `list`: free. Every other verb: ask |
 | `share` | LAN share, the server's side: offers this machine's heads to the person's other machines. `on` and `off` write `[share]` in `splice.toml` and restart a running daemon; `status` prints each command's address | `on [--port N]`, `off`, `status` (no word is `status`) | no (`status` asks the running daemon; a running daemon is restarted) | no | `on`, `off`: ask (they restart); `status`: ask (read-only) |
 | `remote` | LAN share, a node's side: commands this machine runs on another machine's heads. `add` writes one `[remote.<command>]` line and links the command, `remove` takes both out, each restarting a running daemon; the bare verb lists them and whether each server answers | `[list]`, `add <address> [--as <command>]`, `remove <command>` | no (a running daemon is restarted) | no | `add`, `remove`: ask (they restart); `list`: ask (read-only) |
@@ -163,6 +163,36 @@ for `relaunch` the asking is yours: say what it will do in plain text and wait f
 Source: `features/sessions/.../list/SessionsCommand.kt:60-110`, `.../registry/SessionRegistry.kt:23,243`
 (`STALE_AFTER_MS` = 30 minutes), `.../list/SessionsJson.kt`, `app/.../cli/sessions/SessionsRelaunchCommand.kt`.
 The console's Sessions page uses "ended" for what this verb calls `gone` (see accounts-sessions-console.md).
+
+### usage
+
+```
+splice usage --json
+```
+
+Prints every command's logins and their plan windows as one JSON document on one line, for a program that reads
+them when it needs them (a menu that opens, a window that comes back). It asks the running daemon once; it keeps
+nothing and watches nothing. The shape:
+
+```
+{"version":1,"commands":[{"head":"<head key>","command":"<what the person types>","next":"<label>"|null,
+  "accounts":[{"label":"<label>"|null,"name":"<display name>","kind":"<kind>","plan":"<plan>"|null,
+    "five_hour":{"used_percent":N,"resets_at_epoch_seconds":N,"current":true|false}|null,
+    "seven_day":{"used_percent":N,"resets_at_epoch_seconds":N,"current":true|false}|null,
+    "models":[{"model":"<model>","used_percent":N,"resets_at_epoch_seconds":N}],
+    "held":[{"model":"<model>","until_epoch_seconds":N}],
+    "observed_at_epoch_seconds":N|null}]}]}
+```
+
+`next` is the login the command's next request goes to, where the command has several; which login a running
+session is on is that session's own fact and is not here. `label` is the name the command's pool knows a login by,
+which is what `next` holds, and null for a command with one login. A window is null where the provider gave no reading of it, and its
+`current` is false once its reset has passed with no newer reading. `models` holds a plan's per-model weeks,
+`held` the models a login cannot serve yet and until when, `observed_at_epoch_seconds` when the login was last
+heard. A command with no login is left out. Within one `version`, fields are only added. When the daemon gave no
+answer it prints nothing on stdout, one line on stderr, and exits 1.
+
+Source: `app/.../cli/UsageJson.kt`.
 
 ### doctor
 
@@ -268,7 +298,7 @@ Source: `features/lifecycle/.../restart/RestartCommand.kt:46-130`, `README.md` "
 claudex login                       # the head's own command
 splice login claudex
 splice login claudex --label work   # a further account of the same kind
-splice login claude-splice --label work
+splice login claude --label work
 ```
 
 `<head>` is a head key or its wrapper command; with no head and exactly one sign-in-capable head it picks that
@@ -463,35 +493,6 @@ place, row and state).
 
 Source: `app/.../cli/status/ConsolePilotCommand.kt` (the words), `app/.../control/ConsolePilot.kt` (the relay),
 `app/src/main/resources/console/pilot.js` (what each action does on the page).
-
-### mcp install temple
-
-```sh
-splice mcp install temple --script /absolute/temple/slices/screen/bin/tools-server.ts --url http://127.0.0.1:7741
-splice mcp install temple --launch-file /absolute/path/to/launch-descriptor --url http://127.0.0.1:7741
-splice mcp install temple --endpoint http://127.0.0.1:7740/mcp
-```
-
-Temple normally runs this during its own provisioning. It persists the resolved local MCP entry so Splice
-can start it after reboot before Temple's app opens. The entry is named by exactly one of `--script` (a script
-that `bun` runs; `--command` selects another executable) and `--launch-file` (a descriptor holding the command,
-args, cwd and env; `--command` is not allowed with it). `--codex-home` selects the native Codex home. An omitted native home retains a previously registered one,
-then follows `TEMPLE_CODEX_HOME` or `CODEX_HOME`. No head's permissions change.
-
-A Temple that serves MCP itself registers its address with `--endpoint URL`, alone or with `--codex-home`.
-Splice then starts nothing: every Claude session and the native Codex entry are handed that HTTP address as
-it is. `--endpoint` is refused beside `--script`, `--launch-file`, `--command` or `--url`. Each form replaces
-the other whole.
-
-A running daemon refreshes the service and native client entry immediately. With the daemon stopped,
-registration succeeds and takes effect at its next boot. A failed live refresh is reported separately from
-the durable registration. Retry the same install; never read the registry or an access key yourself.
-
-The current Temple MCP exports `act`, `get_screen`, `help`, `read_card`, `say`, and `state`. Dispatch is an
-operation through `act`. The app's root URL answering 503 does not establish whether its MCP tools work.
-
-Ask before using this command yourself. It changes a service registration and the native Codex MCP entry.
-Source: `app/.../cli/mcp/McpServiceCommand.kt`, `app/.../mcp/TempleMcpStartup.kt`.
 
 ### peer
 

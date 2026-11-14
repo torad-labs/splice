@@ -168,6 +168,7 @@ internal class CollectTurn(
             detachOwner.replay,
             detachOwner.scope,
             detachOwner.context,
+            detachOwner.turns,
         )
         // The reply the turn's own client would have read, a failure's status included: a re-send that waited on a
         // failed turn is told that failure, never a 200 carrying an error body.

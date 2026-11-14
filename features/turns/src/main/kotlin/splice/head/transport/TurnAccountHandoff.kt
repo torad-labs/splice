@@ -17,7 +17,8 @@ internal class TurnAccountHandoff(
     private val pool: AccountPool,
     private val quotas: TurnQuota,
 ) {
-    private val refused = linkedSetOf<String>()
+    /** Each login that refused this turn, with the pool's join count when it did ([AccountPool.joins], PoolJoins.count). */
+    private val refused = linkedMapOf<String, Long>()
     private var committed = false
 
     @Synchronized
@@ -31,9 +32,11 @@ internal class TurnAccountHandoff(
         val pending = pending(drive) ?: return false
         val model = drive.meta.route.upstreamModel
         val session = drive.meta.scope.sessionId
-        val available = pool.awaitingEvidence.select(session, pending.excluded, model = model)
+        // own = false: the turn was counted toward the command's usual model at its admission. Counted again here, a
+        // login running out would hand that say to the helpers' turns it refused, at the moment the screens are read.
+        val available = pool.awaitingEvidence.select(session, pending.excluded, model = model, own = false)
         val selected = if (available is Selection.Exhausted && earlierHeld(drive)) {
-            pool.awaitingEvidence.select(session, model = model)
+            pool.awaitingEvidence.select(session, model = model, own = false)
         } else {
             available
         }
@@ -57,8 +60,9 @@ internal class TurnAccountHandoff(
      *  [cause] supplies the current reset before the retry executor publishes that login's hold. */
     fun otherFree(drive: TurnDrive, cause: FailureCause): Boolean {
         if (synchronized(this) { committed }) return false
-        val current = drive.account?.account?.label
-        val tried = synchronized(this) { refused.toSet() }
+        // A login that left the pool since, or whose label is another account's now, is not this turn's login any more.
+        val current = drive.account?.account?.takeIf { held -> pool.members.any { it === held } }?.label
+        val tried = synchronized(this) { tried() }
         val reset = when (cause) {
             is FailureCause.Provider.Limited -> (cause.lift as? Lift.At)?.at
             is FailureCause.Provider.NeedsPayment -> (cause.lift as? Lift.At)?.at
@@ -90,9 +94,15 @@ internal class TurnAccountHandoff(
     private fun pending(drive: TurnDrive): PendingHandoff? {
         if (committed) return null
         val previous = drive.account ?: return null
-        refused += previous.account.label
-        return PendingHandoff(previous, refused.toSet())
+        // Only a login still in the pool refuses under its label: one replaced under the same label is another account.
+        if (pool.members.any { it === previous.account }) refused[previous.account.label] = pool.joins.count
+        return PendingHandoff(previous, tried())
     }
+
+    /** The logins this turn does not go back to: the ones that refused it since the newest join. A join opens every
+     *  login again, since what refused before may be another account now or signed in again, and a login still spent
+     *  is kept out by the hold its own refusal left on it. Called under this monitor. */
+    private fun tried(): Set<String> = pool.joins.count.let { now -> refused.filterValues { it == now }.keys.toSet() }
 
     @Synchronized
     private fun adopt(drive: TurnDrive, previous: AccountSelection, next: AccountSelection): Boolean {

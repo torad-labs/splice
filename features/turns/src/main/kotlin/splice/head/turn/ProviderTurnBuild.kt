@@ -12,6 +12,7 @@ import splice.core.perf.TurnPerf
 import splice.core.turn.TurnCompaction
 import splice.head.HeadDeps
 import splice.head.compaction.CompactionReplay
+import splice.head.turn.review.AutoModeReview
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
 

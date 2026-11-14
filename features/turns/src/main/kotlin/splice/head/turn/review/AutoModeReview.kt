@@ -9,7 +9,7 @@
 //
 // The match is the policy's opening sentence, as ActivityLabel matches its side query. A later Claude Code that
 // rewords it is counted as a near miss on the turn's perf row ([AUTO_MODE_REVIEW_NEAR_MISS]) instead of going unseen.
-package splice.head.turn
+package splice.head.turn.review
 
 import splice.core.perf.TurnPerf
 import splice.core.wire.AnthropicRequest

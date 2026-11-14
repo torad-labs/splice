@@ -42,6 +42,8 @@ import splice.head.HeadDeps
 import splice.head.RequestBodyReader
 import splice.head.admission.AdmissionResponses
 import splice.head.headDeps
+import splice.head.turn.review.AUTO_MODE_REVIEW
+import splice.head.turn.review.AUTO_MODE_REVIEW_NEAR_MISS
 import splice.sessions.prompt.SLOT_PROMPT_CHANGED
 import splice.sessions.prompt.SlotInstructions
 import splice.sessions.teams.Team

@@ -18,6 +18,11 @@ import kotlin.io.path.isSymbolicLink
 
 internal const val SELF_COMMAND = "splice"
 
+// why: what install and add say when they name the head plain `claude` runs while `claude` is not wrapped yet.
+internal const val CLAUDE_UNWRAPPED =
+    "plain `claude` is not wrapped, so it runs Claude Code directly and not through splice; " +
+        "`splice setup` wraps it, or POST /api/claude-head/wrap on the control plane"
+
 /** The one wrapper name-claiming primitive. A seam (SymlinkOp precedent): the DR-67 safety
  *  property — a foreign file that appears AFTER the precheck wins, never gets eaten — is only
  *  testable on the production path if a test can interleave that creator before the claim. */
@@ -48,7 +53,9 @@ internal class InstallLinker(
         val bin = layout.localBin(env)
         Files.createDirectories(bin)
         val selected = selected(topology, headArg) ?: return InstallResult.Declined
-        val refusal = collisionRefusal(topology) ?: linkRefusal(bin, selected, launchShim)
+        val refusal = unwrappedClaude(topology, headArg, env)
+            ?: collisionRefusal(topology)
+            ?: linkRefusal(bin, selected, launchShim)
         // Said only when it is true: doctor, a few lines later, grades the same fact.
         val onPath = env("PATH").orEmpty().split(':').any { it == bin.toString() }
         if (refusal == null && !onPath) output.line("splice: add $bin to your PATH to use the wrappers")
@@ -70,6 +77,15 @@ internal class InstallLinker(
     internal fun runsShim(command: String, env: EnvReader): Boolean {
         val link = layout.wrapperLinkOrNull(layout.localBin(env), command) ?: return false
         return link.isSymbolicLink() && Files.readSymbolicLink(link) == layout.launchShimPath(env)
+    }
+
+    /** [CLAUDE_UNWRAPPED] when [headArg] names the head plain `claude` runs while `claude` is not wrapped: that
+     *  head has no link of its own to lay, so reporting it linked would send its person to a command that bypasses
+     *  splice. */
+    private fun unwrappedClaude(topology: Topology, headArg: String?, env: EnvReader): String? {
+        val head = headArg?.let(topology.heads::get) ?: return null
+        val isClaude = (head.claude.command ?: headArg) == CLAUDE_COMMAND
+        return CLAUDE_UNWRAPPED.takeIf { isClaude && !runsShim(CLAUDE_COMMAND, env) }
     }
 
     /** Every command for --all/no-arg, else the one named: a remote command (LAN share) by its name, a head by

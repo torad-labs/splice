@@ -61,7 +61,13 @@ public class UpgradeChecks(
 ) {
     /** The release reader. Internal and replaceable so a test puts its fake at the network edge; production never touches it. */
     internal var release: UpgradeRelease =
-        UpgradeRelease(TerminalOutput { }, JdkUpgradeFetch(), JdkUpgradeProcess(), "java")
+        UpgradeRelease(
+            TerminalOutput { },
+            JdkUpgradeFetch(),
+            JdkUpgradeProcess(),
+            // The JVM this daemon runs on, which install.sh chose: the java on PATH may be older than 21, or none.
+            ProcessHandle.current().info().command().orElse("java"),
+        )
 
     internal var channel: ReleaseChannel = ReleaseChannel(env)
 

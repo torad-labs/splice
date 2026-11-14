@@ -14,7 +14,7 @@
 
 # Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 # — bump both together whenever this shim's behavior changes. No code generation.
-SPLICE_SHIM_VERSION="shim-25"
+SPLICE_SHIM_VERSION="shim-26"
 # Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 SPLICE_GATEWAY_VERSION="0.4.0"
 
@@ -306,10 +306,19 @@ STATE_DIR=$(live_state_dir "$SHIM_HOME" "${SPLICE_STATE_DIR-}" "${CLAUDEX_STATE_
 CONTROL_PORT_FROM_ENV=${CONTROL_PORT:-}
 CONTROL_PORT=$(control_port_for "$SHIM_HOME" "$STATE_DIR" "${SPLICE_CONFIG-}" "${XDG_CONFIG_HOME-}" "${SPLICE_CONTROL_PORT-}" "${CONTROL_PROXY_PORT-}")
 CONTROL="http://127.0.0.1:$CONTROL_PORT"
-JAR=${SPLICE_JAR:-${SPLICE_SHARE_DIR:-$SHIM_HOME/.local/share/splice}/splice.jar}
+LAUNCH_SHARE=${SPLICE_SHARE_DIR:-$SHIM_HOME/.local/share/splice}
+JAR=${SPLICE_JAR:-$LAUNCH_SHARE/splice.jar}
 # shim-22: the java splice runs on. SPLICE_JAVA names one for a machine whose java on PATH is older than 21 for its own
 # work (an Android toolchain on 17); only splice's own JVM uses it, and the Claude Code this launcher execs keeps PATH.
-JAVA=${SPLICE_JAVA:-java}
+# shim-26: else the Java 21 install.sh linked at <share>/java, which it lays only when the java on PATH cannot run
+# splice: one it found elsewhere on the machine, or the runtime it downloaded for splice alone. Else the java on PATH.
+if [ -n "${SPLICE_JAVA-}" ]; then
+  JAVA=$SPLICE_JAVA
+elif [ -x "$LAUNCH_SHARE/java" ]; then
+  JAVA=$LAUNCH_SHARE/java
+else
+  JAVA=java
+fi
 # shim-23: the heap's ceiling flags for SPLICE_JVM_OPTS below. 16 GiB where 75% of the memory the daemon may use
 # reaches it, otherwise the JVM's own 75%. That memory is the machine's RAM, MemTotal from /proc/meminfo on Linux or
 # hw.memsize on macOS, or the memory limit of this process's control group or of a group above it where one is lower:
@@ -704,7 +713,7 @@ cold_start() {
   if ! command -v "$JAVA" >/dev/null 2>&1; then
     # A java that cannot be run leaves no JVM output, so the boot log says so itself (nohup used to): the handshake
     # below shows the tail, and this line is what it has to show.
-    printf "splice: failed to run command 'java': not found on PATH\n" >>"$cs_log" 2>/dev/null || true
+    printf "splice: failed to run command '%s': not found\n" "$JAVA" >>"$cs_log" 2>/dev/null || true
   else
     cold_start_java "$cs_log" "$cs_flag"
   fi

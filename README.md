@@ -75,7 +75,7 @@ The per-turn write bound still runs on macOS, without the kernel acknowledgement
 
 | Dependency | Why | If missing |
 | --- | --- | --- |
-| **Java 21+** | the spliced daemon ships as a fat jar | `apt install openjdk-21-jre-headless` · `brew install --cask temurin@21` · [adoptium.net](https://adoptium.net) |
+| **Java 21+** | the spliced daemon ships as a fat jar | nothing to do: the installer takes any Java 21+ on the machine, and on a machine with none it downloads Eclipse Temurin's Java 21 runtime for splice alone (below) |
 | **Claude Code** | splice wraps it; `claude` must resolve on PATH | `curl -fsSL https://claude.ai/install.sh \| bash` (the native installer; no Node needed) |
 | **curl** + **bash** | the installer, and the launch shim, which is plain `sh` and `curl` | preinstalled almost everywhere |
 | **GitHub CLI** (optional) | signed in, it lets release installs and `splice upgrade` also verify each asset's build-provenance attestation | [cli.github.com](https://cli.github.com), then `gh auth login`; without it the install still verifies checksums and prints the command that checks provenance later |
@@ -89,6 +89,15 @@ and output attached to a terminal, it also offers to run each fix, with consent.
 ```bash
 curl -fsSL https://splice.torad.ai/download/install.sh | bash
 ```
+
+**Java.** The installer looks for Java 21 or newer: the `java` on your PATH, `JAVA_HOME`, macOS's
+`/usr/libexec/java_home`, and the folders JDKs install to (`/usr/lib/jvm`, `/Library/Java/JavaVirtualMachines`,
+Homebrew, SDKMAN, mise, asdf). On a machine with none, it downloads Eclipse Temurin's Java 21 runtime (about 50 MB,
+from Adoptium's releases on GitHub), checks it against the sha256 pinned in `install.sh`, and unpacks it into
+`~/.local/share/splice/runtime/`. Only splice runs it: the Java the installer chose is linked at
+`~/.local/share/splice/java`, which the launcher runs, and your PATH and system Java stay as they are.
+`SPLICE_JAVA=/path/to/java` names one yourself; `SPLICE_NO_JAVA_DOWNLOAD=1` makes the installer stop and print the
+package command instead of downloading.
 
 Releases are downloaded from splice.torad.ai/download. The downloaded jar and launch shim are checked against the release's `sha256sums.txt`. If the GitHub CLI is installed
 and signed in, the installer also verifies each asset's build-provenance attestation; if not, it

@@ -76,25 +76,25 @@ class ClaudeLoginOwnerTest {
         return ClaudeLoginEdits(ClaudeLoginRead(paths, {}, WallClock { 1000 })) to ClaudeLogins(location.storeDir)
     }
 
+    // Nov 13, 2026: a Remove on this login deleted it, and every claude session on the machine said "Not logged in".
     @Test
-    fun `native removal backs up only its addressed credential and leaves pool logins intact`() {
+    fun `a Remove on Claude Code's own login is refused and the login every session runs on stays`() = runBlocking {
         val native = location()
-        val (edits, logins) = editable(native, "synthetic-native")
-        val pool = Files.createDirectories(home.resolve("pool/work")).resolve(".credentials.json")
-        Files.writeString(pool, "synthetic-pool")
+        live(native, "account-a", """{"claudeAiOauth":{"accessToken":"synthetic-native"}}""")
         val bytes = Files.readString(native.credentials)
+        val scope = CoroutineScope(SupervisorJob())
+        try {
+            val owner = owner(native, scope, NativeAuthStart { error("must not spawn") })
 
-        assertEquals(AccountMutation.Ok, edits.remove(native, logins))
+            val removed = owner.remove(ClaudeLoginPlaceId.NATIVE)
 
-        assertFalse(Files.exists(native.credentials))
-        assertFalse(Files.exists(native.storeDir.resolve("work.credentials.json")))
-        assertEquals("synthetic-pool", Files.readString(pool))
-        val backup = Files.list(native.storeDir.resolve("removed")).use { it.toList().single() }
-        assertEquals(bytes, Files.readString(backup))
-        assertEquals(
-            "rw-------",
-            java.nio.file.attribute.PosixFilePermissions.toString(Files.getPosixFilePermissions(backup)),
-        )
+            assertTrue(removed is AccountMutation.Refused, removed.toString())
+            assertTrue((removed as AccountMutation.Refused).reason.contains("/logout"), removed.reason)
+            assertEquals(bytes, Files.readString(native.credentials))
+            assertFalse(Files.exists(native.storeDir.resolve("removed")))
+        } finally {
+            scope.coroutineContext[Job]?.cancelAndJoin()
+        }
     }
 
     @Test

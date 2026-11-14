@@ -1944,12 +1944,16 @@ function accountHtml(s) {
  *  model for a session. Its turns go to that model only while every login is held on its own, and back on the first turn a
  *  login can serve it (HeldModelFallback). */
 function fallbackHtml(s) {
-  const asked = modelKey(s.turn?.model ?? s.row.model ?? s.row.served_model ?? "");
-  const others = (state.headModels[s.head] || []).filter((id) => id !== asked);
-  if (!asked || others.length === 0) return "";
   const fb = state.fallbacks[s.id] ?? null, open = ui.fbopen.has(s.id), busy = ui.fbBusy === s.id;
+  const seen = modelKey(s.turn?.model ?? s.row.model ?? s.row.served_model ?? "");
+  // A turn sent on its fallback reads the fallback as its model, and nothing names the model it asked for then (review
+  // of #595): the card names no model it cannot know, and the fallback keeps its row and its Remove.
+  const asked = fb != null && seen === modelKey(fb) ? "" : seen;
+  const others = (state.headModels[s.head] || []).filter((id) => id !== asked);
+  if (!seen || others.length === 0) return "";
   const label = (id) => modelName(state.modelLabel, id);
-  const inner = `<span class="fbtext"><span class="fbq">When no login has ${esc(label(asked))}</span>`
+  const its = asked ? label(asked) : "the model it asks for";
+  const inner = `<span class="fbtext"><span class="fbq">When no login has ${esc(its)}</span>`
     + `<span class="state${fb ? " on" : ""}">${esc(fb ? `Runs on ${label(fb)}` : "Waits")}</span></span>`;
   const line = DRAW.disc({ open, controls: `fb-${esc(s.id)}`, inner, act: "fb", data: ` data-s="${esc(s.id)}"`, cls: "fbhead" });
   if (!open) return `<div class="fbline">${line}</div>`;
@@ -1960,7 +1964,7 @@ function fallbackHtml(s) {
       : `<button class="act small" data-act="fb-use" data-s="${esc(s.id)}" data-model="${esc(id)}">Use</button>`;
     return `<div class="fbrow${on ? " on" : ""}"><span class="lname">${esc(label(id))}</span><span class="lact">${act}</span></div>`;
   }).join("");
-  const why = `Used only while every login is held on ${label(asked)}.`;
+  const why = `Used only while every login is held on ${its}.`;
   return `<div class="fbline">${line}<div class="fbrows unfold" id="fb-${esc(s.id)}"><p class="fbwhy">${esc(why)}</p>${rows}</div></div>`;
 }
 /** Give the session its fallback, or take it away, then read the page again. */

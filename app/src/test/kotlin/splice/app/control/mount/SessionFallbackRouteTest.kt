@@ -47,23 +47,10 @@ import java.nio.file.Path
 private const val SESSION = "0b9c-a-session"
 private const val FABLE = "claude-fable-5-2"
 private const val OPUS = "claude-opus-5-5"
+private const val OTHER = "7f1e-another-session"
 
 class SessionFallbackRouteTest {
-    private val sessions = object : SessionSource {
-        override fun read(): List<SessionRecord> = listOf(
-            SessionRecord(
-                sessionId = SESSION,
-                name = "builder",
-                status = SessionStatus(),
-                route = SessionRoute.Head("claude"),
-                availability = SessionAvailability.LIVE,
-                process = SessionProcess(1L, "/", 0L, 0L, null),
-                client = SessionClient("claude-code", "2.1.325"),
-            ),
-        )
-
-        override fun list(): SessionListing = SessionListing(read())
-    }
+    private val sessions = registry(record(SESSION, "builder"))
 
     @Test
     fun `a session given a model its command has keeps it across a restart until it is taken away`(@TempDir tmp: Path) {
@@ -102,11 +89,49 @@ class SessionFallbackRouteTest {
         assertEquals(emptyMap<String, String>(), listed(route(tmp).list()))
     }
 
-    private fun route(tmp: Path): SessionFallbackRoute {
+    @Test
+    fun `clearing a name two running sessions share is refused, and both keep theirs`(@TempDir tmp: Path) {
+        val twins = registry(record(SESSION, "twin"), record(OTHER, "twin"))
+        assertEquals(HttpStatusCode.OK, route(tmp, twins).set(SESSION, """{"model":"$OPUS"}""").status)
+        assertEquals(HttpStatusCode.OK, route(tmp, twins).set(OTHER, """{"model":"$OPUS"}""").status)
+
+        val reply = route(tmp, twins).clear("twin")
+        assertEquals(HttpStatusCode.Conflict, reply.status)
+        assertTrue(error(reply).contains("its id"), error(reply))
+        assertEquals(mapOf(SESSION to OPUS, OTHER to OPUS), listed(route(tmp, twins).list()))
+    }
+
+    @Test
+    fun `a session no longer listed is cleared by its id, and an unknown id is refused`(@TempDir tmp: Path) {
+        assertEquals(HttpStatusCode.OK, route(tmp).set(SESSION, """{"model":"$OPUS"}""").status)
+        val forgotten = registry()
+
+        assertEquals(HttpStatusCode.OK, route(tmp, forgotten).clear(SESSION).status)
+        assertEquals(emptyMap<String, String>(), listed(route(tmp, forgotten).list()))
+        assertEquals(HttpStatusCode.NotFound, route(tmp, forgotten).clear("not-a-session").status)
+    }
+
+    private fun route(tmp: Path, registry: SessionSource = sessions): SessionFallbackRoute {
         val store = SessionFallbackStore(tmp.resolve(SESSION_FALLBACKS_FILE))
         val ports = ConsolePorts().apply { sessionFallbacks = store }
-        return SessionFallbackRoute(sessions, mapOf("claude" to claudeHead()), ports)
+        return SessionFallbackRoute(registry, mapOf("claude" to claudeHead()), ports)
     }
+
+    private fun registry(vararg records: SessionRecord): SessionSource = object : SessionSource {
+        override fun read(): List<SessionRecord> = records.toList()
+
+        override fun list(): SessionListing = SessionListing(read())
+    }
+
+    private fun record(id: String, name: String): SessionRecord = SessionRecord(
+        sessionId = id,
+        name = name,
+        status = SessionStatus(),
+        route = SessionRoute.Head("claude"),
+        availability = SessionAvailability.LIVE,
+        process = SessionProcess(1L, "/", 0L, 0L, null),
+        client = SessionClient("claude-code", "2.1.325"),
+    )
 
     private fun body(reply: JsonReply): JsonObject = Json.parseToJsonElement(reply.body).jsonObject
 

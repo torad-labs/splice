@@ -71,10 +71,16 @@ internal class SessionFallbackRoute(
     }
 
     /** Takes [session]'s fallback away: it waits for the model it asks for again, as every session does by default. A
-     *  session that has ended is named by its id. */
+     *  session the registry no longer lists is named by the id its fallback is kept under. A name two running sessions
+     *  share is refused, as [set] refuses it, since fallbacks are kept by id and clearing the name would clear neither. */
     fun clear(session: String): JsonReply {
         val store = ports.sessionFallbacks ?: return refused(HttpStatusCode.ServiceUnavailable, FALLBACK_UNWIRED)
-        val id = (target(session) as? Target.Found)?.id ?: session
+        val id = when (val found = target(session)) {
+            is Target.Found -> found.id
+            is Target.Refused ->
+                session.takeIf { found.reply.status == HttpStatusCode.NotFound && it in store.all() }
+                    ?: return found.reply
+        }
         return saved(store, id, null, "waits for the model it asks for while every login is held on it")
     }
 

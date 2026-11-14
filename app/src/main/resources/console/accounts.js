@@ -1082,8 +1082,8 @@ async function readResets(a, spot, said = null) {
   ui.resets = login ? { spot, state: "read", login, said } : { spot, state: "failed", ...mutationError(res, "Resets not read") };
   render();
 }
-// WHAT A HELD CLAUDE LOGIN CAN DO ABOUT IT, ON ITS CARD (Nov 14, 2026). Marcos, asked whether a login at its limit should
-// say a reset is available: "yes, that or offer to fallback to another model if one hasnt been configured". The card
+// WHAT A HELD CLAUDE LOGIN CAN DO ABOUT IT, ON ITS CARD (Nov 14, 2026). Marcos wanted a login at its limit to say when a
+// reset is available, with the way to its Limit resets, and to offer a fallback model where none is set. The card
 // reads its resets once (the read asks the provider) and again after RESET_REASK_MS, and says so only when one can be
 // spent now; its act opens the login's Limit resets, where a spend still takes two presses. The sessions on it with no
 // fallback are offered the command's other models, set per session as Sessions sets them (SessionFallbackRoute). splice

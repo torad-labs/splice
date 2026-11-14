@@ -22,6 +22,9 @@ public const val RESET_SPENT: String = "reset"
 // why: the outcome of a spend asked for a kind the login's provider has no such reset for, which a route answers 400.
 public const val RESET_UNKNOWN_KIND: String = "unknown_kind"
 
+// why: the outcome of a spend whose answer did not say it was spent or refused; asking again sends the same request.
+public const val RESET_UNCONFIRMED: String = "unconfirmed"
+
 // why: the body field that names the kind of reset to spend.
 private const val KIND_FIELD = "kind"
 

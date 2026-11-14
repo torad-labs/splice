@@ -9,8 +9,6 @@
 // on the same grant: the first of that kind that can be used now. It spends one only when a person asks for that kind
 // on that login, because a reset cannot be undone. A request whose answer did not confirm the spend is asked again with
 // the same request id, so asking twice never spends two.
-@file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
-
 package splice.app.auth.claude
 
 import io.ktor.client.plugins.timeout
@@ -23,24 +21,20 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonIgnoreUnknownKeys
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.accounts.pool.LoginResetKind
 import splice.accounts.pool.LoginResetSpend
 import splice.accounts.pool.LoginResets
+import splice.accounts.pool.RESET_UNCONFIRMED
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.oauth.AuthHttpClientFactory
 import splice.usage.quota.CLAUDE_OAUTH_BETA
 import splice.usage.quota.ClientUserAgent
-import java.time.Instant
-import java.time.format.DateTimeParseException
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -59,12 +53,6 @@ private const val CLAUDE_RESET_PROGRAM = "cedar_ember"
 // why: Claude Code gives a spend 25 seconds before it calls the answer unconfirmed.
 private const val CLAUDE_RESET_TIMEOUT_MS = 25_000L
 
-// why: the one window a 5-hour reset clears; a grant that clears only it is a 5-hour reset.
-private const val FIVE_HOUR_LIMIT = "five_hour"
-
-// why: the outcome of a spend whose answer did not say it was spent or refused; asked again with the same request id.
-private const val UNCONFIRMED = "unconfirmed"
-
 // why: what an unconfirmed spend tells the person, since a second ask is safe.
 private const val ASK_AGAIN = "Asking again sends the same request, so it is never spent twice."
 
@@ -74,131 +62,11 @@ private const val NO_ORGANIZATION = "Anthropic's profile of this login names no 
 // why: the sentence for a login whose token Anthropic refused, said wherever a read or a spend meets it.
 private const val TOKEN_REFUSED = "Anthropic refused this login's token; sign it in again."
 
-/** The kinds a person can ask for, in Claude Code's own words for them (`/limit-reset fable`). */
-internal object ResetKinds {
-    const val FABLE = "fable"
-    const val WEEKLY = "weekly"
-    const val FULL = "full"
-    const val FIVE_HOUR = "5-hour"
-    val all: List<String> = listOf(FABLE, WEEKLY, FULL, FIVE_HOUR)
-
-    // A grant's own type, where Anthropic names one, in the words a person types.
-    val byType: Map<String, String> = mapOf("session" to FIVE_HOUR, "weekly" to WEEKLY, "full" to FULL)
-
-    fun name(kind: String): String = when (kind) {
-        FABLE -> "Fable reset"
-        WEEKLY -> "weekly reset"
-        FULL -> "full reset"
-        else -> "5-hour reset"
-    }
-}
-
-@Serializable
-@JsonIgnoreUnknownKeys
-private data class ResetsDocument(@SerialName("cedar_ember") val resets: ResetsBlock? = null)
-
-@Serializable
-@JsonIgnoreUnknownKeys
-private data class ResetsBlock(
-    val eligible: Boolean = false,
-    @SerialName("ineligible_reason") val ineligibleReason: String? = null,
-    val grants: List<ResetGrant> = emptyList(),
-    @SerialName("cooldown_until") val cooldownUntil: String? = null,
-)
-
-@Serializable
-@JsonIgnoreUnknownKeys
-private data class ResetGrant(
-    val id: String,
-    @SerialName("resets_total") val resetsTotal: Int = 0,
-    @SerialName("resets_left") val resetsLeft: Int = 0,
-    @SerialName("ends_at") val endsAt: String? = null,
-    val clears: List<String> = emptyList(),
-    val paused: Boolean = false,
-    @SerialName("usable_now") val usableNow: Boolean = false,
-    val type: String? = null,
-    @SerialName("gives_back_weekly") val givesBackWeekly: Boolean = false,
-    @SerialName("unavailable_reason") val unavailableReason: String? = null,
-) {
-    /** Claude Code's reading of a grant's kind: a Fable reset gives the week back, and otherwise the grant's own type,
-     *  or what it clears, decides. */
-    val kind: String
-        get() = when {
-            givesBackWeekly -> ResetKinds.FABLE
-            type in ResetKinds.byType -> ResetKinds.byType.getValue(type.orEmpty())
-            clears.isEmpty() -> ResetKinds.FULL
-            clears.all { it == FIVE_HOUR_LIMIT } -> ResetKinds.FIVE_HOUR
-            clears.none { it == FIVE_HOUR_LIMIT } -> ResetKinds.WEEKLY
-            else -> ResetKinds.FULL
-        }
-
-    /** Claude Code offers a grant that is not paused and has a reset left or can be used now. */
-    val offered: Boolean get() = !paused && (resetsLeft > 0 || usableNow)
-
-    /** Whether its time to be used ended before [nowMs]; a time Anthropic wrote that does not parse never ends it. */
-    fun expired(nowMs: Long): Boolean {
-        val ends = endsAt ?: return false
-        return try {
-            Instant.parse(ends).toEpochMilli() <= nowMs
-        } catch (_: DateTimeParseException) {
-            false
-        }
-    }
-
-    fun usable(nowMs: Long): Boolean = usableNow && !expired(nowMs)
-}
-
-@Serializable
-@JsonIgnoreUnknownKeys
-private data class OrgProfile(val organization: OrgId? = null)
-
-@Serializable
-@JsonIgnoreUnknownKeys
-private data class OrgId(val uuid: String? = null)
-
-@Serializable
-@JsonIgnoreUnknownKeys
-private data class SpendAnswer(
-    val result: String? = null,
-    val reason: List<String> = emptyList(),
-    @SerialName("resets_left") val resetsLeft: Int? = null,
-    val cleared: List<String> = emptyList(),
-    @SerialName("cooldown_until") val cooldownUntil: String? = null,
-)
-
 /** One login's resets as Anthropic answered, or the sentence that says why they could not be read. */
 private sealed class ResetRead {
     data class Read(val block: ResetsBlock) : ResetRead()
 
     data class Refused(val outcome: String, val said: String) : ResetRead()
-}
-
-/** What a person reads about a login's resets, in one place so the list and a spend say the same thing. */
-private object ResetWords {
-    fun notOffered(reason: String?): String = when (reason) {
-        "tier", "seat" -> "This login's plan has no limit resets."
-        "no_grant" -> "This login has no limit resets."
-        "cli_version" -> "Anthropic wants a newer Claude Code before this login's resets can be used."
-        null -> "Anthropic offers this login no limit resets."
-        else -> "Anthropic offers this login no limit resets now ($reason)."
-    }
-
-    /** Why none of [grants], the offered grants of [kind], can be spent at [nowMs]. */
-    fun notNow(kind: String, grants: List<ResetGrant>, cooldownUntil: String?, nowMs: Long): String {
-        val name = ResetKinds.name(kind)
-        val reason = grants.firstNotNullOfOrNull(ResetGrant::unavailableReason)
-        return when {
-            grants.isEmpty() -> "This login has no $name left."
-            reason == "cooldown" -> "Resets are cooling down" + until(cooldownUntil) + "."
-            reason == "needs_limit" -> "A $name can be used only once this login reaches a limit it clears."
-            reason == "cannot_clear" -> "A $name cannot clear the limit this login is at."
-            reason?.startsWith("blocked_") == true -> "A limit this $name does not clear is used up, so it cannot help."
-            grants.any { it.expired(nowMs) } -> "This login's $name has expired."
-            else -> "Anthropic says it cannot be used now."
-        }
-    }
-
-    fun until(at: String?): String = at?.let { " until $it" }.orEmpty()
 }
 
 /** Reads and spends a Claude login's limit resets with that login's own OAuth token. Never logs or keeps a token. */
@@ -236,7 +104,7 @@ internal class ClaudeLimitResets(
             target == null ->
                 LoginResetSpend(label, kind, "not_now", ResetWords.notNow(kind, grants, block.cooldownUntil, clock()))
             org == null -> LoginResetSpend(label, kind, "refused", NO_ORGANIZATION)
-            else -> claim(LoginResetSpend(label, kind, UNCONFIRMED, ""), token, org, target)
+            else -> claim(LoginResetSpend(label, kind, RESET_UNCONFIRMED, ""), token, org, target)
         }
     }
 
@@ -319,7 +187,7 @@ internal class ClaudeLimitResets(
             null
         }
         val spend = spent(asked, answer)
-        if (spend.outcome == UNCONFIRMED) unconfirmed[key] = requestId else unconfirmed.remove(key)
+        if (spend.outcome == RESET_UNCONFIRMED) unconfirmed[key] = requestId else unconfirmed.remove(key)
         return spend
     }
 
@@ -346,7 +214,7 @@ internal class ClaudeLimitResets(
     private fun answeredSpend(asked: LoginResetSpend, body: String): LoginResetSpend {
         val answer = spendAnswer(body)
         val name = ResetKinds.name(asked.kind)
-        val result = answer.result?.takeIf { it in answered } ?: UNCONFIRMED
+        val result = answer.result?.takeIf { it in answered } ?: RESET_UNCONFIRMED
         val said = when (result) {
             "reset" -> "Spent a $name." + answer.resetsLeft?.let { " $it left." }.orEmpty()
             "already_used" -> "Anthropic says that $name was already used."

@@ -31,6 +31,7 @@ import splice.head.compaction.CompactionTail
 import splice.head.compaction.SessionProjectLookup
 import splice.head.perf.PerfStats
 import splice.head.turn.LiveTurns
+import splice.head.turn.SessionFallbacks
 import splice.head.usage.EconomicsStore
 import splice.head.usage.QuotaTracker
 import splice.head.usage.UsageStore
@@ -215,6 +216,9 @@ public data class HeadDeps(
          *  without one says so ([splice.core.budget.NoHeadBudget]) rather than forgetting. */
         val budget: HeadBudget,
         val credentialAccountNames: CredentialAccountNames,
+        /** The model each session named to fall back to while the one it asks for is held on every login (Nov 13,
+         *  2026). The default names none for every session, which is every head's state until a person sets one. */
+        val sessionFallbacks: SessionFallbacks = SessionFallbacks { null },
     ) {
         /** The one resolver for which quota tracker a turn reads (V4-99). */
         internal val turnQuota: TurnQuota = TurnQuota(accountPool, accountQuotas, quota)

@@ -41,6 +41,7 @@ import splice.head.compaction.FileCompactionRecordings
 import splice.head.compaction.KeepingRecordings
 import splice.head.perf.PerfStats
 import splice.head.perf.SessionTotals
+import splice.head.turn.SessionFallbacks
 import splice.head.usage.AccountOnPlan
 import splice.head.usage.CredentialQuotaFiles
 import splice.head.usage.EconomicsStore
@@ -160,6 +161,10 @@ internal class ManagedHeadFactory(
     private val perfSources: splice.app.sources.PerfSourceFiles = splice.app.sources.PerfSourceFiles(statePaths),
 ) {
     internal var quotaProbes: QuotaProbes = QuotaProbes(AuthHttpClientFactory().create())
+
+    /** The model each session named to fall back to while the one it asks for is held on every login: the daemon's one
+     *  store, read at each turn. Unassigned, no session has one. */
+    internal var sessionFallbacks: SessionFallbacks = SessionFallbacks { null }
     private val accountPools = HeadAccountPools(HeadAccountPools.EvidenceLoadFactory(quotaSeams::evidenceLoads))
     private val accountOrders = AccountOrderStore(statePaths.stateDir.resolve(ACCOUNT_ORDER_FILE))
     private val accountPins = AccountPinStore(statePaths.stateDir.resolve(ACCOUNT_PINS_FILE))
@@ -311,6 +316,7 @@ internal class ManagedHeadFactory(
         accounts = HeadAccountStores(
             pool = pool,
             quotas = accountQuotas,
+            fallbacks = SessionFallbacks { session -> sessionFallbacks.of(session) },
         ),
         clientWindows = ClientWindows(store = statePaths.clientWindowsFile(ctx.key), log = log),
         trace = traceStores.forHead(ctx.key, ctx.cfg),

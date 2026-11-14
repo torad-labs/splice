@@ -5,6 +5,8 @@ package splice.app
 
 import splice.app.control.ControlServer
 import splice.app.daemon.BootedTopology
+import splice.app.head.SESSION_FALLBACKS_FILE
+import splice.app.head.SessionFallbackStore
 import splice.app.probe.PlaygroundProviders
 import splice.app.probe.UpstreamPlaygroundProbe
 import splice.app.sources.PerfSourceFiles
@@ -31,6 +33,10 @@ internal class ControlStores(
     // restart: this one reader is what every head's perf, archive and economics store asks.
     val perfRows = PerfSourceFiles(daemon.statePaths, KeptHistory { daemon.config.getConfig().historyWindow })
     val foregroundTools = ForegroundTools()
+
+    /** Nov 13, 2026: the model each session named to fall back to while the one it asks for is held on every login: the
+     *  Sessions routes set it, and every head's turns read it. */
+    val sessionFallbacks = SessionFallbackStore(daemon.statePaths.stateDir.resolve(SESSION_FALLBACKS_FILE))
 
     /** V4-444: each assembled head's provider, registered by ManagedHeadFactory, so the Playground sends
      *  through the head's own request builder rather than a hand-built copy of it. */

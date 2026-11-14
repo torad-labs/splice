@@ -142,6 +142,9 @@ internal class TurnPreparation(
     private val messageEdges = MessageEdges(deps.seams.events)
     private val providerTurns = ProviderTurnBuild(provider, deps, replay)
 
+    /** A session's own fallback model while the one it asks for is held on every login (Nov 13, 2026). */
+    private val heldFallback = HeldModelFallback(deps.quotaBundle, provider.catalog, deps.log)
+
     /** Fix 4 of the Oct 27 Responses fixes: which earlier request of the same Claude Code turn each request
      *  continues, so the turn state its backend returned rides every request of that turn (ToolLoopTurns). */
     private val toolLoop = ToolLoopTurns()
@@ -192,9 +195,12 @@ internal class TurnPreparation(
     private fun preparedParsed(
         call: ApplicationCall,
         perf: TurnPerf,
-        parsed: AnthropicTurnBody,
-        asked: RefusedRequest,
+        received: AnthropicTurnBody,
+        named: RefusedRequest,
     ): Preparation {
+        // Before anything reads the model: a refusal past here names the model the turn would have gone upstream as.
+        val parsed = heldFallback.applied(received, named.sessionId)
+        val asked = named.copy(model = parsed.typed.model)
         val sessionId = asked.sessionId
         val inbound = asked.inbound
         refusalOf(parsed, asked)?.let { return it }

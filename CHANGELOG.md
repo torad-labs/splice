@@ -5,6 +5,17 @@
 Changes on main since v0.4.0. They take a version's heading when that version is cut.
 
 ### Added
+- **A session can be given a model to run on while every login is held on the one it asks for.** On Nov 13, 2026
+  every login of one machine ran out of its week of Fable, and every session that asked for Fable waited until
+  the week turned. `splice fallback <session> <model>` (a session's id, or its name while it runs) gives one
+  session a model of its own command; its turns go up on that model while no login can serve the one it asks for
+  for longer than a rate limit's wait, and some login can serve the fallback. The first turn a login can serve
+  the asked model again goes to it. Only the request's model changes: thinking blocks are left for the API to
+  read or drop, and the effort the client asked for stays. A session with no fallback waits as before, and
+  splice never gives one by itself. `splice fallback` lists the sessions that have one, and
+  `splice fallback <session> off` takes it away. The setting is kept in `session-fallbacks.json` beside the
+  daemon's other state, so a restart keeps it; the routes are `GET /api/sessions/fallbacks` and `PUT` and
+  `DELETE /api/sessions/{id}/fallback`.
 - **A Claude login's limit resets can be listed and spent from splice.** Some Claude plans come with a few resets
   (Fable, weekly, full, 5-hour) that until now could only be spent in Claude Code, one login at a time. `splice
   limit-reset <command>` lists how many of each kind every login of that command has left, and whether one can be

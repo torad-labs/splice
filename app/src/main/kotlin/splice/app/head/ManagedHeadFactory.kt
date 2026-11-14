@@ -41,7 +41,7 @@ import splice.head.compaction.FileCompactionRecordings
 import splice.head.compaction.KeepingRecordings
 import splice.head.perf.PerfStats
 import splice.head.perf.SessionTotals
-import splice.head.turn.SessionFallbacks
+import splice.head.turn.fallback.SessionFallbacks
 import splice.head.usage.AccountOnPlan
 import splice.head.usage.CredentialQuotaFiles
 import splice.head.usage.EconomicsStore

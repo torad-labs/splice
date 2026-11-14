@@ -522,6 +522,7 @@ names = [
     "McpScopeLookup",
     "QuotaHeaderRead",
     "SessionAddress",
+    "SessionFallbacks",
     "SessionServedOf",
     "SliceMemoryCap",
     "TypedCommand",
@@ -583,7 +584,13 @@ TypedCommand (Nov 12, 2026) is an EIGHTH source: a head's key to the name a pers
 is not the head's own command, read from the wrap a launch reads (`claude` for the Claude head while plain \
 `claude` goes through splice). Its null is the ordinary answer for every other head and while nothing is \
 wrapped: show the head's own command. Served by HeadOfSession or SessionAddress it would be asked with a head \
-key where a session id is expected, and a screen would name a command after a session's head or its address."""
+key where a session id is expected, and a screen would name a command after a session's head or its address. \
+SessionFallbacks (Nov 13, 2026) is a NINTH source: a session id to the model that session's person chose for it to \
+run on while every login is held on the model it asks for, read from the daemon's own session-fallbacks.json. Its \
+null is the ordinary answer and means "this session waits": splice never picks a model for a session. Its answer is \
+a model id the turn is sent upstream on. Served by SessionServedOf, the model splice last served a session would \
+become the model its next held turn is rewritten to, a fallback nobody chose; served by HeadOfSession, a head key \
+would stand in the request's model field."""
 
 # ── 5 names, () -> T ──────────────────────────────────────────────────────────────────────────────
 [[groups]]

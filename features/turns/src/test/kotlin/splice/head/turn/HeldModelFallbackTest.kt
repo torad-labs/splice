@@ -36,6 +36,7 @@ import splice.head.RequestBodyReader
 import splice.head.admission.AdmissionResponses
 import splice.head.headDeps
 import splice.head.quotaFor
+import splice.head.turn.fallback.SessionFallbacks
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning

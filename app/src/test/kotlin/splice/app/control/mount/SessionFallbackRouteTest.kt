@@ -18,6 +18,7 @@ import splice.app.control.ManagedHead
 import splice.app.control.StatuslineContext
 import splice.app.control.UsageWarning
 import splice.app.control.UsageWarningSource
+import splice.app.control.mount.fallback.SessionFallbackRoute
 import splice.app.head.SESSION_FALLBACKS_FILE
 import splice.app.head.SessionFallbackStore
 import splice.core.auth.AuthDescription

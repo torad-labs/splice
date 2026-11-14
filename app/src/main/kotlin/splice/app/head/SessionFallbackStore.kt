@@ -9,7 +9,7 @@ import kotlinx.serialization.json.Json
 import splice.core.util.DaemonLog
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
-import splice.head.turn.SessionFallbacks
+import splice.head.turn.fallback.SessionFallbacks
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException

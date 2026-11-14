@@ -6,7 +6,7 @@ package splice.app.head
 import splice.core.model.ClientWindows
 import splice.head.compact.CompactStats
 import splice.head.perf.PerfStats
-import splice.head.turn.SessionFallbacks
+import splice.head.turn.fallback.SessionFallbacks
 import splice.head.usage.EconomicsStore
 import splice.head.usage.QuotaTracker
 import splice.head.usage.UsageStore

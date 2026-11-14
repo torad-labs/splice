@@ -31,7 +31,7 @@ import splice.head.compaction.CompactionTail
 import splice.head.compaction.SessionProjectLookup
 import splice.head.perf.PerfStats
 import splice.head.turn.LiveTurns
-import splice.head.turn.SessionFallbacks
+import splice.head.turn.fallback.SessionFallbacks
 import splice.head.usage.EconomicsStore
 import splice.head.usage.QuotaTracker
 import splice.head.usage.UsageStore

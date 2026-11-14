@@ -2,7 +2,7 @@
 // machine ran out for the week and every turn waited until Sunday. A session given a fallback runs on it while no login
 // can serve the model it asks for, and goes back the first turn one can (HeldModelFallback). splice never sets one by
 // itself: only these routes, on a person's word, do.
-package splice.app.control.mount
+package splice.app.control.mount.fallback
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json
@@ -21,10 +21,10 @@ import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
 import java.io.IOException
 
-private const val BAD_BODY = "body must be {\"model\": \"<a model the session's command has>\"}"
-private const val NO_SESSION = "no session has that id, and no running session has that name"
+private const val FALLBACK_BAD_BODY = "body must be {\"model\": \"<a model the session's command has>\"}"
+private const val FALLBACK_NO_SESSION = "no session has that id, and no running session has that name"
 private const val SEVERAL_NAMED = "more than one running session has that name; name it by its id"
-private const val UNWIRED = "this splice keeps no session fallbacks"
+private const val FALLBACK_UNWIRED = "this splice keeps no session fallbacks"
 
 /** The session a request names, or the reply that refuses it. */
 private sealed class Target {
@@ -44,15 +44,15 @@ internal class SessionFallbackRoute(
 
     /** Every session that has a fallback, and the model it falls back to. */
     fun list(): JsonReply {
-        val store = ports.sessionFallbacks ?: return refused(HttpStatusCode.ServiceUnavailable, UNWIRED)
+        val store = ports.sessionFallbacks ?: return refused(HttpStatusCode.ServiceUnavailable, FALLBACK_UNWIRED)
         val sessions = buildJsonObject { store.all().forEach { (session, model) -> put(session, model) } }
         return JsonReply(HttpStatusCode.OK, buildJsonObject { put("sessions", sessions) }.toString())
     }
 
     /** Gives [session], an id or a running session's name, the fallback [body] names, when its command has it. */
     fun set(session: String, body: String): JsonReply {
-        val store = ports.sessionFallbacks ?: return refused(HttpStatusCode.ServiceUnavailable, UNWIRED)
-        val model = modelOf(body) ?: return refused(HttpStatusCode.BadRequest, BAD_BODY)
+        val store = ports.sessionFallbacks ?: return refused(HttpStatusCode.ServiceUnavailable, FALLBACK_UNWIRED)
+        val model = modelOf(body) ?: return refused(HttpStatusCode.BadRequest, FALLBACK_BAD_BODY)
         return when (val found = target(session)) {
             is Target.Refused -> found.reply
             is Target.Found -> setOn(store, found, model)
@@ -73,7 +73,7 @@ internal class SessionFallbackRoute(
     /** Takes [session]'s fallback away: it waits for the model it asks for again, as every session does by default. A
      *  session that has ended is named by its id. */
     fun clear(session: String): JsonReply {
-        val store = ports.sessionFallbacks ?: return refused(HttpStatusCode.ServiceUnavailable, UNWIRED)
+        val store = ports.sessionFallbacks ?: return refused(HttpStatusCode.ServiceUnavailable, FALLBACK_UNWIRED)
         val id = (target(session) as? Target.Found)?.id ?: session
         return saved(store, id, null, "waits for the model it asks for while every login is held on it")
     }
@@ -86,7 +86,7 @@ internal class SessionFallbackRoute(
             .mapNotNull { record -> record.sessionId?.let { Target.Found(it, record) } }
         return when {
             named.size == 1 -> named.single()
-            named.isEmpty() -> Target.Refused(refused(HttpStatusCode.NotFound, NO_SESSION))
+            named.isEmpty() -> Target.Refused(refused(HttpStatusCode.NotFound, FALLBACK_NO_SESSION))
             else -> Target.Refused(refused(HttpStatusCode.Conflict, SEVERAL_NAMED))
         }
     }

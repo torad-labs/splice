@@ -13,6 +13,7 @@ import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
 import splice.app.control.ProcessReads
 import splice.app.control.RelaunchCommands
+import splice.app.control.mount.fallback.SessionFallbackRoute
 import splice.core.config.ConfigService
 import splice.core.config.UserHome
 import splice.launch.recipe.LaunchService

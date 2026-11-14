@@ -2,7 +2,7 @@
 // every Fable login on one machine ran out at about 6:24 PM CT and every turn waited until Sunday. A session that names
 // a fallback model on its command runs on it while no login can serve the model it asks for, and goes back on the
 // first turn one can. A session that names none keeps waiting as before: splice never picks a model for a session.
-package splice.head.turn
+package splice.head.turn.fallback
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -18,7 +18,7 @@ import splice.upstream.credentials.AccountPool
 private const val PLAN_HOLD_MS = 10 * 60_000L
 
 // why: the request body's field that names the model, the one field a fallback changes.
-private const val MODEL_FIELD = "model"
+private const val TURN_BODY_MODEL = "model"
 
 /** The model each session of a head falls back to while the one its turns ask for is held on every login. */
 public fun interface SessionFallbacks {
@@ -48,7 +48,7 @@ internal class HeldModelFallback(
                 "sent as ${LogSafe.str(instead)}\n",
         )
         return parsed.copy(
-            raw = JsonObject(parsed.raw + (MODEL_FIELD to JsonPrimitive(instead))),
+            raw = JsonObject(parsed.raw + (TURN_BODY_MODEL to JsonPrimitive(instead))),
             typed = parsed.typed.copy(model = instead),
         )
     }

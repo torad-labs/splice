@@ -10,6 +10,7 @@ import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
 
@@ -18,6 +19,12 @@ private fun ev(json: String): JsonObject = Json.parseToJsonElement(json).jsonObj
 private fun delta(text: String) = ev("""{"type":"response.output_text.delta","output_index":0,"delta":"$text"}""")
 
 private val messageAdded = ev("""{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
+
+/** The message item done, carrying [text] and nothing past it. */
+private fun messageDone(text: String) = ev(
+    """{"type":"response.output_item.done","output_index":0,"item":{"type":"message",
+       "content":[{"type":"output_text","text":"$text"}]}}""",
+)
 
 private val completed = ev(
     """{"type":"response.completed","response":{"id":"r1","usage":{"input_tokens":100,"output_tokens":7}}}""",
@@ -84,6 +91,30 @@ class ResponsesStopSequenceTest {
         assertEquals("ok", shownText(sink))
         assertEquals("</block>", outcome.stopSequence)
         assertEquals("ok", outcome.text.bodyText)
+    }
+
+    @Test
+    fun `a stop split between a message item that closed and the final snapshot is found`() = runTest {
+        val sink = RecordingSink()
+        val outcome = review().driveTurn(
+            listOf(messageAdded, delta("ok</bl"), messageDone("ok</bl"), completedWith("ok</block>extra")).asFlow(),
+            sink,
+        ) as TurnOutcome.Success
+        assertEquals("ok", shownText(sink))
+        assertTrue(sink.calls.none { "</bl" in it || "extra" in it }, "nothing from the stop on reaches the client")
+        assertEquals("</block>", outcome.stopSequence)
+        assertEquals("ok", outcome.text.bodyText)
+    }
+
+    @Test
+    fun `text a closed message item held is shown when the answer ends with no stop after it`() = runTest {
+        val sink = RecordingSink()
+        val outcome = review().driveTurn(
+            listOf(messageAdded, delta("a</b"), messageDone("a</b"), completedWith("a</b")).asFlow(),
+            sink,
+        ) as TurnOutcome.Success
+        assertTrue(sink.calls.any { "</b" in it }, "the held text reaches the client")
+        assertNull(outcome.stopSequence)
     }
 
     @Test

@@ -1109,13 +1109,14 @@ function kindsWord(kinds) {
   const said = words.length < 2 ? words[0] : `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`;
   return said.charAt(0).toUpperCase() + said.slice(1);
 }
+// what the card says of the resets it can spend now (one at least)
+const resetWord = (kinds) => kinds.length === 1
+  ? `${/^[aeiou]/i.test(kinds[0].name) ? "An" : "A"} ${kinds[0].name} is available` : `${kindsWord(kinds)} resets are available`;
 function offerHtml(p, a, spot) {
   if (!heldClaude(p, a)) return "";
   const kinds = (HELD_RESETS.get(a.id)?.kinds || []).filter((k) => k.usable_now && k.left > 0);
-  // the panel open on this card says it row by row already
-  const word = kinds.length === 1 ? `${/^[aeiou]/i.test(kinds[0].name) ? "An" : "A"} ${kinds[0].name} is available`
-    : `${kindsWord(kinds)} resets are available`;
-  const reset = kinds.length && ui.resets?.spot !== spot ? `<div class="of-row"><span class="of-say">${esc(word)}</span>`
+  // the panel open on this card says it row by row already; with no reset to spend, only the fallback offer is drawn
+  const reset = kinds.length && ui.resets?.spot !== spot ? `<div class="of-row"><span class="of-say">${esc(resetWord(kinds))}</span>`
     + `${DRAW.act({ word: "Limit resets", act: "resets", cls: "quiet small", data: ` data-p="${esc(p.id)}" data-a="${esc(a.id)}" data-s="${esc(spot)}"` })}</div>` : "";
   const fb = fallbackOfferHtml(p, a, spot);
   return reset || fb ? `<div class="offer">${reset}${fb}</div>` : "";

@@ -102,6 +102,8 @@ echo "splice: checking this machine's prerequisites…"
 # one it takes is linked at $SHARE_DIR/java, which the launcher runs (shim-26); the java on PATH is never changed.
 JAVA_LINK="${SHARE_DIR}/java"
 JAVA_RUNTIMES="${SHARE_DIR}/runtime"
+# The first launcher that runs the link; an older one runs SPLICE_JAVA or the java on PATH, and nothing else.
+LINKED_JAVA_SHIM=26
 # Temurin's Java 21 runtime release, pinned with each platform's sha256 as Adoptium's API lists it and as Adoptium's
 # sums beside each archive on GitHub read. A new pin is a reviewed change to these lines and temurin_archive's.
 TEMURIN_RELEASE="jdk-21.0.13+9"
@@ -607,6 +609,20 @@ if [ -z "$WANT_SHIM" ] || [ "$HAVE_SHIM" != "$WANT_SHIM" ] || [ -z "$WANT_RELEAS
   echo "splice: the launcher $SHIM_SRC is ${HAVE_SHIM:-unmarked} for release ${HAVE_RELEASE:-<unmarked>}," \
     "but this jar needs ${WANT_SHIM:-a launcher it did not name} for release ${WANT_RELEASE:-<unnamed>};" \
     "install the launcher built with this jar (SPLICE_SHIM=<path>)" >&2
+  exit 1
+fi
+
+# A release whose launcher is older than shim-${LINKED_JAVA_SHIM} never runs the link above, so where the Java this
+# install chose is neither SPLICE_JAVA nor the java on PATH, that release would land and then fail to start its daemon.
+# Refused here, before anything goes live, with the fix.
+HAVE_SHIM_NUMBER="${HAVE_SHIM#shim-}"
+case "$HAVE_SHIM_NUMBER" in '' | *[!0-9]*) HAVE_SHIM_NUMBER=0 ;; esac
+if [ "$HAVE_SHIM_NUMBER" -lt "$LINKED_JAVA_SHIM" ] && [ -z "${SPLICE_JAVA:-}" ] \
+  && [ "$JAVA_BIN" != "$(command -v java 2>/dev/null)" ]; then
+  echo "splice: release ${WANT_RELEASE}'s launcher ($HAVE_SHIM) runs only SPLICE_JAVA or the java on PATH," \
+    "and the java on PATH is not Java 21+" >&2
+  echo "splice:   fix: add  export SPLICE_JAVA=\"$JAVA_BIN\"  to your shell rc and re-run with it set," \
+    "or install a release whose launcher is shim-${LINKED_JAVA_SHIM} or newer" >&2
   exit 1
 fi
 

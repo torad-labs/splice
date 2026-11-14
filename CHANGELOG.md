@@ -5,6 +5,14 @@
 Changes on main since v0.4.0. They take a version's heading when that version is cut.
 
 ### Added
+- **A Claude login's limit resets can be listed and spent from splice.** Some Claude plans come with a few resets
+  (Fable, weekly, full, 5-hour) that until now could only be spent in Claude Code, one login at a time. `splice
+  limit-reset <command>` lists how many of each kind every login of that command has left, and whether one can be
+  spent now or why not; `splice limit-reset <command> <login> <kind>` spends one. Right after a spend splice reads
+  that login's usage again instead of waiting up to two minutes for the next reading, so turns held for the limits
+  it cleared go on. The routes are `GET /api/auth/{head}/resets` and `POST /api/auth/{head}/reset`. splice never
+  spends a reset by itself, and a spend whose answer was lost is sent again as the same request, so it is never
+  spent twice.
 - **`splice usage --json` prints every command's logins and their plan windows for a program to read.** A
   program beside splice that shows how much of each plan is used (a menu bar, a dashboard) had nothing of splice's
   to read: it read files Claude Code's status line kept, which a session on splice has not written since Nov 10,

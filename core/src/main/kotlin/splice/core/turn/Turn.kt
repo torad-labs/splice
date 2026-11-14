@@ -31,6 +31,9 @@ public data class TurnRoute(
     val originalModel: String,
     val upstreamModel: String,
     val clientMaxTokens: Long?,
+    /** The client's stop_sequences, for a dialect whose backend has none and cuts the answer itself
+     *  (splice.upstream.sse.StopSequenceCut). Empty when the request sent none. */
+    val stopSequences: List<String> = emptyList(),
 )
 
 /** How a turn reasons and how that reasoning reaches the client. */

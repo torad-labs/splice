@@ -48,6 +48,7 @@ import splice.dialect.responses.reasoning.ResponsesReasoningFold
 import splice.dialect.responses.reasoning.ResponsesReasoningReplay
 import splice.upstream.StreamTranslator
 import splice.upstream.ToolNameShortener
+import splice.upstream.sse.StopSequenceCut
 import splice.upstream.sse.WireSink
 import java.io.IOException
 import java.util.concurrent.CancellationException
@@ -63,6 +64,9 @@ internal class ResponsesStreamTranslator(
     private val answerSchema: JsonObject? = null,
     /** The head's own reading of a failure event its backend sends (ResponsesTerminalDecision). */
     private val reading: FailureReading = FailureReading(),
+    /** The client's stop strings (TurnRoute.stopSequences). Responses has no stop parameter, so the answer is cut
+     *  at them here, on its way to the client. */
+    private val stopSequences: List<String> = emptyList(),
 ) : StreamTranslator {
 
     private val bufferBudget = ResponsesBufferBudget()
@@ -107,7 +111,11 @@ internal class ResponsesStreamTranslator(
         state: ResponsesTurnState,
     ): TurnOutcome {
         val reasoningFold = ResponsesReasoningFold(ctx, state, summaryParts, bufferBudget)
-        val orderedSink = reasoningFold.orderedSink(sink)
+        val ordered = reasoningFold.orderedSink(sink)
+        // The client's stop strings, which Responses cannot take, cut the text on its way out (StopSequenceCut).
+        val cut = stopSequences.takeIf { it.isNotEmpty() }?.let { StopSequenceCut(ordered, it) }
+        state.stopCut = cut
+        val orderedSink = cut ?: ordered
         val replay = ResponsesReasoningReplay(ctx, state, names)
         val itemFold = ResponsesItemFold(
             state,
@@ -160,6 +168,8 @@ internal class ResponsesStreamTranslator(
             cleanup.close(itemFold, sink, terminalSeen(state))
         }
 
+        // Text held back as the possible start of a stop string had no stop after it: it is the answer's end.
+        cut?.release()
         reasoningFold.finishLeadingText(sink)
         // A parsed terminal owns real usage. Late reader cancellation cannot interrupt its cleanup or accounting.
         return finishPreservingTerminal(state, sink)
@@ -219,7 +229,7 @@ internal class ResponsesStreamTranslator(
     ): TurnOutcome {
         latchSweptToolBlocks(state)
         sink.closeAll()
-        state.terminalTextSuffix?.let { sink.addTextBlock(it) }
+        state.terminalTextSuffix?.let { (state.stopCut ?: sink).addTextBlock(it) }
         ResponsesSchemaOutput(outputToolName, answerSchema).emit(state, sink)
         val outcome = billedOutcome(state)
         state.ending?.let { log("upstream round ended on $it") }

@@ -86,6 +86,7 @@ public class OpenAiChatProvider(
                 totalCapMs = watchdog.totalCap.inWholeMilliseconds,
                 replies = replies,
                 owner = auth.owner,
+                stopSequences = meta.route.stopSequences,
             ),
         )
 }

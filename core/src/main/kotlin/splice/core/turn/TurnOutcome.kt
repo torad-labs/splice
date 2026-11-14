@@ -76,6 +76,9 @@ public sealed class TurnOutcome {
         val text: RoundText = RoundText(),
         val shape: ResponseShape = ResponseShape(),
         val handoffs: RoundHandoffs = RoundHandoffs(),
+        /** The client's own stop string the answer was cut at, when a dialect made the cut itself: the terminal
+         *  writes stop_reason `stop_sequence` and names it. Null for every other ending. */
+        val stopSequence: String? = null,
     ) : TurnOutcome()
 
     public data class Failure(

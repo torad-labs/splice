@@ -19,7 +19,8 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
 
     fun successOutcome(state: ResponsesTurnState): TurnOutcome.Success = TurnOutcome.Success(
         hasToolUse = state.hasToolUse,
-        incomplete = state.incomplete,
+        // An answer cut at a stop string ended there, whatever cap the upstream reached after it.
+        incomplete = state.incomplete && state.stopCut?.matched == null,
         usage = Usage(
             state.inputTokens,
             state.outputTokens,
@@ -33,7 +34,8 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
             bodyText = if (state.schemaToolEmitted) {
                 ""
             } else {
-                state.nativePrefix?.textOwner?.snapshot(state.textBuf)
+                state.stopCut?.takeIf { it.matched != null }?.shownText
+                    ?: state.nativePrefix?.textOwner?.snapshot(state.textBuf)
                     ?: state.textBuf.toString()
             },
             emittedText = state.emittedText,
@@ -60,6 +62,7 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
                 NativeDeliverySnapshot(deliveredPrefix = it.delivered.recovery())
             },
         ),
+        stopSequence = state.stopCut?.matched,
     )
 
     /** The salvage payload for mid-stream re-anchoring — the wire is at a block boundary

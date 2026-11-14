@@ -29,6 +29,7 @@ internal class StreamFinish(
         // Reasoning mirror (L2): one mirrorInto for both paths; tools stay on.
         honesty.mirrorGated(emitter, outcome.text.thinkingText, meta)
 
+        outcome.stopSequence?.let(emitter::stoppedAt)
         // The whole usage with only the output clamped: the payload builder also reads the cache write
         // (V4-248) and a code-mode step's client context, and a three-field rebuild dropped both.
         emitter.emitTerminal(

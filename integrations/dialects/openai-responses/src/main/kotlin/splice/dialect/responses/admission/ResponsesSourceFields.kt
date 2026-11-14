@@ -24,11 +24,12 @@ import splice.core.util.LogSink
 import java.util.concurrent.ConcurrentHashMap
 
 /** Kind 1 that the Responses request carries, under the policy checks that refuse what it cannot. The effort and
- *  summary aliases are the head's own loose reads (ResponsesLooseFields). */
+ *  summary aliases are the head's own loose reads (ResponsesLooseFields). `stop_sequences` never reaches the wire:
+ *  the head cuts the answer at them itself (ResponsesWireRequestControls.stopSequences). */
 private val carriedFields = setOf(
     "model", "messages", "system", "tools", "tool_choice", "thinking", "max_tokens", "stream", "metadata",
     "output_config", "output_format", "temperature", "top_p", "service_tier", "speed", "cache_control", "reasoning",
-    "effort", "reasoning_effort", "reasoning_summary",
+    "effort", "reasoning_effort", "reasoning_summary", "stop_sequences",
 )
 
 /** Kind 2, each with why it never shapes the answer here: the words the head's once-per-field line says. */

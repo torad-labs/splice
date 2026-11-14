@@ -77,11 +77,21 @@ class ResponsesRawRequestControlsTest {
     fun `controls without an equivalent Responses meaning are declined`() {
         listOf(
             ""","top_k":40""" to "TOP_K",
-            ""","stop_sequences":["END"]""" to "STOP_SEQUENCES",
             ""","speed":"standard"""" to "SPEED",
             ""","speed":"fast"""" to "SPEED",
             ""","service_tier":"priority"""" to "SERVICE_TIER",
         ).forEach { (fields, expected) -> assertEquals(expected, declinedFeature(fields), fields) }
+    }
+
+    @Test
+    fun `stop sequences are admitted, stay off the wire, and reach the turn the stream is cut by`() {
+        val fields = ""","stop_sequences":["</block>","","END"]"""
+        assertNull(declinedFeature(fields))
+        val parsed = AnthropicParse.parseAnthropicBody(body(fields))
+        val built = ResponsesRequestBuilder(quirks).build(parsed.typed, parsed.raw, options())
+        assertNull(built.req["stop_sequences"])
+        assertNull(built.req["stop"])
+        assertEquals(listOf("</block>", "END"), built.meta.route.stopSequences)
     }
 
     @Test

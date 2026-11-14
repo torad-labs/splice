@@ -116,11 +116,17 @@ internal class RequestEvidenceCoverage(
         val captured = prefixes.capture(files)
         val proof = snapshot(untilMs, captured)
         val encoded = Json.encodeToString(proof)
-        if (encoded.length * UTF8_BYTES > RequestEvidenceProofFormat.MAX_BYTES) {
-            throw IOException(
-                "evidence proof size limit",
-            )
-        }
+        // The limit is the one the reader holds a proof to, in bytes (RequestEvidenceProofFormat.decode). Three bytes
+        // a character is the most UTF-8 takes, so a proof under that bound is written uncounted, and one over it is
+        // counted. The bound alone used to refuse: a proof is ASCII, so it was refused at a third of the limit,
+        // 43,690 characters, and the format's own 256 intervals and 128 segments come to about 53,600 at the name
+        // lengths of Nov 13, 2026. That day coverage.json was last written at 4:23 PM CT, at 43,388 characters with
+        // 253 intervals and 71 segments. The folder held 77 segments two hours later, and every hand-over from then
+        // said `[perf] cleanup failed: evidence_unsettled`, as 14 had the day before. Nothing else in the journal
+        // told of it.
+        val oversize = encoded.length * UTF8_BYTES > RequestEvidenceProofFormat.MAX_BYTES &&
+            encoded.encodeToByteArray().size > RequestEvidenceProofFormat.MAX_BYTES
+        if (oversize) throw IOException("evidence proof size limit")
         SecureFile.writeAtomic0600(directory.resolve(RequestEvidenceProofFormat.COVERAGE_FILE), encoded)
         FileChannel.open(directory, StandardOpenOption.READ).use { it.force(true) }
         synchronized(this) { active.entries.removeIf { (it.value.stopMs ?: Long.MAX_VALUE) <= untilMs } }
@@ -237,5 +243,6 @@ private const val STATE_BYTES = 512L * 1_024
 // Invalidate coverage when wall and monotonic progress disagree by more than one second instead of filling a clock gap.
 private const val CLOCK_DRIFT_MS = 1_000L
 
-// Three UTF-8 bytes per UTF-16 code unit conservatively bounds the encoded receipt before publication.
+// why: three UTF-8 bytes per UTF-16 code unit is the most an encoded receipt takes, so a receipt under the limit at
+// that rate needs no count of its bytes.
 private const val UTF8_BYTES = 3L

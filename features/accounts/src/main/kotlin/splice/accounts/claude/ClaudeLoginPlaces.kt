@@ -10,9 +10,9 @@ import splice.core.usage.QuotaSnapshot
  *  own command renews the next time it runs. Such a login is not signed out, and the Accounts row says so. */
 public const val TOKEN_RENEWS_FIELD: String = "token_renews"
 
-/** The key of the head Claude Code's own login serves: the one `claude` runs through while it is wrapped, and
- *  `claude-splice` by name. */
-public const val CLAUDE_LOGIN_HEAD: String = "claude-splice"
+/** The key of the head Claude Code's own login serves: the one `claude` runs through while it is wrapped. Named
+ *  `claude` since Nov 13, 2026; it was `claude-splice`. */
+public const val CLAUDE_LOGIN_HEAD: String = "claude"
 
 /** The Claude command's one own login: Claude Code's, in ~/.claude. `claude` and `claude-splice` both run on it
  *  (Marcos, Nov 12, 2026: "why ... is claude and claude-splice two identities? We use Claude only via splice"). Until

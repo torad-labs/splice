@@ -98,8 +98,10 @@ const LOGIN_FLOWS: Record<string, { words: string[]; all: boolean }> = {
 const selectorFree = (model: unknown) => String(model ?? "").replace(/\[1m\]$/i, "");
 
 // The Claude command runs Claude Code over its own home, ~/.claude: one Claude login, not one per command. Until
-// Nov 12, 2026 it ran over a second home, ~/.claude-claude-splice, with a sign-in of its own.
-const CLAUDE_HEAD = "claude-splice";
+// Nov 12, 2026 it ran over a second home, ~/.claude-claude-splice, with a sign-in of its own. Since Nov 13 the head is
+// keyed `claude`, and its one command is Claude Code's own `claude`, which the wrap takes over (POST
+// /api/claude-head/wrap): splice lays no command of its own for it, and its sign-in is Claude Code's /login.
+const CLAUDE_HEAD = "claude";
 
 /** The settings a launch hands Claude Code on its command line, which is where an own-home launch carries the
  *  head's: nothing is written into ~/.claude for it. Null when the launch carries none. */
@@ -161,7 +163,8 @@ async function exampleHeads(example: string, headsFile: string, port: string, ho
     const pinned: string = h["pinned_model"] ?? "";
     const want = h["context_window"] || windows.get(pinned) || prov["context_window"];
     const command: string = obj(h["claude"])["command"] ?? head;
-    const wrapper = executable(join(home, ".local", "bin", command));
+    // the Claude head's command is Claude Code's own, wrapped or not; every other head's is the link splice laid
+    const wrapper = head === CLAUDE_HEAD || executable(join(home, ".local", "bin", command));
     let env: Json;
     let argv: unknown;
     try {
@@ -220,6 +223,7 @@ async function exampleHeads(example: string, headsFile: string, port: string, ho
   // on the unreachable network AFTER trying, api-key names the pipe path, client auth says so.
   const failed: string[] = [];
   for (const [head, h] of Object.entries<Json>(t["heads"])) {
+    if (head === CLAUDE_HEAD) continue; // `claude login` is Claude Code's own, not a verb splice answers
     const kind: string = t["providers"][h["provider"]]["auth"]["kind"];
     const command: string = obj(h["claude"])["command"] ?? head;
     const proc = Bun.spawnSync(["timeout", "10", join(home, ".local", "bin", command), "login"], {

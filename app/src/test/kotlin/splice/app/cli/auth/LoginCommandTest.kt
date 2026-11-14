@@ -208,7 +208,7 @@ class LoginCommandTest {
     )
 
     private fun signedIn(tmp: Path): Path {
-        val configDir = Files.createDirectories(tmp.resolve("claude-splice"))
+        val configDir = Files.createDirectories(tmp.resolve("claude"))
         Files.writeString(configDir.resolve(".credentials.json"), "A-gen1")
         Files.writeString(
             configDir.resolve(".claude.json"),
@@ -234,14 +234,14 @@ class LoginCommandTest {
     }
 
     @Test
-    fun `splice login on claude-splice points to Claude Code's own login and changes nothing`(
+    fun `splice login on claude points to Claude Code's own login and changes nothing`(
         @TempDir tmp: Path,
     ) {
         val configDir = signedIn(tmp)
         for (label in listOf(null, "work")) {
             val lines = mutableListOf<String>()
 
-            val ok = claudeLabel(tmp, lines).login("claude-splice", claudeHeads(configDir), label, discard = false)
+            val ok = claudeLabel(tmp, lines).login("claude", claudeHeads(configDir), label, discard = false)
 
             assertFalse(ok)
             assertTrue(lines.single().contains("runs on Claude Code's own login"), "$lines")

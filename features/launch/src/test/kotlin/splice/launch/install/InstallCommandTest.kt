@@ -148,6 +148,52 @@ class InstallCommandTest {
         }
     }
 
+    /** The Claude head keyed `claude`, beside Claude Code's own `claude` link in bin, pointing at its own binary. */
+    private fun seedClaudeHead(home: Path): Path {
+        seedTopology(home)
+        val toml = home.resolve(".config").resolve("splice").resolve("splice.toml")
+        toml.writeString(
+            Files.readString(toml) + "\n\n" +
+                """
+                [heads.claude]
+                provider = "codex"
+                port = 3101
+                discovery_prefix = "claude-own--"
+                pinned_model = "gpt-5.6-sol"
+                """.trimIndent(),
+        )
+        val versions = home.resolve(".local").resolve("share").resolve("claude").resolve("versions")
+        Files.createDirectories(versions)
+        val real = versions.resolve("2.1.322")
+        real.writeString("#!/bin/sh\n")
+        val bin = home.resolve(".local").resolve("bin")
+        Files.createDirectories(bin)
+        return Files.createSymbolicLink(bin.resolve("claude"), real)
+    }
+
+    @Test
+    fun `uninstall never removes Claude Code's own claude`(@TempDir home: Path) {
+        withHome(home) {
+            val claude = seedClaudeHead(home)
+            val real = claude.readSymbolicLink()
+            installCommand().uninstall("--all", env = noEnv)
+            installCommand().uninstall("claude", env = noEnv)
+            assertTrue(claude.isSymbolicLink())
+            assertEquals(real, claude.readSymbolicLink())
+        }
+    }
+
+    @Test
+    fun `installing the claude head refuses while claude is not wrapped`(@TempDir home: Path) {
+        withHome(home) {
+            val claude = seedClaudeHead(home)
+            val real = claude.readSymbolicLink()
+            val result = installCommand().install("claude", env = noEnv)
+            assertTrue(result is InstallResult.Refused)
+            assertEquals(real, claude.readSymbolicLink())
+        }
+    }
+
     private fun shimPath(home: Path): Path =
         home.resolve(".local").resolve("share").resolve("splice").resolve("splice-launch")
 

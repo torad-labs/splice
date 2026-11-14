@@ -19,7 +19,6 @@ package splice.app.cli.setup
 import splice.terminal.ConsolePresence
 import splice.terminal.KeyReader
 import splice.terminal.MultiSelectPrompt
-import splice.terminal.SelectPrompt
 import splice.terminal.Spinner
 import splice.terminal.TerminalMode
 import splice.terminal.WizardFrame
@@ -35,11 +34,6 @@ internal data class SetupPrompts(
     val pickModels: ModelPicker = ModelPicker { question, options, initial ->
         MultiSelectPrompt(KeyReader(System.`in`), TerminalMode(), System.out)
             .ask(question, options, initial, minimum = 1)
-    },
-    /** V4-175: Separate or Wrap for the Claude head. SelectPrompt answers a consoleless ask with the
-     *  option at the index it was given, which is what makes SEPARATE the non-TTY default. */
-    val pickLane: LanePicker = LanePicker { options, initialIndex ->
-        SelectPrompt(KeyReader(System.`in`), TerminalMode(), System.out).ask("Claude lane", options, initialIndex)
     },
     val spinner: Spinner = Spinner(),
     /** Whether anyone is watching: it decides which heads start ticked, never what is offered. */

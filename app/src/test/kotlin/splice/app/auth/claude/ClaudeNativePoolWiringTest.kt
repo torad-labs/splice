@@ -51,7 +51,7 @@ import splice.usage.quota.QuotaProbes
 import java.nio.file.Files
 import java.nio.file.Path
 
-internal const val NATIVE_HEAD = "claude-splice"
+internal const val NATIVE_HEAD = "claude"
 internal const val NATIVE_SELECTOR = "native:claude"
 internal const val NATIVE_ACCESS_EXPIRY = 4_102_444_800_000L
 

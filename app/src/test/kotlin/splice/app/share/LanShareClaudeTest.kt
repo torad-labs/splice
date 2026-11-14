@@ -61,7 +61,7 @@ private const val NODE_BETAS = "claude-code-20250219,interleaved-thinking-2025-0
 private const val CALLERS_OWN = "claude-code"
 
 private const val OPUS = "claude-opus-5-5"
-private const val HEAD = "claude-splice"
+private const val HEAD = "claude"
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class LanShareClaudeTest {
@@ -312,7 +312,7 @@ class LanShareClaudeTest {
         [heads.$HEAD]
         provider = "anthropic"
         port = $port
-        discovery_prefix = "claude-splice--"
+        discovery_prefix = "claude--"
         pinned_model = "$OPUS"
         [heads.$HEAD.claude]
         command = "$HEAD"

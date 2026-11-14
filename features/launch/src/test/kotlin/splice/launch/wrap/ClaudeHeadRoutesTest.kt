@@ -63,12 +63,12 @@ class ClaudeHeadRoutesTest {
             modelOptionsCache = buildJsonObject { },
         ),
         signIn = LaunchSignIn(
-            loginCommand = "claude-splice login",
+            loginCommand = "claude login",
             signInLabel = "Claude",
-            headKey = "claude-splice",
+            headKey = "claude",
         ),
         gateway = LaunchGateway(
-            statuslineCommand = "\"/bin/curl\" -s :3096/statusline/claude-splice",
+            statuslineCommand = "\"/bin/curl\" -s :3096/statusline/claude",
             port = 3104,
             bearer = GatewayBearer.Planted("test-token"),
             apiTimeoutMs = 960_000,
@@ -78,7 +78,7 @@ class ClaudeHeadRoutesTest {
     )
 
     private fun claudeHead(configDir: Path): LaunchHead = LaunchHead(
-        head = runningHead("claude-splice"),
+        head = runningHead("claude"),
         auth = absentAuth("client"),
         spec = launchSpec(configDir),
     )
@@ -90,7 +90,7 @@ class ClaudeHeadRoutesTest {
         val share: Path = home.resolve("share").also { Files.createDirectories(it) }
         val realBinary: Path = home.resolve("real-claude").also { it.writeText("#!/bin/sh\n") }
         val shim: Path = share.resolve("splice-launch").also { it.writeText("#!/usr/bin/env bash\n") }
-        val configDir: Path = home.resolve(".claude-claude-splice")
+        val configDir: Path = home.resolve(".claude-claude")
         val routes = ClaudeHeadRoutes(
             heads = launchHeadsOf(claudeHead(configDir)),
             home = home,

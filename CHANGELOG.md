@@ -310,6 +310,14 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   login could serve once it ran out. Two logins the roster shows as one account now count as one.
 
 ### Changed
+- **The Claude head is `claude`, the one command that runs it.** The head that forwards Claude Code's own login was
+  keyed `claude-splice`, and `splice setup` offered it as a second command beside `claude`. Both ran on the same
+  login and the same ~/.claude, so a session, a login card and a status line could each name the one Claude by
+  either word. The head is now keyed `claude`: plain `claude`, wrapped, runs it, `splice add claude` adds it
+  under that name, and `splice setup` wraps `claude` when the Claude plan is ticked instead of asking. No
+  second command is linked. A `[remote.claude]` from a LAN share is still asked before the Claude head here. A
+  splice.toml that keys it `claude-splice` renames `[heads.claude-splice]` to `[heads.claude]` and drops its
+  `[heads.claude-splice.claude]` command: under the old key the head is no longer the one on Claude Code's own login.
 - **A restart no longer holds every command behind the model lists and the ChatGPT command's saved
   conversations.** The next daemon asked every provider for its model list, and then read the ChatGPT command's
   saved code-mode conversations, before any command took a request. On Nov 13, 2026 a restart on one machine held

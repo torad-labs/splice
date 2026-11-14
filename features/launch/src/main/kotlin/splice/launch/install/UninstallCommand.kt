@@ -4,12 +4,18 @@
 package splice.launch.install
 
 import splice.core.terminal.TerminalOutput
+import splice.core.topology.CLAUDE_COMMAND
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import kotlin.io.path.isSymbolicLink
+
+// why: what uninstall says when asked to remove `claude`, which is Claude Code's own command, never a splice link.
+private const val CLAUDE_LEFT =
+    "splice: left 'claude' alone: it is Claude Code's own command; " +
+        "undo the wrap with POST /api/claude-head/unwrap on the control plane"
 
 internal class UninstallCommand(
     private val output: TerminalOutput,
@@ -19,7 +25,9 @@ internal class UninstallCommand(
 ) {
 
     internal fun uninstall(headArg: String?, env: EnvReader): Boolean {
-        val commands = uninstallTargets(headArg, env) ?: return false
+        val targets = uninstallTargets(headArg, env) ?: return false
+        if (CLAUDE_COMMAND in targets) output.line(CLAUDE_LEFT)
+        val commands = targets - CLAUDE_COMMAND
         val bin = layout.localBin(env)
         var ok = true
         for (command in commands) {

@@ -71,9 +71,9 @@ internal class SetupHeads(
 
     /** Returns what LANDED, which is a different list from what was ticked: `splice add` refuses a
      *  command collision or a topology that stops parsing. The Claude lane is applied from that
-     *  list and only after the restart below, because wrapping reads the LIVE `claude-splice`
+     *  list and only after the restart below, because wrapping reads the LIVE `claude`
      *  head's own spec — a wrap posted before the daemon carries the head it was just handed is
-     *  refused with "the 'claude-splice' head is not configured", which is the daemon being right. */
+     *  refused with "the 'claude' head is not configured", which is the daemon being right. */
     suspend fun addAll(names: List<String>): List<String> {
         if (names.isEmpty()) return emptyList()
         val landed = mutableListOf<String>()
@@ -161,7 +161,7 @@ internal class SetupHeads(
 }
 
 // V4-175: `claude` LEFT this map. Its reason — "needs a name" — was never true of that row:
-// AddPrepare.kt:42 takes `args.name ?: profile.head.key` and the catalogue gives it `claude-splice`,
+// AddPrepare.kt:42 takes `args.name ?: profile.head.key` and the catalogue gives it `claude`,
 // so `splice add claude --yes` has always worked unaided. The wrong reason is what kept the lane
 // choice off the wizard entirely, which is the half of V4-175 the operator asked for. `api-key`
 // and `local` stay excluded: both need a name, base URL and model before they can be added, and

@@ -14,7 +14,7 @@ class ClaudeLoginLocationsTest {
     lateinit var home: Path
 
     private fun locations(config: String? = null): List<ClaudeLoginLocation> {
-        val extra = config?.let { "\n[heads.claude-splice.claude]\nconfig_dir = \"$it\"" }.orEmpty()
+        val extra = config?.let { "\n[heads.claude.claude]\nconfig_dir = \"$it\"" }.orEmpty()
         val topology = TopologyLoader.parse(
             """
             [providers.native]
@@ -22,7 +22,7 @@ class ClaudeLoginLocationsTest {
             base_url = "https://api.anthropic.com"
             [providers.native.auth]
             kind = "client"
-            [heads.claude-splice]
+            [heads.claude]
             provider = "native"
             port = 3100
             discovery_prefix = "native--"
@@ -37,7 +37,7 @@ class ClaudeLoginLocationsTest {
         assertEquals(listOf(ClaudeLoginPlaceId.NATIVE), places.map { it.id })
         assertEquals(home.resolve(".claude/.credentials.json"), places.single().credentials)
         assertEquals(home.resolve(".claude.json"), places.single().target.accountFile)
-        assertEquals("claude-splice", places.single().target.head.key)
+        assertEquals("claude", places.single().target.head.key)
     }
 
     @Test

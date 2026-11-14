@@ -1,4 +1,4 @@
-// The wizard's Claude lane question, and what answering `wrap` does.
+// What the wizard does about the Claude head: ticking it wraps plain `claude`, and nothing is asked.
 package splice.app.cli.setup
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -7,77 +7,35 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.daemonclient.ControlReply
-import splice.terminal.SelectOption
-import splice.terminal.SelectOutcome
 
 private const val CLAUDE = "claude"
 
-private fun lanes(
-    answer: (List<SelectOption<ClaudeLane>>, Int) -> SelectOutcome<ClaudeLane>,
-    wrap: ClaudeWrap = ClaudeWrap { error("wrap must not be called") },
-    asked: MutableList<List<SelectOption<ClaudeLane>>> = mutableListOf(),
-): Pair<SetupClaudeLane, MutableList<List<SelectOption<ClaudeLane>>>> {
-    val picker = LanePicker { options, index ->
-        asked += options
-        answer(options, index)
-    }
-    return SetupClaudeLane(picker, wrap) to asked
-}
-
 class ClaudeLaneTest {
 
-    // Mutant: ask unconditionally. The wizard would put a question about the Claude head in front
-    // of an operator adding only OpenRouter, and whatever they answered would apply to nothing.
     @Test
-    fun `no question when the claude head is not among the ticked profiles`() {
-        val (lane, asked) = lanes({ _, _ -> error("must not ask") })
+    fun `no claude head ticked, nothing is wrapped`() {
+        val lane = SetupClaudeLane(ClaudeWrap { error("wrap must not be called") })
 
-        assertEquals(ClaudeLane.SEPARATE, lane.ask(listOf("codex", "openrouter")))
-        assertTrue(asked.isEmpty(), "asked anyway: $asked")
+        assertEquals(ClaudeLane.NONE, lane.ask(listOf("codex", "openrouter")))
+        assertNull(lane.apply(ClaudeLane.NONE, listOf("codex", "openrouter")))
     }
 
-    // Mutant: preselect Wrap, or list it first. The operator's default must be the lane that
-    // touches nothing of theirs — and a non-TTY run takes exactly this option, because
-    // SelectPrompt answers a consoleless ask with the one at initialIndex.
+    // One Claude (Nov 13, 2026): the head is plain `claude`, wrapped. There is no separate command to choose instead.
     @Test
-    fun `separate is the first option and the preselected one`() {
-        val (lane, asked) = lanes({ options, index -> SelectOutcome.Chosen(options[index].value) })
-
-        assertEquals(ClaudeLane.SEPARATE, lane.ask(listOf(CLAUDE)))
-        assertEquals(listOf(ClaudeLane.SEPARATE, ClaudeLane.WRAP), asked.single().map { it.value })
-    }
-
-    // Mutant: treat a cancelled prompt as an answer. Escaping out of a menu is not consent to
-    // take over the operator's claude command.
-    @Test
-    fun `cancelling the lane prompt leaves the head separate`() {
-        val (lane, _) = lanes({ _, _ -> SelectOutcome.Cancelled })
-
-        assertEquals(ClaudeLane.SEPARATE, lane.ask(listOf(CLAUDE)))
-    }
-
-    // Mutant: wrap whatever the lane says. Separate is the lane in which splice touches nothing,
-    // so a wrap call here is the whole failure this option exists to avoid.
-    @Test
-    fun `separate never calls the wrap path`() {
-        val (lane, _) = lanes({ _, _ -> SelectOutcome.Cancelled })
-
-        assertNull(lane.apply(ClaudeLane.SEPARATE, listOf(CLAUDE)))
-    }
-
-    @Test
-    fun `wrap calls the wrap path once and prints what came back`() {
+    fun `ticking the claude head wraps claude once and prints what came back`() {
         var calls = 0
-        val (lane, _) = lanes(
-            { _, _ -> SelectOutcome.Cancelled },
+        val lane = SetupClaudeLane(
             ClaudeWrap {
                 calls += 1
                 "wrapped: claude now runs through splice"
             },
         )
 
-        assertEquals("wrapped: claude now runs through splice", lane.apply(ClaudeLane.WRAP, listOf(CLAUDE)))
+        val chosen = lane.ask(listOf(CLAUDE))
+        assertEquals(ClaudeLane.WRAP, chosen)
+        assertEquals("wrapped: claude now runs through splice", lane.apply(chosen, listOf(CLAUDE)))
         assertEquals(1, calls)
+        assertFalse("claude-splice" in lane.summaryLine(), lane.summaryLine())
     }
 
     // Mutant: wrap on the ANSWER rather than on what landed. `splice add claude` can refuse (a
@@ -85,7 +43,7 @@ class ClaudeLaneTest {
     // the daemon does not have — the operator's `claude` shadowed for a head that is not there.
     @Test
     fun `wrap is not attempted when the claude head did not land`() {
-        val (lane, _) = lanes({ _, _ -> SelectOutcome.Cancelled })
+        val lane = SetupClaudeLane(ClaudeWrap { error("wrap must not be called") })
 
         val said = lane.apply(ClaudeLane.WRAP, listOf("codex"))
         assertEquals("not wrapping: the claude head was not added", said)
@@ -120,7 +78,7 @@ class ClaudeWrapReplyTest {
 
     @Test
     fun `the unconfigured-head refusal reaches the operator verbatim`() {
-        val reason = "the 'claude-splice' head is not configured, and a wrapped claude launches it"
+        val reason = "the 'claude' head is not configured, and a wrapped claude launches it"
         val said = DaemonClaudeWrap().replyLine(ControlReply(503, """{"error":"$reason"}"""))
 
         assertEquals("not wrapping: $reason", said)

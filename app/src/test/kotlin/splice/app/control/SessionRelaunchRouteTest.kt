@@ -79,7 +79,7 @@ import java.nio.file.Path
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-private const val HEAD = "claude-splice"
+private const val HEAD = "claude"
 private const val REVIEW = "5e1a0001-0000-4000-8000-000000000001"
 private const val SEAT = "5e1a0002-0000-4000-8000-000000000002"
 
@@ -114,7 +114,7 @@ class SessionRelaunchRouteTest {
     private val share by lazy { Files.createDirectories(home.resolve(".local/share/splice")) }
     private val paths by lazy { StatePaths(baseOverride = home.resolve("state")) }
     private val sessionsDir by lazy { Files.createDirectories(home.resolve(".claude/sessions")) }
-    private val headDir by lazy { home.resolve(".claude-claude-splice") }
+    private val headDir by lazy { home.resolve(".claude-claude") }
     private val realClaude by lazy { home.resolve("claude-real").also { Files.writeString(it, "#!/bin/sh\n") } }
 
     /** The pids that run, as the registry and the terminal see them. */
@@ -160,7 +160,7 @@ class SessionRelaunchRouteTest {
         session,
         pid,
         listOf(realClaude.toString(), "--settings", """{"env":{"SPLICE":"1"}}""") +
-            listOf("--mcp-config", paths.stateDir.resolve("wrapped-mcp-claude-splice.json").toString()) +
+            listOf("--mcp-config", paths.stateDir.resolve("wrapped-mcp-claude.json").toString()) +
             listOf("--allow-dangerously-skip-permissions", "--model", "claude-fable-5-1"),
         environ = listOf("SPLICE=1", "CLAUDE_CONFIG_DIR=$folder") +
             listOfNotNull(key?.let { "ANTHROPIC_AUTH_TOKEN=$it" }),
@@ -217,29 +217,6 @@ class SessionRelaunchRouteTest {
             assertTrue(terminal.opened.isEmpty(), "no new terminal is opened: ${terminal.opened}")
             assertEquals(listOf(review, seat), terminal.held, "each pane is kept before its client leaves")
             assertEquals(listOf(review, seat), terminal.released, "and given back its own end once it is back")
-        }
-    }
-
-    @Test
-    fun `a claude-splice session in his own folder comes back on claude-splice while claude is not wrapped`() {
-        serve(wrapped = false) { daemon ->
-            val review = startReview()
-
-            val reviewed = daemon.relaunch(REVIEW)
-            assertEquals(HttpStatusCode.OK, reviewed.first, reviewed.second)
-
-            assertEquals(
-                listOf(
-                    Restart(
-                        review,
-                        listOf("env", "-u", "CLAUDE_CONFIG_DIR", bin.resolve(HEAD).toString()) +
-                            listOf("--agent", "eli", "-n", "splice-review-3", "-r", REVIEW, "--model", ROW_MODEL),
-                        cwd(REVIEW).toString(),
-                    ),
-                ),
-                terminal.restarted,
-                "the command that runs in his own folder starts it there again",
-            )
         }
     }
 
@@ -464,7 +441,6 @@ class SessionRelaunchRouteTest {
                 WrappedClaudeLaunch(launch.wrap).of(HEAD) != null,
                 "his claude is wrapped as `splice wrap` leaves it, or left alone",
             )
-            Files.createSymbolicLink(bin.resolve(HEAD), share.resolve("splice-launch"))
             val mgmt = MgmtKey(paths)
             val key = mgmt.get()
             val control = controlServerFor(
@@ -576,9 +552,9 @@ class SessionRelaunchRouteTest {
                 contextWindow = 200_000,
                 modelOptionsCache = buildJsonObject { },
             ),
-            signIn = LaunchSignIn(loginCommand = "claude-splice login", signInLabel = "Claude", headKey = HEAD),
+            signIn = LaunchSignIn(loginCommand = "claude login", signInLabel = "Claude", headKey = HEAD),
             gateway = LaunchGateway(
-                statuslineCommand = "\"/bin/curl\" -s :3096/statusline/claude-splice",
+                statuslineCommand = "\"/bin/curl\" -s :3096/statusline/claude",
                 port = 3104,
                 bearer = GatewayBearer.Planted("test-token"),
                 apiTimeoutMs = 960_000,

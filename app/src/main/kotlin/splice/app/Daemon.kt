@@ -338,8 +338,9 @@ public class Daemon(
      *  can finish an answer beside another daemon keeps the turns already answering. Everything else this process
      *  holds that the next daemon needs is closed here, in the stop's own order (the share listener, the control
      *  server, the probes and sign-ins, the performance recorder), but for what rides on the control server, which
-     *  stops first. When this returns the caller releases the daemon lock and the next daemon boots; [finish] then
-     *  waits for the kept turns. Returns how many were kept.
+     *  stops first, and the control server's engine: here it stops taking connections, and it stops in [finish]. When
+     *  this returns the caller releases the daemon lock and the next daemon boots; [finish] then waits for the kept
+     *  turns. Returns how many were kept.
      *
      *  The probe scope ends here although kept turns are still streaming, which the stop never allows. It has to: a
      *  login's renewal and an open sign-in are the next daemon's from the hand-over on, and two daemons renewing one
@@ -356,7 +357,7 @@ public class Daemon(
         share.close()
         headProbes.closeStarts()
         val kept = headShutdown.retireHeads(heads.values.map { it.head }, HEAD_STOP_BUDGET_MS, log) {
-            controlPlane.ownership.close()
+            controlPlane.ownership.leave()
         }
         val handedOver = System.nanoTime()
         closeBackground()
@@ -370,10 +371,11 @@ public class Daemon(
         kept
     }
 
-    /** #523: waits up to [withinMs] for the turns [retire] kept, and stops each head when its last one ends. It holds
+    /** #523: waits up to [withinMs] for the turns [retire] kept, and stops each head when its last one ends. The
+     *  control server's engine, which [retire] left running with its listener handed on, stops beside them. It holds
      *  no lock, so a [stop] that arrives meanwhile is not held behind it and cuts what is still running. */
     public suspend fun finish(withinMs: Long) {
-        headShutdown.finishHeads(heads.values.map { it.head }, withinMs, log)
+        headShutdown.finishHeads(heads.values.map { it.head }, withinMs, log) { controlPlane.ownership.close() }
     }
 
     public suspend fun stop(): Unit = stopLock.withLock {

@@ -67,6 +67,16 @@ internal class ControlOwnership(
         synchronized(gate) { owned }?.quiet()
     }
 
+    /** #525: the stop boundary of a hand-over. Anything adopted after is refused, and what was adopted stops taking
+     *  connections ([ControlServer.leave]); its engine is stopped by the [close] that follows the lock's release. */
+    fun leave() {
+        val server = synchronized(gate) {
+            closed = true
+            owned
+        }
+        server?.leave()
+    }
+
     /** The stop boundary: closes what was adopted, and refuses anything adopted after. Safe to call twice. */
     fun close() {
         val server = synchronized(gate) {

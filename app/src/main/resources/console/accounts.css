@@ -228,6 +228,18 @@
 .card > .resets :is(.rs-arm, .rs-note) { margin: 0; font: 400 .9rem/1.35 var(--font-name); color: var(--text-body); }
 .card > .resets .rs-arm { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--u); text-align: right; }
 .card > .resets .rs-why { color: var(--text-mute); }
+/* WHAT A HELD CLAUDE LOGIN CAN DO (Nov 14): under its windows, past a hairline, a reset it can spend now with the act that
+   opens its Limit resets, and its sessions with no fallback model, whose line opens the command's other models */
+.card > .offer { display: grid; gap: calc(.75 * var(--u)); margin-top: var(--u); padding-top: var(--u); border-top: var(--ink-w) solid var(--track-line); }
+.card > .offer .of-row { display: flex; align-items: center; justify-content: space-between; gap: var(--u); min-height: var(--ctl-h); }
+.card > .offer .of-say { font: 500 .9rem/1.3 var(--font-name); color: var(--text-body); }
+.card > .offer .of-head { width: auto; max-width: 100%; gap: .5rem; text-align: left; min-height: var(--ctl-h); }
+.card > .offer .of-rows { display: grid; gap: .5rem; margin-top: var(--u); }
+.card > .offer .of-why { margin: 0; max-width: 46ch; font: 400 .82rem/1.35 var(--font-name); color: var(--text-mute); }
+.card > .offer .of-mrow { display: flex; align-items: center; justify-content: space-between; gap: .667rem; min-height: 1.9rem; }
+.card > .offer .of-mrow .lname { font: 500 .9rem/1.3 var(--font-name); color: var(--text-body); }
+.card > .offer .of-said { margin: 0; font: 400 .88rem/1.35 var(--font-name); }
+.card > .offer .of-said .of-why { margin-left: .4rem; }
 /* THE MOVES ON A CARD, DRAWN ON THE RAIL'S OWN SOCKETS (Oct 28): a move is two sockets and the arrow between them, the one
    the traffic left and the one it came to, each with the number it has on the rail, the lit one being the login serving.
    The command's chip says which command moved where the provider serves two or more, a lamp and a count say how many

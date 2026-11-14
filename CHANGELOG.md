@@ -10,6 +10,11 @@
   can't be forwarded: naming one refuses boot. The README's
   [Headers for a gateway](#headers-for-a-gateway-in-front-of-a-provider) section explains them with
   `extra_headers`, which already set fixed headers.
+- **A held Claude login offers its reset and a fallback model on its card.** On Accounts, a Claude login at its
+  limit says when a reset can be spent now ("A weekly reset is available"), and its Limit resets button opens the
+  login's resets, where a spend still takes two presses. When sessions on it have no fallback model, the card says
+  how many and offers the command's other models; Use sets the one picked on each of them. splice spends no reset
+  and sets no fallback by itself.
 
 ### Fixed
 - **Claude Code's auto mode reviews actions on every head.** Before an action runs in auto mode, Claude Code asks

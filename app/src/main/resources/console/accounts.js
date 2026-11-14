@@ -106,12 +106,15 @@ function askEconomics() {
 // last visit, and when it answers each card takes its sessions and the page draws again. Null is not read yet; a later
 // read keeps the last answer meanwhile.
 let liveSessions = null;
+let FALLBACKS = {}; // session id -> its fallback model (/api/sessions/fallbacks, SessionFallbackRoute)
 let askingSessions = false;
 function askSessions() {
   if (askingSessions) return;
   askingSessions = true;
-  API.get("/api/sessions").then((ss) => {
+  Promise.all([API.get("/api/sessions"), API.get("/api/sessions/fallbacks")]).then(([ss, fb]) => {
     askingSessions = false;
+    // the model each session runs on while every login is held on its own (splice fallback); a failed read keeps what it had
+    if (fb.ok) FALLBACKS = fb.body?.sessions || {};
     // the sessions running now, each on the login splice proved it uses (/api/sessions account, SessionAccountOf.kt): a
     // login lists them under its card (v0.4.0 section 9: show which account every session is currently on)
     liveSessions = ss.ok ? (ss.body?.sessions || []).filter((x) => x.availability === "live" && x.account && x.head) : liveSessions ?? [];
@@ -314,6 +317,7 @@ async function readAll({ asks = true } = {}) {
   // read means the board's data is held: a draw that the day's figures or the sessions start while the orders are still
   // being read keeps the ghosts, never an empty board offering Add provider
   readOnce = true;
+  askHeldResets();
   // a move names a login as its card is titled, never by its address
   for (const p of data) if (p.kind === "plan") for (const a of p.accounts) {
     const named = shownName(p, a);
@@ -392,7 +396,7 @@ function askAgainSoon() {
   againTimer = setTimeout(async () => { await load(); render({ flip: true }); }, 5000);
 }
 const FRESH_UI = () => ({ lane: {}, signin: {}, editor: null, addProv: null, menu: null, armed: null, removeErr: null, rename: null, renameErr: null, renameDraft: null, replace: null, pulse: null, naming: null,
-  moving: null, slotErr: null, orderErr: null, keyErr: null, orderSaving: null, removing: null, resets: null });
+  moving: null, slotErr: null, orderErr: null, keyErr: null, orderSaving: null, removing: null, resets: null, offerFb: null, offerBusy: null, offerSaid: null });
 // why: the Day rows whose Not read reason is open; reasons: the refusals whose reason splice gave is open under their
 // word; doors: the logins whose every session door is out; enter: the one form or menu just opened, which rises into
 // place once and never again on a later redraw; shook: the refusal just drawn, which shakes once and then stands still
@@ -1074,8 +1078,88 @@ async function readResets(a, spot, said = null) {
   const res = await API.get(`/api/auth/${encodeURIComponent(head)}/resets?label=${encodeURIComponent(label)}`);
   if (ui.resets?.spot !== spot) return;
   const login = res.ok ? res.body?.logins?.[0] : null;
+  if (login) HELD_RESETS.set(a.id, { at: Date.now(), kinds: login.kinds || [] });
   ui.resets = login ? { spot, state: "read", login, said } : { spot, state: "failed", ...mutationError(res, "Resets not read") };
   render();
+}
+// WHAT A HELD CLAUDE LOGIN CAN DO ABOUT IT, ON ITS CARD (Nov 14, 2026). Marcos, asked whether a login at its limit should
+// say a reset is available: "yes, that or offer to fallback to another model if one hasnt been configured". The card
+// reads its resets once (the read asks the provider) and again after RESET_REASK_MS, and says so only when one can be
+// spent now; its act opens the login's Limit resets, where a spend still takes two presses. The sessions on it with no
+// fallback are offered the command's other models, set per session as Sessions sets them (SessionFallbackRoute). splice
+// spends no reset and moves no session by itself: each is his press.
+const RESET_REASK_MS = 10 * 60000;
+const HELD_RESETS = new Map(); // login id -> { at, kinds } once read, with reading: true while its read is out
+const heldClaude = (p, a) => p.id === "claude" && p.kind === "plan" && !a.out && !a.blocked && held(a);
+function askHeldResets() {
+  for (const p of data) for (const a of p.accounts) {
+    const seen = HELD_RESETS.get(a.id);
+    if (!heldClaude(p, a) || seen?.reading || (seen && Date.now() - seen.at < RESET_REASK_MS)) continue;
+    HELD_RESETS.set(a.id, { at: Date.now(), reading: true, kinds: seen?.kinds ?? [] });
+    const head = resetHead(a);
+    API.get(`/api/auth/${encodeURIComponent(head)}/resets?label=${encodeURIComponent(labelOn(a, head))}`).then((res) => {
+      HELD_RESETS.set(a.id, { at: Date.now(), kinds: (res.ok && res.body?.logins?.[0]?.kinds) || [] });
+      render();
+    });
+  }
+}
+// "Weekly", "Weekly and Fable": the kinds by the word splice names them with (ResetKinds.name), the first one capitalised
+function kindsWord(kinds) {
+  const words = kinds.map((k) => k.name.replace(/ reset$/i, ""));
+  const said = words.length < 2 ? words[0] : `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`;
+  return said.charAt(0).toUpperCase() + said.slice(1);
+}
+function offerHtml(p, a, spot) {
+  if (!heldClaude(p, a)) return "";
+  const kinds = (HELD_RESETS.get(a.id)?.kinds || []).filter((k) => k.usable_now && k.left > 0);
+  // the panel open on this card says it row by row already
+  const word = kinds.length === 1 ? `${/^[aeiou]/i.test(kinds[0].name) ? "An" : "A"} ${kinds[0].name} is available`
+    : `${kindsWord(kinds)} resets are available`;
+  const reset = kinds.length && ui.resets?.spot !== spot ? `<div class="of-row"><span class="of-say">${esc(word)}</span>`
+    + `${DRAW.act({ word: "Limit resets", act: "resets", cls: "quiet small", data: ` data-p="${esc(p.id)}" data-a="${esc(a.id)}" data-s="${esc(spot)}"` })}</div>` : "";
+  const fb = fallbackOfferHtml(p, a, spot);
+  return reset || fb ? `<div class="offer">${reset}${fb}</div>` : "";
+}
+// the model a session asks for, by the spelling a fallback is set in
+const askedOf = (x) => modelKey(x.model ?? x.served_model ?? "");
+// the models a fallback can name for these sessions: each one their commands all serve, once each, in the catalog's order
+function fallbackModels(sessions) {
+  const heads = [...new Set(sessions.map((x) => x.head))];
+  const lists = heads.map((h) => (MODEL_IDS.get(h) || []).map((m) => ({ id: modelKey(m.id), label: m.label || m.id })));
+  const seen = new Set();
+  return (lists[0] || []).filter((m) => !seen.has(m.id) && seen.add(m.id) && lists.every((l) => l.some((o) => o.id === m.id)));
+}
+function fallbackOfferHtml(p, a, spot) {
+  const open = ui.offerFb === spot, said = ui.offerSaid?.spot === spot ? ui.offerSaid : null;
+  const waiting = (a.sessions || []).filter((x) => !FALLBACKS[x.session_id]);
+  const asked = new Set(waiting.map(askedOf));
+  const models = fallbackModels(waiting).filter((m) => !(asked.size === 1 && asked.has(m.id)));
+  const result = said ? `<p class="of-said">${DRAW.result(said.text, said.ok ? "good" : "bad")}${said.why ? ` <span class="of-why">${esc(said.why)}</span>` : ""}</p>` : "";
+  if (!waiting.length || !models.length) return result;
+  const n = waiting.length, them = n === 1 ? "its turns" : "their turns";
+  const inner = `<span class="of-say">${n === 1 ? "1 session" : `${n} sessions`} on it ${n === 1 ? "has" : "have"} no fallback model</span>`;
+  const line = DRAW.disc({ open, controls: `of-${esc(spot)}`, inner, act: "offer-fb", data: ` data-s="${esc(spot)}"`, cls: "of-head" });
+  if (!open) return `<div class="of-fb">${line}</div>${result}`;
+  const busy = ui.offerBusy === spot;
+  const rows = models.map((m) => `<div class="of-mrow"><span class="lname">${esc(m.label)}</span>${busy ? "" : DRAW.act({ word: "Use", act: "offer-fb-use", cls: "small",
+    data: ` data-p="${esc(p.id)}" data-a="${esc(a.id)}" data-s="${esc(spot)}" data-model="${esc(m.id)}"` })}</div>`).join("");
+  const why = `When no login has the model ${n === 1 ? "it asks" : "they ask"} for, ${them} run on the one you pick, and come back on the first turn a login can take.`;
+  return `<div class="of-fb">${line}<div class="of-rows unfold" id="of-${esc(spot)}"${busy ? ' aria-busy="true"' : ""}><p class="of-why">${esc(why)}</p>${rows}</div></div>${result}`;
+}
+/** Give every session on [a] with no fallback the [model], each as Sessions gives one, then read the sessions again. */
+async function offerFallback(a, spot, model) {
+  const waiting = (a.sessions || []).filter((x) => !FALLBACKS[x.session_id] && askedOf(x) !== model);
+  ui.offerBusy = spot; render();
+  const answers = await Promise.all(waiting.map((x) => API.put(`/api/sessions/${encodeURIComponent(x.session_id)}/fallback`, { model })));
+  const failed = answers.find((r) => !r.ok), set = answers.filter((r) => r.ok).length;
+  waiting.forEach((x, i) => { if (answers[i].ok) FALLBACKS[x.session_id] = model; });
+  const label = fallbackModels(waiting).find((m) => m.id === model)?.label || model;
+  ui.offerBusy = null; ui.offerFb = failed ? spot : null;
+  const err = failed ? mutationError(failed, set ? `Set for ${set} of ${waiting.length}` : "Not set") : null;
+  ui.offerSaid = err ? { spot, ok: false, text: err.word, why: err.why }
+    : { spot, ok: true, text: `${set === 1 ? "1 session runs" : `${set} sessions run`} on ${label} while every login is held` };
+  render();
+  askingSessions = false; askSessions();
 }
 // Remove is in the text's ink like every other item, and armed it fills in that ink and names what it cuts: the limit red
 // is for limits and failures, never for an act. A refusal says so in plain words under it, its reason one press away,
@@ -1291,7 +1375,7 @@ function cardHtml(p, c, a, i, serves) {
   } else if (p.kind === "plan") {
     const first = c && serving(p, c) === a;
     const next = first ? nextOf(p, c) : null;
-    body = windowsHtml(a, next, first ? c.lastLeft : null, usageDoor(a, c), next ? ordered(p, c).indexOf(next) + 1 : 0) + signRow;
+    body = windowsHtml(a, next, first ? c.lastLeft : null, usageDoor(a, c), next ? ordered(p, c).indexOf(next) + 1 : 0) + offerHtml(p, a, spot) + signRow;
   } else {
     // the model it serves, and the door to its command on Models, where its log and its model are
     // a server that does not answer offers the act that asks it again, on its own card, beside the door to its command
@@ -2370,7 +2454,7 @@ document.addEventListener("click", async (e) => {
   const act = t.dataset.act, p = t.dataset.p && findProv(t.dataset.p), a = t.dataset.a && findAcct(t.dataset.a);
   const k = t.dataset.c && findCmd(t.dataset.c).c;
   // a refused switch or order is said until the next press; opening its reason is no new press
-  if (act !== "reason") { ui.slotErr = null; ui.orderErr = null; ui.keyErr = null; }
+  if (act !== "reason") { ui.slotErr = null; ui.orderErr = null; ui.keyErr = null; if (act !== "offer-fb-use") ui.offerSaid = null; }
   switch (act) {
     // a refusal's word opens splice's own reason under it, and folds it back
     case "reason":
@@ -2473,6 +2557,9 @@ document.addEventListener("click", async (e) => {
       if (res.ok) await refresh();
       break;
     }
+    // a held login's sessions with no fallback: the command's other models open under the line, each with Use
+    case "offer-fb": ui.offerFb = ui.offerFb === t.dataset.s ? null : t.dataset.s; ui.offerSaid = null; ui.enter = null; render(); break;
+    case "offer-fb-use": if (a && !ui.offerBusy) await offerFallback(a, t.dataset.s, t.dataset.model); break;
     case "reset-keep": if (ui.resets) { ui.resets.arm = null; render(); } break;
     case "reset-close": if (!ui.resets?.spending) { ui.resets = null; render(); } break;
     // Remove takes two presses on the same item; removal deletes the sign-in, so nothing comes back from it.

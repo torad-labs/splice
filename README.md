@@ -31,7 +31,7 @@ Type `claudex` instead of `claude` to work with a ChatGPT-backed model inside Cl
 
 The gateway runs locally on your machine. Model requests go to the chosen provider, including a local runtime when you configure one. Subscription connections run on the plan you already pay for; API-key connections use ordinary pay-per-token access.
 
-Signing in happens on each company's own page: `claudex login`, `claude-grok login`, `claude-kimi login` and `claude-muse login` open the sign-in page of OpenAI, xAI, Kimi or Meta. Claude uses Claude Code's own `/login`. Credentials stay on your machine: OAuth logins in `~/.config/splice/auth/`, API keys in `~/.config/splice/keys.toml`, and plain claude’s login and claude-splice’s own login in their separate Claude Code directories. Additional Claude accounts have separate folders under `~/.splice/state/claude-accounts/<head>/`; saved copies of the commands' own logins live under `~/.splice/state/claude-logins/`. Your requests go from your machine to that provider, and splice also connects to a webhook URL if you save one for alerts, runs the program you name as `[daemon] alert_command` in `splice.toml` if you set one, and connects to GitHub: to download a release when you install or upgrade, and to fetch rig's installer if you choose a local model in `splice setup` (rig then downloads the model itself). [Credential locations](#credential-locations) and [What splice keeps on your disk](#what-splice-keeps-on-your-disk) have the details.
+Signing in happens on each company's own page: `claudex login`, `claude-grok login`, `claude-kimi login` and `claude-muse login` open the sign-in page of OpenAI, xAI, Kimi or Meta. Claude uses Claude Code's own `/login`. Credentials stay on your machine: OAuth logins in `~/.config/splice/auth/`, API keys in `~/.config/splice/keys.toml`, and Claude Code’s own login in `~/.claude`. Additional Claude accounts have separate folders under `~/.splice/state/claude-accounts/<head>/`; saved copies of the commands' own logins live under `~/.splice/state/claude-logins/`. Your requests go from your machine to that provider, and splice also connects to a webhook URL if you save one for alerts, runs the program you name as `[daemon] alert_command` in `splice.toml` if you set one, and connects to GitHub: to download a release when you install or upgrade, and to fetch rig's installer if you choose a local model in `splice setup` (rig then downloads the model itself). [Credential locations](#credential-locations) and [What splice keeps on your disk](#what-splice-keeps-on-your-disk) have the details.
 
 ## Why it exists
 
@@ -159,7 +159,7 @@ every failing check.
 
 ### Guided setup
 
-`splice setup` is what the installer tells you to run next. It says what it finds on the machine, then asks which plans to connect (Claude's own login, a ChatGPT, Grok, Kimi or Muse sign-in, a DeepSeek or OpenRouter key), and whether plain `claude` itself goes through splice or a separate `claude-splice` sits beside it. It also asks whether sessions share MCP servers, and, on a Linux machine with an NVIDIA card, whether to run a local model. It shows a summary and writes nothing until you confirm; without a terminal it takes every default. The sections below are the same steps by hand.
+`splice setup` is what the installer tells you to run next. It says what it finds on the machine, then asks which plans to connect (Claude's own login, a ChatGPT, Grok, Kimi or Muse sign-in, a DeepSeek or OpenRouter key), and whether plain `claude` itself goes through splice or a separate `claude-splice` command for the `claude` head sits beside it. It also asks whether sessions share MCP servers, and, on a Linux machine with an NVIDIA card, whether to run a local model. It shows a summary and writes nothing until you confirm; without a terminal it takes every default. The sections below are the same steps by hand.
 
 ### API-key starter: OpenRouter
 
@@ -209,11 +209,11 @@ If the daemon is already running, finish pending work before a full `splice rest
 
 ### Claude
 
-`claude-splice` routes Claude Code through splice over Claude Code's own home, `~/.claude`: the same login, settings and sessions as plain `claude`, whether or not `claude` itself goes through splice. There is one Claude Code login, not one per command; sign in with `/login` inside either. A Claude head can also hold additional subscriptions in separate splice-owned folders and select between its available logins per request ([More than one Claude login](#more-than-one-claude-login-on-claude-splice)). Splice reads Claude Code's live access token for selection but never refreshes its credential. It refreshes only the added accounts whose folders it alone owns.
+The `claude` head routes Claude Code through splice over Claude Code's own home, `~/.claude`: the same login, settings and sessions as plain `claude`, whether or not `claude` itself goes through splice. There is one Claude Code login, not one per command; sign in with `/login` inside either. A Claude head can also hold additional subscriptions in separate splice-owned folders and select between its available logins per request ([More than one Claude login](#more-than-one-claude-login-on-claude)). Splice reads Claude Code's live access token for selection but never refreshes its credential. It refreshes only the added accounts whose folders it alone owns.
 
 ### The billing word in Claude Code's header
 
-Claude Code's header prints a billing word beside the model. On `claude-splice` signed in with a Claude subscription, it names that plan, for example `Claude Max`. On every other head it reads `API Usage Billing`: Claude Code only has names for Anthropic's plans and the clouds that sell Claude, so it prints that for any other service. It does not mean Anthropic is billing you. Each head uses the plan, key or GPU you set it up with, and splice's status line shows an estimate at API rates, never a charge, where splice has a rate card for the model.
+Claude Code's header prints a billing word beside the model. On `claude` signed in with a Claude subscription, it names that plan, for example `Claude Max`. On every other head it reads `API Usage Billing`: Claude Code only has names for Anthropic's plans and the clouds that sell Claude, so it prints that for any other service. It does not mean Anthropic is billing you. Each head uses the plan, key or GPU you set it up with, and splice's status line shows an estimate at API rates, never a charge, where splice has a rate card for the model.
 
 ## Manage your sessions
 
@@ -396,7 +396,7 @@ Splice signs in on its own. Each OAuth head keeps its own credential file under 
 
 | Backend / route | Auth kind | Location | Notes |
 | --- | --- | --- | --- |
-| Claude (`claude-splice`) | `client` | Claude Code's own login in `~/.claude`; additional accounts under `~/.splice/state/claude-accounts/<head>/<label>/` | Claude Code performs sign-in; splice never refreshes Claude Code's own credential and refreshes only the added folders it owns |
+| Claude (`claude`) | `client` | Claude Code's own login in `~/.claude`; additional accounts under `~/.splice/state/claude-accounts/<head>/<label>/` | Claude Code performs sign-in; splice never refreshes Claude Code's own credential and refreshes only the added folders it owns |
 | codex (ChatGPT) | `chatgpt-oauth` | `~/.config/splice/auth/codex.json` | splice's own OAuth tokens (`splice login claudex`); `~/.codex/auth.json` only by explicit `auth.file` |
 | grok (xAI) | `grok-oauth` | `~/.config/splice/auth/grok.json` | splice's own OAuth tokens (`claude-grok login`); `~/.grok/auth.json` only by explicit `auth.file` |
 | kimi (Moonshot) | `kimi-oauth` | `~/.config/splice/auth/kimi.json` (+ `device_id` beside it) | splice's own device-flow token (`claude-kimi login`); the app's file only by explicit `auth.file` |
@@ -408,7 +408,7 @@ Splice signs in on its own. Each OAuth head keeps its own credential file under 
 
 ### More than one ChatGPT, Grok, Kimi or Muse account
 
-An OAuth head (ChatGPT, Grok, Kimi or Muse) can hold several accounts of its kind and switch between them when one runs out. Claude heads also have per-head pools, with different credential ownership and sign-in ([More than one Claude login](#more-than-one-claude-login-on-claude-splice)).
+An OAuth head (ChatGPT, Grok, Kimi or Muse) can hold several accounts of its kind and switch between them when one runs out. Claude heads also have per-head pools, with different credential ownership and sign-in ([More than one Claude login](#more-than-one-claude-login-on-claude)).
 `splice login <head>` without `--label` always signs in the primary account in the file above,
 so a revoked primary is replaced in place; every further `splice login <head> --label <name>` lands
 beside it under `<primary directory>/<kind>/<primary file>/<name>.json`, for the default primary
@@ -523,14 +523,14 @@ Any other host is ignored, the vendor's address is used, and the daemon log name
 once. The rule is on the host, not on which home the daemon runs in, so a test home answers from a
 stand-in on its own machine.
 
-### More than one Claude login on `claude-splice`
+### More than one Claude login on `claude`
 
 A Claude head can hold multiple subscriptions. `POST /api/auth/<head>/login` on the control plane
 adds one through Claude Code's own browser sign-in into a new folder under `~/.splice/state/claude-accounts/<head>/<label>/`, never
 replacing another login. Once filed, it can join a running head through membership publication.
 The pool is per head, and uses the same pin, saved order, sticky default selection and same-turn
 hand-off on a refusal described above. Claude Code's own login, the one in `~/.claude`, is one
-selectable login on `claude-splice`, whichever of `claude` and `claude-splice` started the session:
+selectable login on `claude`, whichever command started the session:
 splice reads its live access token without refreshing or replacing its credential during selection.
 It can refresh an added folder's credential because no other program uses that folder.
 
@@ -547,9 +547,9 @@ command's own login is refused while its sessions are active or their state is u
 credential is backed up before removal.
 
 The labelled-copy CLI is separate from automatic pool selection, and it is for a second Claude
-command you declare yourself: a head with `auth = "client"` under a name other than `claude-splice`,
+command you declare yourself: a head with `auth = "client"` under a name other than `claude`,
 which keeps a Claude Code config directory of its own, `~/.claude-<head>/`, with one login at a
-time. `splice login <head> --label <name>` saves or switches copies of that login. On `claude-splice`
+time. `splice login <head> --label <name>` saves or switches copies of that login. On `claude`
 it changes nothing and says where to sign in, since that command runs on Claude Code's own login and
 its other accounts are added on the Accounts page.
 
@@ -718,7 +718,7 @@ These files hold settings and statistics. Custom compaction instructions and tea
 | `<primary directory>/<kind>/<primary file>/primary.name` | The name you gave a command's first ChatGPT, Grok, Kimi or Muse account on Accounts; no credentials. It sits beside the pool rather than in the credential, which can be the vendor CLI's own file | Only you (0600) | Until you rename the account again or remove it | `OAuthPrimaryAccount.kt` |
 | `~/.config/splice/key-ledger.json` and `key-ledger.json.unreadable-<epoch>` | Each API key variable's keys by a short fingerprint, never the key, with the day splice first saw each one, so Accounts can mark a key you replaced. A ledger splice cannot read is moved to the `.unreadable-<epoch>` copy, once, and a new one starts | Only you (0600) | Grows by one entry each time a variable's key changes; an `.unreadable-<epoch>` copy stays until you delete it | `KeyLedger.kt` |
 | `~/.splice/state/published-rates.tsv` | splice's price table as the project's main branch last served it: each vendor's published price per model, and the day the table last changed. Public data; nothing of yours | Only you (0600) | Replaced at each hourly look that fetched a table splice could read; kept when `refresh_prices = false`, and read at a start unless it is older than the table in the build | `PriceRefresh.kt` |
-| `~/.splice/state/login-alerts.json` | Which notices about a command's last login were already sent, so each is sent once: a short key per notice naming the command, the model, the login's pool label, the limit and the mark (such as `claude-splice\|claude-fable-5-2\|account-5\|Fable week\|80`), or, for a command with one login, the command, the limit and the mark (`claudex\|login\|weekly limit\|80`), and a short hash of the `alert_command` that was sent its first line; no credentials, no account names | Only you (0600) | Written at the first check once an alert command or webhook is set, then when a notice is sent, and when one is forgotten half an hour after it stops applying | `LoginAlerting.kt` |
+| `~/.splice/state/login-alerts.json` | Which notices about a command's last login were already sent, so each is sent once: a short key per notice naming the command, the model, the login's pool label, the limit and the mark (such as `claude\|claude-fable-5-2\|account-5\|Fable week\|80`), or, for a command with one login, the command, the limit and the mark (`claudex\|login\|weekly limit\|80`), and a short hash of the `alert_command` that was sent its first line; no credentials, no account names | Only you (0600) | Written at the first check once an alert command or webhook is set, then when a notice is sent, and when one is forgotten half an hour after it stops applying | `LoginAlerting.kt` |
 | `~/.splice/state/budgets.json`, `alerts.json` (and their `.bak`) | Daily API-rate estimate budgets per head; alert settings, including a webhook URL, which can carry its own secret | Only you (0600) | Until changed; `.bak` is the version before | `BudgetStore.kt`, `AlertStore.kt` |
 | `~/.splice/state/activity/edges-<day>.jsonl`, `.jsonl.lock` and `.jsonl.1` | Which session sent a message to which, and when; never the message's text. `messageEdges = "false"` stops new edges after restart | Only you | `activityRetentionDays` (default 90, at least 2): a day is deleted at the UTC midnight it leaves that window (within 10 minutes of waking, if the computer slept through it), or at the next daemon start if splice was stopped. `DELETE /api/kept/edges` deletes retained rows now. A history-window cut deletes the edges observed before the moment you are reading, which is not a whole number of UTC days, so the one day that straddles it is rewritten to a `.cut` sibling and moved over the original in one step: a reader sees the whole old day or the whole new one, a row splice cannot read is kept, and a session bound to a team that is still going keeps its edges | `ActivityStores.kt`, `DayLinesKept.kt` |
 | `~/.splice/state/<head>-perf.jsonl`, `.jsonl.lock`, `.jsonl.1` and `perf-archive/<head>-perf.jsonl-<yyyyMMddTHHmmssZ>` | One row per request splice handled (turns, requests refused at the gate and local steps): model, outcome, timings and token counts | Only you | Rolled at 64 MB to `.jsonl.1`, and each later roll copies the generation it replaces into the archive; archived files older than `historyRetentionDays` are deleted at the next rotation; `DELETE /api/kept/turns` removes all of it now except the empty `.jsonl.lock`; a history-window cut deletes the turns written before the moment you are reading, rewriting the one generation that straddles it to a `.jsonl.tmp` sibling and moving it over the original in one step, so a reader sees the whole old file or the whole new one and an undated row is kept | `PerfStats.kt`, `HistoryPrune.kt` |
@@ -750,7 +750,7 @@ These files hold settings and statistics. Custom compaction instructions and tea
 
 | File | What it holds | Who can read it | How long it stays | Written by |
 | --- | --- | --- | --- | --- |
-| `~/.claude-<head>/settings.json` and `.claude.json` | The head's settings: its models, status line and hooks. `.claude.json` carries Claude Code's own keys forward. `claude-splice` has no such folder: it runs over `~/.claude`, which splice does not rewrite, and carries its settings on the command line | Only you (0600) | Rewritten at each launch | `ClaudeConfigMaterializer.kt` |
+| `~/.claude-<head>/settings.json` and `.claude.json` | The head's settings: its models, status line and hooks. `.claude.json` carries Claude Code's own keys forward. The `claude` head has no such folder: it runs over `~/.claude`, which splice does not rewrite, and carries its settings on the command line | Only you (0600) | Rewritten at each launch | `ClaudeConfigMaterializer.kt` |
 | `~/.claude-<head>/.splice-hook-origins.json` | Hook settings before and after the last materialization, with only the inherited entries splice actually appended; no callback IDs or launch owner | Only you (0600) | Rewritten at each launch, before the atomic settings swap | `ClaudeConfigMaterializer.kt` |
 | `~/.claude-<head>/.credentials.json` of a second Claude command, and the account in its `.claude.json` | Written by `splice login <head> --label <name>` only when it switches the head to a saved login: the saved copy, and its account's id and email. Adding an account signs the head out, which deletes the file. Claude Code writes both itself on `/login` | Only you (0600) | Until the next switch, `/login` or `/logout` | `ClaudeLogins.kt`, `ClaudeLoginFiles.kt` |
 | Links in `~/.claude-<head>/` to `~/.claude/` | The config a head shares: agents, commands, skills, hooks, plugins, `CLAUDE.md`, and, when shared, `sessions` and `projects`, whose existing files are merged into `~/.claude` the first time | Links only | Until you change what the head shares | `ClaudeConfigMaterializer.kt`, `SessionRegistryLink.kt`, `ProjectsLink.kt` |
@@ -800,7 +800,7 @@ can run rig's installer.
 
 | Route | Auth | Status |
 | --- | --- | --- |
-| Claude (`claude-splice`) | `client` (Claude Code sign-in) | **Primary**: per-head Claude account pool; Claude Code signs in, splice reads Claude Code's own login without refreshing it and refreshes only added account folders |
+| Claude (`claude`) | `client` (Claude Code sign-in) | **Primary**: per-head Claude account pool; Claude Code signs in, splice reads Claude Code's own login without refreshing it and refreshes only added account folders |
 | OpenRouter | `api-key` (`OPENROUTER_API_KEY`) | **Supported**: pay-per-token, any OpenAI-compatible vendor |
 | Moonshot | `api-key` (`MOONSHOT_API_KEY`) | **Supported**: pay-per-token Anthropic base |
 | DeepSeek | `api-key` (`DEEPSEEK_API_KEY`) | **Supported**: pay-per-token over DeepSeek's Anthropic-format endpoint |

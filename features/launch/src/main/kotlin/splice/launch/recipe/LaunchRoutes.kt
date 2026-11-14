@@ -57,8 +57,8 @@ public class LaunchRoutes(
         }
         val direct = targets.singleOrNull()?.let { Resolved(it, wrapped = ownHome(it)) }
         // LAN share: a name no head here carries may be a command another machine serves. A `[remote.claude]` is
-        // asked before the wrap's own Claude head: the person gave that name to another machine's head.
-        val remote = if (direct == null) launchService?.remotes?.launch(key) else null
+        // asked before the Claude head here, keyed `claude` too: the person gave that name to another machine's head.
+        val remote = if (direct == null || key == CLAUDE_HEAD_KEY) launchService?.remotes?.launch(key) else null
         if (remote != null) remoteReply(call, key, remote) else localReply(call, key, direct ?: wrapped(key))
     }
 

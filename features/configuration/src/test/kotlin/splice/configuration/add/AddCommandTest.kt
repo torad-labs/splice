@@ -419,8 +419,8 @@ class AddCommandTest {
         val routes = mapOf("GET https://api.anthropic.com" to "{}")
         assertTrue(runBlocking { command(http(routes), login = false).add(listOf("claude", "--yes"), env) })
         val topology = TopologyLoader.parse(Files.readString(config()))
-        assertEquals("client", topology.providers.getValue("claude-splice").auth.kind)
-        assertEquals(listOf("claude-splice"), installed, "no sign-in, the wrapper linked")
+        assertEquals("client", topology.providers.getValue("claude").auth.kind)
+        assertEquals(listOf("claude"), installed, "no sign-in, the wrapper linked")
     }
 
     private fun capture(block: () -> Unit): String {

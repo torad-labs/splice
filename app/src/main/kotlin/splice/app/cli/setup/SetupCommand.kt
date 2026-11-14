@@ -38,7 +38,7 @@ internal class SetupEffects(
     fun heads(profiles: AddProfiles, prompts: SetupPrompts, env: EnvReader): SetupHeads =
         SetupHeads(profiles, prompts.pickHeads, add, restart, prompts.hasConsole, env, prompts.frame)
 
-    fun lanes(prompts: SetupPrompts): SetupClaudeLane = SetupClaudeLane(prompts.pickLane, wrap)
+    fun lanes(): SetupClaudeLane = SetupClaudeLane(wrap)
 
     /** `splice doctor`, once, after the last head is added. */
     fun checkup(env: EnvReader) = add.checkup(env)
@@ -104,7 +104,7 @@ internal class SetupCommand(
         menu.printDetected(facts)
         val path = TopologyLoader.configPath(env)
         val bin = InstallLayout().localBin(env)
-        val lanes = effects.lanes(prompts)
+        val lanes = effects.lanes()
         val picker = effects.heads(profiles, prompts, env)
         // The list of plans is the first question, so leaving it with Escape or Ctrl-C ends setup. While a "Starting
         // point" menu came first, leaving the list meant "none of these" and the wizard went on to its next question.
@@ -113,7 +113,7 @@ internal class SetupCommand(
         val lane = lanes.ask(heads)
         val local = localModel.offer(path)
         val share = mcpShare.ask(path)
-        val summary = menu.summaryLines(path, bin, heads, lanes.summaryLine(lane)) +
+        val summary = menu.summaryLines(path, bin, heads, lanes.summaryLine()) +
             choices.values.map { it.summary } + localModel.summary(local) + mcpShare.summary(share)
         frame.note("Summary", summary)
         if (!frame.confirm("Install now?", true)) return WizardAnswer.Cancelled("not installing")

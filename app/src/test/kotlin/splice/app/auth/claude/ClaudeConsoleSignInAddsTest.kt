@@ -61,7 +61,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.LockSupport
 import kotlin.time.Duration.Companion.minutes
 
-private const val HEAD = "claude-splice"
+private const val HEAD = "claude"
 private const val HEAD_PORT = 3104
 private const val WAIT_MS = 20_000L
 private const val POLL_MS = 20L

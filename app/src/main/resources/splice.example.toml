@@ -708,7 +708,7 @@ maxInflight = "8"
 
 [heads.claude-muse]
 provider = "muse"
-port = 3106                    # 3103 is fireworks; 3104 is claude-splice; 3105 is commented ollama
+port = 3106                    # 3103 is fireworks; 3104 is claude; 3105 is commented ollama
 discovery_prefix = "claude-muse--"
 pinned_model = "muse-spark-1.3[1m]"
 # No models line: Spark 1.3 is the only catalog model worth pinning, and a models list names each
@@ -819,31 +819,21 @@ id = "claude-haiku-5-5"
 label = "Claude Haiku 5.5"
 context_window = 1000000
 
-[heads.claude-splice]
+[heads.claude]
+# The Claude head. Its key is `claude`, the command every session of it runs as once `claude` is wrapped.
 provider = "anthropic"
 port = 3104                    # 3103 is fireworks above
-discovery_prefix = "claude-splice--"
+discovery_prefix = "claude--"
 # No pinned_model and no models list: Claude Code shows its own models and starts on its own default, so a
 # model Anthropic releases tomorrow is there without an edit here. A pinned_model, if you add one, only
 # chooses the model a new session starts on.
 context_window = 1000000
-[heads.claude-splice.claude]
-# The SEPARATE lane: a command of its own, beside the `claude` you already run, and what `splice setup`
-# preselects. It runs Claude Code over its own home, ~/.claude: the same login, settings and sessions as
-# plain `claude`. There is one Claude Code login, not one per command, and splice writes nothing there:
-# it hands Claude Code this head's settings on the command line.
-#
-# The other lane is WRAP, and it is not spelled here — do not set `command = "claude"` to get it.
-# Wrapping is an ACTION, not a config value: `splice setup` offers it, and the console's Settings
-# page posts it to /api/claude-head/wrap. The daemon then shadows `claude` with a shim and carries
-# your settings.json and .claude.json across, backing both up first, so there is a way back.
-#
-# A wrapped `claude`
-# ON PATH *is* the shim, so a head launching the bare name would invoke itself — the launch instead
-# execs the real binary path the wrap recorded, and falls back to the bare name only when nothing is
-# wrapped. Setting `command = "claude"` by hand still gets you a second command named `claude` with
-# none of that bookkeeping: no backups, no recorded real binary, nothing for an unwrap to restore.
-command = "claude-splice"
+# Plain `claude` runs this head once it is wrapped, and no second command is laid beside it. Wrapping is an
+# ACTION, not a config value: `splice setup` does it when the Claude plan is ticked, and the console posts it to
+# /api/claude-head/wrap. The daemon then points `claude` at its launch shim, recording the real binary so an
+# unwrap can put it back, and the launch execs that recorded binary. Every session runs over Claude Code's own home,
+# ~/.claude: one login, and splice writes nothing there; it hands Claude Code this head's settings on the
+# command line.
 
 # ── KNOB REFERENCE: every key the config layers accept ──────────────────────────
 # A knob is settable in `[defaults]` (every head), in `[heads.<key>.overrides]` (that head), in the

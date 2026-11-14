@@ -88,12 +88,12 @@ class ClaudeHeadRoutesWiringTest {
             modelOptionsCache = buildJsonObject { },
         ),
         signIn = LaunchSignIn(
-            loginCommand = "claude-splice login",
+            loginCommand = "claude login",
             signInLabel = "Claude",
-            headKey = "claude-splice",
+            headKey = "claude",
         ),
         gateway = LaunchGateway(
-            statuslineCommand = "\"/bin/curl\" -s :3096/statusline/claude-splice",
+            statuslineCommand = "\"/bin/curl\" -s :3096/statusline/claude",
             port = 3104,
             bearer = GatewayBearer.Planted("test-token"),
             apiTimeoutMs = 960_000,
@@ -104,8 +104,8 @@ class ClaudeHeadRoutesWiringTest {
 
     private fun managedHead(configDir: Path): ManagedHead = ManagedHead(
         head = object : Head {
-            override val key: String = "claude-splice"
-            override val label: String = "claude-splice"
+            override val key: String = "claude"
+            override val label: String = "claude"
             override val port: Int = 0
             override suspend fun start() = Unit
             override suspend fun stop() = Unit
@@ -142,7 +142,7 @@ class ClaudeHeadRoutesWiringTest {
         val control = controlServerFor(
             port = 0,
             // bound by the OS at start and read back below: no lease-then-bind window
-            heads = mapOf("claude-splice" to managedHead(tmp.resolve(".claude-claude-splice"))),
+            heads = mapOf("claude" to managedHead(tmp.resolve(".claude-claude"))),
             config = ConfigService(paths),
             runtime = ControlRuntime(launchService = launchService),
             auth = ControlAuth(mgmtKey = mgmt, log = { }),
@@ -199,13 +199,11 @@ class ClaudeHeadRoutesWiringTest {
         }
     }
 
-    /** V4-129 review, the failing state it names: wrap symlinks `claude` to the launch shim, the
-     *  shim names its head by its own basename and posts /launch/claude, and no head is keyed or
-     *  labeled `claude` — so every wrapped `claude` got a 404 and exited 1 until unwrap. After a wrap
-     *  through the route, the launch through that name must answer the splice-owned Claude head's
-     *  recipe over the vanilla config dir, with the real binary (recorded by the wrap) as argv[0]. */
+    /** V4-129 review: wrap symlinks `claude` to the launch shim, and the shim posts /launch/claude by its own
+     *  basename. After a wrap through the route, that launch answers the Claude head's recipe over the vanilla
+     *  config dir, with the real binary (recorded by the wrap) as argv[0]. */
     @Test
-    fun `after a wrap, launching through the wrapped claude command answers claude-splice over the vanilla dir`(
+    fun `after a wrap, launching through the wrapped claude command answers claude over the vanilla dir`(
         @TempDir home: Path,
     ) {
         val realBinary = home.resolve("real-claude").also { it.writeText("#!/bin/sh\n") }
@@ -213,12 +211,6 @@ class ClaudeHeadRoutesWiringTest {
             val client = HttpClient(CIO) { expectSuccess = false }
             try {
                 val url = "http://127.0.0.1:$port"
-                val beforeWrap = client.post("$url/launch/claude") {
-                    header("Authorization", "Bearer $key")
-                    setBody("{}")
-                }
-                assertEquals(HttpStatusCode.NotFound, beforeWrap.status, "unwrapped, no head is named claude")
-
                 val wrapped = client.post("$url/api/claude-head/wrap") { header("Authorization", "Bearer $key") }
                 assertEquals(HttpStatusCode.OK, wrapped.status, wrapped.bodyAsText())
 
@@ -231,7 +223,7 @@ class ClaudeHeadRoutesWiringTest {
                 assertWrappedRecipe(Json.parseToJsonElement(body).jsonObject, realBinary)
                 assertFalse(home.resolve(".claude").exists(), "wrap and a wrapped launch write nothing into ~/.claude")
                 assertFalse(
-                    home.resolve(".claude-claude-splice").exists(),
+                    home.resolve(".claude-claude").exists(),
                     "a wrapped launch never builds the isolated tree it replaced",
                 )
             } finally {
@@ -243,7 +235,7 @@ class ClaudeHeadRoutesWiringTest {
     /** One Claude login (Nov 12, 2026): the head launched by its own name runs over the person's own ~/.claude, as a
      *  wrapped `claude` does, whether or not `claude` is wrapped. No second home is built and none is named. */
     @Test
-    fun `launching claude-splice by its own name with claude unwrapped runs over the own home and writes none`(
+    fun `launching claude by its own name with claude unwrapped runs over the own home and writes none`(
         @TempDir home: Path,
     ) {
         val launchService = LaunchService(
@@ -260,7 +252,7 @@ class ClaudeHeadRoutesWiringTest {
         serveWired(home, launchService) { port, key ->
             val client = HttpClient(CIO) { expectSuccess = false }
             try {
-                val launched = client.post("http://127.0.0.1:$port/launch/claude-splice") {
+                val launched = client.post("http://127.0.0.1:$port/launch/claude") {
                     header("Authorization", "Bearer $key")
                     setBody("{}")
                 }
@@ -272,7 +264,7 @@ class ClaudeHeadRoutesWiringTest {
                 assertEquals("http://127.0.0.1:3104", env.getValue("ANTHROPIC_BASE_URL").jsonPrimitive.content)
                 val argv = recipe.getValue("argv").jsonArray.map { it.jsonPrimitive.content }
                 assertTrue("--settings" in argv, "the head's settings ride the launch as an overlay: $argv")
-                assertFalse(home.resolve(".claude-claude-splice").exists(), "the head's own dir is never built")
+                assertFalse(home.resolve(".claude-claude").exists(), "the head's own dir is never built")
                 assertFalse(home.resolve(".claude").exists(), "nothing is written into ~/.claude")
             } finally {
                 client.close()
@@ -289,7 +281,7 @@ class ClaudeHeadRoutesWiringTest {
             val client = HttpClient(CIO) { expectSuccess = false }
             try {
                 val url = "http://127.0.0.1:$port"
-                assertEquals(listOf("claude-splice", "claude-splice"), shownNames(client, url, key))
+                assertEquals(listOf("claude", "claude"), shownNames(client, url, key))
                 val wrapped = client.post("$url/api/claude-head/wrap") { header("Authorization", "Bearer $key") }
                 assertEquals(HttpStatusCode.OK, wrapped.status, wrapped.bodyAsText())
                 assertEquals(listOf("claude", "claude"), shownNames(client, url, key))
@@ -354,7 +346,7 @@ class ClaudeHeadRoutesWiringTest {
         assertEquals(
             "http://127.0.0.1:3104",
             env.getValue("ANTHROPIC_BASE_URL").jsonPrimitive.content,
-            "the launch runs the claude-splice head, so its own settings and prompt apply",
+            "the launch runs the claude head, so its own settings and prompt apply",
         )
         assertEquals(
             "--settings",

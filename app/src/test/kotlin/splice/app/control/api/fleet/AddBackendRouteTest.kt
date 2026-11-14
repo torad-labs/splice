@@ -411,7 +411,7 @@ class AddBackendRouteTest {
         val forwarded = post("/api/add", """{"profile":"claude"}""")
         val login = post("/api/add/${body(forwarded)["id"]!!.jsonPrimitive.content}/login")
         assertEquals(HttpStatusCode.Conflict, login.status)
-        val forwardedLogin = "'claude-splice' has no sign-in of its own: your Claude login is forwarded at launch."
+        val forwardedLogin = "'claude' has no sign-in of its own: your Claude login is forwarded at launch."
         assertEquals(forwardedLogin, error(login))
         assertEquals(HttpStatusCode.NotFound, get("/api/add/no-such-id").status)
         val stranger = withTimeout(TIMEOUT_MS) { client.post("$url/api/add") { setBody(fw) } }
@@ -434,7 +434,7 @@ class AddBackendRouteTest {
             discovery_prefix = "reserved-"
             pinned_model = "m"
             [heads.reserved.claude]
-            command = "claude-splice"
+            command = "claude"
         """.trimIndent() + "\n"
         Files.writeString(config, original)
         val taken = post("/api/add", """{"profile":"claude"}""")

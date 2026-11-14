@@ -298,7 +298,7 @@ Source: `features/lifecycle/.../restart/RestartCommand.kt:46-130`, `README.md` "
 claudex login                       # the head's own command
 splice login claudex
 splice login claudex --label work   # a further account of the same kind
-splice login claude-splice --label work
+splice login claude --label work
 ```
 
 `<head>` is a head key or its wrapper command; with no head and exactly one sign-in-capable head it picks that

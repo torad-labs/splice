@@ -10,7 +10,7 @@ Verbs: cli.md. Where a doc in the repo disagrees with the code, the code wins; t
 
 - One daemon (`spliced`) runs on the machine. Its control plane listens on `127.0.0.1:3096` (`control_port`). Everything is loopback.
 - A **head** is a Claude Code wrapper command on its own loopback port: `claudex`, `claude-grok`, `claude-kimi`,
-  `claude-muse`, `claude-openrouter`, `claude-deepseek`, `claude-splice` (Claude). The person types it where they typed `claude`.
+  `claude-muse`, `claude-openrouter`, `claude-deepseek`, `claude` (Claude, once `claude` is wrapped). The person types it where they typed `claude`.
 - Claude Code stays the tool executor. The head translates Anthropic's Messages API into the provider's dialect.
 - A session is a Claude Code process. Splice launches some, reads all of them from Claude Code's registry, and types only into
   the ones it opened.
@@ -153,7 +153,7 @@ Source: `models.js:13-14,139-187,270-330,429-466,654-707,768-916,1096`, `setting
 
 | Provider | Command | Auth kind | Sign-in | Credential file |
 |---|---|---|---|---|
-| Claude | `claude-splice` | `client` | `/login` inside the command | Claude Code's own config directory for that command |
+| Claude | `claude` | `client` | `/login` inside the command | Claude Code's own config directory for that command |
 | ChatGPT | `claudex` | `chatgpt-oauth` | `claudex login` (browser) or Accounts (device code) | `~/.config/splice/auth/codex.json` |
 | Grok | `claude-grok` | `grok-oauth` | `claude-grok login` (browser) or Accounts | `auth/grok.json` |
 | Kimi | `claude-kimi` | `kimi-oauth` | `claude-kimi login` (device code) or Accounts | `auth/kimi.json` and a `device_id` |
@@ -218,7 +218,7 @@ section 11 (Superseded 2026-10-03; Deviations 2026-10-10); repo `CLAUDE.md` proj
   serve, the pin stays and its card says why and which login the turns use instead. Pins are saved in `<state>/account-pins.json`
   (0600, one `.bak`), so a daemon restart keeps them.
 - **Claude.** Claude Code signs in; splice never refreshes the command's own login. Added Claude accounts live in splice-owned
-  folders `~/.splice/state/claude-accounts/<head>/<label>/`, which splice may refresh. `splice login claude-splice --label <name>`
+  folders `~/.splice/state/claude-accounts/<head>/<label>/`, which splice may refresh. `splice login claude --label <name>`
   is a different feature: it saves or switches named copies of the one login, changes nothing while any session of the command runs,
   saves the outgoing login first, and fails closed when it cannot tell whose login it is.
 - **Budgets.** Accounts' "Day" meter, "Set budget": a dollar cap on the command's estimated API-rate cost for the local day, with
@@ -226,7 +226,7 @@ section 11 (Superseded 2026-10-03; Deviations 2026-10-10); repo `CLAUDE.md` proj
   turn until midnight; a running turn finishes; a Compare send is refused too). Plan-account turns do not count; an unpriced model
   counts as unpriced, so the day can read low. Stored in `budgets.json`, applies within a second.
 
-Source: `README.md` "Pin a head or a session to an account", "More than one Claude login on claude-splice", "Daily budgets";
+Source: `README.md` "Pin a head or a session to an account", "More than one Claude login on claude", "Daily budgets";
 `app/.../auth/claude/ClaudeAccountFolders.kt:1-30`; `accounts.js:451-533,645-659,1183-1191`.
 
 ## Models and routing
@@ -457,7 +457,7 @@ Source: `docs/specs/v0.4.0.md` section 15, `README.md` "The splice manager", `co
 
 | Question | Answer |
 |---|---|
-| Log in a second Claude account? | Accounts, the Claude card, "Add account" (Claude Code's browser sign-in). Or the person runs `splice login claude-splice --label <name>` while no `claude-splice` session runs |
+| Log in a second Claude account? | Accounts, the Claude card, "Add account" (Claude Code's browser sign-in). Or the person runs `splice login claude --label <name>` while no `claude-splice` session runs |
 | A second ChatGPT account? | The person runs `claudex login --label <name>`, or Accounts, "Add account" |
 | Why is claude-grok out of quota? | "Rotation and quota exhaustion" above |
 | A session looks stuck | `splice sessions`: `stale` means no update in 30 minutes, not dead; `gone` is exited |

@@ -154,7 +154,7 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
             base_url = "$upstreamUrl"
             [providers.native.auth]
             kind = "client"
-            [heads.claude-splice]
+            [heads.claude]
             provider = "native"
             port = 3100
             discovery_prefix = "synthetic--"

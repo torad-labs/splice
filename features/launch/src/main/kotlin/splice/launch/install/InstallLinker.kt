@@ -5,6 +5,7 @@
 package splice.launch.install
 
 import splice.core.terminal.TerminalOutput
+import splice.core.topology.CLAUDE_COMMAND
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
@@ -85,7 +86,10 @@ internal class InstallLinker(
     /** Each command the topology links, with what runs it: a head's wrapper command (or its key) with the head's
      *  key, and a remote command (LAN share, `[remote.<command>]`) with its own name, `claude` aside. */
     private fun commands(topology: Topology): List<Pair<String, String>> =
-        topology.heads.map { (key, head) -> key to (head.claude.command ?: key) } +
+        topology.heads.map { (key, head) -> key to (head.claude.command ?: key) }
+            // `claude` is Claude Code's own link: only the wrap points it at the shim, recording the real binary
+            // first. A head keyed `claude` with no command of its own is reached through that wrap, never linked here.
+            .filterNot { (_, command) -> command == CLAUDE_COMMAND } +
             topology.remoteLinks.map { it to it }
 
     /** Validate the WHOLE topology's commands (+ `splice`) on EVERY install, not just this

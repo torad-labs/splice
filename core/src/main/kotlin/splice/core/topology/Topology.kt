@@ -264,11 +264,13 @@ public data class ProviderConfig(
     /** Every header this table sets on each request: the Via line when [sendVersion] is on, then [extraHeaders] with
      *  key quoting removed, so a Via written in extra_headers is the one that rides. */
     public val staticHeaders: Map<String, String>
-        get() = (if (sendVersion) mapOf("Via" to SPLICE_VIA) else emptyMap()) +
-            extraHeaders.mapKeys { (key, _) -> key.trim('"') }
+        get() = via + extraHeaders.mapKeys { (key, _) -> key.trim('"') }
 
     /** [forwardHeaders] as the list a head forwards from. */
     public val forwarded: ForwardHeaders get() = ForwardHeaders(forwardHeaders)
+
+    /** The Via line [sendVersion] adds, or nothing. */
+    private val via: Map<String, String> get() = if (sendVersion) mapOf("Via" to SPLICE_VIA) else emptyMap()
 
     /** V4-162: this provider without its windows (see [Topology.withoutWindows]). extra_windows and
      *  window_rules declare windows and nothing else, so they are dropped whole: a row added to or

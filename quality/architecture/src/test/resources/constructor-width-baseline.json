@@ -9,6 +9,11 @@
       "subsystems": 2,
       "reason": "model_slots, V4-254, 2026-09-30: tier map split from the models allowlist"
     },
+    "core/src/main/kotlin/splice/core/topology/Topology.kt ProviderConfig": {
+      "params": 14,
+      "subsystems": 1,
+      "reason": "provider headers for a gateway, 2026-11-14: forward_headers and send_version; the class mirrors splice.toml's [providers.<key>] table field by field, the outside-format exception Marcos set for LongParameterList on 2026-10-09"
+    },
     "core/src/main/kotlin/splice/core/topology/QuirksConfig.kt QuirksConfig": {
       "params": 33,
       "subsystems": 0,

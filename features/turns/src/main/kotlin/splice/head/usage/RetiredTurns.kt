@@ -27,7 +27,7 @@ internal class RetiredTurns(
         val model = row.model
         if (model != null) {
             row.session?.let { perfStats.totals?.add(it, model, row.counters, row.ts) }
-            spend.economics(PerfSnapshot(emptyMap(), row.counters), model, false, row.account, row.outcome)
+            spend.retiredEconomics(row.ts, PerfSnapshot(emptyMap(), row.counters), model, row.account, row.outcome)
             spend.spend(row.ts, model, row.counters, row.account, row.outcome)
         }
         events.turnEnded(row.ts.toString(), row.outcome, row.sessionId)

@@ -1,8 +1,8 @@
 // NEW: 2026-09-22 — the daemon's half of model discovery: ask a head's provider what it serves and
 // hand its catalog the models that can run a turn.
 //
-// The operator: "make sure that splice probes the head endpoint for available models instead of
-// having to hardcode them on the toml file". The question is the one `splice models` already asks
+// The operator wanted splice to probe the head endpoint for available models instead of having them
+// hardcoded in the toml file. The question is the one `splice models` already asks
 // (ModelsProbe, same URL, same credential, same parser), so there is one probe and two readers of
 // its answer: the verb REPORTS it against splice.toml, and this TURNS IT INTO ROWS. What the rows
 // mean next to the declared ones is the catalog's decision (ProviderConfig.catalogFor), not this

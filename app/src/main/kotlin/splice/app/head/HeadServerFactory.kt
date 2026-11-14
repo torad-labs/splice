@@ -96,6 +96,7 @@ internal class HeadServerFactory(
             listenPort = ctx.head.port,
             inherited = adopted.head(key),
             voiceFacts = voices.of(ctx.head.provider, ctx.providerCfg),
+            forwarded = ctx.providerCfg.forwarded,
             deps = HeadDeps(
                 // read per request, so a key replaced while the head runs is the only one it accepts from then on, and
                 // the keys that replacement retired are still refused as splice's on a head that forwards the caller's

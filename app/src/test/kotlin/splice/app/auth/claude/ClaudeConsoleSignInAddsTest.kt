@@ -1,5 +1,5 @@
-// Marcos, Oct 27, 2026: "SPlice console login ADDs an account, it doesn't replace it", after "Why the fuck does the
-// signin refuses to start with sessions running". The goal, as the person at the console sees it: Sign in and Sign in
+// Oct 27, 2026: a console login must add an account and never replace one, and must not refuse to start because
+// sessions are running. The goal, as the person at the console sees it: Sign in and Sign in
 // again on a Claude Code login card, like + Add account, end with one more account the command can use. The login the
 // command's running sessions use stays exactly as it was and stays the selected one, nothing refuses because sessions
 // run, an account the command already holds answers Already added, and an attempt leaves no credential behind once it

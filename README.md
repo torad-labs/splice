@@ -522,6 +522,39 @@ so a second head on such a profile needs `--command`; only the local and api-key
 already holds, a model it does not declare is dropped, unless none is declared. A key, a command or a table that already exists is refused with a
 sentence naming it, and a duplicated TOML table is reported by name and line, never by value.
 
+### Headers for a gateway in front of a provider
+
+If your company runs its own gateway between its developers and a provider (LiteLLM, Kong, Portkey or one of its own),
+point the provider's `base_url` at the gateway. Three keys on the provider's table give the gateway the headers it
+reads:
+
+```toml
+[providers.acme]
+dialect = "anthropic-passthrough"
+base_url = "https://llm-gateway.acme.example"
+auth = { kind = "api-key", env = "ACME_GATEWAY_KEY" }
+extra_headers = { "x-acme-team" = "platform" }
+forward_headers = ["x-acme-user", "x-acme-cost-center"]
+send_version = true
+```
+
+- `extra_headers` sets fixed headers on every request splice sends this provider, model listing included. It
+  replaces a header of the same name that splice would otherwise send there, except the one your login is sent in.
+- `forward_headers` names headers that ride on from Claude Code unchanged, by exact name, on any head. Claude Code
+  adds headers of your own through `ANTHROPIC_CUSTOM_HEADERS`, one `Name: Value` per line. A header the list does not
+  name stays on your machine, so nothing rides on until you name it. A forwarded value replaces an `extra_headers`
+  value of the same name. A login or connection header (`Authorization`, `x-api-key`, `Cookie`, `Host`,
+  `Content-Length` and the like) can't be named: the daemon refuses to start and names the provider. A value that
+  holds one of splice's own keys is not forwarded, and the daemon log names the header.
+- `send_version = true` adds `Via: 1.1 splice (splice/<version>)` to every request splice sends this provider. Via
+  is the header HTTP has a gateway add to a request it passes on (RFC 9110, section 7.6.3), here with splice's
+  version. Claude Code's own `User-Agent` is left as it is. It is off by default, so a provider sees nothing of splice
+  unless you ask.
+
+To require a newer splice, have the gateway refuse a request whose `Via` names an older version, with a JSON body
+like `{"error":{"message":"splice 0.4.1 is too old here: run splice upgrade"}}`. Keep the message short: the line
+Claude Code shows quotes the start of it, up to 160 characters.
+
 ### Test homes and loopback-only endpoint overrides
 
 The sign-in and usage endpoints can be pointed at a stand-in for tests: `CODEX_OAUTH_ISSUER`,

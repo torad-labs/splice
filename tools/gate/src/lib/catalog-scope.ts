@@ -1,5 +1,4 @@
-// What a version catalog change makes the pre-push run. Marcos, Nov 2 2026: "can we make sure that the pre push only runs the
-// diff please, that is change aware. Let's make it scoped." Until then gradle/libs.versions.toml was a `full` path: any change to
+// What a version catalog change makes the pre-push run. Nov 2 2026: the pre-push was to run only what the diff touches, change aware and scoped. Until then gradle/libs.versions.toml was a `full` path: any change to
 // it checked every module and ran the whole unit suite, and on Nov 2 a guava floor two scripts read, a logback floor, two
 // Dependabot bumps and a konsist hold each cost a 15 to 21 minute run.
 //

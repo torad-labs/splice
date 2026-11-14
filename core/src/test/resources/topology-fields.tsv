@@ -94,6 +94,7 @@ providers.*.extra_windows
 providers.*.extra_windows[].context_window	
 providers.*.extra_windows[].id	
 providers.*.extra_windows[].max_context_window	
+providers.*.forward_headers	
 providers.*.local	
 providers.*.models	
 providers.*.models[].client_model	
@@ -160,6 +161,7 @@ providers.*.quirks.tool_surface.search_rounds
 providers.*.quirks.websocket	
 providers.*.quirks.websocket_prefill	
 providers.*.quirks.zstd_request_body	
+providers.*.send_version	
 providers.*.window_rules	
 providers.*.window_rules[].context_window	
 providers.*.window_rules[].prefix	

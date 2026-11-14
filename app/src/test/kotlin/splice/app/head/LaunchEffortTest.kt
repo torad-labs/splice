@@ -1,6 +1,5 @@
-// Marcos, Oct 28: "effort at high by default, but these should be configurable by users in the console and in the toml
-// file", then: "claude code picks should also be considered, for all heads and all adapters we do. Always. WHy one or
-// the other, why can't it be both?" Both: a launched session starts at its head's effort (splice.toml, or the
+// Oct 28: effort defaults to high but must be configurable by users in the console and in the toml file, and Claude
+// Code's own picks must also count, for all heads and all adapters, always: both, not one or the other. So a launched session starts at its head's effort (splice.toml, or the
 // console's Settings, else high), handed to Claude Code as its own --effort, so the session shows it and /effort
 // changes it from there; every adapter then sends the effort Claude Code's request names. A person who gives
 // --effort on the command line keeps theirs.

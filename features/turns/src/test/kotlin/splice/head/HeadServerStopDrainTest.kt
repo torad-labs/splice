@@ -6,8 +6,7 @@
 //
 // The assertions are on WHAT THE CLIENT RECEIVED, never on splice's internal call counts. Since Oct 29, 2026 a
 // restart does not wait for a running turn: it hands it the restart line at once, so the next daemon takes over in
-// seconds (Marcos: "we already send a message saying the server is restarting and so the user knows about it, then
-// we just have the new daemon take over").
+// seconds (a restart already tells the user the server is restarting, so the new daemon just takes over).
 package splice.head
 
 import com.sun.net.httpserver.HttpServer
@@ -536,8 +535,8 @@ class HeadServerStopDrainTest {
         }
     }
 
-    // Marcos, Oct 29, 2026: "we already send a message saying the server is restarting and so the user knows about
-    // it, then we just have the new daemon take over". A restart cuts a running turn at once with the restart line,
+    // Oct 29, 2026: a restart already tells the user the server is restarting, so the new daemon just takes over.
+    // A restart cuts a running turn at once with the restart line,
     // under the head's own default policy, so the next daemon can take over in seconds. The old 45s wait cut every
     // turn longer than itself anyway, and bounced every new request while it waited (155 at the 9:48 PM CT install
     // of Oct 28).

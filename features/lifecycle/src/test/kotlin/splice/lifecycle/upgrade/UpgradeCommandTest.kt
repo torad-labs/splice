@@ -92,8 +92,8 @@ internal class UpgradeCommandTest : UpgradeRig() {
 
     private fun attestations() = calls.filter { it.take(3) == listOf("gh", "attestation", "verify") }
 
-    // Goal (Marcos, Oct 31: "I dont want the release download to be there [GitHub] ... being at Cloudflare makes more
-    // sense"): with no SPLICE_RELEASE_BASE_URL, `splice upgrade` downloads every file of a release from splice.torad.ai/download,
+    // Goal (Oct 31: the release download does not belong on GitHub, and Cloudflare makes more sense):
+    // with no SPLICE_RELEASE_BASE_URL, `splice upgrade` downloads every file of a release from splice.torad.ai/download,
     // the pinned version from its own folder and the newest stable from /latest, and nothing from github.com.
     @Test
     fun `with no override every download of an upgrade comes from splice torad ai`(@TempDir home: Path) {

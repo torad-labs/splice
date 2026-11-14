@@ -3,9 +3,9 @@
 **Verdict: two real architectural differences. One is a knob (landed). The other is not portable
 to a proxy without splice becoming a tool executor.**
 
-Operator observation: "GPT uses a significantly higher amount of tools than kimi and grok do. I
-wonder if it has anything to do with how OpenAI handle tools in general." Also: "tools are sent in
-one object to the backend on the Codex codebase which we don't do."
+Operator observation: GPT uses a significantly higher amount of tools than kimi and grok do, which
+may come from how OpenAI handles tools in general, and the Codex codebase sends tools to the backend
+in one object, which splice does not do.
 
 Both halves check out.
 

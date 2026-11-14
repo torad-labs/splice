@@ -8,15 +8,14 @@ gateway, routed at write time by
 half (the Kotlin module suites, plus the migration oracle's 11 byte-exact
 fixtures — `npm run oracle:replay`). Do not weaken either.
 
-1. **L1 — hard lock RETIRED (2026-07-14); replay DEFAULT-ON (2026-10-23,
-   Marcos).** Replay is a supported, config-gated behavior (`replayReasoning`):
+1. **L1 — hard lock RETIRED (2026-07-14); replay DEFAULT-ON (2026-10-23).** Replay is a supported, config-gated behavior (`replayReasoning`):
    earlier turns' reasoning items ride back as input until the conversation
    compacts, as Codex sends them. It shipped off from 2026-07-15 on a measurement
    that replay thinned the detailed-reasoning "wall" (~4×). The 2026-10-22
    claudex-vs-Codex comparison found the cost of off: only 26% of earlier tool
    steps reached the model with their reasoning, against about 90% in Codex,
-   and a seat lost its reasoning at every peer message. Marcos: off "is a big
-   defect and it should not be off by default". **Replay ships on**;
+   and a seat lost its reasoning at every peer message. Marcos judged off
+   a big defect that should not be the default. **Replay ships on**;
    `replay_reasoning = false` or `CLAUDEX_REPLAY_REASONING=0` turns it off.
    Current launch defaults keep `mirror_reasoning` off under the standing
    project ruling in `CLAUDE.md`; L2 still pins the mirror's implementation and

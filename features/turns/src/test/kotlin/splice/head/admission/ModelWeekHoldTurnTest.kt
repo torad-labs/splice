@@ -1,6 +1,6 @@
-// NEW: a week spent on one model holds a login for that model alone (Marcos, Nov 3, 2026, 1:15 AM CT: "we just hit 5hs
-// limit and instead of handing to the next account with available limit, it just got locked waiting for the 5h limit
-// to finish"). That night Anthropic refused Fable on accounts 2, 3 and 6 with the claim seven_day_overage_included,
+// NEW: a week spent on one model holds a login for that model alone (Nov 3, 2026, 1:15 AM CT: a five-hour limit hit and splice
+// did not hand over to the next account with an available limit, it stayed locked waiting for the limit to end).
+// That night Anthropic refused Fable on accounts 2, 3 and 6 with the claim seven_day_overage_included,
 // their week at 65 to 73% and Fable at 100%, and splice held all three for every model until Nov 8. When account 8, the
 // one in use, hit its five-hour limit, no login was left for Opus or Sonnet, and the turns waited for its reset.
 //

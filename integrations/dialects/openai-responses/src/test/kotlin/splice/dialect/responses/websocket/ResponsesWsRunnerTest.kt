@@ -854,7 +854,7 @@ class ResponsesWsSocketFaultTest {
         assertFalse(runner.isPlannedClose(event(created("r1"))))
     }
 
-    // Marcos, 2026-10-27: "every fallback logs a warning and a counter". A socket that cannot take the round at all is
+    // Marcos, 2026-10-27: every fallback logs a warning and a counter. A socket that cannot take the round at all is
     // counted on the turn, so the head can tell it from a round that was never the websocket's to take.
     @Test
     fun `a round the socket could not send is counted as a transport decline`() = runBlocking {

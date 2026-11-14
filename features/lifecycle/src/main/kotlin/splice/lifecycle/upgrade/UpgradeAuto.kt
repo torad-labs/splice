@@ -1,4 +1,4 @@
-// NEW: auto-update (Marcos, Oct 13: "keep releasing to beta with auto update", and this machine follows beta).
+// NEW: auto-update (Oct 13: keep releasing to beta with auto update, and this machine follows beta).
 //
 // OPT-IN, OR NOTHING POLLS. UpgradeChecks keeps its law that a person's tap is the only way the console learns the newest
 // release; this updater is a second, separate reader that runs only while `[daemon] auto_update = true`, read from

@@ -199,7 +199,7 @@ class WsPeerCloseFallbackTest(@param:TempDir private val tmp: Path) {
     )
 
     // Since 2026-10-27 a socket that closes before any output is replaced once at once on the same login, then HTTP
-    // (Marcos: "a limit error or close mid-request reconnects at once"). Every socket here closes the same way.
+    // (a limit error or close mid-request reconnects at once). Every socket here closes the same way.
     @Test
     fun `a peer close before any output is tried on one fresh socket, then served over HTTP once`() {
         val run = turnAgainst(CODEX_PREAMBLE)

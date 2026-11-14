@@ -137,6 +137,7 @@ class TurnPipelineTest {
         thinking: String,
         emittedThinking: Boolean = false,
         messageClosed: Boolean = false,
+        stopSequence: String? = null,
     ) = TurnOutcome.Success(
         hasToolUse = false,
         incomplete = false,
@@ -151,6 +152,7 @@ class TurnPipelineTest {
             emittedThinking = emittedThinking,
         ),
         shape = ResponseShape(messageClosed = messageClosed),
+        stopSequence = stopSequence,
     )
 
     /** In the uncovered band by construction: too short to promote, too long for the old check. */
@@ -430,6 +432,19 @@ class TurnPipelineTest {
         val rec = run(mirrorReasoning = false, showReasoning = "text", thinking = long)
         assertEquals("terminal", rec.ending)
         assertTrue(rec.texts.any { it == long }, "promote-to-text must emit the thinking verbatim")
+    }
+
+    @Test
+    fun `an answer that ended at its stop string before any text is that empty answer, not the reasoning`() = runTest {
+        val rec = RecTerminal()
+        pipeline().finishStream(
+            rec,
+            outcome("x".repeat(PROMOTED_CHARS), stopSequence = "</block>"),
+            meta("text"),
+            elapsedMs = 1,
+        )
+        assertEquals("terminal", rec.ending)
+        assertTrue(rec.texts.isEmpty(), "the reasoning must not be sent as the answer: ${rec.texts}")
     }
 
     // THE COMPACT HALF OF THE HONESTY GATE. Every case above builds `compact = false`, so only the

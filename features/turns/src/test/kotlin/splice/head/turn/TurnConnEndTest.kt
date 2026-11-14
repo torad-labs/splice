@@ -318,8 +318,8 @@ class TurnConnEndTest {
         assertTrue("70000" !in said, said)
     }
 
-    // V4-164, the operator's banner verbatim: "bonsai: upstream connection failed (no detail) —
-    // retry". The JDK client's refused connect is a ConnectException with a NULL message, and this
+    // V4-164, the operator saw a banner reading that the upstream connection failed with
+    // no detail. The JDK client's refused connect is a ConnectException with a NULL message, and this
     // surface printed Throwable.message. Since failure-handling slice 2 the endpoint and the reason go to
     // the log, and the client reads the refused-connection line, which names no host.
     @Test

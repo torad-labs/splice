@@ -122,8 +122,8 @@ export function stageStepProblem(workflow: Workflow): string | null {
 export const ACCEPTED_ARTIFACT = "accepted-release";
 
 /**
- * Since Oct 31, 2026 the downloads are served from splice.torad.ai, never from GitHub (Marcos: "I dont want the release
- * download to be there"): the GitHub release carries the notes and no file, and the build job keeps the WHOLE accepted
+ * Since Oct 31, 2026 the downloads are served from splice.torad.ai, never from GitHub (the download does not belong
+ * on GitHub): the GitHub release carries the notes and no file, and the build job keeps the WHOLE accepted
  * dist/ as the run's artifact, which `bun tools/release publish --run <id>` takes to the site. DR-25's worry, an asset
  * dropped by a hand list and shipped absent under a green build, has no list left to drop it from: the publisher sends
  * every file sha256sums.txt binds, and the stage task writes the sums over the whole staged set.

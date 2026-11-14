@@ -1,4 +1,4 @@
-// The lines of an open conversation as he reads them (Oct 27; Marcos, Oct 26: "the tool call ui is very busy"). A run of
+// The lines of an open conversation as he reads them (Oct 27; on Oct 26 the tool call UI read as very busy). A run of
 // the same notice from the client stands as one line with its count, which opens every text in place; and a call's file
 // path longer than its line keeps the file's own name whole while the folders before it give way. Through the real
 // Sessions page against a stub daemon, read off the rendered DOM.

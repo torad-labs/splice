@@ -1,5 +1,5 @@
-// Oct 28, 2026 (Marcos: "add the ability for anyone or anything to register to send and receive messages via splice
-// peer. For anything other than claude code, we'll keep it as a manual thing agents have to do"). A bot, a script or
+// Oct 28, 2026 (anyone or anything can register to send and receive messages via splice
+// peer; for anything other than claude code, registering stays a manual step agents take). A bot, a script or
 // another harness registers by hand, and `--owner <pid>` names the process the peer lives and dies with, where the
 // register could only find a codex or claude ancestor. A pid that names no running process is refused before any call.
 package splice.app.cli.peer

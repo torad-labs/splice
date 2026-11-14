@@ -1,5 +1,4 @@
-// A turn waits only on its own failure, never on another turn's (Marcos, Oct 26, approving the login-hold fix: "your 3
-// fixes sounds reasonabel. I KNEW IT WEAS THE CODE"). Until then, a turn that ran out of retries on a 429 put its login
+// A turn waits only on its own failure, never on another turn's (Oct 26, approving the login-hold fix). Until then, a turn that ran out of retries on a 429 put its login
 // on hold, and every later turn on that login slept before it was sent or was refused without reaching the provider.
 // On claude-splice, Oct 25 between 6 and 11 PM CT, the ten slowest such turns waited 45 s to 2.3 min and then failed
 // with the rate-limit error anyway. Each turn now asks the provider itself and gets the provider's own answer.

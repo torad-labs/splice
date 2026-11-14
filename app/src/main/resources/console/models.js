@@ -296,7 +296,7 @@ function winBar(win, max, scale, over = false) {
 
 // ---------- a command's lamp and word ----------
 // What is not read yet draws as its own shape, never as the word "Reading": the state's place is a striped bar its
-// own size ([ghost]), so nothing moves when the word lands (Marcos, Oct 12; the old page said "Reading" on 7 of 11 cards).
+// own size ([ghost]), so nothing moves when the word lands (Oct 12; the old page said "Reading" on 7 of 11 cards).
 function look(c) {
   if (ui.sign?.key === c.key) return { cls: "working", lamp: WAIT, word: "Signing in" };
   if (ui.fixing[c.key]) return { cls: "working", lamp: WAIT, word: ui.fixing[c.key] };
@@ -2944,7 +2944,7 @@ const twinUrl = (p) => commandsOf().find((c) => c.key === p.head_key || c.cmd ==
 // the address is a field when the profile asks for it, for a second command, and once the address did not answer
 // a second command at its provider's own address keeps that provider's address and models, and the form asks which key
 // it sends with: the provider's own (the default, a command on that provider), or a new one, saved as another key under
-// that provider with this command on it (key: "own", AddPrepare; marlin, Oct 12, Marcos's Oct 4 rule: a provider is a
+// that provider with this command on it (key: "own", AddPrepare; marlin, Oct 12, from the Oct 4 rule that a provider is a
 // template). Neither writes over the provider's key.
 const sameUrl = (p, a) => a.url.trim().replace(/\/+$/, "") === twinUrl(p).replace(/\/+$/, "");
 const asksWhichKey = (p, a) => second(p) && sameUrl(p, a) && p.auth_kind === "api-key";
@@ -3160,7 +3160,7 @@ function signIn() {
 }
 // Cancel on a sign-in, an add's or a command's. It ends on splice, and the box goes once splice has answered: it reads
 // Cancelling until then (SIGNIN.cancel). Until Nov 11, 2026 Cancel only forgot it here, and splice went on holding it
-// (Marcos: "it said it canceled ... so it didnt really cancelled"): the provider's callback port stayed taken, and a
+// (the page said cancelled, yet the sign-in had not really been cancelled): the provider's callback port stayed taken, and a
 // sign-in page finished later still filed the login.
 async function cancelSignin(a) {
   const sg = a?.sign ?? ui.sign;
@@ -3290,7 +3290,7 @@ const commandsHtml = () => {
 };
 // THE FIRST READ DRAWS AS THE PAGE THAT IS ARRIVING, not as the word "Reading": the tabs, a rail of ghost cards the
 // size of the cards that land and a ghost pane beside them, so nothing moves when the commands answer. A read that
-// failed says so in the limit colour, with the act that asks again (Marcos, Oct 12: "we can do better than that").
+// failed says so in the limit colour, with the act that asks again (Oct 12: the plain failure state was not good enough).
 // The other two tabs arrive as their own shapes when the address opens on them (?view=every, ?view=projects): the
 // board's command cards, or the projects' wall and pane.
 // The tabs need no read, so they are drawn as they are and answer at once: another tab shows its own arriving shape.

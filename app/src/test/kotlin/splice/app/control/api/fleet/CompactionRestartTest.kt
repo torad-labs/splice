@@ -132,7 +132,7 @@ class CompactionRestartTest {
 
     /** The route names the drain in the daemon's own number, in every phase. Since Oct 29, 2026 it is 0: a restart
      *  tells a request in flight that splice restarted and ends it at once, so Settings' armed Restart promises no time
-     *  to finish (Marcos: "then we just have the new daemon take over"). The phase is whatever earlier tests left. */
+     *  to finish (the new daemon simply takes over). The phase is whatever earlier tests left. */
     @Test
     fun `the status says a restart gives a request in flight no time to finish`() = runBlocking {
         awaitPort()

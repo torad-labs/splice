@@ -1,5 +1,5 @@
-// NEW: Oct 28, 2026, out of PeerCommand.kt by concern (Marcos: "add the ability for anyone or anything to register to
-// send and receive messages via splice peer"): `splice peer register <name> [--cwd DIR] [--send-to A,B] [--owner PID]`.
+// NEW: Oct 28, 2026, out of PeerCommand.kt by concern (anyone or anything can register to send and
+// receive messages via splice peer): `splice peer register <name> [--cwd DIR] [--send-to A,B] [--owner PID]`.
 package splice.app.cli.peer
 
 import splice.core.terminal.TerminalOutput

@@ -1,5 +1,5 @@
 // NEW: Oct 15, 2026 (the splice manager) — POST /api/manager/head: the manager goes on under another head, the same
-// conversation. Marcos: "They should also be able to later change the head without changing the transcript".
+// conversation. The head can be changed later without changing the transcript.
 //
 // While it runs, Continue on moves it (SessionContinue): its client is ended with `/exit` and resumed on the new
 // head's command with `-r <id>`, and an answer naming a session_id (the cross-head copy) makes that id the pointer's.

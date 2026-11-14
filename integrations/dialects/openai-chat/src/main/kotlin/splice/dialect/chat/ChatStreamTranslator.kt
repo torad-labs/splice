@@ -32,6 +32,7 @@ import splice.upstream.retry.FIRST_OUTPUT_TIER
 import splice.upstream.retry.MID_OUTPUT_TIER
 import splice.upstream.retry.MS_PER_S
 import splice.upstream.retry.WatchdogFired
+import splice.upstream.sse.StopSequenceCut
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.BufferCapacity
 import java.io.IOException
@@ -54,7 +55,11 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     private val usage = ChatUsage()
     private val router = ChatEventRouter(channels, toolCalls, ChatFinalToolFold(toolCalls), terminal, usage)
 
+    /** The cut at the client's stop strings, when the request sent any: what it matched ends the turn. */
+    private var stopCut: StopSequenceCut? = null
+
     override suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome {
+        val out = cutAtStops(sink)
         try {
             upstream
                 .takeWhile {
@@ -71,7 +76,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
                     withinCapacity
                 }
                 .firstOrNull { evt ->
-                    router.onEvent(evt, sink)
+                    router.onEvent(evt, out)
                     // The backend's last word (its finish with the bill, or an error chunk) ends the read, as the
                     // Responses twin stops at its completed response, instead of waiting for the socket to close.
                     terminal.ended(usage.billed)
@@ -101,7 +106,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
             if (!clientSawContent()) throw ignored
             unexpected = ignored
         }
-        toolCalls.flushPendingTools(sink)
+        toolCalls.flushPendingTools(out)
         // CX-01: parse each opened tool's accumulated args at terminal; a corrupt/empty tool call
         // becomes a Failure in terminalOutcome, never a Success with a malformed tool_use. Only on a
         // known finish: a stream that tore or stalled mid-arguments always holds incomplete JSON, and
@@ -110,7 +115,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         if (terminal.settled && toolCalls.toolArgsInvalid == null) {
             toolCalls.toolArgsInvalid = toolCalls.firstInvalidToolArgs()
         }
-        sink.closeAll()
+        out.closeAll()
         return terminalOutcome()
     }
 
@@ -215,13 +220,28 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         usage = usage.toUsage(),
     )
 
-    private fun successOutcome(): TurnOutcome = TurnOutcome.Success(
+    /** [sink], cut at the client's stop strings when the request sent any. */
+    private fun cutAtStops(sink: WireSink): WireSink {
+        val cut = ctx.stopSequences.takeIf { it.isNotEmpty() }?.let { StopSequenceCut(sink, it) }
+        stopCut = cut
+        return cut ?: sink
+    }
+
+    private fun successOutcome(): TurnOutcome {
+        // First: cutting an answer that was never streamed is what finds its stop.
+        val text = channels.textBuf.toString()
+        val body = stopCut?.answer(text, streamed = channels.emittedText) ?: text
+        return success(body, stopCut?.matched)
+    }
+
+    private fun success(body: String, stop: String?): TurnOutcome = TurnOutcome.Success(
         hasToolUse = toolCalls.hasToolUse,
-        incomplete = terminal.incomplete,
+        // An answer cut at a stop string ended there, whatever cap the backend reached after it.
+        incomplete = terminal.incomplete && stop == null,
         usage = usage.toUsage(),
         text = RoundText(
             thinkingText = channels.thinkingBuf.toString(),
-            bodyText = channels.textBuf.toString(),
+            bodyText = body,
             emittedText = channels.emittedText,
             emittedThinking = channels.emittedThinking,
         ),
@@ -230,5 +250,6 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         // answer (Claude Code's prompt-suggestion request asks for silence) was graded empty_model and re-sent as an
         // overloaded error. A stream with no finish, or one that stopped on length, stays the honest empty error.
         shape = ResponseShape(messageClosed = terminal.finished && terminal.endedByModel),
+        stopSequence = stop,
     )
 }

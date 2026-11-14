@@ -83,7 +83,7 @@ class ResponsesFoldTest {
 
     @Test
     fun `continuation keeps the summary request (turn-scoped dedup owns the repeats)`() {
-        // Operator call 2026-07-26: "always show the reasoning, detailed" — the summary request
+        // Operator call 2026-07-26: the reasoning is always shown, in detail — the summary request
         // rides on continuations; exact repeats are suppressed in the stream translator instead.
         val withSummary = Json.parseToJsonElement(
             """{"model":"gpt-5.6-luna","input":[{"role":"user","content":"solve it"}],

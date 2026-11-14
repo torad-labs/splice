@@ -111,5 +111,5 @@ class UpstreamClientStatusTest {
         assertTrue(failure.evidence.body.orEmpty().endsWith("[… omitted …]"))
     }
 
-    // V4-61 REVERSED THIS: it pinned the give-up the operator reported as "it did not retry".
+    // V4-61 REVERSED THIS: it pinned the give-up the operator reported as not retried.
 }

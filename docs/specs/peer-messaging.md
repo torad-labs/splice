@@ -351,8 +351,7 @@ All of these are named constants, each with a `// why:` line, as the silent-cons
 
 ### 4.1 Lifecycle (B)
 
-- **One host for every peer** (Oct 28, 2026, replacing one JVM per peer; Marcos: "yeah replcace the java process per
-  peer"). A JVM per peer cost 80 to 110 MB of memory each. One process now serves every peer of a state folder: the
+- **One host for every peer** (Oct 28, 2026, replacing one JVM per peer, as Marcos asked). A JVM per peer cost 80 to 110 MB of memory each. One process now serves every peer of a state folder: the
   splice jar run as
   `java -Xmx128m -XX:+UseSerialGC -cp <splice.jar> splice.app.MainKt peer-host --settings … --state …`,
   with `--registry`, `--runtime` and `--build` after them. It enters through `Main.kt`, because the architecture

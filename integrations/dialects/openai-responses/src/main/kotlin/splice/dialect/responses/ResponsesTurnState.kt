@@ -12,6 +12,7 @@ import splice.dialect.responses.reasoning.ResponsesNativePrefix
 import splice.dialect.responses.request.BlockState
 import splice.dialect.responses.request.ToolSalvage
 import splice.dialect.responses.stream.ResponsesCompletedOutput
+import splice.upstream.sse.StopSequenceCut
 import splice.upstream.transport.BufferCapacity
 
 /**
@@ -53,6 +54,10 @@ internal class ResponsesTurnState {
 
     /** Terminal-only text remains a promotion candidate. A terminal suffix after live text is emitted separately. */
     var terminalTextSuffix: String? = null
+
+    /** The cut at the client's stop strings, when the request sent any: what it matched ends the turn, and the text it
+     *  showed is the answer's text. */
+    var stopCut: StopSequenceCut? = null
 
     /** codex-parity active-item tracking (sequential_cutoff, 2026-08-26; codex-rs
      *  session/turn.rs: `active_item` is set by every OutputItemAdded and taken by

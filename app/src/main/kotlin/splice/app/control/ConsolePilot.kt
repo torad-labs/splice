@@ -1,4 +1,4 @@
-// NEW: Oct 16, 2026 (Marcos: "Everything that the user can do the agents should be able to do it too"). The relay
+// NEW: Oct 16, 2026 (whatever a person can do in the console, an agent should be able to do too). The relay
 // that lets `splice console <action>` drive the console a person has open. The CLI posts one order; the daemon hands
 // it to the tab the person looked at last, which acts on its own page (pilot.js) and posts its answer back, and the
 // CLI prints that answer. The daemon reads nothing in an order but its action word: what a tap or a fill does is the

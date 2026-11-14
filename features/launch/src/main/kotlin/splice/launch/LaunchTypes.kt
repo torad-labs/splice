@@ -88,9 +88,9 @@ public data class LaunchSpec(
     val signIn: LaunchSignIn,
     val gateway: LaunchGateway,
     val policy: ClaudePolicy,
-    /** The effort the session starts at, handed to Claude Code as its own --effort (Marcos, Oct 28: "effort at high
-     *  by default ... configurable by users in the console and in the toml file", and "claude code picks should also
-     *  be considered ... why can't it be both?"). Read per launch, so a change in the console reaches the next one;
+    /** The effort the session starts at, handed to Claude Code as its own --effort (Oct 28: effort is high
+     *  by default and configurable by users in the console and in the toml file, and Claude Code's own picks count
+     *  too, both and not one or the other). Read per launch, so a change in the console reaches the next one;
      *  Claude Code's /effort changes it from there, and every adapter sends what Claude Code's request names. Null
      *  for a spec that names none, such as a command another machine serves. */
     val effort: LaunchEffort? = null,

@@ -1,5 +1,5 @@
-// NEW: WHO GETS ITS EARLIER REASONING BACK, decided at the assembly point (Marcos, 2026-10-23: "pass reasoning for
-// self served heads like glm and qwen").
+// NEW: WHO GETS ITS EARLIER REASONING BACK, decided at the assembly point (2026-10-23: reasoning is passed back for
+// self-served heads such as glm and qwen).
 //
 // A self-served head is a local runtime (llama-server here): its chat template renders each earlier assistant turn's
 // reasoning_content inside that turn's think block, so sending it back is how the model reads the history it wrote.

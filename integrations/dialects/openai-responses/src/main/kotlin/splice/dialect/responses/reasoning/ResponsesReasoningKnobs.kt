@@ -32,8 +32,8 @@ internal class ResponsesReasoningKnobs(private val quirks: ResponsesQuirks) {
         if (requested == "none") return requested
         // Thinking off is never a reasoning choice (Marcos, 2026-10-27): the turn keeps the effort it
         // asked for, else the configured one, else high. A disabled thinking config's budget picks nothing.
-        // Both count (Marcos, 2026-10-28: "claude code picks should also be considered, for all heads and all adapters
-        // we do"): Claude Code's pick rides, and the configured effort reaches it as the --effort a launch starts at.
+        // Both count (Marcos, 2026-10-28: Claude Code's picks count on every head and
+        // every adapter): Claude Code's pick rides, and the configured effort reaches it as the --effort a launch starts at.
         var effort = requested
         if (effort == null) {
             // v27: the /effort picker (budget) WINS over the config/env fallback

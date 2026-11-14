@@ -66,7 +66,7 @@ public class AccountPool(
     public var membershipRefresh: AccountMembershipRefresh? = null
 
     /** Every read of the pool starts here, so a pin whose login read a new limit lets go before anything reads the pin
-     *  (Marcos, Nov 3, 2026: "make the pin let go at the first limit reading instead of pulling seats back"). */
+     *  (Nov 3, 2026: a pin lets go at the first limit reading instead of pulling seats back). */
     private val liveMembership: AccountMembership
         get() {
             membershipRefresh?.refresh()
@@ -345,7 +345,7 @@ public class AccountPool(
     /** Clears only runtime stickiness/cooldowns; persisted quota and credential files stay untouched. The operator's
      *  policy stays too: the saved order, and the pins, which the daemon saves and puts back when it builds the head.
      *  Every head start runs this reset (HeadLifecycle), so a pin it cleared died at the restart that was to keep it
-     *  (Nov 3, 2026: the install of #461 dropped Marcos's pin on account-3 that way). */
+     *  (Nov 3, 2026: the install of #461 dropped the pin on account-3 that way). */
     public fun reset() {
         synchronized(sessions) { sessions.clear() }
         synchronized(statelessLock) { statelessPrevious = null }
@@ -440,8 +440,8 @@ public class AccountPool(
     }
 
     /** One order for selection and its preview. A session stays on its free login in either mode, until a limit
-     *  (Marcos, Oct 3: "a session stays put until a limit"); where it moves next is the quota that resets soonest, or
-     *  the person's saved order, which also places a session that has no login yet. */
+     *  (Oct 3: a session stays put until a limit); where it moves next is the quota that resets soonest, or the
+     *  person's saved order, which also places a session that has no login yet. */
     private fun candidates(
         previousLabel: String?,
         current: AccountMembership,
@@ -481,7 +481,7 @@ public class AccountPool(
             .distinctBy(PoolAccount::label)
             .filter { it.label !in excluded }
         // A warm session keeps its login through a short rate limit, which admission waits out: a move rebuilds its
-        // whole cache on the next login (Marcos, Oct 19). A pin or a changed caller login elsewhere still wins.
+        // whole cache on the next login. A pin or a changed caller login elsewhere still wins.
         val stay = caller.stays(previous, current.byLabel, preference, at)?.takeIf { it.label !in excluded }
         val free = AccountAvailability.preferredFree(order, at, caller.model)
         val held = AccountAvailability.nearestHeld(order, at, caller.model)

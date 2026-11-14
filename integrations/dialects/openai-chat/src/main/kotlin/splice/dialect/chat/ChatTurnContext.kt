@@ -18,4 +18,7 @@ public data class ChatTurnContext(
     val replies: Replies = Replies(ChatReplies),
     /** Whose login the head sends, which names the owner of a login an error chunk rejects. */
     val owner: LoginOwner = LoginOwner.SPLICE,
+    /** The client's stop strings (TurnRoute.stopSequences). The dialect sends no stop parameter, so the answer is
+     *  cut at them on its way to the client (splice.upstream.sse.StopSequenceCut). */
+    val stopSequences: List<String> = emptyList(),
 )

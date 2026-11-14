@@ -3,6 +3,7 @@
 // the head's layers even when the head's own mode is replace, it is resolved per turn (an edit lands
 // on the next turn with no restart), and the one turn whose slot text changed carries
 // slot_prompt_changed=1 in its perf counters, which PerfStats writes into the turn's perf row.
+// Claude Code's auto-mode review gets neither the head's layers nor the slot text: its policy goes upstream as written.
 package splice.head.turn
 
 import io.ktor.client.request.header
@@ -29,6 +30,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.perf.TurnPerf
 import splice.core.prompt.HeadSystemPrompt
+import splice.core.prompt.SYSTEM_PROMPT_LAYERS
 import splice.core.prompt.SystemPromptLayers
 import splice.core.prompt.SystemPromptMode
 import splice.core.turn.WatchdogBudget
@@ -40,6 +42,8 @@ import splice.head.HeadDeps
 import splice.head.RequestBodyReader
 import splice.head.admission.AdmissionResponses
 import splice.head.headDeps
+import splice.head.turn.review.AUTO_MODE_REVIEW
+import splice.head.turn.review.AUTO_MODE_REVIEW_NEAR_MISS
 import splice.sessions.prompt.SLOT_PROMPT_CHANGED
 import splice.sessions.prompt.SlotInstructions
 import splice.sessions.teams.Team
@@ -59,6 +63,14 @@ private const val MODEL = "kimi-k2"
 private const val REQUEST =
     """{"model":"claude-kimi--$MODEL","stream":false,"max_tokens":16,""" +
         """"system":[{"type":"text","text":"house rules"}],"messages":[{"role":"user","content":"hello"}]}"""
+
+private const val REVIEW_POLICY = "You are a security monitor for autonomous AI coding agents. Judge the action."
+private const val REWORDED_POLICY = "You are the security monitor for an autonomous coding agent."
+
+/** A request whose system text is [system], as Claude Code's auto-mode review sends its policy. */
+private fun reviewRequest(system: String): String =
+    """{"model":"claude-kimi--$MODEL","stream":false,"max_tokens":64,""" +
+        """"system":[{"type":"text","text":"$system"}],"messages":[{"role":"user","content":"Bash: rm -rf build"}]}"""
 
 private class SlotTestAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("token", "account")
@@ -121,11 +133,28 @@ class SlotPromptTurnTest {
         assertEquals(1L, cold[SLOT_PROMPT_CHANGED], "dropping the text changes the prefix too")
     }
 
+    @Test
+    fun `the auto-mode review reaches the upstream with its own policy and nothing of the head or the slot`() {
+        bindBuilder("run the gate")
+        val (turn, counters) = turn(SystemPromptMode.REPLACE, reviewRequest(REVIEW_POLICY))
+        assertEquals(listOf(REVIEW_POLICY), systemTexts(turn), "neither the replacing layer nor the slot text")
+        assertEquals(1L, counters[AUTO_MODE_REVIEW])
+        assertNull(counters[SYSTEM_PROMPT_LAYERS], "no layer was applied, so none is counted")
+    }
+
+    @Test
+    fun `a reworded review policy gets the head layers and is counted as a near miss`() {
+        val (turn, counters) = turn(SystemPromptMode.APPEND, reviewRequest(REWORDED_POLICY))
+        assertEquals(listOf(REWORDED_POLICY, "N"), systemTexts(turn))
+        assertEquals(1L, counters[AUTO_MODE_REVIEW_NEAR_MISS])
+        assertNull(counters[AUTO_MODE_REVIEW])
+    }
+
     private fun systemTexts(turn: BuiltTurn): List<String> = turn.requestBody.getValue("system").jsonArray
         .map { it.jsonObject.getValue("text").jsonPrimitive.content }
 
     /** One request through a head wired with the shared [slots], and the turn's perf counters. */
-    private fun turn(headMode: SystemPromptMode): Pair<BuiltTurn, Map<String, Long>> {
+    private fun turn(headMode: SystemPromptMode, body: String = REQUEST): Pair<BuiltTurn, Map<String, Long>> {
         val deps = headDeps(
             tmp = tmp,
             upstream = UpstreamClient(totalTimeoutMs = 1_000),
@@ -165,7 +194,7 @@ class SlotPromptTurnTest {
             client.post("/v1/messages") {
                 header(HttpHeaders.ContentType, "application/json")
                 header("x-claude-code-session-id", SESSION)
-                setBody(REQUEST)
+                setBody(body)
             }
         }
         return requireNotNull(captured) to perf.snapshot().counters

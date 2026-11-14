@@ -61,7 +61,7 @@ const TOPIC = Object.fromEntries(TOPICS.map((x) => [x.id, x]));
 const topicOf = (key) => KNOB[key].home || KNOB[key].adv || TOPICS.find((x) => x.keys && x.keys.includes(key)).id;
 /** The settings this page offers: every one with a job here. One the running splice reads only at start (GET
  *  each knob's disposition in /api/config, Knob.kt) stays editable and reads "Applies on restart" (v0.4.0 section 9,
- *  Resolved, Marcos's decision, which the Oct 10 "every knob drawn applies live" reading gave way to). */
+ *  Resolved, a decision which the Oct 10 "every knob drawn applies live" reading gave way to). */
 const liveKnobs = () => (KNOBS.others(), Object.values(KNOB))
   .filter((k) => (k.home || k.adv ? TOPIC[k.home || k.adv] : TOPICS.some((x) => x.keys && x.keys.includes(k.key))));
 // A setting that does nothing right now still shows, read-only, with why (v0.4.0 section 9: every knob shows; the lead's
@@ -355,7 +355,7 @@ function elOf(key) {
 // the line says "2" where the setting stands as "2", so no name is written twice on the screen.
 const TIE_NO = { showReasoning: 1, summary: 2, progressLine: 3, verbosity: 4 };
 // ---------- a section's settings, on one grid ----------
-// A SETTING IS A ROW, AND WHAT IT DOES IS DRAWN ON IT (Oct 27, from Marcos's "show don't tell"): its name, its control
+// A SETTING IS A ROW, AND WHAT IT DOES IS DRAWN ON IT (Oct 27, from the show-rather-than-tell rule): its name, its control
 // and, where this page reads the fact, the drawing of what the value does, each in a column of its own, so the names,
 // the controls and the drawings start at one x down a section. A section whose rows draw nothing is two columns.
 // [draw] gives a row its own drawing by key. [ax] puts the drawings on one time axis, its ticks said once under the
@@ -401,7 +401,7 @@ function krowsHtml(keys, { ax = null, draw = {}, mark = null, adv = null } = {})
   }
   return `<div class="krows${cols}">${head}${rows.join("")}${foot}${more}</div>`;
 }
-// THE MARKS ARE NAMED ONCE A PANE (Marcos, Oct 25: "show don't tell"): the first section carrying a mark names it on its
+// THE MARKS ARE NAMED ONCE A PANE (Oct 25: show rather than tell): the first section carrying a mark names it on its
 // kicker line, a later one naming only the marks above it did not. The knob kit owns the rule (KNOBS.legendHtml's
 // [said] set, which every view shares): that includes the ring-and-plus slot where a value for one command is set, so
 // no row says "One command" and no topic repeats a scope sentence.
@@ -1162,7 +1162,7 @@ const busyHtml = () => {
 // ---------- Reasoning ----------
 // REASONING HAS NO FIGURE, SO IT OPENS ON THE THING ITSELF (Oct 26): nothing on the wire counts what a reasoning setting
 // did, so this topic leads with the terminal it changes, drawn from the live values as shapes, never as sample words or
-// numbers (Marcos, Oct 25: "no made-up data"). Each line a setting decides is named in the terminal's margin by that
+// numbers (Oct 25: no made-up data). Each line a setting decides is named in the terminal's margin by that
 // setting's own name, and pointing at the line or at the setting lights the other (settings.css), so a choice is read
 // as the line it adds, moves or takes away. A line a setting takes away keeps its place, dashed, with the value that
 // took it.
@@ -2307,7 +2307,7 @@ function summary(id) {
   return h.some((x) => x === null) ? ["Not read"] : [...(stop ? [`Saving stopped ${stop.when}`] : []), `${mbWord(h.reduce((s, x) => s + x.bytes, 0))} kept`];
 }
 // ---------- what a rail card draws ----------
-// A CARD SHOWS THE STATE, NOT THE SETTING (Marcos, Oct 25: "show don't tell"): the rail's job is to say which topic
+// A CARD SHOWS THE STATE, NOT THE SETTING (Oct 25: show rather than tell): the rail's job is to say which topic
 // needs him, and a sentence does that only after it is read. Where this page already holds a figure, the card draws
 // it on the scale it belongs to — a share of a limit as a meter, two outcomes on one scale, a failure in the limit
 // red. Where the fact is a choice and not a quantity (how reasoning shows), the choice itself is the state and stays
@@ -2458,7 +2458,7 @@ function render() {
   if (ui.err) { root.innerHTML = `<div class="list rail plain empty"><div class="nomatch"><span class="state limit">${esc(ui.err)}</span><button class="act quiet" data-act="again">Read again</button></div></div>`; return; }
   ui.legendSaid = new Set();
   ui.advIn = null;
-  // SEARCH NARROWS, IT NEVER EMPTIES (Marcos, Oct 25): every topic keeps its place on the rail and the ones with no
+  // SEARCH NARROWS, IT NEVER EMPTIES (Oct 25): every topic keeps its place on the rail and the ones with no
   // match go quiet, so the shape of the page does not change under him and a miss is read as a miss. A search that
   // finds nothing keeps the topic he was on, and says so once, beside the field (searchCount).
   const all = jobs(), searching = words().length > 0;
@@ -2650,7 +2650,7 @@ document.addEventListener("click", (e) => {
 const opened = location.hash.slice(1);
 if (Object.hasOwn(TOPIC, opened)) { ui.open = opened; ui.chosen = true; ui.shown = true; }
 // before the first read answers, the rail draws its cards: their names and glyphs are this page's own, and each card's
-// state is the ghost of what will land in it (Marcos, Oct 12: a blank page under its title read as broken)
+// state is the ghost of what will land in it (Oct 12: a blank page under its title read as broken)
 // EACH CARD'S GHOST IS THE STATE IT WILL HOLD (Oct 27): the pairs of a word, a figure and a bar the card draws once read,
 // in their own words, their figures striped and their bars empty tracks, so no card grows and no card under it moves
 // when the reads land. A one-line stripe stood where two pairs land, and the rail grew 150 px under the pointer.

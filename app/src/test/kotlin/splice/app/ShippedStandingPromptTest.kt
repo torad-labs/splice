@@ -1,7 +1,6 @@
-// Marcos, Oct 28: "ship Splice by default with a pre defined configured append system prompt, that the user can
-// change if they'd like ... that covers the gaps that make codex better at certain behaviors or even where we can
-// improve some GPT failures we can identify from transcripts, like for example, stopping before the work is fully
-// done, or overchecking, over testing and over reading." Claude Code's own prompt stays: the shipped text is appended.
+// Oct 28: Splice ships by default with a predefined append system prompt the user can change, covering the gaps that
+// make codex better at certain behaviors and GPT failures identified from transcripts, such as stopping before the
+// work is fully done, or overchecking, over-testing and over-reading. Claude Code's own prompt stays: the shipped text is appended.
 //
 // The goal, as a person running a head sees it: a head on an OpenAI Responses provider that sets no prompt of its own
 // gets splice's shipped instructions appended to Claude Code's; a prompt the person sets replaces the shipped one; an

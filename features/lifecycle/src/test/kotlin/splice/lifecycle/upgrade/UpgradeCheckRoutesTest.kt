@@ -29,7 +29,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-// Releases download from splice.torad.ai/download since Oct 31 (Marcos: "I dont want the release download to be there [GitHub]").
+// Releases download from splice.torad.ai/download since Oct 31 (the release download does not belong on GitHub).
 private const val LATEST_BASE = "https://splice.torad.ai/download/latest"
 
 class UpgradeCheckRoutesTest {

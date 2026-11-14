@@ -176,7 +176,7 @@ test("at 1440 the same chips wrap inside their row instead of running past its e
 
 // A setting that carries per-command values takes the line it is on, as a section holding one setting does: its chips
 // make it taller than the plain ones, and a plain setting beside it would stand with empty space under its control. Every
-// row fills its section (Marcos: "why are we having all this empty space", Oct 11).
+// row fills its section (Oct 11: the empty space in them was unwanted).
 test("a setting carrying per-command values has its line to itself, and every row fills its section", async () => {
   const page = await open(3828, 2130);
   try {

@@ -29,7 +29,7 @@ public class SwitchRoute(private val resolver: AccountHeadResolver) {
      *  turn, so pinning it is a promise nothing keeps: it answers 409 with the account's own sentence and pins
      *  nothing. An account the pool does not list keeps the pin's 400.
      *
-     *  Nov 3, 2026 (Marcos: "clicking 'use now' also didnt work"): an account the provider holds for every model, its
+     *  Nov 3, 2026 (clicking Use now did not work): an account the provider holds for every model, its
      *  plan window named spent, serves no turn until that reset, so pinning it is the same empty promise: a 409 that
      *  names the window and the reset, and nothing pinned. An account held for one model's week serves every other
      *  model, so it pins, and the answer names each model it cannot serve yet and until when (`models_held`), so a turn

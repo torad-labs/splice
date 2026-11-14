@@ -140,7 +140,7 @@ describe("the gradle slot", () => {
     expect(await runUnderSlot({ layout: fake.layout, label: "red", args: ["check"], env: { CI: "1", PATH: fake.path } })).toBe(7);
   });
 
-  // 2026-10-25 (Marcos: "let's fix the gradle cache issue"): Gradle's 30-day cache cleanup deletes a dependency's
+  // 2026-10-25 (fixing the Gradle cache issue): Gradle's 30-day cache cleanup deletes a dependency's
   // POM that no build re-read while its jar stays, and an --offline run cannot fetch it again, so dependency
   // verification failed every local build until someone refetched ~600 POMs by hand. Every run, local or CI, lets
   // Gradle download what its cache lost; with pinned versions it touches the network only for a missing file.

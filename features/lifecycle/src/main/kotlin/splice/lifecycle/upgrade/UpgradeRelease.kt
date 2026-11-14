@@ -25,7 +25,7 @@ internal const val SUMS_ASSET = "sha256sums.txt"
 // one name carrying two meanings is a reading hazard whether or not the compiler minds.
 private const val GITHUB_REPO = "torad-labs/splice"
 
-/** Where releases are downloaded from since Oct 31, 2026 (Marcos: the release download belongs at Cloudflare, not
+/** Where releases are downloaded from since Oct 31, 2026 (the release download belongs at Cloudflare, not
  *  GitHub): /latest/ follows the newest stable release, /v<version>/ holds each release, /releases.json lists them. */
 internal const val RELEASE_SITE = "https://splice.torad.ai/download"
 private const val SHIM_MODE = "rwxr-xr-x"

@@ -1,5 +1,5 @@
-// Goal (Marcos, Oct 31: "I dont want the release download to be there [GitHub] ... being at Cloudflare makes more
-// sense"; then "Have tje download be splice.torad.ai/download"): publishing a built release puts it on splice.torad.ai/download, where the installer and `splice upgrade` find it.
+// Goal (Oct 31: the download does not belong on GitHub, and Cloudflare suits it better, at
+// splice.torad.ai/download): publishing a built release puts it on splice.torad.ai/download, where the installer and `splice upgrade` find it.
 //
 //   - after a publish, splice.torad.ai serves every file of the release byte for byte from /download/v<version>/,
 //     cached for good, lists the release in /download/releases.json (a beta as a prerelease), never cached, and

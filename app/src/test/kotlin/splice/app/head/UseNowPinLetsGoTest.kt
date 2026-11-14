@@ -1,6 +1,6 @@
-// NEW: a Use now pin lets go at its login's first limit reading (Marcos, Nov 3, 2026, through Simon: "when account-3
-// hit its limit at 5:16 PM CT, the #463 Use-now pin pulled seats back to account-3 for ~6 minutes before they settled
-// on account-8. Please make the pin let go at the first limit reading instead of pulling seats back").
+// NEW: a Use now pin lets go at its login's first limit reading (Nov 3, 2026, reported through Simon: when account-3
+// hit its limit at 5:16 PM CT, the #463 Use-now pin pulled seats back to account-3 for about 6 minutes before they
+// settled on account-8; the pin should let go at the first limit reading instead of pulling seats back).
 //
 // That evening Anthropic refused Fable on account-3 for the week (seven_day_overage_included, Fable alone) at 5:16 PM
 // CT. The pin stayed and account-3 still served Opus, so at 5:22 PM CT a short 429 on account-8 sent a seat back to

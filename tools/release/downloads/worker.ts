@@ -1,6 +1,5 @@
-// splice.torad.ai/download — where splice's releases are downloaded from since Oct 31, 2026 (Marcos: "I dont want the
-// release download to be there [GitHub] ... being at Cloudflare makes more sense", then "Splice.torad.ai should be
-// splices website ... Have tje download be splice.torad.ai/download"). A Cloudflare Worker in front of the
+// splice.torad.ai/download — where splice's releases are downloaded from since Oct 31, 2026 (the download does not belong
+// on GitHub, and Cloudflare suits it better; splice.torad.ai is splice's website, with the download at /download). A Cloudflare Worker in front of the
 // splice-releases R2 bucket, which `bun tools/release` publishes into (src/lib/downloads.ts):
 //
 //   /download/v<version>/<file>  a published file; a version never changes once published, so it is cached for a year
@@ -9,7 +8,7 @@
 //   /download/install.sh         the newest stable release's installer, served directly for `curl … | bash`
 //   /download/releases.json      the published list the updater reads (ReleaseChannel.kt), newest first, never cached
 //
-// The rest of the host is splice's website (Marcos: "Yes, at splice.torad.ai, with downloads at /download"): every other
+// The rest of the host is splice's website (at splice.torad.ai, with downloads at /download): every other
 // path is answered by the site's static files in ./site, and no site file ever answers for a /download path. Anything
 // but GET and HEAD is 405. The worker reads the bucket and never writes it.
 

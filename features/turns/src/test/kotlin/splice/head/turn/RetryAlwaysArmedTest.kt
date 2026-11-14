@@ -1,6 +1,5 @@
-// OPERATOR LAW, 2026-09-16, Marcos verbatim: "I need an E2E test that will break if we ever
-// remove the retries again. We should ALWAYS have some sort of retry armed. ALWAYS. There will
-// never be a case, if an error occur, that we wont have a way to retry."
+// OPERATOR LAW, 2026-09-16: an E2E test must break if the retries are ever removed again. Some sort of
+// retry is ALWAYS armed: there is never a case where an error occurs and there is no way to retry.
 //
 // THE INVARIANT. Every turn that ends in an error must leave the client able to recover. For every
 // error class the gateway can produce, the CLIENT-VISIBLE outcome must be exactly one of:
@@ -12,8 +11,8 @@
 // Anything in none of the four FAILS BY NAME.
 //
 // (d) RECONCILED WITH V4-62 — TWO LAWS THAT TURNED OUT TO GOVERN DIFFERENT LAYERS.
-// The operator's law ("we would retry on any error, no matter what, with different levels of retry
-// and escalation + backoff") is about what SPLICE does to the upstream, and V4-62 made it so: the
+// The operator's law (retry on any error, no matter what, with different levels of retry
+// and escalation plus backoff) is about what SPLICE does to the upstream, and V4-62 made it so: the
 // status gate is gone from RetryPolicy and a 400 now takes the same 200ms curve as a 503. This list
 // is about what the CLIENT can usefully do with the ENDING. Different questions.
 //
@@ -101,7 +100,7 @@ private val EXCLUDED: Map<ErrorType, String> = mapOf(
  *  is NOT a pass: the test fails by name and says a driver is owed. */
 private val DRIVER: Map<ErrorType, String?> = mapOf(
     // RATE_LIMIT is driven TWICE by design: the first turn meets the limit mid-stream, which arms
-    // the cooldown, and the SECOND asks the provider itself (Marcos, Oct 26: a turn waits only on its
+    // the cooldown, and the SECOND asks the provider itself (Oct 26: a turn waits only on its
     // own failure), so it must end exactly as recoverable as the first.
     ErrorType.RATE_LIMIT to "quota429+quota429",
     ErrorType.OVERLOADED to "overload_503",
@@ -284,7 +283,7 @@ class RetryAlwaysArmedTest {
             assertTrue(firstBody.contains(OUTLASTED_LIMIT), "the limit's own line: ${firstBody.take(400)}")
             assertTrue(classify(firstStatus, firstBody) != "UNRECOVERABLE", "an answer the law names: $firstBody")
 
-            // The next turn asks the provider itself (Marcos, Oct 26), so a limit that still holds is held again.
+            // The next turn asks the provider itself (Oct 26), so a limit that still holds is held again.
             val (nextStatus, nextBody) = request("quota429")
             assertEquals(200, nextStatus, "the next turn is held and committed like the first: ${nextBody.take(240)}")
             assertTrue(nextBody.contains(OUTLASTED_LIMIT), "and ends the same way: ${nextBody.take(400)}")

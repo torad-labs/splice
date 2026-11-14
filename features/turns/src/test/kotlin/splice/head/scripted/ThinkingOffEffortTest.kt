@@ -1,5 +1,4 @@
-// NEW: thinking off never costs a turn its reasoning (Marcos, 2026-10-27: "thinking being off should never be a
-// thing"). A Claude Code request whose thinking is disabled reaches the provider with the reasoning any other request
+// NEW: thinking off never costs a turn its reasoning (2026-10-27: thinking off is never a mode that drops reasoning). A Claude Code request whose thinking is disabled reaches the provider with the reasoning any other request
 // gets, through a real head: on a Responses head the effort it asked for with the head's summary, on a Chat head the
 // effort. Every assertion reads the request the provider received.
 package splice.head.scripted

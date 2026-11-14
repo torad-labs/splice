@@ -76,7 +76,7 @@ public object ConfigFindings {
         return refused(checks + OperatorTelemetryFindings.of(topology) + local + elsewhere(topology), topology)
     }
 
-    /** A knob finding keeps boot's own reason as written (the console writer pins it word for word); the boot
+    /** A knob finding keeps boot's own reason as written (the console writer pins its exact text); the boot
      *  refusal adds what to do about it. A retired knob has no value left to fix, only its line to remove. */
     private fun withFix(finding: TopologyFinding): String = when {
         !finding.path.startsWith("defaults.") && !finding.path.contains(".overrides.") -> finding.message

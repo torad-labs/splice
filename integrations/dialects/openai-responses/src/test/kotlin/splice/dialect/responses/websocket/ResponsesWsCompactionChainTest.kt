@@ -1,4 +1,4 @@
-// Goal (Marcos, 2026-10-25, "both"): Claude Code sends a compaction as the previous request plus the summary
+// Goal (Marcos, 2026-10-25): Claude Code sends a compaction as the previous request plus the summary
 // instruction and drops the answer it just received, so that answer's tool call stays open on the Responses
 // websocket. Full-sent, the compaction depends on the provider finding the prompt again, and on claudex it missed
 // the cache far more often than a chained turn (0 of 14 chained compactions missed; 17 of 228 warm ones did).
@@ -7,9 +7,9 @@
 // ensure_call_outputs_present), then the compaction's new items follow. A compaction that rewrote its history still
 // full-sends.
 //
-// Since Marcos, 2026-10-27 ("unanswered tool calls are closed as aborted and chaining continues"), an ordinary turn
+// Since Marcos, 2026-10-27 (unanswered tool calls are closed as aborted and chaining continues), an ordinary turn
 // that leaves a call open chains the same way, as codex-rs does for every request. A code-mode call on an ordinary turn
-// is the one exception ("a code-mode dangling call is flagged and left alone"): code mode runs it itself, so the turn
+// is the one exception (a code-mode dangling call is flagged and left alone): code mode runs it itself, so the turn
 // full-sends as before and the log says so.
 package splice.dialect.responses.websocket
 

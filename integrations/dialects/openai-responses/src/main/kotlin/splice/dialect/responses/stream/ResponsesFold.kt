@@ -67,8 +67,8 @@ internal class ResponsesFoldPolicy(
 internal class ResponsesContinuation {
     private val pairing = ResponsesCallPairing()
 
-    /** The summary request RIDES ALONG on continuations by design (operator call 2026-07-26: "I
-     *  want to always see the reasoning, detailed"): the duplicated sections that the re-request
+    /** The summary request RIDES ALONG on continuations by design (operator call 2026-07-26: the
+     *  reasoning is always shown, in detail): the duplicated sections that the re-request
      *  provokes are suppressed turn-scoped in the stream translator (SharedSummaryParts) — exact
      *  repeats of a section already emitted this turn never reach the client; every genuinely-new
      *  section does. */

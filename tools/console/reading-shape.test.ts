@@ -1,5 +1,5 @@
-// A page still reading draws its own shape, never the lone word "Reading" (Marcos, Oct 12: "we can do better than that
-// reading indicator"). With every daemon read held open, Requests, Teams, Usage and Settings each draw striped bars where
+// A page still reading draws its own shape, never the lone word "Reading" (Oct 12: the plain reading indicator
+// was to be improved). With every daemon read held open, Requests, Teams, Usage and Settings each draw striped bars where
 // their figures will land, and Settings draws its own cards, each with a ghost where its figure will land.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser } from "@playwright/test";
@@ -76,7 +76,7 @@ test("teams keeps Read again off while its read is out", () => reading("teams", 
 
 // Breakdown is the "Where it went" band now and Results by command its own band (the Usage rebuild, Oct 26): each draws
 // its own table in stripes, in the band its rows land in. Results by command lives in #band-results again (b64e9f989,
-// as Marcos approved it Oct 29); Performance under it stays folded to one line and draws no card until it is opened.
+// as approved Oct 29); Performance under it stays folded to one line and draws no card until it is opened.
 test("usage draws Breakdown and Commands in the frames they land in, one card each", () => reading("usage", async (p) => {
   expect(await p.locator("#band-by .card .ghost").count()).toBeGreaterThan(3);
   expect(await p.locator("#band-by .card.ghosted").count()).toBe(1);

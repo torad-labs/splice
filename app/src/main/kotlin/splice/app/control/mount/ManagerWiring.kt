@@ -53,7 +53,7 @@ internal class FleetHeadChoices(
         else -> null
     }
 
-    /** [block] in his words, for a reader of the reply; the composer reads the name. */
+    /** [block] in plain words, for a reader of the reply; the composer reads the name. */
     private fun words(block: ManagerHeadBlock, key: String): String = when (block) {
         ManagerHeadBlock.NOT_INSTALLED -> "not installed as a command: run splice install $key"
         ManagerHeadBlock.OUT_OF_QUOTA -> "out of quota"

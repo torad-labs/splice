@@ -122,6 +122,29 @@ class SseEmitterTest {
     }
 
     @Test
+    fun `an answer a dialect cut at a client stop string ends naming it, streamed or collected`() = runTest {
+        val (frames, e) = collector()
+        e.stoppedAt("</block>")
+        e.emitTerminal(hasToolUse = false, incomplete = false, usage = Usage(1, 2))
+        val delta = frames.first { it.startsWith("event: message_delta") }
+        assertTrue(delta.contains("\"stop_reason\":\"stop_sequence\",\"stop_sequence\":\"</block>\""), delta)
+
+        val envelope = SseEmitter.TerminalEnvelope().apply { acceptStop("</block>") }
+        val msg = envelope.terminalMessageJson(
+            TerminalMessage(
+                id = "msg_1",
+                model = "m",
+                content = emptyList(),
+                hasToolUse = false,
+                incomplete = false,
+                usagePayload = buildJsonObject { put("input_tokens", 1) },
+            ),
+        )
+        assertEquals("\"stop_sequence\"", msg["stop_reason"].toString())
+        assertEquals("\"</block>\"", msg["stop_sequence"].toString())
+    }
+
+    @Test
     fun `terminal is idempotent and ends with message_stop`() = runTest {
         val (frames, e) = collector()
         e.emitTerminal(false, false, Usage())

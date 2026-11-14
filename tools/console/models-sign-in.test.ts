@@ -1,5 +1,4 @@
-// A command's Sign in on Models follows the sign-in splice holds (Marcos, Nov 11, 2026: "TRhe whol state machine system
-// for login is broken"). Models ran its own loop over a sign-in: it read "Not completed" however the sign-in had failed,
+// A command's Sign in on Models follows the sign-in splice holds (Nov 11, 2026: the login state machine was broken). Models ran its own loop over a sign-in: it read "Not completed" however the sign-in had failed,
 // went on drawing "Signing in" for five minutes over one a restarted splice no longer held, and its Cancel let go of the
 // box before splice had answered. It runs the steps every page shares now (SIGNIN, api.js). Through the real page
 // against a stub daemon in the routes' own shapes (LoginRoutes.kt).

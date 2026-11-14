@@ -16,7 +16,7 @@ import splice.upstream.sse.WireSink
 import kotlin.random.Random
 
 /**
- * Goal (Marcos, Nov 3, 2026, "like native claude code"): the Write block a script's opening tools.Write streams into is
+ * Goal (Nov 3, 2026): behave like native Claude Code. The Write block a script's opening tools.Write streams into is
  * the one Claude Code runs only when it is exactly the call the script made; any other ending reaches Claude Code as an
  * input it refuses, so it writes nothing. Whatever order the script's deltas, the runtime's claim and finish, the
  * round's own blocks, detaches and the step's end come in, every early block closes exactly once, with the claimed

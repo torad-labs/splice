@@ -1,8 +1,28 @@
 # Changelog
 
-## Unreleased
+## splice v0.4.1: limit resets from splice, a fallback model per session, and an installer that brings its own Java - 2026-11-14
 
-Changes on main since v0.4.0. They take a version's heading when that version is cut.
+### Highlights
+- **The installer brings Java 21 when the machine has none.** The install command takes the first Java 21 or newer
+  it finds (the `java` on PATH, `JAVA_HOME`, macOS's `java_home`, and the
+  folders JDKs install to). On a machine with none it downloads Eclipse Temurin's Java 21 runtime, checks it against
+  a pinned sha256 and keeps it for splice alone, so an install no longer stops to ask for a package command.
+- **A Claude login's limit resets are listed and spent from splice.** `splice limit-reset <command>` lists the
+  resets each login has left and `splice limit-reset <command> <login> <kind>` spends one. splice never spends a
+  reset by itself.
+- **A session can be given a model to run on while every login is held on the one it asks for.**
+  `splice fallback <session> <model>`, or the line under each session's account on the console. The session goes
+  back to its own model on the first turn a login can serve it, and a session with no fallback waits as before.
+- **The Claude head is `claude`.** splice's Claude head is Claude Code's own `claude`, wrapped; there is no second
+  command beside it. Removing that head, uninstalling splice, or removing its login card never deletes Claude
+  Code's own `claude` or its login.
+- **`splice usage --json`** prints every command's logins and their plan windows on one line, for a menu bar or a
+  dashboard to read.
+
+### Upgrading from 0.4.0
+- Run the install command again, or `splice upgrade`. The launcher moves to shim-26, which runs the Java the
+  installer chose (linked at `~/.local/share/splice/java`); an install whose `java` on PATH is already 21 or newer
+  keeps running on it.
 
 ### Added
 - **A session can be given a model to run on while every login is held on the one it asks for.** On Nov 13, 2026

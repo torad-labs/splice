@@ -70,6 +70,13 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   none comes while a request is open. Sessions started before this version show it once they are started again.
 
 ### Fixed
+- **Request evidence keeps its coverage record on a day with many restarts.** The record of which stretches of
+  request evidence are complete (`coverage.json`) was refused by its writer at a third of the size its reader
+  accepts, because the writer counted three bytes for every character of a file that is plain ASCII. A record at
+  the format's own limits, 256 intervals and 128 segments, could not be written at all. On Nov 13, 2026 it was
+  last written at 4:23 PM CT, with 253 intervals and 71 segments, and every restart from then logged
+  `[perf] cleanup failed: evidence_unsettled`, as 14 restarts had the day before. Nothing else said so. The writer
+  now counts the bytes.
 - **A session whose answer a restart let finish no longer has its next request turned away.** A restart starts
   the next daemon beside the running one, which finishes the answers already arriving and takes nothing new. A
   client keeps the connection its answer came on, so that session's next request went to the daemon that was

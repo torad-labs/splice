@@ -22,9 +22,6 @@ import splice.core.util.PerfWorkBudget
 internal class WorkBudgetMark {
     private val before = PerfWorkBudget.snapshot().accounting
 
-    /** The whole total at the mark, for a test that asks whether it rose while a caller still holds a reply. */
-    val total: Long = before.leasedBytes
-
     fun assertGivenBack() {
         val now = PerfWorkBudget.snapshot().accounting
         assertEquals(

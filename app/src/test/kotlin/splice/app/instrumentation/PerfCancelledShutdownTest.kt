@@ -38,13 +38,15 @@ class PerfCancelledShutdownTest {
                 cancellationPreserved = true
             }
         }.join()
-        try {
-            assertTrue(cancellationPreserved)
-            assertEquals("1", JsonScalars.str(reply, "schema_version"))
-            assertTrue(PerfWorkBudget.retainedBytes() > budget.total, "the caller still owns its returned reply")
-        } finally {
-            PerfWorkBudget.release(reply)
-        }
+        val schema = JsonScalars.str(reply, "schema_version")
+        // why: other tests' owners fall off the JVM-wide total whenever they are collected (WorkBudgetMark), so the
+        // whole total is no measure of this reply. What releasing it gives back is, and a collection only adds to that.
+        val held = PerfWorkBudget.retainedBytes()
+        PerfWorkBudget.release(reply)
+        val givenBack = held - PerfWorkBudget.retainedBytes()
+        assertTrue(cancellationPreserved)
+        assertEquals("1", schema)
+        assertTrue(givenBack > 0, "the caller still owned its returned reply until it released it")
         budget.assertGivenBack()
         val replacement = telemetry(directory)
         try {

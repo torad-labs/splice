@@ -212,8 +212,9 @@ internal class ControlPlane(
         val sessions = sessionWiring.source(home, heads, console, foregroundTools)
         val signals = health.signals(heads, sessions, probes, home)
         val guard = parts.guard()
+        val listen = adopted.control(controlPort)
         val srv = ControlServer(
-            adopted.control(controlPort),
+            listen,
             heads,
             config,
             guard,
@@ -233,7 +234,7 @@ internal class ControlPlane(
         // Oct 19, 2026: the peer helpers and their journals, over the same store the guard admits peer keys from.
         srv.peerServices = PeersWiring().services(guard.peers, statePaths.stateDir, probeScope, log)
         parts.wireRestartSuccessor(srv, controlPort)
-        return if (ownership.bind(srv, controlPort)) srv.also { mcpServices.refresh() } else null
+        return if (ownership.bind(srv, controlPort, listen.handOn(guard))) srv.also { mcpServices.refresh() } else null
     }
 
     /** Every port [srv] takes after construction, extracted out of [start] (LongMethod — the same

@@ -118,8 +118,8 @@ internal class DaemonRun(
 
     /** #523: this daemon hands over to the next one and finishes what it was answering. Startup is waited for first:
      *  the request arrives over the control server, which startup opens last, so the wait is over or nearly so. The
-     *  lock is released once the heads' books are written and the control server is closed, and the next daemon,
-     *  which has been waiting on it, boots from there. A stop signal ends the wait for the kept answers, and the
+     *  lock is released once the heads' books are written and the control server has stopped taking connections, and
+     *  the next daemon, which has been waiting on it, boots from there. A stop signal ends the wait for the kept answers, and the
      *  ordered stop that follows cuts what is still running. */
     private suspend fun handOver(
         daemon: Daemon,

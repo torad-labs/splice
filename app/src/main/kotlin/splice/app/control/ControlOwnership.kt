@@ -18,11 +18,12 @@ internal class ControlOwnership(
     private val gate = Any()
     private var closed = false
     private var owned: ControlServer? = null
+    private var handOn: ControlHandOn? = null
 
     /** Takes the control port: [server] is adopted first, then bound. A port another process holds is not a crash: the
      *  daemon says so and asks to exit, and the stop then closes what was adopted. True when the listener is up. */
-    suspend fun bind(server: ControlServer, controlPort: Int): Boolean {
-        adopt(server)
+    suspend fun bind(server: ControlServer, controlPort: Int, handOn: ControlHandOn? = null): Boolean {
+        adopt(server, handOn)
         val bound = boundary.runCatchingDaemonBoundary { server.start() }
             .onFailure {
                 // "another owns it" is said only while the port is not ours: start() also starts what rides on the
@@ -44,9 +45,12 @@ internal class ControlOwnership(
 
     /** The one registration. Called when startup has built [server] and before it binds, so the stop can reach it from
      *  the moment it can hold a port. After the stop began, [server] is stopped here and startup ends cancelled. */
-    private fun adopt(server: ControlServer) {
+    private fun adopt(server: ControlServer, handOn: ControlHandOn?) {
         val late = synchronized(gate) {
-            if (!closed) owned = server
+            if (!closed) {
+                owned = server
+                this.handOn = handOn
+            }
             closed
         }
         if (late) {
@@ -65,6 +69,24 @@ internal class ControlOwnership(
      *  ([ControlServer.quiet]); nothing is fenced, so the daemon serves until its heads retire. */
     fun quiet() {
         synchronized(gate) { owned }?.quiet()
+    }
+
+    /** #525: the stop boundary of a hand-over, which the daemon lock waits for. Anything adopted after is refused. A
+     *  server on a socket a manager holds only stops taking connections ([ControlHandOn]): its engine's own stop waits
+     *  out its grace, and up to its timeout for a call still answering, and an event stream never ends by itself, so
+     *  that stop is left to the [close] that follows the lock's release. A server that bound its own port stops whole
+     *  here, because the next daemon binds that port. */
+    fun leave() {
+        val (server, socket) = synchronized(gate) {
+            closed = true
+            owned to handOn
+        }
+        if (socket == null) {
+            server?.stop()
+        } else {
+            server?.quiet()
+            socket.leave()
+        }
     }
 
     /** The stop boundary: closes what was adopted, and refuses anything adopted after. Safe to call twice. */

@@ -333,14 +333,21 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   daemon in it twice in a row, on the thread that builds the commands one after another while their requests wait.
   It is made once now, while the next daemon waits for the running one to hand over. The restart that carried it
   held a Claude command's requests for 1.68 seconds, where the one before held them for 1.76.
-- **A hand-over no longer waits for the control server after the commands.** A retiring daemon stopped its
-  control server once every command had handed over, and that stop waits a tenth of a second for the requests it
-  is answering. The daemon lock is held until it returns, and every command's requests wait for the lock: at three
-  restarts on Nov 13, 2026 it was freed 106 to 130 ms after the last command had said it handed over. The control
-  server now stops beside the commands. The next daemon's request for the hand-over is answered before either
-  begins, as it was. At the first restart that carried it, control closed 4 ms after the last command's line. The
-  retiring daemon also says how long it still held the lock after its commands handed over, closing its
-  background work: 145 ms at that restart, a stretch no line told from the next daemon's own start before.
+- **A hand-over no longer waits for the control server.** A retiring daemon stopped its control server once every
+  command had handed over, and that stop waits a tenth of a second for the requests it is answering, and up to
+  half a second. The daemon lock is held until the hand-over returns, and every command's requests wait for the
+  lock: at three restarts on Nov 13, 2026 it was freed 106 to 130 ms after the last command had said it handed
+  over. The control server first stopped beside the commands, which removed the wait only where the commands took
+  longer than the stop: under a full load control closed 4 ms after the last command's line, and at three later
+  restarts that day the commands had handed over 16 to 27 ms in and the hand-over ended at 107, 160 and 522 ms.
+  At a hand-over the control server now only stops taking connections, and closes the ones with no request on
+  them, so a request sent from then on waits for the next daemon. Its own stop runs once the lock is freed, beside
+  the turns the retiring daemon is still answering, and a line says how long it took. A daemon that bound its own
+  control port, with no socket manager holding it, still stops the server whole before it frees the lock, because
+  the next daemon binds that port. The next daemon's request for the hand-over is answered before any of this
+  begins, as it was. The retiring daemon also says how long it still held the lock after its commands handed over,
+  closing its background work: 145 ms at the first restart that carried the line, a stretch no line told from the
+  next daemon's own start before.
 - **A start reads a ChatGPT command's saved code-mode conversations with four readers.** Every command waits for
   that read at each start and restart, and it went through the conversations one after another on one core: 4.6 to
   6.2 seconds on a busy machine that held 369 MB of them in 54 files. Four readers now work ahead of the

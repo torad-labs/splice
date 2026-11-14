@@ -23,6 +23,12 @@ private val completed = ev(
     """{"type":"response.completed","response":{"id":"r1","usage":{"input_tokens":100,"output_tokens":7}}}""",
 )
 
+/** A completed response whose snapshot holds the message [text]: the backend's final word on the answer. */
+private fun completedWith(text: String) = ev(
+    """{"type":"response.completed","response":{"id":"r1","output":[{"type":"message",
+       "content":[{"type":"output_text","text":"$text"}]}],"usage":{"input_tokens":100,"output_tokens":7}}}""",
+)
+
 class ResponsesStopSequenceTest {
 
     private fun review() = ResponsesStreamTranslator(ctx(), stopSequences = listOf("</block>"))
@@ -66,6 +72,28 @@ class ResponsesStopSequenceTest {
         assertEquals("a</br", shownText(sink))
         assertNull(outcome.stopSequence)
         assertEquals("a</br", outcome.text.bodyText)
+    }
+
+    @Test
+    fun `a stop split between the stream and the final snapshot is found, and nothing past it is shown`() = runTest {
+        val sink = RecordingSink()
+        val outcome = review().driveTurn(
+            listOf(messageAdded, delta("ok</bl"), completedWith("ok</block>extra")).asFlow(),
+            sink,
+        ) as TurnOutcome.Success
+        assertEquals("ok", shownText(sink))
+        assertEquals("</block>", outcome.stopSequence)
+        assertEquals("ok", outcome.text.bodyText)
+    }
+
+    @Test
+    fun `an answer sent only in the final snapshot is cut at its stop`() = runTest {
+        val sink = RecordingSink()
+        val outcome = review().driveTurn(listOf(completedWith("<block>no</block> because")).asFlow(), sink)
+            as TurnOutcome.Success
+        assertEquals("", shownText(sink), "the snapshot's answer reaches the client from the outcome, not the stream")
+        assertEquals("<block>no", outcome.text.bodyText)
+        assertEquals("</block>", outcome.stopSequence)
     }
 
     @Test

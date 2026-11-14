@@ -168,8 +168,9 @@ internal class ResponsesStreamTranslator(
             cleanup.close(itemFold, sink, terminalSeen(state))
         }
 
-        // Text held back as the possible start of a stop string had no stop after it: it is the answer's end.
-        cut?.release()
+        // The cleanup's harvest has read the final snapshot: its text past the stream is read on from what the cut
+        // holds, so a stop split between the two is found, and what is held with no stop after it is the answer's end.
+        cut?.let { state.terminalTextSuffix = it.finish(state.terminalTextSuffix) }
         reasoningFold.finishLeadingText(sink)
         // A parsed terminal owns real usage. Late reader cancellation cannot interrupt its cleanup or accounting.
         return finishPreservingTerminal(state, sink)

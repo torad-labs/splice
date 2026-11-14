@@ -17,10 +17,25 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
     private val harvest = ResponsesHarvest()
     private val customCalls = ResponsesCustomCallParse(ctx.codeMode)
 
-    fun successOutcome(state: ResponsesTurnState): TurnOutcome.Success = TurnOutcome.Success(
+    fun successOutcome(state: ResponsesTurnState): TurnOutcome.Success {
+        // First: cutting an answer that was never streamed is what finds its stop.
+        val body = bodyText(state)
+        val stop = state.stopCut?.matched
+        return success(state, body, stop)
+    }
+
+    /** The answer's text as the client holds it: cut at the client's stop strings, streamed or not. */
+    private fun bodyText(state: ResponsesTurnState): String {
+        // Schema JSON was delivered as tool input, not prose for an honesty fallback to emit again.
+        if (state.schemaToolEmitted) return ""
+        val text = state.nativePrefix?.textOwner?.snapshot(state.textBuf) ?: state.textBuf.toString()
+        return state.stopCut?.answer(text, streamed = state.emittedText) ?: text
+    }
+
+    private fun success(state: ResponsesTurnState, body: String, stop: String?) = TurnOutcome.Success(
         hasToolUse = state.hasToolUse,
         // An answer cut at a stop string ended there, whatever cap the upstream reached after it.
-        incomplete = state.incomplete && state.stopCut?.matched == null,
+        incomplete = state.incomplete && stop == null,
         usage = Usage(
             state.inputTokens,
             state.outputTokens,
@@ -30,14 +45,7 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
         ),
         text = RoundText(
             thinkingText = state.thinkingBuf.toString(),
-            // Schema JSON was delivered as tool input, not prose for an honesty fallback to emit again.
-            bodyText = if (state.schemaToolEmitted) {
-                ""
-            } else {
-                state.stopCut?.takeIf { it.matched != null }?.shownText
-                    ?: state.nativePrefix?.textOwner?.snapshot(state.textBuf)
-                    ?: state.textBuf.toString()
-            },
+            bodyText = body,
             emittedText = state.emittedText,
             emittedThinking = state.emittedThinking,
         ),
@@ -62,7 +70,7 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
                 NativeDeliverySnapshot(deliveredPrefix = it.delivered.recovery())
             },
         ),
-        stopSequence = state.stopCut?.matched,
+        stopSequence = stop,
     )
 
     /** The salvage payload for mid-stream re-anchoring — the wire is at a block boundary

@@ -227,14 +227,21 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         return cut ?: sink
     }
 
-    private fun successOutcome(): TurnOutcome = TurnOutcome.Success(
+    private fun successOutcome(): TurnOutcome {
+        // First: cutting an answer that was never streamed is what finds its stop.
+        val text = channels.textBuf.toString()
+        val body = stopCut?.answer(text, streamed = channels.emittedText) ?: text
+        return success(body, stopCut?.matched)
+    }
+
+    private fun success(body: String, stop: String?): TurnOutcome = TurnOutcome.Success(
         hasToolUse = toolCalls.hasToolUse,
         // An answer cut at a stop string ended there, whatever cap the backend reached after it.
-        incomplete = terminal.incomplete && stopCut?.matched == null,
+        incomplete = terminal.incomplete && stop == null,
         usage = usage.toUsage(),
         text = RoundText(
             thinkingText = channels.thinkingBuf.toString(),
-            bodyText = stopCut?.takeIf { it.matched != null }?.shownText ?: channels.textBuf.toString(),
+            bodyText = body,
             emittedText = channels.emittedText,
             emittedThinking = channels.emittedThinking,
         ),
@@ -243,6 +250,6 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         // answer (Claude Code's prompt-suggestion request asks for silence) was graded empty_model and re-sent as an
         // overloaded error. A stream with no finish, or one that stopped on length, stays the honest empty error.
         shape = ResponseShape(messageClosed = terminal.finished && terminal.endedByModel),
-        stopSequence = stopCut?.matched,
+        stopSequence = stop,
     )
 }

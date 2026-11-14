@@ -28,11 +28,13 @@ internal class StreamPromote(
         meta: TurnMeta,
         elapsedMs: Long,
     ): PromoteVerdict {
-        val answered = answered(outcome.text)
-        if (answered || outcome.hasToolUse) {
-            recordCompactShape(meta, answered, outcome.text.bodyText, elapsedMs)
+        if (spoke(outcome)) {
+            recordCompactShape(meta, answered(outcome.text), outcome.text.bodyText, elapsedMs)
             return PromoteVerdict(null)
         }
+        // The answer ended at the client's stop string before any text: an empty answer is what was asked for, so
+        // nothing is promoted in its place and nothing grades it empty.
+        if (stoppedBeforeText(outcome)) return PromoteVerdict(null)
         // No text AND no tools: promote model thinking to text (compact needs a text channel),
         // else grade the empty.
         val picked = ModelTextPicker.pickModelText(outcome.text.thinkingText, outcome.text.bodyText)
@@ -87,6 +89,13 @@ internal class StreamPromote(
             else -> PromoteVerdict(null)
         }
     }
+
+    /** The round answered in text or called a tool: there is nothing to promote and nothing empty to grade. */
+    private fun spoke(outcome: TurnOutcome.Success): Boolean = answered(outcome.text) || outcome.hasToolUse
+
+    /** The answer ended at a stop string the client asked for, with nothing before it. */
+    private fun stoppedBeforeText(outcome: TurnOutcome.Success): Boolean =
+        outcome.stopSequence != null && outcome.text.bodyText.isBlank()
 
     /** Text counts once it holds something besides whitespace, the same trim [ModelTextPicker] reads with: a round
      *  whose only text was "\n\n" reached the client as a block with nothing in it, and taking the emitted flag alone

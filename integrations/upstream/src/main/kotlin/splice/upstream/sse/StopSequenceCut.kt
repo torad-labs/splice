@@ -9,7 +9,8 @@
 //
 // The upstream keeps generating until it ends on its own; only what reaches the client is cut. Text that could be the
 // start of a stop string is held until the next delta settles it, so a stop split across two deltas is never half
-// shown.
+// shown. Text a backend sent only in its final snapshot is cut the same way: read on from what is held ([finish]), or,
+// when nothing was streamed, cut where the answer is taken from the buffer ([answer]).
 package splice.upstream.sse
 
 import kotlinx.serialization.json.JsonArray
@@ -74,7 +75,7 @@ public class StopSequenceCut(private val sink: WireSink, stops: List<String>) : 
     }
 
     override suspend fun closeAll() {
-        release()
+        releaseAll()
         sink.closeAll()
     }
 
@@ -86,9 +87,38 @@ public class StopSequenceCut(private val sink: WireSink, stops: List<String>) : 
         sink.discard()
     }
 
-    /** Shows the text still held, in every open block: no stop followed it. Call it before a block closes through
-     *  any sink but this one. */
-    public suspend fun release() {
+    /** Ends the streamed text, before any block closes through a sink but this one. [suffix] is the rest of the answer
+     *  that the backend sent only in its final snapshot: it is read on from the text still held, in the block that
+     *  holds it, so a stop split between the stream and the snapshot is found. Then the text still held is shown: no
+     *  stop followed it. Returns what of [suffix] is left to send as a block of its own, all of it when no block was
+     *  holding text. */
+    public suspend fun finish(suffix: String?): String? {
+        val open = held.keys.lastOrNull()
+        val rest = if (suffix != null && open != null) {
+            textDelta(open, suffix)
+            null
+        } else {
+            suffix
+        }
+        releaseAll()
+        return rest
+    }
+
+    /** The answer as the client holds it, given [text], all the backend produced. Streamed text was cut on its way out,
+     *  so it is [shownText] once a stop matched. Text that was never [streamed], which a backend sent only in its final
+     *  snapshot and which reaches the client from the buffer, is cut here, and the stop it holds becomes [matched]. */
+    public fun answer(text: String, streamed: Boolean): String {
+        if (matched == null && !streamed) {
+            firstStop(text)?.let { hit ->
+                matched = hit.stop
+                shown.setLength(0)
+                shown.append(text, 0, hit.at)
+            }
+        }
+        return if (matched != null) shownText else text
+    }
+
+    private suspend fun releaseAll() {
         held.keys.toList().forEach { release(it) }
     }
 

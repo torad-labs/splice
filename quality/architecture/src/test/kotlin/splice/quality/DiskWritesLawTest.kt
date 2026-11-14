@@ -312,7 +312,6 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/mcp/NativeCodexSocketProxy.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeAccountFolders.kt" to mapOf("writeAtomic0600(" to 4),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeCredentialProfiles.kt" to mapOf("writeAtomic0600(" to 1),
-    "app/src/main/kotlin/splice/app/auth/claude/ClaudeLoginEdits.kt" to mapOf("writeAtomic0600(" to 1),
     // The console launch page, 0600, documented in the console-open.html README row.
     "app/src/main/kotlin/splice/app/cli/status/ConsoleCommand.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/config/ConfigService.kt" to mapOf("writeAtomic0600(" to 1),

@@ -75,7 +75,7 @@ What already exists that this work builds on, rather than reinvents:
 Four assets, one for each phase of the work below.
 
 **Correction owed to this record.** Earlier in the 2026-09-15 discussion I told Marcos splice was
-"sending data to a third party". He challenged it, and reading the code showed the claim was too
+sending data to a third party. He challenged it, and reading the code showed the claim was too
 strong. `ResponsesClientHints.clientMetadataBlock` emits, on lite turns only, `client=splice` plus
 `session_id` and `thread_id`. That is protocol metadata for the prompt cache: no prompt, no
 completion, no token count, no credential. "Data" was the wrong word. It is recorded here because

@@ -40,11 +40,10 @@ How anyone can tell it does:
 
 ## Decisions (Marcos, 2026-10-24): a node is a client, nothing more
 
-Marcos, after the Mac's `claudex` died on a LAN blip and its `/login` answered "this head signs in with an
-API key" (2026-10-24): "a user using splice as a node, should connect to the server splice just like it
-does, when using vertex or bedrock. That's it, it shouldnt care about credentials, it shouldn't care about
-synching file, about tailscale, NONE OF that. And we can filter the details about models and usage, and
-what the auth to use via query params. That's it, it's so simple."
+After the Mac's `claudex` died on a LAN blip and its `/login` answered "this head signs in with an
+API key" (2026-10-24), Marcos decided that a node uses the server splice the way a client uses Vertex or
+Bedrock, and no more. It does not handle credentials, file synchronization or Tailscale. Model details,
+usage and which auth to use are filtered through query parameters. The design stays that simple.
 
 - **A node is Claude Code pointed at the server.** The machine that uses another machine's heads is a
   node. It connects to the server's splice the way Claude Code connects to Vertex or Bedrock: a base URL,
@@ -98,8 +97,8 @@ What the Mac showed on 2026-10-24 that this replaces: the relay modeled as an ap
   sign-ins, its added accounts): a node's turn runs on one of those, and the held login names Anthropic's
   OAuth beta on every turn it carries, which a node's Claude Code, holding no login, does not. While the
   caller's own sign-in is one of the head's logins, or it holds none, it has nothing to offer a node.
-- **Plain `claude` on a node** (Marcos, 2026-10-25: "claude here is still using a local account instead of
-  the server account on [the server]"). `claude` may name a remote command: `splice remote add
+- **Plain `claude` on a node** (2026-10-25: plain `claude` on the Mac was still using a local account instead of the
+  server's account, which Marcos wants fixed). `claude` may name a remote command: `splice remote add
   http://devbox.lan:3097/claude-splice --as claude`. The wrapped `claude` then launches on the server's
   head, over the node's own `~/.claude` as it does today, so its settings, instructions, sessions and models
   stay the person's: only where its turns go changes. The node gets no model list from the server, since a

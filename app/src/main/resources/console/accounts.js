@@ -392,7 +392,7 @@ function askAgainSoon() {
   againTimer = setTimeout(async () => { await load(); render({ flip: true }); }, 5000);
 }
 const FRESH_UI = () => ({ lane: {}, signin: {}, editor: null, addProv: null, menu: null, armed: null, removeErr: null, rename: null, renameErr: null, renameDraft: null, replace: null, pulse: null, naming: null,
-  moving: null, slotErr: null, orderErr: null, keyErr: null, orderSaving: null, removing: null });
+  moving: null, slotErr: null, orderErr: null, keyErr: null, orderSaving: null, removing: null, resets: null });
 // why: the Day rows whose Not read reason is open; reasons: the refusals whose reason splice gave is open under their
 // word; doors: the logins whose every session door is out; enter: the one form or menu just opened, which rises into
 // place once and never again on a later redraw; shook: the refusal just drawn, which shakes once and then stands still
@@ -1036,7 +1036,46 @@ function menuItems(p, a) {
   if (p.kind === "local") return [];
   if (p.kind === "key") return a.has && keyActs(a) ? [["replace", "Replace key"], ["remove", "Remove key"]] : [];
   return [...(a.canRename === false ? [] : [["rename", "Rename"]]), ...(a.out ? [] : [["resign", "Sign in again"]]),
+    ...(p.id === "claude" && !a.out ? [["resets", "Limit resets"]] : []),
     ...(a.canRemove === false ? [] : [["remove", "Remove"]])];
+}
+// A CLAUDE LOGIN'S LIMIT RESETS (Nov 13, 2026), opened from its menu: each kind it has, how many are left, and one act to
+// spend one. A spend cannot be taken back, so it takes two presses on the same act, and the second says what it clears.
+// splice never spends one by itself (LimitResetRoutes.kt). The head and label are the login's own, as signing in again
+// sends them (howFor).
+const resetHead = (a) => a.row.heads[0];
+function resetsHtml(p, a, spot) {
+  const r = ui.resets;
+  if (!r || r.spot !== spot) return "";
+  const close = DRAW.act({ word: "Close", act: "reset-close", cls: "quiet small", disabled: !!r.spending });
+  const head = `<div class="rs-head"><span class="rs-title">Limit resets</span>${close}</div>`;
+  if (r.state === "reading") return `<div class="resets${ui.enter === "resets" ? " enter" : ""}" aria-busy="true">${head}<p class="rs-note">Reading…</p></div>`;
+  if (r.state === "failed") return `<div class="resets">${head}<p class="rs-note">${DRAW.result(r.word, "bad")}${r.why ? ` <span class="rs-why">${esc(r.why)}</span>` : ""}</p></div>`;
+  const login = r.login;
+  const why = login.refusal || login.not_offered;
+  const rows = (login.kinds || []).map((k) => {
+    const armed = r.arm === k.kind, spending = r.spending === k.kind;
+    // splice names a kind "Fable reset", "weekly reset", "full reset" or "5-hour reset" (ResetKinds.name)
+    const word = k.name.replace(/ reset$/i, ""), limit = k.kind === "full" ? "every limit" : `the ${word} limit`;
+    const left = k.left > 0 ? `${k.left} of ${k.total} left` : "None left";
+    const act = !k.usable_now || k.left < 1 ? `<span class="rs-not">${esc(k.left < 1 ? "" : k.not_now || "Not now")}</span>`
+      : DRAW.act({ word: spending ? "Resetting…" : armed ? `Reset ${word} now` : "Use one", act: "reset-use",
+        cls: armed ? "danger small" : "quiet small", busy: spending, disabled: !!r.spending, data: ` data-a="${esc(a.id)}" data-k="${esc(k.kind)}"` });
+    const note = armed && !spending ? `<p class="rs-arm">Clears ${esc(limit)} on ${esc(shownName(p, a))} now, ${k.left - 1} left after. It can't be undone.`
+      + ` ${DRAW.act({ word: "Cancel", act: "reset-keep", cls: "quiet small" })}</p>` : "";
+    return `<div class="rs-row"><span class="rs-name">${esc(k.name.charAt(0).toUpperCase() + k.name.slice(1))}</span><span class="rs-left">${left}</span>${act}</div>${note}`;
+  }).join("");
+  const said = r.said ? `<p class="rs-note">${DRAW.result(r.said.text, r.said.ok ? "good" : "bad")}</p>` : "";
+  const none = !rows && !said ? `<p class="rs-note">${esc(why || "No resets on this login")}</p>` : "";
+  return `<div class="resets${ui.enter === "resets" ? " enter" : ""}">${head}${rows}${none}${said}</div>`;
+}
+async function readResets(a, spot, said = null) {
+  const head = resetHead(a), label = labelOn(a, head);
+  const res = await API.get(`/api/auth/${encodeURIComponent(head)}/resets?label=${encodeURIComponent(label)}`);
+  if (ui.resets?.spot !== spot) return;
+  const login = res.ok ? res.body?.logins?.[0] : null;
+  ui.resets = login ? { spot, state: "read", login, said } : { spot, state: "failed", ...mutationError(res, "Resets not read") };
+  render();
 }
 // Remove is in the text's ink like every other item, and armed it fills in that ink and names what it cuts: the limit red
 // is for limits and failures, never for an act. A refusal says so in plain words under it, its reason one press away,
@@ -1277,7 +1316,7 @@ function cardHtml(p, c, a, i, serves) {
     + `${nameHtml(p, a, spot)}${nameIt}${sub}${src}<div class="slot${slotErr && ui.shook === slotKey(a, c) ? " failed" : ""}">${slotHtml(p, c, a, serves)}</div>${more}</div>`
     + `${slotErr ? reasonHtml(slotErr, slotKey(a, c), "onslot") : pinNote ? reasonHtml(pinNote, null, "onslot") : ""}${armRow(p, c, a)}`
     + `${mail}${renameErr ? `<div class="rename-err${ui.shook === "rename" ? " failed" : ""}" id="rename-err">${refusalHtml(renameErr, "rename")}${reasonHtml(renameErr, "rename")}</div>` : ""}`
-    + `${ui.menu === spot ? menuHtml(p, a, spot) : ""}${body}${sessionsHtml(p, a, i + 1, !!live)}</article>`;
+    + `${ui.menu === spot ? menuHtml(p, a, spot) : ""}${resetsHtml(p, a, spot)}${body}${sessionsHtml(p, a, i + 1, !!live)}</article>`;
 }
 const KEY_FROM = { environment: "Environment", file: "File" };
 // A LOCAL MODEL AS ITS HEAD LABELS IT, "Name 7B (local, 1.72bpw)": the name he would say, the words that tell two
@@ -1661,7 +1700,7 @@ function shapeOf(L) {
     doors: Object.fromEntries(data.flatMap((p) => p.accounts).map((a) => [a.id, doors(a)]).filter(([, k]) => k > 0)) };
 }
 // the board at rest: an open form, menu, reason or list of doors is not the shape the next visit lands on
-const atRest = () => !(ui.menu || ui.rename || ui.replace || ui.editor || ui.naming || ui.addProv || ui.moving || Object.keys(ui.signin).length || ui.why.size || ui.doors.size || ui.moves.size);
+const atRest = () => !(ui.menu || ui.rename || ui.replace || ui.editor || ui.naming || ui.addProv || ui.moving || ui.resets || Object.keys(ui.signin).length || ui.why.size || ui.doors.size || ui.moves.size);
 const tall = (h) => (h ? `;min-height:${h}rem` : "");
 const ghostDoors = (n) => (n ? `<div class="onlogin" aria-hidden="true">${Array.from({ length: n }, (_, j) => `<span class="sdoor gdoor"><i class="ghost lampg"></i>${GHOST.bar(4.2 + (j % 3) * 1.3)}</span>`).join("")}</div>` : "");
 function ghostCard(kind, [rows, doors, h, over = 0, moves = 0], k) {
@@ -2296,8 +2335,8 @@ board.addEventListener("focusout", (e) => {
 });
 const closeAll = () => Object.assign(ui, { menu: null, armed: null, removeErr: null, rename: null, renameErr: null, renameDraft: null, replace: null, keyErr: null, editor: null, naming: null });
 document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape" || !(ui.menu || ui.rename || ui.replace || ui.editor || ui.naming)) return;
-  closeAll(); render();
+  if (e.key !== "Escape" || !(ui.menu || ui.rename || ui.replace || ui.editor || ui.naming || (ui.resets && !ui.resets.spending))) return;
+  closeAll(); if (!ui.resets?.spending) ui.resets = null; render();
 });
 // Enter on a name splice won't take keeps the field open with the reason; leaving the field keeps the old name.
 async function saveRename(field, enter) {
@@ -2417,6 +2456,25 @@ document.addEventListener("click", async (e) => {
     case "resign": ui.menu = null; ui.enter = "sign"; startSignin(`re:${a.id}`, howFor(p, a, null), t.dataset.s); break;
     case "replace": ui.menu = null; ui.replace = t.dataset.s; ui.enter = "key"; render(); break;
     case "cancel-replace": ui.replace = null; render(); break;
+    // a login's limit resets open under its head, read from its provider now; Use one asks once more before it spends
+    case "resets": {
+      const spot = t.dataset.s; ui.menu = null; ui.armed = null; ui.enter = "resets";
+      ui.resets = { spot, state: "reading" }; render(); await readResets(a, spot); break;
+    }
+    case "reset-use": {
+      const r = ui.resets, kind = t.dataset.k;
+      if (!r || r.spending || r.state !== "read") break;
+      if (r.arm !== kind) { r.arm = kind; r.said = null; render(); board.querySelector(".resets .act.danger")?.focus(); break; }
+      r.spending = kind; render();
+      const head = resetHead(a), res = await API.post(`/api/auth/${encodeURIComponent(head)}/reset`, { label: labelOn(a, head), kind });
+      if (ui.resets !== r) break;
+      const text = typeof res.body?.said === "string" ? res.body.said : mutationError(res, "Not used").why || "Not used";
+      await readResets(a, r.spot, { text, ok: res.ok });
+      if (res.ok) await refresh();
+      break;
+    }
+    case "reset-keep": if (ui.resets) { ui.resets.arm = null; render(); } break;
+    case "reset-close": if (!ui.resets?.spending) { ui.resets = null; render(); } break;
     // Remove takes two presses on the same item; removal deletes the sign-in, so nothing comes back from it.
     case "remove": {
       if (ui.removing || ui.orderSaving) break;

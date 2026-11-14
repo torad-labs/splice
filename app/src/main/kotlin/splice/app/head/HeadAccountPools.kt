@@ -12,6 +12,7 @@ import splice.accounts.pool.HeadAccountPinSource
 import splice.accounts.pool.HeadAccountPoolSource
 import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.pool.HeadAccountQuota
+import splice.accounts.pool.HeadAccountResetSource
 import splice.accounts.pool.HeadAccountSessionChoice
 import splice.accounts.pool.HeadAccountSessionSource
 import splice.accounts.pool.HeadAccountSessions
@@ -19,6 +20,8 @@ import splice.accounts.pool.HeadAccountSwitchView
 import splice.accounts.pool.HeadAccountView
 import splice.accounts.pool.HeadAccountWindow
 import splice.accounts.pool.HeadNextTarget
+import splice.accounts.pool.LoginResetSpend
+import splice.accounts.pool.LoginResets
 import splice.app.provider.Wired
 import splice.app.provider.WiredAccount
 import splice.core.auth.AuthDescription
@@ -101,6 +104,7 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
         head: String,
         orders: AccountOrderStore,
         pins: AccountPinStore? = null,
+        resets: HeadAccountResetSource? = null,
     ): HeadAccountPoolSource? = pool?.let {
         val labels = it.effectiveOrder().toSet()
         it.order = orders.order(head).filter(labels::contains)
@@ -109,7 +113,7 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
             // A pin lets go at its login's first limit reading, and the saved one with it, so no restart restores it.
             it.onPinsLetGo = PinsLetGo { gone, over -> pins.release(head, gone, over) }
         }
-        PoolSource(it, head, orders, pins)
+        PoolSource(it, head, orders, pins, resets)
     }
 
     fun authSource(wired: Wired): HeadAccountAuthSource? =
@@ -180,12 +184,20 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
         private val head: String? = null,
         private val orders: AccountOrderStore? = null,
         private val pins: AccountPinStore? = null,
+        private val limitResets: HeadAccountResetSource? = null,
     ) : HeadAccountPoolSource,
         HeadAccountPinSource,
         HeadAccountAskSource,
         HeadAccountOrderSource,
-        HeadAccountSessionSource {
+        HeadAccountSessionSource,
+        HeadAccountResetSource {
         override val active: Boolean get() = pool.active
+
+        override fun resetLabels(): List<String> = limitResets?.resetLabels().orEmpty()
+
+        override suspend fun resets(label: String): LoginResets? = limitResets?.resets(label)
+
+        override suspend fun reset(label: String, kind: String): LoginResetSpend? = limitResets?.reset(label, kind)
 
         override fun askAgain(label: String): Boolean = pool.askAgain(label)
 

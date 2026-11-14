@@ -2,15 +2,19 @@
 package splice.app.head
 
 import splice.accounts.order.AccountOrderStore
+import splice.accounts.pool.HeadAccountResetSource
+import splice.app.auth.claude.ClaudeLimitResets
 import splice.app.auth.claude.ClaudeNativeQuota
 import splice.app.auth.claude.OWN_SIGN_IN_LABEL
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
 import splice.app.provider.Wired
 import splice.app.provider.WiredAccount
+import splice.app.provider.WiredAccountsRead
 import splice.core.auth.AuthProvider
 import splice.core.auth.ClientAuthProvider
 import splice.core.usage.QuotaReadFailures
+import splice.core.util.LogSink
 import splice.head.usage.QuotaTracker
 import splice.provider.muse.MuseAuthProvider
 import splice.usage.quota.ClientUserAgent
@@ -30,7 +34,7 @@ internal class HeadQuotaPolling(
     private val orders: AccountOrderStore,
     /** Where each login's failed limits read is kept for /api/accounts (Accounts' "Not read" reason). */
     private val failures: QuotaReadFailures = QuotaReadFailures(),
-) {
+) : LoginReadAgain {
     private val held = ConcurrentHashMap<String, QuotaPoller>()
     private val owners = ConcurrentHashMap<String, AuthProvider>()
     private val live = CopyOnWriteArrayList<QuotaPoller>()
@@ -59,6 +63,14 @@ internal class HeadQuotaPolling(
             }
         }
         return pollers
+    }
+
+    override suspend fun readAgain(label: String): Boolean = held[label]?.readNow() != null
+
+    /** The limit resets of this head's Claude logins, spent only on a person's word (Nov 13, 2026). */
+    fun limitResets(wired: Wired, log: LogSink): HeadAccountResetSource {
+        val client = ClaudeLimitResets(clientUserAgent, log)
+        return HeadLimitResets(ctx.key, WiredAccountsRead { wired.liveAccounts }, this, client, log)
     }
 
     fun remove(label: String) {

@@ -187,8 +187,8 @@ internal class ManagedHeadFactory(
             ?: QuotaTracker(statePaths.quotaFile(key), extraFamily = CodexQuotaHeaderFamily())
         quotaSeams.primaryWired(primaryQuota)
         val stores = headStores(ctx, wired, primaryQuota, accountQuotas)
-        val quotaPollers = quotaSeams.pollingFor(ctx, quotaProbes, accountOrders)
-            .start(wired, stores, accountQuotas, providerAssembly, providerHolds)
+        val polling = quotaSeams.pollingFor(ctx, quotaProbes, accountOrders)
+        val quotaPollers = polling.start(wired, stores, accountQuotas, providerAssembly, providerHolds)
         // Derived from the CREDENTIAL, never from the declared string. The bypass is safe only
         // because splice holds nothing for this head, so it reads the artifact that IS that fact:
         // `wired.auth`. ProviderAssembly rejects registered client auth on non-passthrough dialects
@@ -213,7 +213,8 @@ internal class ManagedHeadFactory(
                 authKind = ctx.providerCfg.auth.kind,
                 dialect = DialectWires.name(ctx.providerCfg.dialect),
                 keyPresence = keyPresence,
-                accountPool = accountPools.source(stores.accounts.pool, key, accountOrders, accountPins),
+                accountPool = accountPools
+                    .source(stores.accounts.pool, key, accountOrders, accountPins, polling.limitResets(wired, log)),
                 accountAuth = accountPools.authSource(wired),
                 plans = stores.telemetry.economics.plans,
             ),

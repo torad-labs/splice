@@ -189,6 +189,11 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
         "--json",
         CommandFactory { a -> Command.UsageAsJson.takeIf { a.drop(1) == listOf("--json") } },
     ),
+    // Nov 13, 2026: a Claude command's limit resets, listed, or one spent on the person's word (LimitResetCommand).
+    "limit-reset" to CommandRegistration(
+        "<command> [<login> [fable|weekly|full|5-hour]]",
+        CommandFactory { a -> Command.LimitReset(a.drop(1)).takeIf { it.args.size in 1..LIMIT_RESET_SPEND_WORDS } },
+    ),
     "wire" to CommandRegistration(
         "<head> [--last N] [--json]",
         CommandFactory { a -> Command.Wire(a.drop(1)) },

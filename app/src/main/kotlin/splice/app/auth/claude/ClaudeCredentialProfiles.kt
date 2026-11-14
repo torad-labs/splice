@@ -31,7 +31,7 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.minutes
 
 // why: Claude Code resolves the account authenticated by an OAuth token at this endpoint.
-private const val CLAUDE_PROFILE_URL = "https://api.anthropic.com/api/oauth/profile"
+internal const val CLAUDE_PROFILE_URL = "https://api.anthropic.com/api/oauth/profile"
 
 // why: the existing credential join is a SHA-256 digest rendered as lower-case hexadecimal.
 private const val PROFILE_CREDENTIAL_KEY_CHARS = 64

@@ -67,6 +67,15 @@ public class QuotaPoller(
         }
     }
 
+    /** One reading now, past the floor between reads: the person just reset this login's limits at its provider, and
+     *  the floor would keep the turns that reset frees waiting up to two minutes more (Nov 13, 2026). The new reading,
+     *  or null when the provider gave none. */
+    public suspend fun readNow(): QuotaSnapshot? = admission.withLock {
+        val before = lastSnapshot
+        attempt()
+        lastSnapshot?.takeIf { it !== before }
+    }
+
     private fun insideFloor(): Boolean =
         lastProbeAtMs?.let { clocks.elapsedSince(it) < reuseMs } == true
 

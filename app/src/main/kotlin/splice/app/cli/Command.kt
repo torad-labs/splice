@@ -224,6 +224,15 @@ public sealed class Command {
             return outcomeExitCode(verb.print(EnvReader(System::getenv)))
         }
     }
+
+    /** Nov 13, 2026: `splice limit-reset`, a Claude command's limit resets listed, or one spent on the person's word. */
+    internal data class LimitReset(val args: List<String>) : Command() {
+        override suspend fun run(): Int {
+            val verb = LimitResetCommand(TerminalOutput(::println), TerminalOutput(System.err::println))
+            return outcomeExitCode(verb.run(args, EnvReader(System::getenv)))
+        }
+    }
+
     public data class Perf(val args: List<String>) : Command() {
         override suspend fun run(): Int = outcomeExitCode(PerfWiring.run(args, EnvReader(System::getenv)))
     }

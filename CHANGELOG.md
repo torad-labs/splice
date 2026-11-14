@@ -70,6 +70,13 @@ Changes on main since v0.4.0. They take a version's heading when that version is
   none comes while a request is open. Sessions started before this version show it once they are started again.
 
 ### Fixed
+- **Remove never deletes Claude Code's own login.** The Claude command's own login card offered Remove, and
+  since that login became Claude Code's own (`~/.claude`), a Remove deleted the file every `claude` session on the
+  machine signs in with: each one said "Not logged in" until someone ran `/login`. The card no longer offers Remove,
+  and the route refuses it, saying to run `/logout` in Claude Code to sign it out. Logins added to a command are
+  still removed from the pool as before.
+- **The console's session list loads when a session record names no command.** Such a record made every listing
+  fail with an error instead of showing the sessions.
 - **Request evidence keeps its coverage record on a day with many restarts.** The record of which stretches of
   request evidence are complete (`coverage.json`) was refused by its writer at a third of the size its reader
   accepts, because the writer counted three bytes for every character of a file that is plain ASCII. A record at

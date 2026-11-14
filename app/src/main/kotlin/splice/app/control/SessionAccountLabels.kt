@@ -29,7 +29,8 @@ internal class SessionAccountLabels(
     override fun forRecords(records: List<SessionRecord>): SessionAccountOf {
         val byHead = records.groupBy { it.head }
         val saved = byHead.mapNotNull { (head, sessions) ->
-            val managed = heads[head] ?: return@mapNotNull null
+            // a record with no head names no login, and the live heads map answers a null key with an NPE (Nov 13)
+            val managed = head?.let(heads::get) ?: return@mapNotNull null
             if (managed.authSurface.authKind != CLIENT_AUTH_KIND) return@mapNotNull null
             val source = managed.sources.perfRows as? PerfRowsFileSource ?: return@mapNotNull null
             val ids = sessions.mapNotNull { it.sessionId }

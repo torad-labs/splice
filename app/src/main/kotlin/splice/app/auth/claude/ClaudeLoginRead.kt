@@ -130,7 +130,8 @@ internal class ClaudeLoginRead(
                 untilEpochSeconds = until,
             ),
             management = names?.let {
-                ClaudeLoginManagement(name ?: location.id.command, native.present, name != null)
+                // never removable from splice: it is Claude Code's own login, every session's (ClaudeLoginOwner.remove)
+                ClaudeLoginManagement(name ?: location.id.command, canRemove = false, canRename = name != null)
             },
         )
     }

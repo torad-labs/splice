@@ -1,6 +1,21 @@
 # Changelog
 
-## Unreleased
+## splice v0.4.2: auto mode on every head, headers for a company gateway, and a held login that offers its reset - 2026-11-14
+
+### Highlights
+- **Claude Code's auto mode works on every head.** Auto mode asks the session's model whether a policy blocks each
+  action, and the OpenAI Responses and chat heads couldn't give that verdict. They can now, and the review reaches the
+  model with Claude Code's own policy, not a head's standing prompt.
+- **Headers for a gateway in front of a provider.** A provider's table can pass on named headers from Claude Code
+  (`forward_headers`) and add a `Via` line naming splice and its version (`send_version`), so a company gateway can tag
+  requests and turn away an old splice. Both are off by default.
+- **A held Claude login offers its reset and a fallback model on its card.** On Accounts, a login at its limit says
+  when a reset can be spent now, with the button that opens its Limit resets, and offers a fallback model to the
+  sessions on it that have none.
+
+### Upgrading from 0.4.1
+- Run the install command again, or `splice upgrade`. Nothing in `splice.toml` has to change: the new provider keys
+  are off until a table sets them.
 
 ### Added
 - **Headers for a gateway in front of a provider.** A provider's table can name headers that ride on from Claude

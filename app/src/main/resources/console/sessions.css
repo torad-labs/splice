@@ -766,6 +766,18 @@
 .sessions .lname .pv { font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
 .sessions .lhead-row { width: auto; max-width: 100%; }
 /* its last switch: the two logins by name with a caret between, then splice's own reason and when */
+/* the session's fallback: one line under its logins, Waits or Runs on, opening the command's other models (fallbackHtml) */
+.sessions .fbline { margin-top: calc(2 * var(--u)); padding-top: calc(2 * var(--u)); border-top: var(--ink-w) solid var(--track-line); }
+.sessions .fbhead { width: auto; max-width: 100%; align-items: flex-start; gap: 0.5rem; }
+.sessions .fbhead .fbtext { display: flex; flex-direction: column; align-items: flex-start; gap: .2rem; min-width: 0; text-align: left; }
+.sessions .fbhead .fbq { font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
+.sessions .fbhead .state { font-size: .92rem; color: var(--text-body); }
+.sessions .fbhead .state.on { color: var(--text); font-weight: 600; }
+.sessions .fbrows { display: grid; gap: 0.5rem; margin-top: calc(1.5 * var(--u)); }
+.sessions .fbwhy { margin: 0; max-width: 46ch; font: 400 .82rem/1.35 var(--font-name); color: var(--text-mute); }
+.sessions .fbrow { display: flex; align-items: center; gap: 0.667rem; min-height: 1.9rem; }
+.sessions .fbrow.on .lname { font-weight: 600; }
+.sessions .fbrow .lact .act.small { padding: .28rem .6rem; font-size: .85rem; }
 .sessions .moved { display: flex; flex-wrap: wrap; align-items: center; gap: 0.333rem 0.333rem; margin: var(--u) 0 0; min-width: 0; font: 500 .85rem/1.3 var(--font-name); color: var(--text-mute); }
 .sessions .moved b { font-weight: 500; color: var(--text-body); }
 .sessions .moved > svg { width: .7rem; height: .7rem; }

@@ -1,5 +1,5 @@
-// NEW: Oct 28, 2026, out of PeersMount.kt by concern (ConcentrationLawTest), with the repeat register (Marcos: "add the
-// ability for anyone or anything to register to send and receive messages via splice peer"): POST /api/peers.
+// NEW: Oct 28, 2026, out of PeersMount.kt by concern (ConcentrationLawTest), with the repeat register (anyone or anything
+// can register to send and receive messages via splice peer): POST /api/peers.
 package splice.app.control.peer
 
 import io.ktor.http.HttpStatusCode

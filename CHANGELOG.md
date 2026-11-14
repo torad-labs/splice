@@ -116,8 +116,8 @@
 - **splice tells you when a command is on its last login.** A command with several logins moves to the next when
   a plan limit is reached, and nothing said when it reached the last. On Nov 12, 2026 every Claude login on one
   machine ran out of Fable one after another and eleven sessions waited three hours, while the person had resets
-  to spend (Marcos: "just let me know when we're on the last account close to hit limit and I'll call a
-  reset"). The daemon now checks each command's logins once a minute, for every model a turn of the command
+  to spend; he wanted to be told when the last account was close to its limit, so he could call a
+  reset. The daemon now checks each command's logins once a minute, for every model a turn of the command
   asked for in the last hour, so the turns of helpers on a small model never hide the model the sessions wait
   on. When only one login can serve a model and it has used 80% of a limit, splice says so, with the login, the
   limit and when it resets, and says it again at 95%. Below 80% it reads the pace too: when the last login is being
@@ -184,8 +184,7 @@
   out of a model, its turns wait. A login reset at the provider before its time ends that wait, and splice heard
   of the reset only from the login's usage reading, which it asked for every five minutes or when someone opened
   a console page. On Nov 12, 2026 a login was reset while seven turns waited and the sessions went on showing
-  "loading" until the next five-minute reading (Marcos: "my limit just freed up, and the sessions were all still
-  loading"). While a command holds any turn, the daemon now reads every one of its logins' usage as often as the
+  "loading" until the next five-minute reading, though the limit had freed up. While a command holds any turn, the daemon now reads every one of its logins' usage as often as the
   provider's usage endpoint is asked for a page, once a minute, so the waiting turns move to the reset login
   without anyone logging in again or opening a page.
 - **A daemon start no longer clears another daemon's session moves.** Continue on keeps a short record while a
@@ -245,8 +244,7 @@
   provider refuses a turn, which lasts until the reset the refusal named and decides where the next turn goes.
   The screens drew only the first. On Nov 12, 2026 a login refused for Fable went on reading 99%, so its card
   showed room and `splice status` counted Fable used up on six logins of eight when seven could not serve it,
-  and a login reset at its provider read 0% and looked open while its hold still stood (Marcos: "after I reset
-  it I saw it showing upo in SPlice right away"). The accounts reply now carries each login's held models
+  and a login reset at its provider read 0% and looked open while its hold still stood, where a reset should show in Splice right away. The accounts reply now carries each login's held models
   (`models_held`, each with its claim and the reset the provider named). A card says "Fable used up until ..."
   for a held model whatever its bar reads, and `splice status` counts that login among the ones the model is
   used up on. `splice status` names the login the command's next turn goes to for the model its turns ask
@@ -255,8 +253,7 @@
   Ethan: primary account reset" a minute after Ethan ran out of Fable.
 - **A `claude` that goes through splice is named `claude`.** With plain `claude` wrapped, the console and
   `splice status` still named its command `claude-splice`, the name of its table in `splice.toml`, so a person
-  who only ever types `claude` saw a second Claude he never starts (Marcos, Nov 12, 2026: "why ... is claude and
-  claude-splice two identities? We use Claude only via splice"). While `claude` is wrapped, `/api/heads` and
+  who only ever types `claude` saw a second Claude he never starts (Nov 12, 2026: Claude is used only through splice here, so it should not appear as two identities). While `claude` is wrapped, `/api/heads` and
   `/api/status` answer `claude` as that command's name, so Sessions, Accounts, Usage, Requests and Models show
   it, a session's resume line reads `claude -r <id>`, and the command column of `splice status` reads `claude`.
   Unwrapped, they name `claude-splice` as before. The head's key, its table in `splice.toml` and the
@@ -282,8 +279,7 @@
   Code over a second home, `~/.claude-claude-splice`, with a sign-in of its own, and the command counted that
   home as its first login beside the one in `~/.claude`. A machine that signs in to `claude` and nowhere else
   carried a second, empty Claude login in the pool, in `splice status` and in the daemon's choice of where a
-  session starts (Marcos, Nov 12, 2026: "why ... is claude and claude-splice two identities? We use Claude only
-  via splice"). `claude-splice` now launches over `~/.claude`, as a `claude` that goes through splice does and
+  session starts (Nov 12, 2026: Claude is used only through splice here, so it should not appear as two identities). `claude-splice` now launches over `~/.claude`, as a `claude` that goes through splice does and
   whether or not it does: the same login, settings and sessions under either name. The second login is gone
   from Accounts, Usage, `splice status`, `splice doctor` and `/api/claude-logins`. If you signed in inside
   `claude-splice` and never in `claude`, sign in once more with `/login`; the old sign-in stays on disk in
@@ -1898,8 +1894,7 @@ origin.
 - **Teams, Usage and Settings draw their own shape while loading,** like Requests, instead of a blank page.
 - **`/api/auth` returns only the fields the console and the command line read.** A login whose file cannot be read
   reads "can't read the login file".
-- **GPT sessions no longer show the code-mode script as reasoning;** the reasoning summaries are unchanged (Marcos,
-  Oct 12).
+- **GPT sessions no longer show the code-mode script as reasoning;** the reasoning summaries are unchanged (Oct 12).
 - **Restart splice, pressed while requests are in flight, names the agents mid-request** and says each ends at once with
   the restart line, since the stop gives a running turn no time to finish. Compactions are still waited for first.
 - **The streaming-idle limit, the activity retention and message edges apply without a restart.**
@@ -1950,8 +1945,8 @@ origin.
 - **A new Claude command names no model, so Claude Code shows its own.** `splice add claude`, and the Claude row of
   `splice setup`, wrote `pinned_model = "claude-fable-5-1"` and a list of four models (Fable 5.1, Opus 5.5, Sonnet 5,
   Haiku 4.5): a new install started on last month's model, and its list was behind the day Fable 5.2 came out.
-  Marcos, Nov 9, 2026: "for default anthropic claude it should juyst show the default models iot shouldn't list
-  anything otherwise when new models like this comes up wi'll miss them". The command writes neither line now, as
+  Nov 9, 2026: a default Anthropic Claude should show the default models and list nothing of its own, or new
+  models like this one get missed. The command writes neither line now, as
   the head doc always allowed for a provider that forwards the client's own login, and setup says "Claude Code's own
   models" in place of asking which to keep. The provider's rows, which carry what splice knows about a model and are
   not the list Claude Code shows, name Fable 5.2, Opus 5.5, Sonnet 5.5 and Haiku 5.5 at 1M tokens each, and

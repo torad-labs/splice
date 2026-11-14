@@ -26,7 +26,7 @@ class ChatEffortWiringTest {
         assertEquals("max", built.meta.reasoning.effort)
     }
 
-    // Marcos, Oct 28: "claude code picks should also be considered, for all heads and all adapters we do. Always." A
+    // Oct 28: Claude Code's effort picks count for all heads and all adapters, always. A
     // provider without its own vocabulary sends the effort Claude Code's request names on the standard rungs, and its
     // request is otherwise byte-for-byte what it was. Rewritten from "preserves its exact request bytes", which pinned
     // high for every pick.

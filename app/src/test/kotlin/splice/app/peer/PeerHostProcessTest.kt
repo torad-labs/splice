@@ -1,4 +1,4 @@
-// Oct 28, 2026 (Marcos: "yeah replcace the java process per peer"). Each peer ran a JVM of its own, 80 to 110 MB of
+// Oct 28, 2026 (Marcos chose to replace the per-peer java process). Each peer ran a JVM of its own, 80 to 110 MB of
 // memory apiece, so sixteen peers cost well over a gigabyte. One peer-host process now serves every peer of a state
 // folder. Each peer keeps a pid of its own, a small anchor process the host started, so the session registry,
 // ListAgents and SendMessage still see one live session per peer. A signal to that pid stops that peer alone, a host

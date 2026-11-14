@@ -1,11 +1,11 @@
-// NEW: V4-173 (operator 2026-09-20: "we're a proxy man, how aren't we able to check the system
-// prompt from the requests?") — the ONE place splice keeps a body it sent upstream. Until this
+// NEW: V4-173 (2026-09-20: as a proxy, splice should be able to check the system
+// prompt of the requests) — the ONE place splice keeps a body it sent upstream. Until this
 // row nothing did: the perf row stamps `upstream_req_bytes`, a count, and the bytes died with the
 // round, so the strip mode's `system_prompt_applied` could say "a paragraph was removed" and
 // nothing anywhere could say WHICH. A proxy that cannot show what it sent cannot be audited.
 //
-// OPT-IN BY CONSTRUCTION (operator: "make the upstream request bodies opt-in so our users don't
-// think we're spying on them"). A body carries the user's whole conversation, so this class is
+// OPT-IN BY CONSTRUCTION (the upstream request bodies are opt-in so users do not
+// think splice is spying on them). A body carries the user's whole conversation, so this class is
 // only ever built for a head whose operator named a count ([heads.KEY.overrides] wireTap = N;
 // HeadServerFactory hands every other head null), it holds the LAST N in memory and nowhere else,
 // and a restart forgets them. `splice doctor` names the tap on every run while it is on.

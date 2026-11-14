@@ -2,8 +2,8 @@
 // sessions"). The pool's manual pins, held apart from AccountPool so that class stays under detekt's function
 // ceiling. A session pin outranks the head pin for THAT session only; a pin for one session never reaches another.
 //
-// Nov 3, 2026: a pin lets go at its login's first limit reading (Marcos, through Simon: "make the pin let go at the
-// first limit reading instead of pulling seats back"). That evening Anthropic refused Fable on the pinned account-3 for
+// Nov 3, 2026: a pin lets go at its login's first limit reading (so it stops pulling seats back).
+// That evening Anthropic refused Fable on the pinned account-3 for
 // the week; the pin stayed, account-3 still served Opus, and a short limit elsewhere sent a seat back to it for six
 // minutes until a usage reading showed its week full.
 package splice.upstream.credentials

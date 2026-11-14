@@ -295,7 +295,7 @@ const API = (() => {
 // Models and Compare each carried their own copy of these steps, and the copies drifted. On Nov 11, 2026 Cancel was
 // mended on Accounts while three pages still only forgot the sign-in; Models and Compare went on drawing "Signing in"
 // for five minutes over a sign-in a restarted splice no longer held; and only Accounts said in what way one had
-// failed (Marcos: "TRhe whol state machine system for login is broken"). The steps are here once. A page brings what
+// failed (the whole login state machine was reported broken). The steps are here once. A page brings what
 // is its own: where its sign-in starts (how), the object it draws from (s), and what it does as the sign-in changes (on).
 //   how: { start: the POST that begins it, body, poll: the head its status is read under, native: Claude Code's own
 //          sign-in, which takes a pasted code; an add's sign-in is carried by its add instead: watch, the GET that
@@ -403,7 +403,7 @@ const SIGNIN = (() => {
   /** Cancel. The sign-in ends on splice, and the page lets go of it only once splice has answered: true when it is over
    *  there (one that already failed, or that splice never knew, is over), false when splice did not answer, with the
    *  sign-in left as "Not cancelled" for the page to draw. Until Nov 11, 2026 Cancel only forgot the sign-in in the
-   *  page (Marcos: "it said it canceled ... so it didnt really cancelled"). */
+   *  page (the page said cancelled, yet the sign-in had not really been cancelled). */
   async function cancel(s, on) {
     if (s.state === "ending") return false;
     quiet(s);

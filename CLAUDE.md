@@ -5,13 +5,12 @@ conduct rules the operator has had to repeat to sessions.
 
 ## A build runs in the background while the seat keeps coding (2026-10-09)
 
-Operator: "as an engineer when I code and I have a long build, I'm gonna start coding other things ... I don't keep staring at the screen." Every gradle, gate, test or push command runs in the background, never in the foreground and never in a `sleep` or poll loop. While it runs, the seat edits the next item in its queue. A lock, a peer's file or a red build is never a reason to stop: take the next item and come back when the result arrives. A seat that waits is a splice defect, not a pause.
+The operator expects a seat to work like an engineer with a long build: start coding other things instead of staring at the screen. Every gradle, gate, test or push command runs in the background, never in the foreground and never in a `sleep` or poll loop. While it runs, the seat edits the next item in its queue. A lock, a peer's file or a red build is never a reason to stop: take the next item and come back when the result arrives. A seat that waits is a splice defect, not a pause.
 
 ## This machine follows the beta channel with auto-update (2026-10-13)
 
-Operator: "make sure to keep releasing to better with auto update please throuyghout the day" (read as
-beta), then,
-asked whether this machine follows beta too: "Follow beta here too". This replaces the milestone-only
+The operator wants betas released throughout the day with auto-update, and this machine follows the beta
+channel too. This replaces the milestone-only
 rule of 2026-10-10. A beta (v0.4.0-beta.N, a GitHub prerelease) is cut whenever a push lands green
 with user-visible changes, built locally while Actions is locked, without attestation, as he chose.
 Once auto-update ships, this machine's splice.toml carries update_channel = "beta" and
@@ -21,8 +20,8 @@ No other seat installs or runs `splice restart`.
 
 ## How an install runs, once it is due (2026-09-16)
 
-Operator, after the third ask in one session: "i told you a million times to restart ... you dont
-need my permission for everything, Im tired of babysitting all these sessions."
+The operator had to ask for a restart three times in one session. Seats do not need his permission for
+each install and restart, and he does not want to babysit sessions.
 
 When an install is due (above) and its sha passed the gate of record, install it and restart. Do not
 ask. Cutting in-flight turns on the local daemon is not operator data (global rules §8): the retry
@@ -30,9 +29,9 @@ layers exist exactly so a cut turn comes back on its own. The install is reversi
 backup is taken first (global rules §21). Once an install is due, the only reasons to hold it are a red gate or a
 jar the seat did not build and verify itself.
 
-Never wait for a turn, a stop, or another seat's work (2026-09-28). Operator: "YOU CAN ALWAYS INSTALL
-AND RESTART SPLICE at anytime, never wait for a turn or for a stop. SPlice WAS BUIULT to recover, if
-you restart, and the session dont recover bythesmelvfes we have a bug." Restart with
+Never wait for a turn, a stop, or another seat's work (2026-09-28). A seat can install and restart splice
+at any time, because splice was built to recover: if a session does not recover by itself after a restart,
+that is a bug. Restart with
 `splice restart --now` the moment the jar is installed. No gate on a local model server's load, a
 peer's GPU run, a peer's "hold the restart" message or an idle window. A session that does not come
 back on its own after a restart is a splice defect: file it as a row with the evidence, never wait
@@ -49,7 +48,7 @@ The procedure, every time, in this order:
    tree once the install is verified. The build is reproducible: CI's jar and a local jar of the
    same sha hash identically. When CI can run again, rebuild there and reinstall if the jar differs.
 2. A sha is installable when the pushed commit passed the repo's hooks, and CI is green on it if CI
-   ran. CI never blocks an install (Marcos's ruling, 2026-10-09). Red = stop, fix forward, no
+   ran. CI never blocks an install (ruling of 2026-10-09). Red = stop, fix forward, no
    install.
 3. Backup first: `cp -p ~/.local/share/splice/splice.jar
    ~/.local/share/splice/splice.jar.bak-<date>-pre-<sha>`.
@@ -65,8 +64,8 @@ The procedure, every time, in this order:
 
 ## Never ask the operator to look at a screen no seat has looked at (2026-10-07)
 
-Operator, after splice-lead asked him to review the console: "Who reviewed and approved the
-console? ... I WANT WHOEVER APPROVED THIS BULLSHIT TO NEVER MAKE THIS MISTAKE AGAIN." Nobody had.
+After splice-lead asked him to review the console, the operator asked who had reviewed and approved it,
+and wants that mistake never repeated. Nobody had.
 splice-lead asked after checking only that the page answered 200. The last whole-console approval
 was a week old, and every later walk was at 1440 px in light mode. He uses dark mode on a wide
 screen (his Oct 7 screenshot: 3394 x 1889), where Accounts drew text over its cards, cut controls
@@ -88,7 +87,7 @@ A passing test, an HTTP 200, a source review, a copy audit or another seat's old
 look. A seat that has not done 1-4 does not ask. A number that could mislead is fixed in the number
 or its label first; a short line beside a control is allowed when its name alone would be cryptic.
 Scar, Oct 7, 7:17 PM CT: nine screens passed splice-lead and marlin on defects alone at 3394; he
-reviewed at 3828 and stopped at screen 2 ("What does note do?", cards that "all look like templates").
+reviewed at 3828 and stopped at screen 2, unable to say what a control did and seeing cards that all looked like templates.
 
 ## Project laws
 
@@ -113,12 +112,12 @@ Marcos's standing rulings for splice, one per line.
 - A refused claim, a blocked file or an unanswered question is never a stopping point: take the next open work and say in one line what you took and what you are still waiting on.
 - No version bump and no release cut without Marcos's explicit go.
 - GitHub settings, branch protection, rulesets and required checks are Marcos's to change.
-- No detekt or ast-grep ignores, with one exception: LongParameterList skips @Serializable classes, which mirror an outside format (splice.toml, saved state, wire bodies) field by field (Marcos, 2026-10-09).
-- This machine follows the beta channel with auto-update; betas are cut through the day, built locally without attestation while Actions is locked (Marcos, 2026-10-13, replacing milestone-only installs of 2026-10-10).
-- A screen fix takes seconds: the walker names the broken thing to the page's owner, the owner fixes it, the walker reloads the desk, which serves the live console folder, and the owner commits. No test suite, no screenshot set and no rewalk per fix. One look at every page at his width in dark mode comes before Marcos is asked to look (Marcos, 2026-10-12).
+- No detekt or ast-grep ignores, with one exception: LongParameterList skips @Serializable classes, which mirror an outside format (splice.toml, saved state, wire bodies) field by field (2026-10-09).
+- This machine follows the beta channel with auto-update; betas are cut through the day, built locally without attestation while Actions is locked (2026-10-13, replacing milestone-only installs of 2026-10-10).
+- A screen fix takes seconds: the walker names the broken thing to the page's owner, the owner fixes it, the walker reloads the desk, which serves the live console folder, and the owner commits. No test suite, no screenshot set and no rewalk per fix. One look at every page at his width in dark mode comes before Marcos is asked to look (2026-10-12).
 - No test asserts code usage: no call counts, no "method X was called", no file-read counts. A fix lands without a new test unless the test checks what a user sees or a route returns. Speed is proven by timing on a desk (Marcos, 2026-10-12).
 - The push's pre-push is the only gradle run a change needs. No seat runs a separate proof, exact-tree check or duplicate suite before pushing (Marcos, 2026-10-12). Any seat pushes; there is no driver (Marcos, 2026-10-17).
 - Seats spend over 75% of their time building and under 25% on tests, as "Where agents' time goes" counts it. A decided change deletes the tests that pinned the old behavior unless one checks what a user sees (Marcos, 2026-10-12).
-- Building is at least 25% of every seat's day in "Where agents' time goes", where it read 9% on Oct 13 and reading read 72%. Reading and checking go to small helpers: a search, a map of code, more than two files read, a look at a page, or a check is one Agent call with model "haiku". That alias runs Haiku under Claude and gpt-6-luna under claudex. The seat reads the helper's answer and builds (Marcos: "if we need to check, read files its fine, but let's just have luna or haiku subagents do that, it's way more efficient and way faster"; 2026-10-13: "less time with useless tests, less time checking, use haiku for reading, and more building").
+- Building is at least 25% of every seat's day in "Where agents' time goes", where it read 9% on Oct 13 and reading read 72%. Reading and checking go to small helpers: a search, a map of code, more than two files read, a look at a page, or a check is one Agent call with model "haiku". That alias runs Haiku under Claude and gpt-6-luna under claudex. The seat reads the helper's answer and builds (Marcos, 2026-10-12 and 2026-10-13: checking and reading are far faster and cheaper through luna or haiku subagents, with less time on useless tests and more on building).
 - PR #247 merged on 2026-10-31. There is no release train and no long-lived dev branch: work goes on a short-lived branch off main, reaches main through a PR, and the branch is deleted when it merges. The pre-push gate stays.
 - splice has two fronts, each with a lead. splice-runtime-lead leads splice-platform and splice-sessions: the daemon, launch, sessions, release and the train. splice-console-lead leads splice-config and splice-usage: configuration, accounts, models, usage and the walker. A seat reports to its lead, and the leads report to splice-lead. A finding on the other front goes lead to lead. The roster is in the splice-roster skill (Marcos, 2026-10-13).

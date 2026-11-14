@@ -1,6 +1,6 @@
 // splice.torad.ai's website: one page whose product parts are the console's own markup, on the console's own
-// stylesheets, with made-up data (Marcos, Oct 31, 2026: "redo the website for Spllice, so it uses latest console ui ...
-// show actually components with fake data"). The worker beside this folder serves what this writes, at every path but
+// stylesheets, with made-up data (Oct 31, 2026: the site was redone to use the latest console UI and to show
+// the actual components with fake data). The worker beside this folder serves what this writes, at every path but
 // /download (../worker.ts).
 //
 //   bun tools/release/downloads/website/build.ts <out> --media <dir>

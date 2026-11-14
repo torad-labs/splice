@@ -121,8 +121,8 @@ const createKnobs = (scope) => {
     // what a budget made without an action of its own does once it is spent (PUT /api/budgets, Knob.kt BUDGET_DEFAULT_ACTION)
     K("budgetDefaultAction", "Spent budget", { k: "pick", names: { warn: "Warns", block: "Blocks" } }, "warn",
       { home: "plan", also: "when a budget runs out spend money new budget spent" }),
-    // the effort a session starts at, on every head (Marcos, Oct 28: "effort at high by default, but these should be
-    // configurable by users in the console and in the toml file", and "claude code picks should also be considered"). A launch
+    // the effort a session starts at, on every head (Oct 28: high by default, configurable by users in the
+    // console and in the toml file, and Claude Code's own picks considered too). A launch
     // hands it to Claude Code as --effort, /effort changes it from there, and each head sends what Claude Code asks; high when
     // nothing is set. Read at each launch (LaunchSpecFactory), so a change here reaches the next session (Knob.kt EFFORT).
     K("effort", "Reasoning effort", { k: "pick", unset: "High", names: { none: "None", minimal: "Minimal", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" } }, null,
@@ -159,8 +159,8 @@ const createKnobs = (scope) => {
     K("traceRetentionDays", "Keep requests for", { k: "count", opts: [1, 3, 7, 14, 30], unit: "days" }, 7, { home: "data", also: "keep prompts and answers for" }),
     K("traceMaxBodyChars", "Longest saved prompt", { k: "count", opts: [4 * MB, 8 * MB, 16 * MB, 32 * MB], unit: "M characters", per: MB }, 16 * MB, { home: "data" }),
     // one setting for the usage and request history (the hourly totals and the request records), what Usage and
-    // Requests can look back on: 35 days on a fresh install, Forever a real choice (Marlin, Oct 10, from Marcos: "it
-    // should keep as much as the user wants it to keep"). Forever is the daemon's word "forever" (null would delete the setting and bring the 35 days
+    // Requests can look back on: 35 days on a fresh install, Forever a real choice (Marlin, Oct 10: it
+    // should keep as much as the user wants it to keep). Forever is the daemon's word "forever" (null would delete the setting and bring the 35 days
     // back), and Today only is 0, a choice never typed:
     // a daily budget needs today's spend, so it keeps today and drops it at midnight. A Custom field takes whole days
     // from 1. A shorter window waits for the page's yes (ask), since it deletes what falls outside it.
@@ -399,7 +399,7 @@ const createKnobs = (scope) => {
     // boot-only one then offers Restart splice above
     return rest ? restHtml(id) : "";
   }
-  // THE ORDINARY CASE SAYS NOTHING (the polish pass, Oct 26, from Marcos's "show don't tell"): a row at splice's default
+  // THE ORDINARY CASE SAYS NOTHING (the polish pass, Oct 26, from the show-rather-than-tell rule): a row at splice's default
   // whose change lands live carried two tags saying so on 45 rows, read once and never again. What is left is the mark
   // for a value a reader could not guess at: changed, from the file, from the shell, gone at the next start, or read
   // only when splice starts. The words live in the section's legend (legendHtml), beside the same glyph.
@@ -803,7 +803,7 @@ const createKnobs = (scope) => {
     });
     root.addEventListener("focusout", (e) => { if (e.target.dataset.kcustom && st.custom === e.target.dataset.kcustom) { st.custom = null; setTimeout(render); } });
   }
-  // THE REST OF THE SETTINGS (gap 457; Marlin, Oct 13 12:01 PM, from Marcos's block at v0.4.0.md:568): each knob on the
+  // THE REST OF THE SETTINGS (gap 457; Marlin, Oct 13 12:01 PM, from the block at v0.4.0.md:568): each knob on the
   // wire with no row of its own goes behind its section's Advanced, named by its key, its control from the daemon's kind.
   // ADV_HOME is the section each belongs to; one the daemon adds later lands in Version's until it is given a home. Each is
   // kept in KNOB from first sight, so a change saves like any other row's and the page's search finds it.
@@ -814,7 +814,7 @@ const createKnobs = (scope) => {
     activityStoreHeads: "data", debug: "data", trace: "data", wireTap: "data", perfArchiveRetentionDays: "data",
   };
   // A KEY IS NOT A NAME (Oct 26): `ingressReadIdleMs` behind Advanced told him the daemon's field, in the daemon's
-  // spelling, and what it does nowhere. Each one named here reads as what it does, in his words, with the unit the
+  // spelling, and what it does nowhere. Each one named here reads as what it does, in plain words, with the unit the
   // control shows; the unit also tells a number apart from a count (a duration's field is in seconds or minutes).
   // A key with no entry still shows, under its own spelling: that is honest, and it is the next one to name.
   // A name that changed keeps the words it had as search words (the third entry), so a search for the old name still

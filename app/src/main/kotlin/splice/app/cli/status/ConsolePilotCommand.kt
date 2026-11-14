@@ -1,4 +1,4 @@
-// NEW: Oct 16, 2026 (Marcos: "Everything that the user can do the agents should be able to do it too") —
+// NEW: Oct 16, 2026 (whatever a person can do in the console, an agent should be able to do too) —
 // `splice console <action>`: drives the console a person has open, with the taps, words and moves a person makes, so
 // an agent such as the splice manager can show and do what it explains. The daemon relays one order to the tab the
 // person looked at last (ConsolePilot) and the page acts on itself (console/pilot.js). Bare `splice console` still

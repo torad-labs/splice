@@ -100,7 +100,7 @@ public enum class Knob(
         KnobDefault.Text("text"),
     ),
 
-    // ON for every head (Marcos, Oct 22: off "is a big defect and it should not be off by default"). Off, splice
+    // ON for every head (Oct 22: off is a big defect and must not be the default). Off, splice
     // dropped every reasoning item before the last real prompt: 26% of earlier tool steps reached claudex's model
     // with their reasoning, against about 90% in Codex's own requests, which keep it until compaction (Oct 22
     // claudex-vs-Codex comparison). The July note that replay thins fresh reasoning (~4x) stays on record;
@@ -219,7 +219,7 @@ public enum class Knob(
     // this switch neither changes TRACE nor exposes its instructions, tools or raw headers.
     TRANSCRIPT_VIEW("transcriptView", listOf(), KnobDefault.Flag(true)),
 
-    // The two prompt stores that are splice's own to stop (Marcos, Oct 10: the user decides how much splice keeps). Both ON
+    // The two prompt stores that are splice's own to stop (Oct 10: the user decides how much splice keeps). Both ON
     // by default, both read LIVE by their writers, so a PATCH stops the next copy with no restart. Off keeps what is
     // already held until Delete now.
     KEEP_TRANSCRIPT_COPIES("keepTranscriptCopies", listOf(), KnobDefault.Flag(true)),
@@ -586,8 +586,8 @@ public enum class Knob(
     // a window should not have to be spelled as one. ConfigCoercion refuses any other word by name.
     // NO RESTART. Every reader of this window reads it through KeptHistory at the moment it needs
     // it — each head's hourly store and its archive sweep, the backfill's reach, the retention the
-    // console declares, and the history row itself. Marcos asked twice for changes to apply without
-    // a restart, and the console's rule is that a change reads "Applied" once (Marlin, Oct 10,
+    // console declares, and the history row itself. Changes are meant to apply without
+    // a restart (asked for twice), and the console's rule is that a change reads "Applied" once (Marlin, Oct 10,
     // 2026): a person who shortens their history has shortened it, and the save on Settings > Your
     // data trims every store to the moment it showed them. Saying restart-required here would be
     // asking for one that nothing needs.

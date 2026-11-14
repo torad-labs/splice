@@ -1,5 +1,5 @@
-// Publishing a built release to splice.torad.ai/download (Marcos, Oct 31, 2026: "I dont want the release download to be there
-// [GitHub] ... being at Cloudflare makes more sense"). The release's files go into the splice-releases R2 bucket under
+// Publishing a built release to splice.torad.ai/download (Oct 31, 2026: the download does not belong on
+// GitHub, and Cloudflare suits it better). The release's files go into the splice-releases R2 bucket under
 // v<version>/, and the bucket's releases.json lists the release; the worker in tools/release/downloads/worker.ts serves
 // both. The order is what keeps a client from ever seeing half a release:
 //

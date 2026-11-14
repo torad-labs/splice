@@ -1,5 +1,5 @@
-// Oct 28, 2026 (Marcos: "add the ability for anyone or anything to register to send and receive messages via splice
-// peer"). Anything that registers by hand runs its register again whenever it starts, and a register that repeats one
+// Oct 28, 2026 (anyone or anything can register to send and receive messages via splice
+// peer). Anything that registers by hand runs its register again whenever it starts, and a register that repeats one
 // already there was refused ("a peer named '<name>' already exists"), so a restarted bot, script or harness had to
 // revoke first and lost its journal's key. A register from the same owner, or from no owner where the peer has none,
 // now answers the registration that is there: the same session id and key file, its cwd and send scope as the new

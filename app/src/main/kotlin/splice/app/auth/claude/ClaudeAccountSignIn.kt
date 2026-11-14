@@ -10,16 +10,16 @@
 // button, POST /api/auth/{head}/login with a label, and the same polling. An OAuth head mints a device code; a
 // Claude head signs in through the client that owns these folders.
 //
-// It is also what Sign in and Sign in again do on a command's own login card ([ClaudeLoginOwner.login]). Marcos, Oct
-// 27, 2026: "SPlice console login ADDs an account, it doesn't replace it". None of these writes a login a running
+// It is also what Sign in and Sign in again do on a command's own login card ([ClaudeLoginOwner.login]). Since Oct
+// 27, 2026 a console login adds an account and never replaces one. None of these writes a login a running
 // session reads, so none of them waits for sessions to stop.
 //
 // A sign-in ends one of five ways and each is final: the account lands, it is refused by name, Claude Code stops, its
 // ten minutes run out, or it is cancelled. Cancelled means by the person ([cancel]), by a newer sign-in to the same
 // label ([prepare]) or by the daemon stopping, and in each the child is stopped and the pending folder goes. Until Nov
 // 11, 2026 there was no cancel: the console's Cancel only forgot the sign-in in the page, Claude Code's child ran on
-// for its ten minutes, and the next Sign in on that login was refused as already running (Marcos: "it said it
-// canceled, then when I tried sign in again, it said it was already in progress, so it didnt really cancelled").
+// for its ten minutes, and the next Sign in on that login was refused as already running (the page said
+// cancelled, then the next try said already in progress, so the cancel had not really cancelled).
 package splice.app.auth.claude
 
 import kotlinx.coroutines.CancellationException
@@ -227,7 +227,7 @@ internal class ClaudeAccountSignIn(
             // prompted"), so the status says so and every card that shows the link has the field for the code. Until
             // Nov 11, 2026 only a command's own login card drew that field: Sign in again on an added login, and
             // + Add account, opened the same page and left its code with nowhere to go, so the sign-in stayed open
-            // (Marcos: "then trhe sign in in splice showed still in progress").
+            // (the console showed the sign-in still in progress).
             val completed = child.await { url ->
                 cell.updateAndGet {
                     it.copy(state = LoginState.WAITING, prompt = it.prompt.copy(browserUrl = url, pasteBack = true))

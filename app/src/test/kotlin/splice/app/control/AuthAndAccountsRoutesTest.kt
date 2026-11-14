@@ -269,8 +269,8 @@ class AuthAndAccountsRoutesTest {
         assertTrue(response.bodyAsText().contains(NO_POOL), response.bodyAsText())
     }
 
-    // Try again on a login its provider refused (Marcos, Nov 11, 2026: "I did sign in again because it said it was
-    // blocked"): the card's own act, which until then was only Sign in again.
+    // Try again on a login its provider refused (Nov 11, 2026: a person signed in again because the card said it
+    // was blocked): the card's own act, which until then was only Sign in again.
     @Test
     fun `asking a login again answers ok true, and a label the pool does not list is a 400 naming it`() = runBlocking {
         awaitPort()

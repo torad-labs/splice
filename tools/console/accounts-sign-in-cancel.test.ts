@@ -1,5 +1,5 @@
-// Cancel on a sign-in ends it on splice (Marcos, Nov 11, 2026: "it said it canceled, then when I tried sign in again,
-// it said it was already in progress, so it didnt really cancelled"). Until that day the page's Cancel only forgot the
+// Cancel on a sign-in ends it on splice (Nov 11, 2026: the page said it canceled, then a new sign-in
+// was refused as already in progress, so the cancel had not really happened). Until that day the page's Cancel only forgot the
 // sign-in in the page: splice kept it for its ten minutes and refused the next Sign in on that login. Through the real
 // page against a stub daemon in the routes' own shapes (LoginRoutes.kt): Cancel asks splice to end the sign-in and the
 // card lets go of it only once splice has answered, and a page opened while splice holds a sign-in shows it where it

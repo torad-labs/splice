@@ -105,7 +105,7 @@ const REASON = { plan: "On your plan", local: "This computer", vast: "vast.ai", 
 // A key is an account: its variable and the day splice first saw THAT key, "OPENROUTER_API_KEY · Sep 14" (fin's
 // words). A row names the key it was sent with as `VARIABLE:fingerprint` (KeyAccount.kt), so a rotated key reads as
 // its own account and the one it replaced keeps its own history, marked Replaced — on Requests as on Accounts
-// (Marcos, Oct 8). A plan's label has no colon and no key behind it, and prints as it stands.
+// (Oct 8). A plan's label has no colon and no key behind it, and prints as it stands.
 const keyNameOf = (account) => { const s = String(account ?? ""), at = s.lastIndexOf(":"); return at < 0 ? s : s.slice(0, at); };
 // A key reads as its provider, the heading Accounts draws over it and the name Continue on uses; its variable joins
 // only when two keys of that provider feed the same command, so the line says which one it sent (fin).
@@ -585,7 +585,7 @@ function askedHeads() {
 
 /** Each command's newest requests, at most [held] of them. The read answers at once with what splice has ready: a
  *  command whose saved requests splice is still reading after a restart is named so, and asked again shortly, rather
- *  than holding every other command's rows back (splice-lead, Marcos's live console: 28 to 45 s to settle). */
+ *  than holding every other command's rows back (splice-lead, on the live console: 28 to 45 s to settle). */
 /** A command whose read failed is named with one word on the list, never splice's prose: the reason goes to the
  *  browser's log, as every source string does (fin). Partly read when some rows came back, so Not read is never said
  *  over rows on screen. */
@@ -797,7 +797,7 @@ function stateOf(r, row = false, resetSaid = false) {
   };
 }
 // THE WATERFALL'S COUNTERS (web-console.md, Turn waterfall): what the bar alone cannot say, each drawn only when it
-// happened, so a clean request draws none (Marcos stopped a walk on walls of figures). Attempts already stands in the
+// happened, so a clean request draws none (a walk was stopped over walls of figures). Attempts already stands in the
 // figures above, so retries are not said twice. Bytes each way show only on a request that did not answer cleanly,
 // where they say how far it got. async_io_drops is left out: the row carries the head's running total, not this
 // request's (PerfKeys.ASYNC_IO_DROPS), so on one request it would mislead.
@@ -1369,8 +1369,8 @@ function searchFoot() {
 const priceOf = (r) => r.cost ?? r.planValue ?? null;
 const ordered = (rows) => rows.slice().sort(state.order === "price"
   ? (a, b) => (priceOf(b) ?? -1) - (priceOf(a) ?? -1) || +b.ts - +a.ts : (a, b) => +b.ts - +a.ts);
-// WHILE THE FIRST READ IS OUT the list draws its own shape, hollow (Marcos, Oct 12: the dashed "Reading" box "looks
-// awful", and it was the same box No requests uses, so loading read as an empty day): its head line, the table with its
+// WHILE THE FIRST READ IS OUT the list draws its own shape, hollow (Oct 12: the dashed "Reading" box looked
+// bad, and it was the same box No requests uses, so loading read as an empty day): its head line, the table with its
 // columns' header, an hour's sub-head, and rows at the rows' own height on the rows' own grid, each cell the striped bar
 // a meter draws while it reads, fading down the page, so the rows land where the eye already is and nothing moves when
 // they do. The filters' row holds ghost chips the same way.

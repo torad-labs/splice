@@ -1,14 +1,13 @@
-// Goal (Marcos, Oct 31: "I dont want the release download to be there [GitHub] ... being at Cloudflare makes more
-// sense"), then: "Splice.torad.ai should be splices website ... Have tje download be splice.torad.ai/download"):
-// splice.torad.ai/download serves every release file the installer and `splice upgrade` ask for.
+// Goal (Oct 31): the download does not belong on GitHub, and Cloudflare suits it better; splice.torad.ai is splice's
+// website, with the download at /download. splice.torad.ai/download serves every release file the installer and `splice upgrade` ask for.
 //
 //   /download/v<version>/<file>  the file as published, cacheable forever since a published version never changes;
 //   /download/latest/<file>      a redirect to that file in the newest stable release, so every client lands on one;
 //   /download/install.sh         the newest stable release's installer;
 //   /download/releases.json      the list of published releases the updater reads, never cached;
 //
-// and nothing else under /download. The rest of the host is splice's website (Marcos, Oct 31: "Yes, at splice.torad.ai,
-// with downloads at /download"): every other path is the site's own files, and no site file ever answers for a
+// and nothing else under /download. The rest of the host is splice's website (at splice.torad.ai, with downloads at
+// /download): every other path is the site's own files, and no site file ever answers for a
 // /download path. The worker runs here against an in-memory bucket with the R2 calls it makes, and a stand-in for the
 // site's static assets.
 import { describe, expect, test } from "bun:test";

@@ -1,4 +1,4 @@
-// NEW: Oct 28, 2026 (Marcos: "yeah replcace the java process per peer"; docs/specs/peer-messaging.md 4.1) — the one
+// NEW: Oct 28, 2026 (replacing the java process per peer; docs/specs/peer-messaging.md 4.1) — the one
 // process that serves every peer of a state folder, where each peer ran a JVM of its own:
 // `java -Xmx128m -XX:+UseSerialGC -cp <splice.jar> splice.app.MainKt peer-host --settings DIR --state DIR
 // --registry DIR... [--runtime DIR] --build ID`, started by PeerSupervisor's HelperLaunch. Main.kt hands it here,

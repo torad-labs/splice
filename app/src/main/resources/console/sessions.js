@@ -284,7 +284,7 @@ async function readNewerNow(s) {
 }
 
 // ---------- what the page says about a session (look() and the lamp are kit.js's) ----------
-// A SESSION IS CALLED BY WHAT HE WOULD CALL IT (Marcos, Oct 28: names are the user's words, never a machine id): the name he
+// A SESSION IS CALLED BY WHAT HE WOULD CALL IT (Oct 28: names are the user's own words, never a machine id): the name he
 // gave it here, else the name its client registered, else the first line of its first message as the daemon read it
 // (SessionsRoutes `title`), then its worktree, then its folder where the page is flat. A name a client built from an id
 // ("codex-1f2e3d4c-...") is an id however it is spelled, and the kit's rule reads a word and a whole UUID as a name; a
@@ -401,7 +401,7 @@ function spanWord(ms) {
 }
 /** How long the row has been in its state: from when that state began (sinceOf). */
 const spanOf = (s, now = Date.now()) => Math.max(0, now - s.since);
-// ONE FIXED LOG AXIS, 1 s TO 4 w (Marcos: "show, don't tell"): the bar's length is the time in state on a scale no data
+// ONE FIXED LOG AXIS, 1 s TO 4 w (shown, not told): the bar's length is the time in state on a scale no data
 // moves, so 12 s and 3 d read as lengths on one line and the same length is the same time on every row and every visit.
 // Its ticks stand under every bar and in the legend, so a length is read against them without a figure (the kit's axis).
 const AXIS = DRAW.timeAxis;
@@ -510,7 +510,7 @@ const lampName = (L) => L.name ?? wordsIn(L.word).split(" · ")[0].trim();
 const lampHtml = (L) => `<span class="lamp ${L.cls}" role="img" aria-label="${esc(lampName(L))}" title="${esc(lampName(L))}">${L.lamp}</span>`;
 // a worktree whose folder is an id names nothing he would know it by: it reads as a worktree, its folder its title
 const wtWord = (wt) => (ID_PART.test(wt) ? "Worktree" : wt);
-/** WHAT A SESSION IS DOING, AS A GLYPH AND ITS TARGET (Marcos: "show, don't tell"), never a sentence cut at the row's edge: the
+/** WHAT A SESSION IS DOING, AS A GLYPH AND ITS TARGET (shown, not told), never a sentence cut at the row's edge: the
  *  tool it last ran as the mark its own user would know it by, its word, and the file or command it was on, whole or not
  *  at all. A sentence it last said stands only where it is short enough to stand whole; its words, whole, are on the row's
  *  title and in the conversation one press away. */
@@ -555,8 +555,8 @@ const renameHtml = (s) => `<form class="rename" data-s="${esc(s.id)}" data-renam
   + `<button class="act primary small" type="submit">Save</button><button class="act quiet small" type="button" data-act="rename-no" data-s="${esc(s.id)}">Cancel</button><span class="kept">Kept in this browser</span></form>`;
 /** THE ROW'S LINE, on the tracks every row of the page shares: who it is (the chevron that opens it in place, its name,
  *  its branch), its words (where it is when the block does not say, what the lamp cannot say, then what it last said
- *  or ran), how long it has been in that state as a bar on one scale, its command, and its act (Marcos, Oct 26: "the
- *  row style just does not look good"). The open session's title bar is this same line. */
+ *  or ran), how long it has been in that state as a bar on one scale, its command, and its act (Oct 26: the
+ *  row style did not look good). The open session's title bar is this same line. */
 function lineHtml(s, L, inPlate) {
   const stop = stopHtml(s, "act quiet small", ICON.stop, true);
   const door = stop ? "" : doorHtml(s);
@@ -635,8 +635,8 @@ function foldNamesakes(live, ended) {
 /** A row the list must draw whatever a fold or a page would do with it: the open session, and the row the open session
  *  is folded under, since its plate is drawn there. */
 const holdsOpen = (s) => s.id === ui.open || (ui.earlier.get(s.id) || []).some((x) => x.id === ui.open);
-// ---------- by project (Marcos, Oct 11: "If we don't separate sessions per project, it'll be really hard to
-// navigate"): the grouping serves finding the one for a project, and must never cost seeing who is stuck on him ----
+// ---------- by project (Oct 11: without separating sessions per project, they are hard to
+// navigate): the grouping serves finding the one for a project, and must never cost seeing who is stuck on him ----
 // The project is the daemon's answer on the row (ProjectWire), the same one Teams and Requests read; this page never
 // resolves a path itself. A session in no project is "No project", which is a group like any other but always last.
 const NO_PROJECT = "-";
@@ -725,7 +725,7 @@ function rowPiece(s) {
   return { html: cardHtml(s), plate: namesake ? plateHtml(namesake) : "", w };
 }
 const pieceHtml = (p) => p.html + (p.plate || "");
-// A GROUP SHOWS WHAT MOVES AND FOLDS WHAT RESTS (Marcos, Oct 15: "organize sessions per project a bit more efficiently").
+// A GROUP SHOWS WHAT MOVES AND FOLDS WHAT RESTS (Oct 15: sessions are organized per project more efficiently).
 // Needs you, stalled and working always stand, then its latest idle sessions up to a handful of rows; the idle ones past
 // that fold behind "N idle" on the group's foot line, beside its Ended fold, closed until he opens it. A search opens
 // it, because no fold may hide a match, and a fold he opened stays open for the tab.
@@ -972,7 +972,7 @@ function ghostListHtml() {
  *  top. The board holds as many columns as a row's words need (colCount). While his pointer is in the list the blocks keep
  *  the order they were drawn in, as the rows keep theirs, so no block moves to another column under it.
  *
- *  THE OPEN SESSION TAKES THE BOARD'S WIDTH (Marcos, Oct 26: "we're wasting a lot of horizontal space"): its block spans
+ *  THE OPEN SESSION TAKES THE BOARD'S WIDTH (Oct 26: horizontal space was being wasted): its block spans
  *  all but one column where three or more fit and blocks follow it, so the list stays in sight beside the session he
  *  reads, and the whole row where it does not. Its rows keep a column's width and run down the columns it spans. */
 function boardHtml(blocks, cls = "") {
@@ -1306,7 +1306,7 @@ function logHtml(s) {
     // what the strip's figures can open: the messages folded behind the count or the page before, and the calls a run folded
     hidden, earlier: Boolean(held.earlier), more: hidden > 0 || Boolean(held.earlier), callsMore: runs.some((it) => it.trail > TRAIL_FLAT) };
 }
-/** A RUN OF CALLS IS ONE QUIET LINE (Marcos, Oct 26: "the tool call ui is very busy"): a run of one or two calls shows them,
+/** A RUN OF CALLS IS ONE QUIET LINE (Oct 26: the tool call UI was too busy): a run of one or two calls shows them,
  *  one line each on one grid; a longer run is one line, its count with the tools it used as marks and counts, and under it
  *  the newest call, which is what the session is doing now. One press opens the rest in place, and it stays open while a call
  *  it hides is opened or has its result open. */
@@ -1732,7 +1732,7 @@ function reveal() {
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   window.scrollTo({ top: Math.max(0, window.scrollY + top - bar - 16), behavior: still ? "auto" : "smooth" });
 }
-/** THE DETAILS FOLD AWAY AND COME BACK (Marcos, Oct 26: "we should be able to collapse the top component"). They close
+/** THE DETAILS FOLD AWAY AND COME BACK (Oct 26: the top component should be collapsible). They close
  *  over 240 ms on the same element, so the conversation rises in the same motion; his choice stays in this browser. */
 function foldTop() {
   ui.topShut = !ui.topShut;
@@ -1741,7 +1741,7 @@ function foldTop() {
   ui.fbopen.clear();
   render();
 }
-/** THE ROW'S TRACKS ARE AS WIDE AS WHAT THEY HOLD (Marcos, Oct 26: "we're wasting a lot of horizontal space"): the name
+/** THE ROW'S TRACKS ARE AS WIDE AS WHAT THEY HOLD (Oct 26: horizontal space was being wasted): the name
  *  track is the widest name in the list with its branch mark, up to 30rem, the command track the widest command, and
  *  the act track the widest act, none at all when no row has one, so the words start one gap after the widest name and
  *  get the rest. A row with no words runs its name over the words' track, and the name track grows only by what that track cannot hold. The words' track steps in whole 3rem, so a changing tool name seldom shifts the columns. Written on the list's root

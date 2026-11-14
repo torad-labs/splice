@@ -1,4 +1,4 @@
-// Marcos, Nov 3, 2026: "now claude accounts dont all show the email, this is a recent regression". A command's own
+// Nov 3, 2026: Claude accounts stopped all showing their email, a recent regression. A command's own
 // Claude Code login (the native place) is renewed by Claude Code, never by splice, so splice cannot carry its account
 // across the renewal the way it does for a login it renews itself. It sees the new token when it next reads the
 // credential file, which every pool pick, quota read and turn does. The goal, as the person at the console sees it:

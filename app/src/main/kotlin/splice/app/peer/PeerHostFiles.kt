@@ -1,4 +1,4 @@
-// NEW: Oct 28, 2026 (Marcos: "yeah replcace the java process per peer"): the files the daemon and the one peer-host
+// NEW: Oct 28, 2026 (replacing the java process per peer): the files the daemon and the one peer-host
 // process share under `<state dir>/peer-host/`. host.lock keeps a second host out, host.json names the host that runs
 // and its build, and `start/<name>` asks the host of that build to serve a peer.
 package splice.app.peer

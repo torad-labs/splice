@@ -351,7 +351,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 // (CodeQL js/incomplete-multi-character-sanitization, alerts 24 to 27 and 34, Nov 2 2026). The result is text, and goes
 // through esc wherever it is drawn again. Named for what it returns, since models.js keeps a textOf of its own.
 const wordsIn = (html) => new DOMParser().parseFromString(String(html ?? ""), "text/html").documentElement.textContent ?? "";
-// WHAT IS NOT READ YET DRAWS AS ITS OWN SHAPE (Marcos, Oct 12: "we can do better than that reading indicator"): a
+// WHAT IS NOT READ YET DRAWS AS ITS OWN SHAPE (Oct 12: the plain reading indicator was not good enough): a
 // figure or a line is a striped bar the size of what will land there, a card a drawn card of such bars, a chart its
 // columns, so a page reads as arriving, never as empty or as a lone word. Widths are in rem; console.css draws them.
 // A GHOST IS THE SIZE AND THE SHAPE OF WHAT WILL LAND, so nothing moves when the data arrives, and an item keeps its own
@@ -504,7 +504,7 @@ const inline = (s) => {
 };
 // THE BLOCK SHAPES AN AGENT ACTUALLY WRITES (Oct 26). This read dash lists and backticks only, so a Claude Code turn's
 // table came out as a run of pipes, a heading as hash marks, a numbered list as paragraphs and a fenced block as one
-// long line — the walls of explanation Marcos stopped the console for. Sessions carried its own copy of this; every
+// long line — the walls of explanation the console was stopped for. Sessions carried its own copy of this; every
 // page that shows what an agent wrote (its conversation, Teams' messages, Requests' bodies) now draws the same shapes.
 const mdCells = (line) => line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
 const MD_RULE = /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/;
@@ -549,7 +549,7 @@ const acctPlanHtml = (acct, plan) => `<span class="acct">${esc(acct)}${plan ? `<
 // ================================================================================================================
 // DRAW: THE DRAWINGS EVERY PAGE SHARES (Oct 26)
 //
-// Marcos's rule for the console is "show don't tell". Until now the drawings that make the Usage drill-down and Accounts
+// The console's rule is to show rather than tell. Until now the drawings that make the Usage drill-down and Accounts
 // lived inside the two files that drew them: the hero figure, the stacked outcome bar, the ring and glyph tiles and
 // the log axis were private to the Usage drill-down (perf-heads.js), and the meter, the reset ring and the card's
 // acts were private to Accounts. Everywhere else a share, a load, a window, a time or an amount was printed as a

@@ -411,9 +411,9 @@ internal class AddProfileCatalog {
             labels = AddLabels(
                 summary = "Anthropic with your own Claude login, forwarded untouched",
             ),
-            // THE HEAD NAMES NO MODEL (Marcos, Nov 9, 2026, of his own Claude head: "for default anthropic claude
-            // it should juyst show the default models iot shouldn't list anything otherwise when new models like
-            // this comes up wi'll miss them"). Until Nov 11, 2026 this profile pinned claude-fable-5-1 and listed
+            // THE HEAD NAMES NO MODEL (Nov 9, 2026, of his own Claude head: a default
+            // Anthropic Claude shows the default models and lists nothing of its own, or new models get
+            // missed). Until Nov 11, 2026 this profile pinned claude-fable-5-1 and listed
             // Fable 5.1, Opus 5.5, Sonnet 5 and Haiku 4.5 by tier, so a new install started on Fable 5.1 and
             // never showed Fable 5.2, Sonnet 5.5 or Haiku 5.5, on a machine whose own Claude sessions ran
             // claude-fable-5-2 for 85 in 100 requests. The policy below writes neither line: Claude Code shows

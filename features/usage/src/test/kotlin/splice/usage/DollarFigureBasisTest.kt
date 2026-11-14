@@ -2,8 +2,8 @@
 // found printing a dollar figure (the status line's cost segment, the budget refusal, the budget
 // warning) is driven here. The budget refusal and warning must say what their figure is based on: an API-rate
 // estimate ("an estimated $0.85 in API cost") or the operator's own budget ("$2.00 daily budget"). The status
-// line's short form carries no label since Oct 15, 2026 (Marcos: "the value is useful but we dont need the
-// label"). And a figure Claude Code priced itself never renders under another vendor's model: that was the
+// line's short form carries no label since Oct 15, 2026 (the value is useful but needs no
+// label). And a figure Claude Code priced itself never renders under another vendor's model: that was the
 // $0.85 a resumed Opus session left on the GPT-6-Sol line in rehearsal-resume-2.
 package splice.usage
 

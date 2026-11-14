@@ -1423,7 +1423,7 @@ function readNote() {
 const PERF_HEADS = createPerfHeads(scope, { changed: renderDoors,
   selectAccount: (head, account) => { ui.f.account = `${head}|${account}`; ui.by = nextBy("account"); ui.shown = CUT; again(); },
   chip, providerOfHead, cmdOf, flagOf, flagHtml, hasFilter, ui, S, n0, secs, OPEN, OUTCOME_WORD, tagWord, isFailed, NOT_READ });
-// Results by command as Marcos approved it (perf-results.js), beside Where it went; the measurements above stay one
+// Results by command as approved (perf-results.js), beside Where it went; the measurements above stay one
 // step away under it, folded, and read nothing until they are opened.
 const PERF_RESULTS = createPerfResults(scope, { render: () => { renderBand("results"); renderDoors(); },
   providerOfHead, cmdOf, flagOf, flagHtml, hasFilter, ui, S, n0, secs, OPEN, OUTCOME_WORD, tagWord, isFailed, NOT_READ });
@@ -1709,7 +1709,7 @@ async function signDone(target) {
 // Cancel ends the sign-in on splice, and the box goes once splice has answered (SIGNIN.cancel): it reads Cancelling
 // until then, and "Not cancelled" when splice did not answer. Until Nov 11, 2026 it only forgot the sign-in here: splice
 // held it for up to ten minutes, refused the next Sign in on that login as already running, and a sign-in page finished
-// later still filed the login (Marcos: "it said it canceled ... so it didnt really cancelled").
+// later still filed the login (the page said cancelled, yet the sign-in had not really been cancelled).
 async function signStop(target) {
   const g = ui.signing[target];
   if (!g || !(await SIGNIN.cancel(g, signOn(target))) || ui.signing[target] !== g) return;

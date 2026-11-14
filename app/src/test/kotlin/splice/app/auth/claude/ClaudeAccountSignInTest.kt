@@ -161,7 +161,7 @@ class ClaudeAccountSignInTest {
         }
     }
 
-    // Marcos, Nov 11, 2026: "then trhe sign in in splice showed still in progress". The link Claude Code prints ends
+    // Nov 11, 2026: the console showed a sign-in still in progress. The link Claude Code prints ends
     // in a code to paste back, and only a command's own login card had the field for it.
     @Test
     fun `a sign-in waiting on Claude Code's page says its code is pasted back, whichever card started it`() {
@@ -178,7 +178,7 @@ class ClaudeAccountSignInTest {
         }
     }
 
-    // Marcos, Nov 11, 2026: "it said it canceled, then when I tried sign in again, it said it was already in progress".
+    // Nov 11, 2026: the page said cancelled, then the next sign-in said it was already in progress.
     @Test
     fun `signing in again on a login whose sign-in is still open replaces it, and the new one lands`() {
         val first = NativeLoginTestProcess(BROWSER)

@@ -1,5 +1,5 @@
-// NEW (Oct 29, 2026, splice-lead; Marcos: "we already send a message saying the server is restarting and so the user
-// knows about it, then we just have the new daemon take over", then yes to socket activation): systemd holds every
+// NEW (Oct 29, 2026, splice-lead; the restart already sends a message saying the server is restarting so the user
+// knows, and the new daemon just takes over; Marcos then agreed to socket activation): systemd holds every
 // port splice listens on, so a restart fails no request. Between the old daemon's exit and the new one's bind nothing
 // listened, and Claude Code printed ECONNREFUSED; a request on a connection the stopping daemon closed printed
 // ECONNRESET. With a socket unit per listener, a client that connects during a restart waits in the kernel's accept

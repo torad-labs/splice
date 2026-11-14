@@ -1,5 +1,5 @@
-// An open session on Sessions as he reads it at his width (Oct 27; Marcos, Oct 26: "scrolling on the chat
-// gets crampped ... the tool call ui is very busy, it also seems like we're wasting a lot of horizontal space"). The
+// An open session on Sessions as he reads it at his width (Oct 27; on Oct 26 scrolling the chat felt
+// cramped, the tool call UI read as very busy and horizontal space was wasted). The
 // session he opens takes the board's whole width under its own row, so no block stands beside it and no column runs
 // empty beside it; and Earlier shows the newest few namesakes with the rest behind one count. GOAL CHANGED (Oct 29, the
 // open-plate pass of Sessions, whose passed prototype collects the calls): the conversation reads down one column of words

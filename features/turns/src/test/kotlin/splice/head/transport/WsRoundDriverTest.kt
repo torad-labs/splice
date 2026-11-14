@@ -1073,7 +1073,7 @@ class WsRoundReserveTest {
         }.bodyAsText()
     }
 
-    // Marcos, 2026-10-27: a live limit or a drop before any output reconnects at once on the same login, with no
+    // 2026-10-27: a live limit or a drop before any output reconnects at once on the same login, with no
     // backoff. HTTP is for a socket that fails again. The backend ends every websocket at 60 minutes with this error.
     @Test
     fun `a connection limit before any client frame is answered on a fresh socket, not over HTTP`() {
@@ -1196,7 +1196,7 @@ class WsRoundReserveTest {
         }
     }
 
-    // Marcos, 2026-10-27: "every fallback logs a warning and a counter with session, account and reason". A socket
+    // 2026-10-27: every fallback logs a warning and a counter with session, account and reason. A socket
     // that cannot take the round at all fails before any output too, so it gets the same fresh socket first.
     @Test
     fun `a socket that cannot take the round is answered on a fresh socket the second time`() {

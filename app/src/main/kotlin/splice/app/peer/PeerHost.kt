@@ -1,4 +1,4 @@
-// NEW: Oct 28, 2026 (Marcos: "yeah replcace the java process per peer"; docs/specs/peer-messaging.md 4.1) — the peers
+// NEW: Oct 28, 2026 (replacing the java process per peer; docs/specs/peer-messaging.md 4.1) — the peers
 // one peer-host process serves. Each runs as its own helper had: its inbox socket, its record, its heartbeat, its look
 // at peer.json, its webhook pusher and, for a codex peer, its hand-overs (HelperLoops.kt). Each stands under a pid of
 // its own, an anchor the host starts: `cat` reading a pipe only the host writes to, with SIGHUP ignored. The registry

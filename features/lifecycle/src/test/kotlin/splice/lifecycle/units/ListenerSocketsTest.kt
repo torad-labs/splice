@@ -1,5 +1,5 @@
-// Goal (Oct 29, 2026, Marcos: "we already send a message saying the server is restarting and so the user knows about
-// it, then we just have the new daemon take over", and yes to socket activation): a restart of splice through its
+// Goal (Oct 29, 2026: a restart already tells the user the server is restarting, so the new daemon just takes over,
+// and socket activation was approved): a restart of splice through its
 // systemd unit fails no request. systemd holds every port splice listens on, the control port and each head's, so a
 // request that arrives while the daemon restarts waits in the kernel and the next daemon answers it: Claude Code
 // prints no connection error and no session moves to its fallback model. `splice restart` lays one socket unit per

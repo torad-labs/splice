@@ -1,6 +1,5 @@
-// Marcos, Oct 28: "claude code picks should also be considered, for all heads and all adapters we do. Always.", and on
-// Kimi's fixed max: "We should never make configuration that might be expensive for the user without them knowing or
-// without giving them an oiption to change." A Kimi turn sends the effort Claude Code's request names (its /effort,
+// Marcos, Oct 28: Claude Code's own picks count on every head and every adapter, always. On Kimi's fixed max: nothing
+// that might be expensive is configured without the user knowing or having an option to change it. A Kimi turn sends the effort Claude Code's request names (its /effort,
 // its --effort, which a launch sets to the head's configured effort), on Kimi's own rungs (low, high, max), never a
 // rung above the one asked for. A later message's output_config changes it for the turn, as on every other head.
 package splice.dialect.anthropic

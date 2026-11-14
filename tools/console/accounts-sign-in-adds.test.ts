@@ -1,5 +1,5 @@
-// Signing in from the console ADDS an account (Marcos, Oct 27, 2026: "SPlice console login ADDs an account, it doesn't
-// replace it"). He pressed Sign in on claude-splice's card "Account", which read Signed out, and got a bare red "In use"
+// Signing in from the console ADDS an account (Oct 27, 2026: a console login adds an account and never replaces
+// one). Pressing Sign in on claude-splice's card "Account", which read Signed out, gave a bare red "In use"
 // with nothing to act on. Through the real page against a stub daemon in the routes' own shapes: a sign-in splice
 // refuses says its word where it was pressed, on a login's card and on + Add account alike, and splice's own reason
 // stands printed under the word; and a command's own login that is signed out and never proved an account draws no card, since

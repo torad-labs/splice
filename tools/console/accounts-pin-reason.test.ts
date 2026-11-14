@@ -1,5 +1,5 @@
 // Accounts says why a pinned login is not serving, on every load, through the real page against a stub daemon in the
-// routes' own shapes (Nov 3, 2026). Marcos pressed Use now on account 3 ("clicking 'use now' also didnt work"); the pin
+// routes' own shapes (Nov 3, 2026). Pressing Use now on account 3 did not seem to work; the pin
 // now outlives a restart, and the pool's projection (/api/auth's account_pool) carries why the pinned login serves no
 // turn, or which models it cannot serve yet. Goal: the pinned card says it under the card, as a page load reads it, not
 // only in the moment after the press; a pin that serves every model, and a card that is not the pin, say nothing.

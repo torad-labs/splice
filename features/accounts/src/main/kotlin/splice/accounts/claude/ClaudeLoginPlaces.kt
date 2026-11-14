@@ -15,7 +15,7 @@ public const val TOKEN_RENEWS_FIELD: String = "token_renews"
 public const val CLAUDE_LOGIN_HEAD: String = "claude"
 
 /** The Claude command's one own login: Claude Code's, in ~/.claude. `claude` and `claude-splice` both run on it
- *  (Marcos, Nov 12, 2026: "why ... is claude and claude-splice two identities? We use Claude only via splice"). Until
+ *  (Nov 12, 2026: Claude is used only through splice here, so it should not show as two identities). Until
  *  then `claude-splice` by name had a second home, ~/.claude-claude-splice, with a login of its own. */
 public enum class ClaudeLoginPlaceId(public val wire: String, public val command: String) {
     NATIVE("claude", "claude"),

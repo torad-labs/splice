@@ -1,6 +1,6 @@
 // The composer: the door to the splice manager, ONE resident Claude Code session that works in splice's global settings
-// folder and helps run splice (Marcos, Oct 15: "the composer for splice is a session that runs inside a splice global
-// settings folder and its goal is to help manage splice, not to switch between multiple sessions"). It never types into
+// folder and helps run splice (Oct 15: the composer is a session that runs inside splice's global
+// settings folder to help manage splice, not to switch between multiple sessions). It never types into
 // any other session: the manager reaches other sessions itself, the way any session can.
 //
 // WHERE EVERY VALUE COMES FROM. The composer carries no data of its own:

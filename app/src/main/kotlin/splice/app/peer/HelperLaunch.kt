@@ -1,6 +1,6 @@
 // NEW: peer messaging, package B (docs/specs/peer-messaging.md 4.1) — how the daemon starts a peer, moved out of
 // PeerSupervisor.kt: where peers live, which build serves them, and the detached command line. Since Oct 28, 2026
-// (Marcos: "yeah replcace the java process per peer") one peer-host process serves every peer: a start asks it for
+// (replacing the java process per peer) one peer-host process serves every peer: a start asks it for
 // the peer, and starts the host only when none of this build runs, after asking one of an older build to make way.
 // Under a systemd unit the host runs in its own `systemd-run --user --scope`, because a process left in
 // splice.service's cgroup is killed with the unit (KillMode=mixed); elsewhere it runs under setsid. Every standard

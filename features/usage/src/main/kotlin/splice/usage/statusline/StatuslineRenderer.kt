@@ -106,8 +106,8 @@ internal class StatuslineRenderer(
     }
 
     /** The login this session runs on, named only where the head holds more than one: a lone login tells the line
-     *  nothing. The switch reason stays on Accounts, `splice status` and doctor (Marcos, Oct 15: "messages like
-     *  that aren't very helpful"), and the machine prefix `native:` never reaches the line. */
+     *  nothing. The switch reason stays on Accounts, `splice status` and doctor (Oct 15: messages like
+     *  that were not helpful in the line), and the machine prefix `native:` never reaches the line. */
     private fun accountSegment(pool: HeadAccountPoolView?): String? {
         val multi = pool?.takeIf { it.accounts.size > 1 } ?: return null
         return multi.selectedAccount()?.label?.removePrefix(NATIVE_LOGIN_PREFIX)

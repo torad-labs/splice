@@ -1,4 +1,4 @@
-// Marcos, Nov 9 2026: "GPT responses on splice keeps dropping all the time". At 23:22 CT a gpt-6-astra answer on the
+// Nov 9 2026: GPT responses on splice kept dropping. At 23:22 CT a gpt-6-astra answer on the
 // websocket was closed by the backend with 1012 (service restart) 51 s in, after three reasoning summary parts and 766
 // deltas of its final answer reached the client; the client was handed "Server error mid-response" and the answer
 // stopped there. A close like that is the backend's restart, not the request's fault: the head carries the answer on

@@ -1,5 +1,5 @@
-// Since a493ed3e5 (Marcos, 2026-10-28: "ship Splice by default with a pre defined configured append system prompt,
-// that the user can change if they'd like"), a Responses head that sets no prompt of its own leads every request's
+// Since a493ed3e5 (2026-10-28: ship Splice by default with a predefined append system prompt that the
+// user can change), a Responses head that sets no prompt of its own leads every request's
 // input with splice's standing prompt, a developer item the frozen oracle never recorded. The replay grades that item
 // as a sanctioned insertion pinned to the bytes splice ships, and stays red when it is missing, moved or different.
 import { expect, test } from "bun:test";

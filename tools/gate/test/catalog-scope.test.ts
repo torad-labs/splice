@@ -1,5 +1,5 @@
-// A version catalog change is scoped to the modules whose build scripts read the changed entries (Marcos, Nov 2 2026: "can we
-// make sure that the pre push only runs the diff please, that is change aware. Let's make it scoped"). Until then every catalog
+// A version catalog change is scoped to the modules whose build scripts read the changed entries (Nov 2 2026: the pre-push
+// was to run only what the diff touches, change aware and scoped). Until then every catalog
 // change ran every module's check and the full unit suite: on Nov 2 a guava floor two scripts read, a logback floor, two
 // Dependabot bumps and a konsist hold each cost a 15 to 21 minute full run.
 import { describe, expect, test } from "bun:test";

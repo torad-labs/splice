@@ -4,7 +4,7 @@
 //
 //   (b) a restart does not wait for a detached compaction. A compaction whose client hung up outlives its
 //       client (5f3df5cb), and its handed-off slot travels with the drive. Since Oct 29, 2026 the stop's drain is
-//       0 (Marcos: "then we just have the new daemon take over"), so stopDetached ends it at once and releases its
+//       0 (the new daemon just takes over), so stopDetached ends it at once and releases its
 //       slot, and the next daemon is not held. A console restart still waits for compactions first
 //       (RestartAfterCompactions); `splice restart --now` does not.
 //

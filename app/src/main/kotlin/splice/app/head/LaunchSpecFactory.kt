@@ -29,7 +29,7 @@ import splice.upstream.retry.MAX_HOLD_MS
 import java.nio.file.Path
 import java.nio.file.Paths
 
-/** A session starts at high when nothing sets its head's effort (Marcos, Oct 28: "effort at high by default"). */
+/** A session starts at high when nothing sets its head's effort (Oct 28, 2026: the default effort is high). */
 private const val DEFAULT_LAUNCH_EFFORT = "high"
 
 internal class LaunchSpecFactory(

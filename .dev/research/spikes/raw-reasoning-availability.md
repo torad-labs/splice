@@ -3,8 +3,8 @@
 **Verdict: no. The ChatGPT backend never streams raw reasoning to this client. Omitting the summary
 key yields NOTHING — not raw CoT, not a summary. Do not "fix" splice by dropping the summary field.**
 
-Operator report: "the thinking tokens are super short and summarized compared to how long and
-detailed they used to be — I want to see all verbose robust reasoning."
+Operator report: the thinking tokens are much shorter and more summarized than they used to be, and
+the operator wants to see the full, verbose reasoning.
 
 A reading of codex-rs suggested codex OMITS `reasoning.summary` (it does — the `null` seen in an
 intercepted frame was the server normalising an absent key, not codex sending null). The obvious

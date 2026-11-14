@@ -1,5 +1,5 @@
-// THE CONSOLE'S HANDS FOR AN AGENT (Oct 16, 2026; Marcos: "Everything that the user can do the agents should be able
-// to do it too"). `splice console <action>` hands the daemon one order, the daemon hands it to the tab the person
+// THE CONSOLE'S HANDS FOR AN AGENT (Oct 16, 2026; whatever a person can do in the console, an agent should be able
+// to do too). `splice console <action>` hands the daemon one order, the daemon hands it to the tab the person
 // looked at last (ConsolePilot), and this script does it here the way a person would: it looks, reads, taps, types,
 // picks, presses keys, hovers, scrolls, moves between pages, and points with a ring the person can see. Only a tab the
 // person can see asks for orders. The composer is the agent's own door, so it is never listed, read or driven.

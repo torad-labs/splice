@@ -430,8 +430,8 @@ const ARMS: readonly Arm[] = [
     },
   },
   {
-    // The daemon's heap ceiling (Marcos, 2026-10-25, approving a cap near 16 GB: "I dont want the cap to be the only
-    // way we keep things under control"). The heap may grow to 16 GiB, or to 75% of the memory the machine or its
+    // The daemon's heap ceiling (2026-10-25, a cap near 16 GB approved, though the cap is not to be the
+    // only way things are kept under control). The heap may grow to 16 GiB, or to 75% of the memory the machine or its
     // limit holds where that is less, and where the 16 GiB ceiling applies G1 keeps the 32 MB regions it picked for the
     // old 75% ceiling on a big machine, so only an object of 16 MB or more is humongous. The real JVM is asked, with the flags the shim gives the
     // daemon, what ceiling it ends up with: what is checked is the heap the daemon gets, not the text of its flags.

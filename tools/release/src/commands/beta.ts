@@ -15,7 +15,7 @@
 //                belong on GitHub).
 //
 // The MCP hub pair is never linked in the tree: Kotlin/Native writes each source file's absolute path into the
-// binary, so a tree build cannot hash to the qualified pair (lead-install.sh). The kept folder under
+// binary, so a tree build cannot hash to the qualified pair. The kept folder under
 // artifacts/mcp-hub whose two binaries hash to the pins is placed where stageRelease reads them, and the link
 // tasks are excluded.
 //
@@ -71,7 +71,7 @@ function parseHubPins(text: string): Map<string, string> {
   );
 }
 
-/** The kept hub folder whose two binaries hash to their pins, as lead-install.sh selects it. */
+/** The kept hub folder whose two binaries hash to their pins, as the maintainer's install script selects it. */
 function qualifiedHub(repoRoot: string, pins: ReadonlyMap<string, string>): string {
   const kept = join(repoRoot, HUB_KEPT);
   const folder = (existsSync(kept) ? readdirSync(kept) : []).map((name) => join(kept, name)).find((dir) =>

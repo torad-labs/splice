@@ -348,24 +348,6 @@ internal class ControlServer(
         stopResources()
     }
 
-    /** #525: the part of [stop] a hand-over holds the daemon lock for. On a socket a manager holds, the server stops
-     *  taking connections and closes the ones with no request on them, so a request sent from here on waits in the
-     *  kernel for the next daemon. The engine's own stop is left to the [stop] that follows the lock's release: it
-     *  waits out its grace, and up to its timeout for a call that is still answering, and an event stream never ends
-     *  by itself. A server that bound its own port stops whole here, because the next daemon binds that port. */
-    @Synchronized
-    public fun leave() {
-        val adopted = listen.adopted
-        if (adopted == null) {
-            stop()
-        } else {
-            stopRequested = true
-            stopResources()
-            adopted.pauseAccepting()
-            guard.closeIdleConnections()
-        }
-    }
-
     @Synchronized
     public fun stop() {
         stopRequested = true

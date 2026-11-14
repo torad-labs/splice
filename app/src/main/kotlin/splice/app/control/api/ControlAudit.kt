@@ -5,11 +5,11 @@
 // launch argument, a warning composed from the request body) must not write the audit format itself.
 // 2026-09-23: a fourth line, a management route that threw (RouteFailure), with its request line.
 // 2026-10-13: an inline JSON argument (the --settings body) is logged as its size and a short hash. Logged whole, about
-// 1,400 launches an hour rolled daemon.log at 64 MB within hours (splice-turns log audit via splice-lead); the size and
+// 1,400 launches an hour rolled daemon.log at 64 MB within hours; the size and
 // hash still tell one launch's settings from another's.
 // 2026-10-13: a launch the same as the one before it for that key is not logged again. A `claude agents --json` run
 // through the launch recipe twice every ten seconds still filled daemon.log on its own; the next line
-// that differs names how many identical launches it stood for (splice-lead, from splice-usage's log volume count).
+// that differs names how many identical launches it stood for.
 package splice.app.control.api
 
 import splice.client.ClaudeArgv

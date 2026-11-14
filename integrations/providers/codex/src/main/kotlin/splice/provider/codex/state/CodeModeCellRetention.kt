@@ -136,9 +136,9 @@ internal class CodeModeCellRetention(
         }
     }
 
-    // why: a live seat idle at its prompt is not running the calls its parked cell waits on (an interrupted turn
-    // leaves the cell parked), so its cell takes the unknown lease from the last moment the seat was seen at work;
-    // only cells read it, and a busy or waiting seat keeps its cell however long it is quiet.
+    // why: a live session idle at its prompt is not running the calls its parked cell waits on (an interrupted turn
+    // leaves the cell parked), so its cell takes the unknown lease from the last moment the session was seen at work;
+    // only cells read it, and a busy or waiting session keeps its cell however long it is quiet.
     private fun alive(record: CodeModeRecord): Boolean? = record.sessionId
         ?.let { id ->
             config.cellLease.sessionAlive(id)?.takeUnless { live -> live && config.cellLease.sessionIdle(id) }

@@ -154,7 +154,7 @@ public object SecureFile {
         val tmp = ownerOnlyTemp(parent)
         Cancellables.runCatchingCancellable {
             // The bytes reach the disk before the name moves, so a power cut leaves the old file or the new one, never an
-            // empty one (splice-config, Oct 13: a cut during splice add could leave an empty splice.toml).
+            // empty one (Oct 13: a cut during splice add could leave an empty splice.toml).
             FileChannel.open(tmp, StandardOpenOption.WRITE).use { channel ->
                 writeAll(channel, content.toByteArray(Charsets.UTF_8))
                 channel.force(true)
@@ -179,7 +179,7 @@ public object SecureFile {
      * written through or over; that throws FileAlreadyExistsException. On a non-POSIX filesystem the
      * mode is best-effort, as in [writeAtomic0600].
      *
-     * The name appears whole or not at all (Oct 12, splice-config's spec pass, §1 "failed setup leaves
+     * The name appears whole or not at all (Oct 12 spec pass, §1 "failed setup leaves
      * the previous config usable"): the bytes go to a 0600 sibling, reach the disk, and are then hard-
      * linked to [path], which is atomic and refuses an existing name. Written in place, a first run
      * killed mid-write left a partial splice.toml that boot refused and never wrote again. A filesystem

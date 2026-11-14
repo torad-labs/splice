@@ -3,7 +3,7 @@
 // survive a limit longer than its default ten retries — and that mode REFUSES to wait when the response sets
 // anthropic-ratelimit-unified-overage-disabled-reason (read by Zio() in the 2.1.257 binary). splice authors
 // that header set when every login of a pool is exhausted, so a header we did not intend would turn our own
-// refusal into a session-ending error. The admission hold this file also pinned is gone (Marcos, Oct 26): a
+// refusal into a session-ending error. The admission hold this file also pinned is gone: a
 // turn is never refused for another turn's rate limit, so no wording of that refusal is left to check.
 package splice.head.admission
 

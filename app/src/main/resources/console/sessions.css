@@ -22,17 +22,17 @@
   background: var(--socket); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .15rem var(--rail);
 }
 /* the socket is dark in both themes, so what is lit in it keeps night's ink in day: day's dark green and greys sank into
-   it (Working's trace near-invisible, walk ea3eeff67). The open seat in Teams is a light socket and keeps day's. */
+   it (Working's trace near-invisible). The open member card in Teams is a light socket and keeps day's. */
 [data-theme="day"] .lamp:not(.open) { --live: var(--splice-live-on-night); --limit: var(--splice-limit-on-night); --text-body: var(--splice-cream-body); --text-mute: var(--splice-cream-mute); --track-line: var(--splice-track-line-on-night); }
 .lamp svg { width: 1.2rem; height: 1.2rem; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .lamp i { width: .62rem; height: .62rem; border-radius: 50%; background: currentColor; }
 /* Working: a trace that runs, small and slow, because it repeats on every working card */
 .lamp.working { color: var(--live); }
-/* Continuing on: the wait ring in the live colour while a move runs (hitstop 899cb2e) */
+/* Continuing on: the wait ring in the live colour while a move runs */
 .lamp.moving { color: var(--live); }
 .lamp.moving .wait { width: 1.25rem; height: 1.25rem; }
 .lamp.moving .wait circle { stroke: var(--live); }
-/* Not running: Needs you's ring and glow around an empty socket, since nothing runs on either command (hitstop cd2bf9c) */
+/* Not running: Needs you's ring and glow around an empty socket, since nothing runs on either command */
 .lamp.notrunning i { background: transparent; box-shadow: inset 0 0 0 .14rem currentColor; }
 .lamp svg.wave { width: 1.5rem; height: 1.5rem; stroke-width: 3.6; }
 .lamp.working .base { opacity: .32; }
@@ -62,15 +62,15 @@
 .wt { display: inline-flex; align-items: center; gap: 0.333rem; font: 500 .9rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
 .wt svg, .team svg, .where svg { width: 1rem; height: 1rem; flex: none; }
 .s .top .chip { margin-left: auto; }
-.s .top .state { margin-left: auto; }  /* "unknown head" takes the chip's place at the right edge (hitstop) */
+.s .top .state { margin-left: auto; }  /* "unknown head" takes the chip's place at the right edge */
 .meta { display: flex; align-items: center; flex-wrap: wrap; gap: 0.333rem 1rem; margin-top: 0.333rem; font: 500 .95rem/1 var(--font-data); color: var(--text-mute); }
 .meta .word.stalled, .meta .word.limit { color: var(--limit); }
 .meta .word.needs { color: var(--needs); }
 .meta .detail.retried { color: var(--key-ink); }
 .meta .detail { font: 500 .95rem/1 var(--font-data); color: var(--limit); display: inline-flex; align-items: center; gap: 0.333rem; }
 .meta .detail svg { width: 1rem; height: 1rem; }
-.meta .detail.resumes { color: var(--live); }  /* splice has it: the working colour, not the stalled one (fin) */
-.meta .detail.noresume { color: var(--limit); flex: none; white-space: nowrap; }  /* nothing will re-send it: the stalled colour, words only (hitstop) */
+.meta .detail.resumes { color: var(--live); }  /* splice has it: the working colour, not the stalled one */
+.meta .detail.noresume { color: var(--limit); flex: none; white-space: nowrap; }  /* nothing will re-send it: the stalled colour, words only */
 .meta a.detail.fix { text-decoration: underline; text-underline-offset: .2em; }  /* Signed out's way back: a link to Accounts */
 .watch .hand { transform-origin: 12px 13.5px; transform-box: view-box; }  /* a duration: the hand runs with its seconds */
 .meta .team, .meta .where { display: inline-flex; align-items: center; gap: 0.333rem; }
@@ -127,7 +127,7 @@
 /* a refusal from an act in the pane (Stop, Continue on), read where the conversation starts */
 .pane > .why { margin: 0; padding: .75rem 1.2rem 0; }
 /* a move that did not happen: the state line, the attempt's last lines while reading is on (the evidence), then the way
-   forward: the resume command with Copy beside it when even the way back failed, then Try again (hitstop 899cb2e) */
+   forward: the resume command with Copy beside it when even the way back failed, then Try again */
 .pane > .unmoved { display: grid; justify-items: start; gap: 0.667rem; padding: .75rem 1.2rem 0; }
 .why.unline { margin: 0.667rem 0 0; color: var(--limit); display: flex; flex-wrap: wrap; align-items: center; gap: 0.333rem 0.667rem; font: 400 .95rem/1.4 var(--font-name); }
 .why.unline .chip { color: var(--text); }
@@ -192,8 +192,8 @@
 .joint > * { position: relative; }
 .joint .model { background: var(--obj); padding: .3rem .8rem; border-radius: .3rem; }
 .joint .model .left { margin-left: 0.667rem; color: var(--text-mute); }  /* what didn't come along, dimmed after the move */
-[data-theme="day"] .joint::before { background: var(--obj-sunk); box-shadow: none; }  /* a quiet divider in day: night's dark rail and ink read as a weight on the light card (Marlin, p176; hitstop 9dd0f95) */
-/* the move's time under its line, where a message's time sits, with what didn't come along beside it (hitstop f38853e) */
+[data-theme="day"] .joint::before { background: var(--obj-sunk); box-shadow: none; }  /* a quiet divider in day: night's dark rail and ink read as a weight on the light card */
+/* the move's time under its line, where a message's time sits, with what didn't come along beside it */
 .log > .jwrap { display: flex; flex-direction: column; align-items: center; gap: 0.333rem; align-self: stretch; max-width: none; }  /* the divider crosses the whole conversation */
 .jwrap > .joint { align-self: stretch; }
 .jat { margin: 0; font: 500 .85rem/1 var(--font-data); color: var(--text-mute); }
@@ -246,16 +246,16 @@
 .menu.models .mgroup.off .acct, .menu.models .line:disabled { color: var(--text-mute); }
 .menu.models .line:disabled { cursor: default; border-style: dashed; }
 
-/* End armed: what ending would lose, then the danger End and Keep running (fin, Marlin p218) */
+/* End armed: what ending would lose, then the danger End and Keep running */
 .pane .armed.end { display: flex; flex-wrap: wrap; align-items: center; gap: 0.667rem; padding: .6rem 1.4rem; border-bottom: var(--ink-w) solid var(--ink); }
 .pane .armed.end .said { display: inline-flex; align-items: center; gap: 0.333rem; font: 500 .95rem/1 var(--font-name); color: var(--text-body); }
 .pane .armed.end .said svg { width: 1rem; height: 1rem; }
 .pane .armed.end .unsent { font: 400 .95rem/1.4 var(--font-data); color: var(--text-mute); overflow-wrap: anywhere; flex: 1 1 18rem; min-width: 0; }
-/* a card whose state changed rings once in the key light, where it stands (hitstop 9e95ae4) */
+/* a card whose state changed rings once in the key light, where it stands */
 .s.changed { animation: ring 1.1s var(--e-out) 1; }
 @keyframes ring { from { outline: .25rem solid var(--key-ink); outline-offset: .15rem; } to { outline: .25rem solid transparent; outline-offset: .55rem; } }
-/* words already in the prompt, shown before his message goes, cleared only on his say-so (Marlin): a zero-height anchor
-   on the composer's top edge, so the composer never moves (hitstop 0704658) */
+/* words already in the prompt, shown before his message goes, cleared only on his say-so: a zero-height anchor
+   on the composer's top edge, so the composer never moves */
 .inprompt { position: relative; height: 0; }
 .inprompt-card {
   position: absolute; right: 1.4rem; bottom: .8rem; z-index: 6; width: 32rem; max-width: calc(100% - 2.8rem);
@@ -266,7 +266,7 @@
 .inprompt .words { margin: 0; min-width: 0; font: 500 1rem/1.4 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .55rem .75rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .inprompt .acts { display: flex; justify-content: flex-end; gap: 0.667rem; }
 
-/* ---------- by project (Marlin and fin, Oct 11; one block per project, Oct 15) ----------
+/* ---------- by project ----------
    A group's header reads at a glance: the fold, the name at the section-title size, then one lamp and its count for each
    live state present, then the muted total. No state words: the lamps are the words, and Idle and Ended are in the
    total. Its foot line holds the folds for what rests: its idle sessions past a handful, and its ended ones. */
@@ -293,7 +293,7 @@
 .pfoot { display: flex; flex-wrap: wrap; align-items: center; gap: 0.333rem 0.667rem; min-height: 2.6rem; padding: .35rem .9rem; box-sizing: border-box; }
 .pfoot .fold { font-size: .88rem; padding: .35rem .6rem; }
 .rested { display: flex; flex-direction: column; box-shadow: inset 0 .08rem 0 var(--track-line); }
-/* the grouping switch says what it does: Project, Command and Team alone read as filters (splice-usage's walk, Oct 13) */
+/* the grouping switch says what it does: Project, Command and Team alone read as filters */
 .lhead .by { display: inline-flex; align-items: center; gap: 0.667rem; }
 .lhead .by .what { margin-right: 0.333rem; font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
 
@@ -656,7 +656,7 @@
 .sessions .ghosts .phead { min-height: 3.6rem; }
 
 /* ============================================================================================================
-   THE OPEN SESSION, IN PLACE (round 2, Oct 27): a plate under its own row, inside its block. Its title bar is the
+   THE OPEN SESSION, IN PLACE: a plate under its own row, inside its block. Its title bar is the
    row's own line, raised in the selection's ink, and its name folds it away. Oct 26: scrolling in the chat got
    cramped, so the top component can collapse, the tool call UI was too busy, horizontal space was wasted and the row
    style did not look good.
@@ -878,7 +878,7 @@
 .sessions .call { gap: 0.667rem; }
 .sessions .call .morepill { margin-left: 0.333rem; }
 .sessions .tool .nothing { font-size: .88rem; }
-/* A RUN OF CALLS IS ONE QUIET TRAIL (Oct 26: the tool call UI was too busy): one line per call on one grid,
+/* A RUN OF CALLS IS ONE QUIET TRAIL (the tool call UI was too busy): one line per call on one grid,
    the tool word's track as wide as the calls it shows, one hairline at the run's left as its one edge, and no call with
    a box, a fill, a shadow or a coloured edge. */
 /* THE CALLS A SESSION MADE stand in the rail beside its conversation, a run to a block on one grid, the tool word's track as wide as the calls it shows */

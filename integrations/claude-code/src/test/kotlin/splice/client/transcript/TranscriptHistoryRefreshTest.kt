@@ -1,4 +1,4 @@
-// NEW: Oct 12, 2026 (splice-lead) — a refresh of the history index lists and stats the transcripts and reads only a new or
+// NEW: Oct 12, 2026 — a refresh of the history index lists and stats the transcripts and reads only a new or
 // changed one, and reads only what was appended to history.jsonl. The answers stay right through add, change and remove.
 package splice.client.transcript
 

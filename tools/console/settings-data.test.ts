@@ -2,7 +2,7 @@
 // as a bar on the column's scale and what it holds under its name, and its share of everything kept is its part of the
 // one bar under the total; a store holding nothing is an empty track with no count and has no part; and a Delete stands
 // on the row it deletes, under the column that says it cannot be undone. The rows must also keep their words inside
-// themselves at his width and at 1440, where a long "When off" note used to run past the card's right edge.
+// themselves at a wide desktop width and at 1440, where a long "When off" note used to run past the card's right edge.
 import { afterAll, beforeAll, test } from "bun:test";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";

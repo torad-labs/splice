@@ -1,7 +1,7 @@
 // NEW: rolling trace-body capacity and body-only eviction shared across every head.
 // 2026-10-26: admission listed and statted the trace directory for each new body chunk, compiled the date pattern
 // for each directory entry and found the volume's mount again at each free-space probe, 3.85% of the daemon's
-// allocation in the Oct 25 17:59-18:04 CT JFR. Now one lock hold lists the directory once and moves that listing by
+// allocation in an Oct 25 JFR. Now one lock hold lists the directory once and moves that listing by
 // its own grants, listing again after its own deletions. The pattern and the pack endings are built once, and the
 // default free-space probe keeps its FileStore.
 // 2026-10-26, on review: a call joins the hold when its directory is the hold's on disk, however its path spells it.
@@ -31,7 +31,7 @@ import java.time.ZoneOffset
 public const val TRACE_BODY_MAX_BYTES: Long = 32L shl 30
 
 /** Rolling JSONL index capacity shared by every head in a trace directory: past it the oldest completed day goes whole
- *  (splice-lead, Oct 12). The history window still bounds both; this keeps a busy window inside the disk. */
+ *  (Oct 12). The history window still bounds both; this keeps a busy window inside the disk. */
 internal const val TRACE_INDEX_MAX_BYTES: Long = 16L shl 30
 
 /** Trace bodies never consume the last 64 GiB of usable space on a large volume, nor the last twentieth of a volume

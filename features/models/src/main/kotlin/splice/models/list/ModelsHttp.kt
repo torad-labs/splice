@@ -11,7 +11,7 @@
 // This verb then labels a local provider's silence "not running" — which would have been printed
 // over a malformed `models_url` or a TLS failure, telling the operator to start a process that is
 // already running. A transport fault keeps its rendered reason; only a refused connection is
-// absence. (Raised by the builder seat reviewing this file, 2026-09-22.)
+// absence. (Raised in review of this file, 2026-09-22.)
 package splice.models.list
 
 import splice.core.util.Cancellables

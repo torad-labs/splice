@@ -27,7 +27,7 @@ internal enum class Unattributed(val wire: String) { MODEL("model"), ACCOUNT("ac
  *
  *   [silenceMs]   the longest upstream silence this request sat through (UP_GAP_MAX_MS), at or over this
  *   [queuedMs]    how long the gate HELD it because its command's limit was full (ADMIT_HELD_MS), at or over this;
- *                 a request that went straight in carries no hold and never matches, even at 0 (Marlin, Oct 12)
+ *                 a request that went straight in carries no hold and never matches, even at 0
  *   [resumed]     whether splice re-anchored it at all (REANCHORS), true for the ones it did and false for the rest
  *   [startedOver] whether any of those re-anchors re-posted the request verbatim (REANCHORS_FROM_SCRATCH), which is
  *                 a round STARTED OVER rather than an answer resumed from its partial

@@ -42,6 +42,9 @@ internal data class BootedTopology(
     /** Nov 12, 2026: `[daemon] alert_command` as booted: the operator's own program for what cannot wait for the
      *  console. Empty when none is set. */
     val alertCommand: List<String> = emptyList(),
+    /** `[daemon] reserved_peer_names` as booted: the names no peer may register on this install, beyond the built-in
+     *  ones. Empty when none is set. */
+    val reservedPeerNames: Set<String> = emptySet(),
 )
 
 /** V4-162: which splice.toml version the daemon runs, and whether the file has moved past it in a way

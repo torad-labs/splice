@@ -53,7 +53,7 @@ public interface WsRoundRunner {
 
     /** True when [event] is a failure of the SOCKET rather than of the request, so the same request can succeed on a
      *  new socket. The head then sends the round again at once on a fresh socket of the same login, with no backoff,
-     *  before any HTTP fallback (Marcos, 2026-10-27). False for every event by default. */
+     *  before any HTTP fallback (2026-10-27). False for every event by default. */
     public fun isSocketFault(event: JsonObject): Boolean = false
 
     /** True when [event] is the provider closing the socket at its planned lifetime, not a failure of the request or

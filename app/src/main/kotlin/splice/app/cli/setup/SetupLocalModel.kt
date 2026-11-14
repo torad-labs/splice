@@ -30,8 +30,8 @@ import java.nio.file.Path
 /** The systemd user unit rig writes for the model, under ~/.config/systemd/user. */
 private const val RIG_UNIT = "rig-$RIG_HEAD.service"
 
-/** What happens, in the words the question and the Summary both use: the President's ruling for Marcos on the rig
- *  handoff (v0.4.0.md section 10, 82ba06219) keeps it on condition that it says, before a yes, that it installs rig,
+/** What happens, in the words the question and the Summary both use: the rig handoff (v0.4.0.md section 10)
+ *  is offered on condition that it says, before a yes, that it installs rig,
  *  downloads about 9 GB, writes a systemd user unit and starts the runtime. */
 private const val WHAT_HAPPENS =
     "splice installs rig into ~/.local/share/rig, which downloads $RIG_HEAD and its engine " +
@@ -127,7 +127,7 @@ internal class SetupLocalModel(
         }
         val run = spun(label, "$RIG_HEAD is serving on this machine") { rig.up(RIG_HEAD, progress) }
         if (run.exit != 0) return stopped(refusals.up(run))
-        // The ruling's second condition: once it runs, say how to stop it and remove what rig set up. Said here, as
+        // The second condition: once it runs, say how to stop it and remove what rig set up. Said here, as
         // soon as it serves, so a later step that fails still leaves the person these lines.
         out.line("  to stop it: systemctl --user disable --now $RIG_UNIT")
         out.line(

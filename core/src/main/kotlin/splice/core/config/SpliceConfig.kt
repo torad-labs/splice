@@ -175,7 +175,7 @@ public class SpliceConfig internal constructor(
      *  2. otherwise the WIDEST of the windows this one setting replaced, never the narrowest: the
      *     records window the install already had (`perfArchiveRetentionDays`, 90 by default) and
      *     the 35 days the hourly totals always kept (V4-122's fixed economics window, now
-     *     [HISTORY_DEFAULT_DAYS]). An upgrade never shortens history on its own (Marlin, Oct 10,
+     *     [HISTORY_DEFAULT_DAYS]). An upgrade never shortens history on its own (Oct 10,
      *     2026), and it has to hold for BOTH files: an install that had set a one-day archive
      *     window would otherwise have 34 days of spending deleted the first time this daemon ran,
      *     because splice learned a new name for the question. Taking the wider one keeps records
@@ -192,8 +192,8 @@ public class SpliceConfig internal constructor(
     /**
      * How many UTC days of saved prompts and answers this head keeps NOW, read through [current] by whoever
      * must follow a change without a restart. "Keep prompts and answers for" governs when someone set it, shorter
-     * or longer than the history window (splice-lead, Oct 12). Unset, they follow the one history window, which
-     * keeps both of Marlin's Oct 10 reasons: Requests reads this same number, so it never says "Older than 7
+     * or longer than the history window (Oct 12). Unset, they follow the one history window, which
+     * keeps both of the Oct 10 reasons: Requests reads this same number, so it never says "Older than 7
      * days" while Settings says forever, and an upgrade shortens nothing an install never chose. Forever keeps
      * every day; a window of zero keeps the day that is running.
      */

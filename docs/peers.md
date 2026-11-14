@@ -41,9 +41,10 @@ A management `POST /api/peers` can supply `owner: {pid, procStart, pidDomain}`. 
 same live local process. An incomplete, stale or reused-pid tuple is refused before a peer is registered.
 
 A name is 2 to 32 characters: a lowercase letter, then lowercase letters, digits or `-`. These names are
-reserved: `system`, `user`, `operator`, `human`, `assistant`, `claude`, `anthropic`, `splice`, `splice-console`,
-`telegram`, `president`, `marcos` and `dispatch`. A name a running session or another peer already carries is
-refused. One user may have 16 peers.
+reserved: `system`, `user`, `operator`, `human`, `assistant`, `claude`, `anthropic`, `splice` and `splice-console`.
+To reserve more, such as an inbox of your own that no peer should pose as, list them under `[daemon]` in `splice.toml`
+(`reserved_peer_names = ["inbox"]`) and restart splice. Each must itself be a peer name, or splice refuses to boot. A
+name a running session or another peer already carries is refused. One user may have 16 peers.
 
 Options:
 
@@ -265,8 +266,8 @@ If the desktop does not own the thread, Splice checks `app-server-control/app-se
 
 Attach looks up its own ancestry for the nearest process running `codex`. When it finds one, the peer's registry
 record carries a `lifecycleBinding` (version 1) naming that process as the thread's native owner and the peer's
-helper as the process that receives for it, which is how Fence tells which conversation a Codex hook belongs to. The
-binding is written only while that process is still the one named.
+helper as the process that receives for it, which is how a coordinator outside splice can tell which conversation a
+Codex hook belongs to. The binding is written only while that process is still the one named.
 
 The helper submits messages in order, in Claude Code's own envelope
 (`<cross-session-message from="…" from-name="…">`), with the message's id as the input's client id. A shared

@@ -77,7 +77,7 @@ class FailClosedBootTest {
         assertFalse(said.contains("not declared under"), "the decode never ran: $said")
     }
 
-    // Marlin's ruling (Oct 11): a Projects folder is a display preference and never stops splice. A saved folder that is
+    // A Projects folder is a display preference and never stops splice. A saved folder that is
     // gone is reported as not found by the projects read and its sessions fall back to the git-repo rule; only a
     // relative entry, which names no folder at all, is a finding.
     @Test

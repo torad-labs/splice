@@ -51,7 +51,7 @@ private fun answeredAt(random: Random): Instant =
     Instant.ofEpochSecond(1_793_000_000L + random.nextLong(10_000_000))
 
 class MuseRepliesPropertyTest {
-    // The 429 of Oct 25, 10:16:47 PM CT named a reset 2 h 8 min out and carried Retry-After 7,728,000 ms, and yet
+    // The 429 of Oct 25 named a reset 2 h 8 min out and carried Retry-After 7,728,000 ms, and yet
     // four of fourteen requests in the next seven minutes were served (audit-verdicts.md:186-197). Its reset is
     // Muse's word about its window, not a closed door, so the limit holds with probes rather than firmly.
     @Test

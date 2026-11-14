@@ -1,5 +1,5 @@
 // PUT /api/topology refuses a changed system_prompt_file a turn could not read, in words naming why, and
-// splice.toml is byte-identical after it. Marlin's walk of V4-348 on bb54736ea:
+// splice.toml is byte-identical after it. Console walk of V4-348 on bb54736ea:
 // the preview showed a refusal, Save wrote `system_prompt_file = "<missing path>"` anyway and dropped the
 // head's system_prompt. The real loader parses every candidate, so a refusal here is the route's, never a
 // stub's.

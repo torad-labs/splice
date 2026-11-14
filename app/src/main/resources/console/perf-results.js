@@ -1,5 +1,5 @@
-// Usage › Results by command: the per-command table (v0.4.0 spec §3, its Resolved block), drawn as Marcos approved it on
-// Oct 29 (build 531d46e7e): which command is healthy and which one is hurting. A row is the command (the provider's
+// Usage › Results by command: the per-command table (v0.4.0 spec §3, its Resolved block):
+// which command is healthy and which one is hurting. A row is the command (the provider's
 // colour on its dot alone), its requests as a number over a bar, its failure rate as one bar coloured only when it is bad,
 // and the whole request's typical time and slowest 5% on one log axis. Everything else a command has opens under its row:
 // every request in one bar sized by outcome, the cache as a ring, the stages on one axis, the compactions, the models.
@@ -20,7 +20,7 @@ const createPerfResults = (scope, helpers) => {
   const { API, document } = scope;
   const { render, providerOfHead, cmdOf, flagOf, flagHtml, hasFilter, ui, S, n0, secs, OPEN, OUTCOME_WORD, tagWord, isFailed, NOT_READ } = helpers;
   const WINDOWS = { "1h": "1 hour", "24h": "24 hours", "7d": "7 days" };
-  // WHERE THE TABLE'S COUNT BEGINS, in the words the chart above uses for its own (Nov 10): the fold counts the last 1, 24
+  // WHERE THE TABLE'S COUNT BEGINS, in the words the chart above uses for its own: the fold counts the last 1, 24
   // or 168 hours to the minute it was read, while the chart counts whole calendar days from midnight, so "1,289 failed of
   // 177,208" here and "1,129 failed" over 154,980 requests there read as a contradiction until each says where it starts
   const sinceWord = (win) => {

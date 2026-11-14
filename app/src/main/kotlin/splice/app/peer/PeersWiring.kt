@@ -23,9 +23,10 @@ import java.nio.file.Path
 internal class PeersWiring(private val env: EnvReader = EnvReader(System::getenv)) {
 
     /** The registered peers, under the folder holding splice.toml; reading a missing folder creates nothing. A folder
-     *  that cannot be read boots with no peers and says so in [log], so no peer key opens a route until it is fixed. */
-    fun store(log: LogSink): PeerStore {
-        val store = PeerStore(settingsDir())
+     *  that cannot be read boots with no peers and says so in [log], so no peer key opens a route until it is fixed.
+     *  [reserved] is `[daemon] reserved_peer_names`, names a register is refused on top of the built-in ones. */
+    fun store(log: LogSink, reserved: Set<String>): PeerStore {
+        val store = PeerStore(settingsDir(), reservedNames = reserved)
         store.loadFailure?.let { log("peers: the peers folder could not be read, so no peer key is admitted: $it") }
         return store
     }

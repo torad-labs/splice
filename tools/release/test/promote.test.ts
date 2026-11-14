@@ -20,10 +20,10 @@ afterAll(() => {
 const GIT_ENV = {
   GIT_CONFIG_NOSYSTEM: "1",
   GIT_CONFIG_GLOBAL: "/dev/null",
-  GIT_AUTHOR_NAME: "seat",
-  GIT_AUTHOR_EMAIL: "seat@example.invalid",
-  GIT_COMMITTER_NAME: "seat",
-  GIT_COMMITTER_EMAIL: "seat@example.invalid",
+  GIT_AUTHOR_NAME: "dev",
+  GIT_AUTHOR_EMAIL: "dev@example.invalid",
+  GIT_COMMITTER_NAME: "dev",
+  GIT_COMMITTER_EMAIL: "dev@example.invalid",
 };
 
 function git(cwd: string, ...argv: string[]): string {

@@ -1,4 +1,4 @@
-// NEW: labels only (Eli's ruling via splice-lead, 2026-10-12). PUT /api/accounts/names/{ref} {"name": "..."} names any
+// NEW: labels only. PUT /api/accounts/names/{ref} {"name": "..."} names any
 // login by its ref: the one route behind Accounts' Name it, its Rename, and the name typed when a login is added.
 package splice.accounts.pool
 

@@ -1,4 +1,4 @@
-// NEW (Oct 29, 2026, splice-lead): `splice uninstall --all` takes away the systemd user units
+// NEW (Oct 29, 2026): `splice uninstall --all` takes away the systemd user units
 // splice laid. Before, it removed only the command links, so splice.service stayed enabled and started again at every
 // login from the jar left on disk, and since socket activation systemd also kept holding splice's ports and started
 // the daemon again on the next request.

@@ -74,7 +74,7 @@ class LanShareConfigTest {
         assertEquals(listOf("remote.local"), refused("[remote.local]\nurl = \"http://torad:3097/claudex\""))
     }
 
-    // Marcos, 2026-10-25: plain `claude` runs on the server's Claude logins, so `claude` may name a remote command.
+    // 2026-10-25: plain `claude` runs on the server's Claude logins, so `claude` may name a remote command.
     @Test
     fun `a remote claude boots holding its address`() {
         val topology = boot("[remote.claude]\nurl = \"http://torad:3097/claude-splice\"").getOrThrow()

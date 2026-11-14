@@ -35,7 +35,7 @@ internal class TurnConnEnd(
 ) {
     /** True when [e] is a raw connection-class failure this surface owns: a socket failure past the handoff.
      *
-     *  A client that already left is a client abort, not a connection reset (splice-providers, Oct 12): a write to
+     *  A client that already left is a client abort, not a connection reset: a write to
      *  its closed socket throws the JDK's bare IOException("Stream closed"), and in codex code mode that write
      *  happens outside the translator (the held writes drained into a new step's sink), so the raw IOException
      *  reaches here with ClientChannel's clientGone already set. It is sealed as CancellationSeal seals one:
@@ -96,7 +96,7 @@ internal class TurnConnEnd(
         drive.emitter.emitError(cause)
     }
 
-    /** The runtime port a refusal was against, when the address is this machine's own: the count the perf row
+    /** The runtime port a refusal was against, when the address is this host's own: the count the perf row
      *  carries (refused_runtime_port). Null for a provider out on the network, whose port is nobody's to start. */
     private fun runtimePort(): Int? {
         val endpoint = try {

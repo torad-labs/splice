@@ -247,7 +247,7 @@ class ClaudeConfigMaterializerSafetyTest {
     }
 }
 
-// DR-64 (sweep 2026-08-31, both seats independently): JsonStateReads carried an exists/symlink
+// DR-64 (sweep 2026-08-31): JsonStateReads carried an exists/symlink
 // pre-gate into both modes. Strict read a REAL local .claude.json under an untraversable dir —
 // and any symlinked local — as "fresh head, safe to seed" and destroyed operator state; tolerant
 // silently blanked unreadable global sources and skipped readable dotfiles symlinks. Own class:

@@ -14,19 +14,19 @@ class PeerEnvelopeTest {
     private fun record(json: String) = Json.parseToJsonElement(json).jsonObject
 
     private val wrapped = "Another Claude session sent a message:\n" +
-        "<cross-session-message from=\"uds:/run/x.sock\" from-name=\"splice-lead\" from-mode=\"bypass\">\n" +
+        "<cross-session-message from=\"uds:/run/x.sock\" from-name=\"lead-session\" from-mode=\"bypass\">\n" +
         "Push is done.\n\nSecond paragraph.\n</cross-session-message>\n\nThis came from another Claude session."
 
     @Test
     fun `a tagged record names its sender and carries the body without the envelope`() {
-        val tagged = record("""{"type":"user","origin":{"kind":"peer","name":"splice-lead","body":"Push is done."}}""")
-        assertEquals(ReceivedMessage("splice-lead", "Push is done."), envelope.read(tagged, wrapped))
+        val tagged = record("""{"type":"user","origin":{"kind":"peer","name":"lead-session","body":"Push is done."}}""")
+        assertEquals(ReceivedMessage("lead-session", "Push is done."), envelope.read(tagged, wrapped))
     }
 
     @Test
     fun `a record with no tag is read from its envelope, the sender named by its name before its address`() {
         val untagged = record("""{"type":"user"}""")
-        val whole = ReceivedMessage("splice-lead", "Push is done.\n\nSecond paragraph.")
+        val whole = ReceivedMessage("lead-session", "Push is done.\n\nSecond paragraph.")
         assertEquals(whole, envelope.read(untagged, wrapped))
         val onlyAddress = "<cross-session-message from=\"uds:/run/x.sock\">\nhi\n</cross-session-message>"
         assertEquals(ReceivedMessage("uds:/run/x.sock", "hi"), envelope.read(untagged, onlyAddress))

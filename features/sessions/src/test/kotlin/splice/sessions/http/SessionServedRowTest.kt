@@ -1,5 +1,5 @@
 // NEW: Oct 11, 2026 — with reading off, a session still names the model splice served it, so Continue on leaves that
-// model out of its menu and keeps it as the move's "from" (Marlin, rewalk 4).
+// model out of its menu and keeps it as the move's "from".
 package splice.sessions.http
 
 import kotlinx.serialization.json.Json

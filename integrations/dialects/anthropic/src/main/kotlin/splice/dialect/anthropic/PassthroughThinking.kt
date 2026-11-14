@@ -84,7 +84,7 @@ internal class PassthroughThinking(
      *
      *  A turn that DOES send thinking reaches the wire via output_config.effort. It sends the effort
      *  Claude Code's request names, else its budget's rung, else the configured effort, else high, each
-     *  on the vendor's rungs (Marcos, Oct 28: max must not be the unchangeable default; this ends KIMI BYTE-IDENTITY's unconditional max for the effort alone). */
+     *  on the vendor's rungs (max must not be the unchangeable default; this ends KIMI BYTE-IDENTITY's unconditional max for the effort alone). */
     fun effortLadder(typed: AnthropicRequest, raw: JsonObject): String {
         val rungs = quirks.thinking.effortRungs
         val thinking = typed.thinking

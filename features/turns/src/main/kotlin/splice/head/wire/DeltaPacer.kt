@@ -2,7 +2,7 @@
 //
 // WHY. Providers send some output in batches: Anthropic streams a summarized thinking block as a whole
 // summary at once (platform.claude.com thinking guide, "Streaming thinking"), and a JFR socket recording
-// of the live daemon (Oct 1, 7:49 PM CT) showed 190 thinking deltas, about 31 KB, arriving in ONE read
+// of the live daemon (Oct 1) showed 190 thinking deltas, about 31 KB, arriving in ONE read
 // after a 16 s provider silence. splice wrote each of them 1 to 3 ms after reading it, so Claude Code
 // drew the whole batch in one frame: nothing for a long time, then a burst. Codex's terminal paces its
 // own input (codex-rs/tui/src/streaming/chunking.rs), so the same provider looks smoother there. This
@@ -17,7 +17,7 @@
 //   - A frame that starts a tool call (a tool_use or server_tool_use block) or ends the message (a message_delta
 //     carrying a stop_reason, or message_stop) never waits: everything held leaves at once, ahead of it, so the order
 //     still holds and Claude Code starts the tool and ends the turn the moment splice has the frame. Fix 2, Oct 26:
-//     on claude-splice, Oct 25, 6 to 11 PM CT (21,215 turns), a turn ended 67 ms after the upstream's last byte at
+//     on claude-splice, Oct 25 (21,215 turns), a turn ended 67 ms after the upstream's last byte at
 //     p50 and 923 ms at p99, while the pacer's longest hold per turn was 131 ms and 944 ms. A burst that more text
 //     or thinking follows is paced as before.
 //   - Each tick releases enough visible deltas to finish what is held within [windowMs] of the oldest
@@ -220,7 +220,7 @@ internal class DeltaPacer(
 
 /** The three fields of a frame's `delta` the pacer reads. Decoded straight from the frame's text, every other key
  *  skipped, so a streamed delta builds no JsonObject: parsing each one into a tree was 345 of 632 MB/s sampled on the
- *  live daemon (Oct 20, 01:28 CT), its HashMap tables alone 333. Elements, read by JsonScalars.str as the tree was,
+ *  live daemon (Oct 20), its HashMap tables alone 333. Elements, read by JsonScalars.str as the tree was,
  *  so a number or null in any of them answers as before. */
 @Serializable
 private data class DeltaRead(

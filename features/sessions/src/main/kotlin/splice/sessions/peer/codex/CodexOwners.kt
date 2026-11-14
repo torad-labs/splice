@@ -1,6 +1,6 @@
 // NEW: Oct 27, 2026 (docs/peers.md, "A Codex thread as a peer"): the Codex process an attach binds its thread to. It is
 // read from the attach's own ancestry, never from an argument, an event or the environment: the nearest process above
-// it whose program is `codex`, as Fence's lifecycle binding names a native owner (Fence's lifecycle-owner-binding.md).
+// it whose program is `codex`, the native owner a lifecycle binding names.
 // A hook Codex runs has that process above it; a shell outside Codex has none, and its attach binds no owner.
 package splice.sessions.peer.codex
 

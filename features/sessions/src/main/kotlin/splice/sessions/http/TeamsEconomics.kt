@@ -1,7 +1,7 @@
 // NEW: V4-160 — the team economics, moved verbatim out of TeamsRoutes.kt (concentration, 2026-09-18).
 // TeamsRoutes.kt's header states what the economics count and why.
 //
-// PLAN WINDOWS (Oct 13, 2026; web-console §4.13 "Team tracking ... plan window use", marlin's call via splice-lead).
+// PLAN WINDOWS (Oct 13, 2026; web-console §4.13 "Team tracking ... plan window use").
 // Beside the lifetime figures, each slot carries what its sessions moved on a plan account over the trailing 5 hours
 // and 7 days, the two windows Usage reads a plan over, by command and account. These count from the perf session
 // tag as the lifetime does, and from before the team was made too, since a window is the plan's and not the team's.
@@ -97,7 +97,7 @@ internal class TeamEconomics(
     private fun held(slot: TeamSlot): List<String> = slot.sessionsHistory + listOfNotNull(slot.session)
 
     /** When [session] joined [slot]: "since joining" is each member's own join, so a session bound later does not bring
-     *  its earlier requests (the President's sign-off of §14, Oct 13). One bound before joins were kept reads from the
+     *  its earlier requests (§14). One bound before joins were kept reads from the
      *  team's creation, as before. */
     private fun joined(slot: TeamSlot, session: String): Long = slot.joinedAt[session] ?: team.createdAt
 
@@ -171,7 +171,7 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
     private var usd = 0.0
 
     /** Moved turns an account with a plan carried: they are counted in [unpricedTurns] and never in [pricedMovedTurns],
-     *  because a plan covered them (fin, Oct 11). */
+     *  because a plan covered them. */
     var planTurns: Long = 0L
         private set
 

@@ -1,5 +1,5 @@
 // NEW: V4-381 — the guarded console's delete of retained turn statistics. Its inventory (GET /api/kept/turns) is gone:
-// no console page, CLI or tool read a key of it (splice-turns, Oct 12).
+// no console page, CLI or tool read a key of it.
 package splice.head.perf
 
 import io.ktor.http.HttpStatusCode

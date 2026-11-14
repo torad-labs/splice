@@ -203,7 +203,7 @@ public class LaunchService(
             addAll(hub.args + effortArgs(held)) // the effort after the hub's: a relaunch reads it as its own
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.
-            // V4-169 (the President, Oct 13): a session another head wrote goes on as the copy the client resumes.
+            // V4-169: a session another head wrote goes on as the copy the client resumes.
             addAll(resume.resumingAs(bounded.args, adoption))
         }
         val adopted = resume.warning(adoption)
@@ -225,8 +225,8 @@ public class LaunchService(
         return wrapped.settingsOverlay(roster, gateway.statuslineCommand, LaunchMarker.here, gateway.keyHelper, hooks)
     }
 
-    /** MCP hub step 6: what the hub adds to this launch. A wrapped launch reads his own config home and falls back to
-     *  the V4-445 file; a head's launch reads the head's home. */
+    /** MCP hub step 6: what the hub adds to this launch. A wrapped launch reads the user's own config home and falls
+     *  back to the V4-445 file; a head's launch reads the head's home. */
     private fun hubArgs(
         caller: LaunchCaller,
         wrapped: WrappedLaunch?,
@@ -352,7 +352,7 @@ public class LaunchService(
             putAll(LaunchModelEnvironment.windows(spec))
             put("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "85")
             // The default only: splice-launch keeps a MAX_THINKING_TOKENS the caller already set, so a headless caller
-            // that bounds its own thinking keeps that bound (Oct 13, the Temple's read).
+            // that bounds its own thinking keeps that bound.
             put("MAX_THINKING_TOKENS", "128000")
             // The client's own timers and retry limits, so the head's wall decides every turn (LaunchClientTimers).
             putAll(LaunchClientTimers.of(spec))
@@ -384,7 +384,7 @@ public class LaunchService(
     }
 
     /** The ambient ANTHROPIC_CUSTOM_HEADERS without splice's own headers, the session's client wall, and on a head here
-     *  that forwards the client's login, the launch's proof (PR #247 review, Oct 29). An outer session's splice headers
+     *  that forwards the client's login, the launch's proof. An outer session's splice headers
      *  never ride along: its proof would reach a head it was not planted for, or another machine. */
     private fun customHeaders(spec: LaunchSpec): String {
         // Every header splice plants for a session starts "x-splice-" (the client wall, the launch proof).

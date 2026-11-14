@@ -28,7 +28,7 @@ public data class FoldRound(
     val outcome: TurnOutcome.Success,
 )
 
-/** Mid-stream re-anchoring policy (eli design 2026-07-24): when a round FAILS after frames were
+/** Mid-stream re-anchoring policy (design of 2026-07-24): when a round FAILS after frames were
  *  already forwarded, the provider may return the continuation request that resumes the turn from
  *  its accumulated partial output. Null = the round cannot be carried on from what arrived (a poison tool tear, a
  *  committed tool call, or prose a provider cannot continue from), and the turn ends with the honest error. Whether a

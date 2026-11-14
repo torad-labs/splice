@@ -1,13 +1,13 @@
-// NEW: Nov 12, 2026: while a command holds a turn, its logins' usage is read again and again, not every five minutes.
+// While a command holds a turn, its logins' usage is read again and again, not every five minutes.
 //
 // A turn held on a plan limit goes on when a login can serve it: at the reset the provider named, or sooner, when the
 // person resets a login at the provider. splice hears of that reset from the login's usage reading (PlanHold.weigh),
-// and a reading was asked for every five minutes (QuotaPoller) or when someone opened a console page. That evening
-// every Claude login on one machine was out of Fable from 8:48 PM CT. Marcos reset one, and the sessions went on
-// waiting until the next five-minute reading, at 8:57:44 PM; by then he had logged in again by hand ("my limit just
-// freed up, and the sessions were all still loading"). While a head holds any turn, this asks every login's poller
-// for a reading each time the poller's own floor allows one, so a reset is heard within about a minute and no one has
-// to open a page for it. In a hold of hours the provider refuses a read a minute (Nov 13, 2026); the poller then reads
+// and a reading was asked for every five minutes (QuotaPoller) or when someone opened a console page. One evening
+// every Claude login on a machine was out of Fable. A login was reset, and the sessions went on waiting until the
+// next five-minute reading, by which time the person had logged in again by hand. While a head
+// holds any turn, this asks every login's poller for a reading each time the poller's own floor allows one, so a
+// reset is heard within about a minute and no one has to open a
+// page for it. In a hold of hours the provider refuses a read a minute (Nov 13, 2026); the poller then reads
 // each login every two minutes, where it used to fall silent for five (QuotaReadGap).
 package splice.app.probe
 

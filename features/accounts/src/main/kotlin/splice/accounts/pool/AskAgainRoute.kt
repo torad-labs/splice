@@ -1,7 +1,8 @@
 // NEW: Try again on a login its provider refused (Nov 11, 2026). A card that read "Blocked until its organization
-// allows subscription access" offered only Sign in again, in its menu. Marcos, that day, signed in again because
-// it said it was blocked, then realized his payment had failed and paid again. Nothing on the card let him say the cause
-// was fixed, and splice asked the login again only when its hold ran out and a turn happened to reach it.
+// allows subscription access" offered only Sign in again, in its menu. One person, that day, signed in again because
+// it said it was blocked, then realized their payment had failed and paid again. Nothing on the
+// card let them say the cause was fixed, and splice asked the login
+// again only when its hold ran out and a turn happened to reach it.
 package splice.accounts.pool
 
 import io.ktor.http.HttpStatusCode

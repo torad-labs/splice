@@ -1,10 +1,10 @@
 // Red-green proof that the root `./gradlew` cannot start gradle outside the gradle slot.
 //
 // WHY THIS WALL EXISTS. The slot serialises every gradle in the checkout, but before this it only
-// serialised the runs that TOOK it. On 2026-10-10 a seat ran three one-task checks straight through
+// serialised the runs that TOOK it. On 2026-10-10 a session ran three one-task checks straight through
 // the wrapper beside a run inside the slot; two writers then shared one test-results directory and
 // gradle's reporter closed onto a file the other had already moved, which ended the run with a
-// NoSuchFileException naming an internal binary. A rule both seats already agreed on did not stop
+// NoSuchFileException naming an internal binary. A rule both sessions already agreed on did not stop
 // it, so the wrapper routes itself and running outside the slot is no longer something to remember.
 //
 // HOW IT IS MEASURED: through the REAL wrapper, never a copy of its logic. Each arm runs
@@ -12,7 +12,7 @@
 // exits 0. So an arm asserts what the shipped script decided, and a arm that passes because the test
 // re-implemented the decision is not possible here.
 //
-// THE EXEMPT ARMS MATTER MORE THAN THE ROUTED ONES. A wrapper that routes everything hangs the seat
+// THE EXEMPT ARMS MATTER MORE THAN THE ROUTED ONES. A wrapper that routes everything hangs the session
 // running `./gradlew --stop` behind the build it is trying to stop, and adds a bun dependency to
 // every CI step for no serialisation at all. Those arms are the ones that keep this fix from costing
 // more than the bug.
@@ -73,23 +73,23 @@ describe("the root wrapper sends a build through the gradle slot", () => {
     expect(argv[1]).toBe("slot");
     expect(argv[3]).toBe("--");
     expect(argv.slice(4)).toEqual([":features-sessions:test", "--tests", "splice.sessions.http.Team*"]);
-    // The label is what a waiting seat reads out of the holder file, so it has to identify the caller.
+    // The label is what a waiting session reads out of the holder file, so it has to identify the caller.
     expect(argv[2]).toMatch(/^gradlew-pid\d+$/);
   });
 
-  test("a seat can name its own label, so the holder file says who to ask", () => {
-    const run = wrapper(["check"], { GRADLE_SLOT_LABEL: "builder3" });
-    expect(run.routed?.[2]).toBe("builder3");
+  test("a session can name its own label, so the holder file says who to ask", () => {
+    const run = wrapper(["check"], { GRADLE_SLOT_LABEL: "builder-a" });
+    expect(run.routed?.[2]).toBe("builder-a");
   });
 
   test("a run already admitted by a live slot runs gradle itself, and does not route twice", () => {
     // The slot spawns this same wrapper, so believing the marker is what keeps that from recursing.
-    const run = wrapper([":app:test"], { SPLICE_GRADLE_SLOT: `builder3:${process.pid}` });
+    const run = wrapper([":app:test"], { SPLICE_GRADLE_SLOT: `builder-a:${process.pid}` });
     expect(run.routed, "a run inside the slot must not take the slot again").toBeNull();
   });
 
   test("a marker left behind by a finished run is ignored, so a stale export cannot open the door", () => {
-    // A seat that exports the marker once would otherwise run outside the slot for the rest of its
+    // A session that exports the marker once would otherwise run outside the slot for the rest of its
     // session. The marker carries the slot process's pid, and a dead pid admits nothing.
     const dead = deadPid();
     const run = wrapper([":app:test"], { SPLICE_GRADLE_SLOT: `stale:${dead}` });
@@ -121,7 +121,7 @@ describe("the root wrapper sends a build through the gradle slot", () => {
   });
 
   // THE CLIENT-ONLY COMMANDS. Each builds nothing, so each must reach gradle without waiting for a
-  // build to finish — `--stop` most of all, which a seat reaches for to stop the build it would queue
+  // build to finish — `--stop` most of all, which a session reaches for to stop the build it would queue
   // behind.
   for (const flag of ["--version", "-v", "--stop", "--status", "--help", "-h", "-?"]) {
     test(`${flag} takes no slot`, () => {
@@ -154,7 +154,7 @@ describe("the root wrapper sends a build through the gradle slot", () => {
         env: { PATH: `${join(tree, "bin")}:/usr/bin:/bin`, HOME: tree, CI: "", SPLICE_GRADLE_SLOT: "" },
       });
       expect(ran.status, "a build that cannot take the slot must not run").not.toBe(0);
-      // A refusal that does not say how to proceed is how a seat ends up going around the wall.
+      // A refusal that does not say how to proceed is how a session ends up going around the wall.
       expect(ran.stderr).toContain("bun tools/gate slot");
     } finally {
       rmSync(tree, { recursive: true, force: true });

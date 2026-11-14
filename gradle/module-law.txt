@@ -22,7 +22,7 @@
 :integrations-terminal -> :core
 # the console's session terminal, implemented on tmux (console TMUX.md, Oct 8): core declares what a session's
 # terminal IS, and this is the one place that knows tmux exists. Core only, so nothing reaches tmux but through
-# the contract, and the day seatd carries every act this module is deleted with nothing else to change.
+# the contract, and the day another terminal carries every act this module is deleted with nothing else to change.
 :integrations-tmux -> :core
 # a CLI process's client of the local daemon: where it listens (control port, supervisor unit),
 # how to prove the caller (the management key), whether it is up (/health, the bound port), and

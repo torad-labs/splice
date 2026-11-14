@@ -112,11 +112,11 @@ class DaemonStopDeadlineTest {
     @Test
     @Timeout(60)
     fun `a client connecting in a loop is never refused by an idle head while a busy head drains`() {
-        // The defect this pins (measured 2026-10-10 on the operator's box): each head closed its own
+        // The defect this pins (measured 2026-10-10): each head closed its own
         // listener the moment its own drain converged, so an idle head refused every connection for the
         // whole 45s its busy siblings took to drain — ECONNREFUSED to every agent on that port, while
-        // the daemon was still running and could have answered. The loop is the check splice-lead asked
-        // for: connect over and over across the stop, and count what the kernel said.
+        // the daemon was still running and could have answered. The loop is the check for it:
+        // connect over and over across the stop, and count what the kernel said.
         val busyDraining = CountDownLatch(1)
         val letBusyFinish = CountDownLatch(1)
         val idle = DrainingHead("idle") { }

@@ -1,5 +1,5 @@
 // NEW: the --plugin-dir-no-mcp verdicts and their check, moved out of ControlPlane.kt by their own seam, behavior
-// unchanged (concentration, Oct 13, splice-lead). MCP hub step 6: each installed Claude Code version's verdict, and the
+// unchanged (concentration). MCP hub step 6: each installed Claude Code version's verdict, and the
 // background check that records it. Daemon asks for a pass at start; a launch on a version with no verdict asks again.
 package splice.app
 

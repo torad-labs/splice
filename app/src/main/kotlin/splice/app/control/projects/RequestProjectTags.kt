@@ -41,7 +41,7 @@ internal class RequestProjectTags(
     }
 
     // why: one resolution per folder and head, not per session: each one reads the merged config twice, and a registry
-    // holds thousands of sessions in a few dozen folders (jfr on desk c, Oct 12: a fifth of a Usage read)
+    // holds thousands of sessions in a few dozen folders (measured with JFR: a fifth of a Usage read)
     private class Places(private val routes: SessionsRoutes) {
         private val known = HashMap<Pair<String, String?>, ProjectRef?>()
 

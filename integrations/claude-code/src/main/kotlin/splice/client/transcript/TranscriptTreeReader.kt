@@ -1,4 +1,4 @@
-// NEW: Oct 12, 2026 (splice-lead) — the primary transcripts under each root's projects folder, split out of
+// NEW: Oct 12, 2026 — the primary transcripts under each root's projects folder, split out of
 // TranscriptHistoryIndex.kt: what is in each folder, which files are trusted, and what each one holds.
 package splice.client.transcript
 

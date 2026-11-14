@@ -86,12 +86,12 @@
 .fmenu button.idlechip[aria-checked="true"] { opacity: 1; color: var(--sel-ink); border-color: var(--sel-line); background: var(--sel-face); }
 .fmenu button.idlechip[aria-checked="true"]::before { display: none; }
 .fmenu .morepill { margin: 0.333rem 0.333rem 0.333rem; }
-/* Up to: a day and time to list the requests up to, under the windows it chooses between (Marlin, desk c, Oct 12) */
+/* Up to: a day and time to list the requests up to, under the windows it chooses between */
 .fmenu .goto { display: flex; align-items: center; gap: 0.667rem; margin: 0.333rem 0.333rem 0; padding-top: .55rem; border-top: .08rem solid var(--track-line); }
 .fmenu .goto label { font: 500 .88rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
 .fmenu .goto input { font: 500 .92rem/1 var(--font-data); color: inherit; background: var(--track); border: .08rem solid var(--track-line); border-radius: var(--r-in); padding: .4rem .55rem; }
 /* the field types and steps with the arrow keys; its calendar button is gone, because a pick there never reached the
-   field (Marlin, p225) and the week's days below are one press each */
+   field and the week's days below are one press each */
 .fmenu .goto input::-webkit-calendar-picker-indicator { display: none; }
 .fmenu .days { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--u); margin: var(--u) 0 0; padding: 0 .333rem; }
 .fmenu .days button { justify-content: center; padding: .55rem .4rem; border: .12rem solid var(--track-line); }
@@ -186,7 +186,7 @@ a.byr:hover .bn { color: var(--text); }
 .byr .bn { min-width: 0; font: 500 .92rem/1.2 var(--font-name); color: var(--text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .byr .bb { display: flex; align-items: center; gap: 0.333rem; min-width: 0; }
 /* each bar sits on a faint track across its column, as the band's other bar rows do, so a share of a few percent reads as
-   the start of a bar and never as a lone "0" beside its figure (lead walk of the installed console, Oct 29, at 1440) */
+   the start of a bar and never as a lone "0" beside its figure */
 .byr .bb:not(:empty) { height: .62rem; border-radius: .31rem; background: var(--track); }
 .byr .bb b, .byr .bb i { transition: width var(--t-snap) var(--e-out); }
 .byr .bb b, .byr .bb i { height: .62rem; border-radius: .31rem; }
@@ -246,7 +246,7 @@ button.byr:hover .bn { color: var(--text); }
 .kl.stopped { width: .8rem; height: .8rem; border-radius: .15rem; background: var(--text-body); }
 .rqpane .fig .fsub > .sw { margin-right: 0.333rem; vertical-align: -.02rem; }  /* the open request's plan mark, a space before its words */
 /* A READ THAT REFUSED SAYS SO WHERE IT HAPPENED: the command and one word, above the rows it is missing from, or under
-   the rows for a search; the reason goes to the browser's log (fin). One command that cannot answer is not an empty day. */
+   the rows for a search; the reason goes to the browser's log. One command that cannot answer is not an empty day. */
 .list-wait { display: flex; align-items: center; gap: 0.667rem; margin: 0; font: 500 .92rem/1.45 var(--font-data); color: var(--text-mute); }
 .list-wait .wait { --c: var(--text-mute); width: 1.1rem; height: 1.1rem; }
 .list-wait.unread { color: var(--limit); }
@@ -485,7 +485,7 @@ mark.rq-q { padding: .12rem .35rem; border-radius: .25rem; background: color-mix
 /* the card is reqview.css's; here only where it stands: a step in past the chevron, with room under it for its offset edge */
 .rqtable .rqpane { margin: var(--u) calc(2 * var(--u)) calc(4 * var(--u)) 2rem; }
 
-/* ---------- reading: the list's own shape, hollow (Marcos, Oct 12); the bars themselves are console.css's .ghost ---------- */
+/* ---------- reading: the list's own shape, hollow; the bars themselves are console.css's .ghost ---------- */
 .rqg { min-height: 3.7rem; box-sizing: border-box; position: relative; }
 .rqg > .lamp { --c: var(--track); }
 .rqg .tk > .ghost, .rqg .du > .ghost, .rqg .co > .ghost { grid-column: 1 / -1; height: .5rem; }

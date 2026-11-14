@@ -1,7 +1,7 @@
 // NEW: Meta's Muse gateway as a head meets it, answering each request by the route it rides
 // (x-meta-ai-gateway-session-id), and recording the prompt_cache_key it carries, which Meta routes by too and which
-// moves with the route. A route with a generation stuck on it answers what Meta answered on Oct 26 from
-// 02:37 CT: a 504 gateway_timeout with connection: close, which says nothing about the generation behind it. A route
+// moves with the route. A route with a generation stuck on it answers what Meta answered on Oct 26:
+// a 504 gateway_timeout with connection: close, which says nothing about the generation behind it. A route
 // can also carry a generation that is still running: its request is streamed the start of an answer that never ends
 // while the test runs, or whose connection breaks under it, and every later request on that route waits behind it
 // until the gateway gives up. A route can also finish one response with no answer in it, and leave nothing running.

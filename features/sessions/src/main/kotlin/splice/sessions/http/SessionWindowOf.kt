@@ -1,4 +1,4 @@
-// NEW: Oct 13, 2026 (spec §9: computed values are inspectable; console audit gap 473, via splice-lead) — the context
+// NEW: Oct 13, 2026 (spec §9: computed values are inspectable; console audit gap 473) — the context
 // window Claude Code computed for one session, as its status line reported it to the head it runs on. The head already
 // learns it (ClientWindows) and scales that session's counts against it; no route served it, so the console could
 // not show the window a session actually runs in.

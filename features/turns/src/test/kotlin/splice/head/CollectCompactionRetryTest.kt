@@ -4,7 +4,7 @@
 // Drives the REAL production path: HeadServer on an ephemeral port, a raw socket client that
 // hangs up mid-compaction (the Esc), and a held upstream whose release lets the detached drive
 // finish cleanly. The retry then arrives while the upstream is parked again: answered from the
-// hold with NO new upstream turn — exactly what hack-program never got from the collect path.
+// hold with NO new upstream turn — exactly what a head never got from the collect path.
 package splice.head
 
 import kotlinx.coroutines.delay
@@ -55,7 +55,7 @@ private data class HeldHead(
 
 class CollectCompactionRetryTest {
 
-    // stream:false is the whole point: Claude Code's auto-compaction on heads like hack-program.
+    // stream:false is the whole point: Claude Code's auto-compaction on heads that run it.
     private val body = """{"model":"claude-codex--gpt-5.6-sol","stream":false,"max_tokens":64,""" +
         """"system":"SCENARIO:hold You are tasked with summarizing conversations for another agent.",""" +
         """"messages":[{"role":"user","content":"compact"}]}"""
@@ -68,7 +68,7 @@ class CollectCompactionRetryTest {
             """"messages":[{"role":"user","content":"look into it"}]}"""
 
     // The SAME request with stream:true: Claude Code's first attempt streams, and when that attempt dies its
-    // fallback re-sends these bytes as stream:false (rig's finding, hack-program on glml53, 2026-10-25 00:58 CT).
+    // fallback re-sends these bytes as stream:false (rig's finding, 2026-10-25).
     private val streamBody = body.replace("\"stream\":false", "\"stream\":true")
 
     private fun post(port: Int, json: String = body): Socket {

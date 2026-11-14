@@ -1,7 +1,7 @@
 // NEW: `splice check-config` — the boot findings pass against the person's splice.toml, run by the build that is
 // about to boot, and nothing else. An install that replaces a running daemon asks the NEW jar this before it
 // stops the old one: a splice.toml the new build refuses must leave the old daemon running (fail-closed boot,
-// the project law). It reads and reports; it never writes, never starts a daemon and never offers a fix.
+// the design rule). It reads and reports; it never writes, never starts a daemon and never offers a fix.
 package splice.app.cli
 
 import splice.app.provider.LocalRowBootFindings

@@ -1,6 +1,6 @@
 // NEW: the hourly token-economics rollup projection (quota instrument), SUMS ONLY: what each hour cost, how many
 // turns it served and how many ran on a plan. Sums stay mergeable when the window changes. The store keeps more sums
-// per hour (tokens, bytes, tools); the route serves only what the Accounts page reads (Oct 12, splice-lead's sweep).
+// per hour (tokens, bytes, tools); the route serves only what the Accounts page reads.
 //
 // A head whose rollup cannot be shown honestly answers with no buckets and an `unavailable` sentence, and the
 // other heads still answer: one head's evidence never takes the whole route down.

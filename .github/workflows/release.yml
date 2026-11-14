@@ -14,11 +14,10 @@ name: release
 #
 #   tag push (the plumbing):  git push origin v0.3.0-beta.1     — still works, unchanged.
 #
-# Where the release lands (Oct 31, 2026: the release download does not belong on GitHub, and being at
-# Cloudflare makes more sense): this workflow builds, accepts and attests, and leaves the GitHub release as an
-# unpublished draft carrying the notes and no file. The downloads are served from splice.torad.ai/download, which is
-# written from the maintainer's machine with a token scoped to the release bucket that its keyring holds, never with a
-# Cloudflare token in this repository:
+# Where the release lands (the release download is served from Cloudflare, not GitHub): this workflow builds, accepts
+# and attests, and leaves the GitHub release as an unpublished draft carrying the notes and no file. The downloads are
+# served from splice.torad.ai/download, which is written from the maintainer's machine with a token scoped to the
+# release bucket that its keyring holds, never with a Cloudflare token in this repository:
 #
 #   bun tools/release publish <version> --run <this run's id>
 #
@@ -143,7 +142,7 @@ jobs:
 
       - name: place the qualified hub pair
         # Kotlin/Native writes each source file's absolute path into a binary, so a hub built on this runner can never
-        # hash to tools/release/mcp-hub.sha256. The bytes hostshield-lead qualified are committed in
+        # hash to tools/release/mcp-hub.sha256. The qualified bytes are committed in
         # tools/release/mcp-hub/ beside their pins; this puts them where :app:stageRelease reads the hub binaries and
         # stops the release here if either one does not hash to its pin. It also warns, without stopping, when
         # integrations/mcp-hub is no longer the tree the pair was built from (tools/release/mcp-hub.tree).
@@ -164,8 +163,8 @@ jobs:
         run: SPLICE_EXPECTED_VERSION="$RESOLVED_VERSION" bun tools/release accept
 
       - name: hub pair matches the qualified hashes
-        # The MCP hub's two binaries ship only as the bytes hostshield-ctl qualified: each staged one must hash to its
-        # line in tools/release/mcp-hub.sha256, as lead-install.sh checks on this machine. The step before staging
+        # The MCP hub's two binaries ship only as the qualified bytes: each staged one must hash to its
+        # line in tools/release/mcp-hub.sha256, as the maintainer's install script checks. The step before staging
         # checks the committed pair; this checks what the stage put in dist/. Without that file the release stops
         # here, before anything is uploaded, so the check is never skipped.
         run: |

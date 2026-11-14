@@ -9,12 +9,12 @@ import splice.core.util.ElapsedClock
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
 
-// why: Marcos's bound (Oct 26, 2026): a session is said when it is first refused and again at most every ten minutes
+// why: a session is said when it is first refused and again at most every ten minutes
 // while it keeps being refused, so a stranded session reads as one in the log however often its client sends again
 private const val SAY_AGAIN_MS = 600_000L
 
-// why: a rotation strands every session launched before it at once, and this machine runs 20+ sessions at a time
-// (Marcos, Oct 16, 2026); 64 names each of them with room to spare, and holds a caller that loops through made-up
+// why: a rotation strands every session launched before it at once, and a host can run 20+ sessions at a time;
+// 64 names each of them with room to spare, and holds a caller that loops through made-up
 // session ids to 64 lines every ten minutes. Past it the refusals are counted, the count said at each doubling.
 private const val MAX_NAMED_SESSIONS = 64
 
@@ -32,7 +32,7 @@ internal enum class KeyRefusal(val says: String) {
     /** A credential that is none of splice's keys, in force or retired, such as a vendor's own key. */
     NOT_SPLICES("the credential it presented is not one of splice's keys"),
 
-    /** On a head that holds logins of its own: no proof of a launch, and none of those logins (PR #247 review). */
+    /** On a head that holds logins of its own: no proof of a launch, and none of those logins. */
     NOT_LAUNCHED(
         "this head serves the logins it holds only to a session splice launched, and the request named no launch " +
             "proof and forwarded none of those logins; launch it with the head's command",

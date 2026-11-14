@@ -4,7 +4,7 @@
 // fields grokbot-mailbox writes, with Splice's values. The key file goes first and the record second, so a session never
 // reads a record whose token is not yet on disk; withdrawal runs the other way. The record carries no secret and is 0644,
 // as Claude Code writes its own; the key file is 0600. A codex peer's record (Oct 27, 2026) also says whether its
-// thread is busy, and carries the lifecycle binding Fence reads: the Codex process that hosts the thread, and the
+// thread is busy, and carries its lifecycle binding: the Codex process that hosts the thread, and the
 // helper that receives for it.
 package splice.sessions.peer.helper
 

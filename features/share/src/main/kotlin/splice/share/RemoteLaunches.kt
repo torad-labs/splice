@@ -1,4 +1,4 @@
-// NEW: LAN share (docs/specs/lan-share.md, Marcos's ruling of 2026-10-24). The launch of a command another machine
+// NEW: LAN share (docs/specs/lan-share.md). The launch of a command another machine
 // serves (`[remote.<command>]`). Nothing here relays a turn or holds anything of the other machine's: the launch asks it
 // for the head's models and timeout, with the address's `auth=` and `models=`, and builds the recipe a head here gets
 // with the other machine's address in place of a loopback port. Claude Code then talks to that machine itself, holding

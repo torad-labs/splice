@@ -1,7 +1,7 @@
 // NEW: Oct 10, 2026 — the `turns` count on a session row, and the start that says what it covers.
 //
 // WHY THE PAIR IS THE WALL. Teams' "Add existing" menu draws "· N turns" beside each session so a
-// person can tell two quiet sessions apart (fin, Oct 10). The number is a LOWER BOUND whenever the
+// person can tell two quiet sessions apart. The number is a LOWER BOUND whenever the
 // session began before the accumulator did, which happens on every daemon restart, so a row that
 // published `turns` alone would say "12 turns" about a session that ran 400 and the menu would have
 // no way to know. These arms pin that the two keys travel together, that a session nothing counted

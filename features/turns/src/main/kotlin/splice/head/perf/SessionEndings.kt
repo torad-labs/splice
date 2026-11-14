@@ -43,7 +43,7 @@ public data class SessionEndingRecovery(
 // and each note is a few short strings.
 private const val MAX_SESSION_ENDINGS = 2_000
 
-/** The endings where splice re-sent a request until it gave up, which open a run of refusals (Marlin, Oct 11). */
+/** The endings where splice re-sent a request until it gave up, which open a run of refusals. */
 private val GAVE_UP = setOf(OutcomeTag.UPSTREAM_FAILED.wire, OutcomeTag.TURN_CAP.wire)
 
 /** A newly recorded ending, after its state is published, so its reset can be scheduled without polling. */

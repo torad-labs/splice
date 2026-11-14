@@ -1,6 +1,6 @@
 // NEW: v0.4.0 FEATURES.md §6 — the doctor report's log tail (only with --with-logs): the last 500 lines of
-// daemon.log from a bounded tail of both generations, each as written and then redacted, as the spec asks (the
-// President ruled on Oct 13 that the spec stands over the earlier events-only reduction): a person's or a model's own
+// daemon.log from a bounded tail of both generations, each as written and then redacted, as the spec asks (the spec
+// stands over the earlier events-only reduction): a person's or a model's own
 // words lose their payload (DoctorLogPayloads), then every credential shape and foreign path (DoctorRedaction.text).
 // An unreadable generation is typed metadata beside the lines, never a 501st line. The perf tail lives in
 // DoctorReportPerf.kt.

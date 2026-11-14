@@ -66,7 +66,7 @@ public class AccountPool(
     public var membershipRefresh: AccountMembershipRefresh? = null
 
     /** Every read of the pool starts here, so a pin whose login read a new limit lets go before anything reads the pin
-     *  (Nov 3, 2026: a pin lets go at the first limit reading instead of pulling seats back). */
+     *  (Nov 3, 2026: a pin lets go at the first limit reading instead of pulling sessions back). */
     private val liveMembership: AccountMembership
         get() {
             membershipRefresh?.refresh()
@@ -269,7 +269,7 @@ public class AccountPool(
         // Oct 12). A session staying on its login, and the first login served after a start, are no switch of the head.
         // And only a turn of the model the command's turns ask for: a helper turn on a small model starts on a login
         // that is out of the sessions' model, and that is not the command moving back to it (Nov 12, 2026: "switched
-        // from Seek Apps to Ethan: primary account reset" a minute after Ethan ran out of Fable).
+        // from work to personal: primary account reset" a minute after personal ran out of Fable).
         val turned = if (previous == null || moved != null) headServing.takeIf { asked.leads(caller.model) } else null
         val headFrom = turned?.getAndSet(chosen.account.label)
         val headSwitch = headFrom?.takeIf { it != chosen.account.label }?.let {

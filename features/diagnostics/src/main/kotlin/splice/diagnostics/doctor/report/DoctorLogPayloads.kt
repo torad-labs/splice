@@ -1,4 +1,4 @@
-// NEW: the doctor report's log tail is shareable, redacted diagnostics (spec §6; splice-lead, Oct 13): raw lines, but a
+// NEW: the doctor report's log tail is shareable, redacted diagnostics (spec §6): raw lines, but a
 // line that carries a person's or a model's own words keeps its head and loses that payload, the way the other masks
 // keep a line's shape and lose the secret.
 //
@@ -11,7 +11,7 @@
 //   tool-call arguments     TurnPreparation (activity label answered locally)
 //   exception text          AuthProbeLoop (tick threw, loop died), LocalRuntimeWatch and TurnPathProbeLoop (DIED),
 //                           HeadProbes (failed to start), HeadShutdown (stop failed uncaught), BudgetLedger (spend
-//                           short): a parse failure's message can quote the body it failed on (splice-lead, Oct 13)
+//                           short): a parse failure's message can quote the body it failed on
 // A line without the daemon's `[date time.millis] [tag]` opening is not trusted, so it is masked whole: a stack frame or
 // a child's stderr can quote anything.
 //

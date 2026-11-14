@@ -1,4 +1,4 @@
-// NEW: Oct 12, 2026 (V4-445, the President via splice-lead) — a plain `claude` reaches the servers splice hosts
+// NEW: Oct 12, 2026 (V4-445) — a plain `claude` reaches the servers splice hosts
 // without a write to ~/.claude.json. Plain claude sessions each ran their own uvx ast-grep: 45 copies, 3.0 GiB.
 package splice.client.mcp
 
@@ -19,9 +19,9 @@ import java.nio.file.Path
 
 /** The `--mcp-config` file a wrapped launch hands Claude Code: each of the operator's user-scope servers splice hosts,
  *  as the HTTP entry a head's home carries ([McpSharing.plan]). An entry passed this way replaces the user-scope one
- *  of the same name (Claude Code 2.1.296 on a desk, Oct 12: one ast-grep, "Dynamically configured", its stdio command
+ *  of the same name (Claude Code 2.1.296, Oct 12: one ast-grep, "Dynamically configured", its stdio command
  *  never spawned), so plain claude connects to the one hosted copy instead of starting its own, and ~/.claude.json
- *  stays as he wrote it. The entries carry the MCP-scoped bearer, so they go in an owner-only file in [dir], never in
+ *  stays as written. The entries carry the MCP-scoped bearer, so they go in an owner-only file in [dir], never in
  *  argv, which any process on the machine can read. */
 public class HostedMcpOverlay(
     private val home: Path,
@@ -34,8 +34,8 @@ public class HostedMcpOverlay(
     public fun args(headKey: String, templeEntry: McpServerInput? = selectedTemple()): List<String> =
         file(headKey, templeEntry)?.let { listOf("--mcp-config", it.toString()) }.orEmpty()
 
-    /** The file for a launch of [headKey], or null when nothing is hosted or his file cannot be read: the launch then
-     *  runs over his own servers as before. Rewritten per launch, so it follows his file and the bearer. */
+    /** The file for a launch of [headKey], or null when nothing is hosted or that file cannot be read: the launch then
+     *  runs over the existing servers as before. Rewritten per launch, so it follows the file and the bearer. */
     public fun file(headKey: String, templeEntry: McpServerInput? = selectedTemple()): Path? =
         write(JsonObject(servers().orEmpty() - TEMPLE_MCP_NAME + templeEntries(templeEntry)), headKey, templeEntry)
 

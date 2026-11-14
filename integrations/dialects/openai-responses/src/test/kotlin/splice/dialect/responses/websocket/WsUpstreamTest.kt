@@ -63,7 +63,7 @@ private const val SESSION = "sess-7f3a"
 // A two-event inbox: overflow is a three-frame test instead of a 1025-frame one.
 private const val SMALL_INBOX = 2
 
-// Marcos runs many agents at once; a thousand is past any day's count, and the pool must not care.
+// Many agents may run at once; a thousand is past any day's count, and the pool must not care.
 private const val CONVERSATIONS = 1_000
 
 // The fixture's socket age limit: an hour of virtual clock would read the same, a small number reads plainer.
@@ -364,7 +364,7 @@ class WsUpstreamTest {
         )
     }
 
-    // Rewritten 2026-10-27 (Marcos: a busy socket opens another socket instead of going to HTTP). The loser of a
+    // Rewritten 2026-10-27 (a busy socket opens another socket instead of going to HTTP). The loser of a
     // cold race used to ride SSE; now each round keeps its own socket, and still neither tears the other.
     @Test
     fun `concurrent COLD rounds on one key each get a socket - neither tears the other`() = runTest {

@@ -143,7 +143,7 @@ public class PerfRowsFileSource internal constructor(
     /** Both sides are read together, so lost or clock-shifted evidence cannot justify subtraction. Read from the
      *  compact rows, which keep every figure an hour is rebuilt from (PerfProjectedKeys), so the totals and the
      *  warmup's week window (UsageReadWarmup) read one tier: the startup scan decoded every line twice, whole for the
-     *  totals and compact for the window (claude-splice's 445 MB file on desk d, Oct 12). */
+     *  totals and compact for the window (claude-splice's 445 MB file). */
     @Synchronized
     internal fun economicsEvidence(sinceMs: Long): EconomicsPerfEvidence {
         val stamp = files.stamp()

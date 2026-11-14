@@ -1,6 +1,6 @@
 # V4-383 — a test never makes its own temp directory or file. `Files.createTempDirectory` and
-# `createTempFile` hand back a path under /tmp that nothing deletes: on the dev box /tmp is a tmpfs, so
-# every test run left its directories in RAM (427 leaked dirs on Sep 27, 11:15 PM CT: grok-*,
+# `createTempFile` hand back a path under /tmp that nothing deletes: on some machines /tmp is a tmpfs, so
+# every test run left its directories in RAM (427 leaked dirs on Sep 27: grok-*,
 # control-gate*, console-routes*, claudex-test-state*), and the tree held 227 such call sites in 107
 # test files. JUnit's `@TempDir` makes the same directory and deletes it when the test (or, on a
 # `@BeforeAll` parameter or a static field, the class) ends, so the compliant spelling costs nothing.

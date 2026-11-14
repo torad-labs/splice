@@ -1,4 +1,4 @@
-// NEW: failure-handling slice 4, the answer of Oct 27, 2:52 PM CT. Anthropic told claude-splice "We've updated our
+// NEW: failure-handling slice 4, the answer of Oct 27. Anthropic told claude-splice "We've updated our
 // Consumer Terms and Privacy Policy. You'll need to accept them in claude.ai with the email in /status to continue."
 // with a 400, splice read it as a request the provider rejected, and 210 turns ended in one minute (daemon.log). The
 // answer is about the account, not the request. These routes hold what it must do on a Claude head: stop using the

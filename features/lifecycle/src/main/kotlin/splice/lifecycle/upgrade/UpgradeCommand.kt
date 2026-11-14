@@ -4,7 +4,7 @@
 // jar, refresh or keep the wrapper (UpgradeWrapper), restart the unit, run doctor. --rollback
 // repoints at the previous release, kept until the next successful upgrade. Config and credentials
 // live elsewhere and are never touched; a refusal at any step leaves the previous release active.
-// Oct 13 (pre-merge review): an activated release that does not come up serving and ready, or whose doctor is red, is
+// Oct 13: an activated release that does not come up serving and ready, or whose doctor is red, is
 // put back the same way, and the release it put back, like the one --rollback leaves, is recorded as refused
 // (UpgradeLayout.rejected) so the updater does not install it again.
 package splice.lifecycle.upgrade
@@ -149,7 +149,7 @@ internal class UpgradeCommand(
                 output.line("  $YELLOW!$RESET ${"waiting".padEnd(UPGRADE_PAD)} $STILL_BUSY; the candidate stays staged")
                 return Upgraded.Ok(false)
             }
-            // Marcos, Oct 13: the updater restarts at the first moment no turn is in flight, or once the wait is spent.
+            // The updater restarts at the first moment no turn is in flight, or once the wait is spent.
             val label = "waiting".padEnd(UPGRADE_PAD)
             output.line("  $YELLOW!$RESET $label the wait for turns is spent; auto-update restarts now")
         }

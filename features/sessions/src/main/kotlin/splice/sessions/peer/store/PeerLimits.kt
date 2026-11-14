@@ -1,7 +1,7 @@
 // NEW: Oct 27, 2026 (docs/peers.md, "Send as the peer"): how fast a peer may send. Every peer gets the default, a token
 // bucket of 20 refilled at 60 a minute, and `splice peer limit` gives one peer its own, kept in limit.json in its
 // settings folder beside peer.json (revoking the peer deletes it with the folder). The default lets a program that tells
-// a whole team at once (the Temple's tell-seat, after a land) send its burst without a wait, while a script stuck in a
+// a whole team at once (a tell-session tool, after a land) send its burst without a wait, while a script stuck in a
 // loop is held to one send a second. The bounds keep a configured limit within what one helper and the sessions it
 // writes to can take.
 package splice.sessions.peer.store

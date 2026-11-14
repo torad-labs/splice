@@ -1,5 +1,5 @@
-// NEW (Oct 25, 2026, splice-lead): splice.service as splice lays it (SpliceUnits). Its directives are the ones the
-// daemon has run under since Host Shield laid its unit on Oct 23, so nothing about how the daemon runs changes when
+// NEW (Oct 25, 2026): splice.service as splice lays it (SpliceUnits). Its directives are the ones the
+// daemon has run under since a host wrapper laid its unit on Oct 23, so nothing about how the daemon runs changes when
 // splice's copy takes over. Two values differ by machine and are written in at install: the JDK the install ran on,
 // put first on the daemon's PATH, and the `splice` link the install made. A path the unit could not carry as written
 // lays no unit, rather than one that systemd or the shell would read as another path.

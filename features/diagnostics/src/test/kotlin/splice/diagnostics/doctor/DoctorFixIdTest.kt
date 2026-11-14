@@ -1,6 +1,6 @@
 // NEW: V4-220 item 4 — what the report tells the console about each fix: which rows the daemon can
 // fix itself (`fix_id`), and that the fixes meant for pasting or following survive the report's redaction.
-// Marlin's review of the doctor-1600x1000 capture: the Fix column read
+// Review of the doctor-1600x1000 capture: the Fix column read
 // `add to your shell rc: export PATH="<redacted:path>"`, a command that cannot be pasted.
 package splice.diagnostics.doctor
 

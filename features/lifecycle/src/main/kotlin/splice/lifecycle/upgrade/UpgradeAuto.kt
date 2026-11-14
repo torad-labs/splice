@@ -1,4 +1,4 @@
-// NEW: auto-update (Oct 13: keep releasing to beta with auto update, and this machine follows beta).
+// NEW: auto-update (keep releasing to beta with auto update).
 //
 // OPT-IN, OR NOTHING POLLS. UpgradeChecks keeps its law that a person's tap is the only way the console learns the newest
 // release; this updater is a second, separate reader that runs only while `[daemon] auto_update = true`, read from
@@ -10,13 +10,13 @@
 // WHAT IT DOES IS WHAT THE CONSOLE'S UPGRADE BUTTON DOES. It finds the newest published release on its channel, and when
 // that is newer than the version this daemon serves it starts the same out-of-process run (UpgradeRuns), with --auto:
 // the run checks every asset against the release's sha256sums.txt and not through gh's attestation, because a beta is
-// built on the maintainer's machine, outside release.yml, and has none (splice-lead, Oct 13), and it restarts at the
+// built on the maintainer's machine, outside release.yml, and has none, and it restarts at the
 // first moment no turn is in flight, or once the bounded wait is spent.
 //
 // ONE TRY PER VERSION PER DAEMON. A run that fails leaves this daemon serving, and the same version is not tried again
 // until the daemon restarts or a newer one is published, so a release that cannot install does not loop.
 //
-// A REFUSED RELEASE STAYS REFUSED ACROSS RESTARTS (pre-merge review, Oct 13). A release the upgrade put back, or one
+// A REFUSED RELEASE STAYS REFUSED ACROSS RESTARTS. A release the upgrade put back, or one
 // `--rollback` left, is on UpgradeLayout.rejected in splice's state folder, and the put-back's own restart would
 // otherwise empty the in-memory set above and try it again within the hour. It is skipped until a newer release is
 // published, or a person installs it with `splice upgrade --to`, which never reads the list.

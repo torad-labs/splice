@@ -1,4 +1,4 @@
-// NEW: the request-write bound's send-queue table on macOS (the Temple's bundling queue, via splice-lead, Oct 13).
+// NEW: the request-write bound's send-queue table on macOS (Oct 13).
 // Linux reads what the upstream has not acknowledged from /proc/net/tcp (ProcNetTcp, unchanged); macOS has no such
 // file, so RequestWriteBound fell back to bounding the write CALL there, and a request that fit in the socket buffers
 // waited for the turn cap. macOS's netstat lists every TCP connection's Send-Q to any user, no root needed: the bytes

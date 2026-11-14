@@ -148,7 +148,7 @@ test("at 3828 the requests-on-your-plan line under a Day reading stays clear of 
     await expect(meter).toBeVisible({ timeout: 15_000 });
     await expect(meter).not.toHaveAttribute("aria-busy", "true", { timeout: 15_000 });
     // clear means the two boxes share no area: since 18cb0a9eb the button sits on the row under the line, so a
-    // left-of check alone failed whenever a longer reset label ("Resets Mon 7:00 PM", after 7 PM CT) moved it left
+    // left-of check alone failed whenever a longer reset label ("Resets Mon 7:00 PM", after 7 PM) moved it left
     const overlap = await page.evaluate(() => {
       const el = document.querySelector('[data-meter="plan-day"]')!;
       const sub = el.querySelector(".dayline .ads-unit")?.getBoundingClientRect();

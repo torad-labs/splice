@@ -1,7 +1,6 @@
 # Modular backends: typed data selecting a small set of explicit algorithms
 
-**Status:** design plan — nothing implemented yet. For review before it becomes an executable
-`manifest.py` campaign.
+**Status:** design plan — nothing implemented yet. For review before implementation.
 **Acceptance model (not "behavior-preserving"):** established vendor wire semantics and valid
 explicit configurations stay **byte-identical**; each intentional correction declares an **exact
 before/after delta** and proves **no collateral delta** outside it. Every manifest item classifies
@@ -260,16 +259,16 @@ rotation, and vetoes refresh on entitlement-shaped 401s.
 Tier-1 auth-param variation is TOML-only **only** for parameters C0 actually externalizes; a new
 codec or refresh policy is Tier-3 code, correctly.
 
-## 7. Fence-aware sequenced roadmap
+## 7. Sequenced roadmap
 
 P0 distinguishes **decision-records**, **manifest-cut** items, and **implementation** items. Q1/Q2/
-Q3 are resolved in §8 (their decision-records are ready to transcribe into the manifest); the fences
-they gate can now be cut.
+Q3 are resolved in §8 (their decision-records are ready); the file scopes
+they gate can now be fixed.
 
-- **P0 — Campaign birth.** Create `.dev/campaigns/modular-backends.toml`; transcribe the §8 Q1/Q2/Q3
-  decision-records; cut each slot's exact exclusive fences (unblocked by §8); declare
-  environment-of-record and deletion policy. **No non-P0 item is dispatchable until P0 produces:**
-  the exact P2/P3 before/after fixture deltas; one manifest item per exclusive file fence with its
+- **P0 — Planning.** Record the §8 Q1/Q2/Q3 decision-records; fix each slot's exclusive file
+  scope (unblocked by §8); declare
+  environment-of-record and deletion policy. **No non-P0 item starts until P0 produces:**
+  the exact P2/P3 before/after fixture deltas; one work item per exclusive file scope with its
   own verify command; exact path/symbol inventories for each deletion item (incl. the P4.4 auth
   collapse and the Q2 fold-orchestrator ownership of `FoldRunner`/`TurnDriver`); and a certification
   command that launches the **candidate** JAR, verifies its hash + topology digest, and rejects

@@ -8,12 +8,12 @@
 // THE TURN'S OWN REQUEST (V4-444): the body is what the head's own provider builds (Provider.buildTurn)
 // from the one-message turn Claude Code would send with this prompt, posted to the provider's own URL
 // under the provider's and the turn's headers, composed by the transport's own UpstreamHeaders. Until
-// marlin's check of 0e22c018b this file hand-built each dialect's body, a second copy of the request
+// a check of 0e22c018b this file hand-built each dialect's body, a second copy of the request
 // shape that had drifted from the turn path: ChatGPT refused every send with 400 "Input must be a list".
 // One builder means the Playground succeeds and fails exactly where a turn would.
 //
 // ONE SHOT, NO PIPELINE: this bypasses :daemon-head's TurnDriver, so there is no retry loop and no account rotation.
-// Deviation from V4-133 (Oct 12, 2026, marlin): the send IS recorded, because it is real spend. The head's own budget
+// Deviation from V4-133 (Oct 12, 2026): the send IS recorded, because it is real spend. The head's own budget
 // weighs it first (a block refuses it and leaves an Over budget row), the head's own stream translator reads its tokens
 // (PlaygroundUsage), and the head writes its Requests row, economics entry and budget spend (CompareSends), the row
 // flagged Compare and with no session. No trace is kept. The builder writes nothing for a turn with no tools

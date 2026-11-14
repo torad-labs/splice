@@ -105,7 +105,7 @@ internal class StreamPromote(
     /** A finished answer that holds nothing: the model closed an empty message, or the upstream stopped on max_tokens
      *  having produced as many tokens as the client allowed. The second is the answer to a request whose cap left room
      *  for nothing, such as Claude Code's one-token model check behind `/model <full id>`, which got a 529 here and
-     *  kept the old model (the-temple, 2026-10-19). Re-sending the same body spends the same cap. A max_tokens stop with
+     *  kept the old model (2026-10-19). Re-sending the same body spends the same cap. A max_tokens stop with
      *  tokens to spare stays the empty error. */
     private fun finishedEmpty(outcome: TurnOutcome.Success, meta: TurnMeta): Boolean {
         val cap = meta.route.clientMaxTokens

@@ -2,7 +2,7 @@
 // not re-sent by the turn that met it, records that reset for status, and ends on a cause naming the
 // reset and the window, so the line a person reads is written from the reset and never from the
 // upstream's words, which the evidence and the log keep whole (failure-handling slice 2). The next turn
-// still asks the provider itself (Marcos, Oct 26). A reader that recognizes no plan window uses the bounded
+// still asks the provider itself (Oct 26). A reader that recognizes no plan window uses the bounded
 // throttle budget. A named exhausted window without a reset ends promptly and keeps the upstream's words.
 //
 // Failure-handling slice 3: the head's reader reads the unified headers where the reply arrives (AnthropicReplies,
@@ -184,7 +184,7 @@ class UpstreamClientPlanLimitTest {
             assertEquals(0L, client.planHoldForMs)
         }
 
-    // A turn waits only on its own failure, never on another turn's (Marcos, Oct 26): the next turn on a spent
+    // A turn waits only on its own failure, never on another turn's (Oct 26): the next turn on a spent
     // window asks the provider itself, hears the window from its own refusal, and the first answer ends the hold.
     @Test
     fun `the next turn on a spent window asks the provider itself, and an answer ends the hold`() = runTest {

@@ -22,7 +22,7 @@ public enum class ClaudeLoginPlaceId(public val wire: String, public val command
 }
 
 /** Claude Code's account record supplies identity; neither a head key nor a token is an account identity. The uuid and
- *  email stay in process: what leaves it is [ref] (labels only, Eli's ruling, 2026-10-12). */
+ *  email stay in process: what leaves it is [ref] (labels only). */
 public data class ClaudeAccountIdentity(val uuid: String, val email: String?) {
     public val ref: String get() = AccountRef.of(uuid)
 

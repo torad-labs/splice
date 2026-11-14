@@ -1,4 +1,4 @@
-// Marlin's Accounts walk of Oct 12, ruled via splice-lead, through the real page against a stub daemon that answers in
+// The Accounts page, through the real page against a stub daemon that answers in
 // the routes' own shapes: failed requests that reported no usage are failed, never "with no price"; the key in use shows
 // its masked tail from /api/auth, and its date only when its variable has held two keys, the key it replaced folded into
 // one line on its card; a window whose reset went by
@@ -37,7 +37,7 @@ const answers: Record<string, unknown> = {
     plan("quiet", { no_usage_at_epoch_seconds: sec(now - 60_000) }),
     // the unproved login place: the daemon names it "Account" and it holds no reading yet
     plan("Account", { label: "claude", label_default: true, identity_verified: false, can_rename: false, login_place: { id: "claude" } }),
-    // seven Claude accounts in all, as desk c had in the walk (item 8)
+    // seven Claude accounts in all, as a real roster can have
     ...["lab", "spare", "team", "side"].map((name, i) => plan(name, { five_hour_used_percent: 5 + i, five_hour_reset_epoch_seconds: sec(now + 2 * HOUR),
       five_hour_window_seconds: 18_000, seven_day_used_percent: 9 + i, seven_day_reset_epoch_seconds: sec(now + 50 * HOUR), seven_day_window_seconds: 604_800 })),
   ] },
@@ -89,7 +89,7 @@ afterAll(async () => {
 
 async function onPage<T>(check: (page: Page) => Promise<T>, theme = "night", width = 1440): Promise<T> {
   // the page and this file read the same clock, so a day is the same day on both sides: bun's test runner reads UTC,
-  // where a key first seen at 7:25 PM CT is already the next day, and the card's "Sep 26" met "Sep 27" (Oct 26, 7:25 PM CT)
+  // where a key first seen at 7:25 PM local time is already the next day, and the card's "Sep 26" met "Sep 27"
   const context = await browser.newContext({ viewport: { width, height: 1000 }, timezoneId: Intl.DateTimeFormat().resolvedOptions().timeZone });
   await context.addInitScript((t) => localStorage.setItem("splice-console-theme", t), theme);
   const page = await context.newPage();
@@ -117,7 +117,7 @@ test("the key in use shows its masked tail, a date only where its variable has h
   const dayOf = (ms: number) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
   const names = (await page.locator("article.card .name").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
   bunExpect(names).toContain(`DEEPSEEK_API_KEY …9c21 · ${dayOf(now - 2 * HOUR)}`);
-  // a replaced key has nothing to act on, so it folds into one quiet line on the card of the key now in use (marlin, Oct 12)
+  // a replaced key has nothing to act on, so it folds into one quiet line on the card of the key now in use
   bunExpect(names.filter((n) => n.startsWith("DEEPSEEK_API_KEY"))).toHaveLength(1);
   await expect(page.locator("article.card", { hasText: "DEEPSEEK_API_KEY" })).toContainText(`Replaced an earlier key · ${dayOf(now - 30 * 24 * HOUR)}`);
   bunExpect(names).toContain("SPLIT_KEY");

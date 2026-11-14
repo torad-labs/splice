@@ -5,14 +5,14 @@
 // gate-242dd749.log: TEN acquire/release pairs in one run — `gate-of-record` (l.2 -> l.950), seven
 // more inside `:gateTests` (l.471-494, slot.test.ts's own fixtures, which print "gradle free
 // (exit 0)" and once "(exit 7)"), then `release-verify` (l.958-959). So neither the lock nor the log
-// answers whether a verdict is open over this worktree, and with four seats sharing one checkout
+// answers whether a verdict is open over this worktree, and with four sessions sharing one checkout
 // that question got answered wrong twice in one day, in both directions: a live gate killed because
 // the slot read FREE, and a verdict nearly reported from a run whose tree had been edited under it.
 //
 // LIVENESS IS AN FLOCK HELD FOR THE WHOLE RUN, never a staleness heuristic. A pid plus
 // /proc/<pid>/stat field 22 (starttime, to defeat pid recycling) was the alternative, and it is
 // strictly worse: a bash trap cannot catch SIGKILL, and SIGKILL is a DESIGNED-FOR case here —
-// earlyoom is active system-wide and buildgate sets `choom -n 800` so builds volunteer to die first
+// an out-of-memory killer may be active system-wide and a host build wrapper may set `choom -n 800` so builds volunteer to die first
 // under pressure, which makes a 12-minute gradle run the intended victim. An flock makes staleness
 // INEXPRESSIBLE instead of detectable: the kernel drops it on exit, SIGKILL, OOM-kill and reboot.
 // Proven in that order, control first, so the FREEs are not vacuous:
@@ -33,8 +33,7 @@
 // IT LIVES OUTSIDE THE WORKTREE. A sentinel inside the tree dirties it, and an empty `git status` is
 // the gate of record's own precondition — a marker that fails the check it exists to protect.
 // $XDG_RUNTIME_DIR is tmpfs and clears on reboot, which matches the lock's own lifetime. It gets
-// splice's OWN directory rather than buildgate's: buildgate is hostshield-owned
-// (hostshield MANIFEST.toml:38, `owner = true`), and borrowing another component's runtime directory
+// splice's OWN directory rather than a host build wrapper's: borrowing another component's runtime directory
 // couples this to a layout we do not control.
 import { closeSync, ftruncateSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -44,7 +43,7 @@ const LOCK_EX = 2;
 const LOCK_NB = 4;
 
 // flock.ts's loader, not a dlopen of `libc.so.6` here: that name exists only on glibc, so the gate could not start on
-// macOS at all (2026-10-22, the Mac clone pushed with no gate).
+// macOS at all (a macOS clone once pushed with no gate).
 const libc = { flock: (fd: number, op: number): number => libcFlock()(fd, op) };
 
 const UNKNOWN_RUN: OpenRun = { headAtStart: "unknown", start: "unknown", pid: 0 };
@@ -60,7 +59,7 @@ export interface OpenRun {
  *
  *  ONE SENTINEL PER TREE. A verdict covers the tree it runs in, so [tree] names it: the local gate's build tree, the
  *  pre-push build tree, or a CI runner's checkout. With one sentinel for every tree, a local gate in its own tree made
- *  every push refuse for the gate's whole run (Oct 9: builder2's push behind a gate in .git/splice-prepush/gate), though
+ *  every push refuse for the gate's whole run (a push behind a gate in .git/splice-prepush/gate), though
  *  the two verdicts read different trees. No [tree] is the shared checkout's own name, kept for the probe. */
 export function sentinelPath(tree?: string): string {
   const override = process.env.SPLICE_GATE_SENTINEL;
@@ -95,7 +94,7 @@ export function acquireRunSentinel(headAtStart: string, tree?: string): OpenRun 
   // overwriting one, records accumulated for the life of the file, and readOpenRun's non-global
   // .match() returned the OLDEST — every HELD report naming the first run since boot, because tmpfs
   // clears only on reboot. Safe by the same argument that fixed the ordering: no rename, no new
-  // inode, and any reader that matters takes the lock first. (splice-lead, 2026-09-21)
+  // inode, and any reader that matters takes the lock first.
   ftruncateSync(fd, 0);
   writeSync(fd, `head_at_start=${headAtStart}\nstart=${new Date().toISOString()}\npid=${process.pid}\n`);
   held = fd;
@@ -129,7 +128,7 @@ function readOpenRun(path: string): OpenRun | null {
   // which cannot happen on a path just opened successfully. An empty or malformed file matched no
   // field, every field fell through to "", and the caller got a non-null record reading `pid 0`
   // instead of an honest "unknown" — true today for any partially-written sentinel, and true for the
-  // microsecond window the ftruncate above opens. (splice-lead, 2026-09-21)
+  // microsecond window the ftruncate above opens.
   if (field("head_at_start") === "") return null;
   const pid = Number.parseInt(field("pid"), 10);
   return { headAtStart: field("head_at_start"), start: field("start"), pid: Number.isNaN(pid) ? 0 : pid };

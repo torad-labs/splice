@@ -1,4 +1,4 @@
-// NEW: labels only (Eli's ruling via splice-lead, 2026-10-12). The names a person gives logins, kept in splice's own
+// NEW: labels only. The names a person gives logins, kept in splice's own
 // state as ref -> name (with the number each unnamed login keeps), so every kind of login can be named and renamed (his native Claude login included) without
 // splice ever writing a credential file it does not own.
 package splice.accounts.pool

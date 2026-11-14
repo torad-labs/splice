@@ -1,5 +1,5 @@
 // A figure that counts from the number last drawn in its place to the new one only ever shows numbers between the two
-// (desk look at Usage, Oct 29: one frame about four seconds into the load drew four rows of Where it went with negative
+// (a look at Usage: one frame about four seconds into the load drew four rows of Where it went with negative
 // dollars, "$-23,491" among them, between two positive figures). Chrome can hand a frame a timestamp from before the
 // moment the count began, when the page was busy as it drew; a count must read that as its start, never as a step back.
 // Over generated pairs of figures and frame lags, through the console's own count (kit.js, as every page loads it) in a

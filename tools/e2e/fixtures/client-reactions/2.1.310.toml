@@ -2,9 +2,9 @@
 # design (section 11, slice 0b). Slices 3 to 5 choose ClientWire's statuses from it, and its rows are the evidence in
 # ClientWire's KDoc. tools/e2e/src/client-reactions.ts loads and checks it.
 #
-# Built on 2026-10-26 without starting any Claude Code session (rulings.md, ruling 2), from three sources, in order:
+# Built on 2026-10-26 without starting any Claude Code session, from three sources, in order:
 #   journal      splice's trace (<head>-<UTC date>.jsonl: each request, its answer and the chunk hashes of both bodies)
-#                and daemon log (daemon.log.1 until Oct 24 16:22 CT, daemon.log after), Oct 19 19:01 to Oct 26 06:31 CT.
+#                and daemon log (daemon.log.1 until Oct 24, daemon.log after), Oct 19 to Oct 26.
 #   transcript   the clients' own session transcripts. Only non-interactive sessions write a system/api_error entry per
 #                retry; every session writes an assistant isApiErrorMessage entry for an error it prints.
 #   shipped-code the 2.1.310 file in Claude Code's versions folder, read as bytes and never run, for about 30 minutes.

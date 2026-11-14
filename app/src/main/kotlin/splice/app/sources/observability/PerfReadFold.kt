@@ -10,7 +10,7 @@ import splice.core.perf.observation.PerfIdentity
  *
  * Coarsened as far as it goes, it keeps adding to every series it already holds and turns away only a series it has
  * not met, which [refused] counts. Until Nov 11, 2026 it stopped the whole read there, and the files after that
- * point, the newest, went unread: a day on a desk that had restarted ten times returned five of its hours.
+ * point, the newest, went unread: a day on a machine that had restarted ten times returned five of its hours.
  */
 internal class PerfReadFold(initialResolution: Long, private val span: Long) {
     var resolution = initialResolution

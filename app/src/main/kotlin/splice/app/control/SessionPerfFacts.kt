@@ -59,7 +59,7 @@ internal class SessionPerfFacts(
 
     /** How the session's newest request ended, newest across every head, and only when that ending holds the session
      *  back until something changes: a plan window or every account spent (At limit), or no credential (Signed
-     *  out), or splice re-sent it until it gave up: the provider kept failing, or the turn ran past its cap (Marlin #2).
+     *  out), or splice re-sent it until it gave up: the provider kept failing, or the turn ran past its cap.
      *  A burst 429 passes on its own, so it is not one, and neither is a spent window whose reset has already
      *  come: the limit it names is over, so the session reads as it is, not At limit. */
     private val holdingEndings =

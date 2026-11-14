@@ -18,8 +18,8 @@
 // dir. Defaulting to the new root and starting empty would look, to the operator, exactly like a
 // daemon that lost every head's history — so when the new root has no state dir and the old one
 // does, the old one IS the state dir, unmoved. A DIRECTORY IS NOT STATE (2026-10-04): a sandboxed
-// process that could not see the old root created an empty `.splice/state` at 7:16 PM CT, and the
-// 7:27 PM CT restart took it, minted a fresh mgmt-key and read every head's history as empty — the
+// process that could not see the old root created an empty `.splice/state`, and the
+// next restart took it, minted a fresh mgmt-key and read every head's history as empty — the
 // outcome this paragraph predicts. So when BOTH state dirs exist, the mgmt-key decides: a current
 // one proven to hold none, beside an old one proven to hold it, is passed over, and doctor names it
 // ([passedOverDir]). Nothing is copied, nothing is deleted, and no upgrade
@@ -236,7 +236,7 @@ public class StatePaths(
     ).mapNotNull { (path, probe) -> (probe as? RootProbe.Unusable)?.let { "$path ${it.reason}" } }
         .joinToString("; ").takeIf { it.isNotEmpty() }
 
-    /** PR #247 review: why a FIRST start must not happen yet, as a sentence naming paths only — null whenever
+    /** Why a FIRST start must not happen yet, as a sentence naming paths only — null whenever
      *  one may. With the pre-0.4 root unreadable, neither adoption arm can fire and [stateDir] falls to the
      *  current layout; a mgmt-key minted there is permanent, because once it exists the key decides above and
      *  keeps the current root live after access to the pre-0.4 one comes back, so that history and every
@@ -284,7 +284,7 @@ public class StatePaths(
     public val modelMovesDir: Path = stateDir.resolve("model-moves")
 
     /** Which moves are in flight and what folder each carries the operator's trust for: one owner-only file per
-     *  session, written when he presses and removed when the move ends, either way (MovingTrust). */
+     *  session, written when the person presses and removed when the move ends, either way (MovingTrust). */
     public val movingTrustDir: Path = stateDir.resolve("moving-trust")
 
     /** Raw MCP tool results privately correlated with the code-mode callback that the client actually executed. */

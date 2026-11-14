@@ -247,7 +247,7 @@ val distDir = repositoryRoot.dir("dist")
 // BSD-3-Clause added 2026-10-25 for com.google.protobuf:protobuf-java, which code mode's native gRPC transport needs
 // (integrations/codemode/build.gradle.kts). It is BSD 2-Clause plus a no-endorsement clause, which splice never
 // touches. Its jar carries no LICENSE, so generateThirdPartyLicenses bundles protobufLicense and
-// verifyReleaseCompliance checks the bundle holds it whole (splice-lead's decision).
+// verifyReleaseCompliance checks the bundle holds it whole.
 val allowedReleaseLicenses = setOf(
     "Apache License, Version 2.0",
     "BSD 2-Clause License",

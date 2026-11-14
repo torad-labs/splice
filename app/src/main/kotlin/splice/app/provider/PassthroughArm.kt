@@ -44,8 +44,8 @@ internal class PassthroughArm(
                     ),
                 ),
                 auth,
-                // Every account this command holds beyond the caller's own Claude Code sign-in (operator ruling,
-                // Oct 3, 11:44 PM CT). Empty on a command nobody has added one to, which keeps the pre-pool path.
+                // Every account this command holds beyond the caller's own Claude Code sign-in. Empty on a command
+                // nobody has added one to, which keeps the pre-pool path.
                 accounts,
                 changes.view(key, accounts),
             )

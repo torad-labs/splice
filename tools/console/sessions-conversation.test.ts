@@ -13,8 +13,8 @@ const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const now = Date.now();
 const MIN = 60_000;
 const session = {
-  session_id: "s-conv", name: "reader", head: "alpha", route: "head", availability: "live", status: "idle", cwd: "/work/desk/app",
-  project: { id: "/work/desk", name: "desk", label: "desk", source: "folder", folder: "/work" },
+  session_id: "s-conv", name: "reader", head: "alpha", route: "head", availability: "live", status: "idle", cwd: "/work/web/app",
+  project: { id: "/work/web", name: "web", label: "web", source: "folder", folder: "/work" },
   last: { role: "assistant", tool: null, text: "See the guide.", ts: now - MIN }, updated_at: new Date(now - MIN).toISOString(),
 };
 const messages = [
@@ -25,9 +25,9 @@ const messages = [
   { index: 3, role: "system", ts: now - 6 * MIN,
     text: "[Cross-session delivery notice] Your message to \"keeper\" was delivered to uds:/run/user/1000/cc-socks/1f2e3d4c.sock and is waiting." },
   { index: 4, role: "assistant", ts: now - 5 * MIN,
-    text: "The guide is at [the guide](https://example.com/guide), and the code is in [sessions.js](/work/desk/app/src/sessions.js)." },
+    text: "The guide is at [the guide](https://example.com/guide), and the code is in [sessions.js](/work/web/app/src/sessions.js)." },
 ];
-const transcript = { messages, path: "/home/me/.claude/projects/desk/s-conv.jsonl", earlier: null, moves: [], unmoved: [], unparseable_lines: 0 };
+const transcript = { messages, path: "/home/me/.claude/projects/web/s-conv.jsonl", earlier: null, moves: [], unmoved: [], unparseable_lines: 0 };
 const server = Bun.serve({
   port: 0,
   fetch(req) {
@@ -59,7 +59,7 @@ test("a link the agent wrote is a link, and a link to a file names only the file
     await expect(log.locator('a[href="https://example.com/guide"]')).toHaveText("the guide", { timeout: 15_000 });
     await expect(log).toContainText("sessions.js");
     await expect(log).not.toContainText("](");
-    await expect(log).not.toContainText("/work/desk/app/src");
+    await expect(log).not.toContainText("/work/web/app/src");
   } finally {
     await page.close();
   }

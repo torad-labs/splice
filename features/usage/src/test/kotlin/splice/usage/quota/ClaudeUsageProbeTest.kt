@@ -1,5 +1,5 @@
-// NEW: the Claude subscription usage endpoint, body fixtures and the exact GET it sends (operator ruling, Oct 4,
-// 12:00 AM CT). The bodies are the shape Anthropic answers with, from three independent readers of the same
+// NEW: the Claude subscription usage endpoint, body fixtures and the exact GET it sends.
+// The bodies are the shape Anthropic answers with, from three independent readers of the same
 // endpoint: anthropics/claude-code#30930 (a captured 200), pleaseai/shunt src/auth/claude/usage.rs, and
 // FullFran/claudeops-tui docs/oauth-usage-endpoint.md. No real credential and no real request is in this file.
 package splice.usage.quota
@@ -74,7 +74,7 @@ class ClaudeUsageProbeTest {
         assertEquals(listOf(ModelQuota("Sonnet", 1.0, 1_776_308_401L)), snapshot.models)
     }
 
-    // Read from Anthropic on Oct 10, 2026 with Marcos's own account: seven_day_opus and seven_day_sonnet both answer
+    // Read from Anthropic on Oct 10, 2026 with a real account: seven_day_opus and seven_day_sonnet both answer
     // null now, and each model's week arrives as a `limits` row of kind weekly_scoped whose scope names the model.
     // The unscoped weekly row is the plan's own week, already read from seven_day, so it names no model here.
     @Test

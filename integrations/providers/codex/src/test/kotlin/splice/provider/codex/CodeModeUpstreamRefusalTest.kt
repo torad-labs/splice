@@ -35,7 +35,7 @@ private val REFUSED = FailedReply(
 )
 
 /**
- * Oct 4, 6:31 AM CT: a code-mode source post the upstream refused with HTTP 400 reached Claude Code as
+ * Oct 4: a code-mode source post the upstream refused with HTTP 400 reached Claude Code as
  * overloaded_error, "upstream source failed". The refusal escaped the source reader as a throwable none of its
  * catches named, so the reader's death handler ended the round as an internal fault, and Claude Code retried the
  * same request as an overload for 36 minutes. A plain turn ends that refusal as claudex's own reader reads it; a

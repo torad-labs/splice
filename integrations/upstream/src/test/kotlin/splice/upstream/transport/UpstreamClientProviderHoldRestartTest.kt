@@ -82,7 +82,7 @@ class UpstreamClientProviderHoldRestartTest {
         observers = PostObservers(onRetry = { notices.add(it) }),
     )
 
-    // Each turn asks the provider itself and waits only on its own failure (Marcos, Oct 26): the restored native
+    // Each turn asks the provider itself and waits only on its own failure (Oct 26): the restored native
     // refusal is the provider's word for status and selection, never a refusal of the credential's next turn.
     @Test
     fun `a restarted native hold keeps the provider's word and never stops its credential's next turn`(

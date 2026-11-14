@@ -23,7 +23,7 @@ class AccountPoolOrderTest {
         assertEquals("primary", pool.nextTargetLabel())
         pool.select("session")
         pool.order = listOf("higher", "lower", "primary")
-        // Marcos, Oct 3: a session stays put until a limit, in the saved order's mode too.
+        // Oct 3: a session stays put until a limit, in the saved order's mode too.
         assertEquals("primary", pool.nextTargetLabel("session"))
         val kept = (pool.select("session") as Selection.Chosen).account
         assertEquals("primary", kept.account.label)

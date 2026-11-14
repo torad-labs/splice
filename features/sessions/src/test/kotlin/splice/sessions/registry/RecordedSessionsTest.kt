@@ -80,7 +80,7 @@ class RecordedSessionsTest {
         assertFalse(Files.exists(dir) && Files.list(dir).use { it.count() } > 0)
     }
 
-    // Eli's Reading, §4, Oct 11: a session with no launch record joins the head its requests arrive on.
+    // §4: a session with no launch record joins the head its requests arrive on.
     @Test
     fun `a session with no launch record joins the head its requests arrive on, and keeps it across a restart`() {
         listed = listOf(live("aaaa-1", at = now, route = SessionRoute.Unknown))

@@ -1,5 +1,5 @@
-// NEW (Oct 25, 2026, splice-lead, on Host Shield's handover): splice lays its own systemd user units. Marcos ruled
-// that Host Shield vendors no splice, so the units its slice laid in ~/.config/systemd/user on Oct 23 retire with its
+// NEW (Oct 25, 2026): splice lays its own systemd user units. A host wrapper
+// vendors no splice, so the units its slice laid in ~/.config/systemd/user on Oct 23 retire with its
 // next install, and without a unit of splice's own the daemon would have nothing to come back under after a restart
 // or a reboot. Splice's units live in $XDG_DATA_HOME/systemd/user, the folder systemd keeps for a user's installed
 // software, which the user manager searches after ~/.config/systemd/user (systemd.unit(5), "User Unit Search Path").

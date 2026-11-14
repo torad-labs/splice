@@ -1,4 +1,4 @@
-// Goal (Oct 31, 2026, through the President): redo the website so it uses the latest console UI. Instead of full
+// Goal (Oct 31, 2026): redo the website so it uses the latest console UI. Instead of full
 // screenshots it shows the actual components with fake data to highlight features, looks like a real product page,
 // shows rather than tells, and discloses progressively as people scroll.
 //
@@ -329,8 +329,8 @@ describe("splice.torad.ai's website", () => {
 
   // Nov 1, 2026: a line like "runs on your computer" is filler, since of course it runs on the person's computer.
   // A shared link shows the page in small: its picture, described by the alt text, says what the page's headline says,
-  // and neither the picture's description nor anything a visitor reads on the page carries the line he struck. (The
-  // film window keeps the film's own captions, which are the film's words.)
+  // and neither the picture's description nor anything a visitor reads on the page carries the line that was struck.
+  // (The film window keeps the film's own captions, which are the film's words.)
   test("the link preview carries the page's headline, and the page never says it runs on your computer", () => {
     const h1 = words(/<h1\b[\s\S]*?<\/h1>/.exec(page)?.[0] ?? "").trim();
     expect(h1.length).toBeGreaterThan(0);

@@ -1,5 +1,5 @@
 // NEW: the control plane's one LaunchService, moved out of ControlPlane.kt by its own seam, behavior unchanged
-// (concentration, Oct 13, splice-lead): the materializer, the transcript copies a resume across heads rewrites, the
+// (concentration): the materializer, the transcript copies a resume across heads rewrites, the
 // Claude login arm and the MCP hub launch. The login owner and accounts port it builds land in the [ClaudeLoginSlot]
 // ControlPlane holds from its first line, at the same moment as before, so every reader that asks later finds them.
 package splice.app
@@ -38,7 +38,7 @@ import splice.usage.quota.ClientUserAgent
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.days
 
-// why: the port the MCP hub front listens on, the address shape splice-config set (docs/specs/mcp-hub.md step 6).
+// why: the port the MCP hub front listens on, the address shape set in docs/specs/mcp-hub.md step 6.
 internal const val MCP_HUB_FRONT_PORT = 3095
 
 /** The Claude login owner and accounts port, null until a Claude head's login machinery is built. Readers capture the

@@ -183,7 +183,7 @@ public class SessionTotals(
     /**
      * Drop every session whose last row is older than [momentMs], and say how many went.
      *
-     * The save on Settings > Your data reaches these too (Marlin, Oct 10, 2026): a session whose
+     * The save on Settings > Your data reaches these too: a session whose
      * last activity is before the cut loses its totals, and one active inside the window keeps them,
      * because that is live work. Resumability is deliberately NOT the test: nearly every session is
      * resumable for as long as its transcript exists, so that exception would keep months of spend

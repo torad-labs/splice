@@ -20,7 +20,7 @@
 //   202  the terminal opened and Claude Code is asking something before it registers (its folder trust question, a
 //        first-run prompt), also with an empty body. The slot stays bound and the pane stays open; the page
 //        reads the question off .../screen and answers it on his click only, through .../answer. splice never answers
-//        it for him (Marlin, Oct 12). A start asked again for that slot then waits on the SAME pane, its 45 s clock
+//        it for him. A start asked again for that slot then waits on the SAME pane, its 45 s clock
 //        starting over, and a pane his answer closed (No, exit) gives the slot back.
 //   504  the terminal opened and Claude Code did not register in time, with nothing asked on its screen.
 // A failure to come up leaves the slot as it was: the binding is put back and the terminal closed, so a slot is never

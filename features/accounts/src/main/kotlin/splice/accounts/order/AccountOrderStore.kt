@@ -16,7 +16,7 @@ private data class OrderDocument(val orders: Map<String, List<String>> = emptyMa
 
 /** Atomic policy persistence. An unreadable document is a failure, never an empty replacement. Each replacement keeps
  *  the file it replaced as `account-order.json.bak`, one copy, so a mistaken order has a way back; a dated copy per
- *  change piled up with nothing removing them (Temple notice e5d7aaabc9fb0ebc). */
+ *  change piled up with nothing removing them. */
 public class AccountOrderStore(private val file: Path) {
     private val json = Json {
         prettyPrint = true

@@ -1,4 +1,4 @@
-// Labels only (Eli's ruling via splice-lead, Oct 12): no page displays an account's email or account id. Through the
+// Labels only: no page displays an account's email or account id. Through the
 // real pages against a daemon answering in the label contract (a roster row's `display_name`, `ref`, `label_default`;
 // a request row's `account` ref and `account_label`): Accounts, Requests and Sessions put no "@" and no id anywhere in
 // the DOM, text or attribute, and a login splice named itself is offered its one naming on Accounts, beside its name.
@@ -114,7 +114,7 @@ test("a login splice named itself offers Name it beside its name, and a named on
     const unnamed = page.locator(".card").filter({ has: page.locator(".name", { hasText: /^Max$/ }) });
     await unnamed.waitFor({ timeout: 15_000 });
     expect(await page.locator(".card", { hasText: "Work" }).locator(".name-it").count()).toBe(0);
-    // the plan tag shows beside a chosen name, and never repeats the plan word a default already starts with (fin)
+    // the plan tag shows beside a chosen name, and never repeats the plan word a default already starts with
     expect(await page.locator(".card", { hasText: "Work" }).locator(".plan").count()).toBe(1);
     expect(await unnamed.locator(".plan").count()).toBe(0);
     expect(await page.locator("body").innerText()).not.toContain(REF); // a ref is never a name (the stored number)
@@ -153,7 +153,7 @@ test("Add opens an empty name: Enter alone signs in unnamed, and a typed name is
     await page.locator('[data-act="add"]').first().click();
     const field = page.locator(".add-name");
     await field.waitFor({ timeout: 5_000 });
-    expect(await field.inputValue()).toBe(""); // no "<Provider> N" saved as if he chose it (Marlin, Oct 12)
+    expect(await field.inputValue()).toBe(""); // no "<Provider> N" saved as if a person chose it
     await field.press("Enter");
     await until(() => ROSTER.some((r) => r.ref === ADDED), 10_000);
     await Bun.sleep(500);

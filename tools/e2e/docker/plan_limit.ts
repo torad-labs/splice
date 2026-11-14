@@ -4,7 +4,7 @@
  *  probe <port> <out> <log> three turns compared with the mock's recorded native responses: FIRST
  *                           and SECOND streamed, THIRD buffered, each sent to the upstream once and
  *                           refused with HTTP 429, with no proxy retries. A turn waits only on its own
- *                           failure (2026-10-26, Marcos's call): the next turn on a limited login is
+ *                           failure (2026-10-26): the next turn on a limited login is
  *                           still sent to the provider, so a lifted limit is noticed at once and one
  *                           that holds reaches the client the same way the first turn's did. Each
  *                           answer is the hand-over of failure-handling slice 5 (2026-10-27,

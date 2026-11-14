@@ -151,6 +151,7 @@ public class Daemon(
             },
             running = topologyWindows,
             alertCommand = topology.daemon.alertCommand.orEmpty(),
+            reservedPeerNames = topology.daemon.reservedPeerNames.orEmpty().toSet(),
         ),
         refreshCall,
         mcpHosting = McpHostingSettings(share = McpShareChoice { topologyWindows.mcpShare }).with(topology.daemon),
@@ -264,7 +265,7 @@ public class Daemon(
         val legacySolo = TopologyKnobLayer(topology).soleLegacyHeadKeys()
         // V4-260: a head removed from splice.toml leaves no compaction answers, code-mode state or
         // trace days behind; this start is the first moment it is known to be gone.
-        // A command removed from Models is recorded as retired and keeps everything it wrote (Marcos, Oct 12).
+        // A command removed from Models is recorded as retired and keeps everything it wrote.
         val retiredHeads = RetiredHeads(statePaths.stateDir)
         // A command added back is no longer retired: its history joins it again, once.
         retiredHeads.all().filter { it.key in topology.heads }.forEach { retiredHeads.rejoin(it.key) }

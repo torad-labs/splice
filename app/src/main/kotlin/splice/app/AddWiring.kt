@@ -96,11 +96,11 @@ internal object AddWiring {
 
 /** The local runtime's answer about an add's rows, through the probe boot uses (LocalProbeInputs), so `splice add` and boot
  *  refuse the same rows: validate()'s verdicts refuse (tool support, the card ceiling only while the served window is
- *  unknown, a generic server's one listed row trusted), and the served windows are only shown (splice-providers, Oct 12). */
+ *  unknown, a generic server's one listed row trusted), and the served windows are only shown. */
 internal class RuntimeRows : LocalRuntimeRows {
     override fun invoke(baseUrl: String, rows: Map<String, Long?>): LocalRowsAnswer {
         val probe = LocalRuntimeProbe(baseUrl, JdkLocalHttp())
-        // Temple notice 7ca59c70c91124ca: a runtime that is not found, or lists nothing, says so beside the add's checks.
+        // A runtime that is not found, or lists nothing, says so beside the add's checks.
         val runtime = probe.detect() ?: return LocalRowsAnswer(unchecked = "no local runtime answered at $baseUrl")
         val listed = probe.models(runtime, rows.keys)
             ?: return LocalRowsAnswer(unchecked = "the runtime at $baseUrl listed no models")

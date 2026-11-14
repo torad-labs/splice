@@ -2,7 +2,7 @@
 //
 // WHY THE ROW AND NOT A SECOND ROUTE. Teams' vacant member card offers "Add existing", and its menu
 // lists the sessions a slot could take. A session id and a name do not tell you which of two quiet
-// sessions is the one you meant; the turn count does (fin, Oct 10). The Sessions page needs the same
+// sessions is the one you meant; the turn count does. The Sessions page needs the same
 // number on the same rows, so it is ONE field on the listing both pages already read, not a Teams-only
 // read that Sessions would have to re-derive.
 //
@@ -35,7 +35,7 @@ import splice.sessions.registry.SessionRecord
  *  only if every contributing counter was already running when it began. */
 public data class SessionTurnCount(val turns: Long, val fromMs: Long) {
     /** Whether [turns] is a FLOOR rather than the whole figure, decided here and not by the surface
-     *  that draws it (builder3, Oct 10): the comparison needs [fromMs] and the session's start to be
+     *  that draws it: the comparison needs [fromMs] and the session's start to be
      *  the same unit, the row's `started_at` does not say which it is, and a client guessing wrong
      *  draws "12 turns" on a session that ran 400 or "12+" on every row. Both are milliseconds —
      *  SessionRegistry compares `startedAt` against PID_REUSE_TOLERANCE_MS — and that is exactly the

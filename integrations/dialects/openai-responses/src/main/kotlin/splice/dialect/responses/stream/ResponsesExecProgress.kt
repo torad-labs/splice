@@ -1,12 +1,12 @@
 // NEW: exec input feeds the runtime observer and nothing else: no byte of the script reaches the client.
 //
-// Oct 12, 2026 (Marcos's decision, reversing afb7a1f87's display of V4-456, Oct 2): the program the model writes for
+// Oct 12, 2026 (reversing afb7a1f87's display of V4-456): the program the model writes for
 // code mode is an implementation detail, and shown as a thinking block it sat beside the reasoning summaries (73 of
 // 137 blocks in one claudex transcript). The runtime still gets the text unchanged, so a call dispatches as soon as
 // it can and shows as a tool chip; the client's stream stays alive on keepalives while a long script is written, and
 // nothing new shows in the reasoning until a call dispatches.
 //
-// Nov 3, 2026 (Marcos wanted it to behave like native Claude Code): the file a script's opening tools.Write writes is the one exception.
+// Nov 3, 2026 (to behave like native Claude Code): the file a script's opening tools.Write writes is the one exception.
 // The codex head streams its path and content into Claude Code's Write block while GPT writes them, as a native Write
 // shows them (CodeModeEarlyBlocks); the script around them still never reaches the client.
 package splice.dialect.responses.stream

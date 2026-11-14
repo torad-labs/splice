@@ -1,5 +1,5 @@
 // NEW: a Claude login's limit resets, listed and spent through the routes the console and `splice limit-reset` call
-// (Nov 13, 2026: every Fable login on one machine ran out at about 6:24 PM CT and no reset could be called from splice).
+// (Nov 13, 2026: every Fable login on one machine ran out and no reset could be called from splice).
 // Anthropic is a stand-in here: no test reaches its real reset address.
 //
 // The goal: a person sees how many of each kind a login has left and whether one can be spent now; a spend asked for

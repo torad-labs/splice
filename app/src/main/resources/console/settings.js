@@ -1,4 +1,4 @@
-// Settings, built from the finished drawing (Splice-Animator/design/console at d3338fa). A rail of the jobs a person
+// Settings, built from the finished drawing (the console design at d3338fa). A rail of the jobs a person
 // comes with, and the open job beside it. Every value on this page is read from the daemon (GET /api/config through
 // knobs.js, GET /api/history, GET /api/kept/*) and every change goes back to it; a figure splice does not keep is not
 // drawn, and a store with no route to count or delete it says so on its own row instead of offering a Delete that
@@ -44,9 +44,9 @@ function keepShape(name, n) {
 }
 
 // ---------- the jobs ----------
-// Only the jobs people come to it with (Marlin, Oct 10): a job draws the settings the daemon takes live, in knobs.js's
+// Only the jobs people come to it with: a job draws the settings the daemon takes live, in knobs.js's
 // order, and a job none of whose settings is live is not on the rail until one is. The names are the
-// mock's, with no description line under them (fin).
+// mock's, with no description line under them.
 const TOPICS = [
   { id: "silent", name: "Stalled answers", also: "stall stuck wedged hang quiet resume timeout" },
   { id: "busy", name: "Many agents at once", keys: ["maxInflight", "maxQueued"], also: "overloaded busy queue waiting 429 failed errors" },
@@ -64,8 +64,7 @@ const topicOf = (key) => KNOB[key].home || KNOB[key].adv || TOPICS.find((x) => x
  *  Resolved, a decision which the Oct 10 "every knob drawn applies live" reading gave way to). */
 const liveKnobs = () => (KNOBS.others(), Object.values(KNOB))
   .filter((k) => (k.home || k.adv ? TOPIC[k.home || k.adv] : TOPICS.some((x) => x.keys && x.keys.includes(k.key))));
-// A setting that does nothing right now still shows, read-only, with why (v0.4.0 section 9: every knob shows; the lead's
-// ruling, Oct 13): a value that does nothing would read as working if it took changes (fin). The poll interval while
+// A setting that does nothing right now still shows, read-only, with why (v0.4.0 section 9: every knob shows; the console's\n// rule): a value that does nothing would read as working if it took changes. The poll interval while
 // reading plan limits is off; the resume wait while no command has a stall gate; "Run at most" while the hub serves,
 // which stops servers when idle and leaves their memory to the host's MCP slice (v0.4.0 section 8, as built under the hub).
 // The poll interval's reason is another setting on the same pane, so it names it, and pressing the name brings that row
@@ -102,7 +101,7 @@ function chevTurn(id, open) { const t = turn(`chev:${id}`, open, CHEV_MS); retur
 const advBar = (id, keys, open) => { const c = chevTurn(`adv:${id}`, open); return `<div class="sechead"><button class="act quiet advbtn${c.cls}"${c.style} data-act="adv" data-id="${id}" aria-expanded="${open}">Advanced<b>${fmt(keys.length)}</b>${ICON.caret}</button>${open ? paneLegend(keys) : ""}</div>`; };
 /** The topics whose Advanced is the last block of their settings grid, in the column beside what the settings act on. */
 const ADV_IN = new Set(["silent", "busy", "reasoning", "plan"]);
-// VERSION'S ADVANCED IS SPLIT BY WHAT EACH SETTING BELONGS TO (Oct 27): twenty-odd settings in one grid mixed the ChatGPT
+// VERSION'S ADVANCED IS SPLIT BY WHAT EACH SETTING BELONGS TO: twenty-odd settings in one grid mixed the ChatGPT
 // and Grok commands' addresses with Code mode's switches and splice's own ports, so finding one meant reading them all.
 // Each group is named once over its rows; a setting no group claims (one the daemon added, or one it still carries from
 // an older release) stands under Other by its own name.
@@ -203,10 +202,10 @@ function readKept() {
   // the MCP host's own snapshot. The route is mounted only while splice hosts MCP (ControlServer.kt), so a 404 here is
   // the honest answer "nothing is hosted", not a failure: it is drawn as that sentence and never as an unread figure.
   get("/api/mcp", (r) => { ui.mcp = r.ok ? r.body : r.status === 404 ? false : null; });
-  // whether the MCP hub serves this machine (McpHubGate, decided at boot; /health's mcpHub): its holders have no count
+  // whether the MCP hub serves this host (McpHubGate, decided at boot; /health's mcpHub): its holders have no count
   // ceiling, so "Run at most" binds only the servers the daemon runs itself (v0.4.0 section 8, as built under the hub)
   get("/health", (r) => { ui.hubOn = r.ok && r.body?.mcpHub === "on"; });
-  // the sharing choice ([daemon] mcp_share) and what every copy on this machine holds against one copy each
+  // the sharing choice ([daemon] mcp_share) and what every copy on this host holds against one copy each
   get("/api/topology", (r) => { ui.topo = r.ok ? r.body : null; colourCommands(); });
   get("/api/mcp/memory", (r) => { ui.mmem = r.ok ? r.body : null; nameHolders(); });
   // the plan windows Accounts draws, read here for the highest of each against the warn line these settings set
@@ -257,7 +256,7 @@ async function readHeads() {
 const mbWord = (b) => { const mb = b / MiB; return mb >= 1000 ? `${+(mb / 1024).toFixed(1)} GB` : mb >= 1 ? `${+mb.toFixed(1)} MB` : b > 0 ? `${Math.max(1, Math.round(b / 1024))} KB` : "0 B"; };
 const dateWord = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 const atWord = (ms) => { const d = new Date(ms); return d.getHours() || d.getMinutes() ? `${dateWord(d)}, ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : dateWord(d); };
-// A TIME CARRIES ITS ZONE (Oct 26), as today's peak does: today's is its clock, any other day's leads with the date
+// A TIME CARRIES ITS ZONE, as today's peak does: today's is its clock, any other day's leads with the date
 const whenWord = (ms) => { const d = new Date(ms); return `${d.toDateString() === new Date().toDateString() ? "" : `${dateWord(d)}, `}${clock(d)}${ZONE_WORD ? ` ${ZONE_WORD}` : ""}`; };
 
 // ---------- search ----------
@@ -294,13 +293,13 @@ function colourCommands() {
 }
 
 // ---------- what a setting's row draws ----------
-// AN ELEMENT, NEVER A SENTENCE, AND ONLY WHERE THE FACT IS ON THE WIRE (Marlin's ruling, Oct 12). Each of these is a
+// AN ELEMENT, NEVER A SENTENCE, AND ONLY WHERE THE FACT IS ON THE WIRE. Each of these is a
 // fact this page already reads: when the plans were last read, where every login stands against the warn line, the
 // logins reporting no window, how many servers run now. The waiting line's own text lives in TurnProgressLine.kt and
 // reaches no route, and nothing counts fold continuations, so those rows draw no figure of either.
 const seenAt = () => Math.max(0, ...(ui.accts || []).map((x) => x.observed_at_epoch_seconds || 0));
 // Accounts' own rule for a login it shows as Signed out (accounts.js): its last reading is from before, so this pane draws
-// no window of it, where "100% Highest this week" stood on a signed-out login (splice-usage's walk, Oct 13)
+// no window of it, where "100% Highest this week" stood on a signed-out login
 const signedOut = (x) => !x.token_renews && (!x.credential_present || x.auth_exclusion_reason === "credential_missing"
   || (!!x.refusal && !(x.five_hour_used_percent >= 100 || x.seven_day_used_percent >= 100)));
 // A login by its command, and by its own name as well where that command has more than one login: several logins can
@@ -351,7 +350,7 @@ function elOf(key) {
   return "";
 }
 
-// A SETTING A DRAWING NAMES WEARS ITS NUMBER (Oct 28): the terminal on Reasoning draws four lines that four settings decide, and
+// A SETTING A DRAWING NAMES WEARS ITS NUMBER: the terminal on Reasoning draws four lines that four settings decide, and
 // the line says "2" where the setting stands as "2", so no name is written twice on the screen.
 const TIE_NO = { showReasoning: 1, summary: 2, progressLine: 3, verbosity: 4 };
 // ---------- a section's settings, on one grid ----------
@@ -461,12 +460,12 @@ const delBtn = (id, n, unit) => (!n ? "" : ui.armed === id
   ? `<span class="armed"><button class="act danger small" data-act="delete" data-id="${id}">Delete ${fmt(n)} ${unit}</button><button class="act quiet small" data-act="disarm">Cancel</button></span>`
   : `<button class="act quiet small del" data-act="arm" data-id="${id}" aria-label="Delete now" title="Delete now">${SV.trash}<span class="delw" aria-hidden="true">Delete</span></button>`);
 const ALWAYS = `<span class="fixed quiet">Always saved</span>`; // a store whose daemon has no off switch
-// WHAT OFF COSTS IS SAID WHILE IT IS IN FORCE (Oct 26): under a switch that is On the line told him, on every card, what
+// WHAT OFF COSTS IS SAID WHILE IT IS IN FORCE: under a switch that is On the line told him, on every card, what
 // a press he is not making would cost. It is the Off button's own title while On, and the line under the switch once Off,
-// where it is the state he is in. Each part wraps at a dot, never inside a part (fin).
+// where it is the state he is in. Each part wraps at a dot, never inside a part.
 const costHtml = (off, isOff) => (off && isOff ? `<p class="offcost now">${off.split(" · ").map((t) => `<span class="whole">${esc(t)}</span>`).join(" · ")}</p>` : "");
 const offTitles = (off) => (off ? { titles: { false: off.replace(/ · /g, ". ") } } : {});
-/** ONE STORE IS ONE ROW OF ITS GROUP'S TABLE (Oct 28), the way a command is one row of Usage's results: its colour, name and
+/** ONE STORE IS ONE ROW OF ITS GROUP'S TABLE, the way a command is one row of Usage's results: its colour, name and
  *  door, then what it holds and how fast it grows, each a bar on its column's one scale, then its Save and Keep for, with the
  *  length it keeps drawn on one log axis, and last its Delete, on the row it deletes. [under] is what opens beneath the row:
  *  the per-command list, a shorter window's question, the usage chart. The columns are named once, over the table. */
@@ -479,14 +478,14 @@ const drow = ({ id = "", cls = "", name, hay = name, door, meta = "", size = "",
     + `${costHtml(off, offShown)}${under}</article>`,
 });
 /** The columns of a group's table, named once. */
-// SIZE AND A DAY STAND ON ONE LOG AXIS OF BYTES (Oct 29): a store of 570 KB and one of 62 GB are both a bar a person can read, the ticks said
+// SIZE AND A DAY STAND ON ONE LOG AXIS OF BYTES: a store of 570 KB and one of 62 GB are both a bar a person can read, the ticks said
 // once in the column's head, over the bar and not over its figure, so the stores compare by eye before a figure is read
 const SIZE_LO = 1e5, SIZE_HI = 1e12;
 const SIZE_TICKS = [[1e7, "10 MB"], [1e9, "1 GB"], [1e11, "100 GB"]];
 const sizeAt = (b) => Math.max(0, Math.min(100, (Math.log(Math.max(b, SIZE_LO) / SIZE_LO) / Math.log(SIZE_HI / SIZE_LO)) * 100));
 const sizeHead = (word) => `<span class="dah"><span class="dw">${word}</span><span class="pd-ax dsx">${SIZE_TICKS.map(([b, w]) => `<span class="pd-tk" style="left:${sizeAt(b).toFixed(2)}%">${w}</span>`).join("")}</span></span>`;
 const DHEAD = `<div class="dhead" role="row"><span>Store</span><span>Holds</span>${sizeHead("Size")}${sizeHead("A day")}<span>Save</span><span>Keep for</span><span class="dcant">Cannot be undone</span></div>`;
-// HOW LONG A STORE KEEPS WHAT IT HOLDS IS A LENGTH, SO IT IS DRAWN AS ONE (Oct 28): every store's Keep for is a track on one log
+// HOW LONG A STORE KEEPS WHAT IT HOLDS IS A LENGTH, SO IT IS DRAWN AS ONE: every store's Keep for is a track on one log
 // axis of days, from an hour to two years, so "2 hours", "30 days" and "Forever" read as lengths side by side before a word
 // is read. A store that keeps nothing past the conversation has no length and draws no track.
 const KEEP_LO = 1 / 24, KEEP_HI = 730;
@@ -552,7 +551,7 @@ const CELLS_GHOST = { meta: GHOST.bar(8), size: GHOST.cell(), rate: GHOST.cell()
 // a store that could not be read keeps its row: dashed tracks and the dash on each column's edge, and Not read said once, under its name
 const CELLS_UNREAD = { meta: `<span class="state limit">Not read</span>`, size: DRAW.unread.cell(), rate: DRAW.unread.cell() };
 // A store splice could not read says so on its own figure line, in the limit colour as every unread figure on this page
-// does; why goes to the console, where the read that failed is named (fin, Oct 11)
+// does; why goes to the console, where the read that failed is named
 const unreadable = `<span class="state limit">Not read</span>`;
 /** The reason a read failed, in the words every page warns with. */
 const whyNot = (path, r) => console.warn(`${path}: ${r.status === 0 ? "splice is not answering" : r.body?.error || `splice answered ${r.status}`}`);
@@ -568,7 +567,7 @@ function histBar(h) {
 }
 // The window the daemon keeps: the saved setting, else the one it falls back to with none saved, the wider of the records
 // window and 35 days (SpliceConfig.historyWindow), which GET /api/history spells. knobs.js's 35 is only the starter file's,
-// so an install with none saved read "Keep for 35 days" over 84 days it was keeping for 90 (splice-usage's walk, Oct 13).
+// so an install with none saved read "Keep for 35 days" over 84 days it was keeping for 90.
 const keptDays = () => {
   const w = ui.hist?.window;
   if (ks.cfg?.knobs?.historyRetentionDays?.scope !== "default" || !w) return val("historyRetentionDays");
@@ -590,8 +589,8 @@ function histRow(r, scale) {
   });
 }
 // How long prompts and answers stay, claiming no more than is true. Each command keeps them for "Keep prompts and
-// answers for" when that knob is set, on the command or for all, and for the history window otherwise (splice-lead and
-// splice-turns, Oct 12); its trace/kept answer carries that number as kept_days once the route has it. Sooner than either
+// answers for" when that knob is set, on the command or for all, and for the history window otherwise;
+// its trace/kept answer carries that number as kept_days once the route has it. Sooner than either
 // once trace passes its shared size caps, 32 GiB of bodies and 16 GiB of records, where the oldest whole day goes first
 // (DayBodyBudget): at 12 GB a day the bodies last about 3 days.
 const traceSetDays = (head) => {
@@ -609,7 +608,7 @@ const STOP_WORDS = {
 };
 /** Since when prompts and answers have not saved, from each command's trace/kept answer: the first stop among the
  *  commands saving, the reason in words, and the commands it holds for. Null while every one saves whole. Settings said
- *  "25.2 GB counted" while nothing had been saved since 10:44 AM, the disk at splice's free-space floor (walk on d0ec523b5). */
+ *  "25.2 GB counted" while nothing had been saved since 10:44 AM, the disk at splice's free-space floor. */
 function traceStopped() {
   const stops = ui.heads.map((h, i) => ({ h, b: ui.kept.trace?.[i] })).filter(({ h, b }) => traceOn(h) && b?.saving_stopped_at_epoch_ms);
   if (!stops.length) return null;
@@ -621,7 +620,7 @@ function traceStopped() {
   if (why) console.warn(`trace: saving stopped: ${why}`);
   // The cause by the daemon's name for it (saving_stopped_code), never by the words of its sentence: a reworded
   // sentence used to change this card without anyone seeing it. The floor is a twentieth of the disk, 64 GB at
-  // most, and the daemon sends its size: the card said "64 GB" on every disk while that was the one floor (Nov 11).
+  // most, and the daemon sends its size: the card said "64 GB" on every disk while that was the one floor.
   const known = STOP_WORDS[first.saving_stopped_code]?.(first.saving_stopped_floor_bytes) ?? "";
   const heads = stops.length < ui.heads.filter(traceOn).length ? stops.map(({ h }) => h) : [];
   return { when: whenWord(at), words: known || shortWhy(why), known: !!known, heads };
@@ -670,7 +669,7 @@ function traceCommands() {
 }
 /** A store's Keep for: its control or its words, and the length it draws on the axis (days, Infinity for none, null for no length). */
 function keepOf(r) {
-  // the copies keep their own days (the President, Oct 12), and the messages theirs, so each row sets them in its Keep for
+  // the copies keep their own days, and the messages theirs, so each row sets them in its Keep for
   if (r.id === "originals") return { keep: `${ctlHtml(KNOB.transcriptCopyDays, val("transcriptCopyDays"))}${saidHtml("transcriptCopyDays")}`, days: Number(val("transcriptCopyDays")) };
   if (r.id === "trace") return ui.hist ? { keep: `<span class="fixed quiet">${esc(traceKeep())}</span>`, days: traceDays(), said: `${traceKeep()}, ${TRACE_CAPS}` } : { keep: "", days: null };
   if (r.id === "edges") return { keep: `${ctlHtml(KNOB.activityRetentionDays, val("activityRetentionDays"))}${saidHtml("activityRetentionDays")}`, days: Number(val("activityRetentionDays")) };
@@ -723,12 +722,12 @@ function keptHtml() {
     : unread ? `<div class="pd-top"><b class="pd-rate">${DRAW.dash}</b><span class="pd-failed"><span>kept</span></span>${unreadable}</div>`
     : DRAW.hero({ figure: mbWord(all), of: "kept" });
   const stop = reading ? null : traceStopped();
-  // SAVING STOPPED IS A STATE ON THE FIGURE IT STOPS (Oct 26): the stalled lamp, since when, the commands it holds for,
+  // SAVING STOPPED IS A STATE ON THE FIGURE IT STOPS: the stalled lamp, since when, the commands it holds for,
   // the cause, and the one way back, which scrolls to the stores' deletes and lights them once
   const stopped = stop ? `<div class="dstop" role="status">${DRAW.lamp("stalled")}<b>Saving stopped ${esc(stop.when)}</b>`
     + `${stop.heads.length ? `<span class="dwho">${stop.heads.map((h) => cmdChip(h)).join("")}</span>` : ""}${stop.words ? `<span class="dwhy">${esc(stop.words)}</span>` : ""}`
     + (stop.known ? `<button class="act quiet small" data-act="tofree">Free up space</button><span class="dthen">Saves again on the next request</span>` : "") + `</div>` : "";
-  // WHAT WAS REMOVED IS SAID WHERE WHAT IS KEPT IS COUNTED (Nov 12): the days, and that their records stayed. Nothing
+  // WHAT WAS REMOVED IS SAID WHERE WHAT IS KEPT IS COUNTED: the days, and that their records stayed. Nothing
   // is wrong now, so it wears no lamp and no red.
   const gone = reading ? null : traceRemoved();
   const removed = gone ? `<div class="dgone" role="note"><b>Prompts and answers of ${gone.n === 1 ? esc(gone.span) : `${gone.n} days`} were removed to make room</b>`
@@ -756,7 +755,7 @@ function dataHtml() {
   const taps = ui.heads.filter((h) => tapOf(h) > 0), heldN = taps.reduce((n, h) => n + (ui.held[h] ?? 0), 0);
   const scale = dscale();
   // The row draws when the fact exists: a command taps its requests or bodies are held. With neither it holds nothing and
-  // offers nothing (the tap is set per command in splice.toml and read at start), so it is not drawn at all (fin, Oct 11).
+  // offers nothing (the tap is set per command in splice.toml and read at start), so it is not drawn at all.
   const memory = taps.length || heldN ? drow({
     id: "memory", name: "Last requests, in memory",
     meta: taps.some((h) => ui.held[h] === undefined) ? GHOST.bar(8) : taps.some((h) => ui.held[h] === null) ? unreadable
@@ -783,8 +782,8 @@ function dataHtml() {
 // here: a count is the daemon's `count` for the filter a door opens on Requests, so the figure and the page it opens
 // agree. Six words are tested on the daemon over every row (TurnsTest.kt), never over the newest 2,000 the route would send.
 const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
-// A TIME CARRIES ITS ZONE (Oct 26): he reads this page beside a terminal whose log lines are in UTC, so a bare "4:10 PM"
-// on today's peak is a time he has to place. The browser's own short name for the zone it is in, said on the time.
+// A TIME CARRIES ITS ZONE: a person may read this page beside a terminal whose log lines are in UTC, so a bare "4:10 PM"
+// on today's peak is a time to place. The browser's own short name for the zone it is in, said on the time.
 const ZONE_WORD = new Intl.DateTimeFormat("en-US", { timeZoneName: "short" }).formatToParts(new Date()).find((p) => p.type === "timeZoneName")?.value ?? "";
 const SEC = 1000, MIN = 60000;
 const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return +d; };
@@ -825,7 +824,7 @@ async function countsWeek(head, plan, week) {
 async function readPeak(head) {
   const res = await bulkGet(`/api/perf/turns?${new URLSearchParams({ head: head.key, since: String(startOfToday()), time_zone: ZONE, n: "1", local: "0", usage: "0", peak: "1" })}`);
   const answer = (res.body?.heads || []).find((x) => x.key === head.key);
-  // a peak not read is "Not read" or "Not answering" on the page, and why goes to the console, as whyNot does (fin, Oct 12)
+  // a peak not read is "Not read" or "Not answering" on the page, and why goes to the console, as whyNot does
   if (!res.ok || !answer || answer.error || answer.read_error) {
     console.warn(`/api/perf/turns peak for ${head.key}: ${res.status === 0 ? "splice is not answering" : answer?.error || answer?.read_error || `splice answered ${res.status}`}`);
     return { head, err: res.status === 0 ? "Not answering" : "Not read" };
@@ -906,7 +905,7 @@ function durDraw(key, ax) {
 }
 
 // ---------- Stalled answers ----------
-// WHAT SPLICE DID THIS WEEK WHEN A MODEL WENT QUIET, AS ONE TABLE ON ONE SCALE (Oct 27): the two ways a request ended
+// WHAT SPLICE DID THIS WEEK WHEN A MODEL WENT QUIET, AS ONE TABLE ON ONE SCALE: the two ways a request ended
 // early and the three ways it kept going, each a bar as long as its count against the largest and split by the
 // commands it happened on, its count a door to exactly those requests, and its newest one a door to that request.
 // Beside it, the waits that decide which of them happens, on one time axis, with the longest stall this week across them.
@@ -918,7 +917,7 @@ const STALL_WHYS = STALL_GROUPS.flatMap(([, rows]) => rows.map(([why]) => why));
 const otabHead = () => `<div class="orow oh" role="row"><span role="columnheader">Outcome</span><span role="columnheader">By command</span>`
   + `<span role="columnheader" class="r">Requests</span><span role="columnheader">Most on</span><span role="columnheader">${esc(zoneHead("Latest"))}</span></div>`;
 const ogroup = (name) => `<div class="orow og" role="row"><span role="rowheader">${esc(name)}</span></div>`;
-// ONE LEVEL FOR HOW MUCH ENDED EARLY (Oct 29): the share of the week's requests that ended early is the one figure that
+// ONE LEVEL FOR HOW MUCH ENDED EARLY: the share of the week's requests that ended early is the one figure that
 // sets the colour of the hero, the Ended early counts in the table and the Ended early bar on the rail card, so the same
 // fact is the same colour wherever it stands: neutral under 2%, the key light (a rate worth watching) from 2% to under
 // 10%, the limit red from 10%. What kept going stays neutral, so red stands for nothing else here but a count not read.
@@ -986,7 +985,7 @@ function stallRow(why, what, top, early) {
   const last = newest ? `<a href="${rowUrl(newest.head.key, newest.newest)}">${esc(whenShort(newest.newest.ts))}</a>` : "";
   return cells("", bar, count, cmds, last);
 }
-// EVERY OUTCOME KEEPS ITS ROW (Oct 28): the ones that did not happen are not dropped into a sentence under the table
+// EVERY OUTCOME KEEPS ITS ROW: the ones that did not happen are not dropped into a sentence under the table
 // ("None this week" and their names), they stand as rows with an empty track and a quiet 0, so the table is the same five
 // rows every week and a week with nothing to report reads as short tracks, not as a line of words. A count that did not
 // answer keeps its row too, with Not read.
@@ -1013,7 +1012,7 @@ function silentWaits() {
 const silentHtml = () => pair(DRAW.section("This week", `${silentHero()}${stallTable()}`), silentWaits());
 
 // ---------- Many agents at once ----------
-// TODAY, ONE ROW PER COMMAND ON SHARED SCALES (Oct 27): the most requests it held at once against its own limit, when
+// TODAY, ONE ROW PER COMMAND ON SHARED SCALES: the most requests it held at once against its own limit, when
 // in the day that was, how many requests it sent and how many waited in line, each figure a door to those requests.
 // The settings that make those limits stand beside the table. What splice did when a provider pushed back stands under
 // it, with no setting beside it: since 0.4.0 splice decides how often and how soon a failed request goes again from
@@ -1023,7 +1022,7 @@ const LIMITS = ["maxInflight", "maxQueued", "maxRequestBytes"];
 const dayAt = (ms) => Math.max(0, Math.min(100, ((ms - startOfToday()) / DAY) * 100));
 const DAY_TICKS = [[0, "12 AM"], [25, "6 AM"], [50, "12 PM"], [75, "6 PM"]];
 // the Waited in line column stands only on a day when something waited: a column of noughts said one fact once per row
-// THE LIMIT IS SAID ONCE WHEN EVERY ROW SHARES IT (Oct 27): "of 100" stood on every row of a table whose meters all
+// THE LIMIT IS SAID ONCE WHEN EVERY ROW SHARES IT: "of 100" stood on every row of a table whose meters all
 // ran to 100, so the column says it once in its head; a day when commands hold limits of their own says each on its row
 const limitHead = (one) => (one === undefined ? "At once, of its limit" : one ? `At once, of ${DRAW.n(one)}` : "At once, no limit set");
 const peakHead = (lined = true, one = undefined) => `<div class="pk ph" role="row"><span role="columnheader">Command</span><span role="columnheader" class="plh">${esc(limitHead(one))}</span>`
@@ -1058,7 +1057,7 @@ function peakRow(p, maxN, now, lined, one = undefined, maxQ = 1) {
     // a command none of whose requests waited leaves its cell empty: the column's other doors say what waited
     + (lined ? `<span class="pq" role="cell">${queued ? DRAW.barCell({ w: (queued / maxQ) * 100, level: "watch", text: `<a class="pd-count" href="${reqUrl({ from: today(), why: "queued", cmd: p.head.command })}">${fmt(queued)}</a>` }) : ""}</span>` : "") + `</div>`;
 }
-// EVERY COMMAND KEEPS ITS ROW (Oct 28): the ones that ran nothing today were a line of chips under the table, names in a
+// EVERY COMMAND KEEPS ITS ROW: the ones that ran nothing today were a line of chips under the table, names in a
 // sentence. They stand in the table as rows with the empty meter they are (nothing held of the limit), under one
 // "No requests" said once, the first few in view and the rest behind a count; a command whose peak did not answer
 // stands the same way under its own word, the dashed track for what was not read.
@@ -1093,7 +1092,7 @@ function peaksTable() {
 const peaksGhost = () => `<div class="peaks" aria-busy="true">${peakHead()}${Array.from({ length: Math.max(1, shapeOf("peakrows", 6)) }).map(() => `<div class="pk" aria-hidden="true">`
   + `<span>${GHOST.chip()}</span><span class="pm">${GHOST.track()}</span><span class="pmv">${GHOST.fig(1.2)}</span><span class="pclk">${GHOST.bar(3.6)}</span><span class="pday"></span>`
   + `<span>${GHOST.cell()}</span><span class="pq r">${GHOST.fig(1.4)}</span></div>`).join("")}</div>`;
-// WHAT THE DAY PUSHED BACK WITH IS ONE TILE A KIND ON THE KICKER LINE (Oct 29): requests that waited in line, that a provider
+// WHAT THE DAY PUSHED BACK WITH IS ONE TILE A KIND ON THE KICKER LINE: requests that waited in line, that a provider
 // overloaded and that were cut off, each a door to exactly those requests and each a short bar on one 0 to 500 scale, so the
 // three read against each other. A kind that came to zero draws nothing, no tile and no 0, and a day with none leaves the line
 // empty; a count that could not be read is a dash on its own tile, which pushback names by its words.
@@ -1135,13 +1134,13 @@ function pushback() {
     const shares = per.filter((p) => !p.err && p.n).sort((a, b) => b.n - a.n), top = shares[0]?.n || 1;
     const k = why === "overloaded" ? "over" : "cut", said = `${fmt(total)} ${what}${all ? ` of ${DRAW.n(all)} requests` : ""}`;
     // the swatch says its kind in words beside it: two bare swatches over two claude-splice rows read as the same thing
-    // twice at his width, where the tiles that key their colours stand a column away (desk walk, Nov 10)
+    // twice on a wide screen, where the tiles that key their colours stand a column away
     parts.push(`<div class="pb mam-k-${k}"><a class="pbhead" href="${reqUrl({ from: today(), why })}"><span class="mam-sw mam-k-${k}" aria-hidden="true"></span>${esc(said)}</a>`
       + `<div class="pbrows">${shares.map((p) => `<a class="pbrow" href="${reqUrl({ from: today(), why, cmd: p.head.command })}">${cmdChip(p.head.key)}${DRAW.barCell({ w: (p.n / top) * 100, text: fmt(p.n), level: why === "overloaded" ? "bad" : "", cls: why === "overloaded" ? "" : "mam-cut" })}</a>`).join("")}</div></div>`);
   }
   return parts.join("") + (quiet.length ? `<p class="zeros">${quiet.join('<span class="dot">·</span>')}</p>` : "");
 }
-// WHAT HAPPENED TODAY STANDS IN ONE COLUMN, THE LIMITS THAT SHAPED IT IN THE OTHER (Oct 27): what the providers pushed
+// WHAT HAPPENED TODAY STANDS IN ONE COLUMN, THE LIMITS THAT SHAPED IT IN THE OTHER: what the providers pushed
 // back with is part of today, so it sits under today's table, and a full-width section of two bars no longer ran a
 // 6-request bar 1,700 px long across the plate at 3822.
 // WHAT THE PROVIDERS PUSHED BACK WITH belongs to neither side, so it goes under whichever of the two is shorter (the kit's
@@ -1160,7 +1159,7 @@ const busyHtml = () => {
 };
 
 // ---------- Reasoning ----------
-// REASONING HAS NO FIGURE, SO IT OPENS ON THE THING ITSELF (Oct 26): nothing on the wire counts what a reasoning setting
+// REASONING HAS NO FIGURE, SO IT OPENS ON THE THING ITSELF: nothing on the wire counts what a reasoning setting
 // did, so this topic leads with the terminal it changes, drawn from the live values as shapes, never as sample words or
 // numbers (Oct 25: no made-up data). Each line a setting decides is named in the terminal's margin by that
 // setting's own name, and pointing at the line or at the setting lights the other (settings.css), so a choice is read
@@ -1203,10 +1202,10 @@ function terminal() {
 }
 const termGhost = () => `<div class="term" aria-busy="true"><div class="tbar" aria-hidden="true"><i></i><i></i><i></i></div>`
   + [24, 40, 62, 44, 30, 70].map((w) => `<div class="tl" aria-hidden="true"><span class="tx">${GHOST.bar(w / 4)}</span><span></span></div>`).join("") + `</div>`;
-// THE TERMINAL IS THE FOCAL OBJECT AND TAKES THE PLATE; THE SETTINGS ARE ONLY AS WIDE AS THEIR LONGEST NAME AND WIDEST CONTROL (Oct 29):
+// THE TERMINAL IS THE FOCAL OBJECT AND TAKES THE PLATE; THE SETTINGS ARE ONLY AS WIDE AS THEIR LONGEST NAME AND WIDEST CONTROL:
 // a grid of two columns, the second as wide as its content, so no row has a blank run beside its control and nothing is stretched to
 // the terminal's height. Below a plate's width of 70rem they stand one over the other.
-// A CHOICE IS A RADIO ROW WITH THE LINES IT PUTS IN THE TERMINAL (Oct 29): each option of a setting that decides what the terminal prints
+// A CHOICE IS A RADIO ROW WITH THE LINES IT PUTS IN THE TERMINAL: each option of a setting that decides what the terminal prints
 // is a row of its own, a ring that fills for the one held and, at the row's end, a small preview of the terminal lines that choice
 // leaves. The row is the setting's own switch button (the same attributes, so the same write), only drawn as a choice.
 const rsnPreview = (key, v) => {
@@ -1250,7 +1249,7 @@ function paneTitle(x) {
 }
 
 // ---------- Plan limits ----------
-// WHERE EACH LOGIN STANDS, IN ACCOUNTS' OWN WINDOW ROWS (Oct 27): the meter for how much is used, the percent, and the
+// WHERE EACH LOGIN STANDS, IN ACCOUNTS' OWN WINDOW ROWS: the meter for how much is used, the percent, and the
 // ring for how soon it refills, read from /api/accounts as Accounts reads them, with the warn line these settings set
 // as a tick on every meter. Beside them the warn line's own row carries every login as a dot at its highest window,
 // so the setting is read as a line among the figures it acts on rather than as a number in a box.
@@ -1305,7 +1304,7 @@ function planBack(x) {
   const at = Math.max(...full.map((w) => w.resetMs ?? 0));
   return at > 0 ? at : null;
 }
-// A LOGIN'S CARD IS A DOOR TO ITS CARD ON ACCOUNTS (Oct 27): the act on a login at its limit is there (sign in again, move
+// A LOGIN'S CARD IS A DOOR TO ITS CARD ON ACCOUNTS: the act on a login at its limit is there (sign in again, move
 // to another login), so each card carries the way in at its header's right end, one mark in the same place on every card.
 // Accounts opens the card named by ?card=, and the kit spells that key once for the board and for every door to it
 // (kit.js acctCardKey).
@@ -1356,7 +1355,7 @@ function planCards() {
   if (a === undefined) return planGhost();
   if (!a) return `<p class="pidle"><span class="state limit">Not read</span></p>`;
   const warn = warnPct(), out = a.filter(signedOut);
-  // THE LOGINS NEAREST THEIR LIMIT STAND AT FULL SIZE, THE REST BEHIND ONE COUNT (Oct 27): nine cards were two screens, and
+  // THE LOGINS NEAREST THEIR LIMIT STAND AT FULL SIZE, THE REST BEHIND ONE COUNT: nine cards were two screens, and
   // the plans far from their limit are not what this topic is read for. They open in place, and the warn line's track beside
   // them still has every login as a dot.
   const logins = [...planLogins().map((l) => l.x), ...planQuiet(), ...planUnread()], open = !!ui.pmore.plan, shown = open ? logins : logins.slice(0, capOf(logins.length, PLAN_SHOWN));
@@ -1367,7 +1366,7 @@ function planCards() {
   const signed = out.length ? `<div class="psigned"><span class="state">Signed out</span>${out.map((x) => `<span class="psi">${loginChip(x)}<a class="act quiet small" href="accounts.html?card=${encodeURIComponent(acctCardKey(x))}">Sign in</a></span>`).join("")}</div>` : "";
   if (!shown.length) {
     // "No limits reported" is the providers answering with none; a login splice has never read is Not read, since this
-    // page asks for no reading of its own (marlin, Oct 12)
+    // page asks for no reading of its own
     const never = a.some((x) => !x.refusal && x.credential_present !== false && !x.observed_at_epoch_seconds && !x.no_usage_at_epoch_seconds);
     return `<p class="pidle"><span class="state${never ? " limit" : " mute"}">${never ? "Not read" : "No limits reported"}</span></p>${signed}`;
   }
@@ -1380,7 +1379,7 @@ const PLOG_MIN = 41;
 const planGhost = () => DRAW.cols(Array.from({ length: Math.max(1, Math.min(PLAN_SHOWN, shapeOf("logins", 3))) }, (_, i) => i).map((i) => `<article class="card plog ghosted" style="--i:${i}" aria-hidden="true"><header>${GHOST.bar(8)}</header>`
   + `<span class="windows lw-wins">${[0, 1].map(() => `${GHOST.bar(3.4)}${GHOST.track()}${GHOST.fig(4.2)}<span class="when">${GHOST.ring()}${GHOST.bar(6.2)}</span>`).join("")}</span></article>`), PLOG_MIN, "plogs");
 // ---------- a limit or a line, on a track with its scale ----------
-// A LIMIT IS A TRACK TO ITS END, AND WHAT HOLDS IT RIGHT NOW IS ITS FILL (Oct 28): "Requests at once 100" and "Requests
+// A LIMIT IS A TRACK TO ITS END, AND WHAT HOLDS IT RIGHT NOW IS ITS FILL: "Requests at once 100" and "Requests
 // waiting in line 512" were numbers in boxes. Each command's gate answers what it runs and what waits this moment (GET
 // /api/heads, gate.inflight and gate.queued, read again every few seconds), so the command nearest its own limit is the
 // fill at the scale the limit sets, the dots on it are the commands' busiest moments today and the ends of the track carry
@@ -1482,7 +1481,7 @@ const MCP_STATE = {
   excluded: { word: "Set by you" },
 };
 // keys that say a state and no word: the section's own switch says hosting is off, a race reads only its state, and a
-// web server is shared by being one server (fin, Oct 12)
+// web server is shared by being one server
 const MCP_SILENT = new Set(["hosting_disabled", "race", "transport", "until_restart"]);
 const HOME = /^\/(?:home|Users)\/[^/]+/;
 const homeWord = (p) => String(p || "").replace(HOME, "~");
@@ -1503,7 +1502,7 @@ const fromWord = (e) => {
     const dir = dirs.pop();
     return dir ? `${dir} plugin` : "a plugin";
   }
-  // A FILE IS NAMED, NEVER SPELLED AS A PATH (Oct 26): his own .claude.json, or the config folder a copy sits in when it
+  // A FILE IS NAMED, NEVER SPELLED AS A PATH: his own .claude.json, or the config folder a copy sits in when it
   // is not his home's (.claude-grok); the whole path stays on the line's title
   const parts = homeWord(e.source_file).split("/"), name = parts.pop() || "", dir = parts.at(-1) || "";
   return name === ".claude.json" && dir && dir !== "~" ? dir.replace(/^\.(?=claude-)/, "") : name;
@@ -1514,12 +1513,12 @@ const projectOf = (e) => (e?.kind === "project" || e?.kind === "repo" ? String(e
 const addressOf = (v) => {
   try { const u = new URL(v); return u.host + (u.pathname === "/" ? "" : u.pathname); } catch { return ""; }
 };
-// EVERY VALUE SHOWN AS CODE IS READ AS AN ADDRESS FIRST (Oct 26): a server's deciding value can be its URL, whose query
+// EVERY VALUE SHOWN AS CODE IS READ AS AN ADDRESS FIRST: a server's deciding value can be its URL, whose query
 // carries a key. One that parses as a web address shows its host and path only, as the shared row's address does.
 const codeOf = (v) => (/^(https?|wss?):\/\//i.test(String(v || "")) ? addressOf(v) : homeWord(v));
 // where a server is declared, under its name: its project's chip, else its file or plugin, and a web server's address
 // a server the files never declared (the daemon planned it from elsewhere) has no line here: a file glyph naming nothing
-// read as a file with no name (temple, Per project, at 3822 on Oct 26)
+// read as a file with no name (a project named in Per project, at 3822 on Oct 26)
 // HIS OWN .claude.json IS WHERE A SERVER IS DECLARED UNLESS SAID OTHERWISE, so no row says it: the same file name under
 // every server of a list is the one qualifier of a page said on every row. A row names its place only where it is
 // somewhere else (a project, a plugin, a command's own copy), and a web server its address, which is what tells it apart.
@@ -1581,8 +1580,8 @@ async function testServer(name) {
 
 // ---------- MCP servers: shared or one per session, and what sharing saves (mcp-hub.md, How it works 4) ----------
 // The one stored choice is [daemon] mcp_share in splice.toml, the answer `splice setup` saves. Absent reads as shared,
-// which is how splice hosts servers today, so the switch never shows a third "not asked" state (splice-config, Oct 12).
-// ONE SWITCH, ONE FACT (Marlin, Oct 13, gap 464): servers are shared only when both mcp_share and mcp_hosting are on, so
+// which is how splice hosts servers today, so the switch never shows a third "not asked" state.
+// ONE SWITCH, ONE FACT: servers are shared only when both mcp_share and mcp_hosting are on, so
 // the switch reads both, and Shared turns on whichever was off. One per session writes mcp_share only.
 const shareOn = () => ui.topo?.topology?.daemon?.mcp_share !== false && ui.topo?.topology?.daemon?.mcp_hosting !== false;
 /** The switch, on the Sharing section's own kicker line: it is what the figure under it answers to. */
@@ -1653,7 +1652,7 @@ async function rereadMcp() {
 const shareable = (s) => s.class === "shared" || s.why === "per_session_choice";
 // one server reads one answer on this page: where the list keeps a server unshared for a reason the switch does not
 // change, a project's server the hub does not host yet among them, the census counts it with the ones kept one per
-// session, under that reason and out of what sharing saves (marlin, desk m, Oct 12)
+// session, under that reason and out of what sharing saves
 const asListed = (s, rows) => {
   const r = rows.get(s.label ?? s.name);
   return r && !r.shared && MCP_STATE[r.state] && r.state !== "per_session_choice" ? { ...s, class: "per_session", why: r.state, value: r.value } : s;
@@ -1697,13 +1696,13 @@ function sessLink(s) {
 // THE LAMP IS THE SERVER'S STATE (the kit's tlamp): the live trace while splice runs its one copy, the flat line in the
 // limit red when it last failed, and an unlit socket for one nothing runs now (a web address has no process here)
 const lampOf = (s) => DRAW.lamp(s.err ? "stalled" : s.hosted ? "working" : "");
-// THE COLUMNS ARE NAMED ONCE, over the rows (Oct 26): "Used by" and "Last call" on every row said the same two words
+// THE COLUMNS ARE NAMED ONCE, over the rows: "Used by" and "Last call" on every row said the same two words
 // three times over three servers. A time is a dash where the daemon has none to give, as a web server never has.
 const USES_SHOWN = 4;
-// A LIST'S TAIL IS NEVER ONE (Oct 26): a pill that hides one item is as big as the item, so a list one over its cap
+// A LIST'S TAIL IS NEVER ONE: a pill that hides one item is as big as the item, so a list one over its cap
 // shows whole, and a pill only ever stands for two or more
 const capOf = (n, cap) => (n > cap + 1 ? cap : n);
-// WHAT A SERVER IS WHEN NOTHING RUNS IT HERE IS A MARK, NOT A WORD ON EVERY ROW (Oct 27): "At a web address" and "Not
+// WHAT A SERVER IS WHEN NOTHING RUNS IT HERE IS A MARK, NOT A WORD ON EVERY ROW: "At a web address" and "Not
 // running" read on twenty-one rows of one section, one qualifier said twenty-one times. A globe is a server that lives at
 // a web address, an unlit socket one nothing runs now, and the section's line says each once (idleKey).
 const idleWord = { web: "At a web address", off: "Not running" };
@@ -1722,9 +1721,9 @@ const SRV_HEAD = `<div class="srvhead"><span></span><span></span><span>Used by</
 const copyBytes = (s) => { if (s.web) return null; const c = censusOf(s.name); return c?.copies ? c.now : s.hosted && s.rss ? s.rss : null; };
 function sharedRow(s, top = 1) {
   const c = censusOf(s.name);
-  // THE COMMANDS ON A SERVER ARE A BOUNDED LIST (Oct 26): eleven chips ran the row past every other column. The first
+  // THE COMMANDS ON A SERVER ARE A BOUNDED LIST: eleven chips ran the row past every other column. The first
   // four, then the rest behind one pill; a command whose own copy of the config is older joins at its next session,
-  // which rewrites the copy (fin, Oct 12), and those are one count that opens to their chips in place
+  // which rewrites the copy, and those are one count that opens to their chips in place
   const usesOpen = !!ui.mmore[`uses:${s.name}`], soonOpen = !!ui.mmore[`soon:${s.name}`];
   const cmds = (usesOpen ? s.cmds : s.cmds.slice(0, capOf(s.cmds.length, USES_SHOWN))).map((x) => cmdChip(x)).join("")
     + (s.cmds.length > USES_SHOWN + 1 ? DRAW.more(s.cmds.length - USES_SHOWN, { act: "mmore", data: ` data-id="uses:${esc(s.name)}"`, open: usesOpen, pill: !usesOpen }) : "");
@@ -1748,7 +1747,7 @@ function sharedRow(s, top = 1) {
     + `<span class="fig uses">${s.web ? fromHtml(s) : used}</span><span class="fig sess">${sessLink(s)}</span>${s.web ? `<span class="fig none">${DRAW.dash}</span>` : `<span class="fig mem">${mem}</span><span class="fig t">${when(s.started)}</span><span class="fig t">${when(s.last)}</span>`}`
     + `<span class="acts">${test}${exAct(s.name, true)}</span></div>`;
 }
-// THE REASON IS SAID ONCE, ON ITS GROUP (Oct 26): fifteen rows each reading "Plugin-owned" said one word fifteen times.
+// THE REASON IS SAID ONCE, ON ITS GROUP: fifteen rows each reading "Plugin-owned" said one word fifteen times.
 // Each reason is a card with its count; under it, each server with the value that decides it and where it is declared.
 const MCP_SHOWN = 4;
 const outWord = (s) => MCP_STATE[s.state]?.word ?? (s.state === "hosting_disabled" ? "Sharing off" : "No reason given");
@@ -1814,9 +1813,9 @@ function savedHtml() {
   const now = share.reduce((n, s) => n + s.bytes_now, 0), one = share.reduce((n, s) => n + s.bytes_if_shared, 0);
   const copies = share.reduce((n, s) => n + s.copies, 0);
   // the census measures what runs now, so the saving it can show is what one copy of each would free from it: once each
-  // runs one copy there is nothing more to free, which is sharing working, never "sharing saves nothing" (Oct 26)
+  // runs one copy there is nothing more to free, which is sharing working, never "sharing saves nothing"
   const saves = now - one > 0 ? DRAW.focal(mbWord(now - one), "sharing would free") : `<p class="mcp-free"><b>${esc(mbWord(0))}</b> sharing would free</p>`;
-  // EACH SERVER ON ONE SCALE (Oct 27): what its copies hold now beside what one copy of it would, so the server worth
+  // EACH SERVER ON ONE SCALE: what its copies hold now beside what one copy of it would, so the server worth
   // sharing is the longest pair of bars and the total is their sum on the last line. The biggest six, the rest in place.
   const rows = [...share].sort((a, b) => b.bytes_now - a.bytes_now || a.name.localeCompare(b.name));
   const top = Math.max(...rows.map((s) => Math.max(s.bytes_now, s.bytes_if_shared)), 1);
@@ -1838,7 +1837,7 @@ function savedHtml() {
 const MCP_ORDER = ["mcpMaxServers", "mcpInitializeTimeoutMs", "mcpRequestTimeoutMs", "mcpIdleTimeoutMs"];
 const mcpKeys = () => { const keys = keysOf("mcp"); return [...MCP_ORDER.filter((k) => keys.includes(k)), ...keys.filter((k) => !MCP_ORDER.includes(k))]; };
 // the reasons land as cards, so their place is held by two cards of their shape: a name and its count, then servers
-// four reasons stand on a row at his width, each as tall as its servers make it: the ghost is four cards, each as tall as a typical machine's
+// four reasons stand on a row on a wide screen, each as tall as its servers make it: the ghost is four cards, each as tall as a typical machine's
 const mcardsGhost = () => DRAW.masonry([0, 1, 2, 3].map(() => `<article class="mcard" aria-hidden="true"><header class="mtop">${GHOST.bar(8)}${GHOST.fig(1.6)}</header>${GHOST.lines([9, 12, 8, 11, 9, 12])}</article>`), 26, { cls: "mcards", gap: "var(--gap-card)" });
 // the shared list's rows as the grid they land on: lamp, name, users, memory bar, two times and the two acts
 const srvGhost = () => `<div class="srvs" aria-hidden="true">${SRV_HEAD}${[0, 1, 2].map(() => `<div class="srv"><i class="ghost ring lampg"></i><div class="sname">${GHOST.bar(8)}${GHOST.bar(6)}</div>`
@@ -1892,9 +1891,9 @@ function mcpHtml() {
 // newest is a version only when a check has succeeded here; otherwise it is the releases page, one tap away. Go back is
 // POST /api/upgrade {rollback}.
 //
-// ONE CARD PER VERSION THERE IS, AND NO CARD FOR A VERSION THERE IS NOT (splice-lead, Oct 11): Running always has a
-// number; Previous joins it only when a release is on this machine to go back to, and Newest only when a check found a
-// version he does not run. THEY STAND IN THE ORDER THEY CAME OUT (Oct 26), the one he runs at the hero's size between
+// ONE CARD PER VERSION THERE IS, AND NO CARD FOR A VERSION THERE IS NOT: Running always has a
+// number; Previous joins it only when a release is on disk to go back to, and Newest only when a check found a
+// version he does not run. THEY STAND IN THE ORDER THEY CAME OUT, the one he runs at the hero's size between
 // them, so which way each act moves him is read from where it sits before its word is.
 const RELEASES = "https://github.com/torad-labs/splice/releases";
 // ONE ROUTE, TWO DIRECTIONS: POST /api/upgrade takes him to a release or back to one, and the run that follows is the
@@ -1918,17 +1917,17 @@ function versionHtml() {
     // the files come with the settings, which have answered by now, so they stand while the versions are read
     return pair(DRAW.section("Versions", `<div class="vline">${ghost(5)}${ghost(8)}</div>`), filesHtml(), "lead");
   }
-  // the word the Version job's own rail line uses; why is warned where it was read (fin)
+  // the word the Version job's own rail line uses; why is warned where it was read
   if (!v) return pair(DRAW.section("Versions", `<div class="vline">${rungs([vnode("Running", " now", `<b class="v">${DRAW.dash}</b>${unreadable}`)])}</div>`), filesHtml(), "lead");
   const back = v.rollback_target, run = ui.run, going = run && run.state === "running";
-  // "Not checked" sits where "Checked Oct 12, 4:10 AM CDT" would, in the same small line, so the version stays the
-  // largest thing on the card (Marlin with hitstop, Oct 12)
+  // "Not checked" sits where "Checked Oct 12, 4:10 AM" would, in the same small line, so the version stays the
+  // largest thing on the card
   const checked = `<p class="kel">${v.checked_at_epoch_millis ? `Checked ${esc(whenWord(v.checked_at_epoch_millis))}` : v.latest ? "Not checked" : ""}</p>`;
-  // A STATE AND AN ACT, NOT A SENTENCE (Oct 12): "Not read" when a tap answered nothing, "Newest"
+  // A STATE AND AN ACT, NOT A SENTENCE: "Not read" when a tap answered nothing, "Newest"
   // when he is already on the newest. A newer version is a version there is, so it takes a card of its own.
   const news = v.latest && v.latest !== v.installed;
   const newest = news ? "" : v.latest ? `<span class="state">Newest</span>` : ""; // with no newest known, the Newest card says Not read or Not checked yet
-  // ONLY HIS TAP READS THE NETWORK (Marlin's privacy line, Oct 12): nothing here polls, and the page never checks when
+  // ONLY HIS TAP READS THE NETWORK: nothing here polls, and the page never checks when
   // it opens. GET /api/upgrade answers the snapshot a past tap left, and POST /api/upgrade/check is the only fetch.
   const checkAct = () => (ui.armed === "restart" ? "" : `<button class="act quiet${ui.shook === "check" ? " shook" : ""}" data-act="check"${ui.checking || going ? " disabled" : ""}>${ui.checking ? ICON.wait : ""}Check</button>`
     + (ui.checkSaid ? `<span class="said limit">${esc(ui.checkSaid)}</span>` : ""));
@@ -1961,7 +1960,7 @@ function filesHtml() {
   const rows = `${line("Settings file", p.config, SV.file)}${line("State", p.state, SV.folder)}${line("Logs", p.logs, SV.folder)}`;
   return rows ? DRAW.section("Files", `<div class="vfiles">${rows}</div>`) : "";
 }
-// A RUN IS ITS STEPS, AND THE LOG IS A DOOR ONLY WHEN IT FAILS (Marlin, Oct 12). The steps are read off the lines the
+// A RUN IS ITS STEPS, AND THE LOG IS A DOOR ONLY WHEN IT FAILS. The steps are read off the lines the
 // run prints (UpgradeCommand, RestartCommand, DaemonStop, DaemonLaunch): a step is done once a later one has begun.
 // The turns a run waits for before it activates are not this step, which is the wait after splice is told to stop.
 const RUN_STEPS = ["Checked", "Stopping", "Waiting for running turns", "Starting"];
@@ -1990,7 +1989,7 @@ function runHtml(run, back) {
   return `<section class="run${failed ? " bad" : ""}"><header><h3>${words[run.state] ?? words.running} ${esc(run.to ?? back ?? "")}</h3></header>${steps}${door}</section>`;
 }
 /** Restart splice, beside the version it is running. With nothing in flight it is one press: splice is built to come
- *  back from a restart. With requests in flight it arms the way Remove does on Models (Marlin, Oct 12): the first press
+ *  back from a restart. With requests in flight it arms the way Remove does on Models: the first press
  *  names the agents mid-request, each a chip with the Working lamp that opens its session, says how long the drain lets
  *  them finish before it cuts them (the daemon's own cap, GET /api/daemon/restart's drain_ms, never a number written
  *  here), and the second press restarts. Check steps aside while it is armed. What a restart waits for is said on the button, because a daemon that waits on a compaction looks
@@ -2128,7 +2127,7 @@ const folderFacts = () => {
     makes: (ui.projects?.projects || []).filter((p) => p.folder === path && (p.name || p.label)),
   }));
 };
-// A PROJECT IS AN OBJECT HE CAN OPEN (Oct 27): each one is a door to its sessions on Sessions, with how many sessions it
+// A PROJECT IS AN OBJECT HE CAN OPEN: each one is a door to its sessions on Sessions, with how many sessions it
 // holds drawn on one scale and when it was last active, newest first, so the projects he works in lead and the rest
 // follow. Sixteen, then the rest behind one pill that opens them in place. The counts come from one read of
 // /api/sessions made the first time the topic is drawn; until it lands each row holds a bar's place.
@@ -2190,7 +2189,7 @@ function projectsTop(p, folders) {
 }
 function pathRow(f) {
   const armed = ui.armed === `folder:${f.path}`;
-  // REMOVAL ARMS IN PLACE (Oct 26): the × turns into the act it would take and the way out, on the path it removes
+  // REMOVAL ARMS IN PLACE: the × turns into the act it would take and the way out, on the path it removes
   const drop = armed
     ? `<span class="armed"><button class="act danger small" data-act="dropfolder" data-path="${esc(f.path)}">Remove</button><button class="act quiet small" data-act="disarm">Keep</button></span>`
     : `<button class="icon" data-act="armfolder" data-path="${esc(f.path)}" aria-label="Remove ${esc(f.path)}">${ICON.close}</button>`;
@@ -2243,7 +2242,7 @@ async function saveFolders(paths) {
   const r = await KNOBS.patch("projectsFolders", paths.join(FOLDER_SEP));
   if (r.ok) { ui.addPath = null; delete ui.bad.projectsFolders; render(); await refreshProjects(); return; }
   ui.addPath = was;
-  // A REFUSAL IS SAID ONCE, WHERE HE ACTED (Oct 26): an added path is refused on its own form, so the kicker keeps no
+  // A REFUSAL IS SAID ONCE, WHERE HE ACTED: an added path is refused on its own form, so the kicker keeps no
   // second word for it, and it reads "Not found" only when the daemon turned the path down; with no answer it was
   // never weighed, and reads "Not saved". A removal has no form, so its "Not saved" stays on the kicker.
   if (was === null) ui.bad.projectsFolders = "Not saved";
@@ -2269,7 +2268,7 @@ const PANES = {
 };
 
 // ---------- the rail ----------
-// A TOPIC THAT HOLDS A LIMIT HIT OR A FAILURE SAYS SO ON ITS CARD, AND OPENS FIRST (Oct 28): the limit red is for limits and
+// A TOPIC THAT HOLDS A LIMIT HIT OR A FAILURE SAYS SO ON ITS CARD, AND OPENS FIRST: the limit red is for limits and
 // failures, so a card wears it on its edge when its topic holds one (a plan at its limit, a command held at its own ceiling,
 // requests a provider turned away, a week of answers that ended early past a tenth), and the page opens on the first such
 // topic once its reads have landed, unless he has already chosen one or came by a link that names one.
@@ -2314,7 +2313,7 @@ function summary(id) {
 // in words. Nothing is invented: a card whose read has not landed draws the ghost of its own shape.
 // A figure that did not come back is a dash beside the limit red's "Not read", as every unread figure on the page is.
 const RAIL_UNREAD = `<p class="rfig"><b>${DRAW.dash}</b><span class="state limit">Not read</span></p>`;
-// EVERY CARD DRAWS ITS STATE (Oct 29): a share is a ring or a bar, a count that appears only above zero is a tile, the logins are a
+// EVERY CARD DRAWS ITS STATE: a share is a ring or a bar, a count that appears only above zero is a tile, the logins are a
 // ring each, the projects and the stores are one split bar, and the versions are sockets in release order, so no card is only words.
 /** A share of a whole as a ring with its figure inside, coloured by the level that share holds. */
 const railRing = (frac, text, level = "") => `<span class="rail-ring${level && level !== "ok" ? ` lv-${level}` : ""}" role="img" aria-label="${esc(text)}">`
@@ -2423,7 +2422,7 @@ function railDraw(id) {
   }
   return "";
 }
-// A TOPIC IS A CARD WITH ITS GLYPH AND ITS STATE, AND A SEARCH NEVER RESIZES IT (Oct 27): the glyph names the topic
+// A TOPIC IS A CARD WITH ITS GLYPH AND ITS STATE, AND A SEARCH NEVER RESIZES IT: the glyph names the topic
 // beside its name, as a list card's glyph does, and is not a lamp, since a topic has no live state of its own to
 // light. What the search found in a topic takes the place of the card's state for as long as the search stands, on one
 // line, so the rail keeps its height and every card its place under the pointer.
@@ -2458,7 +2457,7 @@ function render() {
   if (ui.err) { root.innerHTML = `<div class="list rail plain empty"><div class="nomatch"><span class="state limit">${esc(ui.err)}</span><button class="act quiet" data-act="again">Read again</button></div></div>`; return; }
   ui.legendSaid = new Set();
   ui.advIn = null;
-  // SEARCH NARROWS, IT NEVER EMPTIES (Oct 25): every topic keeps its place on the rail and the ones with no
+  // SEARCH NARROWS, IT NEVER EMPTIES: every topic keeps its place on the rail and the ones with no
   // match go quiet, so the shape of the page does not change under him and a miss is read as a miss. A search that
   // finds nothing keeps the topic he was on, and says so once, beside the field (searchCount).
   const all = jobs(), searching = words().length > 0;
@@ -2651,7 +2650,7 @@ const opened = location.hash.slice(1);
 if (Object.hasOwn(TOPIC, opened)) { ui.open = opened; ui.chosen = true; ui.shown = true; }
 // before the first read answers, the rail draws its cards: their names and glyphs are this page's own, and each card's
 // state is the ghost of what will land in it (Oct 12: a blank page under its title read as broken)
-// EACH CARD'S GHOST IS THE STATE IT WILL HOLD (Oct 27): the pairs of a word, a figure and a bar the card draws once read,
+// EACH CARD'S GHOST IS THE STATE IT WILL HOLD: the pairs of a word, a figure and a bar the card draws once read,
 // in their own words, their figures striped and their bars empty tracks, so no card grows and no card under it moves
 // when the reads land. A one-line stripe stood where two pairs land, and the rail grew 150 px under the pointer.
 const gPair = (label) => `<div class="pd-q row" aria-hidden="true"><span class="k">${esc(label)}</span><b>${GHOST.fig(2.6)}</b><span class="pd-mini"><i style="width:0%"></i></span></div>`;
@@ -2678,7 +2677,7 @@ const ghostHtml = () => `<div class="jobs${ui.shown ? " open" : ""}" style="${GH
   + `<div class="top"><span class="jglyph">${SV[x.id]}</span><span class="jname">${esc(x.name)}</span></div><div class="jstate"><div class="jdraw">${railGhost(x.id)}</div></div></article>`).join("")}</div>`
   + `<div class="pane" aria-hidden="true"><header><span class="jglyph">${SV[ui.open] ?? SV.busy}</span><div class="who"><div class="top"><span class="name">${esc(TOPIC[ui.open]?.name ?? "")}</span></div></div></header>`
   + `<div class="body kn plate">${ownGhost(PANE_GHOST, ui.open, PANE_GHOST.busy)()}</div></div></div>`;
-// EVERY TOPIC ARRIVES IN ITS OWN SHAPE (Oct 26): opened from a link, a topic draws its sections under their real
+// EVERY TOPIC ARRIVES IN ITS OWN SHAPE: opened from a link, a topic draws its sections under their real
 // kickers, its settings under their own names, and the figures, bars, rows and cards they will hold as ghosts, so
 // nothing moves when the reads land.
 const ghostSec = (body, kicker = "", cls = "") => `<section class="psec${cls ? ` ${cls}` : ""}"><div class="sechead">${kicker ? `<h3 class="kicker">${esc(kicker)}</h3>` : GHOST.bar(5)}</div>${body}</section>`;

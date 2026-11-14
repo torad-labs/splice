@@ -1,7 +1,7 @@
 // NEW: the daemon's account projection as the CLI reads it, one cause per arm. The read returned null
 // for no key, a refused key, nothing answering and a body of another shape alike, and doctor's row
 // read "the daemon's /api/accounts could not be read (mgmt key?)": a Warn with no fix and a guess for a
-// reason (Hitstop's #271 critique, relayed by console). The daemon here is a two-route HttpServer; the
+// reason. The daemon here is a two-route HttpServer; the
 // mgmt key sits in a temp state dir the env points at.
 package splice.diagnostics.doctor
 

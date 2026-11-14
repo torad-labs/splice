@@ -45,7 +45,7 @@ public class LogFileSource(
         }.getOrElse { failure -> LogRebase(unreadable(failure), 0L) }
 
     /** DR-68 (class law, display flavor): one explicit in-band line instead of a silently blank
-     *  dashboard/`splice logs`. Absence says so too (splice-lead, Oct 13): an empty tail read the
+     *  dashboard/`splice logs`. Absence says so too: an empty tail read the
      *  same as a log with no lines for this head, so the console could not tell a fresh install
      *  from a quiet one. */
     private fun unreadable(failure: Throwable): String {

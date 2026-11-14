@@ -11,8 +11,8 @@ import splice.core.wire.AnthropicRequest
 internal class ChatEffortTiers(private val xhighModels: Regex? = null) {
 
     /**
-     * The effort Claude Code's request names, on this vendor's rungs, else the budget tier (Marcos, 2026-10-28:
-     * "claude code picks should also be considered, for all heads and all adapters we do. Always."). Claude Code
+     * The effort Claude Code's request names, on this vendor's rungs, else the budget tier (Claude Code picks are
+     * considered for all heads and all adapters, always). Claude Code
      * names it in output_config (its /effort, its --effort, which a launch sets to the head's configured effort), and
      * a later message's output_config changes it for the turn, as the Responses adapter reads it. A request that
      * names none keeps the budget tier, so a compaction on the same session's request shape keeps its effort.
@@ -42,7 +42,7 @@ internal class ChatEffortTiers(private val xhighModels: Regex? = null) {
      * support cleartext CoT actually emit `reasoning_content`. Compact turns INHERIT the session
      * effort (AGENTS cache law — a mismatched effort cold-starts the prompt cache); tools are
      * stripped separately, effort is deliberately not compact-aware. Thinking off is not a tier: a turn with no
-     * budget gets high, so thinking off never drops the effort (Marcos, 2026-10-27).
+     * budget gets high, so thinking off never drops the effort.
      */
     fun chatReasoningEffort(body: AnthropicRequest, upstreamModel: String): String {
         val budget = body.thinking?.budgetTokens

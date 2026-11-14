@@ -3,7 +3,7 @@
 // with nothing to act on. Through the real page against a stub daemon in the routes' own shapes: a sign-in splice
 // refuses says its word where it was pressed, on a login's card and on + Add account alike, and splice's own reason
 // stands printed under the word; and a command's own login that is signed out and never proved an account draws no card, since
-// it holds no account to sign in again (one that proved its account keeps its card, as Marlin ruled on Oct 10).
+// it holds no account to sign in again (one that proved its account keeps its card).
 // Changed Oct 29 by the accounts-login-cards pass: splice's reason is no longer folded behind its word; it is printed in place
 // beside the refused act (the word alone where splice gave no reason, never an invented one), so it reads with no press.
 // Changed Oct 29 by the console-wide naming fix (anchors of accounts-login-cards, requests-filters and teams-member-cards): a login

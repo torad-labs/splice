@@ -37,7 +37,7 @@ internal object LifecycleWiring {
     private val jar = RunningJar(AdminSupport::selfJar)
 
     /** The jar an upgrade restarts onto: the install's live jar, which the activation just repointed. The jar this
-     *  CLI runs from is the OLD release, so a daemon no unit supervises came back on it (found on a desk, 2026-10-12). */
+     *  CLI runs from is the OLD release, so a daemon no unit supervises came back on it (found on a test machine). */
     fun installedJar(): RunningJar = RunningJar {
         InstallLayout().shareDir(EnvReader(System::getenv)).resolve("splice.jar")
     }

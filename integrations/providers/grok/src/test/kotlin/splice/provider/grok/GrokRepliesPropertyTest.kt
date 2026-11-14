@@ -26,7 +26,7 @@ private val EXPIRED = listOf(
     """{"error":{"message":"The access token could not be validated","type":"invalid_request_error"}}""",
 )
 
-/** xAI's other 403s and 402s, which the standard reads: the spending limit of Oct 20, 10:27:59 PM CT included. */
+/** xAI's other 403s and 402s, which the standard reads: the spending limit of Oct 20 included. */
 private val OTHER = listOf(
     """{"code":"personal-team-blocked:spending-limit","error":"Your team has run out of credits"}""",
     """{"error":{"code":"invalid_image","message":"Image dimensions 1x1 are too small."}}""",

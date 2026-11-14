@@ -3,7 +3,7 @@
 // Doctrine (#924, make drift not compile): hooks and review are probabilistic filters;
 // the only wall that holds against an unbounded generator is one where the violation
 // is inexpressible. An illegal project dependency here is a BUILD ERROR, not a review
-// comment. Pattern lineage: grailseeker's torad.block.ui dependency-law plugin.
+// comment.
 //
 // The table is gradle/module-law.txt and IS the architecture diagram. Changing it is changing the architecture:
 // do that deliberately, and say why in the commit.

@@ -27,7 +27,7 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
         .recyclerPool(recycler).build()
 
     // why: a set, not a list: the duplicate check ran over every earlier name of a 66-field row, a fifth of each
-    // decode in the startup scan (jfr on desk d, Oct 12)
+    // decode in the startup scan (measured with JFR)
     private val seen = HashSet<String>()
     private val numbers = PerfNumericBuilder(pool)
     private var unsharedNames = false

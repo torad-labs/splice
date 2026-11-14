@@ -1,4 +1,4 @@
-// Walls for the round runners (eli design 2026-07-24 + code-review fix round): a spliced turn is
+// Walls for the round runners (design of 2026-07-24 + code-review fix round): a spliced turn is
 // ONE coherent Anthropic message — single message_start, monotonic block indices, exactly ONE
 // terminal; budget exhaustion ends in the honest error AFTER the appended blocks; gone clients
 // never continue (DR-7 REVERSED the watchdog half of that pair — an idle fire reaps a ROUND now,

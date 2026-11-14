@@ -1,5 +1,6 @@
-// NEW: Oct 27, 2026: `splice sessions --json`, the same registry `splice sessions` lists, for a program to read. The
-// Temple lists the sessions it can message from here instead of keeping its own reader of Claude Code's registry. One
+// NEW: Oct 27, 2026: `splice sessions --json`, the same registry `splice sessions` lists, for a program to read. A
+// program can list the sessions it can message from here instead of keeping its own reader of Claude Code's
+// registry. One
 // document on one line: every readable registration with its identity (session id, name, pid and kernel start, socket),
 // its state as Claude Code wrote it, and how Splice judged it (live, stale or gone, and the head it talks to). Registry
 // text is passed through as written, since JSON carries it safely; a program decides what to show.

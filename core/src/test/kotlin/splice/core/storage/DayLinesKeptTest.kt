@@ -1,6 +1,6 @@
-// NEW: Oct 10, 2026 — the row-exact cut over a day store, which is what Marlin's ruling needs and
-// what a whole-day delete cannot give: a UTC day file straddles the person's own midnight, so
-// "Today only" in Chicago has to cut INSIDE the day that began at 19:00 the evening before.
+// NEW: Oct 10, 2026 — the row-exact cut over a day store, which is what "delete my history" needs
+// and what a whole-day delete cannot give: a UTC day file straddles the person's own midnight, so "Today only"
+// in Chicago has to cut INSIDE the day that began at 19:00 the evening before.
 package splice.core.storage
 
 import org.junit.jupiter.api.Assertions.assertEquals

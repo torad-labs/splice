@@ -90,7 +90,7 @@ private val HEALTH_FILES = listOf(
     ".github/PULL_REQUEST_TEMPLATE.md",
 )
 
-// Operator ruling, 2026-09-26: no disclaimer anywhere splice speaks to the people who use it. The
+// 2026-09-26: no disclaimer anywhere splice speaks to the people who use it. The
 // three rules `no-disclaimer` replaced REQUIRED "not affiliated", "at your own risk" and "unofficial"
 // in the README, so every session that took them out went red here and put them back.
 private val DISCLAIMERS = listOf(
@@ -278,7 +278,7 @@ internal object ReleaseReadiness {
             }
         },
         Rule("release-draft-first") { repo -> repo.contains(RELEASE_WORKFLOW, "draft: true") },
-        // Oct 31, 2026: the GitHub release carries notes only and splice.torad.ai serves every staged file, so the
+        // The GitHub release carries notes only and splice.torad.ai serves every staged file, so the
         // licenses ship when the stage task stages them, beside the jar and bound by sha256sums.txt.
         Rule("release-ships-licenses") { repo -> repo.contains(STAGE_BUILD, "THIRD_PARTY_LICENSES.txt") },
     )
@@ -366,7 +366,7 @@ private const val MIN_KOTLIN = 100
 private const val CI_WORKFLOW = ".github/workflows/ci.yml"
 private const val STAGE_BUILD = "app/build.gradle.kts"
 
-// Where releases are downloaded from since Oct 31, 2026 (Marcos: the download belongs at Cloudflare, not GitHub).
+// Where releases are downloaded from (Cloudflare serves the download, not GitHub).
 private const val RELEASE_SITE = "https://splice.torad.ai/download"
 private const val INSTALL_RELEASE = "RELEASE_SITE=\"$RELEASE_SITE\"\n"
 private const val INSTALL_REFUSALS = "echo 'sha256 verification FAILED'; echo 'attestation verification FAILED'\n"

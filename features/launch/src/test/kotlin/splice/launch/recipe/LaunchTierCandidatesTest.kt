@@ -135,7 +135,7 @@ class LaunchTierCandidatesTest(@param:TempDir private val tmp: Path) {
         assertTrue("ANTHROPIC_DEFAULT_OPUS_MODEL" !in recipe.unset, recipe.unset.toString())
     }
 
-    // Two tiers may name one model (Marcos, 2026-10-15: claudex runs opus and sonnet on gpt-6.1-sol).
+    // Two tiers may name one model (claudex runs opus and sonnet on gpt-6.1-sol).
     // Both tiers are planted; the repeat carries the head's discovery spelling of the same model.
     @Test
     fun `two tiers declared on one model are both planted`() {

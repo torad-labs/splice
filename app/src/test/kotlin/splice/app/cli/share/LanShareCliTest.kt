@@ -1,4 +1,4 @@
-// LAN share (docs/specs/lan-share.md, Marcos's ruling of 2026-10-24), its two verbs. The goal: on the server,
+// LAN share (docs/specs/lan-share.md), its two verbs. The goal: on the server,
 // `splice share on` turns sharing on and `splice share status` prints, for each command it offers, the address another
 // machine uses; on a node, `splice remote add <address>` checks that address against the server, keeps it as one line
 // in splice.toml and links the command, `add <server>` adds every command it offers, `splice remote remove` takes one

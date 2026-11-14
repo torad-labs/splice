@@ -1,4 +1,4 @@
-// NEW: LAN share (docs/specs/lan-share.md, Marcos's ruling of 2026-10-24). The daemon's two parts of it: the launch of a
+// LAN share (docs/specs/lan-share.md). The daemon's two parts of it: the launch of a
 // command another machine serves (`[remote.*]`), which the launch service asks when no head here has the name, and the
 // listener that offers this machine's heads to its other machines (`[share]`), opened once the heads and the control
 // plane are up and closed first at stop. A listener that can't open (a port another program holds) is said in the log

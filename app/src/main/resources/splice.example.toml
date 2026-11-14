@@ -54,6 +54,9 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # command shows that day. The same notice is posted to the webhook saved in the console's alert settings, when there
 # is one. Read at the daemon's start.
 # alert_command = ["/usr/local/bin/notify-me", "--from", "splice"]
+# Peer names no peer may register, on top of the built-in ones (docs/peers.md): an inbox or a role of your own setup
+# that a peer must not be able to pose as. Each must be a peer name, or boot refuses. Read at the daemon's start.
+# reserved_peer_names = ["inbox"]
 
 # ── LAN share: this machine's heads, run from your other machines (docs/specs/lan-share.md) ──
 # `splice share on` writes this table and restarts; `splice share status` prints each command's address. Sharing opens
@@ -126,7 +129,7 @@ summary_field = true
 # the same login before HTTP, and every HTTP fallback logs a warning naming session, login and code.
 # With the key false or absent no WebSocket is ever constructed and the request path is
 # byte-identical to a build without the feature.
-websocket = false   # ships off (project law): turning it on is your one-line change here
+websocket = false   # ships off: turning it on is your one-line change here
 # websocket_prefill: when WebSocket is enabled, Codex warms the server with the ordered code-mode
 # instruction/tool prefix before its first generated round. It adds a no-output request. The
 # Responses dialect default is false; the Codex profile enables it. Custom profiles should opt in

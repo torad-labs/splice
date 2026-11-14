@@ -132,7 +132,7 @@ internal class AddChecks(
         val passthrough = provider.dialect == Dialect.ANTHROPIC_PASSTHROUGH
         if (passthrough && provider.auth.kind != API_KEY) return ListedModels.NoCredential
         // A server with no model list is normal, and the person typed the models themselves, so a missing or
-        // unreadable list never stops an add (Marlin's walk, Oct 12). Only a key the server refuses on an openai-chat
+        // unreadable list never stops an add. Only a key the server refuses on an openai-chat
         // or an API-key passthrough endpoint does: the key would fail the first request too.
         val refusesCredential = provider.dialect == Dialect.OPENAI_CHAT || passthrough
         val url = provider.rosterUrl

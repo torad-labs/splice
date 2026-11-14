@@ -73,8 +73,8 @@ export function trackedSources(root: string): string[] {
 
 function runProgram(root: string, compiler: string, program: string): ProgramResult {
   const started = performance.now();
-  // The compiler runs by its plain command through bunx, never by its path, so hostshield's shim takes each run into
-  // the machine's check queue like every other heavy tool (Torad laws, Oct 19, 2026; PR #247 review r3). With
+  // The compiler runs by its plain command through bunx, never by its path, so a host build wrapper can take each run
+  // into its check queue like every other heavy tool. With
   // --no-install, a compiler missing from the tree's node_modules is a census that cannot run, never a download.
   const r = spawnSync("bunx", ["--no-install", compiler, "--noEmit", "--pretty", "false", "--listFiles", "-p", program], {
     cwd: root, encoding: "utf8", maxBuffer: 1 << 28,

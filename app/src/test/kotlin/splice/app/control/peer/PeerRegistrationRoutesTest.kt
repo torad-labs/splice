@@ -2,8 +2,8 @@
 // A register that repeats one already there answers it with 200 and the same session id and key file, where it
 // was refused.
 // POST /api/peers/codex: a Codex home where no app-server listens refuses every attach, a thread its Codex process
-// hosts included, since no message could reach it. Rewritten Oct 28, 2026, when Marcos dropped the hook route that
-// had let a `--no-daemon` thread attach anyway.
+// hosts included, since no message could reach it. Rewritten Oct 28, 2026, when the hook route that had let a
+// `--no-daemon` thread attach anyway was dropped.
 package splice.app.control.peer
 
 import io.ktor.client.HttpClient
@@ -110,8 +110,8 @@ class PeerRegistrationRoutesTest {
     }
 
     // Oct 30, 2026: a thread run by a Codex that is not its home's shared app-server (the ChatGPT desktop app's own, on
-    // this machine) attached with 201, its helper read "the app-server has not loaded the thread" and ended, and the
-    // daemon revoked the peer 20 s later: the caller was told it had a peer, and no message could ever reach it.
+    // the same machine) attached with 201, its helper read "the app-server has not loaded the thread" and ended, and
+    // the daemon revoked the peer 20 s later: the caller was told it had a peer, and no message could ever reach it.
     @Test
     fun `a thread the home's app-server has not loaded is refused, and one it has loaded attaches`(
         @TempDir dir: Path,

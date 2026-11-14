@@ -2,8 +2,9 @@
 //
 // Anthropic gives some Claude plans a few resets to spend. A Fable reset gives back the week's Fable usage and refills
 // the 5-hour limit, a weekly reset refills the week, a full reset refills every limit, a 5-hour reset the 5-hour one.
-// Claude Code offers them with /limit-reset. That evening every login on one machine ran out of Fable at about 6:24 PM
-// CT, and the turns held for it could only wait for Sunday or for Marcos to call a reset on each login by hand.
+// Claude Code offers them with /limit-reset. One evening every login on a machine ran out of Fable,
+// and the turns held for it could only wait for Sunday or for a person to call a reset on each login by
+// hand.
 //
 // This reads a login's resets the way Claude Code 2.1.325 reads them, beside its usage, and spends one the way it does,
 // on the same grant: the first of that kind that can be used now. It spends one only when a person asks for that kind

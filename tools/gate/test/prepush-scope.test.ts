@@ -216,7 +216,7 @@ describe("jar legs run when their inputs match", () => {
 
 // THE CONSOLE'S OWN TESTS RUN WHEN THE CONSOLE CHANGES. tools/console holds Chromium tests of every page, and until Nov 3,
 // 2026 no row ran them: gateTests listed tools/console/**/*.ts among its inputs and ran tools/gate alone, so a console
-// script reached dev checked by `node --check` and nothing else (the President's decision after PR 450).
+// script reached dev checked by `node --check` and nothing else.
 describe("the console's Chromium tests run when the console changes", () => {
   const ladder = JSON.parse(readFileSync(`${repoRoot}/tools/gate/config/ladder.json`, "utf8")) as { legs: Leg[] };
   const direct = (path: string) => scope([path], ladder.legs).legs.map((leg) => leg.task);

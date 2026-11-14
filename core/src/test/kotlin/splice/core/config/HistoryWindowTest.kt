@@ -2,7 +2,7 @@
 // had. Read through ConfigService, which is the only thing that may mint a SpliceConfig, so each
 // case is the merge an operator's own splice.toml produces rather than a hand-built map.
 //
-// WHAT THESE PIN, in Marlin's words: an upgrade never shortens history on its own, so a 90 stays 90
+// WHAT THESE PIN: an upgrade never shortens history on its own, so a 90 stays 90
 // and splice deletes nothing because it learned a new name for the question. 35 is the default only
 // where there is no earlier setting, which is a fresh install — pinned beside the starter that
 // writes it (FreshInstallHistoryWindowTest), because that file is where the number lives.

@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test
 import splice.core.config.Knob
 
 private const val NO_JOB = "no job among the six the page offers"
-private const val NOT_DRAWN = "live, but the drawing of Many agents at once leaves it off (Marlin, Oct 10)"
+private const val NOT_DRAWN = "live, but the drawing of Many agents at once leaves it off"
 private const val ENV_OPT_IN = "on by default for every head; turning it off is an environment or TOML choice (Oct 23)"
 
 class SettingsCoverageTest {

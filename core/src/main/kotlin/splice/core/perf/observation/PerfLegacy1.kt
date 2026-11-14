@@ -92,7 +92,7 @@ internal object PerfLegacy1 {
             "Only on a request the gate HELD because its command's limit was full: how long it sat " +
                 "in the queue. A request that went straight in has no such field, whatever " +
                 "ADMIT_WAIT_MS reads, since a pass through an open gate is not waiting. \"Waited in " +
-                "line\" counts and lists the requests that carry it (Marlin, Oct 12).",
+                "line\" counts and lists the requests that carry it.",
         ),
     )
 

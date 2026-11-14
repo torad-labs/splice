@@ -1,4 +1,4 @@
-// NEW: MCP hub item 6 — whether this machine runs the hub, decided once at boot (splice-config, Oct 12; mcp-hub.md item
+// NEW: MCP hub item 6 — whether this machine runs the hub, decided once at boot (Oct 12; mcp-hub.md item
 // 6). Three checks, in order: a Linux x86-64 machine, since the front and holder are linuxX64 binaries; both binaries
 // present and executable beside splice.jar; and a reachable systemd --user, since every holder starts in its own scope.
 // The first that fails is the reason the daemon logs and the front is answered with. Boot only: the binaries arrive with

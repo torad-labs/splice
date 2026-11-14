@@ -12,7 +12,7 @@ import java.io.IOException
  * Streaming hour reduction keeps one minute decode and bounded aggregate cells, never sixty decoded minutes.
  *
  * A cell is charged what a held point takes ([PerfHistorySize.held]). Charged a flat 2 KiB and its text, the fold
- * held some 900 cells, and an hour of a desk running ten commands across two boots has 1,348 (Nov 9, 2026, 5 PM CT):
+ * held some 900 cells, and an hour of a machine running ten commands across two boots has 1,348 (Nov 9, 2026):
  * that hour never folded.
  */
 internal class PerfHourFold(private val hour: Long) {

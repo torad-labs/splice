@@ -100,7 +100,7 @@ class SessionContinueTest {
     /** The command the lead was started with, as the daemon reads it back from its process: his own `claude` in his own
      *  config folder, its agent kept, resumed by its id on [model]. A relaunch starts it on exactly this. */
     private fun started(model: String?): List<String> =
-        listOf("env", "-u", "CLAUDE_CONFIG_DIR", "/home/p/.local/bin/claude", "--agent", "eli", "-r", LEAD) +
+        listOf("env", "-u", "CLAUDE_CONFIG_DIR", "/home/p/.local/bin/claude", "--agent", "reviewer", "-r", LEAD) +
             model?.let { listOf("--model", it) }.orEmpty()
 
     /** What the daemon answers for the command the lead was started with: [started], unless a test says otherwise. */
@@ -391,7 +391,8 @@ class SessionContinueTest {
         val reply = relaunch(LEAD)
 
         assertEquals(HttpStatusCode.OK, reply.status, reply.body)
-        val line = "env -u CLAUDE_CONFIG_DIR /home/p/.local/bin/claude --agent eli -r $LEAD --model claude-fable-5-1"
+        val line = "env -u CLAUDE_CONFIG_DIR /home/p/.local/bin/claude --agent reviewer -r $LEAD" +
+            " --model claude-fable-5-1"
         assertEquals(listOf(leadPane to "/exit", leadPane to line), terminal.sent)
         assertTrue(terminal.opened.isEmpty() && terminal.restarted.isEmpty(), "he keeps the shell he is in")
         assertEquals(listOf(leadPane), terminal.released)
@@ -440,7 +441,8 @@ class SessionContinueTest {
             "the attempt, then the way back, both on the command it was started with and never on its head's",
         )
         assertTrue(terminal.opened.isEmpty(), "it never leaves its pane")
-        val line = "env -u CLAUDE_CONFIG_DIR /home/p/.local/bin/claude --agent eli -r $LEAD --model claude-fable-5-1"
+        val line = "env -u CLAUDE_CONFIG_DIR /home/p/.local/bin/claude --agent reviewer -r $LEAD" +
+            " --model claude-fable-5-1"
         assertEquals("cd ${rig.repo} && $line", body.getValue("resume").jsonPrimitive.content)
         assertEquals(listOf(leadPane), terminal.released, "its pane is given back its own end")
     }

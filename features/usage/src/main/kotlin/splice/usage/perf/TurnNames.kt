@@ -10,8 +10,8 @@ import splice.core.perf.PerfKeys
 
 /** `?usage=names`: the models, accounts and sessions a window's requests name, in [TurnUsage]'s shapes and keys but
  *  without its figures, for a caller that only lists them. Requests' menus read a week of a command this way: the full
- *  fold priced every row and wrote every session's counters, 8.8 MB in 2.1 s for claude-splice's week on desk c,
- *  while the daemon held that command's other reads behind it (marlin, Oct 12). */
+ *  fold priced every row and wrote every session's counters, 8.8 MB in 2.1 s for claude-splice's week,
+ *  while the daemon held that command's other reads behind it. */
 internal class TurnNames(rows: List<PerfRow>, reading: AccountReading) {
     private val models = linkedSetOf<String?>()
     private val accounts = linkedMapOf<String?, String?>()

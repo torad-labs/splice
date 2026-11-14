@@ -38,7 +38,7 @@ internal object PerfHistorySize {
     }
 
     /** One decoded point as a read holds it in memory. [point] charges the rendered, escaped form, about three times
-     *  this. Charged that way a read's fold held some 700 series in its 2 MiB, and one hour of a desk running ten
+     *  this. Charged that way a read's fold held some 700 series in its 2 MiB, and one hour of a machine running ten
      *  commands records 616 (Nov 11, 2026): a measurement of a day stopped inside its first hours. */
     fun held(value: PerfAggregatePoint): Long = HELD_POINT_BYTES + heldText(value.metric) + heldScope(value.scope) +
         value.buckets.size.toLong() * BUCKET_BYTES

@@ -1,5 +1,5 @@
-// NEW: Oct 11, 2026 — the one project answer (Marlin's ruling): with a Projects folder set, mythos/repo,
-// mythos/Splice-CPO and every worktree under mythos are the project "mythos"; with none set, a repo is named by its
+// NEW: Oct 11, 2026 — the one project answer: with a Projects folder set, acme/repo,
+// acme/api and every worktree under acme are the project "acme"; with none set, a repo is named by its
 // remote. The layouts are built with the files git writes, as RepoResolverTest does.
 package splice.sessions.registry
 
@@ -37,26 +37,26 @@ class ProjectResolverTest {
     fun `with a Projects folder set the repo, a sibling folder and worktrees all resolve to the folder under it`() {
         val base = tmp.toRealPath()
         val projects = Files.createDirectories(base.resolve("projects"))
-        val main = repo(projects.resolve("mythos/repo"), "git@github.com:torad/splice.git")
-        Files.createDirectories(projects.resolve("mythos/Splice-CPO"))
+        val main = repo(projects.resolve("acme/repo"), "git@github.com:torad/splice.git")
+        Files.createDirectories(projects.resolve("acme/api"))
         val inside = worktree(main, main.resolve(".claude/worktrees/feature"), "feature")
         val outside = worktree(main, base.resolve("elsewhere/wt"), "wt")
         val resolver = resolver(base, listOf(projects.toString()))
 
         val expected = ProjectRef(
-            projects.resolve("mythos").toString(),
-            "mythos",
-            "mythos",
+            projects.resolve("acme").toString(),
+            "acme",
+            "acme",
             ProjectSource.FOLDER,
             projects.toString(),
         )
         listOf(
             main,
-            projects.resolve("mythos/Splice-CPO"),
+            projects.resolve("acme/api"),
             inside,
             outside,
             Files.createDirectories(main.resolve("features/deep")),
-            projects.resolve("mythos"),
+            projects.resolve("acme"),
         ).forEach { assertEquals(expected, resolver.of(it.toString()), it.toString()) }
     }
 
@@ -88,14 +88,14 @@ class ProjectResolverTest {
     fun `two Projects folders each holding the same name label both with their parent folder`() {
         val base = tmp.toRealPath()
         val work = Files.createDirectories(base.resolve("work/repo"))
-        val home = Files.createDirectories(base.resolve("mythos/repo"))
-        Files.createDirectories(base.resolve("mythos/solo"))
-        val resolver = resolver(base, listOf(base.resolve("work").toString(), base.resolve("mythos").toString()))
+        val home = Files.createDirectories(base.resolve("acme/repo"))
+        Files.createDirectories(base.resolve("acme/solo"))
+        val resolver = resolver(base, listOf(base.resolve("work").toString(), base.resolve("acme").toString()))
 
         assertEquals("work/repo", resolver.of(work.toString())?.label)
-        assertEquals("mythos/repo", resolver.of(home.toString())?.label)
+        assertEquals("acme/repo", resolver.of(home.toString())?.label)
         assertEquals("repo", resolver.of(work.toString())?.name)
-        assertEquals("solo", resolver.of(base.resolve("mythos/solo").toString())?.label)
+        assertEquals("solo", resolver.of(base.resolve("acme/solo").toString())?.label)
     }
 
     @Test

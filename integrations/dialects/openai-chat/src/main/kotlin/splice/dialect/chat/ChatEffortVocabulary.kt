@@ -9,7 +9,7 @@ import kotlinx.serialization.json.JsonPrimitive
 private const val EFFORT_FIELD = "effort"
 
 /** A provider-opted vocabulary. Explicit client effort wins over the default. Thinking off changes neither
- *  (Marcos, 2026-10-27): the none level is reached only by a client that asks for none. */
+ *  (2026-10-27): the none level is reached only by a client that asks for none. */
 public class ChatEffortVocabulary(
     private val default: String,
     private val levels: Map<String, String>,

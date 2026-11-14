@@ -1,4 +1,4 @@
-// Oct 11, 2026 (fin): on /api/perf/turns a plan account's request is a plan request whether the card prices it or
+// Oct 11, 2026: on /api/perf/turns a plan account's request is a plan request whether the card prices it or
 // not, with its API-rate value kept apart, and the window's cost is the key accounts' alone.
 package splice.usage.perf
 

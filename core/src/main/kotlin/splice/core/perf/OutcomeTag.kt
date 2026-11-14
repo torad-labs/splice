@@ -37,7 +37,7 @@ public enum class OutcomeTag(public val wire: String) {
     /** V4-444: splice GAVE UP on this turn after the no-progress limit passed with nothing from the model. Its own
      *  tag, not [CANCELLED]: a turn nobody cancelled, and the one ending whose cause is the model going quiet
      *  rather than a provider under load. The console reads it as "Given up" and lists these apart from a
-     *  provider's own overload (console BUILD row 46, hitstop). The client still sees an overloaded error type,
+     *  provider's own overload. The client still sees an overloaded error type,
      *  because that is the retryable shape, so this changes what splice RECORDS and not what it answers. */
     TURN_CAP("error:turn-cap"),
 
@@ -118,7 +118,7 @@ public object OutcomeTags {
         !isClean(tag) && tag != UNATTRIBUTED && !isStopped(tag)
 
     /** A request that ended failed and reported no usage at all: it spent nothing the card could price, so it counts as
-     *  failed, never as unpriced (Marlin's Accounts walk, Oct 12: "71 requests with no price" were failed DeepSeek
+     *  failed, never as unpriced (an Accounts walk showed "71 requests with no price" that were failed DeepSeek
      *  turns). "Failed" is the Requests page's own Outcome switch ([isFailed]). */
     public fun isFailedWithoutUsage(tag: String, row: Map<String, Long>): Boolean =
         row[PerfKeys.LOCAL_STEP] != 1L && isFailed(tag) && TurnBill.isEmpty(row)

@@ -18,10 +18,10 @@ private const val MARK = """{"spliceLaunch":true}"""
 
 /** What a person types after `claude`: none of it is a file in splice's state, and none is splice's own hub flag. */
 private val GIVEN = listOf(
-    listOf("--agent", "eli"), listOf("-n", "splice-review-3"), listOf("--allow-dangerously-skip-permissions"),
+    listOf("--agent", "reviewer"), listOf("-n", "splice-review-3"), listOf("--allow-dangerously-skip-permissions"),
     listOf(SKIP), listOf("--model", "claude-fable-5-1"), listOf("--settings", "/home/p/settings.json"),
     listOf("--settings", """{"model":"x"}"""), listOf("--mcp-config", "/home/p/servers.json"),
-    listOf("-r", "splice-lead"),
+    listOf("-r", "alpha-lead"),
     listOf("/review-pr https://github.com/torad/splice/pull/251"), listOf("--", "fix it"),
 )
 
@@ -35,11 +35,11 @@ class LaunchRecipeArgsTest {
         val hub = state.resolve("mcp-hub/launch-41.json").toString()
         val started = listOf(
             "--settings", """{"env":{"A":"1"}}""", "--mcp-config", hub, "--plugin-dir-no-mcp", "/p/a",
-            "--plugin-dir-no-mcp", "/p/b", "--agent", "eli", "/review-pr 251",
+            "--plugin-dir-no-mcp", "/p/b", "--agent", "reviewer", "/review-pr 251",
         )
         val read = LaunchRecipeArgs.callerArgs(started, state, wrapped = true)
 
-        assertEquals(listOf("--agent", "eli", "/review-pr 251"), read)
+        assertEquals(listOf("--agent", "reviewer", "/review-pr 251"), read)
     }
 
     @Test

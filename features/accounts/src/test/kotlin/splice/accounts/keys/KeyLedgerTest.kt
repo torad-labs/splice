@@ -1,4 +1,4 @@
-// NEW: a ledger splice cannot read is kept, never overwritten (Marcos, Oct 11).
+// NEW: a ledger splice cannot read is kept, never overwritten.
 package splice.accounts.keys
 
 import org.junit.jupiter.api.Assertions.assertEquals

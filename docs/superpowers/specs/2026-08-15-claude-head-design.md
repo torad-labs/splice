@@ -1,6 +1,6 @@
 # Claude head — Anthropic passthrough on the client's native auth
 
-2026-08-15. Reviewed by the Eli subagent (parallax pass, findings integrated); revised three
+2026-08-15. Reviewed (findings integrated); revised three
 times on operator direction: (1) Claude gets a first-class path like codex/grok/kimi; (2) no
 shortcuts — the head surface itself becomes properly compositional; (3) the harness's native
 auth lifecycle is never overridden — splice forwards, never holds.

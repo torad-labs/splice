@@ -18,7 +18,7 @@ internal class McpServerMemory(
 
     /** The hosted copy's RSS where splice hosts the server, else the median copy's: zero with no copy running.
      *  Never more than [bytesNow]: one copy shared costs what it costs now, and a copy's RSS counts pages its PSS
-     *  splits with others, so a lone copy read 107.5 MB shared against 98 MB now (marlin, desk m, Oct 12). */
+     *  splits with others, so a lone copy read 107.5 MB shared against 98 MB now. */
     val bytesIfShared: Long = when {
         hosted.isNotEmpty() -> hosted.sumOf { it.rss }
         copies.isEmpty() -> 0L

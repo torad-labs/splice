@@ -368,7 +368,7 @@ class HeadServerStopDrainTest {
         }
     }
 
-    // Eli, Oct 28 (Simon's report): restart drains moved Haiku and Sonnet sessions onto their Opus fallbacks for good.
+    // Oct 28: restart drains moved Haiku and Sonnet sessions onto their Opus fallbacks for good.
     // Claude Code 2.1.312 moves a session with a fallback model onto it after three overloaded answers in a row, and at
     // once after any other 5xx, but it never changes model on a connection error, which it retries ten times. A request
     // that reaches a draining head therefore meets a closed connection and no HTTP answer at all, and its retry reaches
@@ -396,7 +396,7 @@ class HeadServerStopDrainTest {
     }
 
     // #523: a restart used to cut every running turn. Claude Code does not send again a turn cut after its answer
-    // began, so that session stopped until someone typed into it: 8 of the 14 such cuts on one machine, Nov 10 to 12,
+    // began, so that session stopped until someone typed into it: 8 of the 14 such cuts on one host, Nov 10 to 12,
     // 2026. A retiring head now finishes the answers in progress while the next daemon takes everything else.
     @Test
     fun `a retiring head finishes the answer in progress and turns a new request away`(
@@ -538,7 +538,7 @@ class HeadServerStopDrainTest {
     // Oct 29, 2026: a restart already tells the user the server is restarting, so the new daemon just takes over.
     // A restart cuts a running turn at once with the restart line,
     // under the head's own default policy, so the next daemon can take over in seconds. The old 45s wait cut every
-    // turn longer than itself anyway, and bounced every new request while it waited (155 at the 9:48 PM CT install
+    // turn longer than itself anyway, and bounced every new request while it waited (155 at an install
     // of Oct 28).
     @Test
     fun `a restart hands a running turn the restart line at once instead of waiting for it`(

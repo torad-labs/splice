@@ -1,4 +1,4 @@
-// NEW: the stored number (Marlin via fin, Oct 12). An unnamed login reads its plan word and a number it keeps for good,
+// NEW: the stored number. An unnamed login reads its plan word and a number it keeps for good,
 // "Max", "Max 2", "Max 3", counted per provider, so no page ever needs its ref to tell two logins apart.
 package splice.accounts.pool
 

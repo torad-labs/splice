@@ -1,5 +1,5 @@
-// NEW: the Claude half of failover within one provider (operator ruling, Oct 3, 11:44 PM CT: "each provider gets a
-// head, each head can have multiple subscriptions"; Oct 4, 12:00 AM CT: heads are templates, so this serves ANY head
+// The Claude half of failover within one provider (each provider gets a head, each head can have multiple
+// subscriptions; heads are templates, so this serves ANY head
 // built from the Claude template, under any key, plain `claude` included).
 //
 // Turns one command's accounts into the pool entries the head is assembled from. Entry one is the CALLER's own Claude

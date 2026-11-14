@@ -14,13 +14,13 @@ const answers: Record<string, unknown> = {
   "/api/topology": { topology: {
     heads: { alpha: { provider: "alpha-co" } },
     providers: { "alpha-co": { base_url: "https://api.alpha.example" } },
-    compaction: { project: [{ path: "/work/desk", file: "~/notes/compact.md" }] },
+    compaction: { project: [{ path: "/work/web", file: "~/notes/compact.md" }] },
   } },
   "/api/models": { heads: [{ head: "alpha", pinned_model: null, models: [{ id: "alpha-one", label: "Alpha One", resolved: true, slot: "opus" }] }] },
   // the project's rule is a file splice read, and the file holds nothing
-  "/api/projects": { projects: [{ id: "desk", name: "desk", label: "desk", root: "/work/desk", source: "seen",
-    compaction: [{ scope: "project", source: "project:/work/desk file:/home/u/notes/compact.md", chars: 0 }] }], folders: [] },
-  "/api/projects/desk/files": { files: [] },
+  "/api/projects": { projects: [{ id: "web", name: "web", label: "web", root: "/work/web", source: "seen",
+    compaction: [{ scope: "project", source: "project:/work/web file:/home/u/notes/compact.md", chars: 0 }] }], folders: [] },
+  "/api/projects/web/files": { files: [] },
   "/api/doctor": { checks: [] },
   "/api/sessions": { sessions: [] },
   "/api/models/local": { providers: [] },

@@ -1,4 +1,4 @@
-// NEW: Mac session identity for sessions splice did not launch (Temple bundling queue, Oct 13). On Linux, /proc gives
+// NEW: Mac session identity for sessions splice did not launch. On Linux, /proc gives
 // a plain `claude` session three facts: its pid domain and kernel start (ProcPidIdentity), which tell a live session
 // from a reused pid or another container's, and its environment (ProcessEnvironment), whose SPLICE marker tells a
 // session splice never launched (DIRECT) from a launch nothing recorded, and whose CLAUDE_CONFIG_DIR names its config
@@ -24,7 +24,7 @@
 // UNTESTED ON A MAC: written against ps(1) and the bundle above on a Linux machine. Off macOS every member answers
 // null and nothing runs, so the Linux reads are unchanged.
 //
-// Public for one more reader (splice-config, Oct 13): the MCP hub reads a launch's whole environment for its per-session
+// Public for one more reader: the MCP hub reads a launch's whole environment for its per-session
 // server copy (McpHubWiring), as it reads /proc/<pid>/environ on Linux.
 package splice.sessions.registry
 

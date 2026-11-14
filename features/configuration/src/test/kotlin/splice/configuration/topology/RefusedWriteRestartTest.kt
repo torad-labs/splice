@@ -1,4 +1,4 @@
-// A PUT /api/topology that wrote nothing says restart_required false. Marlin's walk of V4-400 on
+// A PUT /api/topology that wrote nothing says restart_required false. Console walk of V4-400 on
 // 3839fcc06: a refused write (missing instruction file) answered ok false with splice.toml untouched and
 // restart_required true, because every refusal path built its Attempt with the default. One test per way
 // a PUT is refused, and a write that moves a boot-only key still says true.

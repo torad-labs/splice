@@ -13,23 +13,22 @@ __pycache__/
 /dist/
 /.cache/
 
-# gradle (the build root is the repository root; the modules live where restructure plan §2.2 puts
-# them, so the module build outputs are ignored at ANY depth — one rule, not one per module)
+# gradle (the build root is the repository root; module build outputs are ignored at any depth)
 .gradle/
 .kotlin/
 build/
 
 # agent worktrees (scratch repo copies)
 .claude/worktrees/
-# per-tool agent configs and release-media workspaces that live beside the repo, never in it
+# per-tool agent configs and media workspaces that live beside the repo, never in it
 .agents/
 .codex/
 dev/media/
 
-# #924 Phase 1: live contract receipts are per-run artifacts, not source
+# live contract receipts are per-run artifacts, not source
 tools/e2e/receipts/
 
-# secrets / credential stores (OSS-A defensive baseline)
+# secrets / credential stores
 .env
 .env.*
 !.env.example
@@ -38,7 +37,7 @@ credentials.json
 *.pem
 *.key
 
-# live capture output (raw request/response dumps — see .dev/release/history-rewrite-runbook.md)
+# live capture output (raw request/response dumps)
 **/capture/*.json
 **/capture/*.log
 
@@ -46,7 +45,7 @@ credentials.json
 *.log
 *.dump
 
-# --- OSS-K: internal-material untrack ignores (per-file, never blanket) ---
+# --- local agent tooling and notes, never committed ---
 .claude/skills/
 .claude/agents/
 .claude/workflows/
@@ -59,15 +58,20 @@ credentials.json
 /.dev/research/gateway-gaps-tracker.md
 # release media projects (a node tree per release video)
 /.dev/media/
-# --- end OSS-K entries ---
+/.claude/PLAN.md
+/.Codex/
+/.impeccable/
+/codegraph.json
+/tools/release/lead-install.sh
+# --- end local tooling ---
 
-# transient operator wall grant (/grant) — never committed
+# transient wall grant (/grant) — never committed
 .claude/state/walls-grant.json
 # hook and tool state written beside the repo's settings (gitleaks reports, restart logs)
 /.claude/state/
 /.impeccable/hook.cache.json
-# tool output a seat's run drops at the root: Playwright's default outputDir, a Java language
-# server's workspace, tsc's incremental cache; screenshots belong in captures/
+# tool output dropped at the root: Playwright's default outputDir, a Java language server's
+# workspace, tsc's incremental cache; screenshots belong in captures/
 /.ci/
 /test-results/
 /workspace/
@@ -76,17 +80,14 @@ credentials.json
 
 # gradle slot lock + holder (bun tools/gate slot)
 /.gradle-slot.lock*
-# A host build wrapper's per-project lock. The gradle slot (tools/gate/src/lib/slot.ts) runs gradle through whatever
-# memory-containment wrapper the box provides, when it provides one, and such a wrapper drops its
-# lock beside the tree it builds — the repository root, where the build is rooted. A machine
-# artifact, never source, and the pattern is the SHAPE rather than one tool's name so a box with a
-# differently-named wrapper needs no edit to this file.
+# A host build wrapper's per-project lock: a memory-containment wrapper around gradle may drop its
+# lock at the repository root. A machine artifact, never source; the pattern matches any wrapper name.
 .*-build.lock
-# per-machine agent tooling installs: skills and hook mirrors for the other seats
+# per-machine agent tooling installs: skills and hook mirrors
 /.agents/
 /.codex/
-# verifier harnesses, receipts and measurements: never committed (operator rule), so a seat's files here are never unlanded work
+# verifier harnesses, receipts and measurements: never committed
 /captures/
 /.Codex/tmp/
-# splice.torad.ai's website, built by tools/release/downloads/website/build.ts; never committed
+# the downloads website, built by tools/release/downloads/website/build.ts; never committed
 tools/release/downloads/site/

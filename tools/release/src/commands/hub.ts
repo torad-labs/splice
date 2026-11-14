@@ -1,24 +1,24 @@
 // `release hub <sha>` — builds the MCP hub's two native binaries at <sha> and keeps them, as built, where the
-// install and the beta look for a qualified pair: ../artifacts/mcp-hub/<short sha>/ (splice-runtime-lead, Oct 13).
+// install and the beta look for a qualified pair: ../artifacts/mcp-hub/<short sha>/.
 //
-// A front change reaches nobody until its binary is rebuilt, qualified and installed, and an ordinary splice install
+// A hub change reaches nobody until its binary is rebuilt, qualified and installed, and an ordinary splice install
 // never rebuilds it: Kotlin/Native writes each source file's absolute path into the binary, so a build in an install's
-// throwaway tree can never hash to the pins (lead-install.sh). This verb is the one place a pair is built. It builds
-// in one tree, /tmp/splice-hub-build, then prints the pair in tools/release/mcp-hub.sha256's format.
+// throwaway tree can never hash to the pins (the maintainer's install script). This verb is the one place a pair is
+// built. It builds in one tree, /tmp/splice-hub-build, then prints the pair in tools/release/mcp-hub.sha256's format.
 //
 // A fixed tree does NOT make a build reproducible, and no two builds of the same sources are expected to hash the same.
 // `strings` on the pairs kept on 2026-10-13 and 2026-10-19 finds the pre-push tree's path, <checkout>/.git/
 // splice-prepush/tree, in every binary and /tmp/splice-hub-build in none: Gradle's build cache (org.gradle.caching=true)
-// hands the compile back from the tree that first made it, with that tree's paths inside (splice-hub-pin, Oct 19). The
+// hands the compile back from the tree that first made it, with that tree's paths inside. The
 // two holders, whose sources did not change between them, differ in 84 bytes: the 6 letters of the project folder's name in one
 // embedded path (the folder was renamed between the two builds), the 20 bytes of the ELF build ID, and 58 more spread through the
 // file that were not decoded. So a pin is the bytes of ONE build: the kept pair ships as built and is never rebuilt to
 // check it, and any other build, a cold cache, another tree or a runner, is expected to hash differently. A rebuild is for changed hub
 // sources (`git diff --quiet <kept sha> <head> -- integrations/mcp-hub`), and it is qualified again.
 //
-// So the qualified bytes travel as they are, and two more verbs carry them (splice-hub-pin for splice-lead, Oct 19):
+// So the qualified bytes travel as they are, and two more verbs carry them:
 //
-//   hub pin <sha>  once hostshield-lead's desk has run the kept pair: copies its two binaries into tools/release/mcp-hub/
+//   hub pin <sha>  once the maintainer has qualified the kept pair: copies its two binaries into tools/release/mcp-hub/
 //                  and writes their hashes into tools/release/mcp-hub.sha256 in one move, so the committed bytes and
 //                  their pins are one commit and cannot disagree. It also records the git tree id of integrations/mcp-hub
 //                  at <sha> in tools/release/mcp-hub.tree. A runner checks out exactly the pair the pins name.
@@ -27,17 +27,17 @@
 //                  do the same by hand from the kept pair). It then compares integrations/mcp-hub at HEAD with the
 //                  recorded tree id and prints one warning line when they differ. That is a warning and never a
 //                  refusal: a hub change after the pin ships the older hub until someone builds, qualifies and pins
-//                  a new pair, and this is how the release says so (splice-lead, Oct 20).
+//                  a new pair, and this is how the release says so.
 //
-// `hub <sha>` qualifies nothing and starts nothing. The qualification is hostshield-lead's: only after its desk has run
-// the kept pair is `hub pin` run, and only then does lead-install.sh install the pair and reload a front that is
-// running. No unit and no installed binary is touched here.
+// `hub <sha>` qualifies nothing and starts nothing. The qualification is the maintainer's: only after it has run
+// the kept pair is `hub pin` run, and only then does the maintainer's install script install the pair and reload a hub
+// that is running. No unit and no installed binary is touched here.
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export const usage = [
   "hub <sha>                            build the MCP hub pair at <sha> and keep it under ../artifacts/mcp-hub/<sha>",
-  "hub pin <sha>                        after hostshield-lead's qualification: commit the kept pair beside its pins and source tree id",
+  "hub pin <sha>                        after the maintainer's qualification: commit the kept pair beside its pins and source tree id",
   "hub place                            check the committed hub pair against the pins, put it where stageRelease reads it, warn if the hub sources moved",
 ].join("\n  ");
 
@@ -107,7 +107,7 @@ function build(ref: string, repoRoot: string): number {
   } finally {
     run(["git", "worktree", "remove", "--force", TREE], repoRoot);
   }
-  console.log(`kept ${kept}; for hostshield-lead to qualify, then \`bun tools/release hub pin ${short}\`:`);
+  console.log(`kept ${kept}; for the maintainer to qualify, then \`bun tools/release hub pin ${short}\`:`);
   for (const b of HUB) console.log(`${sha256(join(kept, `splice-mcp-${b}`))}  splice-mcp-${b}`);
   return 0;
 }

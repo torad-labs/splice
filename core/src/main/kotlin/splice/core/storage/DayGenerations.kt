@@ -6,7 +6,7 @@
 // it rolls except that one `.1`, which every reader already met being replaced.
 //
 // The trace body pack, its eviction marker and every size cap read a generation as the day it was cut from, so a
-// day's rows, bytes and removal take in all of its generations (splice-lead, Oct 12).
+// day's rows, bytes and removal take in all of its generations.
 package splice.core.storage
 
 import splice.core.util.RotationArchive

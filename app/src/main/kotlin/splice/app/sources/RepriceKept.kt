@@ -3,9 +3,9 @@
 //
 // why: its answers lived only in memory, and every hour recorded before the plan split asks to be priced again, so each
 // start decoded every archived perf generation back to the oldest of them: about 57% of the allocation in the first
-// 40 s of the 08:32 CT boot on Oct 20, 12 s of claudex's start and 20 s of claude-splice's. A price is only as good as
+// 40 s of a boot on Oct 20, 12 s of claudex's start and 20 s of claude-splice's. A price is only as good as
 // the cards behind it, so the kept answers carry a key over the build, the card of every model their hours ran and the
-// plan answer for every account that carried them, and are all dropped when that key differs (splice-lead, Oct 20).
+// plan answer for every account that carried them, and are all dropped when that key differs.
 package splice.app.sources
 
 import kotlinx.serialization.Serializable

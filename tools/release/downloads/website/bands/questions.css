@@ -411,7 +411,7 @@
   .qa-route .qa-rwl{display:none}
 }
 
-/* between a 982 px and a 1,100 px list the router answer's second column is under 200 px: each seat's role stands over its command */
+/* between a 982 px and a 1,100 px list the router answer's second column is under 200 px: each member's role stands over its command */
 @container qal (min-width:982px) and (max-width:1100px){
   .qa-seat{flex-wrap:wrap;gap:var(--pg-sp-1) var(--pg-sp-2)}
   .qa-seat em{flex:0 0 100%;min-width:0}

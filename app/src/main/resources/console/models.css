@@ -479,7 +479,7 @@ a.rn-door b { border-bottom: .1rem dotted var(--text-mute); }
 .later svg { width: .95rem; height: .95rem; stroke-width: 1.6; }
 .leg { display: inline-flex; align-items: center; gap: 0.333rem; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
 .leg svg { flex: none; width: .9rem; height: .9rem; stroke-width: 1.6; }
-/* console-lead's per-command setting rows stand in this page's own grid */
+/* per-command setting rows stand in this page's own grid */
 .form .kn, .effgrid .kn { display: contents; }
 .pane .kn .tags { margin-left: 0; }
 /* one picker look in a command's pane: the settings' pickers like the tiers' */
@@ -519,7 +519,7 @@ a.rn-door b { border-bottom: .1rem dotted var(--text-mute); }
 .changes .was { font: 500 .9rem/1.3 var(--font-data); color: var(--text-mute); text-decoration: line-through; overflow-wrap: anywhere; }
 .changes .now { font: 500 .9rem/1.3 var(--font-data); color: var(--text); overflow-wrap: anywhere; }
 .changes .when { display: inline-flex; align-items: center; }
-/* a field whose value its section's Save lists carries the command's colour edge (hitstop) */
+/* a field whose value its section's Save lists carries the command's colour edge */
 .field.dirty { box-shadow: .16rem .16rem 0 var(--c); }
 
 /* ---------- a new command ---------- */

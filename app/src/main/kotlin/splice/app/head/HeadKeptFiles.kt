@@ -1,5 +1,5 @@
 // NEW: V4-260 — the files a head keeps are deleted at the daemon's start once their use is over, not
-// only when the head next writes. Marlin's disk-writes audit (99244e63a) found three stores holding a
+// only when the head next writes. A disk-writes audit (99244e63a) found three stores holding a
 // head's private content past it: an expired compaction answer waited for that head's next save,
 // code-mode state stayed after code mode was turned off or the head was removed, and trace days
 // stayed after trace was turned off. What happens now (V4-286 says it as it is): an expired

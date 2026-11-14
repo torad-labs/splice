@@ -43,7 +43,7 @@ const { repoRoot } = layout();
 // The same L3 wall fixtures the write-time hook test uses: VIOLATION holds `message_stop` outside the sole
 // emitter (error severity); CLEAN is clean under every wall. The path is in scope and not the emitter.
 const TARGET = "core/src/main/kotlin/splice/core/Probe.kt";
-const SEAT_FILE = "core/src/main/kotlin/splice/core/Seat.kt";
+const SOURCE_FILE = "core/src/main/kotlin/splice/core/Widget.kt";
 const VIOLATION = 'class Probe {\n    fun endTurn(out: Writer) {\n        out.write("message_stop")\n    }\n}\n';
 const CLEAN = "class Probe {\n    fun endTurn(out: Writer) {\n        out.close()\n    }\n}\n";
 const MODULE_SETTINGS = 'rootProject.name = "scratch"\ninclude(":core")\nproject(":core").projectDir = file("core")\n';
@@ -277,7 +277,7 @@ describe("a ladder leg the commit's path triggers refuses the commit before the 
   test("RED: the failing leg is named and the Kotlin judgement never runs", async () => {
     const root = dir("splice-hook-legs-");
     git(root, ["init", "-q"]);
-    writeFile(root, "core/src/main/kotlin/splice/core/Seat.kt", CLEAN);
+    writeFile(root, "core/src/main/kotlin/splice/core/Widget.kt", CLEAN);
     git(root, ["add", "--", "core"]);
     commit(root, "chore(test): scratch base");
     writeFile(root, "sgconfig.yml", "ruleDirs: []\n");
@@ -376,7 +376,7 @@ describe("pre-push judges the tip", () => {
     writeFile(root, TARGET, CLEAN);
     git(root, ["add", TARGET]);
     commit(root, "chore(test): probe tip");
-    writeFile(root, SEAT_FILE, VIOLATION);
+    writeFile(root, SOURCE_FILE, VIOLATION);
     const trees: string[] = [];
     const gate: GateRunner = async (tasks, at) => {
       trees.push(at ?? "");
@@ -684,7 +684,7 @@ describe("pre-push stops a gradle run whose push cannot pass, and records how lo
   });
 });
 
-// Load cut 3 (temple plan 2026-10-19-load-cuts-splice-and-torad-main.md, approved by Marcos): the four legs that read no code run
+// The four legs that read no code run
 // and pass before gradle starts. Stopping a gradle run that already started also ends the warm pre-push daemon, so a red title
 // or attribution must never start one.
 describe("the legs that read no code run and pass before gradle starts", () => {
@@ -892,7 +892,7 @@ describe("pre-push scopes the gate to the pushed diff", () => {
     const branch = branchRef(root);
     mainGains(root, branch);
     rebase(root, "origin/main");
-    // two commits pushed together, the remote holding the second; then the seat drops the second and pushes the first by force
+    // two commits pushed together, the remote holding the second; then the session drops the second and pushes the first by force
     const kept = pushedBranch(root);
     writeFile(root, OTHER_TARGET, CLEAN);
     git(root, ["add", OTHER_TARGET]);
@@ -980,7 +980,7 @@ describe("pre-push scopes the gate to the pushed diff", () => {
   });
 });
 
-// Load cut 4 of the temple plan of 2026-10-19, approved by Marcos: :app:codeModePackagedTest reruns the code-mode suites against
+// :app:codeModePackagedTest reruns the code-mode suites against
 // the fat jar, and a push whose changes cannot change what the code-mode worker loads from that jar skips it. Which paths decide
 // is packaged-worker.test.ts's to pin; this pins what the push does with the answer.
 describe("pre-push runs the packaged code-mode test only when the push can change what the worker loads", () => {
@@ -1106,7 +1106,7 @@ describe("pre-push runs the packaged code-mode test only when the push can chang
   });
 });
 
-// Simon asked for the diff-aware test run on Oct 26 2026, with Marcos's approval, while a full check cost about 14 minutes a push:
+// A full check cost about 14 minutes a push, so
 // the pre-push runs the test classes the pushed diff reaches. A full suite runs only for a path tools/gate/config/scope.json marks
 // `full`. A module's own build file or a test fixture checks that module and its dependents, and prints which mode ran and why.
 // Which classes a diff reaches is test-impact.test.ts's to pin; this pins what the push does with the answer: the gradle tasks it
@@ -1265,7 +1265,7 @@ describe("pre-push runs the test classes the pushed diff reaches, and says which
   });
 });
 
-// Load cut 2 of the temple plan of 2026-10-19, approved by Marcos: seats push one shared branch, so pushes queue behind the one
+// Sessions push one shared branch, so pushes queue behind the one
 // being judged, and each holds the commits below it. Only the newest queued push is judged; an older one is told its commit was
 // carried; when the newest fails, the next older one is judged. A push stands for its git process: it is queued while that runs.
 describe("the push lane judges only the newest queued push of a branch", () => {
@@ -1286,7 +1286,7 @@ describe("the push lane judges only the newest queued push of a branch", () => {
     return { root, base, chain: chain as [string, string, string] };
   };
 
-  /** git's stdin for a push of [tip] by its sha, as the seats push, to a branch the remote holds at [base]. */
+  /** git's stdin for a push of [tip] by its sha, as the sessions push, to a branch the remote holds at [base]. */
   const laneStdin = (tip: string, base: string): string => `${tip} ${tip} refs/heads/feat ${base}\n`;
 
   /** A push whose git process is the [n]th fake one, running while [live] holds n. */
@@ -1391,12 +1391,12 @@ describe("the push lane judges only the newest queued push of a branch", () => {
     git(root, ["update-ref", ON_ORIGIN, base]);
     writeFile(root, TARGET, CLEAN.replace("out.close()", "out.close() // x"));
     git(root, ["add", TARGET]);
-    commit(root, "chore(test): one seat's commit");
+    commit(root, "chore(test): one session's commit");
     const x = head(root);
     git(root, ["checkout", "-q", "-b", "other", base]);
     writeFile(root, TARGET, CLEAN.replace("out.close()", "out.close() // y"));
     git(root, ["add", TARGET]);
-    commit(root, "chore(test): another seat's commit, beside it");
+    commit(root, "chore(test): another session's commit, beside it");
     const y = head(root);
     const live = new Set([1, 2]);
     const judged: string[] = [];

@@ -1,6 +1,6 @@
 // NEW: V4-404 — a failed turn's trace has a sentence in words for EVERY failure, not only the ones whose connection
 // ended. RED on the pre-fix telemetry: only TurnConnEnd wrote `failure_sentence`, so an upstream-failed turn's detail
-// read `error:upstream-failed · 3 retries` and then Timing (Marlin's walk of V4-349 on bb54736ea).
+// read `error:upstream-failed · 3 retries` and then Timing (a walk of V4-349 on bb54736ea).
 //
 // Rewritten by failure-handling slice 2 (2026-10-26): the sentence is the line the client read, without its
 // "[splice] " prefix, so the trace cannot say one thing while the client read another. The walk is over every leaf of
@@ -355,7 +355,7 @@ class OutcomeSentenceTest {
     }
 
     @Test
-    fun `an upstream-failed turn after three retries reads in words, Marlin's walk`(@TempDir tmp: Path) = runBlocking {
+    fun `an upstream-failed turn after three retries reads in words`(@TempDir tmp: Path) = runBlocking {
         val rig = Rig("upstream-failed", tmp)
         val knownEnd = TurnKnownEnd(provider(), rig.log, rig.telemetry, HeadHealthCounters())
         val drive = rig.drive()

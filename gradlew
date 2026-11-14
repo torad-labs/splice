@@ -108,24 +108,24 @@ die () {
 #
 #   ONE GRADLE AT A TIME IS A LOCK, NOT A CONVENTION. tools/gate's slot serialises every gradle in
 #   this checkout and all its worktrees, but it only serialises the runs that TAKE it. On
-#   2026-10-10 a seat ran three one-task checks straight through this wrapper beside a run inside
+#   2026-10-10 a session ran three one-task checks straight through this wrapper beside a run inside
 #   the slot. Two writers then shared one test-results directory, and gradle's reporter closed onto
 #   a file the other had already moved: SerializableTestResultStore$Writer.close does
 #   `Files.move(in-progress-results-generic.bin, results-generic.bin, REPLACE_EXISTING)`, so an
 #   existing target is fine and a MISSING SOURCE is the NoSuchFileException that ended the run. The
-#   rule both seats already agreed on did not stop it, so the wrapper now sends itself back through
+#   rule both sessions already agreed on did not stop it, so the wrapper now sends itself back through
 #   the slot and running outside it is no longer something to remember.
 #
 #   WHAT IS EXEMPT, AND WHY. Client-only commands build nothing and take no slot: --version,
 #   --status, --stop and the help flags. Queueing `./gradlew --stop` behind a running build would
-#   hang the seat trying to stop that build, which is the opposite of the point. A run with no
+#   hang the session trying to stop that build, which is the opposite of the point. A run with no
 #   arguments is gradle's own help, and the slot refuses an empty task list by design rather than
 #   report a pass for a run that did nothing. CI is one build per runner with no second writer to
 #   collide with, and its workflow steps call this wrapper directly, so routing them through the
 #   slot would add a bun dependency to every step and serialise nothing.
 #
 #   THE MARKER IS BELIEVED ONLY WHILE ITS RUN IS ALIVE. SPLICE_GRADLE_SLOT is `<label>:<pid>`,
-#   written by the slot (tools/gate/src/lib/slot.ts, spawnGradle). A copy left behind in a seat's
+#   written by the slot (tools/gate/src/lib/slot.ts, spawnGradle). A copy left behind in a session's
 #   exported environment names a process that has exited, and this wrapper then routes as if the
 #   marker were absent. `kill -0` asks, which works where there is no /proc (macOS): the slot runs as this user.
 #
@@ -164,7 +164,7 @@ if [ -z "${CI:-}" ] && [ -f "$APP_HOME/tools/gate/index.ts" ] && splice_builds "
 Two gradle runs in one project directory corrupt each other's test results, so the slot is the
 only way in. Either put bun on PATH and run this again, or name the slot yourself:
 
-    bun tools/gate slot <your-seat> -- $*"
+    bun tools/gate slot <your-name> -- $*"
 fi
 
 # OS specific support (must be 'true' or 'false').

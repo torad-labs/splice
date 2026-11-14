@@ -1,15 +1,15 @@
 // NEW: Oct 10, 2026 — the hours splice holds the turns for but has no hourly total for are built from
-// those turns, so Usage reaches as far back as the request records do (Marlin: "If splice holds a
-// turn, Usage counts it").
+// those turns, so Usage reaches as far back as the request records do (if splice holds a
+// turn, Usage counts it).
 //
 // THE GAP THIS CLOSES. The hourly rollup keeps sums written as each turn finished, trimmed to the
 // history window; the request records are a separate, much larger file set with its own window. When
 // the window widens, or when the rollup's file is younger than the records (a new install of a daemon
 // that keeps more hours than the one before it), the rollup reaches back days less far than the turns
-// on disk do. On this machine the day that happened the figures read: 8.0 days of hourly buckets, 15
+// on disk do. The day that happened the figures read: 8.0 days of hourly buckets, 15
 // days of archived request records. The month view was drawn over the shorter one.
 //
-// AN HOUR IS BUILT ONLY WHEN IT CAN BE EXACT (Marlin). Four refusals, each for a reason a person
+// AN HOUR IS BUILT ONLY WHEN IT CAN BE EXACT. Four refusals, each for a reason a person
 // would recognise as "then don't show me a number":
 //  · the read was not whole — a read error — so no hour in it can be trusted to hold all its turns.
 //    Nothing is backfilled, and the next read tries again.
@@ -30,12 +30,12 @@
 // itself: the oldest, partial hour of the records is dropped, and the records reach back less far than the window
 // (claudex 20.6 days of 35). So every boot decoded every in-window request record again (1.10 GB / 1.02 M rows for
 // claudex, 1.34 GB / 0.85 M for claude-splice), taking live heap from 0.7 to 2.0 GB and committed heap to 4.9 GB in
-// the 30 s after the 2:21 PM and 6:01 PM CT boots. The edge is now kept on disk ([BackfillEdgeFile]).
+// the 30 s after two boots. The edge is now kept on disk ([BackfillEdgeFile]).
 //
 // TORN LINES (Oct 23, 2026). One unparseable line anywhere in the window refused the whole pass, and the refusal lapsed
 // whenever the set of files changed. So after every rotation, about once a day per head, the next read decoded the
 // whole window again to find the same tears: 1.10 GB for claudex, 1.35 GB for claude-splice, whose committed heap went
-// from 1.57 to 2.56 GB at 8:56 PM CT on Oct 22. Archives are never rewritten, so a tear stays for the whole window and
+// from 1.57 to 2.56 GB on Oct 22. Archives are never rewritten, so a tear stays for the whole window and
 // no edge was ever kept. Now a tear leaves out only the hours it could belong to, and the pass succeeds and keeps its
 // edge. A tear with a leading ts costs its own hour. One with none costs the hours its row can lie in: from the newest
 // row ahead of it in its file, less an hour for a row appended late, up to its archive's rotation second, or with no

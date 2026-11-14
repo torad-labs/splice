@@ -1,4 +1,4 @@
-// NEW: `splice upgrade --check` (spec §5; splice-lead's spec check, Oct 13): the newest published release beside the
+// NEW: `splice upgrade --check` (spec §5): the newest published release beside the
 // installed one, read the way the console's Check reads it (UpgradeChecks) on splice.toml's update channel, with nothing
 // staged, activated or restarted.
 package splice.lifecycle.upgrade

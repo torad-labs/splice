@@ -1,4 +1,4 @@
-// NEW: Oct 29, 2026. Temple's North Star journal asked to read a sent message's receipt through the public command
+// NEW: Oct 29, 2026. A caller's journal asked to read a sent message's receipt through the public command
 // rather than its own control-port client: `splice peer status --as <name> <msgId> --json` prints the record the
 // daemon stored for that send, its id, target, outcome and receipt, exactly as stored, and sends and changes nothing.
 // A read the daemon refuses leaves stdout empty and exits non-zero, so a caller never reads a refusal as a receipt.
@@ -138,7 +138,7 @@ private val statusJson: Json = Json
 
 private const val PEER: String = "north-star"
 private const val PEER_KEY: String = "peer-key-for-north-star"
-private const val MSG_ID: String = "temple-op-7f3a9c"
+private const val MSG_ID: String = "harbor-op-7f3a9c"
 private const val REFUSED_RECORD: String =
     """{"msgId":"$MSG_ID","to":"uds:/run/user/1000/cc-socks/42.sock","at":1761750000000,"outcome":"submitted",""" +
         """"receipt":{"status":"refused","detail":"rate limit","at":1761750001000}}"""

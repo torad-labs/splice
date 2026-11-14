@@ -1,7 +1,7 @@
-// NEW: the Claude half of failover within one provider (operator ruling, Oct 3, 11:44 PM CT: "each provider gets a
-// head, each head can have multiple subscriptions"; Oct 4, 12:00 AM CT: heads are templates and the console probes
-// each account's usage). A Claude head's first login is the caller's own Claude Code sign-in, which splice forwards
-// and never holds. Every account added beyond it lives HERE: one splice-owned folder per label under its head, in
+// The Claude half of failover within one provider (each provider gets a head, each head can have multiple
+// subscriptions; heads are templates and the console probes each account's usage). A Claude head's
+// first login is the caller's own Claude Code sign-in, which splice forwards and never holds. Every account added
+// beyond it lives HERE: one splice-owned folder per label under its head, in
 // Claude Code's own file format, written by Claude Code's own `auth login` with CLAUDE_CONFIG_DIR pointed at it.
 //
 // WHY A FOLDER AND NOT `claude setup-token`: a setup-token is scoped user:inference, and the usage endpoint the
@@ -210,7 +210,7 @@ internal class ClaudeAccountFolders(
         discard(directory)
         changes?.completeWithdrawal(head, label)
         val gone = !Files.exists(directory)
-        // The journal says when a login left: on Nov 12, 2026 one added at 9:04:59 AM was gone 18 seconds later, and
+        // The journal says when a login left: on Nov 12, 2026 one was gone 18 seconds later, and
         // no line told what had taken it.
         log("[claude-accounts] $label on $head: ${if (gone) "removed" else "could not be removed, still on disk"}\n")
         return if (gone) ClaudeAccountRemoval.Removed else ClaudeAccountRemoval.Failed

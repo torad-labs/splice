@@ -1,5 +1,5 @@
 // NEW (Nov 13, 2026): a session's own fallback model, while the model it asks for is held on every login. That evening
-// every Fable login on one machine ran out at about 6:24 PM CT and every turn waited until Sunday. A session that names
+// every Fable login ran out one evening and every turn waited until Sunday. A session that names
 // a fallback model on its command runs on it while no login can serve the model it asks for, and goes back on the
 // first turn one can. A session that names none keeps waiting as before: splice never picks a model for a session.
 package splice.head.turn.fallback

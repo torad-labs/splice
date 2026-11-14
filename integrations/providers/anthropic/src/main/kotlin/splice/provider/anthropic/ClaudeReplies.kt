@@ -23,7 +23,7 @@ private const val ORGANIZATION_SETTINGS = "the organization's settings"
 /**
  * Anthropic's deviations for a Claude login: an account its owner, or its organization, must act on.
  *
- * At 2:52:10 PM CT on Oct 27, 2026, Anthropic answered claude-splice with a 400 invalid_request_error reading "We've
+ * On Oct 27, 2026, Anthropic answered claude-splice with a 400 invalid_request_error reading "We've
  * updated our Consumer Terms and Privacy Policy. You'll need to accept them in claude.ai with the email in /status to
  * continue." (daemon.log). The standard reads a 400 as a request the provider rejected, so splice ended 210 turns in
  * one minute saying the request was rejected as sent. The answer is about the account, not the request: every request
@@ -36,7 +36,7 @@ private const val ORGANIZATION_SETTINGS = "the organization's settings"
  * "Your organization has disabled Claude subscription access for Claude Code. Use an Anthropic API key instead, or ask
  * your admin to enable access." The standard reads a 403 as a model the plan leaves out, so the turn moved to another
  * login and nothing held the refused one: it had the most room left, so the pool chose it again for every session that
- * started, 20 of them in the 22 minutes after the 11:12 PM CT start, each answered 403 before it was served elsewhere.
+ * started, 20 of them in the 22 minutes after the start, each answered 403 before it was served elsewhere.
  * It is the same kind of answer as the terms one, about the account and not the request, and it carries its own block.
  */
 public object ClaudeReplies : ProviderDeviation {

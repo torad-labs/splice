@@ -1,4 +1,4 @@
-// NEW: a turn that a spent PLAN window ended is recorded as one, and says when it comes back. Marlin's walk
+// NEW: a turn that a spent PLAN window ended is recorded as one, and says when it comes back. A live walk
 // (f7f1e9308, daemon.log:39520): ChatGPT answered usage_limit_reached with a reset six days out, the retry loop armed the
 // plan hold, and the turn was then recorded error:upstream-failed with the table's "wait a moment and retry"; the turns
 // held behind it read "wait for the limit to clear" with no time, though splice held the instant. V4-444: the
@@ -75,7 +75,7 @@ private const val TRACE_DAY_EPOCH_MS = 1_789_725_600_000L
 private const val TRACE_FILE = "codex-2026-09-18.jsonl"
 private const val TOKYO = "Asia/Tokyo"
 
-// ChatGPT's live weekly-limit body (Sep 28, 5:11 PM CT), reset made relative.
+// ChatGPT's live weekly-limit body (Sep 28), reset made relative.
 private fun usageLimitBody(reset: Long) =
     """{"error":{"type":"usage_limit_reached","plan_type":"pro","resets_at":$reset,""" +
         """"resets_in_seconds":$SIX_DAYS_S,"limit_window_minutes":10080}}"""

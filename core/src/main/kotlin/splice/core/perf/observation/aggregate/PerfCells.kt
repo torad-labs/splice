@@ -43,7 +43,7 @@ internal class PerfCells(private val memory: PerfMemoryAccount?) {
      * every minute was marked. A head or model that had been idle then marked, on its next request, every minute the
      * recorder held. A marked minute cannot be evicted until its page is written again, one page each five seconds,
      * so a full recorder had no minute to give up and refused the new series of the minute in progress. In the hour
-     * after that day's 7:19 AM CT restart it held 601 of the request log's 602 completions and lacked the tokens of
+     * after that day's restart it held 601 of the request log's 602 completions and lacked the tokens of
      * two requests, at 8:04:07 and 8:14:08, and its count of refused cells rose around both.
      */
     fun integrate(series: PerfSeriesKey, from: Long, until: Long, value: Double) {

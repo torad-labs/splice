@@ -246,7 +246,7 @@ class ProbeEconomicsTest {
         assertEquals(original, store.read(), "uncertainty never mutates the genuine bucket")
     }
 
-    // splice-lead, Oct 4: GET /api/economics failed on every poll from 5:18 AM CT because one head's
+    // Oct 4: GET /api/economics failed on every poll because one head's
     // evidence threw. A head that cannot reconcile now answers unavailable with its reason, alone.
     @Test
     fun `one head whose evidence does not reconcile answers unavailable while the others still answer`(

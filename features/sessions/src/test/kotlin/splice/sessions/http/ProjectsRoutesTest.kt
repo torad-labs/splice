@@ -174,7 +174,7 @@ class ProjectsRoutesTest {
             teams = TeamSource { rig.store },
         )
         val row = rig.find(rig.json(sessions.sessionsJson()), "sessions", "session_id", BUILDER)
-        // the card names the team he reads, never its id (Marlin, move check: a bound session showed no team at all)
+        // the card names the team he reads, never its id (a bound session showed no team at all)
         assertEquals("atlas team-0", row.getValue("team_name").jsonPrimitive.content)
     }
 
@@ -221,7 +221,7 @@ class ProjectsRoutesTest {
         assertEquals("null", teamOf(BUILDER), "an archived team binds nothing")
     }
 
-    // Marlin's ruling (Oct 11): with a Projects folder set, the project is the folder directly under it, and the
+    // With a Projects folder set, the project is the folder directly under it, and the
     // session rows, /api/projects and the Teams slots all print the SAME object for it.
     private fun foldersOver(root: Path): SessionsRoutes {
         Files.createDirectories(rig.repo.resolve(".git"))

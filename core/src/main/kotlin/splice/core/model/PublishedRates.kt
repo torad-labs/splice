@@ -1,6 +1,6 @@
 // NEW: Oct 10, 2026 — splice ships each vendor's published list price, so a fresh install prices its turns
-// (Marlin: "Every person who installs splice starts with no rates either, so they'd see 'N turns with no
-// price' on every plan forever"). The prices are data in published-rates.tsv, with each vendor's source and the
+// (every person who installs splice would otherwise see "N turns with no
+// price" on every plan forever). The prices are data in published-rates.tsv, with each vendor's source and the
 // day it was read; RateTable reads them. A card in splice.toml, a head's own card, or a price the
 // provider's model list publishes is always worth more than this one (ProviderConfig.catalogFor).
 //

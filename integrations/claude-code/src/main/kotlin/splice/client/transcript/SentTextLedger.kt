@@ -1,7 +1,7 @@
 // NEW: V4-427 — hold only redacted SendMessage texts, never the conversation, against a file snapshot.
 // A session's subagents send too, and Claude Code keeps their transcripts beside the session's own, in
 // <session>/subagents/*.jsonl (often absolute symlinks): a text the session's file lacks is looked for there
-// (marlin's 3:37 walk, Oct 12: ten of a team's messages were a subagent's).
+// (Oct 12 walk: ten of a team's messages were a subagent's).
 // Unchanged files cost a stat and no transcript bytes. Appends resume at the last complete line;
 // a replaced, shrunk or same-size rewritten file starts over. A boundary guard detects truncate-and-grow.
 package splice.client.transcript
@@ -16,7 +16,7 @@ import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
 
-// why: hold the recent sessions and their subagents (419 beside one session on his machine) without keeping every
+// why: hold the recent sessions and their subagents (419 beside one session on one machine) without keeping every
 // transcript ever visited; an entry is its texts and a 4 KiB tail, so this many cost a few megabytes.
 private const val HELD_FILES = 1024
 

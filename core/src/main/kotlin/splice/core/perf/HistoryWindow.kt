@@ -6,7 +6,7 @@
 // WHY ONE SETTING AND NOT TWO. The two were never two questions a person has: "how far back can I
 // read my spending" and "how far back can I read my requests" are the same question about the same
 // days, asked of two files. Two knobs meant one could silently be shorter than the other, which is
-// how a month-wide view ends up drawn over eight days of buckets (the figure Marlin stopped on
+// how a month-wide view ends up drawn over eight days of buckets (the figure seen on
 // Oct 10). The console asks it once, on Settings > Your data.
 //
 // WHY THE WINDOW IS A TYPE AND NOT AN Int. `forever` is a value a person may choose, and an Int
@@ -18,7 +18,7 @@
 // WHY A DAY IS 24 HOURS HERE, EXCEPT FOR ZERO. For a window of days, 24 hours each makes the cutoff
 // exact and the same in every zone, and no person can read the difference a DST hour makes to a
 // 35-day window. Zero is the one case a person reads as a calendar day: "keep nothing" is a choice
-// the console offers, and a daily budget still has to know what today cost (Marlin, Oct 10, 2026),
+// the console offers, and a daily budget still has to know what today cost,
 // so zero keeps the day that is running where the daemon runs and drops it at that midnight. That is
 // the same boundary the budget day is drawn on (BudgetLedger).
 package splice.core.perf
@@ -38,8 +38,8 @@ private val HISTORY_HOUR_MS = 1.hours.inWholeMilliseconds
  *  weekly quota window with room to spare, so the week-to-date figure stays exact across a reset.
  *
  *  An install that PREDATES this setting does not take it: it keeps the records window it already
- *  had (perfArchiveRetentionDays, 90), because an upgrade never shortens history on its own
- *  (Marlin, Oct 10, 2026). SpliceConfig.historyWindow is where those two meet. */
+ *  had (perfArchiveRetentionDays, 90), because an upgrade never shortens history on its own.
+ *  SpliceConfig.historyWindow is where those two meet. */
 public const val HISTORY_DEFAULT_DAYS: Int = 35
 
 /** The literal word that keeps everything, in splice.toml and on the wire. A word rather than a
@@ -103,8 +103,8 @@ public data class HistoryWindow(
 /**
  * The window AS IT IS NOW, read at every use and never captured.
  *
- * A person who shortens their history on Settings > Your data has shortened it, not scheduled it
- * (Marlin, Oct 10, 2026): "Applied" has to be true when the row says it. A store that captured the
+ * A person who shortens their history on Settings > Your data has shortened it, not scheduled it:
+ * "Applied" has to be true when the row says it. A store that captured the
  * window it was built with would keep trimming by the old one until the daemon restarted, so a
  * person who chose "Today only" for privacy would still be shown last week's spending, which is
  * being told something false. Reading the window per use costs one map lookup in ConfigService and

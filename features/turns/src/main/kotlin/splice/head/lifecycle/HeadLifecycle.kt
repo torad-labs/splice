@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit
 // End in-flight SSE turns with an honest terminal before tearing the engine.
 //
 // The drain's budget is HeadDeps' DEFAULT_STOP_DRAIN_MS, now 0: a restart cuts each running turn at once with the
-// head's restart line rather than waiting for it, so the next daemon takes over in seconds (Marcos, Oct 29, 2026).
+// head's restart line rather than waiting for it, so the next daemon takes over in seconds.
 // The cut is sealed while the client socket is still open, so the client reads the line, never a torn stream. This
 // is the INNERMOST budget of a five-link ladder; see Main.kt's STOP_DEADLINE_MS comment for the whole chain, and
 // DaemonStopBudgetTest for the ordering that keeps each link below the next.

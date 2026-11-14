@@ -223,7 +223,7 @@ public class AccountsRoute(
         writeQuota(into, row, nowSeconds)
         // A credential two heads share is read once per head: the newest failure is the one the page names. A head's
         // primary login is polled under "primary" when its OAuth pool lists it, though the page shows it as the head's
-        // one login with no label, so that row asks both (marlin, Oct 12: claudex read Not read with no reason).
+        // one login with no label, so that row asks both (claudex read Not read with no reason).
         val failure = row.labelsByHead.flatMap { (head, label) ->
             val asked = if (label == null && row.primary) listOf(null, POLLED_PRIMARY) else listOf(label)
             asked.mapNotNull { readFailures?.failure(head, it) }

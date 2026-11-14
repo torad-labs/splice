@@ -122,7 +122,7 @@ class ForeignUnitRestartRefusalTest {
     }
 
     @Test
-    fun `Marlin's walk, a different HOME on a different port, is refused with both homes named`(@TempDir tmp: Path) {
+    fun `a different HOME on a different port, is refused with both homes named`(@TempDir tmp: Path) {
         val daemon = FakeDaemon(OLD)
         val home = tmp.resolve("walk-desk")
         val ctl = FakeSystemctl()

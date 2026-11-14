@@ -7,7 +7,7 @@
 // whenever the vendor can hold the schema. Whatever the backend answers within the schema it was sent, the client
 // gets an answer that is valid against its own schema.
 //
-// Oct 27, 14:01 CT: claudex answered 400 "Invalid schema for response_format 'structured_output' ...
+// Oct 27: claudex answered 400 "Invalid schema for response_format 'structured_output' ...
 // 'additionalProperties' is required to be supplied and to be false" twice, to a schema whose objects did not close.
 // OpenAI documents the subset (https://developers.openai.com/api/docs/guides/structured-outputs, "Supported schemas"):
 // the root is an object and not anyOf, every object sets additionalProperties false and lists every key in required,

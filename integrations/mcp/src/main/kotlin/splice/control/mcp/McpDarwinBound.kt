@@ -1,4 +1,4 @@
-// NEW: Mac containment for hosted MCP servers (Temple bundling list, Oct 13). On Linux a hosted child runs in the slice
+// NEW: Mac containment for hosted MCP servers (Oct 13). On Linux a hosted child runs in the slice
 // the host caps (McpContainment); macOS has no systemd and no cgroup, and it does not enforce the address-space or
 // resident-set rlimits, so nothing the kernel offers an unprivileged process can cap a child's memory. This bound needs
 // no root: every few seconds one `ps -A -o pid=,rss=` gives each process's resident memory, each hosted child is summed

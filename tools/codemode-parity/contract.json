@@ -31,7 +31,7 @@
     { "id": "runtime.errors-and-cancellation", "requirement": "Tool errors, source errors, cancellation and host loss remain distinct and never repeat accepted effects" },
     { "id": "history.append-only", "requirement": "Requests extend authoritative model history without reconstructing old model items from display text" },
     { "id": "history.restart", "requirement": "A daemon restart restores authoritative model history and callback ownership" },
-    { "id": "history.replay-is-not-steering", "requirement": "The captured callback-only replay from splice-lead resumes its script rather than becoming unexpectedReplay steering" },
+    { "id": "history.replay-is-not-steering", "requirement": "The captured callback-only replay resumes its script rather than becoming unexpectedReplay steering" },
     { "id": "history.real-steering", "requirement": "Actual new user steering, compaction, rewind and edited results retain their intended boundaries" },
     { "id": "history.cleared-results", "requirement": "Verified client-cleared results retain their accepted native execution and reasoning history" },
     { "id": "delivery.readable-reasoning", "requirement": "Deliver each real readable reasoning character once, retaining encrypted reasoning only in model history" },

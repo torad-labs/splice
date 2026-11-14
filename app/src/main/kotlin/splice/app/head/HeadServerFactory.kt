@@ -49,7 +49,7 @@ internal class HeadServerFactory(
      *  head built without it would serve turns the console never hears of. */
     private val console: ConsoleEventPublisher? = null,
 ) {
-    /** What splice ships beside Claude Code's prompt for a head that sets none (Marcos, 2026-10-28). */
+    /** What splice ships beside Claude Code's prompt for a head that sets none. */
     private val shippedPrompts = ShippedStandingPrompts()
 
     private val upstreamFactory = UpstreamFactory()

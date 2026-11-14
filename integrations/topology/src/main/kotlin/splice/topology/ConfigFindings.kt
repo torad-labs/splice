@@ -1,4 +1,4 @@
-// NEW: fail-closed boot (project law: "config findings refuse boot, all listed at once, and the CLI offers an
+// NEW: fail-closed boot (design rule: "config findings refuse boot, all listed at once, and the CLI offers an
 // interactive fix session; never boot on a finding or fix silently"). Boot used to stop at the FIRST exception
 // the loader threw, so a file with three problems took three restarts, each naming only the next one.
 //

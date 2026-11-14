@@ -21,7 +21,7 @@ import java.time.format.DateTimeParseException
 /**
  * Muse's two answers of its own, and its key mint's verdicts.
  *
- * A 429's stated reset is SOFT. The 429 of Oct 25, 10:16:47 PM CT named a reset 2 h 8 min out and carried Retry-After
+ * A 429's stated reset is SOFT. The 429 of Oct 25 named a reset 2 h 8 min out and carried Retry-After
  * 7,728,000 ms, and four of the fourteen requests sent over the next seven minutes came back 200, two of them 15 s and
  * 20 s after a 429 naming that reset (audit-verdicts.md:186-197). So the instant is Muse's word about its window, not
  * a closed door: the limit holds with probes, and a probe may be served well before it.
@@ -104,7 +104,7 @@ public object MuseReplies : ProviderDeviation {
  *  continue_reasoning_only quirk from this, so the fact stays in this module. */
 public const val MUSE_CONTINUES_REASONING_ONLY: Boolean = true
 
-/** Muse refuses the `additional_tools` input item. On 2026-10-27 at 13:59 CT, once Claude Code added three tools in a
+/** Muse refuses the `additional_tools` input item. On 2026-10-27, once Claude Code added three tools in a
  *  system message, Muse answered 400 "`input[8]` did not match any supported type", and input[8] was the item splice
  *  sent for them. So a tool the conversation adds or ToolSearch loads rides in the request's tool list, and a removed
  *  one leaves it. The app sets the Responses dialect's accepts_inline_tool_changes quirk from this, so the fact stays
@@ -114,7 +114,7 @@ public const val MUSE_TAKES_INLINE_TOOL_CHANGES: Boolean = false
 /** Muse holds every answer to a json_schema text format to that schema, strict or not: Meta's structured-output docs
  *  (https://dev.meta.ai/docs/structured-output) say output is always schema-constrained, that strict false constrains
  *  it the same way, and that strict true only adds a check of the schema against a subset modeled on OpenAI's, where
- *  every object sets additionalProperties false and lists every key in required. On 2026-10-27 at 14:27 CT Muse
+ *  every object sets additionalProperties false and lists every key in required. On 2026-10-27 Muse
  *  refused 27 requests in two seconds with 400 "'additionalProperties' is required to be supplied and to be false.",
  *  each a strict format over a schema whose objects did not close. The app sets the Responses dialect's
  *  constrains_output_without_strict quirk from this, so the fact stays in this module. */

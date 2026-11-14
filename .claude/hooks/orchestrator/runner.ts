@@ -1,4 +1,4 @@
-/** Generic hook dispatcher for torad-fleet.
+/** Generic hook dispatcher.
  *
  *  Stolen from kandi-main / qgre-agent .claude/hooks/orchestrator/runner.py, with
  *  TWO deliberate divergences documented in checks/HARNESS-REVIEW.md:

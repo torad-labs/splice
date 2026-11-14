@@ -5,7 +5,7 @@
 // `defer_loading` where the upstream cannot read the reference that loads it. A head whose upstream reads the blocks
 // gets the client's tools as sent, and on every head a tool change moves nothing but the tool list.
 //
-// Oct 27, 14:46 CT: claude-kimi logged "content block 'tool_addition' is absent from this head's block_allowlist;
+// Oct 27: claude-kimi logged "content block 'tool_addition' is absent from this head's block_allowlist;
 // dropped from the request, so the upstream never sees it", and the same for 'tool_removal'. The three Claude Docs tools
 // Claude Code added never reached Kimi's model. DeepSeek's endpoint reads tool_reference but refuses both change blocks
 // (its own deserializer's list, 2026-09-16), so its head carries the changes the same way and leaves loading to it.

@@ -25,7 +25,7 @@
 // That sentence used to end "applied to PNG, JPEG and RIFF alike", and the RIFF third of it was
 // FALSE when written: the rule reached every chunk and not the container holding them, so a RIFF
 // declaring it ended after its form word still had a VP8X read out of the bytes past that end.
-// Both reviewing seats found it independently by replaying the rule against every reader rather
+// Both reviewers found it independently by replaying the rule against every reader rather
 // than against the ones this note named — which is the argument for stating a claim narrowly
 // enough to be checked. The container bound now lives in WebpChunks.read, and the rule is applied
 // where it says it is.

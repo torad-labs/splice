@@ -1,4 +1,4 @@
-// Nov 11, 2026 (the Temple's lead, on the President's ruling of that day): `splice mcp install temple --endpoint URL`,
+// Nov 11, 2026: `splice mcp install temple --endpoint URL`,
 // for a Temple that serves its MCP tools itself. The two halves of the command that need no daemon run here as the
 // command runs them: the arguments are parsed and the registration is written. Then the launch plan's own reader says
 // what every client is handed.

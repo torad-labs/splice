@@ -9,7 +9,7 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * An hour whose minutes do not fit one hour file stays as minutes, and this process does not fold it again: the next
  * hour gets its turn. Until Nov 11, 2026 the oldest hour was tried first every time, so one that did not fit was
- * read again at every checkpoint, twice every five seconds and 66,183 times on one desk, and no later hour was ever
+ * read again at every checkpoint, twice every five seconds and 66,183 times on one machine, and no later hour was ever
  * folded: minutes filled the disk allowance and the recorder kept 38 hours where it is meant to keep 35 days.
  */
 internal class PerfHistoryRetention(private val files: PerfHistoryFiles) {

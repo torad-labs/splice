@@ -1,6 +1,6 @@
-// NEW: MCP hub step 1 (docs/specs/mcp-hub.md, draft 2, which Marcos approved on Oct 12) — the servers Claude Code
+// NEW: MCP hub step 1 (docs/specs/mcp-hub.md, draft 2) — the servers Claude Code
 // itself would load for one launch folder, and the ones it would leave out with the reason. Read-only: the plan
-// reads his files and changes no launch. McpLaunchPlanner builds it; /api/mcp reports one per launch folder.
+// reads the user's files and changes no launch. McpLaunchPlanner builds it; /api/mcp reports one per launch folder.
 package splice.client.mcp
 
 import kotlinx.serialization.json.JsonElement

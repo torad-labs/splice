@@ -53,7 +53,7 @@ ENV PATH="/home/tester/.local/bin:${PATH}"
 # own healthy daemon and refuses ("port is occupied by a non-splice or malformed health endpoint"), so the
 # rehearsal never reaches the upgrade. Only the upgrade run builds this stage; the fresh machine stays without it,
 # because 0.4.0 needs none.
-# NO-PYTHON-EXEMPT[2026-10-10]: runs a published 0.3.x as shipped, which needs python3 (President for Marcos, 2026-10-10); remove when the oldest supported upgrade source no longer needs python3.
+# NO-PYTHON-EXEMPT[2026-10-10]: runs a published 0.3.x as shipped, which needs python3; remove when the oldest supported upgrade source no longer needs python3.
 FROM fresh AS upgrade
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*

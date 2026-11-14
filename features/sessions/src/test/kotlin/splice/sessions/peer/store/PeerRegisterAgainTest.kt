@@ -37,11 +37,11 @@ class PeerRegisterAgainTest {
         assertEquals(NAME, store.principal("Bearer ${key.trim()}")?.name, "and still opens the peer's routes")
 
         val elsewhere = Files.createDirectories(dir.resolve("elsewhere")).toString()
-        val moved = registered(store.register(PeerRequest(NAME, elsewhere, listOf("temple")), emptySet()))
+        val moved = registered(store.register(PeerRequest(NAME, elsewhere, listOf("reviewer")), emptySet()))
         assertEquals(RegisterOutcome.UPDATED, moved.outcome)
         assertEquals(first.config.sessionId, moved.config.sessionId)
         assertEquals(elsewhere, PeerStore(dir.resolve("settings")).get(NAME)?.cwd, "peer.json says the new cwd")
-        assertEquals(listOf("temple"), moved.config.sendTo)
+        assertEquals(listOf("reviewer"), moved.config.sendTo)
     }
 
     @Test

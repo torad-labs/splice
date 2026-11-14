@@ -15,7 +15,7 @@
 //   - never seen asking its client for roots: the host offers roots and answers none, so a server that
 //     depends on them shows itself by asking, and from then on its launch tuple launches per session.
 //
-// MCP hub step 3 (docs/specs/mcp-hub.md, splice-lead, Oct 12): every stdio server with a command is now CLASSED,
+// MCP hub step 3 (docs/specs/mcp-hub.md): every stdio server with a command is now CLASSED,
 // shared or per session, and the class is decided in this order: the setup answer (share by default, yes or no),
 // then evidence that forces per session (a cwd, a ${VAR}, a directory argument, roots asked), then the built-in list
 // of servers known to keep state per process, starting with Desktop Commander. A per-session server keeps its

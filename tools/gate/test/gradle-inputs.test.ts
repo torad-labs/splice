@@ -1,7 +1,7 @@
 // The probes that need the real gradle wrapper: each runs gradle, through the slot, in a scratch repository, to prove a declaration
 // gradle reads (the architecture suite's tracked-paths fingerprint, the law suites' tracked-file inputs). They check gradle, not the
 // git hooks, so they live apart from git-hooks.test.ts: a push that changes the hook runs the hook's tests against a stub gradle and
-// starts no real gradle (load cut 5 of the temple plan of 2026-10-19). They run when this file or what it imports changes, and in
+// starts no real gradle. They run when this file or what it imports changes, and in
 // the full gate.
 import { afterAll, describe, expect, test } from "bun:test";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -81,7 +81,7 @@ function writeFile(root: string, path: string, content: string): void {
 /** The real gradle wrapper, run through the gradle slot in a scratch repository: the declaration under test is what gradle reads
  *  there. The slot is runUnderSlot, the function `bun tools/gate slot` calls. The verb finds its layout from its own location, so a
  *  child process runs the function on the scratch layout, and the slot's lock and holder file are the scratch repository's own, so
- *  this run never queues behind or overwrites a seat's build. */
+ *  this run never queues behind or overwrites a session's build. */
 function gradleHere(root: string): (tasks: readonly string[]) => Promise<{ status: number; output: string }> {
   return async (tasks) => {
     const jdk = resolveJdk21();

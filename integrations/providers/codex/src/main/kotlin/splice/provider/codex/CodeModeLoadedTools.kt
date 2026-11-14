@@ -1,6 +1,6 @@
-// NEW (Oct 25, 2026, splice-lead): the client tools a code-mode cell's search loaded in the middle of a conversation.
+// NEW (Oct 25, 2026): the client tools a code-mode cell's search loaded in the middle of a conversation.
 // exec's manual leaves them out, as the turns before the load did, so the request's first item keeps its bytes and the
-// provider's prompt cache keeps the conversation: at 2:05 CT on Oct 25 loading Monitor grew the manual from 42251 to
+// provider's prompt cache keeps the conversation: on Oct 25 loading Monitor grew the manual from 42251 to
 // 49555 characters, and the turn read 0 cached tokens right after a 99% hit. The search's own result describes them
 // instead, which the conversation only ever appends to.
 package splice.provider.codex

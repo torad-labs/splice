@@ -119,7 +119,7 @@ internal class ResponsesTurnState {
     var nativePrefix: ResponsesNativePrefix? = null
     val nativeOutput = ResponsesCompletedOutput()
 
-    // Mid-stream re-anchor salvage (eli 2026-07-24) — see [ToolSalvage].
+    // Mid-stream re-anchor salvage (2026-07-24) — see [ToolSalvage].
     val toolSalvage = ToolSalvage()
 
     // Reasoning-cache capture (RC-1): the round's REAL upstream function_call ids, in order.

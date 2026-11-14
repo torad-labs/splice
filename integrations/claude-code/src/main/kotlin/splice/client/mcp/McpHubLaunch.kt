@@ -1,14 +1,14 @@
-// NEW: MCP hub step 6 (docs/specs/mcp-hub.md; splice-lead, Oct 12, after proofs (e) and (f) passed) — the launch
+// NEW: MCP hub step 6 (docs/specs/mcp-hub.md, after proofs (e) and (f) passed) — the launch
 // side. Every server Claude Code would load for the launch (step 1's plan) that the hub runs, shared or one per
 // session, goes in one owner-only `--mcp-config` file as a hub address under its own name. A same-named entry replaces
-// the user, local or approved project server Claude Code would have started (proof e), so no strict mode, and his
-// claude.ai connectors stay his (the President's ruling). A plugin's servers do not yield to a same-named entry (proof
+// the user, local or approved project server Claude Code would have started (proof e), so no strict mode, and
+// the user's claude.ai connectors stay. A plugin's servers do not yield to a same-named entry (proof
 // a), so a plugin whose every declared server the hub runs is loaded with `--plugin-dir-no-mcp <its install folder>`:
 // its MCP off, its skills and commands under their own names (proof f). That flag is hidden, and an unknown flag can
 // stop a launch, so it is passed only on a Claude Code version where it is known to hold; a plugin without the flag
 // keeps its servers as Claude Code starts them, since an entry beside the plugin's own would only add a copy. When the
 // front does not answer, the launch carries no hub file and no plugin flag, and says so in one line: Claude Code
-// starts its own. Before any front has run on this machine (no front.json), the hub is not set up and nothing is said.
+// starts its own. Before any front has run (no front.json), the hub is not set up and nothing is said.
 package splice.client.mcp
 
 import kotlinx.serialization.json.JsonObject
@@ -102,7 +102,7 @@ public class McpHubLaunch(
         val hub = hubArgs(launch)
         if (hub.args.isNotEmpty()) return hub
         val fallback = fallback(launch)
-        // the overlay still sends his hosted user-scope servers to splice, so the line says only what is true of them
+        // the overlay still sends the hosted user-scope servers to splice, so the line says only what is true of them
         val warning = hub.warning?.let { if (fallback.isEmpty()) it else HUB_UNREACHED_OVERLAY }
         return HubLaunchArgs(fallback, warning)
     }

@@ -1,5 +1,5 @@
-// the Claude half of failover within one provider (operator ruling, Oct 3, 11:44 PM CT: "each provider gets a
-// head, each head can have multiple subscriptions"; Oct 4, 12:00 AM CT: heads are templates, and the console probes
+// the Claude half of failover within one provider (each provider gets a
+// head, each head can have multiple subscriptions; heads are templates, and the console probes
 // each account's usage). An account added beyond the caller's own Claude Code sign-in lives in a splice-owned folder
 // under its head, in Claude Code's own file format, so splice is that credential's only user and only refresher.
 // The sign-in runs in a PENDING folder: an account already in this head's pool is refused there and nothing existing

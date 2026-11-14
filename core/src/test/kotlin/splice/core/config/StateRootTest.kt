@@ -189,7 +189,7 @@ class StateRootTest {
                 home.resolve(LEGACY_STATE_HOME).resolve("state").toString() in paths.rootProbeFault!!,
                 "the fault must name the path an operator has to go look at: ${paths.rootProbeFault}",
             )
-            // PR #247 review: and it refuses the first start, naming that path, before a key exists that
+            // And it refuses the first start, naming that path, before a key exists that
             // would keep the new root live once the old one is readable again.
             val refused = assertThrows<java.nio.file.FileSystemException> { MgmtKey(paths, log = { }).get() }
             assertTrue(legacyRoot.toPath().resolve("state").toString() in refused.message.orEmpty(), refused.message)
@@ -243,7 +243,7 @@ class StateRootTest {
     }
 
     // THE EVIDENCE-OF-STATE ARMS (2026-10-04). A sandboxed process that could not see the pre-0.4 root
-    // created an empty current state dir at 7:16 PM CT; the 7:27 PM CT restart found it, took it as
+    // created an empty current state dir; the next restart found it, took it as
     // DEFAULT, minted a fresh mgmt-key, and every head's history read as empty. A directory is not
     // state; the mgmt-key is the install's. So once both state dirs exist, the keys decide.
     @Test

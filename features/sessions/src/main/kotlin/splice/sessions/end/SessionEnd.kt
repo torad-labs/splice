@@ -1,4 +1,4 @@
-// NEW: Oct 12, 2026 — ending a session from the console, in any state (Marlin's p218 ruling, fin's words "End").
+// NEW: Oct 12, 2026 — ending a session from the console, in any state.
 //
 //   POST /api/sessions/{id}/end   {"confirm": true}   end the client where it runs
 //
@@ -7,7 +7,7 @@
 //
 // NOTHING IS LOST SILENTLY. Ending would cut a turn mid-work, or drop words typed into the prompt and not sent: then,
 // without "confirm", nothing is pressed and the answer says what would go, the working state or the words verbatim,
-// so the page arms and shows them (Marlin). With nothing to lose, End goes on the first ask. Confirmed, a running turn
+// so the page arms and shows them. With nothing to lose, End goes on the first ask. Confirmed, a running turn
 // or a question on screen is stopped first (Escape does both), the prompt is emptied, and `/exit` is typed.
 //
 //   200  it ended: {"session_id", "state": "ended"}.   404  no such running session.

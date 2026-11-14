@@ -64,7 +64,7 @@ internal class UpgradeRelease(
 
     /** Fetch, verify and validate the release into [staging]. [attest] false is the daemon updater (UpgradeAuto): a beta
      *  built while Actions is locked has no attestation, so that run checks every asset against the release sums alone,
-     *  whether or not gh is signed in, and says so per asset (splice-lead, Oct 13). */
+     *  whether or not gh is signed in, and says so per asset. */
     fun stage(base: String, staging: Path, attest: Boolean = true): Upgraded<Staged> {
         val remote = !base.startsWith("file:")
         val gap = if (remote && attest) attestationGap() else null

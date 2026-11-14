@@ -1,4 +1,4 @@
-// NEW: LAN share (docs/specs/lan-share.md, Marcos's ruling of 2026-10-24). The two tables splice.toml carries for it:
+// NEW: LAN share (docs/specs/lan-share.md). The two tables splice.toml carries for it:
 // `[share]` on a machine that offers its heads to the person's other machines on its LAN, and `[remote.<command>]` on
 // a machine that runs one of them. A remote command holds the server's address and nothing else: no credential, no
 // token and no copy of the server's models. What the address names (the head, which of the server's logins, which

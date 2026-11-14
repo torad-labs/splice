@@ -65,7 +65,7 @@ import java.nio.file.Path
 import java.util.UUID
 import java.util.concurrent.ConcurrentLinkedQueue
 
-private const val PEER = "temple"
+private const val PEER = "harbor"
 private const val SEAT = "0a8e7c2b-5d14-4f3a-9b61-2c7e8d9f0a1b"
 private const val SEAT_NAME = "walk-a"
 private const val ID = "tell-7"

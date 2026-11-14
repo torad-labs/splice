@@ -1,4 +1,4 @@
-// The push lane (load cut 2 of the temple plan of 2026-10-19, approved by Marcos). Seats push one shared branch, so pushes queue
+// The push lane. Contributors push one shared branch, so pushes queue
 // behind the one being judged, and a later push holds the commits of the ones before it. Only the newest queued push of a branch is
 // judged. An older one waits while a newer push that holds its commit is queued, judged or sent; once that push lands, the older
 // commit is on the remote, so its push is told it was carried and sends nothing. When the newest fails, the next older one is

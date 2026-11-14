@@ -249,7 +249,7 @@ public class TurnWatchdog(
                 // fold loop open the next — spending past the cap under a name that means "stop".
                 // One breach kind per poller, each cancelling the scope it actually owns.
                 if (idle >= idleLimit) {
-                    // Idle is a probe, never an error (splice-lead's ruling, Oct 12): every tier asks the path first, the
+                    // Idle is a probe, never an error (Oct 12): every tier asks the path first, the
                     // stall re-anchor tier included. A model thinking in silence on a live path is held; only a path that
                     // cannot answer is reaped, and on the stall tier that reap is the re-anchor that resumes it.
                     val pingAgo = path.pingAgoMs()

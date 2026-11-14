@@ -6,7 +6,7 @@
 // 2026-10-13: the MCP host wiring left for ControlMcpWiring.kt, the LaunchService for ControlLaunchWiring.kt, the
 // session source and driver for ControlSessions.kt, the readings and /health body for ControlHealth.kt, the guard and
 // restart successor for ControlServerParts.kt, the console stores for ControlStores.kt and the plugin-flag checks for
-// ControlPluginFlags.kt, each by its own seam with its state and its order unchanged (concentration, splice-lead).
+// ControlPluginFlags.kt, each by its own seam with its state and its order unchanged (concentration).
 package splice.app
 
 import kotlinx.coroutines.cancel

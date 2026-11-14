@@ -174,7 +174,7 @@ class SessionTotalsTest {
     fun `the save on Your data drops a session finished before the moment and keeps one still working`(
         @TempDir tmp: Path,
     ) {
-        // Marlin, Oct 10, 2026: the cut is the session's LAST ACTIVITY against the moment, not
+        // The cut is the session's LAST ACTIVITY against the moment, not
         // whether it could be resumed. Both sessions here are well inside the 30-day idle window, so
         // this arm only passes if the window's own cut is doing the work.
         val totals = store(tmp.resolve("t.json"))

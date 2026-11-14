@@ -38,7 +38,7 @@ internal class TurnUsage(
             val cost = gaps.usd(row)
             val value = gaps.value(row).takeIf { gaps.onPlan(row) }
             // the row's numbers are read once and added to its five groups: each read is a lookup into the packed row,
-            // and reading them per group was most of a week's fold (jfr on desk c, Oct 12)
+            // and reading them per group was most of a week's fold (measured with JFR)
             val counted = counted(row, Priced(cost, value), gaps.of(row))
             val day = Instant.ofEpochMilli(row.ts).atZone(zone).toLocalDate().toString()
             totals.add(counted)

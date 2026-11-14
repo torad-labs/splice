@@ -192,8 +192,8 @@ internal class AccountCredentialEligibility(
         /** The provider refused the account itself until its owner takes this step, which no sign-in changes. It
          *  stands from that refusal until the login serves a turn or its credential names another account: through
          *  the hold, and after the hold's time has run out and the next turn may ask again. Null for every other
-         *  hold. Until Nov 11, 2026 it ended with the hold's time: a login refused at 2:29:35 AM CT read "Use now" on
-         *  its card from 3:29 AM, and a session that found its recovery probe running at 2:29:35 AM moved off it
+         *  hold. Until Nov 11, 2026 it ended with the hold's time: a login read "Use now" on
+         *  its card an hour after its refusal, and a session that found its recovery probe running moved off it
          *  with only "account unavailable" for a reason. */
         val block: AccountBlock? = null,
     )
@@ -282,11 +282,11 @@ internal class AccountCredentialEligibility(
         val renewable: Boolean = false,
     ) {
         /** A changed credential file is a new credential, which ends a hold, except a hold on the ACCOUNT: the
-         *  provider blocked the account, and a rewritten file that still names it is the same blocked login. At
-         *  12:17:14 AM CT on Nov 11, 2026, Claude Code rewrote its credential file around the same token one second
-         *  after its login was held for its organization's block; the hold ended with the rewrite, and the next
-         *  session's first request went to that login 56 seconds after the hold began. [source] is asked for
-         *  its account only then. A file that names another account, or none splice can prove, ends the hold. */
+         *  provider blocked the account, and a rewritten file that still names it is the same blocked login. On Nov 11,
+         *  2026, Claude Code rewrote its credential file around the same token one second after its login was held for
+         *  its organization's block; the hold ended with the rewrite, and the next session's first request
+         *  went to that login 56 seconds after the hold began. [source] is asked for its account only then.
+         *  A file that names another account, or none splice can prove, ends the hold. */
         fun observeIdentity(observed: CredentialFileIdentity, source: CredentialEvidence): State = when {
             !credentialPresent -> recovered(observed)
             identity == null -> copy(identity = observed)

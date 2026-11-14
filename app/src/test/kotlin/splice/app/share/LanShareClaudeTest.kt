@@ -1,5 +1,4 @@
-// LAN share (docs/specs/lan-share.md, Marcos's ruling of 2026-10-24), for the head plain `claude` runs on. Marcos, Oct
-// 25: "claude here is still using a local account instead of the server account on [the server]". The goal: on a node,
+// LAN share (docs/specs/lan-share.md), for the head plain `claude` runs on. The goal: on a node,
 // `claude` runs Claude Code on the server's Claude logins, as `claudex` runs on its ChatGPT login. A Claude head forwards
 // its caller's own login, and devbox's serves every turn from logins it holds itself (its native sign-ins), so it
 // has logins to offer; one whose logins include the caller's own has none it could serve a node with. A node's turn

@@ -1,5 +1,5 @@
-// NEW (Marcos, 2026-10-28): the standing instructions the OpenAI Responses adapter ships beside Claude Code's own
-// prompt, for a head that sets none of its own. Claude Code's prompt stays (Marcos: GPT does best under it, on the
+// The standing instructions the OpenAI Responses adapter ships beside Claude Code's own
+// prompt, for a head that sets none of its own. Claude Code's prompt stays (GPT does best under it, on the
 // benchmarks); this covers what it leaves unsaid for a model that is not Claude, from GPT's claudex transcripts of Oct:
 // ending turns before the work is done, reading far more than the work needs, and polling what has not changed.
 package splice.dialect.responses

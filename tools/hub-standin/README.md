@@ -10,7 +10,7 @@ build, install or update the release pin.
 
 ## Inputs and invocation
 
-Wait for splice-lead to supply the kept candidate carrying `15a0af554` and any
+Wait for the maintainers to supply the kept candidate carrying `15a0af554` and any
 later fixes, its matching daemon jar, and their exact SHA-256 values. The runner
 identifies the executed artifacts by those hashes. The required-behavior commit
 is not a label for the candidate bytes or proof of their build revision. Do not run this

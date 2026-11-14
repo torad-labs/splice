@@ -59,7 +59,7 @@ class AccountPoolTest {
         assertEquals("primary", pool.view("session-b").selectedLabel)
     }
 
-    // Marcos, Oct 3: no threshold of ours. A window short of 100 percent never moves a session, however full.
+    // Oct 3: no threshold of ours. A window short of 100 percent never moves a session, however full.
     @Test
     fun `a window under a hundred percent never moves the session, a full one does`() {
         val fixture = Fixture()
@@ -380,7 +380,7 @@ class AccountPoolTest {
         assertEquals("secret", (primary.auth.credentials() as Credentials.Bearer).token)
     }
 
-    // Marcos, Nov 11, 2026: a login blocked while its organization's payment had failed, signed in again once paid.
+    // Nov 11, 2026: a login blocked while its organization's payment had failed, signed in again once paid.
     @Test
     fun `a blocked login asked again is held no longer, and reads blocked until a turn is served on it`() {
         val fixture = Fixture()

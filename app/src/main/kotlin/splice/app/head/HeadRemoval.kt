@@ -1,4 +1,4 @@
-// NEW: Oct 12, 2026 — removing a command from Models (Marcos's rulings through the splice-lead): the read says what a removal
+// Removing a command from Models: the read says what a removal
 // would leave and who is on the command now, and the removal drops the head from splice.toml through the one topology
 // writer (backup first), unlinks the wrapper no other head shares, empties its account order, and records it as retired
 // so its requests, sessions and usage stay findable. Every store stays in place. A command a live session is using is

@@ -21,6 +21,8 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
@@ -62,6 +64,9 @@ private const val NO_ORGANIZATION = "Anthropic's profile of this login names no 
 // why: the sentence for a login whose token Anthropic refused, said wherever a read or a spend meets it.
 private const val TOKEN_REFUSED = "Anthropic refused this login's token; sign it in again."
 
+/** A spend sent or about to be sent: its organization, grant and request id, kept until an answer confirms it. */
+private data class PendingSpend(val org: String, val grant: String, val requestId: String)
+
 /** One login's resets as Anthropic answered, or the sentence that says why they could not be read. */
 private sealed class ResetRead {
     data class Read(val block: ResetsBlock) : ResetRead()
@@ -79,9 +84,13 @@ internal class ClaudeLimitResets(
     private val json = Json
     private val answered = setOf("reset", "already_used", "not_limited", "cooldown", "ineligible")
 
-    // The request id of a spend whose answer did not confirm it, by organization and grant: the next ask for that grant
-    // sends the same id, so Anthropic counts the two as one request (Claude Code keeps its id the same way).
-    private val unconfirmed = ConcurrentHashMap<String, String>()
+    // The spend whose answer has not confirmed it, by login and kind, held from before its request is sent: the next
+    // ask for that login and kind sends the same grant and id, so Anthropic counts the two as one request (Claude Code
+    // keeps its id the same way), even when the usage read no longer lists that grant as usable because it was spent.
+    private val unconfirmed = ConcurrentHashMap<String, PendingSpend>()
+
+    // One spend at a time: two overlapping asks would each draw a request id, and Anthropic would count two resets.
+    private val spending = Mutex()
 
     /** The resets [token]'s login holds, one row per kind it has, for [label]. */
     suspend fun read(label: String, token: String): LoginResets = when (val read = fetch(token)) {
@@ -90,12 +99,20 @@ internal class ClaudeLimitResets(
     }
 
     /** Spends one reset of [kind] on [token]'s login, when it has one it can use now. */
-    suspend fun spend(label: String, token: String, kind: String): LoginResetSpend = when (val read = fetch(token)) {
-        is ResetRead.Refused -> LoginResetSpend(label, kind, read.outcome, read.said)
-        is ResetRead.Read -> spendFrom(label, token, kind, read.block)
+    suspend fun spend(label: String, token: String, kind: String): LoginResetSpend = spending.withLock {
+        val asked = LoginResetSpend(label, kind, RESET_UNCONFIRMED, "")
+        val pending = unconfirmed["$label:$kind"]
+        when {
+            pending != null -> claim(asked, token, pending)
+            else -> when (val read = fetch(token)) {
+                is ResetRead.Refused -> LoginResetSpend(label, kind, read.outcome, read.said)
+                is ResetRead.Read -> spendFrom(asked, token, read.block)
+            }
+        }
     }
 
-    private suspend fun spendFrom(label: String, token: String, kind: String, block: ResetsBlock): LoginResetSpend {
+    private suspend fun spendFrom(asked: LoginResetSpend, token: String, block: ResetsBlock): LoginResetSpend {
+        val (label, kind) = asked
         val grants = block.grants.filter { it.offered && it.kind == kind }
         val target = grants.firstOrNull { it.usable(clock()) }
         val org = if (block.eligible && target != null) organization(token) else null
@@ -104,7 +121,7 @@ internal class ClaudeLimitResets(
             target == null ->
                 LoginResetSpend(label, kind, "not_now", ResetWords.notNow(kind, grants, block.cooldownUntil, clock()))
             org == null -> LoginResetSpend(label, kind, "refused", NO_ORGANIZATION)
-            else -> claim(LoginResetSpend(label, kind, RESET_UNCONFIRMED, ""), token, org, target)
+            else -> claim(asked, token, PendingSpend(org, target.id, UUID.randomUUID().toString()))
         }
     }
 
@@ -162,18 +179,18 @@ internal class ClaudeLimitResets(
         null
     }
 
-    /** Spends [grant] for the login and kind [asked] names, under [org]. */
-    private suspend fun claim(asked: LoginResetSpend, token: String, org: String, grant: ResetGrant): LoginResetSpend {
-        val key = "$org:${grant.id}"
-        val requestId = unconfirmed[key] ?: UUID.randomUUID().toString()
+    /** Spends [pending] for the login and kind [asked] names, held as unconfirmed until an answer confirms it. */
+    private suspend fun claim(asked: LoginResetSpend, token: String, pending: PendingSpend): LoginResetSpend {
+        val key = "${asked.label}:${asked.kind}"
+        unconfirmed[key] = pending
         val body = buildJsonObject {
             put("program", CLAUDE_RESET_PROGRAM)
-            put("grant_id", grant.id)
-            put("request_id", requestId)
+            put("grant_id", pending.grant)
+            put("request_id", pending.requestId)
         }.toString()
         val answer = Cancellables.runCatchingCancellable {
             client.open().use { http ->
-                val response = http.post(CLAUDE_RESET_ORGS_URL + org + CLAUDE_RESET_SPEND_PATH) {
+                val response = http.post(CLAUDE_RESET_ORGS_URL + pending.org + CLAUDE_RESET_SPEND_PATH) {
                     signed(this, token, beta = true)
                     contentType(ContentType.Application.Json)
                     setBody(body)
@@ -187,7 +204,7 @@ internal class ClaudeLimitResets(
             null
         }
         val spend = spent(asked, answer)
-        if (spend.outcome == RESET_UNCONFIRMED) unconfirmed[key] = requestId else unconfirmed.remove(key)
+        if (spend.outcome != RESET_UNCONFIRMED) unconfirmed.remove(key)
         return spend
     }
 

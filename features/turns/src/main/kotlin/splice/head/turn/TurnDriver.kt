@@ -210,10 +210,10 @@ internal class TurnDriver(
     }
 
     /** Head restart = fresh diagnostic baseline (the HeadHealth doc's promised behavior; the
-     *  counters lived through control-plane restarts before — review 2026-07-19). */
+     *  counters lived through control-plane restarts before — review 2026-07-19). The counters only: the logins' holds
+     *  are HeadLifecycle.restart's to clear, and a head's first start keeps them. */
     internal fun resetHealth() {
         health.reset()
-        deps.quotaBundle.activePool?.reset()
     }
 
     /** Cancel active turns with a head-owned cause while their client sockets are still open. */

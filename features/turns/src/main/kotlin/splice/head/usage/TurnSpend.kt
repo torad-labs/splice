@@ -49,11 +49,21 @@ internal class TurnSpend(
         account: String?,
         outcome: String,
     ) {
+        rollup(SnapshotEconomics().of(snap, model, rateLimited), account, outcome, null)
+    }
+
+    /** A turn a retired head finished, counted by this daemon: it goes into the hour of [rowTs], its row's time, at
+     *  that hour's price. The next daemon counts it only when one of its own turns ends, which on a quiet head can be
+     *  hours later. A turn that finished after its head retired was already answering, so it was never refused at a
+     *  limit. */
+    fun retiredEconomics(rowTs: Long, snap: PerfSnapshot, model: String, account: String?, outcome: String) {
+        rollup(SnapshotEconomics().of(snap, model, false), account, outcome, rowTs)
+    }
+
+    private fun rollup(turn: TurnEconomics, account: String?, outcome: String, atMs: Long?) {
         val store = economics ?: return
         Cancellables.discard(
-            Cancellables.runCatchingCancellable {
-                store.record(SnapshotEconomics().of(snap, model, rateLimited), account, outcome)
-            },
+            Cancellables.runCatchingCancellable { store.record(turn, account, outcome, atMs) },
             "telemetry is best-effort; a turn must never fail on the quota rollup",
         )
     }

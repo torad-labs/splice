@@ -57,6 +57,12 @@ internal class HeadLifecycle(
     }
     suspend fun restart(): Unit = mutex.withLock {
         stopLocked()
+        // NF-01: restart clears whichever cooldown authority the turn path actually uses. Pooled
+        // turns bypass the client-owned legacy cooldown, so reset every account instead.
+        // Only a restart does: a head's first start keeps what its logins brought back from disk, a hold its provider
+        // put on a login and the provider's word on its limits. On 0.4.1's promotion review (Nov 14, 2026) the reset
+        // sat in every start, so the daemon's own boot undid the login holds #521 had just made survive a restart.
+        deps.quotaBundle.activePool?.reset() ?: deps.traffic.upstream.clearRateLimitCooldown()
         startLocked()
     }
 
@@ -69,9 +75,6 @@ internal class HeadLifecycle(
         // restart() is stop-then-start, so this reset alone suffices — a bare stop keeps counters intact.
         driver.resetHealth()
         driver.headStarted()
-        // NF-01: restart clears whichever cooldown authority the turn path actually uses. Pooled
-        // turns bypass the client-owned legacy cooldown, so reset every account instead.
-        deps.quotaBundle.activePool?.reset() ?: deps.traffic.upstream.clearRateLimitCooldown()
         engine.start()
         window.open()
     }

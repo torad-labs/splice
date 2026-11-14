@@ -20,8 +20,10 @@ import splice.core.util.SecureFile
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.locks.ReentrantLock
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
+import kotlin.concurrent.withLock
 import kotlin.concurrent.write
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
@@ -53,6 +55,7 @@ internal fun interface RetiredRowCount {
  *  final name, so the reader never meets half of one and the two processes need no lock between them. */
 internal class RetiredRows(private val dir: Path, private val log: LogSink = LogSink(DaemonLog::write)) {
     private val gate = ReentrantReadWriteLock()
+    private val folding = ReentrantLock()
     private var retired = false
     private val left = AtomicLong(0)
     private val json = Json { ignoreUnknownKeys = true }
@@ -93,9 +96,18 @@ internal class RetiredRows(private val dir: Path, private val log: LogSink = Log
     /** The next daemon's side: each row a retired head left goes to [count] once and its file is removed. A row that
      *  cannot be read is removed too and said in the log, since it would otherwise be met again at every turn. A
      *  daemon stopped between a row's count and its removal counts that row again at its next start. A process that
-     *  has itself retired counts nothing: the rows here are then its own. */
-    fun fold(count: RetiredRowCount) {
-        if (isRetired || !Files.isDirectory(dir)) return
+     *  has itself retired counts nothing: the rows here are then its own.
+     *
+     *  One fold runs at a time, and inside the gate [retire] waits on. Every turn that ends folds, so two turns ending
+     *  together would otherwise both read a row before either removed it and count its cost twice; and a process
+     *  retiring in the middle of a fold would hand over totals the rest of that fold still adds to, while the next
+     *  daemon folds the same rows. The gate is taken before [folding], the order [settle] keeps too. */
+    fun fold(count: RetiredRowCount): Unit = gate.read {
+        if (retired || !Files.isDirectory(dir)) return@read
+        folding.withLock { foldLocked(count) }
+    }
+
+    private fun foldLocked(count: RetiredRowCount) {
         Cancellables.runCatchingCancellable {
             dir.listDirectoryEntries().filter { it.name.endsWith(ROW) }.sortedBy { it.name }.forEach { file ->
                 read(file)?.let(count::count)

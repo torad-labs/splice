@@ -23,6 +23,10 @@ import splice.head.perf.PerfStats
 import splice.head.perf.PerfTranscriptIds
 import splice.head.perf.SessionTotals
 import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.thread
 
 private const val OPUS = "claude-opus-5-5"
 private const val TAG = "a6b15bd7"
@@ -30,6 +34,12 @@ private const val SESSION = "a6b15bd7-1c2d-4e5f-8a9b-0c1d2e3f4a5b"
 
 /** The moment both daemons read as now: the turns below ended seconds before it, so no total has gone idle. */
 private const val NOW = 4_000L
+
+/** Three hours on: when a quiet head's next turn ends and its daemon first looks at what the retired one left. */
+private const val LATER = 3L * 60 * 60 * 1_000
+
+// why: how long a fold counting a row waits for a second fold to count the same row; the second fold must not.
+private const val SECOND_FOLD_WAIT_MS = 500L
 
 private val PRICE = TurnPrice(
     ModelCatalog(
@@ -122,5 +132,47 @@ class RetiredTurnsTest {
         RetiredTurns(next, TurnSpend(), NoHeadEvents).fold()
         assertEquals(2L, turnsOf(next), "the row was still there for the daemon that counts")
         assertTrue(AsyncFileIo.drain(), "the file lane drained")
+    }
+
+    // Every turn that ends looks at what the retired head left, so two ending together both look.
+    @Test
+    fun `two turns ending together count a turn the retired head left once`(@TempDir tmp: Path) {
+        val retiring = daemon(tmp)
+        retiring.retired.retire()
+        retiring.record(turn(), COLD, at = 3_000L)
+        val next = daemon(tmp)
+        val counted = AtomicInteger()
+        val counting = CountDownLatch(1)
+        val secondDone = CountDownLatch(1)
+        val first = thread {
+            next.retired.fold {
+                counting.countDown()
+                // The second turn ends while this one is counting the row.
+                secondDone.await(SECOND_FOLD_WAIT_MS, TimeUnit.MILLISECONDS)
+                counted.incrementAndGet()
+            }
+        }
+        counting.await()
+        val second = thread {
+            next.retired.fold { counted.incrementAndGet() }
+            secondDone.countDown()
+        }
+        first.join()
+        second.join()
+        assertEquals(1, counted.get(), "the turn's cost is counted once")
+    }
+
+    @Test
+    fun `a turn the retired head left goes into the hour it ended in`(@TempDir tmp: Path) {
+        val retiring = daemon(tmp)
+        retiring.retired.retire()
+        retiring.record(turn(), COLD, at = 3_000L)
+        val economics = EconomicsStore(tmp.resolve("claude-splice-economics.json"), PRICE, WallClock { LATER })
+        // The next daemon's first own turn ends three hours later, on a quiet head.
+        RetiredTurns(daemon(tmp), TurnSpend(economics), NoHeadEvents).fold()
+        val hours = economics.read()
+        assertEquals(listOf(0L), hours.map { it.hour }, "the turn is in the hour it ended in, not the hour it was read")
+        assertEquals(1L, hours.single().turns)
+        assertEquals(0.525, hours.single().cost.costUsd!!, 1e-9)
     }
 }

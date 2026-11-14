@@ -9,8 +9,10 @@
 //
 // The upstream keeps generating until it ends on its own; only what reaches the client is cut. Text that could be the
 // start of a stop string is held until the next delta settles it, so a stop split across two deltas is never half
-// shown. Text a backend sent only in its final snapshot is cut the same way: read on from what is held ([finish]), or,
-// when nothing was streamed, cut where the answer is taken from the buffer ([answer]).
+// shown. A block that closes while holding such text keeps it for the text that comes next, since a block's close does
+// not end the answer: a Responses message item can close before the final snapshot brings the rest of its text. Text a
+// backend sent only in its final snapshot is cut the same way: read on from what is held ([finish]), or, when nothing
+// was streamed, cut where the answer is taken from the buffer ([answer]).
 package splice.upstream.sse
 
 import kotlinx.serialization.json.JsonArray
@@ -35,6 +37,9 @@ public class StopSequenceCut(private val sink: WireSink, stops: List<String>) : 
     private val held = LinkedHashMap<WireBlockIndex, StringBuilder>()
     private val shown = StringBuilder()
 
+    /** What a block was holding as the start of a stop string when it closed: the next text reads on from it. */
+    private var closedTail = ""
+
     /** The stop string the text was cut at, or null while none has appeared. */
     public var matched: String? = null
         private set
@@ -45,7 +50,7 @@ public class StopSequenceCut(private val sink: WireSink, stops: List<String>) : 
 
     override suspend fun textDelta(index: WireBlockIndex, text: String) {
         if (matched != null || text.isEmpty()) return
-        val pending = held.getOrPut(index) { StringBuilder() }.append(text)
+        val pending = held.getOrPut(index) { StringBuilder() }.append(takeClosedTail()).append(text)
         val hit = firstStop(pending)
         if (hit != null) {
             held.remove(index)
@@ -62,26 +67,35 @@ public class StopSequenceCut(private val sink: WireSink, stops: List<String>) : 
 
     override suspend fun addTextBlock(text: String) {
         if (matched != null) return
-        val hit = firstStop(text)
-        val kept = hit?.let { text.substring(0, it.at) } ?: text
+        val whole = takeClosedTail() + text
+        val hit = firstStop(whole)
+        val kept = hit?.let { whole.substring(0, it.at) } ?: whole
         shown.append(kept)
-        sink.addTextBlock(kept)
+        // a block the stop cut to nothing is not sent: an empty text block is no answer
+        if (hit == null || kept.isNotEmpty()) sink.addTextBlock(kept)
         hit?.let { matched = it.stop }
     }
 
     override suspend fun closeBlock(index: WireBlockIndex) {
-        release(index)
+        held.remove(index)?.let { if (matched == null) closedTail += it }
         sink.closeBlock(index)
     }
 
+    /** Everything ends: a closed block's held text is no stop after all, so it is shown, in a block of its own. */
     override suspend fun closeAll() {
         releaseAll()
         sink.closeAll()
+        val tail = takeClosedTail()
+        if (tail.isNotEmpty() && matched == null) {
+            shown.append(tail)
+            sink.addTextBlock(tail)
+        }
     }
 
     /** A round whose output is dropped takes its cut with it: the next round starts uncut. */
     override fun discard() {
         held.clear()
+        closedTail = ""
         shown.setLength(0)
         matched = null
         sink.discard()
@@ -90,15 +104,15 @@ public class StopSequenceCut(private val sink: WireSink, stops: List<String>) : 
     /** Ends the streamed text, before any block closes through a sink but this one. [suffix] is the rest of the answer
      *  that the backend sent only in its final snapshot: it is read on from the text still held, in the block that
      *  holds it, so a stop split between the stream and the snapshot is found. Then the text still held is shown: no
-     *  stop followed it. Returns what of [suffix] is left to send as a block of its own, all of it when no block was
-     *  holding text. */
+     *  stop followed it. Returns what is left to send as a block of its own: all of [suffix] when no open block was
+     *  holding text, after what a closed block was holding, which the block's own [addTextBlock] cuts at its stop. */
     public suspend fun finish(suffix: String?): String? {
         val open = held.keys.lastOrNull()
         val rest = if (suffix != null && open != null) {
             textDelta(open, suffix)
             null
         } else {
-            suffix
+            (takeClosedTail() + suffix.orEmpty()).takeIf { it.isNotEmpty() || suffix != null }
         }
         releaseAll()
         return rest
@@ -117,6 +131,8 @@ public class StopSequenceCut(private val sink: WireSink, stops: List<String>) : 
         }
         return if (matched != null) shownText else text
     }
+
+    private fun takeClosedTail(): String = closedTail.also { closedTail = "" }
 
     private suspend fun releaseAll() {
         held.keys.toList().forEach { release(it) }

@@ -154,6 +154,9 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     // LAN share (docs/specs/lan-share.md): the one listener beyond loopback, which offers this machine's heads to its
     // other machines, and the launch of a command another machine serves: Claude Code pointed at that machine.
     ":features-share" to setOf(":core", ":integrations-claude-code", ":integrations-http", ":features-launch"),
+    // Server mode (docs/specs/server-mode.md): the listener that answers only keys, on what share already offers a
+    // listener. Its tests stand in for a head, whose contract (SharedHead) names features-launch's LaunchSpec.
+    ":features-server" to setOf(":core", ":integrations-http", ":features-share", ":features-launch"),
     // the management plane reads the domain, the client side it assembles a launch spec for, and
     // the head-start slice it delegates starting a head to.
 )

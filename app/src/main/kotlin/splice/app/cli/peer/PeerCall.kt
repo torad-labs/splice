@@ -33,6 +33,8 @@ private const val PEER_KEY_FILE_ENV = "SPLICE_PEER_KEY_FILE"
 internal class PeerCall(
     private val env: EnvReader,
     private val err: TerminalOutput,
+    /** The verb whose name every refusal carries: `splice server` makes its calls through this class too. */
+    private val verb: String = "peer",
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val codexNames = CodexNames()
@@ -111,7 +113,7 @@ internal class PeerCall(
     private fun url(path: String): String = "http://127.0.0.1:${AdminSupport.controlPort(env)}$path"
 
     private fun fail(message: String): String? {
-        err.line("splice peer: $message")
+        err.line("splice $verb: $message")
         return null
     }
 }

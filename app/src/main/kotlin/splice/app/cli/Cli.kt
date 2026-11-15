@@ -78,7 +78,7 @@ public class Cli {
 private const val VERBS_USAGE =
     "usage: splice [setup|add <profile>|add-model|models [provider]|upgrade|status|\n" +
         "  sessions [relaunch]|perf|usage --json|wire <head> [--last N] [--json]|\n" +
-        "  peer <verb>|\n" +
+        "  peer <verb>|server <key|person> <verb>|\n" +
         "  share [on|off|status]|remote [add|remove]|restart [--now]|console [<action>]|\n" +
         "  trace <head> [--last N] [--session S] [--turn ID] [--json] [--purge]|\n" +
         "  login <head> [--label <name> [--discard]]|\n" +

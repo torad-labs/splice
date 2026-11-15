@@ -32,6 +32,7 @@ import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
 import splice.app.head.QuotaPollSeams
 import splice.app.probe.LocalWindowRefresh
+import splice.app.server.DaemonServer
 import splice.app.share.DaemonShare
 import splice.client.mcp.McpShareChoice
 import splice.client.resume.originals.TranscriptOriginals
@@ -239,6 +240,9 @@ public class Daemon(
 
     /** LAN share: the commands this machine runs on another's heads, and the listener that offers its own. */
     private val share = DaemonShare(topology, config, TurnKey(mgmtKey), log, statePaths.stateDir)
+
+    /** Server mode: a team's keys and the listener that answers them, when splice.toml has a `[server]`. */
+    private val server = DaemonServer(topology, config, TurnKey(mgmtKey), log, statePaths.stateDir, topologyDir)
     private val stopLock = Mutex()
     private var stopped = false
 
@@ -300,6 +304,9 @@ public class Daemon(
         // The share listener opens before the control plane too: `splice share on` restarts, waits for /health, and
         // reads the share port at once.
         share.open(heads, controlPort)
+        // And the server listener, with its keys: `splice server key create` asks the control plane for them.
+        server.open(heads, controlPort)
+        controlPlane.serverMode = server
         controlPlane.start(
             controlPort = controlPort,
             heads = heads,
@@ -310,7 +317,7 @@ public class Daemon(
             },
             headCount = topology.heads.size,
             probes = headProbes,
-        ) ?: return share.close()
+        ) ?: return closeListeners()
         // MCP hub step 6: each installed Claude Code version's --plugin-dir-no-mcp verdict, checked in the background.
         controlPlane.pluginFlagChecks.request()
         prices.start()
@@ -355,7 +362,7 @@ public class Daemon(
         controlPlane.ownership.quiet()
         headProbes.fenceStarts()
         controlPlane.ownership.fence()
-        share.close()
+        closeListeners()
         headProbes.closeStarts()
         val kept = headShutdown.retireHeads(heads.values.map { it.head }, HEAD_STOP_BUDGET_MS, log) {
             controlPlane.ownership.leave()
@@ -387,7 +394,7 @@ public class Daemon(
             headProbes.fenceStarts()
             controlPlane.ownership.fence()
             // No other machine's turn starts on a head that is about to drain.
-            if (!retired) share.close()
+            if (!retired) closeListeners()
 
             // Heads stop in PARALLEL under a phase DEADLINE, then control stops — see
             // [HeadShutdown.stopHeads]. The supervisor scope + stopFailureHandler live there so an
@@ -406,6 +413,12 @@ public class Daemon(
             if (!retired) closeBackground()
             stopped = true
         }
+    }
+
+    /** The two listeners that bring other machines' turns to the heads here: LAN share's and server mode's. */
+    private suspend fun closeListeners() {
+        share.close()
+        server.close()
     }
 
     /** What runs beside the heads, closed once the heads no longer take turns. Probe cancellation runs AFTER the

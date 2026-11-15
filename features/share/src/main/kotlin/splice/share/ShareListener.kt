@@ -38,15 +38,11 @@ import io.ktor.server.plugins.origin
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
 import io.ktor.server.request.queryString
-import io.ktor.server.response.respondText
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import splice.core.client.SESSION_HEADER
 import splice.core.config.TurnKey
-import splice.core.topology.SHARE_AUTH_PARAM
-import splice.core.topology.SHARE_MODELS_PARAM
 import splice.core.topology.ShareConfig
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
@@ -65,6 +61,7 @@ public class ShareListener(
 ) {
     private val admission = LanAdmission(heads.machine, share.hostnames, HostPrefixes(log))
     private val relay = ShareRelay(turnKey, controlPort, heads.machine, io, log)
+    private val catalog = ShareCatalog(heads, io, ShareErrors.voice)
     private val launches = SharedLaunches(heads.machine)
     private val json = Json { encodeDefaults = true }
 
@@ -97,14 +94,8 @@ public class ShareListener(
         val refusal = withContext(io) { admissionRefusal(call) }
         if (refusal != null) return ShareErrors.refuse(call, HttpStatus.FORBIDDEN, refusal)
         val parts = call.request.path().split('/').filter(String::isNotEmpty)
-        val named = parts.firstOrNull() ?: return info(call)
-        val offered = withContext(io) { heads.offered() }
-        val head = offered.firstOrNull { it.command == named } ?: offered.firstOrNull { it.key == named }
-        if (head == null) {
-            val offers = offered.joinToString(", ") { it.command }.ifEmpty { "nothing" }
-            val why = "${heads.machine} offers no command named '$named'; it offers $offers"
-            return ShareErrors.refuse(call, HttpStatus.NOT_FOUND, why)
-        }
+        val named = parts.firstOrNull() ?: return catalog.directory(call)
+        val head = catalog.named(call, named) ?: return
         route(call, head, parts.drop(1))
     }
 
@@ -114,8 +105,8 @@ public class ShareListener(
         val login = rest.firstOrNull()?.takeIf { it.startsWith(LOGIN_MARK) }?.drop(1)
         val path = if (login != null) rest.drop(1) else rest
         when {
-            path.firstOrNull() == API_ROOT -> turn(call, head, login, path)
-            login == null && path == listOf(LAUNCH_ROUTE) -> launch(call, head)
+            path.firstOrNull() == HEAD_API_ROOT -> turn(call, head, login, path)
+            login == null && path == listOf(HEAD_LAUNCH_ROUTE) -> catalog.launch(call, head)
             path == listOf(STATUSLINE) -> relay.statusline(call, head) { body -> login?.let { lined(head, it, body) } }
             else -> ShareErrors.refuse(call, HttpStatus.NOT_FOUND, "no such path on ${heads.machine}")
         }
@@ -130,34 +121,10 @@ public class ShareListener(
             ?: "a web page may not reach this machine's heads".takeIf { HttpHeaders.Origin in call.request.headers }
     }
 
-    private suspend fun info(call: ApplicationCall) {
-        val offers = withContext(io) {
-            heads.offered().map { head ->
-                val models = head.launch()?.models?.availableModelIds.orEmpty()
-                ShareOffer(head.command, head.key, head.running(), models, head.logins())
-            }
-        }
-        val body = json.encodeToString(ShareInfo.serializer(), ShareInfo(heads.machine, offers))
-        call.respondText(body, ContentType.Application.Json)
-    }
-
-    private suspend fun launch(call: ApplicationCall, head: SharedHead) {
-        if (!head.running()) return notRunning(call, head)
-        val params = call.request.queryParameters
-        val read = withContext(io) { launches.of(head, params[SHARE_AUTH_PARAM], params[SHARE_MODELS_PARAM]) }
-        when (read) {
-            is SharedLaunchRead.Read -> {
-                val body = json.encodeToString(SharedLaunch.serializer(), read.launch)
-                call.respondText(body, ContentType.Application.Json)
-            }
-            is SharedLaunchRead.Refused -> ShareErrors.refuse(call, read.status, read.why)
-        }
-    }
-
     /** A turn for [head], on [login] when the address named one. A login it lacks is refused rather than run on
      *  another; a turn that names no session cannot be pinned, so with a login named it is refused too. */
     private suspend fun turn(call: ApplicationCall, head: SharedHead, login: String?, path: List<String>) {
-        if (!head.running()) return notRunning(call, head)
+        if (!head.running()) return catalog.notRunning(call, head)
         val posted = call.request.httpMethod == HttpMethod.Post
         if (posted && !sentAsJson(call)) {
             return ShareErrors.refuse(call, HttpStatus.BAD_REQUEST, "a turn's body must be application/json")
@@ -199,35 +166,14 @@ public class ShareListener(
         val session = JsonScalars.str(JsonScalars.objectOrNull(json, body.decodeToString()), STATUSLINE_SESSION)
         return pinned(head, login, session?.takeIf(String::isNotBlank), runs = false)
     }
-
-    private suspend fun notRunning(call: ApplicationCall, head: SharedHead) {
-        val why = "${head.command} is not running on ${heads.machine}; `splice restart` there starts it again"
-        ShareErrors.refuse(call, HttpStatus.SERVICE_UNAVAILABLE, why)
-    }
 }
-
-/** What `GET /` answers: this machine and the commands it offers. */
-@Serializable
-public data class ShareInfo(val machine: String, val commands: List<ShareOffer>)
-
-/** One offered command: what an address names it by, its head, whether it runs now, its models and its logins. */
-@Serializable
-public data class ShareOffer(
-    val command: String,
-    val head: String,
-    val running: Boolean,
-    val models: List<String>,
-    val logins: List<String>,
-)
 
 // All interfaces: LanAdmission decides who is answered, by source address and Host, before anything else runs. On a
 // host with IPv6 the JDK binds this wildcard as `::`, so IPv6 sources on the LAN reach it too.
 private const val SHARE_BIND_HOST = "0.0.0.0"
 
-// The path segment that marks the login a turn runs on (`/claudex/@work/v1/messages`), and the API's own root.
+// The path segment that marks the login a turn runs on (`/claudex/@work/v1/messages`).
 private const val LOGIN_MARK = "@"
-private const val API_ROOT = "v1"
-private const val LAUNCH_ROUTE = "launch"
 private const val STATUSLINE = "statusline"
 
 // The key Claude Code names a statusline's session under in the JSON it feeds the statusline.

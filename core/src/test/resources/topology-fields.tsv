@@ -168,6 +168,16 @@ providers.*.window_rules[].context_window
 providers.*.window_rules[].prefix	
 remote	
 remote.*.url	
+server	
+server.admins	
+server.commands	
+server.limits	
+server.limits.inflight_per_person	
+server.limits.rpm_per_person	
+server.listen	
+server.tls_cert	
+server.tls_key	
+server.trusted_proxies	
 share	
 share.enabled	
 share.hostnames	

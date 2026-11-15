@@ -62,6 +62,12 @@ public sealed class Command {
         override suspend fun run(): Int = splice.app.cli.peer.PeerCommand().run(args)
     }
 
+    /** `splice server <key|person> <verb>`: the keys and the people of a team's front door
+     *  (docs/specs/server-mode.md). */
+    public data class Server(val args: List<String>) : Command() {
+        override suspend fun run(): Int = splice.app.cli.server.ServerCommand().run(args)
+    }
+
     /** `splice share <verb>`: offer this machine's commands to the person's other machines on its LAN
      *  (docs/specs/lan-share.md). */
     public data class Share(val args: List<String>) : Command() {

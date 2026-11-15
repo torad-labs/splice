@@ -12,6 +12,8 @@
 // turned into a client of the heads.
 package splice.share
 
+import splice.core.listen.IpLiterals
+import splice.core.listen.IpPrefix
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
@@ -19,7 +21,6 @@ import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress
 import java.net.NetworkInterface
-import java.net.UnknownHostException
 
 internal class LanAdmission(
     /** This machine's host name as the OS reports it, full or short. */
@@ -29,9 +30,6 @@ internal class LanAdmission(
     /** The prefixes this machine's own interfaces hold: what makes a routable address a machine on this LAN. */
     private val attached: AttachedPrefixes,
 ) {
-    private val ipv4 = Regex("""^\d{1,3}(\.\d{1,3}){3}$""")
-    private val ipv6 = Regex("""^[0-9A-Fa-f:.]+$""")
-
     // The domains a house router, mDNS or a home DNS puts this machine's short name under.
     private val lanSuffixes = listOf("local", "lan", "home", "internal")
 
@@ -92,19 +90,7 @@ internal class LanAdmission(
         else -> host
     }
 
-    /** An IP literal parsed with no DNS lookup, or null for a name. Only digits, hex letters, `:` and `.` are handed
-     *  to the parser, which looks a name up; a zone (`%en0`) is dropped first. */
-    private fun literal(text: String): InetAddress? {
-        val bare = text.substringBefore('%')
-        val looksLiteral = ipv4.matches(bare) || (':' in bare && ipv6.matches(bare))
-        if (!looksLiteral) return null
-        // A literal of the right letters that still does not parse (an octet past 255) is no address at all.
-        return try {
-            InetAddress.getByName(bare)
-        } catch (_: UnknownHostException) {
-            null
-        }
-    }
+    private fun literal(text: String): InetAddress? = IpLiterals.parse(text)
 
     private fun carrierGrade(ip: InetAddress): Boolean {
         val bytes = (ip as? Inet4Address)?.address ?: return false
@@ -119,16 +105,7 @@ internal class LanAdmission(
 internal data class SharePrefix(val address: InetAddress, val bits: Int, val link: String) {
 
     /** Whether [other] sits on this prefix: the same address family, with those leading bits equal. */
-    fun holds(other: InetAddress): Boolean {
-        val ours = address.address
-        val theirs = other.address
-        if (ours.size != theirs.size || bits !in 0..ours.size * Byte.SIZE_BITS) return false
-        return (0 until bits).all { bit(ours, it) == bit(theirs, it) }
-    }
-
-    /** The bit at [index] of [bytes], counted from the most significant bit of the first byte, as a prefix counts. */
-    private fun bit(bytes: ByteArray, index: Int): Int =
-        (bytes[index / Byte.SIZE_BITS].toInt() shr (Byte.SIZE_BITS - 1 - index % Byte.SIZE_BITS)) and 1
+    fun holds(other: InetAddress): Boolean = IpPrefix(address, bits).holds(other)
 }
 
 /** The prefixes this machine's interfaces hold right now. Read at each request rather than kept: a Wi-Fi hop, a

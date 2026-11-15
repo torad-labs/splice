@@ -124,6 +124,10 @@ public class ConsolePorts {
     /** Native command-local logins, assigned before management and launch requests are served. */
     public var claudeLogins: ClaudeLoginPlaces? = null
 
+    /** Nov 15, 2026: the daemon's server mode (docs/specs/server-mode.md), assigned by ControlPlane and asked at each
+     *  request; null answers the `/api/server` routes with a named 409. */
+    internal var serverMode: ServerModeSource? = null
+
     /** Each login's last failed limits read, assigned by ControlPlane; null reads as no failure on any login. */
     public var quotaReadFailures: QuotaReadFailureSource? = null
 

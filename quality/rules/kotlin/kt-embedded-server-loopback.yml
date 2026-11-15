@@ -17,6 +17,10 @@
 # share listener, which opens only when `[share] enabled`, binds all interfaces, and admits only a source on this
 # machine's own networks that names this machine in its Host, before anything else runs. Every other embeddedServer
 # stays loopback-only; a second exemption needs its own decision recorded the same way.
+#
+# A SECOND exemption, by its own decision (docs/specs/server-mode.md, which overturns the single-user loopback boundary
+# for a team's front door): the server listener, which opens only when splice.toml has a `[server]`, binds the address
+# `[server] listen` names, and answers nothing but `GET /health` without a key the operator issued to one person.
 id: kt-embedded-server-loopback
 language: kotlin
 severity: error
@@ -26,6 +30,7 @@ files:
   - "**/src/main/**/*.kts"
 ignores:
   - "features/share/src/main/kotlin/splice/share/ShareListener.kt"
+  - "features/server/src/main/kotlin/splice/server/ServerListener.kt"
 rule:
   pattern: embeddedServer($$$ARGS)
   not:

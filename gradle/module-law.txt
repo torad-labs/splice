@@ -75,6 +75,10 @@
 # LAN share (docs/specs/lan-share.md): the one listener beyond loopback, which offers this machine's heads to its other
 # machines, and the launch of a command another machine serves: Claude Code pointed at that machine.
 :features-share -> :core :integrations-claude-code :integrations-http :features-launch
+# server mode (docs/specs/server-mode.md): the listener that makes this machine a team's front door, answering only
+# per-person keys, with the keys and each person's limits. It serves the directory, a command's launch and the turns
+# through the share module's own writers, so the other machine reads a server as it reads a sharing machine.
+:features-server -> :core :integrations-http :features-share
 :quality-architecture ->
 # :quality-compiler-plugin is a Kotlin-compiler plugin: zero project deps in main (it talks to the compiler,
 # not our modules), wired into every build only via the -Xplugin classpath (see gateway/build.gradle.kts).

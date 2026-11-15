@@ -150,3 +150,5 @@ a647799d38d70d51ba0e324e720020deca2508e4:tools/codemode-parity/current-api-refer
 # PKCS#8 key's base64 body between its header and footer markers in the operator's tls_key file. Opened at the commit:
 # the line holds the two markers and a capture group, no key material, and the key itself is read at run time.
 d4f2dff621ee32f61df9e6ec9d80d1f2c4eb51f3:features/server/src/main/kotlin/splice/server/PemTls.kt:private-key:19
+# The same PemTls.kt line 19, as #616's squash put it on main (023b10c58): same path, rule and line, new commit.
+023b10c58cac8f2b38c188883ecefae315acf8d1:features/server/src/main/kotlin/splice/server/PemTls.kt:private-key:19

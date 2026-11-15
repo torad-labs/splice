@@ -6,6 +6,8 @@
 - Overturns: the `docs/specs/v0.4.0.md` boundary "Preserve the single-user, loopback product boundary.
   Remote/multi-user hosting is not a missing feature to quietly fold into this release." Single-user
   stays: one person's own machines. Loopback-only moves for exactly one opt-in listener.
+- Beside it since 2026-11-15: server mode (`docs/specs/server-mode.md`) serves a team, each person by key,
+  on a listener of its own. A daemon runs share mode or server mode, never both.
 
 ## The goal
 

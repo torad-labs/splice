@@ -34,7 +34,9 @@ console is loopback-only, bearer-guarded, served as one HTML file from the daemo
 
 There are no teams, no tenants, no end users of the console other than the operator. That rules
 whole categories of competitor features out (§5) and makes others uniquely possible (§4, marked
-"only here").
+"only here"). Server mode (`docs/specs/server-mode.md`, 2026-11-15) adds a team's people as clients of
+the daemon, not as console users: the console stays the operator's alone, and that spec plans a Server
+page for it.
 
 ## 2. The daemon surface the console must cover
 

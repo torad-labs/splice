@@ -7,6 +7,7 @@ base = 'main'
 judged = [
   '.campaign/checks/',
 ]
+agent = 'campaign seat'
 
 [feature."server-front"]
 goal = "A splice daemon serves a team on a listener of its own: every request carries a person's key (operator-issued, hashed at rest, revocable one at a time or per person), admins manage keys from the CLI, the control plane or the listener, and each person is held to an in-flight cap and an optional requests-per-minute cap. Spec: docs/specs/server-mode.md, F1 and the limits half of F3."

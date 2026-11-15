@@ -9,6 +9,8 @@ dependencies {
     implementation(project(":core"))
     implementation(project(":integrations-http"))
     implementation(project(":features-share"))
+    // a kept-alive turn's silences are waited out on the runtime's Waiter seam (ServerMode's constructor names it).
+    implementation(project(":integrations-upstream"))
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.netty)
     implementation(libs.kotlinx.coroutines.core)

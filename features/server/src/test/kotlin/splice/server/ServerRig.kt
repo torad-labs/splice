@@ -19,6 +19,8 @@ import splice.core.util.LogSink
 import splice.launch.LaunchSpec
 import splice.share.SharedHead
 import splice.share.SharedHeads
+import splice.upstream.Waiter
+import splice.upstream.codemode.ProcessWaiter
 import java.nio.file.Path
 import java.time.Clock
 
@@ -42,12 +44,13 @@ internal class StandInHead(
     override fun requestReadTimeoutMs(): Long = 5_000
 }
 
-/** Server mode on loopback for one test: it writes its lines to [log], reads the time off [clock], and the servers
- *  behind its providers are what [upstreams] says. */
+/** Server mode on loopback for one test: it writes its lines to [log], reads the time off [clock], the servers
+ *  behind its providers are what [upstreams] says, and a kept-alive turn's silences are waited out on [waiter]. */
 internal class ServerRig(
     private val log: LogSink = LogSink { },
     private val clock: Clock = Clock.systemUTC(),
     private val upstreams: HeadUpstreams = object : HeadUpstreams {},
+    private val waiter: Waiter = ProcessWaiter(),
 ) {
     /** The port the listener answers on. */
     val port: Int = TestPorts.reserve()
@@ -67,7 +70,7 @@ internal class ServerRig(
             override fun offered(): List<SharedHead> = heads
         }
         val reach = ServerReach(TurnKey(MgmtKey(StatePaths(baseOverride = state))), TestPorts.reserve())
-        val opened = ServerMode(server, state.resolve("server"), Dispatchers.IO, log, clock, upstreams)
+        val opened = ServerMode(server, state.resolve("server"), Dispatchers.IO, log, clock, upstreams, waiter)
         mode = opened
         opened.open(ServerAddress("127.0.0.1", port), machine, reach, state)
         return opened

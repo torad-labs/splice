@@ -10,10 +10,13 @@ import splice.core.topology.ServerAddress
 import splice.core.topology.ServerConfig
 import splice.core.util.LogSink
 import splice.share.RefusalVoice
+import splice.share.RelayClock
 import splice.share.RelaySpeaker
 import splice.share.ShareRelay
 import splice.share.SharedHead
 import splice.share.SharedHeads
+import splice.upstream.Waiter
+import splice.upstream.codemode.ProcessWaiter
 import java.nio.file.Path
 import java.time.Clock
 
@@ -38,6 +41,8 @@ public class ServerMode(
     private val clock: Clock = Clock.systemUTC(),
     /** The servers behind this machine's providers (F4); none for a daemon whose providers are each one server. */
     upstreams: HeadUpstreams = object : HeadUpstreams {},
+    /** What a kept-alive turn's silences are waited out on (F4, `keepalive_seconds`): the process clock. */
+    private val waiter: Waiter = ProcessWaiter(),
 ) {
     private val keys = ServerKeys(folder.resolve(KEYS_FILE), io, clock)
     private val people = ServerPeople(folder.resolve(PEOPLE_FILE), io)
@@ -63,7 +68,7 @@ public class ServerMode(
             keys = keys,
             limits = PersonLimits(server.limits, people, clock),
             heads = ServedHeads(heads, server.commands),
-            relay = ShareRelay(reach.turnKey, reach.controlPort, heads.machine, io, log, speaker),
+            relay = ShareRelay(reach.turnKey, reach.controlPort, heads.machine, io, log, speaker, RelayClock(waiter)),
             tls = server.pem(configDir)?.let { PemTls(it).keyStore() },
             people = people,
             upstreams = upstreamApi,

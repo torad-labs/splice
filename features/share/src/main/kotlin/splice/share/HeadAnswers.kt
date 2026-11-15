@@ -7,7 +7,8 @@
 // answered in a second has its stream opened to the client then, a keepalive written at once and at each interval,
 // and the head's events after them when they come. The status has gone out as 200 by then, so a head that refuses
 // such a turn late, or does not answer it, is said as the stream's `error` event, in the head's own words where it
-// gave them. A head that answers within the second answers as it always did, its own status included.
+// gave them. A head that answers within the second answers as it always did, its own status included. The second
+// and the interval are waited out on the relay's clock (RelayClock).
 package splice.share
 
 import io.ktor.http.ContentType
@@ -15,6 +16,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
+import io.ktor.utils.io.ByteWriteChannel
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.runInterruptible
@@ -34,6 +36,8 @@ internal class HeadAnswers(
     /** Blocking JDK I/O runs here: each read of the answer. */
     private val io: CoroutineDispatcher,
     private val errors: RefusalVoice,
+    /** What a kept-alive client's silences are timed on. */
+    private val clock: RelayClock,
 ) {
     /** [sent] as [call]'s answer: the head's own, or that it is not answering. */
     suspend fun given(call: ApplicationCall, sent: Result<HttpResponse<InputStream>>, wait: ClientWait) {
@@ -45,7 +49,7 @@ internal class HeadAnswers(
         val type = typeOf(response)
         if (type.match(ContentType.Text.EventStream)) {
             call.response.status(status)
-            call.respond(SseChannelResponse { out -> response.body().use { pump(it, QuietWire(out, wait.every)) } })
+            call.respond(SseChannelResponse { out -> response.body().use { pump(it, quiet(out, wait)) } })
         } else {
             val whole = runInterruptible(io) { response.body().use(InputStream::readAllBytes) }
             call.respondBytes(whole, type, status)
@@ -57,7 +61,7 @@ internal class HeadAnswers(
     suspend fun early(call: ApplicationCall, sending: Deferred<Result<HttpResponse<InputStream>>>, wait: ClientWait) {
         call.respond(
             SseChannelResponse { out ->
-                val wire = QuietWire(out, wait.every)
+                val wire = quiet(out, wait)
                 wire.keepalive()
                 wire.during { sending.await() }.fold(
                     onSuccess = { response -> late(response, wire) },
@@ -73,6 +77,9 @@ internal class HeadAnswers(
         val whole = runInterruptible(io) { response.body().use(InputStream::readAllBytes) }
         wire.error(errors.relayed(response.statusCode(), String(whole)))
     }
+
+    /** The client's side of the stream [out], kept alive as [wait] asks. */
+    private fun quiet(out: ByteWriteChannel, wait: ClientWait): QuietWire = QuietWire(out, wait.every, clock)
 
     private fun typeOf(response: HttpResponse<InputStream>): ContentType =
         response.headers().firstValue("content-type").map { ContentType.parse(it) }

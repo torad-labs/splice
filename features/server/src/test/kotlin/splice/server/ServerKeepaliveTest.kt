@@ -1,6 +1,8 @@
 // Server mode's keepalive (docs/specs/server-mode.md, F4) as a person's client meets it, over real HTTP on loopback:
 // in front of a head that says nothing for a while, the way one does while its model server prefills a long prompt.
-// Each test writes what the head does and reads what the client then hears, and when.
+// No test here sits through that silence. The head holds a turn until the test lets it go on, the relay's clock is
+// the test's (SteppedClock), and the client's answer is read as it comes (Hearing). Each test writes what the head
+// does, says when time passes, and reads what the client has heard by then.
 package splice.server
 
 import com.sun.net.httpserver.HttpExchange
@@ -10,12 +12,16 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
+import org.junit.jupiter.api.fail
 import org.junit.jupiter.api.io.TempDir
 import splice.core.testing.TestPorts
 import splice.core.topology.ServerLimits
 import java.io.IOException
+import java.io.InputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
@@ -27,25 +33,37 @@ import java.net.http.HttpResponse
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
+import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.locks.LockSupport
 
 internal class ServerKeepaliveTest {
     @TempDir lateinit var state: Path
 
-    private val rig = ServerRig()
+    private val clock = SteppedClock()
+    private val rig = ServerRig(waiter = clock)
     private val port = rig.port
     private val http = HttpClient.newHttpClient()
     private val workers = Executors.newCachedThreadPool()
+
+    /** A turn the head is holding, counted when it starts to; and the head's leave to go on with one, which the
+     *  test gives. */
+    private val holding = Semaphore(0)
+    private val goOn = Semaphore(0)
 
     /** What the head does with each turn it is asked. */
     private fun interface HeadScript {
         fun answer(turn: Asked)
     }
 
-    /** One turn at the head, for a script to answer in its own time. */
-    private class Asked(private val exchange: HttpExchange) {
-        fun silent(ms: Long) = LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(ms))
+    /** One turn at the head, for a script to answer. */
+    private inner class Asked(private val exchange: HttpExchange) {
+        /** Says nothing more until the test lets the head go on, as a head does while its model server prefills. */
+        fun prefills() {
+            holding.release()
+            check(goOn.tryAcquire(HEARD_WITHIN_MS, TimeUnit.MILLISECONDS)) { "the test never let the head go on" }
+        }
 
         fun opens(status: Int = 200, type: String = "text/event-stream") {
             exchange.responseHeaders.add("Content-Type", type)
@@ -90,93 +108,87 @@ internal class ServerKeepaliveTest {
         workers.shutdownNow()
     }
 
-    /** What a client heard of one turn: its status and type, when its headers came, and each read of its body with
-     *  when it came, in milliseconds from the moment the turn was sent. */
-    private class Heard(val status: Int, val type: String, val headersMs: Long, val reads: List<Pair<Long, String>>) {
-        val body: String = reads.joinToString("") { it.second }
-
-        /** The body in the blocks a blank line ends: an event each, or a comment. */
-        private val blocks = body.split("\n\n").filter(String::isNotEmpty)
-
-        /** The comments: blocks whose every line an SSE reader skips. */
-        val keepalives: Int = blocks.count(::comment)
-
-        /** The body as an SSE reader takes it, the comments gone. */
-        val events: String = blocks.filterNot(::comment).joinToString("") { "$it\n\n" }
-
-        /** The longest the client heard nothing between two reads of the body. */
-        val longestSilenceMs: Long =
-            reads.map { it.first }.zipWithNext { earlier, later -> later - earlier }.maxOrNull() ?: 0L
-
-        private fun comment(block: String): Boolean = block.lines().all { it.startsWith(":") }
-    }
-
-    private fun turn(key: String, body: String = STREAMED): Heard {
+    /** A turn [key]'s holder sends. Its answer's headers come when the listener sends them. */
+    private fun send(key: String, body: String = STREAMED): CompletableFuture<HttpResponse<InputStream>> {
         val request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:$port/claude-team/v1/messages"))
             .header("Content-Type", "application/json")
             .header("x-api-key", key)
             .POST(HttpRequest.BodyPublishers.ofString(body))
-        val sent = System.nanoTime()
-        val response = http.send(request.build(), HttpResponse.BodyHandlers.ofInputStream())
-        val headersMs = msSince(sent)
-        val reads = mutableListOf<Pair<Long, String>>()
-        response.body().use { input ->
-            val buffer = ByteArray(READ_BYTES)
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                reads += msSince(sent) to String(buffer, 0, read)
-            }
-        }
-        val type = response.headers().firstValue("content-type").orElse("").substringBefore(';')
-        return Heard(response.statusCode(), type, headersMs, reads)
+        return http.sendAsync(request.build(), HttpResponse.BodyHandlers.ofInputStream())
     }
 
-    private fun msSince(nanos: Long): Long = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - nanos)
+    /** What the client hears of [sent] from its headers on, which have come by now. */
+    private fun heard(sent: CompletableFuture<HttpResponse<InputStream>>): Hearing = try {
+        Hearing(sent.get(HEARD_WITHIN_MS, TimeUnit.MILLISECONDS), workers)
+    } catch (_: TimeoutException) {
+        fail("the client never had its answer's headers")
+    }
+
+    /** Whether [block] is one an SSE reader skips: a comment, which is what a keepalive is. */
+    private fun keepalive(block: String?): Boolean {
+        val lines = block.orEmpty().lines().filter(String::isNotEmpty)
+        return lines.isNotEmpty() && lines.all { it.startsWith(":") }
+    }
+
+    /** Back once the head holds a turn and says nothing. */
+    private fun headHolds() {
+        assertTrue(holding.tryAcquire(HEARD_WITHIN_MS, TimeUnit.MILLISECONDS), "the turn never reached the head")
+    }
 
     @Test
-    fun `behind a silent head a streamed turn has its stream at once, a keepalive each interval, then its answer`() {
+    fun `behind a silent head a streamed turn is opened in two seconds, kept alive each interval, then answered`() {
         val key = serve(keepaliveSeconds = 1)
         script = HeadScript { turn ->
-            turn.silent(3_300)
+            turn.prefills()
             turn.opens()
             turn.says(START)
             turn.says(DELTA)
             turn.says(STOP)
             turn.ends()
         }
-        val heard = turn(key)
+        val sent = send(key)
+        clock.pass()
+        val heard = heard(sent)
         assertEquals(200, heard.status)
         assertEquals("text/event-stream", heard.type)
-        assertTrue(heard.headersMs < 2_000, "the headers came after ${heard.headersMs} ms")
-        assertTrue(heard.reads.first().first < 2_000, "the first keepalive came after ${heard.reads.first().first} ms")
-        assertTrue(heard.longestSilenceMs < 1_400, "with a keepalive each second: ${heard.reads.map { it.first }}")
-        assertTrue(heard.keepalives >= 3, "3.3 s of silence carried ${heard.keepalives} keepalives")
-        assertEquals(START + DELTA + STOP, heard.events, "the client's reader takes the head's events and nothing else")
-        assertTrue(heard.body.endsWith(STOP), heard.body)
+        assertTrue(keepalive(heard.block("a keepalive as its stream opens")))
+        repeat(3) {
+            clock.pass()
+            assertTrue(keepalive(heard.block("a keepalive after one more interval of silence")))
+        }
+        goOn.release()
+        assertEquals(START + DELTA + STOP, heard.rest("the head's answer"), "the head's events and nothing after them")
+        val opened = clock.asked.first()
+        assertTrue(opened <= 2_000, "the stream was opened after $opened ms of the head's silence")
+        val intervals = clock.asked.drop(1)
+        assertTrue(intervals.all { it <= 1_000 }, "with keepalive_seconds = 1 a keepalive waited longer: $intervals")
     }
 
     @Test
-    fun `the silence between two events is kept alive, and an event the head has half written is left whole`() {
+    fun `events are heard as the head writes them, a silence between two is kept alive, half an event is left whole`() {
         val key = serve(keepaliveSeconds = 1)
         val cut = DELTA.length / 2
         script = HeadScript { turn ->
             turn.opens()
             turn.says(START)
-            turn.silent(2_300)
+            turn.prefills()
             turn.says(DELTA.take(cut))
-            turn.silent(2_300)
+            turn.prefills()
             turn.says(DELTA.drop(cut) + STOP)
             turn.ends()
         }
-        val heard = turn(key)
-        val first = heard.reads.first()
-        assertTrue(first.first < 1_000 && START in first.second, "an event waits for the answer's end: $first")
-        assertTrue(heard.reads.last().first - first.first > 4_000, "the events came together: ${heard.reads}")
-        val between = heard.body.substringAfter(START).substringBefore(DELTA.take(cut))
-        assertTrue(": " in between, "2.3 s between two events carried no keepalive: ${heard.body}")
-        assertTrue(DELTA in heard.body, "a keepalive was written inside an event: ${heard.body}")
-        assertEquals(START + DELTA + STOP, heard.events)
+        val heard = heard(send(key))
+        assertEquals(START, heard.block("the first event, while the head has written no more"))
+        clock.pass()
+        assertTrue(keepalive(heard.block("a keepalive in the silence after the first event")))
+        goOn.release()
+        assertEquals(DELTA.take(cut), heard.part(cut, "the half of an event the head has written"))
+        // Two intervals: by the time the second passes, the relay has been through a whole one with the event half
+        // written, and had its chance to write into it.
+        clock.pass()
+        clock.pass()
+        goOn.release()
+        assertEquals(DELTA + STOP, heard.rest("the rest of the answer"), "something was written inside an event")
     }
 
     @Test
@@ -187,41 +199,49 @@ internal class ServerKeepaliveTest {
             turn.says(REFUSAL)
             turn.ends()
         }
-        val heard = turn(key)
+        val heard = heard(send(key))
         assertEquals(400, heard.status)
         assertEquals("application/json", heard.type)
-        assertEquals(REFUSAL, heard.body)
+        assertEquals(REFUSAL, heard.rest("the head's refusal"))
     }
 
     @Test
     fun `a head that refuses once the stream is open ends it with its own error`() {
         val key = serve(keepaliveSeconds = 1)
         script = HeadScript { turn ->
-            turn.silent(1_800)
+            turn.prefills()
             turn.opens(status = 529, type = "application/json")
             turn.says(OVERLOADED)
             turn.ends()
         }
-        val heard = turn(key)
+        val sent = send(key)
+        clock.pass()
+        val heard = heard(sent)
         assertEquals(200, heard.status, "the stream was open before the head answered")
-        assertTrue(heard.keepalives >= 1, heard.body)
-        val event = heard.events.lines()
-        assertEquals("event: error", event.first(), heard.body)
+        assertTrue(keepalive(heard.block("a keepalive as its stream opens")))
+        goOn.release()
+        val event = heard.block("the head's refusal").orEmpty().lines()
+        assertEquals("event: error", event.first())
         val said = Json.parseToJsonElement(event[1].removePrefix("data: "))
         assertEquals(Json.parseToJsonElement(OVERLOADED), said, "the head's own error, on an event's one data line")
+        assertNull(heard.block("the end of the stream"), "the error ends the stream")
     }
 
     @Test
     fun `a head that goes away once the stream is open ends it saying the head is not answering`() {
         val key = serve(keepaliveSeconds = 1)
         script = HeadScript { turn ->
-            turn.silent(1_800)
+            turn.prefills()
             turn.ends()
         }
-        val heard = turn(key)
+        val sent = send(key)
+        clock.pass()
+        val heard = heard(sent)
         assertEquals(200, heard.status)
-        val event = heard.events.lines()
-        assertEquals("event: error", event.first(), heard.body)
+        assertTrue(keepalive(heard.block("a keepalive as its stream opens")))
+        goOn.release()
+        val event = heard.block("that the head is not answering").orEmpty().lines()
+        assertEquals("event: error", event.first())
         val error = Json.parseToJsonElement(event[1].removePrefix("data: ")).jsonObject.getValue("error").jsonObject
         assertEquals("api_error", error.getValue("type").jsonPrimitive.content)
         val message = error.getValue("message").jsonPrimitive.content
@@ -231,30 +251,41 @@ internal class ServerKeepaliveTest {
     @Test
     fun `a turn that asks for no stream answers one JSON body, however long its head is silent`() {
         val key = serve(keepaliveSeconds = 1)
+        clock.flies = true
         script = HeadScript { turn ->
-            turn.silent(2_300)
+            turn.prefills()
             turn.opens(type = "application/json")
             turn.says(MESSAGE)
             turn.ends()
         }
-        val heard = turn(key, body = UNSTREAMED)
+        val sent = send(key, body = UNSTREAMED)
+        headHolds()
+        goOn.release()
+        val heard = heard(sent)
         assertEquals(200, heard.status)
         assertEquals("application/json", heard.type)
-        assertEquals(MESSAGE, heard.body, "one body, the head's own, with nothing before it")
+        assertEquals(MESSAGE, heard.rest("the head's answer"), "one body, the head's own, with nothing before it")
     }
 
     @Test
     fun `with no keepalive_seconds a streamed turn waits on its head and carries its events alone`() {
         val key = serve(keepaliveSeconds = 0)
+        clock.flies = true
         script = HeadScript { turn ->
-            turn.silent(1_600)
+            turn.prefills()
             turn.opens()
             turn.says(START + STOP)
             turn.ends()
         }
-        val heard = turn(key)
-        assertTrue(heard.headersMs >= 1_500, "a stream was opened after ${heard.headersMs} ms with no keepalive set")
-        assertEquals(START + STOP, heard.body)
+        val sent = send(key)
+        headHolds()
+        // Nothing signals that a stream was not opened, so one is watched for through a window: its length is how
+        // long the test looks, and a slower machine only looks at less.
+        assertThrows<TimeoutException>("a stream was opened before its head answered, with no keepalive set") {
+            sent.get(NO_STREAM_WINDOW_MS, TimeUnit.MILLISECONDS)
+        }
+        goOn.release()
+        assertEquals(START + STOP, heard(sent).rest("the head's events"))
     }
 
     @Test
@@ -275,25 +306,30 @@ internal class ServerKeepaliveTest {
         )
         val key = serve(keepaliveSeconds = 1, limits = ServerLimits(inflightPerPerson = 1), headPort = box.localPort)
         Socket("127.0.0.1", port).use { client ->
+            client.soTimeout = HEARD_WITHIN_MS.toInt()
             val request = "POST /claude-team/v1/messages HTTP/1.1\r\nHost: 127.0.0.1:$port\r\nx-api-key: $key\r\n" +
                 "Content-Type: application/json\r\nContent-Length: ${STREAMED.length}\r\n\r\n$STREAMED"
             client.getOutputStream().apply {
                 write(request.toByteArray())
                 flush()
             }
+            clock.pass()
             val opened = client.getInputStream().bufferedReader().readLine()
             assertEquals("HTTP/1.1 200 OK", opened, "the stream of a turn whose head is silent")
-            assertEquals(429, turn(key, body = UNSTREAMED).status, "the turn in flight does not fill the cap of one")
+            assertEquals(429, statusOf(key), "the turn in flight does not fill the cap of one")
         }
-        hungUp.get(FREED_WITHIN_SECONDS, TimeUnit.SECONDS)
+        hungUp.get(HEARD_WITHIN_MS, TimeUnit.MILLISECONDS)
         // The head is gone now, so a turn that takes the freed slot is told so, where one still capped is a 429.
         box.close()
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(FREED_WITHIN_SECONDS)
-        while (turn(key, body = UNSTREAMED).status != HEAD_GONE) {
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(HEARD_WITHIN_MS)
+        while (statusOf(key) != HEAD_GONE) {
             assertTrue(System.nanoTime() < deadline, "the slot of the client that hung up was never freed")
             LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(POLL_MS))
         }
     }
+
+    /** The status a turn of [key]'s that asks for no stream is answered with. */
+    private fun statusOf(key: String): Int = heard(send(key, body = UNSTREAMED)).status
 }
 
 private const val STREAMED = """{"model":"m","stream":true,"messages":[]}"""
@@ -311,8 +347,10 @@ private const val REFUSAL = """{"type":"error","error":{"type":"invalid_request_
 private const val OVERLOADED =
     "{\"type\":\"error\",\n \"error\":{\"type\":\"overloaded_error\",\"message\":\"the box is busy\"}}"
 
-private const val READ_BYTES = 8 * 1024
-private const val FREED_WITHIN_SECONDS = 10L
+// How long the one test that proves an absence looks for a stream that must not open.
+private const val NO_STREAM_WINDOW_MS = 500L
+
+// The pause between two looks at a slot that is being freed, inside a poll that has a deadline.
 private const val POLL_MS = 50L
 
 // What the stand-in head's read answers when the relay's hang-up reached it as a reset.

@@ -14,7 +14,9 @@
 // server listener does when a turn's client hangs up, ends it at once and hangs up on the head, which then sees its own
 // client leave: no head goes on computing an answer nobody is waiting for. A turn the server listener asks to be kept
 // alive, and that asks for a stream, is not left waiting on a silent head: after a second its stream is opened to the
-// client and kept alive until the head answers (HeadAnswers.early).
+// client and kept alive until the head answers (HeadAnswers.early). That second, and each interval between two
+// keepalives, goes by the relay's clock (RelayClock): the process clock in production, and in a test one the test
+// steps.
 package splice.share
 
 import io.ktor.http.HttpHeaders
@@ -29,7 +31,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.io.readByteArray
 import splice.core.config.LAUNCH_PROOF_HEADER
 import splice.core.config.TurnKey
@@ -68,9 +69,11 @@ public class ShareRelay(
     private val io: CoroutineDispatcher,
     private val log: LogSink,
     private val speaker: RelaySpeaker = RelaySpeaker(ShareErrors.voice, "share"),
+    /** What a kept-alive client's silences are timed on. */
+    private val clock: RelayClock = RelayClock(),
 ) {
     private val errors get() = speaker.errors
-    private val answers = HeadAnswers(io, speaker.errors)
+    private val answers = HeadAnswers(io, speaker.errors, clock)
     private val streamed = StreamedBodies()
 
     /** What a statusline's body passes before it is relayed: the listener pins the session it names to the login the
@@ -136,8 +139,11 @@ public class ShareRelay(
             if (wait.every == null) return answers.given(call, send(request, answer, wait), wait)
             coroutineScope {
                 val sending = async { send(request, answer, wait) }
-                val soon = withTimeoutOrNull(HEAD_SOON_MS) { sending.await() }
-                if (soon == null) answers.early(call, sending, wait) else answers.given(call, soon, wait)
+                if (clock.endedWithin(HEAD_SOON_MS, sending)) {
+                    answers.given(call, sending.await(), wait)
+                } else {
+                    answers.early(call, sending, wait)
+                }
             }
         } finally {
             // However the answer ended, a relay cancelled before it read a byte included: the head is hung up on.

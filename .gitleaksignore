@@ -146,3 +146,7 @@ dfd2d19585d17364e76e73a5aa23e9159348d42d:features/turns/src/test/kotlin/splice/h
 # reference's lockfile. Neither is a credential or grants anything. No broad rule is relaxed.
 f061db6b50b4c9600f775503a09fc706935b1f4e:features/share/src/test/kotlin/splice/share/ShareCertificateDamageTest.kt:private-key:54
 a647799d38d70d51ba0e324e720020deca2508e4:tools/codemode-parity/current-api-reference/Cargo.lock:generic-api-key:2259
+# 2026-11-15: features/server/.../PemTls.kt line 19 (d4f2dff62, server mode's listener) — the regex that finds a
+# PKCS#8 key's base64 body between its header and footer markers in the operator's tls_key file. Opened at the commit:
+# the line holds the two markers and a capture group, no key material, and the key itself is read at run time.
+d4f2dff621ee32f61df9e6ec9d80d1f2c4eb51f3:features/server/src/main/kotlin/splice/server/PemTls.kt:private-key:19

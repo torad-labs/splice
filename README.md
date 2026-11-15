@@ -371,6 +371,44 @@ The first machine answers machines on its own LAN only: private and link-local a
 
 A machine that ran the first build of this (October 22 to 24) still has a head for each command it imported then. splice refuses to start until those are replaced, and says so for each one: run `splice remote add` with the first machine's address, and each old head is replaced by the address under its own name, its key removed from `keys.toml` in the same step.
 
+## Serve a team from one machine
+
+Sharing is for your own machines on one LAN. To serve a team, give one splice a `[server]` table in `splice.toml`: it then serves the commands you list on an address of its own, to anyone holding a key it issued, and to nobody else.
+
+```toml
+[server]
+listen = "0.0.0.0:3443"
+commands = ["claude-team"]
+tls_cert = "/etc/splice/tls/fullchain.pem"   # both, or neither when a proxy in front of it speaks TLS
+tls_key = "/etc/splice/tls/privkey.pem"
+trusted_proxies = ["10.0.0.0/8"]             # the proxies whose X-Forwarded-For names the client
+admins = ["ops@team.example"]
+
+[server.limits]
+inflight_per_person = 3                      # 0, or no line, is no cap
+rpm_per_person = 30
+```
+
+Give each person a key, and take it back the same way:
+
+```bash
+splice server key create --person ann@team.example --name laptop --expires 90d   # prints the key, once
+splice server key list --person ann@team.example
+splice server key revoke spk_ab12cd34                # one key, by the prefix the list shows
+splice server key revoke-person ann@team.example     # every key of someone who left
+splice server person set ann@team.example --inflight 5 --rpm 60
+```
+
+A person runs Claude Code against a command with their key, as against any Anthropic-compatible gateway:
+
+```bash
+ANTHROPIC_BASE_URL=https://gateway.team.example:3443/claude-team ANTHROPIC_API_KEY=spk_… claude
+```
+
+`GET /health` is open, and everything else needs a live key, as `x-api-key` or `Authorization: Bearer`. A missing, unknown, revoked or expired key is a 401 that never repeats the key, and nothing reaches the model. A revoke holds from the key's next request. The server keeps each key only as its SHA-256, bound to the person's email (see [What splice keeps on your disk](#what-splice-keeps-on-your-disk)), and an admin's key also manages keys over the listener at `/server/api/keys`. A person past a cap gets a 429 with `Retry-After` naming the cap, and everyone else is still served.
+
+splice refuses to start a server beside `splice share on`, with a command no head here runs, or with a command whose head signs in with a person's plan login (a Claude or ChatGPT subscription, for example): a plan's terms are for one person, so a server serves only heads that sign with an API key or a self-hosted provider. There is no sign-in, budget, usage report or per-person metric yet; [server mode's spec](docs/specs/server-mode.md) is the plan for them.
+
 ## Troubleshooting
 
 `splice doctor` checks prerequisites, install integrity, config, daemon, and auth, then prints
@@ -724,6 +762,7 @@ These files hold settings and statistics. Custom compaction instructions and tea
 | `~/.local/share/systemd/user/splice.service`, `app-mcp.slice`, `splice-mcp-front.socket`, `splice-mcp-front.service`, `splice-control.socket` and one `splice-head-<head>.socket` per head | Splice's own systemd user units, each under a `# splice-owned unit` line: the daemon's, which runs the `splice` command on the JDK the install ran on, the MCP hub's, and the listener sockets through which systemd holds splice's ports across a restart. No key or secret | Anyone who can read your home directory (0644, as systemd units are) | Replaced by every `splice install --all` on Linux, the hub's only beside an installed hub front; laying one never enables, starts or restarts it. `splice restart` lays, enables and starts the listener sockets. `splice uninstall --all` stops, disables and removes every one of them. A unit of the same name in `~/.config/systemd/user` overrides splice's, and splice writes nothing there and removes only the hub copies its own earlier installs wrote. `splice setup` with MCP sharing on enables and starts `splice-mcp-front.socket` only over splice's own hub units | `SpliceUnits.kt` |
 | `~/.config/splice/peers/<name>/peer.json` | A peer's registration: its name, session id, working directory, send scope, its key's id and SHA-256, and its webhook URL. No key or secret | Only you (0600, in a 0700 folder) | Until `splice peer revoke` | `PeerStore.kt` |
 | `~/.config/splice/peers/<name>/limit.json` | A peer's own send limit, once `splice peer limit` gave it one: sends a minute and its burst | Only you (0600, in a 0700 folder) | Until `splice peer limit <name> --default` or `splice peer revoke` | `PeerLimits.kt` |
+| `~/.splice/state/server/keys.json` and `people.json` | Only on a machine whose `splice.toml` has a `[server]`, which serves its commands to a team's keys. `keys.json` holds each key the server issued as its prefix, the SHA-256 of the whole key, the person's email it is bound to, its name, who issued it, and when it was created, last used, expires and was revoked. `people.json` holds the caps `splice server person set` gave a person. Never a key or the secret part of one | Only you (0600) | Until you delete the file. A revoked or expired key's record is kept, so `splice server key list` still shows it | `StateFile.kt` |
 | `~/.splice/state/mcp-hub/units-written` | Which of the hub's systemd units splice's earlier installs wrote into `~/.config/systemd/user`, each with the SHA-256 of the bytes written. No key or secret | Only you (0600) | A line goes when `splice install --all` lays its unit in `~/.local/share/systemd/user`, and the old copy goes with it while it still holds those bytes; the file goes with its last line | `SpliceUnits.kt` |
 | `~/.config/splice/mcp-front.env` | Where the MCP hub keeps its state and the control port the hub front reports to, which `splice-mcp-front.service` reads at start. No key or secret | Only you (0600) | Rewritten by `splice init` when either value changes, which it reports as a config migration, because a running front keeps the values it started with. Linux only | `McpFrontEnv.kt` |
 | `~/.config/splice/splice.toml` | Your topology: providers, heads, models and ports, and any header values you put in `extra_headers` | Only you (0600): the daemon holds it owner-only at every start, and any `splice.toml.bak-<time>-<hash>` an older splice left beside it | Yours. Written once from a template on first run; `PUT /api/topology`, `PATCH /api/config?head=<key>` and `splice add` edit it, at its target when it is a link; the fix session a `splice` command offers when a boot refusal lists findings edits it too, after a backup. Every save holds an empty `.splice.toml.lock` beside the file's target across its re-read and rename, kept so each writer locks the same file | `TopologyLoader.kt`, `TopologyWriter.kt`, `AddWrite.kt`, `ConfigFixSession.kt` |
@@ -1038,7 +1077,7 @@ A single tool result larger than the runner's 64 KiB text frame is truncated at 
 Reasons to walk away:
 
 - **One tested Claude Code version per release.** The launch handshake checks the daemon's version. Doctor and the status line report when Claude Code is newer than the version tested with that release.
-- **Single-user by design.** There is no multi-user story, remote access, or TLS. A team wanting a shared model gateway should run one built for that job (LiteLLM, for example).
+- **A team server that is only starting.** One splice can [serve a team](#serve-a-team-from-one-machine) on keys it issues, over TLS, with per-person caps, but there is no sign-in, budget, usage ledger or per-person metric yet, and it serves only heads that sign with an API key or a self-hosted provider, never a person's plan login. A team that needs those today should run a gateway built for that job (LiteLLM, for example).
 - **A JVM daemon.** Java 21 is a hard dependency. The daemon has no fixed heap ceiling: its heap may grow to 75% of RAM, and G1 is tuned to keep committed memory close to the live data. The JVM options live in one place, `SPLICE_JVM_OPTS` in the `splice-launch` launcher, which every daemon start runs through; set that variable to override them.
 - **A one-person project.** The release gates are strict: every release is checksummed, provenance-attested, and installed hermetically in CI before it ships. One person maintains the project.
 

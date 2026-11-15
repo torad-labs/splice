@@ -27,7 +27,7 @@ goal = "Whoever runs the box sees each person's traffic live, from Prometheus on
 id = 'server-listener'
 title = 'A [server] listener that answers only keys'
 feature = 'server-front'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -41,13 +41,14 @@ reviews = [
 ]
 notes = [
   '2026-11-15 07:46 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-15 10:47 CT campaign: done in round 2 of server-front: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'server-keys'
 title = 'Per-person keys: create, list, revoke, offboard'
 feature = 'server-front'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -61,13 +62,14 @@ reviews = [
 ]
 notes = [
   '2026-11-15 07:46 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-15 10:47 CT campaign: done in round 1 of server-front: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'person-limits'
 title = 'Per-person in-flight and per-minute caps'
 feature = 'server-front'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'server-keys',
@@ -83,6 +85,7 @@ reviews = [
 ]
 notes = [
   '2026-11-15 07:46 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-15 10:47 CT campaign: done in round 3 of server-front: its checks, its feature review, its code review passed',
 ]
 
 [[row]]

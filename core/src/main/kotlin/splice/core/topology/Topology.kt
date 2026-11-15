@@ -52,6 +52,8 @@ public data class Topology(
     val share: ShareConfig = ShareConfig(),
     /** LAN share: commands another machine's splice serves, by the command each runs as here. */
     val remote: Map<String, RemoteConfig> = emptyMap(),
+    /** Server mode (docs/specs/server-mode.md): this machine as a team's front door, answering only keys. */
+    val server: ServerConfig = ServerConfig(),
 ) {
     /** Resolve a user-supplied head name — the topology key or the installed wrapper command
      *  (starter: head `openrouter`, command `claude-openrouter`) — to matching topology keys. A topology-KEY
@@ -90,7 +92,10 @@ public data class Topology(
         val controlPort = daemon.controlPort ?: Knob.CONTROL_PORT.count().toInt()
         // LAN share's listener holds its port only while sharing is on.
         val sharing = listOfNotNull((share.port to SHARE_PORT_OWNER).takeIf { share.enabled })
-        val declared = heads.entries.map { it.value.port to it.key } + (controlPort to CONTROL_PLANE_OWNER) + sharing
+        // Server mode's listener holds its port on whichever address it names.
+        val serving = listOfNotNull(server.address?.let { it.port to SERVER_LISTEN_OWNER })
+        val declared = heads.entries.map { it.value.port to it.key } + (controlPort to CONTROL_PLANE_OWNER) + sharing +
+            serving
         return declared.groupBy({ it.first }, { it.second }).filterValues { it.size > 1 }
     }
 

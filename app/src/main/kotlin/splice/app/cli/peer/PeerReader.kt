@@ -18,7 +18,7 @@ private const val FOLLOW_INTERVAL_MS = 2_000L
 private const val NO_LIMIT = 0L
 
 // why: inbox and status both take it, to print the daemon's answer as one line of JSON instead of text.
-private const val JSON_SWITCH = "--json"
+internal const val JSON_SWITCH = "--json"
 
 /** The `--as` verbs that read: `inbox` and `status`. */
 internal class PeerReader(

@@ -8,20 +8,13 @@ package splice.head.turn
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
-import io.ktor.server.netty.NettyApplicationCall
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
-import io.ktor.server.routing.RoutingCall
-import io.ktor.server.routing.RoutingPipelineCall
-import io.netty.channel.ChannelFuture
-import io.netty.util.concurrent.GenericFutureListener
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import splice.core.model.ClientWindows
@@ -40,9 +33,9 @@ import splice.head.wire.CollectingTerminal
 import splice.head.wire.DetachOwner
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.TurnWiring
+import splice.http.ClientConnectionClose
 import splice.upstream.Provider
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.coroutines.resume
 
 internal class CollectTurn(
     private val provider: Provider,
@@ -221,31 +214,5 @@ internal class CollectTurn(
                 drive.perf,
             ),
         )
-    }
-}
-
-/** Shared Netty close signal for collect and the stream's uncommitted status hold. */
-internal object ClientConnectionClose {
-    suspend fun await(call: ApplicationCall) {
-        val netty = nettyCall(call)
-        if (netty == null) {
-            awaitCancellation()
-            return
-        }
-        suspendCancellableCoroutine { cont ->
-            val future = netty.context.channel().closeFuture()
-            val listener = GenericFutureListener<ChannelFuture> {
-                if (cont.isActive) cont.resume(Unit)
-            }
-            future.addListener(listener)
-            cont.invokeOnCancellation { future.removeListener(listener) }
-        }
-    }
-
-    // Ktor 3 routing wraps the engine call twice; checking call directly misses every turn.
-    private fun nettyCall(call: ApplicationCall): NettyApplicationCall? {
-        val pipeline = (call as? RoutingCall)?.pipelineCall ?: call
-        val engine = (pipeline as? RoutingPipelineCall)?.engineCall ?: pipeline
-        return engine as? NettyApplicationCall
     }
 }

@@ -209,6 +209,11 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
     ),
     // Oct 19, 2026: named peers (docs/specs/peer-messaging.md 5); the verb's own words are PeerCommand's to parse.
     "peer" to CommandRegistration(splice.app.cli.peer.PEER_USAGE, CommandFactory { a -> Command.Peer(a.drop(1)) }),
+    // Nov 15, 2026: server mode (docs/specs/server-mode.md); its nouns and verbs are its command's to parse.
+    "server" to CommandRegistration(
+        splice.app.cli.server.SERVER_USAGE,
+        CommandFactory { a -> Command.Server(a.drop(1)) },
+    ),
     // Oct 24, 2026: LAN share (docs/specs/lan-share.md); each verb's own words are its command's to parse.
     "share" to CommandRegistration(splice.app.cli.share.SHARE_USAGE, CommandFactory { a -> Command.Share(a.drop(1)) }),
     "remote" to CommandRegistration(

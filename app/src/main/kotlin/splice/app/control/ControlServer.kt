@@ -193,6 +193,9 @@ internal class ControlServer(
     @Volatile
     internal var peerServices: PeerServices = PeerServices()
 
+    // Nov 15, 2026: a server's keys and people (docs/specs/server-mode.md), which `splice server` asks for.
+    private val serverMode = ServerModeRoutes(ports, guard)
+
     // Oct 16, 2026: what `splice console <action>` hands the open console to do, and the page's answer (ConsolePilot).
     private val consolePilot = ConsolePilotMount(guard)
 
@@ -228,6 +231,7 @@ internal class ControlServer(
         ControlMount(models::register),
         ControlMount(launch::register),
         ControlMount(consolePilot::register),
+        ControlMount(serverMode::register),
         ControlMount(console::register),
     ) + listOfNotNull(peers?.let { ControlMount(it::register) }, mcp)
     private val resources: List<BoundResource> = listOfNotNull(mcp, sessionWake)

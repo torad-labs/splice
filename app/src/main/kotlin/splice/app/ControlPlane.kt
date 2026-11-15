@@ -23,6 +23,7 @@ import splice.app.control.HandOver
 import splice.app.control.KeyRotation
 import splice.app.control.ManagedHead
 import splice.app.control.ProcessReads
+import splice.app.control.ServerModeSource
 import splice.app.daemon.BootedTopology
 import splice.app.head.HeadProbeReadings
 import splice.app.peer.PeersWiring
@@ -72,6 +73,9 @@ internal class ControlPlane(
     /** LAN share: the commands this machine runs on another's heads, assigned by Daemon before [start] (the launch
      *  service asks them for a name no head here has). Null runs none. */
     internal var remoteCommands: RemoteCommands? = null
+
+    /** Server mode (docs/specs/server-mode.md), assigned by Daemon before [start]; null answers its routes 409. */
+    internal var serverMode: ServerModeSource? = null
 
     /** Captures the owner only at send time, after launch composition has wired the live native places. */
     internal val credentialAccountNames = HeadDeps.CredentialAccountNames { key ->
@@ -258,6 +262,7 @@ internal class ControlPlane(
         srv.ports.turns.foreground = foregroundTools
         srv.ports.compaction = compactionInstructions
         srv.ports.claudeLogins = claudeLogin.owner
+        srv.ports.serverMode = serverMode
         srv.ports.quotaReadFailures = quotaReadFailures
         srv.ports.sessionFallbacks = sessionFallbacks
         srv.ports.lifecycle.keyRotation = KeyRotation(daemon.mgmtKey, daemon.mcpAccess, statePaths, log)

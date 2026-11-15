@@ -8,6 +8,11 @@
 // and read timeout), so a body the head would refuse is refused here in the head's words, before this listener holds
 // more of it than the head would. A head that does not answer is said as that, in this machine's name: a 503 Claude
 // Code prints, never a 529 it retries in silence as "overloaded".
+//
+// Server mode (docs/specs/server-mode.md) relays a key holder's turn through this same class, under its own voice.
+// Each blocking step (the send, each read of the answer) is interruptible, so a caller that cancels the relay, as the
+// server listener does when a turn's client hangs up, ends it at once and hangs up on the head, which then sees its own
+// client leave: no head goes on computing an answer nobody is waiting for.
 package splice.share
 
 import io.ktor.http.ContentType
@@ -23,6 +28,7 @@ import io.ktor.utils.io.readBuffer
 import io.ktor.utils.io.writeFully
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.io.readByteArray
@@ -42,14 +48,20 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
 
-internal class ShareRelay(
+/** Whose words a relay refuses in, and the name its log lines carry. */
+public data class RelaySpeaker(val errors: RefusalVoice, val tag: String)
+
+public class ShareRelay(
     private val turnKey: TurnKey,
     private val controlPort: Int,
     private val machine: String,
     /** Blocking JDK I/O runs here: the send, and each read of the answer. */
     private val io: CoroutineDispatcher,
     private val log: LogSink,
+    private val speaker: RelaySpeaker = RelaySpeaker(ShareErrors.voice, "share"),
 ) {
+    private val errors get() = speaker.errors
+
     /** What a statusline's body passes before it is relayed: the listener pins the session it names to the login the
      *  address chose, so the line shows that login from its first draw, before the session's first turn. */
     internal fun interface StatuslineAdmission {
@@ -63,7 +75,7 @@ internal class ShareRelay(
         .build()
 
     /** [path] (`/v1/messages?beta=true`) on [head], under the head's own body limits. */
-    suspend fun turn(call: ApplicationCall, head: SharedHead, path: String) {
+    public suspend fun turn(call: ApplicationCall, head: SharedHead, path: String) {
         val body = body(call, head.maxRequestBytes(), head.requestReadTimeoutMs()) ?: return
         val silent = "${head.command} on $machine is not answering"
         // A head that takes the caller's own login refuses this machine's turn key as a credential to send upstream.
@@ -77,10 +89,10 @@ internal class ShareRelay(
 
     /** The control plane's statusline for [head], fed the session's JSON as Claude Code feeds its statusline, once
      *  [admission] has read the body: a refusal it returns is answered instead. */
-    suspend fun statusline(call: ApplicationCall, head: SharedHead, admission: StatuslineAdmission) {
+    internal suspend fun statusline(call: ApplicationCall, head: SharedHead, admission: StatuslineAdmission) {
         val body = body(call, STATUSLINE_BODY_MAX_BYTES, STATUSLINE_READ_MS) ?: return
         val refusal = withContext(io) { admission.refusal(body) }
-        if (refusal != null) return ShareErrors.refuse(call, HttpStatus.BAD_REQUEST, refusal)
+        if (refusal != null) return errors.refuse(call, HttpStatus.BAD_REQUEST, refusal)
         val silent = "$machine's statusline for ${head.command} is not answering"
         val signed = mapOf(HttpHeaders.Authorization to "Bearer ${turnKey.get()}")
         forward(call, URI.create("http://127.0.0.1:$controlPort/statusline/${head.key}"), body, silent, signed)
@@ -106,13 +118,21 @@ internal class ShareRelay(
         }
         signed.forEach { (name, value) -> request.header(name, value) }
         val streamed = HttpResponse.BodyHandlers.ofInputStream()
-        val sent = withContext(io) { Cancellables.runCatchingCancellable { http.send(request.build(), streamed) } }
+        val sent = runInterruptible(io) { Cancellables.runCatchingCancellable { http.send(request.build(), streamed) } }
         val response = sent.getOrElse { failure ->
-            log("[share] $silent on :${target.port}: ${SafeFailureText.render(failure)}\n")
-            ShareErrors.refuse(call, HttpStatus.SERVICE_UNAVAILABLE, silent)
+            log("[${speaker.tag}] $silent on :${target.port}: ${SafeFailureText.render(failure)}\n")
+            errors.refuse(call, HttpStatus.SERVICE_UNAVAILABLE, silent)
             return
         }
-        answer(call, response)
+        try {
+            answer(call, response)
+        } finally {
+            // However the answer ended, a relay cancelled before it read a byte included: the head is hung up on.
+            Cancellables.discard(
+                Cancellables.runCatchingCancellable { response.body().close() },
+                "closing an answer already read to its end or already closed changes nothing",
+            )
+        }
     }
 
     /** [call]'s body, or null once it is refused the way a head's own admission refuses one: 413 for a body declared
@@ -127,12 +147,12 @@ internal class ShareRelay(
                 withTimeout(readTimeoutMs) { call.receiveChannel().readBuffer(cap + 1L).readByteArray() }
             } catch (_: TimeoutCancellationException) {
                 val why = "the request body was still arriving after ${readTimeoutMs}ms"
-                ShareErrors.refuse(call, HttpStatus.REQUEST_TIMEOUT, why)
+                errors.refuse(call, HttpStatus.REQUEST_TIMEOUT, why)
                 return null
             }
         }
         if (read != null && read.size <= cap) return read
-        ShareErrors.refuse(call, HttpStatus.CONTENT_TOO_LARGE, "request body exceeds $cap bytes")
+        errors.refuse(call, HttpStatus.CONTENT_TOO_LARGE, "request body exceeds $cap bytes")
         return null
     }
 
@@ -147,7 +167,7 @@ internal class ShareRelay(
             call.response.status(status)
             call.respond(SseChannelResponse { out -> response.body().use { input -> pump(input, out) } })
         } else {
-            val whole = withContext(io) { response.body().use(InputStream::readAllBytes) }
+            val whole = runInterruptible(io) { response.body().use(InputStream::readAllBytes) }
             call.respondBytes(whole, type, status)
         }
     }
@@ -158,7 +178,7 @@ internal class ShareRelay(
     private suspend fun pump(input: InputStream, out: ByteWriteChannel) {
         val buffer = ByteArray(PUMP_BUFFER_BYTES)
         while (true) {
-            val read = withContext(io) {
+            val read = runInterruptible(io) {
                 Cancellables.runCatchingCancellable { input.read(buffer) }
                     .getOrElse { failure -> if (failure is IOException) END_OF_STREAM else throw failure }
             }

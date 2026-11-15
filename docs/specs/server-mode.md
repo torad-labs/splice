@@ -216,25 +216,37 @@ every = "1h"
 
 ## P2: the laptop side
 
-- **F7 server profile.** `GET /server/profile`: commands, models with their context windows, effort vocabulary,
-  telemetry endpoint, version policy, sign-in configuration. `splice remote add <server>` links every command it
-  offers; `splice remote refresh` resizes heads whose window changed, unless the person pinned one.
-- **F8 telemetry relay.** `POST /server/otlp/v1/{metrics,logs,traces}` takes Claude Code's own OTLP with the
-  person's key, stamps the verified person and team on every point, log and span, and forwards to the operator's
-  collector. The laptop recipe sets Claude Code's OTLP endpoint and an `otelHeadersHelper` that sends the key,
-  never logs prompts, and respects organisation-managed settings (`remote-settings.json`): telemetry is turned off
-  only where those settings set a telemetry key.
-- **F9 client version policy.** The server advertises a minimum client version; the laptop sends
-  `x-splice-client`. An outdated client's turn gets a clear in-band message (a 200 the client shows, because
-  Claude Code retries a refusal about six times and a 200 once) and the launcher upgrades itself: verified download,
-  the new executable must run and name its version before it replaces the old, the old kept for rollback, one
-  check at a time. Optional update-and-resume through one allowlisted command and `--resume`.
-- **F10 fixed-cost providers.** `hourly_usd` on a provider, metered from the host's live boot time (never a value
-  rendered at an earlier boot), with reports showing actual spend beside the API-equivalent cost.
-- **F11 session affinity.** A session's turns go to the upstream that served its last turn while it is healthy, so
-  the server's prefix cache stays warm (`cache_n` in the ledger shows it).
-- **F12 token limits and allowlists.** Tokens per minute per person; commands and models allowed per person or
-  team.
+Drafted checks for these exist and are committed with the P2 plan once P1 has landed.
+
+- **F7 server profile.** `GET /server/profile` for a key holder: each command with its models and their context
+  windows, the sign-in configuration, the telemetry relay and the minimum client. `splice login <server>
+  --key-stdin` keeps an operator-issued key the way a sign-in keeps its own (never in a config file).
+  `splice remote add <server>` links every command the server offers, and `splice remote refresh <server>` links
+  the ones it starts offering and unlinks the ones it drops. Each launch already takes the server's window from its
+  recipe; `splice remote set <command> --window N|server` pins one on the laptop or gives it back.
+- **F8 telemetry relay.** `[server.telemetry] forward_to` names the operator's collector.
+  `POST /server/otlp/v1/{metrics,logs,traces}` takes Claude Code's own OTLP (JSON or protobuf) with the person's
+  key, sets `splice.person`, `splice.team` and `user.email` on every resource whatever the client claimed, and
+  forwards it in the same encoding. The laptop recipe sets `CLAUDE_CODE_ENABLE_TELEMETRY=1` and
+  `OTEL_EXPORTER_OTLP_ENDPOINT=<server>/server/otlp` with an `otelHeadersHelper` that sends the key, and never sets
+  `OTEL_LOG_USER_PROMPTS`. Where the command's `remote-settings.json` (organisation-managed) sets a telemetry key,
+  splice adds no telemetry of its own; managed settings that set none leave the relay on.
+- **F9 client version policy.** `[server.client] minimum`. Each launch sends `x-splice-client: <version>` in
+  `ANTHROPIC_CUSTOM_HEADERS`. An older client's turn is answered 200 with an assistant message naming the version
+  to upgrade to, streamed or not, and nothing reaches the upstream (Claude Code retries a refusal about six times
+  and shows a 200 once). A request with no version (a script) is served. The upgrade itself goes through
+  `splice upgrade` and, with F15, the build the server points at: verified download, the new executable must run
+  and name its version before it replaces the old, the old kept for rollback, one check at a time.
+- **F10 fixed-cost providers.** `hourly_usd` on a provider, metered from the host's live boot time read at report
+  time (never a boot time stored earlier). Reports carry `fixed: [{provider, hours, cost_usd}]` and
+  `totals: {cost_usd, fixed_usd, actual_usd, reference_cost_usd}`.
+- **F11 session affinity.** A session's turns (by `X-Claude-Code-Session-Id`) go to the upstream that served its
+  last turn while it is healthy, so the server's prefix cache stays warm. New sessions are still balanced; a
+  session whose upstream goes down moves once and stays where it moved.
+- **F12 access and token caps.** `splice server team set <team> --commands a,b` and `server person set <email>
+  --commands a,b|all`; the person's setting wins over the team's. A command a person may not use is a 403
+  `permission_error` naming it. `[server.limits] tpm_per_person` refuses a person's next turn with 429 once their
+  last minute's tokens reach the cap.
 
 ## P3
 

@@ -8,7 +8,7 @@ coroutines = "1.11.0"
 # kotlinx-serialization 1.12.0's JVM parser caps nesting at 400 (JsonLineShapeFuzzTest), which changes what a request
 # body may hold. Held for that. The other reason of PR #432 (2026-11-02), klibs of ABI 2.4.0 that the 2.3.21 compiler
 # could not link into the MCP hub, went with Kotlin 2.3.
-serialization = "1.11.0"
+serialization = "1.12.0"
 ktoml = "0.7.1"
 # konsist 0.18.x is built against kotlin-compiler-embeddable 2.4.21 (0.17.3 asks 2.0.21), so it moves with the Kotlin
 # version above: against 2.3.21 its PSI setup failed with "Extensions storage is not registered" (PR #432).
@@ -23,7 +23,7 @@ junit = "6.1.3"
 # Current gRPC embeds the gateway's Netty floor; protobuf stays on its ABI-compatible 3.x line.
 grpc = "1.85.1"
 protobuf = "3.25.9"
-opentelemetry = "1.67.0"
+opentelemetry = "1.68.0"
 # Self-contained code-mode feasibility probe; community artifacts, no Codex/Node installation.
 graaljs = "25.5.5.0.3"
 # slf4j-api arrives under ktor; this pins the no-op provider that rides beside it (2026-09-25). Keep it
@@ -40,7 +40,7 @@ netty = "4.2.20.Final"          # 4.2.16.Final resolved; GHSA-8c42-7qj2-3j46 (CO
 # Jackson core ships in the Usage and Claude Code transcript streaming parsers.
 # Plugin classpaths need separate floors: build-logic keeps the detekt floor, and app/build.gradle.kts
 # floors CycloneDX's jackson-core/databind from this version because project dependencies cannot reach it.
-jackson = "2.22.4"              # Security floor for shipped parsers and plugin classpaths; GHSA-7hhh-6rmp-j9qf, GHSA-p6pp-m3f8-5c89
+jackson = "2.23.0"              # Security floor for shipped parsers and plugin classpaths; GHSA-7hhh-6rmp-j9qf, GHSA-p6pp-m3f8-5c89
 # freemarker rides in on the ROOT script classpath under kover (kover-gradle-plugin -> kover-features-jvm
 # -> intellij-coverage-reporter -> coverage-report), floored by a buildscript classpath constraint in
 # the root build.gradle.kts. Build-time only, never in the shipped jar. No bump reaches it: kover

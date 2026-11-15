@@ -1,7 +1,7 @@
 // Server mode (docs/specs/server-mode.md, F4): a vendor that is several servers. A server that takes no connection got
 // no byte of the request, so the same request goes to the vendor's next server at once, on none of the waits a path
-// that did not answer is otherwise given; with no server left the turn ends at once with the error it met; and a
-// request a server may already hold is never sent to another. MockEngine, no network.
+// that did not answer is otherwise given; with no server left the turn ends at once, naming the servers and the
+// refusal the last one gave; and a request a server may already hold is never sent to another. MockEngine, no network.
 package splice.upstream.transport
 
 import io.ktor.client.engine.mock.MockEngine
@@ -30,6 +30,8 @@ class UpstreamClientRerouteTest {
         private var at = 0
 
         override fun target(): String = "http://${servers[at]}/v1/chat/completions"
+
+        override fun places(): List<String> = servers
 
         override fun unreachable(): Reroute {
             if (at == servers.lastIndex) return Reroute.NOWHERE
@@ -86,10 +88,13 @@ class UpstreamClientRerouteTest {
     }
 
     @Test
-    fun `with no server left the turn ends at once with the refusal it met`() = runTest {
+    fun `with no server left the turn ends at once, naming the servers and the refusal it met`() = runTest {
         val two = ctx(Servers(listOf("a.test", "b.test")))
-        val refused = runCatching { client(down = setOf("a.test", "b.test")).posted(two, "{}") { "answered" } }
-        assertInstanceOf(ConnectException::class.java, refused.exceptionOrNull(), "the turn ended as: $refused")
+        val none = assertEnds<NoPlaceLeft> {
+            client(down = setOf("a.test", "b.test")).posted(two, "{}") { }
+        }
+        assertEquals(listOf("a.test", "b.test"), none.places)
+        assertInstanceOf(ConnectException::class.java, none.cause)
         assertEquals(listOf("a.test", "b.test"), asked)
         assertEquals(emptyList<Long>(), capture.waits, "nothing is waited out once every server refused")
     }

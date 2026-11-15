@@ -10,7 +10,6 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
-import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
@@ -105,16 +104,30 @@ class UpstreamPoolsTest {
     }
 
     @Test
-    fun `every head of a provider shares its one pool, and a provider that is one server has none`() = runTest {
+    fun `a turn one head of a provider has in flight is in flight for its other head, and each server has one row`() =
+        runTest {
+            answers["http://10.0.0.21:8080/health"] = 200
+            answers["http://10.0.0.22:8080/health"] = 200
+            val pools = pools()
+            val first = checkNotNull(pools.of("box", box) { emptyMap() })
+            val second = checkNotNull(pools.of("box", box) { emptyMap() })
+
+            val turn = first.lease()
+            assertEquals(listOf(1, 0), second.readings().map { it.inflight })
+            assertEquals(listOf("gpu-1" to 1, "gpu-2" to 0), rows(pools), "the upstream list has a row for each server")
+            turn.release()
+            assertEquals(listOf("gpu-1" to 0, "gpu-2" to 0), rows(pools))
+        }
+
+    @Test
+    fun `a provider that is one server has no pool, and no row in the upstream list`() = runTest {
         val pools = pools()
         val one = box.copy(baseUrl = "http://10.0.0.9:8080/v1", upstreams = emptyList())
         assertNull(pools.of("solo", one) { emptyMap() })
-        val first = pools.of("box", box) { emptyMap() }
-        assertSame(first, pools.of("box", box) { emptyMap() })
-        assertSame(first, pools.named("box"))
-        assertNull(pools.named("solo"))
-        val later = pools.of("spare", box) { emptyMap() }
-        assertEquals(listOf(first, later), pools.all())
-        assertEquals(2 * box.upstreams.size, asked.size, "each server is checked by one loop, however many heads")
+        assertEquals(emptyList<Pair<String, Int>>(), rows(pools))
     }
+
+    /** The upstream list as it reads now: each row's server and the turns in flight on it. */
+    private fun rows(pools: UpstreamPools): List<Pair<String, Int>> =
+        pools.all().flatMap { it.readings() }.map { it.name to it.inflight }
 }

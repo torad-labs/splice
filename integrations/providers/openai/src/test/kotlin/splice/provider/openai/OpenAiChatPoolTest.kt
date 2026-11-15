@@ -1,6 +1,7 @@
 // Server mode (docs/specs/server-mode.md, F4): a head whose provider is several servers, asked real turns. Which
 // server answered is read off the reply, since each says its own name: turns in flight together are spread, a turn
-// that names its person's upstream goes there, and a server that takes no connection is left at once.
+// that names its person's upstream goes there, a server that takes no connection is left at once, and a turn that
+// finds none taking one is refused in words that name them.
 package splice.provider.openai
 
 import com.sun.net.httpserver.HttpServer
@@ -12,6 +13,7 @@ import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -128,12 +130,15 @@ class OpenAiChatPoolTest {
     }
 
     /** One streamed turn on the head at [port], naming [preferred] as the server listener would; its whole answer. */
-    private suspend fun turn(port: Int, preferred: String? = null): String =
+    private suspend fun turn(port: Int, preferred: String? = null): String = asked(port, TURN, preferred).bodyAsText()
+
+    /** [body] sent as a turn to the head at [port]. */
+    private suspend fun asked(port: Int, body: String, preferred: String? = null): HttpResponse =
         client.post("http://127.0.0.1:$port/v1/messages") {
             header("Content-Type", "application/json")
             preferred?.let { header(PREFERRED_UPSTREAM_HEADER, it) }
-            setBody(TURN)
-        }.bodyAsText()
+            setBody(body)
+        }
 
     @AfterEach
     fun stop() = runBlocking {
@@ -185,16 +190,43 @@ class OpenAiChatPoolTest {
     }
 
     @Test
-    fun `with no server taking a connection the turn ends in an error and both read down`() = runBlocking {
-        val pool = pool("gone" to nobody(), "gone-too" to nobody())
+    fun `a streamed turn that finds no server taking a connection is refused naming them, and both read down`() =
+        runBlocking {
+            val pool = pool("gpu-a" to nobody(), "gpu-b" to nobody())
+            val port = serving(pool)
+            val answer = turn(port)
+            assertTrue("event: error" in answer, answer)
+            assertTrue(NONE_UP in answer, answer)
+            assertFalse("from-" in answer)
+            assertFalse(pool.up)
+            assertEquals(listOf(0, 0), pool.readings().map { it.inflight })
+        }
+
+    @Test
+    fun `a turn that is not streamed and finds no server taking a connection is refused naming them`() = runBlocking {
+        val port = serving(pool("gpu-a" to nobody(), "gpu-b" to nobody()))
+        val answer = asked(port, TURN.replace("\"stream\":true", "\"stream\":false"))
+        val said = answer.bodyAsText()
+        assertEquals(OVERLOADED_STATUS, answer.status.value, said)
+        assertTrue("\"type\":\"error\"" in said && NONE_UP in said, said)
+    }
+
+    @Test
+    fun `servers found down by a health check, with the last one refusing, are all named to the turn`() = runBlocking {
+        val pool = pool("gpu-a" to nobody(), "gpu-b" to nobody(), "gpu-c" to nobody())
         val port = serving(pool)
+        pool.checked("gpu-a", healthy = false, said = "connection refused")
+        pool.checked("gpu-b", healthy = false, said = "connection refused")
         val answer = turn(port)
-        assertTrue("event: error" in answer, answer)
-        assertFalse("from-" in answer)
-        assertFalse(pool.up)
-        assertEquals(listOf(0, 0), pool.readings().map { it.inflight })
+        assertTrue("upstreams is up (gpu-a, gpu-b, gpu-c)" in answer, answer)
     }
 }
+
+// What a refused turn says of a provider whose two servers are both gone.
+private const val NONE_UP = "upstreams is up (gpu-a, gpu-b)"
+
+// The status a turn that is not streamed ends with when its path to the provider broke.
+private const val OVERLOADED_STATUS = 529
 
 private const val TURN =
     """{"model":"claude-box--team-model","stream":true,"max_tokens":50,"messages":[{"role":"user","content":"hi"}]}"""

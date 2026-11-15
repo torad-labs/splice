@@ -105,7 +105,7 @@ public class KeyApi(private val keys: ServerKeys, private val log: LogSink) {
 public class PersonApi(
     private val people: ServerPeople,
     private val log: LogSink,
-    private val upstreams: UpstreamApi = UpstreamApi(object : HeadUpstreams {}),
+    private val upstreams: UpstreamApi,
 ) {
 
     /** Sets what `{"inflight"?: N, "rpm"?: N, "upstream"?: name}` names for [person] and answers their settings as

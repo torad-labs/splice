@@ -4,7 +4,6 @@
 package splice.server
 
 import com.sun.net.httpserver.HttpServer
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
@@ -21,18 +20,9 @@ import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.config.MgmtKey
-import splice.core.config.StatePaths
-import splice.core.config.TurnKey
 import splice.core.pool.UpstreamPool
-import splice.core.testing.TestPorts
-import splice.core.topology.ServerAddress
-import splice.core.topology.ServerConfig
 import splice.core.topology.UpstreamConfig
 import splice.core.util.LogSink
-import splice.launch.LaunchSpec
-import splice.share.SharedHead
-import splice.share.SharedHeads
 import java.net.InetSocketAddress
 import java.net.URI
 import java.net.http.HttpClient
@@ -44,9 +34,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 internal class ServerUpstreamsTest {
     @TempDir lateinit var state: Path
 
-    private val port = TestPorts.reserve()
     private val http = HttpClient.newHttpClient()
-    private var mode: ServerMode? = null
 
     /** The upstream each turn that reached the head named as its person's, "" for a turn that named none. */
     private val named = CopyOnWriteArrayList<String>()
@@ -72,57 +60,27 @@ internal class ServerUpstreamsTest {
         LogSink { },
     )
 
-    private class Head(override val port: Int) : SharedHead {
-        override val key: String = "team"
-        override val command: String = "claude-team"
-
-        override fun running(): Boolean = true
-
-        override fun launch(): LaunchSpec? = null
-
-        override fun logins(): List<String> = emptyList()
-
-        override fun pin(login: String, session: String): Boolean = false
-
-        override fun maxRequestBytes(): Int = 1_000_000
-
-        override fun requestReadTimeoutMs(): Long = 5_000
-    }
-
-    /** Server mode as the daemon opens it, over one head whose provider is [pool]'s two servers. */
-    private fun serve(): ServerMode {
-        val machine = object : SharedHeads {
-            override val machine: String = "gpu-box"
-
-            override fun offered(): List<SharedHead> = listOf(Head(head.address.port))
-        }
-        val upstreams = object : HeadUpstreams {
+    /** The server's providers as the daemon would describe them: the head `team`'s is [pool]'s two servers. */
+    private val rig = ServerRig(
+        upstreams = object : HeadUpstreams {
             override fun all(): List<UpstreamPool> = listOf(pool)
 
             override fun of(head: String): UpstreamPool? = pool.takeIf { head == "team" }
-        }
-        val server = ServerConfig(listen = "127.0.0.1:$port", commands = listOf("claude-team"))
-        val reach = ServerReach(TurnKey(MgmtKey(StatePaths(baseOverride = state))), TestPorts.reserve())
-        val opened = ServerMode(server, state.resolve("server"), Dispatchers.IO, LogSink { }, upstreams = upstreams)
-        opened.open(ServerAddress("127.0.0.1", port), machine, reach, state)
-        mode = opened
-        return opened
-    }
+        },
+    )
+
+    /** Server mode as the daemon opens it, over one head whose provider is [pool]'s two servers. */
+    private fun serve(): ServerMode = rig.open(state, listOf(StandInHead(head.address.port)))
 
     @AfterEach
     fun stop() {
-        runBlocking { mode?.close() }
+        rig.close()
         head.stop(0)
-    }
-
-    private fun keyFor(mode: ServerMode, person: String): String {
-        val answer = runBlocking { mode.keyApi.create(buildJsonObject { put("person", person) }) }
-        return assertInstanceOf(ServerAnswer.Done::class.java, answer).body.getValue("key").jsonPrimitive.content
     }
 
     /** A turn as [key]'s holder sends it, with [sent] as a header of the caller's own. */
     private fun turn(key: String, sent: Pair<String, String>? = null): HttpResponse<String> {
-        val request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:$port/claude-team/v1/messages"))
+        val request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:${rig.port}/claude-team/v1/messages"))
             .header("Content-Type", "application/json")
             .header("x-api-key", key)
             .POST(HttpRequest.BodyPublishers.ofString("""{"model":"m","messages":[]}"""))
@@ -162,8 +120,8 @@ internal class ServerUpstreamsTest {
     @Test
     fun `a person set to an upstream has their turns handed to the head naming it, and no one else's are`() {
         val mode = serve()
-        val pia = keyFor(mode, "pia@team.example")
-        val ann = keyFor(mode, "ann@team.example")
+        val pia = rig.keyFor("pia@team.example")
+        val ann = rig.keyFor("ann@team.example")
         val answer = assertInstanceOf(ServerAnswer.Done::class.java, set(mode, "pia@team.example", "gpu-2")).body
         assertEquals(JsonPrimitive("gpu-2"), answer["upstream"])
 
@@ -196,7 +154,7 @@ internal class ServerUpstreamsTest {
     @Test
     fun `with no upstream up a turn is refused at once naming them, counts toward no cap, and is served once one is`() {
         val mode = serve()
-        val key = keyFor(mode, "ada@team.example")
+        val key = rig.keyFor("ada@team.example")
         runBlocking { mode.personApi.set("ada@team.example", buildJsonObject { put("rpm", 1) }) }
         pool.checked("gpu-1", healthy = false, said = "HTTP 503")
         pool.checked("gpu-2", healthy = false, said = "no answer")

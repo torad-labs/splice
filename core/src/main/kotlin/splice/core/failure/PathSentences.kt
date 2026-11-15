@@ -30,6 +30,9 @@ internal object PathSentences {
         answering: Boolean,
         ongoing: Boolean,
     ): String {
+        // A provider that is several servers, and the turn ran out of them: the line names them the way the
+        // upstream list does, so the person can say which are down to whoever runs them.
+        if (cause.noneOf.isNotEmpty()) return "None of $head's upstreams is up (${cause.noneOf.joinToString(", ")})"
         val side = if (cause.local) "$head's model server" else "$head's provider"
         return when (cause.why) {
             Unreach.REFUSED -> refused(side, cause.local, ongoing)

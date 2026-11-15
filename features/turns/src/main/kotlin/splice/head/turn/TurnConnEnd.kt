@@ -16,6 +16,7 @@ import splice.core.util.LoopbackOverride
 import splice.head.HeadHealthCounters
 import splice.head.perf.PerfFailure
 import splice.upstream.Provider
+import splice.upstream.transport.NoPlaceLeft
 import splice.upstream.transport.SseFrameTooLarge
 import splice.upstream.transport.StreamTornBeforeClient
 import splice.upstream.transport.TransportFaults
@@ -57,7 +58,11 @@ internal class TurnConnEnd(
      *  retryable; never "internal gateway error". */
     suspend fun emitTorn(drive: TurnDrive, torn: StreamTornBeforeClient) = emitConn(drive, torn.cause)
 
-    private suspend fun emitConn(drive: TurnDrive, e: IOException) {
+    /** The provider is several servers and the turn ran out of them: the ending the last one's refusal has, with
+     *  their names in the line the person reads. */
+    suspend fun emitNoPlace(drive: TurnDrive, none: NoPlaceLeft) = emitConn(drive, none.cause, none.places)
+
+    private suspend fun emitConn(drive: TurnDrive, e: IOException, noneOf: List<String> = emptyList()) {
         val divergence = generateSequence<Throwable>(e) { it.cause }.take(MAX_FAILURE_CAUSE_DEPTH).any { failure ->
             failure.suppressed.any { it is CodeModeDivergenceMarker }
         }
@@ -65,7 +70,8 @@ internal class TurnConnEnd(
         // Failure-handling slice 3: the socket's failure is READ, once, by the one reader of it
         // (TransportFaults) — this surface no longer decides a refusal from a perf counter it set itself, which
         // left every refusal that was not a loopback one reading as a connection closed before answering.
-        val cause = TransportFaults.of(e, local = LoopbackOverride.isLoopback(provider.upstreamUrl))
+        val read = TransportFaults.of(e, local = LoopbackOverride.isLoopback(provider.upstreamUrl))
+        val cause = read.copy(noneOf = noneOf)
         if (cause.why == Unreach.REFUSED) {
             runtimePort()?.let { drive.perf.setCount(PerfKeys.REFUSED_RUNTIME_PORT, it.toLong()) }
         }

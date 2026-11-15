@@ -21,6 +21,10 @@ public interface VendorRoute {
      *  stays ([Reroute.STAY], the default) and the failure is waited out as any path that did not answer. */
     public fun unreachable(): Reroute = Reroute.STAY
 
+    /** The names of the places this vendor is, for a turn that ran out of them ([Reroute.NOWHERE]): the person is
+     *  told which are down. Empty (the default) for a vendor with one place. */
+    public fun places(): List<String> = emptyList()
+
     /** The headers that route the request about to be sent. */
     public fun sending(): Map<String, String>
 

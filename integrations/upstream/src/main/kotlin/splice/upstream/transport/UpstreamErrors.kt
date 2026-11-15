@@ -2,7 +2,7 @@
 //
 // How an upstream call ENDS without delivering a round, as VALUES (kt-no-exception-as-outcome, 2026-10-09).
 //
-// These four were exceptions: thrown by the retry loop, the SSE reader and the translators, and caught at the
+// Four of these were exceptions: thrown by the retry loop, the SSE reader and the translators, and caught at the
 // turn's boundary. They are returned now. [UpstreamEnding] is what [UpstreamPost.Ended] and
 // [splice.upstream.StreamRead.Ended] carry, and [splice.upstream.RoundResult.Ended] carries it up the round ports to
 // the turn, where one end handler per variant writes the terminal. A caller that forgets one fails to compile.
@@ -24,6 +24,13 @@ public class UpstreamAuthMissing : UpstreamEnding()
 /** G5: a transport tear BEFORE any client frame, which the retry loop may re-issue. The original tear rides as [cause]
  *  so the transport classifiers walk it exactly as they walk a raw IOException. */
 public class StreamTornBeforeClient(public val cause: java.io.IOException) : UpstreamEnding()
+
+/** A vendor that is several servers, and the turn ran out of them: each one down, or refusing the connection the
+ *  turn opened to it (VendorRoute.unreachable). The turn ends at once, on none of the waits one server's refusal is
+ *  given. The refusal the last server gave rides as [cause], which the transport classifiers walk as they walk a raw
+ *  IOException, and [places] names the servers, so the line the person reads names them (docs/specs/server-mode.md,
+ *  F4: "with none up a turn is refused within seconds naming the upstreams"). */
+public class NoPlaceLeft(public val cause: java.io.IOException, public val places: List<String>) : UpstreamEnding()
 
 /** The upstream sent a frame over our own safety limit: [kind] says which of the two limits, [limit] its size, and
  *  [observed] how many characters the frame had reached when the read stopped (null when the reader did not count). */

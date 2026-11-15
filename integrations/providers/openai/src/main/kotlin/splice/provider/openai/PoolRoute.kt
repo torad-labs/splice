@@ -40,6 +40,8 @@ internal class PoolRoute(
         return if (pool.up && left < pool.upstreams.size) Reroute.MOVED else Reroute.NOWHERE
     }
 
+    override fun places(): List<String> = pool.upstreams.map { it.name }
+
     /** The turn's place, taken when its first request asks where to go. A request sent after the turn ended holds
      *  none: it is counted nowhere, since nothing would ever give its place back. */
     private fun held(): UpstreamLease = lease ?: pool.lease(preferred).also { taken ->

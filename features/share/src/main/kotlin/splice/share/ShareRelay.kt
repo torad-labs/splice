@@ -3,8 +3,8 @@
 // other machine sent, and the answer streamed back as it arrives. A head that takes the caller's own login gets the
 // node's word instead of the turn key, and its pool sends a login it holds. The head runs the turn as for a session here:
 // its admission, account selection, cooldowns and honest failures all apply unchanged, and no credential of any
-// provider leaves this process. An event stream goes back through SseChannelResponse, the daemon's one streaming
-// writer; any other answer goes back whole. The body is read under the head's own limits first (its maxRequestBytes
+// provider leaves this process. The answer goes back as HeadAnswers gives it: an event stream as it arrives, any other
+// answer whole. The body is read under the head's own limits first (its maxRequestBytes
 // and read timeout), so a body the head would refuse is refused here in the head's words, before this listener holds
 // more of it than the head would. A head that does not answer is said as that, in this machine's name: a 503 Claude
 // Code prints, never a 529 it retries in silence as "overloaded".
@@ -12,25 +12,24 @@
 // Server mode (docs/specs/server-mode.md) relays a key holder's turn through this same class, under its own voice.
 // Each blocking step (the send, each read of the answer) is interruptible, so a caller that cancels the relay, as the
 // server listener does when a turn's client hangs up, ends it at once and hangs up on the head, which then sees its own
-// client leave: no head goes on computing an answer nobody is waiting for.
+// client leave: no head goes on computing an answer nobody is waiting for. A turn the server listener asks to be kept
+// alive, and that asks for a stream, is not left waiting on a silent head: after a second its stream is opened to the
+// client and kept alive until the head answers (HeadAnswers.early).
 package splice.share
 
-import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.receiveChannel
-import io.ktor.server.response.respond
-import io.ktor.server.response.respondBytes
-import io.ktor.utils.io.ByteWriteChannel
 import io.ktor.utils.io.readBuffer
-import io.ktor.utils.io.writeFully
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.io.readByteArray
 import splice.core.config.LAUNCH_PROOF_HEADER
 import splice.core.config.TurnKey
@@ -40,21 +39,26 @@ import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.wire.HttpStatus
-import splice.http.SseChannelResponse
-import java.io.IOException
 import java.io.InputStream
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
-import java.time.Duration
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.time.Duration
 
 /** Whose words a relay refuses in, and the name its log lines carry. */
 public data class RelaySpeaker(val errors: RefusalVoice, val tag: String)
 
-/** One request for a head: its [path] under the head (`/v1/messages?beta=true`), and what the listener that relays
- *  it says about it in headers of its own ([named]), such as the upstream the caller's person prefers. */
-public data class HeadTurn(val head: SharedHead, val path: String, val named: Map<String, String> = emptyMap())
+/** One request for a head: its [path] under the head (`/v1/messages?beta=true`), what the listener that relays it
+ *  says about it in headers of its own ([named]), such as the upstream the caller's person prefers, and how often its
+ *  client is sent a [keepalive] while a streamed answer is silent (null: never, and the client waits on the head). */
+public data class HeadTurn(
+    val head: SharedHead,
+    val path: String,
+    val named: Map<String, String> = emptyMap(),
+    val keepalive: Duration? = null,
+)
 
 public class ShareRelay(
     private val turnKey: TurnKey,
@@ -66,6 +70,8 @@ public class ShareRelay(
     private val speaker: RelaySpeaker = RelaySpeaker(ShareErrors.voice, "share"),
 ) {
     private val errors get() = speaker.errors
+    private val answers = HeadAnswers(io, speaker.errors)
+    private val streamed = StreamedBodies()
 
     /** What a statusline's body passes before it is relayed: the listener pins the session it names to the login the
      *  address chose, so the line shows that login from its first draw, before the session's first turn. */
@@ -76,7 +82,7 @@ public class ShareRelay(
 
     private val http: HttpClient = HttpClient.newBuilder()
         .version(HttpClient.Version.HTTP_1_1)
-        .connectTimeout(Duration.ofMillis(RELAY_CONNECT_TIMEOUT_MS))
+        .connectTimeout(java.time.Duration.ofMillis(RELAY_CONNECT_TIMEOUT_MS))
         .build()
 
     /** [turn] on its head, under the head's own body limits. */
@@ -90,7 +96,8 @@ public class ShareRelay(
         // PR #247 review, Oct 29: that head serves its logins only to a caller proven splice's, and this relay is.
         val proof = if (head.forwardsClientAuth) mapOf(LAUNCH_PROOF_HEADER to turnKey.get()) else emptyMap()
         val signed = mapOf(HttpHeaders.Authorization to "Bearer $bearer") + proof + turn.named
-        forward(call, URI.create("http://127.0.0.1:${head.port}${turn.path}"), body, silent, signed)
+        val request = request(call, URI.create("http://127.0.0.1:${head.port}${turn.path}"), body, signed)
+        forward(call, request, ClientWait(silent, turn.keepalive?.takeIf { streamed.asks(body) }))
     }
 
     /** The control plane's statusline for [head], fed the session's JSON as Claude Code feeds its statusline, once
@@ -101,18 +108,13 @@ public class ShareRelay(
         if (refusal != null) return errors.refuse(call, HttpStatus.BAD_REQUEST, refusal)
         val silent = "$machine's statusline for ${head.command} is not answering"
         val signed = mapOf(HttpHeaders.Authorization to "Bearer ${turnKey.get()}")
-        forward(call, URI.create("http://127.0.0.1:$controlPort/statusline/${head.key}"), body, silent, signed)
+        val target = URI.create("http://127.0.0.1:$controlPort/statusline/${head.key}")
+        forward(call, request(call, target, body, signed), ClientWait(silent))
     }
 
-    /** [body] to [target], with the [signed] headers in place of whatever the other machine sent: the bearer, and for
-     *  a Claude head that holds logins, the launch proof. */
-    private suspend fun forward(
-        call: ApplicationCall,
-        target: URI,
-        body: ByteArray,
-        silent: String,
-        signed: Map<String, String>,
-    ) {
+    /** [body] for [target], with the [signed] headers in place of whatever the other machine sent: the bearer, and
+     *  for a Claude head that holds logins, the launch proof. */
+    private fun request(call: ApplicationCall, target: URI, body: ByteArray, signed: Map<String, String>): HttpRequest {
         val publisher = if (body.isEmpty()) {
             HttpRequest.BodyPublishers.noBody()
         } else {
@@ -123,22 +125,43 @@ public class ShareRelay(
             if (name.lowercase() !in notForwarded) values.forEach { request.header(name, it) }
         }
         signed.forEach { (name, value) -> request.header(name, value) }
-        val streamed = HttpResponse.BodyHandlers.ofInputStream()
-        val sent = runInterruptible(io) { Cancellables.runCatchingCancellable { http.send(request.build(), streamed) } }
-        val response = sent.getOrElse { failure ->
-            log("[${speaker.tag}] $silent on :${target.port}: ${SafeFailureText.render(failure)}\n")
-            errors.refuse(call, HttpStatus.SERVICE_UNAVAILABLE, silent)
-            return
-        }
+        return request.build()
+    }
+
+    /** [request] sent, and its answer given to [call]. A client that is kept alive does not wait on a silent head for
+     *  its stream to open: a head that has not answered within [HEAD_SOON_MS] finds the stream open when it does. */
+    private suspend fun forward(call: ApplicationCall, request: HttpRequest, wait: ClientWait) {
+        val answer = AtomicReference<HttpResponse<InputStream>>()
         try {
-            answer(call, response)
+            if (wait.every == null) return answers.given(call, send(request, answer, wait), wait)
+            coroutineScope {
+                val sending = async { send(request, answer, wait) }
+                val soon = withTimeoutOrNull(HEAD_SOON_MS) { sending.await() }
+                if (soon == null) answers.early(call, sending, wait) else answers.given(call, soon, wait)
+            }
         } finally {
             // However the answer ended, a relay cancelled before it read a byte included: the head is hung up on.
-            Cancellables.discard(
-                Cancellables.runCatchingCancellable { response.body().close() },
-                "closing an answer already read to its end or already closed changes nothing",
-            )
+            answer.get()?.let { response ->
+                Cancellables.discard(
+                    Cancellables.runCatchingCancellable { response.body().close() },
+                    "closing an answer already read to its end or already closed changes nothing",
+                )
+            }
         }
+    }
+
+    /** The head's answer to [request], kept in [answer] from the moment there is one, so it is closed however the
+     *  relay ends; a head that does not answer is said in the log. */
+    private suspend fun send(
+        request: HttpRequest,
+        answer: AtomicReference<HttpResponse<InputStream>>,
+        wait: ClientWait,
+    ): Result<HttpResponse<InputStream>> = runInterruptible(io) {
+        Cancellables.runCatchingCancellable {
+            http.send(request, HttpResponse.BodyHandlers.ofInputStream()).also(answer::set)
+        }
+    }.onFailure { failure ->
+        log("[${speaker.tag}] ${wait.silent} on :${request.uri().port}: ${SafeFailureText.render(failure)}\n")
     }
 
     /** [call]'s body, or null once it is refused the way a head's own admission refuses one: 413 for a body declared
@@ -162,38 +185,6 @@ public class ShareRelay(
         return null
     }
 
-    private suspend fun answer(call: ApplicationCall, response: HttpResponse<InputStream>) {
-        response.headers().map().forEach { (name, values) ->
-            if (name.lowercase() !in notReturned) values.forEach { call.response.headers.append(name, it) }
-        }
-        val status = HttpStatusCode.fromValue(response.statusCode())
-        val type = response.headers().firstValue("content-type").map { ContentType.parse(it) }
-            .orElse(ContentType.Application.OctetStream)
-        if (type.match(ContentType.Text.EventStream)) {
-            call.response.status(status)
-            call.respond(SseChannelResponse { out -> response.body().use { input -> pump(input, out) } })
-        } else {
-            val whole = runInterruptible(io) { response.body().use(InputStream::readAllBytes) }
-            call.respondBytes(whole, type, status)
-        }
-    }
-
-    /** Chunk by chunk, flushed each time: an event (or the head's keepalive ping) reaches the other machine the moment
-     *  the head writes it. A client that went away fails the write, and closing the head's stream then hangs up on the
-     *  head, which sees its own client leave. A head that hangs up mid-stream ends the relay there. */
-    private suspend fun pump(input: InputStream, out: ByteWriteChannel) {
-        val buffer = ByteArray(PUMP_BUFFER_BYTES)
-        while (true) {
-            val read = runInterruptible(io) {
-                Cancellables.runCatchingCancellable { input.read(buffer) }
-                    .getOrElse { failure -> if (failure is IOException) END_OF_STREAM else throw failure }
-            }
-            if (read < 0) return
-            out.writeFully(buffer, 0, read)
-            out.flush()
-        }
-    }
-
     // Hop-by-hop, framing, the other machine's own token, and the names java.net.http refuses to set. Host becomes
     // 127.0.0.1, which the head's own DNS-rebinding guard requires. Which upstream a turn prefers is the relaying
     // listener's to say, from what the operator set for the person, and never the other machine's.
@@ -202,22 +193,17 @@ public class ShareRelay(
         "trailer", "proxy-authorization", "proxy-connection", "authorization", "x-api-key", "date", "via",
         "warning", "from", "origin", "referer", LAUNCH_PROOF_HEADER, PREFERRED_UPSTREAM_HEADER,
     )
-
-    // Framing the response re-chunks, and the type each answer sets itself.
-    private val notReturned = setOf("content-length", "transfer-encoding", "connection", "keep-alive", "content-type")
 }
 
 // why: the head and the control plane are on this machine's loopback, where a live listener accepts at once; a connect
 // still waiting after five seconds is one that is not answering, and the other machine hears that in words.
 private const val RELAY_CONNECT_TIMEOUT_MS = 5_000L
 
-// why: one read of the head's answer: an SSE event is a few hundred bytes, so 16 KiB carries a whole burst per flush
-// while holding little memory for each relayed stream.
-private const val PUMP_BUFFER_BYTES = 16 * 1024
-
-// why: what InputStream.read answers at the end of the stream; a failed read of the head's answer ends the relay the
-// same way, as the head hanging up.
-private const val END_OF_STREAM = -1
+// why: a head that refuses a turn (a body it cannot read, a model it does not serve, a cap of its own) does so in
+// milliseconds, and its own status reaches the client only while no stream is open; a head still silent after a
+// second is waiting on its model server, and a client that asked to be kept alive has its stream opened then, well
+// inside the two seconds server mode promises one (docs/specs/server-mode.md, F4).
+private const val HEAD_SOON_MS = 1_000L
 
 // why: Claude Code's statusline input is one session's JSON, a few KiB; 256 KiB holds it with room, and nothing larger
 // is read before it is refused.

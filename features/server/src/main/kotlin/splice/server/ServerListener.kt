@@ -20,6 +20,11 @@
 // prefers, which the head sends it to while that one is healthy; and while none of the provider's servers is up the
 // turn is refused here, a 503 naming them, before it takes a slot or reaches the head.
 //
+// With `[server] keepalive_seconds` a streamed turn is not left silent while its model server prefills a long prompt:
+// its stream is opened within two seconds and carries an SSE keepalive at least that often until the answer comes,
+// and after it whenever the answer falls silent (HeadAnswers, QuietWire). A turn that asks for no stream answers one
+// JSON body as before.
+//
 // A path is read the way a head reads one, percent-escapes decoded, and a head is handed the path as it was read
 // (RequestPaths): what a head serves as a turn is what the caps counted, however the client spelled it.
 //
@@ -62,6 +67,7 @@ import splice.share.SharedHead
 import splice.share.SharedHeads
 import java.security.KeyStore
 import java.time.Instant
+import kotlin.time.Duration.Companion.seconds
 
 /** What the listener serves from: the keys it answers, each person's limits, the heads `[server] commands` names,
  *  the relay that hands their turns to those heads, its TLS identity when it speaks HTTPS itself, each person's
@@ -90,6 +96,9 @@ internal class ServerListener(
     private val refusedCallers = RefusedCallers(log)
     private val watched = WatchedRelay(parts.relay)
     private val paths = RequestPaths()
+
+    /** How often a streamed turn's client is sent a keepalive while its answer is silent; null sends none. */
+    private val keepalive = server.keepaliveSeconds.takeIf { it > 0 }?.seconds
 
     /** The path, after the command, of the one request that runs a turn on the Messages route. */
     private val turnPath = listOf(HEAD_API_ROOT, "messages")
@@ -192,7 +201,7 @@ internal class ServerListener(
         val query = call.request.queryString().takeIf(String::isNotEmpty)?.let { "?$it" }.orEmpty()
         val preferred = parts.people.of(key.person).preferred
         val named = listOfNotNull(preferred?.let { PREFERRED_UPSTREAM_HEADER to it }).toMap()
-        watched.turn(call, HeadTurn(head, paths.spell(path) + query, named), slot)
+        watched.turn(call, HeadTurn(head, paths.spell(path) + query, named, keepalive), slot)
     }
 
     /** The slot a turn on [head] takes among those of [key]'s person, or null with the turn refused: one past a cap,

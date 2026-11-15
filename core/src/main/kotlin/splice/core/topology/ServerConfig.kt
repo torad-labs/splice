@@ -1,7 +1,8 @@
 // NEW: server mode (docs/specs/server-mode.md, F1 and the limits half of F3). The `[server]` table splice.toml carries
 // on a machine that is a team's front door: where it listens, which commands it serves, the PEM files it speaks TLS
-// from, the proxies whose word on a client's address it takes, who administers it, and what each person may hold at
-// once. A file with no `[server]` decodes to the defaults, which serve nothing.
+// from, the proxies whose word on a client's address it takes, who administers it, what each person may hold at
+// once, and how often a silent stream is kept alive (F4). A file with no `[server]` decodes to the defaults, which
+// serve nothing.
 package splice.core.topology
 
 import kotlinx.serialization.SerialName
@@ -23,6 +24,9 @@ public data class ServerConfig(
     /** The people whose keys open the server's own API on the listener, by email. */
     val admins: List<String> = emptyList(),
     val limits: ServerLimits = ServerLimits(),
+    /** How often a streamed turn's client is sent an SSE keepalive while its answer is silent, as a model server
+     *  prefilling a long prompt is; the stream is opened to the client at once for it. 0 sends none. */
+    @SerialName("keepalive_seconds") val keepaliveSeconds: Int = 0,
 ) {
     /** Whether the file carries a `[server]` table at all, whatever it holds. */
     val declared: Boolean get() = this != ServerConfig()

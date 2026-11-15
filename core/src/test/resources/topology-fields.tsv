@@ -175,6 +175,7 @@ remote.*.url
 server	
 server.admins	
 server.commands	
+server.keepalive_seconds	
 server.limits	
 server.limits.inflight_per_person	
 server.limits.rpm_per_person	

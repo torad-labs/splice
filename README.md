@@ -383,6 +383,7 @@ tls_cert = "/etc/splice/tls/fullchain.pem"   # both, or neither when a proxy in 
 tls_key = "/etc/splice/tls/privkey.pem"
 trusted_proxies = ["10.0.0.0/8"]             # the proxies whose X-Forwarded-For names the client
 admins = ["ops@team.example"]
+keepalive_seconds = 10                       # keeps a streamed turn's connection alive through a long prefill
 
 [server.limits]
 inflight_per_person = 3                      # 0, or no line, is no cap
@@ -425,6 +426,8 @@ url = "http://10.0.0.22:8080/v1"
 ```
 
 splice asks each server `GET /health` beside its API root (`http://10.0.0.21:8080/health`), where llama-server and vLLM answer it, and a server that answers anything but a 2xx takes no turn until it does again. A turn goes to the healthy server with the fewest turns in flight, or to the one its person was set to with `--upstream` while that one is healthy (`--upstream ""` takes the preference back). A server that refuses a connection is left at once and the same turn goes to another; with none up, a turn is refused with a 503 that names them. `GET /api/server/upstreams` on the control plane lists each server's provider, name, address, health and turns in flight.
+
+A model server prefilling a long prompt can say nothing for minutes, and a proxy in front of the server closes a connection that carries nothing for that long. With `keepalive_seconds` set, a streamed turn whose answer has not started within a second has its stream opened then, and is sent an SSE comment (`: keepalive`), which Claude Code and every SSE client skip, at least that often until the answer comes and whenever it falls silent after. Tokens are relayed as the model server sends them. Such a turn has answered 200 before its model server did, so a failure after that arrives as the stream's `error` event. A turn that asks for no stream gets one JSON body and no keepalive, so give those the proxy's longer read timeout. Without the key, or at 0, a turn waits on its model server as before.
 
 splice refuses to start a server beside `splice share on`, with a command no head here runs, or with a command whose head signs in with a person's plan login (a Claude or ChatGPT subscription, for example): a plan's terms are for one person, so a server serves only heads that sign with an API key or a self-hosted provider. There is no sign-in, budget, usage report or per-person metric yet; [server mode's spec](docs/specs/server-mode.md) is the plan for them.
 

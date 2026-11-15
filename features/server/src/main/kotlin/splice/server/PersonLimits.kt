@@ -76,7 +76,7 @@ internal class PersonLimits(
         uses.computeIfAbsent(person) { PersonUse() }.begin(person, capsOf(person), clock.millis())
 
     /** [person]'s caps: their own where the operator set one, else the server's. */
-    fun capsOf(person: String): ServerLimits {
+    private fun capsOf(person: String): ServerLimits {
         val own = people.of(person)
         return ServerLimits(own.inflight ?: server.inflightPerPerson, own.rpm ?: server.rpmPerPerson)
     }

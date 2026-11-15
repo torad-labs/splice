@@ -17,8 +17,7 @@ import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
+import splice.app.control.api.ControlBodies
 import splice.app.control.mount.ControlGuard
 import splice.http.JsonBody
 import splice.http.JsonReply
@@ -87,7 +86,7 @@ internal class ServerModeRoutes(private val ports: ConsolePorts, private val gua
     }
 
     private suspend fun refuse(call: ApplicationCall, status: HttpStatusCode, why: String) {
-        JsonReply(status, buildJsonObject { put("error", why) }.toString()).send(call)
+        JsonReply(status, ControlBodies.errorJson(why)).send(call)
     }
 }
 

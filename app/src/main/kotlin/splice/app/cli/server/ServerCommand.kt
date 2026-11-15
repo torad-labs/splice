@@ -19,9 +19,9 @@ internal class ServerCommand(
     private val err: TerminalOutput = TerminalOutput(System.err::println),
     env: EnvReader = EnvReader(System::getenv),
 ) {
-    private val call = PeerCall(env, err, "server")
-    private val keys = ServerKeyVerbs(call, out)
-    private val people = ServerPersonVerbs(call, out)
+    private val ask = ServerAsk(PeerCall(env, err, "server"), out)
+    private val keys = ServerKeyVerbs(ask)
+    private val people = ServerPersonVerbs(ask)
 
     fun run(args: List<String>): Int {
         val rest = args.drop(2)

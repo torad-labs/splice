@@ -6,14 +6,10 @@ package splice.app.cli.server
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.app.cli.peer.PeerAnswer
 import splice.app.cli.peer.PeerArgsParser
-import splice.app.cli.peer.PeerCall
-import splice.app.cli.peer.PeerExit
-import splice.core.terminal.TerminalOutput
-import java.net.URLEncoder
+import splice.app.cli.peer.PeerLine
 
-internal class ServerPersonVerbs(private val call: PeerCall, private val out: TerminalOutput) {
+internal class ServerPersonVerbs(private val ask: ServerAsk) {
     private val lines = ServerLines()
 
     /** `person set <email> [--inflight N] [--rpm N]`, with at least one of the two. */
@@ -22,7 +18,7 @@ internal class ServerPersonVerbs(private val call: PeerCall, private val out: Te
         val person = parsed?.words?.singleOrNull()
         val body = parsed?.let { capsOf(it.values) }
         if (person == null || body == null) return null
-        return call.managementKey()?.let { key -> sent(person, key, body) } ?: PeerExit.REFUSED
+        return ask.send(ServerCall("PUT", "$PEOPLE_PATH/${ask.segment(person)}", body), PeerLine(lines::person))
     }
 
     /** `{"inflight": N, "rpm": N}` from the flags given, each 0 or more; null when none is given or one is no such
@@ -31,17 +27,6 @@ internal class ServerPersonVerbs(private val call: PeerCall, private val out: Te
         val caps = flags.mapValues { (_, text) -> text.toIntOrNull()?.takeIf { it >= 0 } }
         if (caps.isEmpty() || caps.values.any { it == null }) return null
         return buildJsonObject { caps.forEach { (flag, cap) -> put(flag.removePrefix("--"), cap) } }
-    }
-
-    private fun sent(person: String, key: String, body: JsonObject): Int {
-        val path = "$PEOPLE_PATH/${URLEncoder.encode(person, Charsets.UTF_8)}"
-        return when (val answer = call.call("PUT", path, key, body)) {
-            is PeerAnswer.Exit -> answer.code
-            is PeerAnswer.Ok -> {
-                out.line(lines.person(answer.body))
-                PeerExit.DONE
-            }
-        }
     }
 }
 

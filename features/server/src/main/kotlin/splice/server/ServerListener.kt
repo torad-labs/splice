@@ -16,6 +16,10 @@
 // it counts against its person's in-flight and per-minute caps (PersonLimits), and one past a cap is a 429
 // `rate_limit_error` with `Retry-After`. Every error is in the Anthropic shape, so Claude Code prints its message.
 //
+// A command whose provider is several servers (F4): a turn is handed to its head naming the upstream its person
+// prefers, which the head sends it to while that one is healthy; and while none of the provider's servers is up the
+// turn is refused here, a 503 naming them, before it takes a slot or reaches the head.
+//
 // A path is read the way a head reads one, percent-escapes decoded, and a head is handed the path as it was read
 // (RequestPaths): what a head serves as a turn is what the caps counted, however the client spelled it.
 //
@@ -42,6 +46,7 @@ import io.ktor.server.request.queryString
 import io.ktor.server.response.respondText
 import kotlinx.coroutines.CoroutineDispatcher
 import splice.core.auth.BearerScheme
+import splice.core.pool.PREFERRED_UPSTREAM_HEADER
 import splice.core.topology.ServerAddress
 import splice.core.topology.ServerConfig
 import splice.core.util.LogSink
@@ -49,6 +54,7 @@ import splice.core.wire.HttpStatus
 import splice.http.listen.HttpListenerThreads
 import splice.share.HEAD_API_ROOT
 import splice.share.HEAD_LAUNCH_ROUTE
+import splice.share.HeadTurn
 import splice.share.RefusalVoice
 import splice.share.ShareCatalog
 import splice.share.ShareRelay
@@ -58,13 +64,16 @@ import java.security.KeyStore
 import java.time.Instant
 
 /** What the listener serves from: the keys it answers, each person's limits, the heads `[server] commands` names,
- *  the relay that hands their turns to those heads, and its TLS identity when it speaks HTTPS itself. */
+ *  the relay that hands their turns to those heads, its TLS identity when it speaks HTTPS itself, each person's
+ *  settings, and the servers behind those heads' providers. */
 internal data class ServerParts(
     val keys: ServerKeys,
     val limits: PersonLimits,
     val heads: SharedHeads,
     val relay: ShareRelay,
     val tls: KeyStore? = null,
+    val people: ServerPeople,
+    val upstreams: UpstreamApi,
 )
 
 internal class ServerListener(
@@ -179,16 +188,28 @@ internal class ServerListener(
     private suspend fun turn(call: ApplicationCall, key: ServerKey, head: SharedHead, path: List<String>) {
         if (!head.running()) return catalog.notRunning(call, head)
         val counted = call.request.httpMethod == HttpMethod.Post && path == turnPath
-        val slot = if (counted) {
-            when (val verdict = parts.limits.begin(key.person)) {
-                is LimitVerdict.Admitted -> verdict.slot
-                is LimitVerdict.Refused -> return limited(call, verdict)
-            }
-        } else {
-            null
-        }
+        val slot = if (counted) slot(call, key, head) ?: return else null
         val query = call.request.queryString().takeIf(String::isNotEmpty)?.let { "?$it" }.orEmpty()
-        watched.turn(call, head, paths.spell(path) + query, slot)
+        val preferred = parts.people.of(key.person).preferred
+        val named = listOfNotNull(preferred?.let { PREFERRED_UPSTREAM_HEADER to it }).toMap()
+        watched.turn(call, HeadTurn(head, paths.spell(path) + query, named), slot)
+    }
+
+    /** The slot a turn on [head] takes among those of [key]'s person, or null with the turn refused: one past a cap,
+     *  and before that one whose provider has no server up, which counts toward no cap. */
+    private suspend fun slot(call: ApplicationCall, key: ServerKey, head: SharedHead): TurnSlot? {
+        val noneUp = parts.upstreams.noneUp(head.key)
+        if (noneUp != null) {
+            voice.refuse(call, HttpStatus.SERVICE_UNAVAILABLE, noneUp)
+            return null
+        }
+        return when (val verdict = parts.limits.begin(key.person)) {
+            is LimitVerdict.Admitted -> verdict.slot
+            is LimitVerdict.Refused -> {
+                limited(call, verdict)
+                null
+            }
+        }
     }
 
     private suspend fun limited(call: ApplicationCall, refused: LimitVerdict.Refused) {

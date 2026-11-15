@@ -2,18 +2,22 @@
 // keys and the people kept under `<state>/server` and the listener that answers key holders, opened once the heads
 // are up and closed first at stop. A server mode that can't start (a port another program holds, a PEM file that is
 // no certificate, a keys file that cannot be read) is said in the log and to every `splice server` verb, and leaves
-// the rest of the daemon serving.
+// the rest of the daemon serving. It is also how server mode reads the servers behind a head (F4): the pool of the
+// provider that head's splice.toml table names.
 package splice.app.server
 
 import splice.app.control.ManagedHead
 import splice.app.control.ServerModeSource
+import splice.app.provider.UpstreamPools
 import splice.app.share.ManagedSharedHeads
 import splice.core.config.ConfigService
 import splice.core.config.TurnKey
+import splice.core.pool.UpstreamPool
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import splice.server.HeadUpstreams
 import splice.server.ServerMode
 import splice.server.ServerReach
 import splice.share.ShareMachine
@@ -29,7 +33,9 @@ internal class DaemonServer(
     private val stateDir: Path,
     /** splice.toml's directory, which a relative `tls_cert` or `tls_key` is under. */
     private val configDir: Path,
-) : ServerModeSource {
+    /** The pools of the providers that list upstreams (F4), as the heads' providers hold them. */
+    private val pools: UpstreamPools,
+) : ServerModeSource, HeadUpstreams {
     @Volatile
     private var running: ServerMode? = null
 
@@ -40,12 +46,17 @@ internal class DaemonServer(
 
     override fun absent(): String = down
 
+    override fun all(): List<UpstreamPool> = pools.all()
+
+    override fun of(head: String): UpstreamPool? = topology.heads[head]?.let { pools.named(it.provider) }
+
     /** Opens server mode when `[server]` names an address, serving [heads] through [controlPort]'s daemon. */
     fun open(heads: Map<String, ManagedHead>, controlPort: Int) {
         val address = topology.server.address ?: return
         Cancellables.runCatchingBestEffort {
             val offered = ManagedSharedHeads(heads, topology, config, ShareMachine(log).name())
-            ServerMode(topology.server, stateDir.resolve(SERVER_STATE), ProcessDispatchers().io(), log)
+            val folder = stateDir.resolve(SERVER_STATE)
+            ServerMode(topology.server, folder, ProcessDispatchers().io(), log, upstreams = this)
                 .also { it.open(address, offered, ServerReach(turnKey, controlPort), configDir) }
         }.onSuccess { running = it }.onFailure { failure ->
             val why = SafeFailureText.render(failure)

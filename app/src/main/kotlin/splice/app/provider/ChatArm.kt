@@ -27,6 +27,8 @@ internal class ChatArm(
     private val probeScope: CoroutineScope,
     private val log: LogSink,
     private val grokRefresh: GrokRefresh,
+    /** Server mode (F4): the pools of the providers that list upstreams, shared by every head of each. */
+    private val pools: UpstreamPools = UpstreamPools(probeScope, log),
 ) {
     private val overlay = QuirksOverlay()
     private val probeInputs = LocalProbeInputs()
@@ -56,6 +58,11 @@ internal class ChatArm(
                 keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
             )
         if (providerCfg.isLocal) refuseContradictedRows(ctx)
+        // A provider that is several servers: its turns go where its pool says, and each server's health check carries
+        // what a turn carries (the provider's headers and its key as it stands at the check).
+        val pool = pools.of(ctx.head.provider, providerCfg) {
+            probeInputs.headers(providerCfg, (auth as? ApiKeyAuthProvider)?.keyNow())
+        }
         val provider = OpenAiChatProvider(
             tuning = ProviderTuning(
                 name = ProviderName(key = key, label = label),
@@ -72,6 +79,7 @@ internal class ChatArm(
             display = { ctx.cfg.current().showReasoning },
             affinity = slotAffinity(ctx, (auth as? ApiKeyAuthProvider)?.keyNow()),
             replies = chatReplies(providerCfg),
+            pool = pool,
         )
         val configured = providerCfg.staticHeaders.takeIf { it.isNotEmpty() }
             ?.let { StaticChatHeaders(provider, it) }

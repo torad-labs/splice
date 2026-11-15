@@ -1,7 +1,7 @@
-// NEW: server mode (docs/specs/server-mode.md, F3). What the operator set for one person with `splice server person
-// set <email>`: for now their own in-flight and per-minute caps, which override the server's; the same record later
-// carries their team and their preferred upstream. Kept in `<state>/server/people.json` and read by the limits at each
-// turn, so a change holds from the person's next request.
+// NEW: server mode (docs/specs/server-mode.md, F3 and F4). What the operator set for one person with `splice server
+// person set <email>`: their own in-flight and per-minute caps, which override the server's, and the upstream their
+// turns go to while it is healthy; the same record later carries their team. Kept in `<state>/server/people.json` and
+// read at each turn, so a change holds from the person's next request.
 package splice.server
 
 import kotlinx.coroutines.CoroutineDispatcher
@@ -11,13 +11,17 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import java.nio.file.Path
 
-/** One person's own settings. A null leaves that setting to the server's; a cap of 0 is no cap. */
+/** One person's own settings. A null leaves that setting to the server's; a cap of 0 is no cap. [upstream] is the
+ *  name of the server they prefer among a provider's upstreams, and "" once the operator took a preference back. */
 @Serializable
-public data class PersonSettings(val inflight: Int? = null, val rpm: Int? = null) {
+public data class PersonSettings(val inflight: Int? = null, val rpm: Int? = null, val upstream: String? = null) {
+
+    /** The upstream this person's turns go to while it is healthy, or null when they have none. */
+    val preferred: String? get() = upstream?.takeIf(String::isNotEmpty)
 
     /** These settings with every one [change] names taken from it. */
     public fun with(change: PersonSettings): PersonSettings =
-        PersonSettings(change.inflight ?: inflight, change.rpm ?: rpm)
+        PersonSettings(change.inflight ?: inflight, change.rpm ?: rpm, change.upstream ?: upstream)
 }
 
 @Serializable

@@ -36,6 +36,8 @@ public class ServerMode(
     private val log: LogSink,
     /** What time it is, for a key that expires and for the minute a person is counted over. */
     private val clock: Clock = Clock.systemUTC(),
+    /** The servers behind this machine's providers (F4); none for a daemon whose providers are each one server. */
+    upstreams: HeadUpstreams = object : HeadUpstreams {},
 ) {
     private val keys = ServerKeys(folder.resolve(KEYS_FILE), io, clock)
     private val people = ServerPeople(folder.resolve(PEOPLE_FILE), io)
@@ -43,8 +45,11 @@ public class ServerMode(
     /** The keys' operations, as the CLI and the control plane ask them. */
     public val keyApi: KeyApi = KeyApi(keys, log)
 
+    /** The upstreams as they read now, as the control plane lists them. */
+    public val upstreamApi: UpstreamApi = UpstreamApi(upstreams)
+
     /** Each person's settings, as the CLI and the control plane set them. */
-    public val personApi: PersonApi = PersonApi(people, log)
+    public val personApi: PersonApi = PersonApi(people, log, upstreamApi)
 
     @Volatile
     private var listener: ServerListener? = null
@@ -60,6 +65,8 @@ public class ServerMode(
             heads = ServedHeads(heads, server.commands),
             relay = ShareRelay(reach.turnKey, reach.controlPort, heads.machine, io, log, speaker),
             tls = server.pem(configDir)?.let { PemTls(it).keyStore() },
+            people = people,
+            upstreams = upstreamApi,
         )
         val opened = ServerListener(server, parts, io, log)
         opened.start(address)

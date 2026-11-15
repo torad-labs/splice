@@ -6,6 +6,7 @@
 package splice.provider.openai
 
 import splice.core.parse.AnthropicTurnBody
+import splice.core.pool.UpstreamPool
 import splice.core.prompt.SystemPromptMode
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.ReasoningDisplayNow
@@ -28,6 +29,7 @@ import splice.upstream.ReanchorPolicy
 import splice.upstream.StreamTranslator
 import splice.upstream.TurnEnd
 import splice.upstream.TurnSignals
+import splice.upstream.VendorRoute
 import splice.upstream.failure.Replies
 
 public class OpenAiChatProvider(
@@ -40,9 +42,13 @@ public class OpenAiChatProvider(
     /** This head's reading of its own failures: the Chat standard, and the deviation its arm declared (a local
      *  runtime's own shapes, xAI's expired token). */
     override val replies: Replies = Replies(ChatReplies),
+    /** Server mode (F4): set for a provider that lists upstreams, whose turns each go to one of [pool]'s servers. */
+    private val pool: UpstreamPool? = null,
 ) : Provider, ProviderIdentity by tuning {
 
-    override val upstreamUrl: String = "${tuning.locations.baseUrl}/chat/completions"
+    /** A provider that is several servers names its first here, for what asks the provider where it is; each turn
+     *  is sent where its [route] says. */
+    override val upstreamUrl: String = "${tuning.locations.baseUrl}$CHAT_PATH"
     override val replayReasoning: Boolean = false // chat dialect has no encrypted-reasoning replay
     override val showReasoning: ReasoningDisplay get() = display()
 
@@ -74,6 +80,11 @@ public class OpenAiChatProvider(
     override fun withSystemPrompt(turn: BuiltTurn, prompt: String, mode: SystemPromptMode): BuiltTurn =
         turn.copy(requestBody = systemPrompt.apply(turn.requestBody, prompt, mode))
 
+    /** The turn's place among this provider's servers: its person's preferred one while that is healthy, else the
+     *  healthy one with the least in flight (server mode, F4). Null for a provider that is one server. */
+    override fun route(meta: TurnMeta): VendorRoute? =
+        pool?.let { PoolRoute(it, meta.route.preferredUpstream, CHAT_PATH) }
+
     /** An unknown vendor error code before any content is sent once more (retry totality); nothing else re-anchors. */
     override fun reanchorPolicy(meta: TurnMeta): ReanchorPolicy = ChatResendOnce
 
@@ -90,3 +101,6 @@ public class OpenAiChatProvider(
             ),
         )
 }
+
+// The route a Chat Completions turn is posted to, under the server's API root.
+private const val CHAT_PATH = "/chat/completions"

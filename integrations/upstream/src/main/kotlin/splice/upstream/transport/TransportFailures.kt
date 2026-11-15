@@ -78,6 +78,13 @@ internal class TransportFailures {
             causeChain(e).firstNotNullOfOrNull { transportPhaseOf(it) }
         }
 
+    /** Whether [e] says no connection was made to the server at all: a refusal, a name that did not resolve, a
+     *  connect that ran out of time. Narrower than [TransportFailurePhase.CONNECT], which also holds a request this
+     *  machine could not start or finish writing: those say nothing about whether the server is there. */
+    internal fun neverConnected(e: Throwable): Boolean =
+        causeChain(e).none { it is RequestWriteStalled || it is RefusedBeforeSend } &&
+            classifyTransport(e) == TransportFailurePhase.CONNECT
+
     /**
      * Connection-phase failures worth a silent retry: name resolution, TCP connect/reset,
      * socket timeouts. Deliberately conservative — everything else (TLS trust failures,

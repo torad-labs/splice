@@ -13,6 +13,14 @@ import splice.upstream.failure.FailedReply
 /** One turn's route upstream, from [Provider.route]. The transport and the head say what happened to each request it
  *  routed; which of those means the conversation must leave its route is the vendor's to know. */
 public interface VendorRoute {
+    /** Where the request about to be sent goes, for a vendor that is several servers: the URL of the one this turn
+     *  is on now, the same until [unreachable] moves it. Null (the default) sends it to the provider's own URL. */
+    public fun target(): String? = null
+
+    /** The place [target] named took no connection, so no byte of the request reached it. A vendor with one place
+     *  stays ([Reroute.STAY], the default) and the failure is waited out as any path that did not answer. */
+    public fun unreachable(): Reroute = Reroute.STAY
+
     /** The headers that route the request about to be sent. */
     public fun sending(): Map<String, String>
 
@@ -43,4 +51,16 @@ public interface VendorRoute {
     /** The turn is over, whichever way it ended. A request still counted as running is one the turn left behind.
      *  Must not throw: it runs in the finally that settles the turn. */
     public fun turnEnded()
+}
+
+/** What a vendor's route did about a place that took no connection ([VendorRoute.unreachable]). */
+public enum class Reroute {
+    /** The vendor has one place: the retry engine is asked, as about any path that did not answer. */
+    STAY,
+
+    /** The turn moved to another place: the request goes there at once, on no wait. */
+    MOVED,
+
+    /** No place the vendor has takes a connection: the turn ends now, as the provider it could not reach. */
+    NOWHERE,
 }

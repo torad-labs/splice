@@ -114,6 +114,16 @@ public data class Topology(
         heads = heads.mapValues { (_, head) -> head.copy(contextWindow = null) },
     )
 
+    /** This topology with each provider that lists upstreams and no `base_url` reading its first upstream's as its
+     *  own, so everything that asks a provider where it is (its model list, its local-runtime probe, its price card)
+     *  asks a server of the pool. The loader applies it to every file it decodes. */
+    public fun withPoolBases(): Topology = copy(
+        providers = providers.mapValues { (_, provider) ->
+            val first = provider.upstreams.firstOrNull()?.url
+            if (provider.baseUrl.isBlank() && first != null) provider.copy(baseUrl = first) else provider
+        },
+    )
+
     /** This topology without every key the running daemon re-reads live: the context windows, and since Oct 12 the
      *  [compaction] table (§7, the console edits it) and `[daemon] mcp_share` (MCP hub step 3: the sharing choice
      *  applies to new connections, never after a restart), and since Oct 13 `[daemon] update_channel` and `auto_update`,
@@ -169,7 +179,9 @@ public data class DaemonConfig(
 @Serializable
 public data class ProviderConfig(
     val dialect: Dialect,
-    @SerialName("base_url") val baseUrl: String,
+    /** Where the provider is reached. A provider that lists [upstreams] instead writes none, and reads here as its
+     *  first upstream's ([Topology.withPoolBases]), which is where its models are listed and probed. */
+    @SerialName("base_url") val baseUrl: String = "",
     val auth: AuthConfig,
     val quirks: QuirksConfig = QuirksConfig(),
     /** Static vendor headers every upstream request carries (e.g. `anthropic-version`). Operator-
@@ -198,6 +210,11 @@ public data class ProviderConfig(
     /** 2026-09-22: which of the models this provider's endpoint publishes join its heads' pickers
      *  beyond the [models] declared here. Absent = every published model that can run a turn. */
     val discovery: ModelDiscoveryConfig = ModelDiscoveryConfig(),
+    /** Server mode (docs/specs/server-mode.md, F4): the servers this provider is, in place of one [baseUrl]. Each is
+     *  health-checked and a turn goes to a healthy one with the least in flight. Empty = the one [baseUrl]. */
+    val upstreams: List<UpstreamConfig> = emptyList(),
+    /** The seconds between health checks of each of [upstreams]. */
+    @SerialName("health_seconds") val healthSeconds: Int = DEFAULT_HEALTH_SECONDS,
 ) {
     /** Whether this provider is a local runtime: what the operator said, else the loopback rule. */
     public val isLocal: Boolean

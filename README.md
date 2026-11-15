@@ -396,7 +396,7 @@ splice server key create --person ann@team.example --name laptop --expires 90d  
 splice server key list --person ann@team.example
 splice server key revoke spk_ab12cd34                # one key, by the prefix the list shows
 splice server key revoke-person ann@team.example     # every key of someone who left
-splice server person set ann@team.example --inflight 5 --rpm 60
+splice server person set ann@team.example --inflight 5 --rpm 60 --upstream gpu-2
 ```
 
 A person runs Claude Code against a command with their key, as against any Anthropic-compatible gateway:
@@ -406,6 +406,25 @@ ANTHROPIC_BASE_URL=https://gateway.team.example:3443/claude-team ANTHROPIC_API_K
 ```
 
 `GET /health` is open, and everything else needs a live key, as `x-api-key` or `Authorization: Bearer`. A missing, unknown, revoked or expired key is a 401 that never repeats the key, and nothing reaches the model. A revoke holds from the key's next request. The server keeps each key only as its SHA-256, bound to the person's email (see [What splice keeps on your disk](#what-splice-keeps-on-your-disk)), and an admin's key also manages keys over the listener at `/server/api/keys`. A person past a cap gets a 429 with `Retry-After` naming the cap, and everyone else is still served.
+
+A team's model often runs on more than one machine. A provider that speaks `openai-chat` can list its servers in place of its one `base_url`:
+
+```toml
+[providers.box]
+dialect = "openai-chat"
+auth = { kind = "api-key", env = "BOX_KEY" }
+health_seconds = 5                           # how often each server is asked /health; 5 when left out
+
+[[providers.box.upstreams]]
+name = "gpu-1"
+url = "http://10.0.0.21:8080/v1"
+
+[[providers.box.upstreams]]
+name = "gpu-2"
+url = "http://10.0.0.22:8080/v1"
+```
+
+splice asks each server `GET /health` beside its API root (`http://10.0.0.21:8080/health`), where llama-server and vLLM answer it, and a server that answers anything but a 2xx takes no turn until it does again. A turn goes to the healthy server with the fewest turns in flight, or to the one its person was set to with `--upstream` while that one is healthy (`--upstream ""` takes the preference back). A server that refuses a connection is left at once and the same turn goes to another; with none up, a turn is refused with a 503 that names them. `GET /api/server/upstreams` on the control plane lists each server's provider, name, address, health and turns in flight.
 
 splice refuses to start a server beside `splice share on`, with a command no head here runs, or with a command whose head signs in with a person's plan login (a Claude or ChatGPT subscription, for example): a plan's terms are for one person, so a server serves only heads that sign with an API key or a self-hosted provider. There is no sign-in, budget, usage report or per-person metric yet; [server mode's spec](docs/specs/server-mode.md) is the plan for them.
 
@@ -762,7 +781,7 @@ These files hold settings and statistics. Custom compaction instructions and tea
 | `~/.local/share/systemd/user/splice.service`, `app-mcp.slice`, `splice-mcp-front.socket`, `splice-mcp-front.service`, `splice-control.socket` and one `splice-head-<head>.socket` per head | Splice's own systemd user units, each under a `# splice-owned unit` line: the daemon's, which runs the `splice` command on the JDK the install ran on, the MCP hub's, and the listener sockets through which systemd holds splice's ports across a restart. No key or secret | Anyone who can read your home directory (0644, as systemd units are) | Replaced by every `splice install --all` on Linux, the hub's only beside an installed hub front; laying one never enables, starts or restarts it. `splice restart` lays, enables and starts the listener sockets. `splice uninstall --all` stops, disables and removes every one of them. A unit of the same name in `~/.config/systemd/user` overrides splice's, and splice writes nothing there and removes only the hub copies its own earlier installs wrote. `splice setup` with MCP sharing on enables and starts `splice-mcp-front.socket` only over splice's own hub units | `SpliceUnits.kt` |
 | `~/.config/splice/peers/<name>/peer.json` | A peer's registration: its name, session id, working directory, send scope, its key's id and SHA-256, and its webhook URL. No key or secret | Only you (0600, in a 0700 folder) | Until `splice peer revoke` | `PeerStore.kt` |
 | `~/.config/splice/peers/<name>/limit.json` | A peer's own send limit, once `splice peer limit` gave it one: sends a minute and its burst | Only you (0600, in a 0700 folder) | Until `splice peer limit <name> --default` or `splice peer revoke` | `PeerLimits.kt` |
-| `~/.splice/state/server/keys.json` and `people.json` | Only on a machine whose `splice.toml` has a `[server]`, which serves its commands to a team's keys. `keys.json` holds each key the server issued as its prefix, the SHA-256 of the whole key, the person's email it is bound to, its name, who issued it, and when it was created, last used, expires and was revoked. `people.json` holds the caps `splice server person set` gave a person. Never a key or the secret part of one | Only you (0600) | Until you delete the file. A revoked or expired key's record is kept, so `splice server key list` still shows it | `StateFile.kt` |
+| `~/.splice/state/server/keys.json` and `people.json` | Only on a machine whose `splice.toml` has a `[server]`, which serves its commands to a team's keys. `keys.json` holds each key the server issued as its prefix, the SHA-256 of the whole key, the person's email it is bound to, its name, who issued it, and when it was created, last used, expires and was revoked. `people.json` holds the caps and the preferred upstream `splice server person set` gave a person. Never a key or the secret part of one | Only you (0600) | Until you delete the file. A revoked or expired key's record is kept, so `splice server key list` still shows it | `StateFile.kt` |
 | `~/.splice/state/mcp-hub/units-written` | Which of the hub's systemd units splice's earlier installs wrote into `~/.config/systemd/user`, each with the SHA-256 of the bytes written. No key or secret | Only you (0600) | A line goes when `splice install --all` lays its unit in `~/.local/share/systemd/user`, and the old copy goes with it while it still holds those bytes; the file goes with its last line | `SpliceUnits.kt` |
 | `~/.config/splice/mcp-front.env` | Where the MCP hub keeps its state and the control port the hub front reports to, which `splice-mcp-front.service` reads at start. No key or secret | Only you (0600) | Rewritten by `splice init` when either value changes, which it reports as a config migration, because a running front keeps the values it started with. Linux only | `McpFrontEnv.kt` |
 | `~/.config/splice/splice.toml` | Your topology: providers, heads, models and ports, and any header values you put in `extra_headers` | Only you (0600): the daemon holds it owner-only at every start, and any `splice.toml.bak-<time>-<hash>` an older splice left beside it | Yours. Written once from a template on first run; `PUT /api/topology`, `PATCH /api/config?head=<key>` and `splice add` edit it, at its target when it is a link; the fix session a `splice` command offers when a boot refusal lists findings edits it too, after a backup. Every save holds an empty `.splice.toml.lock` beside the file's target across its re-read and rename, kept so each writer locks the same file | `TopologyLoader.kt`, `TopologyWriter.kt`, `AddWrite.kt`, `ConfigFixSession.kt` |

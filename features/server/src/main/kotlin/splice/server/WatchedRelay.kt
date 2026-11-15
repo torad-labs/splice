@@ -10,16 +10,16 @@ import io.ktor.server.application.ApplicationCall
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import splice.http.ClientConnectionClose
+import splice.share.HeadTurn
 import splice.share.ShareRelay
-import splice.share.SharedHead
 
 internal class WatchedRelay(private val relay: ShareRelay) {
-    /** Relays [call] to [head] at [path], holding [slot] when the turn counts against its person. The slot is released
-     *  when the turn ends, and before that the moment the client's connection closes. */
-    suspend fun turn(call: ApplicationCall, head: SharedHead, path: String, slot: TurnSlot?) {
+    /** Relays [call] as [turn], holding [slot] when the turn counts against its person. The slot is released when
+     *  the turn ends, and before that the moment the client's connection closes. */
+    suspend fun turn(call: ApplicationCall, turn: HeadTurn, slot: TurnSlot?) {
         try {
             coroutineScope {
-                val relayed = launch { relay.turn(call, head, path) }
+                val relayed = launch { relay.turn(call, turn) }
                 val gone = launch {
                     ClientConnectionClose.await(call)
                     slot?.release()

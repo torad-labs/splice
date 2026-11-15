@@ -1,4 +1,4 @@
-// NEW: server mode (docs/specs/server-mode.md, F1 and F3). The server's own operations on its keys and its people, as
+// NEW: server mode (docs/specs/server-mode.md, F1, F3 and F4). The server's own operations on its keys and its people, as
 // each of its three doors asks them: the CLI through the control plane, the control plane itself, and an admin's key
 // on the listener. One class per noun, so a key is validated, minted, listed and revoked the same way whichever door
 // asked, and each door only says the answer in its own shape.
@@ -102,37 +102,61 @@ public class KeyApi(private val keys: ServerKeys, private val log: LogSink) {
     private fun notAnEmail(): ServerAnswer = refused("person must be an email, as in ada@team.example")
 }
 
-public class PersonApi(private val people: ServerPeople, private val log: LogSink) {
+public class PersonApi(
+    private val people: ServerPeople,
+    private val log: LogSink,
+    private val upstreams: UpstreamApi = UpstreamApi(object : HeadUpstreams {}),
+) {
 
-    /** Sets [person]'s own caps from `{"inflight"?: N, "rpm"?: N}`, each 0 (no cap) or more, and answers their
-     *  settings as they now stand. */
+    /** Sets what `{"inflight"?: N, "rpm"?: N, "upstream"?: name}` names for [person] and answers their settings as
+     *  they now stand. A cap is 0 (no cap) or more; an upstream is one this server's providers list, or "" for no
+     *  preference. */
     public suspend fun set(person: String, body: JsonObject?): ServerAnswer {
         val who = PersonEmails.read(person)
             ?: return refused("the person must be an email, as in ada@team.example")
         val inflight = body?.get("inflight")
         val rpm = body?.get("rpm")
-        val change = PersonSettings(cap(inflight), cap(rpm))
-        return when {
-            inflight == null && rpm == null -> refused("name at least one setting: inflight or rpm")
-            (inflight != null && change.inflight == null) || (rpm != null && change.rpm == null) ->
-                refused("inflight and rpm must each be a whole number, 0 (no cap) or more")
-            else -> {
-                val now = people.set(who, change)
-                log("[server] settings of ${LogSafe.str(who)} changed\n")
-                ServerAnswer.Done(
-                    HttpStatusCode.OK,
-                    buildJsonObject {
-                        put(PERSON, who)
-                        put("inflight", now.inflight)
-                        put("rpm", now.rpm)
-                    },
-                )
-            }
+        val upstream = body?.get(UPSTREAM)
+        val change = PersonSettings(cap(inflight), cap(rpm), name(upstream))
+        val why = when {
+            listOfNotNull(inflight, rpm, upstream).isEmpty() -> "name at least one setting: inflight, rpm or upstream"
+            unread(inflight, change.inflight) || unread(rpm, change.rpm) ->
+                "inflight and rpm must each be a whole number, 0 (no cap) or more"
+            upstream != null -> notAnUpstream(change.upstream)
+            else -> null
         }
+        if (why != null) return refused(why)
+        val now = people.set(who, change)
+        log("[server] settings of ${LogSafe.str(who)} changed\n")
+        return ServerAnswer.Done(
+            HttpStatusCode.OK,
+            buildJsonObject {
+                put(PERSON, who)
+                put("inflight", now.inflight)
+                put("rpm", now.rpm)
+                put(UPSTREAM, now.preferred)
+            },
+        )
     }
+
+    /** Whether a cap was [asked] and could not be [read] as one. */
+    private fun unread(asked: JsonElement?, read: Int?): Boolean = asked != null && read == null
 
     private fun cap(value: JsonElement?): Int? =
         (value as? JsonPrimitive)?.takeUnless { it.isString }?.intOrNull?.takeIf { it >= 0 }
+
+    private fun name(value: JsonElement?): String? = (value as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()
+
+    /** Why [name] is no upstream a person can prefer, or null when it is one, or "" (no preference). */
+    private fun notAnUpstream(name: String?): String? {
+        val known = upstreams.names()
+        return when {
+            name == null -> "upstream must be the name of an upstream, or \"\" for no preference"
+            name.isEmpty() || name in known -> null
+            known.isEmpty() -> "no provider of this server lists upstreams, so there is none to prefer"
+            else -> "no upstream is named ${LogSafe.str(name)}; this server's are ${known.joinToString(", ")}"
+        }
+    }
 
     private fun refused(why: String): ServerAnswer = ServerAnswer.Refused(HttpStatusCode.BadRequest, why)
 }
@@ -161,3 +185,6 @@ private const val NAME_MAX = 64
 
 // The field every answer names a person in.
 private const val PERSON = "person"
+
+// The field a person's preferred upstream is set and answered in.
+private const val UPSTREAM = "upstream"

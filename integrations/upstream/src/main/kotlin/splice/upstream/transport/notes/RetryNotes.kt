@@ -15,7 +15,7 @@ import splice.upstream.transport.TransportFaultLine
 internal object RetryNotes {
     fun thrown(e: Throwable, ctx: PostContext, state: RetryState, phase: TransportFailurePhase?) {
         val n = "${state.ledger.attempts}/$MAX_ATTEMPTS_OUTSIDE_HOLDS"
-        val line = TransportFaultLine.of(e, ctx.url).take(ERR_SNIPPET)
+        val line = TransportFaultLine.of(e, ctx.target).take(ERR_SNIPPET)
         val note = when (phase) {
             null -> "stream torn before first client frame, reissue $n: ${e::class.simpleName} $line"
             TransportFailurePhase.POST_SEND -> "transport-possible-duplicate ${e::class.simpleName} attempt $n: $line"

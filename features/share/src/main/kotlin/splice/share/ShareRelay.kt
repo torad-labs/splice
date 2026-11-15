@@ -34,6 +34,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.io.readByteArray
 import splice.core.config.LAUNCH_PROOF_HEADER
 import splice.core.config.TurnKey
+import splice.core.pool.PREFERRED_UPSTREAM_HEADER
 import splice.core.topology.SHARE_NODE_TOKEN
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
@@ -50,6 +51,10 @@ import java.time.Duration
 
 /** Whose words a relay refuses in, and the name its log lines carry. */
 public data class RelaySpeaker(val errors: RefusalVoice, val tag: String)
+
+/** One request for a head: its [path] under the head (`/v1/messages?beta=true`), and what the listener that relays
+ *  it says about it in headers of its own ([named]), such as the upstream the caller's person prefers. */
+public data class HeadTurn(val head: SharedHead, val path: String, val named: Map<String, String> = emptyMap())
 
 public class ShareRelay(
     private val turnKey: TurnKey,
@@ -74,8 +79,9 @@ public class ShareRelay(
         .connectTimeout(Duration.ofMillis(RELAY_CONNECT_TIMEOUT_MS))
         .build()
 
-    /** [path] (`/v1/messages?beta=true`) on [head], under the head's own body limits. */
-    public suspend fun turn(call: ApplicationCall, head: SharedHead, path: String) {
+    /** [turn] on its head, under the head's own body limits. */
+    public suspend fun turn(call: ApplicationCall, turn: HeadTurn) {
+        val head = turn.head
         val body = body(call, head.maxRequestBytes(), head.requestReadTimeoutMs()) ?: return
         val silent = "${head.command} on $machine is not answering"
         // A head that takes the caller's own login refuses this machine's turn key as a credential to send upstream.
@@ -83,8 +89,8 @@ public class ShareRelay(
         val bearer = if (head.forwardsClientAuth) SHARE_NODE_TOKEN else turnKey.get()
         // PR #247 review, Oct 29: that head serves its logins only to a caller proven splice's, and this relay is.
         val proof = if (head.forwardsClientAuth) mapOf(LAUNCH_PROOF_HEADER to turnKey.get()) else emptyMap()
-        val signed = mapOf(HttpHeaders.Authorization to "Bearer $bearer") + proof
-        forward(call, URI.create("http://127.0.0.1:${head.port}$path"), body, silent, signed)
+        val signed = mapOf(HttpHeaders.Authorization to "Bearer $bearer") + proof + turn.named
+        forward(call, URI.create("http://127.0.0.1:${head.port}${turn.path}"), body, silent, signed)
     }
 
     /** The control plane's statusline for [head], fed the session's JSON as Claude Code feeds its statusline, once
@@ -189,11 +195,12 @@ public class ShareRelay(
     }
 
     // Hop-by-hop, framing, the other machine's own token, and the names java.net.http refuses to set. Host becomes
-    // 127.0.0.1, which the head's own DNS-rebinding guard requires.
+    // 127.0.0.1, which the head's own DNS-rebinding guard requires. Which upstream a turn prefers is the relaying
+    // listener's to say, from what the operator set for the person, and never the other machine's.
     private val notForwarded = setOf(
         "host", "connection", "content-length", "transfer-encoding", "upgrade", "expect", "keep-alive", "te",
         "trailer", "proxy-authorization", "proxy-connection", "authorization", "x-api-key", "date", "via",
-        "warning", "from", "origin", "referer", LAUNCH_PROOF_HEADER,
+        "warning", "from", "origin", "referer", LAUNCH_PROOF_HEADER, PREFERRED_UPSTREAM_HEADER,
     )
 
     // Framing the response re-chunks, and the type each answer sets itself.

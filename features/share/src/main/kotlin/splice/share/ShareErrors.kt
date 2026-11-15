@@ -16,7 +16,7 @@ import splice.core.wire.HttpStatus
  *  and is never `overloaded_error`: a head that can't take a turn is said as that, never as a busy server worth
  *  retrying in silence. */
 public class RefusalVoice(private val prefix: String) {
-    public fun body(status: Int, message: String): String {
+    private fun body(status: Int, message: String): String {
         val type = when (status) {
             HttpStatus.BAD_REQUEST, HttpStatus.REQUEST_TIMEOUT -> "invalid_request_error"
             HttpStatus.UNAUTHORIZED -> "authentication_error"
@@ -38,8 +38,6 @@ public class RefusalVoice(private val prefix: String) {
 /** The share listener's own voice. */
 internal object ShareErrors {
     val voice = RefusalVoice(SHARE_ERROR_PREFIX)
-
-    fun body(status: Int, message: String): String = voice.body(status, message)
 
     suspend fun refuse(call: ApplicationCall, status: Int, message: String) {
         voice.refuse(call, status, message)

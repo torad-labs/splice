@@ -27,9 +27,6 @@ public data class ServerConfig(
     /** Whether the file carries a `[server]` table at all, whatever it holds. */
     val declared: Boolean get() = this != ServerConfig()
 
-    /** Whether this daemon serves a team: the table names where to listen. */
-    val enabled: Boolean get() = listen.isNotBlank()
-
     /** Where [listen] says to listen, or null when it is not an address and a port. */
     val address: ServerAddress? get() = ServerAddresses.read(listen)
 

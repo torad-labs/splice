@@ -91,3 +91,4 @@ credentials.json
 /.Codex/tmp/
 # the downloads website, built by tools/release/downloads/website/build.ts; never committed
 tools/release/downloads/site/
+.campaign/.lock

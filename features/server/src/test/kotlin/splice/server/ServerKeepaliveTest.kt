@@ -5,30 +5,16 @@ package splice.server
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.config.MgmtKey
-import splice.core.config.StatePaths
-import splice.core.config.TurnKey
 import splice.core.testing.TestPorts
-import splice.core.topology.ServerAddress
-import splice.core.topology.ServerConfig
 import splice.core.topology.ServerLimits
-import splice.core.util.LogSink
-import splice.launch.LaunchSpec
-import splice.share.SharedHead
-import splice.share.SharedHeads
 import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -47,10 +33,10 @@ import java.util.concurrent.locks.LockSupport
 internal class ServerKeepaliveTest {
     @TempDir lateinit var state: Path
 
-    private val port = TestPorts.reserve()
+    private val rig = ServerRig()
+    private val port = rig.port
     private val http = HttpClient.newHttpClient()
     private val workers = Executors.newCachedThreadPool()
-    private var mode: ServerMode? = null
 
     /** What the head does with each turn it is asked. */
     private fun interface HeadScript {
@@ -86,51 +72,20 @@ internal class ServerKeepaliveTest {
         start()
     }
 
-    private class Head(override val port: Int) : SharedHead {
-        override val key: String = "team"
-        override val command: String = "claude-team"
-
-        override fun running(): Boolean = true
-
-        override fun launch(): LaunchSpec? = null
-
-        override fun logins(): List<String> = emptyList()
-
-        override fun pin(login: String, session: String): Boolean = false
-
-        override fun maxRequestBytes(): Int = 1_000_000
-
-        override fun requestReadTimeoutMs(): Long = 5_000
-    }
-
     /** Server mode as the daemon opens it, with `[server] keepalive_seconds` as given, and the key of one person. */
     private fun serve(
         keepaliveSeconds: Int,
         limits: ServerLimits = ServerLimits(),
         headPort: Int = head.address.port,
     ): String {
-        val machine = object : SharedHeads {
-            override val machine: String = "gpu-box"
-
-            override fun offered(): List<SharedHead> = listOf(Head(headPort))
-        }
-        val server = ServerConfig(
-            listen = "127.0.0.1:$port",
-            commands = listOf("claude-team"),
-            limits = limits,
-            keepaliveSeconds = keepaliveSeconds,
-        )
-        val reach = ServerReach(TurnKey(MgmtKey(StatePaths(baseOverride = state))), TestPorts.reserve())
-        val opened = ServerMode(server, state.resolve("server"), Dispatchers.IO, LogSink { })
-        opened.open(ServerAddress("127.0.0.1", port), machine, reach, state)
-        mode = opened
-        val minted = runBlocking { opened.keyApi.create(buildJsonObject { put("person", "lia@team.example") }) }
-        return assertInstanceOf(ServerAnswer.Done::class.java, minted).body.getValue("key").jsonPrimitive.content
+        val server = rig.config.copy(limits = limits, keepaliveSeconds = keepaliveSeconds)
+        rig.open(state, listOf(StandInHead(headPort)), server)
+        return rig.keyFor("lia@team.example")
     }
 
     @AfterEach
     fun stop() {
-        runBlocking { mode?.close() }
+        rig.close()
         head.stop(0)
         workers.shutdownNow()
     }

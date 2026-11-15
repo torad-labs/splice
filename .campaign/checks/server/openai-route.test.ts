@@ -16,7 +16,7 @@ afterAll(async () => {
 }, 60_000);
 
 const url = (p: string) => `${srv.base}/${COMMAND}/v1/${p}`;
-const chat = (body: Record<string, unknown>, k: string | undefined = key) =>
+const chat = (body: Record<string, unknown>, k: string | null = key) =>
   fetch(url("chat/completions"), {
     method: "POST",
     headers: { "content-type": "application/json", ...(k ? { authorization: `Bearer ${k}` } : {}) },
@@ -29,7 +29,7 @@ const chunks = (text: string) =>
     .map((l) => l.slice(6).trim());
 
 test("without a key the OpenAI route is refused 401", async () => {
-  expect((await chat({}, undefined)).status).toBe(401);
+  expect((await chat({}, null)).status).toBe(401);
   expect((await fetch(url("models"))).status).toBe(401);
 });
 

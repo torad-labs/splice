@@ -72,13 +72,16 @@ internal class ServerListenerTest {
         createContext("/") { exchange ->
             heard += exchange.requestHeaders.getFirst("Authorization").orEmpty()
             val asked = exchange.requestBody.use { it.readBytes() }.decodeToString()
-            if (HOLD in asked) {
+            // As a head's routing does, this reads a path with its escapes decoded and serves a turn at one path alone.
+            val turn = exchange.requestURI.path == "/v1/messages"
+            if (turn && HOLD in asked) {
                 held.release()
                 release.await()
             }
-            val answer = """{"type":"message","content":[{"type":"text","text":"from the box"}]}""".toByteArray()
+            val served = """{"type":"message","content":[{"type":"text","text":"from the box"}]}"""
+            val answer = (if (turn) served else """{"error":"no such route on this head"}""").toByteArray()
             exchange.responseHeaders.add("Content-Type", "application/json")
-            exchange.sendResponseHeaders(200, answer.size.toLong())
+            exchange.sendResponseHeaders(if (turn) 200 else 404, answer.size.toLong())
             exchange.responseBody.use { it.write(answer) }
         }
         start()
@@ -169,6 +172,24 @@ internal class ServerListenerTest {
 
     private fun turnHeld(key: String): CompletableFuture<HttpResponse<String>> =
         http.sendAsync(request("POST", TURN_PATH, key, HELD_TURN).build(), HttpResponse.BodyHandlers.ofString())
+
+    /** One POST of a turn as its bytes on the wire, [path] exactly as it is written here: an HTTP client would decode
+     *  or drop part of what some paths spell before sending them. */
+    private fun onTheWire(path: String, key: String, body: String): ByteArray {
+        val head = "POST $path HTTP/1.1\r\nHost: 127.0.0.1:$port\r\nx-api-key: $key\r\n" +
+            "Content-Type: application/json\r\nContent-Length: ${body.length}\r\n\r\n"
+        return (head + body).toByteArray()
+    }
+
+    /** The status a turn POSTed to [path], spelled exactly so, is answered with. */
+    private fun statusOf(path: String, key: String): Int = Socket("127.0.0.1", port).use { client ->
+        client.getOutputStream().apply {
+            write(onTheWire(path, key, TURN))
+            flush()
+        }
+        val status = checkNotNull(client.getInputStream().bufferedReader().readLine()) { "no answer to POST $path" }
+        status.split(' ')[1].toInt()
+    }
 
     /** The Anthropic error body Claude Code prints: its type and its message. */
     private fun error(response: HttpResponse<String>): Pair<String, String> {
@@ -312,16 +333,46 @@ internal class ServerListenerTest {
         serve(base.copy(limits = ServerLimits(inflightPerPerson = 1)))
         val ada = keyFor("ada@team.example")
         Socket("127.0.0.1", port).use { client ->
-            val head = "POST $TURN_PATH HTTP/1.1\r\nHost: 127.0.0.1:$port\r\nx-api-key: $ada\r\n" +
-                "Content-Type: application/json\r\nContent-Length: ${HELD_TURN.length}\r\n\r\n"
             client.getOutputStream().apply {
-                write((head + HELD_TURN).toByteArray())
+                write(onTheWire(TURN_PATH, ada, HELD_TURN))
                 flush()
             }
             awaitHeld(turns = 1)
             assertEquals(429, turn(ada).statusCode(), "the turn in flight does not fill the cap of one")
         }
         awaitUntil("the slot of the client that hung up is free") { turn(ada).statusCode() == 200 }
+    }
+
+    @Test
+    fun `a turn whose path is spelled another way is held to its person's cap, or is not served as a turn`() {
+        serve(base.copy(limits = ServerLimits(inflightPerPerson = 1)))
+        val ada = keyFor("ada@team.example")
+        val inFlight = turnHeld(ada)
+        awaitHeld(turns = 1)
+
+        // A head decodes a path's escapes and skips its empty segments, so each of these is the turn it serves.
+        val sameTurn = listOf(
+            "/claude-team/v1/%6dessages",
+            "/%63laude-team/v1/%6D%65ssages",
+            "/claude-team//v1/messages/",
+        )
+        for (spelled in sameTurn) {
+            assertEquals(429, statusOf(spelled, ada), "POST $spelled got past the cap of one turn in flight")
+        }
+        // No head reads these as its turn. One that reached a head as the turn would be answered 200, past the cap.
+        val noTurn = listOf(
+            "/claude-team/v1/messages#x",
+            "/claude-team/v1/./messages",
+            "/claude-team/v1/x/../messages",
+            "/claude-team/v1/%zzessages",
+        )
+        for (spelled in noTurn) {
+            assertEquals(404, statusOf(spelled, ada), "POST $spelled")
+        }
+
+        release.countDown()
+        assertEquals(200, inFlight.get(10, TimeUnit.SECONDS).statusCode())
+        assertEquals(200, statusOf("/claude-team/v1/%6dessages", ada), "a turn spelled with an escape is not served")
     }
 
     @Test

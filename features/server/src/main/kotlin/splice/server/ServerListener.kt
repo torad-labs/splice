@@ -16,6 +16,9 @@
 // it counts against its person's in-flight and per-minute caps (PersonLimits), and one past a cap is a 429
 // `rate_limit_error` with `Retry-After`. Every error is in the Anthropic shape, so Claude Code prints its message.
 //
+// A path is read the way a head reads one, percent-escapes decoded, and a head is handed the path as it was read
+// (RequestPaths): what a head serves as a turn is what the caps counted, however the client spelled it.
+//
 // HTTP/2 is off: Claude Code speaks HTTP/1.1, and a turn's client leaving is read off its connection (WatchedRelay),
 // which is one request's on HTTP/1.1.
 package splice.server
@@ -35,7 +38,6 @@ import io.ktor.server.netty.Netty
 import io.ktor.server.netty.NettyApplicationEngine
 import io.ktor.server.plugins.origin
 import io.ktor.server.request.httpMethod
-import io.ktor.server.request.path
 import io.ktor.server.request.queryString
 import io.ktor.server.response.respondText
 import kotlinx.coroutines.CoroutineDispatcher
@@ -78,6 +80,7 @@ internal class ServerListener(
     private val addresses = ClientAddresses(server.trustedProxies)
     private val refusedCallers = RefusedCallers(log)
     private val watched = WatchedRelay(parts.relay)
+    private val paths = RequestPaths()
 
     /** The path, after the command, of the one request that runs a turn on the Messages route. */
     private val turnPath = listOf(HEAD_API_ROOT, "messages")
@@ -120,17 +123,22 @@ internal class ServerListener(
     }
 
     private suspend fun answer(call: ApplicationCall) {
-        val path = call.request.path().split('/').filter(String::isNotEmpty)
+        val path = paths.read(call)
         val read = call.request.httpMethod == HttpMethod.Get
         if (read && path == listOf(HEALTH_ROUTE)) return call.respondText(HEALTH_BODY, ContentType.Application.Json)
         val key = admitted(call) ?: return
+        if (path == null) noSuchPath(call) else routed(call, key, path)
+        parts.keys.keepUse()
+    }
+
+    /** [path] asked with a live [key]: what the server offers, its own API, or one of its commands. */
+    private suspend fun routed(call: ApplicationCall, key: ServerKey, path: List<String>) {
         when {
-            path.isEmpty() && read -> catalog.directory(call)
+            path.isEmpty() && call.request.httpMethod == HttpMethod.Get -> catalog.directory(call)
             path.isEmpty() -> noSuchPath(call)
             path.first() == SERVER_ROOT -> admin.answer(call, key, path.drop(1))
             else -> command(call, key, path)
         }
-        parts.keys.keepUse()
     }
 
     /** The key [call] presents, once it is a live one; else null with the 401 answered, in words that say which of
@@ -180,7 +188,7 @@ internal class ServerListener(
             null
         }
         val query = call.request.queryString().takeIf(String::isNotEmpty)?.let { "?$it" }.orEmpty()
-        watched.turn(call, head, path.joinToString("/", prefix = "/") + query, slot)
+        watched.turn(call, head, paths.spell(path) + query, slot)
     }
 
     private suspend fun limited(call: ApplicationCall, refused: LimitVerdict.Refused) {

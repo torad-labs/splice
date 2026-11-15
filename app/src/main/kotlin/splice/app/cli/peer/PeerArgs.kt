@@ -52,11 +52,6 @@ internal fun interface PeerStdin {
     fun read(): String
 }
 
-/** One call made with the management key. */
-internal fun interface PeerKeyed {
-    operator fun invoke(key: String): Int
-}
-
 /** The line a successful call prints, from the daemon's answer. */
 internal fun interface PeerLine {
     operator fun invoke(reply: JsonObject): String?

@@ -3,6 +3,7 @@
 // the listener answers: a key minted or revoked here is the listener's on its very next request.
 package splice.app.cli.server
 
+import splice.app.cli.peer.PeerAsk
 import splice.app.cli.peer.PeerCall
 import splice.app.cli.peer.PeerExit
 import splice.core.terminal.TerminalOutput
@@ -19,7 +20,7 @@ internal class ServerCommand(
     private val err: TerminalOutput = TerminalOutput(System.err::println),
     env: EnvReader = EnvReader(System::getenv),
 ) {
-    private val ask = ServerAsk(PeerCall(env, err, "server"), out)
+    private val ask = PeerAsk(PeerCall(env, err, "server"), out)
     private val keys = ServerKeyVerbs(ask)
     private val people = ServerPersonVerbs(ask)
 

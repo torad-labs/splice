@@ -6,10 +6,11 @@ package splice.app.cli.server
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.app.cli.peer.ControlRequest
 import splice.app.cli.peer.PeerArgsParser
-import splice.app.cli.peer.PeerLine
+import splice.app.cli.peer.PeerAsk
 
-internal class ServerPersonVerbs(private val ask: ServerAsk) {
+internal class ServerPersonVerbs(private val ask: PeerAsk) {
     private val lines = ServerLines()
 
     /** `person set <email> [--inflight N] [--rpm N]`, with at least one of the two. */
@@ -18,7 +19,7 @@ internal class ServerPersonVerbs(private val ask: ServerAsk) {
         val person = parsed?.words?.singleOrNull()
         val body = parsed?.let { capsOf(it.values) }
         if (person == null || body == null) return null
-        return ask.send(ServerCall("PUT", "$PEOPLE_PATH/${ask.segment(person)}", body), PeerLine(lines::person))
+        return ask.managed(ControlRequest("PUT", "$PEOPLE_PATH/${ask.segment(person)}", body)) { lines.person(it) }
     }
 
     /** `{"inflight": N, "rpm": N}` from the flags given, each 0 or more; null when none is given or one is no such

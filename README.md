@@ -429,6 +429,14 @@ splice asks each server `GET /health` beside its API root (`http://10.0.0.21:808
 
 A model server prefilling a long prompt can say nothing for minutes, and a proxy in front of the server closes a connection that carries nothing for that long. With `keepalive_seconds` set, a streamed turn whose answer has not started within a second has its stream opened then, and is sent an SSE comment (`: keepalive`), which Claude Code and every SSE client skip, at least that often until the answer comes and whenever it falls silent after. Tokens are relayed as the model server sends them. Such a turn has answered 200 before its model server did, so a failure after that arrives as the stream's `error` event. A turn that asks for no stream gets one JSON body and no keepalive, so give those the proxy's longer read timeout. Without the key, or at 0, a turn waits on its model server as before.
 
+A script or another tool that speaks OpenAI's API uses the same server and the same keys. A command whose provider speaks `openai-chat` also answers `POST /<command>/v1/chat/completions` and `GET /<command>/v1/models`:
+
+```bash
+OPENAI_BASE_URL=https://gateway.team.example:3443/claude-team/v1 OPENAI_API_KEY=spk_… python script.py
+```
+
+Such a request goes to the provider's own server as the client sent it, under the provider's key in place of the person's, and the answer comes back as that server gave it, a stream event by event as it is written. A streamed request always asks the server for its usage (`stream_options.include_usage`), and the usage chunk reaches a client only when it asked for it; a stream the server ended whole ends with `data: [DONE]`. A chat completion counts against its person's caps like any turn, and a provider that is several servers places it like one. On these two routes a refusal is in OpenAI's error shape: a 401 without a live key, a 429 with `Retry-After` at a cap, a 503 naming the upstreams when none is up. They carry no keepalive. The models list is the provider server's own; Claude Code's request for a command's models, which carries `anthropic-version`, is answered by the command as before, and a command whose provider speaks another dialect answers no chat completions.
+
 splice refuses to start a server beside `splice share on`, with a command no head here runs, or with a command whose head signs in with a person's plan login (a Claude or ChatGPT subscription, for example): a plan's terms are for one person, so a server serves only heads that sign with an API key or a self-hosted provider. There is no sign-in, budget, usage report or per-person metric yet; [server mode's spec](docs/specs/server-mode.md) is the plan for them.
 
 ## Troubleshooting

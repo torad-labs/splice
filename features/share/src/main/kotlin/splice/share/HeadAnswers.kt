@@ -9,6 +9,9 @@
 // such a turn late, or does not answer it, is said as the stream's `error` event, in the head's own words where it
 // gave them. A head that answers within the second answers as it always did, its own status included. The second
 // and the interval are waited out on the relay's clock (RelayClock).
+//
+// A relay that answers for a provider's own server (F4, openai-route) reads that server's stream through a StreamEdit,
+// event by event, and gives it its ending only when the server ended it whole.
 package splice.share
 
 import io.ktor.http.ContentType
@@ -28,9 +31,9 @@ import java.io.InputStream
 import java.net.http.HttpResponse
 import kotlin.time.Duration
 
-/** What a relay tells its client of one request: [silent] when the head does not answer, and a keepalive each
- *  [every] while a streamed answer is silent (null: none). */
-internal data class ClientWait(val silent: String, val every: Duration? = null)
+/** What a relay tells its client of one request: [silent] when the head does not answer, a keepalive each [every]
+ *  while a streamed answer is silent (null: none), and a streamed answer as [edit] reads it (null: byte for byte). */
+internal data class ClientWait(val silent: String, val every: Duration? = null, val edit: StreamEdit? = null)
 
 internal class HeadAnswers(
     /** Blocking JDK I/O runs here: each read of the answer. */
@@ -49,7 +52,9 @@ internal class HeadAnswers(
         val type = typeOf(response)
         if (type.match(ContentType.Text.EventStream)) {
             call.response.status(status)
-            call.respond(SseChannelResponse { out -> response.body().use { pump(it, quiet(out, wait)) } })
+            call.respond(
+                SseChannelResponse { out -> response.body().use { pump(it, quiet(out, wait), wait.edit) } },
+            )
         } else {
             val whole = runInterruptible(io) { response.body().use(InputStream::readAllBytes) }
             call.respondBytes(whole, type, status)
@@ -87,18 +92,21 @@ internal class HeadAnswers(
 
     /** Chunk by chunk, flushed each time: an event (or the head's keepalive ping) reaches the other machine the moment
      *  the head writes it. A client that went away fails the write, and closing the head's stream then hangs up on the
-     *  head, which sees its own client leave. A head that hangs up mid-stream ends the relay there. */
-    private suspend fun pump(input: InputStream, wire: QuietWire) {
+     *  head, which sees its own client leave. A head that hangs up mid-stream ends the relay there. With an [edit] the
+     *  chunks go through it, an event at a time, and a stream that ended whole is given the edit's ending. */
+    private suspend fun pump(input: InputStream, wire: QuietWire, edit: StreamEdit? = null) {
         val buffer = ByteArray(PUMP_BUFFER_BYTES)
+        val edited = edit?.let { EditedWire(wire, it) }
         while (true) {
             val read = wire.during {
                 runInterruptible(io) {
                     Cancellables.runCatchingCancellable { input.read(buffer) }
-                        .getOrElse { failure -> if (failure is IOException) END_OF_STREAM else throw failure }
+                        .getOrElse { failure -> if (failure is IOException) CUT_SHORT else throw failure }
                 }
             }
+            if (read == END_OF_STREAM) edited?.end()
             if (read < 0) return
-            wire.write(buffer, read)
+            if (edited == null) wire.write(buffer, read) else edited.write(buffer, read)
         }
     }
 
@@ -110,6 +118,9 @@ internal class HeadAnswers(
 // while holding little memory for each relayed stream.
 private const val PUMP_BUFFER_BYTES = 16 * 1024
 
-// why: what InputStream.read answers at the end of the stream; a failed read of the head's answer ends the relay the
-// same way, as the head hanging up.
+// What InputStream.read answers at the end of the stream.
 private const val END_OF_STREAM = -1
+
+// why: a failed read of the answer ends the relay as the end of the stream does, as the head hanging up; it is told
+// apart only so that a stream cut short is never given the ending of a whole one.
+private const val CUT_SHORT = -2

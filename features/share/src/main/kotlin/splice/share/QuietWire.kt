@@ -104,10 +104,10 @@ internal class StreamedBodies {
 private const val KEEPALIVE = ": keepalive\n\n"
 
 // The byte of `\n`, which ends an SSE line.
-private const val LINE_FEED: Byte = 10
+internal const val LINE_FEED: Byte = 10
 
 // The byte of `\r`, which a line's end may carry beside its `\n`: it is stepped over, and only a `\n` counts.
-private const val CARRIAGE_RETURN: Byte = 13
+internal const val CARRIAGE_RETURN: Byte = 13
 
 // Line ends in a row that end an event.
 private const val EVENT_END = 2

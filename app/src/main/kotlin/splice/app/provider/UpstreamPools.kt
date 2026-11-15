@@ -3,6 +3,9 @@
 // so every head of the provider balances over the same servers and a head rebuilt while the daemon runs keeps what the
 // pool knows. Making a pool starts its health checks: each server is asked `/health` at once and then every
 // `health_seconds`, on its own loop, so one server that hangs holds up no other's reading.
+//
+// It also keeps, for every provider a chat head was built for, pool or not, the headers the daemon's own requests to
+// that provider's server carry: server mode relays an OpenAI-style client's requests with them (F4, openai-route).
 package splice.app.provider
 
 import kotlinx.coroutines.CancellationException
@@ -26,10 +29,11 @@ import java.net.http.HttpClient
 import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
 
-/** The headers a health check carries, read at each check: the provider's static headers and the key its turns send,
- *  so a server behind a gateway answers the check as it answers a turn, and a key changed since boot is the one
+/** The headers a request the daemon itself makes of a provider's server carries (a health check, an OpenAI-style
+ *  client's request relayed as sent), read at each request: the provider's static headers and the key its turns
+ *  send, so a server behind a gateway answers it as it answers a turn, and a key changed since boot is the one
  *  sent. */
-internal fun interface HealthHeaders {
+internal fun interface ServerHeaders {
     fun now(): Map<String, String>
 }
 
@@ -48,6 +52,7 @@ internal class UpstreamPools(
 ) {
     private val pools = ConcurrentHashMap<String, UpstreamPool>()
     private val order = ConcurrentHashMap<String, Int>()
+    private val carried = ConcurrentHashMap<String, ServerHeaders>()
 
     // One client for every check: a JDK client holds a selector thread of its own.
     private val client by lazy {
@@ -56,8 +61,10 @@ internal class UpstreamPools(
     private val http = http ?: HealthHttp { headers -> JdkLocalHttp(headers, client) }
 
     /** The pool of the provider [key], or null when it lists no upstreams. The first call for a provider makes its
-     *  pool and starts its health checks, which carry [headers]. */
-    fun of(key: String, provider: ProviderConfig, headers: HealthHeaders): UpstreamPool? {
+     *  pool and starts its health checks, which carry [headers]. With a pool or without, the provider's requests
+     *  carry the headers of the last call from then. */
+    fun of(key: String, provider: ProviderConfig, headers: ServerHeaders): UpstreamPool? {
+        carried[key] = headers
         if (provider.upstreams.isEmpty()) return null
         return pools.computeIfAbsent(key) {
             order[key] = order.size
@@ -70,6 +77,9 @@ internal class UpstreamPools(
 
     /** The pool of the provider [key], when a head of it was built. */
     fun named(key: String): UpstreamPool? = pools[key]
+
+    /** What a request to the provider [key] carries now; nothing for a provider no chat head was built for. */
+    fun headers(key: String): Map<String, String> = carried[key]?.now().orEmpty()
 
     /** Every pool, in the order they were made. */
     fun all(): List<UpstreamPool> = pools.values.sortedBy { order[it.provider] }
@@ -88,7 +98,8 @@ internal class UpstreamPools(
         }
         loop.invokeOnCompletion { cause ->
             if (cause == null || cause is CancellationException) return@invokeOnCompletion
-            check.pool.checked(upstream.name, healthy = false, said = "its health check stopped ($cause)")
+            val why = "its health check stopped (${SafeFailureText.render(cause)})"
+            check.pool.checked(upstream.name, healthy = false, said = why)
             if (scope.isActive) watch(check, upstream, waitFirst = true)
         }
     }
@@ -102,7 +113,7 @@ internal class UpstreamPools(
     }
 
     /** What every server of one pool is checked with: how often, and the headers a check carries. */
-    private class HealthCheck(val pool: UpstreamPool, val everyMs: Long, val headers: HealthHeaders) {
+    private class HealthCheck(val pool: UpstreamPool, val everyMs: Long, val headers: ServerHeaders) {
         /** What asking [upstream] for its health came to: healthy on a 2xx, and not on any other answer or none. A
          *  check that could not be made reads the server down and says why in the pool's line. */
         fun found(upstream: UpstreamConfig, asked: Result<LocalHttpReply?>) {
@@ -123,4 +134,6 @@ private const val HEALTH_CONNECT_SECONDS = 2L
 // The statuses that say a server can take a turn, the 2xx: llama-server answers 200 once its model is loaded and 503
 // before.
 private const val OK_FROM = 200
+
+// The first status past the 2xx: an answer under it, from 200 up, is a healthy server's.
 private const val OK_BELOW = 300

@@ -17,6 +17,11 @@
 // client and kept alive until the head answers (HeadAnswers.early). That second, and each interval between two
 // keepalives, goes by the relay's clock (RelayClock): the process clock in production, and in a test one the test
 // steps.
+//
+// Server mode also answers OpenAI-style clients for a command's provider itself (F4, openai-route): `outward` sends
+// such a request to that provider's server with the provider's own headers in place of the caller's key, and gives
+// the answer back the same way a head's is given. A server that took no connection got nothing of the request, and
+// the caller is told so instead of the client, so it can ask another of the provider's servers.
 package splice.share
 
 import io.ktor.http.HttpHeaders
@@ -41,8 +46,10 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.wire.HttpStatus
 import java.io.InputStream
+import java.net.ConnectException
 import java.net.URI
 import java.net.http.HttpClient
+import java.net.http.HttpConnectTimeoutException
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.util.concurrent.atomic.AtomicReference
@@ -59,6 +66,16 @@ public data class HeadTurn(
     val path: String,
     val named: Map<String, String> = emptyMap(),
     val keepalive: Duration? = null,
+)
+
+/** One request for a server that is no head of this machine, such as a provider's own API: where it goes, the
+ *  [headers] it carries in place of the caller's key, what its client hears when the server does not answer
+ *  ([silent]), and what reads the events of a streamed answer on their way back ([edit]; null: byte for byte). */
+public data class OutwardAsk(
+    val target: URI,
+    val headers: Map<String, String>,
+    val silent: String,
+    val edit: StreamEdit? = null,
 )
 
 public class ShareRelay(
@@ -88,6 +105,34 @@ public class ShareRelay(
         .connectTimeout(java.time.Duration.ofMillis(RELAY_CONNECT_TIMEOUT_MS))
         .build()
 
+    /** This relay with [voice] for its refusals: the same machine and the same heads, for a client that reads errors
+     *  in another shape. */
+    public fun speaking(voice: RefusalVoice): ShareRelay =
+        ShareRelay(turnKey, controlPort, machine, io, log, speaker.copy(errors = voice), clock)
+
+    /** [call]'s body, read under [head]'s own limits: null once it is refused, the way the head would refuse it. */
+    public suspend fun sent(call: ApplicationCall, head: SharedHead): ByteArray? =
+        body(call, head.maxRequestBytes(), head.requestReadTimeoutMs())
+
+    /** [body] asked of [ask]'s server the way [call] asked it, and that server's answer given to [call]. False, with
+     *  nothing answered, when the server took no connection: nothing of the request reached it, so the caller may ask
+     *  another server, or say that none answers. */
+    public suspend fun outward(call: ApplicationCall, ask: OutwardAsk, body: ByteArray): Boolean {
+        val answer = AtomicReference<HttpResponse<InputStream>>()
+        val wait = ClientWait(ask.silent, edit = ask.edit)
+        // The answer is read here when it is a stream to edit, so the server is asked to send it as it is.
+        val carried = ask.headers + (HttpHeaders.AcceptEncoding to "identity")
+        try {
+            val sent = send(request(call, ask.target, body, carried), answer, wait)
+            val failure = sent.exceptionOrNull()
+            if (failure is ConnectException || failure is HttpConnectTimeoutException) return false
+            answers.given(call, sent, wait)
+            return true
+        } finally {
+            hangUp(answer)
+        }
+    }
+
     /** [turn] on its head, under the head's own body limits. */
     public suspend fun turn(call: ApplicationCall, turn: HeadTurn) {
         val head = turn.head
@@ -115,8 +160,8 @@ public class ShareRelay(
         forward(call, request(call, target, body, signed), ClientWait(silent))
     }
 
-    /** [body] for [target], with the [signed] headers in place of whatever the other machine sent: the bearer, and
-     *  for a Claude head that holds logins, the launch proof. */
+    /** [body] for [target], with the [signed] headers in place of whatever the other machine sent under those names:
+     *  the bearer, and for a Claude head that holds logins, the launch proof. */
     private fun request(call: ApplicationCall, target: URI, body: ByteArray, signed: Map<String, String>): HttpRequest {
         val publisher = if (body.isEmpty()) {
             HttpRequest.BodyPublishers.noBody()
@@ -127,7 +172,7 @@ public class ShareRelay(
         call.request.headers.forEach { name, values ->
             if (name.lowercase() !in notForwarded) values.forEach { request.header(name, it) }
         }
-        signed.forEach { (name, value) -> request.header(name, value) }
+        signed.forEach { (name, value) -> request.setHeader(name, value) }
         return request.build()
     }
 
@@ -146,13 +191,17 @@ public class ShareRelay(
                 }
             }
         } finally {
-            // However the answer ended, a relay cancelled before it read a byte included: the head is hung up on.
-            answer.get()?.let { response ->
-                Cancellables.discard(
-                    Cancellables.runCatchingCancellable { response.body().close() },
-                    "closing an answer already read to its end or already closed changes nothing",
-                )
-            }
+            hangUp(answer)
+        }
+    }
+
+    /** However the answer ended, a relay cancelled before it read a byte included: the head is hung up on. */
+    private fun hangUp(answer: AtomicReference<HttpResponse<InputStream>>) {
+        answer.get()?.let { response ->
+            Cancellables.discard(
+                Cancellables.runCatchingCancellable { response.body().close() },
+                "closing an answer already read to its end or already closed changes nothing",
+            )
         }
     }
 

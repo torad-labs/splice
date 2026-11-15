@@ -92,7 +92,7 @@ class UpstreamPoolsTest {
         answers["http://10.0.0.21:8080/health"] = 200
         answers["http://10.0.0.22:8080/health"] = 200
         var broken = true
-        val headers = HealthHeaders {
+        val headers = ServerHeaders {
             if (broken) throw UncheckedIOException(IOException("no key file"))
             emptyMap()
         }

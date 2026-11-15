@@ -8,13 +8,17 @@
 //   GET  /<command>/launch         what a laptop's launch of that command needs (as share mode serves it)
 //   ANY  /<command>/v1/...         relayed to the head on loopback with this machine's turn key in place of the
 //                                  person's key, and the answer streamed back as it arrives
+//   POST /<command>/v1/chat/completions, GET /<command>/v1/models
+//                                  an OpenAI-style client's, for a command whose provider speaks openai-chat: relayed
+//                                  to that provider's own server, refusals in OpenAI's error shape (OpenAiRoute)
 //   ANY  /server/api/...           the server's own API, for a key whose person is an admin (ServerAdmin)
 //
 // A key arrives as `x-api-key` or as `Authorization: Bearer`. A missing, unknown, revoked or expired one is a 401
 // `authentication_error` that says which and never repeats the key, and nothing reaches a head. Only the commands
 // `[server] commands` lists are served; any other name is 404 naming those. A `POST /<command>/v1/messages` is a turn:
 // it counts against its person's in-flight and per-minute caps (PersonLimits), and one past a cap is a 429
-// `rate_limit_error` with `Retry-After`. Every error is in the Anthropic shape, so Claude Code prints its message.
+// `rate_limit_error` with `Retry-After` (TurnAdmission). Every error is in the Anthropic shape, so Claude Code prints
+// its message.
 //
 // A command whose provider is several servers (F4): a turn is handed to its head naming the upstream its person
 // prefers, which the head sends it to while that one is healthy; and while none of the provider's servers is up the
@@ -47,7 +51,6 @@ import io.ktor.server.netty.Netty
 import io.ktor.server.netty.NettyApplicationEngine
 import io.ktor.server.plugins.origin
 import io.ktor.server.request.httpMethod
-import io.ktor.server.request.queryString
 import io.ktor.server.response.respondText
 import kotlinx.coroutines.CoroutineDispatcher
 import splice.core.auth.BearerScheme
@@ -94,8 +97,10 @@ internal class ServerListener(
     private val admin = ServerAdmin(server, KeyApi(parts.keys, log), voice)
     private val addresses = ClientAddresses(server.trustedProxies)
     private val refusedCallers = RefusedCallers(log)
-    private val watched = WatchedRelay(parts.relay)
+    private val watched = WatchedRelay()
     private val paths = RequestPaths()
+    private val admission = TurnAdmission(parts, voice)
+    private val openAi = OpenAiRoute(parts, io)
 
     /** How often a streamed turn's client is sent a keepalive while its answer is silent; null sends none. */
     private val keepalive = server.keepaliveSeconds.takeIf { it > 0 }?.seconds
@@ -144,7 +149,8 @@ internal class ServerListener(
         val path = paths.read(call)
         val read = call.request.httpMethod == HttpMethod.Get
         if (read && path == listOf(HEALTH_ROUTE)) return call.respondText(HEALTH_BODY, ContentType.Application.Json)
-        val key = admitted(call) ?: return
+        // A request refused before its route is known is still refused in the shape its client reads.
+        val key = admitted(call, if (path != null && openAi.asks(call, path)) openAi.voice else voice) ?: return
         if (path == null) noSuchPath(call) else routed(call, key, path)
         parts.keys.keepUse()
     }
@@ -155,13 +161,13 @@ internal class ServerListener(
             path.isEmpty() && call.request.httpMethod == HttpMethod.Get -> catalog.directory(call)
             path.isEmpty() -> noSuchPath(call)
             path.first() == SERVER_ROOT -> admin.answer(call, key, path.drop(1))
-            else -> command(call, key, path)
+            else -> if (!openAi.answered(call, key, path)) command(call, key, path)
         }
     }
 
-    /** The key [call] presents, once it is a live one; else null with the 401 answered, in words that say which of
-     *  missing, unknown, revoked and expired it was and never repeat the key. */
-    private suspend fun admitted(call: ApplicationCall): ServerKey? {
+    /** The key [call] presents, once it is a live one; else null with the 401 answered in [voice], in words that say
+     *  which of missing, unknown, revoked and expired it was and never repeat the key. */
+    private suspend fun admitted(call: ApplicationCall, voice: RefusalVoice): ServerKey? {
         val headers = call.request.headers
         val presented = headers[API_KEY_HEADER]?.trim()?.takeIf(String::isNotEmpty)
             ?: BearerScheme.bearerToken(headers[HttpHeaders.Authorization])
@@ -197,33 +203,11 @@ internal class ServerListener(
     private suspend fun turn(call: ApplicationCall, key: ServerKey, head: SharedHead, path: List<String>) {
         if (!head.running()) return catalog.notRunning(call, head)
         val counted = call.request.httpMethod == HttpMethod.Post && path == turnPath
-        val slot = if (counted) slot(call, key, head) ?: return else null
-        val query = call.request.queryString().takeIf(String::isNotEmpty)?.let { "?$it" }.orEmpty()
+        val slot = if (counted) admission.slot(call, key, head) ?: return else null
         val preferred = parts.people.of(key.person).preferred
         val named = listOfNotNull(preferred?.let { PREFERRED_UPSTREAM_HEADER to it }).toMap()
-        watched.turn(call, HeadTurn(head, paths.spell(path) + query, named, keepalive), slot)
-    }
-
-    /** The slot a turn on [head] takes among those of [key]'s person, or null with the turn refused: one past a cap,
-     *  and before that one whose provider has no server up, which counts toward no cap. */
-    private suspend fun slot(call: ApplicationCall, key: ServerKey, head: SharedHead): TurnSlot? {
-        val noneUp = parts.upstreams.noneUp(head.key)
-        if (noneUp != null) {
-            voice.refuse(call, HttpStatus.SERVICE_UNAVAILABLE, noneUp)
-            return null
-        }
-        return when (val verdict = parts.limits.begin(key.person)) {
-            is LimitVerdict.Admitted -> verdict.slot
-            is LimitVerdict.Refused -> {
-                limited(call, verdict)
-                null
-            }
-        }
-    }
-
-    private suspend fun limited(call: ApplicationCall, refused: LimitVerdict.Refused) {
-        call.response.headers.append(HttpHeaders.RetryAfter, refused.retryAfterSeconds.toString())
-        voice.refuse(call, HttpStatus.TOO_MANY_REQUESTS, refused.why)
+        val turn = HeadTurn(head, paths.spell(path) + paths.query(call), named, keepalive)
+        watched.turn(call, slot) { parts.relay.turn(call, turn) }
     }
 
     private suspend fun noSuchPath(call: ApplicationCall) {

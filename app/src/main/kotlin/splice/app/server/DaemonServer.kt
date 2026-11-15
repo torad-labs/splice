@@ -3,7 +3,8 @@
 // are up and closed first at stop. A server mode that can't start (a port another program holds, a PEM file that is
 // no certificate, a keys file that cannot be read) is said in the log and to every `splice server` verb, and leaves
 // the rest of the daemon serving. It is also how server mode reads the servers behind a head (F4): the pool of the
-// provider that head's splice.toml table names.
+// provider that head's splice.toml table names, and that provider itself when it speaks openai-chat, which is where
+// an OpenAI-style client's requests are relayed (DaemonChatServer).
 package splice.app.server
 
 import splice.app.control.ManagedHead
@@ -13,10 +14,12 @@ import splice.app.share.ManagedSharedHeads
 import splice.core.config.ConfigService
 import splice.core.config.TurnKey
 import splice.core.pool.UpstreamPool
+import splice.core.topology.Dialect
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import splice.server.ChatServer
 import splice.server.HeadUpstreams
 import splice.server.ServerMode
 import splice.server.ServerReach
@@ -49,6 +52,12 @@ internal class DaemonServer(
     override fun all(): List<UpstreamPool> = pools.all()
 
     override fun of(head: String): UpstreamPool? = topology.heads[head]?.let { pools.named(it.provider) }
+
+    override fun chat(head: String): ChatServer? {
+        val key = topology.heads[head]?.provider ?: return null
+        val provider = topology.providers[key]?.takeIf { it.dialect == Dialect.OPENAI_CHAT } ?: return null
+        return DaemonChatServer(provider.baseUrl.trimEnd('/'), key, pools)
+    }
 
     /** Opens server mode when `[server]` names an address, serving [heads] through [controlPort]'s daemon. */
     fun open(heads: Map<String, ManagedHead>, controlPort: Int) {

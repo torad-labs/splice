@@ -44,6 +44,10 @@
   where the policy was. The review is recognized by the policy's opening sentence and goes upstream as Claude
   Code wrote it. Its perf row carries `auto_mode_review=1`, and a request that only resembles it carries
   `auto_mode_review_near_miss=1`, so a reworded policy in a later Claude Code shows up instead of going unseen.
+- **A limit reset spent from the console is said as spent.** Anthropic's answer to a spend carries fields splice
+  read too strictly, so a reset that was spent could show as "Anthropic did not confirm the reset". splice now
+  reads the answer field by field, as Claude Code does, and a spend whose answer is unclear reads the login again,
+  so its card shows whether the reset went through.
 
 ## splice v0.4.1: limit resets from splice, a fallback model per session, and an installer that brings its own Java - 2026-11-14
 

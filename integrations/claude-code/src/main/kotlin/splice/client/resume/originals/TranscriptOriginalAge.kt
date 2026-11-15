@@ -3,7 +3,7 @@
 // A copy is kept so a session can be resumed after its head changed the file, so its age is the session's, not the
 // copy's: the newest write among the live files it was copied from (the sources the marker records). A copy whose
 // sources are all gone is aged by its own newest write, which is when it was last touched. Resumability is not the
-// test (Marlin, Oct 10): nearly everything is resumable while its copy exists. The caller holds the originals lock.
+// test: nearly everything is resumable while its copy exists. The caller holds the originals lock.
 package splice.client.resume.originals
 
 import kotlinx.serialization.json.Json

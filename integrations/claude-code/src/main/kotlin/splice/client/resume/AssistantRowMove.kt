@@ -1,4 +1,4 @@
-// NEW: Oct 7 CT — the per-line half of the resume rewrite, split out of TranscriptModelRewrite so that the file
+// the per-line half of the resume rewrite, split out of TranscriptModelRewrite so that the file
 // transaction (survey, preservation, staging, the swap) and the rule for one line each stay small enough to read.
 // A line of a transcript is read here, and an assistant row on a model the head does not serve is moved here:
 // onto the pinned model, without its thinking (see TranscriptModelRewrite's header). Nothing here touches a file.
@@ -75,7 +75,7 @@ internal class AssistantRowMove {
 
     /** Whether [row] can be an assistant row at all. One that cannot is history, kept as it is, so a pass need not
      *  decode or parse it: on a resume launch that was every row, tool output included, four passes over the transcript
-     *  (about 2.8 GB in 9 s for five launches on the live daemon, 02:03 CT, Oct 20). */
+     *  (about 2.8 GB in 9 s for five launches on the live daemon, Oct 20). */
     fun mayMove(row: TranscriptRow): Boolean = row.indexOf(ASSISTANT_BYTES) >= 0 || row.indexOf(UNICODE_ESCAPE) >= 0
 
     /** The line as the move reads it. */

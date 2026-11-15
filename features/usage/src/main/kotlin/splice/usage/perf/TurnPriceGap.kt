@@ -73,7 +73,7 @@ private object ProviderRefusal {
 internal class TurnPriceGap(private val price: TurnPrice?, private val plans: AccountPlans) {
     // why: each row is decided once per read. The totals, the price order and the row's own three fields each ask for
     // its cost, value and reason, and each asked again priced the row; a week's Usage read priced every row three times
-    // (jfr on desk c, Oct 12). One instance serves one read, on one thread.
+    // (seen in a JFR profile). One instance serves one read, on one thread.
     private val decided = IdentityHashMap<PerfRow, Decided>()
 
     /** One row's three answers, read together. */
@@ -135,7 +135,7 @@ internal class TurnPriceGap(private val price: TurnPrice?, private val plans: Ac
  *  to run, a plan's are covered by the plan, and on any other command a turn with no price is a model with no
  *  rate card. The same two head-wide branches [TurnPriceGap.of] takes first, so the console's Day row and the
  *  Requests page give one reason. An API-key command whose account carries a plan is the one case only a row
- *  can tell (Oct 10, 2026, Marlin: a plan turn reads "on your plan", never "with no price"). */
+ *  can tell (a plan turn reads "on your plan", never "with no price"). */
 internal object HeadPriceGap {
     fun of(kind: UsageBilling?): PriceGap? = when (kind) {
         UsageBilling.LOCAL_RUNTIME -> PriceGap.LOCAL

@@ -1,6 +1,6 @@
 // NEW: Oct 10, 2026 — an hour whose turns had no rate card when they ran is priced again from the perf rows,
-// at the cards splice holds NOW (Marlin: "The shipped table prices every turn splice still holds, old ones
-// included"). The hourly rollup prices each turn at RECORD time and keeps only the sum (V4-221), so the day
+// at the cards splice holds NOW (the shipped table prices every turn splice still holds, old ones
+// included). The hourly rollup prices each turn at RECORD time and keeps only the sum (V4-221), so the day
 // splice began shipping list prices, every earlier hour would have read as unpriced for the whole retention
 // window — and so would every hour before an operator wrote a card of their own.
 //

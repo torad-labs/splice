@@ -4,7 +4,7 @@
 // `text.format` carries the requested schema unchanged, and it never asks Muse to validate the schema as strict when
 // the schema falls outside Meta's strict subset, which Muse refuses with a 400.
 //
-// Oct 27, 14:27 CT: Muse answered 400 "'additionalProperties' is required to be supplied and to be false." to 27
+// Oct 27: Muse answered 400 "'additionalProperties' is required to be supplied and to be false." to 27
 // claude-muse requests in two seconds, each with `text.format.strict: true` over a schema whose objects did not close.
 // Meta's structured-output docs (https://dev.meta.ai/docs/structured-output) say output is always schema-constrained,
 // that `strict: false` constrains it the same way, and that `strict: true` only adds a check of the schema against a

@@ -160,7 +160,7 @@ internal class DoctorConfigChecks(
             )
         }
 
-    /** V4-36 (operator amendment 2026-09-15): `system_prompt_mode = "replace"` SUBSTITUTES the
+    /** V4-36 (2026-09-15): `system_prompt_mode = "replace"` SUBSTITUTES the
      *  client's whole system field, and Claude Code ships its entire operating instruction set in
      *  that field — so the head then runs as a bare model with tools attached. That is the
      *  operator's choice to make, but it must never be a thing they DISCOVER; doctor says it
@@ -201,7 +201,7 @@ internal class DoctorConfigChecks(
      *  nothing is at least a coherent thing to have meant. A strip layer with no pattern list is
      *  not — the mode has no meaning without patterns, which is why an EMPTY one is now a load
      *  error (HeadSystemPrompt) and an ABSENT one is this row. An empty `system_prompt = ""` refuses boot (v0.4.0
-     *  section 13, the President's deviation of Oct 13), so doctor fails it the way boot does instead of warning. */
+     *  section 13), so doctor fails it the way boot does instead of warning. */
     private fun strippingNothingChecks(topology: Topology): List<DoctorCheck> = topology.heads
         .filterValues { it.systemPromptMode == SystemPromptMode.STRIP && !carriesPrompt(it) }
         .map { (key, head) ->

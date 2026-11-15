@@ -168,7 +168,7 @@ class ProbeEconomicsHoursTest {
         )
     }
 
-    // Live, Nov 10: the machine stopped at 8:28 PM CT and left a run of NUL bytes in claude-splice's and claudex's
+    // Live, Nov 10: the machine stopped and left a run of NUL bytes in claude-splice's and claudex's
     // logs, where a request the rollup had counted would have been. Accounts read "Not read" for the day on both. Those
     // hours were counted by a build that refuses the probe, so no line the log lost is a probe in their count: they
     // show the rollup's figure, and the route names no hour.

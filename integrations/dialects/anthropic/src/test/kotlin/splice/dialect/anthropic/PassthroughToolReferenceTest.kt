@@ -1,5 +1,5 @@
 // A session on an anthropic-passthrough head loads a deferred tool through ToolSearch and must then be
-// able to call it (eli-ff, 2026-10-26). Claude Code answers ToolSearch with a tool_result holding one
+// able to call it. Claude Code answers ToolSearch with a tool_result holding one
 // `tool_reference` block per loaded tool. Kimi accepts these natively; preserving them lets it load
 // deferred tools without rewriting their cached definitions. Other upstreams may still need the fallback.
 // A head that cannot carry the reference gives the model the sentence the client meant, under the name
@@ -100,7 +100,7 @@ class PassthroughToolReferenceTest {
             """{"name":"$name","description":"d","input_schema":{"type":"object"},"defer_loading":true}"""
         }
         val body = """{"model":"m","messages":[
-            {"role":"user","content":"tell eli-ff the fix landed"},
+            {"role":"user","content":"tell review-bot the fix landed"},
             {"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"ToolSearch",
                 "input":{"query":"select:${loaded.joinToString(",")}","max_results":${loaded.size}}}]},
             {"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":[$references]}]}],

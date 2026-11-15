@@ -2,7 +2,7 @@
 // record a plan-limit outcome and speak the reset: the ending is the only thing that crosses from the retry loop
 // to the turn (RetryPolicy.giveUp returns it for each turn that meets the 429; since Oct 26 no turn is held behind
 // another's, so every turn meets its own). Before this the window was dropped into the body text and the turn ended
-// error:upstream-failed, "wait a moment and retry", for a plan spent until a day six days out (Marlin, f7f1e9308;
+// error:upstream-failed, "wait a moment and retry", for a plan spent until a day six days out (f7f1e9308;
 // daemon.log:39520). A bare 429 gets bounded retries without inventing a plan window.
 package splice.upstream.transport
 
@@ -31,7 +31,7 @@ private const val MS = 1_000L
 private const val SIX_DAYS_S = 6L * 24 * 3_600
 private const val HOUR_S = 3_600L
 
-// ChatGPT's live weekly-limit body (Sep 28, 5:11 PM CT), reset made relative.
+// ChatGPT's live weekly-limit body (Sep 28), reset made relative.
 private fun usageLimitBody(reset: Long) =
     """{"error":{"type":"usage_limit_reached","plan_type":"pro","resets_at":$reset,""" +
         """"resets_in_seconds":$SIX_DAYS_S,"limit_window_minutes":10080}}"""

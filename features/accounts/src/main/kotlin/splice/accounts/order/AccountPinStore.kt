@@ -1,5 +1,5 @@
 // NEW: per-head Use now pins survive daemon restarts (Nov 3, 2026). A pin lived in the pool's memory alone, so the
-// restart that installed #459 dropped the one Marcos had just set, and on the beta channel the daemon restarts all day.
+// restart that installed #459 dropped the one just set, and on the beta channel the daemon restarts all day.
 package splice.accounts.order
 
 import kotlinx.serialization.Serializable

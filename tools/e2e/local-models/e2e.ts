@@ -20,7 +20,7 @@
  *  ─────────────────────────────────────────────────────────────────────────────────────────────
  *  V4-145: converted to TypeScript (bun). READ THIS BEFORE TRUSTING A GREEN RUN.
  *
- *  THIS FILE IS NOT EXERCISED BY THE CONVERSION, and cannot be from a build seat: it needs a live
+ *  THIS FILE IS NOT EXERCISED BY THE CONVERSION, and cannot be from a build session: it needs a live
  *  Ollama or LM Studio on localhost AND a built fat jar, and it starts a real daemon. What that means:
  *
  *    COVERED — differentialled in-process against the Python original on synthetic inputs:
@@ -43,7 +43,7 @@
  *    integer-like keys and collapse the number forms the receipt records.
  *
  *    THE RECEIPT IS A PYTHON json.dumps ARTIFACT. Receipts from the two runtimes were reviewed against
- *    each other, so key ORDER and indent=2 are part of the artifact. Receipts stay on this machine under
+ *    each other, so key ORDER and indent=2 are part of the artifact. Receipts stay local under
  *    tools/e2e/receipts/, which git ignores: none is committed. It is built as an ordered pair list and
  *    emitted through python-json's dumpsIndent, not JSON.stringify.
  *

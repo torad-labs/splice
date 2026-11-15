@@ -19,8 +19,8 @@ const sess = (id: string, name: string | null, p: string | null, over: Row = {})
 });
 const SESSIONS = [
   sess("aaaaaaaa-1", "api", "website", { status: "working" }),
-  sess("cccccccc-1", "asking", "temple", { waiting_for: "input" }),
-  sess("dddddddd-1", "builder", "temple", { status: "working" }),
+  sess("cccccccc-1", "asking", "backend", { waiting_for: "input" }),
+  sess("dddddddd-1", "builder", "backend", { status: "working" }),
   sess("eeeeeeee-1", "stray", null),
 ];
 const turn = (t: string, agoS: number, session: string, p: string | null, over: Row = {}): Row => ({
@@ -30,15 +30,15 @@ const turn = (t: string, agoS: number, session: string, p: string | null, over: 
 const TURNS = [
   turn("t-web", 20, "aaaaaaaa", "website"),
   turn("t-loose", 30, "eeeeeeee", null),
-  turn("t-old", 40, "bbbbbbbb", "temple", { title: "Fix the retry ladder in the gate" }), // a session no longer live
-  turn("t-ask", 60, "cccccccc", "temple"),
+  turn("t-old", 40, "bbbbbbbb", "backend", { title: "Fix the retry ladder in the gate" }), // a session no longer live
+  turn("t-ask", 60, "cccccccc", "backend"),
 ];
 const slot = (id: string, session: string | null, p: string | null, lead = false): Row =>
   ({ id, role: id, head: "alpha", lead, session, project: p ? proj(p) : null });
 const TEAMS = [
   { id: "t1", name: "Site crew", repo: "/work/website", project: proj("website"), slots: [slot("lead", "aaaaaaaa-1", "website", true)] },
-  // no repo: under its lead's project, temple, and with a member in website it shows on website's pick too
-  { id: "t2", name: "Gate crew", repo: "", project: null, slots: [slot("lead", "dddddddd-1", "temple", true), slot("helper", "aaaaaaaa-1", "website")] },
+  // no repo: under its lead's project, backend, and with a member in website it shows on website's pick too
+  { id: "t2", name: "Gate crew", repo: "", project: null, slots: [slot("lead", "dddddddd-1", "backend", true), slot("helper", "aaaaaaaa-1", "website")] },
   { id: "t3", name: "Loose crew", repo: "", project: null, slots: [slot("lead", "eeeeeeee-1", null, true)] },
 ];
 
@@ -91,17 +91,17 @@ test("Requests: picking a project asks the daemon for its requests, in time orde
     await expect(card(p, "t-web")).toBeVisible({ timeout: 20_000 });
     await expect(p.locator("#pickline .ppick .pname")).toHaveText("Every project");
     await p.locator("#pickline .ppick").click();
-    await p.locator(".pmenu button", { hasText: "temple" }).click();
+    await p.locator(".pmenu button", { hasText: "backend" }).click();
     // the page draws its loading rows until the daemon answers, so the rows are read once the project's own are drawn, not
     // when the old row leaves
     await expect(card(p, "t-old")).toBeVisible({ timeout: 10_000 });
     await expect(card(p, "t-ask")).toBeVisible({ timeout: 10_000 });
     await expect(card(p, "t-web")).toHaveCount(0);
-    expect(asked.at(-1)).toBe("/work/temple");
+    expect(asked.at(-1)).toBe("/work/backend");
     expect(await p.locator("article.card.rq").evaluateAll((els) => els.map((e) => e.getAttribute("data-open")))).toEqual(["alpha:t-old", "alpha:t-ask"]);
     await expect(p.locator(".pgroup")).toHaveCount(0);
-    expect(new URL(p.url()).searchParams.get("project")).toBe("/work/temple");
-    expect(await p.evaluate(() => localStorage.getItem("splice.project"))).toBe("/work/temple");
+    expect(new URL(p.url()).searchParams.get("project")).toBe("/work/backend");
+    expect(await p.evaluate(() => localStorage.getItem("splice.project"))).toBe("/work/backend");
   } finally {
     await p.context().close();
   }
@@ -112,7 +112,7 @@ test("Requests: project tiles keep their own selector inside an advanced perform
   const p = await open("requests.html", `?perf=1&contract=1&head=alpha&from=${now - 86_400_000}&until=${now}`);
   try {
     await expect(card(p, "t-web")).toBeVisible({ timeout: 20_000 });
-    await expect.poll(() => ["<all>", "/work/website", "/work/temple", "none"].every((key) => tileProjects.has(key))).toBe(true);
+    await expect.poll(() => ["<all>", "/work/website", "/work/backend", "none"].every((key) => tileProjects.has(key))).toBe(true);
   } finally {
     await p.context().close();
   }
@@ -132,10 +132,10 @@ test("Requests: while one project is picked, one where someone waits is a door t
   const p = await open("requests.html", "?project=/work/website");
   try {
     const door = p.locator("#pickline .pdoor");
-    await expect(door).toContainText("temple", { timeout: 20_000 });
+    await expect(door).toContainText("backend", { timeout: 20_000 });
     await expect(door.locator(".pc.needs b")).toHaveText("1");
     await door.click();
-    await expect(p.locator("#pickline .ppick .pname")).toHaveText("temple");
+    await expect(p.locator("#pickline .ppick .pname")).toHaveText("backend");
     await expect(card(p, "t-ask")).toBeVisible();
   } finally {
     await p.context().close();
@@ -143,9 +143,9 @@ test("Requests: while one project is picked, one where someone waits is a door t
 }, 60_000);
 
 test("Requests: an older door that names the project by its name opens on that project", async () => {
-  const p = await open("requests.html", "?project=temple");
+  const p = await open("requests.html", "?project=backend");
   try {
-    await expect(p.locator("#pickline .ppick .pname")).toHaveText("temple", { timeout: 20_000 });
+    await expect(p.locator("#pickline .ppick .pname")).toHaveText("backend", { timeout: 20_000 });
     await expect(card(p, "t-web")).toHaveCount(0);
     await expect(card(p, "t-ask")).toBeVisible();
   } finally {
@@ -157,8 +157,8 @@ test("Teams: the tabs sit under their project's name in Sessions' order, a team 
   const p = await open("teams.html");
   try {
     await expect(p.locator(".tabs .tproj").first()).toBeVisible({ timeout: 20_000 });
-    expect(await p.locator(".tabs .tproj").allTextContents()).toEqual(["temple", "website", "No project"]);
-    await expect(p.locator(".tcluster", { hasText: "temple" }).locator(".tab")).toHaveText(["Gate crew"]);
+    expect(await p.locator(".tabs .tproj").allTextContents()).toEqual(["backend", "website", "No project"]);
+    await expect(p.locator(".tcluster", { hasText: "backend" }).locator(".tab")).toHaveText(["Gate crew"]);
   } finally {
     await p.context().close();
   }
@@ -170,7 +170,7 @@ test("Teams: a pick shows every team with a member in the project, wherever its 
     await expect(p.locator(".ppick .pname")).toHaveText("website", { timeout: 20_000 });
     await expect(p.locator(".tabs .tab .tname")).toHaveText(["Site crew", "Gate crew"]);
     await expect(p.locator(".tabs .tproj")).toHaveCount(0);
-    await p.locator(".pdoor", { hasText: "temple" }).click();
+    await p.locator(".pdoor", { hasText: "backend" }).click();
     await expect(p.locator(".tabs .tab .tname")).toHaveText(["Gate crew"]);
     await expect(p.locator('.tab[aria-current="true"] .tname')).toHaveText("Gate crew");
   } finally {
@@ -178,18 +178,18 @@ test("Teams: a pick shows every team with a member in the project, wherever its 
   }
 }, 60_000);
 
-// ONE ORDER (Marlin): a stalled project outranks a working one on every page, read from the same live turns. Here
-// website's session is the newer, so an order that missed the stall would put website above temple.
+// ONE ORDER: a stalled project outranks a working one on every page, read from the same live turns. Here
+// website's session is the newer, so an order that missed the stall would put website above backend.
 test("Sessions, Teams and Requests order projects alike, a stalled project above a working one", async () => {
   sessions = [
     sess("gggggggg-1", "asking", "garden", { waiting_for: "input" }),
-    sess("tttttttt-1", "quiet", "temple", { status: "working", updated_at: new Date(now - 5 * 3_600_000).toISOString() }),
+    sess("tttttttt-1", "quiet", "backend", { status: "working", updated_at: new Date(now - 5 * 3_600_000).toISOString() }),
     sess("wwwwwwww-1", "busy", "website", { status: "working" }),
     sess("eeeeeeee-1", "stray", null),
   ];
   liveTurns = [{ session: "tttttttt-1", idle_ms: 20 * 60_000, seen_output: true, retries: 0 }];
-  teams = ["garden", "temple", "website"].map((p, i) => ({ id: `o${i}`, name: `${p} crew`, repo: `/work/${p}`, project: proj(p), slots: [slot("lead", null, p, true)] }));
-  const order = ["garden", "temple", "website", "No project"];
+  teams = ["garden", "backend", "website"].map((p, i) => ({ id: `o${i}`, name: `${p} crew`, repo: `/work/${p}`, project: proj(p), slots: [slot("lead", null, p, true)] }));
+  const order = ["garden", "backend", "website", "No project"];
   try {
     const s = await open("sessions.html");
     await expect(s.locator(".pgroup .pname").first()).toBeVisible({ timeout: 20_000 });
@@ -208,7 +208,7 @@ test("Sessions, Teams and Requests order projects alike, a stalled project above
   }
 }, 90_000);
 
-// EACH PAGE COUNTS ITS OWN THING (Marlin): a tile's figure is teams on Teams and requests on Requests; the lamps stay
+// EACH PAGE COUNTS ITS OWN THING: a tile's figure is teams on Teams and requests on Requests; the lamps stay
 // the sessions', so someone waiting shows from every page.
 const tileTotals = (p: Page) => p.locator("#ptiles .ptile, .ptiles .ptile").evaluateAll((els) =>
   els.map((e) => [e.querySelector(".tname")?.textContent, e.querySelector(".ptotal")?.textContent]));
@@ -216,8 +216,8 @@ test("on a wide Teams the tiles count teams, a team under every project it has a
   const p = await open("teams.html", "", 3828);
   try {
     await expect(p.locator(".ptiles .ptile")).toHaveCount(4, { timeout: 20_000 });
-    expect(await tileTotals(p)).toEqual([["Every project", "3"], ["temple", "1"], ["website", "2"], ["No project", "1"]]);
-    await expect(p.locator(".ptiles .ptile", { hasText: "temple" }).locator(".pc.needs b")).toHaveText("1");
+    expect(await tileTotals(p)).toEqual([["Every project", "3"], ["backend", "1"], ["website", "2"], ["No project", "1"]]);
+    await expect(p.locator(".ptiles .ptile", { hasText: "backend" }).locator(".pc.needs b")).toHaveText("1");
   } finally {
     await p.context().close();
   }
@@ -228,7 +228,7 @@ test("on a wide Requests the tiles count the requests in the window, and the fil
   const p = await open("requests.html", "", 3828);
   try {
     await expect(p.locator(".ptiles .ptotal").first()).toHaveText("4", { timeout: 20_000 });
-    expect(await tileTotals(p)).toEqual([["Every project", "4"], ["temple", "2"], ["website", "1"], ["No project", "1"]]);
+    expect(await tileTotals(p)).toEqual([["Every project", "4"], ["backend", "2"], ["website", "1"], ["No project", "1"]]);
     const left = (sel: string) => live(p.locator(sel).first(), (e) => Math.round(e.getBoundingClientRect().left));
     expect(await left(".fv")).toBe(await left(".ptiles"));
   } finally {
@@ -236,15 +236,15 @@ test("on a wide Requests the tiles count the requests in the window, and the fil
   }
 }, 60_000);
 
-// A PROJECT'S FIGURE AT EVERY WIDTH (Marlin's walk, Oct 12): both walkers paged through thousands of rows at 1440 to
-// find how many requests temple sent, a figure only the tiles carried. Below the tiles' width the picker and its menu
+// A PROJECT'S FIGURE AT EVERY WIDTH: a reader paged through thousands of rows at 1440 to
+// find how many requests backend sent, a figure only the tiles carried. Below the tiles' width the picker and its menu
 // carry the same figure each page's tiles do.
 const menuFigures = (p: Page) => p.locator(".pmenu button").evaluateAll((els) =>
   els.map((e) => [e.querySelector(".pname")?.textContent, e.querySelector(".pfig")?.textContent ?? null]));
 for (const [page, figures] of [
-  ["sessions.html", [["Every project", "4"], ["temple", "2"], ["website", "1"], ["No project", "1"]]],
-  ["teams.html", [["Every project", "3"], ["temple", "1"], ["website", "2"], ["No project", "1"]]],
-  ["requests.html", [["Every project", "4"], ["temple", "2"], ["website", "1"], ["No project", "1"]]],
+  ["sessions.html", [["Every project", "4"], ["backend", "2"], ["website", "1"], ["No project", "1"]]],
+  ["teams.html", [["Every project", "3"], ["backend", "1"], ["website", "2"], ["No project", "1"]]],
+  ["requests.html", [["Every project", "4"], ["backend", "2"], ["website", "1"], ["No project", "1"]]],
 ] as const) {
   test(`at 1440 ${page}'s picker and its menu carry each project's figure, as its tiles do`, async () => {
     const p = await open(page);
@@ -253,7 +253,7 @@ for (const [page, figures] of [
       await p.locator(".ppick").click();
       await expect(p.locator(".pmenu button")).toHaveCount(figures.length);
       await expect.poll(() => menuFigures(p), { timeout: 20_000 }).toEqual(figures.map(([n, f]) => [n, f]));
-      await p.locator(".pmenu button", { hasText: "temple" }).click();
+      await p.locator(".pmenu button", { hasText: "backend" }).click();
       await expect(p.locator(".ppick .pfig")).toHaveText(figures[1][1]);
     } finally {
       await p.context().close();

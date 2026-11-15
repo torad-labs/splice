@@ -16,11 +16,11 @@
 /* a word the search matched is the console's one search mark (console.css mark) */
 
 /* The stores' colours. A tint ramp of the one key made six near-identical beiges in day, so the split bar could not
-   show where the space goes, which is its whole job (splice-lead's walk, Oct 11). These are six hues of their own and
+   show where the space goes, which is its whole job. These are six hues of their own and
    never the provider colours (--claude, --gpt, --grok, --kimi, --muse, --router, --local, --deepseek): a provider keeps
    its colour on every page, and a store is not a provider. Day's are darkened to hold against the cream. */
 :root, [data-theme="night"], [data-theme="day"] {
-  /* A STORE IS A LEVEL OF INK, NEVER A HUE (Oct 29): provider colour names a provider and a store is not one, so the stores take six
+  /* A STORE IS A LEVEL OF INK, NEVER A HUE: provider colour names a provider and a store is not one, so the stores take six
      levels of the page's own ink, a neighbour always a light and a dark apart, and a store keeps its level on the split bar, the
      rail card, its swatch and its bars */
   --store-1: color-mix(in oklab, var(--text) 80%, var(--obj-sunk)); --store-2: color-mix(in oklab, var(--text) 30%, var(--obj-sunk));
@@ -49,7 +49,7 @@
 /* the topics are a plain list of cards, with no rail bar and no socket: a topic has no order to keep and no live state
    to light, so the glyph in its name line is what tells it apart (sessions.css .list, console.css .rail) */
 .jobs .list.rail.plain { padding-left: 0; }
-/* A RAIL CARD CASTS NO SHADOW OF ITS OWN (Oct 28): eight cards each throwing a hard edge said "object" eight times and nothing about which
+/* A RAIL CARD CASTS NO SHADOW OF ITS OWN: eight cards each throwing a hard edge said "object" eight times and nothing about which
    one mattered. The open card alone is raised, in neutral ink (below); a topic holding a limit hit or a failure wears the limit
    red on its edge, since that is what the red is for */
 .card.job { --c: var(--track-line); --quiet: .4; cursor: pointer; box-shadow: none; }
@@ -78,7 +78,7 @@
 .pane > header .jglyph svg { width: 1.4rem; height: 1.4rem; }
 .card.job .meta { gap: 0.333rem 1rem; font-size: 1rem; color: var(--text-body); }
 .card.job .meta span + span::before { content: "·"; margin-right: 1rem; color: var(--text-mute); }
-/* A SEARCH NEVER RESIZES A CARD (Oct 27): what the search found takes the place of the card's own state, on the same
+/* A SEARCH NEVER RESIZES A CARD: what the search found takes the place of the card's own state, on the same
    one line, so the rail keeps its height and every card its place under the pointer while he types. */
 .jstate { display: grid; margin-top: 1rem; min-width: 0; }
 .jstate > * { grid-area: 1 / 1; min-width: 0; }
@@ -139,7 +139,7 @@
    (Oct 27, from the show-rather-than-tell rule.) One grid a section: the name, the control, and the drawing of what the
    value does, each in a column of its own, so the names, the controls and the drawings start at one x down a section
    and a value is read against the figures it acts on. A section whose rows draw nothing is two columns. */
-/* A NAME READS ON ONE LINE (Oct 27): the name column is as wide as the section's longest name, up to 28rem, so "Check
+/* A NAME READS ON ONE LINE: the name column is as wide as the section's longest name, up to 28rem, so "Check
    the connection if no output arrives for" (a little over 24rem in the name face) stands whole beside its control
    where a 15rem column broke four names of one section in two. The control column is as wide as its widest control and
    the commands under it, and the drawing takes the rest, never less than a track a value can be read on. */
@@ -160,7 +160,7 @@
    moves the controls of the settings above it: a name longer than the column wraps on two lines instead of widening it */
 .krows:has(> .adv) { grid-template-columns: minmax(14rem, 21rem) fit-content(26rem) minmax(14rem, 1fr); }
 .krows.flat:has(> .adv) { grid-template-columns: repeat(var(--fc), minmax(14rem, 21rem) minmax(0, 1fr)); }
-/* two columns from a plate of 100rem (his 2548 at 150% is 154rem), three from 140rem, where a column of name, control
+/* two columns from a plate of 100rem (2548 px at 150% is 154rem), three from 140rem, where a column of name, control
    and the control's commands still has the 45rem it takes; these name the classes outright, as the base rule does, so
    the wider plate wins over `--fc: 1` above */
 @container plate (min-width: 100rem) { .krows.flat:is(.n2, .n3) { --fc: 2; } }
@@ -212,7 +212,7 @@
 .kaxis { padding-top: .2rem; }
 .kaw { justify-self: end; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); text-align: right; }
 .krows .kaxis > .pd-ax { align-self: start; }
-/* A FIGURE THIS PAGE READ, ON THE AXIS THE SETTINGS SIT ON (Oct 27): the longest stall of the week as one upright line
+/* A FIGURE THIS PAGE READ, ON THE AXIS THE SETTINGS SIT ON: the longest stall of the week as one upright line
    through every wait, with its door above them, so each wait is read against what actually happened. */
 .khead { padding-bottom: calc(1.5 * var(--u)); }
 .kmk { position: relative; display: block; min-height: 1.6rem; }
@@ -322,7 +322,7 @@ a.oseg:hover { box-shadow: inset 0 0 0 999px color-mix(in oklab, var(--text) 16%
 .pidle { display: flex; align-items: center; flex-wrap: wrap; gap: 0.667rem 0.667rem; margin: 1rem 0 0; font: 500 .92rem/1.3 var(--font-name); color: var(--text-body); }
 /* ---------- Providers today: what each kind of pushback cost, and each command's share of it ---------- */
 .pb { display: flex; flex-direction: column; gap: var(--u); }
-/* THE THREE KINDS OF PUSHBACK ARE THREE COLOURS READ AS A KEY (Oct 29): waited in line is a rate worth watching (the key light),
+/* THE THREE KINDS OF PUSHBACK ARE THREE COLOURS READ AS A KEY: waited in line is a rate worth watching (the key light),
    overloaded a failure (the limit red), cut off the limit red a step deeper, so the tile on the kicker line, the swatch over the
    table's column and the bars under Providers today are one colour each wherever they stand */
 :root, [data-theme="night"], [data-theme="day"] { --mam-queued: var(--key-ink); --mam-over: var(--limit); --mam-cut: color-mix(in oklab, var(--limit) 52%, var(--obj-sunk)); }
@@ -513,7 +513,7 @@ a.mam-tile:hover { background: var(--obj-high); }
 .gaside > .gof { font: 500 .88rem/1.2 var(--font-name); color: var(--text-mute); }
 /* a tag, not a light: the key marks one thing per view and this is a fact about the group */
 .yours { display: inline-block; white-space: nowrap; padding: .25rem .5rem; font: 500 .85rem/1 var(--font-name); color: var(--text-body); border: .12rem solid var(--track-line); border-radius: .35rem; }
-/* A GROUP'S STORES ARE ONE TABLE (Oct 28), the way a command is one row of Usage's results: the columns are named once over
+/* A GROUP'S STORES ARE ONE TABLE, the way a command is one row of Usage's results: the columns are named once over
    it and every store is a row on them, so the sizes are read down one scale, the Save switches stand in one column and
    the Keep for tracks start and end at one x. The Save and the Delete columns take what their widest cell needs. */
 .dwrap { container: dtab / inline-size; min-width: 0; }
@@ -634,7 +634,7 @@ button.count:hover { color: var(--text); }
 .tap .icon { width: 1.6rem; height: 1.6rem; }
 
 /* ---------- MCP servers ---------- */
-/* THE SHARED SERVERS ON COLUMNS NAMED ONCE (Oct 26): the lamp, the name and where it is declared, the sessions on it,
+/* THE SHARED SERVERS ON COLUMNS NAMED ONCE: the lamp, the name and where it is declared, the sessions on it,
    what its one copy holds, when it started, when it was last called, and its acts. Every row is a subgrid of the list,
    so a column starts at one x down every row however long a name or a chip is. */
 /* the columns that hold the most share what is left: the name, the commands on it, and what its one copy holds as a bar.
@@ -696,7 +696,7 @@ button.count:hover { color: var(--text); }
 .srv .said.ok { color: var(--live); }
 .srv .said.limit { color: var(--limit); white-space: normal; text-align: right; }  /* a failed test carries the route's own words, which wrap in the cell */
 .srv .said svg { width: 1rem; height: 1rem; }
-/* NOT SHARED, A CARD PER REASON (Oct 26): the reason and its count once on the card, the line it carries once under
+/* NOT SHARED, A CARD PER REASON: the reason and its count once on the card, the line it carries once under
    it, then each server with the value that decides it, four of them and the rest behind one pill */
 .mcard { min-width: 0; display: flex; flex-direction: column; gap: var(--u); padding: calc(2 * var(--u)); border-radius: var(--r-in); background: color-mix(in oklab, var(--text) 2.5%, transparent); box-shadow: inset 0 0 0 .08rem var(--hair); }
 .mcard > .morepill { align-self: flex-start; }  /* the pill ends its own card's list, opened or not, however tall the row is */
@@ -748,7 +748,7 @@ button.count:hover { color: var(--text); }
 .ghost-rows { display: flex; flex-direction: column; gap: calc(2 * var(--u)); }
 
 /* ---------- Version: the versions in the order they came out, the one he runs at the hero's size between them ----------
-   A card per version there is: Previous when a release is on this machine to go back to, Running always, Newest when a
+   A card per version there is: Previous when a release is on disk to go back to, Running always, Newest when a
    check found one he does not run. Each act sits on the card of the version it would take him to. */
 .vline { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: var(--gap-card); align-items: stretch; }
 .vcard { display: flex; flex-direction: column; gap: var(--u); min-width: 0; padding: calc(2 * var(--u)) calc(2.5 * var(--u)); border-radius: var(--r-in); background: color-mix(in oklab, var(--text) 2.5%, transparent); box-shadow: inset 0 0 0 .08rem var(--hair); }
@@ -827,7 +827,7 @@ button.count:hover { color: var(--text); }
 .hcut { position: absolute; left: var(--at); top: -.35rem; bottom: -.35rem; width: .14rem; margin-left: -.07rem; background: var(--text); }
 .hcut em { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 0.333rem; font: 500 .95rem/1 var(--font-data); font-style: normal; color: var(--text); white-space: nowrap; }
 
-/* fin, Oct 10: while splice reads what a shorter window would delete, the bar's track is empty with a slow sweep, Cancel
+/* While splice reads what a shorter window would delete, the bar's track is empty with a slow sweep, Cancel
    shows at once and Delete waits, with no count, until the number arrives */
 .hbar.reading .hdays { position: relative; overflow: hidden; background: var(--track-line); opacity: .5; }
 .hbar.reading .hdays::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 30%; background: linear-gradient(90deg, transparent, var(--track-line), transparent); animation: hbar-sweep 1.8s ease-in-out infinite; }
@@ -861,7 +861,7 @@ button.count:hover { color: var(--text); }
 #st .kn .ctl.col:has(.over) { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr)); align-items: stretch; gap: 1rem 1.333rem; }
 #st .kn .ctl.col > .line { grid-column: 1 / -1; }
 /* every command's line has one shape, its chip beside its control and the way back under the control, so a long command
-   name never wraps one line's Back under its picker while a short one's sits beside it (splice-usage's walk at 3828, Oct 13) */
+   name never wraps one line's Back under its picker while a short one's sits beside it */
 #st .kn .ctl.col > .over { display: grid; grid-template-columns: max-content minmax(0, 1fr); justify-items: start; align-items: center; padding: .2rem 0 .2rem .9rem; }
 #st .kn .ctl.col > .over > :not(.chip) { grid-column: 2; }
 
@@ -885,7 +885,7 @@ button.count:hover { color: var(--text); }
 #st .ppath .icon svg { width: 1rem; height: 1rem; }
 #st .ppath .armed { margin-left: 0.333rem; }
 #st .prow.arming .ppath { border-color: var(--limit); }
-/* WHAT HE SET IS NEVER QUIETER THAN WHAT IT MAKES (Marlin, Oct 12): the projects a path makes sit beside it, each in
+/* WHAT HE SET IS NEVER QUIETER THAN WHAT IT MAKES: the projects a path makes sit beside it, each in
    the name font it wears on Sessions, Teams and Requests, at the size of the path that made them */
 #st .pmakes { display: flex; flex-wrap: wrap; align-items: center; gap: 0.667rem; }
 /* a project is a row and a door to its sessions: its name, its sessions on the list's one scale, when it was last
@@ -922,7 +922,7 @@ button.count:hover { color: var(--text); }
 #st .adv .advbtn { display: inline-flex; align-items: center; gap: 0.667rem; }
 #st .adv .advbtn b { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); font-variant-numeric: tabular-nums; }
 #st .adv .advbtn svg { width: .95rem; height: .95rem; color: var(--text-mute); transition: transform var(--t-snap); }
-#st .adv .advbtn[aria-expanded="true"] svg { transform: rotate(90deg); }  /* right when closed, down when open, as Full log does (marlin) */
+#st .adv .advbtn[aria-expanded="true"] svg { transform: rotate(90deg); }  /* right when closed, down when open, as Full log does */
 #st .adv .advin { display: grid; grid-template-rows: 1fr; }
 /* what unfolds under the button starts 2u below it, as a kicker stands 2u over its content; a second block of rows in one
    group (the timers on their axis) stands 2u under the first */

@@ -2,7 +2,7 @@
 // makes, the scan cache they share, where a chosen window is persisted, and every other store the
 // same save has to trim.
 //
-// Marlin's ruling, Oct 10: when a person says yes to "Delete 25,877 turns", everything history
+// When a person says yes to "Delete 25,877 turns", everything history
 // covers is gone at that moment — the request records, the hourly spending totals, and the message
 // edges — trimmed at the same delete_before_epoch_ms by the same PUT. The stores take the new
 // window live, with no restart, because someone who chose "Today only" for privacy and still saw
@@ -90,7 +90,7 @@ internal class HistoryWiring(
         }
     }.firstOrNull()
 
-    /** What each finished session cost. Marlin, Oct 10, 2026: a session whose last activity is
+    /** What each finished session cost. A session whose last activity is
      *  before the cut loses its total, and one working inside the window keeps it, because that is
      *  live work. Resumability is not the test: nearly every session is resumable while its
      *  transcript exists, so that exception would keep months of spend after "Today only". */
@@ -103,7 +103,7 @@ internal class HistoryWiring(
         }.firstOrNull()
 
     /** The message edges, which are the record of who a person messaged, minus the ones an active
-     *  team still needs (Marlin, Oct 10, 2026). An install with no activity stores has none. */
+     *  team still needs. An install with no activity stores has none. */
     private fun edges(momentMs: Long): String? {
         val store = ports.activity?.edges ?: return null
         return Cancellables.runCatchingCancellable { store.trimBefore(momentMs, spared()) }

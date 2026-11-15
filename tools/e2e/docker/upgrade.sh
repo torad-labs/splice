@@ -8,7 +8,7 @@
 # assets, /artifacts the candidate.
 #
 # THE HOME THE OLD RELEASE LEAVES BEHIND IS THE POINT, and it is built BY THE OLD RELEASE wherever
-# the old release writes that file itself (splice-builder, 2026-10-10: the rehearsal used to seed a
+# the old release writes that file itself (2026-10-10: the rehearsal used to seed a
 # three-head TOML, one API key, one ChatGPT credential, one transcript and the management key, so
 # every other thing a real 0.3.x home holds was upgraded by nobody and read by nothing). What 0.3.2
 # writes here now: a Grok credential through its own browser OAuth flow and a Kimi credential

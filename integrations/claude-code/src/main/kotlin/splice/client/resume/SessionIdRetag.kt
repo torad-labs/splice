@@ -1,4 +1,4 @@
-// NEW: Oct 13, 2026 (the President's ruling on V4-169, via splice-lead) — the cross-head `-r` copy is a session of its
+// NEW: Oct 13, 2026 (V4-169) — the cross-head `-r` copy is a session of its
 // own. A session another head wrote, which this head sees through the shared projects tree, is resumed as a copy beside
 // it under a new id, and the original is left byte for byte: another head resuming it sees it as it was written
 // (ResumeAcrossHeads). Claude Code writes the session's id into each row it appends (`"sessionId":"<id>"`), so the copy's

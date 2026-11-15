@@ -57,8 +57,8 @@ internal class SessionAccountLabels(
 
     /** The labels as [forRecords] read them, with the accounts the perf rows saved for the sessions in view. One
      *  listing reads each head's pool once for all its sessions ([ids]). A pool view re-reads every login's
-     *  credentials: asked per row, 590 rows took /api/sessions to 23.5 s on a cold daemon (splice-usage, Oct 13), and
-     *  one view per session still left 1.1 s of a 1.6 s warm listing there (splice-sessions, Oct 13). */
+     *  credentials: asked per row, 590 rows took /api/sessions to 23.5 s on a cold daemon, and
+     *  one view per session still left 1.1 s of a 1.6 s warm listing there. */
     private inner class ListingViews(
         private val saved: Map<String, PerfSessionAccountIndex.Snapshot>,
         private val ids: Map<String, List<String>>,

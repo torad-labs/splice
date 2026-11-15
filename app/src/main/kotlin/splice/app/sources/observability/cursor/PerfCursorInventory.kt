@@ -21,7 +21,7 @@ internal class PerfCursorInventory(private val live: Path, private val archive: 
      * An archived generation's name carries the second it was retired, and the rolled one was last written before
      * the rotation that rolled it: each is an upper bound on every row inside, so a generation that ends a full
      * second before [sinceMs] stays unopened, by the rule the Requests list reads by (PerfArchiveName.endsBefore).
-     * Until Nov 11, 2026 a cursor read every generation from its first byte. On a desk with 35 archived generations
+     * Until Nov 11, 2026 a cursor read every generation from its first byte. On a machine with 35 archived generations
      * of 64 MiB its 512 MiB of work ran out inside the third, and every period, the last minute included, answered
      * cursor_work_limit with no rows.
      */

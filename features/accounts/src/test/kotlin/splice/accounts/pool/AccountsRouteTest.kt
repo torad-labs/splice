@@ -205,7 +205,7 @@ class AccountsRouteTest {
         assertEquals(JsonNull, row["seven_day_window_seconds"])
     }
 
-    // Operator report, 2026-09-29 (Marlin): a single login's long window printed 7 days whatever the provider said, because
+    // Operator report, 2026-09-29: a single login's long window printed 7 days whatever the provider said, because
     // the head's own QuotaView dropped the length the tracker had read and the console filled the gap with a week.
     @Test
     fun `a single-login head carries the window lengths its provider reported`() = runBlocking {

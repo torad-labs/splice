@@ -10,8 +10,8 @@
 //     `internal` members: on 2026-09-16 :app:compileKotlin and :app:compileTestKotlin were restored
 //     FROM-CACHE from different source states and SpinnerTest died with AbstractMethodError. A gate
 //     of record must never measure a mixture of two source states;
-//   - in a tree of its own on this box (the gate tree under the git directory, moved to HEAD), so `clean` never
-//     deletes another seat's build output and the run never holds the shared checkout's slot;
+//   - in a tree of its own (the gate tree under the git directory, moved to HEAD), so `clean` never
+//     deletes another session's build output and the run never holds the shared checkout's slot;
 //   - through the SLOT, because two gradles in one project dir clobber build/ outputs and hand each
 //     other false reds, and a gate that a neighbour's timing can turn red is not a gate of record.
 // the daemon choice is the slot's own, as it is for every other caller. `--continue` is
@@ -68,10 +68,10 @@ function headAtStart(repoRoot: string): string {
   return proc.exitCode === 0 ? proc.stdout.toString().trim() : "unknown";
 }
 
-/** Where a gate judges, and the lock its gradle takes. On CI, the runner's checkout of the sha. On this box, the gate's own
- *  build tree moved to HEAD, never the shared checkout: there `clean` deleted every seat's build output and a whole gate held
- *  the checkout's slot for 34 to 40 minutes while every other seat's build waited (buildgate footprints, Oct 9: 2439 s and
- *  2067 s), and its verdict covered whatever uncommitted edits other seats had in flight. The tree holds HEAD's committed
+/** Where a gate judges, and the lock its gradle takes. On CI, the runner's checkout of the sha. Locally, the gate's own
+ *  build tree moved to HEAD, never the shared checkout: there `clean` deleted every session's build output and a whole gate held
+ *  the checkout's slot for 34 to 40 minutes while every other session's build waited (2439 s and
+ *  2067 s measured), and its verdict covered whatever uncommitted edits other sessions had in flight. The tree holds HEAD's committed
  *  bytes, as CI does, and its gradle (the rehearsal's nested gradle included) takes the lock beside the tree's build root. */
 interface JudgedIn {
   readonly where: Layout;
@@ -157,7 +157,7 @@ export async function run(argv: readonly string[]): Promise<number> {
     // THE RUN SENTINEL of the tree this verdict runs in, taken before the run that spans BOTH phases:
     // the slot lock is released between gradle and the release rehearsal, so it can never stand for
     // the verdict. Held by the kernel until this process ends by any means, SIGKILL included — which
-    // matters because earlyoom is built to kill exactly this process under pressure. Keyed by the tree,
+    // matters because an out-of-memory killer can kill exactly this process under pressure. Keyed by the tree,
     // so a local gate in its own tree never makes a push to the pre-push tree refuse.
     const alreadyOpen = acquireRunSentinel(head, where.repoRoot);
     if (alreadyOpen) {

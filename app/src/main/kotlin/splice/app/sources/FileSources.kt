@@ -120,7 +120,7 @@ public class EconomicsStoreSource(
     }
 
     // why: one totals read at a time per command. Two at once each found the backfill undone and decoded the week again,
-    // a route's read beside the startup warm's (jfr on desk d, Oct 12); the second now waits and finds it written.
+    // a route's read beside the startup warm's (measured with JFR); the second now waits and finds it written.
     override fun read(): EconomicsRead = synchronized(this) { perfRows?.sharingEvidence().use { reconciled() } }
 
     private fun reconciled(): EconomicsRead {

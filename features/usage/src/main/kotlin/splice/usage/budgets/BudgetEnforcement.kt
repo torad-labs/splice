@@ -7,7 +7,7 @@
 // turn, spent() after its perf row. `block` refuses the turn once today's spend has reached the limit;
 // `warn` tells the operator once, through the saved alert webhook and the head's log, and serves it.
 //
-// TODAY IS THE OPERATOR'S DAY, midnight to midnight where the daemon runs (Marlin, Oct 10, 2026). On
+// TODAY IS THE OPERATOR'S DAY, midnight to midnight where the daemon runs. On
 // the UTC day a Chicago budget lifted at 7 PM. Accounts draws the same boundary in the browser, and
 // /api/projects' cost_today_usd still draws the UTC day. A new day starts from nothing. A turn on a
 // model with NO rate card has no price: it is not counted, and never silently — the head's log names
@@ -31,7 +31,7 @@ public fun interface HeadPerfHistory {
     public fun rowsFor(head: String): PerfRowsSource
 }
 
-/** Whether a plan covers the requests an account carried. A budget caps what a KEY was charged (Marlin, Oct 11), so
+/** Whether a plan covers the requests an account carried. A budget caps what a KEY was charged, so
  *  a request on a plan account is neither spent nor unpriced. */
 public fun interface BudgetPlans {
     public operator fun invoke(account: String?): Boolean

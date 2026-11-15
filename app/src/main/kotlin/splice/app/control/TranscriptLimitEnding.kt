@@ -19,9 +19,9 @@ private const val LIMIT_ERROR = "API error"
 // all sit in a turn's last few messages; this many covers them with room.
 private const val LIMIT_TAIL = 8
 
-/** A conversation ends at the limit when its newest messages hold the limit's error with nothing he or the model said
- *  after it. Claude Code 2.1.296 writes the stopped prompt back AFTER the error in the file but stamped before it
- *  (limit walk, Oct 12, 6:24 PM CT), so "after" is by time; a message with no time is ordered by its place. */
+/** A conversation ends at the limit when its newest messages hold the limit's error with nothing a person or
+ *  the model said after it. Claude Code 2.1.296 writes the stopped prompt back AFTER the error in the file but stamped
+ *  before it, so "after" is by time; a message with no time is ordered by its place. */
 internal class TranscriptLimitEnding(
     private val config: ConfigService,
     private val transcripts: SessionTranscripts,

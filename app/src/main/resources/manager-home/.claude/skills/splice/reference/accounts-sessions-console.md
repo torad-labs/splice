@@ -208,7 +208,7 @@ Source: `README.md` "More than one ChatGPT, Grok, Kimi or Muse account"; `featur
 and when it resets. A head with one account has no pool: the fix is a second login or the reset.
 
 Source: `README.md` "More than one ChatGPT, Grok, Kimi or Muse account", "Plan usage in Claude Code"; `docs/specs/v0.4.0.md`
-section 11 (Superseded 2026-10-03; Deviations 2026-10-10); repo `CLAUDE.md` project laws; `accounts.js:369-376,801-828`.
+section 11 (Superseded 2026-10-03; Deviations 2026-10-10); repo `CLAUDE.md` "Code rules"; `accounts.js:369-376,801-828`.
 
 ### Pins, Claude accounts, budgets
 
@@ -281,7 +281,7 @@ at its own real window.
    is boot-only, and doctor reports the file stale until `splice restart`.
 
 Source: `ModelCatalog.kt:15-30,204-282`, `ClientSpelling.kt:1-40`, `LaunchModelEnvironment.kt:55-70`, `LaunchService.kt:349`,
-`README.md` "Long-session reliability", repo `CLAUDE.md` project law 22.
+`README.md` "Long-session reliability".
 
 ### Reasoning effort is part of the cache key
 
@@ -290,7 +290,7 @@ own model and effort and is built like any turn; a mismatch invalidates the cach
 effort per turn type, nobody proposes it, and `effort` has no console control. `mirror_reasoning` stays false on every head and cannot be
 enabled by TOML, env or console: tell the person only the owner can revisit it.
 
-Source: `AGENTS.md:49-53`, repo `CLAUDE.md` project laws, `docs/specs/v0.4.0.md` section 9.
+Source: `AGENTS.md:49-53`, repo `CLAUDE.md` "Code rules", `docs/specs/v0.4.0.md` section 9.
 
 ## Sessions
 

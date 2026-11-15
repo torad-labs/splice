@@ -54,7 +54,7 @@ internal object AddModelChecks {
         }
 
     /** Check advertised limits and name every declared row whose limit could not be checked: by the local runtime's
-     *  [unchecked] reason when it never answered, never as the provider listing no size (splice-usage, Oct 13). */
+     *  [unchecked] reason when it never answered, never as the provider listing no size. */
     fun windows(models: List<ModelEntry>, listed: ListedModels, unchecked: String? = null): AddCheck {
         val windows = (listed as? ListedModels.Listed)?.windows.orEmpty()
         val oversized = models.any { row -> windows[row.id]?.let { row.contextWindow > it } == true }

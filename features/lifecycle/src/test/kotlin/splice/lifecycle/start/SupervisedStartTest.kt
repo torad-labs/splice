@@ -128,7 +128,7 @@ class SupervisedStartTest {
         assertTrue(named, "the failure must name the journal:\n$out")
     }
 
-    // Oct 1, 11:49 PM CT: splice.service was restarting after a failed boot, a `splice start` typed in a
+    // splice.service was restarting after a failed boot, a `splice start` typed in a
     // terminal ran the daemon there, and the unit then lost its port to it. The unit a start goes through
     // is named whether or not it runs; only a selector or a box without a unit keeps the daemon in the shell.
     @Test

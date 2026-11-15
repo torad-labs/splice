@@ -40,7 +40,7 @@ class BudgetStoreTest {
     }
 
     // The console prints each reason under the row it refused, so it reads as UI words and never
-    // repeats the head the row already names (Hitstop's #271 critique, relayed by console).
+    // repeats the head the row already names.
     @Test
     fun `each bad row is refused by name, and nothing is written`(@TempDir tmp: Path) {
         val file = tmp.resolve("budgets.json")

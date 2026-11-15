@@ -498,7 +498,7 @@ names = [
 reason = """Two measures of a path that no caller may swap. DayVolumeSpace answers how many bytes a day's volume has free, which a retention budget compares its trace bodies against; FileStamp answers when a file was last used, in epoch milliseconds, which a history cut compares against its moment. Both take a Path and return a Long, so a stamp wired where free space was expected would read as a volume that is full or empty and cut or keep a day's bodies for no reason, and nothing complains."""
 
 # ── 4 names, (Path, Path) -> Unit ─────────────────────────────────────────────────────────────────
-# Oct 1 CT: original-copy failure injection requires forced bytes, never a link activation or claim.
+# Oct 1: original-copy failure injection requires forced bytes, never a link activation or claim.
 [[groups]]
 signature = "(Path,Path)->Unit"
 dated = "2026-10-01"

@@ -11,7 +11,7 @@ import { layout } from "../gate/src/lib/repo.ts";
 
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const row = (id: string, name: string, head: string, route: string) => ({
-  session_id: id, name, head, route, availability: "live", status: "idle", cwd: "/work/desk",
+  session_id: id, name, head, route, availability: "live", status: "idle", cwd: "/work/web",
   last: { role: "assistant", tool: null, text: `${name} said its last line.`, ts: 1 },
 });
 const answers: Record<string, unknown> = {

@@ -14,10 +14,10 @@ private const val ACTIVITY_TEXT_CHARS = 160
 internal object SessionActivity {
     private val whitespace = Regex("[\\s\\p{Z}]+")
 
-    // Markdown the card has no place to draw (splice-lead, Oct 11): a heading, bullet or quote mark at a line's start,
+    // Markdown the card has no place to draw: a heading, bullet or quote mark at a line's start,
     // a link's target, and the marks around bold, italic and code. The words between the marks stay. A fenced code
-    // block is code, never prose: the fence and all inside it leave the line, an unclosed one to the end (splice-lead,
-    // Oct 11: "the new daemon is healthy. open…" read a block's first word as the sentence's last), and so does the
+    // block is code, never prose: the fence and all inside it leave the line, an unclosed one to the end
+    // ("the new daemon is healthy. open…" read a block's first word as the sentence's last), and so does the
     // sentence that led into it with a colon, which would point at nothing ("From the repo root, type: It needs…").
     private val fenced = Regex("(?ms)^[ \\t]*(```|~~~).*?(?:^[ \\t]*\\1[^\\n]*$|\\z)")
     private val sentenceEnd = Regex("[.!?](?=\\s)|\\n")
@@ -29,7 +29,7 @@ internal object SessionActivity {
     private val starred = Regex("(?<![*\\w])\\*(?=\\S)(.+?)(?<=\\S)\\*(?![*\\w])")
     private val underscored = Regex("(?<![_\\w])_(?=\\S)(.+?)(?<=\\S)_(?![_\\w])")
 
-    // what a line cut short never ends on before its ellipsis, so it reads "fin…", never "fin.…" or "fin,…"
+    // what a line cut short never ends on before its ellipsis, so it reads "dev…", never "dev.…" or "dev,…"
     private fun trailing(c: Char): Boolean =
         c.isWhitespace() || c in ".,;:!?" || Character.getType(c) == Character.DASH_PUNCTUATION.toInt()
 
@@ -57,7 +57,7 @@ internal object SessionActivity {
         val tail = sessionId?.let { source.tail(it, roots, cwd) }
         // a move with no reply since names the model the session goes on with: the newest reply is still the old one.
         // Judged against the reply that NAMED the model, never the newest message: a line Claude Code wrote itself
-        // after a move, such as an API error, carries no model and must not date the move away (Marlin, move check 5)
+        // after a move, such as an API error, carries no model and must not date the move away
         val moved = sessionId?.let { source.moves(it).lastOrNull() }
             ?.takeIf { it.model.isNotBlank() && it.movedAt > (tail?.modelAt ?: tail?.answered?.ts ?: 0L) }
         val model = moved?.model ?: tail?.model ?: return JsonNull
@@ -124,7 +124,7 @@ internal object SessionActivity {
     }
 
     /** A heading or bullet is its own sentence once its marks are gone: with no stop of its own it gets one, so it
-     *  never runs into the next line ("Done The fix.", splice-lead, Oct 11). */
+     *  never runs into the next line ("Done The fix."). */
     private fun stopped(line: String): String {
         val text = line.trimEnd()
         if (!itemMark.containsMatchIn(text)) return line
@@ -133,7 +133,7 @@ internal object SessionActivity {
     }
 
     /** A line past the cap ends on its last whole word and an ellipsis, so a card never shows a word cut in half
-     *  (splice-lead, Oct 11: "If fin give"), and on no stop or comma before it; one word longer than the cap is cut,
+     *  ("If dev give"), and on no stop or comma before it; one word longer than the cap is cut,
      *  and says so with the ellipsis. */
     private fun clipped(line: String): String {
         if (line.length <= ACTIVITY_TEXT_CHARS) return line

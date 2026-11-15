@@ -155,6 +155,10 @@ public data class DaemonConfig(
     // limit and can call a reset. The program and its arguments, run with no shell, the message on its standard input.
     // Set in this file and nowhere else: it names a program the daemon runs, so no route or console page writes it.
     @SerialName("alert_command") val alertCommand: List<String>? = null,
+    // Peer names no peer may register, on top of the built-in ones (docs/peers.md): an inbox or a role of the
+    // operator's own setup that a peer must not be able to pose as. Each is a peer name ([PEER_NAME_PATTERN]).
+    // Read when the daemon boots.
+    @SerialName("reserved_peer_names") val reservedPeerNames: List<String>? = null,
 )
 
 @Serializable

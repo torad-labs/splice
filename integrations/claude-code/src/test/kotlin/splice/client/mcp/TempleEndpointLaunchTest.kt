@@ -1,4 +1,4 @@
-// Nov 11, 2026 (the Temple's lead, on the President's ruling of that day): the rebuilt Temple serves its MCP tools
+// Nov 11, 2026: the rebuilt Temple serves its MCP tools
 // itself, on one HTTP endpoint, and its registration names that endpoint instead of a process to launch. Every session
 // splice started was still handed the old Temple's stdio server, whose files were gone, so no session held a Temple
 // tool. What a session holds is the file its launch hands Claude Code (HostedMcpOverlay), so that file is read here.

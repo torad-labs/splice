@@ -148,7 +148,7 @@ internal class DoctorStateLayout {
 
     /** An adopted root beside a current state dir that holds no mgmt-key is a WARN naming that dir: it
      *  is what a process that cannot see the pre-0.4 root writes into, and a key minted there moves the
-     *  next start onto an empty root (2026-10-04, 7:27 PM CT). */
+     *  next start onto an empty root. */
     private fun layout(statePaths: StatePaths): DoctorCheck? = when (statePaths.origin) {
         StateDirOrigin.ADOPTED_LEGACY -> statePaths.passedOverDir?.let { empty ->
             DoctorCheck(

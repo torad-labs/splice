@@ -1,5 +1,5 @@
 // NEW: 2026-11-09 audit — what a request refused while it was prepared arrived as, so the refusal leaves a log line, a
-// perf row and a trace record (PreDriveRefusals.refusePrepared). From 5:51 to 6:58 PM CT that day a Responses dialect
+// perf row and a trace record (PreDriveRefusals.refusePrepared). For over an hour that day a Responses dialect
 // refused every claudex turn on a field Claude Code 2.1.321 had started sending, and the log, the perf file and the
 // trace recorded nothing: Preparation.Rejected carried only its cause, so there was nothing to record it with.
 // It lives in splice.head (Nov 10), beside the request reader, so splice.head.turn keeps its 30 files (concentration).

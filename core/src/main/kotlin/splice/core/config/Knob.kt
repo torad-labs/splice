@@ -215,7 +215,7 @@ public enum class Knob(
 
     // V4-354: one GLOBAL live switch for reading the redacted conversation Claude Code already wrote
     // locally. ON by default because it collects no new bytes. Exact request/response bodies belong to
-    // per-head TRACE below (on by default since the operator's 2026-09-28 ruling, off per head);
+    // per-head TRACE below (on by default since 2026-09-28, off per head);
     // this switch neither changes TRACE nor exposes its instructions, tools or raw headers.
     TRANSCRIPT_VIEW("transcriptView", listOf(), KnobDefault.Flag(true)),
 
@@ -224,7 +224,7 @@ public enum class Knob(
     // already held until Delete now.
     KEEP_TRANSCRIPT_COPIES("keepTranscriptCopies", listOf(), KnobDefault.Flag(true)),
 
-    // How many days a transcript copy is kept, apart from the history window (the President's ruling, Oct 12):
+    // How many days a transcript copy is kept, apart from the history window (Oct 12):
     // each new copy first removes the copies of sessions last used before now minus this. Read live by that copy,
     // so a PATCH applies to the next one.
     TRANSCRIPT_COPY_DAYS("transcriptCopyDays", listOf(), KnobDefault.Count(30L)),
@@ -576,7 +576,7 @@ public enum class Knob(
     // question about one set of days.
     //
     // DEFAULT IS ABSENT ON PURPOSE. A number here would become every upgrade's new window, and a
-    // shorter one deletes history nobody asked it to (Marlin, Oct 10: an upgrade never shortens
+    // shorter one deletes history nobody asked it to (Oct 10: an upgrade never shortens
     // history on its own, so a 90 stays 90). Absent means "nobody has set this", which
     // SpliceConfig.historyWindow answers from the records window the install already had. A FRESH
     // install gets HISTORY_DEFAULT_DAYS written into its starter splice.toml, where the person can
@@ -587,7 +587,7 @@ public enum class Knob(
     // NO RESTART. Every reader of this window reads it through KeptHistory at the moment it needs
     // it — each head's hourly store and its archive sweep, the backfill's reach, the retention the
     // console declares, and the history row itself. Changes are meant to apply without
-    // a restart (asked for twice), and the console's rule is that a change reads "Applied" once (Marlin, Oct 10,
+    // a restart (asked for twice), and the console's rule is that a change reads "Applied" once (Oct 10,
     // 2026): a person who shortens their history has shortened it, and the save on Settings > Your
     // data trims every store to the moment it showed them. Saying restart-required here would be
     // asking for one that nothing needs.

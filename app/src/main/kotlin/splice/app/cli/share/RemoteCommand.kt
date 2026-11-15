@@ -1,4 +1,4 @@
-// NEW: LAN share (docs/specs/lan-share.md, Marcos's ruling of 2026-10-24). `splice remote`, a node's side: the commands
+// LAN share (docs/specs/lan-share.md). `splice remote`, a node's side: the commands
 // this machine runs as Claude Code pointed at another machine's heads. Each is one `[remote.<command>]` line in
 // splice.toml holding the address `splice share status` printed there, and a command link like every other; nothing
 // else is kept, no credential and no copy of the server's models. `add` checks the address against the server first

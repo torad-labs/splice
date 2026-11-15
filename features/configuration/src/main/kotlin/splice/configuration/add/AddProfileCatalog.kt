@@ -177,11 +177,11 @@ internal class AddProfileCatalog {
                 summary = "Meta Muse subscription over the Responses wire (device sign-in)",
             ),
             // V4-229: Meta publishes no window, so 1.3's is measured. api.meta.ai served a prompt of
-            // 1,010,789 tokens by its own count (2026-09-25 14:36 CDT, through claude-muse), past the
+            // 1,010,789 tokens by its own count (2026-09-25), past the
             // 1,000,000 declared here, so the row stays at the window Claude Code's `[1m]` implies. The
             // cold prompt met three upstream 504s ("the response stream did not start before the server
             // timeout") before the fourth attempt rode the cached prefix. 1.2's is measured the same way:
-            // 1,010,789 tokens served cold on the first attempt (2026-09-25 15:00:47 CDT, 46.4 s).
+            // 1,010,789 tokens served cold on the first attempt (2026-09-25, 46.4 s).
             //
             // V4-240 RATES: muse-spark-1.3's Standard tier, dev.meta.ai/docs/pricing-rate-limits (read
             // 2026-09-25): input $1.25, cached input $0.15, output $4.25 per 1M tokens, and "There is no
@@ -274,7 +274,7 @@ internal class AddProfileCatalog {
             // Flash, GLM 5.3 and 5.3 Flash, and Llama 4 Maverick are still their families' latest there.
             //
             // V4-434 RATES: every row carries OpenRouter's own card, the `pricing` block of the same listing
-            // (read 2026-09-29 2:05 PM CT, 464 models), USD per token there and per 1M tokens here: prompt,
+            // (read 2026-09-29, 464 models), USD per token there and per 1M tokens here: prompt,
             // completion, input_cache_read and input_cache_write. OpenRouter's write price is its default
             // 5-minute one (input_cache_write_1h is the 1-hour rate), and this dialect sends no cache_control
             // and reads no write bucket from the usage, so a write bills only where OpenRouter reports one.
@@ -411,7 +411,7 @@ internal class AddProfileCatalog {
             labels = AddLabels(
                 summary = "Anthropic with your own Claude login, forwarded untouched",
             ),
-            // THE HEAD NAMES NO MODEL (Nov 9, 2026, of his own Claude head: a default
+            // THE HEAD NAMES NO MODEL (Nov 9, 2026, of a Claude head: a default
             // Anthropic Claude shows the default models and lists nothing of its own, or new models get
             // missed). Until Nov 11, 2026 this profile pinned claude-fable-5-1 and listed
             // Fable 5.1, Opus 5.5, Sonnet 5 and Haiku 4.5 by tier, so a new install started on Fable 5.1 and

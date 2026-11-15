@@ -1,6 +1,6 @@
 // A request on a plan account costs the person nothing: the list's key says "Plan cost" once, beside the hollow mark, and the
 // opened request draws what it would have cost at API prices (plan_value_usd) as its figure with "On your plan" under it,
-// never as a price paid (Marlin, Oct 11 5:52 PM; Requests' goal, Oct 26). A request billed to a key keeps its dollars and
+// never as a price paid (Requests' goal). A request billed to a key keeps its dollars and
 // has no such line. Through the real page against a stub daemon.
 // Goal changed 2026-10-29 by the requests-list pass (build-from alt-3): the key names only drawn marks, each by a short word
 // beside its mark, so the hollow bar is named "Plan cost" where it said "On your plan, at API prices".

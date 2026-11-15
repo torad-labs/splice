@@ -1,8 +1,8 @@
-// NEW: Oct 12, 2026 (splice-lead) — the nested repositories below the root, read as a VALUE the configuration cache compares,
+// The nested repositories below the root, read as a VALUE the configuration cache compares,
 // never as the directories the walk opened.
 //
 // The walk used to run inside quality/architecture/build.gradle.kts with File.listFiles, so Gradle recorded every directory
-// it listed as a configuration input: any file added or removed anywhere under the root (a new test, a seat's scratch file)
+// it listed as a configuration input: any file added or removed anywhere under the root (a new test, a session's scratch file)
 // threw the configuration cache away, and every run stored a new entry and a new 65 MB report. As a ValueSource the walk
 // still runs at the start of each build, and the cache is reused while the answer it gives is the same list.
 package splice.lawsuite

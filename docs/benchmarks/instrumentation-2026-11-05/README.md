@@ -84,5 +84,5 @@ The cleanup receipt and retained-input verification live beside the archive.
 This cleanup changes storage, not the historical measurements or their
 calibration-only status. New steady comparisons use the
 [serial runner](../../../tools/instrumentation-bench/README.md#serial-runner)
-to archive completed desk state between roles rather than accumulating expanded
+to archive completed session state between roles rather than accumulating expanded
 state across an entire batch.

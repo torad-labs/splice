@@ -572,7 +572,7 @@ class ResponsesWsRunnerTest {
         assertEquals("\"response-terminal\"", frame["previous_response_id"].toString())
     }
 
-    // Goal 8 (Marcos, 2026-10-27): socket log lines carry the session id. These lines say why a chain held or broke,
+    // Goal 8: socket log lines carry the session id. These lines say why a chain held or broke,
     // so they are the ones read when a turn is slow.
     @Test
     fun `the lines that say why a round chained or sent its whole input name the session`() = runTest {
@@ -590,7 +590,7 @@ class ResponsesWsRunnerTest {
     }
 
     /** The terminal's output is read for the calls it leaves open: a next turn that answers none of them
-     *  closes each as aborted and chains on (Marcos, 2026-10-27), one that answers them chains as sent. */
+     *  closes each as aborted and chains on, one that answers them chains as sent. */
     @Test
     fun `a held tool call from the terminal gates the next round's chaining`() = runTest {
         val rig = Rig { round ->
@@ -807,7 +807,7 @@ private const val CONNECTION_LIMIT =
 
 private fun event(json: String): JsonObject = responsesRequestJson.parseToJsonElement(json) as JsonObject
 
-// Marcos, 2026-10-27: a live limit reconnects at once on the same login. The head sends the round again on a fresh
+// a live limit reconnects at once on the same login. The head sends the round again on a fresh
 // socket, so the socket the backend retired must never be handed back out.
 class ResponsesWsSocketFaultTest {
     @Test
@@ -854,7 +854,7 @@ class ResponsesWsSocketFaultTest {
         assertFalse(runner.isPlannedClose(event(created("r1"))))
     }
 
-    // Marcos, 2026-10-27: every fallback logs a warning and a counter. A socket that cannot take the round at all is
+    // every fallback logs a warning and a counter. A socket that cannot take the round at all is
     // counted on the turn, so the head can tell it from a round that was never the websocket's to take.
     @Test
     fun `a round the socket could not send is counted as a transport decline`() = runBlocking {

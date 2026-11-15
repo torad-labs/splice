@@ -22,8 +22,8 @@
 // names this file and the error log.
 //
 // NO STOP-TIME SCAN (removed 2026-09-22, hook audit). A whole-tree `ast-grep scan` ran at every Stop
-// and SubagentStop: 2.1-3.7 s per turn end, and in a checkout shared by several seats its 12 blocks
-// in 14 days were findings in files the blocked seat had not touched (another seat's move in
+// and SubagentStop: 2.1-3.7 s per turn end, and in a checkout shared by several sessions its 12 blocks
+// in 14 days were findings in files the blocked session had not touched (another session's move in
 // progress). It was the third of three instruments; this wall and the gate + CI are the two left.
 //
 // Deliberate rule exceptions go inline, as ast-grep's ignore comment naming the rule id plus a

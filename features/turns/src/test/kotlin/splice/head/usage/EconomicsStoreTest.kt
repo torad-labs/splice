@@ -368,7 +368,7 @@ class EconomicsStoreTest {
     }
 
     /** Retention is what keeps the file small enough to read on every dashboard poll. A fresh install's
-     *  window is a month and the days it is read over (Marlin, Oct 10, 2026), because plans and keys are
+     *  window is a month and the days it is read over, because plans and keys are
      *  paid by the month. */
     @Test
     fun `buckets older than the retention window are dropped`(@TempDir tmp: Path) {
@@ -445,8 +445,8 @@ class EconomicsStoreTest {
         )
     }
 
-    /** Marcos asked twice for a setting to apply without a restart, and the console's rule is that a
-     *  change reads "Applied" once (Marlin, Oct 10, 2026). The window is therefore read at every
+    /** A setting should apply without a restart, and the console's rule is that a
+     *  change reads "Applied" once. The window is therefore read at every
      *  trim: a store that captured it would keep the old one until the daemon restarted. */
     @Test
     fun `shortening the window shortens it now, with no restart`(@TempDir tmp: Path) {

@@ -2,7 +2,7 @@
 // linuxX64, so neither is a JVM:
 //   splice-mcp-holder  joins one stdio MCP server's stdin and stdout to a Unix socket and outlives the daemon;
 //   splice-mcp-front   holds the hub port and every session's stream, checks the bearer and routes calls to holders.
-// No JVM module depends on this one. The gate's hub leg, CI and the release link both (splice-platform); the
+// No JVM module depends on this one. The gate's hub leg, CI and the release link both; the
 // install puts them beside splice.jar on Linux x86_64 only, because the hub needs systemd --user (the front's
 // socket, each holder's scope).
 //

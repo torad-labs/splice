@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /** Redact and curate a Muse live capture into tools/e2e/receipts/muse-YYYYMMDD/.
  *
- *  The live head-through-splice turn needs Marcos's login and is recorded later.
+ *  The live head-through-splice turn needs a real login and is recorded later.
  *  This script only curates an already-redacted-or-raw capture: secrets never survive
  *  in the output. Self-test: muse-curate.ts --selftest
  *

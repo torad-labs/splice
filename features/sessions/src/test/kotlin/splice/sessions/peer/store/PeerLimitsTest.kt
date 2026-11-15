@@ -23,16 +23,16 @@ class PeerLimitsTest {
 
     @Test
     fun `a peer sends 20 at once and 60 a minute until it is given a limit of its own`(@TempDir dir: Path) {
-        val store = registered(dir, "temple")
+        val store = registered(dir, "harbor")
         val limits = PeerLimits(store)
 
-        assertEquals(PeerLimit(perMinute = 60, burst = 20), limits.of("temple"))
-        assertTrue(limits.set("temple", PeerLimit(perMinute = 120, burst = 40)))
-        assertEquals(PeerLimit(120, 40), limits.of("temple"))
-        assertEquals(PeerLimit(120, 40), PeerLimits(PeerStore(dir.resolve("settings"))).of("temple"), "kept on disk")
+        assertEquals(PeerLimit(perMinute = 60, burst = 20), limits.of("harbor"))
+        assertTrue(limits.set("harbor", PeerLimit(perMinute = 120, burst = 40)))
+        assertEquals(PeerLimit(120, 40), limits.of("harbor"))
+        assertEquals(PeerLimit(120, 40), PeerLimits(PeerStore(dir.resolve("settings"))).of("harbor"), "kept on disk")
 
-        assertTrue(limits.set("temple", null))
-        assertEquals(PeerLimit(), PeerLimits(PeerStore(dir.resolve("settings"))).of("temple"), "the default again")
+        assertTrue(limits.set("harbor", null))
+        assertEquals(PeerLimit(), PeerLimits(PeerStore(dir.resolve("settings"))).of("harbor"), "the default again")
         assertFalse(limits.set("nobody", PeerLimit()), "no such peer")
     }
 

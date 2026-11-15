@@ -1,4 +1,4 @@
-// NEW: LAN share (docs/specs/lan-share.md, Marcos's ruling of 2026-10-24). The one listener splice opens beyond
+// NEW: LAN share (docs/specs/lan-share.md). The one listener splice opens beyond
 // loopback, and only when `[share] enabled`: the wall kt-embedded-server-loopback exempts this file alone, by that
 // decision. Another machine's Claude Code is pointed here the way Claude Code is pointed at Vertex or Bedrock, and holds
 // no credential: this machine signs every turn with its own logins. Every request passes LanAdmission first (a source

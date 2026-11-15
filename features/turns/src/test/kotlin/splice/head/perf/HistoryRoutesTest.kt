@@ -139,7 +139,7 @@ class HistoryRoutesTest {
         assertEquals(2, left.getValue("turns").jsonPrimitive.int, "what was offered went, and the rest is kept")
     }
 
-    /** hitstop: shortened again before the first sweep settles, the second count is of what is left. */
+    /** Shortened again before the first sweep settles, the second count is of what is left. */
     @Test
     fun `a second cut is counted from what the first one left`(@TempDir tmp: Path) {
         val paths = paths(tmp)
@@ -236,7 +236,7 @@ class HistoryRoutesTest {
         write(paths, at(2026, 10, 9, 8, 0))
 
         // The console's picker cannot send these, so whoever reads this refusal is editing
-        // splice.toml or the env var in a terminal, and needs to see what they wrote (fin, Oct 10).
+        // splice.toml or the env var in a terminal, and needs to see what they wrote.
         val read = routes(paths).read(HistoryWindow(7, UTC), "a month")
         assertEquals(HttpStatusCode.BadRequest, read.status)
         assertTrue(read.body.contains("historyRetentionDays"), read.body)
@@ -312,7 +312,7 @@ class HistoryRoutesTest {
         )
     }
 
-    /** One moment for everything the window covers (Marlin, Oct 10, 2026): the hourly spending
+    /** One moment for everything the window covers: the hourly spending
      *  totals and finished sessions' totals are trimmed at the same moment the records were cut at,
      *  in the same save, so Usage cannot still draw days the person was just told are gone. */
     @Test

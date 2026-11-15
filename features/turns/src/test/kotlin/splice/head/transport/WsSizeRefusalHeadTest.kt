@@ -89,7 +89,7 @@ private class FixedAuth : RefreshableAuthProvider {
 }
 
 /**
- * Oct 4, 6:31 AM CT onward, on the claudex head: the WebSocket peer closed a code-mode round 1009 before any
+ * Oct 4, on the claudex head: the WebSocket peer closed a code-mode round 1009 before any
  * event, the round rode SSE, HTTP answered 400 `{"detail":"Bad Request"}` four times, and Claude Code read an
  * overload and sent the same request again for 36 minutes. Claude Code 2.1.289 compacts on an error whose text
  * includes "prompt is too long" (its K6n) and retries only 429 and 5xx.

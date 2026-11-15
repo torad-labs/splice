@@ -245,7 +245,7 @@ class UpstreamClientBackoffTest {
         }
     }
 
-    // A turn waits only on its own failure, never on another turn's (Marcos, Oct 26): a login another turn marks
+    // A turn waits only on its own failure, never on another turn's (Oct 26): a login another turn marks
     // limited while this one waits out its own transport failure does not stop this turn's retry.
     @Test
     fun `a planned retry still goes out when another turn marks the login limited during its wait`() = runTest {

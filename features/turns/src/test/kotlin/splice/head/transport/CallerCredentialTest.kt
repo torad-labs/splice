@@ -1,5 +1,5 @@
-// NEW: the Claude half of failover within one provider (operator ruling, Oct 3, 11:44 PM CT: "each provider gets a
-// head, each head can have multiple subscriptions"). A client-auth head forwards the caller's own credential; once the
+// NEW: the Claude half of failover within one provider (each provider gets a
+// head, each head can have multiple subscriptions). A client-auth head forwards the caller's own credential; once the
 // head holds several logins, the login the pool selected must be the one that rides, or a held login's turn would go
 // out on the caller's token anyway. The caller's credential stays untouched when it IS the selected login's.
 package splice.head.transport

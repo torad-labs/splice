@@ -14,11 +14,11 @@ fixtures — `npm run oracle:replay`). Do not weaken either.
    that replay thinned the detailed-reasoning "wall" (~4×). The 2026-10-22
    claudex-vs-Codex comparison found the cost of off: only 26% of earlier tool
    steps reached the model with their reasoning, against about 90% in Codex,
-   and a seat lost its reasoning at every peer message. Marcos judged off
-   a big defect that should not be the default. **Replay ships on**;
+   and a session driven by peer messages lost its reasoning at every message,
+   so off is not a safe default. **Replay ships on**;
    `replay_reasoning = false` or `CLAUDEX_REPLAY_REASONING=0` turns it off.
-   Current launch defaults keep `mirror_reasoning` off under the standing
-   project ruling in `CLAUDE.md`; L2 still pins the mirror's implementation and
+   Current launch defaults keep `mirror_reasoning` off on every head
+   (`CLAUDE.md`, "Code rules"); L2 still pins the mirror's implementation and
    wire behavior when enabled. `prompt_cache_key` (keyed on the first user
    message) warms the INPUT cache independently of replay.
 2. **L2 — the mirror never regresses.** ONE `mirrorInto()`, a member of `Mirror` in
@@ -255,6 +255,6 @@ pins the sentence. On drift: update `compactMarkers` + fixture together.
 ## Out of scope (locked)
 
 No transcript shrinking. No fake summaries (L4). (Reasoning replay was formerly
-out of scope; as of 2026-07-14 it is supported, and as of 2026-07-15 it is
-default-off for the codex head — see "L1 — RETIRED" above.)
+out of scope; as of 2026-07-14 it is supported, and since 2026-10-23 it is
+default-on — see "L1" above.)
 

@@ -1,9 +1,9 @@
-// The per-server MCP rows on Settings (hitstop's drawing, fin's words), through the real page against a stub daemon in
+// The per-server MCP rows on Settings, through the real page against a stub daemon in
 // the shape the daemon sends now (a `why` key and value per server it does not share, the commands using each shared
 // one) and in the shape it sent before (no keys, no commands). A shared server reads its commands and its last call under
 // the columns "Used by" and "Last call", said once over the list; a server splice cannot share sits on the card of its one
 // word for why; a web server shows its address without the part of a URL that can hold a secret; and Test posts to the
-// server's route and says what came back in fin's words.
+// server's route and says what came back in its own words.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -106,7 +106,7 @@ test("a shared server reads its commands under Used by and its last call; one sp
     const uses = await row(page, "context7").locator(".fig.uses").innerText();
     expect(uses).toContain("claude-splice");
     expect(uses).toContain("claudex");
-    // a command still on an older copy of the config joins Used by, and takes the server at its next session (fin, Oct 12)
+    // a command still on an older copy of the config joins Used by, and takes the server at its next session
     expect(uses).toContain("claude-grok");
     expect(uses).toContain("Next session");
     // its last call in the Last call column, as the browser's own clock reads it: another day leads with its date

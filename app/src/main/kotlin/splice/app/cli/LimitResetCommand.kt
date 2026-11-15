@@ -1,5 +1,5 @@
-// NEW (Nov 13, 2026): `splice limit-reset`, a Claude command's limit resets from a terminal. That evening every Fable
-// login on one machine ran out at about 6:24 PM CT, turns waited until Sunday, and the only way to call a reset was in
+// NEW (Nov 13, 2026): `splice limit-reset`, a Claude command's limit resets from a terminal. One evening every Fable
+// login on a machine ran out, turns waited until Sunday, and the only way to call a reset was in
 // Claude Code, login by login. `splice limit-reset <command>` lists how many of each kind every login has left;
 // `splice limit-reset <command> <login> <kind>` spends one of that kind on that login, and the command's turns held
 // for the limits it cleared go on. splice never spends one by itself: only this verb and the console's button do.

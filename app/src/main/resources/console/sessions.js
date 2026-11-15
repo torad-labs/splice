@@ -1,12 +1,12 @@
-// Sessions: every agent on every command and project, what it's doing, and its conversation. hitstop's drawing
-// (Splice-Animator design/console/sessions.js), built on live data.
+// Sessions: every agent on every command and project, what it's doing, and its conversation. The drawing
+// is built on live data.
 //
 // WHERE EVERY VALUE COMES FROM. The page carries no data of its own:
 //   GET  /api/sessions                      each session as its client registered it: status, what it waits for,
 //                                           whether it still runs, its folder, its command, its team
 //   GET  /api/heads · /api/models           the commands, the provider each runs on and its models' names
 //   GET  /api/heads/retired                 the commands removed from Models: a session on one still reads its name,
-//                                           and a search for that name finds it ("History stays", Marlin)
+//                                           and a search for that name finds it ("History stays")
 //   GET  /api/heads/{head}/turns/live       the turns running now, by session: the one Stop ends and the model it runs
 //   GET  /api/sessions/{id}/transcript      the conversation, newest first, with the cursor to the page before it
 //   POST /api/heads/{head}/turns/{id}/stop  Stop, for a session splice did not open
@@ -16,9 +16,9 @@
 //
 // WHERE A SESSION MOVED is drawn from the transcript page's `moves` (ModelMoves): "Continued on [to] model · from
 // [from] model", at the moment of the move, with its time and, when moved rows lost it, "Thinking not carried over"
-// (fin, hitstop f38853e). A move kept from before Continue on named its start carries no from, and draws only where it went.
+// A move kept from before Continue on named its start carries no from, and draws only where it went.
 //
-// ONE PAGE, ONE SCROLL (round 2, Oct 27). A session opens in place, under its own row inside its project's block, and
+// ONE PAGE, ONE SCROLL. A session opens in place, under its own row inside its project's block, and
 // the page scrolls once: the open session's conversation is drawn in the page's flow, its newest items standing and the
 // older ones behind one count, so nothing on the page scrolls inside itself. The blocks stand in equal columns packed
 // by how many rows each one draws, so opening a session moves no block to another column.
@@ -63,7 +63,7 @@ function keepName(id, name) {
 }
 const root = document.getElementById("sessions");
 
-/** A refused call's word on the page (fin, Oct 13): [word] for a refusal, "Not answering" when splice did not answer at
+/** A refused call's word on the page: [word] for a refusal, "Not answering" when splice did not answer at
  *  all, and the daemon's sentence, or the status it answered, to the console's log under [what], never on the screen. */
 function refusedAs(answer, word, what) {
   console.warn(`${what}: ${answer.status === 0 ? "splice is not answering" : answer.body?.error || `splice answered ${answer.status}`}`);
@@ -114,7 +114,7 @@ async function read() {
 // ---------- the agents that have ended: Claude Code keeps every conversation, and splice lists them from it ----------
 // The registry holds only the agents its client still reports, so a week's ended agents come from history
 // (GET /api/sessions/history): its newest page joins the Ended line, a search asks it too, and a door to an agent the
-// list does not hold looks there before it says No transcript (Marlin, Oct 12: from a request, the agent opens, running
+// list does not hold looks there before it says No transcript (from a request, the agent opens, running
 // or ended). A history row is the same row shape as a live one; it is drawn as ended, since nothing of it runs.
 const HISTORY_PAGE = 50;
 const UNKNOWN_HEAD = "unknown head";
@@ -153,13 +153,13 @@ const sendLine = (s) => `SendMessage(to="${sendTo(s).replace(/\\/g, "\\\\").repl
 
 // a session splice cannot place reads "unknown head" (SessionsRoutes UNKNOWN_HEAD) and the card says so, as the spec's
 // Sep 13 Resolved block has it (§4 reading, Oct 11); a head key no configured command has names nothing
-// it reads as a quiet fact in the chip's slot, never as a chip: a chip claims a command (hitstop)
+// it reads as a quiet fact in the chip's slot, never as a chip: a chip claims a command
 const UNPLACED = "unknown head";
 // a session that never went through splice has no command to name: its row's route says direct, and the card says
-// "direct", the spec's word for it (Reading, Oct 10), never "unknown head" (Oct 11: a bridge that talks to splice)
+// "direct", the spec's word for it, never "unknown head" (a bridge that talks to splice)
 const DIRECT = "direct";
 const QUIET = new Set([UNPLACED, DIRECT]);
-// THE WIRE'S WORDS ARE NOT HIS WORDS (the words pass, Oct 26): "direct" and "unknown head" are the route and the head
+// THE WIRE'S WORDS ARE NOT HIS WORDS: "direct" and "unknown head" are the route and the head
 // key as the daemon writes them, and both stood in the command chip's place. The fact each one carries, said in the
 // words the page uses everywhere else: one the command column draws as an empty command, dashed, since there is no
 // command to name.
@@ -180,7 +180,7 @@ function sessionOf(row) {
   // the one reading Teams and Requests rank projects by (kit rowLook)
   const { state: st, stall } = rowLook(row, turn, state.heads.find((h) => h.key === turn?.head));
   const s = {
-    // a linked worktree is named by its own folder, never its whole path, which ran past the card's edge (splice-usage, Oct 13)
+    // a linked worktree is named by its own folder, never its whole path, which ran past the card's edge
     id: row.session_id, row, name: row.name || null, first: row.title || null, repo: folderOf(row), wt: row.repo?.worktree?.split("/").filter(Boolean).pop() || null,
     project: row.project ?? null, // as the daemon resolved it (ProjectWire); absent is "No project", never a guess here
     head: row.head, cmd: cmdOf(row), provider: state.providerOf[row.head] ?? null,
@@ -218,7 +218,7 @@ function sinceOf(s, now = Date.now()) {
 
 // A READ ALREADY ON ITS WAY IS NEVER ASKED AGAIN. The browser holds six connections to splice; every 5 s tick fired the
 // whole page's reads again while the last were still waiting on a slow /api/sessions, so they queued without end and
-// an opened conversation sat on Reading for 98 and 126 s behind them (splice-usage's walk, Oct 13).
+// an opened conversation sat on Reading for 98 and 126 s behind them.
 const inFlight = new Set();
 async function alone(key, read) {
   if (inFlight.has(key)) return;
@@ -228,7 +228,7 @@ async function alone(key, read) {
 
 const NOT_READ = "Not read";
 // A CONVERSATION OPENS ON ITS NEWEST 50 MESSAGES, and Show earlier reads the page before. 200 sent 0.3 to 1.5 MB of
-// messages, tool results whole, on every 5 s read of a live session (splice-sessions, Oct 13).
+// messages, tool results whole, on every 5 s read of a live session.
 const LOG_PAGE = 50;
 /** The conversation, from its newest messages; Show earlier reads the page before, [limit] messages of it. */
 const readLog = (s, before = "end", limit = LOG_PAGE) => alone(`log ${s.id} ${before}`, () => readLogNow(s, before, limit));
@@ -240,7 +240,7 @@ async function readLogNow(s, before, limit = LOG_PAGE) {
   const back = before !== "end" && !String(before).startsWith("at:");
   if (back && held?.messages && String(held.earlier) !== String(before)) return;
   if (!res.ok) {
-    // gone reads No transcript and a failed read Not read; the daemon's own words go to the console, never the page (fin)
+    // gone reads No transcript and a failed read Not read; the daemon's own words go to the console, never the page
     if (res.status !== 404) refusedAs(res, NOT_READ, `conversation ${s.id}`);
     state.logs[s.id] = held && before !== "end" ? { ...held, error: NOT_READ }
       : { messages: null, error: res.status === 404 ? null : NOT_READ };
@@ -248,7 +248,7 @@ async function readLogNow(s, before, limit = LOG_PAGE) {
     state.logs[s.id] = { messages: null, off: true }; // reading off: splice does not read his conversations
   } else if (!Array.isArray(res.body?.messages)) {
     // an answer with no messages in it reads Not read: taking it as a page threw before anything was kept, which left
-    // the pane on Reading for good (splice-usage, Oct 13: 180 s on one session)
+    // the pane on Reading for good (180 s on one session)
     console.warn("The conversation came back with no messages in it");
     state.logs[s.id] = held && before !== "end" ? { ...held, error: NOT_READ } : { messages: null, error: NOT_READ };
   } else {
@@ -260,7 +260,7 @@ async function readLogNow(s, before, limit = LOG_PAGE) {
   render();
 }
 // A LIVE CONVERSATION'S POLL ASKS ONLY FOR WHAT IS NEWER: its last message again, which may have grown, and what came
-// after it, a few KB where a read from the end sent its whole page every five seconds (splice-runtime-lead, Oct 13). It
+// after it, a few KB where a read from the end sent its whole page every five seconds. It
 // keeps the earlier pages he read back. More than a page behind, a cursor the daemon refuses or reading turned off
 // reads from the end.
 const readNewer = (s) => alone(`log ${s.id} newer`, () => readNewerNow(s));
@@ -284,14 +284,14 @@ async function readNewerNow(s) {
 }
 
 // ---------- what the page says about a session (look() and the lamp are kit.js's) ----------
-// A SESSION IS CALLED BY WHAT HE WOULD CALL IT (Oct 28: names are the user's own words, never a machine id): the name he
+// A SESSION IS CALLED BY WHAT HE WOULD CALL IT (names are the user's own words, never a machine id): the name he
 // gave it here, else the name its client registered, else the first line of its first message as the daemon read it
 // (SessionsRoutes `title`), then its worktree, then its folder where the page is flat. A name a client built from an id
 // ("codex-1f2e3d4c-...") is an id however it is spelled, and the kit's rule reads a word and a whole UUID as a name; a
 // session nothing can name reads as its command and project, with an ordinal where two would read alike.
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 const registered = (name) => { const own = DRAW.ownName(name); return own && !UUID.test(own) ? own : ""; };
-/** Words a person can read: a leading tag that carries an id ("[eli-dispatch 1f2e3d4c]") and any UUID come out. */
+/** Words a person can read: a leading tag that carries an id ("[dispatch 1f2e3d4c]") and any UUID come out. */
 const readable = (text) => String(text ?? "").replace(/^\s*\[[^\]]*[0-9a-f]{6,}[^\]]*\]\s*/i, "").replace(UUID, "").replace(/\s+/g, " ").trim();
 const ownOf = (s) => ui.names.get(s.id) || registered(s.name);
 const label = (s) => ownOf(s) || (ui.grouped ? readable(s.first) || (s.wt && !ID_PART.test(s.wt) ? s.wt : "") : s.repo) || readable(s.first);
@@ -307,7 +307,7 @@ function nameRows() {
 const color = (s) => colorOf(s.provider);
 
 const FOLDER = G('<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>');
-/** Where a session is, said once and in the words the page already uses for it (Marlin, Oct 12):
+/** Where a session is, said once and in the words the page already uses for it:
  *  - the open session names its project, the same name its group wears, never the folder ("repo" for most of his);
  *  - a session in no project names its folder from home with the folder glyph, on its card too, because there the
  *    folder is the only clue; `place` is the daemon's spelling of it ("~/notes"), and until a row carries one the
@@ -443,10 +443,10 @@ const READING_OFF_ASK = "Answer it in the terminal it runs in";
 const askNote = (s) => (notable(s) && !drivable(s) ? noteHtml(s) : "");
 function askHtml(s, where = "card") {
   // from his press until the session moves on, the answer he pressed keeps its words with the wait ring and the rest
-  // wait disabled, drawn from the choices he saw: never "answer it in the terminal" meanwhile (Marlin p165, hitstop 8a04273)
+  // wait disabled, drawn from the choices he saw: never "answer it in the terminal" meanwhile
   const going = ui.answered.get(s.id);
   // reading off: he told splice not to read his conversations, and a question and its choices are the conversation, so
-  // the card says only that it waits and where to answer it (Marlin, 5:12 AM CT), ending on a quiet door to the switch
+  // the card says only that it waits and where to answer it, ending on a quiet door to the switch
   if (!state.reading) return `<div class="ask"><p class="why">${READING_OFF_ASK}${where === "pane" ? "" : ` · <a class="door" href="settings.html#data">Reading off${ICON.door}</a>`}</p></div>`;
   const a = s.ask, offer = going?.offer ?? state.screens[s.id], can = going ? true : drivable(s);
   const busy = going || ui.sending.has(s.id) ? " disabled" : "";
@@ -479,14 +479,14 @@ function askHtml(s, where = "card") {
 }
 
 const lastOf = (s) => s.row.last;
-// From the press until splice answers, Stop keeps its place, disabled, reading Stopping with the wait ring (hitstop
-// 9e95ae4). [short]: on a row the wait ring alone holds the button's place, named for assistive tech, and the word
+// From the press until splice answers, Stop keeps its place, disabled, reading Stopping with the wait ring.
+// [short]: on a row the wait ring alone holds the button's place, named for assistive tech, and the word
 // Stopping leads the row's words (stateCell)
 const stopHtml = (s, cls, icon, short = false) => ui.armedStop.has(s.id) && canStop(s) ? "" : ui.stopping.has(s.id)
   ? `<button class="${cls} stopping" disabled${short ? ` aria-label="Stopping" title="Stopping">${ICON.wait}` : `>${ICON.wait}Stopping`}</button>`
   : canStop(s) ? `<button class="${cls}" data-act="stop" data-s="${esc(s.id)}">${icon}Stop</button>` : "";
 const canStop = (s) => s.state === "working" && (s.live || drivable(s));
-// Stop armed, End's pattern (Marlin, Oct 13): the first press names the turn it would end, from what the session last
+// Stop armed, End's pattern: the first press names the turn it would end, from what the session last
 // did, and only the second press stops it; Keep running, Escape or the turn ending on its own disarms it.
 function armedStopHtml(s, small) {
   if (!ui.armedStop.has(s.id) || !canStop(s)) return "";
@@ -555,7 +555,7 @@ const renameHtml = (s) => `<form class="rename" data-s="${esc(s.id)}" data-renam
   + `<button class="act primary small" type="submit">Save</button><button class="act quiet small" type="button" data-act="rename-no" data-s="${esc(s.id)}">Cancel</button><span class="kept">Kept in this browser</span></form>`;
 /** THE ROW'S LINE, on the tracks every row of the page shares: who it is (the chevron that opens it in place, its name,
  *  its branch), its words (where it is when the block does not say, what the lamp cannot say, then what it last said
- *  or ran), how long it has been in that state as a bar on one scale, its command, and its act (Oct 26: the
+ *  or ran), how long it has been in that state as a bar on one scale, its command, and its act (the
  *  row style did not look good). The open session's title bar is this same line. */
 function lineHtml(s, L, inPlate) {
   const stop = stopHtml(s, "act quiet small", ICON.stop, true);
@@ -596,12 +596,12 @@ function cardHtml(s) {
 }
 
 // ---------- the list: what needs him first, then what runs, then what rests ----------
-// a session a failed move left with nothing running waits on him as Needs you does: ranked, coloured and listed with it (Marlin, 6:08 AM)
+// a session a failed move left with nothing running waits on him as Needs you does: ranked, coloured and listed with it
 const stranded = (s) => s.state === "ended" && ui.failed.get(s.id)?.unmoved === true && !ui.failed.get(s.id).back;
 // a move that failed here is this page's own fact, so it lifts the card only here; the rest is the kit's rank
 const RANK = (s) => (stranded(s) ? 0 : rankOf(s));
 // a project's name matches every session in it, so typing a project's name keeps that whole group rather than the one card
-// whose folder happens to be spelled that way (Marlin); the open session stays on the page whatever he types
+// whose folder happens to be spelled that way; the open session stays on the page whatever he types
 const matches = (s) => !ui.q || s.id === ui.open || [ui.names.get(s.id), s.name, s.first, s.repo, s.cmd, s.row.repo?.root, s.row.cwd, s.project?.label, s.project?.name]
   .some((v) => v && v.toLowerCase().includes(ui.q));
 function sorted() { // what waits on him: the longest waiting first; the rest: the latest first
@@ -609,7 +609,7 @@ function sorted() { // what waits on him: the longest waiting first; the rest: t
     .sort((a, b) => RANK(a) - RANK(b) || (RANK(a) <= 1 ? a.at - b.at : b.at - a.at));
   if (!ui.hold) return list;
   // while he works in the list it holds the order last drawn, so a card never moves under his pointer; a new one joins
-  // at the end (Marlin p163, hitstop 9e95ae4)
+  // at the end
   const at = (s) => { const i = ui.order.indexOf(s.id); return i < 0 ? Infinity : i; };
   return list.map((s, i) => [s, i]).sort(([a, i], [b, j]) => at(a) - at(b) || i - j).map(([s]) => s);
 }
@@ -635,7 +635,7 @@ function foldNamesakes(live, ended) {
 /** A row the list must draw whatever a fold or a page would do with it: the open session, and the row the open session
  *  is folded under, since its plate is drawn there. */
 const holdsOpen = (s) => s.id === ui.open || (ui.earlier.get(s.id) || []).some((x) => x.id === ui.open);
-// ---------- by project (Oct 11: without separating sessions per project, they are hard to
+// ---------- by project (without separating sessions per project, they are hard to
 // navigate): the grouping serves finding the one for a project, and must never cost seeing who is stuck on him ----
 // The project is the daemon's answer on the row (ProjectWire), the same one Teams and Requests read; this page never
 // resolves a path itself. A session in no project is "No project", which is a group like any other but always last.
@@ -653,15 +653,15 @@ const groupKey = (s) => (ui.by === "head" ? (s.head ? `h:${s.head}` : NO_PROJECT
 // a block named for the command takes the same plain words the command column uses, never the route or head key
 const groupName = (s) => (ui.by === "head" ? (s.head ? QUIET_WORD[s.cmd || s.head] || s.cmd || s.head : "No command")
   : ui.by === "team" ? s.team || "No team" : projName(s));
-// ONE SET WITH ONE LIT (the drawings pass, Oct 26): the kit's segmented switch draws the choice, in neutral ink.
+// ONE SET WITH ONE LIT: the kit's segmented switch draws the choice, in neutral ink.
 const byHtml = () => `<span class="by"><span class="kicker" aria-hidden="true">Group by</span>`
   + `${DRAW.switcher(BY.map((b) => [b, BY_WORDS[b]]), ui.by, "by", "Group by")}</span>`;
 /** Two groups is what makes a list a grouped list: a first-time user with one project keeps the flat page. Read off
  *  every live session and never off the search, so a search that happens to land inside one project keeps the
- *  headers it had: it hides the groups it does not match, it does not undo the grouping (Marlin). */
+ *  headers it had: it hides the groups it does not match, it does not undo the grouping. */
 const grouped = () => new Set(state.rows.filter((s) => s.state !== "ended" || stranded(s)).map(groupKey)).size >= 2;
 // THE PICK (kit PICK): one project, or every project. It only exists where there are two groups to pick between, so a
-// first-time user with one project never meets it, and a pick left over from another page's desk filters nothing here
+// first-time user with one project never meets it, and a pick left over from another page filters nothing here
 // until there are two. A picked project that has gone keeps its pick: the list says "No sessions" and the doors stay.
 const picked = () => (grouped() && ui.by === "project" ? ui.project : null);
 const inPick = (s) => picked() == null || projKey(s) === picked();
@@ -678,7 +678,7 @@ function groupsOf(list) {
   if (ui.hold && ui.gorder) { const held = (k) => { const i = ui.gorder.indexOf(k); return i < 0 ? Infinity : i; }; keys.sort((a, b) => held(a) - held(b)); }
   return keys.map((k) => [k, m.get(k)]);
 }
-// fin's header: the name, then one lamp and its count for each live state present, in the cards' rank, then the
+// The header: the name, then one lamp and its count for each live state present, in the cards' rank, then the
 // live sessions drawn and the quiet total. No state words: the lamps are the words, and Idle and Ended are in the total.
 const STATES = [["needs", 0], ["stalled", 1], ["working", 2]];
 const BIG = { needs: ICON.input, stalled: ICON.flat, working: ICON.trace };
@@ -725,7 +725,7 @@ function rowPiece(s) {
   return { html: cardHtml(s), plate: namesake ? plateHtml(namesake) : "", w };
 }
 const pieceHtml = (p) => p.html + (p.plate || "");
-// A GROUP SHOWS WHAT MOVES AND FOLDS WHAT RESTS (Oct 15: sessions are organized per project more efficiently).
+// A GROUP SHOWS WHAT MOVES AND FOLDS WHAT RESTS (sessions are organized per project more efficiently).
 // Needs you, stalled and working always stand, then its latest idle sessions up to a handful of rows; the idle ones past
 // that fold behind "N idle" on the group's foot line, beside its Ended fold, closed until he opens it. A search opens
 // it, because no fold may hide a match, and a fold he opened stays open for the tab.
@@ -747,7 +747,7 @@ function rowPieces(key, g, ended) {
   return [...up.map(rowPiece), ...idleRows, ...foot, ...(rested.length ? [{ html: REST_OPEN, w: 0, wrap: 1 }, ...rested, { html: REST_SHUT, w: 0, wrap: -1 }] : [])];
 }
 const REST_OPEN = `<div class="rested">`, REST_SHUT = `</div>`;
-/** COLLAPSED, A GROUP STILL SHOWS ITS NEEDS-YOU CARDS (Marlin): nothing waiting on him is ever hidden by a fold. */
+/** COLLAPSED, A GROUP STILL SHOWS ITS NEEDS-YOU CARDS: nothing waiting on him is ever hidden by a fold. */
 function groupBlock([key, g], ended, { loose = false } = {}) {
   const shut = ui.shut.has(key) && !ui.q, counts = countsOf(g);
   const folded = g.reduce((a, s) => a + (ui.earlier.get(s.id)?.length ?? 0), 0) + ended.reduce((a, s) => a + (ui.earlier.get(s.id)?.length ?? 0), 0);
@@ -884,7 +884,7 @@ function lampLegend(live) {
 function listHead() {
   const live = state.rows.filter((s) => s.state !== "ended" || stranded(s));
   if (!live.length) return "";
-  // one project and nothing outside it: no picker and no headers, its name where the picker would be (Marlin)
+  // one project and nothing outside it: no picker and no headers, its name where the picker would be
   const by = live.length >= 2 ? byHtml() : ""; // the grouping switch, once there are two sessions to group
   const found = "";
   // grouped by something nothing has (no team in any session), the list stays one block: the switch says so beside itself
@@ -972,7 +972,7 @@ function ghostListHtml() {
  *  top. The board holds as many columns as a row's words need (colCount). While his pointer is in the list the blocks keep
  *  the order they were drawn in, as the rows keep theirs, so no block moves to another column under it.
  *
- *  THE OPEN SESSION TAKES THE BOARD'S WIDTH (Oct 26: horizontal space was being wasted): its block spans
+ *  THE OPEN SESSION TAKES THE BOARD'S WIDTH (horizontal space was being wasted): its block spans
  *  all but one column where three or more fit and blocks follow it, so the list stays in sight beside the session he
  *  reads, and the whole row where it does not. Its rows keep a column's width and run down the columns it spans. */
 function boardHtml(blocks, cls = "") {
@@ -1018,7 +1018,7 @@ function listHtml() {
   const fail = state.error ? failStripHtml() : "";
   const head = listHead();
   if (!list.length && !ended.length) {
-    // a picked project with nothing in it says so plainly, and its doors stay in the head (fin)
+    // a picked project with nothing in it says so plainly, and its doors stay in the head
     // the empty list is the row that would stand in it, drawn dashed, with the one fact it has; why a run may be missing from
     // it is the Not listed line under it
     const slot = `<span class="nrow" aria-hidden="true"><i class="nl"></i><i class="nb"></i><i class="nb s"></i></span>`;
@@ -1132,7 +1132,7 @@ function fromHtml(name, s) {
 // A LONG MESSAGE FOLDS AFTER ITS FIRST LINES (one page, one scroll): a summary or a report a screen long stood between him
 // and everything after it. Its first lines stand, and the rest is one press away, in place.
 const CLAMP_LINES = 28, CLAMP_SHOWN = 14, CLAMP_CHARS = 3600;
-/** The tag a dispatch puts before its words, with its id inside ("[eli-dispatch 1f2e3d4c]"), is a machine's note, not his words. */
+/** The tag a dispatch puts before its words, with its id inside ("[dispatch 1f2e3d4c]"), is a machine's note, not his words. */
 const untagged = (text) => String(text ?? "").replace(/^\s*\[[^\]]*[0-9a-f]{6,}[^\]]*\]\s*/i, "");
 function bodyHtml(s, m, text = m.role === "assistant" ? m.text : untagged(m.text)) {
   const key = `m:${s.id}:${m.index}`, lines = String(text).split("\n");
@@ -1190,7 +1190,7 @@ function sysHtml(s, group, at, word) {
 }
 /** What the session's prompt holds now, read off its screen; empty when nothing or unread. */
 const inPrompt = (s) => (state.screens[s.id]?.draft || "").trim();
-/** A message of his that Claude Code took back when he stopped it before any answer (hitstop 0298d62): marked so by
+/** A message of his that Claude Code took back when he stopped it before any answer: marked so by
  *  its transcript, or, for his newest message, by the prompt holding exactly its words. */
 function takenBack(s, m) {
   if (m.role !== "user") return false;
@@ -1230,7 +1230,7 @@ function logHtml(s) {
   const first = held.messages.find((m) => m.ts)?.ts;
   const marks = (held.moves || []).filter((mv) => !held.earlier || first == null || mv.moved_at >= first)
     .sort((a, b) => a.moved_at - b.moved_at);
-  // a move that did not come back draws no mark, but splice ended the client for it all the same (Marlin, #3)
+  // a move that did not come back draws no mark, but splice ended the client for it all the same
   const tries = (held.unmoved || []).slice().sort((a, b) => a - b);
   let pressed = null, exit = EXIT_LOOKING;
   // A RUN is every call drawn between two things that are not calls: it lands as one trail when the next thing comes
@@ -1306,7 +1306,7 @@ function logHtml(s) {
     // what the strip's figures can open: the messages folded behind the count or the page before, and the calls a run folded
     hidden, earlier: Boolean(held.earlier), more: hidden > 0 || Boolean(held.earlier), callsMore: runs.some((it) => it.trail > TRAIL_FLAT) };
 }
-/** A RUN OF CALLS IS ONE QUIET LINE (Oct 26: the tool call UI was too busy): a run of one or two calls shows them,
+/** A RUN OF CALLS IS ONE QUIET LINE (the tool call UI was too busy): a run of one or two calls shows them,
  *  one line each on one grid; a longer run is one line, its count with the tools it used as marks and counts, and under it
  *  the newest call, which is what the session is doing now. One press opens the rest in place, and it stays open while a call
  *  it hides is opened or has its result open. */
@@ -1334,7 +1334,7 @@ function tally(calls) {
     .map(([w, at]) => `<span class="tk"><span class="tg" aria-hidden="true">${TOOL_GLYPH[at.kind]}</span>${esc(w)} <b>${DRAW.n(at.n)}</b></span>`).join("")}</span>`;
 }
 /** ONE CALL, ONE LINE: the mark, the tool in plain words, what it did, and No output at the line's end when it printed
- *  nothing (Marlin p164), never on a second line. Opened: its whole input when the line showed something else, then its
+ *  nothing, never on a second line. Opened: its whole input when the line showed something else, then its
  *  result, bounded on the page rather than in a box that scrolls. A call nothing has come back for yet ([out]) runs
  *  while the session works, and says nothing of its output. */
 function callHtml(s, m, results, out, working, long = false) {
@@ -1353,7 +1353,7 @@ function callHtml(s, m, results, out, working, long = false) {
     + `${mark}<span class="tname" title="${esc(word)}">${esc(word)}</span><span class="twhat">${said}${nothing}</span></button>${under}</div>`;
 }
 /** The /exit splice typed to end the client for a move, and what Claude Code printed for it: the move's mechanics, which
- *  the joint already says, so they are not his conversation (Marlin #3). A move that did not come back is the same
+ *  the joint already says, so they are not his conversation. A move that did not come back is the same
  *  press with no joint. Only the first /exit after a mark, sent within
  *  the move's own wait, and the one line it printed next; an /exit he types himself later is his and stays. */
 const MOVE_EXIT_MS = 60_000;
@@ -1365,7 +1365,7 @@ function moveExit(m, pressed, exit) {
   return m.role === "system" && !m.kind ? EXIT_DONE : exit;
 }
 /** The rail where a session moved: each chip keeps its model, since a move can stay on one command and change only the
- *  model, and the time sits under it where a message's does, with what didn't come along beside it (hitstop f38853e). */
+ *  model, and the time sits under it where a message's does, with what didn't come along beside it. */
 function jointHtml(mv) {
   const chip = (head) => `<span class="chip" style="--c:${colorOf(state.providerOf[head])}">${esc(commandOf(head) ?? head)}</span>`;
   const model = (id) => (id ? `<span class="model">${esc(modelName(state.modelLabel, id))}</span>` : "");
@@ -1514,7 +1514,7 @@ function tokensHtml(s) {
  *  model leads: it is what the room is measured against. */
 function contextHtml(s) {
   const u = state.usage[s.id], win = u?.ctx?.model ? state.window[u.ctx.model] ?? state.window[modelKey(u.ctx.model)] : null;
-  // a move in flight names its target model in the state (hitstop), so the model reads a dash meanwhile
+  // a move in flight names its target model in the state, so the model reads a dash meanwhile
   const model = `<p class="model"${s.model ? ` title="${esc(s.model)}"` : ""}>${s.model && !ui.moving.has(s.id) ? esc(s.model) : DRAW.dash}</p>`;
   if (u === undefined) return `${model}<div class="meterline">${GHOST.track()}${GHOST.fig(5)}</div>`;
   // nothing has gone out yet: the window's empty track; the newest request's figure with no room to measure it against
@@ -1526,7 +1526,7 @@ function contextHtml(s) {
     + `<span class="pct">${DRAW.pct(share)}<span class="used">used</span></span>${DRAW.focal(DRAW.big(u.ctx.in), `of ${DRAW.big(win)}`)}</div>`;
 }
 /** THE LINES TO PASTE: what another session types to reach this one, what a terminal types to resume it, and where its
- *  conversation lives on disk (gap 423), as three Copy acts in his words, and the three lines whole behind one
+ *  conversation lives on disk, as three Copy acts in his words, and the three lines whole behind one
  *  disclosure under the facts, so no line is ever cut and no id or path stands on the screen unasked. */
 function copiesHtml(s) {
   const held = state.logs[s.id];
@@ -1541,7 +1541,7 @@ function copiesHtml(s) {
 }
 
 // A door to a session splice no longer lists, by link or address: a compact plate at the list's top says Not listed,
-// with the search for it and Close, and No transcript where its conversation would be (Marlin, Oct 12; fin's word).
+// with the search for it and Close, and No transcript where its conversation would be.
 function missingHtml(id) {
   const close = `<button class="act quiet" data-act="close">Close</button>`;
   // nothing about it can be read, so the one thing it can offer is the search for its name among the rest
@@ -1557,7 +1557,7 @@ const denyOf = (s) => state.screens[s.id]?.choices?.find((c) => /^no\b/i.test(c.
 // The Message field, only on a session splice can type into. While a permission waits, it is Deny: the refusing choice
 // is pressed, then his words, if any, go in as what to do instead. While a question waits, its options answer it and
 // no field is drawn, since his own words would land in the question's menu rather than as an answer.
-/** The command that resumes this session in a terminal, copyable, whenever its command is known (gap 419). */
+/** The command that resumes this session in a terminal, copyable, whenever its command is known. */
 const resumeLine = (s) => (s.cmd && !QUIET.has(s.cmd) ? `${s.cmd} -r ${s.id}` : "");
 /** A note to a session splice did not open: it arrives as a message from another session, and the page says only that it
  *  was handed over, since the client gives no receipt (SessionNoteRoute). */
@@ -1573,7 +1573,7 @@ function composerHtml(s) {
   if (s.state === "needs" && (!dialog || !denyOf(s))) return "";
   const busy = ui.sending.has(s.id) ? " disabled" : "";
   // words already in its prompt that are not his stopped message: shown over Send like a console menu, so the answer
-  // to his press appears where he pressed, and cleared only on his say-so (Marlin; hitstop 0704658, fin's words)
+  // to his press appears where he pressed, and cleared only on his say-so
   const left = ui.leftover[s.id];
   const leftover = left == null ? "" : `<div class="inprompt" role="group" aria-label="In the prompt"><div class="inprompt-card"><p class="lbl">In the prompt</p>`
     + `<p class="words">${esc(left)}</p><div class="acts"><button class="act" data-act="keep" data-s="${esc(s.id)}">Cancel</button>`
@@ -1732,7 +1732,7 @@ function reveal() {
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   window.scrollTo({ top: Math.max(0, window.scrollY + top - bar - 16), behavior: still ? "auto" : "smooth" });
 }
-/** THE DETAILS FOLD AWAY AND COME BACK (Oct 26: the top component should be collapsible). They close
+/** THE DETAILS FOLD AWAY AND COME BACK (the top component should be collapsible). They close
  *  over 240 ms on the same element, so the conversation rises in the same motion; his choice stays in this browser. */
 function foldTop() {
   ui.topShut = !ui.topShut;
@@ -1741,7 +1741,7 @@ function foldTop() {
   ui.fbopen.clear();
   render();
 }
-/** THE ROW'S TRACKS ARE AS WIDE AS WHAT THEY HOLD (Oct 26: horizontal space was being wasted): the name
+/** THE ROW'S TRACKS ARE AS WIDE AS WHAT THEY HOLD (horizontal space was being wasted): the name
  *  track is the widest name in the list with its branch mark, up to 30rem, the command track the widest command, and
  *  the act track the widest act, none at all when no row has one, so the words start one gap after the widest name and
  *  get the rest. A row with no words runs its name over the words' track, and the name track grows only by what that track cannot hold. The words' track steps in whole 3rem, so a changing tool name seldom shifts the columns. Written on the list's root
@@ -1780,7 +1780,7 @@ function fitTracks() {
   const cmdW = fit(cmd, cmd ? 3 : 0, 11), actW = act ? fit(act, 2, 10) : 0;
   // the bar keeps at least BAR_MIN of the row: what the name and the words ask for beyond what is left gives way, the words
   // first, and a name never takes more than it asks for. The squeeze works on the widths as written, so no rounding after
-  // it takes the bar's room back (lead walk, Oct 29: the words were squeezed to 15rem and written as 18, and every bar on
+  // it takes the bar's room back (the words were squeezed to 15rem and written as 18, and every bar on
   // his board fell to 12.8rem under an axis cut to "s min h d w")
   const BAR_MIN = 16;
   const widths = [...rows].filter((t) => !t.parentElement.classList.contains("pane")).map((t) => t.getBoundingClientRect().width / rem).filter(Boolean);
@@ -1802,7 +1802,7 @@ function fitTracks() {
 // the page's own faces land after the first draw, and every name grows with them
 document.fonts?.ready?.then(fitTracks);
 /** THE SLIDING MOVE: each row, block and tile starts where it stood and eases to its new place, on the shared list-move
- *  tokens (--t-move on --e-io, hitstop): a re-sort moves them, and a list-sized move arrives on an in-out ease. */
+ *  tokens (--t-move on --e-io): a re-sort moves them, and a list-sized move arrives on an in-out ease. */
 const tok = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const spots = () => new Map([...root.querySelectorAll(".list .s[data-key], .list .pgroup[data-key], .ptile[data-key]")].map((el) => [el.dataset.key, el.getBoundingClientRect()]));
 function slideFrom(before) {
@@ -2019,7 +2019,7 @@ async function pinLogin(s, label) {
 const readUsage = (s) => alone(`usage ${s.id}`, () => { usageAt.set(s.id, Date.now()); return readUsageNow(s); });
 // TODAY'S USAGE IS READ AGAIN EVERY 30 S, NOT ON EVERY 5 S RELOAD. It is one /api/perf/turns per command, 11 of them
 // taking up to 1.8 s, and on every reload they held the browser's six connections to splice, so a card clicked then
-// waited behind them: 1.5 s to its first text where a free connection gives 0.2 s (splice-sessions, Oct 13, at 3394).
+// waited behind them: 1.5 s to its first text where a free connection gives 0.2 s.
 const USAGE_EVERY_MS = 30_000;
 const usageAt = new Map();
 async function readUsageNow(s) {
@@ -2079,7 +2079,7 @@ async function stop(s) {
 }
 
 // ---------- End ----------
-// End closes the session where it runs, in any state; Stop only halts a turn and keeps the agent (fin, Marlin p218).
+// End closes the session where it runs, in any state; Stop only halts a turn and keeps the agent.
 // With nothing to lose it goes on the first press; a turn mid-work or unsent words arm it, Restart's pattern.
 const endHtml = (s) => !drivable(s) || ui.armedEnd.has(s.id) ? ""
   : ui.ending.has(s.id) ? `<button class="act stopping" disabled>${ICON.wait}Ending · ${Math.floor((Date.now() - ui.ending.get(s.id)) / 1000)} s</button>`
@@ -2109,19 +2109,19 @@ async function endSession(s, confirm) {
 
 // ---------- Continue on ----------
 // The session goes on under another command's model: on another command as its copy under a new id, the original left
-// as it was (the President's ruling on V4-169), and on the same command as itself (POST .../continue,
+// as it was (V4-169), and on the same command as itself (POST .../continue,
 // SessionContinue). A session waiting on an answer can't move, since the move types into its prompt; one splice can't
 // reach can't either, except one whose client already exited, which goes on in a new terminal.
 const movable = (s) => s.state !== "needs" && (s.state === "ended" || drivable(s)) && state.heads.some((h) => h.key !== s.head);
 
 /** One line per model on each other command, on the account that command would send as now (its pool's next pick,
- *  else its one account), with that account's nearest-full window as Accounts draws it (the mock's choicesOf, fin).
- *  Commands with room first, the soonest week to reset first and the 5 hours breaking a tie (his Oct 4 rule); keys,
+ *  else its one account), with that account's nearest-full window as Accounts draws it.
+ *  Commands with room first, the soonest week to reset first and the 5 hours breaking a tie; keys,
  *  which report no quota, after them; then a command at its limit or signed out, disabled. */
 async function readChoices(s) {
   const [ac, md, ks] = await Promise.all(["/api/accounts", "/api/models", "/api/keys"].map((p) => API.get(p)));
   const rows = ac.body?.accounts || [], keys = ks.body?.keys || [];
-  // its own command is offered too, without the model it runs on now: another model on the same plan is a move (p176)
+  // its own command is offered too, without the model it runs on now: another model on the same plan is a move
   const now = s.turn?.model ?? s.row.model ?? s.row.served_model; // reading off: what splice served it
   const groups = (await Promise.all((md.body?.heads || []).filter((h) => h.models?.length).map(async (h) => {
     const names = h.models.map((m) => ({ id: m.id, label: m.label || m.id }))
@@ -2132,7 +2132,7 @@ async function readChoices(s) {
     if (unstartable) return { head: h.head, own: h.head === s.head, names, kind: "unlinked", fix: unstartable.cannotStartFix, rank: 4 };
     if (state.heads.find((x) => x.key === h.head)?.authKind === "api-key") {
       // a key reads as its provider, the heading Accounts draws over it; its variable joins only when two keys of
-      // that provider feed this command, so the line says which one it sends (fin)
+      // that provider feed this command, so the line says which one it sends
       const feeding = keys.filter((k) => (k.heads || []).some((x) => x.head === h.head)), key = feeding[0];
       const missing = !key || key.heads.find((x) => x.head === h.head).source === "missing";
       const provider = PROVIDER_NAME[state.providerOf[h.head]] ?? key?.name ?? null;
@@ -2179,7 +2179,7 @@ function choicesHtml(s) {
 }
 async function openChoices(s) {
   if (ui.menu === s.id) { ui.menu = null; render(); return; }
-  delete ui.held[s.id]; // opening the models menu dismisses the held card (hitstop)
+  delete ui.held[s.id]; // opening the models menu dismisses the held card
   ui.menu = s.id; ui.choices[s.id] = await readChoices(s);
   if (ui.menu === s.id) render();
 }
@@ -2203,10 +2203,10 @@ async function continueOn(s, head, model, label, clear = false) {
   await reload();
 }
 /** Copy his words, then clear and move. The clear waits on the clipboard: a button that says Copy never clears words
- *  it did not copy, so a refused write leaves the card up and the session where it is (Marlin, fin). */
+ *  it did not copy, so a refused write leaves the card up and the session where it is. */
 async function heldCopy(s, button) {
   const h = ui.held[s.id];
-  if (!h || h.copying) return; // a press while the copy is pending does nothing (hitstop 439f414)
+  if (!h || h.copying) return; // a press while the copy is pending does nothing
   h.copying = true;
   try {
     await navigator.clipboard.writeText(h.words);
@@ -2221,7 +2221,7 @@ async function heldCopy(s, button) {
 
 /** Words he typed and never sent, held under Continue on: the stopped message Claude Code put back, and anything he
  *  typed while the turn ran. They are his, so they are shown verbatim and go to his clipboard before anything is
- *  cleared (fin, hitstop 605ab5c). Cancel moves nothing. */
+ *  cleared. Cancel moves nothing. */
 function heldHtml(s) {
   const h = ui.held[s.id];
   if (!h) return "";
@@ -2234,17 +2234,17 @@ function heldHtml(s) {
 /** A command as the move mark draws it: its chip, in its provider's colour. */
 const cmdChip = (head) => `<span class="chip" style="--c:${colorOf(state.providerOf[head])}">${esc(commandOf(head) ?? head)}</span>`;
 /** While a move is in flight its old client has exited, so the session reads as the move, never as Ended: one verb
- *  family with the button and the mark, Continue on, Continuing on, Continued on (fin). */
+ *  family with the button and the mark, Continue on, Continuing on, Continued on. */
 const movingLook = (s) => {
   const m = ui.moving.get(s.id);
   if (m) return { cls: "moving", lamp: ICON.wait, word: `Continuing on ${cmdChip(m.head)} ${esc(m.label)}`, name: "Continuing on" };
-  // when even the way back failed nothing runs on either command: not Idle (at its prompt), never Ended (fin, Marlin)
+  // when even the way back failed nothing runs on either command: not Idle (at its prompt), never Ended
   if (stranded(s)) return { cls: "needs notrunning", lamp: "<i></i>", word: "Not running", name: "Not running" };
   return null;
 };
 /** A move that did not happen, as a state: the command that did not start or answer, and where the session is now
- *  (fin). Try again while it went on where it was; when even the way back failed, the resume command and Copy. Opened,
- *  the attempt's last lines come first, the evidence before the ways forward, and only while reading is on (Marlin):
+ *  Try again while it went on where it was; when even the way back failed, the resume command and Copy. Opened,
+ *  the attempt's last lines come first, the evidence before the ways forward, and only while reading is on:
  *  its last lines stand, and the rest is one press away in place, never a box scrolling inside the page. */
 const SCREEN_LINES = 8;
 function unmovedHtml(s, f, pane) {
@@ -2312,7 +2312,7 @@ function copy(act, s, text) {
   render();
   setTimeout(render, COPIED_MS + 50);
 }
-// Escape on the in-prompt card is its Cancel: nothing sent, nothing cleared, his message stays in the field (fin)
+// Escape on the in-prompt card is its Cancel: nothing sent, nothing cleared, his message stays in the field
 document.addEventListener("keydown", (e) => {
   // the search is one key away from anywhere on the page, as it is in a console
   if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && !/^(?:INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? "")) {

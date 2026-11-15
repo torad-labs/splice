@@ -4,7 +4,7 @@
 // Claude Code's --continue picks the NEWEST transcript in the cwd's directory whoever wrote it, and
 // appends this head's turns INTO that file. Measured 2026-09-20: nine transcripts in seven days
 // carried two model families, seven of them deepseek sessions continued in place by a claude head
-// within one hour. The operator's ruling: keep the shared tree, bound continue to the head.
+// within one hour. Decision: keep the shared tree, bound continue to the head.
 //
 // A transcript says nothing about which head wrote it (the model id is rewritten on resume, and two
 // heads can serve the same family), so ownership is recorded where it is decided: the daemon learns

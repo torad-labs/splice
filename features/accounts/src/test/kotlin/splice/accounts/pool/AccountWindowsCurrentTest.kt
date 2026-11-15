@@ -1,5 +1,5 @@
 // /api/accounts says which windows are current, by the rule /api/usage applies.
-// Marlin's walk on bb54736ea: a codex 7d 100% reading 4.5 h old, on a home with no ChatGPT sign-in,
+// Console walk on bb54736ea: a codex 7d 100% reading 4.5 h old, on a home with no ChatGPT sign-in,
 // was the console's nearest limit, because account rows carried every window with no age rule.
 // The figures still ship; only the current flags decide what the nearest limit may rank.
 package splice.accounts.pool

@@ -1,4 +1,4 @@
-// NEW: V4-260 — the files a head keeps go when their promise ends (Marlin's disk-writes audit at
+// NEW: V4-260 — the files a head keeps go when their promise ends (a disk-writes audit at
 // 99244e63a). A REAL daemon starts over a state dir seeded the way earlier runs left it: an expired
 // compaction answer beside a fresh one, code-mode state for a head whose provider has code mode off
 // and for a head the topology no longer names, and trace days for a head with trace off, one with

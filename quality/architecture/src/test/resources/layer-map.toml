@@ -1,4 +1,4 @@
-# layer-map.toml — which architectural role each Gradle module plays (splice-lead ruling, 2026-10-07).
+# layer-map.toml — which architectural role each Gradle module plays (2026-10-07).
 #
 # EVERY Gradle module is classified in EXACTLY ONE layer below. A module the map does not classify
 # fails LayerMapLawTest BY NAME, so new code can never sit outside a layer. A layer rule names its

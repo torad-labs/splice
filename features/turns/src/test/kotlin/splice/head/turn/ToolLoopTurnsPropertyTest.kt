@@ -9,12 +9,12 @@
 // when its turn has received none yet. The model is the rule itself, kept per conversation.
 //
 // A prompt is the person's words, wherever Claude Code puts them. It sends the text a person types while a tool runs in
-// the same user message as that tool's result (claudex's trace, Oct 27 08:08 to 08:21 CT: 29 distinct user messages
+// the same user message as that tool's result (claudex's trace, 29 distinct user messages
 // carried a tool result and then a text block, 10 of them with one result and text of 20 characters or less), and it
 // files its own notes for the model — system reminders — as text blocks too, which are never a message
 // (integrations/claude-code ClientEcho.kt:8). So text beside a tool result opens a turn and a reminder beside one does
-// not. A subagent is told apart by the agent id Claude Code heads its requests with (the same trace, Oct 27 05:44 to
-// 08:26 CT: on every request of all 13 subagents, on no main thread's), because two subagents of one session whose
+// not. A subagent is told apart by the agent id Claude Code heads its requests with (the same trace, on
+// every request of all 13 subagents, on no main thread's), because two subagents of one session whose
 // first messages are identical share a conversation key by design (TurnScope.conversationKey).
 package splice.head.turn
 

@@ -1,5 +1,5 @@
-// NEW: the `client` arm of the accounts port every other provider already has (operator ruling, Oct 3, 11:44 PM CT:
-// a head can hold many subscriptions). The generic port serves a head whose accounts live in the OAuth account file.
+// The `client` arm of the accounts port every other provider already has (a head can hold many
+// subscriptions). The generic port serves a head whose accounts live in the OAuth account file.
 // A Claude head's added accounts live in folders splice owns ([ClaudeAccountFolders]), so for that kind this arm
 // answers two verbs: the add, through Claude Code's own `auth login` ([ClaudeAccountSignIn]), and the remove.
 //

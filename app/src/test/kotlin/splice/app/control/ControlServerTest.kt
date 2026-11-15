@@ -287,7 +287,7 @@ class ControlServerTest {
 
     @Test
     fun `the bare address opens the console on Accounts, with no key`() = runTest {
-        // Changed Oct 10, 2026: the console is back at the root, by Marcos's choice of a console lead.
+        // Changed Oct 10, 2026: the console is back at the root.
         val page = client.get("http://127.0.0.1:$port/")
         assertEquals(HttpStatusCode.OK, page.status)
         assertTrue(page.bodyAsText().contains("accounts.js"), "the root lands on the Accounts page")

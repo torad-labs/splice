@@ -6,7 +6,7 @@ package splice.accounts.pool
  *  A SIBLING of [HeadAccountPoolSource], for the reason [HeadAccountPinSource] is one: test doubles implement that
  *  fun interface as a bare lambda. A listing discovers this with a checked cast and, without it, asks [view] per
  *  session. [HeadAccountPoolSource.view] re-reads every login and builds every account's row on each call, so 609
- *  session rows asking it apart spent 1.1 s of a 1.6 s /api/sessions there (splice-sessions, Oct 13). */
+ *  session rows asking it apart spent 1.1 s of a 1.6 s /api/sessions there. */
 public interface HeadAccountSessionSource {
     public fun sessions(sessionIds: Collection<String>): HeadAccountSessions
 }

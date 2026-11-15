@@ -1,7 +1,7 @@
-// NEW: MCP hub steps 3 and 4, the daemon half (docs/specs/mcp-hub.md; splice-lead, Oct 12; shapes agreed with
-// splice-config, who builds the front). The front names a call's session by the launch id in its hub address's
-// X-Splice-Launch header and passes it here; these are the two questions the daemon asks about that launch: where it
-// runs (the folder and environment a per-session copy starts with), and which servers it loads.
+// NEW: MCP hub steps 3 and 4, the daemon half (docs/specs/mcp-hub.md, Oct 12). The front names a
+// call's session by the launch id in its hub address's X-Splice-Launch header and passes it here; these are the two
+// questions the daemon asks about that launch: where it runs (the folder and environment a
+// per-session copy starts with), and which servers it loads.
 package splice.control.mcp.hub
 
 import splice.client.mcp.McpServerInput

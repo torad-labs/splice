@@ -3,10 +3,10 @@
 // compaction) and only queues the write here, so the queue's order is the order of the changes: a conversation
 // evicted and begun again is deleted before its new round is appended.
 //
-// REWORKED 2026-10-26 (fix 3, approved by Marcos about 2:00 AM CT): the writes leave the thread that made the
+// REWORKED 2026-10-26 (fix 3): the writes leave the thread that made the
 // change. That thread used to drain the queue itself, under one lock every session on the head shared, forcing each
 // record to disk; a completed reasoning item makes its change inside the upstream read loop, so a session's stream
-// waited on the disk for its own records and every other session's (claudex, Oct 25, 6 to 11 PM CT: splice's first
+// waited on the disk for its own records and every other session's (claudex, Oct 25, 6 to 11 PM: splice's first
 // byte to the client trailed the upstream's by 6.4 s at p50 and 29.7 s at p90). Now the thread only wakes the head's
 // one writer and goes on. The writer applies the queue oldest first, so the order above holds whichever thread
 // queued, and the head's stop waits for it ([drain]). A record lands in the page cache, which outlives the process,

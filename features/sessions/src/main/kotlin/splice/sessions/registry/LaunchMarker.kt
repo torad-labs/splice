@@ -1,4 +1,4 @@
-// NEW: the mark a splice launch leaves in its arguments on macOS (splice-lead, Oct 13). On Linux a session splice did
+// NEW: the mark a splice launch leaves in its arguments on macOS. On Linux a session splice did
 // not launch is told from a launch nothing recorded by its environment: SPLICE=1 is a splice launch. macOS hides the
 // environment of a hardened binary that lacks the get-task-allow entitlement (Apple StackExchange 439943), which a
 // notarized claude is likely to be, but its arguments stay readable (ps shows the command line there). So on macOS

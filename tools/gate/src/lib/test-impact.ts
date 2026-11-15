@@ -1,6 +1,5 @@
-// The unit test classes a pushed diff can affect, so the pre-push runs those and not the whole suite. Simon asked for it on
-// Oct 26 2026, with Marcos's approval, while GitHub's billing lock stops CI and this pre-push is the only check: a full gradle check
-// took about 14 minutes a push. A wrongly skipped test reaches main, so wherever the selection is unsure it selects more.
+// The unit test classes a pushed diff can affect, so the pre-push runs those and not the whole suite. A full gradle check
+// takes about 14 minutes a push. A wrongly skipped test reaches main, so wherever the selection is unsure it selects more.
 //
 // THE REACH. A test class is selected when its file reaches a changed file through references, in any module: a file refers to
 // another when it mentions, in code or in a string literal, a name the other declares at top level. Three references name nothing,
@@ -10,7 +9,7 @@
 // the push and after it, so a test that still names a deleted or renamed class is selected.
 //
 // WHAT THE REFERENCES CANNOT SEE runs the whole unit suite of the module that owns it, plus the tests in other modules that reach
-// that module (splice-lead, Oct 26 2026): a resource, a golden or any other file that is not a source, a source the scan cannot
+// that module: a resource, a golden or any other file that is not a source, a source the scan cannot
 // read, code that loads classes by a computed name, and a changed class that a build script or a resource names. When the thing is
 // test-only, no other module can see it, so only its own module runs whole. Markdown a module ships is prose for a person, from
 // which nothing resolves a class, so it is neither (PROSE).
@@ -126,7 +125,7 @@ interface BuildText {
 const BINARY = /\.(jar|class|so|dylib|dll|a|o|png|jpe?g|gif|ico|webp|bmp|woff2?|ttf|otf|eot|zip|gz|tgz|bz2|xz|7z|bin|wasm|pdf|node|exe|keystore|jks|p12)$/i;
 /** Markdown a module ships: prose for a person, from which nothing resolves a class. A class named there is documented, never
  *  loaded, so it does not make its module whole; the laws that read docs as text are tagged and run in lawTest on every push.
- *  Measured on Oct 26 2026: without this, a change to a class the shipped skill docs mention ran the whole suites of :app and
+ *  Measured: without this, a change to a class the shipped skill docs mention ran the whole suites of :app and
  *  :features-turns, the two largest modules, on 2 of 10 recent commits. */
 const PROSE = /\.(md|markdown)$/i;
 
@@ -299,7 +298,7 @@ function select(input: ImpactInput, scope: ScopeRules): TestImpact {
     if (node.tip && node.scan.loadsByName && sourceChanged) unsure(node.module, `${node.path} loads classes by a name the references cannot see`, node.test);
   }
   // A changed class a build script or a resource names: the build or the runtime uses it in a way no reference shows, so the module
-  // that OWNS that text runs whole (splice-lead, Oct 26 2026: "every test of the module that owns it"). The changed class's own
+  // that OWNS that text runs whole. The changed class's own
   // module is not made whole by someone else's text: nothing in it reads that file, and its own tests are reached by reference.
   // Measured: a core class named in the architecture laws' baseline ran every suite of 30 modules; the laws that read the baseline
   // live in a module the selection never narrows, so they run on every push either way.

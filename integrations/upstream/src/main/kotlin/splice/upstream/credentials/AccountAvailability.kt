@@ -11,9 +11,9 @@ import java.util.concurrent.atomic.AtomicLong
 // why: a quota window reports usedPercent on a 0-100 scale, so 100.0 is an exhausted window.
 private const val FULLY_USED = 100.0
 
-/** The longest a warm session waits, in all, out rate limits on its own login before it moves (Marcos, Oct 19:
- *  "switching mid session when the cache is hot can cost a lot"). A move rebuilds the conversation's whole cache on the
- *  next login, which costs far more than two minutes of waiting. A plan limit or a needed sign-in moves it at once.
+/** The longest a warm session waits, in all, out rate limits on its own login before it moves (Oct 19:
+ *  switching mid-session while the cache is hot can cost a lot). A move rebuilds the conversation's whole cache on
+ *  the next login, which costs far more than two minutes of waiting. A plan limit or a needed sign-in moves it at once.
  *
  *  It IS the ceiling every rate-limit hold is clamped to ([MAX_RATE_LIMIT_COOLDOWN_MS]), by reference and not by an
  *  equal number: a warm session can wait out any such hold, so a hold alone never disqualifies a stay. Lowering this
@@ -28,7 +28,7 @@ internal const val WARM_LOGIN_WAIT_MS: Long = MAX_RATE_LIMIT_COOLDOWN_MS
 internal object AccountAvailability {
     /** Free to serve a turn of [model]: selectable, and not held on a plan window the provider named spent, the whole
      *  login's or that model's week (Nov 3, 2026: a login refused Fable for the week still serves Opus). Failover
-     *  within one provider (operator ruling, Oct 3): a held login stays held until the reset it named, so the next turn
+     *  within one provider (Oct 3): a held login stays held until the reset it named, so the next turn
      *  of the same command goes to the next login, and a restart restores the hold with the rest of the provider's
      *  word. A null [model] reads the whole login's windows alone: the login serves some model. */
     fun available(account: PoolAccount, at: Long, model: String? = null): Boolean =
@@ -48,7 +48,7 @@ internal object AccountAvailability {
     /** Held only by the provider's short rate limit, its plan named spent by neither a hold nor a full reading: admission
      *  waits that hold out on the same login (CredentialHoldAdmission), so it is no exhausted login. A pool flipped from
      *  such a login to one held on its seven-day window until the next day, and failed turns as every login exhausted
-     *  while the first had plan room (claude-splice, Oct 13, 6:42 PM CT). */
+     *  while the first had plan room (claude-splice, Oct 13). */
     fun planRoom(account: PoolAccount, at: Long, model: String? = null): Boolean =
         !account.quotaHeld && account.cooldown.planHold.live(model) == null && !fullReading(account, at)
 

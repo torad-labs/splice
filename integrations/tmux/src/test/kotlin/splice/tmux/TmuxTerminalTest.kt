@@ -197,7 +197,7 @@ class TmuxTerminalTest {
     }
 
     /** A session moved after its own terminal closed goes on among the terminals it ran in: its server, not the
-     *  person's default one, which on another desk or under another home has another environment. */
+     *  person's default one, which on another machine or under another home has another environment. */
     @Test
     fun `a terminal opened beside a pane opens on that pane's server`() {
         val other = tmp.resolve("other.sock")

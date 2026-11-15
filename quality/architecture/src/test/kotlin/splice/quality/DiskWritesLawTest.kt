@@ -1,5 +1,4 @@
 // NEW: V4-262 — every file splice writes has an entry in README.md's "What splice keeps on your disk"
-// (Marlin's disk-writes audit, 2026-09-26, at 99244e63a).
 //
 // WHY THIS EXISTS. The site said splice saves no prompts or replies unless you turn that on, and the
 // audit found six files holding content with nothing turned on. A section a reader can trust stays

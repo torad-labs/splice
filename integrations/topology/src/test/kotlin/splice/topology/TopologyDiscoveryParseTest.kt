@@ -113,7 +113,7 @@ class TopologyDiscoveryParseTest {
         }
         assertTrue(mixed.message.orEmpty().contains("keep"), mixed.message)
         assertTrue(mixed.message.orEmpty().contains("model_slots"), mixed.message)
-        // One model behind two tiers is a declaration, not a repeat (Marcos, 2026-10-15).
+        // One model behind two tiers is a declaration, not a repeat (2026-10-15).
         val shared = withHead("""model_slots = { opus = "m1", sonnet = "m1" }""").heads.getValue("one")
         assertEquals(mapOf("opus" to "m1", "sonnet" to "m1"), shared.tierModels())
     }

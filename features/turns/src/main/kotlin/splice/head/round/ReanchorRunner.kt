@@ -1,5 +1,5 @@
 // PORT-OF: splice/gateway/head/TurnDriver.kt (ReanchorRunner.run, the class shell) @ 86f1411 —
-// invariants unchanged: mid-stream re-anchoring loop (eli design 2026-07-24), the LIVE-emitter
+// invariants unchanged: mid-stream re-anchoring loop (design of 2026-07-24), the LIVE-emitter
 // counterpart of [FoldRunner], split from splice.gateway.head (HD-24, the round subsystem's own
 // package). Rounds drive the real wire directly — committed blocks stay; a round that fails with a
 // continuable partial re-POSTs the continuation and APPENDS; everything else finishes with the

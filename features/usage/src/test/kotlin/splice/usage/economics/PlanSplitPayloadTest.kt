@@ -1,4 +1,4 @@
-// Oct 11, 2026 (fin): /api/economics keeps a plan's requests apart from a key's, and says per command whether every
+// Oct 11, 2026: /api/economics keeps a plan's requests apart from a key's, and says per command whether every
 // account is a plan account, so the Day row can say who paid for an hour that was never split.
 package splice.usage.economics
 

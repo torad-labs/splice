@@ -1,5 +1,5 @@
 // NEW: the whole Claude Code User-Agent this daemon has seen, which the Claude quota probes present to Anthropic's
-// usage endpoint (operator ruling, Oct 4, 12:00 AM CT). It is remembered rather than assembled, because an identity
+// usage endpoint (Oct 4). It is remembered rather than assembled, because an identity
 // splice made up would be a claim about a client that never spoke.
 package splice.core.version
 

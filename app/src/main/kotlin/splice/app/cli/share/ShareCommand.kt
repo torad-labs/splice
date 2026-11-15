@@ -1,4 +1,4 @@
-// NEW: LAN share (docs/specs/lan-share.md, Marcos's ruling of 2026-10-24). `splice share`, the server's side: turn
+// LAN share (docs/specs/lan-share.md). `splice share`, the server's side: turn
 // `[share]` on or off in splice.toml and restart so the listener follows, and print, for each command this machine
 // offers, the address another machine adds it by. What is offered is the listener's own answer, asked on loopback, so
 // the list is the daemon's, never a guess from the file. A port another program here holds is refused before the file

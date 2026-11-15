@@ -15,7 +15,7 @@ private const val EFFORT_MAX = "max"
 private const val HIGH_BUDGET_FLOOR = 8_192L
 private const val MAX_BUDGET_FLOOR = 24_576L
 
-/** splice's effort when nothing names one (Marcos wanted high by default, Oct 28). */
+/** splice's effort when nothing names one (high by default). */
 private const val EFFORT_DEFAULT = EFFORT_HIGH
 
 internal class PassthroughEffortLadder {
@@ -23,8 +23,8 @@ internal class PassthroughEffortLadder {
     /** splice's effort words, cheapest first: a vendor rung is placed among them by its position here. */
     private val order = listOf("none", "minimal", EFFORT_LOW, "medium", EFFORT_HIGH, "xhigh", EFFORT_MAX)
 
-    /** [word] on the vendor's [rungs]: the highest rung not above it, so no turn costs more than was asked (Marcos,
-     *  Oct 28: configuration that might be expensive must never be set without the user knowing),
+    /** [word] on the vendor's [rungs]: the highest rung not above it, so no turn costs more than was asked
+     *  (configuration that might be expensive must never be set without the user knowing),
      *  else the cheapest. The word itself where there are no rungs; null for a word that is not an effort. */
     fun onRungs(word: String?, rungs: List<String>?): String? {
         val asked = word?.trim()?.lowercase()

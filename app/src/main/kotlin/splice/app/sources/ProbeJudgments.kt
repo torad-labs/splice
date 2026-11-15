@@ -2,7 +2,7 @@
 //
 // why: the answers lived only in memory, so the first hourly read after a start judged every hour the rollup holds, and
 // decoded every archived perf generation to do it: about 0.9 GB of archives for claudex and 1.2 GB for claude-splice,
-// about 45 GB of allocation in the first 30 s of the 02:28 CT boot on Oct 20, which grew the committed heap to 17.5 GB.
+// about 45 GB of allocation in the first 30 s of a boot on Oct 20, which grew the committed heap to 17.5 GB.
 // A settled hour's answer stands while its rollup is as it was, so it is kept beside the backfill refusal and read back
 // at start; only the hours whose rollup changed, and the hours still settling, are judged against the log.
 package splice.app.sources
@@ -29,7 +29,7 @@ import java.nio.file.Path
 // 3: Oct 23, 2026, a line with nothing after it waits for a late row that may rule its hours out; builds 0153e6371 and
 // bcb857b54 settled those hours as not read under rule 2 (round 15 of #247).
 // 4: Nov 10, 2026, a torn line costs an hour only where the rollup may have counted its probe; the NUL lines a machine
-// stop left that evening kept 7, 8 and 9 PM CT of claude-splice and claudex not read under rule 3.
+// stop left that evening kept three hours of claude-splice and claudex not read under rule 3.
 internal const val TEAR_RULE = 4
 
 /** One hour's answer: the rollup signature it answered, the probes to take off, or why the hour cannot be shown. */

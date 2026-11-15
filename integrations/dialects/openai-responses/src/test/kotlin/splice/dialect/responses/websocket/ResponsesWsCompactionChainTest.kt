@@ -1,4 +1,4 @@
-// Goal (Marcos, 2026-10-25): Claude Code sends a compaction as the previous request plus the summary
+// Goal: Claude Code sends a compaction as the previous request plus the summary
 // instruction and drops the answer it just received, so that answer's tool call stays open on the Responses
 // websocket. Full-sent, the compaction depends on the provider finding the prompt again, and on claudex it missed
 // the cache far more often than a chained turn (0 of 14 chained compactions missed; 17 of 228 warm ones did).
@@ -7,7 +7,7 @@
 // ensure_call_outputs_present), then the compaction's new items follow. A compaction that rewrote its history still
 // full-sends.
 //
-// Since Marcos, 2026-10-27 (unanswered tool calls are closed as aborted and chaining continues), an ordinary turn
+// Since 2026-10-27 (unanswered tool calls are closed as aborted and chaining continues), an ordinary turn
 // that leaves a call open chains the same way, as codex-rs does for every request. A code-mode call on an ordinary turn
 // is the one exception (a code-mode dangling call is flagged and left alone): code mode runs it itself, so the turn
 // full-sends as before and the log says so.
@@ -141,7 +141,7 @@ class ResponsesWsCompactionChainTest {
             assertTrue(rig.logs.any { "chained onto the previous response" in it }, rig.logs.toString())
         }
 
-    /** The live claudex shape (10:36 CT, Oct 25): the answer was reasoning plus code mode's exec call, and the
+    /** The live claudex shape (Oct 25): the answer was reasoning plus code mode's exec call, and the
      *  compaction body carries that reasoning back before the instruction. The echo is the server's own item,
      *  so it is not re-sent; the exec call is closed with code mode's custom output. */
     @Test
@@ -273,7 +273,7 @@ class ResponsesWsCompactionChainTest {
             } + SUMMARIZE
             val sent = responsesRequestJson.parseToJsonElement(frame.json).jsonObject
             // An ordinary turn closes plain calls as aborted and chains; one that leaves code mode's exec open is left
-            // alone and full-sends (Marcos, 2026-10-27). A compaction closes every call either way.
+            // alone and full-sends. A compaction closes every call either way.
             val codeModeOpen = calls.any { (custom, _) -> custom }
             assertEquals(!codeModeOpen, plain.chained, "seed $seed: an ordinary turn chains unless code mode holds one")
             if (!codeModeOpen) {

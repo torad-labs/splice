@@ -1,4 +1,4 @@
-// Every page marks its own nav item whatever address it was opened at (splice-lead, Oct 12, from builder2's "No project"
+// Every page marks its own nav item whatever address it was opened at ("No project"
 // retake: Requests opened with ?project=- marked Accounts). Through the real pages against a stub daemon that answers
 // every read empty: a query, and a page served at a bare address, still mark the page's own item and only that one.
 import { afterAll, beforeAll, expect, test } from "bun:test";

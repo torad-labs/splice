@@ -1968,7 +1968,7 @@ class TransportAttemptStartsTest(@param:TempDir private val tmp: Path) {
  *
  *  A POLICY REFUSAL before any client frame is the vendor's verdict on the REQUEST, so the round ends on it
  *  as its own failure: re-served over SSE, the identical context met the identical refusal (live
- *  2026-10-04, both re-sends that could be attributed: 2:18 to 2:21 and 6:05 PM CT).
+ *  2026-10-04, both re-sends that could be attributed).
  *
  *  ANY failure after a frame of the round stays on the websocket, because the client already holds that
  *  frame, and the turn ends on it as an error the client reads, never as a clean end over the partial. */
@@ -2075,9 +2075,9 @@ class WsRoundFailureTest(@param:TempDir private val tmp: Path) {
 
 /** A plan hold ends when the upstream answers the login again, whichever transport carried the answer.
  *
- *  Oct 25, 01:08 CT: ChatGPT named claudex's 7-day window spent until Oct 30, then reset it early. By 01:45 the
+ *  Oct 25: ChatGPT named claudex's 7-day window spent until Oct 30, then reset it early. Later the
  *  account's own quota read 1% of the week, yet `splice status` still said "out of quota until Oct 30": claudex's turns
- *  are answered over the websocket, and only an HTTP answer ended the hold. A plain HTTP request ended it at 01:46. */
+ *  are answered over the websocket, and only an HTTP answer ended the hold. A plain HTTP request ended it. */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class WsPlanHoldTest(@param:TempDir private val tmp: Path) {
     private val mock = MockChatGptUpstream()

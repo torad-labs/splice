@@ -1,9 +1,8 @@
-// The pre-push runs only the unit test classes a push can affect (test-impact.ts). Simon asked for it on Oct 26 2026, with Marcos's
-// approval: map the changed sources to their tests, include the tests of anything that depends on a changed module, run the
+// The pre-push runs only the unit test classes a push can affect (test-impact.ts). It maps the changed sources to their tests, includes the tests of anything that depends on a changed module, runs the
 // full suite only for a path tools/gate/config/scope.json marks full, and print which mode ran and why.
-// splice-lead settled the reach the same day: a test in any module that reaches a changed file through references is selected, and
+// The reach: a test in any module that reaches a changed file through references is selected, and
 // whatever the reference analysis cannot see selects every test of the module that owns it, plus the tests in other modules that
-// reach that module. This pre-push is the only check while CI is locked, and a wrongly skipped test reaches main, so where the
+// reach that module. A wrongly skipped test reaches main, so where the
 // selection is unsure it selects more.
 import { describe, expect, test } from "bun:test";
 import { scanSource } from "../src/lib/kotlin-source.ts";

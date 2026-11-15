@@ -15,7 +15,7 @@
 // other: a cap with no adj leaves the child unkillable inside its cap, and an adj with no cap orders
 // victims in a box already in trouble.
 //
-// Who lays the cap: Marcos ruled on Oct 25 that Host Shield vendors no splice, so splice's own install lays
+// Who lays the cap: splice's own install lays
 // app-mcp.slice and its ceiling beside an installed hub front, in ~/.local/share/systemd/user, and replaces
 // it on every install (13d0c35c1). A unit of the same name in ~/.config/systemd/user overrides it. Placement
 // still asks systemd for the cap at spawn time ([placed] below) and says so in the log when the answer is

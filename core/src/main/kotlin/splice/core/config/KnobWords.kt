@@ -1,9 +1,9 @@
 // NEW: Oct 13, 2026. The one list of words each word-valued knob takes. A word outside its list is
 // refused by name at every layer (ConfigCoercion), never mapped to a fallback, and GET /api/config sends
-// the list so the console builds the control from it (gap 458, splice-lead). Before this, quotaPoll read
+// the list so the console builds the control from it (gap 458). Before this, quotaPoll read
 // any word but "off" as auto, and showReasoning read any unknown word as thinking, which is not even its
 // default. The budget words lived as a private copy in ConfigCoercion and an internal one in
-// :features-usage, which now reads these. effort and summary are splice's own words too (splice-lead, Oct 13):
+// :features-usage, which now reads these. effort and summary are splice's own words too (Oct 13):
 // how each becomes a vendor's rung stays in the provider modules (DefaultEffortVocabulary, GrokEffortVocabulary,
 // ResponsesEffort), which already map every word listed here.
 package splice.core.config

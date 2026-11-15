@@ -1,4 +1,4 @@
-// Walls for mid-stream re-anchoring (eli design 2026-07-24): the poison tear and committed-tool
+// Walls for mid-stream re-anchoring (design of 2026-07-24): the poison tear and committed-tool
 // rounds MUST refuse continuation (fall back to the honest error terminal); the happy path builds
 // a continuation whose input appends reasoning replay + the partial prose + the resume marker.
 // The translator side pins the salvage payload: what a failed round carries, and when it must not.

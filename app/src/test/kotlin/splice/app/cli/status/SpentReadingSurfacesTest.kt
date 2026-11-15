@@ -1,6 +1,6 @@
 // the three surfaces an operator reads (status, /health, usage) say what a head's CURRENT quota
-// reading at 100% says, before any turn has been refused. Marlin (f7f1e9308): claudex read ready and Fleet OK while
-// its own poll said the week was spent. The ruling: a full reading is not a refusal (claudex served 1,163
+// reading at 100% says, before any turn has been refused. At f7f1e9308 claudex read ready and Fleet OK while
+// its own poll said the week was spent. The rule: a full reading is not a refusal (claudex served 1,163
 // turns on Oct 1 at a week read 100%), so status stays ready and says "week at 100%, resets <reset>", /health names
 // it quotaFull apart from quotaResetAtEpochSeconds, and usage reports the plan window rather than a provider reset.
 // Only a refusal the head holds reads "out of quota until". Driven through the production wiring: ManagedHeadFactory

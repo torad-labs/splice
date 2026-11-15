@@ -8,13 +8,13 @@
 // any head when an account runs dry (the operator's words at V4-64).
 //
 // THE HISTORY THIS FILE CARRIES, because it has been the reverse of itself once already. V4-115
-// (2026-09-17) read the config-isolation ruling — head configurations and details must never leak
+// (2026-09-17) read the config-isolation rule — head configurations and details must never leak
 // into other heads, their wrappers, or the core claude binary sessions — as covering transcripts,
 // rewrote this class into an un-link that gave every head a REAL private tree, and left cross-head
-// resume only as an explicit `-r SESSION_ID` copy (ResumeAcrossHeads). Two days later the operator
-// named that a regression: "we implemented a way for any head to join any session from other heads,
-// that's now gone" — while the operator's own splice.toml still said share = [..., "projects"] and
-// the code treated the spelling as inert. So the ruling stands for CONFIGURATION (settings, rosters,
+// resume only as an explicit `-r SESSION_ID` copy (ResumeAcrossHeads). Two days later it was
+// named a regression: any head must be able to join any session from other heads,
+// and that was gone — while the operator's own splice.toml still said share = [..., "projects"] and
+// the code treated the spelling as inert. So the rule stands for CONFIGURATION (settings, rosters,
 // hooks, MCP) and transcripts are SHARED SESSION STATE: `projects` is the second dispositioned escape
 // from head isolation, beside `sessions`, and — unlike V4-115's un-link — it is decided by the
 // operator's share/isolate policy. A head whose policy isolates projects keeps a real tree and
@@ -132,7 +132,7 @@ internal class ProjectsLink(
     /** A head that isolates projects but whose [dst] is still a link from when it shared them gets an EMPTY private
      *  tree, as a fresh head does, and the shared tree is not touched. Nothing is copied: a session crosses heads the
      *  one way head isolation allows, an explicit `-r` copy with its model rewritten (ResumeAcrossHeads), so the head
-     *  needs none of the shared transcripts up front (splice-lead, Oct 13). The empty tree is made beside the link and
+     *  needs none of the shared transcripts up front (Oct 13). The empty tree is made beside the link and
      *  renamed over it once the link is removed, so dst is missing only for that instant; a failure puts the link back
      *  and is logged, and the next launch tries again. */
     private fun ownFromLink(dst: Path, log: LogSink) {

@@ -1,4 +1,4 @@
-// NEW: labels only (Eli's ruling via splice-lead, 2026-10-12). Through /api/perf/turns as Requests and Usage read it:
+// NEW: labels only. Through /api/perf/turns as Requests and Usage read it:
 // a login is shown by its label and grouped and filtered by its ref, rows written with an email before refs existed
 // read as that same login, the files are never rewritten, and a key keeps the name it was recorded under.
 package splice.usage.perf

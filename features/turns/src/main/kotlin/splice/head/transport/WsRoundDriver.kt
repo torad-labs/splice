@@ -50,7 +50,7 @@ internal class WsRoundDriver(
         val drive = inputs.drive
         clearAccountBoundary(runner, drive)
         val first = driveRound(runner, drive, inputs)
-        // Marcos, 2026-10-27: a socket that failed before any output (the 60-minute limit, a close, a drop) is
+        // A socket that failed before any output (the 60-minute limit, a close, a drop) is
         // replaced at once on the same login, with no backoff, the way codex-rs reconnects. HTTP is for a second
         // failure. The first round already reported its bypass, so the chain is clear and the new socket full-sends.
         val result = if (first is WsRoundResult.NeedsSse && first.freshSocket) {

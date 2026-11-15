@@ -25,7 +25,7 @@
  *   · THERE IS NO LIST, AND ONE NAMED EXEMPTION. Every census is graded against zero, and this library, its
  *     command and its tests are judged like any other file: a law that exempts its own declaration
  *     site is a law that can be broken from there. Their pattern strings are not invocations, so they
- *     need no allowance. The one exemption (President for Marcos, 2026-10-10) is a Dockerfile STAGE,
+ *     need no allowance. The one exemption (2026-10-10) is a Dockerfile STAGE,
  *     never a file: the comment line directly above its FROM reads `NO-PYTHON-EXEMPT[date]: reason`, and
  *     only that stage's instructions are skipped. It lets the upgrade rehearsal run a published 0.3.x as
  *     its users run it (that shim needs the interpreter). The interpreter in any other stage of the same
@@ -469,8 +469,8 @@ export function wall(root: string): WallReport {
 // WHY A GATE LEG WAS NOT ENOUGH, measured rather than argued. On 2026-09-18 a webui commit (1b56f197) added a fresh
 // python3 subprocess to density.mjs and the branch went red — but not at write time, and not at commit time. It went
 // red HOURS LATER, the next time somebody happened to run the wall. A rule that fails late is a rule the tree teaches
-// against in the meantime. The operator's ruling: "it should be a PreToolUse hook that refuses the write and returns
-// with a message."
+// against in the meantime. The requirement: a PreToolUse hook that refuses the write and returns
+// a message.
 //
 // WHAT IT REFUSES, and nothing more: any .py file written into the repo; a write whose TEXT runs or installs the
 // interpreter (invokesPython, judged on what the call would put into the file); and a caller line running a file with

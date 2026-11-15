@@ -1,4 +1,4 @@
-// Oct 11, 2026 (fin): an hour recorded before the plan split is split from the request log wherever the log holds
+// Oct 11, 2026: an hour recorded before the plan split is split from the request log wherever the log holds
 // the hour's own requests, account by account; an hour the log does not hold keeps its mixed figures, unsplit.
 package splice.app.sources
 

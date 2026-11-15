@@ -43,7 +43,7 @@ internal class GrokQuotaParser : QuotaParse {
     /** A body with no `creditUsagePercent` is no reading, even when it names its period (Oct 10, 2026: a quiet week
      *  answered that way). xAI's own client reads the field as optional, so its absence says nothing about use, and a
      *  zero made from it would be a figure splice invented. UsageAnswer turns it into "the provider reported no usage",
-     *  never 0% and never the last week's reading kept as today's (splice-lead, Oct 12). */
+     *  never 0% and never the last week's reading kept as today's. */
     override fun parse(body: JsonObject, now: Long): QuotaSnapshot? {
         val config = body["config"] as? JsonObject ?: return null
         val period = config["currentPeriod"] as? JsonObject

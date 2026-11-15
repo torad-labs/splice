@@ -27,7 +27,7 @@ fail() {
   exit 1
 }
 
-# shim-22 (Marcos, 2026-10-22): the wrapped plain `claude` must never be left unusable by splice. While main() is
+# shim-22: the wrapped plain `claude` must never be left unusable by splice. While main() is
 # getting a launch for it, any failure (no daemon, a failed handshake, no recipe) runs Claude Code directly on its own
 # login instead, as it would unwrapped, and says so once. Named heads keep failing in words: they have no direct path.
 CLAUDE_DIRECT=0
@@ -380,12 +380,11 @@ heap_ceiling_flags() {
 # The daemon's JVM options, in ONE place: every daemon start runs `splice daemon` through this file (the user unit's
 # ExecStart, the cold start below, and the CLI's raw spawn in DaemonLaunch.kt), so this line is what every install
 # runs. Override with SPLICE_JVM_OPTS.
-# The heap's ceiling is 16 GiB, or 75% of RAM where that is less (Marcos, Oct 25, 2026, approving a cap near 16 GB:
-# "I dont want the cap to be the only way we keep things under control"; this replaces his Oct 17 "splice can't have
-# a budget"). On Oct 25 the 75% ceiling let committed heap reach 39 GiB on a 120 GiB machine while live data peaked
-# at 5.6 GiB, about a third of 16 GiB; 2 GB threw OutOfMemoryError 20 times on Oct 2. G1HeapRegionSize=32m keeps the
-# regions G1 picked under the old ceiling: under -Xmx16g alone it picks 8 MB, and every object of 4 MB or more, a
-# large request body among them, would be allocated humongous instead of from 16 MB up.
+# The heap's ceiling is 16 GiB, or 75% of RAM where that is less (a cap near 16 GB, which is not the only way
+# the heap is kept under control). On Oct 25 the 75% ceiling let committed heap reach 39 GiB on a 120 GiB machine while
+# live data peaked at 5.6 GiB, about a third of 16 GiB; 2 GB threw OutOfMemoryError 20 times on Oct 2.
+# G1HeapRegionSize=32m keeps the regions G1 picked under the old ceiling: under -Xmx16g alone it picks 8 MB, and every
+# object of 4 MB or more, a large request body among them, would be allocated humongous instead of from 16 MB up.
 # What keeps the heap near its live data is how G1 sizes it, measured Oct 19 on
 # the live daemon: about 3 GiB live after every collection sat in 10.5 GiB committed, because the default
 # MaxHeapFreeRatio=70 lets committed reach 3.3 times live, and boots peaked at 24 to 28 GiB because the default
@@ -849,8 +848,8 @@ sha256_hex() {
 
 # An ANTHROPIC_AUTH_TOKEN this shell inherited that is one of this daemon's own keys (the management key, or the turn
 # key every non-native head plants in its sessions) is splice's, never the caller's: a launch from inside such a session,
-# as a headless read a seat starts, would carry it to a head that forwards the caller's credential, which refuses it 401
-# and Claude Code retries until its caller gives up (Temple read, Oct 13 2:22 PM CT: 22 refusals in 9.5 min, 204 that
+# as a headless read a session starts, would carry it to a head that forwards the caller's credential, which refuses it
+# 401 and Claude Code retries until its caller gives up (one read saw 22 refusals in 9.5 min, 204 that
 # day). It is dropped before the recipe applies, so a head that plants its own token still sets it below, and a token the
 # person set themselves rides on untouched. Values are compared in this shell only, never printed or sent. The word a
 # LAN-share node's sessions carry, splice-lan (RemoteLaunches.kt, NODE_TOKEN), is splice's too, and dropped the same way.
@@ -879,7 +878,7 @@ drop_own_token() {
 # runs it: a function's positional parameters are its own, so the argv has to be exec'd from in here.
 # Claude Code's own subcommands, as `claude --help` lists them under Commands on 2.1.296. One of these as the first
 # argument is a command, not a prompt: the recipe's flags in front of it make "agents" a prompt and its own options hit
-# the root parser (`claude agents --json`: "error: unknown option '--json'", the Temple's 10 s poll, Oct 13).
+# the root parser (`claude agents --json`: "error: unknown option '--json'", a 10 s poll).
 native_subcommand() {
   case ${1-} in
     agents | attach | auth | auto-mode | doctor | gateway | import | install | logs | mcp | plugin | plugins | purge | \
@@ -892,7 +891,7 @@ native_subcommand() {
 # A subcommand (native_subcommand) takes the recipe's environment, so it reads the head's config and reaches the head,
 # and runs the recipe's Claude Code binary with the caller's arguments exactly as given: none of the recipe's flags go
 # in front of it, and it is not recorded as a session.
-# MAX_THINKING_TOKENS the caller set rides over the recipe's default (splice-lead, Oct 13): a headless caller that bounds
+# MAX_THINKING_TOKENS the caller set rides over the recipe's default: a headless caller that bounds
 # its thinking keeps that bound, and a launch with none set gets the recipe's value.
 apply_recipe() {
   drop_own_token

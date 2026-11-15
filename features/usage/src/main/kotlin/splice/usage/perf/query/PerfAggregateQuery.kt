@@ -13,7 +13,7 @@ import splice.core.util.PerfWorkBudget
  * The live recorder's copy of a minute is the newer one, so the files answer only for the minutes before the ones it
  * still holds. Until Nov 11, 2026 both were read for the whole period and a live minute replaced its file by its
  * start time. A read that coarsens the files (any longer than a few minutes) no longer has that start time, so both
- * copies counted: for 6:42 to 6:52 AM CT that day the files held 92 completions, the live recorder 31 of the same,
+ * copies counted: for ten minutes that day the files held 92 completions, the live recorder 31 of the same,
  * and the summary answered 123.
  *
  * One minute is both's: the first one the live recorder holds, when the daemon started partway through it. Its file

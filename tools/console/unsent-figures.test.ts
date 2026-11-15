@@ -1,5 +1,5 @@
 // A request splice ended before any attempt asked no provider, so its pane has no token tiles, neither "Not reported"
-// nor zeros, and Attempts 0 stands alone (fin, Oct 12). A request that was sent and got no counts back draws its Tokens
+// nor zeros, and Attempts 0 stands alone. A request that was sent and got no counts back draws its Tokens
 // as one dash on a dashed track, "Not reported" under the pointer (Requests' goal, Oct 28: a request with no counts is a
 // dash, never a word per figure). Through the real Requests page against a stub daemon.
 // Changed 2026-10-29 by the shared request view's pass (round 4): the passed prototype draws that one slot as a dashed

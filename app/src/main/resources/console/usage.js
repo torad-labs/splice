@@ -169,7 +169,7 @@ function fold(into, g) {
   if (g.plan_value_usd != null) into.planValue = (into.planValue ?? 0) + g.plan_value_usd;
   into.uncounted += g.unpriced_uncounted_requests ?? 0; into.undeclared += g.unpriced_undeclared_requests ?? 0;
   into.local += g.unpriced_local_requests ?? 0; into.unanswered += g.unanswered_requests ?? 0;
-  into.failed += g.failed_requests ?? 0; into.limited += g.rate_limited_requests ?? 0; // TurnUsage's outcome mix (gap 408)
+  into.failed += g.failed_requests ?? 0; into.limited += g.rate_limited_requests ?? 0; // TurnUsage's outcome mix
   return into;
 }
 /** The window's totals across every command that answered: per account, model, session and day, as the daemon folded them. */
@@ -392,7 +392,7 @@ function acctLabel(head, label, name) {
  *  it is drawn, since it would read as one of the roster's. */
 let goneBook = null;
 // what a login splice carried requests for but no longer holds says it is, on its card and its row: never Signed out, which
-// is a login of the roster to sign in again (lead look at the installed console, Oct 29)
+// is a login of the roster to sign in again
 const GONE_WORD = "No longer in splice";
 function goneOrder() {
   const src = D.all ?? null;
@@ -657,7 +657,7 @@ function goneCard(g, mx) {
       + topRow(leadFig(s, [], { out: true }), headEnd(withChips ? [g.head] : [], false))
       + `<header><span class="nm">${label}</span></header>`
       // where a signed-out login has its Sign in, the plain fact: splice holds this login no more, so there is nothing to sign
-      // in again here, and what it sent stays below (lead look at the installed console, Oct 29)
+      // in again here, and what it sent stays below
       + `<div class="outbox"><span class="state mute">${GONE_WORD}</span></div>` + noReq(s) + thruCells(s, mx, false) + (mine.length ? `<span class="drill" aria-hidden="true">${DRAW.go}</span>` : "") + `</article>` };
 }
 
@@ -736,11 +736,11 @@ let splitDrawn = false;
  *  has not read is a dashed rung. Before the first read it is the same shape in stripes. */
 const boardHead = (cards = null) => {
   if (!cards) return `<div class="bandhead upb-head"><div class="upb-lead"><h2>Plans and keys</h2><p class="upb-hero">${GHOST.bar(9)}</p><p class="upb-key"><span><i class="lim" aria-hidden="true"></i>Limits</span><span><i aria-hidden="true"></i>Counted by splice</span></p></div><div class="upb-lad" aria-hidden="true"><p class="kicker">Highest used</p><div class="upb-rungs">${Array.from({ length: 14 }, () => `<i class="upb-rung gh"></i>`).join("")}</div></div></div>`;
-  // ONE WHOLE ON EVERY PAGE (lead look, Oct 29): the logins whose limits splice reads, as the top bar and Settings count them,
+  // ONE WHOLE ON EVERY PAGE: the logins whose limits splice reads, as the top bar and Settings count them,
   // so a signed-out login, one whose provider reports no limits and one splice no longer holds are not in it. The ladder
   // keeps a dashed rung for a login of the roster with no reading; a login splice no longer holds has no rung.
   const plans = cards.filter((c) => c.kind === "plan" && !c.gone), read = plans.filter((c) => c.used >= 0), held = read.filter((c) => c.used >= 100).length;
-  // A LOGIN OUT OF ONE MODEL IS NOT AT ITS LIMIT, AND IS NOT FREE EITHER (Nov 12, 2026): six of eight Claude logins had
+  // A LOGIN OUT OF ONE MODEL IS NOT AT ITS LIMIT, AND IS NOT FREE EITHER: six of eight Claude logins had
   // used up Fable, the model every session asked for, and this read "0 of 10 logins at their limit". The models some login
   // cannot serve are counted beside it, the one out on most logins first, in the words `splice status` uses.
   const byModel = new Map();
@@ -989,7 +989,7 @@ function chartSlices() {
   });
 }
 const sumParts = (xs) => xs.reduce((a, [, v]) => a + v, 0);
-// WHERE THE CHART'S COUNT BEGINS (Nov 10): its columns are whole calendar days from midnight (or the 5 hours' quarter
+// WHERE THE CHART'S COUNT BEGINS: its columns are whole calendar days from midnight (or the 5 hours' quarter
 // hours), while Results by command counts the last 1, 24 or 168 hours to the minute; each says where it starts, so the
 // two request counts read as two windows, never as one figure counted twice
 const sinceWords = () => { const d = new Date(since()); return d.toDateString() === NOW.toDateString() ? clock(d) : `${DAY[d.getDay()]} ${clock(d)}`; };

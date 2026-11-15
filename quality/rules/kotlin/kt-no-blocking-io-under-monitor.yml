@@ -46,7 +46,7 @@
 #     IDENTIFIER, so renaming a state monitor to `ioLock` would defeat it; that is a lie a reviewer
 #     sees in the diff, and the alternative (no exemption) is a permanently-red wall on correct code,
 #     which trains authors to reach for ast-grep-ignore instead.
-#   2026-09-29 CT: `WrappedHead.WRAP_LOCK` serializes a filesystem transaction: wrap, unwrap and
+#   2026-09-29: `WrappedHead.WRAP_LOCK` serializes a filesystem transaction: wrap, unwrap and
 #     updater reconciliation swap one symlink and its atomic state file. There is no guarded heap
 #     map; status and state reads do not take this monitor. Concurrent swaps must not interleave.
 #     Like ioLock, this is IO-only, not a state-read lock. A nested state monitor remains invalid.

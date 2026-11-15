@@ -1,4 +1,4 @@
-// Sessions at his width (builder3's sweep, Oct 12): one column of his 269 cards ran 17,900 px down beside the open
+// Sessions at a wide desktop width: one column of 269 cards ran 17,900 px down beside the open
 // session. Since Oct 15 a project is one block of one-line rows and the blocks run down as many columns as fit, so cards
 // no longer pair across and 1440 is no longer one column. Since Oct 27 a session opens in place, as a plate under its own
 // row spanning its block, and the page is the one scroll; the project tiles stand in equal columns that fill their row.
@@ -17,7 +17,7 @@ const row = (n: number, p: string, over: Record<string, unknown> = {}) => ({
   project: { id: `/work/${p}`, name: p, label: p, source: "folder", folder: "/work" }, ...over,
 });
 const columns = [
-  row(1, "temple", { waiting_for: "input" }), ...Array.from({ length: 39 }, (_, i) => row(i + 2, "temple")),
+  row(1, "web-app", { waiting_for: "input" }), ...Array.from({ length: 39 }, (_, i) => row(i + 2, "web-app")),
   ...Array.from({ length: 20 }, (_, i) => row(i + 41, "splice")),
 ];
 let sessions: Record<string, unknown>[] = columns;
@@ -82,14 +82,14 @@ test("a session opens in place under the rows before it, across its block, and t
   expect(m.pageScrolls).toBe(true);
 }, 30_000);
 
-// His project tiles at 3394 (splice-lead, Oct 12; marlin, Oct 13): the tiles stand in equal columns that fill the row,
+// Project tiles at 3394: the tiles stand in equal columns that fill the row,
 // each carrying its bar of states on the scale every tile shares, and a name is cut only when its own column cannot hold
 // it, with the whole name in the tile's title. A tile on a wrapped line is the width of the tiles above it, and every line
 // starts at the row's left edge. What the figures count is said once for the page, in the head line's legend ("live / all"),
 // and no tile repeats a unit word (Sessions' goal, Oct 28: "Words are said once").
 test("in a crowded tile row the tiles are equal columns that fill the row, each with its bar and no unit word, the legend saying live / all once, a cut name whole in its title", async () => {
-  const twelve = ["temple", "splice", "grailseeker-backend", "Splice-CPO", "hostshield", "assistant", "Splice-Animator",
-    "Splice-Writer", "twork", "qgre-engine-labs", "grailseeker-console"];
+  const twelve = ["web-app", "splice", "billing-backend-api", "Docs-Web", "toolbox", "notes", "Docs-Mobile",
+    "Docs-Writer", "batch", "engine-labs", "billing-console"];
   const names = [...twelve, ...twelve.map((p) => `${p}-two`)];
   sessions = [...names.flatMap((p, i) => [row(100 + 2 * i, p, { status: "working" }), row(101 + 2 * i, p)]),
     { ...row(200, "loose"), project: undefined, cwd: "/home/notes" }];

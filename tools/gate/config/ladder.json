@@ -74,7 +74,7 @@
       "task": "moduleLawRead",
       "inputs": ["**/build.gradle.kts", "settings.gradle.kts", "gradle/module-law.txt", "tools/gate/src/commands/module-law.ts"],
       "commit": ["**/build.gradle.kts", "settings.gradle.kts", "gradle/module-law.txt"],
-      "why": "The module law read from the build files without gradle, so a forbidden project dependency stops at the seat's own commit. Gradle's configuration enforces the same law (splice.module-law.gradle.kts), but only at pre-push, behind the build gate's line: on Oct 13, 2026 a920eeef1 waited 2,344 s for the build lock and then failed in 15 s on muse depending on the Responses dialect.",
+      "why": "The module law read from the build files without gradle, so a forbidden project dependency stops at the contributor's own commit. Gradle's configuration enforces the same law (splice.module-law.gradle.kts), but only at pre-push, behind the build gate's line: on Oct 13, 2026 a920eeef1 waited 2,344 s for the build lock and then failed in 15 s on muse depending on the Responses dialect.",
       "command": ["bun", "tools/gate", "module-law"]
     },
     {
@@ -87,7 +87,7 @@
     {
       "task": "consoleTests",
       "inputs": ["app/src/main/resources/console/**","tools/console/**","tools/gate/src/lib/repo.ts","package.json","bun.lock"],
-      "why": "The console's own tests, through the real pages in Chromium against a stub daemon (tools/console): every page loads its nine classic scripts without an error, the pilot's ticking rule, and each page's reads, controls and words as a person sees them. Until Nov 3, 2026 no row ran them: a console script reached dev checked by `node --check` alone, and kit.js shipped a regex tag-stripper CodeQL then flagged (PR 450). Every job that runs the gate installs Playwright's Chromium for this row (ci.yml's ladder, release.yml's build, and tools/gate/test/console-browser.test.ts holds them to it); on this machine the tests use the browser Playwright installed, or SCREEN_REVIEW_BROWSER.",
+      "why": "The console's own tests, through the real pages in Chromium against a stub daemon (tools/console): every page loads its nine classic scripts without an error, the pilot's ticking rule, and each page's reads, controls and words as a person sees them. Until Nov 3, 2026 no row ran them: a console script reached dev checked by `node --check` alone, and kit.js shipped a regex tag-stripper CodeQL then flagged (PR 450). Every job that runs the gate installs Playwright's Chromium for this row (ci.yml's ladder, release.yml's build, and tools/gate/test/console-browser.test.ts holds them to it); locally the tests use the browser Playwright installed, or SCREEN_REVIEW_BROWSER.",
       "command": ["bun", "test", "tools/console"]
     },
     {

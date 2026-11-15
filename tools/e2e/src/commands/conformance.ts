@@ -248,7 +248,7 @@ export function gradeCheck(dialect: string, body: Json, check: Check): string | 
     }
     case "reasoning": {
       // A self-served chat runtime gets an earlier turn's reasoning back as that turn's `reasoning_content`, which its
-      // chat template renders in the turn's think block (Marcos, 2026-10-23): whole, on the one turn that carried it.
+      // chat template renders in the turn's think block: whole, on the one turn that carried it.
       const hits = items.filter((i) => i["role"] === check.role && i["reasoning_content"] === check.text);
       if (hits.length === 1) return null;
       const asText = items.some((i) => itemText(i).includes(check.text.slice(0, 40)));

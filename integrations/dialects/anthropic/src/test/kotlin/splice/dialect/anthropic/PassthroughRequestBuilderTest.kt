@@ -154,12 +154,12 @@ class PassthroughRequestBuilderTest {
         assertEquals("high", thinkingReq("20000").effort())
         assertEquals("low", thinkingReq("1").effort()) // > 0
         assertEquals("low", thinkingReq("8191").effort())
-        // Oct 28, Marcos: max must not be an unchangeable default. A turn with no
+        // max must not be an unchangeable default. A turn with no
         // budget, no effort of Claude Code's and no setting gets splice's default, high (it was max).
         assertEquals("high", thinkingReq(null).effort())
     }
 
-    // Oct 28 (Marcos: nothing expensive is configured without the user knowing or having an option to change it): a configured effort reaches kimi's wire when Claude Code names none.
+    // Nothing expensive is configured without the user knowing or having an option to change it: a configured effort reaches kimi's wire when Claude Code names none.
     // Rewritten from PT-002's "a configured effort never moves the wire bytes", which froze max there.
     @Test
     fun `a configured effort reaches the wire for thinking-present-without-budget`() {

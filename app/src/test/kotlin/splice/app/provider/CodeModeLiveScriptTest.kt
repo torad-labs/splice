@@ -1,4 +1,4 @@
-// NEW: V4-456, reversed Oct 12 (Marcos's decision): a GPT code-mode script never reaches the client, in any block, while
+// NEW: V4-456, reversed Oct 12: a GPT code-mode script never reaches the client, in any block, while
 // the model writes it. What stays live is the connection: a scripted upstream sends one script delta at a time and
 // waits, with a deadline, for the client to read a keepalive from the head's response before it sends the next. A head
 // that stops keeping the stream alive while a long script is written lets the deadline pass, so that delta is recorded

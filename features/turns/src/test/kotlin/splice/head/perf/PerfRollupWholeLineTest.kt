@@ -1,5 +1,5 @@
 // The hourly rollup counts a turn only once that turn's request-log line is whole on disk, so a stop or a halt that
-// cuts the file lane leaves the rollup behind the log, never ahead of it (Oct 11, 3:26 to 3:28 AM CT).
+// cuts the file lane leaves the rollup behind the log, never ahead of it (Oct 11).
 package splice.head.perf
 
 import org.junit.jupiter.api.Assertions.assertEquals

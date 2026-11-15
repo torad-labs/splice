@@ -1,5 +1,5 @@
 // NEW: V4-444 (heap) — where a session's transcript is, found once rather than on every Sessions poll. A 60 s JFR profile
-// of the installed daemon (splice-lead, Oct 3, 6:39 PM CT) put about 28% of 0.8 GB/s of allocation on the Sessions route:
+// of the installed daemon (Oct 3) put about 28% of 0.8 GB/s of allocation on the Sessions route:
 // every row's activity line located its transcript by listing every directory under each projects tree (5,393 on the
 // operator's machine) and statting <dir>/<id>.jsonl in each until it hit, and a session with no transcript walked all of
 // them on every poll.
@@ -17,7 +17,7 @@
 //
 // THE SESSION'S OWN PROJECT DIRECTORY is tried before any walk when the caller knows the session's working directory:
 // Claude Code files a transcript under `projects/<cwd with every character that is not a letter or digit as '-'>/`
-// (27 of 27 transcripts of the live sessions on the operator's machine, Oct 3). The probe trusts that placement: it takes
+// (27 of 27 transcripts of the live sessions on the a live machine, Oct 3). The probe trusts that placement: it takes
 // the first tree whose own directory holds the transcript, and walks only when none does.
 //
 // A MISS is remembered with the modification times of every projects tree it walked and of the session's own project
@@ -30,7 +30,7 @@
 // ONLY A NEW PROJECT DIRECTORY SENDS A REMEMBERED LOOKUP BACK TO THE WALK (Oct 13). A session's own project directory
 // moves with every transcript Claude Code creates in it, and in a folder many sessions work in that is every few
 // minutes: each move sent every remembered lookup for that folder through the walk of every project directory, and
-// /api/sessions took 7 s warm and 23.5 s cold (splice-usage, splice-sessions). A copy that appears in the session's own
+// /api/sessions took 7 s warm and 23.5 s cold. A copy that appears in the session's own
 // directory is exactly what the probe of that directory finds, so when only own directories moved, the probe runs and
 // the walk does not. When a tree's own time moved, a new project directory may hold a copy, and the walk runs as before.
 package splice.client.transcript

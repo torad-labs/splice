@@ -31,7 +31,7 @@ describe("the pre-push build tree", () => {
   test("holds the committed bytes, not the shared checkout's uncommitted edits", () => {
     const root = repo();
     const sha = sh(root, "rev-parse", "HEAD");
-    writeFileSync(join(root, "a.txt"), "half-finished edit by another seat\n");
+    writeFileSync(join(root, "a.txt"), "half-finished edit by another session\n");
     writeFileSync(join(root, "untracked.txt"), "not committed\n");
     const tree = preparePrePushTree(root, sha);
     expect(readFileSync(join(tree.path, "a.txt"), "utf8")).toBe("first\n");

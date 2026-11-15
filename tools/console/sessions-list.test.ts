@@ -53,7 +53,7 @@ async function open(): Promise<Page> {
 const card = (page: Page, name: string) => page.locator(".card.s", { has: page.locator(".name", { hasText: new RegExp(`^${name}$`) }) });
 
 test("clearing a search closes the ended sessions it opened", async () => {
-  sessions = () => [row("a-1", "api", "website"), row("b-1", "builder", "temple"), row("o-1", "oldie", "attic", { availability: "gone" })];
+  sessions = () => [row("a-1", "api", "website"), row("b-1", "builder", "harbor"), row("o-1", "oldie", "attic", { availability: "gone" })];
   turns = () => [];
   const page = await open();
   try {
@@ -69,7 +69,7 @@ test("clearing a search closes the ended sessions it opened", async () => {
 }, 40_000);
 
 test("every lamp names its state, so a stalled row and a working row read apart", async () => {
-  sessions = () => [row("s-st", "stuck", "temple", { status: "working" }), row("s-wk", "busy", "temple", { status: "working" }), row("a-1", "api", "website")];
+  sessions = () => [row("s-st", "stuck", "harbor", { status: "working" }), row("s-wk", "busy", "harbor", { status: "working" }), row("a-1", "api", "website")];
   turns = () => [
     { session: "s-st", id: "t-st", phase: "stream", idle_ms: 120_000, seen_output: true, age_ms: 200_000, retries: 0 },
     { session: "s-wk", id: "t-wk", phase: "stream", idle_ms: 1_000, seen_output: true, age_ms: 5_000, retries: 0 },
@@ -87,7 +87,7 @@ test("every lamp names its state, so a stalled row and a working row read apart"
 test("a working row counts its time from when it started working, with or without a request in flight", async () => {
   let reads = 0;
   const started = new Date(Date.now() - 10 * MIN - 5_000).toISOString();
-  sessions = () => { reads += 1; return [row("s-w", "worker", "temple", { status: "working", status_updated_at: started, updated_at: new Date().toISOString() }), row("a-1", "api", "website")]; };
+  sessions = () => { reads += 1; return [row("s-w", "worker", "harbor", { status: "working", status_updated_at: started, updated_at: new Date().toISOString() }), row("a-1", "api", "website")]; };
   // splice holds a request for it on every other read, three seconds into that request
   turns = () => (reads % 2 ? [{ session: "s-w", id: `t-${reads}`, phase: "stream", idle_ms: 500, seen_output: true, age_ms: 3_000, retries: 0 }] : []);
   const page = await open();
@@ -104,16 +104,16 @@ test("a working row counts its time from when it started working, with or withou
 
 test("a session is listed once, and its ended namesake is reached from it", async () => {
   sessions = () => [
-    row("n-live", "lenovo", "temple", { availability: "stale", updated_at: new Date(Date.now() - 40 * MIN).toISOString() }),
-    row("n-gone", "lenovo", "temple", { availability: "gone", updated_at: new Date(Date.now() - 3 * 60 * MIN).toISOString() }),
+    row("n-live", "laptop", "harbor", { availability: "stale", updated_at: new Date(Date.now() - 40 * MIN).toISOString() }),
+    row("n-gone", "laptop", "harbor", { availability: "gone", updated_at: new Date(Date.now() - 3 * 60 * MIN).toISOString() }),
     row("a-1", "api", "website"),
   ];
   turns = () => [];
   const page = await open();
   try {
-    await page.locator("#q").fill("lenovo");
-    await expect(card(page, "lenovo")).toHaveCount(1, { timeout: 10_000 });
-    await card(page, "lenovo").locator("button.name").click();
+    await page.locator("#q").fill("laptop");
+    await expect(card(page, "laptop")).toHaveCount(1, { timeout: 10_000 });
+    await card(page, "laptop").locator("button.name").click();
     await expect(page.locator(`.pane a[href="#n-gone"]`)).toBeVisible({ timeout: 10_000 });
   } finally {
     await page.close();

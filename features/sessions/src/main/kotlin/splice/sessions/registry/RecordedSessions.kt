@@ -11,7 +11,7 @@ import splice.core.util.EnvReader
  *  only what the record keeps, so its status and client are unknown and it has no process to reach.
  *
  *  A live session no launch joins to a head takes the head [seen] recorded for it, so the head it joined by its
- *  requests survives a restart (Eli's Reading, §4, Oct 11). That is one with no launch record, and one whose record
+ *  requests survives a restart (§4). That is one with no launch record, and one whose record
  *  no longer matches (its head was removed, or another head owns its port now): its requests are the evidence left. */
 public class RecordedSessions(
     private val source: SessionSource,
@@ -41,7 +41,7 @@ public fun interface HeadOfSession {
 /** [source]'s listing with every live session no launch joins to a head joined to the head its requests arrive on
  *  ([arrivals]). A session its launch record joins is never moved by this. One whose record no longer matches (its
  *  head was removed, or another head owns the declared port) has no join, so its requests decide like any other.
- *  One with no join and no request since the upgrade keeps the route [source] gave it (Eli's Reading, §4, Oct 11). */
+ *  One with no join and no request since the upgrade keeps the route [source] gave it (§4). */
 public class ArrivalJoinedSessions(
     private val source: SessionSource,
     private val arrivals: HeadOfSession,

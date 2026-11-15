@@ -1,4 +1,4 @@
-// NEW: Oct 12, 2026 (splice-lead) — what a history scan learned from each transcript, kept while the file is the same
+// NEW: Oct 12, 2026 — what a history scan learned from each transcript, kept while the file is the same
 // file. A refresh lists and stats the files and reads again only a new or changed one; a file that is gone is forgotten.
 package splice.client.transcript
 

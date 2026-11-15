@@ -3,7 +3,7 @@
 // ChatGPT refused every Playground send with 400 "Input must be a list"). ManagedHeadFactory registers a head's
 // provider when it assembles it; the probe reads it at call time. A head assembled again replaces its entry.
 //
-// A COMMAND WITH TWO OR MORE LOGINS (failover within one provider, splice-lead's 6:06 PM CT followup) also registers
+// A COMMAND WITH TWO OR MORE LOGINS (failover within one provider) also registers
 // its pool and the logins it was built from, so the Playground sends as the login a real turn would use next: the
 // pool's own read-only answer (AccountPool.nextTargetLabel), never the head's default credential.
 package splice.app.probe

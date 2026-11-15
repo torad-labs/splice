@@ -24,7 +24,7 @@ import kotlin.random.Random
 
 private const val RUNS = 2_000
 
-/** Anthropic's answer to claude-splice at 2:52:10 PM CT on Oct 27, 2026, verbatim (daemon.log). */
+/** Anthropic's answer to claude-splice on Oct 27, 2026, verbatim (daemon.log). */
 private const val UPDATED_TERMS =
     "We've updated our Consumer Terms and Privacy Policy. You'll need to accept them in claude.ai with the email " +
         "in /status to continue."

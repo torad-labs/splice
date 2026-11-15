@@ -1,5 +1,5 @@
-// A Compare pane whose command is signed out signs it in where it failed, and follows the sign-in splice holds (Marcos,
-// Nov 11, 2026: "TRhe whol state machine system for login is broken"). The pane ran its own loop over a sign-in: it read
+// A Compare pane whose command is signed out signs it in where it failed, and follows the sign-in splice holds (the login
+// state machine was broken). The pane ran its own loop over a sign-in: it read
 // "Not completed" however the sign-in had failed, and went on waiting for five minutes on one a restarted splice no
 // longer held. It runs the steps every page shares now (SIGNIN, api.js), and a sign-in whose pane is closed ends on
 // splice too. Through the real page against a stub daemon in the routes' own shapes (LoginRoutes.kt).

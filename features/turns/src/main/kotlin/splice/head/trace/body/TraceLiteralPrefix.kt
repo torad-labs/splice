@@ -1,4 +1,4 @@
-// NEW: trace cost (Oct 13, splice-lead through splice-runtime-lead). A conversation's next request repeats its whole
+// NEW: trace cost. A conversation's next request repeats its whole
 // history before the turn's new messages, and every byte of it was escaped, Gear-scanned and hashed again each turn,
 // to find chunks the pack already held. A body now reuses the stored chunks that lie inside the opening it shares with
 // a recent body of the same pack, and only what follows is encoded, chunked and hashed.

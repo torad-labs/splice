@@ -82,7 +82,7 @@ internal class CodeModeSaveHeap(private val heap: HeapReservations) {
     ): HeapLease {
         var bytes = SAVE_METADATA_BYTES
         // One conversation's records from the registry's index, and their ids as a set: scanning every record of
-        // every conversation once per record held a head stop's save at full CPU past the halt (Oct 19, 11:36 PM CT).
+        // every conversation once per record held a head stop's save at full CPU past the halt (Oct 19).
         val own = CodeModeRecordKeys.of(records, key)
         val retained = own.mapTo(HashSet(own.size)) { it.id }
         own.forEach { bytes = HeapJson.add(bytes, snapshotBytes(it, retained)) }

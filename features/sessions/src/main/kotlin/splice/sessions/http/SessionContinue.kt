@@ -11,19 +11,19 @@
 //
 // The relaunch of Oct 26 was a move onto each session's HEAD command in a NEW terminal: two sessions started as
 // `claude` came back "Not logged in" in the head's config folder, reviews came back without their agent, and nobody
-// could find the seats it moved. What a session was started with is splice's to read ([SessionRelaunches]), and the
+// could find the sessions it moved. What a session was started with is splice's to read ([SessionRelaunches]), and the
 // pane it ran in is kept so it comes back there (SessionTerminal.hold, restart, release).
 //
 // WHAT A MOVE IS. The session goes on under another head: Claude Code is ended where it runs and started again on the
 // chosen command with `-r <id>`, and that launch's cross-head resume makes a copy of the session beside it under a new
 // id, with its rows on the head's model (ResumeAcrossHeads, TranscriptModelRewrite), recording the joint the page
-// draws (ModelMoves). The original is left as it was (the President's ruling on V4-169, Oct 13). A move between heads
+// draws (ModelMoves). The original is left as it was (V4-169). A move between heads
 // is that explicit `-r` copy and nothing else (head isolation); the answer names the copy's id, which the page opens.
 // A move to another model on the same command, whose rows all stay, goes on as the same session. Nothing is sent for
-// the person: his next message runs on the new model (the mock, hitstop).
+// the person: his next message runs on the new model.
 //
 // WHAT IS KEPT. A move that came back is handed to [MoveLedger] with what it left, the command and the model it ran on
-// before he pressed, and that moment, so the transcript's mark reads "Continued on [to] · from [from]" (fin, hitstop).
+// before he pressed, and that moment, so the transcript's mark reads "Continued on [to] · from [from]".
 //
 // WHERE IT GOES ON. In the terminal it ran in. The client is ended with its own `/exit`, never by killing the
 // terminal: a session he started from his own shell leaves that shell in front, and the resume is typed there as he
@@ -35,13 +35,14 @@
 //
 // WHAT IS REFUSED. A session waiting on an answer: `/exit` would land in the question. One running background shells,
 // at its prompt or once the move stopped its turn: `/exit` would land in "Background work is running", whose focused
-// answer stops that work (PR #247's fifth review). One holding a feedback draft the person has not sent, before the
+// answer stops that work. One holding a feedback draft the person has not sent, before the
 // move or once it stopped the turn: Claude Code 2.1.310 answers `/exit` with "You have 1 unsent feedback draft · Enter
-// to review & send · Esc to discard and exit", and sending or discarding it is the person's call (FeedbackDrafts; Oct
-// 27, 08:30 CT, a relaunch left a session sitting at that question). The draft is named before anything else that
+// to review & send · Esc to discard and exit", and sending or discarding it is the person's
+// call (FeedbackDrafts; a relaunch left a
+// session sitting at that question). The draft is named before anything else that
 // keeps a running session where it is, a turn, a question, background shells or no splice command, since it alone
 // waits on the person whatever else holds the session. One already on that command
-// with no other model picked; another model on the same command is a move like any other (p176: his Opus week is
+// with no other model picked; another model on the same command is a move like any other (one model's week is
 // spent and Fable on the same plan has room).
 // One splice cannot reach (the refusals SessionDrive gives). One whose prompt holds words he has not sent: `/exit`
 // would be sent with them. A working turn is stopped first, as Stop would, and once it has stopped the prompt is
@@ -313,7 +314,7 @@ public class SessionContinue(
 
     /** End the client in [pane] with its own exit, and resume once it has gone. A turn in flight is stopped first,
      *  and the stopped message Claude Code puts back, with anything he typed while it ran, is his: it is answered back
-     *  to him, and emptied only on his say-so, never to get the move through (Marlin, move check 4). The prompt is read
+     *  to him, and emptied only on his say-so, never to get the move through. The prompt is read
      *  and `/exit` typed in the pane's turn, refused when anything was given to the session since the press came or
      *  it runs a turn the move did not stop, and nothing else is typed there until the client has left: a message
      *  that landed after `/exit` would reach the shell it leaves in front. A client that does not leave in time keeps

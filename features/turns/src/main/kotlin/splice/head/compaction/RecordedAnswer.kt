@@ -2,7 +2,7 @@
 // a non-stream retry reads. When Claude Code's streamed compaction dies it falls back to stream:false with
 // the same request, and every dialect sends the same upstream bytes either way, so the fallback IS that
 // compaction: it follows the detached drive's recording instead of starting a second read beside it
-// (hack-program on glml53, 00:58 CT: a 65 ms later fallback prefilled 646k again and starved the first).
+// (a 65 ms later fallback prefilled 646k again and starved the first).
 // The frames are this head's own (SseFrameWriter's `event: X\ndata: {json}\n\n`), so the fold reads a
 // closed shape: the message from its start, each block from its start and deltas, and the stop fields and
 // usage from the message delta. Nothing is derived here; every value is copied off a frame (L3).

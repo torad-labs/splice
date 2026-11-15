@@ -1,4 +1,4 @@
-// One unnamed login carries one name on every page (Marcos' console-wide naming, finish pass of Oct 29: a login nobody named reads
+// One unnamed login carries one name on every page (console-wide naming: a login nobody named reads
 // "Account", told apart from the others by one ordinal from one order). The order is the daemon's accounts list, counted over
 // every unnamed login in it, whatever page names them and however that page groups them; where only one login is unnamed it
 // reads plain "Account"; a login a person named keeps its name. Through the real Accounts and Usage pages against one stub
@@ -124,7 +124,7 @@ test("logins the roster no longer holds are numbered on after its logins, and no
     const page = await browser.newPage({ viewport: { width: 1440, height: 1600 } });
     try {
       await page.goto(`http://127.0.0.1:${server.port}/usage.html`);
-      // goal changed Oct 29 (lead look at the installed console): such a login reads "No longer in splice", never Signed out
+      // goal changed Oct 29: such a login reads "No longer in splice", never Signed out
       await expect(page.getByText("No longer in splice").first()).toBeVisible({ timeout: 20_000 });
       const read = () => page.evaluate(() => [...document.querySelectorAll("article.pcard.gone .nm")].map((n) => (n.textContent ?? "").replace(/\s+/g, " ").trim()));
       await expect.poll(async () => (await read()).length, { timeout: 20_000 }).toBeGreaterThanOrEqual(2);

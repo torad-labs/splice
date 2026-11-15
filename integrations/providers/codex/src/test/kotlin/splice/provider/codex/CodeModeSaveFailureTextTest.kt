@@ -15,8 +15,8 @@ import splice.provider.codex.state.save.StateDiskSpace
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** a code-mode save that fails says why. On Sep 28 the root disk was full from 10:57 to
- *  11:03 AM CT, and every claudex save read only "code-mode state persistence failed", which the
+/** a code-mode save that fails says why. On Sep 28 the root disk was full for several
+ *  minutes, and every claudex save read only "code-mode state persistence failed", which the
  *  operator read as a code-mode bug. */
 class CodeModeSaveFailureTextTest {
     private val json = Json

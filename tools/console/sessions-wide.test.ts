@@ -1,6 +1,6 @@
-// An open session on Sessions as he reads it at his width (Oct 27; on Oct 26 scrolling the chat felt
+// An open session on Sessions at a wide desktop width (scrolling the chat felt
 // cramped, the tool call UI read as very busy and horizontal space was wasted). The
-// session he opens takes the board's whole width under its own row, so no block stands beside it and no column runs
+// session opened takes the board's whole width under its own row, so no block stands beside it and no column runs
 // empty beside it; and Earlier shows the newest few namesakes with the rest behind one count. GOAL CHANGED (Oct 29, the
 // open-plate pass of Sessions, whose passed prototype collects the calls): the conversation reads down one column of words
 // with no run of calls between them; every call the session made stands together in one trail, in the plate's right column
@@ -31,8 +31,8 @@ const sessions: Row[] = [
   row("d-1", "delta", "dune", 8),
   row("e-1", "ember", "elm", 9), row("e-2", "echo", "elm", 10),
   // one live session with six ended namesakes before it
-  row("n-0", "lenovo", "elm", 11),
-  ...Array.from({ length: 6 }, (_, i) => row(`n-${i + 1}`, "lenovo", "elm", 60 * (i + 2), { availability: "gone" })),
+  row("n-0", "laptop", "elm", 11),
+  ...Array.from({ length: 6 }, (_, i) => row(`n-${i + 1}`, "laptop", "elm", 60 * (i + 2), { availability: "gone" })),
 ];
 const call = (index: number, id: string, tool: string, input: Record<string, unknown>, ts: number) => [
   { index, role: "assistant", tool, tool_use_id: id, text: JSON.stringify(input), ts },
@@ -112,7 +112,7 @@ async function board(page: Page) {
   return { list, plate, head, blocks, beside };
 }
 
-test("at his width the open session spans the board under its row, the space beside the first block is filled, and the rest continue below it", async () => {
+test("at a wide desktop width the open session spans the board under its row, the space beside the first block is filled, and the rest continue below it", async () => {
   const page = await opened(2548, 1240, 1.5, "b-1");
   try {
     const { list, plate, head, blocks, beside } = await board(page);
@@ -144,7 +144,7 @@ test("at 3822 the open session takes every column but one, and the other blocks 
   }
 }, 40_000);
 
-test("at his width the calls stand together in the right column beside the words, and the words read straight on in one column", async () => {
+test("at a wide desktop width the calls stand together in the right column beside the words, and the words read straight on in one column", async () => {
   const page = await opened(2548, 1240, 1.5, "b-1");
   try {
     const words = await boxOf(page, '.pane .log .msg.agent:has-text("I will read the parser first.")');

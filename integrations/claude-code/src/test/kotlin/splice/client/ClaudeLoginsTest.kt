@@ -234,7 +234,7 @@ class ClaudeLoginsTest {
         assertEquals("B-gen1", live(), "an unreadable .claude.json is refused too")
     }
 
-    // splice-lead 2026-09-26: a copy stored before V4-276 has no record, so it is stale by construction,
+    // 2026-09-26: a copy stored before V4-276 has no record, so it is stale by construction,
     // like this box's max.credentials.json from 2026-09-20.
     @Test
     fun `a legacy copy is never put back, and the refusal names the remedy`() {

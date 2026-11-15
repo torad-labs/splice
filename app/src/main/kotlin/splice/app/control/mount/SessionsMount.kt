@@ -76,7 +76,7 @@ internal class SessionsMount(
         ),
     )
 
-    /** End: the session closed where it runs, armed by what it would lose (SessionEnd, Marlin's p218 ruling). */
+    /** End: the session closed where it runs, armed by what it would lose (SessionEnd). */
     private val ends = SessionEnd(wiring.drive, RegistryHandover(sessions, ProcessWaiter()), sessions)
 
     /** V4-444: the console's note to one live session, written to its inbox socket. */

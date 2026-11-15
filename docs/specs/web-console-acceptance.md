@@ -5,11 +5,11 @@ a normal-size browser window, as that person: for each question, can I do it, ho
 take, and did I have to already know where it was. Wherever the answer is "open a terminal", "read a
 log" or "edit a TOML file", the console does not do it yet.
 
-Owner and gate: Marlin (operator, 2026-09-27: Marlin approves every screen and every page).
-Draft 2, 2026-09-27: draft 1 (a7143498c) with Marlin's changes. Merged from three sources: what
+Owner and gate: the operator approves every screen and every page (2026-09-27).
+Draft 2, 2026-09-27: draft 1 (a7143498c) with the owner's changes. Merged from three sources: what
 splice can do today (source-capabilities.md), what users of other proxy consoles can do
-(source-proxy-consoles.md), and how splice has actually been used on the operator's machine (kept
-private, off this repo). Sections follow what splice users want most (Splice-CPO demand research,
+(source-proxy-consoles.md), and how splice has actually been used in practice (kept
+private, off this repo). Sections follow what splice users want most (demand research,
 2026-09-25): getting in, limits, models, other plans inside Claude Code, then seeing what several
 agents are doing. Inside each section, questions are ordered by how often the evidence asks for them;
 the build follows that order. "(new)" marks something splice cannot do at all today, in the console

@@ -1,7 +1,7 @@
 // Nov 3, 2026: every account used to show its email, and Claude accounts no longer all did, a recent regression.
 // That day five Claude cards went two to four hours without their email: splice renewed
-// each login's token between 1:47 and 3:32 PM CT, the email was filed under the old token, and the new token was
-// proved only when the Accounts page next read the login, at 5:58 PM. The goal, as the person at the console sees it:
+// each login's token over those hours, the email was filed under the old token, and the new token was
+// proved only when the Accounts page next read the login. The goal, as the person at the console sees it:
 // a Claude login keeps its email through every token renewal, shows the email Anthropic reports for the account now,
 // and a card names only the account its own token proves.
 //
@@ -45,8 +45,8 @@ private const val MINUTE_MS = 60_000L
 private const val HOUR_MS = 60 * MINUTE_MS
 private const val RUNS = 200
 private const val STEPS = 12
-private val TORAD = ClaudeAccountIdentity("uuid-torad", "marcos@torad.example")
-private val SEEK = ClaudeAccountIdentity("uuid-seek", "marcos@seekapps.example")
+private val TORAD = ClaudeAccountIdentity("uuid-torad", "alice@work.example")
+private val SEEK = ClaudeAccountIdentity("uuid-seek", "alice@personal.example")
 private val NOTHING: Pair<String?, String?> = null to null
 
 class ClaudeRenewedLoginEmailTest {
@@ -91,7 +91,7 @@ class ClaudeRenewedLoginEmailTest {
     fun `a renewal shows the email Anthropic reports for the account now`() = runTest {
         fileLogin(paths, "old", expiresInMs = MINUTE_MS)
         proved("old", TORAD)
-        val moved = ClaudeAccountIdentity(TORAD.uuid, "marcos@torad-new.example")
+        val moved = ClaudeAccountIdentity(TORAD.uuid, "alice@work-new.example")
         val profile = ClaudeProfileCall { token -> if (token == "renewed") moved else awaitCancellation() }
         val login = wire(paths, profile, renew)
 

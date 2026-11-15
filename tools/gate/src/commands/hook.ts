@@ -3,13 +3,13 @@
 // one line.
 //
 // A RED CHECK BLOCKS. A gradle run that exits nonzero stops the commit or the push. Nothing is waived by the
-// file a failure names or by who holds that file: the output names each failing file and the seat that holds it
-// (.git/seat-locks), so the blocked seat knows whom to message. The one exception is a COLLISION, a failure
+// file a failure names or by who holds that file: the output names each failing file and the session that holds it
+// (.git/seat-locks), so the blocked session knows whom to message. The one exception is a COLLISION, a failure
 // another gradle run in this checkout leaves behind (see isCollision). A collision reruns the tasks that failed or
 // were never reached, once; a red after the rerun, or a second collision, fails.
 //
-// STAGED BYTES ONLY. Pre-commit judges the index, never the worktree: the walls read the staged blobs, so a seat commits
-// only its own lines of a shared file and another seat's half-finished edit never blocks a commit. The worktree is
+// STAGED BYTES ONLY. Pre-commit judges the index, never the worktree: the walls read the staged blobs, so a session commits
+// only its own lines of a shared file and another session's half-finished edit never blocks a commit. The worktree is
 // pre-push's to judge, and its verdict says so.
 //
 // EVERY KOTLIN FILE HAS A CHECK. A Kotlin path maps to the gradle tasks that compile it: its module (compile,
@@ -40,7 +40,7 @@
 // timings.jsonl (prepush-timing.ts): sha, scope, gradle seconds, configuration seconds, the ten slowest tasks, verdict.
 //
 // NOTHING HERE IS SKIPPABLE. There is no environment switch and no flag. `--no-verify` is the only bypass, and
-// it is forbidden to seats.
+// it is forbidden to sessions.
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -172,7 +172,7 @@ export function changedPaths(root: string): string[] {
   return gitPaths(root, ["diff", "--cached", "--name-only", "--no-renames", "--diff-filter=ACMRTD", "-z"]);
 }
 
-/** The worktree's paths that differ from HEAD, tracked or untracked: the uncommitted work of every seat. */
+/** The worktree's paths that differ from HEAD, tracked or untracked: the uncommitted work of every session. */
 export function dirtyPaths(root: string): string[] {
   const tracked = gitPaths(root, ["diff", "--name-only", "-z", "HEAD"]);
   const untracked = gitPaths(root, ["ls-files", "--others", "--exclude-standard", "-z"]);
@@ -285,7 +285,7 @@ export function failedTasks(output: string): string[] {
 /** A gradle wrapper or launcher process: the one kind of process another gradle run in this checkout can be. */
 const GRADLE_PROCESS = /GradleWrapperMain|gradle-wrapper\.jar|org\.gradle\.launcher\./;
 
-/** Whether another gradle process is live on this machine, the evidence an EOF or a missing results file needs before
+/** Whether another gradle process is live on the machine, the evidence an EOF or a missing results file needs before
  *  it is taken for another run's collision. Read from the process list, every process but this one. A list that cannot
  *  be read is no evidence. */
 export function liveGradleElsewhere(): boolean {
@@ -369,14 +369,14 @@ function redNote(judged: Judged): string {
   return judged.collidedAgain ? " (a collision again on the rerun)" : "";
 }
 
-/** The seat that holds a repo-relative file's lock in .git/seat-locks, or "no seat lock". */
+/** The session that holds a repo-relative file's lock in .git/seat-locks, or "no seat lock". */
 export function seatOwner(root: string, path: string): string {
   const commonDir = resolve(root, gitText(root, ["rev-parse", "--git-common-dir"]));
   const owner = join(commonDir, "seat-locks", path.replaceAll("/", "%"), "owner");
   return existsSync(owner) ? readFileSync(owner, "utf8").trim() : "no seat lock";
 }
 
-/** What a red run names: its failing tasks, and each file the output names with the seat that holds it. */
+/** What a red run names: its failing tasks, and each file the output names with the session that holds it. */
 export function failureLines(root: string, output: string): string[] {
   const lines: string[] = [];
   const failed = failedTasks(output);
@@ -396,15 +396,15 @@ function spawnEnv(extra: Record<string, string>): Record<string, string> {
 }
 
 /** The pre-push run's own options. --continue runs every module's suites past a failure, so a red push names every
- *  failure at once instead of one per 15 to 45 minute run (splice-lead, Oct 12); the push still fails on any of them.
+ *  failure at once instead of one per 15 to 45 minute run; the push still fails on any of them.
  *  --profile writes build/reports/profile/: configuration time and each task's time, which the timing line of the push reads. */
 const PRE_PUSH_GRADLE_OPTIONS = ["--parallel", "--build-cache", "--continue", "--profile"];
 /** How often the branch is looked at while gradle runs: a push whose branch moved is refused at the end, so its run stops. */
 const MOVED_POLL_MS = 20_000;
 /** The ladder legs that read no code: the commit's title, its attribution trailers, the no-Python wall and the ast-grep walls. They
- *  run before gradle starts, and gradle starts only once they pass. simon measured them at 6 to 22 s. Started beside gradle, a red one
- *  stopped the run, and the stop also ended the warm pre-push daemon: four ended between 9:00 and 9:43 PM CT on Oct 19, three logging
- *  "cancel requested but timed out", and a cold daemon costs a guessed 50 to 150 CPU-seconds (temple plan 2026-10-19, cut 3). */
+ *  run before gradle starts, and gradle starts only once they pass. They take 6 to 22 s. Started beside gradle, a red one
+ *  stopped the run, and the stop also ended the warm pre-push daemon: four ended in one evening, three logging
+ *  "cancel requested but timed out", and a cold daemon costs a guessed 50 to 150 CPU-seconds. */
 const NO_CODE_LEGS: ReadonlySet<string> = new Set(["prTitle", "attribution", "noPython", "gateRules"]);
 
 /** The ktlint tasks a module's `check` runs, by name. The plugin wires `check` to one task per source set and to the script task,
@@ -635,7 +635,7 @@ async function judgeTips(lay: Layout, refs: readonly PushedRef[], deps: HookDeps
 }
 
 /** Judges one pushed commit in the pre-push build tree. The shared checkout is never read: its uncommitted edits belong to
- *  other seats, and a seat's half-finished work must not redden another seat's push. */
+ *  other sessions, and a session's half-finished work must not redden another session's push. */
 async function judgeTip(
   lay: Layout,
   tip: string,
@@ -1011,8 +1011,8 @@ function refTipNow(root: string, ref: string): string | undefined {
   return read.status === 0 && text.length > 0 ? text : undefined;
 }
 
-/** THE MOVED-TIP CHECK. A judgement takes minutes, and the seats share one checkout: a peer committing meanwhile moves
- *  the very ref this push is about. Measured on 2026-10-10 (three times: 05:53, 07:33 and 10:01 CT): the hook judged
+/** THE MOVED-TIP CHECK. A judgement takes minutes, and the sessions share one checkout: a peer committing meanwhile moves
+ *  the very ref this push is about. Measured three times on 2026-10-10: the hook judged
  *  and printed one sha, a peer committed above it in the checkout during the gradle run, and origin took the peer's
  *  commit. The judged sha never existed on the remote, which gave it no push event and no workflow run, and GitHub
  *  reports the pair as ONE push (before from the first, head from the last), which is what hid it.
@@ -1215,7 +1215,7 @@ export function readLadder(root: string): Leg[] {
 }
 
 /** A `bun test` leg's per-test timeout. Bun's 5 s default fails a test that spawns git or the gate a few times whenever the
- *  pre-push runs it beside gradle on a loaded machine (promote.test.ts and hook.test.ts both timed out so, Oct 12), so every
+ *  pre-push runs it beside gradle on a loaded machine (promote.test.ts and hook.test.ts both timed out so), so every
  *  bun test leg, narrowed or whole, runs with this one bound and no test needs its own. */
 const BUN_TEST_TIMEOUT_MS = "30000";
 

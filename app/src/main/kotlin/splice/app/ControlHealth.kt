@@ -1,5 +1,5 @@
 // NEW: the control plane's per-head readings and /health body, moved out of ControlPlane.kt by their own seam, behavior
-// unchanged (concentration, Oct 13, splice-lead). The heads route and /health share the readings; /health adds the
+// unchanged (concentration). The heads route and /health share the readings; /health adds the
 // head set's verdict, the booted config's identity and whether the MCP hub runs.
 package splice.app
 

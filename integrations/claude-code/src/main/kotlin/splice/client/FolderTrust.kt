@@ -38,7 +38,7 @@ internal class FolderTrust(private val home: Path, private val reads: JsonStateR
      *  trust the operator granted and nothing on disk says so: resumed on another command, the move
      *  would stop at the safety check with his agent already ended. The record is what carries that
      *  one grant across, and every launch not carrying it takes the record back out, so the grant
-     *  never outlives the move that needed it (Marlin, Oct 11). */
+     *  never outlives the move that needed it. */
     fun seed(state: JsonObject, launch: TrustedLaunch?, operator: JsonObject): JsonObject {
         val carried = launch?.let { carried(it, operator) }.orEmpty()
         val projects = state[PROJECTS_FIELD] as? JsonObject ?: JsonObject(emptyMap())

@@ -806,7 +806,7 @@ const ARMS: readonly Arm[] = [
   },
   {
     // A body with no Content-Length is sent chunked, and the daemon's ingress charges a chunked body at its
-    // whole cap: six launches at once were five 529s on a 2 GB daemon (console-lead, Oct 11). The stand-in
+    // whole cap: six launches at once were five 529s on a 2 GB daemon. The stand-in
     // below charges a body with a length 1 and a chunked one 4 against a budget of 6, so six concurrent launches
     // fit only when every one states its length.
     name: "concurrent launches all reach the daemon without being refused",

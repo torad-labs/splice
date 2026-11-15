@@ -250,7 +250,7 @@ public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys
     /** Post-exchange collision handling is only for labels that cannot be resolved before OAuth. A sign-in that came
      *  back as the account the command's first login holds adds nothing. It filed a second login for that one
      *  account: the first login's file carries no label of ours, so the pool's own match for a returning account
-     *  never saw it (Marcos had hit this before when adding new accounts, Nov 11, 2026). */
+     *  never saw it (seen when adding new accounts, Nov 11, 2026). */
     public fun writeTokenDerived(
         kind: AuthKind.OAuth,
         primaryFile: Path,

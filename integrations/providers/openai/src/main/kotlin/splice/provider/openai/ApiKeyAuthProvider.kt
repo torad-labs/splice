@@ -94,7 +94,7 @@ public class ApiKeyAuthProvider(
     }
 
     // A key is told apart from the one it replaced by a short digest of its value, never the value: the first four
-    // bytes of its SHA-256 (console BUILD row "a key is its own account", Marcos, Oct 8).
+    // bytes of its SHA-256 (console BUILD row "a key is its own account", Oct 8).
     private fun fingerprint(key: String): String =
         MessageDigest.getInstance("SHA-256").digest(key.toByteArray()).take(FINGERPRINT_BYTES)
             .joinToString("") { "%02x".format(it) }

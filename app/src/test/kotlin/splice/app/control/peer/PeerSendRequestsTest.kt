@@ -99,10 +99,10 @@ class PeerSendRequestsTest {
         val rate = PeerSendRate(WallClock { now })
         val limit = PeerLimit(perMinute = 60, burst = 3)
 
-        repeat(3) { assertEquals(SendAllowance.Go, rate.take("temple", limit)) }
-        assertEquals(SendAllowance.Wait(1), rate.take("temple", limit))
+        repeat(3) { assertEquals(SendAllowance.Go, rate.take("harbor", limit)) }
+        assertEquals(SendAllowance.Wait(1), rate.take("harbor", limit))
         now += 1_000
-        assertEquals(SendAllowance.Go, rate.take("temple", limit))
+        assertEquals(SendAllowance.Go, rate.take("harbor", limit))
         repeat(20) { assertEquals(SendAllowance.Go, rate.take("tell", PeerLimit())) }
     }
 }

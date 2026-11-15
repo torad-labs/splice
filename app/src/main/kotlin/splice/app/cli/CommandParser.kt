@@ -20,7 +20,7 @@ internal fun interface CommandFactory {
     /** Null when the verb's own arguments do not parse (the caller prints usage). */
     operator fun invoke(args: Array<String>): Command?
 
-    // V4-309: `splice restart --help` restarted the live daemon (Sep 26, 7:42 AM CT), because the arm
+    // V4-309: `splice restart --help` restarted the live daemon, because the arm
     // kept the one word it knew and dropped the rest. Every arm takes only the words its verb names;
     // any other word, a help flag included, is null, so usage prints and nothing runs.
 

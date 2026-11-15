@@ -1,4 +1,4 @@
-// NEW: Oct 11, 2026 (fin) — whether a plan covers a request is a fact about the ACCOUNT that carried it, so the
+// NEW: Oct 11, 2026 — whether a plan covers a request is a fact about the ACCOUNT that carried it, so the
 // rollup asks the head's accounts rather than reading it off the price.
 package splice.head.usage
 

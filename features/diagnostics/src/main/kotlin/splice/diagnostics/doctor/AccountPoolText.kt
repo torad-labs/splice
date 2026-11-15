@@ -84,7 +84,7 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
         )
     }
 
-    /** A command that runs on Claude Code's own logins with none on this machine: nobody has signed in yet, which is
+    /** A command that runs on Claude Code's own logins with none on this host: nobody has signed in yet, which is
      *  one thing to do and no limit to wait out. Until Nov 11, 2026 a new install read "every account is out (no reset
      *  time reported)" with "Wait for the earliest reset above", beside one "Sign in again" warning per login place. */
     public fun neverSignedIn(view: HeadAccountPoolView): Boolean = view.accounts.isNotEmpty() &&
@@ -144,9 +144,9 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
         return read + unread
     }
 
-    /** A pool down to its last usable login says so, with the earliest reset among the held ones (splice-lead, Oct 13:
-     *  claude-splice ran on one live login most of the day, and nothing said the next limit had no fallback). Null for
-     *  a pool of one, which never had a fallback, and for a pool with two or more open. */
+    /** A pool down to its last usable login says so, with the earliest reset among the held ones (a
+     *  claude-splice head ran on one live login most of the day, and nothing said the next limit had no fallback).
+     *  Null for a pool of one, which never had a fallback, and for a pool with two or more open. */
     private fun lastLeft(safe: HeadAccountPoolView): String? {
         val open = safe.accounts.filter { it.available && it.credential.present }
         if (safe.accounts.size < 2 || open.size != 1) return null

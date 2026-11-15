@@ -312,7 +312,7 @@ class HeapIngressTest {
         try {
             val port = server.engine.resolvedConnectors().single().port
             // A console button: a POST whose small body its route never reads, then an immediate reread, every time
-            // on the one connection the client keeps alive (marlin's 502, Oct 12).
+            // on the one connection the client keeps alive (a 502 seen on 2026-10-12).
             Socket("127.0.0.1", port).use { socket ->
                 socket.soTimeout = 5000
                 val output = socket.getOutputStream()

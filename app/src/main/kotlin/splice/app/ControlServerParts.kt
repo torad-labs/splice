@@ -1,5 +1,5 @@
 // NEW: the two control-server parts built from the daemon's environment alone, moved out of ControlPlane.kt by their
-// own seam, behavior unchanged (concentration, Oct 13, splice-lead): the guard every control request passes, and the
+// own seam, behavior unchanged (concentration): the guard every control request passes, and the
 // cold successor a restart hands the bound control port to.
 package splice.app
 
@@ -41,7 +41,7 @@ internal class ControlServerParts(
         ),
         daemon.mcpAccess,
         // Oct 19, 2026: the peers whose own keys open Door.PEER (docs/specs/peer-messaging.md 3.1).
-        PeersWiring().store(log),
+        PeersWiring().store(log, topology.reservedPeerNames),
     )
 
     /** Pin the environment override to the live state directory, not its parent: the wrong parent

@@ -108,7 +108,7 @@ internal object QuotaCredentialHeaders {
     }
 }
 
-/** What a usage endpoint's 200 says (Marlin's ruling, Oct 10, 2026). Windows are a reading. A body naming an error is
+/** What a usage endpoint's 200 says. Windows are a reading. A body naming an error is
  *  a failure, so the last reading stays with its time. Anything else is the provider saying it has no usage for this
  *  account (Kimi's `{}`): the tracker drops the older reading instead of drawing it as today's. */
 internal object UsageAnswer {

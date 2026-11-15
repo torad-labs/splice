@@ -25,8 +25,8 @@ class StatuslineJsonNullTest {
 
     @Test
     fun `a null workspace current_dir falls through to cwd instead of rendering the word null`() {
-        val line = render("""{"workspace":{"current_dir":null},"cwd":"/home/someone/mythos-repo"}""")
-        assertTrue(line.contains("mythos-repo"), "cwd is the documented fallback: $line")
+        val line = render("""{"workspace":{"current_dir":null},"cwd":"/home/someone/acme-repo"}""")
+        assertTrue(line.contains("acme-repo"), "cwd is the documented fallback: $line")
         assertFalse(line.contains("null"), "a JSON null must never reach the bar as text: $line")
     }
 }

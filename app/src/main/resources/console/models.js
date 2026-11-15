@@ -1,7 +1,7 @@
 // Models: every command he runs, what it serves and how it is doing, every model on every plan and key with its window
 // and price, and what applies inside a project. Create a command from a template or a custom endpoint, change its model,
 // window and system prompt, run the fix splice offers, and choose whether plain `claude` runs through splice.
-// BUILT AS DRAWN (Splice-Animator/design/console/models.html), on the daemon's own routes: /api/heads, /api/topology,
+// BUILT AS DRAWN (the console design, models.html), on the daemon's own routes: /api/heads, /api/topology,
 // /api/models, /api/projects, /api/add, /api/doctor, /api/logs, /api/claude-head. Where the drawing and the daemon
 // disagree on a fact the daemon wins, and the element shows only where the fact exists. Rename is out of 0.4.0, and
 // Remove is not on this page yet.
@@ -55,7 +55,7 @@ const ui = { rm: null, gone: new Set(), restartDue: false, sign: null, keyin: nu
 
 /** Every read the page draws from. With [draw], the page draws as soon as the commands and their models answer, and
  *  again as each slower read lands: the sessions listing took 4 s and more, doctor 3 s, and Models once sat blank 17 s
- *  waiting on all of them in a row (walk on d0ec523b5). What has not landed reads Reading where it shows ([pending]).
+ *  waiting on all of them in a row. What has not landed reads Reading where it shows ([pending]).
  *  With [lists] false it asks only what moves, /api/heads and /api/sessions, and keeps the other seven as they were read:
  *  topology, models, claude-head, projects, doctor, local runtimes and config change when someone saves or edits a file.
  *  The page's own writes and Read again leave it true. A read of the lists records when it asked them and the commands it
@@ -130,14 +130,14 @@ const listsDue = () => data.listsTicks >= LISTS_MS / TICK_MS || Date.now() - dat
 const topology = () => data.topo?.topology ?? {};
 function window_(row) { return row?.context_window ?? null; } // null: the provider published none (v0.4.0 section 9: never 0)
 // a command added beside another on one profile (claude-openrouter-side-project) is that profile's provider, though its
-// provider key is the name it was given (marlin p228: its pane read "side-project" where every other names its provider)
+// provider key is the name it was given (its pane read "side-project" where every other names its provider)
 function familyByCmd(cmd) {
   const p = (data.profiles ?? []).filter((x) => x.command && (cmd === x.command || cmd.startsWith(`${x.command}-`)))
     .sort((x, y) => y.command.length - x.command.length)[0];
   return p ? famOf(p) : undefined;
 }
 // a local provider splice has no name for reads as the runtime that answers it, Ollama or LM Studio, never its TOML key
-// in lower case (/api/models/local, spec 9i; marlin, Oct 12)
+// in lower case (/api/models/local, spec 9i)
 const runtimeName = (provKey) => (data.local ?? []).find((p) => p.provider === provKey)?.runtime ?? undefined;
 /** When a command is held at a limit and when it comes back: every login that rides it has a window at its limit, and the
  *  first of them to clear brings the command back. Null when some login has room or none is known; { at: null } when a
@@ -452,7 +452,7 @@ function draftState(c) {
 }
 const logsOf = (key) => ui.logs[key];
 // Remove: two presses, and what stays is said before the second. A command a session is on says who, and each name opens it.
-// ---------- one command's Stop and Restart (gap 398), POST /api/heads/{head}/stop and /restart ----------
+// ---------- one command's Stop and Restart, POST /api/heads/{head}/stop and /restart ----------
 // The first press reads the sessions mid-request on this command (kit.js's midRequest). Restart with none restarts at
 // once, as Restart splice does. Stop always asks, because the command then serves nothing until it is restarted.
 const HEAD_ACT = { stop: ["Stop", "Stopped", "Not stopped"], restart: ["Restart", "Restarted", "Not restarted"] };
@@ -530,7 +530,7 @@ async function removeCommand(key) {
   if (res.status === 409) { ui.rm = { key, refused: res.body?.live_sessions ?? [] }; render(); return; }
   if (res.status === 404) { ui.rm = null; ui.gone.add(key); Object.assign(ui, { open: null, draft: null, said: null }); render(); return; }
   if (!res.ok) {
-    // why it was refused, in the words fin gave each cause; the daemon logged the findings and answers which cause it was
+    // why it was refused, in a word for each cause; the daemon logged the findings and answers which cause it was
     console.warn(`models: removing ${key} answered ${res.status}: ${(res.body?.findings ?? []).join("; ")}`);
     const failed = res.body?.reason === "changed" ? { word: "Changed on disk", act: "reread" }
       : res.body?.reason === "config" ? { word: "Config error", act: "raw" } : { word: "Not removed", act: "" };
@@ -1083,7 +1083,7 @@ function whereSection(c, d, st) {
     + `<div class="rt-node rt-cmd" style="--c:${colorOf(c.family)}"><div class="rt-nh"><span class="lamp inline ${k.cls}" aria-hidden="true">${k.lamp}</span>`
     + `<input class="field num rt-port${dirt(d.port !== was.port)}" id="h-port" value="${esc(d.port)}" inputmode="numeric" spellcheck="false" autocomplete="off" aria-label="Port on this computer"${s.port ? "" : ' aria-invalid="true"'}>`
     + `${bad(s.port, "Not a port")}</div>`
-    // THE PREFIX IS A FIELD, NOT A NAME (Nov 10): drawn as a round pill in the command's colour it read as a command chip
+    // THE PREFIX IS A FIELD, NOT A NAME: drawn as a round pill in the command's colour it read as a command chip
     // called "claude-bonsai--", trailing dashes and all. The dashes are the daemon's own discovery prefix, the start of every
     // model id this command lists in Claude Code's picker, so the field says what it is and wears a field's shape.
     + `<div class="rt-pfxrow"><label class="rt-flabel" for="h-prefix">Model ids start with</label><input class="field mono rt-pfx${dirt(d.prefix !== was.prefix)}" id="h-prefix" value="${esc(d.prefix)}" spellcheck="false" autocomplete="off" aria-label="Model prefix"${s.prefix ? "" : ' aria-invalid="true"'}>`
@@ -1427,7 +1427,7 @@ async function readLog(key) {
   ui.logWhy[key] = why ? why[0].toUpperCase() + why.slice(1) : res.ok ? null : "Log not read";
   render();
 }
-// ---------- every setting as this command runs it (gaps 459 and 457) ----------
+// ---------- every setting as this command runs it ----------
 // Each setting with the value this command runs: its own where it holds one, else the shared one, as the daemon folds
 // them for a turn (ConfigRoutes.kt). One a command may hold for itself is its control, applied like Settings' rows, with
 // the way back to the shared value; Settings' command chips open these same rows. A daemon-wide one shows its value.
@@ -1542,13 +1542,13 @@ function everySetHtml(c, n = 1) {
   const plates = DRAW.packCols(blocks, n, (b) => b.w).map((col) => (col.items.length
     ? DRAW.plate(`<div class="kn everycol">${col.items.map((b, i) => b.html(i === col.items.map((x) => x.timed).lastIndexOf(true))).join("")}</div>`, "pcol") : ""));
   const head = `<div class="everyhead"><h3 class="everyttl" title="Every setting as this command runs it">All settings <b>${DRAW.n(keys.length)}</b></h3>`
-    // THE MARKS ARE SAID ONCE, FOR THE WHOLE VIEW (Oct 28): they were said on every group's kicker ("Takes a restart" on eight
+    // THE MARKS ARE SAID ONCE, FOR THE WHOLE VIEW: they were said on every group's kicker ("Takes a restart" on eight
     // of them), so the one legend of every mark any group draws stands here, over the groups
     + `${K.legendHtml(keys, { one: false })}${DRAW.act({ word: "Hide", act: "eff", cls: "quiet small" })}</div>`;
   return `${head}<div class="ecols" style="--n:${n}">${plates.join("")}</div>`;
 }
 
-// ---------- a command's own fields, edited in place (gaps 461/462; marlin's four groups) ----------
+// ---------- a command's own fields, edited in place (four groups) ----------
 // Where it goes and Running write the command's own table; Sign-in, Runs on this computer and the quirks write its provider's,
 // which every command on the provider shares, so those rows name the others (sharedHtml). Prices write the command's own
 // card per model, [heads.KEY.rates], which wins over the provider's row. Every value reaches the daemon in the one Save.
@@ -1618,7 +1618,7 @@ const kindName = (k) => kindWords((vocab().auth_kinds ?? []).find((x) => x.kind 
 const KIND_FAMILY = { "chatgpt-oauth": "gpt", "grok-oauth": "grok", "kimi-oauth": "kimi", "muse-oauth": "muse", client: "claude" };
 const kindFace = (k) => `<span class="rt-kg" style="--c:${KIND_FAMILY[k] ? colorOf(KIND_FAMILY[k]) : "var(--track-line)"}" aria-hidden="true"></span>`;
 // a model priced nowhere has no cache price either: once its row is priced, Cache read shows beside it, filled with the In
-// price splice charges a cache read at until a real one is typed (marlin, Oct 13: overcount, but never hide it)
+// price splice charges a cache read at until a real one is typed (an overcount, but never hidden)
 const unpriced = (c, id) => !c.models.find((m) => m.id === id)?.rates && !topology().heads?.[c.key]?.rates?.[id];
 const cacheShown = (c, id, x) => unpriced(c, id) && Boolean(x.i || x.o || x.c);
 /** RUNNING: whether the runtime is on this computer, what this command shares with his own Claude Code, and the
@@ -1701,7 +1701,7 @@ function runningParts(c, d, st) {
   return { run, behave };
 }
 const dirt = (on) => (on ? " dirty" : "");
-// fin's name for each quirk, from its doc comment in QuirksConfig.kt; a key with none reads as itself
+// A name for each quirk, from its doc comment in QuirksConfig.kt; a key with none reads as itself
 const QUIRK_NAME = {
   store: "Provider keeps responses", account_id_header: "Send account ID", cache_key: "Prompt cache key",
   summary_field: "Ask for reasoning summaries", tool_choice: "Send tool choice", reasoning_cache: "Keep reasoning between tool calls",
@@ -1981,7 +1981,7 @@ async function save(sec) {
   const res = await API.put("/api/topology", { topology: next });
   ui.saving = null;
   if (!res.ok || !res.body?.ok) {
-    // the daemon's sentences are for the log; the page says a config finding in fin's word for it, never the sentence
+    // the daemon's sentences are for the log; the page says a config finding in a word for it, never the sentence
     const found = res.body?.findings ?? [];
     if (found.length) console.warn(`models: saving ${c.key} refused: ${found.map((x) => x.message).join("; ")}`);
     ui.said = { sec, word: found.length ? "Config error" : "Not saved" };
@@ -2369,7 +2369,7 @@ function everyHtml() {
 // opts out of every wider one), or given text, inline or from a file. The whole topology goes back through PUT
 // /api/topology with only [compaction] changed; a compaction-only edit serves the next compaction with no restart.
 // What each choice does is drawn, not said: the rail lights the rule in force and moves the light as he chooses, so
-// Inherit lights the rule above and a text or a file lights its own rung (fin's hint words of Oct 12 became that light).
+// Inherit lights the rule above and a text or a file lights its own rung.
 const CX_MODES = { inherit: "Inherit", off: "Claude Code's own", text: "Text", file: "File" };
 const samePath = (written, root) => written === root || written === homeRel(root) || written === `${homeRel(root)}/`;
 function cxEntries(t, root, model) {
@@ -2407,7 +2407,7 @@ function compTable(t, cx) {
   return { ...g, model: models, project: both };
 }
 // what stops a save before it is sent: an empty text or file, or a table that holds a rule twice, which splice would
-// write and then keep its old rules over ("[compaction] unchanged", splice-turns)
+// write and then keep its old rules over ("[compaction] unchanged")
 function compRefusal(table) {
   const rows = Object.entries(ui.comp.rows);
   const empty = rows.find(([, st]) => st.mode === "text" && !st.text.trim());
@@ -2451,7 +2451,7 @@ async function compSave() {
 // 100rem, and its stack, ladder and files read as lists of words. Every project is now a tile in the folder it sits in,
 // with its sessions drawn; the open one is its files, then the commands as chips, then three plates that follow the
 // chip picked: the system prompt as a rail of layers, compaction as a rail of rules with the one in force lit, and its
-// memory here. The same markup is a wall across the top at his width and a rail beside the pane at 1440: the tab's own
+// memory here. The same markup is a wall across the top on a wide screen and a rail beside the pane at 1440: the tab's own
 // width decides (models.css @container), never the screen's.
 async function loadProject(id) {
   if (ui.files[id]) return;
@@ -2939,12 +2939,12 @@ const second = (p) => Boolean(p.command) && taken(p);
 const commandFor = (p, a) => (p.command ? (second(p) ? `${p.command}-${a.name.trim()}` : p.command) : a.name.trim() ? `claude-${a.name.trim()}` : "");
 const taken = (p) => p.command && data.heads.some((h) => h.label === p.command || h.key === p.head_key);
 // a second command on a provider already set up starts from the address that provider already sends to, never the
-// profile's stock one (marlin p226: a second OpenRouter command tried openrouter.ai where the first sends to a stand-in)
+// profile's stock one (a second OpenRouter command tried openrouter.ai where the first sends to a stand-in)
 const twinUrl = (p) => commandsOf().find((c) => c.key === p.head_key || c.cmd === p.command)?.url || p.base_url || "";
 // the address is a field when the profile asks for it, for a second command, and once the address did not answer
 // a second command at its provider's own address keeps that provider's address and models, and the form asks which key
 // it sends with: the provider's own (the default, a command on that provider), or a new one, saved as another key under
-// that provider with this command on it (key: "own", AddPrepare; marlin, Oct 12, from the Oct 4 rule that a provider is a
+// that provider with this command on it (key: "own", AddPrepare; a provider is a
 // template). Neither writes over the provider's key.
 const sameUrl = (p, a) => a.url.trim().replace(/\/+$/, "") === twinUrl(p).replace(/\/+$/, "");
 const asksWhichKey = (p, a) => second(p) && sameUrl(p, a) && p.auth_kind === "api-key";
@@ -3085,7 +3085,7 @@ function addPaneHtml() {
   const waits = reqs.length && !ready
     ? `<span class="needs" role="img" aria-label="${reqs.filter((r) => r.ok).length} of ${reqs.length} ready">${reqs.map((r) => `<i class="${r.ok ? "on" : ""}" title="${r.word}"></i>`).join("")}</span>` : "";
   // saved: splice restarts to start the command, and the pane says so until the restarted daemon lists it and its own
-  // pane opens (marlin's desk A look, Oct 12: "Adding" sat still through the restart, and only a reload showed the pane)
+  // pane opens ("Adding" sat still through the restart, and only a reload showed the pane)
   const foot = a.stalled
     ? `<div class="foot"><span class="said">Saved</span><span class="said limit">Not restarted</span>${restartBtn()}</div>`
     : a.saved
@@ -3183,7 +3183,7 @@ async function verifyAndSave() {
   // rows, so the form shows them and says which one it waits on, never a bare "Not added"
   if (!s.ok) { if (Array.isArray(s.body?.checks)) a.checks = s.body.checks; a.busy = false; a.said = notAddedWhy(a, profileOf(a)); ui.shook = "add"; render(); return; }
   // the save answers with the add's own key and command (AddViews.session); the pane that opens is that command's, once
-  // the restarted daemon lists it, never another command on the same profile (marlin p228)
+  // the restarted daemon lists it, never another command on the same profile
   const key = s.body?.key, cmd = s.body?.command;
   a.saved = true; a.savedCmd = cmd; render();
   for (let i = 0; i < 90; i++) {
@@ -3878,7 +3878,7 @@ async function init() {
   };
   // a locked console (api.js set body.locked on a 401) sends nothing until it is unlocked (gap 386b)
   const locked = () => document.body.classList.contains("locked");
-  // THE PAGE ASKS ONLY WHILE IT CAN BE SEEN, AND NEVER WHILE ITS LAST ROUND IS ON ITS WAY (Oct 25). The tick read nine
+  // THE PAGE ASKS ONLY WHILE IT CAN BE SEEN, AND NEVER WHILE ITS LAST ROUND IS ON ITS WAY. The tick read nine
   // routes every 5 s, in a tab nobody could see too, and started again before the last round had come back. A hidden tab,
   // a locked console, an edit in hand and a round still out each skip the tick, and a tab shown again reads at once. A
   // round asks for the lists when listsDue says so (readAll). When its heads show the commands moved, it reads the lists

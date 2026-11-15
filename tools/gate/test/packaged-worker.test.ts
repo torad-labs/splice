@@ -1,6 +1,5 @@
 // :app:codeModePackagedTest reruns the code-mode suites against the shipped fat jar. A push runs it only when something it
-// changes can change what the code-mode worker loads from that jar (load cut 4 of the temple plan of 2026-10-19, approved by
-// Marcos). The paths that decide were signed off by splice-lead on 2026-10-26:
+// changes can change what the code-mode worker loads from that jar. The paths that decide:
 //   - anything in a module the worker runs: the module law's closure of :integrations-codemode and :integrations-providers-codex;
 //   - the build's own definition: every *.gradle.kts, gradle/, every gradle.properties, build-logic/, the compiler plugin, and the
 //     gate's JDK pick;

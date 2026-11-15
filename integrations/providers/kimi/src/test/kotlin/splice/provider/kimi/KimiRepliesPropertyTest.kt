@@ -25,7 +25,7 @@ import kotlin.random.Random
 
 private const val RUNS = 2_000
 
-/** The 429 of Oct 23, 3:41:54 PM CT, as Kimi sent it (audit-maps.md:1075): no Retry-After, its window in its words. */
+/** The 429 of Oct 23, as Kimi sent it (audit-maps.md:1075): no Retry-After, its window in its words. */
 private const val FIVE_HOUR_SAID =
     "You've reached your 5-hour usage limit. Your quota will reset when the current 5-hour window ends. " +
         "To continue now, purchase extra usage or upgrade your plan: " +

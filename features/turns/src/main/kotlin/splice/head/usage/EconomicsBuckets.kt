@@ -104,7 +104,7 @@ public data class BucketCost(
      *  ("not counted then", never 0), and it stays null if this daemon adds requests to that hour, for the reason
      *  [costUsd] does. */
     val failedTurns: Long? = 0,
-    /** Oct 11 (fin): the requests an account with a plan carried, priced or not. Their dollars are NOT in [costUsd]
+    /** The requests an account with a plan carried, priced or not. Their dollars are NOT in [costUsd]
      *  and they are not in [unpricedTurns]: a plan covered them. NULL for an hour recorded before the split, whose
      *  [costUsd] and [unpricedTurns] mix plan and key requests, and it stays null if this daemon adds requests to
      *  that hour, for the reason [costUsd] does. */

@@ -1,6 +1,6 @@
 // An image Claude Code puts in a tool result reaches a Responses provider as the data URL the client sent: its MIME
 // type and its exact base64, whatever its size and whatever text sits beside it, on the round that runs the script and
-// on every later turn that replays the script's output. On Oct 26, 2026 a GPT seat's script read two PNGs of 144,920
+// on every later turn that replays the script's output. On Oct 26, 2026 a GPT session's script read two PNGs of 144,920
 // base64 chars each and passed them to image(). The provider got each one cut at 65,536 chars, with
 // " [truncated 79430 chars]" on its end, and every later request in that conversation replayed them and failed with a
 // 400. A conversation the daemon saved that way before the fix works again once the fix is installed.

@@ -1,4 +1,4 @@
-// NEW: the MCP hub's two programs ride `splice upgrade` the way install.sh gets them (splice-lead, Oct 13). A release
+// NEW: the MCP hub's two programs ride `splice upgrade` the way install.sh gets them. A release
 // whose sha256sums.txt lists splice-mcp-holder and splice-mcp-front has both staged in its release folder on Linux
 // x86-64 (UpgradeRelease), and activation swaps them into the share folder in the same transaction as the jar. The
 // live pair is first kept in the release being left, so a failed activation and a later --rollback both put it back.
@@ -7,7 +7,7 @@
 // (a host supervisor or `splice install`): only the programs they run are replaced, by rename, so a running front or holder
 // keeps its own file. A running front then takes the new program by reload (USR2), never a restart, which would drop
 // every session's MCP connection (install.sh step 3b, the host supervisor's contract), and only over units splice wrote
-// itself: over anyone else's, the reload is printed for their owner to apply (HubUnits.reloadFront, splice-lead).
+// itself: over anyone else's, the reload is printed for their owner to apply (HubUnits.reloadFront).
 package splice.lifecycle.upgrade
 
 import splice.core.terminal.GREEN

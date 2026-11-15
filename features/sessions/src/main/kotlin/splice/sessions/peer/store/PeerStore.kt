@@ -81,10 +81,12 @@ public class PeerStore(
     settingsDir: Path,
     random: SecureRandom = SecureRandom(),
     private val clock: Clock = Clock.systemUTC(),
+    /** `[daemon] reserved_peer_names`: names no peer may register, on top of the built-in ones. */
+    reservedNames: Set<String> = emptySet(),
 ) {
     private val folder = PeerFolder(settingsDir.resolve(PEERS_DIR))
     private val keys = PeerKeys(random)
-    private val rules = PeerRules()
+    private val rules = PeerRules(reservedNames)
     private val codexPeers = CodexPeers()
     private val reregister = PeerRegisterAgain()
     private val mutation = Mutex()
@@ -297,7 +299,7 @@ internal class PeerFolder(val root: Path) {
         ignoreUnknownKeys = true
         encodeDefaults = true
     }
-    private val namePattern = Regex(NAME_PATTERN)
+    private val rules = PeerRules()
     private val codexNames = CodexNames()
 
     /** Why [load] could not list `peers/`, or null. */
@@ -363,7 +365,7 @@ internal class PeerFolder(val root: Path) {
         val names = Cancellables.runCatchingBestEffort {
             Files.list(root).use { stream -> stream.map { it.fileName.toString() }.toList() }
         }.onFailure { loadFailure = "$root: ${SafeFailureText.render(it)}" }.getOrNull().orEmpty()
-        return names.filter { namePattern.matches(it) || codexNames.isPeer(it) }.mapNotNull { read(it) }
+        return names.filter { rules.wellFormed(it) || codexNames.isPeer(it) }.mapNotNull { read(it) }
     }
 
     fun config(file: PeerFile): PeerConfig = PeerConfig(

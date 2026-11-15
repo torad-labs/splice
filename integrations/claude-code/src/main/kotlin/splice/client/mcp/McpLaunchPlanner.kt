@@ -1,4 +1,4 @@
-// NEW: MCP hub step 1 (docs/specs/mcp-hub.md, draft 2, approved by Marcos on Oct 12) — the servers Claude Code
+// NEW: MCP hub step 1 (docs/specs/mcp-hub.md, draft 2) — the servers Claude Code
 // itself would load when it starts in one folder under one config home, read the way Claude Code 2.1.296 reads
 // them. Read-only: nothing here writes, and no launch changes until step 6.
 //

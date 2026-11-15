@@ -86,7 +86,7 @@ public class NameHolders(private val sessions: SessionSource) {
         Regex("^(.+) \\[[^\\[\\]]+\\]$").matchEntire(name)?.groupValues?.get(1) ?: name
 }
 
-/** Which edges a cut spares, asked once per dated row. Marlin, Oct 10, 2026: an active team keeps
+/** Which edges a cut spares, asked once per dated row. An active team keeps
  *  its edges, because its board is the record of a conversation still happening. */
 public fun interface SparedEdges {
     public fun spares(edge: MessageEdge): Boolean
@@ -111,7 +111,7 @@ public class MessageEdgeStore(
 
     /**
      * Drop every edge observed before [momentMs], and say how many went. The save on Settings >
-     * Your data reaches these too (Marlin, Oct 10, 2026): when a person says yes to a deletion,
+     * Your data reaches these too: when a person says yes to a deletion,
      * everything the history covers is gone at that moment, and an edge is a record of who they
      * messaged. [spared] keeps the ones an active team still needs.
      *

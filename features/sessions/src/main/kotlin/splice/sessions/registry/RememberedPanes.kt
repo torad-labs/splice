@@ -8,7 +8,7 @@
 //
 // WHY IT IS OPAQUE. A pane is an opaque [SessionPane] id all the way down to this file: the store never
 // reads inside it and could not say which terminal drew it. That is what makes this store survive tmux's
-// replacement — the day seatd arrives, a record written by tmux reads as a pane seatd does not know, the
+// replacement — the day another terminal arrives, a record written by tmux reads as a pane it does not know, the
 // terminal refuses it, and nothing here needs changing.
 //
 // WHY A GONE PANE IS NOT DELETED ON READ. Whether a pane is still live is the TERMINAL's question, and

@@ -1,4 +1,4 @@
-// NEW: the interactive fix session fail-closed boot offers (project law: "the CLI offers an interactive fix
+// NEW: the interactive fix session fail-closed boot offers (design rule: "the CLI offers an interactive fix
 // session; never boot on a finding or fix silently"). splice.toml is copied to splice's backup directory once,
 // before the first change; the file is checked again after every fix; the session succeeds only when no finding is
 // left. Every change is announced before it is made, and a removed or replaced value is never printed.

@@ -1,9 +1,9 @@
 // NEW: Oct 10, 2026 — the stores a history cut reaches that are not turn records: parked compaction summaries,
 // reasoning kept between turns, the native message phases kept beside it (Nov 9, 2026), code mode work and the
 // record of sessions seen, cleared by the same save that cuts the records. Transcript copies are not among them:
-// they keep their own days, transcriptCopyDays (the President, Oct 12), and each new copy removes the ones past them.
+// they keep their own days, transcriptCopyDays, and each new copy removes the ones past them.
 //
-// Every one is cut by its last activity, never by whether it could still be resumed (Marlin, Oct 10): nearly
+// Every one is cut by its last activity, never by whether it could still be resumed: nearly
 // everything is resumable while its file exists, so that exception would keep months of data after "Today only".
 // Each is aged by its files' last write.
 //

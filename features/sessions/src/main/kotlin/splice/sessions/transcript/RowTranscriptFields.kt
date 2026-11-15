@@ -3,7 +3,7 @@
 // A row's `last`, `model` and `title` come only from the session's transcript (and its model moves), so they are kept
 // against that file's stamp: a quiet /api/sessions poll answers each row from memory after one stat, where it located,
 // resolved and stat'ed the file two to four times and redrew the card line through its markdown rules on every row
-// every five seconds (splice-sessions, Oct 13: 686 rows). The account and turn fields change without the file changing
+// every five seconds (686 rows). The account and turn fields change without the file changing
 // and stay live (SessionRowFacts).
 package splice.sessions.transcript
 

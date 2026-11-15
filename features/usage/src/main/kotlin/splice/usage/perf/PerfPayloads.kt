@@ -64,7 +64,7 @@ public class PerfPayloads(
     }
 
     // why: a week of rows is hundreds of MB of file, and the full-row tier holds 16 MiB of it, so reading the summary's
-    // window through window() decoded the rest again on every call (desk c: 21 s warm). The compact tier the turns
+    // window through window() decoded the rest again on every call (21 s warm). The compact tier the turns
     // route reads holds every row of the window, so the summary folds that and a second call reads nothing new.
     private fun foldHead(source: PerfRowsSource?, window: PerfWindow, now: Long): JsonObject {
         val since = now - window.ms

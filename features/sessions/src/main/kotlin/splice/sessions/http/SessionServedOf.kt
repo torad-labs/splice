@@ -1,5 +1,5 @@
 // NEW: Oct 11, 2026 — the model a session is on, from what splice served it, so Continue on keeps its "from" model and
-// leaves the current one out of its menu while reading Claude Code conversations is off (Marlin, rewalk 4).
+// leaves the current one out of its menu while reading Claude Code conversations is off.
 //
 // A fourth SessionRowFacts member, by the four properties that file names: the daemon supplies it (each head's newest
 // perf row per session, and the moves Continue on kept), features/sessions cannot reach it, it answers about ONE

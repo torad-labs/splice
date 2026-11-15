@@ -27,7 +27,7 @@ internal val headOnlyKnobKeys: Set<String> = Knob.entries.filter { it.headOnly }
  *  The history window is the one exception to "no head reads it": historyRetentionDays, and perfArchiveRetentionDays,
  *  the spelling it replaced, also feed a head's trace days (SpliceConfig.traceKeptDays, read per head). A command's own
  *  window would reach only that command's saved prompts and split them from the one window every history reader
- *  keeps (Marlin, Oct 10), so both are refused per command too. Every other restart-only knob outside this list was
+ *  keeps, so both are refused per command too. Every other restart-only knob outside this list was
  *  traced to a per-head reader on Oct 12 and stays settable per command. */
 public val daemonWideKnobs: Set<Knob> = setOf(
     Knob.PERF_COLLECTION_ENABLED,

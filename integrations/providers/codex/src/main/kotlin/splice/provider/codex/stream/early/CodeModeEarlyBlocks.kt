@@ -1,7 +1,7 @@
-// NEW: Marcos, Nov 3, 2026, option 1 (behave like native Claude Code): a script that opens with tools.Write shows Claude
+// NEW: Nov 3, 2026 (behave like native Claude Code): a script that opens with tools.Write shows Claude
 // Code its Write(path) block while GPT still writes the file, and streams the content into it as a native Write does.
 // The runtime's first call takes the block over when it is that Write; any other end closes the block so the client
-// refuses it and writes nothing. The Mac session's 10:26 PM CT turn showed nothing for 5.5 minutes while one script
+// refuses it and writes nothing. A Mac session's turn showed nothing for 5.5 minutes while one script
 // wrote a 52 KB stylesheet.
 package splice.provider.codex.stream.early
 

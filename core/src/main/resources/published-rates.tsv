@@ -6,12 +6,12 @@
 #     against (tools/e2e/docker) and passed. That release and later ones then say they were tested with it.
 #   The header and its columns are read by daemons in the field: a new column goes in a new file, never here.
 #! updated 2026-11-12
-# Each vendor's own published API price, USD per million tokens, read Oct 10, 2026 (console-lead).
-# Re-read Oct 10, 2026 (splice-builder2) against each vendor page below, every row, every column: OpenAI, xAI, Meta, Kimi and
+# Each vendor's own published API price, USD per million tokens, read Oct 10, 2026.
+# Re-read Oct 10, 2026 against each vendor page below, every row, every column: OpenAI, xAI, Meta, Kimi and
 #   DeepSeek all matched, so no price changed. GPT-5.6 Sol's price is a PROMOTION the OpenAI page says holds "at least through
 #   November 21, 2026": re-read it then. The listed pages also carry models with no row here (OpenAI gpt-5.5 and older, xAI
 #   the grok-4.20 variants), which a turn on them prices as unlisted until a row is added.
-# Rows added Oct 10, 2026 (splice-builder2), from developers.openai.com/api/docs/pricing and docs.x.ai/docs/models: the
+# Rows added Oct 10, 2026, from developers.openai.com/api/docs/pricing and docs.x.ai/docs/models: the
 #   OpenAI gpt-5 family on api.openai.com (an OpenAI API-key head's open catalog accepts any id the API serves; the ChatGPT
 #   backend lists only the gpt-6 and gpt-5.6 rows above, so none is added for chatgpt.com), and the xAI grok-4.20 variants
 #   the live Grok roster lists, plus grok-4.5-latest, the alias docs.x.ai names beside grok-build-latest. A -pro model

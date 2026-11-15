@@ -1,7 +1,7 @@
-// NEW: a command's own Claude Code login places, read for Accounts and edited in place. Signing in on a place's card
-// adds an account to the place's command ([ClaudeAccountSignIn]) and never writes the place (Marcos, Oct 27, 2026:
-// "SPlice console login ADDs an account, it doesn't replace it"), so a sign-in neither waits for the command's sessions
-// nor holds its launches. Only an edit of a place does.
+// A command's own Claude Code login places, read for Accounts and edited in place. Signing in on a place's card
+// adds an account to the place's command ([ClaudeAccountSignIn]) and never writes the place (a console login
+// ADDs an account, it doesn't replace it), so a sign-in neither waits for the command's sessions nor
+// holds its launches. Only an edit of a place does.
 package splice.app.auth.claude
 
 import splice.accounts.claude.ClaudeAccountIdentity

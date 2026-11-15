@@ -96,7 +96,7 @@ private object PluginWalkFailure {
 internal class PluginFileWalk(private val log: LogSink = LogSink(DaemonLog::write)) {
     /** A plugins folder that cannot be read is walked as empty, as before, and said once per daemon by its
      *  exception's class alone (the path sits under the person's config home): read as nothing, an unreadable
-     *  folder looked the same as having no plugins (a Temple notice, via splice-lead). */
+     *  folder looked the same as having no plugins. */
     operator fun invoke(root: Path, matches: PluginFileMatch): List<Path> = Cancellables.runCatchingCancellable {
         Files.walk(root, PLUGIN_WALK_DEPTH).use { stream -> stream.filter { candidate(it, matches) }.toList() }
     }.getOrElse { failure ->

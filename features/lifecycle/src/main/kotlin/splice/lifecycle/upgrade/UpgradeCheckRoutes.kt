@@ -1,4 +1,4 @@
-// NEW: the Settings Version card's "Check" (splice-lead, 2026-10-12):
+// NEW: the Settings Version card's "Check" (2026-10-12):
 //
 //   POST /api/upgrade/check   reads the newest published release once, answers the snapshot (409 while a read runs,
 //                             429 with Retry-After when the last began under ten seconds ago)

@@ -27,7 +27,7 @@ internal class LaunchResume(
     fun bounded(ownTree: Path, extraArgs: List<String>, cwd: String?): ContinueResolution =
         headBoundedContinue.resolve(ownTree, extraArgs, cwd)
 
-    /** V4-169 (the President, Oct 13): a session another head wrote goes on as the copy the client resumes. */
+    /** V4-169: a session another head wrote goes on as the copy the client resumes. */
     fun resumingAs(args: List<String>, adoption: SessionAdoption?): List<String> =
         headBoundedContinue.resumingAs(args, (adoption as? SessionAdoption.Copied)?.copyId)
 
@@ -67,7 +67,7 @@ internal class LaunchResume(
             "resumed session ${adoption.sessionId} copied into this head from ${adoption.from}, and " +
                 "${adoption.modelsRewritten} assistant rows now name this head's model"
         // Claude Code resumes a session by the name -n gave it, or opens its picker on a search word, so a -r
-        // word that is not an id is its to resolve, never a refusal (Oct 12: "temple-studio" was warned as an id)
+        // word that is not an id is its to resolve, never a refusal ("alpha-studio" was warned as an id)
         is SessionAdoption.Absent -> adoption.takeIf { sessionUuid.matches(it.sessionId) }?.let {
             "session ${it.sessionId} is in no transcript tree: searched " +
                 "${it.searchedHeads.size} heads (${it.searchedHeads.joinToString(", ")}). " +

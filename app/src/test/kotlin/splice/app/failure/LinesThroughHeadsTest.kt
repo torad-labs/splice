@@ -6,7 +6,7 @@
 // the provider a person pays and the machine's zone in it, and that nothing a person cannot use survives the trip.
 //
 // Every head here says its times in America/Chicago (ScriptedHeads' LINE_ZONE), so a reset reads the same on any
-// machine, and the shapes come from traces: Muse's 429 of Oct 25, 2026 10:16:47 PM CT with a reset of Oct 26,
+// machine, and the shapes come from traces: Muse's 429 of Oct 25, 2026 with a reset of Oct 26,
 // 12:25 AM CDT, and DeepSeek's 402 ("Insufficient Balance", request id dropped).
 package splice.app.failure
 
@@ -39,7 +39,7 @@ import kotlin.time.Duration.Companion.seconds
 /** The prefix every line a person reads opens with. */
 private const val PREFIX = "[splice] "
 
-/** When Muse answered its 429 (Oct 25, 10:16:47 PM CT), the reset it stated in its words (trace 0768bed1a506), and
+/** When Muse answered its 429 (Oct 25), the reset it stated in its words (trace 0768bed1a506), and
  *  how a person reads that reset in Chicago. */
 private val MUSE_ANSWERED: Instant = Instant.parse("2026-10-26T03:16:47Z")
 private val MUSE_RESET: Instant = Instant.parse("2026-10-26T05:25:35Z")

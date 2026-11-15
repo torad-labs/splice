@@ -26,7 +26,7 @@ import splice.upstream.failure.ReplyFacts
  * renews; a renewed login meets the same plan. It reads as Forbidden in Kimi's words, so it spends no refresh and the
  * line says the plan excludes the model (KimiRefusals.kt:8-10 before slice 3).
  *
- * Kimi's 5-hour limit names its window. The 429 of Oct 23, 3:41:54 PM CT read "You've reached your 5-hour usage limit.
+ * Kimi's 5-hour limit names its window. The 429 of Oct 23 read "You've reached your 5-hour usage limit.
  * Your quota will reset when the current 5-hour window ends" with no Retry-After (audit-maps.md:1075), and none of 62
  * retried turns recovered (audit-maps.md:1078). It reads as Limited with the FIVE_HOUR window, at the lift the reply
  * states, which is none. Its monthly billing-cycle exhaustion likewise names its window, without inventing a reset.

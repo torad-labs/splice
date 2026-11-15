@@ -90,7 +90,7 @@ val declaredReadRoots: List<String> = moduleDirectories.values.map { "$it/src/ma
 
 tasks.withType<Test>().configureEach {
     // MEASURED FROM A GC LOG, not picked (2026-10-10, after :quality-architecture:test died of heap twice for one
-    // seat while finishing for two others — load-dependent, and pre-push runs this suite too). At the 2g default
+    // session while finishing for two others — load-dependent, and pre-push runs this suite too). At the 2g default
     // from splice.kotlin-common a Full GC pair reads 2045M->2043M(2048M) and the JVM then throws OutOfMemoryError:
     // the LIVE SET alone passes 2 GB, held by the laws that read the whole tracked tree into memory at once
     // (ConventionalTypeLawTest through ReadSet, and the two ratchet censuses). Runs at 3g and at 4g both complete

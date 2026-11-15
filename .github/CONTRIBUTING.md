@@ -67,26 +67,16 @@ so the PR cannot merge.
 against the same vocabulary when it runs locally. The squash can take its subject from either source,
 so a branch commit with a type the vocabulary rejects can reach `main` even when the PR title passed.
 
-## Working and landing on the shared branch
+## Working and landing a change
 
-All seats work in one checkout on the same branch (the one the project's lead names; no seat opens its own
-feature branch or worktree, and there is no standing `dev` branch). Coordinate ownership by file and preserve
-every other seat's work.
-
-1. Commit only your own files by explicit path: `git commit -m "docs(scope): subject" -- <paths>`.
-   For new files, add only those paths and commit them in the same command. The index is shared,
-   so leave nothing staged. Never use `git add -A`, `git commit -a`, stash, reset or switch the
-   shared branch.
-2. Any seat pushes the shared branch and opens the PR from it to `main`; there is no single driver.
-3. The required checks on `main` are `gate`, `codeql-java-kotlin`, `codeql-javascript-typescript` and
-   `dependency-review`. Local gate runs are feedback, not the verdict: the `gate` job must pass on the
-   head being landed. A red check is fixed forward with a commit and another run.
-4. Land with a squash merge: `main` requires a linear history, which rules out a merge commit. The commit
-   that results is the SHA that gets installed.
-5. Install the jar CI built: download the `splice-jar` artifact of the green `ci` run on that SHA
-   (`gh run download <run> -n splice-jar`). When CI cannot run, build that SHA in a throwaway tree under
-   `/tmp` and delete the tree once the install is verified. Never build an install from the shared
-   checkout, and never keep a second checkout of any kind (worktree, clone, archive or copy) beyond that.
+1. Work on a short-lived branch off `main`, in your fork or in this repository if you have write
+   access. Give every commit subject an allowed type (see "PR title" above).
+2. Open a pull request to `main`. The required checks are `gate`, `codeql-java-kotlin`,
+   `codeql-javascript-typescript` and `dependency-review`. A local gate run is feedback, not the
+   verdict: the `gate` job must pass on the head being landed. Fix a red check forward with another
+   commit.
+3. Pull requests land as a squash merge: `main` requires a linear history, which rules out a merge
+   commit. Delete the branch once it has merged.
 
 `main` reaches `prod` as described under [Releasing](#releasing).
 

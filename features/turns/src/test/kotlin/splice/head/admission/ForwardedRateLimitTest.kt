@@ -85,7 +85,7 @@ class ForwardedRateLimitTest {
         }
     }
 
-    // Each turn asks the provider itself (Marcos, Oct 26): a refused credential's next turn is sent, not replayed.
+    // Each turn asks the provider itself: a refused credential's next turn is sent, not replayed.
     @Test
     fun `every refused turn asks the provider itself and keeps the proved account`() = runBlocking {
         val names = HeadDeps.CredentialAccountNames { digest ->

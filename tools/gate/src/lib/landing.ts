@@ -3,7 +3,7 @@
 // under version control and under test, and the script outside the repository only moves files.
 //
 // Every workflow on the sha is part of the verdict, org ones included. Until Sep 30 only `ci` was
-// read, and secret-scan sat red for 18 hours under three installs (Marlin, Sep 30). The first guard
+// read, and secret-scan sat red for 18 hours under three installs. The first guard
 // that followed refused only a finished failure, so a sha whose secret-scan was still running would
 // have passed; a workflow that has not finished has not said yes. Only `success` and `skipped` are
 // yes: `cancelled` means the check never ran to its end, which is not a pass either.

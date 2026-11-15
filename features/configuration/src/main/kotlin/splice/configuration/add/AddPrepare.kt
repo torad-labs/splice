@@ -159,8 +159,8 @@ internal class AddPrepare(
     }
 
     /** A second command keeps its provider's address and models; with a key of its own it gets a provider of its
-     *  own, in that provider's family, so Accounts lists the key under it (marlin, Oct 12: a provider is a template,
-     *  many accounts on one command or one command each, Marcos's Oct 4 rule). Asked only when nothing [found]
+     *  own, in that provider's family, so Accounts lists the key under it (a provider is a template,
+     *  many accounts on one command or one command each). Asked only when nothing [found]
      *  refused. */
     private fun keyPlan(
         args: AddArgs,
@@ -188,7 +188,7 @@ internal class AddPrepare(
         }
 
     /** A second command on a profile whose provider the file already holds is a head on that provider, sending to its
-     *  address with its key and its models, never a new provider named after the command (marlin, Oct 12: a second
+     *  address with its key and its models, never a new provider named after the command (a second
      *  OpenRouter command listed under This computer, its key under no provider). An address the operator gave that is
      *  not the provider's is another endpoint, and gets a provider of its own as before. */
     private fun sharedProvider(args: AddArgs, profile: AddProfile, current: Topology, key: String): String? {

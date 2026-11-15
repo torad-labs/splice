@@ -216,7 +216,7 @@ class PerfTurnUsageTest {
         assertEquals(0L, totals.getValue(UNPRICED).jsonPrimitive.long, "both rows are priced: $totals")
     }
 
-    /** Marlin's pass 5: one sentence, "no recorded price", stood for three causes. Each unpriced request is
+    /** One sentence, "no recorded price", stood for three causes. Each unpriced request is
      *  counted under the cause the head can name: a priced model whose request has no token count, a model with
      *  no price on an account a plan covers, and a model whose price was never declared. */
     @Test

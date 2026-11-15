@@ -63,8 +63,8 @@ const names = (p: Page) => p.locator(".pgroup .pname").allTextContents();
 const THREE = [
   working("w-1", "api", "website"),
   row("i-1", "notes", "website"),
-  needs("n-1", "asking", "temple"),
-  working("w-2", "builder", "temple"),
+  needs("n-1", "asking", "backend"),
+  working("w-2", "builder", "backend"),
   row("l-1", "stray", null),
 ];
 
@@ -73,7 +73,7 @@ test("groups come in the order of their most urgent card, with No project last",
   const p = await page(THREE);
   try {
     // the list stands before its groups are drawn, so the read waits for them (a CI runner read it at once, Nov 3, 2026)
-    await expect.poll(() => names(p), { timeout: 15_000 }).toEqual(["temple", "website", "No project"]);
+    await expect.poll(() => names(p), { timeout: 15_000 }).toEqual(["backend", "website", "No project"]);
   } finally {
     await p.close();
   }
@@ -81,27 +81,27 @@ test("groups come in the order of their most urgent card, with No project last",
 
 // The header is the line he finds at a glance: the name, a lamp and count per live state present, then the total.
 test("a group's header counts each live state it holds, and totals its sessions", async () => {
-  const p = await page([...THREE, ended("e-1", "done", "temple")]);
+  const p = await page([...THREE, ended("e-1", "done", "backend")]);
   try {
-    const temple = p.locator(".pgroup", { hasText: "temple" }).first();
-    await expect(temple.locator(".pc.needs b")).toHaveText("1");
-    await expect(temple.locator(".pc.working b")).toHaveText("1");
-    await expect(temple.locator(".ptotal")).toHaveText("3"); // the ended one is in the total, not a lamp
-    await expect(temple.locator(".pgroup .pc.stalled")).toHaveCount(0);
+    const backend = p.locator(".pgroup", { hasText: "backend" }).first();
+    await expect(backend.locator(".pc.needs b")).toHaveText("1");
+    await expect(backend.locator(".pc.working b")).toHaveText("1");
+    await expect(backend.locator(".ptotal")).toHaveText("3"); // the ended one is in the total, not a lamp
+    await expect(backend.locator(".pgroup .pc.stalled")).toHaveCount(0);
   } finally {
     await p.close();
   }
 }, 60_000);
 
-// NOTHING WAITING ON HIM IS EVER HIDDEN BY A FOLD (Marlin): the second job must not cost the first.
+// NOTHING WAITING ON HIM IS EVER HIDDEN BY A FOLD: the second job must not cost the first.
 test("a folded group still shows the cards that wait on him, and hides the rest", async () => {
   const p = await page(THREE);
   try {
-    const temple = p.locator(".pgroup", { hasText: "temple" }).first();
-    await expect(temple.locator(".card.s")).toHaveCount(2);
-    await temple.locator(".pfold").click();
-    await expect(temple.locator(".card.s")).toHaveCount(1);
-    await expect(temple.locator(".card.s")).toContainText("asking");
+    const backend = p.locator(".pgroup", { hasText: "backend" }).first();
+    await expect(backend.locator(".card.s")).toHaveCount(2);
+    await backend.locator(".pfold").click();
+    await expect(backend.locator(".card.s")).toHaveCount(1);
+    await expect(backend.locator(".card.s")).toContainText("asking");
   } finally {
     await p.close();
   }
@@ -130,14 +130,14 @@ test("one project and nothing outside it stays a flat list", async () => {
   }
 }, 60_000);
 
-// ONE NAME FOR WHERE A SESSION IS (Marlin, Oct 12): the open pane names the project its group wears, never the folder,
-// which reads "repo" for most of his sessions.
+// ONE NAME FOR WHERE A SESSION IS: the open pane names the project its group wears, never the folder,
+// which reads "repo" for most sessions.
 test("the open session names its project, the same name its group wears", async () => {
   const p = await page(THREE);
   try {
-    await p.locator(".pgroup", { hasText: "temple" }).first().locator(".card.s .name", { hasText: "builder" }).click();
+    await p.locator(".pgroup", { hasText: "backend" }).first().locator(".card.s .name", { hasText: "builder" }).click();
     const meta = p.locator(".pane .meta").first();
-    await expect(meta).toContainText("temple", { timeout: 10_000 });
+    await expect(meta).toContainText("backend", { timeout: 10_000 });
     await expect(meta).not.toContainText("w-2"); // its folder
   } finally {
     await p.close();
@@ -152,7 +152,7 @@ test("a session in no project names its folder by its own name on its card, its 
     const loose = p.locator(".pgroup", { hasText: "No project" }).first();
     await expect(loose.locator(".card.s .where")).toHaveText("notes");
     await expect(loose.locator(".card.s .where")).toHaveAttribute("title", "~/notes");
-    await expect(p.locator(".pgroup", { hasText: "temple" }).first().locator(".card.s .where")).toHaveCount(0);
+    await expect(p.locator(".pgroup", { hasText: "backend" }).first().locator(".card.s .where")).toHaveCount(0);
   } finally {
     await p.close();
   }
@@ -162,20 +162,20 @@ test("a session in no project names its folder by its own name on its card, its 
 // first message, which the daemon reads for it, and never the folder.
 test("inside a group a card is titled by what was asked of it, never by its folder", async () => {
   const p = await page([
-    row("u-1", "", "temple", { name: null, title: "Fix the retry ladder in the gate" }),
+    row("u-1", "", "backend", { name: null, title: "Fix the retry ladder in the gate" }),
     working("w-1", "api", "website"),
   ]);
   try {
-    const temple = p.locator(".pgroup", { hasText: "temple" }).first();
-    await expect(temple.locator(".card.s .name")).toHaveText("Fix the retry ladder in the gate");
-    await expect(temple.locator(".card.s")).not.toContainText("u-1");
+    const backend = p.locator(".pgroup", { hasText: "backend" }).first();
+    await expect(backend.locator(".card.s .name")).toHaveText("Fix the retry ladder in the gate");
+    await expect(backend.locator(".card.s")).not.toContainText("u-1");
   } finally {
     await p.close();
   }
 }, 60_000);
 
 // ---------- the pick: one project, or every project, the same pick on every page ----------
-/** The page opened at [query], e.g. "?project=/work/temple", in a fresh browser so no earlier pick carries over. */
+/** The page opened at [query], e.g. "?project=/work/backend", in a fresh browser so no earlier pick carries over. */
 async function pageAt(rows: Row[], query = ""): Promise<Page> {
   sessions = rows;
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 1200 } });
@@ -205,11 +205,11 @@ test("while one project is picked, another with someone waiting is a door that p
   const p = await pageAt(THREE, "?project=/work/website");
   try {
     const door = p.locator(".pdoor");
-    await expect(door).toHaveCount(1); // temple waits on him; No project does not
-    await expect(door).toContainText("temple");
+    await expect(door).toHaveCount(1); // backend waits on him; No project does not
+    await expect(door).toContainText("backend");
     await expect(door.locator(".pc.needs b")).toHaveText("1");
     await door.click();
-    await expect(p.locator(".ppick .pname")).toHaveText("temple");
+    await expect(p.locator(".ppick .pname")).toHaveText("backend");
     await expect(p.locator(".list .card.s", { hasText: "asking" })).toBeVisible();
     await expect(p.locator(".pdoor")).toHaveCount(0); // nobody waits anywhere else
   } finally {
@@ -233,18 +233,18 @@ test("a picked project with nothing in it says No sessions, and its doors stay",
   const p = await pageAt(THREE, "?project=/work/gone");
   try {
     await expect(p.locator(".list .nomatch")).toContainText("No sessions");
-    await expect(p.locator(".pdoor")).toContainText("temple");
+    await expect(p.locator(".pdoor")).toContainText("backend");
   } finally {
     await p.context().close();
   }
 }, 60_000);
 
 test("with one project the head names it, and there is nothing to pick", async () => {
-  const p = await pageAt([working("w-1", "api", "website"), row("i-1", "notes", "website")], "?project=/work/temple");
+  const p = await pageAt([working("w-1", "api", "website"), row("i-1", "notes", "website")], "?project=/work/backend");
   try {
     await expect(p.locator(".ppick")).toHaveCount(0);
     await expect(p.locator(".lhead .pname.solo")).toHaveText("website");
-    await expect(p.locator(".list .card.s")).toHaveCount(2); // a pick from another desk filters nothing here
+    await expect(p.locator(".list .card.s")).toHaveCount(2); // a pick from another machine filters nothing here
   } finally {
     await p.context().close();
   }
@@ -252,22 +252,22 @@ test("with one project the head names it, and there is nothing to pick", async (
 
 // ---------- the tiles: at a 150rem page and wider, every project at once, in place of the picker and the doors ----------
 test("on a wide screen every project is a tile, Every project first, and pressing one is the pick", async () => {
-  sessions = [...THREE, ended("e-1", "done", "temple")];
+  sessions = [...THREE, ended("e-1", "done", "backend")];
   const ctx = await browser.newContext({ viewport: { width: 3828, height: 2130 } });
   const p = await ctx.newPage();
   try {
     await p.goto(`http://127.0.0.1:${server.port}/sessions.html`);
     const tiles = p.locator("#ptiles .ptile");
     await expect(tiles).toHaveCount(4, { timeout: 15_000 });
-    expect(await p.locator("#ptiles .tname").allTextContents()).toEqual(["Every project", "temple", "website", "No project"]);
+    expect(await p.locator("#ptiles .tname").allTextContents()).toEqual(["Every project", "backend", "website", "No project"]);
     await expect(p.locator(".ppick")).toHaveCount(0); // the tiles are the picker
-    const temple = tiles.filter({ hasText: "temple" });
-    await expect(temple.locator(".ptotal")).toHaveText("3");
-    await expect(temple.locator(".pc.needs b")).toHaveText("1");
+    const backend = tiles.filter({ hasText: "backend" });
+    await expect(backend.locator(".ptotal")).toHaveText("3");
+    await expect(backend.locator(".pc.needs b")).toHaveText("1");
     await expect(tiles.first().locator(".ptotal")).toHaveText("6"); // every session, the ended one too
     await expect(tiles.first()).toHaveAttribute("aria-pressed", "true");
-    await temple.click();
-    await expect(temple).toHaveAttribute("aria-pressed", "true");
+    await backend.click();
+    await expect(backend).toHaveAttribute("aria-pressed", "true");
     await expect(p.locator(".pgroup")).toHaveCount(0);
     await expect(p.locator(".list .card.s")).toHaveCount(2);
   } finally {

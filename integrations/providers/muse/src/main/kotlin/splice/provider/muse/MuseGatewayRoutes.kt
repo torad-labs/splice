@@ -76,7 +76,7 @@ private const val UUID_VERSION_FOUR = 0x4000L
 // why: clear the upper UUID variant bits before setting the RFC variant on the second half.
 private const val UUID_VARIANT_MASK = 0x3FFF_FFFF_FFFF_FFFFL
 
-// why: the longest Meta may hold a warm request's headers after the request was written whole (the President, Oct 26).
+// why: the longest Meta may hold a warm request's headers after the request was written whole (Oct 26).
 // A warm turn waits 4 s for them at the median and 11 s at the 90th percentile; a slow route held them 30 to 180 s.
 private const val HEADER_WAIT_LIMIT_MS = 60_000L
 

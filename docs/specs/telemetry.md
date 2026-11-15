@@ -4,7 +4,7 @@
 - Created: 2026-09-15
 - Evidence baseline: `feat/v0.4.0` at `7fa98534`; every local pointer below was read at that commit
 - External sources: read 2026-09-15, listed at the end with the confidence each one carries
-- Requirement source: user discussion, 2026-09-15 (Marcos). Two decisions are his and are recorded
+- Requirement source: user discussion, 2026-09-15. Two decisions are the maintainer's and are recorded
   as decisions, not as defaults that drifted in: **the product channel is opt-out**, and **the
   self-hosted channel is modelled on what Codex offers**. The first overrides the opt-in
   recommendation made in that discussion and is settled.
@@ -13,8 +13,8 @@ This folder holds the telemetry feature discussion. We will iterate on this docu
 creating a campaign ledger, implementation tasks, or dispatching builders. Nothing below is
 authorized for implementation. Scope and acceptance criteria remain open.
 
-The audience for this document is wider than usual: Marcos is building splice's website, Terms of
-Use and Privacy Policy with torad-main. **This document is the artifact those are derived from.**
+The audience for this document is wider than usual: the maintainer is building splice's website, Terms of
+Use and Privacy Policy. **This document is the artifact those are derived from.**
 Everything here must therefore describe what the binary would DO, never what we intend it to do —
 which is the entire lesson of the research in the last section.
 
@@ -28,7 +28,7 @@ drifting away from the code.**
   feature for self-hosted users.
 - **Channel B — product counts.** A small daily payload of bucketed counters to a splice-owned
   sink, so we can answer how many installs exist, which heads and models are actually used, and
-  whether volume is growing. **Opt-out** (Marcos, 2026-09-15).
+  whether volume is growing. **Opt-out** (decided 2026-09-15).
 
 The design effort does not go into minimising the field list. It goes into two places the research
 says actually fail: making the off switch really work, and making the published description
@@ -60,7 +60,7 @@ What already exists that this work builds on, rather than reinvents:
 - **The counter vocabulary, including tokens.** `PerfKeys` (`gateway/core/src/main/kotlin/splice/core/perf/PerfKeys.kt:6`)
   already defines 36 fields, among them `in_tokens`, `out_tokens` and `cached_tokens`
   (`:44`–`:46`), `attempts`, `retries`, `refreshes`, `backoff_ms`, `inflight`, `async_io_drops`,
-  and frames and bytes in each direction. Marcos asked whether token counts could be included: they
+  and frames and bytes in each direction. The question came up whether token counts could be included: they
   are already measured, per turn, by code that shipped.
 - **An allowlist-of-structure redactor.** `DoctorRedaction` (`gateway/app/src/main/kotlin/splice/app/cli/DoctorRedaction.kt:27`)
   emits a daemon log line as STRUCTURE only: it drops any line without one of the daemon's own
@@ -74,8 +74,8 @@ What already exists that this work builds on, rather than reinvents:
 
 Four assets, one for each phase of the work below.
 
-**Correction owed to this record.** Earlier in the 2026-09-15 discussion I told Marcos splice was
-sending data to a third party. He challenged it, and reading the code showed the claim was too
+**Correction owed to this record.** Earlier in the 2026-09-15 discussion I said splice was
+sending data to a third party. It was challenged, and reading the code showed the claim was too
 strong. `ResponsesClientHints.clientMetadataBlock` emits, on lite turns only, `client=splice` plus
 `session_id` and `thread_id`. That is protocol metadata for the prompt cache: no prompt, no
 completion, no token count, no credential. "Data" was the wrong word. It is recorded here because
@@ -84,7 +84,7 @@ instance of that gap in this discussion was mine.
 
 ## The governing question
 
-Marcos asked it directly: **is the problem sending analytics by default, or not disclosing it
+The question was asked directly: **is the problem sending analytics by default, or not disclosing it
 properly?**
 
 The answer from the research is **not disclosing it properly**, and the evidence is one-sided. In
@@ -121,7 +121,7 @@ the published config reference, and `codex-rs/otel/src/events/session_telemetry.
 - Export disabled by default, so local runs stay self-contained.
 
 **The part worth copying is the shape: the operator's own collector, off unless configured.** The
-part worth *not* copying is how content is kept out, and this is a correction to what I told Marcos
+part worth *not* copying is how content is kept out, and this is a correction to what I said
 earlier in the discussion. I had it as "Codex traces carried prompts". The verified situation is
 more instructive than that:
 
@@ -162,7 +162,7 @@ Proposed scope:
 
 - Export the existing per-turn row as OTLP log records to the configured endpoint, on the existing
   asynchronous best-effort lane. A collector that is down must be indistinguishable, from the user's
-  seat, from one that is up.
+  side, from one that is up.
 - Resource attributes `service.name = "splice"` and the splice version. No account, no email, no
   hostname.
 - `${ENV_VAR}` expansion in `headers`, because a collector token does not belong in a config file
@@ -198,8 +198,8 @@ or their work.
 **User outcome (theirs):** one command shows the exact payload their machine would send, and one
 command stops it.
 
-**Release status:** opt-out, decided by Marcos on 2026-09-15. I recommended opt-in in that
-discussion; he chose opt-out and that is settled. The research supports it being defensible, on
+**Release status:** opt-out, decided on 2026-09-15. I recommended opt-in in that
+discussion; opt-out was chosen and that is settled. The research supports it being defensible, on
 the strict condition that section 5 ships with it.
 
 Proposed payload — the complete list, as it would be published:
@@ -290,7 +290,7 @@ transport records exactly zero requests and no install-id file appears; enabled,
 turn latency mark moves with telemetry enabled. The 24-hour floor survives a daemon restart.
 
 **To resolve:** the retention period for the received data. The Privacy Policy has to state a
-number, so this is Marcos's decision rather than an engineering default, and it should be decided
+number, so this is the maintainer's decision rather than an engineering default, and it should be decided
 before the sink is written rather than after.
 
 ## 3. The off switch
@@ -368,7 +368,7 @@ Proposed surfaces:
   builder from the *real* perf rows. Not a sample, not a copy of the documentation. This is the one
   command that lets the person running splice audit the claim themselves, on their own machine,
   without a packet capture.
-- **The explainer page on the splice website** (Marcos + torad-main), which the first-run notice
+- **The explainer page on the splice website** , which the first-run notice
   and the wizard link to.
 
 **And the wall.** A gate leg runs the real schema emitter and byte-compares its output against the
@@ -416,7 +416,7 @@ fun confirm(prompt: String, default: Boolean = true): Boolean {
 `AdminSupport.kt:172`. There is a second prompt seam for `splice add` — `ConsolePrompter` in
 `AddSeams.kt:19` — with the same null-console fallback.
 
-So the consent notification Marcos described has a real home, with a real prompt, and a headless
+So the consent notification described has a real home, with a real prompt, and a headless
 behaviour that is already proven: **in Docker, CI, or a `systemctl` start there is no console, the
 default is returned, and nothing hangs.**
 
@@ -499,7 +499,7 @@ does not.
 run neither hangs nor enables anything the default did not already allow; and the notice precedes
 any possible first send.
 
-**To resolve:** the explainer URL, which depends on the website work with torad-main. The notice
+**To resolve:** the explainer URL, which depends on the website work. The notice
 cannot ship pointing at a 404, so this gates section 6 and part of section 5.
 
 ## 7. The sink — PostHog, and a correction to this document's first draft
@@ -525,7 +525,7 @@ three things that changed it:
 
 **Recommendation: PostHog as the sink, addressed over raw HTTP with no SDK.** It deletes the
 Worker, the storage and the query layer from this campaign, and gives us their analysis UI for
-the questions Marcos actually asked (how many installs, which heads, which models, is volume
+the questions actually asked (how many installs, which heads, which models, is volume
 growing). Every failure mode in the research stays out by construction rather than by
 configuration: no SDK means no autocapture and no config-fetch chatter, and we never call
 `identify` or `alias` because we only ever POST a capture.
@@ -558,7 +558,7 @@ byte-for-byte, so the sink cannot enrich what the builder produced.
 
 **Alternative, if the inherited claim is not acceptable:** the original Worker design, which keeps
 "we never log your IP" provable, at the cost of building the sink, the storage, the retention job
-and every dashboard ourselves. That is a real product tradeoff and it is Marcos's call, not an
+and every dashboard ourselves. That is a real product tradeoff and it is the maintainer's call, not an
 engineering default — it is listed in "Next discussion".
 
 **To resolve either way:** the explainer URL still depends on the website work, because the wizard
@@ -585,17 +585,17 @@ and the first-run notice link to it.
 
 ## Next discussion
 
-Open for Marcos, in rough order of what blocks what:
+Open, in rough order of what blocks what:
 
 1. **PostHog as the sink, or our own Worker** (section 7). My recommendation is PostHog over its
    raw HTTP endpoint with no SDK: it deletes the Worker, the storage and the dashboards from this
    campaign. The cost is that "we never log your IP" becomes a claim inherited from a vendor
    rather than one provable from our own source. That is a product tradeoff, not an engineering
    default, so it is yours — and it is the decision that most changes the size of the campaign.
-2. **The explainer URL** (with torad-main). Section 6 and part of section 5 cannot finish without
+2. **The explainer URL.** Section 6 and part of section 5 cannot finish without
    it; everything else can proceed.
 3. **The retention period** for received product data. The Privacy Policy has to state a number.
-4. **Whether this folds into 0.4.0** or takes its own release. Marcos said on 2026-09-15 that
+4. **Whether this folds into 0.4.0** or takes its own release. it was said on 2026-09-15 that
    telemetry should fold into 0.4.0; that predates this document's scope, which is larger than the
    discussion assumed — fifteen rows including three walls and a Worker.
 5. **Logs only, or logs plus metrics and traces**, for channel A (section 1).

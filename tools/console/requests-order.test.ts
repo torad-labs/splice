@@ -1,6 +1,6 @@
-// Requests orders Newest or Highest price (fin's words, hitstop 20bfada; Marlin took price over tokens). Through the real
-// page against a daemon that keeps each command's highest priced when asked order=price and says so in `order`
-// (splice-builder): the list runs dearest first with unpriced last, no hour marks and a day on each row, a plan row draws
+// Requests orders Newest or Highest price. Through the real
+// page against a daemon that keeps each command's highest priced when asked order=price and says so in `order`:
+// the list runs dearest first with unpriced last, no hour marks and a day on each row, a plan row draws
 // its worth at API prices in its cost column, hollow, with the list's key saying once what hollow means, and the held
 // line (a meter and "N highest priced of M requests", its rule under the pointer) says the highest priced were kept. A
 // daemon that does not echo the order kept the newest, and the page says Newest over them, never Highest price.

@@ -8,12 +8,12 @@
 //     BUILD SUCCESSFUL having compiled nothing (gradle-slot.sh:15-23);
 //   - the holder file is written BEFORE any JVM starts; legacy runs remove it under the lock (:33-34);
 //     joint runs write it only after host admission and trust it only while that host holds the lock;
-//   - `buildgate` is this MACHINE's containment wrapper, absent on CI, so it is guarded (:37-42);
-//   - no run is `--offline` (2026-10-25): the script's local nicety failed every build here once Gradle's
+//   - a host build wrapper is a machine-local containment wrapper, absent on CI, so it is guarded (:37-42);
+//   - no run is `--offline` (2026-10-25): the script's local nicety failed every build once Gradle's
 //     30-day cleanup deleted POMs no build had re-read, since an offline run cannot fetch them again;
 //   - gradle's exit status propagates, and the release line reports it (:57-68);
 //   - a signal reaches the WRAPPER, not only the process group: `kill <pid>` on the gate is how a
-//     seat, a CI cancel and a supervisor all stop a run, and the shell script dies of it in
+//     session, a CI cancel and a supervisor all stop a run, and the shell script dies of it in
 //     milliseconds. That is why gradle is orchestrated asynchronously below (:98-131).
 import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { availableParallelism, loadavg } from "node:os";
@@ -27,15 +27,15 @@ export const SLOT_TIMEOUT_EXIT = 75;
  *  daemon when another idle one is compatible with it, so a pair with equal JVM args kept culling each other and the next push started
  *  a cold one. A marker in the pre-push tree's JVM args makes its daemon incompatible with the checkout's: each stays warm. */
 const PRE_PUSH_LABEL = "pre-push";
-/** The pre-push tree's gradle workers are sized to the idle cores, within these bounds; hostshield's own cap (6) is the ceiling. */
+/** The pre-push tree's gradle workers are sized to the idle cores, within these bounds; a host wrapper's own cap (6) is the ceiling. */
 const PRE_PUSH_WORKER_FLOOR = 2;
 const PRE_PUSH_WORKER_CAP = 6;
 /** Projects the full gate builds at once, on CI and locally alike. */
 const GATE_OF_RECORD_WORKERS = 3;
 
 /** One gradle worker per idle core (hardware threads minus the one-minute load average, rounded down), never fewer than 2 nor more
- *  than 6. More workers save no CPU per verdict: on a saturated machine they only take it from the seats, so at load 120 on 16
- *  threads the pre-push tree runs at the floor (temple plan 2026-10-19, in place of simon's fix 2). */
+ *  than 6. More workers save no CPU per verdict: on a saturated machine they only take it from the sessions, so at load 120 on 16
+ *  threads the pre-push tree runs at the floor. */
 export function prePushWorkers(machine: Machine): number {
   return Math.min(PRE_PUSH_WORKER_CAP, Math.max(PRE_PUSH_WORKER_FLOOR, Math.floor(machine.cores - machine.load)));
 }
@@ -43,12 +43,12 @@ export function prePushWorkers(machine: Machine): number {
 function readMachine(): Machine {
   return { cores: availableParallelism(), load: loadavg()[0] ?? 0 };
 }
-/** -Xms256m: with no -Xms a JVM's starting heap is 1/64 of the machine's RAM, which here (124 GB) is past the 1536m cap, so
- *  each daemon started at its whole cap and buildgate measured it as anon memory however little it held. The periodic GC hands
+/** -Xms256m: with no -Xms a JVM's starting heap is 1/64 of the machine's RAM, which on a large machine is past the 1536m cap, so
+ *  each daemon started at its whole cap and a host build wrapper measured it as anon memory however little it held. The periodic GC hands
  *  an idle daemon's heap back: the Kotlin daemon sits idle through every test leg of a push. */
 const HEAP_CAPS = "-Xmx1536m -XX:MaxMetaspaceSize=512m -Xms256m -XX:G1PeriodicGCInterval=30000";
-/** The warm daemon's own caps, on the command line because ~/.gradle/gradle.properties (hostshield's 2 GB heap and 5 minute idle
- *  timeout) outranks the project's gradle.properties and only the command line outranks both. The worker cap stays hostshield's. */
+/** The warm daemon's own caps, on the command line because ~/.gradle/gradle.properties (a host wrapper's 2 GB heap and 5 minute idle
+ *  timeout) outranks the project's gradle.properties and only the command line outranks both. The worker cap stays the host wrapper's. */
 function localDaemon(label: string): string[] {
   const marker = label === PRE_PUSH_LABEL ? " -Dsplice.daemon=pre-push" : "";
   return [
@@ -97,7 +97,7 @@ export function lockPath(layout: Layout, env: Record<string, string | undefined>
  * The persistent build trees (prepush-tree.ts: pre-push's and the local gate's) are worktrees of the checkout with build output and caches of their own,
  * kept under `<git common dir>/splice-prepush/`. Each takes the lock beside its own build root: sharing the checkout's lock
  * made every push block every builder in the checkout for the whole push, though the two trees share no output. Its own
- * single-user lock (the tree's flock) already serialises pushes, and buildgate's memory admission still bounds the machine.
+ * single-user lock (the tree's flock) already serialises pushes, and the host build wrapper's memory admission still bounds the machine.
  */
 function isPrePushTree(layout: Layout): boolean {
   return layout.repoRoot.includes(`${sep}splice-prepush${sep}`);
@@ -105,8 +105,8 @@ function isPrePushTree(layout: Layout): boolean {
 
 /**
  * V4-341: `<git common dir>/gradle-slot.lock`, one path for the checkout and every `git worktree add`
- * of it, so a seat's detached-worktree build queues behind the checkout's and every other worktree's.
- * Per worktree, on 2026-09-26 two seats' worktrees both held "the slot" at once, and the contention
+ * of it, so a session's detached-worktree build queues behind the checkout's and every other worktree's.
+ * Per worktree, on 2026-09-26 two sessions' worktrees both held "the slot" at once, and the contention
  * pushed HeadServerLoadTest past its 30 s cap (34.2 s; 4.3 s alone). Resolved from the layout's own
  * root only: the caller's GIT_* variables (a hook sets them) and any repository above the root are
  * ignored. Undefined when git cannot say, and the caller falls back to the build root.
@@ -177,8 +177,8 @@ function supportsJoint(buildgate: string, buildRoot: string, env: Record<string,
   return probe.exitCode === 2 && usage?.split(/\s+/).includes("[--joint]") === true;
 }
 
-/** Signals the build's WHOLE process group. The build runs in a group of its own (spawnGradle), so this reaches what buildgate,
- *  hostshield's subreaper and the gradle client are, not only the first of them: buildgate dies of a signal and leaves the
+/** Signals the build's WHOLE process group. The build runs in a group of its own (spawnGradle), so this reaches what the host build wrapper,
+ *  its subreaper and the gradle client are, not only the first of them: the wrapper dies of a signal and leaves the
  *  rest running, which freed the slot under a live gradle. A gradle DAEMON is not in the group (it detaches), so it stays warm. */
 function signalGroup(child: Bun.Subprocess, signal: NodeJS.Signals): void {
   try {
@@ -353,27 +353,27 @@ function spawnGradle(
   }
   // THE ENVELOPE THE ROOT WRAPPER LOOKS FOR. `./gradlew` re-executes itself through `gate slot` unless it
   // finds this, which is what makes the slot the only way to start gradle here instead of a convention a
-  // seat can forget — and one forgot, three times, on 2026-10-10. Set for both the direct and the joint
+  // session can forget — and one forgot, three times. Set for both the direct and the joint
   // spawn: the joint shim (bin/gradlew) execs the real wrapper with its own environment, minus only the
   // two joint variables, so the marker crosses it. It carries THIS process's pid because a value left
-  // exported in a seat's shell outlives the run that set it, and a marker naming a dead process is
+  // exported in a session's shell outlives the run that set it, and a marker naming a dead process is
   // ignored by the wrapper (see its own note), so the stale case routes instead of slipping through.
   childEnv.SPLICE_GRADLE_SLOT = `${label}:${process.pid}`;
   // No `--offline`, locally or on CI. Gradle's cache cleanup deletes a dependency's POM after 30 days without a
   // read (a configuration-cache hit reads none) while its jar stays, and an offline run cannot fetch it again:
-  // dependency verification then failed every local build on 2026-10-25 until ~600 POMs were refetched by hand.
+  // dependency verification then failed every local build until ~600 POMs were refetched by hand.
   // With pinned versions an online run asks a repository only for a file the cache no longer has.
-  // Projects build in parallel on CI only. The runner is the job's alone; on this box the slot's JVMs
-  // run in buildgate.slice, which hostshield makes earlyoom's first victim, so here one project at a time.
+  // Projects build in parallel on CI only. The runner is the job's alone; a host build wrapper may confine the slot's JVMs
+  // to a memory-limited slice, so here one project at a time.
   // The pre-push tree is the exception: its longest tasks (the app and turns test suites, then the kover and detekt
   // tasks of every module the diff reaches) are independent of each other and ran one after another, 395 s of
   // gradle on a catalog push. Its workers overlap them, one per idle core (prePushWorkers), while the build gate's
   // admission still bounds the machine. The full gate keeps one bound on CI and locally without changing local parallelism.
   const parallel = childEnv.CI || label === PRE_PUSH_LABEL ? ["--parallel"] : [];
   if (maxWorkers !== undefined) parallel.push(`--max-workers=${maxWorkers}`);
-  // `command -v buildgate` — resolved against the child's PATH, because buildgate is this MACHINE's
+  // The host build wrapper is resolved against the child's PATH, because it is a machine-local
   // memory-containment wrapper and nothing in the tree provides it. Calling it unconditionally is
-  // what took every gradle leg on CI down with `buildgate: command not found` (gradle-slot.sh:37-42).
+  // what took every gradle leg on CI down with `command not found` (gradle-slot.sh:37-42).
   const gradlew = `${buildRoot}/gradlew`;
   if (!existsSync(gradlew)) throw new Error(`gate: no gradle wrapper at ${gradlew}`);
   // Locally the daemon stays warm inside the gate (heap, metaspace and Kotlin-daemon caps live in gradle.properties); CI is one build per runner.

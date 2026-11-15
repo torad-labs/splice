@@ -7,7 +7,7 @@
 //
 // A FILE'S LAST WRITE IS ITS LAST ACTIVITY. The reasoning and code-mode files are appended to for as long as
 // their conversation lives and the compaction summary is written once, so the newest write is when anyone last
-// used it. Resumability is not the test (Marlin, Oct 10): nearly everything is resumable while its file exists.
+// used it. Resumability is not the test: nearly everything is resumable while its file exists.
 //
 // WHAT A MISSING DIRECTORY MEANS. A store that never wrote has no directory, and that is zero bytes, never a
 // failure: an install that does not use code mode must not read "could not count" on a row it does not have.

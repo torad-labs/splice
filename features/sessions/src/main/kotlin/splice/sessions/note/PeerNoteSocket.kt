@@ -1,5 +1,5 @@
 // NEW: V4-444 — writes one frame to a live session's inbox socket, and refuses every target it cannot vouch for. The audit's rules
-// (splice-builder2, Sep 29 9:36 PM CT) are the checks below: a version the wire rule accepts, a socket that is a real socket owned by this
+// (Sep 29) are the checks below: a version the wire rule accepts, a socket that is a real socket owned by this
 // user, the socket and its directory not links, the directory one only this user can enter (so nobody else can swap what is behind the
 // path), and the connected peer owned by this user. Transport completion is all the close proves, so the answer is "submitted", never
 // "delivered", and a failed write is not retried.

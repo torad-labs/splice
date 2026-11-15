@@ -186,7 +186,7 @@ public class ClaudeConfigMaterializer(
 
     // Guard the operator's REAL global config: the dir must look like an isolated .claude* dir AND
     // must not resolve to ~/.claude itself. `contains("claude")` let ~/.claude (and
-    // ~/Documents/claude-notes, /tmp/claude) through — this closes both.
+    // ~/notes/claude, /tmp/claude) through — this closes both.
     private fun requireIsolatedDir(configDir: Path) {
         val target = configDir.toAbsolutePath().normalize()
         // DR-102: normalize() is textual and never resolves symlinks — a config_dir SYMLINK

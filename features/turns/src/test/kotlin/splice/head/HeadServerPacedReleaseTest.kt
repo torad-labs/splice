@@ -1,8 +1,8 @@
-// NEW: fix 2 of Oct 26 (Marcos approved it at about 2:00 AM CT). When the model ends a burst of text and then calls a
+// NEW: fix 2 of Oct 26. When the model ends a burst of text and then calls a
 // tool or ends its message, Claude Code gets the tool call and the end of the message as soon as splice gets them from
 // upstream, so the tool starts at once and the turn ends at once. Before, the pacer (V4-456) held a burst for up to its
 // one-second window and every later frame queued behind it, the tool call and message_stop included: on claude-splice,
-// Oct 25, 6 to 11 PM CT, over 21,215 turns, the pacer's longest hold per turn was 131 ms at p50 and 944 ms at p99.
+// Oct 25, over 21,215 turns, the pacer's longest hold per turn was 131 ms at p50 and 944 ms at p99.
 // A burst that more text follows is still spread over the window, for the V4-456 reason: a 31 KB thinking summary that
 // arrives in one read after a silence.
 //
@@ -60,14 +60,14 @@ import kotlin.time.Duration.Companion.seconds
 /** The pacing window a burst is spread over: a held delta waits at most this long, a tick aside. */
 private const val WINDOW_MS = 1_000L
 
-/** "At once" for a frame that crosses two real sockets on this machine: a few of the pacer's own ticks. */
+/** "At once" for a frame that crosses two real sockets on one host: a few of the pacer's own ticks. */
 private const val FEW_TICKS = 5
 
 /** The Oct 1 JFR shape the pacer exists for: 190 deltas in one provider read. */
 private const val BURST = 190
 
 // why: a burst the pacer spreads over most of its window, 6,080 characters in one read, carried in five deltas so the
-// head reads five events before the tool call, not 190. On Oct 26, with other seats' builds holding this machine at a
+// head reads five events before the tool call, not 190. On Oct 26, with other builds holding a host at a
 // load of 135 on 16 cores, reading 190 deltas took the head up to 230 ms before the frame after them reached the pacer.
 private const val BURST_DELTAS = 5
 private const val BURST_CHARS = 6_080
@@ -75,7 +75,7 @@ private const val BURST_CHARS = 6_080
 /** Of a burst that more text follows, the deltas in its first text block; the rest open a second one. */
 private const val FIRST_BLOCK = 150
 
-// why: the bound reads the middle of five turns. One turn can stall behind other processes on this machine: at a load
+// why: the bound reads the middle of five turns. One turn can stall behind other processes on a busy host: at a load
 // of 113 to 135 on 16 cores (Oct 26 runs), one turn in 18 waited 189 ms before splice wrote a byte to the client.
 private const val MEASURED_TURNS = 5
 

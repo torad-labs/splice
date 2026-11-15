@@ -135,7 +135,7 @@ class TransportFaultLineTest {
         assertTrue(text.contains("the write stalled"), text)
     }
 
-    // V4-349 (Marlin's baseline walk, 2026-09-27): the console's one failure read "io.ktor.utils.io.
+    // V4-349 (2026-09-27): the console's one failure read "io.ktor.utils.io.
     // ClosedWriteChannelException from chatgpt.com:443, with no message". Ktor's OkHttp engine throws the
     // closed-channel pair with no message when the connection goes while the request or its answer is still
     // moving.

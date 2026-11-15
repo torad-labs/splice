@@ -1,14 +1,14 @@
-// NEW: failover within one provider, driven through a real head (operator ruling, Oct 3, 3:44 PM CT: "when one hits its
-// limit the same command moves to the next in the order Accounts sets"). A passthrough head with three synthetic logins
+// NEW: failover within one provider, driven through a real head (when one hits its
+// limit the same command moves to the next in the order Accounts sets). A passthrough head with three synthetic logins
 // in a pool, over a local upstream that refuses a login with a native 429 naming its spent plan window. The turn that
 // meets the 429 moves the same request to the next free login before the client hears any refusal. Later turns stay
 // on the serving login. With every login held and armed, admission answers the pool's own "earliest reset" refusal
-// locally (splice-lead, Oct 12).
+// locally.
 // No login is retried within a request, and splice adds no retry words.
 //
-// PR #247 review, Oct 29 (security): the logins such a head holds serve only a caller proven to be splice's, a session
+// Security: the logins such a head holds serve only a caller proven to be splice's, a session
 // splice launched (it names the head's turn key in the launch proof header) or one that already forwards a login the
-// pool holds (a session launched before the proof existed). Any other caller on this machine, whatever it presents, is
+// pool holds (a session launched before the proof existed). Any other caller on this host, whatever it presents, is
 // refused at the head with a 401, and nothing of its turn reaches the vendor.
 package splice.head.admission
 
@@ -227,7 +227,7 @@ class PoolFailoverTurnTest {
         }
     }
 
-    // PR #247 review, Oct 29: another account on this machine posting to the head's loopback port with any bearer of
+    // Another account on this host posting to the head's loopback port with any bearer of
     // its own ran turns on the operator's held logins. Over generated credentials, in either carrier, with no proof or
     // a proof that is not the head's turn key, the head answers 401 and the vendor hears nothing.
     @Test
@@ -259,7 +259,7 @@ class PoolFailoverTurnTest {
         }
     }
 
-    // Oct 29, 21:30 CT: a hookd seat started before the proof existed, on a login token of its own, stopped on
+    // A hookd session started before the proof existed, on a login token of its own, stopped on
     // "This session's splice key is not valid", a key it never sent. The refused session is told why it got no turn and
     // how to come back on this head's command, never that a splice key of its was wrong.
     @Test
@@ -279,7 +279,7 @@ class PoolFailoverTurnTest {
         }
     }
 
-    // PR #247 review round 3, Oct 30: `splice rotate-key` retires the turn key a launch wrote into the session's proof,
+    // `splice rotate-key` retires the turn key a launch wrote into the session's proof,
     // and nothing refreshes it there. Splice started that session, so it is never told otherwise: it reads that its
     // splice key is not valid and to start again from splice, which `splice sessions relaunch` does, and nothing of
     // its turn reaches the vendor.
@@ -358,7 +358,7 @@ class PoolFailoverTurnTest {
         }
     }
 
-    // PR #247 review round 2, Oct 30 (security): the door reads the pool when a turn's headers arrive, and the login is
+    // Security: the door reads the pool when a turn's headers arrive, and the login is
     // chosen once its body is read. A caller that proves nothing, let through while the head held no login of its own,
     // must not get one that joined while its body was still arriving. Over generated callers and both moments a login
     // can join (before the headers, or between the door and the body's end), every caller that proves nothing is

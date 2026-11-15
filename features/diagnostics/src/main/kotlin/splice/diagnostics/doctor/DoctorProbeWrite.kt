@@ -38,7 +38,7 @@ internal class DoctorProbeWrite(
      *  A [dir] PROVEN ABSENT is probed through its nearest existing ancestor and never created
      *  (2026-10-04). This used to create it "as the daemon would" and then delete its own file, so
      *  doctor on a home with no state root left an empty state dir behind, the artifact that took over
-     *  the operator's root at the 7:27 PM CT restart. A dir that cannot be stat-ed is not absent: it
+     *  the operator's root at a restart. A dir that cannot be stat-ed is not absent: it
      *  is probed where it is, and the probe's own failure answers. */
     internal fun writableProbe(name: String, dir: Path, okDetail: String? = null): DoctorCheck {
         var into = dir

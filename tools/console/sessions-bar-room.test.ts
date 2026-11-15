@@ -1,7 +1,6 @@
-// A row's time bar keeps its room on a wide board whatever a working session is doing (lead walk of the installed console,
-// Oct 29: at 3828 in dark mode, the moment one session showed a long line of what it was doing, every row's bar on the board
-// narrowed to about a third and the axis over it dropped to "s min h d w"). The board gives each row at least 16rem of bar,
-// and a long name or a long line of words gives way first (Sessions' finish pass, Oct 29). Over generated name and word
+// A row's time bar keeps its room on a wide board whatever a working session is doing (at 3828 in dark mode, the moment one session showed a long line of what it was doing,
+// every row's bar on the board narrowed to about a third and the axis over it dropped to "s min h d w"). The board gives each row at least 16rem of bar,
+// and a long name or a long line of words gives way first. Over generated name and word
 // lengths, through the real Sessions page against a stub daemon, measured in the rendered DOM.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser } from "@playwright/test";
@@ -17,10 +16,10 @@ const row = (n: number, name: string, p: string, over: Record<string, unknown> =
   updated_at: new Date(Date.now() - n * 60_000).toISOString(),
   project: { id: `/work/${p}`, name: p, label: p, source: "folder", folder: "/work" }, ...over,
 });
-// names and lines of words of the lengths the live board showed the moment its bars narrowed (lead walk, Oct 29, 17:55 CT)
+// names and lines of words of the lengths the live board showed the moment its bars narrowed
 const NAMES = ["postbox1", "harbor-readonly-review-ledger-a9f3", "Model prefill speed on two × large cards, run 9"];
 const WORDS = ["Read the freshness module", "Run the worker package tests", "Read the group dot's exit and the queue it feeds"];
-// one board per case, in three projects so it stands in columns as his does: a working session with a line of words under a
+// one board per case, in three projects so it stands in columns as a real board does: a working session with a line of words under a
 // name, beside idle rows
 const board = (name: string, words: string) => [
   row(1, name, "atlas", { status: "working", last: { role: "assistant", tool: "Bash", text: words, ts: Date.now() - 5_000 } }),
@@ -55,7 +54,7 @@ afterAll(async () => {
 // every name crossed with every line of words, so the longest line meets the longest name
 const CASES = NAMES.flatMap((name) => WORDS.map((words) => ({ name, words })));
 
-test("at his width every row keeps at least 16rem of bar, and the axis keeps its whole words, whatever a working session is doing", async () => {
+test("at a wide desktop width every row keeps at least 16rem of bar, and the axis keeps its whole words, whatever a working session is doing", async () => {
   const page = await browser.newPage({ viewport: { width: 3828, height: 1860 } });
   try {
     const failures: string[] = [];

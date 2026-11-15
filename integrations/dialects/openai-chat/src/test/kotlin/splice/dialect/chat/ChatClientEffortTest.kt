@@ -1,4 +1,4 @@
-// Marcos, Oct 28: Claude Code's own picks count on every head and every adapter, always. A chat
+// Claude Code's own picks count on every head and every adapter, always. A chat
 // head sends the effort Claude Code's request names, built the way a head builds it, from the client's raw JSON.
 package splice.dialect.chat
 
@@ -20,7 +20,7 @@ private fun buildRaw(
 
 class ChatClientEffortTest {
 
-    // Marcos, Oct 28: Claude Code's own picks count on every head and every adapter, always.
+    // Claude Code's own picks count on every head and every adapter, always.
     // Claude Code names its effort in output_config (its /effort, its --effort, which a launch sets to the head's
     // configured effort), and a mid-conversation message's output_config changes it for the turn. A chat head sends
     // it, on the rungs its vendor takes: xhigh and max where the model takes xhigh, high elsewhere.

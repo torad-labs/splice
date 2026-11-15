@@ -24,7 +24,7 @@ internal class WsFailureTerminal(private val evt: JsonObject) {
     val message: String = JsonScalars.strOrEmpty(error["message"]).ifEmpty { JsonScalars.strOrEmpty(carried) }
 
     /** A policy refusal is the vendor's verdict on the REQUEST: re-served over SSE, the identical context met the
-     *  identical refusal (2026-10-04, 2:18 to 2:21 and 6:05 PM CT), so the round ends on it instead. The head's reader
+     *  identical refusal, so the round ends on it instead. The head's reader
      *  ([replies]) reads the event as sent, under its own type, so no code list lives here. */
     fun policyRefusal(replies: Replies, owner: LoginOwner): Boolean {
         val read = replies.event(FailedEvent(JsonScalars.strOrEmpty(evt["type"]), evt, owner))

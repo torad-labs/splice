@@ -37,7 +37,7 @@ private const val MS = 1_000L
 private const val SIX_DAYS_S = 6L * 24 * 3_600
 private val ISO_INSTANT = Regex("""\d{4}-\d{2}-\d{2}T\d{2}:\d{2}""")
 
-// The body ChatGPT sent on the live weekly limit (Sep 28, 5:11 PM CT), reset made relative.
+// The body ChatGPT sent on the live weekly limit (Sep 28), reset made relative.
 private fun liveBody(reset: Long) =
     """{"error":{"type":"usage_limit_reached","plan_type":"pro","resets_at":$reset,""" +
         """"resets_in_seconds":$SIX_DAYS_S,"limit_window_minutes":10080}}"""
@@ -46,7 +46,7 @@ private fun liveBody(reset: Long) =
  *  deviation since failure-handling slice 3, which CodexReplies implements; the login provider's
  *  planLimitFromBody until then) gets V4-233's plan hold: one attempt, a cause naming the reset its body
  *  stated and the window, whose line says that reset, and a plan-hold notice. The next turn asks the
- *  provider itself (Marcos, Oct 26), as UpstreamClientPlanLimitTest shows for the header-named window. The
+ *  provider itself (Oct 26), as UpstreamClientPlanLimitTest shows for the header-named window. The
  *  double reads the body the way codex does, so the vendor parse itself is pinned in provider-codex. */
 class UpstreamClientBodyPlanLimitTest {
 

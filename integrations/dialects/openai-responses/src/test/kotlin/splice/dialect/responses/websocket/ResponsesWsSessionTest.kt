@@ -153,7 +153,7 @@ class ResponsesWsSessionTest {
      *  emitted, and Claude Code's auto-compaction fires BEFORE that call runs — its body ends at
      *  the previous tool result plus the compaction prompt, so no delta can answer the call. The
      *  server refused every chained one ("No tool output found for function call …") and the round
-     *  fell back to a cold SSE send. Since 2026-10-27 (Marcos: unanswered tool calls are closed as aborted and
+     *  fell back to a cold SSE send. Since 2026-10-27 (unanswered tool calls are closed as aborted and
      *  chaining continues) the turn closes the call with codex-rs's "aborted" output and chains. */
     @Test
     fun `a turn that never answers the call the server holds chains with that call closed as aborted`() {
@@ -473,7 +473,7 @@ class ResponsesWsSessionTest {
         )
     }
 
-    /** Marcos, 2026-10-27, on the missing throttle: the chains kept every conversation's whole input as text under a 64 MiB
+    /** On the missing throttle: the chains kept every conversation's whole input as text under a 64 MiB
      *  cap and a 256-conversation cap, so about forty long conversations fit and every one past that was forgotten
      *  and sent whole. Three hundred conversations of 300 KB each must all still chain. */
     @Test

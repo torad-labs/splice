@@ -1,5 +1,5 @@
 // NEW: a Use now pin outlives a daemon restart, end to end (Nov 3, 2026). #461 saved the pins and put them back when the
-// daemon built the head, and its tests built the pool the same way, but the install of #461 still dropped Marcos's pin
+// daemon built the head, and its tests built the pool the same way, but the install of #461 still dropped the pin
 // on account-3: the head's start resets its pool (HeadLifecycle), and that reset cleared the pins it had just restored.
 // No test started a head. This one runs the daemon's own path twice over one state folder: the head assembled by
 // ManagedHeadFactory, then started, behind the real control plane, with the pin set and read where the console does.

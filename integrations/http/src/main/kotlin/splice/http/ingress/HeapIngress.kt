@@ -128,7 +128,7 @@ public class HeapIngress(
      * A body the route never read is read to its end here when its last bytes are already in, or when it is small and
      * declared, so the connection stays reusable, as the reply's keep-alive promised. Cancelling it instead would fail
      * Ktor's copier mid-write and end every later request on the connection: that is why an unread body used to close
-     * it, and a client reusing the socket after a kept-alive reply met a reset (marlin's console 502, Oct 12). The read
+     * it, and a client reusing the socket after a kept-alive reply met a reset (a console 502, Oct 12). The read
      * is bounded by the body already admitted and charged, and runs even when the call was cancelled, so the charge
      * settles. A small body still on its way gets the listener's read-idle bound, or [SMALL_BODY_WAIT_MS]; one that
      * does not finish within it stays unread, and settle closes the connection after the reply.

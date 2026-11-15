@@ -8,7 +8,7 @@
 // its moves, oldest first.
 //
 // A MOVE MADE WITH CONTINUE ON ALSO NAMES WHAT IT LEFT (Oct 11, the transcript's move mark): the command and the
-// model it ran on, and the moment he pressed (SessionContinue, [moved]). Its launch's rewrite has written its
+// model it ran on, and the moment it was pressed (SessionContinue, [moved]). Its launch's rewrite has written its
 // move by then, which this completes; a move between two commands that serve the model rewrites nothing and is
 // recorded here alone.
 package splice.client.resume
@@ -59,7 +59,7 @@ public class ModelMoves(private val dir: Path) {
         val launched = all.lastOrNull()?.takeIf {
             it.fromCommand == null && it.command == move.command && it.movedAt >= move.movedAt
         }
-        // the model he picked names the move; the launch may have moved leftover rows onto another one (p176)
+        // the model picked names the move; the launch may have moved leftover rows onto another one (p176)
         val kept = launched?.copy(
             model = move.model.ifBlank { launched.model },
             movedAt = move.movedAt,
@@ -70,10 +70,10 @@ public class ModelMoves(private val dir: Path) {
     }
 
     /** [session]'s move onto [command] did not come back, so the mark its launch wrote is dropped: the session went
-     *  on where it was, and a mark left standing would name the model it never reached ever after (Marlin, move
-     *  check 5). Only a launch's own mark from [since] on is dropped; a move that came back earlier is kept. The
+     *  on where it was, and a mark left standing would name the model it never reached ever after. Only a launch's own
+     *  mark from [since] on is dropped; a move that came back earlier is kept. The
      *  attempt itself is kept at [since]: splice ended the client for it, and the /exit it typed is in the
-     *  conversation with no mark to sit under (Marlin, #3). */
+     *  conversation with no mark to sit under. */
     public fun unmoved(session: String, command: String, since: Long): Unit = synchronized(this) {
         if (!sessionIdShape.matches(session)) return
         val tried = triedAt(session)
@@ -122,7 +122,7 @@ public class ModelMoves(private val dir: Path) {
     public fun of(sessionId: String): List<ModelMove> {
         val file = dir.resolve("$sessionId.json")
         // A session never moved has no file, and /api/sessions asks this twice for every row: one stat answers it, where a
-        // read that failed built a NoSuchFileException each time (splice-sessions, Oct 13).
+        // read that failed built a NoSuchFileException each time (Oct 13).
         if (!sessionIdShape.matches(sessionId) || !Files.exists(file)) return emptyList()
         val text = try {
             Files.readString(file)

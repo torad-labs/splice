@@ -10,7 +10,7 @@
 //
 // WHY THE PARSE LIVES HERE AND NOT IN THE TERMINAL. :integrations-tmux knows how to GET a screen; what is
 // drawn on it is Claude Code's, the same text whatever terminal shows it. A parse in the tmux module would
-// have to be written again the day seatd replaces it, for no reason.
+// have to be written again the day another terminal replaces it, for no reason.
 //
 // WHAT IT REFUSES TO GUESS. A line is a choice only when it opens with a digit 1 to 9 followed by `.` or
 // `)`, after nothing but whitespace and an optional selection marker. "2 files changed" is prose and stays

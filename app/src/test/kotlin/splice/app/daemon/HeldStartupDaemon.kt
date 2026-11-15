@@ -71,9 +71,9 @@ private fun say(line: String) {
 private const val STOP_DUMP_FRAMES = 25
 
 /** Every live thread's stack, said once when the stop has not reached the listener by its deadline. Under a quiet host
- *  and on a desk under load average 45 to 57 the stop reaches it in 9 to 226 ms (Oct 13, 13 runs of this child outside
- *  gradle), yet inside a loaded pre-push it has taken past 10 s and past 30 s, so the next slow run names its own
- *  cause: the thread the stop is waiting on, and what holds it. */
+ *  and on a machine under load average 45 to 57 the stop reaches it in 9 to 226 ms (Oct 13, 13 runs of this child
+ *  outside gradle), yet inside a loaded pre-push it has taken past 10 s and past 30 s, so the next slow run names its
+ *  own cause: the thread the stop is waiting on, and what holds it. */
 private fun sayWhereTheStopWaits() {
     Thread.getAllStackTraces().forEach { (thread, frames) ->
         say("THREAD \"${thread.name}\" ${thread.state}")

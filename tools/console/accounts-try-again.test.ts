@@ -1,10 +1,10 @@
-// A login its provider blocked has an act of its own on its card: Try again (Nov 11, 2026: a login read as blocked, so
-// he signed in again, then found his payment had failed and paid again). Until that day the card read
+// A login its provider blocked has an act of its own on its card: Try again (a login read as blocked, so
+// signing in again did not lift it). Until then the card read
 // "Blocked until its organization allows subscription access" and offered only Sign in again, in its menu, which lifts
 // no block. Through the real page against a stub daemon in the routes' own shapes (AskAgainRoute.kt, AccountsRoute.kt):
 // the blocked card offers Try again, pressing it has splice end that login's hold, and the card goes on reading Blocked,
 // now with "its next turn asks again" and nothing left to press, since only its provider's next answer lifts a block
-// (it read as a login a turn could take for the three minutes before Anthropic refused it again, Nov 11, 11:36 AM CT);
+// (it read as a login a turn could take for the three minutes before Anthropic refused it again);
 // and a press splice refuses says so on the card, which stays as it was.
 import { afterAll, beforeAll, test } from "bun:test";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";

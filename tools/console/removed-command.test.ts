@@ -1,8 +1,8 @@
-// A command removed from Models keeps its history findable (marlin's ruling on Remove: "History stays" must mean
-// findable). Both walkers removed claude-openrouter, read "History stays · 81 requests · 5 sessions", searched its name
+// A command removed from Models keeps its history findable (on Remove, "History stays" must mean
+// findable). A walk removed claude-openrouter, read "History stays · 81 requests · 5 sessions", searched its name
 // on Requests and Sessions, and got No match. Through the real pages, against a daemon that lists the command under
 // /api/heads/retired: its requests are listed and found by its name and by what was said in them (its trace answers
-// through its retired record, builder3 0680d2ae9), the Command filter names it Removed, a session on it reads its name
+// through its retired record), the Command filter names it Removed, a session on it reads its name
 // and is found by it, and neither page asks a removed command for what only a running one answers.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser } from "@playwright/test";

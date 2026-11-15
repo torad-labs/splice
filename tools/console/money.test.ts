@@ -1,4 +1,4 @@
-// How a dollar figure reads, on the page that draws it (fin, Oct 12): a tiny reply keeps two significant digits instead
+// How a dollar figure reads, on the page that draws it: a tiny reply keeps two significant digits instead
 // of collapsing to "<$0.0001", a cent and up is cents until $100 and whole dollars from there, and Requests' rows say the
 // same under a cent. Requests' row is read off the page, against a stub daemon serving one request that cost a hundredth
 // of a cent.

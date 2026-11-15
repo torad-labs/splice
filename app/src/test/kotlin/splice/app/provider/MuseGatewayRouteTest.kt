@@ -11,7 +11,7 @@
 // muse:<session>, so its cache stays pinned, and a restarted daemon keeps every conversation on the route and key it
 // last moved to.
 //
-// Oct 26, 02:37 to 02:55 CT: Meta answered a claude-muse turn 504 gateway_timeout after 184 s. splice re-sent the same
+// Oct 26: Meta answered a claude-muse turn 504 gateway_timeout after 184 s. splice re-sent the same
 // request on the same x-meta-ai-gateway-session-id within a second, and that request and the four after it waited
 // behind the generation for 18 minutes. After a turn the client aborted, the next warm turn of the session waited over
 // 30 s 6 times in 33, against 2 to 3% after a normal turn. After a warm turn that waited over 60 s for Meta's headers,
@@ -77,7 +77,7 @@ import java.util.concurrent.locks.LockSupport
 import kotlin.time.Duration.Companion.seconds
 
 private const val MODEL = "muse-wonder-full-1.0-contributor"
-private const val CONVERSATION = "sess-flashing-lenovo"
+private const val CONVERSATION = "sess-long-build"
 private const val CALM = "sess-calm"
 
 // One upstream post's whole budget. Meta's holds below pass on the clock the route reads, never in real time.
@@ -95,9 +95,9 @@ class MuseGatewayRouteTest {
     @Test
     fun `a conversation starts on the route it rode before its route could move`(@TempDir root: Path) = runBlocking {
         museHead(root) { rig ->
-            // SHA-256 of "splice-muse:muse:sess-flashing-lenovo" in the UUID v4 layout, the pin every claude-muse
+            // SHA-256 of "splice-muse:muse:sess-long-build" in the UUID v4 layout, the pin every claude-muse
             // conversation has carried since Sep 28: a deploy leaves a running conversation where its cache is.
-            assertEquals("4c446196-0c76-432e-a078-6c0acb57815a", rig.firstRoute(CONVERSATION))
+            assertEquals("fb5d3f62-1bba-421b-b786-988df80bf7f9", rig.firstRoute(CONVERSATION))
         }
     }
 

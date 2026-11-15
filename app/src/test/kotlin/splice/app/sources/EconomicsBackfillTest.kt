@@ -1,4 +1,4 @@
-// If splice holds a turn, Usage counts it (Marlin, Oct 10, 2026): the hours the rollup has no bucket
+// If splice holds a turn, Usage counts it: the hours the rollup has no bucket
 // for are built from the request records splice still holds, so the view reaches back as far as the
 // turns do and not only as far as the hourly file happens to.
 package splice.app.sources

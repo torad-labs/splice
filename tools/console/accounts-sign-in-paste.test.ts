@@ -1,5 +1,5 @@
-// A Claude sign-in's page ends in a code to paste back, and every card that starts one has the field for it (Marcos,
-// Nov 11, 2026: "then trhe sign in in splice showed still in progress"). splice runs Claude Code's own sign-in for every
+// A Claude sign-in's page ends in a code to paste back, and every card that starts one has the field for it (a sign-in
+// used to show as still in progress). splice runs Claude Code's own sign-in for every
 // Claude login, and the link Claude Code prints ends on a page that shows a code ("Paste code here if prompted"). Only
 // a command's own Claude Code login drew the field: Sign in again on an added login, and + Add account, opened the
 // same page and left its code with nowhere to go, so the sign-in stayed open until its ten minutes ran out. The step

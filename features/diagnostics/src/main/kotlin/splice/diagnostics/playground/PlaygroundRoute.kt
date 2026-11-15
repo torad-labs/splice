@@ -1,7 +1,7 @@
 // NEW: V4-133, FEATURES.md §5/§6 — POST /api/playground: "one prompt through one head, raw request
 // and response back, never recorded".
 //
-// Deviation (Oct 12, 2026, marlin): the send IS recorded now, because it is real spend. The head's budget weighs it
+// Deviation (Oct 12, 2026): the send IS recorded now, because it is real spend. The head's budget weighs it
 // first and a block answers 429 {error, outcome: "error:budget-blocked", blocked: "budget", head, spent_usd, limit_usd}; an answered
 // send leaves a Requests row flagged Compare, its economics entry and its budget spend, written by the head from
 // :app (UpstreamPlaygroundProbe). What stays true below: the send does not go through the head's turn pipeline.

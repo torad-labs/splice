@@ -51,7 +51,7 @@ describe("narrowBunTest", () => {
   });
 });
 
-// Load cut 5 (temple plan 2026-10-19, approved by Marcos): the hook's tests judge the hook against a stub gradle. The probes that
+// The hook's tests judge the hook against a stub gradle. The probes that
 // need the real wrapper check gradle's own declarations, not the hook, so a push that changes the hook, or anything the hook
 // imports, runs the hook's tests and starts no real gradle. The probes still run when their own file changes, and in the full gate.
 describe("a change to the hook runs its tests on a stub gradle, never the real one", () => {

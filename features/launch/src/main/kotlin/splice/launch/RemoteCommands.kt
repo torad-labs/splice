@@ -1,4 +1,4 @@
-// NEW: LAN share (docs/specs/lan-share.md, Marcos's ruling of 2026-10-24). A command this machine runs as Claude Code
+// NEW: LAN share (docs/specs/lan-share.md). A command this machine runs as Claude Code
 // pointed at another machine's head, the way Claude Code runs on Vertex or Bedrock: the launch asks that machine for
 // the head's models and builds the recipe a head here gets, with that machine's address as its base URL and no
 // credential. The share module answers it; the launch routes ask it for a name no head here carries.

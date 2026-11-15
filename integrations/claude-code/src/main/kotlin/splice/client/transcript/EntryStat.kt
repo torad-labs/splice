@@ -1,4 +1,4 @@
-// NEW: Oct 12, 2026 (splice-lead) — one stat of a file, folder or link: what it is, how big, when it changed, and which file it
+// NEW: Oct 12, 2026 — one stat of a file, folder or link: what it is, how big, when it changed, and which file it
 // is. The history index lists thousands of entries and asks this of each, so it is one system call each.
 package splice.client.transcript
 

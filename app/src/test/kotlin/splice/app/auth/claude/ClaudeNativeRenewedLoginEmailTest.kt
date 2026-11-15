@@ -35,8 +35,8 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 private const val HOUR_MS = 3_600_000L
-private val TORAD = ClaudeAccountIdentity("uuid-torad", "marcos@torad.example")
-private val SEEK = ClaudeAccountIdentity("uuid-seek", "marcos@seekapps.example")
+private val TORAD = ClaudeAccountIdentity("uuid-torad", "alice@work.example")
+private val SEEK = ClaudeAccountIdentity("uuid-seek", "alice@personal.example")
 
 class ClaudeNativeRenewedLoginEmailTest {
     @TempDir

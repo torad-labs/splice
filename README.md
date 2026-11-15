@@ -371,6 +371,44 @@ The first machine answers machines on its own LAN only: private and link-local a
 
 A machine that ran the first build of this (October 22 to 24) still has a head for each command it imported then. splice refuses to start until those are replaced, and says so for each one: run `splice remote add` with the first machine's address, and each old head is replaced by the address under its own name, its key removed from `keys.toml` in the same step.
 
+## Serve a team from one machine
+
+Sharing is for your own machines on one LAN. To serve a team, give one splice a `[server]` table in `splice.toml`: it then serves the commands you list on an address of its own, to anyone holding a key it issued, and to nobody else.
+
+```toml
+[server]
+listen = "0.0.0.0:3443"
+commands = ["claude-team"]
+tls_cert = "/etc/splice/tls/fullchain.pem"   # both, or neither when a proxy in front of it speaks TLS
+tls_key = "/etc/splice/tls/privkey.pem"
+trusted_proxies = ["10.0.0.0/8"]             # the proxies whose X-Forwarded-For names the client
+admins = ["ops@team.example"]
+
+[server.limits]
+inflight_per_person = 3                      # 0, or no line, is no cap
+rpm_per_person = 30
+```
+
+Give each person a key, and take it back the same way:
+
+```bash
+splice server key create --person ann@team.example --name laptop --expires 90d   # prints the key, once
+splice server key list --person ann@team.example
+splice server key revoke spk_ab12cd34                # one key, by the prefix the list shows
+splice server key revoke-person ann@team.example     # every key of someone who left
+splice server person set ann@team.example --inflight 5 --rpm 60
+```
+
+A person runs Claude Code against a command with their key, as against any Anthropic-compatible gateway:
+
+```bash
+ANTHROPIC_BASE_URL=https://gateway.team.example:3443/claude-team ANTHROPIC_API_KEY=spk_… claude
+```
+
+`GET /health` is open, and everything else needs a live key, as `x-api-key` or `Authorization: Bearer`. A missing, unknown, revoked or expired key is a 401 that never repeats the key, and nothing reaches the model. A revoke holds from the key's next request. The server keeps each key only as its SHA-256, bound to the person's email (see [What splice keeps on your disk](#what-splice-keeps-on-your-disk)), and an admin's key also manages keys over the listener at `/server/api/keys`. A person past a cap gets a 429 with `Retry-After` naming the cap, and everyone else is still served.
+
+splice refuses to start a server beside `splice share on`, with a command no head here runs, or with a command whose head signs in with a person's plan login (a Claude or ChatGPT subscription, for example): a plan's terms are for one person, so a server serves only heads that sign with an API key or a self-hosted provider. There is no sign-in, budget, usage report or per-person metric yet; [server mode's spec](docs/specs/server-mode.md) is the plan for them.
+
 ## Troubleshooting
 
 `splice doctor` checks prerequisites, install integrity, config, daemon, and auth, then prints
@@ -1039,7 +1077,7 @@ A single tool result larger than the runner's 64 KiB text frame is truncated at 
 Reasons to walk away:
 
 - **One tested Claude Code version per release.** The launch handshake checks the daemon's version. Doctor and the status line report when Claude Code is newer than the version tested with that release.
-- **Single-user by design.** There is no multi-user story, remote access, or TLS. A team wanting a shared model gateway should run one built for that job (LiteLLM, for example).
+- **A team server that is only starting.** One splice can [serve a team](#serve-a-team-from-one-machine) on keys it issues, over TLS, with per-person caps, but there is no sign-in, budget, usage ledger or per-person metric yet, and it serves only heads that sign with an API key or a self-hosted provider, never a person's plan login. A team that needs those today should run a gateway built for that job (LiteLLM, for example).
 - **A JVM daemon.** Java 21 is a hard dependency. The daemon has no fixed heap ceiling: its heap may grow to 75% of RAM, and G1 is tuned to keep committed memory close to the live data. The JVM options live in one place, `SPLICE_JVM_OPTS` in the `splice-launch` launcher, which every daemon start runs through; set that variable to override them.
 - **A one-person project.** The release gates are strict: every release is checksummed, provenance-attested, and installed hermetically in CI before it ships. One person maintains the project.
 

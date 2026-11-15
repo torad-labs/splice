@@ -100,7 +100,7 @@ internal class ServerListener(
     private val watched = WatchedRelay()
     private val paths = RequestPaths()
     private val admission = TurnAdmission(parts, voice)
-    private val openAi = OpenAiRoute(parts, io)
+    private val openAi = OpenAiRoute(parts, io, log)
 
     /** How often a streamed turn's client is sent a keepalive while its answer is silent; null sends none. */
     private val keepalive = server.keepaliveSeconds.takeIf { it > 0 }?.seconds

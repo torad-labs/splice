@@ -19,9 +19,11 @@
 // steps.
 //
 // Server mode also answers OpenAI-style clients for a command's provider itself (F4, openai-route): `outward` sends
-// such a request to that provider's server with the provider's own headers in place of the caller's key, and gives
-// the answer back the same way a head's is given. A server that took no connection got nothing of the request, and
-// the caller is told so instead of the client, so it can ask another of the provider's servers.
+// such a request to that provider's server, and gives the answer back the same way a head's is given. That server is
+// no part of this machine, so of what the client sent only the headers the listener names ride on, under the
+// provider's own headers; a request for a head carries all but the few a hop never passes on, because the head is
+// the one that decides what leaves the machine. A server that took no connection got nothing of the request, and the
+// caller is told so instead of the client, so it can ask another of the provider's servers.
 package splice.share
 
 import io.ktor.http.HttpHeaders
@@ -45,11 +47,10 @@ import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.wire.HttpStatus
+import splice.upstream.transport.TransportFailures
 import java.io.InputStream
-import java.net.ConnectException
 import java.net.URI
 import java.net.http.HttpClient
-import java.net.http.HttpConnectTimeoutException
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.util.concurrent.atomic.AtomicReference
@@ -68,16 +69,6 @@ public data class HeadTurn(
     val keepalive: Duration? = null,
 )
 
-/** One request for a server that is no head of this machine, such as a provider's own API: where it goes, the
- *  [headers] it carries in place of the caller's key, what its client hears when the server does not answer
- *  ([silent]), and what reads the events of a streamed answer on their way back ([edit]; null: byte for byte). */
-public data class OutwardAsk(
-    val target: URI,
-    val headers: Map<String, String>,
-    val silent: String,
-    val edit: StreamEdit? = null,
-)
-
 public class ShareRelay(
     private val turnKey: TurnKey,
     private val controlPort: Int,
@@ -92,6 +83,7 @@ public class ShareRelay(
     private val errors get() = speaker.errors
     private val answers = HeadAnswers(io, speaker.errors, clock)
     private val streamed = StreamedBodies()
+    private val failures = TransportFailures()
 
     /** What a statusline's body passes before it is relayed: the listener pins the session it names to the login the
      *  address chose, so the line shows that login from its first draw, before the session's first turn. */
@@ -121,11 +113,10 @@ public class ShareRelay(
         val answer = AtomicReference<HttpResponse<InputStream>>()
         val wait = ClientWait(ask.silent, edit = ask.edit)
         // The answer is read here when it is a stream to edit, so the server is asked to send it as it is.
-        val carried = ask.headers + (HttpHeaders.AcceptEncoding to "identity")
+        val own = ask.headers.own + (HttpHeaders.AcceptEncoding to "identity")
         try {
-            val sent = send(request(call, ask.target, body, carried), answer, wait)
-            val failure = sent.exceptionOrNull()
-            if (failure is ConnectException || failure is HttpConnectTimeoutException) return false
+            val sent = send(request(call, ask.target, body, own, ask.headers.carried), answer, wait)
+            if (sent.exceptionOrNull()?.let(failures::neverConnected) == true) return false
             answers.given(call, sent, wait)
             return true
         } finally {
@@ -161,8 +152,15 @@ public class ShareRelay(
     }
 
     /** [body] for [target], with the [signed] headers in place of whatever the other machine sent under those names:
-     *  the bearer, and for a Claude head that holds logins, the launch proof. */
-    private fun request(call: ApplicationCall, target: URI, body: ByteArray, signed: Map<String, String>): HttpRequest {
+     *  the bearer, and for a Claude head that holds logins, the launch proof. Of the other machine's own headers,
+     *  all ride on but the ones no hop passes on; with [only], the lowercase names given and no other. */
+    private fun request(
+        call: ApplicationCall,
+        target: URI,
+        body: ByteArray,
+        signed: Map<String, String>,
+        only: Set<String>? = null,
+    ): HttpRequest {
         val publisher = if (body.isEmpty()) {
             HttpRequest.BodyPublishers.noBody()
         } else {
@@ -170,7 +168,8 @@ public class ShareRelay(
         }
         val request = HttpRequest.newBuilder(target).method(call.request.httpMethod.value, publisher)
         call.request.headers.forEach { name, values ->
-            if (name.lowercase() !in notForwarded) values.forEach { request.header(name, it) }
+            val rides = name.lowercase().let { it !in notForwarded && (only == null || it in only) }
+            if (rides) values.forEach { request.header(name, it) }
         }
         signed.forEach { (name, value) -> request.setHeader(name, value) }
         return request.build()

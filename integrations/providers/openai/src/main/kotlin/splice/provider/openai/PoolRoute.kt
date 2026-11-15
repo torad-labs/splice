@@ -1,10 +1,10 @@
 // NEW: server mode (docs/specs/server-mode.md, F4). One turn's place among its provider's servers. A provider that
 // lists `[[providers.<p>.upstreams]]` is several machines, and a turn stays on the one it took (its prompt cache is
-// there) unless that one takes no connection: then nothing of the request reached it, the pool reads it down for every
-// turn, and the same request goes to another server at once.
+// there) unless that one takes no connection: then the same request goes to another server at once. Which server, and
+// when the turn has none left, is the pool's one walk (PoolWalk), which the server listener's OpenAI route takes too.
 package splice.provider.openai
 
-import splice.core.pool.UpstreamLease
+import splice.core.pool.PoolWalk
 import splice.core.pool.UpstreamPool
 import splice.core.turn.Usage
 import splice.upstream.Reroute
@@ -17,36 +17,16 @@ import splice.upstream.failure.FailedReply
  *  [path] is the route its requests are sent to under the server's API root. */
 internal class PoolRoute(
     private val pool: UpstreamPool,
-    private val preferred: String?,
+    preferred: String?,
     private val path: String,
 ) : VendorRoute {
-    private var lease: UpstreamLease? = null
-    private var ended = false
+    private val walk = PoolWalk(pool, preferred)
 
-    // Servers this turn left because they took no connection: one pass over the pool at most, so servers whose
-    // health check passes while they refuse turns cannot hand a turn round between them without end.
-    private var left = 0
+    override fun target(): String = walk.server().url + path
 
-    @Synchronized
-    override fun target(): String = held().url + path
-
-    @Synchronized
-    override fun unreachable(): Reroute {
-        val refused = held()
-        refused.refused()
-        refused.release()
-        lease = null
-        left++
-        return if (pool.up && left < pool.upstreams.size) Reroute.MOVED else Reroute.NOWHERE
-    }
+    override fun unreachable(): Reroute = if (walk.moved()) Reroute.MOVED else Reroute.NOWHERE
 
     override fun places(): List<String> = pool.upstreams.map { it.name }
-
-    /** The turn's place, taken when its first request asks where to go. A request sent after the turn ended holds
-     *  none: it is counted nowhere, since nothing would ever give its place back. */
-    private fun held(): UpstreamLease = lease ?: pool.lease(preferred).also { taken ->
-        if (ended) taken.release() else lease = taken
-    }
 
     override fun sending(): Map<String, String> = emptyMap()
 
@@ -60,10 +40,7 @@ internal class PoolRoute(
 
     override fun finished(usage: Usage?): Unit = Unit
 
-    @Synchronized
     override fun turnEnded() {
-        ended = true
-        lease?.release()
-        lease = null
+        walk.end()
     }
 }

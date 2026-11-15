@@ -1,7 +1,8 @@
 // What the OpenAI route's tests stand on (docs/specs/server-mode.md, F4, openai-route): a scripted server in the
 // provider's place that speaks OpenAI's chat API, a head that answers Claude Code's own routes, and server mode opened
-// over both the way the daemon opens it (ServerRig). The chat dialect's part (what a request goes on as, and how its stream is
-// read) is the daemon's to bring, so here it is stood in for by the plainest one that can be told apart on the wire.
+// over both the way the daemon opens it (ServerRig). The chat dialect's part (what a request goes on as, and how its
+// stream is read) is the daemon's to bring, so here it is stood in for by the plainest one that can be told apart on
+// the wire.
 package splice.server
 
 import com.sun.net.httpserver.HttpExchange
@@ -10,6 +11,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.topology.ServerLimits
+import splice.core.util.LogSink
 import splice.share.StreamEdit
 import java.net.InetSocketAddress
 import java.net.URI
@@ -94,9 +96,13 @@ internal class ScriptedBox(private val name: String) {
     }
 }
 
-/** A provider that speaks openai-chat, as the daemon describes one to the listener. A request goes on as it was sent,
- *  and the stream of one that asked for a stream is read by [UsageHidden]. */
-internal class BoxServer(override val base: String) : ChatServer {
+/** A provider that speaks openai-chat, as the daemon describes one to the listener: its `forward_headers` names
+ *  [forwarded], and its `extra_headers` say `x-box-team: blue`. A request goes on as it was sent, and the stream of
+ *  one that asked for a stream is read by [UsageHidden]. */
+internal class BoxServer(
+    override val base: String,
+    override val forwarded: List<String> = emptyList(),
+) : ChatServer {
     override fun headers(): Map<String, String> = mapOf("Authorization" to "Bearer $BOX_KEY", "x-box-team" to "blue")
 
     override fun chat(sent: ByteArray): ChatAsk =
@@ -117,9 +123,14 @@ internal class UsageHidden : StreamEdit {
 }
 
 /** Server mode over one command, `claude-team`, whose head answers Claude Code's routes and whose provider is what
- *  [upstreams] says. */
-internal class OpenAiRig(state: Path, upstreams: HeadUpstreams, limits: ServerLimits = ServerLimits()) {
-    private val rig = ServerRig(upstreams = upstreams)
+ *  [upstreams] says. The server's own lines go to [log]. */
+internal class OpenAiRig(
+    state: Path,
+    upstreams: HeadUpstreams,
+    limits: ServerLimits = ServerLimits(),
+    log: LogSink = LogSink { },
+) {
+    private val rig = ServerRig(log = log, upstreams = upstreams)
     val port = rig.port
     private val http = HttpClient.newHttpClient()
 
@@ -156,36 +167,36 @@ internal class OpenAiRig(state: Path, upstreams: HeadUpstreams, limits: ServerLi
     }
 
     /** `/claude-team/v1/<path>` as an OpenAI-style client asks it, a POST when it has a [body]: its key, when it has
-     *  one, as a bearer. */
-    private fun request(path: String, key: String?, body: String?, extra: Pair<String, String>? = null): HttpRequest {
+     *  one, as a bearer, and [extra], the headers of the caller's own. */
+    private fun request(path: String, key: String?, body: String?, extra: ClientHeaders = emptyList()): HttpRequest {
         val publisher = body?.let(HttpRequest.BodyPublishers::ofString) ?: HttpRequest.BodyPublishers.noBody()
         val request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:$port/claude-team/v1/$path"))
             .method(if (body == null) "GET" else "POST", publisher)
             .header("Content-Type", "application/json")
         key?.let { request.header("Authorization", "Bearer $it") }
-        extra?.let { (name, value) -> request.header(name, value) }
+        extra.forEach { (name, value) -> request.header(name, value) }
         return request.build()
     }
 
     /** A chat completion asked with [body], and its whole answer. */
-    fun chat(key: String?, body: String, query: String = ""): HttpResponse<String> =
-        http.send(request("chat/completions$query", key, body), HttpResponse.BodyHandlers.ofString())
+    fun chat(key: String?, body: String, query: String = "", extra: ClientHeaders = emptyList()): HttpResponse<String> =
+        http.send(request("chat/completions$query", key, body, extra), HttpResponse.BodyHandlers.ofString())
 
     /** A chat completion sent without waiting for its answer. */
     fun chatLater(key: String, body: String): CompletableFuture<HttpResponse<String>> =
         http.sendAsync(request("chat/completions", key, body), HttpResponse.BodyHandlers.ofString())
 
     /** A streamed chat completion's `data:` lines, each with the milliseconds since its headers came. */
-    fun stream(key: String, body: String): List<Pair<Long, String>> {
-        val answer = http.send(request("chat/completions", key, body), HttpResponse.BodyHandlers.ofLines())
+    fun stream(key: String, body: String, extra: ClientHeaders = emptyList()): List<Pair<Long, String>> {
+        val answer = http.send(request("chat/completions", key, body, extra), HttpResponse.BodyHandlers.ofLines())
         val began = System.nanoTime()
         return answer.body().filter { it.startsWith("data:") }
             .map { (System.nanoTime() - began) / NANOS_PER_MS to it }.toList()
     }
 
-    /** The models list, asked with [extra] as a header of the caller's own. */
-    fun models(key: String?, extra: Pair<String, String>? = null): HttpResponse<String> =
-        http.send(request("models", key, body = null, extra), HttpResponse.BodyHandlers.ofString())
+    /** The models list, asked with [extra] as headers of the caller's own. */
+    fun models(key: String?, vararg extra: Pair<String, String>): HttpResponse<String> =
+        http.send(request("models", key, body = null, extra.toList()), HttpResponse.BodyHandlers.ofString())
 
     /** A turn on the Messages route, as Claude Code sends one. */
     fun turn(key: String): HttpResponse<String> =
@@ -200,6 +211,9 @@ internal class OpenAiRig(state: Path, upstreams: HeadUpstreams, limits: ServerLi
         }
     }
 }
+
+/** Headers a client sends of its own, beside its key and its body's type. */
+internal typealias ClientHeaders = List<Pair<String, String>>
 
 internal const val BOX_KEY = "box-key-never-a-persons"
 internal const val BOX_MODELS = """{"object":"list","data":[{"id":"team-model","object":"model","owned_by":"box"}]}"""

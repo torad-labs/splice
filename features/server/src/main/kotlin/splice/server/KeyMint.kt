@@ -11,6 +11,10 @@ internal class KeyMint(private val random: SecureRandom) {
     private val lower = ('a'..'z') + ('0'..'9')
     private val mixed = lower + ('A'..'Z')
 
+    // A lookahead, so every place a key could start is tried: a run that only looks like a key cannot swallow the
+    // first letters of a real one that follows it.
+    private val shaped = Regex("(?=($KEY_MARK[a-z0-9]{$ID_LENGTH}_[A-Za-z0-9]{$SECRET_LENGTH}))")
+
     /** A new prefix that is none of [taken], so a prefix names one key. */
     fun prefix(taken: Set<String>): String =
         generateSequence { "$KEY_MARK${letters(lower, ID_LENGTH)}" }.first { it !in taken }
@@ -21,6 +25,9 @@ internal class KeyMint(private val random: SecureRandom) {
     /** The SHA-256 of [key], in hex: what a presented key is looked up by, so the lookup's time says nothing of it. */
     fun hash(key: String): String =
         HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(key.toByteArray()))
+
+    /** Every run of [text] that has a key's shape, wherever it sits: after a scheme, inside a parameter, or alone. */
+    fun shapedIn(text: String): Sequence<String> = shaped.findAll(text).map { it.groupValues[1] }
 
     private fun letters(from: List<Char>, count: Int): String =
         buildString { repeat(count) { append(from[random.nextInt(from.size)]) } }

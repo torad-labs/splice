@@ -35,6 +35,10 @@ public interface ChatServer {
      *  instead ([HeadUpstreams.of]). */
     public val base: String
 
+    /** The caller's headers that ride on to it, by lowercase name: the ones the provider's `forward_headers` names,
+     *  as on a head's own turn. Every other header a caller sends stays on this machine. */
+    public val forwarded: List<String>
+
     /** What a request to it carries in place of the caller's key: the provider's configured headers and its own key
      *  as it stands now. Blocking: the key may be read from its file. */
     public fun headers(): Map<String, String>

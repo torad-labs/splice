@@ -56,7 +56,7 @@ internal class DaemonServer(
     override fun chat(head: String): ChatServer? {
         val key = topology.heads[head]?.provider ?: return null
         val provider = topology.providers[key]?.takeIf { it.dialect == Dialect.OPENAI_CHAT } ?: return null
-        return DaemonChatServer(provider.baseUrl.trimEnd('/'), key, pools)
+        return DaemonChatServer(key, provider, pools)
     }
 
     /** Opens server mode when `[server]` names an address, serving [heads] through [controlPort]'s daemon. */

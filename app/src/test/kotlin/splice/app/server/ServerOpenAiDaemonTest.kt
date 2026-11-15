@@ -24,9 +24,9 @@ import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
 import splice.core.testing.TestPorts
 import splice.core.util.EnvReader
+import splice.head.awaitListening
 import splice.topology.TopologyLoader
 import java.net.InetSocketAddress
-import java.net.Socket
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -34,7 +34,6 @@ import java.net.http.HttpResponse
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.locks.LockSupport
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ServerOpenAiDaemonTest {
@@ -89,6 +88,7 @@ class ServerOpenAiDaemonTest {
             local = false
             auth = { kind = "api-key", file = "$keyFile" }
             extra_headers = { x-box-team = "blue" }
+            forward_headers = ["x-team-tag"]
 
             [[providers.box.models]]
             id = "team-model"
@@ -112,7 +112,7 @@ class ServerOpenAiDaemonTest {
             topologyPath = config,
         )
         runBlocking { daemon.start() }
-        for (port in listOf(control, listen)) awaitListening(port)
+        awaitListening(control, listen)
         val vars = mapOf("SPLICE_CONFIG" to "$config", "SPLICE_STATE_DIR" to "$state", "HOME" to "$tmp")
         val printed = StringBuilder()
         val made = ServerCommand(TerminalOutput { printed.appendLine(it) }, TerminalOutput { }, EnvReader { vars[it] })
@@ -127,20 +127,18 @@ class ServerOpenAiDaemonTest {
         box.stop(0)
     }
 
-    private fun awaitListening(port: Int) {
-        val deadline = System.currentTimeMillis() + 15_000
-        while (runCatching { Socket("127.0.0.1", port).use { } }.isFailure) {
-            check(System.currentTimeMillis() < deadline) { "nothing listening on :$port" }
-            LockSupport.parkNanos(5_000_000L)
-        }
-    }
-
-    private fun request(path: String, body: String?, bearer: String? = key): HttpRequest {
+    private fun request(
+        path: String,
+        body: String?,
+        bearer: String? = key,
+        own: Map<String, String> = emptyMap(),
+    ): HttpRequest {
         val publisher = body?.let(HttpRequest.BodyPublishers::ofString) ?: HttpRequest.BodyPublishers.noBody()
         val request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:$listen/claude-team/v1/$path"))
             .method(if (body == null) "GET" else "POST", publisher)
             .header("Content-Type", "application/json")
         bearer?.let { request.header("Authorization", "Bearer $it") }
+        own.forEach { (name, value) -> request.header(name, value) }
         return request.build()
     }
 
@@ -192,6 +190,23 @@ class ServerOpenAiDaemonTest {
     }
 
     @Test
+    fun `of a client's headers the provider's server gets the ones forward_headers names, and the key in none`() {
+        // Continue's OpenAI provider sends the person's key as `api-key` too; the rest is what any client carries.
+        val own = mapOf("api-key" to key, "x-team-tag" to "research", "Cookie" to "session=abc", "x-seat" to "7")
+        for ((path, body) in listOf("chat/completions" to CHAT, "models" to null)) {
+            val before = asked.size
+            val answer = http.send(request(path, body, own = own), HttpResponse.BodyHandlers.ofString())
+            assertEquals(200, answer.statusCode(), answer.body())
+            val got = asked[before].headers
+            assertEquals("Bearer $BOX_KEY", got["authorization"], path)
+            assertEquals("research", got["x-team-tag"], path)
+            assertEquals("blue", got["x-box-team"], path)
+            assertEquals(emptySet<String>(), got.keys intersect setOf("api-key", "cookie", "x-seat"), path)
+            assertFalse(got.values.any { key in it }, "the person's key stays on the server's machine ($path)")
+        }
+    }
+
+    @Test
     fun `the models list is the provider server's own, for a key holder and no one else`() {
         val listed = http.send(request("models", body = null), HttpResponse.BodyHandlers.ofString())
         assertEquals(200, listed.statusCode(), listed.body())
@@ -209,6 +224,7 @@ private const val BOX_KEY = "box-key-never-a-persons"
 private const val MODELS = """{"object":"list","data":[{"id":"team-model","object":"model","owned_by":"box"}]}"""
 private const val COMPLETION =
     """{"choices":[{"index":0,"message":{"role":"assistant","content":"from the box"}}],"usage":{"prompt_tokens":7}}"""
+private const val CHAT = """{"model":"team-model","messages":[{"role":"user","content":"hi"}]}"""
 private const val WORD = """data: {"choices":[{"index":0,"delta":{"content":"hi"}}]}"""
 private const val USAGE = """data: {"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":1}}"""
 private const val DONE = "data: [DONE]"

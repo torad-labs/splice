@@ -52,7 +52,7 @@ internal class ProbedLocalRuntimes(private val path: Path) : LocalRuntimes {
     override fun invoke(): List<LocalRuntimeReading> =
         // a provider on loopback that the key registry names, by its key or the family it declares, is that vendor through
         // a proxy, never a runtime of this computer (ProviderFamilyRule, Oct 10): OpenRouter pointed at a stand-in has no
-        // Runtime row (marlin, Oct 12)
+        // Runtime row
         TopologyLoader.parse(Files.readString(path)).providers.filter { (key, provider) ->
             provider.isLocal && ApiKeyProviderRegistry.row(provider.family ?: key) == null
         }.map { (key, provider) ->

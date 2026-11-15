@@ -14,6 +14,7 @@ import kotlin.random.Random
 
 private const val SESSION = "ea0ed4de-1111-4222-8333-444455556666"
 private const val ROW_MODEL = "claude-opus-5-5"
+private const val REVIEW_PROMPT = "/review-pr https://github.com/torad/splice/pull/251"
 
 // why: how many argvs the property draws; each is a few dozen words, so the whole run takes well under a second
 private const val RUNS = 3_000
@@ -31,7 +32,7 @@ private const val DROPPED_SWITCHES = "--continue --fork-session --print --tmux"
 private const val DROPPED_OPTIONAL = "--resume --from-pr --teleport --cloud --worktree"
 
 /** What a person's option carries: a word with a space, a quote, a brace, an accent or an equals sign among them. */
-private val VALUES = listOf("eli", "high", "/tmp/a b", "x=y", "it's", "{\"a\":1}", "ünï")
+private val VALUES = listOf("reviewer", "high", "/tmp/a b", "x=y", "it's", "{\"a\":1}", "ünï")
 
 /** One thing a session was started with, as the client reads it: the words given, the words a resume keeps of them,
  *  and whether a bare word right after them would be read as their value. */
@@ -48,15 +49,15 @@ class ClaudeArgvResumeTest {
     @Test
     fun `a review comes back with its agent and its name, and never with the prompt it was started with`() {
         assertEquals(
-            listOf("--agent", "eli", "-n", "splice-review-3") + tail(),
-            resumed("--agent", "eli", "-n", "splice-review-3", "/review-pr https://github.com/torad/splice/pull/251"),
+            listOf("--agent", "reviewer", "-n", "splice-review-3") + tail(),
+            resumed("--agent", "reviewer", "-n", "splice-review-3", REVIEW_PROMPT),
         )
     }
 
     @Test
-    fun `a seat keeps its own options, and the name it was resumed by gives way to its id`() {
+    fun `a session keeps its own options, and the name it was resumed by gives way to its id`() {
         val skip = "--allow-dangerously-skip-permissions"
-        assertEquals(listOf(skip, skip) + tail(), resumed(skip, skip, "-r", "splice-lead"))
+        assertEquals(listOf(skip, skip) + tail(), resumed(skip, skip, "-r", "my-session"))
     }
 
     @Test

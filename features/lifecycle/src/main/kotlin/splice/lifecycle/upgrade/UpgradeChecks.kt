@@ -1,4 +1,4 @@
-// NEW: the Settings Version card's "Check" (splice-lead, 2026-10-12) — one tap learns the newest published release.
+// NEW: the Settings Version card's "Check" (2026-10-12) — one tap learns the newest published release.
 //
 // THE ONLY WAY LATEST IS EVER LEARNED IS A TAP. No poll, no schedule: [check] runs when POST /api/upgrade/check calls it,
 // and [snapshot] only reports what the last tap found. A tap reads the release the way `splice upgrade` does (the

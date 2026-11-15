@@ -1,8 +1,8 @@
-// NEW: Oct 12, 2026 (Marlin's walk of desk c) — where in a transcript a moment falls, without reading the file.
+// NEW: Oct 12, 2026 - where in a transcript a moment falls, without reading the file.
 //
 // A door from a request opens its agent's conversation at that request's place. A week-long agent's transcript runs
-// past a gigabyte (1.4 GB on desk c), so paging back from the end to last Friday is hundreds of reads. Records are
-// written in time order, so the place is found by halving the file: each probe reads one record's top-level
+// past a gigabyte (1.4 GB seen in practice), so paging back from the end to last Friday is hundreds of reads.
+// Records are written in time order, so the place is found by halving the file: each probe reads one record's top-level
 // `timestamp` at a line start, and a final window is walked line by line. A record with no timestamp (mode,
 // last-prompt and the other bookkeeping kinds) is passed over; one too long to read is treated as no timestamp.
 package splice.client.transcript

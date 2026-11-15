@@ -8,6 +8,7 @@ import splice.accounts.pool.HeadAccountResetSource
 import splice.accounts.pool.LoginResetSpend
 import splice.accounts.pool.LoginResets
 import splice.accounts.pool.RESET_SPENT
+import splice.accounts.pool.RESET_UNCONFIRMED
 import splice.accounts.pool.RESET_UNKNOWN_KIND
 import splice.app.auth.claude.ClaudeLimitResets
 import splice.app.auth.claude.ResetKinds
@@ -58,7 +59,9 @@ internal class HeadLimitResets(
                 )
             }
         }
-        return if (spend.outcome == RESET_SPENT) spend.copy(readAgain = reads.readAgain(label)) else spend
+        // an unconfirmed spend may have been spent: the reading says which, and lets the held turns go on if it was
+        val mayHaveSpent = spend.outcome == RESET_SPENT || spend.outcome == RESET_UNCONFIRMED
+        return if (mayHaveSpent) spend.copy(readAgain = reads.readAgain(label)) else spend
     }
 
     private fun claude(): List<WiredAccount> = logins.current().filter { it.extraHeaders === ClaudeLoginHeaders }

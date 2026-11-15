@@ -25,8 +25,8 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.DurationUnit
 
 // why: each head reads its own files into its own caches, so heads scan side by side, and every head is ready about when
-// the largest one is rather than after the sum of all of them (splice-lead, Oct 12: desk d's claude-splice took most of
-// a 36 s scan while the others queued behind it). Three, not one per head: since 52fefeb63 a head's totals and window
+// the largest one is rather than after the sum of all of them (claude-splice took most of a 36 s
+// scan while the others queued behind it). Three, not one per head: since 52fefeb63 a head's totals and window
 // share one decode, which is what the single permit was holding back, and three bound the transient rows held at once.
 private const val COLD_READS_AT_ONCE = 3
 
@@ -40,7 +40,7 @@ private const val KEEP_WARM_BEST_EFFORT = "the next economics read does the work
 // why: the console never asks further back on its own. Usage's week starts at local midnight six days back (usage.js
 // slices()), which a fall-back day pushes to 7 days 59 minutes (23:59 on Nov 7, 2026 in Chicago), and two hours cover
 // any zone's shift; Requests and the summary ask 7d. Warming from the oldest hourly total decoded every archive back to
-// it at each start: after the Oct 25 18:53 CT start claudex read its requests 15.9 s after start and claude-splice
+// it at each start: after one start claudex read its requests 15.9 s after start and claude-splice
 // 20.1 s, against 2 to 3.5 s for the other heads. The 24-hour default made a head without a week of totals load again
 // on its first Usage open. An older ask still widens the window, through State.wanted.
 private const val CONSOLE_WEEK_MS = (7L * 24 + 2) * 3_600_000L
@@ -112,7 +112,7 @@ internal class UsageReadWarmup(
         scope.launch(io) {
             try {
                 // one turn at the permit for both: a head's request window starts on its own totals, never behind every
-                // other head's, so its Requests is ready a whole totals read sooner (splice-lead, Oct 12)
+                // other head's, so its Requests is ready a whole totals read sooner
                 admission.withPermit { loadTotals(head, state).onSuccess { loadWindow(head, state) } }
             } finally {
                 synchronized(state) { state.loading = false }

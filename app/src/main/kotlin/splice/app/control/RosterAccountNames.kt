@@ -1,5 +1,5 @@
-// NEW: labels only (Eli's ruling via splice-lead, 2026-10-12). Request rows keep the account value they were written
-// with; this names each one by the Accounts roster as it stands, so Requests and Usage show the label Accounts shows
+// Labels only. Request rows keep the account value they were written with;
+// this names each one by the Accounts roster as it stands, so Requests and Usage show the label Accounts shows
 // and group by its ref, and a row written with an email before refs existed is found by that ref.
 package splice.app.control
 
@@ -41,7 +41,7 @@ internal class RosterAccountNames(
         rows(head).forEach { row -> recordedAs(row, head).forEach { byValue.putIfAbsent(it, named(row)) } }
         val places = logins()
         // why: accountLabel reads and parses the login files from disk, and this is asked once per request row under
-        // the perf file lock, so a week of rows starved every Usage and Requests read (desk c jstack, Oct 12). Each
+        // the perf file lock, so a week of rows starved every Usage and Requests read (seen in a jstack). Each
         // distinct value is resolved once per read, a miss included: getOrPut would re-ask on every null.
         val resolved = HashMap<String, NamedAccount?>()
         return HeadAccountNames { recorded ->

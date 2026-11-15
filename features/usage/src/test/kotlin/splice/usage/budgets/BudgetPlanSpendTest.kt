@@ -1,4 +1,4 @@
-// Oct 11, 2026 (Marlin): a mixed command's budget caps what a KEY was charged. A request on a plan account is
+// A mixed command's budget caps what a KEY was charged. A request on a plan account is
 // neither spent nor unpriced, today's or from before this daemon started.
 package splice.usage.budgets
 

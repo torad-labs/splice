@@ -544,7 +544,7 @@ class DoctorWritableDirsTest {
 
     // 2026-10-04: the probe made a missing dir "as the daemon would", then deleted its own file, so a
     // doctor run on a home with no state root left exactly the empty state dir that took over the
-    // operator's root at the 7:27 PM CT restart. Doctor answers writability and creates nothing.
+    // operator's root at a restart. Doctor answers writability and creates nothing.
     @Test
     fun `a missing state root is answered writable and doctor leaves it missing`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))

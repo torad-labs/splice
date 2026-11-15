@@ -1,7 +1,7 @@
 # Stale-issue lifecycle, label-only: 30 days inactive → `stale` label + a comment
 # asking for a signal. Any activity removes the label (actions/stale default).
 # NOTHING auto-closes — auto-close at pre-community volume punishes early reporters
-# for maintainer latency (eli review 2026-07-23). To re-arm closing when a real
+# for maintainer latency. To re-arm closing when a real
 # backlog exists: set days-before-issue-close to a positive number and add a
 # close-issue-message. Escape hatches: `keep-open` label and assignment both exempt.
 name: stale

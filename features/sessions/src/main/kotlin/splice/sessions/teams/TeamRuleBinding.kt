@@ -1,5 +1,5 @@
-// NEW: Oct 13, 2026 (marlin's call on web-console §4.13 "Bind sessions ... or by rule", Marcos's ask of 2026-09-17,
-// via splice-lead) — a session someone starts in a team's repo on a slot's head joins that slot without a pick.
+// NEW: Oct 13, 2026 (web-console §4.13 "Bind sessions ... or by rule") — a session someone starts in a team's repo
+// on a slot's head joins that slot without a pick.
 //
 // THE RULE IS THE SLOT'S. A slot with bind_by_rule set takes a session that starts on the slot's head in a folder at or
 // under its team's repo. Nothing else is judged: the head is the one whose SessionStart hook fired, and the folder is
@@ -11,7 +11,7 @@
 // WHICH SLOT. Unarchived teams in created order, their slots in order: the first rule slot on that head whose team's
 // repo holds the folder and that is free. Free is no session, or one the registry no longer runs. A running member is
 // never displaced, and with no registry to ask, only a slot with no session is free. A session already on an active
-// team stays where it is (one active team per session, Marlin 2026-10-10).
+// team stays where it is (one active team per session).
 //
 // NEVER A FAILURE OF THE START. The binding is the store's own bind, under the store's lock so two starts cannot take
 // one slot. A refusal comes back as a log line, and the session starts either way.

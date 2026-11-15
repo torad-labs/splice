@@ -131,7 +131,7 @@ internal class PerfFieldNames(private val limitBytes: Long, numeric: Collection<
 internal class PerfNumericSchema(val names: List<String>, val shared: Boolean) {
     // why: ordered by each name's hash, so a lookup compares cached ints and tests one name for equality; a search by
     // string compares walked every key's characters, and a week's Usage read asks a row for a field ten times or more
-    // (jfr on desk c, Oct 12: the lookup was the read's largest cost)
+    // (measured with JFR: the lookup was the read's largest cost)
     private val order = names.indices.sortedBy { names[it].hashCode() }.toIntArray()
     private val hashes = IntArray(order.size) { names[order[it]].hashCode() }
     val retainedBytes: Long get() = NUMERIC_SCHEMA_OVERHEAD_BYTES + names.size * NUMERIC_SCHEMA_FIELD_BYTES

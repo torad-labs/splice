@@ -113,7 +113,7 @@ public object TopologyFileTarget {
         if (Files.isSymbolicLink(configured)) configured.toRealPath() else configured
 }
 
-/** Review of PR #247, round 5: one cross-process lock over every save's re-read, compare and rename. Two saves
+/** One cross-process lock over every save's re-read, compare and rename. Two saves
  *  that read the same bytes both passed the staleness check, and the later rename discarded the earlier edit
  *  while both reported success. The lock is an empty `.<name>.lock` beside the file's real target, the one place
  *  every writer of that file agrees on whatever folder it started from. It is never removed, so a waiting
@@ -370,7 +370,7 @@ private class TopologyChecks(
 
     fun findings(): List<TopologyFinding> =
         references() + auth() + ports() + (if (withRosters) rosters() else statics()) + knobs() + prompts() +
-            compaction() + channel() + remotes() + relays() + topology.telemetry.operator.findings() +
+            compaction() + daemon() + remotes() + relays() + topology.telemetry.operator.findings() +
             topology.providers.mapNotNull { (key, provider) -> provider.forwarded.finding(key) }
 
     /** An auth kind its provider's dialect cannot carry, asked the way head assembly asks it ([AuthCompatibility]), so
@@ -384,13 +384,18 @@ private class TopologyChecks(
         }
     }
 
-    /** `[daemon] update_channel` names one of the two channels releases are published on; anything else would leave the
-     *  updater following nothing while the file looks configured. */
-    private fun channel(): List<TopologyFinding> {
-        val channel = topology.daemon.updateChannel ?: return emptyList()
-        if (channel == "stable" || channel == "beta") return emptyList()
-        return listOf(TopologyFinding("daemon.update_channel", "must be \"stable\" or \"beta\""))
-    }
+    /** The `[daemon]` values the decode accepts but nothing can act on, which would otherwise leave the file looking
+     *  configured: an `update_channel` releases are not published on leaves the updater following nothing, and a
+     *  `reserved_peer_names` entry no peer could register under leaves the name meant open to any peer. */
+    private fun daemon(): List<TopologyFinding> = listOfNotNull(
+        topology.daemon.updateChannel?.takeUnless { it == "stable" || it == "beta" }?.let {
+            TopologyFinding("daemon.update_channel", "must be \"stable\" or \"beta\"")
+        },
+        topology.daemon.reservedPeerNames?.takeUnless { names -> names.all(Regex(PEER_NAME_PATTERN)::matches) }?.let {
+            val rule = "each entry must be a peer name: a lowercase letter, then 1 to 31 of a-z, 0-9 or -"
+            TopologyFinding("daemon.reserved_peer_names", rule)
+        },
+    )
 
     /** V4-36 and V4-124: a standing prompt the head build would refuse is a finding here, built the way
      *  HeadServerFactory builds it, so a table setting both keys, an unreadable file, a relative project root or a
@@ -481,7 +486,7 @@ private class TopologyChecks(
 
     /** LAN share: a remote command must be a name no head here runs already, and its address one the launch can read.
      *  Said at boot, beside every other finding, never found out as a launch that runs something else. `claude` may
-     *  name one (Marcos, 2026-10-25): the wrapped `claude` then launches on the other machine's head. */
+     *  name one (2026-10-25): the wrapped `claude` then launches on the other machine's head. */
     private fun remotes(): List<TopologyFinding> = topology.remote.flatMap { (command, remote) ->
         val taken = "a head here already runs as $command; give this one another name"
             .takeIf { topology.resolveHeadKeys(command).isNotEmpty() }
@@ -564,3 +569,8 @@ private class TopologyChecks(
 /** Claude Code's own command: splice's wrapper takes its place on PATH. A remote command may take its name, and is
  *  reached through that wrapper; no remote command links or unlinks it (Topology.remoteLinks). */
 public const val CLAUDE_COMMAND: String = "claude"
+
+// why: docs/specs/peer-messaging.md 2.1 caps a peer name at 32 characters, lowercase, starting with a letter, so it is
+// a safe file name, a safe envelope attribute and a safe registry name. The peer store registers by it, and boot holds
+// `[daemon] reserved_peer_names` to it.
+public const val PEER_NAME_PATTERN: String = "^[a-z][a-z0-9-]{1,31}$"

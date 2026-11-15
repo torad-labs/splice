@@ -12,7 +12,7 @@
     "core/src/main/kotlin/splice/core/topology/Topology.kt ProviderConfig": {
       "params": 14,
       "subsystems": 1,
-      "reason": "provider headers for a gateway, 2026-11-14: forward_headers and send_version; the class mirrors splice.toml's [providers.<key>] table field by field, the outside-format exception Marcos set for LongParameterList on 2026-10-09"
+      "reason": "provider headers for a gateway, 2026-11-14: forward_headers and send_version; the class mirrors splice.toml's [providers.<key>] table field by field, the outside-format exception to LongParameterList (2026-10-09)"
     },
     "core/src/main/kotlin/splice/core/topology/QuirksConfig.kt QuirksConfig": {
       "params": 33,
@@ -40,7 +40,7 @@
     "features/sessions/src/main/kotlin/splice/sessions/peer/helper/PeerRegistryShapes.kt RegistryRecordFile": {
       "params": 19,
       "subsystems": 0,
-      "reason": "peer messaging package B, 2026-10-19: @Serializable mirror of Claude Code's ~/.claude/sessions/<pid>.json registry record, field by field (spec 2.2), the outside-format exception Marcos set for LongParameterList on 2026-10-09; 2026-10-27: codex peers add the record's lifecycleBinding, the field Fence verifies a Codex thread's owner by"
+      "reason": "peer messaging package B, 2026-10-19: @Serializable mirror of Claude Code's ~/.claude/sessions/<pid>.json registry record, field by field (spec 2.2), the outside-format exception to LongParameterList (2026-10-09); 2026-10-27: codex peers add the record's lifecycleBinding, the field a Codex thread's owner is verified by"
     },
     "core/src/main/kotlin/splice/core/turn/Turn.kt TurnMeta": {
       "params": 19,

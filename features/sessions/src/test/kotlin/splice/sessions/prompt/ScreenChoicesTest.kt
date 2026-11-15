@@ -20,7 +20,7 @@ private val PERMISSION = """
       3. No, and tell Claude what to do differently (esc)
 """.trimIndent()
 
-/** Claude Code 2.1.296's folder trust question as captured off a desk pane on Oct 12, 2026: its options carry no numbers,
+/** Claude Code 2.1.296's folder trust question as captured off a pane on Oct 12, 2026: its options carry no numbers,
  *  and pressing a digit on it does nothing. */
 internal val trustScreen = """
 ────────────────────────────────────────────────────────────

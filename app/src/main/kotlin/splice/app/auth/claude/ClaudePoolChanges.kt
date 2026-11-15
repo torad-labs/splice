@@ -13,7 +13,7 @@ import splice.upstream.codemode.ProcessTicker
 import java.util.concurrent.ConcurrentHashMap
 
 // why: a login lands as files, and only a request's admission rereads them; a session stopped at its limit sends
-// none, so the logins are reread this often whether or not anything is in flight (Marcos, Oct 12: within 30 s).
+// none, so the logins are reread this often whether or not anything is in flight.
 private const val LOGIN_RECHECK_MS = 30_000L
 
 internal fun interface ClaudePoolChange {
@@ -45,8 +45,8 @@ internal class ClaudePoolChanges {
     /** The account each head's label last proved, so a login to another account in the same place is a new login. */
     private val proved = ConcurrentHashMap<String, String>()
 
-    /** A login joined [head] when a label is new, or when a place now proves another account than it did: Marcos
-     *  signed in to a second account in ~/.claude, the label stayed native:claude, and nothing woke (Oct 12). */
+    /** A login joined [head] when a label is new, or when a place now proves another account than it did: a
+     *  second account signed in to ~/.claude, the label stayed native:claude, and nothing woke. */
     fun accounts(head: String, current: List<WiredAccount>) {
         val swapped = current.filter { reproved(head, it) }
         val before = accounts.put(head, current.toList())?.map { it.label }?.toSet() ?: return

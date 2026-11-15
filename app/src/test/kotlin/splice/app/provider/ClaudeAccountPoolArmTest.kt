@@ -1,5 +1,5 @@
-// NEW: the Claude half of failover within one provider (operator ruling, Oct 3, 11:44 PM CT: "each provider gets a
-// head, each head can have multiple subscriptions"; Oct 4, 12:00 AM CT: heads are templates, so this is ANY head built
+// NEW: the Claude half of failover within one provider (each provider gets a
+// head, each head can have multiple subscriptions; heads are templates, so this is ANY head built
 // from the Claude template, under any key). A client-auth head with accounts in its own folders is a pool: the
 // caller's own Claude Code sign-in first, which forwards the caller's credential, then each added account with its
 // own. A head with no added account keeps the pre-pool path end to end, which is every install until someone adds one.

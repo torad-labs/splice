@@ -1,7 +1,7 @@
 // NEW: MCP hub step 6 (docs/specs/mcp-hub.md, proof f): what splice's own check found about `--plugin-dir-no-mcp`
 // for each Claude Code version. The launch passes the flag only for a version whose entry holds, and a plugin keeps
 // its own server copies on every other one. The file is <state>/mcp-hub/plugin-flag.json, owner-only, in the shape
-// agreed with splice-sessions: {"versions":{"<version>":{"holds":true|false,"checked_at":"<ISO>","why":"<line>"}}},
+// agreed with the session store: {"versions":{"<version>":{"holds":true|false,"checked_at":"<ISO>","why":"<line>"}}},
 // "why" only on a version that failed.
 package splice.client.mcp
 
@@ -17,7 +17,7 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
-// why: proof (f) ran on this version by hand (Oct 12), so it holds before splice's own check has recorded it. It is the
+// why: proof (f) ran on this version by hand, so it holds before splice's own check has recorded it. It is the
 // one version that shortcut covers, and it stays here when the Claude Code version splice is tested on moves on:
 // a newer one holds only once the check has recorded it.
 public const val PLUGIN_FLAG_PROVEN_VERSION: String = "2.1.296"

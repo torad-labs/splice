@@ -1,6 +1,6 @@
 # LAN share: Claude Code on one machine, running on another machine's heads
 
-- Status: rebuilt from Marcos's ruling of 2026-10-24 (below). The first build (phases 1 and 2, 2026-10-22 to
+- Status: rebuilt on the 2026-10-24 decision (below). The first build (phases 1 and 2, 2026-10-22 to
   10-24) relayed through a head on the using machine and copied tokens, models and sessions to it; commit
   c830a4250 removed it, and this spec starts again from the goal.
 - Overturns: the `docs/specs/v0.4.0.md` boundary "Preserve the single-user, loopback product boundary.
@@ -9,7 +9,7 @@
 
 ## The goal
 
-Marcos, at the Mac, types `claudex`, and Claude Code runs on devbox's ChatGPT login, the way Claude
+A user at the Mac types `claudex`, and Claude Code runs on devbox's ChatGPT login, the way Claude
 Code runs on Vertex or Bedrock: the Mac's Claude Code is pointed at devbox's address and holds nothing
 else. No credential, token or file is copied to the Mac or kept in step with it.
 
@@ -38,10 +38,10 @@ How anyone can tell it does:
    asks for a key. `claudex login` typed in the Mac's terminal says the same.
 7. devbox answers machines on its own networks only. There is no join, token, pin or certificate.
 
-## Decisions (Marcos, 2026-10-24): a node is a client, nothing more
+## Decisions (2026-10-24): a node is a client, nothing more
 
 After the Mac's `claudex` died on a LAN blip and its `/login` answered "this head signs in with an
-API key" (2026-10-24), Marcos decided that a node uses the server splice the way a client uses Vertex or
+API key" (2026-10-24), it was decided that a node uses the server splice the way a client uses Vertex or
 Bedrock, and no more. It does not handle credentials, file synchronization or Tailscale. Model details,
 usage and which auth to use are filtered through query parameters. The design stays that simple.
 
@@ -49,13 +49,13 @@ usage and which auth to use are filtered through query parameters. The design st
   node. It connects to the server's splice the way Claude Code connects to Vertex or Bedrock: a base URL,
   and nothing else to hold or keep in step. The server's splice listens on the LAN for its heads and
   injects every credential itself. The node holds no credential, no token and no key, and syncs no file.
-  Whether the node runs a daemon of its own is the seat's design call; what it never does is the above.
+  Whether the node runs a daemon of its own is a design call; what it never does is the above.
 - **What the node asks for rides in query params.** Which head, which of the server's logins (auth) a
   turn uses, and which models and usage the node is shown, are named by query params on the server's URL
   and filtered there. Nothing about them is copied to the node.
 - **Trust the LAN, for turns too.** No join, no per-machine token, no trust on first contact, no
   certificate pin, no remotes store. The server's heads answer any machine on its private networks.
-  Raised once: every device on that LAN can then use the heads. Marcos's decision.
+  Raised once: every device on that LAN can then use the heads. A deliberate decision.
 - **Tailscale is not part of this.** A node reaches the server by its LAN address, as it would any proxy.
 
 The 2026-10-22 decisions that stand: **relay, never copy** (the server keeps sole ownership of every
@@ -66,7 +66,7 @@ What the Mac showed on 2026-10-24 that this replaces: the relay modeled as an ap
 `/login` said "this head signs in with an API key"; and a dead connection to the server answered as a 529
 `overloaded_error`, so Claude Code printed "(overloaded), retrying" and never the reason.
 
-## Design calls (the seat's)
+## Design calls
 
 - **No relay on the node.** The node's Claude Code talks to the server's share port itself. A relay on
   the node is what turned a dead link into "overloaded"; without one, a dead link is Claude Code's own
@@ -98,7 +98,7 @@ What the Mac showed on 2026-10-24 that this replaces: the relay modeled as an ap
   OAuth beta on every turn it carries, which a node's Claude Code, holding no login, does not. While the
   caller's own sign-in is one of the head's logins, or it holds none, it has nothing to offer a node.
 - **Plain `claude` on a node** (2026-10-25: plain `claude` on the Mac was still using a local account instead of the
-  server's account, which Marcos wants fixed). `claude` may name a remote command: `splice remote add
+  server's account, which is to be fixed). `claude` may name a remote command: `splice remote add
   http://devbox.lan:3097/claude-splice --as claude`. The wrapped `claude` then launches on the server's
   head, over the node's own `~/.claude` as it does today, so its settings, instructions, sessions and models
   stay the person's: only where its turns go changes. The node gets no model list from the server, since a

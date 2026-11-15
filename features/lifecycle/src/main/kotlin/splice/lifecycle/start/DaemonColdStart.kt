@@ -40,7 +40,7 @@ public class DaemonColdStart(
 
     /** `splice start`: the exit code once the supervisor unit has the daemon answering on [port], as every
      *  cold start does where a unit serves this shell (V4-190), running or not; null where none does, and
-     *  the daemon runs in the calling process. Oct 1, 11:49 PM CT: a `start` typed while splice.service
+     *  the daemon runs in the calling process. A `start` typed while splice.service
      *  restarted took its port, with no heap cap and nothing to restart it. */
     public fun startThroughUnit(port: Int): Int? {
         supervisorUnit() ?: return null

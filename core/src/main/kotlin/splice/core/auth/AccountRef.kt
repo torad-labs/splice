@@ -1,5 +1,5 @@
-// NEW: the one short, non-reversible name an account goes by outside its vendor module (Eli's ruling via splice-lead,
-// 2026-10-12: the console never displays an account's email or account id, labels only).
+// NEW: the one short, non-reversible name an account goes by outside its vendor module (2026-10-12: the console never
+// displays an account's email or account id, labels only).
 package splice.core.auth
 
 import splice.core.perf.InputDigest

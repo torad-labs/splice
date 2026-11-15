@@ -3,7 +3,7 @@
 // Code sessions, their processes as /proc shows them, and a terminal that records what it is asked. The relaunch of
 // Oct 26 resumed every session on its head's own command in a new tmux session: two sessions started as `claude` came
 // back "Not logged in" in the head's config folder, reviews came back without their agent, and nobody could find the
-// seats it moved.
+// sessions it moved.
 //
 // What a relaunch must give back: the session started again on the command it was started with, in its own config
 // folder (so signed in as it was), with its agent and every other option it was given and never its first prompt, on
@@ -11,7 +11,7 @@
 //
 // What it must never do: type /exit into a session holding a feedback draft that has not been sent. Claude Code
 // 2.1.310 answers that /exit with "You have 1 unsent feedback draft · Enter to review & send · Esc to discard and
-// exit", and sending or discarding the draft is the person's call. On Oct 27 at 08:30 CT a relaunch did, and left a
+// exit", and sending or discarding the draft is the person's call. On Oct 27 a relaunch did, and left a
 // session in ~/.claude-claudex sitting at that question.
 package splice.app.control
 
@@ -83,10 +83,10 @@ private const val HEAD = "claude"
 private const val REVIEW = "5e1a0001-0000-4000-8000-000000000001"
 private const val SEAT = "5e1a0002-0000-4000-8000-000000000002"
 
-/** A seat beside [SEAT] in one config folder, as the seats of the claudex head share ~/.claude-claudex. */
+/** A session beside [SEAT] in one config folder, as the sessions of the claudex head share ~/.claude-claudex. */
 private const val NEIGHBOR = "5e1a0004-0000-4000-8000-000000000004"
 
-/** Seats in that folder holding a feedback draft they have not sent, each held otherwise too: in its turn, running
+/** Sessions in that folder holding a feedback draft they have not sent, each held otherwise too: in its turn, running
  *  background shells, waiting on an answer, and on no splice command. */
 private const val IN_TURN = "5e1a0005-0000-4000-8000-000000000005"
 private const val SHELLS = "5e1a0006-0000-4000-8000-000000000006"
@@ -141,14 +141,14 @@ class SessionRelaunchRouteTest {
         listOf(
             realClaude.toString(), "--settings", """{"env":{"SPLICE":"1"}}""",
             "--mcp-config", paths.stateDir.resolve("mcp-hub/launch-$FIRST_PID.json").toString(),
-            "--plugin-dir-no-mcp", "/home/p/.claude/plugins/eli",
-            "--agent", "eli", "-n", "splice-review-3", "/review-pr https://github.com/torad/splice/pull/251",
+            "--plugin-dir-no-mcp", "/home/p/.claude/plugins/review",
+            "--agent", "reviewer", "-n", "splice-review-3", "/review-pr https://github.com/torad/splice/pull/251",
         ),
         environ = listOf("SPLICE=1"),
         transcripts = home.resolve(".claude"),
     )
 
-    /** A seat started through his wrapped `claude` in a config folder of its own, with its own model named: [SEAT] as
+    /** A session started through a wrapped `claude` in a config folder of its own, with its own model named: [SEAT] as
      *  [FIRST_PID] + 1 unless another [session] and [pid] are named, holding the turn [key] its launch planted when one
      *  is given. */
     private fun startSeat(
@@ -199,7 +199,8 @@ class SessionRelaunchRouteTest {
                 listOf(
                     Restart(
                         review,
-                        listOf("env", "-u", "CLAUDE_CONFIG_DIR", claude, "--agent", "eli", "-n", "splice-review-3") +
+                        listOf("env", "-u", "CLAUDE_CONFIG_DIR", claude) +
+                            listOf("--agent", "reviewer", "-n", "splice-review-3") +
                             listOf("-r", REVIEW, "--model", ROW_MODEL),
                         cwd(REVIEW).toString(),
                     ),
@@ -236,9 +237,9 @@ class SessionRelaunchRouteTest {
         }
     }
 
-    // The seats of one head share its config folder, and Claude Code keeps every seat's feedback drafts in it: a draft
-    // names the session it came from, and its status reads "queued" until it is sent. On Oct 27 ~/.claude-claudex held
-    // ten queued drafts of several seats, and one file Claude Code had left cut off mid-way.
+    // The sessions of one head share its config folder, and Claude Code keeps every session's feedback drafts in it: a
+    // draft names the session it came from, and its status reads "queued" until it is sent. On Oct 27
+    // ~/.claude-claudex held ten queued drafts of several sessions, and one file Claude Code had left cut off mid-way.
     @Test
     fun `a session holding a feedback draft that has not been sent is left where it is, and its neighbor relaunches`() {
         val folder = home.resolve(".claude-claudex")
@@ -361,10 +362,10 @@ class SessionRelaunchRouteTest {
 
     // ── the rig ──────────────────────────────────────────────────────────────────────────────────────────────
 
-    /** Seats in [folder], each holding a feedback draft it has not sent and held otherwise too: [IN_TURN] in its turn,
-     *  [SHELLS] running background shells and [ASKING] waiting on an answer, each holding the turn [key] when one is
-     *  given. They wrote their registrations after every seat started before them, so a run comes to them first. Each
-     *  with the pane it runs in. */
+    /** Sessions in [folder], each holding a feedback draft it has not sent and held otherwise too: [IN_TURN] in its
+     *  turn, [SHELLS] running background shells and [ASKING] waiting on an answer, each holding the turn [key] when one
+     *  is given. They wrote their registrations after every session started before them, so a run comes to them first.
+     *  Each with the pane it runs in. */
     private fun startHeldOtherwise(folder: Path, key: String?): Map<String, SessionPane> {
         val states = listOf(
             IN_TURN to """"status":"busy"""",

@@ -1,5 +1,5 @@
 // NEW: V4-402 — a day of hand-offs written before rows carried to_session, read after the sessions
-// that sent them are gone. Marlin's walk of V4-391 on a home whose team had ended: 10 of 34 hand-offs
+// that sent them are gone. A walk of V4-391 on a home whose team had ended: 10 of 34 hand-offs
 // showed, every recipient a socket path, because the registry that could name a holder had emptied.
 // The fixture has that shape (4 members, 28 name-addressed rows of which 4 are subagent tool traffic,
 // 10 rows to one socket, an empty registry) with synthetic ids and paths.

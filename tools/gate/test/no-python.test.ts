@@ -15,7 +15,7 @@
 // THE GUARD ARMS drive `bun tools/gate no-python --guard` as a subprocess against THIS repository
 // with synthetic PreToolUse events, exactly as .claude/settings.json runs it. THE ALLOW ARMS MATTER
 // MORE THAN THE BLOCK ARMS: a write guard that over-refuses blocks the work it exists to allow, and
-// the seat it blocks cannot route around it.
+// the session it blocks cannot route around it.
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -388,7 +388,7 @@ describe("the no-python wall: callers", () => {
   }, (r) => readFileSync(join(r, "walls", "reg.toml"), "utf8").includes('wall = ""'));
 
   // ── a live caller running the WRONG runtime for the extension ──────────────────────────────
-  // The red arm carries splice-builder2's ACTUAL slip, quotes and all: a paraphrased arm
+  // The red arm carries an ACTUAL slip, quotes and all: a paraphrased arm
   // (`python3 wall.ts`) passes against a reading blind to the only form it has ever had to catch.
   arm("a .sh running a .ts through python3, path QUOTED", "red", (r) => {
     w(r, "checks/mock_chat.ts", "//\n");
@@ -403,7 +403,7 @@ describe("the no-python wall: callers", () => {
   }, (r) => readFileSync(join(r, "inside.sh"), "utf8").includes('bun "checks/mock_chat.ts"'));
 
   // THE ARM THAT LICENSES THE WHOLE CENSUS: comment lines are prose, or this would charge every
-  // seat that documented the defect it fixed.
+  // session that documented the defect it fixed.
   arm("a COMMENT quoting the wrong-runtime form", "green", (r) => {
     w(r, "run.sh", '# was: python3 "$HERE/mock_chat.ts", fixed in this commit\nbun a.ts\n');
     w(r, "a.ts", "//\n");

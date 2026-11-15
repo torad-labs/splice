@@ -1,5 +1,5 @@
 // NEW: a head reads the provider's own CURRENT quota reading when it names a window fully used, before
-// any turn has been refused. Marlin (f7f1e9308): claudex said nothing while its poll said the week was 100% with a
+// any turn has been refused. Claudex said nothing while its poll said the week was 100% with a
 // reset days out. V4-452 ruled what the reading IS: a reading, not a refusal. On Oct 1 claudex served 1,163 turns at a
 // week read 100%, so HeadServer.quotaFull carries it beside a head that stays ready, and providerResetForMs, the one
 // value any surface prints as out of quota, stays the held refusal's alone. A window that is not full, a reading

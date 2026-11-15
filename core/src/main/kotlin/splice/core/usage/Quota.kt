@@ -56,7 +56,7 @@ public data class QuotaSnapshot(
     public val isEmpty: Boolean get() = fiveHour == null && sevenDay == null
 
     /** A provider that answered its usage endpoint with no usage for this account: no windows, but a time. A probe
-     *  returns it, and a tracker keeps it in place of an older reading (Marlin's ruling, Oct 10, 2026). */
+     *  returns it, and a tracker keeps it in place of an older reading. */
     public val answeredEmpty: Boolean get() = isEmpty && updatedAt > 0L
 
     /** A turn's header reading names no model weeks; only the provider's usage endpoint does. So a reading without them

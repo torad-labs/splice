@@ -5,7 +5,7 @@
 // 2026-10-15: trace writing was 13% of the daemon's CPU (JFR, 90 s). A literal is now encoded in one pass straight to
 // bytes, a chunk's opening bytes are copied without Gear, which cannot cut there, and each cut records where its text
 // stood, so a remembered literal's marks no longer measure its whole text again. The bytes written are unchanged.
-// 2026-10-25: the Gear scan was 59% of trace encoding (136 of 230 samples, 17:59 to 18:04 CT), and nearly every chunk
+// 2026-10-25: the Gear scan was 59% of trace encoding (136 of 230 samples), and nearly every chunk
 // it found was stored already. A cut is now guessed from the chunk that followed the previous part when the pack last
 // stored them, and kept when the bytes up to it digest to that chunk and Gear cuts there. A missed guess is cut by the
 // plain rule, so the parts stored are unchanged.

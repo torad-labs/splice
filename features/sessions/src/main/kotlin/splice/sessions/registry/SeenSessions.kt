@@ -4,7 +4,7 @@
 // held 33 registrations and not one dead pid, Oct 10), so a listing read only from those files has no ended
 // sessions: Sessions' Ended fold stays empty and Requests cannot name the session a row came from. This keeps
 // what a card needs to name one, and nothing else: its id, name, folder, head and last activity. Never a word of
-// its transcript (splice-lead, Oct 10).
+// its transcript.
 //
 // IT IS HISTORY. One file per session, written with its last activity as the file's own time, so the one history
 // window ages it like every other store (HistoryWiring through KeptHistoryStores): a read leaves out what the

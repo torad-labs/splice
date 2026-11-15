@@ -1,5 +1,5 @@
 // + Add account on a ChatGPT command, when the sign-in comes back as the account the command's first login already
-// holds (Marcos had hit this before when adding new accounts, Nov 11, 2026). The sign-in page signs in
+// holds (seen when adding new accounts, Nov 11, 2026). The sign-in page signs in
 // whichever account its browser holds, so that is what an add most often comes back as. It filed a second login for
 // that one account, under a label of its own, and the page drew a second card for it.
 package splice.oauth

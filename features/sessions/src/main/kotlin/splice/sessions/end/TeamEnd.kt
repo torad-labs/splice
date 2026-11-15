@@ -1,5 +1,4 @@
-// NEW: Oct 12, 2026 — "End all" on a team: every started member's session ended, the team and its slots kept (fin,
-// Marlin's p218 ruling).
+// NEW: Oct 12, 2026 — "End all" on a team: every started member's session ended, the team and its slots kept.
 //
 //   POST /api/teams/{id}/end   {"confirm": true}
 //

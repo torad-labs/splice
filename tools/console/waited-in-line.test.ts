@@ -1,7 +1,7 @@
-// "Waited in line" is a request the gate HELD because its command's limit was full (Marlin, Oct 12). A pass through an
-// open gate records a wait of a millisecond or so, and on his day 1,151 such passes read as waiting under a peak of 33
-// and a limit of 100. Through the real Requests page: the door Settings opens asks the daemon for held requests only,
-// and a row the daemon sends that went straight in is not kept, however its wait reads.
+// "Waited in line" is a request the gate HELD because its command's limit was full. A pass through an
+// open gate records a wait of a millisecond or so, and in one real day 1,151 such passes read as waiting under a peak
+// of 33 and a limit of 100. Through the real Requests page: the door Settings opens asks the daemon for held requests
+// only, and a row the daemon sends that went straight in is not kept, however its wait reads.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";

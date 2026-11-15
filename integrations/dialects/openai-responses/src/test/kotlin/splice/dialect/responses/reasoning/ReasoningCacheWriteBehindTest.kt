@@ -1,7 +1,7 @@
-// NEW: fix 3, approved by Marcos about 2:00 AM CT on Oct 26 — a session on a Responses head never waits on the disk
+// NEW: fix 3, Oct 26 — a session on a Responses head never waits on the disk
 // for reasoning-cache writes, its own or another session's, and a daemon restart still keeps every record. Each
 // completed reasoning item used to write its record and force it to disk inside the upstream read loop, under one
-// lock every session on the head shared; on claudex, Oct 25, 6 to 11 PM CT, splice's first byte to the client
+// lock every session on the head shared; on claudex, Oct 25, 6 to 11 PM, splice's first byte to the client
 // trailed the upstream's by 6.4 s at p50 and 29.7 s at p90 with that lock on the path. A disk that holds what is
 // written to it until the test lets go stands in for a slow disk, which cannot be produced here for real; the
 // cache, its files and the head's turns above it run as the daemon runs them.

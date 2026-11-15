@@ -1,4 +1,4 @@
-// NEW: mid-stream re-anchoring (eli design 2026-07-24) — the proxy-side answer to codex-rs's
+// NEW: mid-stream re-anchoring (design of 2026-07-24) — the proxy-side answer to codex-rs's
 // whole-stream retry (responses_retry.rs). A round that fails RETRYABLY after frames were already
 // forwarded is not surfaced to the client: the wire sits at a clean block boundary (the translator
 // closeAlls before its terminal decision), so the turn re-POSTs a continuation carrying the
@@ -45,7 +45,7 @@ internal class ResponsesReanchorPolicy(
         // performs (responses_retry.rs). Emitted thinking may precede this — the client's
         // partial thinking block is already closed (closeAll before the terminal decision) and
         // the fresh round appends new blocks, which is wire-legal. Supersedes the 2026-07-24
-        // surface-honestly ruling for this case (operator call, 2026-08-26): that ruling
+        // surface-honestly decision for this case (2026-08-26): that decision
         // rejected an incoherent MARKER continuation mid-reasoning, not a clean restart.
         return if (!hasClientVisibleSalvage(partial)) round.requestBody else markerContinuation(round, partial)
     }
@@ -133,7 +133,7 @@ internal class ResponsesReanchorPolicy(
      *  (`type: message`), or [ResponsesAssistantText]'s easy-input item (`role`, `phase`, `content`, no `type`), which is
      *  how code mode carries a turn's prose across its hidden script steps. Read only by `type`, the second shape fell
      *  through as an opaque item, its prose was never matched against what the client saw, and an answer cut after a
-     *  script step was handed to the client as an error instead of carried on (Nov 9 2026, 23:22 CT). */
+     *  script step was handed to the client as an error instead of carried on (Nov 9 2026). */
     private fun isMessage(item: JsonObject): Boolean = when (JsonScalars.str(item, "type")) {
         "message" -> true
         null -> JsonScalars.str(item, "role") == "assistant"

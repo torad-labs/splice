@@ -17,7 +17,7 @@ import splice.core.perf.PerfKeys
 internal class PerfPeak(private val rows: List<PerfRow>) {
     /** The peak, the first instant it was reached, the requests counted and how many of them the gate HELD because the
      *  limit was full (ADMIT_HELD_MS). A pass through an open gate records a wait of a millisecond or so and is not
-     *  waiting: on his Oct 12 day 1,151 rows carried such a wait under a peak of 33 and a limit of 100 (Marlin). */
+     *  waiting: on one day 1,151 rows carried such a wait under a peak of 33 and a limit of 100. */
     private data class Reading(val peak: Int, val at: Long, val counted: Int, val queued: Int)
 
     private fun read(): Reading {

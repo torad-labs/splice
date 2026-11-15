@@ -36,7 +36,7 @@ public data class HeadTrees(
     val siblings: List<Path> = emptyList(),
     /** Plain Claude Code's own ~/.claude, searched after [siblings] by `-r ID` alone, so a session plain claude wrote
      *  is found even when no head links to the shared tree. Read only: `-r` copies a session out and never writes
-     *  here. Null when it is this head's own dir or already a sibling (splice-lead, Oct 13). */
+     *  here. Null when it is this head's own dir or already a sibling. */
     val vanilla: Path? = null,
 )
 
@@ -230,7 +230,7 @@ public sealed class GatewayBearer {
 
     /** A head that forwards the client's own login holds no bearer of the session's. It may hold logins of its own,
      *  and serves those only to a caller proven splice's, so the session names [proof] in the launch proof header
-     *  (PR #247 review, Oct 29). The key is read from [turnKey] when the launch is built, so a rotation reaches the
+     *  The key is read from [turnKey] when the launch is built, so a rotation reaches the
      *  next launch, and this class never prints it. */
     public data class Forwarded(val turnKey: TurnKey) : GatewayBearer()
 }
@@ -282,7 +282,7 @@ public data class LaunchGateway(
     val keyHelper: String? get() = (bearer as? GatewayBearer.Helper)?.command?.takeUnless { forwardClientAuth }
 
     /** The launch proof's line for the session's custom headers, on a head here that forwards the client's login, else
-     *  none: a command another machine serves never carries this machine's turn key (PR #247 review, Oct 29). */
+     *  none: a command another machine serves never carries this machine's turn key. */
     val proofLines: List<String> get() = listOfNotNull((bearer as? GatewayBearer.Forwarded)?.takeIf { remote == null })
         .map { "$LAUNCH_PROOF_HEADER: ${it.turnKey.get()}" }
 }

@@ -1,4 +1,4 @@
-// NEW: 2026-11-09 audit — a head refusing every request reads degraded. From 5:51 to 6:58 PM CT that day the Responses
+// NEW: 2026-11-09 audit — a head refusing every request reads degraded. For over an hour that day the Responses
 // dialect refused every claudex turn on a field Claude Code 2.1.321 had started sending, and /health, the status table
 // and daemon.log all read a quiet head. Each refusal is recorded on its own since 4d4cf1110; this is the head-level
 // reading beside them: enough refusals in a row for one cause, with no turn admitted since, mark the head degraded

@@ -66,12 +66,12 @@ internal class ClaudeLoginRows(
         val ref = view.identity.account?.ref
         val name = naming.name(AccountNameFacts(given, null, ref, view.quota?.plan, view.identity.account?.email))
         // A place no credential has proved yet reads "Account", never the command's word, which names no account
-        // (Marlin's Accounts walk, ruled via splice-lead, Oct 12); the page says it is Not read.
+        // (the page says it is Not read).
         name.write(this)
         put("email", naming.email(view.identity.account?.email))
         put("identity_verified", view.identity.account != null)
         put("can_remove", view.management?.canRemove == true)
-        // a proved login can always be named: its name lives in splice's own state, never in his credential files
+        // a proved login can always be named: its name lives in splice's own state, never in the credential files
         put("can_rename", view.management?.canRename == true || ref != null)
         putJsonObject("edit_target") {
             put("kind", "native")

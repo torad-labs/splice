@@ -1,9 +1,9 @@
 // The pre-push build tree: ONE persistent detached worktree of the repository, kept under the git directory and moved to
-// each pushed sha. Pre-push judges the pushed commit there, never the shared checkout, so a seat's half-finished edit
-// cannot redden another seat's push. The tree is persistent on purpose: untracked source is removed on every move, but
-// the ignored build outputs, Kotlin's incremental state and gradle's caches stay, so the next push compiles and tests only
-// what its commit changed. One lock serialises users of the tree. Node modules are linked from the shared checkout (the
-// pinned ast-grep and the gate's own dependencies); every tracked file comes from the commit.
+// each pushed sha. Pre-push judges the pushed commit there, never the shared checkout, so a session's half-finished
+// edit cannot redden another session's push. The tree is persistent on purpose: untracked source is removed on every
+// move, but the ignored build outputs, Kotlin's incremental state and gradle's caches stay, so the next push compiles
+// and tests only what its commit changed. One lock serialises users of the tree. Node modules are linked from the
+// shared checkout (the pinned ast-grep and the gate's own dependencies); every tracked file comes from the commit.
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";

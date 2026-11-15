@@ -260,8 +260,8 @@ class ProviderWordsFilterPropertyTest {
     }
 
     @Test
-    fun `DeepSeek's 402 of Oct 24, 11 08 11 PM CT yields Insufficient Balance with its request id dropped`() {
-        // The journal, Oct 24 23:08:11.149 CT, claude-deepseek: the error.message of
+    fun `DeepSeek's 402 of Oct 24 yields Insufficient Balance with its request id dropped`() {
+        // The journal, Oct 24, claude-deepseek: the error.message of
         // {"error":{"message":"Insufficient Balance (request_id: 49d5cc56-b2b7-42ed-8485-ac06076e79d4)",
         //  "type":"insufficient_balance_error","param":null,"code":"invalid_request_error"}}
         val raw = "Insufficient Balance (request_id: 49d5cc56-b2b7-42ed-8485-ac06076e79d4)"
@@ -270,8 +270,8 @@ class ProviderWordsFilterPropertyTest {
     }
 
     @Test
-    fun `xAI's 402 of Oct 20, 10 27 59 PM CT yields its credits sentence with its sentence of URLs dropped`() {
-        // The journal, Oct 20 22:27:59.234 CT, claude-grok: the error string of
+    fun `xAI's 402 of Oct 20 yields its credits sentence with its sentence of URLs dropped`() {
+        // The journal, Oct 20, claude-grok: the error string of
         // {"code":"personal-team-blocked:spending-limit","error":"You have run out of credits or need a Grok
         //  subscription. Add credits at https://grok.com/?_s=usage or upgrade at https://grok.com/supergrok."}
         val raw = "You have run out of credits or need a Grok subscription. Add credits at " +

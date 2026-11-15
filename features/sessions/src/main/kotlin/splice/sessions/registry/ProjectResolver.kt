@@ -1,9 +1,9 @@
 // NEW: Oct 11, 2026 — the one answer to "which project is this?", asked by the session rows, the Teams
-// slots, the request rows and /api/projects alike, so all of them agree (Marlin's ruling, Oct 11).
+// slots, the request rows and /api/projects alike, so all of them agree.
 //
 // With projectsFolders set, a project is the folder DIRECTLY under one of those folders that holds the
-// working directory, named by that folder: mythos/repo, mythos/Splice-CPO, a worktree under mythos and a
-// seat's home under mythos are all "mythos". A linked git worktree that lives OUTSIDE every folder
+// working directory, named by that folder: acme/repo, acme/api, a worktree under acme and a
+// session's home under acme are all "acme". A linked git worktree that lives OUTSIDE every folder
 // (EnterWorktree's ~/.claude/worktrees) follows its repo: the repo's location is asked instead. A working
 // directory outside every folder has no project.
 // With none set, the project is the git repo (RepoResolver: trusted roots only, worktrees folded into

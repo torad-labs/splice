@@ -1,5 +1,5 @@
 // NEW: a Claude login's limit resets, listed and spent through the routes the console and `splice limit-reset` call
-// (Nov 13, 2026: every Fable login on one machine ran out at about 6:24 PM CT and no reset could be called from splice).
+// (Nov 13, 2026: every Fable login on one machine ran out and no reset could be called from splice).
 // Anthropic is a stand-in here: no test reaches its real reset address.
 //
 // The goal: a person sees how many of each kind a login has left and whether one can be spent now; a spend asked for
@@ -208,6 +208,22 @@ class LimitResetRoutesTest {
     }
 
     @Test
+    fun `a spend answered in Claude Code's shape, with a null reason and fields it does not know, is said as spent`() =
+        testApplication {
+            routes()
+            spendAnswer = """{"result":"reset","reason":null,"resets_left":2,"weekly_resets_at":null,""" +
+                """"cooldown_until":null,"cleared":["seven_day_omelette",{"limit":"five_hour"}],"note":"x"}"""
+
+            val response = spend("""{"label":"$LOGIN","kind":"fable"}""")
+            val answer = parsed(response.bodyAsText())
+
+            assertEquals(HttpStatusCode.OK, response.status, answer.toString())
+            assertEquals("Spent a Fable reset. 2 left.", text(answer, "said"))
+            assertEquals(listOf("seven_day_omelette"), answer["cleared"]?.jsonArray?.map { it.jsonPrimitive.content })
+            assertEquals("true", text(answer, "read_again"))
+        }
+
+    @Test
     fun `a reset that cannot help now, or a body that names nothing, never reaches the spend address`() =
         testApplication {
             routes()
@@ -235,6 +251,8 @@ class LimitResetRoutesTest {
             assertEquals(HttpStatusCode.Conflict, lost.status)
             assertEquals("unconfirmed", text(lostBody, "outcome"))
             assertTrue(text(lostBody, "said").orEmpty().contains("never spent twice"), lostBody.toString())
+            // it may have been spent, so the login is read again and its reading says which
+            assertEquals("true", text(lostBody, "read_again"))
 
             spendAnswer = """{"result":"reset","resets_left":1}"""
             assertEquals(HttpStatusCode.OK, spend("""{"label":"$LOGIN","kind":"fable"}""").status)

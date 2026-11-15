@@ -36,7 +36,7 @@ internal data class LedgerContext(
     val alert: BudgetAlert,
     val log: LogSink,
     val clock: WallClock,
-    /** Where a budget day begins and ends: the operator's own midnight, never UTC's (Marlin, Oct 10, 2026). */
+    /** Where a budget day begins and ends: the operator's own midnight, never UTC's. */
     val zone: ZoneId,
     /** Every perf row at or after this instant was written by this daemon. */
     val bootMs: Long,
@@ -172,7 +172,7 @@ internal class BudgetLedger(
      *  that page leaves out the steps splice answered itself, so a local step with no price is no request to count. */
     // why: a row that reported no usage is classified as the hourly economics classifies it, failed or without a price.
     // Its lower bound on a priced model is $0.00, not null, and charging that booked every 429 as $0 of inexact spend:
-    // never counted failed, and the day never complete (splice-config on desk a, Oct 12).
+    // never counted failed, and the day never complete.
     private fun charge(tally: DayTally, usd: Double?, fields: Map<String, Long>, outcome: String) {
         val reported = TurnBill.fullyReported(fields)
         when {

@@ -1,11 +1,11 @@
 // NEW: Oct 10, 2026 — the ONE contract for a session's terminal, so the console can start a session, send a
-// message, answer a permission, stop a turn, end it, and tell the person how to open it (TMUX.md, Marlin).
+// message, answer a permission, stop a turn, end it, and tell the person how to open it (TMUX.md).
 //
-// WHY A CONTRACT AND NOT tmux CALLS. Marcos, Oct 8: splice should not depend on another product, however
+// WHY A CONTRACT AND NOT tmux CALLS. Splice should not depend on another product, however
 // universal. tmux is the FIRST IMPLEMENTATION, not the design. Everything above this file speaks these six
-// acts and never a tmux word, so when seatd carries all six the tmux implementation is one module deleted,
-// with nothing else to change. A `tmux` string anywhere outside that module is the defect this file exists
-// to prevent.
+// acts and never a tmux word, so when a dedicated session host carries all six the tmux implementation is one
+// module deleted, with nothing else to change. A `tmux` string anywhere outside that module is the defect
+// this file exists to prevent.
 //
 // WHY THESE FIVE ACTS. They are the table in TMUX.md, each written as what the PERSON does, never as how a
 // terminal does it: [open] a session, [send] them a message, [press] the key that answers what is on the
@@ -26,7 +26,7 @@ package splice.core.session
 public data class SessionPane(val id: String)
 
 /** What the person's terminal can be asked to do, for a session splice opened. One implementation at a time
- *  (tmux today, seatd next); no caller names which. */
+ *  (tmux today, a dedicated session host next); no caller names which. */
 public interface SessionTerminal {
     /** Start [command] in a new terminal for this session, in [directory], and answer its pane. With [beside], it
      *  opens where that pane lives (its server and so its environment), as a session that goes on after its own

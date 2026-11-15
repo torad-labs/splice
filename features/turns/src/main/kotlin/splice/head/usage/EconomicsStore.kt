@@ -184,7 +184,7 @@ public class EconomicsStore(
 
     /**
      * Take hours splice holds the turns for but has no bucket for: the gap between what this file
-     * reaches back to and what the request records do (Marlin, Oct 10, 2026 — if splice holds a
+     * reaches back to and what the request records do (if splice holds a
      * turn, Usage counts it). Answers the hours it holds afterwards, newest window first.
      *
      * NEVER OVERWRITES AN HOUR IT HAS. An hour recorded as its turns ran is the authority on itself:

@@ -1,4 +1,4 @@
-# THE LAW (Marcos approved the Splice brand kit on Oct 19, 2026). Every colour the console draws comes from
+# THE LAW (the Splice brand kit). Every colour the console draws comes from
 # app/src/main/resources/console/tokens.css, which is the kit's .design/brandkit/tokens/splice.css. A hex colour anywhere else
 # in the console's CSS, JS or HTML is a second palette, and it is how a console ended up with its own cream, its own red and a
 # review panel in magenta. Use a token (var(--splice-...)) or one of the console's aliases of one (var(--wall), var(--claude)).

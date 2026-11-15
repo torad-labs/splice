@@ -49,7 +49,7 @@ public class ClaudeLoginRoutes(private val source: ClaudeLoginPlacesSource) {
     }
 
     /** A body that is not {"code": "..."} is the caller's mistake, a 400 as the login start answers; only a code the
-     *  sign-in will not take now is a conflict (Temple notice a93cf87364d8c013). */
+     *  sign-in will not take now is a conflict. */
     public suspend fun submit(call: ApplicationCall) {
         val owner = owner(call) ?: return
         val id = call.parameters["id"].orEmpty()

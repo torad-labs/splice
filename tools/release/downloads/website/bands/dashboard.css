@@ -337,7 +337,7 @@
 .db-sess .s .grip svg { opacity: .55; }
 .db-lift .grip svg { opacity: 1; }
 
-/* ---- A team: the team's page, the console's own seats (role, command, standing instruction, state, the tool in use) and its activity ---- */
+/* ---- A team: the team's page, the console's own members (role, command, standing instruction, state, the tool in use) and its activity ---- */
 .db-tmv { display: flex; flex-direction: column; gap: calc(4 * var(--u)); }
 .db-tmbar { display: flex; align-items: center; gap: calc(2 * var(--u)); padding: calc(1.5 * var(--u)) calc(2 * var(--u)); background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: var(--cast) var(--cast) 0 var(--claude), var(--cast) var(--cast) 0 var(--ink-w) var(--ink); }
 .db-tmv .db-tmbar .name { font-family: var(--font-lead); font-weight: 400; line-height: 1.1; color: var(--text); }
@@ -365,7 +365,7 @@
 @container dbw (max-width:640px) {
   .db-tmseats { grid-template-columns: minmax(0, 1fr); }
 }
-/* a phone's Activity: the seat on its own row, the tool and its file under it, so no word breaks inside a narrow column */
+/* a phone's Activity: the member on its own row, the tool and its file under it, so no word breaks inside a narrow column */
 @container dbw (max-width:640px) {
   .db-act { gap: calc(2 * var(--u)); }
   .db-act li { grid-template-columns: .7rem auto minmax(0, 1fr); row-gap: .333rem; }

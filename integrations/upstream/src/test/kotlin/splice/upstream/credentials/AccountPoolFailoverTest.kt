@@ -1,5 +1,5 @@
-// NEW: failover within one provider (operator ruling, Oct 3, 3:44 PM CT: "A provider has two or more logins, and when
-// one hits its limit the same command moves to the next in the order Accounts sets"). A login the provider holds on its
+// NEW: failover within one provider (Oct 3: when one login of a provider with two or more
+// hits its limit, the same command moves to the next in the order Accounts sets). A login the provider holds on its
 // plan, by a native 429 with plan headers or a held refusal a translated provider read from the body, stays held for
 // the reset it named, and the next turn of the same session goes to the next login in the operator's order. When every
 // login is held and armed, selection chooses the nearest-reset eligible login. Its own provider answer controls the

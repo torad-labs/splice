@@ -52,7 +52,7 @@ afterAll(async () => {
 });
 
 test("a login at its limit can still take the session, which moves there when the window refills", async () => {
-  sessions = [row("s-builder", "builder", { account: "main", ...project("temple") }), row("s-other", "other", project("website"))];
+  sessions = [row("s-builder", "builder", { account: "main", ...project("harbor") }), row("s-other", "other", project("website"))];
   pin = null;
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   try {

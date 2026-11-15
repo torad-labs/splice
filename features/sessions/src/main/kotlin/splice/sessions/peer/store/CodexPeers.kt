@@ -13,7 +13,7 @@ import splice.sessions.peer.codex.NativeProcess
 import java.nio.file.Files
 import java.nio.file.Path
 
-// why: each codex peer is a resident helper JVM of about 48 MB, and this machine runs 40 to 50 seats at a time.
+// why: each codex peer is a resident helper JVM of about 48 MB, and a machine can run 40 to 50 sessions at a time.
 private const val MAX_CODEX_PEERS = 64
 
 private const val ANYONE = "*"

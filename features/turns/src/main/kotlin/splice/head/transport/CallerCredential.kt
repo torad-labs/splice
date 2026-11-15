@@ -1,5 +1,5 @@
-// NEW: the Claude half of failover within one provider (operator ruling, Oct 3, 11:44 PM CT: "each provider gets a
-// head, each head can have multiple subscriptions"). A client-auth head forwards the caller's own credential in the
+// NEW: the Claude half of failover within one provider (each provider gets a
+// head, each head can have multiple subscriptions). A client-auth head forwards the caller's own credential in the
 // turn's headers, and the upstream merge puts those headers AFTER the account's own auth header, so a login the pool
 // selected would always be overridden by the caller's token. This is the one rule for which credential rides: the
 // selected login's, unless it is the caller's own (or the head holds none), in which case the caller's headers go
@@ -24,7 +24,7 @@ internal object CallerCredential {
     }
 
     /** LAN share: TRUE when a turn holds another machine's word (SHARE_NODE_TOKEN) and [sender] would forward the
-     *  caller's credential, so no login this machine holds is there to put in the word's place. The word opens nothing
+     *  caller's credential, so no login this host holds is there to put in the word's place. The word opens nothing
      *  upstream, and the vendor's 401 would mark this head's own sign-in rejected. */
     suspend fun unheldNodeWord(turnHeaders: Map<String, String>, sender: AuthProvider): Boolean {
         val word = turnHeaders.any { (name, value) ->

@@ -3,11 +3,11 @@
 // The shared 429 horizon (HD-25). Each pooled account owns one; legacy heads use the UpstreamClient's
 // instance. A turn that gives up on a 429 marks its login limited here, and the mark only steers
 // account selection and names the limit on status. Finite temporary limits still ask the provider on each
-// turn (Marcos, Oct 26). A named exhausted window with no reset, or a billing-cycle limit, refuses promptly with
+// turn (Oct 26). A named exhausted window with no reset, or a billing-cycle limit, refuses promptly with
 // its stored cause during this same bounded horizon (Nov 7); expiry permits an explicit new turn to re-probe.
 // Before Oct 26 this horizon
 // made every later turn on the login sleep or fail fast with a 429 the provider never sent, and on
-// claude-splice the ten slowest turns of Oct 25, 6 to 11 PM CT, waited 45 s to 2.3 min on it and then
+// claude-splice the ten slowest turns of Oct 25 waited 45 s to 2.3 min on it and then
 // failed anyway.
 //
 // This is SHARED MUTABLE STATE, and that is exactly why every touch point moved together rather

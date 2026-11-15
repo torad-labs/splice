@@ -1,4 +1,4 @@
-// Teams: a team is his. Members on different models, each a role on a command, with a goal; splice carries the
+// Teams: a team is the user's. Members on different models, each a role on a command, with a goal; splice carries the
 // members' sessions and reports what they do. Create one and start its members; track each member's state, their
 // messages to each other, what each is doing and what it has cost.
 //
@@ -73,7 +73,7 @@ const state = {
   // its transcript, which is a permission prompt, since those choices belong to the client's own version.
   screens: {},
   // What a member's screen asks before its session registered (its folder trust question), by slot id: the start
-  // stopped there and left the pane open for him to answer (Marlin, Oct 12).
+  // stopped there and left the pane open for him to answer.
   pending: {},
   // a first read that failed has nothing to show but its word; a later one keeps the board, dimmed, and says since when
   error: null, stale: null, loading: true, everRead: false, readAt: null, reading: true,
@@ -104,7 +104,7 @@ const leftOf = (tm) => (tm.left_slots || []).map((l) => ({ ...l.slot, left_epoch
 const slotOf = (tm, id) => tm.slots.find((s) => s.id === id) || leftOf(tm).find((s) => s.id === id) || null;
 const isLeft = (tm, slot) => !tm.slots.some((s) => s.id === slot.id);
 const sessOf = (slot) => (slot.session ? state.sessions[slot.session] : null);
-// ONE ACTIVE TEAM PER SESSION is what PUT refuses (Marlin), but older data may hold a session on two. Never pick one
+// ONE ACTIVE TEAM PER SESSION is what PUT refuses, but older data may hold a session on two. Never pick one
 // silently: a session that looks single-homed when it is not is the worse failure, so each team that holds it names
 // the other. Archived teams do not count, they have let go.
 const alsoOn = (tm, session) => state.teams
@@ -158,7 +158,7 @@ async function readWeek(tm) {
   render();
 }
 
-// Read again stays off until the read it started has landed, its team's own reads included (splice-lead, Oct 12): a
+// Read again stays off until the read it started has landed, its team's own reads included: a
 // second click mid-read started a second read racing the first. A read asked for while one is out waits for it and then
 // reads again, so an act's own read always sees what the act did.
 let inFlight = null;
@@ -224,8 +224,7 @@ async function readAll() {
     API.get("/api/accounts"),
   ]);
   // A READ THAT FAILS KEEPS WHAT IS ON THE PAGE: after the board landed, the teams and every member's state stay as they
-  // were, dimmed, and the head says since when; only a first read that fails has nothing to show but its word (Marlin
-  // p223: a failed launch's reread blanked every team). Without the sessions every member would read Gone.
+  // were, dimmed, and the head says since when; only a first read that fails has nothing to show but its word (a failed launch's reread blanked every team). Without the sessions every member would read Gone.
   const refused = !teams.ok ? refusedAs(teams, "Not read", "/api/teams") : !sessions.ok ? refusedAs(sessions, "Not read", "/api/sessions") : null;
   state.error = refused && !state.everRead ? refused : null;
   state.stale = refused && state.everRead ? refused : null;
@@ -280,7 +279,7 @@ async function readAll() {
 
 /** The selected team's own three reads, each of which can refuse on its own. Only the newest read draws: one asked for
  *  another team or day that lands after it is dropped, and the day panels show their reading state until their own
- *  day lands, never the day before under the new day's name (marlin, Oct 13: Yesterday read No messages over 295). */
+ *  day lands, never the day before under the new day's name (Yesterday read No messages over 295). */
 let teamRead = { gen: 0, key: null, team: null };
 async function readTeam() {
   const tm = team();
@@ -357,7 +356,7 @@ async function readScreens(tm) {
   render();
 }
 
-/** A refused call's word on the page (fin, Oct 13): [word] for a refusal, "Not answering" when splice did not answer at
+/** A refused call's word on the page: [word] for a refusal, "Not answering" when splice did not answer at
  *  all, and the daemon's sentence, or the status it answered, to the console's log under [what], never on the screen. */
 function refusedAs(answer, word, what) {
   console.warn(`${what}: ${answer.status === 0 ? "splice is not answering" : answer.body?.error || `splice answered ${answer.status}`}`);
@@ -409,7 +408,7 @@ function ordered(tm, slots) {
 // ---------- the figures: turns, tokens and dollars, and the turns no rate card priced ----------
 const econRow = (tm, slotId) => (state.economics[tm.id]?.slots || []).find((r) => r.slot === slotId) || null;
 /** A member's checks, drawn only when the team's economics row carries a value: a member with none draws nothing,
- *  since a source sentence on every idle card is plumbing (marlin, Oct 13). Packet has no column at all: the message is
+ *  since a source sentence on every idle card is plumbing. Packet has no column at all: the message is
  *  the unit, and the chat shows it. */
 function checksHtml(tm, slotId) {
   const row = econRow(tm, slotId);
@@ -529,7 +528,7 @@ function splitBar(u, scale, key = "") {
  *  door to exactly those requests, its tokens and its price where any were priced. The Left strip and the timeline's
  *  column heads draw it; [brief] keeps the count and the price alone, for the timeline's narrow heads. */
 function reqHtml(tm, slot, u, scale, { grow = false, brief = false } = {}) {
-  // no requests, no tokens: "0 tokens" beside "0 requests" says nothing more (fin, Oct 12); a price is drawn only where
+  // no requests, no tokens: "0 tokens" beside "0 requests" says nothing more; a price is drawn only where
   // requests were priced, and a price splice could not read for requests that WERE priced is the dash
   const tokens = !brief && u.turns && u.tokens ? `<span>${DRAW.big(u.tokens)} tokens</span>` : "";
   const price = u.turns && u.priced > 0 ? `<span>${u.usd != null ? esc(dollars(u.usd)) : DRAW.dash} priced</span>` : "";
@@ -537,7 +536,7 @@ function reqHtml(tm, slot, u, scale, { grow = false, brief = false } = {}) {
     `<span class="mfig">${countDoor(u.turns, "request", slotDoor(tm, slot))}${tokens}${price}</span></div>`;
 }
 
-// ---------- a member's plan: what it moved on its plan, and the plan's own windows (web-console §4.13; marlin) ----------
+// ---------- a member's plan: what it moved on its plan, and the plan's own windows (web-console §4.13) ----------
 // The daemon counts the member's requests and tokens on each plan account over the last 5 hours and 7 days, the windows
 // Usage reads a plan over (TeamsEconomics). The plan's used share is the provider's own, read from /api/accounts as
 // Accounts reads it, and only set beside the member's count: splice never says what share of a window is the member's.
@@ -754,7 +753,7 @@ function figsHtml(tm, slot, u, sc, grow) {
 }
 
 /** A MEMBER'S OWN FIGURES: its table, then the windows of each plan account it used. The scope, since joining, is said
- *  once on the team's band. A seat with no session and no requests has none to draw; a member with none since joining
+ *  once on the team's band. A member with no session and no requests has none to draw; a member with none since joining
  *  draws its Total as a zero on an empty bar, a figure and not a sentence. */
 function useHtml(tm, slot, sc, { vacant = false, held = null } = {}) {
   const u = useOf(tm, slot.id);
@@ -782,7 +781,7 @@ const inPick = (tm, pick = picked()) => pick == null || teamKey(tm) === pick || 
 // ---------- the tabs: one per team, its members' colours on it ----------
 function tabHtml(tm) {
   const needs = tm.slots.some((s) => sessOf(s)?.waiting_for);
-  // a member is filled only while its session runs: one that ended draws hollow, as one never started does (marlin p227)
+  // a member is filled only while its session runs: one that ended draws hollow, as one never started does
   const running = (x) => { const s = sessOf(x); return Boolean(s) && s.availability !== "gone"; };
   const blots = tm.slots.map((s) => `<i style="--c:${headColor(s.head)}"${running(s) ? "" : ' class="open"'}></i>`).join("");
   const members = tm.slots.length, live = tm.slots.filter(running).length;
@@ -831,7 +830,7 @@ function memberHtml(tm, slot, sc = scalesOf(tm), opts = {}) {
   const s = sessOf(slot);
   const key = `${tm.id}/${slot.id}`;
   const ro = tm.archived;
-  // the tag says what the role does not: a role that already reads Lead carries none (fin, Oct 12)
+  // the tag says what the role does not: a role that already reads Lead carries none
   const lead = slot.lead && !/^lead$/i.test((slot.role || "").trim()) ? `<span class="lead">Lead</span>` : "";
   const command = commandOf(slot.head);
   // under a group titled by its command the chip would say the title again: the title is where the command is said
@@ -853,7 +852,7 @@ function memberHtml(tm, slot, sc = scalesOf(tm), opts = {}) {
   // a refused Stop leaves the card where it is, Stop back in its place, and the refusal beside it
   const refused = ui.failed.get(`stop:${key}`) || ui.failed.get(`end:${key}`);
   const refusal = refused ? `<span class="refusal" role="status">${esc(refused)}</span>` : "";
-  // End closes the session in any state, beside Stop, which only halts a turn and keeps the agent (fin, Marlin p218)
+  // End closes the session in any state, beside Stop, which only halts a turn and keeps the agent
   const ending = ui.ending.get(key);
   const end = ro || ui.armedEnd.has(key) ? ""
     : ending ? `<button class="act quiet small stopping" disabled>${ICON.wait}Ending${secsSince(ending) ? ` · ${secsSince(ending)} s` : ""}</button>`
@@ -990,7 +989,7 @@ function askHtml(session, slotId, readOnly, key) {
   const failed = ui.failed.get(key);
   const why = failed ? `<p class="why limit">${esc(failed)}</p>` : "";
   // reading off: the question and its choices are the conversation, so the card says only where to answer it, with a
-  // quiet door to the switch (Marlin 5:12 AM CT; fin; hitstop b5a39e3)
+  // quiet door to the switch
   // where an answer is given when it cannot be given here: the member's own terminal, with a door to its session
   const elsewhere = (door) => `<p class="why">Answer in its terminal${door ? ` · <a class="door" href="${door}">${esc(door.startsWith("settings") ? "Reading off" : "Its session")}${ICON.door}</a>` : ""}</p>`;
   if (!state.reading) return `<div class="ask">${elsewhere("settings.html#data")}${why}</div>`;
@@ -1042,7 +1041,7 @@ function prompted(call, offer) {
 }
 
 /** How many turns a session has run, beside its name in the "Add existing" menu: a name does not say which of two quiet
- *  sessions is the one meant, the count does (fin). The row carries `turns` only when it was measured, so an absent key
+ *  sessions is the one meant, the count does. The row carries `turns` only when it was measured, so an absent key
  *  draws nothing, never a zero or a dash: a count nobody watched must not read as "ran nothing". A real 0 is drawn,
  *  because "0 turns" is what tells a reader this is not the session they meant. */
 const turnsOf = (session) => {
@@ -1057,28 +1056,28 @@ const turnsOf = (session) => {
 /** A slot with no session: start one on its command, or hand it one of its command's that already runs. */
 function vacantHtml(tm, slot, { key, ro, lead, chip, model, sc, ended = false, hideRole = false }) {
   const failed = ui.failed.get(key), unstarted = ui.unstarted.get(key), asked = state.pending[slot.id];
-  // a slot whose session ended reads the word Sessions shows for it; one that never had one, No session (fin)
+  // a slot whose session ended reads the word Sessions shows for it; one that never had one, No session
   let word = `<span class="word">${ended ? "Ended" : "No session"}</span>`;
   let acts = "";
   let why = "";
   let lamp = `<span class="lamp open" aria-hidden="true"></span>`;
   if (ui.starting.has(key)) {
-    // counting up, as Testing does on Settings, so a start that waits reads as waiting and not as stuck (fin)
+    // counting up, as Testing does on Settings, so a start that waits reads as waiting and not as stuck
     const secs = Math.floor((Date.now() - (ui.startedAt.get(key) || Date.now())) / 1000);
     word = `<span class="word starting">${ICON.wait}Starting${secs ? ` · ${secs} s` : ""}</span>`;
     // the wait is drawn against the time splice gives a start before it gives up, so a slow start reads as a filling bar
     why = `<div class="wait45" data-meter="start:${esc(key)}">${DRAW.meter(Math.min(100, (secs / START_WAIT_S) * 100))}</div>`;
   } else if (asked && !ro) {
     // stopped at Claude Code's own question before it came up: his to answer, in the client's words, in the family of
-    // a member's ask (Marlin, Oct 12; hitstop da3d8b2)
+    // a member's ask
     lamp = `<span class="lamp needs" aria-hidden="true">${ICON.dialog}</span>`;
     word = `<span class="word needs">Needs you</span>`;
     why = trustHtml(slot.id, asked, ui.trusting.get(key));
   } else if (unstarted) {
     // one word for a member that did not come up, whoever ended it; only the timeout has a screen he has not seen, behind
-    // a door that stays shut until he opens it (fin; hitstop da3d8b2)
+    // a door that stays shut until he opens it
     word = `<span class="word limit">Not started</span>`;
-    // why it did not come up, on the card, as a given-up row says why (Marlin p223)
+    // why it did not come up, on the card, as a given-up row says why
     // a start that gave up waiting is the wait and its last screen; any other reason keeps the folder it was started in beside it
     why = (unstarted.why ? `<p class="why limit${/^Waited /.test(unstarted.why) ? " wait" : ""}">${esc(unstarted.why)}</p>` : "")
       + (unstarted.path && !/^Waited /.test(unstarted.why || "") ? `<div class="folder">${folderChip(unstarted.path, 2)}</div>` : "");
@@ -1097,7 +1096,7 @@ function vacantHtml(tm, slot, { key, ro, lead, chip, model, sc, ended = false, h
     if (bindFailed) why = `<p class="why limit">${esc(bindFailed)}</p>`;
     const free = Object.values(state.sessions).filter((x) =>
       x.head === slot.head && x.availability !== "gone" && !state.teams.some((t) => !t.archived && t.slots.some((y) => y.session === x.session_id)));
-    // Start new is not lit: the key light marks ONE thing per view, and on a board of four open seats it would mark
+    // Start new is not lit: the key light marks ONE thing per view, and on a board of four open members it would mark
     // four (the catalog's principle 3). It stays the plain act it is, on the card it acts on.
     acts = `<button class="act" data-act="start" data-s="${esc(slot.id)}">Start new</button>` +
       (free.length ? `<button class="act" data-act="use" data-s="${esc(slot.id)}" aria-expanded="${ui.menu === key}">Add existing${GLYPH.caret}</button>` : "");
@@ -1141,7 +1140,7 @@ const modelLabel = (head, id) => {
   const rows = state.models[head] || [];
   // a session reports its model as the command's prefix, two dashes, then the model's id: the label is under the id
   const bare = id?.includes("--") ? id.slice(id.indexOf("--") + 2) : id;
-  // an id this command does not declare reads as Sessions names it (kit modelName), never as the raw id (marlin, Oct 13)
+  // an id this command does not declare reads as Sessions names it (kit modelName), never as the raw id
   return (id ? rows.find((m) => m.id === id || m.id === bare)?.label || modelName(state.modelLabel, bare) : rows[0]?.label) || "";
 };
 
@@ -1202,7 +1201,7 @@ function chatHtml(tm, key) {
   const now = Date.now(), first = !ui.firstSeen.has(key), seen = ui.firstSeen.get(key) || new Map();
   ui.firstSeen.set(key, seen);
   for (const m of msgs) if (!seen.has(msgId(m))) seen.set(msgId(m), first ? -Infinity : now);
-  // A message whose text is not in its sender's transcript is drawn as who and when, with no box (marlin, Oct 13).
+  // A message whose text is not in its sender's transcript is drawn as who and when, with no box.
   // splice keeps no message text of its own: it reads the sender's transcript.
   const open = ui.chatOpen.has(key);
   const more = `<button class="morepill pill worded" type="button" data-act="chat-more" data-k="${esc(key)}"${open ? "" : " hidden"}><span class="mp-lab">${open ? "Fewer" : "<b>0</b> earlier"}</span>${DRAW.mpChev(open)}</button>`;
@@ -1267,7 +1266,7 @@ function fitChat() {
 }
 
 /** A member or a session outside the team, as the chat and the feed name it: its name in its command's colour. */
-// A PARTY IS NEVER SHOWN AS AN ID (marlin): a session id outside the team takes the name the registry or history
+// A PARTY IS NEVER SHOWN AS AN ID: a session id outside the team takes the name the registry or history
 // gives it, as Usage names an ended agent; a socket, or an id nothing names, reads Outside.
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const pastNames = new Map(); // session id -> its name from history, null when history has none, undefined while asked
@@ -1342,8 +1341,8 @@ function lanesHtml(tm, rows) {
 }
 const panelHead = (word, aside = "") => `<div class="sechead"><h3 class="kicker">${esc(word)}</h3>${aside ? `<span class="sec-aside">${aside}</span>` : ""}</div>`;
 
-// ---------- the views: one team read four ways (web-console §4.13 "Team board"; marlin, Oct 13) ----------
-// Board is the walked default. By command racks the members under the command each runs on, By role under their role,
+// ---------- the views: one team read four ways (web-console §4.13 "Team board") ----------
+// Board is the default. By command racks the members under the command each runs on, By role under their role,
 // the lead's first; both draw the day's messages between members under the groups. Timeline runs the day down the
 // page, one column per member: what each did, and each message drawn from its sender's column to its receiver's at its
 // time. The chat stays beside every view; the activity steps aside for the timeline, which holds every one of its rows.
@@ -1700,7 +1699,7 @@ function teamDoor(tm) {
  *  has done. One plate: the head and its figures were two bands that said the team's name and scope twice. */
 function bandHtml(tm) {
   const ro = tm.archived;
-  // End all: every started member's session ended, the team kept; armed with a chip per member it would cost (fin)
+  // End all: every started member's session ended, the team kept; armed with a chip per member it would cost
   const started = tm.slots.filter((x) => { const s = sessOf(x); return s && s.availability !== "gone"; });
   const tkey = `team:${tm.id}`, armed = ui.armedEnd.get(tkey), endingAll = ui.ending.get(tkey);
   // End all stops every member, so it is the quietest act on the line and the last: it arms in place before it cuts
@@ -1978,10 +1977,10 @@ function composerHtml() {
   const c = ui.compose;
   const ok = ready(c) && !c.saving;
   const needs = waitsOf(c);
-  // Not saved sits on the save row; Repo's row has a word only for the three refusals TeamRules makes of the repo (fin)
+  // Not saved sits on the save row; Repo's row has a word only for the three refusals TeamRules makes of the repo
   const word = c.repoWord ? `<span class="state limit" role="status">${esc(c.repoWord)}</span>` : "";
   const repoRefused = Boolean(c.repoWord);
-  // the folders this machine's sessions already run in, so a repo is picked rather than typed from memory
+  // the folders local sessions already run in, so a repo is picked rather than typed from memory
   const folders = [...new Set(Object.values(state.sessions).map((x) => x.repo?.root || x.cwd).filter(Boolean))].sort();
   // the lamp is said once, in the head of the members it describes
   const legend = DRAW.legend([{ mark: DRAW.lamp("working"), word: "Running" }, { mark: DRAW.lamp("open"), word: "Starts with the team" }]);
@@ -2213,14 +2212,14 @@ async function startSlot(tm, slot, path = null) {
   clearInterval(tick);
   ui.starting.delete(key);
   ui.startedAt.delete(key);
-  // the daemon's sentence goes to the console's log; the card says the fact and keeps what he has not seen (fin)
+  // the daemon's sentence goes to the console's log; the card says the fact and keeps what he has not seen
   if (answer.status === 504) {
     console.warn(`start ${key}: ${answer.body?.error || 504}`);
     ui.unstarted.set(key, { screen: answer.body?.screen || "", why: reasonOf(answer.body) });
   } else if (answer.status === 409 && answer.body?.reason === "closed") {
     ui.unstarted.set(key, { path, why: "Terminal closed" });
   } else if (!answer.ok) {
-    // the card's own Not started, with no reason line; Not answering when splice did not answer (fin)
+    // the card's own Not started, with no reason line; Not answering when splice did not answer
     const word = refusedAs(answer, "Not started", `start ${key}`);
     if (answer.status === 0) ui.failed.set(key, word);
     else ui.unstarted.set(key, { why: null });
@@ -2229,11 +2228,11 @@ async function startSlot(tm, slot, path = null) {
 }
 
 /** Repo's word for the three refusals TeamRules.kt makes of the repo, by the name each carries beside its sentence (the
- *  reply's code), so no other refusal outlines Repo (fin): needed when a member joins by rule, a path that does not
+ *  reply's code), so no other refusal outlines Repo: needed when a member joins by rule, a path that does not
  *  exist, and one that is not a folder. */
 const REPO_WORD = { repo_needed: "Needed", repo_missing: "Not found", repo_not_a_directory: "Not a folder" };
 const repoWordOf = (code) => REPO_WORD[code] ?? null;
-/** The reason line a start that gave up keeps on its card, as a state (fin; Marlin p223): "Claude Code had not registered
+/** The reason line a start that gave up keeps on its card, as a state: "Claude Code had not registered
  *  after 45s" reads "Waited 45 s". Any other reason has no line; its sentence is already in the console's log. */
 const reasonOf = (body) => (body?.code === "not_registered" && body.waited_s ? `Waited ${body.waited_s} s` : null);
 /** The folder a question names: its panel's line that is a path, as the client drew it. */
@@ -2267,7 +2266,7 @@ function trustHtml(slotId, offer, pressed) {
 
 /** End: the member's session closed where it runs. With nothing to lose it goes on the first press; a turn mid-work or
  *  unsent words arm the card instead, and the second press ends it anyway. A refusal reads Not ended, its cause in the
- *  log (fin). */
+ *  log. */
 async function endSlot(tm, slot, confirm) {
   const key = `${tm.id}/${slot.id}`;
   ui.armedEnd.delete(key); ui.failed.delete(`end:${key}`);
@@ -2405,7 +2404,7 @@ document.addEventListener("click", async (e) => {
   const b = e.target.closest("[data-act]");
   const card = e.target.closest(".card[data-go]");
   if (!b && card && !e.target.closest("a, button, input, textarea, select, .mchange")) { openSession(card); return; }
-  // an armed End is disarmed by a tap anywhere but its own row, as Restart's is (fin)
+  // an armed End is disarmed by a tap anywhere but its own row, as Restart's is
   if ((ui.armedEnd.size || ui.armedStop.size) && !e.target.closest(".armed.end")) {
     ui.armedEnd.clear(); ui.armedStop.clear(); if (!b) { render(); return; }
   }
@@ -2461,7 +2460,7 @@ document.addEventListener("click", async (e) => {
       ui.failed.delete(`restore:${tm.id}`);
       const answer = await API.post(`/api/teams/${tm.id}/restore`);
       if (answer.ok) { await read(); break; }
-      // fin: "Not restored", then each held member as its chip, "on", and the active team that holds it, read from the
+      // "Not restored", then each held member as its chip, "on", and the active team that holds it, read from the
       // teams this page already has; the daemon's own sentence goes to the console log, never onto the screen
       refusedAs(answer, "Not restored", `restore ${tm.id}`);
       ui.failed.set(`restore:${tm.id}`, tm.slots.filter((s) => s.session).flatMap((s) => alsoOn(tm, s.session).map((t) =>
@@ -2480,7 +2479,7 @@ document.addEventListener("click", async (e) => {
       break;
     case "stop": ui.armedStop.add(`${tm.id}/${slot.id}`); render(); break;
     case "stop-keep": ui.armedStop.delete(`${tm.id}/${slot.id}`); render(); break;
-    case "stop-now": { // the refusal is a word by its reason key; its cause goes to the log (fin, kit stopRefusal)
+    case "stop-now": { // the refusal is a word by its reason key; its cause goes to the log
       const key = `${tm.id}/${slot.id}`;
       ui.armedStop.delete(key); ui.failed.delete(`stop:${key}`); ui.stopping.add(key); render();
       const res = await API.post(`/api/teams/${tm.id}/slots/${slot.id}/stop`);
@@ -2560,7 +2559,7 @@ read();
 
 // A countdown or a silence is only true as of the read it came from, so the turns and the sessions are read again every
 // five seconds while the page is shown and nothing is being edited; without it Resumes in sat at 0:00 and a turn that
-// had ended stayed Working until he pressed Read again (desk walk, Oct 10). A page whose read failed asks again in full
+// had ended stayed Working until Read again was pressed. A page whose read failed asks again in full
 // on the same beat, so it comes back on its own the moment splice answers.
 setInterval(async () => {
   // a locked console (api.js set body.locked on a 401) sends nothing until it is unlocked (gap 386b)

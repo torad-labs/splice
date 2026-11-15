@@ -1,4 +1,4 @@
-// Marlin's Teams-by-project walk of Oct 12 (78056fbbd), fin's cuts and hitstop's eye pass, through the real Teams page
+// Teams by project, through the real Teams page
 // against a stub daemon answering in the routes' own shapes: a member last heard on another day reads that day's weekday;
 // a role that already reads Lead carries no Lead tag; a member with no requests draws its Total as a 0 on an empty bar with
 // a dash for its tokens, never a token figure (the unit is the Tokens column's head, said once, and a sentence told what
@@ -93,9 +93,9 @@ test("a member with no requests shows a 0 on an empty bar and no tokens, and one
   await expect(table.locator(".mtr", { hasText: "Total" })).toContainText("1.2K");
 }), 60_000);
 
-// Beside the members the chat runs the whole height of the column next to it, so no hole opens under either side
-// (splice-sessions, Oct 13); empty, it still never takes a screen of empty card, and an empty activity panel is as tall
-// as its one line (hitstop's eye pass, Oct 12). At 3828 the column beside it is the members; at 1440, the members with
+// Beside the members the chat runs the whole height of the column next to it, so no hole opens under either side;
+// empty, it still never takes a screen of empty card, and an empty activity panel is as tall
+// as its one line. At 3828 the column beside it is the members; at 1440, the members with
 // the activity under them.
 for (const width of [3828, 1440]) {
   test(`at ${width} an empty chat runs only the height of the column beside it, and an empty activity panel is its one line`, () => onTeams(async (p) => {

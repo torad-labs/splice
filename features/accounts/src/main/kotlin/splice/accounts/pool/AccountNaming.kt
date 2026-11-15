@@ -88,7 +88,7 @@ internal class AccountNaming(private val store: AccountNameStore? = null) {
     private fun planWord(plan: String?): String =
         plan?.takeIf(String::isNotBlank)?.replaceFirstChar(Char::uppercaseChar) ?: FALLBACK_WORD
 
-    /** The stored number (Marlin via fin, Oct 12): an unnamed login reads its plan word and the number it keeps within
+    /** The stored number: an unnamed login reads its plan word and the number it keeps within
      *  its provider, "Max" then "Max 2", so no page needs its ref. Numbers are counted per provider, since every page
      *  puts the provider beside the name, and a login [rows] shows for the first time takes the next one. */
     fun settle(rows: List<JsonObject>): List<JsonObject> {

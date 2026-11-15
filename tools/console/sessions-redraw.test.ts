@@ -13,7 +13,7 @@ import { layout } from "../gate/src/lib/repo.ts";
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 let reads = 0;
 const row = (id: string, name: string, text: string, ts: number, tool: string | null = null) => ({
-  session_id: id, name, head: "alpha", route: "head", availability: "live", status: "idle", cwd: "/work/desk",
+  session_id: id, name, head: "alpha", route: "head", availability: "live", status: "idle", cwd: "/work/web",
   last: { role: "assistant", tool, text, ts },
 });
 // "ticker" last ran a command with a new target on every read: a row draws the tool's mark and the target of its last call,

@@ -120,7 +120,7 @@ internal class RequestEvidenceCoverage(
         // a character is the most UTF-8 takes, so a proof under that bound is written uncounted, and one over it is
         // counted. The bound alone used to refuse: a proof is ASCII, so it was refused at a third of the limit,
         // 43,690 characters, and the format's own 256 intervals and 128 segments come to about 53,600 at the name
-        // lengths of Nov 13, 2026. That day coverage.json was last written at 4:23 PM CT, at 43,388 characters with
+        // lengths of Nov 13, 2026. That day coverage.json was last written at 43,388 characters with
         // 253 intervals and 71 segments. The folder held 77 segments two hours later, and every hand-over from then
         // said `[perf] cleanup failed: evidence_unsettled`, as 14 had the day before. Nothing else in the journal
         // told of it.

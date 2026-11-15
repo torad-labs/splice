@@ -25,7 +25,7 @@ public class TopologyStatePaths(
      *  before V4-109, so a value operators were free to write must not become a failure now that it
      *  means something (NEVER-BELOW-STATUS-QUO); doctor's state_dir row names the dropped value.
      *  Blank is absent for the same reason. A leading `~/`, or a bare `~`, is this home, as `config_dir` and the
-     *  compaction files read it (splice-turns, Oct 13): Paths.get took it as written, a folder named "~" under the
+     *  compaction files read it (Oct 13): Paths.get took it as written, a folder named "~" under the
      *  daemon's working directory. */
     public fun of(topology: Topology?): StatePaths {
         val declared = topology?.daemon?.stateDir?.takeIf { it.isNotBlank() } ?: return fromEnvironment()

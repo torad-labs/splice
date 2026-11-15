@@ -1,4 +1,4 @@
-// NEW: the Claude half of failover within one provider (operator ruling, Oct 4, 12:00 AM CT: the console probes
+// NEW: the Claude half of failover within one provider (the console probes
 // quota on every page open with no turn, one probe per account). Anthropic's own subscription usage endpoint, the
 // one Claude Code's /usage reads:
 //

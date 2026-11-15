@@ -30,13 +30,13 @@ internal enum class Refusal(val key: String) {
     REFUSED("refused"),
 
     /** The prompt already holds words, which a message would be typed after: shown to the person, cleared only on
-     *  his say-so (Marlin, Oct 10). */
+     *  their say-so. */
     DRAFT("draft"),
 
     /** The screen no longer shows the choice the page drew under the click, so nothing was pressed. */
     SCREEN_MOVED("screen_moved"),
 
-    /** A turn is running, which ending the session would cut: shown to the person, ended only on his say-so (Marlin). */
+    /** A turn is running, which ending the session would cut: shown to the person, ended only on their say-so. */
     WORKING("working"),
 
     /** The manager (ManagerSession): no head named, or none splice runs by that key. */

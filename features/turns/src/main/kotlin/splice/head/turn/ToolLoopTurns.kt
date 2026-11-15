@@ -9,11 +9,11 @@
 // state. The conversation is the session, the dialect's conversation key and the subagent the request comes from: two
 // subagents of one session whose first messages are identical share a conversation key by design
 // (TurnScope.conversationKey), and Claude Code names each on its own requests (x-claude-code-agent-id, on every
-// request of all 13 subagents in claudex's trace from Oct 27 05:44 to 08:26 CT and on no main thread's).
+// request of all 13 subagents in claudex's trace and on no main thread's).
 //
 // The prompt is the person's words, wherever Claude Code puts them: a user message that answers no tool call, and also
 // one that answers a tool call and carries words beside it, which is how the client sends text a person types while a
-// tool runs (the same trace, 08:08 to 08:21 CT: 29 distinct user messages carried a tool result and then a text
+// tool runs (the same trace: 29 distinct user messages carried a tool result and then a text
 // block). The notes the client writes for the model — system reminders, a background task's notification, the caveat
 // before a command — ride as text blocks too and are never a message (ClientEcho.kt in integrations/claude-code), so
 // a result with one beside it continues its turn.

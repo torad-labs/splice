@@ -1,4 +1,4 @@
-// The daemon refuses a switch to an account it cannot serve, and says why. Marlin's walk
+// The daemon refuses a switch to an account it cannot serve, and says why. Console walk
 // (ef86845f3): POST /api/auth/codex/switch {label: linked} answered ok:true and pinned a symlinked credential the
 // writer refuses, and the console said "Takes effect on the next turn"; an account with no credential file was
 // pinned the same way. A refusal is a 409 with the account's own sentence and pins nothing; a label the pool does

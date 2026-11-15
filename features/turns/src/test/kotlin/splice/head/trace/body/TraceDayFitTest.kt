@@ -1,6 +1,6 @@
 // NEW: a day of Claude Code bodies fits the daily trace body budget, every body reads back byte-identical, a v1
 // pack written before the v2 store still reads, and a missing, corrupt or torn v2 entry fails by name. On
-// 2026-10-05 claudex and claude-splice filled their 1 GiB packs by 1:22 and 1:02 AM CT, six hours into the day,
+// 2026-10-05 claudex and claude-splice filled their 1 GiB packs six hours into the day,
 // and every body after that was dropped. The Gear chunks already shared each body's unchanged history; what
 // filled the pack was the chunk around each place the client edited its body, stored again whole every request.
 package splice.head.trace.body

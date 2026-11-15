@@ -204,8 +204,8 @@ class ResponsesWsCodeModeChainingTest {
         )
     }
 
-    /** Code mode runs its own exec calls, so the codex head leaves an unanswered one open (Marcos, 2026-10-27:
-     *  "a code-mode dangling call is flagged and left alone"): the round full-sends, and says why. */
+    /** Code mode runs its own exec calls, so the codex head leaves an unanswered one open (a code-mode dangling call
+     *  is flagged and left alone): the round full-sends, and says why. */
     @Test
     fun `an exec call the round leaves unanswered still full-sends`() {
         val s = ResponsesWsSession(policy = ResponsesWebSocketPolicy(runtimeCalls = setOf("exec", "wait")))

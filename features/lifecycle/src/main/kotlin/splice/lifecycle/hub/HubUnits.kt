@@ -1,12 +1,12 @@
-// NEW: the MCP hub's three systemd units (Oct 12). Oct 25, 2026 (splice-lead, on Host Shield's handover): splice
+// NEW: the MCP hub's three systemd units (Oct 12). Oct 25, 2026: splice
 // lays them itself on every `splice install --all` beside an installed hub front, next to the daemon's own unit, in
-// the folder systemd keeps for a user's installed software (SpliceUnits). Host Shield vendors no splice since
-// Marcos's ruling of that day. The bytes under resources/splice/lifecycle/hub are the units Host Shield laid, each
-// under splice's marker line.
-// Oct 13 (splice-lead): `splice setup` turns the hub on when its share answer is yes, but only over splice's own
+// the folder systemd keeps for a user's installed software (SpliceUnits). A host
+// memory-containment wrapper vendors no splice since that day. The bytes under
+// resources/splice/lifecycle/hub are the units that wrapper laid, each under splice's marker line.
+// Oct 13: `splice setup` turns the hub on when its share answer is yes, but only over splice's own
 // units: each one systemd loads from the file splice laid, holding splice's bytes, with no drop-in. A unit of the same
 // name in ~/.config/systemd/user is someone's override, which setup leaves to its owner and names the command for.
-// Oct 13 (splice-lead): `splice upgrade` reloads a running front onto the programs it swapped in, through the unit's
+// Oct 13: `splice upgrade` reloads a running front onto the programs it swapped in, through the unit's
 // own ExecReload (USR2, the in-place re-exec), never a restart; over a front unit anyone else placed it prints the
 // reload for its owner (reloadFront).
 package splice.lifecycle.hub

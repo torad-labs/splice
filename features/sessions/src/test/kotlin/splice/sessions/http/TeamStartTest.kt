@@ -199,7 +199,7 @@ class TeamStartTest {
             assertNull(panes.paneFor(terminal.opened.single().session))
         }
 
-    /** Marlin, Oct 12: a member stopped at Claude Code's folder trust question does not time out; it needs him, and
+    /** A member stopped at Claude Code's folder trust question does not time out; it needs him, and
      *  splice never answers it for him. */
     @Test
     fun `a member stopped at the trust question needs him, slot bound, pane open, nothing pressed`() =

@@ -2,15 +2,15 @@
 /** Shared MCP hosting benchmark (FEATURES.md §8): N parallel Claude Code sessions, the same
  *  stdio MCP servers, once launched per session (Claude Code's own behaviour) and once through the
  *  splice host. The receipt records the PEAK summed RSS of the MCP server processes in each mode
- *  (the denominator the saving is measured against, reported as a number with no pass bar since Marcos dropped
- *  the >50% claim on Oct 10), the daemon's RSS delta while hosting,
+ *  (the denominator the saving is measured against, reported as a number with no pass bar since the >50% claim was
+ *  dropped on Oct 10), the daemon's RSS delta while hosting,
  *  whole-workload RSS, and wall time.
  *
  *  Usage:
  *    bench.ts --control-port 3196 --mgmt-key-file ~/.splice/state/mgmt-key \
  *      (a pre-0.4 install still keeps its key at ~/.claude-codex/state/mgmt-key — splice
  *       adopts that root in place, so pass the one `splice doctor` names)
- *             --servers ast-grep,remotion-docs,torad-fleet,figma-comments --sessions 4 \
+ *             --servers ast-grep,remotion-docs,docs-search,figma-comments --sessions 4 \
  *             --out tools/e2e/receipts/mcp-host-bench.json
  *
  *  Each session is `claude -p` with --strict-mcp-config and a prompt that lists the tools and stops,
@@ -39,7 +39,7 @@
  *    of a missing binary returns pid === undefined with only an ASYNC ENOENT, where Popen raised
  *    synchronously — so the spawn seam throws FileNotFoundError synchronously on an absent pid.
  *
- *  Not exercisable from a build seat: a real run spawns paid `claude -p` sessions against the
+ *  Not exercisable from a build session: a real run spawns paid `claude -p` sessions against the
  *  operator's account and needs a live splice daemon. What IS exercised: --selftest (every arm), and
  *  a differential of every pure function against the Python original on generated inputs.
  */

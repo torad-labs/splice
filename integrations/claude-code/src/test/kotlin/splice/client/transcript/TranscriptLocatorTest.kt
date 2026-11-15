@@ -74,7 +74,7 @@ class TranscriptLocatorTest {
         Files.createDirectories(home.resolve(".claude-head").resolve("projects"))
         val sessions = (1..8).associate { "session-$it" to "/home/op/work/repo-$it" }
         sessions.forEach { (id, cwd) -> transcript(cwd, id) }
-        return sessions + ("session-none" to "/home/op/work/telegram")
+        return sessions + ("session-none" to "/home/op/work/notes")
     }
 
     private fun poll(sessions: Map<String, String>): Map<String, Path?> =

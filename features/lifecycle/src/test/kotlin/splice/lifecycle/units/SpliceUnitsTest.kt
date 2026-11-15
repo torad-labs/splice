@@ -1,6 +1,7 @@
-// Goal (Oct 25, 2026, Host Shield's handover): splice's own install lays the systemd user units the daemon and its MCP
+// Goal (Oct 25, 2026): splice's own install lays the systemd user units the daemon and its MCP
 // front run under, in the folder systemd keeps for a user's installed software ($XDG_DATA_HOME/systemd/user), so the
-// daemon keeps a unit to come back under after a restart or a reboot when Host Shield, or anyone, stops laying one. A
+// daemon keeps a unit to come back under after a restart or a reboot when a host
+// wrapper, or anyone, stops laying one. A
 // unit file someone placed in ~/.config/systemd/user overrides splice's and is never touched; a copy splice's own
 // earlier installs wrote there goes, so splice's laid unit takes effect. Driven through SpliceUnits against a stand-in
 // user manager that searches the two folders in systemd's order, config before data; where systemd-analyze is

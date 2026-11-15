@@ -2,8 +2,8 @@
 // lamp and a word, the outcome words, and the one nav. A page owns its own data, layout and acts; this file
 // owns what would otherwise be written eight times and drift seven ways.
 //
-// FROM THE DRAWING, NOT REINVENTED. Every word, icon path and rule here is the drawing's own
-// (captures/console-acceptance/frozen/console-bad6381/kit.js), carried across unchanged. What did NOT come
+// FROM THE DRAWING, NOT REINVENTED. Every word, icon path and rule here is the drawing's own,
+// carried across unchanged. What did NOT come
 // across is the drawing's mock: its frozen afternoon, its static command and model tables, its sessionStorage
 // stand-in for splice's state, and its canned transcripts. Those were the drawing standing in for routes that
 // now exist, and a page that read them would be drawing the mock's data against the daemon's.
@@ -35,8 +35,8 @@ const PROVIDER_FAMILY = { anthropic: "claude", openai: "gpt", codex: "gpt", xai:
 // A provider splice has no colour for draws in the muted text colour rather than in another provider's.
 const colorOf = (provider) => `var(${COLORS[provider] || "--text-mute"})`;
 /** The colour family of a provider /api/models names. The table above knows the words a provider module uses; a provider
- *  it does not know, one he named in splice.toml, is served from THIS COMPUTER when it answers on this machine's own
- *  loopback (his own model servers, the tunnel to a rented GPU), whatever it is called: the address is the fact, the name
+ *  it does not know, one named in splice.toml, is served from THIS COMPUTER when it answers on the local
+ *  loopback (local model servers, the tunnel to a rented GPU), whatever it is called: the address is the fact, the name
  *  is not. [bases] is /api/topology's providers by name, where a page has read it; without it a name the table does not
  *  know stays itself, and colorOf draws it muted. */
 const LOOPBACK_BASE = /^https?:\/\/(127\.0\.0\.1|\[?::1\]?|localhost)\b/;
@@ -49,10 +49,10 @@ const providerFamilyOf = (provider, bases = {}) =>
 const loginCardId = (row) => `${(row.heads || []).join("+")}/${row.selector_key || row.label || "primary"}`;
 const acctCardKey = (row) => `${providerFamilyOf(row.provider)}/${loginCardId(row)}`;
 
-// ---------- a command removed from Models (marlin's ruling: "History stays" must mean findable) ----------
+// ---------- a command removed from Models ("History stays" must mean findable) ----------
 /** The commands /api/heads/retired lists, as heads beside the live ones: key and name, marked retired, with no
  *  provider (so the muted colour). A key /api/heads still names wins: re-adding a removed command drops its record
- *  only at the daemon's next start (builder3, 4e93eb2a3). A daemon that cannot answer leaves the list as it is. */
+ *  only at the daemon's next start. A daemon that cannot answer leaves the list as it is. */
 function retiredHeads(res, live) {
   if (!res.ok) { console.warn(`removed commands: ${res.status || "no answer"}`); return []; }
   return (res.body?.retired || []).filter((r) => r.key && !live.some((h) => h.key === r.key))
@@ -90,7 +90,7 @@ const weekOf = (name, id) => { const parts = String(id || "").toLowerCase().spli
 /** What a model is called: the label its head declares, else the name its own id spells. THE CLIENT PICKS
  *  MODELS THE CATALOG NEVER DECLARED — Claude Code runs its own small model for titles and summaries — so
  *  those live in the rows and in no catalog, and "claude-haiku-5-5" sat beside "Claude Sonnet 5.5" in one
- *  list (splice-lead, Oct 11). Only an id whose shape proves the convention is respelled: lowercase words
+ *  list. Only an id whose shape proves the convention is respelled: lowercase words
  *  and version numbers between hyphens, which is the spelling every declared Claude label already follows.
  *  Anything else keeps its own spelling, because a GGUF filename or a vendor-prefixed id has no convention
  *  to read and a guess at one would misname a real product. */
@@ -109,7 +109,7 @@ function modelName(labels, id) {
   return words.map((w) => MODEL_WORD[w] ?? w[0].toUpperCase() + w.slice(1)).join(" ");
 }
 
-// ---------- what to call a thing nobody named (Oct 28): ONE RULE FOR EVERY PAGE ----------
+// ---------- what to call a thing nobody named: ONE RULE FOR EVERY PAGE ----------
 // Nine of twenty-six live sessions were titled by a UUID, the serving login by his own address, and three logins by the
 // bare word "Account" — each page fell back to whatever identity it held. The rule: the user's own name if he set one;
 // otherwise a short readable name drawn from what the thing IS (a session: its command and project; a key: the variable
@@ -196,10 +196,10 @@ function displayNames(kind, list) {
   });
 }
 
-// ---------- fin's words for how a request ended (OutcomeTag.kt's tags) ----------
+// ---------- the words for how a request ended (OutcomeTag.kt's tags) ----------
 // A clean request and a spent window have no word: the window shows its own lock and reset time. A stop is not
 // a failure (isStopped, OutcomeTag.kt:75-76).
-// Who stopped it (fin, Marlin on Requests, Oct 12): client_abort is Claude Code letting go (Esc, the client closing, its own
+// Who stopped it: client_abort is Claude Code letting go (Esc, the client closing, its own
 // 600 s give-up, LaunchTypes.kt:208); error:stopped is the console's Stop or End (OperatorStop, CancellationSeal.kt:133-136).
 const OUTCOME_WORD = { client_abort: "Stopped in Claude Code", "error:stopped": "Stopped in the console", "error:cancelled": "Cancelled", "error:restarted": "splice restarted", "error:at-capacity": "Too many at once",
   "error:plan-limit": "", "error:rate-limited": "Rate limited", "error:rate-limit-relayed": "Rate limited", "error:all-accounts-exhausted": "No quota", "error:budget-blocked": "Over budget",
@@ -208,7 +208,7 @@ const OUTCOME_WORD = { client_abort: "Stopped in Claude Code", "error:stopped": 
 // A turn splice gave up on after no progress from the model for the limit reads "Given up". splice writes the tag
 // as of V4-444 (CancellationSeal's TotalCap arm, OutcomeTag.TURN_CAP): before that it landed as a plain
 // error:cancelled and a quiet model was indistinguishable from a provider under load.
-// Both give-up forms read "Given up after no progress" on a row (fin, Marlin, Oct 12): error:turn-cap here, and an overload
+// Both give-up forms read "Given up after no progress" on a row: error:turn-cap here, and an overload
 // stalled past its re-anchors through Requests' outcomeOf, which reads this entry. A silence is what the two share, and
 // it is the console's word for the event: resumed, started over or given up. Not "No output": a turn can stream for
 // minutes, then go quiet. No figure: the limit ignores pings (Watchdog.kt:148-150) and up_gap_max_ms counts them.
@@ -225,7 +225,7 @@ Object.assign(OUTCOME_WORD, {
   "failure:not_found_error": "Not found", "failure:api_error": "Provider error",
 });
 // A tag the words above do not cover is READ OFF THE TAG, never drawn as a generic "Failed" and never left blank
-// (fin): drop the prefix, underscores and hyphens become spaces, the first letter rises, "api" is "API". So
+// Drop the prefix, underscores and hyphens become spaces, the first letter rises, "api" is "API". So
 // failure:context_window_error reads "Context window error". It is for an older row, a type a provider adds later,
 // or an error: kind no page words yet. A tag with no prefix (ok, client_abort) is not read this way: it keeps
 // whatever its page says about it, which for a clean request is nothing.
@@ -236,7 +236,7 @@ const tagWord = (tag) => {
   return words.charAt(0).toUpperCase() + words.slice(1);
 };
 // A COUNT of turns an outcome ended reads with "when", so "60 when splice restarted" is sixty turns cut, not
-// sixty restarts (fin, after p85 and p78); a single request keeps the outcome's own word.
+// sixty restarts; a single request keeps the outcome's own word.
 const COUNT_WORD = { "error:restarted": "when splice restarted" };
 const countWord = (o) => COUNT_WORD[o] ?? OUTCOME_WORD[o] ?? tagWord(o);
 const STOPPED = new Set(["client_abort", "error:stopped"]);
@@ -258,7 +258,7 @@ const WHY = {
   gaveup: { word: "Given up", has: (r) => r.outcome === "error:turn-cap" || (r.outcome === "failure:overloaded_error" && isStalled(r)) },
   overloaded: { word: "Overloaded", has: (r) => r.outcome === "failure:overloaded_error" && !isCutOff(r) && !isStalled(r) },
   cutoff: { word: "Cut off", has: (r) => r.outcome === "failure:overloaded_error" && isCutOff(r) },
-  queued: { word: "Waited in line", has: (r) => r.queued != null }, // held by the gate behind a full limit (Marlin, Oct 12)
+  queued: { word: "Waited in line", has: (r) => r.queued != null }, // held by the gate behind a full limit
   waited: { word: "Waited out", has: (r) => !!r.silent },
   resumed: { word: "Resumed", has: (r) => !!r.resumed && !r.resumedFresh },
   startedover: { word: "Started over", has: (r) => !!r.resumedFresh },
@@ -272,7 +272,7 @@ const WHY = {
 // exactly where a browser filter finds nothing. What the daemon reads is a SUPERSET of what the word means -- a
 // silence must also have begun after the first byte, and only this page compares that -- so WHY's own check still
 // runs over the answer and the two together are exact. `tier` is this command's own silence setting, not a figure
-// this page chose. "Resumed" and "Started over" are asked APART, as fin's two phrases mean them: a request whose
+// this page chose. "Resumed" and "Started over" are asked APART, as the two phrases mean them: a request whose
 // re-anchor re-posted it verbatim started over, and the resumed doors leave it out.
 const WHY_ASKS = {
   gaveup: { outcome: "failed" }, overloaded: { outcome: "failure:overloaded_error" }, cutoff: { outcome: "failure:overloaded_error" },
@@ -296,7 +296,7 @@ const idleTierOf = (cfg, headKey) => {
 };
 
 // ---------- drawing ----------
-// EVERY GLYPH THE KIT DRAWS HAS A SIZE OF ITS OWN (Oct 26): an svg with only a viewBox takes its box, so a kit icon
+// EVERY GLYPH THE KIT DRAWS HAS A SIZE OF ITS OWN: an svg with only a viewBox takes its box, so a kit icon
 // dropped into a line the stylesheet has no rule for drew 300 px tall — ICON.door as an arrow across a card, DRAW.lock
 // filling a login row. 1em is the size of the words beside it; any rule that wants another size still wins.
 const G = (d, extra = "") => `<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${extra}>${d}</svg>`;
@@ -330,7 +330,7 @@ const ICON = {
   // a bin with its lid: a delete that sits on the row it empties (the button names the act for a screen reader)
   trash: G('<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>', 'aria-hidden="true"'),
 };
-// A refused Stop, in fin's words, by the refusal's reason key and never its sentence (SessionDrive.Refusal). Ended and
+// A refused Stop, by the refusal's reason key and never its sentence (SessionDrive.Refusal). Ended and
 // a head's 404 draw no line: the card's re-read state says it. A closed pane splice opened says only that, because
 // nothing runs there to stop. Anything unmatched is "Not stopped", and every cause goes to the log.
 const STOP_REFUSED = { closed: "Terminal closed", not_ours: "Not stopped · Started elsewhere", pane_gone: "Not stopped · Terminal closed",
@@ -343,7 +343,6 @@ const stopRefusal = (res) => {
 // AN ABSENT FIELD IS NOTHING, NOT THE WORD "undefined". The drawing's own esc was String(s), which was safe
 // there because the mock's data was always complete; a real route leaves a field out whenever splice does not
 // know it, and `String(undefined)` prints "undefined" on the screen as though splice knew that. Caught by
-// splice-builder3 reading teams.js against this file (Oct 10, 2026) before it reached a page.
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // THE WORDS IN A DRAWN FRAGMENT, for an aria-label, a monogram or a lowercased state word: the browser's own parser reads
 // the fragment into a document nothing runs or loads from, and its text is what a reader would see, entities decoded.
@@ -351,7 +350,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 // (CodeQL js/incomplete-multi-character-sanitization, alerts 24 to 27 and 34, Nov 2 2026). The result is text, and goes
 // through esc wherever it is drawn again. Named for what it returns, since models.js keeps a textOf of its own.
 const wordsIn = (html) => new DOMParser().parseFromString(String(html ?? ""), "text/html").documentElement.textContent ?? "";
-// WHAT IS NOT READ YET DRAWS AS ITS OWN SHAPE (Oct 12: the plain reading indicator was not good enough): a
+// WHAT IS NOT READ YET DRAWS AS ITS OWN SHAPE (the plain reading indicator was not good enough): a
 // figure or a line is a striped bar the size of what will land there, a card a drawn card of such bars, a chart its
 // columns, so a page reads as arriving, never as empty or as a lone word. Widths are in rem; console.css draws them.
 // A GHOST IS THE SIZE AND THE SHAPE OF WHAT WILL LAND, so nothing moves when the data arrives, and an item keeps its own
@@ -374,7 +373,7 @@ const GHOST = {
   tile: () => `<i class="ghost tile" aria-hidden="true"></i>`,
   // a row of shapes the size of the row that will land: give it the pieces in order
   row: (parts) => `<div class="ghost-row" aria-hidden="true">${parts.join("")}</div>`,
-  // THE REST OF A SECTION'S SHAPES (Oct 27), so a page draws its first frame from the kit and not by hand (three pages
+  // THE REST OF A SECTION'S SHAPES, so a page draws its first frame from the kit and not by hand (three pages
   // drew their own, and jumped by up to 1,093 px when the data landed):
   /** the hero figure and its caption on one baseline (DRAW.hero) */
   hero: () => `<div class="pd-top" aria-hidden="true"><i class="ghost hero"></i><i class="ghost cap"></i></div>`,
@@ -386,7 +385,7 @@ const GHOST = {
   cell: () => `<span class="barcell" aria-hidden="true"><i class="ghost vtrack"></i><i class="ghost fig v"></i></span>`,
   /** a range on the shared log axis (DRAW.range) */
   range: () => `<i class="ghost range" aria-hidden="true"></i>`,
-  /** THE PROJECT TILES WHILE THE PROJECTS ARE READ (Oct 27): the tiles land only once the transcripts are listed, the
+  /** THE PROJECT TILES WHILE THE PROJECTS ARE READ: the tiles land only once the transcripts are listed, the
    *  last read on a page, so a line that drew nothing jumped the page down by the tiles' height when they came. [n]
    *  tiles on the tiles' own equal columns at a wide page (tilesWide), else the picker's chip. WITH NO [n] THE COUNT IS
    *  THE ONE LAST DRAWN ON THIS PAGE (GHOST.count), never a guess: a page that has never drawn tiles draws nothing.
@@ -407,7 +406,7 @@ const GHOST = {
     const hollow = GHOST.count("tiles", -1) < 0 ? " ptv-hollow" : "";
     return `<nav class="ptiles${lamps}${hollow}${GHOST.count("tilestack", 0) > 0 ? " stack" : ""}" aria-hidden="true"><div class="ptgrid">${Array.from({ length: n }, one).join("")}</div>${none}</nav>`;
   },
-  /** HOW MUCH LANDS IS HOW MUCH LANDED LAST (Oct 28). A ghost is the size and count of what it waits for, so a page asks
+  /** HOW MUCH LANDS IS HOW MUCH LANDED LAST. A ghost is the size and count of what it waits for, so a page asks
    *  what it last drew before it guesses: [key] names a kind of thing on this page ("tiles", "rows:ended", "cards") and
    *  [count] answers with the last count drawn, else [fallback] (0 draws nothing, which is right for a first visit with no
    *  response shape to go by). [remember] is called by the draw that lands, so the next first frame is this one's size.
@@ -416,7 +415,7 @@ const GHOST = {
     // a remembered 0 is an answer (a page that last drew nothing draws nothing); only a key never remembered takes the fallback
     try { const v = JSON.parse(localStorage.getItem(GHOST_STORE) || "{}")[`${location.pathname}:${key}`]; return v != null && Number.isFinite(+v) ? +v : fallback; } catch { return fallback; }
   },
-  /** THE HEIGHT OF A BLOCK THAT LANDED, KEPT BY NAME (Oct 29). A ghost is the size of what will land, and how tall a plate or a board
+  /** THE HEIGHT OF A BLOCK THAT LANDED, KEPT BY NAME. A ghost is the size of what will land, and how tall a plate or a board
    *  lands depends on the data (how many sessions run, how many rows an account holds), which only a past visit knew. A block
    *  that lands marks itself `data-held="name"`; the kit keeps its height in rem (holdShapes); the ghost of that block asks
    *  for it here as a minimum height, so the first frame stands as tall as the frame that lands. Nothing remembered gives
@@ -452,27 +451,27 @@ const clock = (d) => {
   const h = d.getHours() % 12 || 12, m = d.getMinutes(), ap = d.getHours() < 12 ? "AM" : "PM";
   return `${h}:${String(m).padStart(2, "0")} ${ap}`;
 };
-// A key is an account: its variable and the day splice first saw it, "OPENROUTER_API_KEY · Sep 14" (fin).
+// A key is an account: its variable and the day splice first saw it, "OPENROUTER_API_KEY · Sep 14".
 const dayWord = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 // When a window comes back, as Accounts says it: a time today, else the day and the time.
 const backWord = (d) => (d.toDateString() === NOW.toDateString() ? clock(d) : `${d.toLocaleDateString("en-US", { weekday: "short" })} ${clock(d)}`);
 const counter = (ms) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
-/** A dollar figure as every page says it (Marlin's money form, fin, Oct 10 and 12): an estimate from the rate card is
+/** A dollar figure as every page says it: an estimate from the rate card is
  *  "≈". Under a cent it keeps two significant digits, so a tiny reply reads "≈$0.00012" and never "<$0.0001" or
  *  zeros, and "<$0.000001" only below a millionth. A cent and up is cents. Nothing charged is exact, "$0".
- *  WHOLE DOLLARS FROM $100 UP (Oct 27): a week's spend runs to five digits, and two digits of cents on a figure nobody
+ *  WHOLE DOLLARS FROM $100 UP: a week's spend runs to five digits, and two digits of cents on a figure nobody
  *  reconciles to the cent widened every money column on Usage; "$20,390", while a figure under $100 keeps its cents. */
 const DOLLAR_FORM = (v) => (v < 0.0095 ? { minimumSignificantDigits: 2, maximumSignificantDigits: 2 }
   : v >= 99.995 ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const dollars = (v) => (v === 0 ? "$0" : v < 0.000001 ? "<$0.000001" : `≈$${v.toLocaleString("en-US", DOLLAR_FORM(v))}`);
 const kTok = (n) => (n >= 999500 ? `${+(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 1e4 ? `${Math.round(n / 1000)}K` : n >= 1000 ? `${+(n / 1000).toFixed(1)}K` : `${n}`);
-// AN AGENT'S *EMPHASIS* IS EMPHASIS (Oct 27): only **bold** was read, so a line an agent wrote with single asterisks
+// AN AGENT'S *EMPHASIS* IS EMPHASIS: only **bold** was read, so a line an agent wrote with single asterisks
 // round a word printed the asterisks themselves, wherever agent text is shown (the manager's sheet, a session's
 // messages). Single asterisks round a run that starts and ends on a letter are <em>, which composer.css already draws
 // in italic; a lone asterisk (5 * 3, a glob, a bullet already read off its line) is left as written, and code keeps
 // its own text.
 const EMPH = /(^|[^*\w])\*(?![\s*])([^*\n]*?[^\s*])\*(?![*\w])/g;
-// A LINK AN AGENT WROTE IS A LINK (Oct 27). Claude Code writes links in its answers constantly, and this read left
+// A LINK AN AGENT WROTE IS A LINK. Claude Code writes links in its answers constantly, and this read left
 // "[the guide](https://…)" on the screen as written, brackets, address and all, on every page that shows an agent's
 // words. An address on the web opens in a new tab under its own words; any other address (a file path, an anchor) names
 // the file and keeps the whole path as its title, since the console cannot open his disk; a script, data or mail
@@ -502,7 +501,7 @@ const inline = (s) => {
   for (let i = 0; i <= held.length && /\u0000\d+\u0000/.test(html); i++) html = html.replace(/\u0000(\d+)\u0000/g, (all, n) => held[+n] ?? "");
   return html;
 };
-// THE BLOCK SHAPES AN AGENT ACTUALLY WRITES (Oct 26). This read dash lists and backticks only, so a Claude Code turn's
+// THE BLOCK SHAPES AN AGENT ACTUALLY WRITES. This read dash lists and backticks only, so a Claude Code turn's
 // table came out as a run of pipes, a heading as hash marks, a numbered list as paragraphs and a fenced block as one
 // long line — the walls of explanation the console was stopped for. Sessions carried its own copy of this; every
 // page that shows what an agent wrote (its conversation, Teams' messages, Requests' bodies) now draws the same shapes.
@@ -547,7 +546,7 @@ function md(text) { // the agent's own text, as it wrote it: headings, lists, ta
 const acctPlanHtml = (acct, plan) => `<span class="acct">${esc(acct)}${plan ? `<span class="pv">${esc(plan)}</span>` : ""}</span>`;
 
 // ================================================================================================================
-// DRAW: THE DRAWINGS EVERY PAGE SHARES (Oct 26)
+// DRAW: THE DRAWINGS EVERY PAGE SHARES
 //
 // The console's rule is to show rather than tell. Until now the drawings that make the Usage drill-down and Accounts
 // lived inside the two files that drew them: the hero figure, the stacked outcome bar, the ring and glyph tiles and
@@ -650,7 +649,7 @@ const DRAW = {
   dash: `<i class="nr" title="Not reported">—</i>`,
   /** What an agent wrote, as it wrote it: headings, lists, tables, fenced code and paragraphs (md above). */
   md,
-  /** A TOOL'S NAME IN WORDS (Oct 26): tool names reach the screen as a client names them, so `mcp__ast-grep__find_code`
+  /** A TOOL'S NAME IN WORDS: tool names reach the screen as a client names them, so `mcp__ast-grep__find_code`
    *  stood on a session's row and "mcp__" was on the page. An MCP tool reads as its server, a middle dot and its own
    *  words; a joined name splits where a lowercase letter or digit meets a capital, and where a run of capitals meets
    *  a capital and a lowercase ("SendMessage" is "Send message", "WebFetch" is "Web fetch"); a one-word name is left
@@ -683,7 +682,7 @@ const DRAW = {
     cell: ({ cls = "", role = "", label = "", title = "" } = {}) => `<span class="barcell unread${cls ? ` ${cls}` : ""}"${role ? ` role="${role}"` : ""}${title ? ` title="${esc(title)}"` : ""}>${label ? `<em>${esc(label)}</em>` : ""}<span class="vbar unread" aria-hidden="true"></span><b class="v"><i class="nr" title="Not reported">—</i></b></span>`,
     object: (word, opts) => DRAW.nothing(word, { slot: true, ...opts }),
   },
-  /** A PLACE IS A FILE CHIP (Oct 28): a path, and the file a call touched, as the file's name in full ink with the folder it
+  /** A PLACE IS A FILE CHIP: a path, and the file a call touched, as the file's name in full ink with the folder it
    *  is in beside it, muted, so a line is found by its name and its folder is there when it is needed. It wraps where the
    *  line ends and never cuts; the whole path, with the home folder as "~", is its hover. A path is a place, never a run
    *  of mono among prose. Returns "" for a path that is empty. */
@@ -694,7 +693,7 @@ const DRAW = {
     const name = cut >= 0 ? where.slice(cut + 1) : where, dir = cut > 0 ? where.slice(0, cut) : "";
     return `<span class="filechip" title="${esc(where)}">${ICON.file}<b>${esc(name || where)}</b>${dir ? `<span>${esc(dir)}</span>` : ""}</span>`;
   },
-  /** ONE LEGEND PER VIEW, for every mark or dot a view draws without a word on it (Oct 28). [items] is [{ mark, word }]:
+  /** ONE LEGEND PER VIEW, for every mark or dot a view draws without a word on it. [items] is [{ mark, word }]:
    *  the mark is the drawing itself (a lamp, a dot, a glyph, DRAW.unread.fig), the word what it means. A view draws this
    *  ONCE, at the head of what it explains, so a dot's meaning is on the screen and never only in a hover title. A title
    *  may repeat the word on the mark; it never carries it alone. */
@@ -792,7 +791,7 @@ const DRAW = {
    *  [cls] per segment: "ok" the clean part, "nt" the quiet part, f0/f1/f2 failure kinds in the limit red by rank,
    *  "rest" the rest of a whole that is not an outcome (the servers not shared), quiet but named by its own word.
    *
-   *  A WHOLE THAT IS NOT A SET OF OUTCOMES (Oct 26). Three pages carried a copy of this bar because the kit wrote
+   *  A WHOLE THAT IS NOT A SET OF OUTCOMES. Three pages carried a copy of this bar because the kit wrote
    *  every count with DRAW.n, coloured only by outcome, and gathered every quiet part under one sentence:
    *   - [text] per segment is the figure as the caller words it ("24.7 GB", "15"); without it, DRAW.n(s.n).
    *   - [ink] per segment is the colour the caller already knows (a member's command, a store's hue), written as --c.
@@ -865,7 +864,7 @@ const DRAW = {
     `<span class="barcell${cls ? ` ${cls}` : ""}${level ? ` lv-${level}` : ""}"${role ? ` role="${role}"` : ""}${title ? ` title="${esc(title)}"` : ""}>${label ? `<em>${esc(label)}</em>` : ""}${DRAW.vbar(w, key, split)}<b class="v" data-tn="${esc(key)}">${text}</b></span>`,
 
   // ---------- a limit on its scale ----------
-  /** A LIMIT IS DRAWN ON ITS SCALE (Oct 28): a thick track with its ends and its marks named under it. [fill] 0 to 1 is what
+  /** A LIMIT IS DRAWN ON ITS SCALE: a thick track with its ends and its marks named under it. [fill] 0 to 1 is what
    *  holds it now ([full] in the limit red), [zone] the share from which it is past a warn line (hatched), [dots] the marks
    *  a page lays on it (`<i class="ldot" style="--at:%;--lane:n;--c:colour">`, [lanes] tall), [ticks] [[0 to 1, word]] its
    *  scale (the words "0" and [end] at its ends by default), [now] the reading at its end and [said] its words for a screen
@@ -916,7 +915,7 @@ const DRAW = {
     + `${ax.ticks.map((v, i) => `<span class="pd-tk${i === 0 ? " pd-t-first" : i === ax.ticks.length - 1 ? " pd-t-last" : ""}" style="left:${ax.at(v).toFixed(2)}%">${tickWord(v)}</span>`).join("")}`
     + `</span>${tail}</div>`,
   tickWord,
-  /** A TIME THAT MEANS THE SAME LENGTH ON EVERY VISIT (Oct 28): the axis above rescales to the data and ends at ten minutes, so
+  /** A TIME THAT MEANS THE SAME LENGTH ON EVERY VISIT: the axis above rescales to the data and ends at ten minutes, so
    *  a bar's length meant different times on different visits. This one is fixed, one second to four weeks on a log scale, so
    *  12 s and 3 d are lengths on one line and the same length is the same time on every row. Returns { lo, hi, at(ms) → percent
    *  of the track, ticks: [[ms, word]] }. A cell of DRAW.vbar wears the ticks under its bar with the class "timed". */
@@ -1010,7 +1009,7 @@ const DRAW = {
   cols: (items, min = 26, cls = "", host = "") => `<div class="cols${cls ? ` ${cls}` : ""}" style="--col-min:${min}rem"${host ? ` data-mp-host="${esc(host)}"` : ""}>${items.join("")}</div>`,
   /** Groups of different heights flowed down columns at least [min] rem wide, the order running down each (.flow-cols). */
   flow: (items, min = 26) => `<div class="flow-cols" style="--col-min:${min}rem">${items.join("")}</div>`,
-  /** THE BALANCED BOARD (Oct 28): plates or groups of any height laid in as many columns of at least [min] rem as the width
+  /** THE BALANCED BOARD: plates or groups of any height laid in as many columns of at least [min] rem as the width
    *  holds, each into the column that is shortest at that point, MEASURED on what is drawn (kit masonry below), so no column
    *  stands as a tall wall beside blocks of empty screen. The order runs across the top and then down. An item of
    *  `data-cols="k"` is k columns wide (a provider with many cards), `data-cols="all"` the whole row. It needs no weights and
@@ -1020,7 +1019,7 @@ const DRAW = {
    *  it from its own rule (Sessions' 72rem a column, Models' pane); without it the width decides, [min] rem a column. */
   masonry: (items, min = 26, { cls = "", gap = "", n = 0 } = {}) =>
     `<div class="mason${cls ? ` ${cls}` : ""}" style="--col-min:${min}rem${gap ? `;--mason-gap:${gap}` : ""}${n ? `;grid-template-columns:repeat(${n},minmax(0,1fr))` : ""}">${items.join("")}</div>`,
-  /** A TOPIC IN BALANCED COLUMNS (Oct 28): the sections of one topic (a figure's section, the settings that act on it, the
+  /** A TOPIC IN BALANCED COLUMNS: the sections of one topic (a figure's section, the settings that act on it, the
    *  next section) in two columns once the plate holds both whole (a plate 110rem wide; below that one column, in order),
    *  laid by the measured rule of DRAW.masonry, so a section that belongs to neither side goes to the shorter one and no
    *  column leaves a block of empty viewport under it. [parts] is a list of sections, each a string or { html, col }: a
@@ -1033,7 +1032,7 @@ const DRAW = {
     if (items.length < 2) return items[0]?.html ?? "";
     return `<div class="topic pair mason${lead ? " lead" : ""}${cls ? ` ${cls}` : ""}">${items.map((p) => `<div class="pcol"${p.col ? ` data-side="${p.col}"` : ""}>${p.html}</div>`).join("")}</div>`;
   },
-  /** A DETAIL OPENED IN PLACE IS HELD NEAR THE WIDTH ITS CONTENT NEEDS (Oct 28), 56rem unless [rem] says another: the rest
+  /** A DETAIL OPENED IN PLACE IS HELD NEAR THE WIDTH ITS CONTENT NEEDS, 56rem unless [rem] says another: the rest
    *  of the row is left to what belongs BESIDE it, never to a rail drawn 3,600 px long for a six-second request.
    *  [body] is the detail; [beside] is the neighbour that takes the rest of the row (a summary, the figures the detail is
    *  about), drawn first on a narrow page and under the detail below 2 x [rem]. Without [beside] the detail is held to
@@ -1167,7 +1166,7 @@ const DRAW = {
   flip: (key) => ` data-flip="${esc(key)}"`,
 };
 
-// ---------- the stacked bar's labels, fitted to the bar as it is drawn (Oct 27) ----------
+// ---------- the stacked bar's labels, fitted to the bar as it is drawn ----------
 // DRAW.stack places each part's word and count from a guess at the bar's width. Once the bar is laid out, a part keeps
 // its label inside only where the label fits, a part named in the row under the bar takes its label in where it fits,
 // and the row keeps its order, largest first, ahead of the quiet parts and the caller's tail. Fitted when a bar lands,
@@ -1242,7 +1241,7 @@ new MutationObserver((records) => {
 addEventListener("resize", () => { fitStacks(); measureFlips(); for (const box of document.querySelectorAll(".mason")) layMason(box); });
 document.fonts?.ready.then(() => { fitRound++; fitStacks(); for (const box of document.querySelectorAll(".mason")) layMason(box); });
 
-// ---------- a value that changed moves to its new place (Oct 28) ----------
+// ---------- a value that changed moves to its new place ----------
 // Pages draw by replacing markup, so a re-read that changes a bar or a figure used to swap it in one frame, and a row that
 // reorders jumped. The kit now remembers the last value it drew at each place and, when a new drawing lands there with
 // another, moves from the old to the new over --t-snap (a bar's width, a figure's number) or --t-move (a row's position):
@@ -1347,7 +1346,7 @@ function settle(root) {
   for (const el of find("[data-flip]")) flipMove(el);
 }
 
-// ---------- a list behind "N more" opens and folds over --t-snap (Oct 29) ----------
+// ---------- a list behind "N more" opens and folds over --t-snap ----------
 // A page draws a list by replacing its markup, so a press on "N more" used to put every new row in one frame and push what
 // stood below it. The rows of a list stand in a host marked data-mp-host="id"; the pill that opens it and the Fewer that
 // folds it carry data-mp="id" (DRAW.more's host option), and a row that exists only while the list is open carries
@@ -1472,7 +1471,7 @@ function unfoldLanded() {
   }
 }
 
-// ---------- the balanced board: blocks of any height into the shortest column, measured (Oct 28) ----------
+// ---------- the balanced board: blocks of any height into the shortest column, measured ----------
 // DRAW.masonry and DRAW.topic lay a grid of 1 px rows; each block spans as many rows as it is tall plus the gap under it,
 // and the grid's own auto-placement puts the next block in the topmost free place, which is the shortest column. A block
 // that cannot fit a narrow board's columns takes the board's whole width instead. Blocks are measured again whenever one
@@ -1499,7 +1498,7 @@ function layMason(box) {
 }
 const MASON_SEEN = new WeakSet();
 
-// ---------- a read that is slow says so, once (Oct 28) ----------
+// ---------- a read that is slow says so, once ----------
 // A page that waits draws ghosts, which move at one stripe cycle a second whether the read is a moment old or has been
 // stuck for a minute, so a stuck read looked like a fresh one. A read that has been out SLOW_READ_MS draws the wait on
 // the ghost it feeds: one elapsed ring on the LEADING ghost of its region (the first card, the hero figure, the table's
@@ -1651,20 +1650,20 @@ function watchGhosts() {
 }
 setInterval(watchGhosts, 1000);
 
-// ---------- what a page says about a session: fin's states, element first and the word small ----------
+// ---------- what a page says about a session: its states, element first and the word small ----------
 //
 // THESE READ THE DRAWING'S SESSION SHAPE, NOT THE DAEMON'S ROW: `s.state`, `s.ask` and `s.stall`. Sessions builds that
 // shape in its sessionOf, with `stall` from stallOf over the live turn (/api/heads/{head}/turns/live), the turns-side
-// read Marlin ruled into 0.4.0 for Sessions and Teams both. Teams reads the daemon's row through its own `stateOf`
-// (splice-builder3) and takes stallOf the same way.
+// read ruled into 0.4.0 for Sessions and Teams both. Teams reads the daemon's row through its own `stateOf`
+// and takes stallOf the same way.
 // why: half a minute with no word from the provider is a silence he would want to see and maybe stop, while shorter
 // pauses are ordinary between thoughts. A display threshold only: nothing is ended by it (Idle is a probe, never an
 // error). A ping is heard: every byte the provider sends resets idle_ms (SseReader onBytes), so a model thinking
-// with pings never reads Stalled (Marlin; desk walk, Oct 10: idle stayed under 5 s across a 36 s pinging hold).
+// with pings never reads Stalled.
 const STALL_SHOWN_MS = 30000;
 // The ceiling: a head whose gate serves a tighter tier (/api/heads gate.first_byte_timeout_ms before any output,
-// gate.stream_idle_ms after) reads Stalled sooner, once idle passes that tier; a head at the defaults keeps Marlin's
-// half minute (splice-lead, Oct 13, gap 396).
+// gate.stream_idle_ms after) reads Stalled sooner, once idle passes that tier; a head at the defaults keeps the
+// half minute.
 // why: under five seconds of quiet is ordinary streaming; a countdown that flickered on every pause would be noise.
 const RESUME_SHOWN_MS = 5000;
 // why: the continuations a round may spend on re-anchors (DEFAULT_MAX_CONTINUATIONS, Turn.kt:266); past them nothing resumes.
@@ -1672,13 +1671,13 @@ const MAX_CONTINUATIONS = 5;
 // The endings that hold a session back until something changes, as the session row's ended_by names them (SessionsWiring).
 const LIMIT_ENDINGS = new Set(["error:plan-limit", "error:all-accounts-exhausted"]);
 // The endings where splice re-sent a request until it gave up: the provider kept failing, or the turn ran past its cap.
-// Nothing will send it again, so the session needs him (Marlin #2).
+// Nothing will send it again, so the session needs him.
 const GAVE_UP_ENDINGS = new Set(["error:upstream-failed", "error:turn-cap"]);
 /** What the session is waiting on. With a request in flight, from the live turn splice holds (LiveTurnsRoutes): refused
  *  and re-sent before any answer, quiet with a re-send coming (the head's stall_reanchor_ms, /api/heads gate), or quiet
  *  with none. With none, from how its newest request ended (the row's ended_by): turned away at a spent plan or pool
  *  (At limit, until the window named comes back) or for want of a credential (Signed out). A plan name has no source
- *  yet, so `plan` is null. Sessions and Teams both read it (Marlin, Oct 10). `at` is when it was read, so the
+ *  yet, so `plan` is null. Sessions and Teams both read it. `at` is when it was read, so the
  *  counters move each second between reads. [head] is the page's /api/heads entry ({ reanchorMs, idleMs, firstByteMs });
  *  a bare number is read as reanchorMs alone, so a caller not yet passing the entry keeps the fixed stall threshold. */
 function stallOf(turn, head, endedBy) {
@@ -1694,7 +1693,7 @@ function stallOf(turn, head, endedBy) {
   if (turn.retries > 0 && !turn.seen_output) return { kind: "retries", n: turn.retries, at };
   // will_resume is the wire saying whether splice would re-send this round now; a round that already emitted a tool
   // call never is, whatever the head's tier. Only an explicit false says so: a daemon that does not publish it, or a
-  // turn it has not decided, says nothing, and the card stays bare Stalled (fin, Oct 10).
+  // turn it has not decided, says nothing, and the card stays bare Stalled.
   // Before the first byte a refusal or a dropped connection is retried, not resumed, so the fact speaks only once the
   // provider has begun answering.
   const wontResume = turn.seen_output === true && turn.will_resume === false;
@@ -1705,21 +1704,20 @@ function stallOf(turn, head, endedBy) {
 }
 
 // A silence splice will end itself (the head's re-anchor tier, continuations left) is still Working on the card: nothing
-// for him to do. Opened, its line counts down to the re-send in the working colour (fin, console-lead's stall states,
-// Oct 10). Only a silence nothing will resume is Stalled.
+// for him to do. Opened, its line counts down to the re-send in the working colour. Only a silence nothing will resume is Stalled.
 const resuming = (s) => s.state === "working" && s.stall?.resumeMs != null;
 // A limit or a sign-out ended the turn, so it holds an idle session as well as a working one.
 const heldByEnding = (s) => s.stall?.kind === "limit" || s.stall?.kind === "signout";
 // splice gave up re-sending his newest request: it waits on him as a question does, with the outcome's own word and
-// how many times it was re-sent (fin), the count in the key's ink and the retries glyph in the key-light ring (hitstop 605ab5c)
+// how many times it was re-sent, the count in the key's ink and the retries glyph in the key-light ring
 // IDLE OR NOT. splice launches every client in its persistent-retry mode (CLAUDE_CODE_RETRY_WATCHDOG, LaunchService), so
 // a client whose provider keeps failing does not go idle: it waits up to five minutes and re-sends, up to 300 times,
 // and reads busy the whole while. Requiring idle meant this state never drew on the session it exists for (march-csv,
 // busy nine hours on a provider that refused every request), and that session fell to the Stalled branch, which has no
-// lamp for "gaveup" and printed the word "undefined" (console-lead, desk walk, Oct 11). stallOf only answers gaveup
+// lamp for "gaveup" and printed the word "undefined". stallOf only answers gaveup
 // when no request is in flight, so the moment the client re-sends, the live turn's own state takes the card again.
 const gaveUp = (s) => s.stall?.kind === "gaveup";
-// THE WORDS NEVER CHANGE; ONLY THE COLOUR AND RANK MOVE WITH THE CLOCK (Marlin, Oct 11, 10:53; fin's words). While the
+// THE WORDS NEVER CHANGE; ONLY THE COLOUR AND RANK MOVE WITH THE CLOCK. While the
 // client is still re-sending and the run of refusals is under half an hour old, the card is Stalled: the client may
 // yet get through, as "Resumes in" is for a silence. Idle, or busy half an hour or more, it is Needs you: the provider
 // is not coming back on its own soon, and moving or stopping it is his act. The run is dated by the daemon (the row's
@@ -1734,8 +1732,7 @@ const stalled = (s) => Boolean(s.stall) && (s.state === "working" ? !resuming(s)
 function rowLook(row, turn, head) {
   const ended = row.availability === "gone";
   // A stale row (alive, but its registry entry not refreshed in 30 minutes) is not read as working off its own status,
-  // only off a live turn splice holds for it (spec §4: unavailable is never shown active; splice-providers' spec pass,
-  // Oct 12). Sessions' card already says "Not heard from since", so it takes no word here.
+  // only off a live turn splice holds for it (spec §4: unavailable is never shown active). Sessions' card already says "Not heard from since", so it takes no word here.
   const working = !ended && (Boolean(turn) || (row.availability !== "stale" && (row.status === "working" || row.status === "busy")));
   const state = ended ? "ended" : row.waiting_for ? "needs" : working ? "working" : "idle";
   return { state, stall: state === "working" || state === "idle" ? stallOf(turn, head, row.ended_by) : null };
@@ -1743,25 +1740,25 @@ function rowLook(row, turn, head) {
 /** How urgent a session is, in the cards' rank: waiting on him, stalled, working, the rest. */
 const rankOf = (s) => (s.state === "needs" || gaveUpNeeds(s) ? 0 : stalled(s) ? 1 : s.state === "working" ? 2 : 3);
 const rowAt = (row) => +new Date(row.updated_at || row.status_updated_at || row.started_at || 0);
-/** How long a live turn has been held since the gate admitted it (age_ms, splice-turns d42eeda99), counted up from
- *  when it was read: seconds, then minutes (fin). */
+/** How long a live turn has been held since the gate admitted it (age_ms), counted up from
+ *  when it was read: seconds, then minutes. */
 const heldFor = (t) => {
   const secs = Math.floor(Math.max(0, t.age_ms + (t.readAt ? Date.now() - t.readAt : 0)) / 1000);
   return secs < 60 ? `${secs} s` : `${Math.floor(secs / 60)} min`;
 };
-/** A working session in its gate's words (fin, Oct 13): the turn's time rides the word, a compaction reads Compacting,
+/** A working session in its gate's words: the turn's time rides the word, a compaction reads Compacting,
  *  and a turn whose request is sent with no first byte back says No output yet beside it. A turn the gate holds no
  *  slot for reads Working, as before. */
 function workingLook(s) {
   const t = s.turn;
-  // a turn the gate has queued and not let in yet reads In line, as a held request reads Waited in line (fin), counted
-  // since it entered the queue (splice-turns cc0181422)
+  // a turn the gate has queued and not let in yet reads In line, as a held request reads Waited in line, counted
+  // since it entered the queue
   if (t?.phase == null && s.wait) {
     return { cls: "working", lamp: ICON.trace, word: `In line · <span data-held="${esc(s.id)}">${heldFor(s.wait)}</span>` };
   }
   if (t?.phase == null) return { cls: "working", lamp: ICON.trace, word: "Working" };
   const word = `${t.compact ? "Compacting" : "Working"} · <span data-held="${esc(s.id)}">${heldFor(t)}</span>`;
-  // THE CONNECT PHASE IS HEALTHY, SO IT IS NOT RED (the colour pass, Oct 26). "No output yet" is the ordinary moment
+  // THE CONNECT PHASE IS HEALTHY, SO IT IS NOT RED. "No output yet" is the ordinary moment
   // between a request going out and the first byte coming back; drawn in the limit red it read as a failure on 3 of 15
   // working sessions. The limit red marks a limit or a failure and nothing else, so this line is muted ink (.soft).
   return { cls: "working", lamp: ICON.trace, word, detail: t.phase === "connect" ? `<span class="detail soft">No output yet</span>` : "" };
@@ -1769,7 +1766,7 @@ function workingLook(s) {
 function look(s) {
   if (s.state === "needs") return { cls: "needs", lamp: ICON[s.ask.kind], word: "Needs you" };
   if (gaveUp(s)) {
-    // ONE INK PER PHASE (fin; hitstop, Oct 11): the word and both details take the limit's ink while it is Stalled, and
+    // ONE INK PER PHASE: the word and both details take the limit's ink while it is Stalled, and
     // the key's ink once it is Needs you. The plain detail class is the limit's; "retried" is the key's.
     const needs = gaveUpNeeds(s), ink = needs ? "detail retried" : "detail";
     const n = s.stall.n, count = n ? `<span class="${ink}">${n} ${n === 1 ? "retry" : "retries"}</span>` : "";
@@ -1780,13 +1777,13 @@ function look(s) {
     paneDetail: `<span class="detail resumes" data-resume="${s.id}">${ICON.watch(Math.floor(s.stall.resumeMs / 1000))}<span>Resumes in ${counter(s.stall.resumeMs)}</span></span>` };
   if (stalled(s)) {
     const k = s.stall.kind, lamp = k === "silent" ? ICON.flat : ICON[k];
-    // "Won't resume" ends the line Stalled begins, in its colour and with no glyph of its own (fin, hitstop 131ad54)
+    // "Won't resume" ends the line Stalled begins, in its colour and with no glyph of its own
     const detail = k === "silent" ? `<span class="detail" data-silent="${s.id}">${ICON.watch(Math.floor(s.stall.ms / 1000))}<span>${counter(s.stall.ms)}</span></span>${s.stall.wontResume ? `<span class="detail noresume">Won't resume</span>` : ""}`
       : k === "retries" ? `<span class="detail">${s.stall.n} ${s.stall.n === 1 ? "retry" : "retries"}</span>`
       : k === "limit" ? `${s.stall.acct ? acctPlanHtml(s.stall.acct, s.stall.plan) : ""}${s.stall.until ? `<span class="detail">Resets ${backWord(s.stall.until)}</span>` : ""}` : "";
-    // a plan's limit ended the turn; nothing stalled, so the word is Accounts' own (fin): lock, At limit, the plan, its reset
+    // a plan's limit ended the turn; nothing stalled, so the word is Accounts' own: lock, At limit, the plan, its reset
     if (k === "limit") return { cls: "stalled", lamp, word: `${ICON.lock}At limit`, detail };
-    // no credential ended it, so nothing stalled either: the word is the state itself, as Accounts says it (fin)
+    // no credential ended it, so nothing stalled either: the word is the state itself, as Accounts says it
     // its act is the way back: Accounts opened on that command's sign-in or key, when the page knows the command (fix)
     const fix = s.stall.fix ? `<a class="detail fix" href="${esc(s.stall.fix.href)}">${esc(s.stall.fix.word)}</a>` : "";
     if (k === "signout") return { cls: "stalled", lamp, word: "Signed out", detail: fix };
@@ -1806,7 +1803,7 @@ const live = (s) => Boolean(s.live);
 // list and open item sit side by side exactly where the page's .page container query puts them: the page's content
 // box, padding out, against the width its stylesheet writes beside that query as .page { --side-by-side: <rem> }, 104
 // where it writes none. So a page never opens an item the CSS can only show in place of its list, and each page keeps
-// its one width in its own stylesheet (the scale pass of Oct 15 moved Requests to 120 and Models to 90).
+// its one width in its own stylesheet (the scale pass moved Requests to 120 and Models to 90).
 const sideBySide = () => {
   const p = document.querySelector(".page"), cs = getComputedStyle(p);
   const at = parseFloat(cs.getPropertyValue("--side-by-side")) || 104;
@@ -1814,13 +1811,13 @@ const sideBySide = () => {
 };
 
 // ---------- the one nav ----------
-// A LINK IS HERE ONLY ONCE ITS PAGE IS (Marlin, Oct 10, 2026). The control plane serves what is packaged under
-// console/ and nothing else can resolve, and builder2's walk of the installed build found seven of eight links
+// A LINK IS HERE ONLY ONCE ITS PAGE IS. The control plane serves what is packaged under
+// console/ and nothing else can resolve, and a walk of the installed build found seven of eight links
 // leading to a 404 with an empty body, which a first-time reader cannot tell from a slow page. 0.4.0 ships
 // eight pages in this order: Accounts, Sessions, Teams, Requests, Usage, Models, Compare models, Settings. A
 // page joins this list in the commit that brings it, and until then its link does not exist. THIS LIST IS THE
 // ONE PLACE: a page that hand-wrote its own nav could disagree with every other page's, and seven of them did.
-// The seat that lands a page adds ITS OWN line here in the same commit, because a line added early is the
+// The contributor who lands a page adds ITS OWN line here in the same commit, because a line added early is the
 // 404 this list exists to prevent: the jar carries what the commit carries, not what a working tree has.
 const PAGES = [
   ["accounts.html", "Accounts"],
@@ -1842,7 +1839,7 @@ function setFavicon() {
   if (link) link.href = document.documentElement.dataset.theme === "day" ? "brand/favicon-day.svg" : "brand/favicon.svg";
 }
 setFavicon();
-// A PRESS THAT CUTS OR MOVES SOMEONE ASKS ONCE (Marlin, Oct 13, from Settings' Restart splice, Oct 12): the first press
+// A PRESS THAT CUTS OR MOVES SOMEONE ASKS ONCE: the first press
 // reads which sessions have a request in flight on the commands it touches, off each command's live turns the way
 // Sessions reads them. None, and the press acts at once; some, and it arms with their names, each a chip that opens its
 // session, and the second press acts. [heads] null is every command splice runs.
@@ -1861,7 +1858,7 @@ const cutChips = (cut) => cut.map((x) => `<a class="chip" href="sessions.html#${
 const armedAsk = (said, cut, act, keep, tail = "") => `<span class="armed cutask"><span class="said">${esc(said)}</span>`
   + cutChips(cut)
   + `${tail}${act}${keep}</span>`;
-/** THE TOGGLE SHOWS BOTH THEMES WITH THE ONE IN USE LIT (Oct 26), as every other two-state control on the console does:
+/** THE TOGGLE SHOWS BOTH THEMES WITH THE ONE IN USE LIT, as every other two-state control on the console does:
  *  the sun and the moon side by side, the current one in full ink and the other muted, and the label says what the
  *  press gives ("Switch to day"). It drew one moon in both themes with the label "Day or night", so it said neither
  *  which theme was on nor what a press would do. The page's own markup holds the button; the kit draws what is in it,
@@ -1881,7 +1878,7 @@ function toggleTheme() {
   setFavicon();
   drawTheme();
 }
-// WITH ONE PAGE THE NAV DRAWS NOTHING (hitstop, Oct 10): a lone link repeats the page's own title, and a single
+// WITH ONE PAGE THE NAV DRAWS NOTHING: a lone link repeats the page's own title, and a single
 // selected box reads as a strip with its other tabs torn off. The top bar keeps its height, its wordmark and its
 // theme toggle either way, so nothing moves when the links arrive.
 // A PAGE IS FOUND BY ITS SHAPE BEFORE ITS WORD IS READ: each link carries one line glyph of what its page holds, in the
@@ -1901,7 +1898,7 @@ function drawNav() {
   const side = document.querySelector(".side");
   if (!side || PAGES.length < 2 || side.querySelector(".nav")) return;
   // the page names itself by its title, so any address it was opened at (a query, a bare "/", no ".html") marks its own
-  // item, and a page no item names marks none rather than Accounts (splice-lead, Oct 12, from builder2's retake)
+  // item, and a page no item names marks none rather than Accounts
   const own = document.title.split(" · ")[0], file = location.pathname.split("/").pop();
   const here = PAGES.find(([f, name]) => name === own || f === file)?.[0];
   const links = PAGES.map(([file, name]) =>
@@ -1909,7 +1906,7 @@ function drawNav() {
   const nav = document.createElement("nav");
   nav.className = "nav";
   nav.setAttribute("aria-label", "Pages");
-  // THE LINKS ARE THE CONSOLE'S OWN SEGMENTED SWITCH, AND ITS LIT SEGMENT TRAVELS (Oct 27, Oct 28): all eight pages stand in one
+  // THE LINKS ARE THE CONSOLE'S OWN SEGMENTED SWITCH, AND ITS LIT SEGMENT TRAVELS: all eight pages stand in one
   // sunk track as every other view switch on the console does, the page he is on raised in the neutral selected look, and
   // the raised face is one object moved to the next link's place over --t-move, so a page change reads as one move along
   // the bar and not as one mark blinking out and another in. What belongs beside the track (the settings act) stands
@@ -1919,7 +1916,7 @@ function drawNav() {
   navLine(false);
   new ResizeObserver(() => navLine(false)).observe(nav);
 }
-/** THE MARKS' TRACKS NARROW ONLY AS FAR AS THE BAR NEEDS (Oct 29): every track is the same width on every mark, so counts compare by eye, and the
+/** THE MARKS' TRACKS NARROW ONLY AS FAR AS THE BAR NEEDS: every track is the same width on every mark, so counts compare by eye, and the
  *  width steps down from its full size until the theme switch is back inside the bar, so a bar with every mark lit is never wider than
  *  the window. A bar with room keeps the full width. */
 const MARK_TRACK_REM = [4.2, 3.4, 2.8, 2.3, 1.9, 1.5];
@@ -1959,7 +1956,7 @@ function navCurrent(file) {
 drawNav();
 
 // ---------- what waits behind a link ----------
-// THE LINKS ARE THE MAP, SO A LINK CARRIES WHAT WAITS BEHIND IT (Oct 27). The bar named eight pages and nothing on
+// THE LINKS ARE THE MAP, SO A LINK CARRIES WHAT WAITS BEHIND IT. The bar named eight pages and nothing on
 // them, so a session waiting on him was one page away and invisible from the other seven. Sessions carries the
 // project tiles' own lamps with their counts: who needs him, and what stalled. It is the same reading every page's
 // tiles take (projectGroups over the sessions and the commands' live turns), so the bar and the tiles never disagree.
@@ -1991,7 +1988,7 @@ async function markNav() {
     if (navAgain) { navAgain = false; markNav(); }
   }
 }
-// A MARK DRAWS ITS COUNT AGAINST ITS WHOLE (Oct 29): the number only labels a track, as every share on the console is drawn. The
+// A MARK DRAWS ITS COUNT AGAINST ITS WHOLE: the number only labels a track, as every share on the console is drawn. The
 // track is the whole, one width on every mark, filled to the count's share of it in the count's ink, so 2 stalled and 3 stalled of 12 read
 // as well as 6 logins of 9 and two marks compare by eye; a count above zero fills at least 2 px, so it never reads empty. The whole is
 // said once after the marks ("of 9", "of 28 live"), and as
@@ -2022,7 +2019,7 @@ function drawNavMarks(file, name, counts, whole = null) {
   link.setAttribute("aria-label", [name, ...counts.map(([k, n]) => NAV_WORDS[k](n, whole))].join(", "));
   navLine(false);
 }
-// A PAGE'S LINK CARRIES THE STATE THAT PAGE HOLDS (Oct 27). Accounts is the page that knows which logins are at their
+// A PAGE'S LINK CARRIES THE STATE THAT PAGE HOLDS. Accounts is the page that knows which logins are at their
 // limit, and nothing anywhere else said so: a provider ran out and a person on Sessions or Usage could not see it until
 // they opened Accounts. Accounts draws its own count on its link from the reading its board is drawn from, so the two
 // never disagree, and keeps it in this browser with the moment each login comes back; every other page draws that
@@ -2077,7 +2074,7 @@ addEventListener("DOMContentLoaded", () => {
 drawTheme();
 document.querySelector('.side [data-act="theme"]')?.addEventListener("click", toggleTheme);
 
-// THE HEADER SEARCH TAKES ITS TEXT BACK FROM INSIDE (Oct 28): a `.clr[data-clears]` button after the field in its `.search`
+// THE HEADER SEARCH TAKES ITS TEXT BACK FROM INSIDE: a `.clr[data-clears]` button after the field in its `.search`
 // label (console.css; shown only while there is text) empties the field, tells the page it changed as typing would, and hands
 // the caret back to the field. A page whose own search already clears itself marks its button otherwise and is left alone.
 document.addEventListener("click", (e) => {
@@ -2094,7 +2091,7 @@ document.addEventListener("click", (e) => {
 // mark sits on the Settings link of the top bar, on every page, and is absent while the two match. Read once the page's scripts have
 // loaded (API comes after this file), then every 15 s; an unanswered read leaves the mark as it was.
 //
-// AND THE ACT IS ON THE MARK (Oct 26). The words were the user's already, but the only way to act on them was to go to
+// AND THE ACT IS ON THE MARK. The words were the user's already, but the only way to act on them was to go to
 // Settings and find Restart splice, so the mark told him to do something and offered nothing. The restart lives here
 // now, as an act on the thing it changes: it arms once with the sessions it would cut (midRequest, as Settings and
 // Models arm theirs), spins where it stands, and says in place what happened. The daemon's side is unchanged:
@@ -2102,7 +2099,7 @@ document.addEventListener("click", (e) => {
 const STALE_READ_MS = 15_000, RESTART_POLL_MS = 2_000, RESTART_TRIES = 60, SAID_MS = 4_000;
 // what the restart press is doing right now: armed with the sessions it would cut, out, or done with a word to say
 let restarting = null;
-// WHAT CHANGED IS MARKED WHERE IT CHANGED (Oct 28). The mark stood at the bar's far end, 2,400 px from the Settings link it
+// WHAT CHANGED IS MARKED WHERE IT CHANGED. The mark stood at the bar's far end, 2,400 px from the Settings link it
 // is about, as two words and an act. It is the Needs-you lamp now, on the Settings link itself, and the one act that
 // applies the change stands right beside that link. What the act needs to say beyond itself (the sessions a restart
 // would cut, the command that restarts splice when it cannot do it itself) hangs under the link, as a page that did not
@@ -2117,7 +2114,7 @@ function clearStale() {
   lamp.remove(); link.removeAttribute("aria-label"); link.removeAttribute("title");
   navLine(false);
 }
-// WHAT THE LIST UNDER THE SETTINGS LINK NAMES IS WHAT THIS CONSOLE SAVED (Oct 29). splice reports only that the settings file moved,
+// WHAT THE LIST UNDER THE SETTINGS LINK NAMES IS WHAT THIS CONSOLE SAVED. splice reports only that the settings file moved,
 // and never which setting, so every save the console makes to that file is noted where it is made (DRAW.savedSettings), by the
 // setting's name and the page it is set on, in this browser under the run of splice it was made in. The run is told by the digest of
 // the settings splice runs (/health topologyDigest), which a restart changes; a save made in a run that has since ended is not listed.
@@ -2182,7 +2179,7 @@ function saidRestarted() {
   drawStale();
   setTimeout(() => { if (restarting?.tone === "good") { restarting = null; markStale(); } }, SAID_MS);
 }
-// THE WAIT FOR SPLICE TO COME BACK IS A RING THAT FILLS (Oct 28): it was a spinner and then the words "Not back yet". The
+// THE WAIT FOR SPLICE TO COME BACK IS A RING THAT FILLS: it was a spinner and then the words "Not back yet". The
 // arc is the share of the wait spent, over the whole time the poll below gives splice, so it reads as progress and, full
 // and in the failure's red, as the end of it, with the seconds spent inside it. The page's own animation carries the arc
 // between redraws, from where it was; the seconds step once a second (staleTick).
@@ -2287,7 +2284,7 @@ function drawStale() {
     });
   }
   // THE ACT IS ON THE MARK. What it does to others, or the way out where splice cannot restart itself, hangs under it.
-  // SPLICE CANNOT BRING ITSELF BACK HERE, SO THE WAY OUT IS THE COMMAND THAT CAN (Oct 27): a refusal that said "Nothing is
+  // SPLICE CANNOT BRING ITSELF BACK HERE, SO THE WAY OUT IS THE COMMAND THAT CAN: a refusal that said "Nothing is
   // set to start it again" left nothing to press. `splice restart` stops it and starts it from a terminal. Every state that
   // failed keeps an act in its panel, and the act spins where it stands while it works.
   const panel = stalePanel();
@@ -2357,7 +2354,7 @@ function pollRestart(tries, id) {
 }
 addEventListener("DOMContentLoaded", () => { markStale(); setInterval(markStale, STALE_READ_MS); });
 
-// ---------- the project pick: ONE PICK across Sessions, Teams and Requests (Marlin, Oct 11) ----------
+// ---------- the project pick: ONE PICK across Sessions, Teams and Requests ----------
 // Choosing a project on any of them changes it on all of them, so it lives in this browser and in the address: the
 // address wins when he arrives by a link ("Open on Requests"), and what he picked last carries to the next page he
 // opens. The key is the project's id as the daemon writes it (ProjectWire), the one thing every page's rows share.
@@ -2381,11 +2378,11 @@ const PICK = {
 const NEEDS_LAMP = (n) => `<span class="pc needs"><span class="plamp" aria-hidden="true">${ICON.input}</span><b>${n}</b></span>`;
 /** The picker and the doors. [projects] is [[key, label]] in the pages' group order; [doors] is [[key, label, waiting]]
  *  for the projects with someone waiting, drawn only while one project is picked; [open] whether the menu is down. */
-// A PROJECT'S FIGURE AT EVERY WIDTH (Marlin's walk, Oct 12): below the tiles' width the picker and its menu carry the
-// same figure each tile does on that page (sessions, teams, or requests in the window), so "how many did temple send"
+// A PROJECT'S FIGURE AT EVERY WIDTH: below the tiles' width the picker and its menu carry the
+// same figure each tile does on that page (sessions, teams, or requests in the window), so "how many did harbor send"
 // is one glance and the menu says where the work is before he picks. [projects] are [key, label, total]; [all] is
 // Every project's total. A total not read yet is null and draws nothing. [show] writes a figure: digits grouped unless
-// the page counts something that runs to billions (Usage writes tokens short, "16 bn", Marlin).
+// the page counts something that runs to billions (Usage writes tokens short, "16 bn").
 const showCount = (n) => n.toLocaleString("en-US");
 // a count whose read answered with a failure: the dash a figure splice has no reading for wears, said "Not read" on hover
 const NOT_READ = `<i class="nr" title="Not read">—</i>`;
@@ -2406,7 +2403,7 @@ function pickerHtml(projects, pick, open, doors, all = null, show = showCount, a
 }
 
 // ---------- the project tiles: at a 150rem page and wider (about 1970 px and up since the nav moved to the top bar and
-// the page took the rail's width), every project at once (Marlin, fin) ----------
+// the page took the rail's width), every project at once ----------
 // A row of tiles across the page replaces the picker and the doors on Sessions, Teams and Requests alike: a tile is its
 // project's header in another place, the name, the muted total beside it, and a card-size lamp and count per live
 // state. "Every project" comes first and sums them. Pressing a tile is the pick, and the picked tile is raised like a
@@ -2421,7 +2418,7 @@ function tilesWide() {
 const TLAMP = { needs: ICON.input, stalled: ICON.flat, working: ICON.trace };
 // a lamp and its count; on a tile, with the words the lamp stands for beside the count ("1 needs you", "3 working")
 const tlampHtml = ([k, n], said = false) => `<span class="pc big ${k}"><span class="tlamp ${k}" aria-hidden="true">${TLAMP[k]}</span><b>${n}</b>${said ? `<span class="pw">${STATE_WORDS[k]}</span>` : ""}</span>`;
-// the brief's own words for a header read aloud: "temple, 1 needs you, 3 working, 7 sessions" (Marlin)
+// the brief's own words for a header read aloud: "harbor, 1 needs you, 3 working, 7 sessions"
 const STATE_WORDS = { needs: "needs you", stalled: "stalled", working: "working" };
 /** "1 needs you, 3 working, 7 sessions": what a tile says to a screen reader, in the lamps' order. */
 const countWords = (counts, total, unit, show = showCount) => [...counts.filter(([, n]) => n).map(([k, n]) => `${n} ${STATE_WORDS[k]}`),
@@ -2432,7 +2429,7 @@ const sumCounts = (lists) => ["needs", "stalled", "working"].map((k) => [k, list
  *  truncates before its total does (the total sits beside the name, never at the lamps' end, where "4" and "1,300"
  *  would read as one number).
  *
- *  A ROW OF TILES SAYS WHAT IT COUNTS ONCE, AND DRAWS EVERY SHARE AS A BAR (Oct 28). The unit stands once, on the one tile
+ *  A ROW OF TILES SAYS WHAT IT COUNTS ONCE, AND DRAWS EVERY SHARE AS A BAR. The unit stands once, on the one tile
  *  that is the whole, beside its figure ("60B tokens"); every other tile is a bare figure under it, in its own column, so
  *  "tokens" is not printed on nine tiles over a hairline. (Oct 27 had put the unit on each tile because said once over
  *  the row it read as the page's title again, "TEAMS" under "Teams"; on the first tile it sits on a figure's baseline
@@ -2450,7 +2447,7 @@ function tilesHtml(items, pick, show = showCount, unit = "") {
   const all = items.find(([k]) => k === "")?.[3];
   const tiles = items.map(([k, label, counts, total, words]) => {
     const on = (pick ?? "") === k, every = k === "", zero = total === 0 && !every;
-    // A TILE BEING READ IS THE SIZE IT WILL BE (Oct 26): the names are known before the figures, so a tile whose
+    // A TILE BEING READ IS THE SIZE IT WILL BE: the names are known before the figures, so a tile whose
     // total has not landed draws the figure and the share as the shapes that will land there, and the page under
     // the row stays where it is. It used to lose both, which left a 10 px stripe and moved the page by ~100 px.
     // A COUNT THAT COULD NOT BE READ IS NOT A COUNT ON ITS WAY: null is being read (stripes, which move), false is a read
@@ -2482,9 +2479,9 @@ function tilesHtml(items, pick, show = showCount, unit = "") {
 // ---------- the projects as Teams and Requests see them: off /api/sessions rows, in Sessions' group order ----------
 // Sessions groups its own cards (sessions.js groupsOf); the other pages read the same rows raw. The order is the same
 // rule and the same reading (rowLook, rankOf, from the same live turns): a project where someone waits on him first,
-// then one with a stalled session, then every other project by its name, No project last. ONE ORDER (Marlin): a
+// then one with a stalled session, then every other project by its name, No project last. ONE ORDER: a
 // project that ranked one way here and another on Sessions would read as two facts.
-// AN ORDER HE CAN LEARN (Oct 27): working and idle no longer rank, and neither does the latest activity, since both
+// AN ORDER HE CAN LEARN: working and idle no longer rank, and neither does the latest activity, since both
 // change by the minute: the tiles reshuffled between two visits minutes apart, so a project found once had moved by
 // the next. Only a project that needs him moves, and its lamp says why.
 const NO_PROJECT_KEY = "-";
@@ -2528,7 +2525,7 @@ function reconcilePick(pick, groups) {
 }
 /** The pick line Teams and Requests draw: the tiles at a wide page, else the picker and its doors, else, with one
  *  project, its name; nothing with no live session. The pick only exists where there are two projects to pick between.
- *  EACH PAGE COUNTS ITS OWN THING (Marlin): [count] is the tiles' totals, { of(key), all, unit }, teams on Teams and
+ *  EACH PAGE COUNTS ITS OWN THING: [count] is the tiles' totals, { of(key), all, unit }, teams on Teams and
  *  requests on Requests; a figure the page has not read is left off. The lamps stay the sessions', so someone waiting
  *  shows from every page. [count.show] writes a figure (Usage: tokens short), digits grouped when a page gives none. */
 function pickLineHtml(groups, pick, open, count) {

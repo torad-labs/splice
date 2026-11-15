@@ -85,14 +85,14 @@ f37280280b4768cf6c9f825e7fdee98145ccffc4:app/src/test/kotlin/splice/app/KeptFile
 # The history is not rewritten, so each commit that carries the quote is fingerprinted here.
 5319b63131cfe0ff25ba6ad85264cd741ba92fbd:.gitleaksignore:generic-api-key:80
 36a22e1a5821273c4592a592bf474e6441f55e30:.dev/campaigns/v0.4.0.toml:generic-api-key:8297
-# 2026-09-29 CT: V4-427 transcript fixtures plant the same synthetic token as the
+# 2026-09-29: V4-427 transcript fixtures plant the same synthetic token as the
 # vetted TranscriptSentTextsTest above, to assert cached hand-offs stay redacted.
 # Opened all three test lines and their assertions. No credential or auth consumer.
 13ef90fbd2b1f075c37612db8e13166d0c4d4dde:integrations/claude-code/src/test/kotlin/splice/client/transcript/v4427/CachedEdgesTest.kt:generic-api-key:34
 13ef90fbd2b1f075c37612db8e13166d0c4d4dde:integrations/claude-code/src/test/kotlin/splice/client/transcript/v4427/SendLedgerTest.kt:generic-api-key:43
 13ef90fbd2b1f075c37612db8e13166d0c4d4dde:integrations/claude-code/src/test/kotlin/splice/client/transcript/v4427/SendLedgerBoundaryTest.kt:generic-api-key:58
-# 2026-09-30 CT (splice-lead): three fixtures red on secret-scan and org-secret-scan since
-# 3962a5897 (Sep 29, 6:46 PM CT). Opened each line: TranscriptLastTest's synthetic assistant
+# 2026-09-30: three fixtures red on secret-scan and org-secret-scan since
+# 3962a5897 (Sep 29, 6:46 PM). Opened each line: TranscriptLastTest's synthetic assistant
 # reply text carrying a token= phrase in a 1970 transcript fixture (message id synthetic-reply),
 # and doctor.test.ts's planted fix and detail values of the report-redaction test, both spelling
 # PLANTED. No credential and no auth consumer; the doctor fix value is also exempt in
@@ -100,24 +100,24 @@ f37280280b4768cf6c9f825e7fdee98145ccffc4:app/src/test/kotlin/splice/app/KeptFile
 1cc6847d61fec3a81471fb798090aeb65eda5eb4:integrations/claude-code/src/test/kotlin/splice/client/v4444/TranscriptLastTest.kt:generic-api-key:14
 1755abd8e5b5b228cff12fccfe86e50a283ca7d5:console-next/tests/doctor.test.ts:generic-api-key:243
 1755abd8e5b5b228cff12fccfe86e50a283ca7d5:console-next/tests/doctor.test.ts:generic-api-key:244
-# Sep 30 CT, vetted by hand after secret-scan and org-secret-scan went red on 6dd4a6204: the two
+# Sep 30, vetted by hand after secret-scan and org-secret-scan went red on 6dd4a6204: the two
 # bare-key inputs of the doctor redaction tests added in beba60d0f (V4-254, doctor --json redacts a
 # bare 32-character key). Both lines assign the alphabet run AbCdEf...Yz012345, the input the test
 # proves the report never prints; no credential and no auth consumer.
 beba60d0f1545cad1d5a6b89c0ccb78df8cd15a5:features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorRedactionTest.kt:generic-api-key:71
 beba60d0f1545cad1d5a6b89c0ccb78df8cd15a5:features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorReportHardeningTest.kt:generic-api-key:85
-# Oct 4 CT, vetted by hand after secret-scan and org-secret-scan went red on 568589466: the OAuth
+# Oct 4, vetted by hand after secret-scan and org-secret-scan went red on 568589466: the OAuth
 # client id of Claude Code's own public client, which ClaudeOAuthRefresh names to rotate a login
 # that client made. A public OAuth client is an app identifier with no secret (PKCE); the same id
 # is printed in third-party usage tools' docs. It grants nothing alone. The supplementary pass was
 # green on the same run.
 5685894667979261c2e1533302b571cc0c067af5:app/src/main/kotlin/splice/app/auth/claude/ClaudeOAuthRefresh.kt:generic-api-key:38
-# Oct 5 CT, vetted by hand after secret-scan went red on e0cb44ff2: a ledger install note names the
+# Oct 5, vetted by hand after secret-scan went red on e0cb44ff2: a ledger install note names the
 # code-mode backup directory, a dated name ending in the installed short sha, a few words after the
 # phrase "management key answers". The flagged token is that backup name; no credential and no auth
 # consumer. Ledger notes now keep backup names away from the word "key".
 e0cb44ff2009e312b96027dacda6b1c30aec49ef:.dev/campaigns/v0.4.0.toml:generic-api-key:423
-# Oct 5 CT, gitleaks 8.30.1 historical triage: opened every exact blob. The ledger match is
+# Oct 5, gitleaks 8.30.1 historical triage: opened every exact blob. The ledger match is
 # narrative prose; the plan matches are an interpolated head log and a static beta-header list.
 # The remaining two are the already-vetted hostile-error and dummy Grok authentication fixtures,
 # appearing under additional historical commits. None is a credential; no broad rule is relaxed.
@@ -128,7 +128,7 @@ e91074c9da1d6758c455ffb37dd6eda221a3d7a7:.dev/campaigns/v0.4.0.toml:generic-api-
 646ce260dbd8e68618640eac4e39e12bf486e5c9:docs/superpowers/plans/2026-08-15-head-decoupling.md:generic-api-key:708
 646ce260dbd8e68618640eac4e39e12bf486e5c9:gateway/core/src/test/kotlin/RefreshOutcomeTest.kt:generic-api-key:88
 dd2a6783fd349d253b4e1fd70cd36f33471b4bc7:gateway/provider-grok/src/test/kotlin/grok/GrokProviderTest.kt:generic-api-key:73
-# Oct 22 CT, gitleaks v8.21.2 (the secret-scan workflow's pin) over the history the merge of PR #247 reaches: opened
+# Oct 22, gitleaks v8.21.2 (the secret-scan workflow's pin) over the history the merge of PR #247 reaches: opened
 # each exact line. All three are test-source constants that are credential-SHAPED on purpose, so each test can prove
 # the value never reaches what it guards: AuthRouteFieldsTest's "sk-test" key (a masked auth route field),
 # ProviderFailureRowTest's SENT_TOKEN (a provider echoing a request header must not carry it onto the console row) and
@@ -139,7 +139,7 @@ dd2a6783fd349d253b4e1fd70cd36f33471b4bc7:gateway/provider-grok/src/test/kotlin/g
 dfd2d19585d17364e76e73a5aa23e9159348d42d:features/turns/src/test/kotlin/splice/head/perf/ProviderFailureRowTest.kt:generic-api-key:68
 7ad358edaa384536c446da53e12351539f0ddd99:integrations/topology/src/test/kotlin/splice/topology/TomlStructurePreflightTest.kt:generic-api-key:41
 
-# Oct 31 CT, gitleaks v8.21.2 (the secret-scan workflow's pin) and 8.30.1 over the full history of PR #247's head
+# Oct 31, gitleaks v8.21.2 (the secret-scan workflow's pin) and 8.30.1 over the full history of PR #247's head
 # 78bc4be2d: opened each exact line. ShareCertificateDamageTest's TEXT_PIECES lists PEM's BEGIN and END markers as
 # pieces a hand-edited tls.pem is damaged with; no key body sits between them, and the file was deleted later. The
 # Cargo.lock match is two crate names in a dependency list (crypto_secretbox and the crate after it) in the Codex API

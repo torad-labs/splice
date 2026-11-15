@@ -6,7 +6,7 @@
 // itself would have started. An id splice cannot place loads the user-scope servers only.
 //
 // ON macOS (Oct 13), which has no /proc, the folder comes from lsof's cwd line and the environment from ps
-// (DarwinPs, splice-sessions'), each in the shape the Linux read gives; the Linux reads are unchanged. UNTESTED ON A MAC:
+// (DarwinPs), each in the shape the Linux read gives; the Linux reads are unchanged. UNTESTED ON A MAC:
 // written against lsof(8) and ps(1) on a Linux machine, and the hub itself does not run there yet (McpHubGate).
 package splice.app
 

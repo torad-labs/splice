@@ -1,4 +1,4 @@
-// NEW: Oct 11, 2026 (fin) — whether a plan covers a request is a fact about its ACCOUNT, answered once for every
+// NEW: Oct 11, 2026 — whether a plan covers a request is a fact about its ACCOUNT, answered once for every
 // reader: the perf rows' split, the hourly rollup's split, and the Day row's flag that all of a command's accounts
 // are plan accounts. A second copy of this decision is a page whose Requests and Accounts disagree about who paid.
 package splice.usage

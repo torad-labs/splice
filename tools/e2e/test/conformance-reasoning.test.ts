@@ -1,5 +1,5 @@
 // A self-served chat model gets each earlier turn's reasoning back as that assistant turn's `reasoning_content`, which
-// its chat template renders inside the turn's think block (Marcos, 2026-10-23). The conformance suite's chat head is
+// its chat template renders inside the turn's think block. The conformance suite's chat head is
 // self-served by splice's own rule (openai-chat on a loopback address), so its reasoning cell grades that field: the
 // reasoning arrives whole on the assistant turn, never as visible text and never on another role.
 import { expect, test } from "bun:test";

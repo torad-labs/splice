@@ -1,4 +1,4 @@
-// Goal (Oct 29, 2026, splice-lead): a splice JVM leaves no unpacked code-mode host behind
+// Goal (Oct 29, 2026): a splice JVM leaves no unpacked code-mode host behind
 // when it ends. Every JVM that runs code mode unpacks the jar's pinned host, about 77 MB, into its own
 // /tmp/splice-native-* folder, and only an explicit close removed it, which the daemon never reaches: on Oct 29 246
 // such folders held 12.6 GB of /tmp, one per daemon start and per test JVM since Oct 24. A JVM that ends normally or

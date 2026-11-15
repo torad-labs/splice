@@ -60,7 +60,7 @@ private const val KIMI_PLAN_TIER = "$KIMI_PLAN_SENTENCE Upgrade your plan to use
 /** xAI's words for an expired OAuth token, which it answers with a 403 (the grok-dead-head incident). */
 private const val XAI_DEAD_TOKEN = "The OAuth2 access token could not be validated. unauthenticated:bad-credentials"
 
-/** Muse's 429, verbatim from the window of Oct 25, 10:16:47 PM CT (audit-maps.md:426): its body names the reset. */
+/** Muse's 429, verbatim from the window of Oct 25 (audit-maps.md:426): its body names the reset. */
 private const val MUSE_LIMIT_BODY =
     """{"error":{"code":"rate_limit_exceeded","message":"Subscription quota exhausted. Your usage window resets """ +
         """at 2026-10-26T05:25:35Z.","resets_at":1792992335}}"""
@@ -71,7 +71,7 @@ private const val MUSE_RETRY_AFTER_S = 7728L
 /** The reset that body names, as a line says it in Chicago. */
 private const val MUSE_RESET_LINE = "Oct 26, 12:25 AM"
 
-/** Muse's own reset is 2 hours out, so the clock starts before it: the window of Oct 25, 10 PM CT. */
+/** Muse's own reset is 2 hours out, so the clock starts before it: the window of Oct 25. */
 private val MUSE_WINDOW_START: Instant = Instant.parse("2026-10-26T03:00:00Z")
 
 /** How a line says a time, without its zone's abbreviation: month, day and clock time in Chicago, every scripted

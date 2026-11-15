@@ -77,10 +77,10 @@ public data class TeamSlot(
      *  "never on the live registry"). */
     @SerialName("sessions_history") val sessionsHistory: List<String> = emptyList(),
     /** A session that starts on [head] in a folder inside its team's repo joins this slot while the slot is free,
-     *  with no pick (TeamRuleBinding; web-console §4.13 "by rule", marlin's call of Oct 13). */
+     *  with no pick (TeamRuleBinding; web-console §4.13 "by rule"). */
     @SerialName("bind_by_rule") val bindByRule: Boolean = false,
     /** When each session in [sessionsHistory] joined this slot, by session id: a member's figures count from its own
-     *  join (the President's sign-off of §14, Oct 13). A session bound before joins were kept has none, and counts
+     *  join (§14). A session bound before joins were kept has none, and counts
      *  from the team's creation, as every session did before. */
     @SerialName("joined_epoch_millis") val joinedAt: Map<String, Long> = emptyMap(),
 )
@@ -105,7 +105,7 @@ public data class Team(
     @SerialName("updated_epoch_millis") val updatedAt: Long = 0L,
     val slots: List<TeamSlot> = emptyList(),
     /** The members removed from the team, each with its session history and the time it left: nothing is deleted
-     *  (spec §14, the President's sign-off of Oct 13). Only [TeamStore.upsert] writes it; a body's own is ignored. */
+     *  (spec §14). Only [TeamStore.upsert] writes it; a body's own is ignored. */
     @SerialName("left_slots") val left: List<TeamLeft> = emptyList(),
     /** The key the team was created under ([TeamStore.create]); null on a team made before keys. */
     @SerialName("idempotency_key") val idempotencyKey: String? = null,

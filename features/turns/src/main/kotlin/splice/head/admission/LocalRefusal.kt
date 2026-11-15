@@ -82,7 +82,7 @@ internal class PreDriveRefusals(
      *  did not parse, a control the dialect cannot carry, a stopped turn's re-send, or a defect in preparing it. It is
      *  recorded as every other local refusal is, before the answer: one daemon.log line naming the head, the line the
      *  client reads (the declined feature), the session and the client, a perf row, turn.start and turn.end, and the
-     *  trace when the head's is on. Until 2026-11-09 it was answered and nothing else: from 5:51 to 6:58 PM CT that
+     *  trace when the head's is on. Until 2026-11-09 it was answered and nothing else: for over an hour that
      *  day the Responses dialect refused every claudex turn on Claude Code's new `diagnostics` field, and the log, the
      *  perf file and the trace showed a quiet head. A defect is recorded as unexpected, every other cause as refused. */
     suspend fun refusePrepared(call: ApplicationCall, rejected: Preparation.Rejected, admitted: AdmittedTurn) {
@@ -205,7 +205,7 @@ internal class PreDriveRefusals(
         return true
     }
 
-    /** PR #247 review round 2, Oct 30 (security): on a head that forwards the caller's login, [pool], the one this
+    /** Security: on a head that forwards the caller's login, [pool], the one this
      *  turn selects from, holds a login of the operator's, and the door did not prove the caller splice's. The door
      *  let it through while the head held none, and one joined while its body arrived. It is refused as the door
      *  refuses it, 401 with the way back, and nothing of it reaches the vendor. */
@@ -252,7 +252,7 @@ internal class PreDriveRefusals(
             admitted.t0,
             LocalRefusal(OutcomeTag.AUTH_MISSING.wire, sentence, trace),
         )
-        // 503, not retried (ClientWire): a login coming back here is this machine's to do, so the node shows the
+        // 503, not retried (ClientWire): a login coming back here is this host's to do, so the node shows the
         // line at once.
         admitted.close()
         responses.respondRefusal(call, cause)

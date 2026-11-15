@@ -1,8 +1,8 @@
 /* team band (prefix tm-): one window holding a team in the middle of its work, then one row that opens on how a team forms.
-   The window is the band's one picture: the prompt to claude-splice, the four seats (every one working, each on its own tool
+   The window is the band's one picture: the prompt to claude-splice, the four members (every one working, each on its own tool
    call and its standing instruction), and the messages between them, the last of which says the tests pass. The row below
    it holds the rest: eight drawn objects, each with a label of three words or fewer.
-   The band's type is the page's: --pg-t-1 (small words, chips, model tags), -2 (what a seat or a message says), -3 (a figure
+   The band's type is the page's: --pg-t-1 (small words, chips, model tags), -2 (what a member or a message says), -3 (a figure
    in an opened cell). Spacing is the page's: --pg-sp-4 between the window's parts and between cards of one row or stack.
    The console's parts keep their markup and classes; #teams sets them on those steps (an id outranks the console's rules). */
 
@@ -23,7 +23,7 @@
 }
 .tm-ptext::before { content: "❯"; flex: none; color: var(--text-mute); }
 
-/* the seats: four across, two by two, then one; each card keeps the console's margin for its lamp's socket */
+/* the members: four across, two by two, then one; each card keeps the console's margin for its lamp's socket */
 .tm-seats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--pg-sp-5) var(--pg-sp-4); padding-bottom: var(--cast); align-items: stretch; }
 .tm-seats > .card.m { display: flex; flex-direction: column; margin: 0 0 0 2.667rem; }
 .tm-seats > .card.m > .body { margin-top: auto; padding-top: calc(1.5 * var(--u)); }
@@ -31,10 +31,10 @@
 #teams .tm-seats .now { line-height: 1.35; }
 #teams .tm-seats .now .obj { min-width: 0; overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
 .tm-seats .now svg { margin-top: .2em; }
-/* a seat's standing instruction: one quoted line under its command */
+/* a member's standing instruction: one quoted line under its command */
 .tm-say { margin: var(--pg-sp-2) 0 0; font: italic 400 var(--pg-t-1)/1.35 var(--font-name); color: var(--text-body); }
 
-/* the messages: a plate under the seats, the thread across it */
+/* the messages: a plate under the members, the thread across it */
 .tm-talk { min-width: 0; display: flex; flex-direction: column; gap: var(--pg-sp-3); }
 .tm-chat { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--pg-sp-4); }
 .tm-bub { padding: var(--pg-sp-2) var(--pg-sp-3); row-gap: var(--pg-sp-1); grid-template-columns: minmax(0, 1fr); margin: 0; align-content: start; }
@@ -110,7 +110,7 @@
 #teams .tm-cell .add .plus { font-size: var(--pg-t-2); }
 
 /* ---------- the motion: the window rises once (every part over 260 ms on --splice-e-out, 1.2rem, 25 ms apart); then the
-   team works. Each message slides in from its sender's side over 340 ms, and the seat it lands on rings once in its own colour
+   team works. Each message slides in from its sender's side over 340 ms, and the member it lands on rings once in its own colour
    (the console's own pulse, mjust), so a change is what moves. Nothing runs under reduced motion. ---------- */
 @media (prefers-reduced-motion: no-preference) {
   @keyframes tm-in { from { opacity: 0; transform: translateY(1.2rem); } to { opacity: 1; transform: none; } }
@@ -120,7 +120,7 @@
   .pg-js .tm-live:not(.is-seen) .tm-bub.tm-rv { transform: translateX(var(--from, -3rem)); }
   .pg-js .tm-live.is-seen .tm-rv { animation: tm-in var(--splice-t-pop) var(--splice-e-out) backwards; animation-delay: calc(var(--i, 0) * 25ms); }
   .pg-js .tm-live.is-seen .tm-bub.tm-rv { animation: tm-send 340ms var(--splice-e-out) backwards; animation-delay: calc(700ms + (var(--i) - 8) * 560ms); }
-  /* the lamps' sockets: a ring on the seat that a message lands on, 340 ms after the message starts to slide */
+  /* the lamps' sockets: a ring on the member that a message lands on, 340 ms after the message starts to slide */
   .pg-js .tm-live.is-seen .tm-seats > .card.m::after { content: ""; position: absolute; inset: -.18rem; border-radius: inherit; pointer-events: none; }
   .pg-js .tm-live.is-seen .tm-seats > .card.m:nth-child(1)::after { animation: tm-ring 420ms var(--splice-e-out) 2160ms; }
   .pg-js .tm-live.is-seen .tm-seats > .card.m:nth-child(2)::after { animation: tm-ring 420ms var(--splice-e-out) 1040ms, tm-ring 420ms var(--splice-e-out) 1600ms; }
@@ -142,7 +142,7 @@
   /* stacked, each bubble ends under its own message: the three share one chip structure, and only the message's length differs */
   .tm-chat { grid-template-columns: minmax(0, 1fr); }
 }
-/* four seats across: a card is too narrow to hold a command and its model on one row (Muse Spark 1.3 beside claude-muse), so in every
+/* four members across: a card is too narrow to hold a command and its model on one row (Muse Spark 1.3 beside claude-muse), so in every
    card the model stands under the command, and a tool line has room for two lines in every card, which keeps the quote and the
    tool line at one height across the row */
 @container tmw (min-width: 1301px) {
@@ -169,7 +169,7 @@
 
 /* ---------- from 1,280 px the head stands beside the window, as the page does from 2,200 px: the window and the row that opens
    share the component's 8 columns, the head takes the 4 beside them over both, and the side follows the band's place on the
-   page. The opened row is two cells across in that column, and the seats two by two (the window's own width decides). ---------- */
+   page. The opened row is two cells across in that column, and the members two by two (the window's own width decides). ---------- */
 @container pg (min-width: 1280px) and (max-width: 2199px) {
   #teams .pg-split { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--pg-cg); align-items: start; }
   #teams .pg-split > .pg-head { display: flex; flex-direction: column; align-self: stretch; grid-column: 1 / span 4; grid-row: 1 / span 2; margin-bottom: 0; padding-right: clamp(0px, 1vw, 32px); }

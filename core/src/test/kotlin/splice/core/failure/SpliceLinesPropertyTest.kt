@@ -50,7 +50,7 @@ private val STATUSES = listOf(null, 400, 401, 403, 404, 408, 413, 429, 502, 503,
 
 /** Where a provider tells an account's owner to act, and the logins a pool names such an account by. */
 private val OWNER_PLACES = listOf("claude.ai", "console.anthropic.com", "platform.openai.com")
-private val BLOCKED_LOGINS = listOf(null, "kestrel", "work", "marcos-max")
+private val BLOCKED_LOGINS = listOf(null, "kestrel", "work", "max-plan")
 
 /** Budget limits as splice spells an amount (ApiCostText.limit), which is what a Decline.Budget carries. */
 private val DOLLARS = listOf("$20.00", "$1.50", "$1,234.56")

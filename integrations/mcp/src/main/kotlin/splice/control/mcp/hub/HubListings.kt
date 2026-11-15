@@ -4,7 +4,7 @@
 // one listing and no value is in a file name. The front posts what a fresh holder answered (its initialize result and
 // its tools/list result) and posts again on notifications/tools/list_changed; this writes it. A post that carries no
 // tools keeps the kept ones only while the server names the same serverInfo: another name or version is another
-// package, whose tools are not the kept ones (splice-config's rule 1, Oct 12).
+// package, whose tools are not the kept ones (rule 1, Oct 12).
 package splice.control.mcp.hub
 
 import kotlinx.serialization.json.JsonObject

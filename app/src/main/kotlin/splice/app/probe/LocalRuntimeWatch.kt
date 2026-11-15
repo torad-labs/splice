@@ -1,7 +1,7 @@
 // NEW: V4-417. Whether each local head's runtime answers, kept by the daemon from a background probe
 // so /health and the heads route can say it without ever waiting on one. V4-415 asked the runtimes
 // only from `splice status`; the console and /health read a head as ready or OK while its runtime was
-// silent (Marlin's walk of f7f1e9308), because the daemon held no answer to give.
+// silent (found at f7f1e9308), because the daemon held no answer to give.
 //
 // Mirrors TurnPathProbeLoop's tick-loop idiom. The probe itself is LocalRuntimeReach, the one the CLI
 // asks with: it bounds each runtime's wait, so a tick is at most that long and a wedged runtime reads

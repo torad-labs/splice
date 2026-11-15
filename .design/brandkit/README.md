@@ -1,6 +1,6 @@
 # Splice brand kit v1.0
 
-Approved by Marcos on October 19, 2026 and kept in this repository at `.design/brandkit/`. The console under `app/src/main/resources/console/` uses its mark, favicon, tokens and fonts.
+Approved on October 19, 2026 and kept in this repository at `.design/brandkit/`. The console under `app/src/main/resources/console/` uses its mark, favicon, tokens and fonts.
 
 ## What this copy leaves out
 This folder holds the design files and stays near 14 MB. The full kit stays with the kit source in `brandkit-incoming/splice-brandkit/`, beside the repository checkout (`../brandkit-incoming/splice-brandkit/`).

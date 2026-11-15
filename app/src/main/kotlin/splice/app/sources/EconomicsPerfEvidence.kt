@@ -82,7 +82,7 @@ internal data class EconomicsPerfEvidence(
 
 /** One hourly-totals read's evidence, lent to the asks after it inside that read. One read asked the log three
  *  times (backfill, probe check, reprice), each from its own oldest hour, and a week of whole rows outgrows the full
- *  tier, so each ask decoded the week again: two decodes of every line in the startup scan (jfr on desk d, Oct 12).
+ *  tier, so each ask decoded the week again: two decodes of every line in the startup scan (measured with JFR).
  *  The evidence is held only while a read is open ([open]), never between reads, and only while [files] are the ones
  *  it was read of. */
 internal class EconomicsEvidenceShare(private val files: PerfReadFiles) {

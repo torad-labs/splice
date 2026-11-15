@@ -1,8 +1,8 @@
 // The run sentinel's red proofs. Liveness claims are the easiest thing in this repo to assert
 // vacuously: a probe that can never report HELD reports FREE forever and looks like a passing test.
 // So the control case is asserted FIRST in every arm that matters, and the SIGKILL arm exists
-// because SIGKILL is the designed-for case here — earlyoom is active and buildgate sets
-// `choom -n 800`, which nominates a long gradle run as the first thing to die under pressure.
+// because SIGKILL is the designed-for case here — an out-of-memory killer may be active and a host build wrapper may
+// set `choom -n 800`, which nominates a long gradle run as the first thing to die under pressure.
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, truncateSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -64,7 +64,7 @@ describe("the gate run sentinel", () => {
   test("the path is outside the worktree — a marker inside it would fail the gate's own precondition", () => {
     delete process.env.SPLICE_GATE_SENTINEL;
     const path = sentinelPath();
-    expect(path).not.toContain("/mythos/repo");
+    expect(path).not.toContain("/acme/repo");
     expect(path.endsWith("/splice/gate-run.lock"), `${path} must be splice's own runtime dir`).toBe(true);
   });
 
@@ -126,7 +126,7 @@ describe("the gate run sentinel", () => {
   // death scenario — refused, killed, inherited — and each performs at most ONE successful acquire
   // per path, so none could reach the state a normal day produces: a run finishes, the next starts.
   // The denominator came from the threat model instead of the lifecycle, and the untested path was
-  // the DESIGNED one. (splice-lead, 2026-09-21)
+  // the DESIGNED one.
   test("the SECOND run of a session is the one reported, not the first", () => {
     scratchSentinel();
     expect(acquireRunSentinel("aaaaaaaaaaaa")).toBeNull();
@@ -166,8 +166,8 @@ describe("the gate run sentinel", () => {
 
   // The grandchild is unref'd so its parent EXITS while it lives. The first cut let the parent wait on
   // it: `await proc.exited` took the whole `sleep 20`, the grandchild was gone before the probe, and
-  // the arm passed a holder that handed the sentinel's fd to the grandchild as an extra stdio entry
-  // (splice-lead, 2026-09-25). What keeps the fd out of children today is Bun's spawn, which passes
+  // the arm passed a holder that handed the sentinel's fd to the grandchild as an extra stdio entry.
+  // What keeps the fd out of children today is Bun's spawn, which passes
   // only stdio: the openSync fd itself is not CLOEXEC. The control is the grandchild alive at the probe.
   test("the fd does not leak to spawned children — a Gradle daemon must not pin it forever", async () => {
     const path = scratchSentinel();

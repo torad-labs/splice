@@ -1,15 +1,15 @@
-// NEW: Oct 11, 2026 — Continue on's ledger, lifted out of SessionsWiring (concentration, splice-lead).
+// Continue on's ledger, lifted out of SessionsWiring (concentration).
 //
-// WHAT A MOVE LEAVES BEHIND, for as long as it is in flight and nothing after it. Two records, both opened when he
-// presses and closed when the move ends, whichever way it ends:
+// WHAT A MOVE LEAVES BEHIND, for as long as it is in flight and nothing after it. Two records, both opened at the
+// press and closed when the move ends, whichever way it ends:
 //
-//   THE MARK: the command and the model the session ran on before he pressed, read then, because the move is about
+//   THE MARK: the command and the model the session ran on before the press, read then, because the move is about
 //   to end that client. A move that came back keeps it (ModelMoves.moved), so the transcript reads "Continued on
 //   [to] · from [from]"; one that did not drops the mark its launch wrote, so the session's model is the one it went
-//   on with and never the one it did not reach (Marlin, move check 5).
+//   on with and never the one it did not reach (move check 5).
 //
-//   THE FOLDER: which folder the session is moving out of (MovingTrust), so the launch can carry the trust he
-//   granted there. Claude Code keeps a home-folder trust for the session alone, so home is the one folder whose
+//   THE FOLDER: which folder the session is moving out of (MovingTrust), so the launch can carry the trust granted
+//   there. Claude Code keeps a home-folder trust for the session alone, so home is the one folder whose
 //   grant leaves nothing to read; FolderTrust is what decides that, and this only says what is moving.
 //
 // ONE MOVE OF A SESSION AT A TIME (Oct 22, PR #247's second review). Sessions and the manager's head each build their

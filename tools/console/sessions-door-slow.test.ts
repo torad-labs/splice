@@ -2,7 +2,7 @@
 // while the page reads splice for the first time, however slow that read is, so a reload in that moment opens the same
 // session. The console check of Oct 26 found the first draw clears the address before the list arrives, and a reload
 // during a slow first read then opened the top session instead (round 2's carry list). Through the real Sessions page
-// against a stub daemon whose list answers 2.5 s late, at Marcos's own width.
+// against a stub daemon whose list answers 2.5 s late, at a wide desktop width.
 import { afterAll, beforeAll, expect as bunExpect, test } from "bun:test";
 import { chromium, expect, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -11,7 +11,7 @@ import { layout } from "../gate/src/lib/repo.ts";
 
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const row = (id: string, name: string, ts: number) => ({
-  session_id: id, name, head: "alpha", route: "head", availability: "live", status: "idle", cwd: "/work/desk",
+  session_id: id, name, head: "alpha", route: "head", availability: "live", status: "idle", cwd: "/work/app",
   last: { role: "assistant", tool: null, text: `${name} said its last line.`, ts },
 });
 const transcript = { messages: [], path: "", earlier: null, moves: [], unmoved: [], unparseable_lines: 0 };

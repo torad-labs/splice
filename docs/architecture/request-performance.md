@@ -2,23 +2,23 @@
 
 ## Purpose and authorization
 
-Make splice efficient with 50-70 simultaneous sessions without losing request semantics, trace detail, recovery or account safety. Marcos requested all identified operation and concurrency optimizations on October 13, 2026, asked for Chinese-source research first, then explicitly added instrumentation to identify unnecessarily retained heavy objects. Research is complete; implementation is authorized. Connected sessions are not the same as concurrent CPU work.
+Make splice efficient with 50-70 simultaneous sessions without losing request semantics, trace detail, recovery or account safety. The scope is all identified operation and concurrency optimizations (requested October 13, 2026), with Chinese-source research first and instrumentation to identify unnecessarily retained heavy objects. Research is complete; implementation is authorized. Connected sessions are not the same as concurrent CPU work.
 
-This is an execution plan and design contract, not a new enforcement mechanism. Work remains on the shared feat/v0.4.0 checkout. Splice-platform remains the only pusher. Ordinary development uses existing pre-commit checks; the existing full pre-push remains the release gate until PR #247 merges. No new approval is needed for routine reversible implementation choices.
+This is an execution plan and design contract, not a new enforcement mechanism. Work remains on one shared checkout. Ordinary development uses existing pre-commit checks; the existing full pre-push remains the release gate. No new approval is needed for routine reversible implementation choices.
 
 ## Current sequence
 
 1. **Completed: source mapping and external research.** Source baseline a37ff412e. The installed baseline bbe7a874c lacks newer trace and account fixes. Source observations identify costs; they do not measure their contribution to live CPU.
 2. **Completed: integrated implementation.** Every mapped scope is committed (receipts below). Transcript streaming and the composition bindings are wired, and the gate's queue outcome counters now include refusals (3a7112539). Each optimization removes repeated work or unnecessary retention while preserving the contracts below.
 3. **In progress: run the release gate on the reviewed candidate.** One completed candidate, no per-edit suite. Fix gate failures forward without weakening ratchets or changing desired behavior to match obsolete tests. Status is recorded under "October 17 review and gate" below.
-4. **Review completed; representative load check pending.** Review the implementation delta with the project's fresh reviewer. Reuse the existing desk with stand-in upstreams for one integrated before/after comparison at representative concurrency and history sizes. Measure local CPU, allocated and resident memory, queue/lock waits, latency and complete-record outcomes. Do not use operator tokens, prompts or production load for benchmarking.
+4. **Review completed; representative load check pending.** Review the implementation delta with the project's fresh reviewer. Reuse the existing synthetic harness with stand-in upstreams for one integrated before/after comparison at representative concurrency and history sizes. Measure local CPU, allocated and resident memory, queue/lock waits, latency and complete-record outcomes. Do not use operator tokens, prompts or production load for benchmarking.
 5. **Pending: install the green reviewed candidate and inspect aggregate telemetry.** Back up and verify the running jar as usual. Report measured gains and any unresolved gaps. Completion is not implied by a green test alone or an assigned brief.
 
 ## Work scopes and owners
 
 ### Runtime front: request and trace pipeline
 
-Owner lead: splice-runtime-lead. Primary builder: splice-platform. Files: features/turns, integrations/upstream transport/RoundBody, the affected dialect builders, and narrow supporting core byte/digest helpers. Existing dirty trace and adapter work stays with its current owner.
+Files: features/turns, integrations/upstream transport/RoundBody, the affected dialect builders, and narrow supporting core byte/digest helpers. Existing dirty trace and adapter work stays with its current owner.
 
 - Remove redundant full-record sizing, encoding, escaping, temporary body Strings and copies where the same representation is already available. Keep correct heap admission and exact UTF-8 behavior.
 - Reuse byte-verified immutable message fragments and serialized lengths under bounded ownership. Prefer existing representation seams over a wholesale parser rewrite. Input identity alone is insufficient when model, dialect, prompt layers, tool schema, code-mode or effort changes.
@@ -28,7 +28,7 @@ Owner lead: splice-runtime-lead. Primary builder: splice-platform. Files: featur
 
 ### Runtime front: transcripts, project lookup and concurrency
 
-Primary builder: splice-sessions. Files: integrations/claude-code transcript paths, features/sessions, core/compaction/SessionProject and narrow shared scheduler/dispatcher changes coordinated with splice-platform.
+Files: integrations/claude-code transcript paths, features/sessions, core/compaction/SessionProject and narrow shared scheduler/dispatcher changes.
 
 - Keep bounded tail/page reads and cache unchanged row metadata. Bound history/ended-session metadata and fallback conversation materialization without silently dropping result coverage.
 - Remove repeated cold project/session lookups through explicit identity and invalidation. Bound positive and negative caches. Do not replace freshness checks with arbitrary stale TTLs.
@@ -37,7 +37,7 @@ Primary builder: splice-sessions. Files: integrations/claude-code transcript pat
 
 ### Console front: configuration and credential evidence
 
-Owner lead: splice-console-lead. Primary builder: splice-config. Files: core/config/ConfigService and immediate config mutation seams; integrations/upstream/credentials; provider auth/evidence adapters when needed.
+Files: core/config/ConfigService and immediate config mutation seams; integrations/upstream/credentials; provider auth/evidence adapters when needed.
 
 - Publish deeply immutable, already merged/normalized configuration snapshots by revision. Retain authoritative external change detection and immediate control-plane updates. Per-request readers see internally consistent data, while live emergency/revocation checks remain current.
 - Coalesce overlapping evidence reads per account and safely observed generation, distinct from existing OAuth refresh singleflight. Share evidence, not account selection, quota reservations or eligibility decisions.
@@ -46,7 +46,7 @@ Owner lead: splice-console-lead. Primary builder: splice-config. Files: core/con
 
 ### Console front: input digests and retention instrumentation
 
-Primary builder: splice-usage. Files: core/perf, features/turns/perf, core/memory and existing diagnostics/perf routes, with specific cache/queue owner hooks coordinated through the runtime lead.
+Files: core/perf, features/turns/perf, core/memory and existing diagnostics/perf routes, with specific cache/queue owner hooks.
 
 - Avoid repeating whole-prefix digest work using exact-byte prefix verification and privately owned unfinished SHA-256 checkpoints where supported. Preserve the current hash domain, delimiters and final digest. Finalized chunk hashes or a Merkle root are not a replacement for existing SHA-256 identities. Unsupported digest cloning falls back correctly.
 - Add bounded low-overhead aggregate instrumentation of the existing ownership/admission transitions: active requests, queued trace bytes/work, decoded bodies, retained recent histories, transcript caches, config/auth snapshots, replay/code-mode state and their counts/estimated bytes/age/high-water marks.
@@ -62,7 +62,7 @@ Primary builder: splice-usage. Files: core/perf, features/turns/perf, core/memor
 - Fail-closed configuration and authorization; immediate revoke/hold/disable semantics; per-request quota checks; no cross-account secrets in shared immutable fragments.
 - Existing crash/ordering promises. Ordinary trace writes already use the page cache; there is no per-turn force to remove.
 - Bounded aggregate memory, cancellation propagation, per-session ordering where required and independent progress between unrelated sessions. Do not serialize entire turns to protect a small state update.
-- Same checkout and file ownership. Commit only named own files; no private worktrees except authorized finished-commit build/desk trees.
+- Same checkout and file ownership. Commit only named own files; no private worktrees except finished-commit build trees.
 
 ## Research and limits
 
@@ -105,7 +105,7 @@ Mapped implementation is committed: bounded captured-source streaming and page l
 
 The fresh independent review of a37ff412e..5e3c0f2bc reported three verified blockers: explicit no-tools choice still armed schema-tool output, captured page capacity failures were mislabeled missing/stale, and accepted trace tasks failing before encoding kept queued ownership. Fixes are committed as 7bca050db, e9a9117f8, and 4ec1b14d9/a55914750. The review did not execute native binaries. A fresh fix-range review is still required.
 
-The retained gate has found compiler/API/architecture failures, all fixed forward without weakening ratchets. Committed remedies include explicit content-block cases, correct post-observer timing access, grouped diagnostic constructor fields, source-compatible timestamp lambda binding, actual terminal close ownership, role dispositions, bounded captured-package separation and documented constant purposes. The app concentration fold is committed as 15a0af554: process diagnostic composition belongs to the JVM adapter, while perf source footprint and generation metadata have separate owners. The exact 15a0af554 integrated gate completed red under normal hostshield admission. It found stale MCP test-fixture bindings, fixed in a65b6b9cb, and MCP route concentration, public-role, constant-purpose and disk-write inventory findings, fixed forward in f1fd4d3b9. Native binary checks did not fail, but that is not qualification of the changed front against its old pin. The operator-free native stand-in procedure is retained in a463d3439 and has not run. The containing a463d3439 candidate is requested for one normal-admission retained checkpoint. The fresh fix-range and scoped MCP review brief covers 5e3c0f2bc..a463d3439 and is prepared, not run. No full green gate or review is claimed.
+The retained gate has found compiler/API/architecture failures, all fixed forward without weakening ratchets. Committed remedies include explicit content-block cases, correct post-observer timing access, grouped diagnostic constructor fields, source-compatible timestamp lambda binding, actual terminal close ownership, role dispositions, bounded captured-package separation and documented constant purposes. The app concentration fold is committed as 15a0af554: process diagnostic composition belongs to the JVM adapter, while perf source footprint and generation metadata have separate owners. The exact 15a0af554 integrated gate completed red. It found stale MCP test-fixture bindings, fixed in a65b6b9cb, and MCP route concentration, public-role, constant-purpose and disk-write inventory findings, fixed forward in f1fd4d3b9. Native binary checks did not fail, but that is not qualification of the changed front against its old pin. The operator-free native stand-in procedure is retained in a463d3439 and has not run. The containing a463d3439 candidate is requested for one normal-admission retained checkpoint. The fresh fix-range and scoped MCP review brief covers 5e3c0f2bc..a463d3439 and is prepared, not run. No full green gate or review is claimed.
 
 October 17 review and gate. A fresh review of 5e3c0f2bc..213ba8f2b ran as three independent scoped reviewers (code-mode and WebSocket; MCP access and hub; perf, trace, sessions and console), then the feature-dev code reviewer and the pr-review-toolkit silent-failure hunter over 5e3c0f2bc..1b219ae90. Verified findings and their fixes:
 
@@ -116,13 +116,13 @@ October 17 review and gate. A fresh review of 5e3c0f2bc..213ba8f2b ran as three 
 
 Not changed: the 0.4.0 version markers follow the recorded preparation go; the reviewers' medium findings on console navigation, hub-standin receipts and the native front's log are open.
 
-The candidate gate ran in a fresh cloud container, which needed environment work first: Maven Central answered 429 (resolved through Google's Central mirror by a container-local init script), the gate runs offline outside CI on an empty cache, and running as root makes every permission-denial test pass its chmod and fail. The gate of record therefore ran as an unprivileged user with CI=1. Its result for the reviewed tip is reported where the push lands. No load comparison or installation ran in that container: the desk and the installed daemon are on the operator's machine.
+The candidate gate ran in a fresh cloud container, which needed environment work first: Maven Central answered 429 (resolved through Google's Central mirror by a container-local init script), the gate runs offline outside CI on an empty cache, and running as root makes every permission-denial test pass its chmod and fail. The gate of record therefore ran as an unprivileged user with CI=1. Its result for the reviewed tip is reported where the push lands. No load comparison or installation ran in that container: the benchmark harness and the installed daemon are on the operator's machine.
 
-Release checkpoint: one completed candidate through the retained pre-push gate, a fresh independent delta review, then one representative synthetic before/after desk comparison and verified installation. Current partial candidate gates have found and fixed compiler issues. No full green candidate, review, measurement or optimized installation is claimed here.
+Release checkpoint: one completed candidate through the retained pre-push gate, a fresh independent delta review, then one representative synthetic before/after comparison and verified installation. Current partial candidate gates have found and fixed compiler issues. No full green candidate, review, measurement or optimized installation is claimed here.
 
-The existing synthetic desk driver is adapted in a unique project checkpoint directory. It uses generated session identities and stand-in upstreams, records raw client timings and queried clock-tick frequency, compares full client and upstream body hashes through hydrated traces, and observes file-work terminal outcomes rather than directory-size stability. Baseline bbe7a874c includes fewer correctness fixes, so the comparison measures the combined candidate rather than isolating each optimization. Artifacts and operator-free data stay outside the repository.
+The existing synthetic load driver is adapted in a unique project checkpoint directory. It uses generated session identities and stand-in upstreams, records raw client timings and queried clock-tick frequency, compares full client and upstream body hashes through hydrated traces, and observes file-work terminal outcomes rather than directory-size stability. Baseline bbe7a874c includes fewer correctness fixes, so the comparison measures the combined candidate rather than isolating each optimization. Artifacts and operator-free data stay outside the repository.
 
-The isolated 2 GiB baseline run did not complete successfully: 571 of 720 requests passed exact terminal/reply validation and 149 failed with observed 200/529 statuses. Its daemon reported heap-budget exhaustion. The initial runner then incorrectly waited for traces of all requests, including refusals; that diagnostic defect is fixed to report failed client load before checking drain. The failed run is preserved, not discarded or presented as a speed comparison. Candidate measurement is pending the green artifact. Tight host memory also defers further heavy desk work.
+The isolated 2 GiB baseline run did not complete successfully: 571 of 720 requests passed exact terminal/reply validation and 149 failed with observed 200/529 statuses. Its daemon reported heap-budget exhaustion. The initial runner then incorrectly waited for traces of all requests, including refusals; that diagnostic defect is fixed to report failed client load before checking drain. The failed run is preserved, not discarded or presented as a speed comparison. Candidate measurement is pending the green artifact. Tight host memory also defers further heavy benchmark work.
 
 A separate read-only assessment of reported live local waits found no queued admission, sampled Java monitor deadlock or blocked Netty loop. Code-mode pipe readers had passed readiness, but idle loops and dispatched-result waits share their stack. Existing live aggregates do not expose occupied-cell count, pending-reply age or per-turn local stage. These observations neither explain isolated stuck sessions nor prove upstream blame, and no restart or live bottleneck fix was performed.
 

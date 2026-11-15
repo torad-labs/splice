@@ -451,7 +451,7 @@ internal class UpstreamSockets(
         SSLContext.getInstance("TLS").apply { init(null, arrayOf(trust), null) }.socketFactory
 }
 
-// The three keepalive timings, 10 + 3 x 5: a dead peer is known within 25s of its last byte (Oct 12, splice-lead:
+// The three keepalive timings, 10 + 3 x 5: a dead peer is known within 25s of its last byte (Oct 12:
 // the SSE path probe as strong as the transport allows). The client is HTTP/1.1 only (one stream per connection),
 // so there is no HTTP/2 PING to send and TCP keepalive is the strongest probe this stack has. It cannot reap a model
 // thinking in silence: the probe is answered by the peer's KERNEL, so a live upstream whose application has said

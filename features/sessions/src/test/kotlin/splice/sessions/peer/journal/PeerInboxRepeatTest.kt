@@ -21,7 +21,7 @@ private const val ROSE = "uds:/run/user/1000/cc-socks/43.sock"
 
 class PeerInboxRepeatTest {
     private val log = LogSink { }
-    private val self = PeerSender("/run/user/1000/cc-socks/7.sock", "temple")
+    private val self = PeerSender("/run/user/1000/cc-socks/7.sock", "harbor")
     private val gary = SenderCheck("gary", "s-gary", GARY, "gary", registered = true)
     private val rose = SenderCheck("rose", "s-rose", ROSE, "rose", registered = true)
 

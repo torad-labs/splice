@@ -1,4 +1,4 @@
-// LAN share (docs/specs/lan-share.md, Marcos's ruling of 2026-10-24). The goal: a command another machine's splice
+// LAN share (docs/specs/lan-share.md). The goal: a command another machine's splice
 // serves runs, on this machine, Claude Code pointed at that machine and holding nothing else. Its launch hands Claude
 // Code the server's address and no credential; its turns answer on the server's login, the one the address names with
 // `auth=`; it is shown the models the address names with `models=`; its statusline is the server's; its /login says

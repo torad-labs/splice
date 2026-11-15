@@ -174,7 +174,7 @@ internal class HeadAdmission(
 
     /** Account selection through its two refusals, then the drive: the tail of [serveReady] as one named step, since
      *  describe/registration/driver each own theirs. No turn waits here on a hold another turn's rate limit armed: it
-     *  is sent, and waits only on its own failure (Marcos, Oct 26). */
+     *  is sent, and waits only on its own failure. */
     private suspend fun admitAccountAndDrive(
         call: ApplicationCall,
         prepared: Preparation.Ready,

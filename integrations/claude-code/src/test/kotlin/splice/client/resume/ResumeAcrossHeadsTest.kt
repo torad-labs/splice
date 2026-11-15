@@ -253,7 +253,7 @@ class ResumeAcrossHeadsTest {
         assertEquals(theirsText, Files.readString(theirs), "an unadopted head's transcript is not touched")
     }
 
-    // V4-169 as the President ruled it (Oct 13): on the shared tree (V4-168) every head's -r SESSION_ID finds the
+    // V4-169 as it was decided (Oct 13): on the shared tree (V4-168) every head's -r SESSION_ID finds the
     // session in its OWN tree, whichever head wrote it, and one whose rows would move goes on as a copy beside it under
     // a new id, its rows naming that id. The original and its subdir stay byte for byte, for any other head.
     @Test
@@ -278,7 +278,7 @@ class ResumeAcrossHeadsTest {
         assertTrue(named in Files.readString(agent), "and name the copy")
     }
 
-    // Review of PR #247, round 6 (Oct 26 CT): both copies wrote the transcript straight under its final name, and a
+    // Review of PR #247, round 6 (Oct 26): both copies wrote the transcript straight under its final name, and a
     // halted daemon runs no cleanup, so a halt partway left a cut-short transcript there. On a head that isolates its
     // projects the next -r resumed it as the head's own, and on the shared tree every head's picker listed it. Round 8
     // found the same for the subagent files: the transcript took its name before they were copied, so a halt among them
@@ -507,7 +507,7 @@ class ResumeAcrossHeadsTest {
         return lines to LogSink { lines += it }
     }
 
-    /** Oct 7 CT: a head that has never run a session has no projects dir, and every launch's search named that
+    /** Oct 7: a head that has never run a session has no projects dir, and every launch's search named that
      *  absence once per head. A missing projects dir is an ordinary miss for a search, so it logs nothing. */
     @Test
     fun `a head that has never run a session copies a foreign one in without naming its missing projects dir`(

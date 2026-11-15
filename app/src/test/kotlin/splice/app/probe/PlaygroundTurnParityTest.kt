@@ -200,7 +200,7 @@ class PlaygroundTurnParityTest {
         assertTrue(body.contains("You are a helpful assistant."), "the system line in the body sent to $key")
     }
 
-    /** The concrete refusal marlin hit: ChatGPT answers 400 "Input must be a list" to a plain-string input. */
+    /** The concrete refusal seen: ChatGPT answers 400 "Input must be a list" to a plain-string input. */
     @ParameterizedTest
     @ValueSource(strings = ["claudex", "platformy"])
     fun `a Responses send carries its input as a list of items, never a plain string`(

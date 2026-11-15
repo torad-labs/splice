@@ -3,8 +3,8 @@
 // Every figure splice prints is priced from a rate card: the vendor's published API price declared on
 // the model row, or Claude Code's own Anthropic card on a head whose upstream is Anthropic. None is a
 // charge. The console says "Estimated API cost" beside every such figure (#281) and sentences say "an
-// estimated $0.85 in API cost"; the status line is the one short form with no label, because Marcos (Oct 15,
-// 2026) found it too long: "the value is useful but we dont need the label".
+// estimated $0.85 in API cost"; the status line is the one short form with no label, because the label made it too long
+// (the value is useful, the label is not needed).
 //
 // kt-dollar-figure-single-source makes this file the only main source that glues a `$` to an amount,
 // so a new surface cannot print a bare figure without reaching past the wall.

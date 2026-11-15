@@ -106,7 +106,7 @@ private const val TOO_MANY_REQUESTS = 429
 private const val SERVICE_UNAVAILABLE = 503
 private const val KEEPALIVES = 100
 
-/** Kimi's 5-hour limit, verbatim from the 429 of Oct 23, 3:41:54 PM CT (audit-maps.md:1075). */
+/** Kimi's 5-hour limit, verbatim from the 429 of Oct 23 (audit-maps.md:1075). */
 private const val KIMI_FIVE_HOUR =
     "You've reached your 5-hour usage limit. Your quota will reset when the current 5-hour window ends. " +
         "To continue now, purchase extra usage or upgrade your plan: " +

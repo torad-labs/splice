@@ -15,10 +15,10 @@ const HOUR = 3_600_000;
 type Row = Record<string, unknown>;
 let reads = 0;
 const row = (id: string, name: string, over: Row = {}): Row => ({
-  session_id: id, name, head: "alpha", route: "head", availability: "live", status: "idle", cwd: `/work/temple/${id}`,
+  session_id: id, name, head: "alpha", route: "head", availability: "live", status: "idle", cwd: `/work/harbor/${id}`,
   last: { role: "assistant", tool: null, text: `${name} said its last line.`, ts: 1 },
   updated_at: Date.now() - 2 * HOUR,
-  project: { id: "/work/temple", name: "temple", label: "temple", source: "folder", folder: "/work" },
+  project: { id: "/work/harbor", name: "harbor", label: "harbor", source: "folder", folder: "/work" },
   ...over,
 });
 const gone = (id: string, name: string, hoursAgo: number) => row(id, name, { availability: "gone", updated_at: Date.now() - hoursAgo * HOUR });

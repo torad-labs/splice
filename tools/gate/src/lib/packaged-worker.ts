@@ -1,6 +1,6 @@
 // Whether a push can change what the code-mode worker loads from the fat jar, so pre-push runs :app:codeModePackagedTest
-// only when it can (load cut 4 of the temple plan of 2026-10-19, approved by Marcos; the paths that decide were signed off
-// by splice-lead on 2026-10-26).
+// only when it can (the paths that decide are pinned in
+// packaged-worker.test.ts).
 //
 // The packaged run reruns the code-mode suites with the worker started from the shipped fat jar instead of the classpath.
 // The classpath runs of the same suites stay in every :app:check, so what the packaged run adds is the jar: which classes,

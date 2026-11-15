@@ -49,7 +49,7 @@ public object PerfKeys {
 
     /** Only on a request the gate HELD because its command's limit was full: how long it sat in the queue. A request
      *  that went straight in has no such field, whatever ADMIT_WAIT_MS reads, since a pass through an open gate is not
-     *  waiting. "Waited in line" counts and lists the requests that carry it (Marlin, Oct 12). */
+     *  waiting. "Waited in line" counts and lists the requests that carry it. */
     public const val ADMIT_HELD_MS: String = "admit_held_ms"
     public const val LEASE_WAIT_MS: String = "lease_wait_ms"
     public const val PREP_MS: String = "prep_ms"

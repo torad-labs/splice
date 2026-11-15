@@ -94,7 +94,7 @@ class ResponsesQuirksOverlayTest {
         ConfigService(StatePaths(baseOverride = tmp), envReader = { env[it] }).getConfig(),
     ).backend.let { it.webSocketIdleCloseMs to it.webSocketMaxAgeMs }
 
-    // Marcos, 2026-10-27: the idle close (about ten minutes) and the max socket age (35 minutes today) are settings,
+    // The idle close (about ten minutes) and the max socket age (35 minutes today) are settings,
     // not constants. They are [defaults] knobs, and a max age at or past the backend's 60-minute limit is held under it.
     @Test
     fun `websocket idle close and max age come from the defaults knobs`(@TempDir tmp: Path) {

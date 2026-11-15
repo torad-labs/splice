@@ -1,5 +1,5 @@
 // NEW: Oct 10, 2026 — step 3: a session whose newest request splice turned away at a limit, or for want of a
-// credential, says so on its row, so Sessions and Teams can draw At limit and Signed out (fin's words, hitstop).
+// credential, says so on its row, so Sessions and Teams can draw At limit and Signed out.
 //
 // A third SessionRowFacts member, by the four properties that file names: the daemon supplies it (each head's perf
 // rows as they are appended), features/sessions cannot reach it, it answers about ONE session, and it writes its own

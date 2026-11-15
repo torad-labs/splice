@@ -6,7 +6,7 @@
 // the safety check again, and the move stops there with his agent already ended. This is where the daemon says, for
 // the length of one move, which folder it is moving a session out of: the launch reads it (FolderTrust carries it
 // into the head's own config), and the move's end takes it away, so the grant never outlives the move. A daemon that
-// died mid-move leaves a file; [sweep] at the next start is what clears it (Marlin, Oct 11).
+// died mid-move leaves a file; [sweep] at the next start is what clears it.
 //
 // NO LOCK. Each member is one atomic file operation over its own session's file, and nothing is held in memory
 // between them, so there is no state for a monitor to keep consistent: a write is SecureFile's atomic replace, a

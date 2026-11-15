@@ -55,7 +55,7 @@ internal class SocketHandoff(
 /**
  * Which listener serves on which handed-over socket, and the one place in the daemon that knows adoption exists: the
  * control plane, the head factory and Daemon itself read their listener from here and never name a socket type, so
- * none of them gains a dependency on the listen packages (concentration, 2026-10-10, splice-lead). Built with no
+ * none of them gains a dependency on the listen packages (concentration). Built with no
  * listeners — the default — every listener binds its own port, which is every start without a socket manager.
  */
 internal class AdoptedServing(private val listeners: AdoptedListeners? = null) {

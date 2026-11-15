@@ -1,5 +1,5 @@
 // NEW: the console's stores and its one publisher, moved out of ControlPlane.kt by their own seam, behavior unchanged
-// (concentration, Oct 13, splice-lead). Built in the order ControlPlane built them; ControlPlane hands each one on by
+// (concentration). Built in the order ControlPlane built them; ControlPlane hands each one on by
 // reference, so the heads, the routes and the publisher still share the same instance of each.
 package splice.app
 
@@ -43,7 +43,7 @@ internal class ControlStores(
     val playgroundProviders = PlaygroundProviders()
 
     /** V4-133: POST /api/playground's ONE upstream probe, sending through [playgroundProviders]. Deviation, Oct 12,
-     *  2026 (marlin): the send is recorded like a request and weighed by its command's budget (see
+     *  2026: the send is recorded like a request and weighed by its command's budget (see
      *  UpstreamPlaygroundProbe). */
     val playground = UpstreamPlaygroundProbe(playgroundProviders)
 

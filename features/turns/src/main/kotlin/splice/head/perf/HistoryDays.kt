@@ -7,8 +7,8 @@
 // in it, which is what deleting them frees. The hourly totals' req_bytes is a different number (what
 // clients sent) and would draw a bar that disagrees with the space the person actually gets.
 //
-// WHY MINUTES AND NOT DAYS. The band under the picker has to cut where HistoryWindow.cutoffMs cuts
-// (hitstop), and that moment is the time of day the person is looking at it: a 7-day window read at
+// WHY MINUTES AND NOT DAYS. The band under the picker has to cut where HistoryWindow.cutoffMs cuts,
+// and that moment is the time of day the person is looking at it: a 7-day window read at
 // 3:12 PM cuts mid-day, so a per-day tally would promise a whole day splice is going to keep most
 // of. Every record is therefore charged to its MINUTE, and a cut is answered by binary search over
 // the minutes held. The count is exact for any minute-aligned moment, which is every moment this

@@ -1,6 +1,6 @@
 // NEW: while Claude Code's history only grows, code mode sends GPT a history that only grows, the way Codex
 // builds each request from the items it recorded (codex-rs core/src/session/turn.rs:1618). Live on 2026-10-23 a
-// claudex seat abandoned a script on almost every turn from 15:51 CT ("native discovery history was edited:
+// claudex session abandoned a script on almost every turn ("native discovery history was edited:
 // nativeOrder", 18 expected, 21 found), and every abandonment moved the prompt under the cache: the cached
 // prefix sat at 107,776 tokens while the input grew to 131,922. The conversations here are generated: scripts of
 // zero to three client steps, reasoning GPT returns and the client replays before the calls of the same message,
@@ -49,7 +49,7 @@ private const val RUNS = 120
 
 /** Each sweep drives 120 or more generated conversations, so its wall time follows the machine, and the bound is a
  *  hang guard, never a speed check. On Oct 25 a sweep took 8.6 s, then past runTest's one-minute default at load 156
- *  on 16 threads, then past five minutes in the 11:38 PM CT pre-push at load 67 to 86, where all six sweeps ran 1 to
+ *  on 16 threads, then past five minutes in a pre-push at load 67 to 86, where all six sweeps ran 1 to
  *  15 times slower than the run before. A real hang still fails here. */
 private val SWEEP_TIMEOUT = 30.minutes
 

@@ -1,11 +1,11 @@
 // NEW: Oct 27, 2026 — a relaunch and a Continue on leave a session holding a feedback draft the person has not sent
 // where it is, and type nothing into it. Claude Code 2.1.310 answers /exit in such a session with "You have 1 unsent
 // feedback draft · Enter to review & send · Esc to discard and exit", and sending or discarding the draft is the
-// person's call. On Oct 27 at 08:30 CT a relaunch typed /exit into one in ~/.claude-claudex: its client sat at that
+// person's call. On Oct 27 a relaunch typed /exit into one in ~/.claude-claudex: its client sat at that
 // question, and the relaunch gave up after 15 s and left it there.
 //
 // A session's drafts are files in its config folder, <folder>/feedback/drafts/<draft_id>.json, each naming the session
-// it came from in source_session_id, with "queued" in its status until it is sent. A head's seats share that folder.
+// it came from in source_session_id, with "queued" in its status until it is sent. A head's sessions share that folder.
 package splice.sessions.http
 
 import io.ktor.http.HttpStatusCode
@@ -43,7 +43,7 @@ class SessionContinueFeedbackTest {
     private val arrived = mutableListOf<String>()
 
     /** The config folder every session's client runs in, as the daemon reads it from its process: one folder, as the
-     *  seats of one head share ~/.claude-claudex. */
+     *  sessions of one head share ~/.claude-claudex. */
     private var configFolder: Path? = null
 
     /** What the registry reads once a stop the move pressed lands: idle at its prompt, unless a test says otherwise. */
@@ -228,7 +228,8 @@ class SessionContinueFeedbackTest {
         assertTrue(terminal.opened.isEmpty() && arrived.isEmpty(), "nothing is started")
     }
 
-    // A head's seats share its config folder, and it holds whatever Claude Code left there: every seat's drafts, drafts
+    // A head's sessions share its config folder, and it holds whatever Claude Code left there: every session's drafts,
+    // drafts
     // already sent or discarded, and on Oct 27 one file cut off mid-way. Only a draft of the session's own that has not
     // been sent holds it: every other file, whatever it holds, leaves its relaunch free to go on.
     @Test

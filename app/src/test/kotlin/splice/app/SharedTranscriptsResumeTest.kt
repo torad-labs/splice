@@ -97,7 +97,7 @@ class SharedTranscriptsResumeTest {
         // compaction follows the session too: no registry entry, resolved from the global transcript
         val project = SessionProject(home.resolve(".claude/sessions"), global).projectFor(sessionId)
         assertEquals(cwd.toAbsolutePath().normalize(), project)
-        // `-r SESSION_ID` on head B finds it in its own (shared) tree, and (V4-169, as the President ruled it on Oct 13)
+        // `-r SESSION_ID` on head B finds it in its own (shared) tree, and (V4-169, decided Oct 13)
         // goes on as a copy beside it under a new id, with its assistant rows on head B's model, so Claude Code's
         // restore check finds a model this head serves. The client resumes the copy; head A's session is untouched.
         val written = Files.readAllBytes(onA)

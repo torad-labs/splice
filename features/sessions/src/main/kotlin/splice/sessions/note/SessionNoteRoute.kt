@@ -1,6 +1,7 @@
 // NEW: V4-444 — POST /api/sessions/{id}/message: a note from the console to one live session (the session page's "Send a
-// note to this session"). It is PEER-NOTE delivery and claims nothing more (V4-444 audit, splice-builder2, Sep 29 9:36 PM
-// CT): the session receives it as a message from another session, never as the operator typing, and it cannot approve,
+// note to this session"). It is PEER-NOTE delivery and claims nothing more (V4-444 audit, Sep 29):
+// the session receives it as a
+// message from another session, never as the operator typing, and it cannot approve,
 // configure or run a command for it. The answer is 202 with an empty body: writing the frame is transport, and the client
 // gives no receipt for an accepted message, so delivery is always unknown.
 //

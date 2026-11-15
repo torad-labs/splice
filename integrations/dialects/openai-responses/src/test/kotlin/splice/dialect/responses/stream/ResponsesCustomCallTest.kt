@@ -111,7 +111,7 @@ class ResponsesCustomCallTest {
         assertEquals(2, outcome.handoffs.customCalls.size)
     }
 
-    /** Oct 12 (Marcos's decision, reversing afb7a1f87's display): the runtime observes every delta of the script as the
+    /** Oct 12 (reversing afb7a1f87's display): the runtime observes every delta of the script as the
      *  model writes it, and no byte of it reaches the client. */
     @Test
     fun `exec input reaches the runtime as it streams and none of it reaches the client`() = runTest {

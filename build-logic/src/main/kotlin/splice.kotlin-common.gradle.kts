@@ -44,7 +44,7 @@ detekt {
         files("src/main/kotlin", "src/test/kotlin", "src/testFixtures/kotlin", "src/lawFixtures/kotlin"),
     )
     // Each module's files are parsed in parallel; the rules still run in order, so the findings are the same. Measured on
-    // :app, :features-turns, :integrations-providers-codex and :core, Oct 9: 68.9 s of detekt one file at a time, 13.9 s
+    // :app, :features-turns, :integrations-providers-codex and :core: 68.9 s of detekt one file at a time, 13.9 s
     // in parallel, with the same eight findings reported by both.
     parallel = true
 }
@@ -119,8 +119,8 @@ tasks.withType<Test>().configureEach {
     // of streams (far under 1g either way); this only funds the stress ceiling.
     maxHeapSize = "2g"
     // A SMALL START, GROWN ON DEMAND. With no -Xms a test JVM's starting heap is 1/64 of the machine's RAM, about 1.9 GB on
-    // this 124 GB box, so every fork held nearly its whole cap from its first test however little its suite keeps live, and
-    // A gate admits a pre-push by the anon memory its forks held (Oct 12: 8.5 GB predicted, hours in line). The cap
+    // a 124 GB machine, so every fork held nearly its whole cap from its first test however little its suite keeps live, and
+    // A gate admits a pre-push by the anon memory its forks held (8.5 GB predicted, hours in line). The cap
     // above still funds the stress ceiling; a suite only grows toward it when it needs to.
     minHeapSize = "256m"
     // FOUR PROCESSORS FOR EVERY TEST JVM (V4-307). A local build can run in one scope capped at 512
@@ -136,7 +136,7 @@ tasks.withType<Test>().configureEach {
     // XDG_CONFIG_HOME, then $HOME/.config (KeyStorePath.defaultPath, whose own comment already
     // promises "test rigs stay hermetic"). Nothing pointed those at the rig, so any test asserting
     // a credential is ABSENT read the OPERATOR's real ~/.config/splice/keys.toml: StatusCommandTest
-    // and MultiProviderDaemonTest's DR-81 both failed on this machine against a genuine stored
+    // and MultiProviderDaemonTest's DR-81 both failed on a machine holding a genuine stored
     // OPENROUTER_API_KEY while passing on every machine without one. A suite that measures the
     // developer's home instead of its own fixtures is worse than red -- it is red somewhere else.
     val testHome = layout.buildDirectory.dir("test-home").get().asFile
@@ -156,7 +156,7 @@ tasks.withType<Test>().configureEach {
     // env var injects its own EnvReader; none may inherit one.
     setEnvironment(environment.filterKeys { !it.endsWith("_API_KEY") && !it.endsWith("_API_TOKEN") })
     // NO REAL BROWSER. SystemBrowserOpener refuses while this is set, so a test that reaches a real
-    // OAuth sign-in fails by name instead of opening a login page on the operator's desktop and
+    // OAuth sign-in fails by name instead of opening a login page on the developer's desktop and
     // blocking on a loopback callback that will never arrive. See LoginIo.kt's wall.
     systemProperty("splice.noSystemBrowser", "1")
     jvmArgumentProviders.add(
@@ -188,7 +188,7 @@ tasks.withType<Test>().configureEach {
     // results-generic.bin, REPLACE_EXISTING)), so an existing TARGET is harmless and a missing
     // SOURCE is fatal — NoSuchFileException at DefaultRootTestEventReporter.close, which names an
     // internal binary and nothing a reader can act on. Two gradle runs sharing one project
-    // directory is how the source goes missing, and on 2026-10-10 that cost a seat three runs with
+    // directory is how the source goes missing, and that once cost three runs with
     // a different wrong diagnosis each time: a flake, then concurrency, then memory.
     //
     // ONE GRADLE AT A TIME IS THE WRAPPER'S JOB NOW (./gradlew routes itself through the slot), so

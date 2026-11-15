@@ -3,8 +3,8 @@
 // project dependency. That failure used to surface only at pre-push, behind the build gate's line: a920eeef1's push
 // waited 2,344 s for the build lock and then failed in 15 s (Oct 13, 2026). This leg reads the same table and the same
 // main configurations (api, implementation, compileOnly, runtimeOnly) as text, so pre-commit refuses the breach at the
-// seat's own commit, in well under the fence's minute. A dependency spelled in a form this reader does not parse still
-// meets the gradle enforcer at pre-push.
+// session's own commit, in well under the fence's minute. A dependency spelled in a form this reader does not parse
+// still meets the gradle enforcer at pre-push.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { layout } from "../lib/repo.ts";

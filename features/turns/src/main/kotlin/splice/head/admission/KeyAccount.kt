@@ -2,8 +2,8 @@
 // Usage can split a key command's spend the way it splits a subscription's.
 //
 // Before this, a key head's every row read `account: "primary"`: a label with no key behind it, identical across
-// OpenRouter, DeepSeek and every other key command, and unchanged when the key was rotated. The key IS the account
-// (Marcos, Oct 8), so the row carries the variable the key is read from and a short fingerprint of its value.
+// OpenRouter, DeepSeek and every other key command, and unchanged when the key was rotated. The key IS the account,
+// so the row carries the variable the key is read from and a short fingerprint of its value.
 package splice.head.admission
 
 import splice.core.auth.AuthProvider

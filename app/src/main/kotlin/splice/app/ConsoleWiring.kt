@@ -45,7 +45,7 @@ internal object ConsoleWiring {
     /** V4-133 (FEATURES.md §5/§6): the console's budget/alert stores and playground probe, split out
      *  of ControlPlane.start() (LongMethod, the same reason these ports moved here in V4-161) — the
      *  same settable-after-construction shape [wire] uses for its four, assigned right after it.
-     *  Deviation from V4-133's "never recorded" (Oct 12, 2026, marlin): the playground probe now records its sends and
+     *  Deviation from V4-133's "never recorded" (Oct 12, 2026): the playground probe now records its sends and
      *  takes the command's budget; docs/specs/v0.4.0.md section 9. */
     internal fun wireV4133(srv: ControlServer, budgets: BudgetStore, alerts: AlertStore, playground: PlaygroundProbe) {
         srv.ports.budgets = budgets

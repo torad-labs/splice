@@ -85,9 +85,9 @@ private val TOML = """
     system_prompt = "Gamma only."
 """.trimIndent() + "\n"
 
-// The walker desk's splice.toml as the second Models walk left it (a command added through Models, then restarted).
+// A test machine's splice.toml as the second Models walk left it (a command added through Models, then restarted).
 private val DESK_TOML = """
-    # The walker desk. Every credential in this home is a made-up string, and the one upstream is on this machine.
+    # A test machine. Every credential in this home is a made-up string, and the one upstream is on this machine.
     [daemon]
     control_port = 31640
     
@@ -334,7 +334,7 @@ class HeadRemovalTest {
     }
 
     @Test
-    fun `a keyless idle command on a desk that added a local command is removed`() {
+    fun `a keyless idle command on a machine that added a local command is removed`() {
         check(Files.exists(file))
         Files.writeString(file, DESK_TOML)
         serve { call ->

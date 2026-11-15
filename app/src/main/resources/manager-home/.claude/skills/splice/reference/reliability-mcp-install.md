@@ -20,7 +20,7 @@ the code wins and the line says so.
 | Retry is total | A known error gets its own plan. Every other error gets a bounded generic retry and an honest message. No failure ends a turn without one of the two. |
 | Idle is a probe | Silence from the model is a question, never a verdict. splice acts only on a dead path, by re-anchoring (resuming the stream). It never reaps a model that is thinking in silence. |
 
-Source: repo `CLAUDE.md` "Project laws"; `core/src/main/kotlin/splice/core/config/Knob.kt` (the note above
+Source: repo `CLAUDE.md` "Code rules"; `core/src/main/kotlin/splice/core/config/Knob.kt` (the note above
 `UPSTREAM_TIMEOUT_MS` on the retired retry knobs, and the `STREAM_IDLE_MS` entry); `core/.../failure/FailureCause.kt`
 lines 1-26 and 161 (`Provider.Unrecognized`); `integrations/upstream/.../retry/RetryEngine.kt` lines 46-64, 151-161
 and 237-243.
@@ -238,7 +238,7 @@ the host runs in the daemon, the supported fallback. A launch offers hub address
 here (`<state>/mcp-hub/front.json` exists) and while it answers on 3095. Otherwise the session prints `this
 session starts its own MCP servers` and Claude Code runs its own.
 
-`docs/specs/mcp-hub.md` is the approved design plus desk proofs on Claude Code 2.1.296. Read it for the why.
+`docs/specs/mcp-hub.md` is the approved design plus proofs on Claude Code 2.1.296. Read it for the why.
 Where it says "will", trust the code and `CHANGELOG.md` 160-186. The hub port 3095 is a constant in the code.
 
 Source: `README.md` 809-832; `CHANGELOG.md` 232-258; `integrations/mcp/.../hub/McpHubGate.kt` 23-52;

@@ -1,4 +1,4 @@
-// NEW: Oct 11, 2026 — a Projects folder is a display preference and never stops splice (Marlin's ruling). A path TYPED
+// NEW: Oct 11, 2026 — a Projects folder is a display preference and never stops splice. A path TYPED
 // into Settings that is not a readable folder is refused at Save, naming its entry. A path already saved that has since
 // vanished is not checked here: boot keeps it and the projects read reports it as not found.
 package splice.core.config

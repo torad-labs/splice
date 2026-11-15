@@ -1,7 +1,7 @@
 // NEW: V4-395 — whose a supervisor unit is. SupervisedStart.route refuses a shell that names its own daemon by
 // an env selector, but a home that sets none (a second profile under its own HOME) reaches the everyday unit
-// through it, and a restart then bounced a daemon that was nobody's business there (Marlin's walk, Sep 28,
-// 12:40:45 PM CT: HOME=walk-desk, control_port 31210, restarted splice.service on :3096). The check compares
+// through it, and a restart then bounced a daemon that was nobody's business there (HOME=walk-home,
+// control_port 31210, restarted splice.service on :3096). The check compares
 // the invoking home with the daemon the unit runs: the same HOME and the same control port, or it is foreign.
 package splice.lifecycle.start
 

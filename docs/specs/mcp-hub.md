@@ -1,9 +1,9 @@
 # splice as the MCP hub
 
-Status: approved. Draft 2 by splice-lead, 2026-10-12, was revised to Marcos's answers on draft 1, and
-Marcos approved it on Oct 12, through the President. The build follows the order below. The hub
-binaries go live only on hostshield-lead's go. beed0812e, which gives plain `claude` the hosted
-user-scope servers through `--mcp-config`, ships on its own.
+Status: approved. Draft 2 (2026-10-12) was revised to the answers on draft 1, and
+it was approved on Oct 12. The build follows the order below. The hub
+binaries go live only once the memory-containment wrapper is ready for them. beed0812e, which gives plain `claude` the
+hosted user-scope servers through `--mcp-config`, ships on its own.
 
 ## What it is for
 
@@ -11,7 +11,7 @@ Every Claude Code session on the machine gets its MCP tools from splice, however
 up, with nothing to opt into. A tool keeps its name. No session loses a tool, a terminal or a
 server's state, during a setup, an update or a crash.
 
-Measured on Oct 12 at 8 PM CT: 51 plain `claude` sessions ran 45 copies of ast-grep (3.0 GiB),
+Measured on Oct 12: 51 plain `claude` sessions ran 45 copies of ast-grep (3.0 GiB),
 41 of Desktop Commander (6.5 GiB with its npx layer), 13 of Remotion (0.93 GiB) and 2 of lottie.
 
 ## How it works
@@ -23,20 +23,20 @@ Measured on Oct 12 at 8 PM CT: 51 plain `claude` sessions ran 45 copies of ast-g
 2. **One launch path, no strict mode.** splice starts Claude Code with one owner-only file listing
    each hosted server as a hub address under its own name. A same-named entry replaces the server
    Claude Code would have started from that scope, as beed0812e showed for user scope. Strict mode
-   is out (the President's ruling, Oct 12): it drops every claude.ai connector, and keeping them
-   would mean splice reading Marcos's claude.ai login. Plugin servers don't yield to a same-named
+   is out (decided Oct 12): it drops every claude.ai connector, and keeping them
+   would mean splice reading the user's claude.ai login. Plugin servers don't yield to a same-named
    entry (proof a), so each hosted plugin is loaded for that launch with its MCP off and its skills
    and commands kept, if Claude Code honors such a mechanism (proof f). If it doesn't, plugin servers
-   stay as Claude Code starts them, and Desktop Commander's cost goes back to Marcos as a plugin
+   stay as Claude Code starts them, and Desktop Commander's cost goes back to the user as a plugin
    on or off decision. http, sse and ws servers and claude.ai connectors are left to Claude Code. A
    `claude` started outside splice reads the files as declared and runs its own copies, as today,
-   because nothing of Marcos's is rewritten.
+   because nothing of the user's is rewritten.
 3. **Names kept.** One hub address per server under the name Claude Code gives it, so
    `mcp__ast-grep__<tool>` and `mcp__plugin_<plugin>_<server>__<tool>` don't change (proof a).
 4. **Shared or per session, asked once.** `splice setup` asks once: "Share MCP servers between
    sessions? It uses less memory." Yes makes servers shared by default, one copy for every session.
    No makes them one per session. The console's MCP section shows the choice, changes it, and shows
-   what sharing saves on this machine in measured memory: today's copies of each shareable server
+   what sharing saves in measured memory: today's copies of each shareable server
    against one copy. Some servers stay one per session either way, and the section names them with
    the reason:
    - servers known to keep state per process, starting with Desktop Commander (terminals, its
@@ -82,7 +82,7 @@ the path of a tool call.
 - **The front's own update** is rare, because its code is small and stable. The running front hands
   its listening socket and its routing table to the new front, which takes over. The gap stays in
   the ~1 s range that proof (c) showed recovers without a trace. If it can't stay under about 3 s,
-  that comes back to Marcos.
+  that comes back to the maintainer.
 - **Crash:** a daemon crash is an update nobody planned, and the front and holders carry on. A front
   crash restarts it on the same socket, which systemd holds, so connects queue rather than fail.
   Only calls in flight at the crash fail, each in words.
@@ -97,7 +97,7 @@ the path of a tool call.
 - **A server that crashes** restarts on the next call. If it was a per-session copy, the session is
   told in that call's result that the server's own state was lost.
 
-Holders and servers run in hostshield's MCP slice (V4-147), so the box's memory cap still holds.
+Holders and servers run in a memory-capped MCP slice (V4-147), so the box's memory cap still holds.
 
 The JVM writes one reusable socket record per holder and generation-addressed exit receipts. One per-socket lifecycle
 lock covers record replacement, child attestation, exit marking, drain-claim acquisition, and destructive eviction. Before
@@ -156,14 +156,14 @@ start or continue retirement. A matching durable front checkpoint can recover it
 `unpinning` checkpoints protect neither old nor candidate generations after the owner claim is released. Destructive
 sweeps refresh both claim and exact candidate-drain state while holding the socket lifecycle lock.
 
-## What changes in Marcos's files
+## What changes in the user's files
 
-For Claude Code, the plan reads his files and writes only splice's own state folder. The one stored
+For Claude Code, the plan reads the user's files and writes only splice's own state folder. The one stored
 choice, sharing yes or no, lives in splice.toml as the answer `splice setup` saved.
 
 ### Registered local service
 
-Marcos wants (October 18) the MCP installed on Codex and Claude through Splice and started together with Splice.
+The MCP is installed on Codex and Claude through Splice and started together with Splice.
 
 An app on the same machine provisions its already-resolved local launch through the CLI's install command, as a
 launch file with its URL or in the compatible script form. A launch file is JSON with a
@@ -200,56 +200,53 @@ A per-frame ceiling does not replace that aggregate queue budget. Refused oversi
 
 ## Build order
 
-0. **Desk proofs.** (a) and (b) passed, and (c) is in progress (results below). New proof (d): a
-   holder keeps a stdio server running across a desk daemon restart, a call made during the restart
+0. **Proofs.** (a) and (b) passed, and (c) is in progress (results below). New proof (d): a
+   holder keeps a stdio server running across a daemon restart, a call made during the restart
    completes, and the server's state is intact afterwards.
 1. **The plan:** servers per launch folder, with precedence, repo approval and plugin enablement,
    reported in the census. It's read-only and ships first.
 2. **The front and holders:** the front holds the port and the streams, holders hold the servers,
-   and the daemon only plans and starts. First, a desk proof: a session's tool answers through a
+   and the daemon only plans and starts. First, a proof: a session's tool answers through a
    daemon swap with no /mcp reconnect, and the front's own socket handover gap is measured. This is
    what makes updates and crashes seamless, so it lands before anything moves onto the hub.
-   hostshield-lead owns the front's socket and service units.
+   The front's socket and service units belong to the host wrapper.
 3. **Per-session copies:** in the session's folder and environment, stopped at session end, with the
    built-in list of stateful servers.
 4. **Started when used:** tools/list from the kept listing.
 5. **The setup question and the console's MCP section,** with the measured savings.
 6. **The hub launch:** every hosted server through the hub by name, plugin MCP off where proof (f)
-   allows, plus the fallback line. First, desk proofs (e) and (f).
+   allows, plus the fallback line. First, proofs (e) and (f).
 
-Owners: splice-config (the host, holders, the console's MCP section and setup), splice-sessions (the
-plan, census and launch, with splice-platform's launch module), and hostshield-lead (the slice).
+## Step 0 results (Claude Code 2.1.296, stand-in files only)
 
-## Step 0 results (desk, Claude Code 2.1.296, stand-in files only)
-
-- **(a) Plugin names, passed (splice-config, Oct 12).** A `--mcp-config` entry named
+- **(a) Plugin names, passed (Oct 12).** A `--mcp-config` entry named
   `plugin_standin_tools` gives exactly `mcp__plugin_standin_tools__<tool>`, the plugin's own names.
   Without strict mode it runs beside the plugin's server, not instead of it, and the plugin's own
   server takes the call. So a plugin's own server has to be switched off for the launch (proof f).
-- **(b) Strict list, passed for interactive sessions (splice-config, Oct 12).** Strict mode with a
+- **(b) Strict list, passed for interactive sessions (Oct 12).** Strict mode with a
   file listing the same servers shows the same four. It starts neither the plugin's own server nor
   an unapproved repo server, and shows no approval prompt. Only the /mcp display differs: one
   "Built-in MCPs" heading, the plugin row under its config name, and Auth rows for http entries.
   `claude -p` with no flags starts an unapproved repo server, trusted folder or not, while a rejected
   one stays off. So the plan leaves pending servers out itself, and print mode's list is not the
   baseline.
-- **(c) http across a daemon restart, failed (splice-providers, Oct 12).** Claude Code never sent
+- **(c) http across a daemon restart, failed (Oct 12).** Claude Code never sent
   its old session id, so V4-148 adoption never ran. A 3 s outage recovered by a fresh initialize
   (retries at 1, 2, 4 and 8 s) with nothing on screen. In a 40 s outage it gave up after 5 attempts,
-  about 17 s: "Max reconnection attempts (5) reached". The tool stayed gone until /mcp. That desk had
-  no socket activation, so each reconnect was refused. The President ruled on Oct 12 that sessions
+  about 17 s: "Max reconnection attempts (5) reached". The tool stayed gone until /mcp. That run had
+  no socket activation, so each reconnect was refused. It was decided on Oct 12 that sessions
   connect to a hub front that outlives the daemon (see above).
-- **(d) A holder across a daemon restart, passed (splice-config, Oct 12).** A Kotlin/Native holder
-  (576 KB, 4.7 MB RSS) ran a stateful stand-in in app-mcp.slice. A call sent 0.5 s into a desk
+- **(d) A holder across a daemon restart, passed (Oct 12).** A Kotlin/Native holder
+  (576 KB, 4.7 MB RSS) ran a stateful stand-in in app-mcp.slice. A call sent 0.5 s into a
   daemon restart answered 8.5 s later with the count intact, on the same server pid. The 8.5 s was
   the JVM daemon's boot, which is why the front matters. Carried forward: the new daemon sent
   initialize again, so the front keeps each server's initialize result and an adopted holder is never
   handshaken twice.
-- **Strict mode drops claude.ai connectors (splice-sessions, from the 2.1.296 binary, Oct 12).** With
+- **Strict mode drops claude.ai connectors (from the 2.1.296 binary, Oct 12).** With
   `--strict-mcp-config`, the MCP provider skips the claude.ai connector fetch, and a connector's
-  proxy url and id come only from that fetch with the session's claude.ai login. The President
-  ruled out strict mode.
-- **(e) A same-named entry replaces each scope, passed (splice-config, Oct 13).** User scope passed
+  proxy url and id come only from that fetch with the session's claude.ai login. Strict mode was
+  ruled out.
+- **(e) A same-named entry replaces each scope, passed (Oct 13).** User scope passed
   with beed0812e. This run covered local scope and an approved repo `.mcp.json` server. It used a
   stand-in config home with no operator data, at `walks/` mode 0700, deleted after the run.
   - The home's `.claude.json` held a local-scope pair, `localsrv` and `localkeep`, under the repo's
@@ -263,7 +260,7 @@ plan, census and launch, with splice-platform's launch module), and hostshield-l
   - Interactive: the same marks. /mcp listed five servers, each once. `repokeep` sat under Project
     MCPs, `localkeep` under Local MCPs and `userkeep` under User MCPs. `localsrv` and `reposrv`
     sat under "Built-in MCPs", as the entries in (b) and (f) do.
-- **(f) A plugin with its MCP off for one launch, passed (splice-providers, Oct 12).** The hidden
+- **(f) A plugin with its MCP off for one launch, passed (Oct 12).** The hidden
   flag `--plugin-dir-no-mcp <installPath>` does it, with the path taken from the config home's
   `plugins/installed_plugins.json`. A stand-in plugin was installed and enabled from a local
   marketplace, with one stdio server, one skill and one command. The plugin loads from that path,
@@ -276,7 +273,7 @@ plan, census and launch, with splice-platform's launch module), and hostshield-l
     entry took the call, so which copy answers is not fixed.
   - With the flag and no entry, the session has no plugin tool at all. So the launch passes the
     flag for a plugin only when the hub holds every server that plugin declares.
-- **The front and holders across updates, passed (splice-config, Oct 12).** A 2.4 MB Kotlin/Native
+- **The front and holders across updates, passed (Oct 12).** A 2.4 MB Kotlin/Native
   front on a systemd-held socket in app-mcp.slice served a real Claude Code 2.1.296 session, with a
   stateful counter under a holder. The session kept its tool, with no /mcp, through three updates:
   - a daemon swap: same server pid, count continued;

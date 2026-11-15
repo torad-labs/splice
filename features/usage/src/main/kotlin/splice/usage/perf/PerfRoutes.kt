@@ -107,7 +107,7 @@ public class PerfRoutes(
             return
         }
         // a head still preparing answers pending, decided first: its reply reads no row, so it asks neither the roster
-        // nor the session registry (a pending reply that built both waited 27 s on desk d in the startup scan, Oct 12)
+        // nor the session registry (a pending reply that built both waited 27 s in the startup scan)
         val pending = preparation?.takeIf { call.request.headers[USAGE_READ_PENDING_HEADER] == "1" }
             ?.requestsPending(wired, asked.since).orEmpty()
         val read = wired.filter { it.key !in pending }
@@ -239,8 +239,8 @@ public class PerfRoutes(
     }
 
     /** One classification for a read's counters and for each row's own figure (TurnPriceGap), priced on one catalog
-     *  snapshot: live() asks splice.toml's stamp, and asking it per row was a file stat per priced row (jstack on desk c,
-     *  Oct 12). */
+     *  snapshot: live() asks splice.toml's stamp, and asking it per row was a file stat per priced row
+     *  (measured with jstack). */
     private fun decisions(head: UsageHead): TurnPriceGap =
         TurnPriceGap(head.statusline.catalog?.live()?.let(::TurnPrice), AccountPlans(head, heads.billing(head.key)))
 

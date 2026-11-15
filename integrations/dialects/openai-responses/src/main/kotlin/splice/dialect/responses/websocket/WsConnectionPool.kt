@@ -10,7 +10,7 @@ import kotlin.time.Duration.Companion.milliseconds
  * Every conversation's sockets: get-or-connect, win the busy flag, and the two ways a round ends
  * for the registry — [release] back to the pool, or [failRound] and poison.
  *
- * No cap and no eviction (Marcos, 2026-10-27: the 32-socket LRU was a throttle). A conversation
+ * No cap and no eviction (the 32-socket LRU was a throttle). A conversation
  * holds one idle socket between rounds and opens another when a round of it is already in flight,
  * so no round is sent to SSE for want of a socket. Sockets leave only when they die, when a round
  * fails on them, or when [sweep] finds them idle past [idleCloseMs] or older than [maxSocketAgeMs].

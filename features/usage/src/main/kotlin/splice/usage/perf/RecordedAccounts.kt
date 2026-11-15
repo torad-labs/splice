@@ -1,4 +1,4 @@
-// NEW: labels only (Eli's ruling via splice-lead, 2026-10-12). A request row keeps the account value it was written
+// NEW: labels only. A request row keeps the account value it was written
 // with (an email, an account id, a pool label, a ref); this is how that value reads on the way out, so no page is
 // handed an email or an id and the files are never rewritten.
 package splice.usage.perf

@@ -317,7 +317,7 @@ class TranscriptModelRewriteTest {
         assertEquals(false, rows(subagent)[0].contains("thinking"), rows(subagent)[0])
     }
 
-    // Oct 7 CT, reported by a peer seat: resuming a 715 MB and a 1022 MB transcript failed the whole launch
+    // Oct 7, reported by a peer session: resuming a 715 MB and a 1022 MB transcript failed the whole launch
     // ("unclassified failure") while a 338 MB one resumed. The rewrite held each file whole, as text,
     // several copies at once, and the JDK's UTF-8 encode of text past about 715M characters throws
     // NegativeArraySizeException. This transcript is sized so a whole-file rewrite cannot fit the test

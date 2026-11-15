@@ -43,7 +43,7 @@ internal sealed class ProbeDeduction {
  *  only appended to and the rollup for that hour is as it was.
  *
  *  A torn line costs an hour only where the rollup may have counted the probe that line was ([mayCountLostProbe]).
- *  Until Nov 10, 2026 it cost every hour it could lie in: a machine stop at 8:28 PM CT left a run of NUL bytes in
+ *  Until Nov 10, 2026 it cost every hour it could lie in: a machine stop left a run of NUL bytes in
  *  claude-splice's and claudex's logs, and Accounts read "Not read" for the day on both, over 22,000 requests the
  *  rollup had counted, with three hours of each left not read for good. */
 internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
@@ -156,8 +156,8 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
         // Probes were dispatched only until they were retired, and none is written now. An hour more than one past the newest probe row or
         // the newest hour a probe-like torn line can lie in, and after the one the log begins in, has no probe to take off: the log's only
         // work there is to subtract probes from the rollup, so the rollup's own count stands even when it is ahead of the log,
-        // as it is when a hard stop tore log lines the rollup had already counted (live, Oct 11: claudex and claude-splice at
-        // 3 AM CT; claude-splice archives hold probes on Oct 1, which held every later hour). A probe on the edge of an hour is
+        // as it is when a hard stop tore log lines the rollup had already counted (live, Oct 11: claudex and
+        // claude-splice; claude-splice archives hold probes on Oct 1, which held every later hour). A probe on the edge of an hour is
         // counted in the next one by the rollup, so that next hour is kept out too. The hour the log begins in is
         // partial, an older one is not in the log at all, and an hour at or before a probe may hide one, so none is vouched for.
         // A torn line with no time and no row after it in `.1` or the live file has no newest hour, so no hour graded here

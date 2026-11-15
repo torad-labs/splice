@@ -1,5 +1,5 @@
-// NEW: Oct 12, 2026 — a Compare models send is real spend on this head's account, so it leaves what a request leaves
-// (marlin, Oct 12): a Requests row, an hourly-rollup entry and the day's spend, and it is weighed by the same budget a
+// NEW: Oct 12, 2026 — a Compare models send is real spend on this head's account, so it leaves what a request leaves:
+// a Requests row, an hourly-rollup entry and the day's spend, and it is weighed by the same budget a
 // turn is. It is NOT a turn: no session, no trace, no client, so it takes the budget's admit() and writes its row
 // here, not in the turn pipeline. The row carries PerfKeys.COMPARE, which keeps it out of "no project".
 package splice.head.usage

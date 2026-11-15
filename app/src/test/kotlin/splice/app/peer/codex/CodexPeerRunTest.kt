@@ -1,6 +1,6 @@
 // A codex peer against an app-server on a real Unix socket: the message its inbox journaled reaches the thread as a
-// turn in Claude Code's envelope, the peer's registry record shows the thread busy and carries the lifecycle binding
-// Fence reads, and the run ends when the thread closes.
+// turn in Claude Code's envelope, the peer's registry record shows the thread busy and carries its lifecycle binding,
+// and the run ends when the thread closes.
 package splice.app.peer.codex
 
 import kotlinx.coroutines.Dispatchers
@@ -86,9 +86,9 @@ class CodexPeerRunTest {
         assertDelivered(dir, home, home.resolve(CONTROL_SOCKET))
     }
 
-    // A Codex home kept deep under a seat runner's state folder, as a runner keeps one per seat, puts
+    // A Codex home kept deep under a session runner's state folder, as a runner keeps one per session, puts
     // its control socket past the 108 bytes a Unix socket path may hold, as a link to the short socket the app-server
-    // listens on; Oct 28 12:38 CT a codex peer ended there with "Unix domain path too long". The peer reaches its
+    // listens on; on Oct 28 a codex peer ended there with "Unix domain path too long". The peer reaches its
     // app-server through the socket the link leads to.
     @Test
     fun `a Codex home whose control socket path is too long for a Unix socket still reaches its app-server`(

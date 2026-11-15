@@ -58,8 +58,8 @@ internal class TeamRules {
 
     fun mintId(): String = "team-" + UUID.randomUUID().toString().replace("-", "").take(ID_HEX_CHARS)
 
-    /** Refuses binding a session to [saved] that another unarchived team already holds (Marlin, 2026-10-10:
-     *  one active team per session), naming that team. Only a session [saved] did not hold in [before] is
+    /** Refuses binding a session to [saved] that another unarchived team already holds (one active
+     *  team per session), naming that team. Only a session [saved] did not hold in [before] is
      *  judged, so a team already double-bound in older data can still be edited, and an archived team
      *  frees its sessions. The console draws a double binding on both teams with the other one named
      *  (it never picks one silently); this is the write that keeps new data from making one. */

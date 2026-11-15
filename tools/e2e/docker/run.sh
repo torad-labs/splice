@@ -6,7 +6,7 @@
 # What gets installed is chosen ONCE, explicitly:
 #   --release vX.Y.Z      the published GitHub release assets (jar, shim, sha256sums, install.sh)
 #   --jar P --shim P      any prebuilt pair (sha256sums.txt beside the jar is verified if present)
-#   (default)             this checkout: :app:shadowJar via buildgate when present, app/src/main/dist/bin/splice-launch
+#   (default)             this checkout: :app:shadowJar via a build wrapper if any, app/src/main/dist/bin/splice-launch
 #
 # Usage: tools/e2e/docker/run.sh [--release vX.Y.Z | --jar PATH --shim PATH] [--upgrade-from vX.Y.Z | --scenario plan-limit|runtime-head] [--keep] [--no-build]
 #   --upgrade-from vX.Y.Z  instead of a fresh machine, run tools/e2e/docker/upgrade.sh: install that

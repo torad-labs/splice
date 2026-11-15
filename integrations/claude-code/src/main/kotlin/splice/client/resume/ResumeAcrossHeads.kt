@@ -4,9 +4,9 @@
 // carrying head model ids sat in the vanilla tree, and the vanilla client printed "Session model
 // deepseek-flash could not be restored" on every restore.
 //
-// OPERATOR RULING: head configurations and details must NEVER leak into other heads, their wrappers,
+// RULE: head configurations and details must NEVER leak into other heads, their wrappers,
 // or the core claude binary sessions. V4-115 read that as covering transcripts and removed the shared
-// tree; V4-168 (2026-09-19) put it back after the operator named the removal a regression — the ruling
+// tree; V4-168 (2026-09-19) put it back after the removal was named a regression — the rule
 // covers CONFIGURATION, and transcripts are shared session state (ProjectsLink's header). So this
 // class is now the path for a head whose policy ISOLATES projects, and for an id that lives only in
 // another head's private tree: an on-demand act with a moment and an actor. On a head that shares
@@ -22,9 +22,9 @@
 //     is left byte-identical — so the two heads never share an inode, an append, or a deletion.
 // (C) MODEL FOLLOWS THE HEAD. On that copy every assistant row's `message.model` is rewritten to the calling head's
 //     pinned model (TranscriptModelRewrite, shared with the resume hook). A session the calling head already sees
-//     through the shared tree (V4-168) whose rows would move is never rewritten where it lies (the President's
-//     ruling on V4-169, Oct 13): it resumes as its copy beside it under a new session id, its rows retagged to that
-//     id (SessionIdRetag), and the original stays as its head wrote it. One whose rows all stay resumes as it is.
+//     through the shared tree (V4-168) whose rows would move is never rewritten where it lies (V4-169, Oct 13): it
+//     resumes as its copy beside it under a new session id, its rows retagged to that id (SessionIdRetag), and the
+//     original stays as its head wrote it. One whose rows all stay resumes as it is.
 //     Claude Code restores a resumed session's model from the
 //     transcript and refuses one the head does not serve — the reason string it prints with
 //     "Session model <X> could not be restored" is "is not in the availableModels allowlist"
@@ -165,7 +165,7 @@ public class ResumeAcrossHeads(
         }
     }
 
-    /** V4-169 as the President ruled it (Oct 13): a session this head sees through the shared tree resumes where it
+    /** V4-169 as it was decided (Oct 13): a session this head sees through the shared tree resumes where it
      *  lies when none of its rows has to move, and otherwise as a copy beside it ([copyAside]), so the original is
      *  never written. One that cannot be read resumes as it is: Claude Code's one-line restore notice, nothing lost. */
     private fun resumeSeen(transcript: Path, sessionId: String, roster: CallingRoster, log: LogSink): SessionAdoption {

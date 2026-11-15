@@ -1,5 +1,5 @@
 // The packaged code-mode mock checks that a Responses lite turn keeps the caller's instructions and the code-mode
-// guidance together in one developer item right after additional_tools. Since a493ed3e5 (Marcos, 2026-10-28) the head's
+// guidance together in one developer item right after additional_tools. Since a493ed3e5 the head's
 // standing prompt rides as a further developer item after those leading ones, so the check accepts a head prompt there
 // and still refuses guidance or base instructions that moved into, or were copied to, another item.
 import { expect, test } from "bun:test";

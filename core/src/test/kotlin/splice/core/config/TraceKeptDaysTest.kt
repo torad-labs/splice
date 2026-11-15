@@ -1,5 +1,5 @@
 // NEW: Oct 10, 2026 — saved prompts and answers follow the one history window until someone sets "Keep prompts and
-// answers for", which then governs, shorter or longer (splice-lead, Oct 12).
+// answers for", which then governs, shorter or longer.
 package splice.core.config
 
 import org.junit.jupiter.api.Assertions.assertEquals

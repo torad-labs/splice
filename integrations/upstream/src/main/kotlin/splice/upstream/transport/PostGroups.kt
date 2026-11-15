@@ -50,7 +50,7 @@ public data class PostLimits(
     val rateLimitCooldown: RateLimitCooldown? = null,
     /** Null preserves the legacy per-post deadline for callers without an outer turn budget. */
     val remainingTurnWait: RemainingTurnWait? = null,
-    /** A warm turn's total wait for rate limits on its own login before it moves (Marcos, Oct 19), one budget shared
+    /** A warm turn's total wait for rate limits on its own login before it moves (Oct 19), one budget shared
      *  with admission and with every other post of the turn; null for a cold turn, which waits out on its login only a
      *  lift stated within [HOLD_FLOOR_MS]. */
     val warmWait: WarmLoginWait? = null,

@@ -30,19 +30,19 @@ class TranscriptReceivedTest {
     }
 
     private val envelope = "Another Claude session sent a message:\\n" +
-        "<cross-session-message from=\\\"uds:/run/x.sock\\\" from-name=\\\"splice-lead\\\">\\nPush is done.\\n" +
+        "<cross-session-message from=\\\"uds:/run/x.sock\\\" from-name=\\\"lead-session\\\">\\nPush is done.\\n" +
         "</cross-session-message>\\n\\nThis came from another Claude session."
 
     @Test
     fun `a teammate's message is a peer message with its sender, not a user turn, tagged or not`() {
         val messages = read(
-            """{"type":"user","origin":{"kind":"peer","name":"splice-lead","body":"Push is done."},""" +
+            """{"type":"user","origin":{"kind":"peer","name":"lead-session","body":"Push is done."},""" +
                 """"isMeta":true,"message":{"role":"user","content":"$envelope"}}""",
             """{"type":"user","message":{"role":"user","content":"$envelope"}}""",
             """{"type":"user","origin":{"kind":"human"},"message":{"role":"user","content":"continue"}}""",
         )
         assertEquals(listOf(TranscriptRole.PEER, TranscriptRole.PEER, TranscriptRole.USER), messages.map { it.role })
-        assertEquals(listOf("splice-lead", "splice-lead", null), messages.map { it.source.from })
+        assertEquals(listOf("lead-session", "lead-session", null), messages.map { it.source.from })
         assertEquals(listOf("Push is done.", "Push is done.", "continue"), messages.map { it.text })
     }
 

@@ -162,7 +162,7 @@ class TeamsPartialCostTest {
         )
     }
 
-    // Oct 11, fin: a plan covered the lead's requests, so they are a value and never a cost.
+    // A plan covered the lead's requests, so they are a value and never a cost.
     @Test
     fun `a slot on a plan account keeps its requests out of the cost and counts them as plan turns`() {
         val plan = heads().getValue("claude-splice")

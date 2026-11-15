@@ -36,7 +36,7 @@ function fixture(body: string): string {
 
 const MARKERS = 'SPLICE_GATEWAY_VERSION="0.0.0"\nSPLICE_SHIM_VERSION="shim-0"\n';
 
-/** Whether this machine can hold a process in an 8 GiB memory limit as this user, a systemd scope whose cgroup v2
+/** Whether the host can hold a process in an 8 GiB memory limit as this user, a systemd scope whose cgroup v2
  *  memory.max reads 8 GiB, the way the memory-limit test runs the shim. */
 function userScopes(): boolean {
   const memoryMax = 'read -r group </proc/self/cgroup && cat "/sys/fs/cgroup${group#0::}/memory.max"';
@@ -155,10 +155,10 @@ describe("the launch shim", () => {
     expect(code.some((line) => /\bcurl\b/.test(line))).toBe(true);
   });
 
-  // hostshield's scheduled verify runs its cold-start classifier (hostshield src/install/splice-shape.ts) on the installed
+  // a host memory-containment wrapper's scheduled verify runs its cold-start classifier on the installed
   // launcher, and a shape it does not recognise is drift. These are its unit-first patterns, copied; the shipped shim
   // must match one on a line of real code, not in a comment.
-  test("the shipped shim carries the unit-first cold start hostshield's classifier recognises", () => {
+  test("the shipped shim carries the unit-first cold start a host wrapper's classifier recognises", () => {
     const BASH_UNIT_START = /^[ \t\n\v\f\r]*(if ! )?systemctl --user start (splice\.service|"\$SUPERVISOR_UNIT")([ \t\n\v\f\r]|$)/m;
     const text = readFileSync(shipped, "utf8");
     expect(BASH_UNIT_START.test(text)).toBe(true);

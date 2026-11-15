@@ -2,8 +2,9 @@
 //
 // Anthropic gives some Claude plans a few resets to spend. A Fable reset gives back the week's Fable usage and refills
 // the 5-hour limit, a weekly reset refills the week, a full reset refills every limit, a 5-hour reset the 5-hour one.
-// Claude Code offers them with /limit-reset. That evening every login on one machine ran out of Fable at about 6:24 PM
-// CT, and the turns held for it could only wait for Sunday or for Marcos to call a reset on each login by hand.
+// Claude Code offers them with /limit-reset. One evening every login on a machine ran out of Fable,
+// and the turns held for it could only wait for Sunday or for a person to call a reset on each login by
+// hand.
 //
 // This reads a login's resets the way Claude Code 2.1.325 reads them, beside its usage, and spends one the way it does,
 // on the same grant: the first of that kind that can be used now. It spends one only when a person asks for that kind
@@ -25,13 +26,19 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
 import splice.accounts.pool.LoginResetKind
 import splice.accounts.pool.LoginResetSpend
 import splice.accounts.pool.LoginResets
 import splice.accounts.pool.RESET_UNCONFIRMED
 import splice.core.util.Cancellables
+import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.oauth.AuthHttpClientFactory
@@ -82,7 +89,7 @@ internal class ClaudeLimitResets(
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
     private val json = Json
-    private val answered = setOf("reset", "already_used", "not_limited", "cooldown", "ineligible")
+    private val answered = setOf("reset", "already_used", "not_limited", "cooldown", "ineligible", "unavailable")
 
     // The spend whose answer has not confirmed it, by login and kind, held from before its request is sent: the next
     // ask for that login and kind sends the same grant and id, so Anthropic counts the two as one request (Claude Code
@@ -221,28 +228,51 @@ internal class ClaudeLimitResets(
         }
     }
 
-    /** Anthropic's answer to a spend; one that does not parse reads as no result, so it is said as unconfirmed. */
-    private fun spendAnswer(body: String): SpendAnswer = try {
-        json.decodeFromString<SpendAnswer>(body)
-    } catch (_: SerializationException) {
-        SpendAnswer()
+    /** Anthropic's answer to a spend, read field by field as Claude Code reads it: a field of a shape it did not expect
+     *  reads as absent and never unreads the rest. Claude Code reads `reason` as one word that may be null and lets any
+     *  field fall back; splice read `reason` as a list and failed the whole answer on any field it did not expect,
+     *  and on Nov 14, 2026 a reset Anthropic spent was said to be unconfirmed. A body that is not a JSON object reads
+     *  as no result, and so as unconfirmed. */
+    private fun spendAnswer(body: String): SpendAnswer {
+        val answer = try {
+            json.parseToJsonElement(body) as? JsonObject
+        } catch (_: SerializationException) {
+            null
+        } ?: return SpendAnswer()
+        val text = { element: JsonElement? -> (element as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.content }
+        val word = { key: String -> text(answer[key]) }
+        val words = { key: String -> (answer[key] as? JsonArray).orEmpty().mapNotNull(text) }
+        return SpendAnswer(
+            result = word("result"),
+            reason = word("reason") ?: words("reason").firstOrNull(),
+            resetsLeft = (answer["resets_left"] as? JsonPrimitive)?.intOrNull?.takeIf { it >= 0 },
+            cleared = words("cleared"),
+            cooldownUntil = word("cooldown_until"),
+        )
     }
 
     private fun answeredSpend(asked: LoginResetSpend, body: String): LoginResetSpend {
         val answer = spendAnswer(body)
         val name = ResetKinds.name(asked.kind)
         val result = answer.result?.takeIf { it in answered } ?: RESET_UNCONFIRMED
-        val said = when (result) {
-            "reset" -> "Spent a $name." + answer.resetsLeft?.let { " $it left." }.orEmpty()
-            "already_used" -> "Anthropic says that $name was already used."
-            "not_limited" -> "Anthropic did not spend it: this login is not at a limit a $name clears."
-            "cooldown" ->
-                "Anthropic did not spend it: resets are cooling down" + ResetWords.until(answer.cooldownUntil) + "."
-            "ineligible" ->
-                "Anthropic did not spend it. " + ResetWords.notOffered(answer.reason.firstOrNull())
-            else -> "Anthropic did not confirm the reset. $ASK_AGAIN"
+        if (result == RESET_UNCONFIRMED) {
+            log("[resets] a spend's answer named no result splice knows: ${LogSafe.str(answer.result ?: "none")}\n")
         }
+        val said = said(name, result, answer)
         return asked.copy(outcome = result, said = said, left = answer.resetsLeft, cleared = answer.cleared)
+    }
+
+    /** What a person reads of a spend Anthropic answered with [result]. */
+    private fun said(name: String, result: String, answer: SpendAnswer): String = when (result) {
+        "reset" -> "Spent a $name." + answer.resetsLeft?.let { " $it left." }.orEmpty()
+        "already_used" -> "Anthropic says that $name was already used."
+        "not_limited" -> "Anthropic did not spend it: this login is not at a limit a $name clears."
+        "cooldown" ->
+            "Anthropic did not spend it: resets are cooling down" + ResetWords.until(answer.cooldownUntil) + "."
+        "ineligible" ->
+            "Anthropic did not spend it. " + ResetWords.notOffered(answer.reason)
+        "unavailable" -> "Anthropic did not spend it: resets are unavailable for this login now."
+        else -> "Anthropic did not confirm the reset. $ASK_AGAIN"
     }
 
     private fun signed(request: HttpRequestBuilder, token: String, beta: Boolean) {

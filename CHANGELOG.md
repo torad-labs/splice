@@ -131,7 +131,7 @@
 - **splice tells you when a command is on its last login.** A command with several logins moves to the next when
   a plan limit is reached, and nothing said when it reached the last. On Nov 12, 2026 every Claude login on one
   machine ran out of Fable one after another and eleven sessions waited three hours, while the person had resets
-  to spend; he wanted to be told when the last account was close to its limit, so he could call a
+  to spend; the person wanted to be told when the last account was close to its limit, so they could call a
   reset. The daemon now checks each command's logins once a minute, for every model a turn of the command
   asked for in the last hour, so the turns of helpers on a small model never hide the model the sessions wait
   on. When only one login can serve a model and it has used 80% of a limit, splice says so, with the login, the
@@ -174,7 +174,7 @@
   request evidence are complete (`coverage.json`) was refused by its writer at a third of the size its reader
   accepts, because the writer counted three bytes for every character of a file that is plain ASCII. A record at
   the format's own limits, 256 intervals and 128 segments, could not be written at all. On Nov 13, 2026 it was
-  last written at 4:23 PM CT, with 253 intervals and 71 segments, and every restart from then logged
+  last written, with 253 intervals and 71 segments, and every restart from then logged
   `[perf] cleanup failed: evidence_unsettled`, as 14 restarts had the day before. Nothing else said so. The writer
   now counts the bytes.
 - **A session whose answer a restart let finish no longer has its next request turned away.** A restart starts
@@ -264,11 +264,11 @@
   for a held model whatever its bar reads, and `splice status` counts that login among the ones the model is
   used up on. `splice status` names the login the command's next turn goes to for the model its turns ask
   for, and "switched from ... to ..." is recorded only for a turn of that model: a new session's first turn on
-  a small model starts on a login that is out of the sessions' model, which read as "switched from Seek Apps to
-  Ethan: primary account reset" a minute after Ethan ran out of Fable.
+  a small model starts on a login that is out of the sessions' model, which read as "switched from work to
+  personal: primary account reset" a minute after personal ran out of Fable.
 - **A `claude` that goes through splice is named `claude`.** With plain `claude` wrapped, the console and
   `splice status` still named its command `claude-splice`, the name of its table in `splice.toml`, so a person
-  who only ever types `claude` saw a second Claude he never starts (Nov 12, 2026: Claude is used only through splice here, so it should not appear as two identities). While `claude` is wrapped, `/api/heads` and
+  who only ever types `claude` saw a second Claude they never start. While `claude` is wrapped, `/api/heads` and
   `/api/status` answer `claude` as that command's name, so Sessions, Accounts, Usage, Requests and Models show
   it, a session's resume line reads `claude -r <id>`, and the command column of `splice status` reads `claude`.
   Unwrapped, they name `claude-splice` as before. The head's key, its table in `splice.toml` and the
@@ -302,7 +302,7 @@
   copies of that second sign-in; it now changes nothing and says where to sign in. It still works on a second
   Claude command declared under another name.
 - **A turn waiting on a used-up model goes the moment a login can take it.** On Nov 12, 2026 Anthropic answered
-  429 for one model on the Claude command's logins from 5:58 AM CT, and eleven sessions on one machine each
+  429 for one model on the Claude command's logins, and eleven sessions on one machine each
   held one request open for about three hours. A waiting turn woke only for an account added under a new name.
   Signing Claude Code in to an account with room at 9:05 AM kept the login's name, so none of them heard it:
   the first answer on that account went to a new request, and each waiting one ended when its client closed
@@ -956,8 +956,8 @@ origin.
   this labelled-copy CLI saves credentials byte for byte and is separate from per-request pool
   selection. `splice doctor` reports the mode.
 - **Teams: sessions on different heads work one goal.** `PUT /api/teams` creates a team: a name, a repo, a goal and role slots,
-  any of them marked the lead, each with a role, a head, its own instructions and a bound session or an open seat. From its next
-  turn through splice, every session bound to an active team gets its team, its role, the team goal, the slot's
+  any of them marked the lead, each with a role, a head, its own instructions and a bound session or an open slot. From
+  its next turn through splice, every session bound to an active team gets its team, its role, the team goal, the slot's
   instructions and where to reach the lead. The text is appended after the head's own prompt, even
   on a `replace` head, and an edit applies on the next turn with no restart; that turn cannot hit
   the prompt cache, and its perf row says so. `GET /api/teams` reports each team as stored, with the project of the
@@ -1913,8 +1913,8 @@ origin.
 - **Restart splice, pressed while requests are in flight, names the agents mid-request** and says each ends at once with
   the restart line, since the stop gives a running turn no time to finish. Compactions are still waited for first.
 - **The streaming-idle limit, the activity retention and message edges apply without a restart.**
-- **A team member stopped at Claude Code's folder trust question waits for you** instead of timing out (Marlin,
-  Oct 12). The Locked state shows on every page, and Teams and the trust page read as walked.
+- **A team member stopped at Claude Code's folder trust question waits for you** instead of timing out (Oct 12).
+  The Locked state shows on every page, and Teams and the trust page read as walked.
 - **Models says why a save was refused,** and an MCP row shows its working folder.
 - **End closes a session in any state, and End all closes a team's.** Teams and Sessions have the buttons; a session
   that is working is refused with the reason.
@@ -1967,8 +1967,8 @@ origin.
   not the list Claude Code shows, name Fable 5.2, Opus 5.5, Sonnet 5.5 and Haiku 5.5 at 1M tokens each, and
   `splice.example.toml` follows. An install that already has a Claude command is not rewritten.
 - **Turns on Claude Fable 5.2 have a price.** The shipped price table had no row for `claude-fable-5-2`, and a Claude
-  command takes whatever model Claude Code asks for, so every turn on it counted as unpriced: on one machine, from
-  10 AM to 3:23 PM CT on Nov 11, 2026, 3,813 of 4,633 turns on its Claude command carried no price and the plan's
+  command takes whatever model Claude Code asks for, so every turn on it counted as unpriced: on one machine on Nov 11,
+  2026, 3,813 of 4,633 turns on its Claude command carried no price and the plan's
   value read a fraction of what it was. The row is there now at Anthropic's published price (8 in, 40 out, a cache
   read at 0.20, writes at 10 and 16 per million tokens, read Nov 11), beside one for `claude-haiku-4-5-20251001`, the
   dated id Claude Code still sends for some background turns.
@@ -2007,7 +2007,7 @@ origin.
   sign-in only forgot it in the page. The daemon kept it: Claude Code's own sign-in ran on for its ten minutes, and a
   browser or device sign-in held its label and its callback port for up to five. The next Sign in on that login was
   then refused, as "In progress" with nothing to press on a Claude login, and as a config error or a bare "Not
-  completed" on the others. On Nov 11 a sign-in started at 9:54 AM CT and cancelled on the page was still running at
+  completed" on the others. On Nov 11 a sign-in started at 9:54 AM and cancelled on the page was still running at
   10:04, and its login could not be signed in again until it ran out. Now `DELETE /api/auth/{head}/login/{id}` ends a
   sign-in where it stands: its process or flow is stopped, what it held is free, and the page's Cancel waits for that
   answer before the card lets go. A new sign-in to the same login ends the one still open and takes its place, so
@@ -2092,28 +2092,28 @@ origin.
   reads the recorder's files, none in what was recorded. The newest minutes were counted twice, once from the file and
   once from the recorder's memory: for ten minutes that held 92 completions the summary answered 123. A period that
   began or ended inside a minute lost every series that minute touched, for the whole period. And the read ran out of
-  its 2 MiB after about 700 series, where one hour of a desk running ten commands records 616, so a day stopped inside
-  its first hours and the newest went unread. The files now answer only for minutes the recorder no longer holds, a
-  minute that crosses the period's edge stays out alone, and the read charges a series what it takes to hold, merges
+  its 2 MiB after about 700 series, where one hour of a machine running ten commands records 616, so a day stopped
+  inside its first hours and the newest went unread. The files now answer only for minutes the recorder no longer holds,
+  a minute that crosses the period's edge stays out alone, and the read charges a series what it takes to hold, merges
   boots once time is one bucket, and past that turns away only a series it has not met, saying how many. A gap reason
   that repeats no longer hides the others: 55 "retention expired" intervals had filled the list. A period measured
   across a restart also counts what splice recorded, before it restarted, in the minute it restarted: those requests
   were left out for as long as that minute was the oldest one the recorder still held in memory.
 - **The performance recorder folds old minutes into hours again, so its history reaches back weeks.** Minutes older
   than a day are folded into one file an hour. An hour that did not fit was tried again at every checkpoint, twice
-  every five seconds, and no later hour was ever folded: on one desk the hour of Nov 9, 5 PM CT was read 66,183 times,
+  every five seconds, and no later hour was ever folded: on one machine an hour was read 66,183 times,
   minute files filled the recorder's 176 MiB, and its history reached back 38 hours where it is meant to reach 35
   days. That hour held 1,348 series. The fold charged each a flat 2 KiB and gave up near 900, and the write refused a
   file at a third of the size a read accepts, counting three bytes a character. The fold now charges what a series
   takes to hold, the write measures the file it would write, and an hour that still does not fit stays as minutes
   while the next hour gets its turn.
 - **A measured period's History tab draws again, and `splice perf series` answers for more than a few minutes.** Every
-  entry of the series reply repeated the reply's whole list of gaps, about 1,000 characters each on a desk with eleven
-  to report, and a reply past its 4 MiB was refused whole: five minutes answered, fifteen did not, and the tab drew
-  "No sampled history" for every longer period. An entry now holds its interval, scope and measurements, and the gaps
-  stay once on the reply. When the entries alone are still too many, their intervals double in width until the reply
-  fits, and `resolution_ms` says the width. The tab names a compaction's readings, which read as a second row of the
-  same scope, and says so when the recorder refuses a period instead of calling it empty.
+  entry of the series reply repeated the reply's whole list of gaps, about 1,000 characters each on a machine with
+  eleven to report, and a reply past its 4 MiB was refused whole: five minutes answered, fifteen did not, and the tab
+  drew "No sampled history" for every longer period. An entry now holds its interval, scope and measurements, and the
+  gaps stay once on the reply. When the entries alone are still too many, their intervals double in width until the
+  reply fits, and `resolution_ms` says the width. The tab names a compaction's readings, which read as a second row of
+  the same scope, and says so when the recorder refuses a period instead of calling it empty.
 - **The Performance panel says what its rates are made of.** Under a rate it names how much of the period is missing
   from the recording, where it said only that the population was partial. "Arrivals recorded" says an arriving request
   is not yet known to go upstream, where it read "Not measured" with no reason. The request counts say they come from
@@ -2122,12 +2122,12 @@ origin.
 - **The recorder no longer turns away a minute's first readings when an idle head or model wakes.** A gauge that had
   not changed for some minutes, on its next change, marked every minute the recorder held as needing to be written
   again. A marked minute cannot be given up for a new one, so for the few seconds until one was written a full
-  recorder refused every new series, and what it refused was gone: on one desk, one completion of 602 in an hour and
+  recorder refused every new series, and what it refused was gone: on one machine, one completion of 602 in an hour and
   the tokens of two requests. Only the minute in progress is marked now; an ended minute's file already holds the
   same reading.
-- **A measured period lists its recorded requests again, and `splice perf turns` answers on a desk with a long
+- **A measured period lists its recorded requests again, and `splice perf turns` answers on a machine with a long
   history.** The list read every kept generation of the request log from its first byte, three times each, and then
-  digested them all twice more for a first page of one row, against 512 MiB of work. On a desk with 35 archived
+  digested them all twice more for a first page of one row, against 512 MiB of work. On a machine with 35 archived
   generations of 64 MiB the work ran out inside the third, and every period, the last minute included, answered
   "reached its work limit" with no rows. A generation that ended before the period now stays unopened, by the rule
   the Requests list already reads by. A generation is read once, its digest taken from the bytes that were read, and
@@ -2151,11 +2151,11 @@ origin.
   outlasts a credential file Claude Code rewrites around the same account, which ended it before: on Nov 11 a rewrite
   one second after the refusal sent the next session's first request to the held login 56 seconds after its hold
   began. A file that names another account still ends it at once. The card and the switch reason keep the step after
-  the hold's time runs out, until the login serves a turn: before, a login refused at 2:29 AM CT read "Use now" again
+  the hold's time runs out, until the login serves a turn: before, a login refused at 2:29 AM read "Use now" again
   from 3:29 AM, and a session that found its hourly ask already running moved off it with "account unavailable".
 - **A new field in Claude Code's request no longer takes a Responses head down, and a head that refuses every turn says
-  so.** Claude Code 2.1.321 sends a top-level `diagnostics` field, which refused every claudex turn from 5:51 to
-  6:58 PM CT on Nov 9 while daemon.log, the perf file and the trace held nothing. Every top-level field of a Responses
+  so.** Claude Code 2.1.321 sends a top-level `diagnostics` field, which refused every claudex turn
+  on Nov 9 while daemon.log, the perf file and the trace held nothing. Every top-level field of a Responses
   request is now a control the request carries or refuses, a field no model reads here (`diagnostics`,
   `context_management`), which is dropped and logged once, or an unclassified field, which is refused and named in
   daemon.log unless its name says it is the client's own record (`telemetry`, `metadata`, `trace`, `debug`), when it is
@@ -2194,11 +2194,11 @@ origin.
   gives each conversation a quarter of each bound, so one growing conversation no longer evicts its neighbours whole.
   A refusal reads as stale reasoning only when it is a 400 or 422 for `invalid_encrypted_content` or for an item's
   `encrypted_content`, not when a 401, a 429 or a refusal of the `include` value happens to name it.
-- **A GPT answer the backend cuts after a script step is carried on.** At 23:22 CT on Nov 9 a gpt-6-astra answer was
+- **A GPT answer the backend cuts after a script step is carried on.** On Nov 9 a gpt-6-astra answer was
   closed with 1012 after 776 frames of its final answer reached the client, which was told "Server error
   mid-response". The continuation did not recognise the prose that followed a code-mode script step, so every answer
   cut mid-prose after one since Oct 24 reached the client as an error. It is now carried on and ends clean.
-- **Code mode's history journals are bounded and swept.** At 08:00 CT on Nov 9 four claudex turns failed with
+- **Code mode's history journals are bounded and swept.** On Nov 9 four claudex turns failed with
   "authoritative history journal exceeds its byte bound" while 1,977 journals held 7 GB. A journal near three quarters
   of its cap, or one an append would push past it, is rewritten as its newest posts within a quarter of the cap and
   moved into place; only a single post set over the cap is refused. An hourly sweep, first run two minutes after the
@@ -2677,7 +2677,7 @@ origin.
   its age, and the entries it could not read. Symlinks are not followed.
 - **Any head joins any session again.** A session started on one head resumed on any
   other because every head's `projects` tree was the shared `~/.claude/projects`. The
-  2026-09-17 head-isolation change read the ruling that head configuration must never leak as
+  2026-09-17 head-isolation change read the rule that head configuration must never leak as
   covering transcripts too, gave every head a private tree, and left cross-head resume only as an
   explicit `-r SESSION_ID` copy, while the operator's `splice.toml` still asked for `projects` in
   its share list. Transcripts are shared session state, not head configuration: a head whose
@@ -3722,13 +3722,13 @@ dashboard. All three autocompact locks fixed as part of the move:
   `CLAUDE_CODE_AUTO_COMPACT_WINDOW` un-gates it. The launcher now sets it
   (resolved window, floor 100k) alongside the kept
   `CLAUDE_CODE_MAX_CONTEXT_TOKENS` and `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=85`.
-- **Overflow on the SSE path** (Eli P0): the "prompt is too long" rewrite
+- **Overflow on the SSE path**: the "prompt is too long" rewrite
   existed only on the HTTP non-ok path; live failures arrive via SSE
   `response.failed` and became raw `api_error` (hard error, no compaction).
   ONE `classifyUpstreamFailure(kind, text, status)` now serves both
   transports; overflow order also fixes v29's auth-regex shadowing of
   wordings containing "tokens".
-- **Compaction detection inverted** (Eli P0/P1 + trace): real compaction
+- **Compaction detection inverted**: real compaction
   requests DO carry tools; v29's `tools.length>0 → false` guard rejected the
   real shape, and a tooled compaction could answer with `tool_use`, gating
   the promote-to-text net off. `classifyCompact` is now a tools-agnostic

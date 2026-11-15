@@ -1,5 +1,5 @@
 // NEW: Oct 10, 2026 — the console's pages, served by the control plane at `/`. The pages are the drawing's own HTML,
-// CSS, JS and fonts (Splice-Animator design/console), packaged under `console/` in the jar. A page carries no data:
+// CSS, JS and fonts (the console design), packaged under `console/` in the jar. A page carries no data:
 // it reads everything from the keyed /api/* rows, so these two rows open with no key, by the dated entry in
 // kt-control-route-guarded's allowlist.
 //

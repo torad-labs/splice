@@ -1,5 +1,5 @@
 // NEW: V4-444 — one note as the frame Claude Code's inbox socket reads. The wire is not documented; this is the shape the
-// V4-444 audit (splice-builder2, Sep 29 9:36 PM CT) read out of the installed 2.1.285 sender: a line of JSON holding a user
+// V4-444 audit (Sep 29) read out of the installed 2.1.285 sender: a line of JSON holding a user
 // message whose text is wrapped in <cross-session-message>, at priority "next". Nothing here asserts a human, a mode or a
 // sender address: the client marks every such message as another session's (it says so to the model), which is what a note
 // from the console is. Peer messaging (docs/specs/peer-messaging.md 1.1) keeps this shape for the console and builds the

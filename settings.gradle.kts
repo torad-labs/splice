@@ -71,7 +71,7 @@ project(":integrations-codemode").projectDir = file("integrations/codemode")
 project(":integrations-observability").projectDir = file("integrations/observability")
 project(":integrations-oauth").projectDir = file("integrations/oauth")
 project(":integrations-terminal").projectDir = file("integrations/terminal")
-// The console's session terminal on tmux (TMUX.md): one module, so the day seatd carries every act it is one deletion.
+// The console's session terminal on tmux (TMUX.md): one module, so replacing tmux is one deletion.
 project(":integrations-tmux").projectDir = file("integrations/tmux")
 project(":integrations-daemon-client").projectDir = file("integrations/daemon-client")
 project(":integrations-upstream").projectDir = file("integrations/upstream")

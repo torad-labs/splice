@@ -1,9 +1,9 @@
 // NEW: Oct 10, 2026 — the console's session terminal on tmux, the FIRST implementation of core's contract
-// (SessionTerminal.kt; console TMUX.md, Marlin, Oct 8). The only file in splice that knows how tmux is driven.
+// (SessionTerminal.kt; console TMUX.md, Oct 8). The only file in splice that knows how tmux is driven.
 //
 // WHY THE DEFAULT SERVER. A session splice opens is the person's as much as splice's: TMUX.md's last act is
 // "open it in a terminal", and the way a person does that is `tmux attach` from whatever terminal they have.
-// That reaches their default server, so that is where a session is opened, beside every seat they already run.
+// That reaches their default server, so that is where a session is opened, beside every session they already run.
 //
 // WHY A PANE CARRIES ITS SERVER. tmux names a pane `%N`, and N is only unique inside one server. A launch
 // recorded from inside the person's own tmux (splice-launch, 48be8c544) records the pane AND the socket it is
@@ -14,8 +14,8 @@
 // server that exits and starts again on the same socket numbers its panes from %0 again, so a remembered `%3`
 // can name a stranger's shell. A pane splice opens is recorded with the process splice started in it, the
 // session's client, and it is live only while that process is still the pane's own; any other is not the
-// terminal splice opened, and nothing is typed into it (PR #247 review 2). A pane remembered before panes carried
-// their process names none, and is never trusted on its number: the console finds the session afresh (review 3).
+// terminal splice opened, and nothing is typed into it. A pane remembered before panes carried
+// their process names none, and is never trusted on its number: the console finds the session afresh.
 //
 // WHY PASTE, NOT TYPING. A message is loaded into a tmux buffer and pasted with bracketed paste, so its line
 // breaks arrive as part of one message instead of as Enter presses that would each submit a fragment of it;
@@ -24,10 +24,11 @@
 // shared by every client of it, so one named for the pane let a second message replace the first between its
 // load and its paste.
 //
-// WHY A RELAUNCH RESPAWNS (Oct 26, 2026). A relaunch that opened a new tmux session for each seat left its starter and
-// the person looking for it. A pane is held with tmux's remain-on-exit before its client leaves, so it outlives the
-// client, and respawn-pane starts the session again in the same session, window and pane. A pane where something still
-// runs, such as the shell the session was started from, is never respawned, since that would end what runs there.
+// WHY A RELAUNCH RESPAWNS (Oct 26, 2026). A relaunch that opened a new tmux session for each session left its
+// starter and the person looking for it. A pane is held with tmux's remain-on-exit before its client leaves, so it
+// outlives the client, and respawn-pane starts the session again in the same session, window and pane. A pane where
+// something still runs, such as the shell the session was started from, is never respawned, since that would end
+// what runs there.
 package splice.tmux
 
 import splice.core.session.SessionKey
@@ -43,7 +44,7 @@ private const val CALL_DEADLINE_MS = 5_000L
 
 // why: one Ctrl-U clears one line of what the prompt holds and does nothing on an empty prompt, so this many clears
 // any message a person writes. Each is its own tmux call: Claude Code 2.1.296 drops 64 Ctrl-U sent in one burst
-// (they reach it as one chunk) and honours them pressed one at a time (desk walk, Oct 10).
+// (they reach it as one chunk) and honours them pressed one at a time (Oct 10).
 private const val CLEAR_PRESSES = 64
 
 // why: how long the client gets to exit on its own after /exit before its terminal is closed under it. Claude
@@ -53,8 +54,8 @@ private const val EXIT_GRACE_MS = 10_000L
 // why: how often a close looks again for the client to have gone.
 private const val EXIT_POLL_MS = 100L
 
-// why: a pane's program that ran the client and waits on it (a seat's `bash -c` wrapper) ends a moment after the client
-// does; two seconds is far past that, and a pane still running something then has a shell in front.
+// why: a pane's program that ran the client and waits on it (a session's `bash -c` wrapper) ends a moment after
+// the client does; two seconds is far past that, and a pane still running something then has a shell in front.
 private const val SETTLE_MS = 2_000L
 
 // why: the size a session opens at before anyone attaches, wide enough that a permission's choices are not
@@ -182,9 +183,10 @@ public class TmuxTerminal(
         return shown.ok
     }
 
-    /** Waits up to [settleMs] for the pane's program to end, since a seat's wrapper ends a moment after the client it
-     *  ran, then starts [command] in its place with tmux's respawn-pane, which keeps the session, the window and the
-     *  pane. A program that still runs there is the shell the session was started from, and is never ended. */
+    /** Waits up to [settleMs] for the pane's program to end, since a session's wrapper ends a moment after the
+     *  client it ran, then starts [command] in its place with tmux's respawn-pane, which keeps the
+     *  session, the window and the pane. A program that still runs there is the shell the session was started from, and
+     *  is never ended. */
     override fun restart(pane: SessionPane, command: List<String>, directory: String): SessionPane? {
         require(command.isNotEmpty()) { "a session needs a command to run" }
         val at = paneOf(pane) ?: throw IOException("no tmux pane is named ${pane.id}")

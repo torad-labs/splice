@@ -27,7 +27,7 @@
 // throws: half-rewritten history is precisely what leaves a resumed session on a model the head
 // cannot serve, and each caller decides what a failure means for its own outcome.
 //
-// One row at a time (Oct 7 CT): a pass reads the rows that move and a SHA-256 of the bytes, and only a
+// One row at a time (Oct 7): a pass reads the rows that move and a SHA-256 of the bytes, and only a
 // file with a moving row is streamed into its staged replacement. The whole-file read this replaced held
 // several copies of the text at once, and a 715 MB transcript failed the launch that resumed it. What one
 // line is, and how an assistant row moves, is AssistantRowMove; this file is the transaction over a file.

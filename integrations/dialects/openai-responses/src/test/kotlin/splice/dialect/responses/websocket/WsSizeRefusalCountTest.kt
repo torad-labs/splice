@@ -27,7 +27,7 @@ private const val FRAME = """{"model":"gpt-6.1-sol","input":[{"role":"user","con
 private const val CREATED = """{"type":"response.created","response":{"id":"resp_1"}}"""
 
 /**
- * Oct 4, 6:31 AM CT: the Responses peer closed 42 rounds' sockets with 1009 before their first event, in two
+ * Oct 4: the Responses peer closed 42 rounds' sockets with 1009 before their first event, in two
  * shapes the log shows: the close lands after the send is accepted ("inbox closed before first event"), or
  * during it, so the send future fails ("send failed async (IOException: Output closed)"). Both ride SSE, and the
  * HTTP 400 that answers the same body there is only readable as a size refusal if this attempt said so.

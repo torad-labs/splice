@@ -1,5 +1,6 @@
-// NEW: Oct 11, 2026 (Continue on, Marlin's live-settings-6 verdict) — the end of a move: the session either comes back on
-// the command he picked, or goes on where it was. A move ends the old client before the new one has to prove itself,
+// NEW: Oct 11, 2026 (Continue on) — the end of a move: the session either comes back on
+// the command the person picked, or goes on where it was. A move ends the old client before the new one has to
+// prove itself,
 // so a move that did not come back has already taken the agent away; this is where it is given back. "They asked to
 // keep going and lost the agent" is the one outcome a move must never have.
 //
@@ -16,7 +17,7 @@
 //
 // THE LEDGER (Oct 11, the transcript's move mark): where Continue on keeps a move that came back: the command and model
 // it went on, the command and model it left, and the moment he pressed, so the mark reads "Continued on [to] · from
-// [from]" (fin, hitstop f38853e). The daemon's ledger keeps them beside the move its launch's rewrite recorded.
+// [from]". The daemon's ledger keeps them beside the move its launch's rewrite recorded.
 package splice.sessions.http
 
 import io.ktor.http.HttpStatusCode
@@ -92,8 +93,8 @@ internal class MoveArrival(
     fun line(argv: List<String>): String = argv.joinToString(" ", transform = ::shellWord)
 
     /** Wait for [move] to come back in [attempt]; when it does not, the session goes on where it was. A move between
-     *  heads goes on as the launch's copy of the session, under its own id (ResumeAcrossHeads, the President's ruling
-     *  on V4-169), and the answer names that id so the page follows it. */
+     *  heads goes on as the launch's copy of the session, under its own id (ResumeAcrossHeads, V4-169),
+     *  and the answer names that id so the page follows it. */
     suspend fun await(driving: SessionDriver, attempt: Attempt, move: Move): JsonReply {
         val arrived = when (val landing = land(driving, attempt.pane, move.session, move.head, move.pid)) {
             is Landing.Missed -> return back(driving, attempt, move, landing.reason)

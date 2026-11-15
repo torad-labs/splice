@@ -1,4 +1,4 @@
-// NEW: which command the six legacy codex and grok knobs reach (§9 audit, Oct 12, splice-lead).
+// NEW: which command the six legacy codex and grok knobs reach (§9 audit, Oct 12).
 //
 // port, pinnedModel and chatgptApiBase were the management API's names for THE codex head, and grokPort, grokModel and
 // xaiApiBase for THE grok head. They govern a head only while it is the sole head of its

@@ -3,7 +3,7 @@
 // a prefix a house interface of this machine holds, one beside an RFC 1918 address and no public IPv4 one, which is how
 // a house whose router hands out a globally routable or unique local /64 reaches itself. Neither 100.64/10 nor unique
 // local IPv6 as a whole (fc00::/7) is: Tailscale hands out 100.64/10 and fd7a:115c:a1e0::/48, inside fc00::/7, and
-// Tailscale is not part of this (Marcos, 2026-10-24), so a tailnet peer is turned away over either address. A source on any
+// Tailscale is not part of this, so a tailnet peer is turned away over either address. A source on any
 // prefix a datacenter interface holds (one with a public IPv4 address) is refused, whatever its range: a provider's
 // private network, link and /64 are shared with its other customers. A machine whose interfaces cannot be read admits
 // loopback alone, since nothing then tells a house from a datacenter, and says that, not that the source is off the

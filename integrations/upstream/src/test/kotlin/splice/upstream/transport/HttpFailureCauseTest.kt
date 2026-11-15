@@ -42,12 +42,12 @@ private const val TOO_MANY_REQUESTS = 429
 private const val PAYMENT_REQUIRED = 402
 private const val FORBIDDEN = 403
 
-/** DeepSeek's 402 of Oct 24, 11:08:11 PM CT, in the shape the journal holds, with its request id. */
+/** DeepSeek's 402 of Oct 24, in the shape the journal holds, with its request id. */
 private const val DEEPSEEK_402 =
     """{"error":{"message":"Insufficient Balance (request_id: 49d5cc56-b2b7-42ed-8485-ac06076e79d4)",""" +
         """"type":"insufficient_balance_error","param":null,"code":"invalid_request_error"}}"""
 
-/** xAI's 402 of Oct 20, 10:27:59 PM CT: its error is a string, and its second sentence carries URLs. */
+/** xAI's 402 of Oct 20: its error is a string, and its second sentence carries URLs. */
 private const val XAI_402 =
     """{"code":"personal-team-blocked:spending-limit","error":"You have run out of credits or need a Grok """ +
         """subscription. Add credits at https://grok.com/?_s=usage or upgrade at https://grok.com/supergrok."}"""

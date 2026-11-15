@@ -81,7 +81,7 @@ class CommandParserTest {
         )
     }
 
-    // V4-309: `splice restart --help` restarted the live daemon (Sep 26, 7:42 AM CT) because the arm
+    // V4-309: `splice restart --help` restarted the live daemon (Sep 26) because the arm
     // kept the one word it knew and dropped the rest. A verb takes only the words it names; anything
     // else, a help flag included, parses to null, so usage prints and nothing runs.
     @Test

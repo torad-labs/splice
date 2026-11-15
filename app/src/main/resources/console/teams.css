@@ -242,7 +242,7 @@
 }
 
 /* ---------- the members: each card its own height ---------- */
-/* THE CARDS STAND IN COLUMNS AT THEIR OWN HEIGHT: a card that asks a question or waits on a seat is as tall as what it holds
+/* THE CARDS STAND IN COLUMNS AT THEIR OWN HEIGHT: a card that asks a question or waits on a member is as tall as what it holds
    and no taller, so no card carries a blank under its buttons. A column is 33rem with the lamp's socket (teams.js
    CARD_REM): four cards beside the chat on his 2548, five at 3822, two at 1440. The grid is never wider than its --n cards
    at 48rem each (teams.js sets --n to the members it holds), so a team of two reads as two cards and not two banners. */
@@ -286,7 +286,7 @@
 /* a member who needs him is tinted in the needs colour, which is what the lamp and the tab dot use */
 .card.m.needs { background: color-mix(in oklab, var(--obj) 88%, var(--needs)); }
 .card.m.vacant { background: var(--obj); border-style: dashed; border-color: var(--track-line); box-shadow: none; }
-/* a seat whose session ended is history on the seat: the same dashed shape, quieter */
+/* a member whose session ended is history on the member: the same dashed shape, quieter */
 .card.m.vacant.ended .role { color: var(--text-body); }
 .card.m > .top { display: flex; align-items: center; flex-wrap: wrap; gap: 0.667rem 0.667rem; min-height: var(--ctl-h); }
 .role { font: 500 1.1rem/1.1 var(--font-name); color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -351,7 +351,7 @@
 /* a start that did not come up is the one that reads as a fault, because it is one */
 .card.m .why.limit { color: var(--limit); }
 .card.m .why.wait { white-space: nowrap; flex: none; }
-/* a seat's start against the time splice gives it, drawn as the meter it fills; a start that gave up shows the meter full */
+/* a member's start against the time splice gives it, drawn as the meter it fills; a start that gave up shows the meter full */
 .wait45 { width: 100%; max-width: 22rem; }
 /* THE LIMIT IS SAID IN THE HEAD: the lock with when the member is back rides beside its state word, and the act that moves
    it to a login that has room stands among its other acts, so a held card is as tall as a working one */

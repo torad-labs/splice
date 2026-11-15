@@ -97,7 +97,7 @@ public data class PlanLimit(
     /** A seven-day claim past the plain one names one model's week: `seven_day_opus`, and `seven_day_overage_included`,
      *  the claim Anthropic refused Fable with on accounts 2, 3 and 6 on Nov 2, 2026, their own week at 65 to 73% and
      *  Fable at 100%. Splice held all three for every model until Nov 8, so when the login in use hit its five hours
-     *  at 1:15 AM CT on Nov 3, no login was left for Opus or Sonnet. `seven_day_oauth_apps` is the one seven-day
+     *  on Nov 3, no login was left for Opus or Sonnet. `seven_day_oauth_apps` is the one seven-day
      *  claim past the plain one that names no model: the week every Claude Code turn spends, which the client reads
      *  beside seven_day_opus and seven_day_sonnet (docs/specs/web-console.md), so it holds the whole login (review
      *  of #459). */

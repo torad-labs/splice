@@ -8,7 +8,7 @@ export const usage = "slot <label> [--] <gradle args...>   run gradle under the 
 export async function slot(argv: readonly string[]): Promise<number> {
   const label = argv[0];
   if (!label || label.startsWith("-")) {
-    console.error("gradle-slot: a label (row id or seat) is required — it is what a waiting seat reads out of the holder file");
+    console.error("gradle-slot: a label (row id or session name) is required — it is what a waiting session reads out of the holder file");
     return NO_TASKS_EXIT;
   }
   // `--` is how the packet spells the boundary and how a shell keeps `--version` out of the

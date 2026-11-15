@@ -1,5 +1,5 @@
 // NEW: console review 2026-09-24 — the windows /api/models reports for each row: the number in force, and the
-// ceiling the provider publishes. Its context_window_source cases went on Oct 12, 2026 with the field (marlin's call).
+// ceiling the provider publishes. Its context_window_source cases went on Oct 12, 2026 with the field.
 package splice.models.roster
 
 import kotlinx.serialization.json.Json

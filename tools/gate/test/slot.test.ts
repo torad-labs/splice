@@ -11,7 +11,7 @@ import { layout } from "../src/lib/repo.ts";
 const real = layout();
 const workspaces: string[] = [];
 // The suite runs on its own locks. runUnderSlot lays the process environment under its options (#170),
-// so a seat that exports GRADLE_SLOT_LOCK (the V4-341 workaround for worktrees at older shas) sent six
+// so a session that exports GRADLE_SLOT_LOCK (the V4-341 workaround for worktrees at older shas) sent six
 // of these runs to that lock instead of their own, red, and holding the repository's real slot.
 const inherited = { lock: process.env.GRADLE_SLOT_LOCK, wait: process.env.GRADLE_SLOT_WAIT_S };
 delete process.env.GRADLE_SLOT_LOCK;
@@ -22,9 +22,9 @@ afterAll(() => {
   if (inherited.wait !== undefined) process.env.GRADLE_SLOT_WAIT_S = inherited.wait;
 });
 
-/** The PATH a fake build runs on: the system's own /usr/bin and /bin, never this machine's ~/.local/bin, so
- *  `command -v buildgate` finds nothing. Its scripts observe the lock with util-linux flock(1); macOS has none of its
- *  own, so a folder holding only the one this machine has (Homebrew's) comes first. */
+/** The PATH a fake build runs on: the system's own /usr/bin and /bin, never the user's ~/.local/bin, so
+ *  `command -v` finds no host build wrapper. Its scripts observe the lock with util-linux flock(1); macOS has none of its
+ *  own, so a folder holding only the one the machine has (Homebrew's) comes first. */
 const SYSTEM_PATH = ((): string => {
   const flock = Bun.which("flock");
   if (flock === null || ["/usr/bin", "/bin"].includes(dirname(flock))) return "/usr/bin:/bin";
@@ -47,7 +47,7 @@ function fakeBuildRoot(script = 'echo "ARGS:$*"\ncat "$LOCK.holder"\nexit 0\n') 
     `#!/usr/bin/env bash\nLOCK="${join(dir, ".gradle-slot.lock")}"\nDIR="${dir}"\n{ ${script} } >"${receipt}" 2>&1\n`,
   );
   chmodSync(join(dir, "gradlew"), 0o755);
-  // The same branch CI takes: no buildgate on PATH. The buildgate branch has a test of its own below.
+  // The same branch CI takes: no host build wrapper on PATH. The wrapped branch has a test of its own below.
   return { layout: { repoRoot: dir, buildRoot: dir }, dir, receipt, path: SYSTEM_PATH };
 }
 
@@ -182,8 +182,8 @@ describe("the gradle slot", () => {
     expect(readFileSync(push.receipt, "utf8")).toMatch(/--parallel --max-workers=\d+ /);
   });
 
-  // In place of more gradle workers for the pre-push tree (simon's fix 2): on a saturated machine extra workers only take CPU from
-  // the seats, so the tree gets one worker per idle core, never fewer than 2 or more than 6 (temple plan 2026-10-19).
+  // In place of more gradle workers for the pre-push tree: on a saturated machine extra workers only take CPU from
+  // the sessions, so the tree gets one worker per idle core, never fewer than 2 or more than 6.
   test("the pre-push tree's gradle gets one worker per idle core, never fewer than 2 nor more than 6", async () => {
     const workers = async (cores: number, load: number): Promise<string> => {
       const push = fakeBuildRoot();
@@ -207,7 +207,7 @@ describe("the gradle slot", () => {
     // held exactly the way checks/gradle-slot.sh holds it: util-linux flock(1) on fd 9
     const holder = Bun.spawn(["bash", "-c", `exec 9>"${lock}"; flock 9; sleep 30`]);
     // a record is believed while the process it names lives, so it names the one that holds the lock
-    writeFileSync(`${lock}.holder`, `another-seat pid=${holder.pid} since=2026-09-20T00:00:00-05:00\n`);
+    writeFileSync(`${lock}.holder`, `another-holder pid=${holder.pid} since=2026-09-20T00:00:00-05:00\n`);
     try {
       Bun.sleepSync(300);
       const stderr: string[] = [];
@@ -226,8 +226,8 @@ describe("the gradle slot", () => {
         console.error = original;
       }
       expect(code).toBe(SLOT_TIMEOUT_EXIT);
-      expect(stderr.join("\n")).toContain(`gradle-slot: waiting (held by: another-seat pid=${holder.pid}`);
-      expect(stderr.join("\n")).toContain(`gradle-slot: gave up after 1s (held by: another-seat pid=${holder.pid}`);
+      expect(stderr.join("\n")).toContain(`gradle-slot: waiting (held by: another-holder pid=${holder.pid}`);
+      expect(stderr.join("\n")).toContain(`gradle-slot: gave up after 1s (held by: another-holder pid=${holder.pid}`);
       expect(existsSync(fake.receipt)).toBe(false);
     } finally {
       holder.kill();
@@ -246,7 +246,7 @@ describe("the gradle slot", () => {
     );
     chmodSync(join(fake.dir, "gradlew"), 0o755);
     await runUnderSlot({ layout: fake.layout, label: "holding", args: ["help"], env: { CI: "1", PATH: fake.path } });
-    // both probes run from a separate process, the way a second seat's gradle-slot.sh would
+    // both probes run from a separate process, the way a second session's gradle-slot.sh would
     expect(readFileSync(fake.receipt, "utf8").trim().split("\n")).toEqual(["BUSY", "BUSY"]);
   });
 
@@ -427,15 +427,15 @@ try {
     const fake = fakeBuildRoot();
     const holder = join(fake.dir, "holder");
     const gone = Bun.spawnSync(["true"]).pid;
-    writeFileSync(holder, `dead-seat pid=${gone} since=2026-10-10T10:35:03-05:00\n`);
+    writeFileSync(holder, `dead-holder pid=${gone} since=2026-10-10T10:35:03-05:00\n`);
     expect(liveHolder(holder)).toBeNull();
-    writeFileSync(holder, `live-seat pid=${process.pid} since=2026-10-10T10:35:03-05:00\n`);
-    expect(liveHolder(holder)).toContain("live-seat");
+    writeFileSync(holder, `live-holder pid=${process.pid} since=2026-10-10T10:35:03-05:00\n`);
+    expect(liveHolder(holder)).toContain("live-holder");
     expect(liveHolder(join(fake.dir, "no-such-file"))).toBeNull();
 
     // and a contender that has to wait does not blame the dead one
     const lock = join(fake.dir, ".gradle-slot.lock");
-    writeFileSync(`${lock}.holder`, `dead-seat pid=${gone} since=2026-10-10T10:35:03-05:00\n`);
+    writeFileSync(`${lock}.holder`, `dead-holder pid=${gone} since=2026-10-10T10:35:03-05:00\n`);
     const held = Bun.spawn(["bash", "-c", `exec 9>"${lock}"; flock 9; sleep 30`]);
     try {
       Bun.sleepSync(300);
@@ -448,7 +448,7 @@ try {
         console.error = original;
       }
       expect(stderr.join("\n")).toContain("waiting (held by: unknown)");
-      expect(stderr.join("\n")).not.toContain("dead-seat");
+      expect(stderr.join("\n")).not.toContain("dead-holder");
     } finally {
       held.kill();
     }
@@ -497,13 +497,13 @@ try {
     }
   };
 
-  // gradle's client is not the first process of the build: buildgate and hostshield's subreaper stand above it, and bash
+  // gradle's client is not the first process of the build: a host build wrapper and its subreaper stand above it, and bash
   // stands above a child it did not exec. A signal that reached only the first left the rest running under a freed slot.
   for (const [signal, status] of [["SIGTERM", 143], ["SIGINT", 130]] as const) {
     test(`a ${signal} to the wrapper takes the build's whole process group with it, and the slot is not freed before`, async () => {
       // perl resets the SIGINT that a non-interactive bash gives every background child to ignore, so the child hears both signals.
       // perl names its own pid, and only after the reset: a pid bash wrote as perl started let the test signal a child that still
-      // ignored SIGINT, which then outlived the wrapper's 15 s grace and timed the test out under the full gate's load (Oct 30).
+      // ignored SIGINT, which then outlived the wrapper's 15 s grace and timed the test out under the full gate's load.
       const fake = fakeBuildRoot(
         'perl -e \'$SIG{INT}="DEFAULT"; open(my $f, ">", "$ARGV[0].tmp") or die; print $f $$; close $f; ' +
           'rename("$ARGV[0].tmp", $ARGV[0]) or die; exec "sleep", "30"\' "$(dirname "$0")/child-pid" &\nwait\n',
@@ -535,7 +535,7 @@ try {
   // The shutdown is a FUNCTION, parsed when the script loads, and the trap is the single word that names
   // it. bash parses whatever a trap holds at the moment the signal arrives, and this build hears the
   // signal TWICE within the same millisecond — signalGroup's `kill(-pgid)` reaches it as a member of the
-  // build's group, and the buildgate above it forwards the same signal to its pid (the fake one at :292,
+  // build's group, and the host build wrapper above it forwards the same signal to its pid (the fake one at :292,
   // the real one for the same reason). Under that pair bash lost the parse of a trap body holding
   // `$(dirname "$0")`: the receipt read `trap: line 1: unexpected EOF while looking for matching ')'`,
   // the body never ran, no `stopping` was ever written, and this test failed on a random push after
@@ -630,7 +630,7 @@ try {
 
   // ── the signal path ───────────────────────────────────────────────────────────────────────────
   //
-  // `kill <pid>` on the gate is how a seat, a CI cancel and a supervisor all stop a run, so these
+  // `kill <pid>` on the gate is how a session, a CI cancel and a supervisor all stop a run, so these
   // signal the wrapper's REAL pid and nothing else — signalling the process group would kill the
   // child too and prove nothing about forwarding. Against the unfixed CLI (Bun.spawnSync, handlers
   // removed in `finally` before a queued signal could run) all three were red: the wrapper ignored
@@ -708,8 +708,8 @@ try {
 
   // ── one slot per repository (V4-341) ──────────────────────────────────────────────────────────
   //
-  // The lock used to sit in each worktree's build root, so a seat's `git worktree add --detach` build
-  // never queued behind the checkout's, or behind another seat's worktree: on 2026-09-26 two seats'
+  // The lock used to sit in each worktree's build root, so a session's `git worktree add --detach` build
+  // never queued behind the checkout's, or behind another session's worktree: on 2026-09-26 two sessions'
   // worktrees both "held the slot" at once and the contention pushed HeadServerLoadTest past its 30 s
   // cap.
 

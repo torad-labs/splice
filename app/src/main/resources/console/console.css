@@ -1,8 +1,8 @@
-/* splice console: the design language (Hitstop, Oct 7 2026).
+/* splice console: the design language (Oct 7 2026).
    One world with the launch film and the splice page: night wall, cel objects with an ink outline and a hard
    shadow in their model's colour, Fraunces for names that lead, Source Serif for names, Plex Mono for numbers,
    times and commands. Dark first. Type grows a little with the screen, so 3828 px never reads smaller than 1440.
-   The type is flat, as the Temple's is (Oct 15: everything showed up too big in the UI): a page
+   The type is flat: a page
    title 2.1rem, a section 1.4, a sub-heading and a card's name about 1.1, body 1, rows .95, buttons .92, labels .88;
    hierarchy comes from weight, colour and place more than from size. */
 
@@ -25,8 +25,8 @@
 
   /* scale: the root grows with the screen, and every size below is in rem, so one factor sizes the whole page: text,
      spacing, borders, radii and shadows together. Oct 8: everything was made 25% smaller (12 px at 1440, 18 px at 3828).
-     Oct 15: still too big on his wide screen, so the root keeps 12 px at 1440 and now grows slower (14.6 px at 3394,
-     15.2 px at 3828), close to the Temple's 14 px text at its 1.25 zoom. */
+     Still too big on a wide screen, so the root keeps 12 px at 1440 and now grows slower (14.6 px at 3394,
+     15.2 px at 3828). */
   --scale: .75;
   font-size: calc(var(--scale) * clamp(16px, calc(13.45px + 0.177vw), 22px));
 
@@ -115,7 +115,7 @@
   --track: var(--splice-track); --track-line: var(--splice-track-line);
   --limit: var(--splice-status-limit); --live: var(--splice-status-live); --needs: var(--splice-status-needs-you);
   --on-fill: var(--splice-on-fill); --on-limit: var(--on-fill); --on-cable: var(--on-fill);
-  --key-ink: var(--splice-key-ink);   /* day's key ink: the pale key washed out on cream (walk ea3eeff67) */
+  --key-ink: var(--splice-key-ink);   /* day's key ink: the pale key washed out on cream */
   --shaft: var(--splice-shaft);
   color-scheme: light;
 }
@@ -170,7 +170,7 @@ html { scroll-padding-top: calc(var(--bar-h) + 1rem); }
 .mark .lockup.day { display: none; }
 [data-theme="day"] .mark .lockup.night { display: none; }
 [data-theme="day"] .mark .lockup.day { display: block; }
-/* THE LINKS ARE THE CONSOLE'S SEGMENTED SWITCH (Oct 28): all eight pages stand in one sunk track with an ink border and the radius
+/* THE LINKS ARE THE CONSOLE'S SEGMENTED SWITCH: all eight pages stand in one sunk track with an ink border and the radius
    every switch has, the page he is on raised in the neutral selected look, and that one raised face travels to the next link
    over --t-move (kit.js navLine). They lead the bar: one step up the ladder from body text, each with its page's own glyph, so a
    page is found by its shape before its word is read. --nav-pad is the one inset every link keeps, and it and the link's type grow gently with the window so the targets keep their proportion to the screen they are read on. A SELECTED VIEW IS
@@ -289,7 +289,7 @@ a.chg-row:hover .go { color: var(--text); transform: translate(.15rem, -.15rem);
 .rs-sec { position: absolute; inset: 0; display: grid; place-items: center; font: 600 .7rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
 .stale-ring:not(.over) .ring .arc { animation: stale-wait var(--span) linear forwards; animation-delay: var(--late, 0s); }
 @keyframes stale-wait { from { stroke-dasharray: 0 94.25; } to { stroke-dasharray: 94.25 94.25; } }
-/* THE THEME SWITCH IS A SWITCH (Oct 26): both themes drawn, the one in use on the raised knob and the other waiting on
+/* THE THEME SWITCH IS A SWITCH: both themes drawn, the one in use on the raised knob and the other waiting on
    the sunk track — the same two-state shape as Usage's window switch (.switch above), so the bar's one odd control now
    reads like the rest of the console. Two bare glyphs with no track read as two buttons that happen to sit together. */
 .icon.thm {
@@ -317,13 +317,13 @@ a.chg-row:hover .go { color: var(--text); transform: translate(.15rem, -.15rem);
    on the right (Usage's 48 px switch, a 39 px search) made the row taller. Now the title keeps the top and the row grows
    downward under it; the controls stay centred on the row. */
 .head { --head-h: var(--ctl-h); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--u) calc(2 * var(--u)); margin: 0 0 calc(2 * var(--u)); }
-/* THE ROW IS ONE HEIGHT, AND THE CONTROLS ON IT ARE THAT HEIGHT (Oct 27): the search and the window switch stood 1.5 px
+/* THE ROW IS ONE HEIGHT, AND THE CONTROLS ON IT ARE THAT HEIGHT: the search and the window switch stood 1.5 px
    taller than the title's row, so the body began 117.6 px down on one page and 119.2 on the next. */
 .head h1 { align-self: flex-start; font: 400 2.1rem/1.05 var(--font-lead); letter-spacing: -.01em; margin: 0; min-height: var(--head-h); display: flex; align-items: center; }
 /* a title with a line under it (Compare) keeps the title on the header's first row and grows downward */
 .head > .titles { align-self: flex-start; }
 main.page > .head + *:not(.lockedby) { margin-top: 0; }
-/* ONE WIDTH FOR THE HEADER'S SEARCH (Oct 27): the same field in the same place read 334, 394 and 455 px wide at 3822 on
+/* ONE WIDTH FOR THE HEADER'S SEARCH: the same field in the same place read 334, 394 and 455 px wide at 3822 on
    Sessions, Settings and Requests, so the header's right end changed shape from page to page. 26rem holds Settings'
    count beside its words. */
 .head .search { width: 26rem; max-width: 100%; height: var(--head-h); }
@@ -353,7 +353,7 @@ a.act { text-decoration: none; }  /* an act that happens to be a link still look
 .act:active { transform: translate(.18rem, .18rem); box-shadow: .04rem .04rem 0 var(--ink); transition-duration: var(--t-hit); }
 .act.primary { background: var(--key-light); color: var(--splice-ink-day); }
 .act.quiet { background: transparent; box-shadow: none; border-color: var(--track-line); }
-/* AN ACT THAT ENDS SOMETHING IS INK, NOT RED (Oct 26): the limit red says "a limit or a failure" and nothing else, so
+/* AN ACT THAT ENDS SOMETHING IS INK, NOT RED: the limit red says "a limit or a failure" and nothing else, so
    an armed Remove, End, Stop or Restart is the heaviest neutral there is — the text's own ink, with the face's colour
    on its words. Five pages wrote this rule in their own sheet, three of them in red. */
 .act.danger { background: var(--text); color: var(--obj); }
@@ -386,7 +386,7 @@ a.act { text-decoration: none; }  /* an act that happens to be a link still look
 .board { display: flex; align-items: flex-start; gap: var(--gap-col); }
 .board > .col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 2.4rem; }
 .board > .col.wide { flex: var(--span) var(--span) calc((var(--span) - 1) * var(--gap-col)); }  /* k columns and the k - 1 gaps between them, so its own columns line up with the board's */
-/* a provider over k columns: its days and its rail split on the board's own columns, the order running down each (accounts.js columns(), hitstop 0360fc4) */
+/* a provider over k columns: its days and its rail split on the board's own columns, the order running down each (accounts.js columns(), 0360fc4) */
 .rails { display: grid; grid-template-columns: repeat(var(--span), minmax(0, 1fr)); column-gap: var(--gap-col); align-items: start; }
 /* A TITLED GROUP (kit DRAW.group): Accounts' provider, lifted so every page's board of groups reads alike — the
    group's dot in its colour, its Fraunces title at 1.4rem, what acts on the whole group at the header's end, and its
@@ -468,7 +468,7 @@ a.chip { text-decoration: none; }  /* a chip that opens something (a session it 
 /* a chip that can be pressed changes over --t-hover when the pointer arrives or leaves, where a chip that only names stays still */
 a.chip, button.chip { transition: color var(--t-hover) var(--e-out), border-color var(--t-hover) var(--e-out), box-shadow var(--t-hover) var(--e-out); }
 .chip svg { flex: none; width: 1em; height: 1em; }  /* a glyph in a chip is the chip's own size, never its box's */
-/* THE QUIET CHIP, for a list where the chip repeats on every row (Oct 26): same box, same face, same live dot, with
+/* THE QUIET CHIP, for a list where the chip repeats on every row: same box, same face, same live dot, with
    the loud edge spent down to 1 px of the command's colour. On 21 rows at 3822 the ink border and the offset edge made
    the chip the loudest shape on the row, over the session's own name. The padding grows by what the border loses, so
    the box is the size of every other chip. */
@@ -516,7 +516,7 @@ mark { color: var(--text); background: color-mix(in oklab, var(--text) 18%, tran
 .bar.grow > b { transform-origin: left; transition: transform var(--t-snap) var(--e-out); }
 .bar.full > b { background: var(--limit); border-right: 0; border-radius: .3rem; }
 .bar.stale > b { background: transparent; box-shadow: inset 0 0 0 .12rem var(--c); border-right: 0; }
-/* a window whose reset has gone by (hitstop, Oct 10): no fill AND no track. A solid empty track is the same
+/* a window whose reset has gone by: no fill AND no track. A solid empty track is the same
    drawing as 0% used, so a stack of them says "nothing used", which is the old figure back in another form.
    Dashed already means "not set yet" here (.pickbtn.unset); on a bar it means "not read since its reset". */
 .bar.gone, .bar.unread { background: none; box-shadow: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
@@ -526,7 +526,7 @@ mark { color: var(--text); background: color-mix(in oklab, var(--text) 18%, tran
 @keyframes reading { to { background-position: -1.27rem 0; } }
 .pct { font: 500 .95rem/1 var(--font-data); text-align: right; min-width: 3rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pct.limit { color: var(--limit); }
-.pct .used { margin-left: 0.333rem; font-weight: 400; color: var(--text-mute); }  /* a plan's percent is what's used, said once on every bar (fin) */
+.pct .used { margin-left: 0.333rem; font-weight: 400; color: var(--text-mute); }  /* a plan's percent is what's used, said once on every bar */
 .when { display: flex; align-items: center; gap: 0.667rem; font: 500 .95rem/1 var(--font-data); color: var(--text-body); white-space: nowrap; min-width: 6.6rem; }
 .ring { width: 1.6rem; height: 1.6rem; flex: none; transform: rotate(-90deg); }
 .ring .trk { fill: none; stroke: var(--track-line); stroke-width: 5; }
@@ -535,7 +535,7 @@ mark { color: var(--text); background: color-mix(in oklab, var(--text) 18%, tran
 .stale-at { grid-column: 1 / -1; font: 500 .88rem/1 var(--font-data); color: var(--text-mute); display: flex; gap: 0.667rem; align-items: center; }
 .stale-at svg { width: .66rem; height: .66rem; flex: none; }  /* its 16 px at 3828, in rem so the scale reaches it */
 
-/* money: today's spend against a cap line. ITS OWN NAME (Oct 26): this was a bare `.cap`, which the kit's caption on a
+/* money: today's spend against a cap line. ITS OWN NAME: this was a bare `.cap`, which the kit's caption on a
    hero figure's baseline also answers to (.cap, .pd-failed below), so a caption written as `.cap` came out
    absolutely positioned and .16rem wide — a hairline where Usage's chart says "348,487 requests through splice". */
 .capline { position: absolute; top: -.3rem; bottom: -.3rem; width: .16rem; background: var(--text); border-radius: .1rem; }
@@ -551,9 +551,9 @@ mark { color: var(--text); background: color-mix(in oklab, var(--text) 18%, tran
 /* a reset that has gone by: muted, and carrying the ring's 1.6rem plus the row's .5rem gap so its time still starts
    where the ringed rows' times do. Its bar and its figure are empty, drawn by the page, so this is all that is left */
 .when.rolled { color: var(--text-mute); padding-left: 2.1rem; }
-.windows .closed { grid-column: 2 / 4; display: flex; align-items: baseline; gap: 0.667rem; font: 500 .95rem/1 var(--font-data); color: var(--text-body); white-space: nowrap; }  /* a closed window is one line, "Ended" and the time, over the bar's and the figure's columns, the time column left empty: an empty bar read as a missing figure (Marlin, fin, Oct 12) */
+.windows .closed { grid-column: 2 / 4; display: flex; align-items: baseline; gap: 0.667rem; font: 500 .95rem/1 var(--font-data); color: var(--text-body); white-space: nowrap; }  /* a closed window is one line, "Ended" and the time, over the bar's and the figure's columns, the time column left empty: an empty bar read as a missing figure */
 .windows .closed b { font: 500 .95rem/1 var(--font-name); color: var(--text); }
-.windows .unproved { grid-column: 1 / -1; font: 500 .95rem/1 var(--font-name); color: var(--text); }  /* a card with no reading: one word where its figures would be, never an empty card (Marlin, Oct 12) */
+.windows .unproved { grid-column: 1 / -1; font: 500 .95rem/1 var(--font-name); color: var(--text); }  /* a card with no reading: one word where its figures would be, never an empty card */
 /* A LOGIN'S WINDOWS OUTSIDE ACCOUNTS' CARDS (DRAW.loginWins): the same four parts in the same four columns, so a meter is as
    long on a Settings card as in a Teams menu and 100% ends on one x. The meter takes what the label, the figure and the
    reset leave, never less than 13rem, and the warn line is a tick across it. */
@@ -601,7 +601,7 @@ mark { color: var(--text); background: color-mix(in oklab, var(--text) 18%, tran
   border-radius: var(--r-in); padding: .55rem .75rem; min-width: 0; flex: 1;
   transition: border-color var(--t-hover) var(--e-out);
 }
-/* A FOCUSED FIELD IS A PLACE, NOT THE ONE ACT (Oct 26): it took the key light, so tabbing into a form's first field
+/* A FOCUSED FIELD IS A PLACE, NOT THE ONE ACT: it took the key light, so tabbing into a form's first field
    lit it in the same ink as the form's one primary button and the eye went to the wrong one. Focus is neutral ink,
    as every selection is, with the ring every other control gets. */
 .field:focus, .field:focus-visible { border-color: var(--text); outline: none; box-shadow: 0 0 0 .12rem var(--text); }
@@ -657,7 +657,7 @@ input.field { height: var(--ctl-h); }
 .meter.windows.spend { grid-template-columns: auto minmax(0, 1fr) auto auto; column-gap: 1rem; }  /* outside the cards: its own columns */
 .meter.windows.spend .money { white-space: normal; }  /* the figure wraps when the card is narrow, so the reset and the button keep their words whole and inside the edge */
 .meter.windows.spend .act { white-space: nowrap; }
-/* Every Day row has one shape (walk on d0ec523b5): the day on the first line, across the whole row after "Day", wrapping
+/* Every Day row has one shape: the day on the first line, across the whole row after "Day", wrapping
    inside it; the budget's control and the reset on the second, at the right, so Set budget sits in the same place on every
    row that can carry a budget and no head's long text can run over its own controls or into the next column */
 .meter.windows.spend { row-gap: 0.667rem; }
@@ -697,7 +697,7 @@ input.field { height: var(--ctl-h); }
 .waitbox { display: inline-flex; flex: none; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .code-in { flex: 0 1 13rem; }
-/* A device code's line (fin): its own row under the code, starting at the code, so the code and the buttons never wrap */
+/* A device code's line: its own row under the code, starting at the code, so the code and the buttons never wrap */
 .outbox:has(> .code-hint) { flex-wrap: wrap; row-gap: 0.667rem; }
 .outbox > .code-hint { order: 1; flex: 1 0 100%; box-sizing: border-box; padding-left: calc(1.5rem + .9rem); font: 400 .92rem/1.3 var(--font-name); color: var(--text-mute); }
 
@@ -756,8 +756,8 @@ input.field { height: var(--ctl-h); }
   .page { padding: 1.2rem 1.4rem 4rem; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
-/* reading off: a waiting card's quiet door to the switch, drawn as Sessions' "Open on Requests" door (fin, hitstop
-   b5a39e3). In the line's own ink at rest; hover lifts the ink and nudges the arrow, which is what says it is a link. */
+/* reading off: a waiting card's quiet door to the switch, drawn as Sessions' "Open on Requests" door.
+   In the line's own ink at rest; hover lifts the ink and nudges the arrow, which is what says it is a link. */
 .ask .why .door, .log .empty .door { display: inline-flex; align-items: center; gap: 0.333rem; color: var(--text-body); text-decoration: none; white-space: nowrap; }
 .ask .why .door svg, .log .empty .door svg { flex: none; width: 1rem; height: 1rem; transition: transform var(--t-snap) var(--e-out); }
 .ask .why .door:hover, .log .empty .door:hover { color: var(--text); }
@@ -774,7 +774,7 @@ input.field { height: var(--ctl-h); }
 .meter.windows.spend > .money.line .sep { white-space: pre; }
 .meter.windows.spend:has(> span.money.line) > .label { align-self: start; line-height: 1.5; }
 
-/* ---------- the project picker (Marlin, fin, Oct 11; hitstop's mock): one pick shared by Sessions, Teams and
+/* ---------- the project picker: one pick shared by Sessions, Teams and
    Requests, and the doors to projects elsewhere with someone waiting (kit pickerHtml) ---------- */
 .lhead { display: flex; flex-wrap: wrap; align-items: center; gap: 0.667rem; }
 .lhead .pname.solo { font: 500 1.15rem/1.1 var(--font-name); color: var(--text); }
@@ -800,7 +800,7 @@ input.field { height: var(--ctl-h); }
 .pmenu .plamps:empty { display: flex; }
 .pmenu .pshare.whole > i { background: color-mix(in oklab, var(--text) 62%, transparent); }
 .pmenu button[aria-checked="true"]::before { content: ""; position: absolute; left: -.4rem; top: .5rem; bottom: .5rem; width: .22rem; background: var(--text); border-radius: 0 .15rem .15rem 0; }
-/* someone waiting in another project while one is picked: a door that picks it, in Needs you's own colour (fin) */
+/* someone waiting in another project while one is picked: a door that picks it, in Needs you's own colour */
 .pdoor { border-color: var(--needs); color: var(--needs); }
 .pdoor:hover { background: color-mix(in oklab, transparent 88%, var(--needs)); }
 .pdoor .pname { font: inherit; }
@@ -809,13 +809,13 @@ input.field { height: var(--ctl-h); }
 .plamp { display: inline-grid; place-items: center; }
 .plamp svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 
-/* ---------- the project tiles (Marlin, fin, Oct 11; hitstop's mock 4e4f391): at a 150rem page and wider, every
+/* ---------- the project tiles: at a 150rem page and wider, every
    project at once, on Sessions, Teams and Requests (kit tilesHtml, tilesWide) ---------- */
-/* THE ROW TAKES THE WHOLE LINE, wherever a page puts it (Oct 27): the tiles are equal columns of the row, so the row
+/* THE ROW TAKES THE WHOLE LINE, wherever a page puts it: the tiles are equal columns of the row, so the row
    needs a width of its own. Laid inside a flex line it was sized by its content, and the columns collapsed to one, which
    stood the eight tiles in a 248 px stack down the page. */
 #ptiles { margin: 0 0 1.333rem; width: 100%; }
-/* THE TILES FILL THE ROW IN EQUAL COLUMNS (Oct 27). Sized by their names they left 831 to 2,949 px of the row empty
+/* THE TILES FILL THE ROW IN EQUAL COLUMNS. Sized by their names they left 831 to 2,949 px of the row empty
    (79% on Teams), no two shared an edge, and each share bar's 100% was its own tile's width, so equal shares drew
    different lengths. Every tile is now one column of the row: the same width, the same track, so the shares compare
    by eye, and the row is full at 3822 and at 1440 alike.
@@ -845,7 +845,7 @@ input.field { height: var(--ctl-h); }
 .ptile.pk-in .pshare > i { transform-origin: 0 50%; animation: pk-grow var(--t-snap) var(--e-out) 1; }
 @keyframes pk-in { from { color: var(--text-body); background: var(--obj-sunk); border-color: var(--track-line); transform: scale(.97); } }
 @keyframes pk-grow { from { transform: scaleX(.04); } }
-/* picked by its look, no word (fin): the Teams tab's raised card, in NEUTRAL ink (the colour pass, Oct 26: a selection
+/* picked by its look, no word: the Teams tab's raised card, in NEUTRAL ink (the colour pass, Oct 26: a selection
    never takes the key light, so the key is free to mark the one place to act) */
 .ptile.on { color: var(--sel-ink); background: var(--sel-face); border-color: var(--sel-line); }
 /* THE NAME NEVER GIVES WAY TO THE FIGURE: when the two do not fit one line the figure stands under the name, so the project
@@ -858,7 +858,7 @@ input.field { height: var(--ctl-h); }
 /* THE TILE'S TOTAL LEADS IT: the project's figure is the focal size (--fig-focal) in the data face, the name keeps its own, so a
    row of nine tiles reads figure first and the picked project's name second, where one small size made it a flat row of labels */
 .ptile .ptotal { flex: none; color: var(--text); font: 600 var(--fig-focal)/1 var(--font-data); letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
-/* WHAT THE FIGURE COUNTS, SAID ONCE ON THE TILE (Oct 27): "2,127 requests", the unit muted on the figure's baseline. It
+/* WHAT THE FIGURE COUNTS, SAID ONCE ON THE TILE: "2,127 requests", the unit muted on the figure's baseline. It
    was a kicker over the row, which under the page's own title read as the title again ("TEAMS" under "Teams"). */
 .ptile .pfigs { flex: none; white-space: nowrap; }
 .ptile .punit { color: var(--text-mute); font: 500 .88rem/1 var(--font-name); white-space: nowrap; }
@@ -938,7 +938,7 @@ input.field { height: var(--ctl-h); }
 .card.gcard > .ghost.big { margin-bottom: 0.667rem; }
 
 /* Locked: this browser holds no key splice takes (a 401). The page's body steps aside for the one way back, the command as
-   something to run with Copy beside it; the title stays so he knows where he is (fin, Marlin, Oct 12).
+   something to run with Copy beside it; the title stays so he knows where he is.
    THE STATE IS A SHAPE (Oct 26): the kit's lock pops in over 260 ms beside the word, where the page was a red word and a
    code chip with no lock, and a two-word kicker says where the command goes, so no sentence has to. */
 /* every page keeps its title, Compare's included, whose title stands inside its .titles with the line under it */
@@ -1048,7 +1048,7 @@ body.locked .lockedby {
 .card .onlogin .sdoor { display: inline-flex; align-items: center; gap: 0.333rem; font: 500 .92rem/1 var(--font-name); color: var(--text-body); text-decoration: none; }
 .card .onlogin .sdoor:hover span { color: var(--text); text-decoration: underline; }
 /* the lamp Sessions draws (sessions.css .lamp), which this page does not load: a dark socket with an ink ring, idle a dot
-   in the muted ink, working the live trace (marlin, Oct 12) */
+   in the muted ink, working the live trace */
 .card .onlogin .sdoor .lamp { position: static; flex: none; width: 1.4rem; height: 1.4rem; border-radius: 50%; display: grid; place-items: center; color: var(--text-mute); background: var(--socket); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .12rem var(--rail); }
 [data-theme="day"] .card .onlogin .sdoor .lamp { --live: var(--splice-live-on-night); --text-mute: var(--splice-cream-mute); }
 .card .onlogin .sdoor .lamp i { width: .45rem; height: .45rem; border-radius: 50%; background: currentColor; }
@@ -1150,7 +1150,7 @@ a.pd-count:hover { color: var(--text); text-decoration: underline; }
 .pd-seg.f0, .pd-sw.f0 { background: var(--limit); }
 .pd-seg.f1, .pd-sw.f1 { background: color-mix(in oklab, var(--limit) 80%, transparent); }
 .pd-seg.f2, .pd-sw.f2 { background: color-mix(in oklab, var(--limit) 72%, transparent); }
-/* A SEGMENT THAT CARRIES ITS OWN COLOUR (Oct 26): a whole split by something that is not an outcome — a member, a
+/* A SEGMENT THAT CARRIES ITS OWN COLOUR: a whole split by something that is not an outcome — a member, a
    store, a provider — takes the colour the caller already knows (DRAW.stack's `ink`), written as --c on the block and
    its swatch. Teams and Settings each restated the eight provider colours or six store hues to get it here. */
 .pd-seg.ink, .pd-sw.ink { background: var(--c, var(--text-mute)); }
@@ -1246,9 +1246,9 @@ a.pd-lb:hover { color: var(--text); text-decoration: underline; }
 .pd-mini i { display: block; height: 100%; border-radius: .25rem; background: color-mix(in oklab, var(--text) 60%, transparent); transition: width var(--t-snap) var(--e-out); }
 .pd-mini > .pd-mk { position: absolute; top: 0; bottom: 0; width: .16rem; margin-left: -.08rem; border-radius: .08rem; background: var(--text-mute); }
 .pd-mini.lv-watch i { background: var(--key-ink); }
-/* a level says what the figure says: a bad one reddens its own fill, with no second class to pass (Oct 26) */
+/* a level says what the figure says: a bad one reddens its own fill, with no second class to pass */
 .pd-mini.lv-bad i { background: var(--limit); }
-/* THE MINI PAIR AS A ROW (Oct 26): in a card 28rem wide the stacked label-figure-bar costs three lines per quantity,
+/* THE MINI PAIR AS A ROW: in a card 28rem wide the stacked label-figure-bar costs three lines per quantity,
    so two quantities fill the card with no room for its name. The row form puts the name left, the figure at the right
    edge and the bar across both. */
 .pd-q.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; column-gap: 1rem; row-gap: 0.333rem; }
@@ -1263,7 +1263,7 @@ a.pd-lb:hover { color: var(--text); text-decoration: underline; }
 .pd-ends b { font: 500 .92rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
 
 /* ---------- bounded lists: the top few at full size, the rest behind one pill; never a column that runs past the fold ---------- */
-/* A DOOR IS A TARGET (Oct 28): a fold door was a 13 px line of text, the only way to open a folded list at 3822. It keeps its
+/* A DOOR IS A TARGET: a fold door was a 13 px line of text, the only way to open a folded list at 3822. It keeps its
    words and takes a 1.9rem hit area (28.8 px at 3822, 22.8 at 1440). */
 .plink, .morepill { align-self: flex-start; display: inline-flex; align-items: center; gap: 0.333rem; min-height: 1.9rem; padding: 0; border: 0; background: none; color: var(--text-mute); font: 500 .88rem/1.2 var(--font-name); cursor: pointer; }
 /* the kit's arrow is an svg with no size of its own: inside a link it took its intrinsic box and squeezed the words
@@ -1295,7 +1295,7 @@ a.pd-lb:hover { color: var(--text); text-decoration: underline; }
 /* ---------- a disclosure: its chevron turns over 240 ms and its detail opens in place, under the row ---------- */
 .disc { display: inline-flex; align-items: center; gap: 0.667rem; min-width: 0; max-width: 100%; padding: .45rem 0; margin-block: -0.333rem; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .disc:focus-visible { outline: .14rem solid var(--text); outline-offset: .25rem; border-radius: .3rem; }
-/* A FOLD THAT STANDS ON A FOOT LINE IS A DOOR WITH AN EDGE (Oct 28): "47 ended" or "6 idle" as a line of small words was the
+/* A FOLD THAT STANDS ON A FOOT LINE IS A DOOR WITH AN EDGE: "47 ended" or "6 idle" as a line of small words was the
    smallest press target on the page, 13 px tall. A door keeps the chevron and its words, takes the track's edge and the
    object radius, and raises its fill and edge as the pointer arrives. */
 .disc.door { gap: 0.667rem; margin-block: 0; padding: .4rem .85rem .4rem .6rem; border: .08rem solid var(--track-line); border-radius: var(--r-in);
@@ -1342,7 +1342,7 @@ a.pd-lb:hover { color: var(--text); text-decoration: underline; }
 .ghost.track { display: block; width: auto; height: var(--meter-h); border-radius: .3rem; }
 .ghost.stack { display: block; width: auto; height: var(--stack-h); border-radius: .3rem; }
 .ghost-row { display: flex; align-items: center; gap: calc(2 * var(--u)); }
-/* THE REST OF THE SHAPES A SECTION LANDS WITH (Oct 27), each the size of what lands, so a page draws its whole first
+/* THE REST OF THE SHAPES A SECTION LANDS WITH, each the size of what lands, so a page draws its whole first
    frame from the kit and nothing moves when the figures arrive (GHOST in kit.js writes them):
    the hero figure and its caption on one baseline, a focal figure, a bar cell's track and its figure, a range track. */
 .ghost.hero { height: var(--fig-hero); width: 5.6rem; border-radius: .4rem; }
@@ -1359,7 +1359,7 @@ a.pd-lb:hover { color: var(--text); text-decoration: underline; }
    shared scale. Without it a row with a short figure drew a longer track. */
 .barcell > .v { min-width: var(--v-w, 0px); }
 
-/* ---------- ONE SCROLL PER PAGE (Oct 27) ----------
+/* ---------- ONE SCROLL PER PAGE ----------
    The page is the only thing that scrolls. No pane, list or log inside it takes a height of its own and an overflow:
    a detail opens in place under its row (DRAW.disc), as the Usage drill-down does, and a long list shows its top few
    and DRAW.more. A menu or a popover may scroll inside itself; nothing else may, and nothing is sticky but the top bar.
@@ -1505,7 +1505,7 @@ a.pd-lb:hover { color: var(--text); text-decoration: underline; }
 .axtrack > .axt:first-child { transform: none; }
 
 /* ---------- a limit on its scale (kit DRAW.scale) ---------- */
-/* A LIMIT IS DRAWN ON ITS SCALE (Oct 28): a thick track with its ends and its marks named under it, the fill what is
+/* A LIMIT IS DRAWN ON ITS SCALE: a thick track with its ends and its marks named under it, the fill what is
    running or held now, the dots the busiest each command reached today, the hatch the stretch past the warn line. A
    dot at 100% stands inside the end and never half past it; dots that would touch take a lane under the one before.
    A figure the page cannot read is the dashed empty track. */

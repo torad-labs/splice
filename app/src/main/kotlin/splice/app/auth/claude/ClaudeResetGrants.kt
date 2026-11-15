@@ -96,14 +96,13 @@ internal data class OrgProfile(val organization: OrgId? = null)
 @JsonIgnoreUnknownKeys
 internal data class OrgId(val uuid: String? = null)
 
-@Serializable
-@JsonIgnoreUnknownKeys
+/** Anthropic's answer to a spend, as ClaudeLimitResets reads it field by field: [reason] is one word, or null. */
 internal data class SpendAnswer(
     val result: String? = null,
-    val reason: List<String> = emptyList(),
-    @SerialName("resets_left") val resetsLeft: Int? = null,
+    val reason: String? = null,
+    val resetsLeft: Int? = null,
     val cleared: List<String> = emptyList(),
-    @SerialName("cooldown_until") val cooldownUntil: String? = null,
+    val cooldownUntil: String? = null,
 )
 
 /** What a person reads about a login's resets, in one place so the list and a spend say the same thing. */

@@ -4,7 +4,7 @@
 // tell by reading the request a head would send: the tools its model can call, with the schema the conversation last
 // gave each, are the ones the conversation holds now, and nothing in it is an item or block that head refuses.
 //
-// Oct 27, 13:59 CT: Muse answered 400 "`input[8]` did not match any supported type" to every claude-muse turn once
+// Oct 27: Muse answered 400 "`input[8]` did not match any supported type" to every claude-muse turn once
 // Claude Code added three Claude Docs tools in a system message, because splice sent each added tool as an
 // `additional_tools` input item, which only the Codex backend takes. The same afternoon claude-kimi dropped the
 // tool_addition and tool_removal blocks its upstream refuses, so Kimi's model never saw the added tools. These build

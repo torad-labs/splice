@@ -4,7 +4,7 @@
 // cut at the person's own midnight: in Chicago that is 05:00 UTC, which falls INSIDE the UTC day
 // that began at 19:00 the evening before. Deleting only the days that END before the cut therefore
 // keeps every edge from that evening, so someone who chose "Today only" would still read yesterday
-// 7 pm's messages on Teams. Marlin, Oct 10: when a person says yes to a deletion, everything the
+// 7 pm's messages on Teams. When a person says yes to a deletion, everything the
 // history covers is gone at that moment. So the straddling day is rewritten line by line.
 //
 // THE SAME LANE AND THE SAME LOCK AS THE APPENDS. The rewrite runs on AsyncFileIo under the store's

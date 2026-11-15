@@ -47,7 +47,7 @@ internal sealed class ListedModels {
     data class Listed(val ids: List<String>, val windows: Map<String, Long> = emptyMap()) : ListedModels()
 
     /** These windows with a local runtime's own [served] ones over them: Ollama and LM Studio leave the window out of
-     *  /v1/models, so without them every local row read "unchecked" (splice-providers' spec pass, Oct 12). */
+     *  /v1/models, so without them every local row read "unchecked". */
     fun withServed(served: Map<String, Long>): ListedModels = if (served.isEmpty()) {
         this
     } else {

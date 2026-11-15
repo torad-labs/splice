@@ -1,8 +1,8 @@
-// A session whose transcript is gone is never a door to nothing (Marlin, Oct 12, from her Usage walk: "Open session"
+// A session whose transcript is gone is never a door to nothing ("Open session"
 // led to a Sessions page reading "No sessions", with no reason). Through the real pages against a stub daemon:
 // Requests opens every request's session, an ended agent's included, since Sessions finds ended agents in history
-// (splice-sessions, Oct 12), and Sessions reached for one it cannot find says "No transcript" where the log would be;
-// a log that cannot be read says "Not read" with the daemon's words kept off the page (fin's leak fix). An open request
+//, and Sessions reached for one it cannot find says "No transcript" where the log would be;
+// a log that cannot be read says "Not read" with the daemon's words kept off the page. An open request
 // always leaves a way back to the list: the list beside it, or Close where the request takes the page.
 import { afterAll, beforeAll, test } from "bun:test";
 import { chromium, expect, type Browser } from "@playwright/test";
@@ -14,7 +14,7 @@ const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const now = Date.now();
 const DAEMON_WORDS = "java.nio.file.AccessDeniedException: /home/someone/.claude/projects/x.jsonl";
 const session = (id: string, name: string) => ({
-  session_id: id, name, head: "alpha", route: "head", availability: "live", status: "idle", cwd: "/work/desk",
+  session_id: id, name, head: "alpha", route: "head", availability: "live", status: "idle", cwd: "/work/app",
   last: { role: "assistant", tool: null, text: `${name} said its last line.`, ts: 1 },
   updated_at: new Date(now - 60_000).toISOString(),
 });
@@ -97,7 +97,7 @@ test("Sessions reached for a session it cannot find says No transcript where the
     await expect(page.locator(".pane.missing .log .empty")).toHaveText("No transcript", { timeout: 15_000 });
     await page.locator(".pane.missing [data-act=close]").click();
     await expect(page.locator(".pane.missing")).toHaveCount(0);
-    await expect(page.locator(".card.s", { hasText: "builder" })).toBeVisible(); // the list he has is still there
+    await expect(page.locator(".card.s", { hasText: "builder" })).toBeVisible(); // the list the user has is still there
   } finally {
     await page.close();
   }

@@ -1,5 +1,5 @@
 // NEW: the control plane's MCP host wiring, moved out of ControlPlane.kt by its own seam, behavior unchanged
-// (concentration, Oct 13, splice-lead): the sharing planner, the host and its hub, the four live knob readers, and the
+// (concentration): the sharing planner, the host and its hub, the four live knob readers, and the
 // four values the console and /health read once the host is built. ControlPlane holds one and asks it at start.
 package splice.app
 

@@ -20,7 +20,7 @@ import splice.usage.statusline.StatuslineRenderer
 import splice.usage.statusline.StatuslineWarn
 
 /** V4-396: /api/usage shows a plan window only while it is current — read under 15 minutes ago and
- *  not yet reset — the rule the status line already applies (QuotaFreshness). Marlin's header read
+ *  not yet reset — the rule the status line already applies (QuotaFreshness). A header read
  *  "claude-splice 7d 99%" from a reading 13.8 hours old on a home with no Claude credential. */
 class UsageFreshWindowsTest {
     private val nowMs = 1_788_000_000_000L

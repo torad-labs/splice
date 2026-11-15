@@ -1,4 +1,4 @@
-// NEW: THE LAYER LAW (splice-lead ruling, 2026-10-07). Every Gradle module plays exactly one role
+// THE LAYER LAW. Every Gradle module plays exactly one role
 // (src/test/resources/layer-map.toml), the composition root is one named file, and the roles point
 // one way. The import check reads the real sources through Konsist; the owner of an import is the
 // layer that owns the longest package the import names, so an unclassified package is never silently

@@ -45,14 +45,14 @@ class PerfProjectTagTest {
     )
     private val rows =
         listOf(row(1_000, "aaaaaaaa"), row(2_000, "bbbbbbbb"), row(3_000, "cccccccc"), row(4_000, null), compareSend)
-    private val mythos = buildJsonObject {
-        put("id", "/p/mythos")
-        put("name", "mythos")
-        put("label", "mythos")
+    private val acme = buildJsonObject {
+        put("id", "/p/acme")
+        put("name", "acme")
+        put("label", "acme")
         put("source", "folder")
     }
     private val tags = object : ProjectTags {
-        private val byTag = mapOf("aaaaaaaa" to mythos, "bbbbbbbb" to mythos)
+        private val byTag = mapOf("aaaaaaaa" to acme, "bbbbbbbb" to acme)
 
         override fun of(tag: String): JsonObject? = byTag[tag]
 
@@ -96,10 +96,10 @@ class PerfProjectTagTest {
         testApplication {
             application { routing { get("/api/perf/turns") { routes.turns(call) } } }
             val all = client.rows("")
-            assertEquals(listOf(mythos, mythos, JsonNull, JsonNull, JsonNull), all.map { it.getValue("project") })
+            assertEquals(listOf(acme, acme, JsonNull, JsonNull, JsonNull), all.map { it.getValue("project") })
             val flags = all.map { it.getValue("compare").jsonPrimitive.boolean }
             assertEquals(listOf(false, false, false, false, true), flags)
-            val only = client.rows("project=%2Fp%2Fmythos")
+            val only = client.rows("project=%2Fp%2Facme")
             assertEquals(listOf(1_000L, 2_000L), only.map { it.getValue("ts").jsonPrimitive.content.toLong() })
             assertEquals(emptyList<JsonObject>(), client.rows("project=%2Fp%2Fnothing"))
         }

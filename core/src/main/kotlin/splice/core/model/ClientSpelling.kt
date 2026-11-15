@@ -5,7 +5,7 @@
 // the cap is 600 (bundle: `XEo(messages, w ? 600 : 100, 20, ...)`, with `w` true for a model id matching
 // /\[1m\]/i). A claudex trace showed a request with 100 input_image parts followed by one with 80 and
 // the marker, on a backend whose window was 872k: the client's rule, not the backend's, was losing the
-// screenshots. The id is a value splice authors (project CLAUDE.md s22), so a row whose window can hold
+// screenshots. The id is a value splice authors, so a row whose window can hold
 // far more than 100 images is handed to the client with the 1M hint, and the head scales the counts it
 // reports (ModelCatalog.usageScale) so the client still compacts at the row's real window.
 package splice.core.model

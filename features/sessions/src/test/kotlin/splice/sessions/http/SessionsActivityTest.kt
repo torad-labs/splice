@@ -114,11 +114,11 @@ class SessionsActivityTest {
 
     @Test
     fun `a long line ends on its last whole word and an ellipsis, never mid-word`(@TempDir tmp: Path) {
-        val said = "Go, as its own commit with the stub-page test. fin owns the words, so send fin the shot and " +
-            "\"No usage reported\" before you hand the sha to builder2. If fin gives the word, push it then."
+        val said = "Go, as its own commit with the stub-page test. dev owns the words, so send dev the shot and " +
+            "\"No usage reported\" before you hand the sha to reviewer. If dev gives the word, push it then."
         val last = row(tmp, LastSource(TranscriptMessage(0, TranscriptRole.ASSISTANT, 7L, said))).getValue("last")
         val text = last.jsonObject.getValue("text").jsonPrimitive.content
-        assertEquals(said.substringBefore(" If fin gives") + " If fin\u2026", text)
+        assertEquals(said.substringBefore(" If dev gives") + " If dev\u2026", text)
     }
 
     @Test
@@ -130,7 +130,7 @@ class SessionsActivityTest {
 
     @Test
     fun `a line cut short drops the stop or comma before its ellipsis`(@TempDir tmp: Path) {
-        val whole = "Today and tonight, on the desk and on the live daemon alike, the build is green and the branch " +
+        val whole = "Today and tonight, on the disk and on the live daemon alike, the build is green and the branch " +
             "is pushed, so the lamp moves up with the cards that need you."
         assertEquals(whole.dropLast(1) + "\u2026", textOf(tmp, "$whole Afterwards the reviewer reads the range."))
     }
@@ -181,7 +181,7 @@ class SessionsActivityTest {
 
     @Test
     fun `a sentence that leads into a dropped code block with a colon leaves with it`(@TempDir tmp: Path) {
-        val said = "The lamp check is ready. From the desk folder, run:\n```\nlamp --check\n```\n" +
+        val said = "The lamp check is ready. From the repo folder, run:\n```\nlamp --check\n```\n" +
             "It needs nothing else.\nTwo notes follow.\nFirst:\n~~~\nnote one\n~~~\nThe colon in 10:30 stays."
         val read = "The lamp check is ready. It needs nothing else. Two notes follow. The colon in 10:30 stays."
         assertEquals(read, textOf(tmp, said))

@@ -1,4 +1,4 @@
-// NEW: a warm turn's one budget for waiting out rate limits on its own login (Marcos, Oct 19), spent by admission and
+// NEW: a warm turn's one budget for waiting out rate limits on its own login (Oct 19), spent by admission and
 // by every post of the turn.
 package splice.upstream.retry
 

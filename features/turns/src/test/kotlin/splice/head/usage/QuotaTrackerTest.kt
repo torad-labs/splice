@@ -34,7 +34,7 @@ class QuotaTrackerTest {
         extraFamily = XCodexFamily(),
     )
 
-    // Oct 10, 2026 (Marlin's ruling): Kimi answered `{}`, and a three-week-old reading was still drawn as today's.
+    // Oct 10, 2026: Kimi answered `{}`, and a three-week-old reading was still drawn as today's.
     @Test
     fun `a provider's answer that it has no usage replaces the older reading, and still reads so after a restart`() {
         val first = tracker()

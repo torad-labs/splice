@@ -114,9 +114,9 @@ async function version(
   await expect(page.locator(".vcard").first()).toBeVisible({ timeout: 15_000 });
   return page;
 }
-// The card is a state and an act, never a sentence (Marlin's ruling on the Settings words, Oct 12). "Not checked" sits in
-// the small line where "Checked" and its time would, so the version stays the largest thing on the card (Marlin with
-// hitstop, Oct 12). The releases page is not a door yet: until a check has found a newer version there is no news.
+// The card is a state and an act, never a sentence. "Not checked" sits in
+// the small line where "Checked" and its time would, so the version stays the largest thing on the card
+// The releases page is not a door yet: until a check has found a newer version there is no news.
 // THE GOAL CHANGED (Oct 29, Settings' version pass, from the passed prototype): the versions sit on one numbered rail, and
 // where no newest version is known the Newest place is a dashed card that says what it is (a dash and "Not checked yet")
 // and holds the one act, Check. It is never an empty card: it has no number, no sentence and no door. Only the Running card
@@ -348,7 +348,7 @@ test("a release the daemon could not read is a card with its reason, not a silen
   }
 }, 30_000);
 
-// ---------- a run: its steps, and the log only when it fails (Marlin, Oct 12) ----------
+// ---------- a run: its steps, and the log only when it fails ----------
 // The lines an upgrade prints, ANSI already stripped by the route (UpgradeRuns.kt), in the order a real run prints them.
 const CHECKED = [
   "splice upgrade: from github.com/torad-labs/splice releases",

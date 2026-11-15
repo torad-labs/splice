@@ -22,7 +22,7 @@ internal class TurnWiring(
     private val hud = UsageHud()
 
     // Each distinct scale line once, not once per turn: per turn it was 106,386 lines in 7 days, about 5% of
-    // the journal (splice-usage's sweep, Oct 12). A row whose factor or window changes says the new one.
+    // the journal (Oct 12 sweep). A row whose factor or window changes says the new one.
     private val saidScales: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     /** The Anthropic usage payload builder — shared by the stream emitter and the non-stream

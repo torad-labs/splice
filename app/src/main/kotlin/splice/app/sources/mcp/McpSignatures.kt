@@ -49,7 +49,7 @@ internal data class McpServerSignature(
 }
 
 /** Turns the census into signatures. An http, sse or ws server has no process, so it is listed shared and matches no
- *  copy: it is one server at its address whoever calls it (fin, Oct 12). [sharing] is the
+ *  copy: it is one server at its address whoever calls it. [sharing] is the
  *  host's own plan: it classes every declared server by the hub's rules, a plugin's or a project's as a
  *  user-scope one, whether or not a session runs in its folder (hub step 3). Null keeps the census's own class, which
  *  covers user-scope servers only. */

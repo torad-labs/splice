@@ -1,4 +1,4 @@
-// NEW: a Use now pin outlives the daemon (Nov 3, 2026). Marcos pressed Use now on account 3 that night because it
+// NEW: a Use now pin outlives the daemon (Nov 3, 2026). an operator pressed Use now on account 3 because it
 // had not worked; #459 made the press take, and the install that shipped it restarted the daemon, which dropped
 // the pin: a pin lived in the pool's memory alone, and on the beta channel the daemon restarts through the day.
 //
@@ -164,7 +164,7 @@ class UseNowPinRestartTest {
         assertEquals(HttpStatusCode.OK, response.status)
     }
 
-    /** A team seat's start pins its session through the pool (PoolAccountPins), past the console's 409 for a login
+    /** A session's start pins its session through the pool (PoolAccountPins), past the console's 409 for a login
      *  held for every model: the one way a pin is set over such a hold. */
     private fun seatPinned(label: String) = assertTrue((Daemon().source as HeadAccountPinSource).pin(label, SESSION))
 

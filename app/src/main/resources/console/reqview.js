@@ -32,7 +32,7 @@ const REQVIEW = (() => {
   };
   // kept or cut: the records are there, and only then are there tabs. Every other state is said ONCE for the request, in
   // the page's words with the page's control (h.gone), never "Not kept" on Sent, Attempts and Returned in turn: three
-  // empty tabs are what sent both p157 and p158 hunting through Settings (fin, Oct 10).
+  // empty tabs are what sent both p157 and p158 hunting through Settings.
   const kept = (st) => ["kept", "cut"].includes(st);
   // one frame's piece of the answer, in whichever dialect it came: Anthropic's block delta, a Responses text delta, or a
   // chat completion chunk's content. Consecutive pieces of one answer fold to one line in the frames list.
@@ -227,7 +227,7 @@ const REQVIEW = (() => {
       return `${toggle}<span class="pv">${Array.isArray(v) ? `[${v.length}]` : ""}</span><ul class="tree">${kids}</ul>`;
     }
     // A body splice could not keep says so in the words the page uses when keeping is off, with what it measured when
-    // that was the disk, and the door where old records are deleted to free the space (fin). Its raw reason goes to the log.
+    // that was the disk, and the door where old records are deleted to free the space. Its raw reason goes to the log.
     function unsavedHtml(body) {
       if (!body || typeof body !== "object" || body.unavailable !== true) return null;
       if (body.reason) console.info("request body not kept:", body.reason);
@@ -296,7 +296,7 @@ const REQVIEW = (() => {
       const list = open ? `<ol class="frames">${groups.map((g) => `<li><span class="ev">${esc(g.event)}</span>${g.n > 1 ? `<span class="times">${g.n} times</span>` : ""}${g.n === 1 ? `<span class="fd">${typeof g.data === "object" ? prev(g.data) : prim(g.data)}</span>` : ""}</li>`).join("")}</ol>` : "";
       return `<div class="rvw-fd${open ? " open" : ""}${wide ? " wide" : ""}"><button class="framefold" data-act="frames" data-k="${key}" aria-expanded="${open}">${ICON.caret}${wide ? "Response" : `${lead}${n0(fr.length)} ${fr.length === 1 ? "event" : "events"}`}</button>${list}</div>`;
     }
-    // A STATUS IN THE CONSOLE'S WORDS, ITS CODE BESIDE IT (Oct 27): "Status 200" was the wire's word for what the pane
+    // A STATUS IN THE CONSOLE'S WORDS, ITS CODE BESIDE IT: "Status 200" was the wire's word for what the pane
     // above already says in his. An answer is a tick and "Answered"; a refusal is its outcome word in the limit red, as
     // its row says it ("Rate limited", "Overloaded"); a spent plan window is "Limit reached"; a 200 whose stream ended on
     // an error event is that error's word, out of the answer's ink. The code stays on the record, small, as its own fact.
@@ -401,7 +401,7 @@ const REQVIEW = (() => {
         const reply = rt.frames ? replyHtml(rt.frames, r.provider, h.reply !== false) : "";
         const tail = rt.frames ? framesHtml(rt.frames, `${r.id}:ret`, "", true) : (unsavedHtml(rt.body) ?? folded(`${r.id}:retbody`, "Response", `<div class="json">${tree(rt.body, `${r.id}.ret`, 0, () => true)}</div>`, true));
         // a 200 whose stream ends on an error event keeps its true status, out of the success colour, so the eye lands on the
-        // ending (fin, after p88 read Claude's in-stream Overloaded as a success)
+        // ending (an in-stream error read Claude's in-stream Overloaded as a success)
         const last = rt.frames?.at(-1), ended = last?.event === "error" ? last.data?.error?.type ?? "api_error"
           : last?.event === "response.failed" ? last.data?.response?.error?.code ?? "api_error" : null;
         const status = `<p class="rstat">${statusHtml(rt.status, { ended, lock: Boolean(tr.attempts?.at(-1)?.lock) && rt.status >= 400 })}</p>`;

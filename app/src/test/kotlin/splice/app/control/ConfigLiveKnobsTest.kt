@@ -247,7 +247,7 @@ class ConfigLiveKnobsTest {
 
         assertFalse(mirror.getValue("editable").jsonPrimitive.boolean, mirror.toString())
         assertEquals(
-            "pinned false by project rule; ask Marcos to change",
+            "pinned false by project rule; not configurable",
             mirror.getValue("read_only_reason").jsonPrimitive.content,
         )
         assertEquals("false", mirror.getValue("value").jsonPrimitive.content)

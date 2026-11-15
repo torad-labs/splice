@@ -4,7 +4,7 @@
 // for, and its result carries the script on. When the script turns out not to ask for that Write as streamed, Claude
 // Code writes nothing from that block.
 //
-// The shape is the Mac session's 10:26 PM CT turn: one script wrote a 52 KB stylesheet, and the client saw nothing for
+// The shape is a Mac session's turn: one script wrote a 52 KB stylesheet, and the client saw nothing for
 // five and a half minutes, because the script reached the runtime, and its Write the client, only once GPT finished it.
 //
 // These drive a codex head in code mode the way Claude Code does, through /v1/messages, in front of a scripted

@@ -1,7 +1,7 @@
 // NEW: Oct 11, 2026 — Settings > Your data's three stores that were counted nowhere (transcript copies, compaction
 // summaries, code mode work), read together and cleared one at a time.
 //
-// Marlin's rule for every store that holds the user's prompts: the row shows a count, Delete now works, and the
+// The rule for every store that holds the user's prompts: the row shows a count, Delete now works, and the
 // store is stopped by a switch or its feature is named. One pair of routes serves the three, so a row reads and
 // deletes them the same way.
 package splice.app.control.kept

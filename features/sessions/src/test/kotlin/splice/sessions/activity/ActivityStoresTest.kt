@@ -159,7 +159,7 @@ class ActivityStoresTest {
 
     @Test
     fun `the save on Your data cuts the edges at its moment, and spares a team that is still going`() {
-        // Marlin, Oct 10, 2026: when a person says yes to a deletion, everything the history covers
+        // When a person says yes to a deletion, everything the history covers
         // is gone at that moment, and an edge is the record of who they messaged. The moment falls
         // INSIDE a UTC day on purpose: a whole-day delete would leave the morning's edges behind.
         val stores = ActivityStores(dir, retentionDays = 90, storeHeads = "*", clock = WallClock { DAY_ONE })

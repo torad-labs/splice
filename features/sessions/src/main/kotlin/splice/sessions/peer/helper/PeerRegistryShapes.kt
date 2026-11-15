@@ -9,7 +9,7 @@ import splice.sessions.peer.codex.NativeProcess
 /** The peer feature Splice's helpers announce. */
 private const val PEER_FEATURE = "splice-peer-v1"
 
-// why: the lifecycle binding layout Fence and the Temple read (Fence's lifecycle-owner-binding.md); 1 is the only one.
+// why: the lifecycle binding layout that external tools read; 1 is the only one.
 private const val LIFECYCLE_BINDING_VERSION = 1
 
 /** What a helper's record says it is, in `kind` and `entrypoint`. */
@@ -27,12 +27,12 @@ public data class RecordPeer(
     val owner: NativeProcess? = null,
 )
 
-/** A process in a record's lifecycle binding, as Fence and the Temple read it. */
+/** A process in a record's lifecycle binding, as external tools read it. */
 @Serializable
 internal data class RegistryProcess(val pid: Long, val procStart: String, val pidDomain: String)
 
 /** The record's `lifecycleBinding` (version 1): this session's lifecycle is hosted by [nativeOwner], and [peer], the
- *  helper the record is for, receives its messages. Fence checks both are still the processes named here. */
+ *  helper the record is for, receives its messages. A reader checks both are still the processes named here. */
 @Serializable
 internal data class RegistryBinding(
     val version: Int = LIFECYCLE_BINDING_VERSION,

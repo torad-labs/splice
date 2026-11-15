@@ -1,5 +1,5 @@
-// NEW: the Claude half of failover within one provider (operator ruling, Oct 3, 11:44 PM CT: "each provider gets a
-// head, each head can have multiple subscriptions"). "Sign in to another account" for a Claude head: Anthropic's own
+// The Claude half of failover within one provider (each provider gets a head, each head can have multiple
+// subscriptions). "Sign in to another account" for a Claude head: Anthropic's own
 // OAuth flow run by Claude Code's own `auth login`, never a form splice draws.
 //
 // The sign-in runs in a PENDING folder nothing reads as an account, and only lands once the account it recorded is

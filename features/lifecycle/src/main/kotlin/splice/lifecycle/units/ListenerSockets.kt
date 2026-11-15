@@ -1,11 +1,11 @@
-// NEW (Oct 29, 2026, splice-lead; the restart already sends a message saying the server is restarting so the user
-// knows, and the new daemon just takes over; Marcos then agreed to socket activation): systemd holds every
+// NEW (Oct 29, 2026; the restart already sends a message saying the server is restarting so the user
+// knows, and the new daemon just takes over; then socket activation was agreed): systemd holds every
 // port splice listens on, so a restart fails no request. Between the old daemon's exit and the new one's bind nothing
 // listened, and Claude Code printed ECONNREFUSED; a request on a connection the stopping daemon closed printed
 // ECONNRESET. With a socket unit per listener, a client that connects during a restart waits in the kernel's accept
 // queue and the next daemon answers it (the daemon's side, adoption and the pause at drain start, is in
 // integrations/http/listen). `splice restart` lays the sockets from splice.toml, one per listener, named for it, since
-// the daemon matches a handed socket by its name. Host Shield was meant to hold these ports (Oct 10) and vendors no
+// the daemon matches a handed socket by its name. A host wrapper was meant to hold these ports (Oct 10) and vendors no
 // splice since Oct 25, so splice lays them itself, beside splice.service, in splice's units folder.
 package splice.lifecycle.units
 

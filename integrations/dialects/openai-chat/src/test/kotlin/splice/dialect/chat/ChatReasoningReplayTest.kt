@@ -1,4 +1,4 @@
-// NEW: a self-served head gets its own earlier reasoning back (Marcos, 2026-10-23: reasoning is passed for self-served
+// NEW: a self-served head gets its own earlier reasoning back (reasoning is passed for self-served
 // heads like GLM and Qwen). llama-server reads an assistant message's reasoning_content and the model's chat template
 // renders it inside that turn's think block. Without it every earlier turn renders an empty think block, so the model
 // reads a history in which it never reasoned, and GLM-5.3 repeats reasoning it already did. Splice's own wait notice

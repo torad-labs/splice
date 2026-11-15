@@ -24,7 +24,7 @@ private val SCOPES_BY_PRECEDENCE = listOf("default", "toml", "file", "env", "run
 
 /** Knobs the schema carries but no layer can change: ConfigCoercion answers them with one value whatever is written. */
 private val PINNED_REASONS = mapOf(
-    Knob.MIRROR_REASONING to "pinned false by project rule; ask Marcos to change",
+    Knob.MIRROR_REASONING to "pinned false by project rule; not configurable",
 )
 
 internal class KnobViews {

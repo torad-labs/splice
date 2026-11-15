@@ -219,8 +219,8 @@ internal object Concentration {
     // (a647799d3). NativeCodeModeRuntime.kt 3.18 (b2bf59fbe), CodexResponsesArm.kt 3.67 (a647799d3) and
     // CodexCodeModeTurnBuilder.kt 3.09 (a647799d3, f6f443847) grew in place. Every other file in the band is
     // unchanged since 785f9cce8, so any of them that crossed 3.0 did so by neighbourhood, as the new files moved the
-    // medians they are measured against. The tree got worse; this records it, on splice-lead's decision, so the
-    // recovered work lands. The decomposition is owed by the seat that landed the recovery, after this push, worst
+    // medians they are measured against. The tree got worse; this records it, so the
+    // recovered work lands. The decomposition is owed by the session that landed the recovery, after this push, worst
     // file first, and this number follows each file down as it leaves the band. 16 -> 29.
     // 2026-10-25, last: the decomposition owed above, worst file first, behavior unchanged, measured with a port of
     // this law's census over this commit's tree. Eleven files leave by seams of their own. NativeGrpcWaits.kt 4.88 ->
@@ -261,8 +261,8 @@ internal object Concentration {
      *
      *  2026-10-25, later: splice.provider.codex becomes the worst at 31. It held 29 at 785f9cce8; the recovery
      *  (a647799d3) added CodeModeToolPolicy.kt and CodexCodeModeSettings.kt and removed CodeModeWaitTool.kt, and
-     *  f6f443847 added CodeModeLoadedTools.kt. Measured by the pre-push's run of this law on e28d00d1f and recorded
-     *  on splice-lead's decision; moving a file out is part of the decomposition owed above. 30 -> 31.
+     *  f6f443847 added CodeModeLoadedTools.kt. Measured by the pre-push's run of this law on e28d00d1f and recorded;
+     *  moving a file out is part of the decomposition owed above. 30 -> 31.
      *
      *  2026-10-26: that move. Six Codex sign-in files leave splice.provider.codex for splice.provider.codex.auth,
      *  beside CodexPlanLimitBody.kt: CodexAuthDescribe, CodexAuthFile, CodexAuthJson, CodexAuthProvider,

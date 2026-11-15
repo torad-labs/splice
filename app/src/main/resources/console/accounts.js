@@ -1,5 +1,5 @@
 // Accounts: every account on every provider, how much of each window is used, when it comes back, which one
-// serves next, and what each command may spend in a day. The drawing (Splice-Animator design/console, d3338fa) on
+// serves next, and what each command may spend in a day. The drawing on
 // splice's own answers: every name, number and state below is read from the control API, and every act calls it.
 CONSOLE.page("accounts.html", (scope) => {
   "use strict";
@@ -9,7 +9,7 @@ const LEN = { "5 hours": 300, Week: 10080, Month: 43200, Day: 1440 };
 
 // splice's budget day runs midnight to midnight on the DAEMON's clock (BudgetEnforcement.kt:10), and the daemon says
 // when it next rolls over (day_resets_at_epoch_ms). A browser in another zone computing its own midnight disagreed
-// with the admission that actually blocks (re-review, Oct 10). Only a daemon that answers nothing falls back here.
+// with the admission that actually blocks. Only a daemon that answers nothing falls back here.
 let DAY_RESETS_AT = null;
 let DAY_STARTED_AT = null; // the instant the budget day now running began, from the daemon's own calendar day
 let DAY_FROM = null; // the first whole hour the day's figures count from, where each Day's door to its requests starts
@@ -31,7 +31,7 @@ const FAMILY = {
   anthropic: { id: "claude", name: "Claude" }, openai: { id: "gpt", name: "ChatGPT" }, xai: { id: "grok", name: "Grok" },
   moonshot: { id: "kimi", name: "Kimi" }, meta: { id: "muse", name: "Muse" }, openrouter: { id: "router", name: "OpenRouter" },
   deepseek: { id: "deepseek", name: "DeepSeek" }, local: { id: "local", name: "This computer" },
-  vast: { id: "vast", name: "vast.ai" }, // a rented GPU behind a tunnel: the provider says family = "vast" (fin's name)
+  vast: { id: "vast", name: "vast.ai" }, // a rented GPU behind a tunnel: the provider says family = "vast"
 };
 // What Add provider offers: a provider splice can add, picked by the family it would run under.
 const CATALOG = [
@@ -100,8 +100,8 @@ function askEconomics() {
     if (answer.ok && (answer.body?.heads || []).some((h) => h.read_pending)) setTimeout(askEconomics, ECONOMICS_REASK_MS);
   });
 }
-// The sessions on each login come from /api/sessions, which took 4 s and more on his machine while every other read here
-// answers in under one, and the page showed only Add provider until it did (walk on d0ec523b5). So it is asked beside
+// The sessions on each login come from /api/sessions, which took 4 s and more on a slow machine while every other read here
+// answers in under one, and the page showed only Add provider until it did. So it is asked beside
 // the other reads and never waited on: the cards draw at once with ghost doors under each login, as many as it had on the
 // last visit, and when it answers each card takes its sessions and the page draws again. Null is not read yet; a later
 // read keeps the last answer meanwhile.
@@ -143,7 +143,7 @@ async function readAll({ asks = true } = {}) {
   }
   if (version !== loadVersion) return newestRead;
   if (revision !== accountRevision || ui.orderSaving || ui.removing) return;
-  // A READ SPLICE DID NOT ANSWER KEEPS THE BOARD IT HAD (Oct 26). It emptied the list, so the board drew only Add provider:
+  // A READ SPLICE DID NOT ANSWER KEEPS THE BOARD IT HAD. It emptied the list, so the board drew only Add provider:
   // a splice with no providers, inviting him to add what was already there. The last board stays with its figures, the
   // page head says splice is not answering and since when, and the page asks again on its own until it answers.
   if (!st.ok || !ac.ok) {
@@ -189,14 +189,14 @@ async function readAll({ asks = true } = {}) {
       return { at, ...t, ok: Math.max(0, t.all - t.fail - t.none), unread: missing.has(at) };
     });
   };
-  // economics counts only requests that moved tokens, so turns less the unpriced ones are the priced share (fin, Oct 10)
+  // economics counts only requests that moved tokens, so turns less the unpriced ones are the priced share
   // A daemon that splits plan from key (all_accounts_on_plan on the head) says per hour how many requests were on a plan
   // and their value at API prices; cost_usd and unpriced_turns are then the key's alone. An hour recorded before the split
   // has its plan fields null, and its cost and count still mix the two, so it is summed apart (old) and never read as key.
   const sumOf = (rows) => rows.reduce((t, b) => {
     const old = b.plan_turns == null;
-    // failed_turns: failed requests that reported no usage, which are failed and never "no price" (Marlin's Accounts walk,
-    // ruled Oct 12); an hour written before the field has none, and its failures stay in unpriced_turns as they were counted
+    // failed_turns: failed requests that reported no usage, which are failed and never "no price";
+    // an hour written before the field has none, and its failures stay in unpriced_turns as they were counted
     return { usd: t.usd + (b.cost_usd || 0), unpriced: t.unpriced + (b.unpriced_turns || 0), failed: t.failed + (b.failed_turns || 0), turns: t.turns + (b.turns || 0),
       plan: t.plan + (old ? 0 : b.plan_turns), planUsd: t.planUsd + (old ? 0 : b.plan_value_usd || 0),
       old: t.old + (old ? b.turns || 0 : 0), oldUsd: t.oldUsd + (old ? b.cost_usd || 0 : 0), oldUnpriced: t.oldUnpriced + (old ? b.unpriced_turns || 0 : 0) };
@@ -208,14 +208,14 @@ async function readAll({ asks = true } = {}) {
     return [h.key, { ...sumOf(rows.filter((b) => b.hour >= wholeFrom)), opening: opening && (opening.usd || opening.unpriced) ? opening : null }];
   }));
   // a command whose hours splice has not read has no count, and its row says why, never zero, because "No requests" over
-  // a day that had them is a false statement (Marlin, Oct 11): still being read just after a restart draws the row's
-  // ghost; a history it could not read, or no answer at all, reads Not read, as Settings does (fin)
+  // a day that had them is a false statement: still being read just after a restart draws the row's
+  // ghost; a history it could not read, or no answer at all, reads Not read, as Settings does
   // a day that holds an hour the daemon could not read has no total, never the sum of the hours it could (not_read_hours)
   const dayUnread = (h) => (h.not_read_hours || []).some((hour) => hour + HOUR > dayStart);
   const unread = new Map(ec.ok ? (ec.body?.heads || []).filter((h) => h.read_pending || h.unavailable || dayUnread(h))
     .map((h) => [h.key, !h.read_pending && (h.unavailable || dayUnread(h)) ? DAY_NOT_READ : DAY_READING])
     : (st.body?.registry || []).map((h) => [h.key, DAY_NOT_READ]));
-  // why a day reads Not read, behind the word as its disclosure (splice-usage's walk, Oct 13: ChatGPT's Day said Not read
+  // why a day reads Not read, behind the word as its disclosure (ChatGPT's Day said Not read
   // and nothing more): the daemon's own fixed sentence for a history it could not read (EconomicsRead.Unavailable), or
   // that splice did not answer. An hour it could not read needs no sentence: the day draws that hour hatched.
   const unreadWhy = new Map(ec.ok ? (ec.body?.heads || []).filter((h) => !h.read_pending && h.unavailable).map((h) => [h.key, h.unavailable])
@@ -239,8 +239,7 @@ async function readAll({ asks = true } = {}) {
     const p = provs.get(fam.id), b = budgets.get(h.key), today = spendToday.get(h.key) || { usd: 0, unpriced: 0, failed: 0, turns: 0, plan: 0, planUsd: 0, old: 0, oldUsd: 0, oldUnpriced: 0 };
     const allPlan = splitOf.get(h.key);
     // with the split: an all-plan command counts every request as on the plan, its old hours too, and names their value
-    // at API prices; a mixed one shows the key's money, the plan's count, and an old hour's requests as not split (fin,
-    // Marlin 5:52 PM, splice-lead on null hours, Oct 11)
+    // at API prices; a mixed one shows the key's money, the plan's count, and an old hour's requests as not split
     const split = allPlan === undefined || kind === "local" ? null : allPlan
       ? { allPlan: true, plan: today.plan + today.old, planUsd: today.planUsd + today.oldUsd }
       : { allPlan: false, keyUsd: today.usd - today.oldUsd, keyUnpriced: today.unpriced - today.oldUnpriced, plan: today.plan, old: today.old,
@@ -281,14 +280,14 @@ async function readAll({ asks = true } = {}) {
         const from = uses[0].source;
         const day = (s) => (s ? new Date(s * 1000) : null); // the day splice first saw the key (KeyLedger.kt)
         // the key in use shows its masked tail, "…9c21", from /api/auth's api_key_masked on a command it serves, so a
-        // replaced key can be told from the one now in use (Marlin's Accounts walk, Oct 12); a short key is masked "set"
+        // replaced key can be told from the one now in use; a short key is masked "set"
         const masked = uses.map((u) => au.body?.[u.head]).find((x) => x?.env_var === k.name && x.api_key_masked)?.api_key_masked;
         const tail = masked && masked.includes("…") ? `…${masked.split("…").pop()}` : null;
-        // the day only tells keys apart, so it shows only when the variable has held more than one (fin, Oct 12)
+        // the day only tells keys apart, so it shows only when the variable has held more than one
         const twins = (k.replaced || []).length > 0;
         // heads: the commands that send with THIS key, so a second command with a key of its own rides its own card, never
-        // the provider's first one (marlin's desk A look, Oct 12). The keys it replaced fold into one line on its card
-        // (marlin, Oct 12): their spend stays on Usage and their requests on Requests, and they have nothing to act on.
+        // the provider's first one. The keys it replaced fold into one line on its card:
+        // their spend stays on Usage and their requests on Requests, and they have nothing to act on.
         p.accounts.push({ id: k.name, env: k.name, tail, twins, has: from !== "missing" && from !== "unknown", from: from === "missing" || from === "unknown" ? null : from, seen: day(k.first_seen_epoch_seconds),
           heads: uses.map((u) => u.head), replaced: (k.replaced || []).map((x) => day(x.first_seen_epoch_seconds)) });
       }
@@ -299,7 +298,7 @@ async function readAll({ asks = true } = {}) {
   // each plan command's own order and pin (AccountOrderStore.kt:1, :24): no order is the soonest-reset rule
   await Promise.all([...provs.values()].filter((p) => p.kind === "plan").flatMap((p) => p.cmds.map(async (c) => {
     const mine = p.accounts.filter((a) => (a.row.heads || []).includes(c.head));
-    // a command with one login has no pool to order, and its order route refuses with a 409 on every load (walk, Oct 13)
+    // a command with one login has no pool to order, and its order route refuses with a 409 on every load
     const o = mine.length > 1 ? await API.get(`/api/auth/${encodeURIComponent(c.head)}/order`) : { body: null };
     const byLabel = (label) => mine.find((a) => labelOn(a, c.head) === label)?.id;
     const ids = [...new Set((o.body?.effective_order || []).map(byLabel).filter(Boolean))];
@@ -347,7 +346,7 @@ function planAccount(row) {
     windowOf(row.seven_day_used_percent, row.seven_day_reset_epoch_seconds, row.seven_day_window_seconds, "long", row.seven_day_current)].filter(Boolean);
   // a login held at its limit carries the limit's own sentence as its refusal, and it is held, not signed out
   const out = !row.token_renews && (!row.credential_present || row.auth_exclusion_reason === "credential_missing" || (!!row.refusal && !windows.some(atLimit)));
-  // Claude Code's own login place that holds no account is no account (Marlin, Oct 10): signed out, no proved
+  // Claude Code's own login place that holds no account is no account: signed out, no proved
   // account, no reading. Its Sign in only adds an account, as Add account does, and the place still read Signed out
   // after it. One that was signed in and expired keeps its account, and shows.
   if (row.login_place && out && !row.identity_verified && !row.observed_at_epoch_seconds) return null;
@@ -406,7 +405,7 @@ const board = document.getElementById("board");
 let drag = null;
 // ---------- time: what a person reads ----------
 // A time from the instant splice gave, rounded once to the minute, so every view of one reset prints the same minute (the
-// walkers saw 5:38 and 5:39 for one reset when it was rebuilt from minutes left at each load).
+// two views showed 5:38 and 5:39 for one reset when it was rebuilt from minutes left at each load).
 function at(ms) {
   const d = new Date(Math.round(ms / 60000) * 60000);
   const days = Math.round((new Date(d).setHours(0, 0, 0, 0) - new Date(NOW).setHours(0, 0, 0, 0)) / 864e5);
@@ -417,7 +416,7 @@ function at(ms) {
 
 // ---------- the rules the page shows ----------
 // A window whose reported reset has gone by. What the page holds for it is the ENDED window's figure, so nothing on
-// the screen counts it (Marlin, Oct 10): not the bar, not the number, and not whether the account is at its limit.
+// the screen counts it: not the bar, not the number, and not whether the account is at its limit.
 // An account held back by a 5-hour window at 100% whose reset passed an hour ago has room, and splice is already
 // sending turns to it; the card said At limit until the next reading landed.
 const ended = (w) => w.left == null && w.rolledMs != null;
@@ -507,7 +506,7 @@ const GLYPH = {
   renew: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4h-4"/></svg>',
 };
 /** A Day row splice is still reading: the count is not known, so it draws the ghost of the row that will land, never a
- *  word (Marcos, Oct 12: "we can do better than that reading indicator"). The value is the row's state, never printed. */
+ *  word. The value is the row's state, never printed. */
 const DAY_READING = "reading";
 const DAY_NOT_READ = "Not read";
 // why a login's limits could not be read, from /api/accounts' last_read_failure.reason; a reason with no word shows none
@@ -515,7 +514,7 @@ const READ_WHY = { not_answering: "Provider not answering", refused: "Provider r
 const money = dollars; // priced from the rate card, so an estimate; nothing charged reads "$0" (kit.js)
 const cap = (v) => `$${Number.isInteger(v) ? v : v.toFixed(2)}`;
 const waiting = () => `<span class="waitbox" role="status">${GLYPH.wait}<span class="sr">Signing in</span></span>`;
-// the lock says what it means beside it: a bare red lock read as nothing until the footer under the stack (walk, Oct 13)
+// the lock says what it means beside it: a bare red lock read as nothing until the footer under the stack
 const locked = (pop = false, word = "Limit reached") => DRAW.lock(word, { pop });
 // a held login is held until the last of its windows at their limit resets
 const heldUntil = (a) => { if (a.blocked) return `${esc(a.blocked)}${a.asking ? `<span class="why">· its next turn asks again</span>` : ""}`; const w = a.windows.filter(atLimit).sort((x, y) => y.left - x.left)[0]; return w?.resetMs != null ? `Limit reached until ${at(w.resetMs)}` : "Limit reached"; };
@@ -525,8 +524,8 @@ const heldUntil = (a) => { if (a.blocked) return `${esc(a.blocked)}${a.asking ? 
 const ring = (w) => DRAW.ring(w.left / w.len);
 const bar = (v, cls = "") => DRAW.meter(v, cls);
 // A window still running says when it resets, with its ring. A window whose reported reset has already gone by says
-// "Ended" and that time (Marlin's Accounts walk, Oct 12: "Reset" over an empty bar misread), with no ring: there is nothing left to fill, and "Week 93% used" beside an empty
-// cell read as a live week at 93% when it was the ended week's figure (fin's word, Oct 10). A window that reported no
+// "Ended" and that time ("Reset" over an empty bar misread), with no ring: there is nothing left to fill, and "Week 93% used" beside an empty
+// cell read as a live week at 93% when it was the ended week's figure. A window that reported no
 // reset at all keeps the empty cell, because there the page genuinely knows nothing to say.
 // what the ring's arc is, said under the pointer: how long the window has left
 const leftWord = (m) => (m < 60 ? `${Math.max(1, m)} min` : m < 2880 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`
@@ -536,11 +535,11 @@ const resets = (w) => (w.left != null ? `<span class="when" data-tip="${leftWord
 // A window whose reset went by is closed, and Claude opens the next only on the next request, so it can stay closed for
 // hours. Its row keeps its shape: the dashed track a window with no reading since its reset draws (console.css .bar.gone,
 // never a solid empty track, which would read as nothing used), a dash for its figure, and "Ended" with the time in the
-// reset's column, where the open rows say when they reset (Marlin's ruling, fin's words, Oct 12).
+// reset's column, where the open rows say when they reset.
 const closed = (w, sub = false) => `${bar(null, `gone${sub ? " sub" : ""}`)}<span class="pct">${DRAW.dash}</span>`
   + `<span class="when rolled">Ended${w.rolledMs != null ? ` ${at(w.rolledMs)}` : ""}</span>`;
 // The budget day refills at the DAEMON's midnight, so its strip says that one word: a day name and "12:00 AM" read
-// as a weekly date to both walkers (fin, Oct 10). The plan windows keep their times, which really move. Read from a
+// as a weekly date to readers. The plan windows keep their times, which really move. Read from a
 // browser in another zone the daemon's midnight is not midnight there, so the word is only used when it is one.
 function refills(day) {
   const at0 = new Date(day.resetMs);
@@ -584,7 +583,7 @@ function windowsHtml(a, next = null, left = null, door = null, nextSock = 0) {
           + `<span class="pct ${full ? "limit" : ""}">${w.used}%<span class="used">used</span></span>` + resets(w));
     if (w.label === "Week" && a.models) {
       // A model's figure is a slice of the account week above it, read in the same observation, so once that week has
-      // ended its slices have too — whether or not the model itself reported a reset (hitstop, Oct 10).
+      // ended its slices have too — whether or not the model itself reported a reset.
       for (const m of a.models) rows += (door?.("Week", m.name) ? `<a class="label sub wdoor" href="${door("Week", m.name)}" aria-label="${esc(m.name)}: what used this week, on Usage">${esc(m.name)}${DRAW.go}</a>` : `<span class="label sub">${esc(m.name)}</span>`)
         + (ended(m) || ended(w) ? closed(ended(m) ? m : w, true)
           : `${bar(m.used, `sub ${m.used >= 100 ? "full" : ""} ${m.stale ? "stale" : ""}`)}`
@@ -599,7 +598,7 @@ function windowsHtml(a, next = null, left = null, door = null, nextSock = 0) {
     rows += `<span class="next"><span class="label">Next</span><span class="who">${loginDoor(next.name, next.id, nextSock)}</span>${w ? `<span class="nextlock" title="Limit reached until ${at(w.resetMs)}">${locked(false, "")}</span>${resets(w)}` : ""}</span>`;
   } else if (left) {
     // the last login with room in a pool of several: no other takes over at the next plan limit, until the first held one
-    // comes back (lastLeftOf), drawn on the Next row where a next would stand (splice-lead, Oct 13): an empty socket where
+    // comes back (lastLeftOf), drawn on the Next row where a next would stand: an empty socket where
     // its name would be, the lock, and the time the first held login is back
     const said = `No other login has room${left.untilMs ? ` until ${at(left.untilMs)}` : ""}`;
     rows += `<span class="next none" title="${said}"><span class="label">Next</span><span class="who"><i class="nosock" role="img" aria-label="${said}"></i></span>`
@@ -669,7 +668,7 @@ function heroHtml(c, split, reading) {
   if (split) {
     const spent = c.budget ? c.spent : split.keyUsd, priced = split.keyPriced;
     if (c.budget && spent == null) return ghost(`of ${cap(c.budget.cap)}`);
-    // a day of failed requests spent nothing and says so, "$0 of $5", never only the cap (Oct 12)
+    // a day of failed requests spent nothing and says so, "$0 of $5", never only the cap
     const counted = c.budget ? spent != null && (spent || priced || c.failed) : priced && spent != null;
     if (counted) return fig(money(spent), over) + unit(c.budget ? `of ${cap(c.budget.cap)}` : split.plan || split.keyUnpriced || split.old ? `for ${reqs(priced)}` : "");
     if (split.plan) return asked(split.plan, "on your plan");
@@ -721,12 +720,12 @@ const requestsAt = (c, { from, to = null, outcome = null }) => `requests.html?${
 const n0 = (n) => n.toLocaleString("en-US");
 const reqs = (n) => `${n0(n)} ${n === 1 ? "request" : "requests"}`;
 // A plan's turns read "on your plan": the plan covered them, and "with no price" would read as splice missing data.
-// Every other turn with no figure is a model with no rate card (fin's words, Marlin, Oct 10).
+// Every other turn with no figure is a model with no rate card.
 const noPrice = (c, lead = false) => `${leadNum(c.unpriced, lead)} ${c.unpriced === 1 ? "request" : "requests"} ${c.onPlan ? "on your plan" : "with no price"}`;
 // A failed request is counted here only when it reported no usage, so nothing was charged for it: one that reported
 // usage is priced into the figure (EconomicsBuckets: failed_turns counts noPrice && failed). The word is the one
-// Requests' Outcome switch uses (fin, Oct 12), in the limit red the hours draw failures in, and the count is the door
-// to exactly those requests; that they cost nothing (marlin p229, Oct 12: a count alone left him unsure) is said on
+// Requests' Outcome switch uses, in the limit red the hours draw failures in, and the count is the door
+// to exactly those requests; that they cost nothing (a count alone left a reader unsure) is said on
 // the door, which is where he asks it.
 const failedDoor = (c, n) => (DAY_FROM == null ? `<span class="failed-n">${n0(n)} failed</span>`
   : `<a class="failed-n" href="${requestsAt(c, { from: DAY_FROM, outcome: "fail" })}">${n0(n)} failed</a>`);
@@ -869,7 +868,7 @@ function previewCap(field) {
 // ---------- sign-in: one element wherever an account signs in, with the step its provider really asks for ----------
 // The step comes from splice's own answer: a device code to type on the provider's page (Kimi, Muse), a code pasted back
 // (Claude Code's own sign-in), or a page that finishes the sign-in by itself (LoginRoutes.kt:56).
-const CODE_HINT = `<span class="code-hint">Enter this code on the sign-in page</span>`; // the act on the code, where Open sign-in goes (fin)
+const CODE_HINT = `<span class="code-hint">Enter this code on the sign-in page</span>`; // the act on the code, where Open sign-in goes
 function signingHtml(target) {
   const s = ui.signin[target];
   // splice is ending it: the row stays, with nothing to press, until splice answers (cancelSignin)
@@ -936,7 +935,7 @@ function landedOn(how, st) {
 }
 // Cancel ends the sign-in on splice, and the card lets go of it only once splice has answered. Until Nov 11, 2026 it
 // only forgot the sign-in here: splice kept it for its ten minutes and refused the next Sign in on that login as
-// already running (Marcos: "it said it canceled ... so it didnt really cancelled"). A sign-in that already failed has
+// already running. A sign-in that already failed has
 // ended, and an add's sign-in ends with its add (dropAdd, AddConsole.discard).
 async function cancelSignin(target) {
   const s = ui.signin[target];
@@ -970,18 +969,18 @@ function howFor(p, a, c) {
   // A removed primary has no file to sign in to under its reserved name, so the login refuses before the browser
   // ever opens (OAuthAccountFiles.kt:181). Signing in with NO name is what creates the primary, so a signed-out
   // primary sends none. A named account still sends its name: signing it in nameless would move it into the
-  // primary slot (re-review, Oct 10).
+  // primary slot.
   const reserved = label === "primary" && !a.row?.credential_present;
   return { start: `/api/auth/${encodeURIComponent(head)}/login`, body: label && !reserved ? { label } : {}, poll: head };
 }
 // ---------- an account ----------
 // serves: every command this account serves now, each riding it as a chip. Use now pins it on the rail's command.
 function slotHtml(p, c, a, serves) {
-  // the pin says what pressing it does, at rest and on touch: both walkers clicked a bare pin on a guess (p153, p154)
+  // the pin says what pressing it does, at rest and on touch: readers clicked a bare pin on a guess
   const pin = c && c.pin === a.id ? `<button class="act quiet small pin" data-act="unpin" data-p="${p.id}" data-c="${esc(c.cmd)}">${GLYPH.pin}Unpin</button>` : "";
   const chips = serves.map((x) => `<span class="chip" data-key="chip:${esc(x.cmd)}"><i></i>${esc(x.cmd)}</span>`).join("");
   // A SERVER ON THIS COMPUTER WEARS ITS LAMP: unlit when it does not answer, as Sessions draws a session that is not
-  // running, and its command's chip with the live dot when it does. "Not answering" is the word (fin, Oct 10): it is
+  // running, and its command's chip with the live dot when it does. "Not answering" is the word: it is
   // what the watch measures, no reply at the address in time (LocalRuntimeReach.kt), and what splice status prints.
   if (a.down) return `${DRAW.lamp("")}<span class="state">Not answering</span>`;
   // a server the watch has no reading for yet: the unlit lamp, and the state line's ghost until the watch reads it
@@ -1013,8 +1012,7 @@ function slotHtml(p, c, a, serves) {
 const slotKey = (a, c) => `slot:${a.id}|${c.cmd}`;
 // Try again on a login its provider blocked until its owner acts: splice lets go of its hold, and the next turn that
 // reaches the login asks the provider, whose answer decides (AskAgainRoute.kt). Until Nov 11, 2026 a blocked card offered
-// only Sign in again, in its menu, and a sign-in lifts no block. Marcos, that day: "I did sign in again because it said it
-// was blocked, I realized my payument failed, so I paid again".
+// only Sign in again, in its menu, and a sign-in lifts no block.
 const tryAct = (p, c, a) => `<button class="act quiet" data-act="ask" data-p="${p.id}" data-c="${esc(c.cmd)}" data-a="${a.id}"`
   + ` title="Its next turn asks the provider again">Try again</button>`;
 // the models a pinned login still cannot serve, each with when it can again (PinReason.kt pin_models_held), as one line
@@ -1043,7 +1041,7 @@ function menuItems(p, a) {
     ...(p.id === "claude" && !a.out ? [["resets", "Limit resets"]] : []),
     ...(a.canRemove === false ? [] : [["remove", "Remove"]])];
 }
-// A CLAUDE LOGIN'S LIMIT RESETS (Nov 13, 2026), opened from its menu: each kind it has, how many are left, and one act to
+// A CLAUDE LOGIN'S LIMIT RESETS, opened from its menu: each kind it has, how many are left, and one act to
 // spend one. A spend cannot be taken back, so it takes two presses on the same act, and the second says what it clears.
 // splice never spends one by itself (LimitResetRoutes.kt). The head and label are the login's own, as signing in again
 // sends them (howFor).
@@ -1082,8 +1080,8 @@ async function readResets(a, spot, said = null) {
   ui.resets = login ? { spot, state: "read", login, said } : { spot, state: "failed", ...mutationError(res, "Resets not read") };
   render();
 }
-// WHAT A HELD CLAUDE LOGIN CAN DO ABOUT IT, ON ITS CARD (Nov 14, 2026). Marcos wanted a login at its limit to say when a
-// reset is available, with the way to its Limit resets, and to offer a fallback model where none is set. The card
+// WHAT A HELD CLAUDE LOGIN CAN DO ABOUT IT, ON ITS CARD. A login at its limit says when a
+// reset is available, with the way to its Limit resets, and offers a fallback model where none is set. The card
 // reads its resets once (the read asks the provider) and again after RESET_REASK_MS, and says so only when one can be
 // spent now; its act opens the login's Limit resets, where a spend still takes two presses. The sessions on it with no
 // fallback are offered the command's other models, set per session as Sessions sets them (SessionFallbackRoute). splice
@@ -1195,8 +1193,8 @@ function nameHtml(p, a, spot) {
   if (p.kind === "local") return `<span class="lmc-cmd"><span class="chip">${a.down || a.unread ? "" : "<i></i>"}${esc(a.name)}</span></span>`;
   if (ui.rename !== spot) return `<span class="name">${DRAW.nameHtml(namedLogin(p, a))}</span>`;
   const err = ui.renameErr;
-  // one visible way to finish and one to leave, as the key field's Save and Cancel: both walkers had to guess Enter
-  // (p153, p154). A refusal reads under it (cardHtml).
+  // one visible way to finish and one to leave, as the key field's Save and Cancel: a reader had to guess Enter.
+  // A refusal reads under it (cardHtml).
   // the field never opens holding an address, which no name may hold: it opens on the name he gave, or empty with the
   // name splice shows now as its placeholder
   return `<input class="field rename${ui.enter === "rename" ? " enter" : ""}" data-a="${a.id}" data-s="${spot}" value="${esc(ui.renameDraft ?? (/\S@\S/.test(a.name ?? "") ? "" : a.name))}" placeholder="${esc(shownName(p, a))}" aria-label="Name" spellcheck="false"${err ? ' aria-invalid="true" aria-describedby="rename-err"' : ""}>`
@@ -1219,7 +1217,7 @@ function sessWhy(x) {
   return [own, moved].filter(Boolean).join(" · ");
 }
 // HOW MANY DOORS EACH LOGIN HAD, kept from the last answer and the last visit, so while /api/sessions is read (4 s and
-// more on his machine) each card stands at the size it will land at, its doors drawn as their ghosts
+// more on a slow machine) each card stands at the size it will land at, its doors drawn as their ghosts
 const DOORS_SEEN = new Map();
 function sessionsHtml(p, a, sock, live) {
   if (a.sessions === null) return ghostDoors(Math.min(SESS_SHOWN, DOORS_SEEN.get(a.id) ?? 0));
@@ -1248,7 +1246,7 @@ function startedAt(x) {
   const t = typeof x.started_at === "number" ? (x.started_at < 1e12 ? x.started_at * 1000 : x.started_at) : Date.parse(x.started_at ?? "");
   return Number.isFinite(t) ? `since ${clock(new Date(t))}` : "";
 }
-// A MOVE IS SHOWN ON THE CARDS IT TOUCHED (Oct 26), in one short line under the card's doors: its glyph says onto this
+// A MOVE IS SHOWN ON THE CARDS IT TOUCHED, in one short line under the card's doors: its glyph says onto this
 // login or off it, then the other login by its socket and its name, a door to its card on this board, then why and when.
 // Where a provider serves two or more commands, each command's move is its own line with that command's chip, so two
 // commands moved off one login read as two moves and he can tell which command went where. The command's last move
@@ -1330,10 +1328,10 @@ function cardHtml(p, c, a, i, serves) {
   // a grip that cannot move promises nothing on hover: only one that drags says how
   const grip = p.kind === "plan" ? `<button class="grip" data-grip="${p.id}" data-c="${esc(c.cmd)}" data-a="${a.id}" aria-label="Move ${esc(shownName(p, a))}"${canMove ? ' title="Drag to reorder, or use the up and down arrow keys"' : " disabled"}>${GLYPH.grip}</button>` : "";
   // a default name starts with its plan word ("Max", "Max · 1a2b3c4d", later "Max 2"): the tag beside it shows only
-  // when it says more than that word, such as a tier "Max 5x" (fin, Oct 12)
+  // when it says more than that word, such as a tier "Max 5x"
   const said = a.row?.label_default && Boolean(a.plan) && shownName(p, a).toLowerCase().includes(String(a.plan).trim().toLowerCase());
   const sub = a.plan && ui.rename !== spot && !said ? `<span class="plan">${esc(a.plan)}</span>` : "";
-  // labels only (Oct 12): a login splice named itself offers its one naming here, beside the name, and never blocks
+  // labels only: a login splice named itself offers its one naming here, beside the name, and never blocks
   const nameIt = a.row?.label_default && a.row?.can_rename && ui.rename !== spot
     ? `<button class="act quiet small name-it" data-act="rename" data-s="${spot}">Name it</button>` : "";
   // the address the provider proved for this login, under its name; a login named by its email already shows it
@@ -1360,12 +1358,12 @@ function cardHtml(p, c, a, i, serves) {
   } else if (a.out) {
     body = signRow || `<div class="outbox"><button class="act primary" data-act="signin" data-p="${p.id}" data-a="${a.id}">Sign in</button></div>`;
   } else if (p.kind === "plan" && a.noUsage) {
-    // fin's words (Marlin, Oct 10): no time on it, and never "no usage", which reads as "used nothing"
+    // no time on it, and never "no usage", which reads as "used nothing"
     body = `<div class="keysrc"><span class="state">No limits reported</span></div>${signRow}`;
   } else if (p.kind === "plan" && !a.windows.length) {
-    // no reading at all is never "No limits reported", which is the provider answering with none (Oct 12). A login
+    // no reading at all is never "No limits reported", which is the provider answering with none. A login
     // splice has never read stands as the ghost of its two windows while the page's own read is in flight; once it is
-    // back with nothing, Not read, with the provider's reason when splice kept one (marlin, Marcos's Oct 4 ruling), over
+    // back with nothing, Not read, with the provider's reason when splice kept one, over
     // the provider's own windows drawn empty: each label on its dashed track with a dash for its figure, so the card
     // keeps its neighbours' columns and says once what is missing
     const never = !a.row?.observed_at_epoch_seconds && !a.row?.no_usage_at_epoch_seconds;
@@ -1467,7 +1465,7 @@ function railHtml(p, c, span = 1, cuts = null, strips = null) {
   const cards = railCards(p, c);
   if (span < 2) return `<div class="rail" data-rail="${p.id}">${cards.join("")}</div>`;
   // a provider wider than one column reads its order down each column and on at the top of the next, each column on its
-  // own length of rail, the numbers carrying on (1-5, 6-8 and Add account): still read top to bottom (hitstop 0360fc4).
+  // own length of rail, the numbers carrying on (1-5, 6-8 and Add account): still read top to bottom.
   // Each column takes the run of cards that leaves the tallest column as short as it can be (cutRail), cut where the
   // board was packed, so a card whose rows grow later never hops to the next column
   return `<div class="rails" data-rail="${p.id}" style="--span:${span}">${wideCols(runs(cards, cuts, span), strips)}</div>`;
@@ -1501,8 +1499,7 @@ const movedWhy = (r) => {
   return MOVED_WHY[r] ?? (named ? `Weekly ${named[1]} limit used up` : r ? r[0].toUpperCase() + r.slice(1) : "");
 };
 // A command whose pool is down to one usable login says the next plan limit has nothing to move to, and until when: the
-// earliest time a held login comes back, from /api/accounts' head_pools, the reading status and doctor use (splice-lead,
-// Oct 13: claude-splice ran on one live login most of the day). Null for a pool of one, which never had a fallback.
+// earliest time a held login comes back, from /api/accounts' head_pools, the reading status and doctor use (claude-splice ran on one live login most of the day). Null for a pool of one, which never had a fallback.
 function lastLeftOf(pool) {
   const all = pool?.account_pool?.accounts ?? [];
   const open = all.filter((a) => a.available && a.credential_present !== false);
@@ -1522,8 +1519,8 @@ function providerHtml(p, span = 1) {
     style: span > 1 ? `--span:${span}` : "", end, body });
   if (p.kind !== "plan") {
     const srv = serving(p), meters = (p.kind === "local" ? p.cmds.filter((c) => c.budget) : p.cmds).map((c) => meterHtml(c)).join("");
-    // a model on this computer or a rented GPU bills nothing per token: no Day row, unless he already set a budget on it
-    // (Marlin and fin, Oct 10), which keeps its row with no figure and no line
+    // a model on this computer or a rented GPU bills nothing per token: no Day row, unless he already set a budget on it,
+    // which keeps its row with no figure and no line
     // a key card carries the commands that send with it; a local card its own command
     const serves = (a) => (p.kind === "local" ? p.cmds.filter((c) => c.head === a.id) : p.kind === "key" ? p.cmds.filter((c) => a.has && (a.heads || []).includes(c.head)) : a === srv ? p.cmds : []);
     return group("", `${meters}<div class="rail plain" data-rail="${p.id}">${p.accounts.map((a, i) => cardHtml(p, null, a, i, serves(a))).join("")}</div>`);
@@ -1594,7 +1591,7 @@ const stripsOf = (p) => (p.kind === "local" ? p.cmds.filter((c) => c.budget) : p
 // a provider as the packing weighs it: the board and a first visit's ghosts hand it the same shape
 const packItem = (p) => ({ id: p.id, plan: p.kind === "plan", sh: stripsOf(p), hs: railRems(p) });
 // THE CUTS THAT SPLIT A WIDE RAIL into k runs in its order, each two cards or more, the tallest run as short as it can be.
-// Split by count, a rail of cards of different heights stood one column 600 px longer than the next at 3822 (Oct 27): the
+// Split by count, a rail of cards of different heights stood one column 600 px longer than the next at 3822: the
 // serving login with its doors and moves at the top of the first, a signed-out one at the foot of the second.
 // [lead]: what each column already holds above its run (its strips), so the cards are cut to level the columns, not the runs.
 function cutRail(hs, k, min = 2, lead = []) {
@@ -1612,8 +1609,8 @@ function cutRail(hs, k, min = 2, lead = []) {
   for (let m = k, j = n; m >= 2; m--) { j = from[m - 2][j]; cuts.unshift(j); }
   return { cuts, tall: best[n] };
 }
-// The board's tallest column is as short as it can be (Marlin's walk item 8, Oct 12: on desk c Claude's seven cards ran one
-// column 2,459 px long at 3828 with most of the page empty; hitstop's rule by width, 0360fc4). The plan provider with the
+// The board's tallest column is as short as it can be (Claude's seven cards ran one
+// column 2,459 px long at 3828 with most of the page empty). The plan provider with the
 // tallest rail may take k columns, its cards cut down them (cutRail), when that makes the tallest column shorter; the rest
 // pack into the other columns, each into the shortest so far. Its columns keep two cards or more, one column is always left
 // for the others and Add provider, and a split that saves under 15% of the height isn't made, so a full board keeps one
@@ -1687,7 +1684,7 @@ function pack(ps, n, w, { beside = [], pin = false, add: withAdd = addLeft() } =
 }
 // how many columns the board's width holds: one per 40rem with the gap between, the board's own rule at every width
 function colCount() { return DRAW.colsFit(board, 40); }
-// EACH PROVIDER KEEPS ITS COLUMN FROM VISIT TO VISIT (Oct 27): the packing is kept with the providers and cards it was made
+// EACH PROVIDER KEEPS ITS COLUMN FROM VISIT TO VISIT: the packing is kept with the providers and cards it was made
 // for, and the next visit with the same ones at the same width lands each provider where he last found it, however its
 // cards' rows have grown or shrunk since; a provider or a card added or gone packs the board again, and the providers
 // slide to their new columns (render).
@@ -1757,8 +1754,8 @@ addEventListener("resize", () => {
 });
 
 // ---------- before splice answers: the board as it stood last time, in ghosts ----------
-// THE FIRST FRAME STANDS WHERE THE BOARD WILL LAND (Oct 26). The board was empty until all seven reads answered, 4 s and
-// more on his machine, then fell in at once; a splice that did not answer left only Add provider. Each visit now keeps
+// THE FIRST FRAME STANDS WHERE THE BOARD WILL LAND. The board was empty until all seven reads answered, 4 s and
+// more on a slow machine, then fell in at once; a splice that did not answer left only Add provider. Each visit now keeps
 // the shape it drew (its columns, each provider's strips and cards, each card's rows, doors and height), never a name
 // or a figure, and the next one draws that shape as ghosts until splice answers, each at the height it had, so nothing
 // moves when the board lands. A first visit, or a width the last one never drew, gets a plain shape of the same parts.
@@ -2031,7 +2028,7 @@ function render({ flip = false } = {}) {
   if (!ui.probing && grown !== "all") slideBars(barsBefore, grown);
   // the logins at their limit ride Accounts' link on every page (kit.js navMark), each until its window comes back
   if (!unheard) {
-    // counted against the logins whose limits splice reads, as Usage and Settings count them (lead look, Oct 29: the bar read
+    // counted against the logins whose limits splice reads, as Usage and Settings count them (the bar read
     // "of 17" with keys and local servers in it, beside "of 14" on Usage and "of 9" on Settings)
     // a login its provider blocked is held and not at a limit, so the count, which says "at their limit", leaves it out
     const read = data.flatMap((p) => p.accounts).filter((a) => !a.out && (a.windows || []).length), out = read.filter((a) => a.windows.some(atLimit));
@@ -2089,7 +2086,7 @@ function findCmd(name) {
 async function probe() {
   const glyph = document.querySelector('[data-act="probe"]');
   // what splice last knew is drawn at once and marked as being checked: the page never reads empty while every
-  // provider is asked, which takes up to half a minute on his machine (Marlin, splice-lead, Oct 11); before its first
+  // provider is asked, which takes up to half a minute on a slow machine; before its first
   // answer the board stands as its ghosts (render)
   if (!data.length) { render(); await load(); adoptSignins(); }
   ui.probing = true; glyph.classList.add("turning"); render();
@@ -2099,7 +2096,7 @@ async function probe() {
   ui.probing = false; glyph.classList.remove("turning"); ui.grow = probed ? null : "all"; probed = true; render();
 }
 let probed = false;
-// THE BOARD STAYS CURRENT WHILE IT IS OPEN (Oct 27): it read once when the page opened and then only when he acted, so a
+// THE BOARD STAYS CURRENT WHILE IT IS OPEN: it read once when the page opened and then only when he acted, so a
 // board left open showed the logins serving, the sessions on them and the day as they were an hour ago, and a splice
 // that stopped answering went unsaid. It reads again every minute while it is in view and at rest (no form, menu or
 // drag open, no hour being read under the pointer), and at once when he comes back to it after a minute away; what
@@ -2117,7 +2114,7 @@ setInterval(keepCurrent, KEEP_MS);
 document.addEventListener("visibilitychange", keepCurrent);
 // ---------- a window that rolls while the page is open ----------
 // The row goes empty the moment its reset passes, and the page reads again right then, so the true figure takes its
-// place within seconds (Marlin, Oct 10, 2026). Without this the empty row would sit there until someone pressed the
+// place within seconds. Without this the empty row would sit there until someone pressed the
 // refresh glyph: honest, and useless. The read is the same one the page opens with, which asks every provider at
 // once, because a reset that has passed is usually a reset several accounts on that plan share.
 let rollWatch = null;
@@ -2143,7 +2140,7 @@ async function refresh(grow = null, no = null) {
 
 // ---------- adding an account, inside the tile ----------
 // A typed name is kept against the ref the new login proves once it lands (AccountNameRoute.kt); Enter alone signs in
-// with no chosen name, and the login reads splice's default for its plan (Marlin, Oct 12). The sign-in itself still mints
+// with no chosen name, and the login reads splice's default for its plan. The sign-in itself still mints
 // its own folder label, which stays the pool selector.
 function startAdd(p, cmd, field) {
   const v = field.value.trim(), err = v ? refNameError(p, {}, v) : null;
@@ -2402,7 +2399,7 @@ board.addEventListener("paste", (e) => {
 });
 board.addEventListener("input", (e) => {
   if (e.target.matches("#key-in")) { keyState(e.target, null); if (ui.keyErr) { ui.keyErr = null; render(); } }
-  // a typed amount is the choice now, so a preset it no longer matches loses its outline at once (Marlin's walk, Oct 10)
+  // a typed amount is the choice now, so a preset it no longer matches loses its outline at once
   if (e.target.matches("#cap-in")) {
     const v = Number(e.target.value);
     if (v > 0) ui.editor.cap = v;
@@ -2650,9 +2647,9 @@ const findCmdPin = (c) => c.pin ?? data.flatMap((p) => p.accounts).find((a) => (
 
 // a door from another page lands on one account: accounts.html?card=<provider>/<account>, or ?head=<command's head>,
 // which lands on what that command needs fixed (a signed-out login, a missing key) and else its first account: the
-// way back from a session Sessions or Teams shows as Signed out (Marlin, Oct 10)
+// way back from a session Sessions or Teams shows as Signed out
 const ADDR = new URLSearchParams(location.search);
-// A POOL'S DOOR LANDS ON THE LOGIN THAT COMMAND SENDS AS NEXT (Oct 26): what needs fixing comes first, as it did, but
+// A POOL'S DOOR LANDS ON THE LOGIN THAT COMMAND SENDS AS NEXT: what needs fixing comes first, as it did, but
 // where nothing does, this landed on the provider's FIRST card, so Compare's Name it — which shows only where the
 // login a command sends as next has no name — opened a named card beside the one to name. The next login is the
 // pool's own pick (c.serving, from GET /api/auth/{head}/order's next_target).

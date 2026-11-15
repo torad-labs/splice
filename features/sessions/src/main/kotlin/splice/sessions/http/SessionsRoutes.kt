@@ -176,7 +176,7 @@ public class SessionsRoutes(
         val listing = registry.list()
         val rowFacts = facts.forRecords(listing.sessions)
         val bound = BoundTeams(teams())
-        // whether splice reads the conversations: off, the console shows no question a session waits on (Marlin, p180)
+        // whether splice reads the conversations: off, the console shows no question a session waits on
         put("reading", viewEnabled())
         // The versions among these sessions a note is sent to, by the peer wire rule (peer messaging 1.4), not a fixed list.
         val noteVersions = listing.sessions.filter { PeerVersions.refusal(it.client) == null }

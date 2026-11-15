@@ -1,4 +1,4 @@
-// `gate sentinel` — the question four seats on one checkout kept answering wrong: is a verdict open
+// `gate sentinel` — the question four sessions on one checkout kept answering wrong: is a verdict open
 // over this tree right now?
 //
 // Before this verb the only things to look at were the gradle slot and the gate log, and neither
@@ -11,9 +11,9 @@
 // writes `bun tools/gate sentinel && <edit the tree>` and cannot get it wrong, which is the whole
 // reason this is a verb and not a file for people to stat.
 //
-// The exit code answers for THIS tree, the one a seat edits. A local gate and pre-push each judge committed bytes in a
-// build tree of their own (prepush-tree.ts), so editing this tree never invalidates them; their verdicts are listed too,
-// so a seat can see what is running.
+// The exit code answers for THIS tree, the one a session edits. A local gate and pre-push each judge committed bytes in
+// a build tree of their own (prepush-tree.ts), so editing this tree never invalidates them; their verdicts are listed
+// too, so a session can see what is running.
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { GATE_TREE, PRE_PUSH_TREE } from "../lib/prepush-tree.ts";

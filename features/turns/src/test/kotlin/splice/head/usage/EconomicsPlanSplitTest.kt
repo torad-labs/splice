@@ -1,4 +1,4 @@
-// Oct 11, 2026 (fin): a plan's requests and a key's are recorded apart, so the hour says who paid.
+// Oct 11, 2026: a plan's requests and a key's are recorded apart, so the hour says who paid.
 package splice.head.usage
 
 import org.junit.jupiter.api.Assertions.assertEquals

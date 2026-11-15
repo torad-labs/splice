@@ -65,7 +65,7 @@ public class TopologyKnobLayer(private val topology: Topology) {
         codex?.let { (_, head) ->
             val provider = topology.providers.getValue(head.provider)
             out["port"] = head.port.toString()
-            // a command with no pin (Marcos runs claudex on its default model) seeds nothing: an empty string is no valid
+            // a command with no pin (claudex on its default model) seeds nothing: an empty string is no valid
             // value for the knob and was logged as ignored on every read of the config
             head.pinnedModel.takeIf { it.isNotEmpty() }?.let { out["pinnedModel"] = it }
             out["chatgptApiBase"] = provider.baseUrl

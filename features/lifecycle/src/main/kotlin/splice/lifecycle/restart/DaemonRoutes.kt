@@ -66,8 +66,8 @@ public fun interface DaemonSupervised {
 
 /** [restarts] is the daemon's one decision and wait-then-drain: every restart the daemon itself takes
  *  on goes through it, a console add's save included. [drainMs] is how long each command's drain lets a request in
- *  flight finish before it is cut, said in every phase so the console names the real wait (Settings' armed Restart,
- *  fin and Marlin, Oct 12); null where the wiring gives none, and the field is then left out. */
+ *  flight finish before it is cut, said in every phase so the console names the real wait (Settings' armed Restart);
+ *  null where the wiring gives none, and the field is then left out. */
 public class DaemonRoutes(private val restarts: DaemonRestarts, private val drainMs: Long? = null) {
 
     /** [shutdown] and [supervised] ARRIVE AT CALL TIME: the routing lambda reads the server's own

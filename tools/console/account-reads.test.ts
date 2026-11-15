@@ -1,4 +1,4 @@
-// Teams and Compare read accounts from what the daemon publishes (splice-lead, Oct 12, from splice-builder's /api/auth audit).
+// Teams and Compare read accounts from what the daemon publishes.
 // /api/auth answers one entry per head, keyed by its key, with a pooled head's logins under account_pool (AuthStatusRoutes,
 // AccountPoolJson); it never names which login is next, which GET /api/auth/{head}/order publishes as next_target. Teams'
 // account picker offers each head's own pool, and Compare sends as the next login, or leaves a pool with none off its picker.

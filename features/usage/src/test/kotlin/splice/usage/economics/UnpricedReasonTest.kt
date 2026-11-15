@@ -1,5 +1,5 @@
 // NEW: Oct 10, 2026 — the console's Day row says why a command's turns with no price have none: a plan's read
-// "on your plan", and only a command on a model with no rate card reads "with no price" (Marlin). The daemon
+// "on your plan", and only a command on a model with no rate card reads "with no price". The daemon
 // gives the reason on /api/economics, decided by the rule the Requests page uses.
 package splice.usage.economics
 

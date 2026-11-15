@@ -7,7 +7,7 @@
 // marker on the knob's line. Nothing paired the two, and on Oct 10 the count was taken: twenty-one
 // knobs were live and six carried a marker. maxInflight, the oldest live knob in the tree and the
 // one the config route's own test uses as its example, was unmarked. Two knobs made live earlier the
-// same day were unmarked by the seat that made them live — me.
+// same day were unmarked by the session that made them live — me.
 //
 // So the marker was a habit, and a habit is not a disposition. This is the liveness twin of the
 // knob-keys law (V4-87), whose parser, guards and red-proof idiom it reuses deliberately: it calls

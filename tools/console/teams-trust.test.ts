@@ -1,4 +1,4 @@
-// Marlin's trust ruling of Oct 12, in fin's words and hitstop's drawing (da3d8b2), through the real Teams page against a
+// The folder trust question, through the real Teams page against a
 // stub daemon answering in the routes' own shapes (TeamStart, TeamScreen, SessionDrive.offered, Refusals.reply). A member
 // stopped at Claude Code's folder trust question reads Needs you with the client's question, its folder (a chip naming the
 // last two folders, the whole path under the pointer) and its two options verbatim, each leading with the number the client
@@ -64,7 +64,7 @@ afterAll(async () => {
   await browser.close();
   server.stop(true);
 });
-// SHOTS=<dir> keeps a capture of each state at Marcos's width in dark and at 1440 in both themes, for the seat's own look
+// SHOTS=<dir> keeps a capture of each state at a wide desktop width in dark and at 1440 in both themes, for a manual look
 async function open(width = 1440, theme = "night"): Promise<Page> {
   const ctx = await browser.newContext({ viewport: { width, height: 1100 } });
   await ctx.addInitScript((t) => localStorage.setItem("splice-console-theme", t), theme);
@@ -131,7 +131,7 @@ test("No closes the terminal: the member reads Not started and Terminal closed, 
     await expect(reviewer(p).locator(".word")).toHaveText("Not started", { timeout: 20_000 });
     await expect(reviewer(p).locator(".folder .where")).toHaveText("work/website");
     await expect(reviewer(p).locator(".folder .where")).toHaveAttribute("title", "/work/website");
-    // why it did not come up, in the console's words, never the daemon's sentence (marlin p223, fin, Oct 13)
+    // why it did not come up, in the console's words, never the daemon's sentence
     await expect(reviewer(p)).toContainText("Terminal closed");
     await expect(reviewer(p)).not.toContainText("has closed");
     teams = team("ffffffff-1");

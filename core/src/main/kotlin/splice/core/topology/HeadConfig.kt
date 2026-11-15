@@ -29,7 +29,7 @@ public data class HeadConfig(
     val models: List<HeadModel>? = null,
     /** Tier mappings without a serving allowlist. [models] still restricts the roster; its entries
      *  must not carry slots alongside this map. Keys are tiers, values are model ids, and one id may
-     *  fill several tiers (Marcos, 2026-10-15: claudex runs opus and sonnet on one gpt-6.1-sol). */
+     *  fill several tiers (2026-10-15: claudex runs opus and sonnet on one gpt-6.1-sol). */
     @SerialName("model_slots") val modelSlots: Map<String, String> = emptyMap(),
     @SerialName("context_window") val contextWindow: Long? = null,
     val overrides: Map<String, String> = emptyMap(),
@@ -39,7 +39,7 @@ public data class HeadConfig(
      *  [systemPromptMode] picks the seam: `append` (the default) adds the text beside Claude
      *  Code's own system field, `replace` SUBSTITUTES it, which strips the harness instructions
      *  Claude Code ships in that field. Absent takes what splice ships for the head's provider, appended (the
-     *  OpenAI Responses adapter ships one, Marcos 2026-10-28; every other dialect ships none, so its bytes are
+     *  OpenAI Responses adapter ships one, 2026-10-28; every other dialect ships none, so its bytes are
      *  unchanged). Empty is no standing prompt at all, the way to turn a shipped one off. */
     @SerialName("system_prompt") val systemPrompt: String? = null,
     @SerialName("system_prompt_file") val systemPromptFile: String? = null,

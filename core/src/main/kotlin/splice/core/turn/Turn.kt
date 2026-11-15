@@ -48,7 +48,7 @@ public data class TurnReasoning(
 public data class TurnScope(
     /** Internal continuity identity (responses dialect: agent-qualified first-message hash) — partitions the
      *  gateway reasoning cache so concurrent agents and conversations on one head can never cross-inject
-     *  (review 2026-07-24, RC-2's eli-risk-8 keying). Null (chat/passthrough) = one shared scope. */
+     *  (review 2026-07-24, RC-2 keying). Null (chat/passthrough) = one shared scope. */
     val conversationKey: String? = null,
     /** The client's session id when it sent one (ws-transport WS-3). [conversationKey] alone can be
      *  shared by separate sessions whose agents open with identical words — harmless for a cache miss,
@@ -271,7 +271,7 @@ public data class WatchdogBudget(
      *  inherited from codex-rs because 300 s is genuinely how long a legitimately-silent backend
      *  may be. A breach of THIS tier is not defeat — it is the signal to CANCEL the round and
      *  re-POST it from the salvage, which is invisible to the client (a proxy that owns the wire can
-     *  always resume; the operator's ruling, 2026-09-17) and costs one POST. Waiting 300 s to do
+     *  always resume; decided 2026-09-17) and costs one POST. Waiting 300 s to do
      *  something we are willing to do at 20 s is the scar this tier exists to close: claude-deepseek
      *  session b10459ba streamed 3810 content frames, went silent, sat through the whole 300 s
      *  mid-output tier, and then ended the turn as an error even though the provider had been

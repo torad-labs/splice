@@ -25,7 +25,7 @@
 // count is not the whole count, so a save that carries a moment is refused outright with the reason
 // and nothing is saved and nothing is deleted. The row reads "Not saved", which is true.
 //
-// SHORTENED TWICE BEFORE THE FIRST SWEEP SETTLES (hitstop): nothing is remembered between calls.
+// SHORTENED TWICE BEFORE THE FIRST SWEEP SETTLES: nothing is remembered between calls.
 // The prune finishes on the file lane before the PUT answers, and the next read rescans every file
 // whose size or modified time moved, so the second cut is counted from what the first one left.
 package splice.head.perf
@@ -71,7 +71,7 @@ private const val NOT_WHOLE = "the records did not read whole: "
 // why: the one refusal for a window that is neither a count of days nor the word forever, naming
 // the setting and quoting what it got. The console's picker and its Custom field can only send whole
 // days or `forever`, so this is read by someone editing splice.toml or the env var in a terminal,
-// and the person fixing the file needs to see what they wrote (fin, Oct 10, 2026).
+// and the person fixing the file needs to see what they wrote.
 private const val NOT_A_WINDOW = "historyRetentionDays takes a number of days or forever, not"
 
 // why: the same refusal TurnKeptRoutes gives for the same cause, so one unwired install reads the
@@ -87,7 +87,7 @@ public fun interface HistoryWindowStore {
  * Everything else the one window covers, trimmed to the same moment the records were cut at: the
  * hourly spending totals, and finished sessions' own totals.
  *
- * Marlin, Oct 10, 2026: when a person says yes to "Delete 25,877 turns", everything history covers
+ * When a person says yes to "Delete 25,877 turns", everything history covers
  * is gone at that moment. Someone who chose "Today only" for privacy and still saw last week's
  * spending on Usage would have been told something false, and no sentence on the page covers that.
  * Returns the first reason a store could not be trimmed, so a save that did not do all of what it
@@ -170,7 +170,7 @@ public class HistoryRoutes(
             moment == null -> null
             held.readError != null -> {
                 // The row reads "Not saved" and the cause goes to the log, where every source
-                // sentence goes (fin, Oct 10, 2026). The console re-asks the read and redraws the
+                // sentence goes. The console re-asks the read and redraws the
                 // band, because the count on the button was the wrong count.
                 log("[history] a save was refused: " + NOT_WHOLE + held.readError + "\n")
                 refuse(HttpStatusCode.ServiceUnavailable, NOT_WHOLE + held.readError)

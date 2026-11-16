@@ -18,6 +18,7 @@ import splice.server.ledger.LedgerParts
 import splice.server.ledger.TurnLedger
 import splice.server.ledger.UsageApi
 import splice.server.ledger.UsageLedger
+import splice.server.metrics.ServerMetrics
 import splice.upstream.Waiter
 import splice.upstream.codemode.ProcessTicker
 import java.nio.file.Path
@@ -57,10 +58,10 @@ public class ServerBookkeeping internal constructor(
     @Volatile
     private var turns: TurnLedger? = null
 
-    /** The books a listener serves from: a ledger for its turns, told on [reach]'s board how each went, and the
-     *  budgets each turn must be within. */
-    internal fun open(reach: ServerReach): ServerBooks {
-        val parts = LedgerParts(ledger, reach.served, people, server.teams, upstreams, run.clock)
+    /** The books a listener serves from: a ledger for its turns, told on [reach]'s board how each went and counting
+     *  each in [metrics] (F6), and the budgets each turn must be within. */
+    internal fun open(reach: ServerReach, metrics: ServerMetrics): ServerBooks {
+        val parts = LedgerParts(ledger, reach.served, people, server.teams, upstreams, run.clock, metrics)
         val opened = TurnLedger(parts, run.io, run.log)
         turns = opened
         return ServerBooks(opened, budgets)

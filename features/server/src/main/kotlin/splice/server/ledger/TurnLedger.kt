@@ -36,6 +36,7 @@ import splice.core.wire.HttpStatus
 import splice.server.ServerKey
 import splice.server.ServerPeople
 import splice.server.UpstreamApi
+import splice.server.metrics.ServerMetrics
 import splice.share.AnsweredStatus
 import splice.share.SharedHead
 import splice.upstream.LifecycleScope
@@ -45,7 +46,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 
 /** What the ledger rows of turns are written from: where they go, the board heads tell their turns on, each person's
- *  team, the rate cards of OpenAI-style turns, and the time. */
+ *  team, the rate cards of OpenAI-style turns, the time, and the live metrics each row is counted in (F6). */
 internal data class LedgerParts(
     val ledger: UsageLedger,
     val board: ServedTurnBoard,
@@ -53,6 +54,7 @@ internal data class LedgerParts(
     val teams: ServerTeams,
     val upstreams: UpstreamApi,
     val clock: Clock,
+    val metrics: ServerMetrics,
 )
 
 internal class TurnLedger(private val parts: LedgerParts, io: CoroutineDispatcher, private val log: LogSink) {
@@ -103,12 +105,22 @@ internal class TurnLedger(private val parts: LedgerParts, io: CoroutineDispatche
             val served = turn.served?.let { word(turn.id, it) }
             parts.board.forget(turn.id)
             val end = LedgerEnd(status, durationMs, served)
-            Cancellables.runCatchingCancellable { parts.ledger.add(rows.of(turn, end)) }
+            val written = rows.of(turn, end)
+            parts.metrics.counted(written, stall(turn, served))
+            Cancellables.runCatchingCancellable { parts.ledger.add(written) }
                 .onFailure { log("[server] a ledger row was not written: ${SafeFailureText.render(it)}\n") }
         }
         pending[row] = turn
         row.invokeOnCompletion { pending.remove(row) }
         row.start()
+    }
+
+    /** The longest [turn]'s answer waited for its upstream's next words after its first: as its head measured it, or
+     *  as the chat dialect read an OpenAI-style stream; null for an answer that streamed no words. */
+    private fun stall(turn: LedgerTurn, served: ServedTurn?): Long? {
+        if (served != null) return served.pace.stallMs
+        val chat = turn.chat?.takeIf { it.stream != null } ?: return null
+        return chat.reading?.stallMs
     }
 
     /** What the head of turn [id] said of it: within a moment of its answer ending, or, where the head said its row

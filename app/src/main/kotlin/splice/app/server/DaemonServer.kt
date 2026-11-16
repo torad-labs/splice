@@ -5,7 +5,8 @@
 // the rest of the daemon serving. It is also how server mode reads the servers behind a head (F4): the pool of the
 // provider that head's splice.toml table names, the caller's headers that provider's `forward_headers` names, and
 // that provider itself when it speaks openai-chat, which is where an OpenAI-style client's requests are relayed
-// (DaemonChatServer).
+// (DaemonChatServer). While it runs, its per-person metrics go to the operator's OTLP collector when
+// `[telemetry.operator]` sends metrics (F6).
 package splice.app.server
 
 import splice.app.control.ManagedHead
@@ -24,6 +25,7 @@ import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import splice.observability.served.ServedMetricsExport
 import splice.server.ChatServer
 import splice.server.HeadUpstreams
 import splice.server.ServerMode
@@ -49,6 +51,10 @@ internal class DaemonServer(
 
     @Volatile
     private var down: String = NO_SERVER
+
+    // The server's per-person metrics on their way to the operator's OTLP collector (F6), while server mode runs.
+    @Volatile
+    private var metricsExport: ServedMetricsExport? = null
 
     // The heads the server serves, once it opened: what an OpenAI-style turn is priced at is its head's rate card.
     @Volatile
@@ -93,7 +99,10 @@ internal class DaemonServer(
             val reach = ServerReach(turnKey, controlPort, served, EnvReader(System::getenv))
             ServerMode(topology.server, folder, ProcessDispatchers().io(), log, upstreams = this)
                 .also { it.open(address, offered, reach, configDir, secret()) }
-        }.onSuccess { running = it }.onFailure { failure ->
+        }.onSuccess { mode ->
+            running = mode
+            metricsExport = ServedMetricsExport(config.getConfig().perfExportConfig(), mode.metrics, log)
+        }.onFailure { failure ->
             val why = SafeFailureText.render(failure)
             down = "server mode did not start on ${topology.server.listen}: $why"
             log("[server] not serving on ${topology.server.listen}: $why\n")
@@ -112,6 +121,8 @@ internal class DaemonServer(
     suspend fun close() {
         running?.close()
         running = null
+        metricsExport?.close()
+        metricsExport = null
     }
 }
 

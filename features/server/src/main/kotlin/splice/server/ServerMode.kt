@@ -11,6 +11,8 @@ import splice.core.topology.ServerAddress
 import splice.core.topology.ServerConfig
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
+import splice.server.metrics.MetricPeople
+import splice.server.metrics.ServerMetrics
 import splice.share.RefusalVoice
 import splice.share.RelayClock
 import splice.share.RelaySpeaker
@@ -55,6 +57,7 @@ public class ServerMode(
 ) {
     private val keys = ServerKeys(folder.resolve(KEYS_FILE), io, clock)
     private val people = ServerPeople(folder.resolve(PEOPLE_FILE), io)
+    private val limits = PersonLimits(server.limits, people, clock)
 
     /** The keys' operations, as the CLI and the control plane ask them. */
     public val keyApi: KeyApi = KeyApi(keys, log)
@@ -69,6 +72,9 @@ public class ServerMode(
      *  control plane and an admin's key ask them. */
     public val books: ServerBookkeeping =
         ServerBookkeeping(folder, server, people, upstreamApi, BookRun(io, clock, waiter, log))
+
+    /** Each person's traffic, live (F6): what an admin scrapes from the listener and the operator's OTLP export sends. */
+    public val metrics: ServerMetrics = ServerMetrics(MetricPeople(keys, people, server.teams, limits), clock)
 
     @Volatile
     private var listener: ServerListener? = null
@@ -85,21 +91,23 @@ public class ServerMode(
         signinSecret: String? = null,
     ) {
         val speaker = RelaySpeaker(RefusalVoice(SERVER_ERROR_PREFIX), SERVER_LOG_TAG)
+        val served = ServedHeads(heads, server.commands)
+        metrics.serving(served)
         val parts = ServerParts(
             keys = keys,
-            limits = PersonLimits(server.limits, people, clock),
-            heads = ServedHeads(heads, server.commands),
+            limits = limits,
+            heads = served,
             relay = ShareRelay(reach.turnKey, reach.controlPort, heads.machine, io, log, speaker, RelayClock(waiter)),
             people = people,
             upstreams = upstreamApi,
-            books = books.open(reach),
+            books = books.open(reach, metrics),
         )
         val tls = server.pem(configDir)?.let { PemTls(it).keyStore() }
         val signin = server.signin?.let { signin ->
             val issuer = SigninIssuer(SigninClient(signin, signinSecret), io, clock)
             SigninParts(signin, issuer, IdTokens(signin, issuer, clock))
         }
-        val opened = ServerListener(server, parts, tls, books.usageApi, io, log, signin)
+        val opened = ServerListener(server, parts, tls, AdminReads(books.usageApi, metrics), io, log, signin)
         opened.start(address)
         listener = opened
         books.exporting(reach.env)

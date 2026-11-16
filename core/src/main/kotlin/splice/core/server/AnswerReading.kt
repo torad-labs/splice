@@ -25,4 +25,8 @@ public interface AnswerReading {
     /** When the answer first carried anything of the model's (a word, a thought or a tool call), in epoch
      *  milliseconds; null while it has carried nothing. */
     public val spokeAtMs: Long?
+
+    /** The longest the answer waited for more of the model's output after it first carried some, in milliseconds (F6);
+     *  null while it has carried nothing. */
+    public val stallMs: Long?
 }

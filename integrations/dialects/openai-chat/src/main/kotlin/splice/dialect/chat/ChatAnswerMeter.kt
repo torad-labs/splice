@@ -1,7 +1,8 @@
 // NEW: server mode (docs/specs/server-mode.md, F5). The ledger's reading of one chat answer the server listener relays
 // for an OpenAI-style client: the usage the server billed (read the way a head reads it, ChatUsage), llama-server's
-// `timings`, the model the server named, whether the answer reached its end and the stream ended with `[DONE]`, and
-// when the model first said anything. It reads each frame as the relay passes it on, and keeps no word of the answer.
+// `timings`, the model the server named, whether the answer reached its end and the stream ended with `[DONE]`, when
+// the model first said anything, and the longest it then fell silent (F6). It reads each frame as the relay passes it
+// on, and keeps no word of the answer.
 package splice.dialect.chat
 
 import kotlinx.serialization.json.JsonArray
@@ -38,6 +39,14 @@ public class ChatAnswerMeter internal constructor(private val clock: Clock = Clo
     override var spokeAtMs: Long? = null
         private set
 
+    @Volatile
+    override var stallMs: Long? = null
+        private set
+
+    // When the answer last carried anything of the model's, in epoch milliseconds.
+    @Volatile
+    private var lastSpokeMs: Long? = null
+
     override val tokens: ServedTokens?
         get() {
             val read = usage.toUsage().takeIf { reported } ?: return null
@@ -66,7 +75,19 @@ public class ChatAnswerMeter internal constructor(private val clock: Clock = Clo
         JsonScalars.str(frame, FRAME_MODEL)?.let { model = it }
         usage.usage(frame)
         reported = reported || usage.toUsage().reported.any { it == UsageField.INPUT || it == UsageField.OUTPUT }
-        if (spokeAtMs == null && speaks(frame)) spokeAtMs = clock.millis()
+        if (speaks(frame)) spoke(clock.millis())
+    }
+
+    /** The model said something at [nowMs]: the first time is when it spoke, and each later one ends a silence. */
+    private fun spoke(nowMs: Long) {
+        val last = lastSpokeMs
+        lastSpokeMs = nowMs
+        if (last == null) {
+            spokeAtMs = nowMs
+            stallMs = 0L
+        } else {
+            stallMs = maxOf(stallMs ?: 0L, nowMs - last)
+        }
     }
 
     /** Whether [frame]'s first choice carries any of the model's own output. */

@@ -5,7 +5,6 @@
 // handing a tool over is beside MUSE_CALLS_ARRIVED_TOOLS_THROUGH_A_CALLER, in the Muse provider module.
 package splice.dialect.responses.tools
 
-import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -93,7 +92,7 @@ internal class ToolCaller {
      *  arguments out gave none, and one that wrote them as JSON text meant the object. Null when the call names no
      *  tool or its arguments are no object: there is no tool to hand that call to. */
     fun named(arguments: String): NamedCall? {
-        val call = parsed(arguments) as? JsonObject
+        val call = JsonScalars.objectOrNull(Json, arguments)
         val tool = JsonScalars.str(call, FIELD_TOOL).orEmpty()
         val given = given(call?.get(FIELD_ARGUMENTS))
         return if (tool.isEmpty() || given == null) null else NamedCall(tool, JsonWire.string(given))
@@ -102,16 +101,8 @@ internal class ToolCaller {
     private fun given(arguments: JsonElement?): JsonObject? = when (arguments) {
         null, JsonNull -> JsonObject(emptyMap())
         is JsonObject -> arguments
-        is JsonPrimitive -> arguments.takeIf { it.isString }?.let { parsed(it.content) } as? JsonObject
+        is JsonPrimitive -> arguments.takeIf { it.isString }?.let { JsonScalars.objectOrNull(Json, it.content) }
         is JsonArray -> null
-    }
-
-    private fun parsed(text: String): JsonElement? = try {
-        Json.parseToJsonElement(text)
-    } catch (ignored: SerializationException) {
-        null
-    } catch (ignored: IllegalArgumentException) {
-        null
     }
 }
 

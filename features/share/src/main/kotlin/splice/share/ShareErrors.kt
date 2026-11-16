@@ -35,6 +35,14 @@ public class RefusalVoice(private val prefix: String, private val shape: Refusal
         return """{"error":{"message":$said,"type":"${openAiType(status)}","param":null,"code":$code}}"""
     }
 
+    /** [envelope], one of this voice's error bodies on its one line, as the event that says it on a stream already
+     *  open. Anthropic's API names that event `error`. OpenAI's sends the error as an event's data and nothing more,
+     *  which is what its SDKs raise from a stream. */
+    internal fun event(envelope: String): String = when (shape) {
+        RefusalShape.ANTHROPIC -> "event: $ERROR\ndata: $envelope"
+        RefusalShape.OPENAI -> "data: $envelope"
+    }
+
     private fun anthropicType(status: Int): String = when (status) {
         HttpStatus.BAD_REQUEST, HttpStatus.REQUEST_TIMEOUT -> "invalid_request_error"
         HttpStatus.UNAUTHORIZED -> "authentication_error"

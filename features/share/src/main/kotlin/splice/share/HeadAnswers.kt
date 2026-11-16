@@ -12,6 +12,13 @@
 //
 // A relay that answers for a provider's own server (F4, openai-route) reads that server's stream through a StreamEdit,
 // event by event, and gives it its ending only when the server ended it whole.
+//
+// An answer that breaks off before its end is never passed on as if it had ended (F4, "an answer the upstream cuts
+// short is an error the client sees"). One that is no stream is read whole before any of it is given, so a body that
+// breaks off is a 502 in the relay's own words. A stream read event by event has its client's stream standing between
+// two events when the server's breaks, so it ends with the relay's error event and never with the ending of a whole
+// one. A stream relayed byte for byte may have broken inside an event, where nothing well-formed can follow: it ends
+// there, as it always did. Each is said in the log, and a relay that was cancelled broke nothing off.
 package splice.share
 
 import io.ktor.http.ContentType
@@ -22,8 +29,12 @@ import io.ktor.server.response.respondBytes
 import io.ktor.utils.io.ByteWriteChannel
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.runInterruptible
 import splice.core.util.Cancellables
+import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.core.wire.HttpStatus
 import splice.http.SseChannelResponse
 import java.io.IOException
@@ -31,32 +42,39 @@ import java.io.InputStream
 import java.net.http.HttpResponse
 import kotlin.time.Duration
 
-/** What a relay tells its client of one request: [silent] when the head does not answer, a keepalive each [every]
- *  while a streamed answer is silent (null: none), and a streamed answer as [edit] reads it (null: byte for byte). */
-internal data class ClientWait(val silent: String, val every: Duration? = null, val edit: StreamEdit? = null)
+/** What a relay tells its client of one request: [who] it waits on, as the client hears it named when that one gives
+ *  no answer or breaks one off, a keepalive each [every] while a streamed answer is silent (null: none), and a
+ *  streamed answer as [edit] reads it (null: byte for byte). */
+internal data class ClientWait(val who: String, val every: Duration? = null, val edit: StreamEdit? = null) {
+    /** What the client hears when [who] gives no answer. */
+    val silent: String get() = "$who is not answering"
+
+    /** What the client hears when [who] broke its answer off before it ended. */
+    val cut: String get() = "$who broke off its answer before it ended"
+}
 
 internal class HeadAnswers(
     /** Blocking JDK I/O runs here: each read of the answer. */
     private val io: CoroutineDispatcher,
-    private val errors: RefusalVoice,
+    private val speaker: RelaySpeaker,
     /** What a kept-alive client's silences are timed on. */
     private val clock: RelayClock,
+    private val log: LogSink,
 ) {
+    private val errors get() = speaker.errors
+
     /** [sent] as [call]'s answer: the head's own, or that it is not answering. */
     suspend fun given(call: ApplicationCall, sent: Result<HttpResponse<InputStream>>, wait: ClientWait) {
         val response = sent.getOrElse { return errors.refuse(call, HttpStatus.SERVICE_UNAVAILABLE, wait.silent) }
-        response.headers().map().forEach { (name, values) ->
-            if (name.lowercase() !in notReturned) values.forEach { call.response.headers.append(name, it) }
-        }
         val status = HttpStatusCode.fromValue(response.statusCode())
         val type = typeOf(response)
         if (type.match(ContentType.Text.EventStream)) {
+            returned(call, response)
             call.response.status(status)
-            call.respond(
-                SseChannelResponse { out -> response.body().use { pump(it, quiet(out, wait), wait.edit) } },
-            )
+            call.respond(SseChannelResponse { out -> response.body().use { pump(it, quiet(out, wait), wait) } })
         } else {
-            val whole = runInterruptible(io) { response.body().use(InputStream::readAllBytes) }
+            val whole = whole(response, wait) ?: return errors.refuse(call, HttpStatus.BAD_GATEWAY, wait.cut)
+            returned(call, response)
             call.respondBytes(whole, type, status)
         }
     }
@@ -69,45 +87,76 @@ internal class HeadAnswers(
                 val wire = quiet(out, wait)
                 wire.keepalive()
                 wire.during { sending.await() }.fold(
-                    onSuccess = { response -> late(response, wire) },
-                    onFailure = { wire.error(errors.body(HttpStatus.SERVICE_UNAVAILABLE, wait.silent)) },
+                    onSuccess = { response -> late(response, wire, wait) },
+                    onFailure = { wire.error(said(HttpStatus.SERVICE_UNAVAILABLE, wait.silent)) },
                 )
             },
         )
     }
 
     /** The head's answer on a stream that is already open: its events, or what it answered in their place. */
-    private suspend fun late(response: HttpResponse<InputStream>, wire: QuietWire) {
-        if (typeOf(response).match(ContentType.Text.EventStream)) return response.body().use { pump(it, wire) }
-        val whole = runInterruptible(io) { response.body().use(InputStream::readAllBytes) }
-        wire.error(errors.relayed(response.statusCode(), String(whole)))
+    private suspend fun late(response: HttpResponse<InputStream>, wire: QuietWire, wait: ClientWait) {
+        if (typeOf(response).match(ContentType.Text.EventStream)) return response.body().use { pump(it, wire, wait) }
+        val whole = whole(response, wait) ?: return wire.error(said(HttpStatus.BAD_GATEWAY, wait.cut))
+        wire.error(errors.event(errors.relayed(response.statusCode(), String(whole))))
+    }
+
+    /** The answer's own headers, given back with it. */
+    private fun returned(call: ApplicationCall, response: HttpResponse<InputStream>) {
+        response.headers().map().forEach { (name, values) ->
+            if (name.lowercase() !in notReturned) values.forEach { call.response.headers.append(name, it) }
+        }
     }
 
     /** The client's side of the stream [out], kept alive as [wait] asks. */
     private fun quiet(out: ByteWriteChannel, wait: ClientWait): QuietWire = QuietWire(out, wait.every, clock)
 
+    /** [message] under [status], as the event that says it on a stream already open. */
+    private fun said(status: Int, message: String): String = errors.event(errors.body(status, message))
+
     private fun typeOf(response: HttpResponse<InputStream>): ContentType =
         response.headers().firstValue("content-type").map { ContentType.parse(it) }
             .orElse(ContentType.Application.OctetStream)
 
+    /** The whole of an answer that is no stream, or null when it broke off before its end. */
+    private suspend fun whole(response: HttpResponse<InputStream>, wait: ClientWait): ByteArray? {
+        val read = runInterruptible(io) {
+            Cancellables.runCatchingCancellable { response.body().use(InputStream::readAllBytes) }
+        }
+        return read.getOrElse { failure -> null.also { brokeOff(failure, wait) } }
+    }
+
     /** Chunk by chunk, flushed each time: an event (or the head's keepalive ping) reaches the other machine the moment
      *  the head writes it. A client that went away fails the write, and closing the head's stream then hangs up on the
-     *  head, which sees its own client leave. A head that hangs up mid-stream ends the relay there. With an [edit] the
-     *  chunks go through it, an event at a time, and a stream that ended whole is given the edit's ending. */
-    private suspend fun pump(input: InputStream, wire: QuietWire, edit: StreamEdit? = null) {
+     *  head, which sees its own client leave. With an edit the chunks go through it, an event at a time, and a stream
+     *  that ended whole is given the edit's ending. A stream that broke off ends the relay there, after the relay's
+     *  error event when it is read through an edit. */
+    private suspend fun pump(input: InputStream, wire: QuietWire, wait: ClientWait) {
         val buffer = ByteArray(PUMP_BUFFER_BYTES)
-        val edited = edit?.let { EditedWire(wire, it) }
+        val edited = wait.edit?.let { EditedWire(wire, it) }
         while (true) {
             val read = wire.during {
-                runInterruptible(io) {
-                    Cancellables.runCatchingCancellable { input.read(buffer) }
-                        .getOrElse { failure -> if (failure is IOException) CUT_SHORT else throw failure }
-                }
+                runInterruptible(io) { Cancellables.runCatchingCancellable { input.read(buffer) } }
             }
-            if (read == END_OF_STREAM) edited?.end()
-            if (read < 0) return
-            if (edited == null) wire.write(buffer, read) else edited.write(buffer, read)
+            val count = read.getOrElse { failure ->
+                brokeOff(failure, wait)
+                if (edited != null) wire.error(said(HttpStatus.BAD_GATEWAY, wait.cut))
+                return
+            }
+            if (count == END_OF_STREAM) {
+                edited?.end()
+                return
+            }
+            if (edited == null) wire.write(buffer, count) else edited.write(buffer, count)
         }
+    }
+
+    /** A read of the answer ended in [failure]: the answer broke off, which is said in the log. A relay that was
+     *  cancelled fails its read too, and ends here as cancelled. */
+    private suspend fun brokeOff(failure: Throwable, wait: ClientWait) {
+        currentCoroutineContext().ensureActive()
+        if (failure !is IOException) throw failure
+        log("[${speaker.tag}] ${wait.cut}: ${SafeFailureText.render(failure)}\n")
     }
 
     // Framing the response re-chunks, and the type each answer sets itself.
@@ -120,7 +169,3 @@ private const val PUMP_BUFFER_BYTES = 16 * 1024
 
 // What InputStream.read answers at the end of the stream.
 private const val END_OF_STREAM = -1
-
-// why: a failed read of the answer ends the relay as the end of the stream does, as the head hanging up; it is told
-// apart only so that a stream cut short is never given the ending of a whole one.
-private const val CUT_SHORT = -2

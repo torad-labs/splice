@@ -12,6 +12,10 @@
 // server for its usage, and the frame that carries only that usage reaches a client only when it asked for it; and a
 // stream the server ended whole ends with `[DONE]`.
 //
+// An answer the server breaks off partway is an error its client sees, never a quiet end (HeadAnswers). A stream
+// ends, after the events already relayed, with one error event in OpenAI's shape (`data: {"error": {...}}`) and no
+// `[DONE]`, which the OpenAI SDKs raise; an answer that is no stream is a 502 with OpenAI's error body.
+//
 // A chat completion is a turn. It takes one of its person's slots under the same caps as a turn on the Messages route,
 // and a client that leaves gives the slot back. A provider that is several servers is asked on the one its pool gives
 // the person (their preferred one while it is healthy), and when that one takes no connection, on the next, the way a
@@ -65,8 +69,8 @@ internal class OpenAiRoute(
     /** One request ready for a server: its [path] under the server's API root, the [headers] it carries, and its
      *  body with what reads its answer. */
     private class Ready(val path: String, val headers: OutwardHeaders, val ask: ChatAsk) {
-        /** This request for the server whose API root is [base], which is said as [silent] when it does not answer. */
-        fun at(base: String, silent: String) = OutwardAsk(URI.create(base + path), headers, silent, ask.stream)
+        /** This request for the server whose API root is [base], which its client hears named as [server]. */
+        fun at(base: String, server: String) = OutwardAsk(URI.create(base + path), headers, server, ask.stream)
     }
 
     /** Whether [path], asked the way [call] asks it, is an OpenAI-style client's. */
@@ -117,14 +121,15 @@ internal class OpenAiRoute(
         val headers = bound.headers(call, parts.upstreams.forwarded(asked.head.key), own)
         val ready = Ready(api + bound.query(paths.query(call)), headers, ask)
         val pool = parts.upstreams.pool(asked.head.key)
-        val silent = "the model server behind ${asked.head.command} is not answering"
+        val server = "the model server behind ${asked.head.command}"
         val taken = if (pool == null) {
-            relay.outward(call, ready.at(asked.server.base, silent), ask.body)
+            relay.outward(call, ready.at(asked.server.base, server), ask.body)
         } else {
             pooled(call, asked, pool, ready)
         }
         if (taken) return
-        voice.refuse(call, HttpStatus.SERVICE_UNAVAILABLE, parts.upstreams.noneUp(asked.head.key) ?: silent)
+        val silent = parts.upstreams.noneUp(asked.head.key) ?: "$server is not answering"
+        voice.refuse(call, HttpStatus.SERVICE_UNAVAILABLE, silent)
     }
 
     /** [ready] asked of [pool]'s servers, one at a time, as [PoolWalk] names them: the one the person prefers while it
@@ -136,8 +141,8 @@ internal class OpenAiRoute(
         try {
             do {
                 val server = walk.server()
-                val silent = "upstream ${server.name} of ${pool.provider} is not answering"
-                if (relay.outward(call, ready.at(server.url, silent), ready.ask.body)) return true
+                val named = "upstream ${server.name} of ${pool.provider}"
+                if (relay.outward(call, ready.at(server.url, named), ready.ask.body)) return true
             } while (walk.moved())
             return false
         } finally {

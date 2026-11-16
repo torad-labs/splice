@@ -13,7 +13,7 @@ public interface StreamEdit {
     public fun event(event: String): String?
 
     /** The event a stream that ended whole is given after the server's last; null gives it none. A stream that was
-     *  cut short is given nothing, so its client reads it as cut. */
+     *  cut short is never given it: the relay ends that one with its own error event (HeadAnswers). */
     public fun ending(): String?
 }
 

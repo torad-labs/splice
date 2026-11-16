@@ -82,10 +82,11 @@ internal class QuietWire(private val out: ByteWriteChannel, every: Duration?, pr
         lineEnds = if (tail.size == count) lineEnds + ends else ends
     }
 
-    /** [envelope], an error in the Anthropic shape, as the `error` event that ends a stream opened before its head
-     *  answered. */
-    suspend fun error(envelope: String) {
-        out.writeStringUtf8("event: error\ndata: $envelope\n\n")
+    /** [event], an error as the stream's client reads one (RefusalVoice.event), which ends a stream that cannot go
+     *  on: one opened before its head answered, or one its server broke off. Written where the stream stands between
+     *  two events. */
+    suspend fun error(event: String) {
+        out.writeStringUtf8("$event\n\n")
         out.flush()
     }
 }

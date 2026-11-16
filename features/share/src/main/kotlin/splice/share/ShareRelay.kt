@@ -88,7 +88,7 @@ public class ShareRelay(
     private val clock: RelayClock = RelayClock(),
 ) {
     private val errors get() = speaker.errors
-    private val answers = HeadAnswers(io, speaker.errors, clock)
+    private val answers = HeadAnswers(io, speaker, clock, log)
     private val streamed = StreamedBodies()
     private val failures = TransportFailures()
 
@@ -118,7 +118,7 @@ public class ShareRelay(
      *  another server, or say that none answers. */
     public suspend fun outward(call: ApplicationCall, ask: OutwardAsk, body: ByteArray): Boolean {
         val answer = AtomicReference<HttpResponse<InputStream>>()
-        val wait = ClientWait(ask.silent, edit = ask.edit)
+        val wait = ClientWait(ask.server, edit = ask.edit)
         // The answer is read here when it is a stream to edit, so the server is asked to send it as it is.
         val own = ask.headers.own + (HttpHeaders.AcceptEncoding to "identity")
         try {
@@ -135,7 +135,7 @@ public class ShareRelay(
     public suspend fun turn(call: ApplicationCall, turn: HeadTurn) {
         val head = turn.head
         val body = body(call, head.maxRequestBytes(), head.requestReadTimeoutMs()) ?: return
-        val silent = "${head.command} on $machine is not answering"
+        val who = "${head.command} on $machine"
         // A head that takes the caller's own login refuses this machine's turn key as a credential to send upstream.
         // It gets the node's word instead, which opens nothing: its pool sends a login it holds in that word's place.
         val bearer = if (head.forwardsClientAuth) SHARE_NODE_TOKEN else turnKey.get()
@@ -144,7 +144,7 @@ public class ShareRelay(
         val signed = mapOf(HttpHeaders.Authorization to "Bearer $bearer") + proof + turn.named
         val target = URI.create("http://127.0.0.1:${head.port}${turn.path}")
         val request = request(call, target, body, signed) { it !in turn.held }
-        forward(call, request, ClientWait(silent, turn.keepalive?.takeIf { streamed.asks(body) }))
+        forward(call, request, ClientWait(who, turn.keepalive?.takeIf { streamed.asks(body) }))
     }
 
     /** The control plane's statusline for [head], fed the session's JSON as Claude Code feeds its statusline, once
@@ -153,10 +153,10 @@ public class ShareRelay(
         val body = body(call, STATUSLINE_BODY_MAX_BYTES, STATUSLINE_READ_MS) ?: return
         val refusal = withContext(io) { admission.refusal(body) }
         if (refusal != null) return errors.refuse(call, HttpStatus.BAD_REQUEST, refusal)
-        val silent = "$machine's statusline for ${head.command} is not answering"
+        val who = "$machine's statusline for ${head.command}"
         val signed = mapOf(HttpHeaders.Authorization to "Bearer ${turnKey.get()}")
         val target = URI.create("http://127.0.0.1:$controlPort/statusline/${head.key}")
-        forward(call, request(call, target, body, signed), ClientWait(silent))
+        forward(call, request(call, target, body, signed), ClientWait(who))
     }
 
     /** [body] for [target], with the [signed] headers in place of whatever the other machine sent under those names:

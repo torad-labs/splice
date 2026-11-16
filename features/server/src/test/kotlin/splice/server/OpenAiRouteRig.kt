@@ -39,7 +39,8 @@ internal class ScriptedBox(private val name: String) {
     /** The pause before each event after the first. */
     @Volatile var gapMs = 0L
 
-    /** How many events go out before the server breaks the stream off; null sends them all and ends it whole. */
+    /** How many events go out before the server breaks the stream off; null sends them all and ends it whole. While
+     *  it is set, an answer that is no stream breaks off halfway too. */
     @Volatile var cutAfter: Int? = null
 
     /** What a streamed completion waits for before it answers. */
@@ -79,7 +80,8 @@ internal class ScriptedBox(private val name: String) {
         val bytes = json.toByteArray()
         exchange.responseHeaders.add("Content-Type", "application/json")
         exchange.sendResponseHeaders(status, bytes.size.toLong())
-        exchange.responseBody.write(bytes)
+        // An answer that is broken off declared all of itself, so closing it after half cuts the connection.
+        exchange.responseBody.write(bytes, 0, if (cutAfter == null) bytes.size else bytes.size / 2)
     }
 
     private fun stream(exchange: HttpExchange) {

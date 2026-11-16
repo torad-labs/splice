@@ -16,9 +16,11 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.topology.ServerLimits
+import splice.core.util.LogSink
 import java.net.Socket
 import java.net.http.HttpResponse
 import java.nio.file.Path
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -26,6 +28,7 @@ internal class ServerOpenAiRouteTest {
     @TempDir lateinit var state: Path
 
     private val box = ScriptedBox("box")
+    private val logged = CopyOnWriteArrayList<String>()
     private var opened: OpenAiRig? = null
 
     /** Server mode over `claude-team`, whose provider speaks openai-chat on [box] unless [chat] says it does not. */
@@ -33,7 +36,7 @@ internal class ServerOpenAiRouteTest {
         val upstreams = object : HeadUpstreams {
             override fun chat(head: String): ChatServer? = BoxServer(box.base).takeIf { chat && head == "team" }
         }
-        return OpenAiRig(state, upstreams, limits).also { opened = it }
+        return OpenAiRig(state, upstreams, limits, LogSink { logged += it }).also { opened = it }
     }
 
     @AfterEach
@@ -43,12 +46,15 @@ internal class ServerOpenAiRouteTest {
     }
 
     /** The error of [answer], which must be in OpenAI's shape: one `error` object and nothing beside it. */
-    private fun openAiError(answer: HttpResponse<String>): JsonObject {
-        val body = Json.parseToJsonElement(answer.body()).jsonObject
-        assertEquals(setOf("error"), body.keys, answer.body())
+    private fun openAiError(answer: HttpResponse<String>): JsonObject = openAiError(answer.body())
+
+    /** The error [said] in OpenAI's shape, as a body or as the data of a stream's event. */
+    private fun openAiError(said: String): JsonObject {
+        val body = Json.parseToJsonElement(said).jsonObject
+        assertEquals(setOf("error"), body.keys, said)
         val error = body.getValue("error").jsonObject
-        assertEquals(setOf("message", "type", "param", "code"), error.keys, answer.body())
-        assertTrue(error.getValue("message").jsonPrimitive.content.startsWith("splice server: "), answer.body())
+        assertEquals(setOf("message", "type", "param", "code"), error.keys, said)
+        assertTrue(error.getValue("message").jsonPrimitive.content.startsWith("splice server: "), said)
         return error
     }
 
@@ -152,12 +158,30 @@ internal class ServerOpenAiRouteTest {
     }
 
     @Test
-    fun `a stream the server broke off is not given the ending of a whole one`() {
+    fun `a stream the server broke off ends, after the events it sent, with one error event and no DONE`() {
         val rig = serve()
         box.events = listOf("one", "two", "three").map { """data: {"choices":[{"delta":{"content":"$it"}}]}""" }
         box.cutAfter = 2
         val heard = rig.stream(rig.keyFor("ola@example.com"), STREAMED_CHAT).map { it.second }
-        assertEquals(box.events.take(2), heard)
+        assertEquals(box.events.take(2), heard.take(2), "what the server sent before it broke off")
+        assertEquals(3, heard.size, "one event after the server's two, and no [DONE]: $heard")
+        val error = openAiError(heard.last().removePrefix("data: "))
+        assertEquals("server_error", text(error, "type"))
+        assertTrue("the model server behind claude-team broke off its answer" in text(error, "message"))
+        assertTrue(logged.any { "broke off its answer" in it }, "the log says the answer broke off: $logged")
+    }
+
+    @Test
+    fun `an answer that is no stream and breaks off partway is a 502 in OpenAI's shape, never half a body`() {
+        val rig = serve()
+        box.cutAfter = 0
+        val answered = rig.chat(rig.keyFor("ola@example.com"), CHAT)
+        assertEquals(502, answered.statusCode())
+        assertEquals("application/json", answered.headers().firstValue("content-type").get().substringBefore(';'))
+        val error = openAiError(answered)
+        assertEquals("server_error", text(error, "type"))
+        assertTrue("the model server behind claude-team broke off its answer" in text(error, "message"))
+        assertTrue(logged.any { "broke off its answer" in it }, "the log says the answer broke off: $logged")
     }
 
     @Test

@@ -111,7 +111,7 @@ private class Rig(tmp: Path, tag: String, clock: ElapsedClock = ElapsedClock { 5
     val perfFile: Path = tmp.resolve("perf-$tag.jsonl")
     val telemetry = TurnTelemetry("codex", PerfStats(perfFile), log, clock)
     val usageStore = UsageStore(tmp.resolve("u-$tag.json"), tmp.resolve("rl-$tag.json"))
-    val usageStamp = TurnUsageStamp(usageStore, log, telemetry)
+    val usageStamp = TurnUsageStamp(usageStore)
     val finish = TurnFinish(
         ElapsedClock { 5L },
         log,

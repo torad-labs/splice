@@ -32,6 +32,9 @@ internal class HeadAccountMembership(
     private val withdrawn = mutableSetOf<String>()
     private val elapsed = ProcessElapsedNow()
     private var polling: HeadQuotaPolling? = null
+
+    // A login that joins the running head writes its plan readings where the head's own sign-in does.
+    private val ownHistory = trackers.getValue(OWN_SIGN_IN_LABEL).historyFor(OWN_SIGN_IN_LABEL)
     private val fallback = PoolAccount(
         OWN_SIGN_IN_LABEL,
         true,
@@ -106,7 +109,11 @@ internal class HeadAccountMembership(
                     auth = account.auth,
                     quota = TrackedAccountQuota(
                         trackers.computeIfAbsent(account.label) {
-                            QuotaTracker(account.quota.file, extraFamily = CodexQuotaHeaderFamily())
+                            QuotaTracker(
+                                account.quota.file,
+                                extraFamily = CodexQuotaHeaderFamily(),
+                                history = ownHistory?.forLogin(account.label),
+                            )
                         }.also {
                             it.credentialListener = account.quota.read as? splice.head.usage.CredentialQuotaListener
                         },

@@ -56,7 +56,9 @@ which speed and what each was worth.
    head's own `CLAUDE_CONFIG_DIR/skills`, so they replace Claude Code's own `/fast` and show in its menu. The
    launch also sets `CLAUDE_CODE_DISABLE_FAST_MODE=1`, so Claude Code never sends Anthropic's speed setting to a GPT
    model.
-   - A head gets a skill for each tier its model's catalog entry offers.
+   - A head gets a skill for each tier its pinned model's catalog entry offers. Its description names the tier, the
+     catalog's description of it and what it uses of a ChatGPT plan's limits: 2.5x for Fast and 8x for Ultrafast,
+     the multiples OpenAI publishes. The catalog's own line for Ultrafast names no cost.
    - A head that is not signed in with ChatGPT gets neither skill, and Claude Code's own `/fast` stays there.
    - The person's own skills stay in `~/.claude/skills`, untouched, and stay offered in every head, as their
      commands are today.
@@ -69,8 +71,10 @@ which speed and what each was worth.
      outlives a daemon restart.
    - A bare command turns its tier on, or goes back to standard when that tier is already on. `on` and `off` set
      it whatever it was, and `off` always means standard. Fast and Ultrafast replace each other.
-   - The reply names the tier and the catalog's description of it, so the person sees what it costs.
-   - A tier the head's model doesn't offer is refused, naming the model and the tiers it does offer.
+   - The reply names the tier, the catalog's description of it and the same plan multiple, so the person sees what
+     it costs.
+   - A tier the session's model doesn't offer is refused, naming the model and the tiers it does offer. The
+     session's model is the model of its last turn, or the head's pinned model before one.
 4. **On the wire as Codex sends it.**
    - Every request of a session at Fast or Ultrafast carries `service_tier` `priority` or `ultrafast`, and the
      routing hint `model=<slug>;tier=<id>`. That includes a subagent's request, a compaction and a turn that is not
@@ -86,7 +90,10 @@ which speed and what each was worth.
      splice.toml names the tier cards as flat keys beside the long-context ones, because the TOML reader takes no
      table nested in a model row: `fast_input`, `fast_cache_read`, `fast_output`, `fast_cache_write`, and the same
      with `ultrafast_`.
-   - The shipped price table carries OpenAI's published Fast and Ultrafast cards.
+   - The shipped price table carries OpenAI's published Fast and Ultrafast cards, in a file of their own beside
+     `published-rates.tsv`. Installed daemons fetch that file from main every hour and refuse a header they do not
+     know, so it takes no new column. No check reaches the shipped table, because a stand-in's host is not in it,
+     so the reviews hold it.
    - A turn served at a speed whose card splice doesn't have is left unpriced, never priced at the standard card.
 
 ## The items

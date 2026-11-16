@@ -270,7 +270,7 @@ class TurnEndingAccountingTest {
         val finish = TurnFinish(
             clock = ElapsedClock { 5L },
             log = rig.log,
-            usageStamp = TurnUsageStamp(store, rig.log, rig.telemetry),
+            usageStamp = TurnUsageStamp(store),
             health = rig.health,
             telemetry = rig.telemetry,
         )
@@ -308,7 +308,7 @@ class TurnEndingAccountingTest {
         val finish = TurnFinish(
             clock = ElapsedClock { 5L },
             log = rig.log,
-            usageStamp = TurnUsageStamp(store, rig.log, rig.telemetry),
+            usageStamp = TurnUsageStamp(store),
             health = rig.health,
             telemetry = rig.telemetry,
         )
@@ -386,7 +386,7 @@ class TurnEndingAccountingTest {
             val rig = EndingRig("usage-cancel-$name")
             val store = UsageStore(tmp.resolve("usage-cancel-$name.json"), tmp.resolve("rl-cancel-$name.json"))
                 .also(usageStores::add)
-            val stamp = TurnUsageStamp(store, rig.log, rig.telemetry)
+            val stamp = TurnUsageStamp(store)
             val seal = CancellationSeal(accountingProvider(), rig.log, rig.telemetry, rig.health, stamp)
             val drive = rig.drive(emitter, clientGone)
             try {
@@ -419,7 +419,7 @@ class TurnEndingAccountingTest {
             val rig = EndingRig("row-cancel-${case.name}")
             val store = UsageStore(tmp.resolve("row-${case.name}.json"), tmp.resolve("rl-row-${case.name}.json"))
                 .also(usageStores::add)
-            val stamp = TurnUsageStamp(store, rig.log, rig.telemetry)
+            val stamp = TurnUsageStamp(store)
             val seal = CancellationSeal(accountingProvider(), rig.log, rig.telemetry, rig.health, stamp)
             val drive = rig.drive(case.emitter, case.clientGone)
             try {
@@ -473,7 +473,7 @@ class TurnEndingAccountingTest {
             rig.log,
             rig.telemetry,
             rig.health,
-            TurnUsageStamp(store, rig.log, rig.telemetry),
+            TurnUsageStamp(store),
         )
         val drive = rig.drive(ConnectedTerminal(), clientGone = false).copy(watchdog = dog)
         try {
@@ -551,7 +551,7 @@ class TurnEndingAccountingTest {
         val rig = EndingRig("usage-cancel-during-seal")
         val store = UsageStore(tmp.resolve("usage-cancel-during-seal.json"), tmp.resolve("rl-cancel-during-seal.json"))
             .also(usageStores::add)
-        val stamp = TurnUsageStamp(store, rig.log, rig.telemetry)
+        val stamp = TurnUsageStamp(store)
         val seal = CancellationSeal(accountingProvider(), rig.log, rig.telemetry, rig.health, stamp)
         val original = CancellationException("original turn cancellation")
         val duringEmission = CancellationException("terminal emission cancellation")
@@ -619,7 +619,7 @@ class TurnFailurePermanenceTest {
             val finish = TurnFinish(
                 ElapsedClock { 5L },
                 rig.log,
-                TurnUsageStamp(store, rig.log, rig.telemetry),
+                TurnUsageStamp(store),
                 rig.health,
                 rig.telemetry,
             )
@@ -675,7 +675,7 @@ class TurnFailurePermanenceTest {
             val finish = TurnFinish(
                 ElapsedClock { 5L },
                 rig.log,
-                TurnUsageStamp(store, rig.log, rig.telemetry),
+                TurnUsageStamp(store),
                 rig.health,
                 rig.telemetry,
             )

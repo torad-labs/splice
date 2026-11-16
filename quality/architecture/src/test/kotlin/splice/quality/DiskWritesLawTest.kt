@@ -521,6 +521,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "features/turns/src/main/kotlin/splice/head/usage/EconomicsStore.kt" to
         mapOf("Files.move(" to 1, "writeAtomic0600(" to 1),
     "features/turns/src/main/kotlin/splice/head/usage/QuotaTracker.kt" to mapOf("writeAtomic0600(" to 1),
+    // Nov 16, 2026: one line per change in a head's plan readings, in the `<head>-quota-history.jsonl` row.
+    "features/turns/src/main/kotlin/splice/head/usage/QuotaHistory.kt" to mapOf("JsonlSink.appendLine(" to 1),
     "features/turns/src/main/kotlin/splice/head/usage/CredentialQuotaFiles.kt" to mapOf("writeAtomic0600(" to 1),
     "features/turns/src/main/kotlin/splice/head/usage/RateLimitFile.kt" to mapOf("writeAtomic0600(" to 1),
     "features/turns/src/main/kotlin/splice/head/usage/UsageRingFile.kt" to mapOf("writeAtomic0600(" to 1),

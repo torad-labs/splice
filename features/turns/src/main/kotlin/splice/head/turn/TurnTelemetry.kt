@@ -173,6 +173,8 @@ internal class TurnTelemetry(
             TurnBill.counters(it).forEach { (key, value) -> drive.perf.setCount(key, value) }
         }
         val snap = billingSnapshot(drive)
+        // The cache line is the row's own numbers, so it is written here, once the row's bill is whole.
+        cache.rowLine(drive.upstreamModel, snap.counters, drive.meta.compact)?.let { log(it) }
         UsageObservation.record(drive.perf, snap)
         // V4-174: the turn record closes on the same snapshot the perf row carries — every ending
         // of a drive goes through here, so the trace never has a turn without its outcome.
@@ -331,9 +333,4 @@ internal class TurnTelemetry(
             latencyMs,
             WatchdogVerdict(drive.watchdog.fired, drive.watchdog.held),
         )
-
-    /** MOVED out of finishTurn (HD-24): a log line is telemetry, and moving it here is what lets
-     *  TurnFinish drop its dependency on UsageHud. [model] is the drive's upstream model; [headKey]
-     *  is the same tag every other line in this class uses. */
-    fun cacheLine(model: String, usage: Usage, compact: Boolean): String = cache.line(model, usage, compact)
 }

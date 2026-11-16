@@ -97,7 +97,7 @@ private class UsageStampRig(tmp: Path, private val tag: String, economics: Econo
     val perfFile: Path = tmp.resolve("perf-$tag.jsonl")
     val telemetry = TurnTelemetry("anthropic", PerfStats(perfFile), log, ElapsedClock { 5L }, TurnSpend(economics))
     val usageStore = UsageStore(tmp.resolve("u-$tag.json"), tmp.resolve("rl-$tag.json"))
-    val stamp = TurnUsageStamp(usageStore, log, telemetry)
+    val stamp = TurnUsageStamp(usageStore)
 
     suspend fun drive(interceptor: RoundInterceptor? = null): TurnDrive = TurnDrive(
         inputs = TurnInputs(

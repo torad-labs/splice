@@ -9,13 +9,10 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.UsageMeasurementStamp
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.core.util.LogSink
 import splice.head.usage.UsageStore
 
 internal class TurnUsageStamp(
     private val usageStore: UsageStore,
-    private val log: LogSink,
-    private val telemetry: TurnTelemetry,
 ) {
     /** Raw completion can follow the last HTTP response. Its receipt prevents later client billing twice. */
     suspend fun stampIndependent(outcome: TurnOutcome): TurnOutcome = withContext(NonCancellable) {
@@ -46,7 +43,6 @@ internal class TurnUsageStamp(
         } ?: success.usage
         setKnownCounters(drive, usage)
         drive.perf.timed(PerfKeys.USAGE_MS) { usageStore.appendOutputTokens(usage.unrecordedOutputTokens) }
-        log(telemetry.cacheLine(drive.upstreamModel, usage, drive.meta.compact))
     }
 
     suspend fun stampSalvaged(drive: TurnDrive, salvaged: Usage) = withContext(NonCancellable) {

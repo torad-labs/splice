@@ -1,5 +1,81 @@
 # Changelog
 
+## splice v0.5.0: Claude Desktop's Code tab on splice, one splice serving a team, and Muse sessions that keep their cache - 2026-11-16
+
+### Highlights
+- **Claude Desktop's Code tab runs on splice.** `splice desktop on` points the tab at splice as one provider, and
+  its model picker then lists every model of every head splice holds a login for. A model picked there runs on its
+  own head. `splice desktop off` puts back what `on` replaced.
+- **One splice serves a team.** With a `[server]` table, splice serves the commands you list on an address of its
+  own, to people holding keys it issued, with caps per person. A provider can be several servers, a long prefill
+  no longer times a connection out, and OpenAI-compatible clients use the same keys.
+- **A tool loaded in the middle of a Muse conversation costs only what it adds.** Before, every tool Claude Code's
+  ToolSearch loaded made Meta read the whole conversation again at the full price.
+
+### Upgrading from 0.4.2
+- Run the install command again, or `splice upgrade`. Nothing in `splice.toml` has to change.
+- Desktop is off until you run `splice desktop on`, and server mode is off until `splice.toml` has a `[server]`
+  table.
+- This release carries the first parts of server mode: the listener, keys, caps, several upstreams and the OpenAI
+  route. A usage ledger, sign-in and metrics are not in it.
+
+### Added
+- **Claude Desktop's Code tab on splice.** `splice desktop on` writes Claude Code's Mantle switch, splice's door
+  (`http://127.0.0.1:<control_port>/desktop`), a key of the door's own, one declared window and the default model
+  into the `env` of `~/.claude/settings.json`, which the tab reads, and a `modelPicker` listing the lineup. It never
+  writes `model`, which holds your pick, and it is the one file of the `claude` command splice writes, only at your
+  command. From the tab's next session the picker lists every model of every head splice holds a login for, each
+  with the command it belongs to, and follows splice from then on: a head or a login added, removed, signed in or
+  signed out shows in the next session's picker. A head that forwards your own Claude login is left out, since the
+  tab doesn't send that login through splice, and so is a head whose login is missing or expired. `splice desktop`
+  says whether it is on, the door, the default model, the lineup, each head left out with the reason, and the last
+  turn through the door; `--json` gives the same as data. The door opens only with the desktop key: the management
+  and turn keys don't open it, `splice rotate-key` leaves it alone, and `splice desktop rotate-key` replaces it.
+  A turn through the door is its head's row on `/api/perf/turns` with `door` set to `desktop`. Chat, Cowork and the
+  terminal stay as they were: with Desktop on, a `claude` launched through splice and every other head still run on
+  their own providers. The README's [Claude Desktop's Code tab on splice](#claude-desktops-code-tab-on-splice)
+  section has the commands. The door was built against what the tab's own Claude Code (2.1.325) sends, read in a
+  terminal; the Desktop app's own picker has not been checked against it.
+- **Server mode: a team's front door.** A `[server]` table (`listen`, `commands`, optional `tls_cert` and
+  `tls_key`, `trusted_proxies`, `admins`) serves the listed commands on that address over HTTP or HTTPS.
+  `GET /health` is open and everything else needs a live key, as `x-api-key` or `Authorization: Bearer`.
+  `splice server key create|list|revoke|revoke-person` issues and takes back keys, each bound to a person's email
+  and kept only as its SHA-256, and an admin's key reaches the same operations on the listener. `[server.limits]`
+  and `splice server person set` cap each person's turns in flight and requests per minute. A key the server
+  issued never leaves it in a forwarded header. splice refuses to start a server beside `splice share on`, with a
+  command no head runs, or with a command whose head signs in with a person's plan login.
+- **Server mode: a model on several servers.** A provider that speaks `openai-chat` can list
+  `[[providers.<p>.upstreams]]` in place of one `base_url`. Each is asked `/health`, a turn goes to the healthy
+  server with the fewest turns in flight or to the one its person was set to, and a refused connection fails over
+  to the next. With `keepalive_seconds`, a streamed turn whose upstream is still prefilling gets its headers at once
+  and an SSE keepalive comment until the answer starts.
+- **Server mode: the OpenAI route.** A served command whose provider speaks `openai-chat` also answers
+  `POST /<command>/v1/chat/completions`, `GET /<command>/v1/models` and `GET /<command>/v1/models/<id>`, on the
+  same keys and caps. An answer the upstream cuts short is an error the client sees, and the provider's own
+  cookies, request ids and rate-limit counts stay at the server. The README's
+  [Serve a team from one machine](#serve-a-team-from-one-machine) section covers all three.
+- **A head keeps each change in its plan reading.** A head appends one line to `<head>-quota-history.jsonl` each
+  time a login's plan reading moves, beside the file that holds the latest reading, so a stretch of work can be read
+  against what it used of a plan. A reading that repeats the one before it writes nothing.
+
+### Fixed
+- **A tool loaded in the middle of a Muse conversation no longer empties its cache.** Meta caches a request by
+  prefix, with the tool list before the input, and the Muse head put every tool ToolSearch loaded at the end of
+  that list, so each load made Meta read everything after it again at the full price. A Muse conversation's tool
+  list is now its first request's on every request. A tool that arrives later is written into the history where
+  it arrived, and the model calls it through one tool of the head's own; Claude Code sees the call under the
+  tool's own name.
+- **`claude -r NAME` no longer opens another command's session in place.** A session resumed by name that another
+  command wrote was opened where it lay, and every turn failed with `claude does not serve <model>`. The launch is
+  now refused before any client starts, with the `-r <id>` that makes the copy on this command's model.
+- **A login whose provider refused its credential reads Signed out.** On Accounts, such a login kept showing its
+  last reading, which could be days old, and still offered Use now. It now reads Signed out, offers Sign in, and
+  sorts after the logins that can serve.
+- **A lost native code-mode session says why in the daemon log.** One line names the connection, the host's pid,
+  whether it is alive, its exit code and the chain of failures. Guest source stays out of the log.
+- **The daemon log's `cache:` line agrees with the turn's row.** It is written from the row's own counters. Before,
+  a code-mode turn that ended on a tool call logged `input=0 cached=0 hit=0%`.
+
 ## splice v0.4.2: auto mode on every head, headers for a company gateway, and a held login that offers its reset - 2026-11-14
 
 ### Highlights

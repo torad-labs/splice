@@ -32,7 +32,7 @@ internal class LedgerRows(private val parts: LedgerParts) {
         return LedgerRow(
             at = Instant.ofEpochMilli(turn.startedMs).toString(),
             person = person,
-            team = parts.people.team(person, parts.teams),
+            team = turn.team,
             device = turn.key.prefix,
             command = turn.head.command,
             model = heard.model,

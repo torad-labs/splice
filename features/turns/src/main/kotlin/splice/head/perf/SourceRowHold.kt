@@ -1,6 +1,7 @@
 // NEW: a turn's perf row waits for the source round it left streaming, so that round's tokens land on it.
 package splice.head.perf
 
+import splice.core.turn.TurnMeta
 import splice.core.turn.Usage
 import splice.upstream.PostingTurnRow
 import splice.upstream.RowRelease
@@ -31,16 +32,17 @@ internal class SourceRowHold : PostingTurnRow {
         return RowRelease { usage -> if (once.compareAndSet(false, true)) released(usage) }
     }
 
-    /** Writes [row] now, or once the last held round settles. */
-    fun writeOrHold(row: RowWrite) {
+    /** Writes [row] now, or once the last held round settles; true when it wrote it now. */
+    fun writeOrHold(row: RowWrite): Boolean {
         val usage = synchronized(lock) {
             if (open > 0) {
                 pending = row
-                return
+                return false
             }
             settled
         }
         row.write(usage)
+        return true
     }
 
     /** A head stop writes a waiting row with what is known. A round that settles after it changes nothing. */
@@ -68,18 +70,25 @@ internal class SourceRowHold : PostingTurnRow {
     }
 }
 
+/** Hears of a turn whose row starts to wait on a source round. */
+internal fun interface RowWaits {
+    fun waits(turn: TurnMeta)
+}
+
 /** One head's rows still waiting on source rounds, so a head stop writes them with what is known ([flush]). A hard
- *  kill loses them: they live in memory until their rounds settle. */
-internal class HeldRows {
+ *  kill loses them: they live in memory until their rounds settle. [waits] hears of each row as it starts to wait, so
+ *  a server listener that relayed its turn waits for the row with it (ServedTurnReport.waits). */
+internal class HeldRows(private val waits: RowWaits = RowWaits { }) {
     private val waiting: MutableSet<SourceRowHold> = ConcurrentHashMap.newKeySet()
 
-    /** Writes [row] now, or once every round [hold] waits on has settled. */
-    fun write(hold: SourceRowHold, row: SourceRowHold.RowWrite) {
+    /** Writes [turn]'s [row] now, or once every round [hold] waits on has settled. */
+    fun write(hold: SourceRowHold, turn: TurnMeta, row: SourceRowHold.RowWrite) {
         waiting += hold
-        hold.writeOrHold { usage ->
+        val written = hold.writeOrHold { usage ->
             waiting -= hold
             row.write(usage)
         }
+        if (!written) waits.waits(turn)
     }
 
     /** Every waiting row, written now; a round that settles afterwards changes nothing. */

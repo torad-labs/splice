@@ -29,7 +29,10 @@ class MuseToolSurfaceTest {
         assertEquals("function", tools.first()["type"]?.jsonPrimitive?.content)
         assertNull(tools.last()["execution"], "Meta owns hosted search, not splice's client controller")
         assertNull(turn.toolSearch)
-        assertEquals(1, turn.meta.tools.eager)
+        // The eager side is the client's one non-MCP tool and the caller every Muse conversation lists from its first request.
+        assertEquals(2, turn.meta.tools.eager)
+        val caller = tools.single { it["name"]?.jsonPrimitive?.content == "CallToolByName" }
+        assertNull(caller["defer_loading"], "the caller is listed outright, never behind the hosted search")
         assertEquals(12, turn.meta.tools.deferred)
     }
 
@@ -37,7 +40,7 @@ class MuseToolSurfaceTest {
     fun `an explicit disabled surface leaves every Muse tool eager`(@TempDir root: Path) = runTest {
         val turn = turn(root, "enabled = false")
         val tools = turn.requestBody.getValue("tools").jsonArray.map { it.jsonObject }
-        assertEquals(13, tools.size)
+        assertEquals(14, tools.size, "the 13 client tools and the caller")
         assertTrue(tools.none { "defer_loading" in it || it["type"]?.jsonPrimitive?.content == "tool_search" })
         assertNull(turn.meta.tools.deferred)
     }
@@ -46,7 +49,7 @@ class MuseToolSurfaceTest {
     fun `an explicit surface table replaces Muse prefix defaults`(@TempDir root: Path) = runTest {
         val turn = turn(root, "defer_prefixes = [\"not-a-tool\"]")
         val tools = turn.requestBody.getValue("tools").jsonArray.map { it.jsonObject }
-        assertEquals(13, tools.size)
+        assertEquals(14, tools.size, "the 13 client tools and the caller")
         assertTrue(tools.none { "defer_loading" in it || it["type"]?.jsonPrimitive?.content == "tool_search" })
         assertEquals(0, turn.meta.tools.deferred)
     }

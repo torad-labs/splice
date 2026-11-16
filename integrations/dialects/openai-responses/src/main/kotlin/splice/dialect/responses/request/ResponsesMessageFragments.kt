@@ -14,7 +14,6 @@ import splice.core.wire.ImageBlock
 import splice.core.wire.RedactedThinkingBlock
 import splice.core.wire.TextBlock
 import splice.core.wire.ThinkingBlock
-import splice.core.wire.ToolDefinition
 import splice.core.wire.ToolResultBlock
 import splice.core.wire.ToolUseBlock
 import splice.core.wire.UnknownBlock
@@ -23,6 +22,7 @@ import splice.dialect.responses.reasoning.ResponsesAssistantPhaseRecords
 import splice.dialect.responses.reasoning.ResponsesHistoryInput
 import splice.dialect.responses.reasoning.ResponsesHistoryMemo
 import splice.dialect.responses.stream.LoopGuard
+import splice.dialect.responses.tools.HistoryTools
 import splice.upstream.ToolNameShortener
 import splice.upstream.memory.FragmentContextKey
 import splice.upstream.memory.MessageFragmentContext
@@ -40,7 +40,7 @@ internal class ResponsesMessageFragments(
         body: AnthropicRequest,
         raw: JsonObject,
         opts: BuildOptions,
-        declareByName: Map<String, ToolDefinition>,
+        historyTools: HistoryTools,
         effort: String?,
     ): JsonArray {
         val directives = if (quirks.roundTrip.loopGuard) LoopGuard.analyze(body.messages) else emptyMap()
@@ -48,7 +48,7 @@ internal class ResponsesMessageFragments(
             quirks,
             directives,
             toolNames,
-            declareByName,
+            historyTools,
             body.tools.associateByTo(mutableMapOf()) { it.name },
         )
         val context = context(body, raw, opts, directives, effort)

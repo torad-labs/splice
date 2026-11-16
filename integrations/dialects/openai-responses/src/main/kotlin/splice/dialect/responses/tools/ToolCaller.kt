@@ -1,4 +1,4 @@
-// NEW: muse-tool-cache (2026-11-16, docs/specs/muse-tool-cache.md, decisions 2 to 4). The caller: the one tool of the
+// NEW: muse-tool-cache (2026-11-16). The caller: the one tool of the
 // head's own that a conversation's tool list holds from its first request, on a backend whose prompt cache a changed
 // tool list would empty. A tool that arrives later never joins the list. Its definition is written into the
 // conversation where it arrived, and the model calls it through the caller, by name. What Meta does with each way of

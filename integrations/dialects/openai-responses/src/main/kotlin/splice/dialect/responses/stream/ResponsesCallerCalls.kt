@@ -1,4 +1,4 @@
-// NEW: muse-tool-cache (2026-11-16, docs/specs/muse-tool-cache.md, decision 4). The model calls a tool that arrived
+// NEW: muse-tool-cache (2026-11-16). The model calls a tool that arrived
 // in the middle of a conversation through the caller (ToolCaller). Before the round's fold reads the backend's
 // stream, each call of the caller becomes a call of the tool it names, under that tool's own name and with its
 // arguments. So everything after this point, Claude Code included, sees the call the model meant and never the caller.

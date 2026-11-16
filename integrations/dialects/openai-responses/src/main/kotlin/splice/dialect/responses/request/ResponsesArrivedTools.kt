@@ -1,7 +1,7 @@
-// NEW: muse-tool-cache (2026-11-16, docs/specs/muse-tool-cache.md). Which of a conversation's tools the model calls
-// through the caller, on a head whose tool list never changes. On 2026-11-16 each of 26 tool loads in one five-hour
-// Muse window moved a whole conversation out of Meta's prompt cache, 2.69 million tokens paid in full, because the
-// loaded tool joined the request's tool list and Meta caches by prefix with the tool list before the input.
+// NEW: muse-tool-cache (2026-11-16). Which of a conversation's tools the model calls through the caller, on a head
+// whose tool list never changes. Until then every tool a Muse conversation loaded moved the whole conversation out of
+// Meta's prompt cache, to be paid for again in full, because the loaded tool joined the request's tool list and Meta
+// caches by prefix with the tool list before the input.
 package splice.dialect.responses.request
 
 import splice.core.wire.ToolDefinition

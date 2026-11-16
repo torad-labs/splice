@@ -112,8 +112,8 @@ public const val MUSE_TAKES_INLINE_TOOL_CHANGES: Boolean = false
 
 /** A tool that arrives in the middle of a Muse conversation, one ToolSearch loaded or a server added, never joins the
  *  request's tool list. Meta caches a request by prefix, in the order instructions, tools, input, so a tool that
- *  joins the list moves the whole conversation out of the cache: on 2026-11-16 each of 26 loads in one five-hour
- *  window made Meta read a conversation again at the full price, 2.69 million tokens. The list holds one tool of the
+ *  joins the list moves the whole conversation out of the cache, and Meta reads all of it again at the full price on
+ *  every load. The list holds one tool of the
  *  head's own from the first request, the caller, the arrived tool is written into the conversation where it arrived,
  *  and the model calls it through the caller.
  *

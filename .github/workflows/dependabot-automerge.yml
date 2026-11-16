@@ -149,7 +149,7 @@ jobs:
           echo "Auto-merge armed; GitHub merges once required checks pass." >> "$GITHUB_STEP_SUMMARY"
 
       # Private repos run CI when a PR opens and when a label is added, never on
-      # a push (Marcos, 2026-11-02). A person re-adds `ci` when ready to merge;
+      # a push. A person re-adds `ci` when ready to merge;
       # nobody does for an automated PR, so a push to one (the template sync
       # onto its open PR) would leave the armed merge without its required
       # checks. The App adds the label: GitHub starts no workflow for a label

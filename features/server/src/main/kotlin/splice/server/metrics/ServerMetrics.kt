@@ -63,7 +63,7 @@ public class ServerMetrics internal constructor(private val who: MetricPeople, p
             MetricPoint(person(person), who.limits.inflightCap(person)?.toDouble() ?: Double.POSITIVE_INFINITY)
         }
         return listOf(
-            MetricFamily.Gauge(INFLIGHT, INFLIGHT_HELP, UNIT_REQUESTS, held),
+            MetricFamily.Gauge(INFLIGHT_METRIC, INFLIGHT_HELP, UNIT_REQUESTS, held),
             MetricFamily.Gauge(INFLIGHT_LIMIT, INFLIGHT_LIMIT_HELP, UNIT_REQUESTS, caps),
         )
     }
@@ -71,7 +71,7 @@ public class ServerMetrics internal constructor(private val who: MetricPeople, p
     private fun person(person: String) = MetricLabels(listOf(LABEL_PERSON to person))
 }
 
-private const val INFLIGHT = "splice_server_inflight"
+private const val INFLIGHT_METRIC = "splice_server_inflight"
 private const val INFLIGHT_HELP = "Requests the person has in flight now."
 private const val INFLIGHT_LIMIT = "splice_server_inflight_limit"
 private const val INFLIGHT_LIMIT_HELP =

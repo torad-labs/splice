@@ -61,8 +61,8 @@ public class ServedMetricsExport(
         val worker = worker ?: return
         worker.submit(::push)
         worker.shutdown()
-        if (!worker.awaitTermination(CLOSE_WAIT_MS, TimeUnit.MILLISECONDS)) worker.shutdownNow()
-        transport?.shutdown()?.join(CLOSE_WAIT_MS, TimeUnit.MILLISECONDS)
+        if (!worker.awaitTermination(EXPORT_CLOSE_WAIT_MS, TimeUnit.MILLISECONDS)) worker.shutdownNow()
+        transport?.shutdown()?.join(EXPORT_CLOSE_WAIT_MS, TimeUnit.MILLISECONDS)
     }
 }
 
@@ -75,4 +75,4 @@ private const val PUSH_SECONDS = 5L
 private const val PUSH_WAIT_MS = 2_500L
 
 // why: the final push and the exporter's shutdown each wait this long at most, so a stop is never held long.
-private const val CLOSE_WAIT_MS = 3_000L
+private const val EXPORT_CLOSE_WAIT_MS = 3_000L

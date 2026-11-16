@@ -9,13 +9,13 @@ internal enum class TurnHistogram(val metric: String, val help: String, val unit
     TTFT(
         "splice_server_ttft_seconds",
         "Seconds from a request's arrival to the first word of its answer.",
-        SECONDS,
+        UNIT_SECONDS,
         listOf(0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0),
     ),
     DURATION(
         "splice_server_duration_seconds",
         "Seconds from a request's arrival to the end of its answer, for every request the server did not refuse.",
-        SECONDS,
+        UNIT_SECONDS,
         listOf(0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0, 1800.0),
     ),
     PREFILL(
@@ -33,7 +33,7 @@ internal enum class TurnHistogram(val metric: String, val help: String, val unit
     STALL(
         "splice_server_stream_stall_seconds",
         "The longest a streamed answer waited for the upstream's next words after its first, in seconds.",
-        SECONDS,
+        UNIT_SECONDS,
         listOf(0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0),
     ),
 }
@@ -54,5 +54,5 @@ internal class Buckets(private val bounds: List<Double>) {
     fun point(labels: MetricLabels): HistogramPoint = HistogramPoint(labels, counts.toList(), sum)
 }
 
-private const val SECONDS = "s"
+private const val UNIT_SECONDS = "s"
 private const val TOKENS_PER_SECOND = "{token}/s"

@@ -12,6 +12,8 @@ import splice.server.ledger.LedgerRow
 import splice.server.ledger.Outcome
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.LongAdder
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.DurationUnit
 
 internal class TurnTallies {
     private val requests = ConcurrentHashMap<MetricLabels, LongAdder>()
@@ -46,8 +48,8 @@ internal class TurnTallies {
     /** Every family's series of the people in [shown], in a stable order. */
     fun families(shown: Set<String>): List<MetricFamily> {
         val counters = listOf(
-            MetricFamily.Counter(REQUESTS, REQUESTS_HELP, UNIT_REQUESTS, points(requests, shown)),
-            MetricFamily.Counter(TOKENS, TOKENS_HELP, UNIT_TOKENS, points(tokens, shown)),
+            MetricFamily.Counter(REQUESTS_METRIC, REQUESTS_HELP, UNIT_REQUESTS, points(requests, shown)),
+            MetricFamily.Counter(TOKENS_METRIC, TOKENS_HELP, UNIT_TOKENS, points(tokens, shown)),
         )
         val histogramFamilies = TurnHistogram.entries.map { histogram ->
             val points = histograms.getValue(histogram).filterKeys { it.of(LABEL_PERSON) in shown }
@@ -86,7 +88,7 @@ internal class TurnTallies {
     /** `2xx`, `4xx`, `5xx`: the first digit of [status] and two x's. */
     private fun statusClass(status: Int): String = "${status / STATUS_CLASS_DIVISOR}xx"
 
-    private fun seconds(ms: Long): Double = ms / MS_PER_SECOND
+    private fun seconds(ms: Long): Double = ms.milliseconds.toDouble(DurationUnit.SECONDS)
 }
 
 /** The label every series carries first: whose requests they are. */
@@ -95,12 +97,12 @@ internal const val LABEL_PERSON: String = "person"
 /** The person's team, empty when they are on none. */
 internal const val LABEL_TEAM: String = "team"
 
-private const val REQUESTS = "splice_server_requests_total"
+private const val REQUESTS_METRIC = "splice_server_requests_total"
 private const val REQUESTS_HELP = "Requests the server ended, by person, team, command and status class."
 
 /** A count of requests, as both exports name its unit. */
 internal const val UNIT_REQUESTS: String = "{request}"
-private const val TOKENS = "splice_server_tokens_total"
+private const val TOKENS_METRIC = "splice_server_tokens_total"
 private const val TOKENS_HELP =
     "Tokens the provider billed, by person, team and kind: prompt (every prompt token), cached (the share of them " +
         "read from the prompt cache) and completion."
@@ -112,8 +114,9 @@ private val TOKEN_KINDS = listOf(KIND_PROMPT, KIND_CACHED, KIND_COMPLETION)
 
 // The status classes a person's request series start at zero in; a 1xx or 3xx is counted when one ends a request.
 private val STATUS_CLASSES = listOf("2xx", "4xx", "5xx")
+
+// why: a status's class is its hundreds digit, so a 200 and a 204 are both counted as 2xx.
 private const val STATUS_CLASS_DIVISOR = 100
-private const val MS_PER_SECOND = 1_000.0
 
 // Series in the order their labels read, so a scrape lists them the same way every time.
 private val SERIES_ORDER: Comparator<MetricLabels> =

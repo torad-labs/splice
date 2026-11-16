@@ -408,6 +408,8 @@ ANTHROPIC_BASE_URL=https://gateway.team.example:3443/claude-team ANTHROPIC_API_K
 
 `GET /health` is open, and everything else needs a live key, as `x-api-key` or `Authorization: Bearer`. A missing, unknown, revoked or expired key is a 401 that never repeats the key, and nothing reaches the model. A revoke holds from the key's next request. The server keeps each key only as its SHA-256, bound to the person's email (see [What splice keeps on your disk](#what-splice-keeps-on-your-disk)), and an admin's key also manages keys over the listener at `/server/api/keys`. A person past a cap gets a 429 with `Retry-After` naming the cap, and everyone else is still served.
 
+A key is the server's secret on the way out too. A head sends its provider the headers that provider's `forward_headers` names ([Headers for a gateway in front of a provider](#headers-for-a-gateway-in-front-of-a-provider)), and one whose value holds a key the server issued, the person's own or anyone else's, anywhere in it, is not sent on: the turn is answered without that header, streamed or not, and the daemon log names the header and never the key.
+
 A team's model often runs on more than one machine. A provider that speaks `openai-chat` can list its servers in place of its one `base_url`:
 
 ```toml
@@ -613,7 +615,8 @@ send_version = true
   name stays on your machine, so nothing rides on until you name it. A forwarded value replaces an `extra_headers`
   value of the same name. A login or connection header (`Authorization`, `x-api-key`, `Cookie`, `Host`,
   `Content-Length` and the like) can't be named: the daemon refuses to start and names the provider. A value that
-  holds one of splice's own keys is not forwarded, and the daemon log names the header.
+  holds one of splice's own keys, or a key a [team's server](#serve-a-team-from-one-machine) issued, is not forwarded,
+  and the daemon log names the header.
 - `send_version = true` adds `Via: 1.1 splice (splice/<version>)` to every request splice sends this provider. Via
   is the header HTTP has a gateway add to a request it passes on (RFC 9110, section 7.6.3), here with splice's
   version. Claude Code's own `User-Agent` is left as it is. It is off by default, so a provider sees nothing of splice

@@ -114,7 +114,8 @@ internal class OpenAiRoute(
         val sent = relay.sent(call, asked.head) ?: return
         val ask = if (api == CHAT_API) asked.server.chat(sent) else ChatAsk(sent, stream = null)
         val own = withContext(io) { asked.server.headers() }
-        val ready = Ready(api + bound.query(paths.query(call)), bound.headers(call, asked.server, own), ask)
+        val headers = bound.headers(call, parts.upstreams.forwarded(asked.head.key), own)
+        val ready = Ready(api + bound.query(paths.query(call)), headers, ask)
         val pool = parts.upstreams.pool(asked.head.key)
         val silent = "the model server behind ${asked.head.command} is not answering"
         val taken = if (pool == null) {

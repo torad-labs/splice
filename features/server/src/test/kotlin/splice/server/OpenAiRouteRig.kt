@@ -96,13 +96,10 @@ internal class ScriptedBox(private val name: String) {
     }
 }
 
-/** A provider that speaks openai-chat, as the daemon describes one to the listener: its `forward_headers` names
- *  [forwarded], and its `extra_headers` say `x-box-team: blue`. A request goes on as it was sent, and the stream of
- *  one that asked for a stream is read by [UsageHidden]. */
-internal class BoxServer(
-    override val base: String,
-    override val forwarded: List<String> = emptyList(),
-) : ChatServer {
+/** A provider that speaks openai-chat, as the daemon describes one to the listener: its `extra_headers` say
+ *  `x-box-team: blue`. A request goes on as it was sent, and the stream of one that asked for a stream is read by
+ *  [UsageHidden]. */
+internal class BoxServer(override val base: String) : ChatServer {
     override fun headers(): Map<String, String> = mapOf("Authorization" to "Bearer $BOX_KEY", "x-box-team" to "blue")
 
     override fun chat(sent: ByteArray): ChatAsk =

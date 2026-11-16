@@ -3,8 +3,9 @@
 // are up and closed first at stop. A server mode that can't start (a port another program holds, a PEM file that is
 // no certificate, a keys file that cannot be read) is said in the log and to every `splice server` verb, and leaves
 // the rest of the daemon serving. It is also how server mode reads the servers behind a head (F4): the pool of the
-// provider that head's splice.toml table names, and that provider itself when it speaks openai-chat, which is where
-// an OpenAI-style client's requests are relayed (DaemonChatServer).
+// provider that head's splice.toml table names, the caller's headers that provider's `forward_headers` names, and
+// that provider itself when it speaks openai-chat, which is where an OpenAI-style client's requests are relayed
+// (DaemonChatServer).
 package splice.app.server
 
 import splice.app.control.ManagedHead
@@ -57,6 +58,9 @@ internal class DaemonServer(
         val provider = topology.providers[key]?.takeIf { it.dialect == Dialect.OPENAI_CHAT } ?: return null
         return DaemonChatServer(key, provider, pools)
     }
+
+    override fun forwarded(head: String): List<String> =
+        topology.heads[head]?.let { topology.providers[it.provider] }?.forwarded?.carried.orEmpty()
 
     /** Opens server mode when `[server]` names an address, serving [heads] through [controlPort]'s daemon. */
     fun open(heads: Map<String, ManagedHead>, controlPort: Int) {

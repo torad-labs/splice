@@ -60,14 +60,21 @@ import kotlin.time.Duration
 public data class RelaySpeaker(val errors: RefusalVoice, val tag: String)
 
 /** One request for a head: its [path] under the head (`/v1/messages?beta=true`), what the listener that relays it
- *  says about it in headers of its own ([named]), such as the upstream the caller's person prefers, and how often its
- *  client is sent a [keepalive] while a streamed answer is silent (null: never, and the client waits on the head). */
+ *  says about it in headers of its own ([named]), such as the upstream the caller's person prefers, how often its
+ *  client is sent a [keepalive] while a streamed answer is silent (null: never, and the client waits on the head),
+ *  and the caller's headers the listener keeps to itself ([held], lowercase names), which the head is never handed. */
 public data class HeadTurn(
     val head: SharedHead,
     val path: String,
     val named: Map<String, String> = emptyMap(),
     val keepalive: Duration? = null,
+    val held: Set<String> = emptySet(),
 )
+
+/** Whether a header the other machine sent rides on with the request the relay passes on, asked by lowercase name. */
+internal fun interface RidingHeader {
+    operator fun invoke(name: String): Boolean
+}
 
 public class ShareRelay(
     private val turnKey: TurnKey,
@@ -115,7 +122,7 @@ public class ShareRelay(
         // The answer is read here when it is a stream to edit, so the server is asked to send it as it is.
         val own = ask.headers.own + (HttpHeaders.AcceptEncoding to "identity")
         try {
-            val sent = send(request(call, ask.target, body, own, ask.headers.carried), answer, wait)
+            val sent = send(request(call, ask.target, body, own) { it in ask.headers.carried }, answer, wait)
             if (sent.exceptionOrNull()?.let(failures::neverConnected) == true) return false
             answers.given(call, sent, wait)
             return true
@@ -135,7 +142,8 @@ public class ShareRelay(
         // PR #247 review, Oct 29: that head serves its logins only to a caller proven splice's, and this relay is.
         val proof = if (head.forwardsClientAuth) mapOf(LAUNCH_PROOF_HEADER to turnKey.get()) else emptyMap()
         val signed = mapOf(HttpHeaders.Authorization to "Bearer $bearer") + proof + turn.named
-        val request = request(call, URI.create("http://127.0.0.1:${head.port}${turn.path}"), body, signed)
+        val target = URI.create("http://127.0.0.1:${head.port}${turn.path}")
+        val request = request(call, target, body, signed) { it !in turn.held }
         forward(call, request, ClientWait(silent, turn.keepalive?.takeIf { streamed.asks(body) }))
     }
 
@@ -153,13 +161,13 @@ public class ShareRelay(
 
     /** [body] for [target], with the [signed] headers in place of whatever the other machine sent under those names:
      *  the bearer, and for a Claude head that holds logins, the launch proof. Of the other machine's own headers,
-     *  all ride on but the ones no hop passes on; with [only], the lowercase names given and no other. */
+     *  all ride on but the ones no hop passes on, and of those only the ones [rides] takes. */
     private fun request(
         call: ApplicationCall,
         target: URI,
         body: ByteArray,
         signed: Map<String, String>,
-        only: Set<String>? = null,
+        rides: RidingHeader = RidingHeader { true },
     ): HttpRequest {
         val publisher = if (body.isEmpty()) {
             HttpRequest.BodyPublishers.noBody()
@@ -168,8 +176,8 @@ public class ShareRelay(
         }
         val request = HttpRequest.newBuilder(target).method(call.request.httpMethod.value, publisher)
         call.request.headers.forEach { name, values ->
-            val rides = name.lowercase().let { it !in notForwarded && (only == null || it in only) }
-            if (rides) values.forEach { request.header(name, it) }
+            val passed = name.lowercase().let { it !in notForwarded && rides(it) }
+            if (passed) values.forEach { request.header(name, it) }
         }
         signed.forEach { (name, value) -> request.setHeader(name, value) }
         return request.build()

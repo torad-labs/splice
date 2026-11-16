@@ -20,6 +20,11 @@
 // `rate_limit_error` with `Retry-After` (TurnAdmission). Every error is in the Anthropic shape, so Claude Code prints
 // its message.
 //
+// A person's key is the server's secret on the way out as well. A head sends its provider the caller's headers that
+// provider's `forward_headers` names, and one of those whose value holds a key this server issued, the caller's own
+// or another person's, is not handed to the head at all: the turn is served without it, and the log names the header
+// and never the key (ProviderBound).
+//
 // A command whose provider is several servers (F4): a turn is handed to its head naming the upstream its person
 // prefers, which the head sends it to while that one is healthy; and while none of the provider's servers is up the
 // turn is refused here, a 503 naming them, before it takes a slot or reaches the head.
@@ -100,6 +105,7 @@ internal class ServerListener(
     private val watched = WatchedRelay()
     private val paths = RequestPaths()
     private val admission = TurnAdmission(parts, voice)
+    private val bound = ProviderBound(parts.keys, log)
     private val openAi = OpenAiRoute(parts, io, log)
 
     /** How often a streamed turn's client is sent a keepalive while its answer is silent; null sends none. */
@@ -206,7 +212,9 @@ internal class ServerListener(
         val slot = if (counted) admission.slot(call, key, head) ?: return else null
         val preferred = parts.people.of(key.person).preferred
         val named = listOfNotNull(preferred?.let { PREFERRED_UPSTREAM_HEADER to it }).toMap()
-        val turn = HeadTurn(head, paths.spell(path) + paths.query(call), named, keepalive)
+        // The head sends its provider the headers `forward_headers` names, and knows none of this server's keys.
+        val held = bound.keyed(call, parts.upstreams.forwarded(head.key))
+        val turn = HeadTurn(head, paths.spell(path) + paths.query(call), named, keepalive, held)
         watched.turn(call, slot) { parts.relay.turn(call, turn) }
     }
 

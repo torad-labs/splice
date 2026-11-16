@@ -3,8 +3,8 @@
 // line must never sit between the last delta and message_stop on the wire. NOT folded into
 // TurnTelemetry (HD-24): calling the L3 terminal from a class named "telemetry" would mislabel the
 // one call the whole invariant hangs on. The cache-line construction itself DID move to
-// TurnTelemetry.cacheLine — that is a log line, not the terminal. Usage stamping lives in
-// TurnUsageStamp.kt (concentration, 2026-08-19).
+// TurnTelemetry, which writes it with the turn's row — that is a log line, not the terminal.
+// Usage stamping lives in TurnUsageStamp.kt (concentration, 2026-08-19).
 package splice.head.turn
 
 import splice.core.perf.OutcomeTags

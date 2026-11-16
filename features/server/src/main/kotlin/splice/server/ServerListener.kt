@@ -32,7 +32,7 @@
 // With `[server] keepalive_seconds` a streamed turn is not left silent while its model server prefills a long prompt:
 // its stream is opened within two seconds and carries an SSE keepalive at least that often until the answer comes,
 // and after it whenever the answer falls silent (HeadAnswers, QuietWire). A turn that asks for no stream answers one
-// JSON body as before.
+// JSON body as before. An OpenAI-style client's streamed completion is kept alive the same way (OpenAiRoute).
 //
 // A path is read the way a head reads one, percent-escapes decoded, and a head is handed the path as it was read
 // (RequestPaths): what a head serves as a turn is what the caps counted, however the client spelled it.
@@ -106,10 +106,10 @@ internal class ServerListener(
     private val paths = RequestPaths()
     private val admission = TurnAdmission(parts, voice)
     private val bound = ProviderBound(parts.keys, log)
-    private val openAi = OpenAiRoute(parts, io, log)
 
     /** How often a streamed turn's client is sent a keepalive while its answer is silent; null sends none. */
     private val keepalive = server.keepaliveSeconds.takeIf { it > 0 }?.seconds
+    private val openAi = OpenAiRoute(parts, io, log, keepalive)
 
     /** The path, after the command, of the one request that runs a turn on the Messages route. */
     private val turnPath = listOf(HEAD_API_ROOT, "messages")

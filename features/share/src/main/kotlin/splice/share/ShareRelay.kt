@@ -22,9 +22,11 @@
 // such a request to that provider's server, and gives the answer back the same way a head's is given. That server is
 // no part of this machine, so of what the client sent only the headers the listener names ride on, under the
 // provider's own headers; a request for a head carries all but the few a hop never passes on, because the head is
-// the one that decides what leaves the machine. A server that took no connection got nothing of the request, and the
-// caller is told so instead of the client, so it can ask another of the provider's servers. And of that server's
-// answer the client gets nothing of the server's own but what the answer is for (HeadAnswers).
+// the one that decides what leaves the machine. A server that took no connection got nothing of the request, so the
+// request goes on to the next server its way names (OutwardWay), and its client is told that none answers only once
+// none is left. A streamed request the listener asks to be kept alive is kept alive as a head's turn is, and its way
+// through those servers is walked behind the stream when that is open by then. And of such a server's answer the
+// client gets nothing of the server's own but what the answer is for (HeadAnswers).
 package splice.share
 
 import io.ktor.http.HttpHeaders
@@ -77,6 +79,12 @@ internal fun interface RidingHeader {
     operator fun invoke(name: String): Boolean
 }
 
+/** What asks for one request's answer and says how that ended: a head's one send, or a way through a provider's
+ *  servers. An answer is kept in the reference it is handed from the moment there is one. */
+internal fun interface Asking {
+    suspend fun sent(answer: AtomicReference<HttpResponse<InputStream>>): Sent
+}
+
 public class ShareRelay(
     private val turnKey: TurnKey,
     private val controlPort: Int,
@@ -114,22 +122,33 @@ public class ShareRelay(
     public suspend fun sent(call: ApplicationCall, head: SharedHead): ByteArray? =
         body(call, head.maxRequestBytes(), head.requestReadTimeoutMs())
 
-    /** [body] asked of [ask]'s server the way [call] asked it, and that server's answer given to [call]. False, with
-     *  nothing answered, when the server took no connection: nothing of the request reached it, so the caller may ask
-     *  another server, or say that none answers. */
-    public suspend fun outward(call: ApplicationCall, ask: OutwardAsk, body: ByteArray): Boolean {
-        val answer = AtomicReference<HttpResponse<InputStream>>()
-        val wait = ClientWait(ask.server, edit = ask.edit, whole = ask.whole, outside = true)
+    /** [ask] asked the way [call] asked it, of the first server of [way] that takes a connection, and that server's
+     *  answer given to [call]; or, once none of them took one, what [way] says of that. */
+    public suspend fun outward(call: ApplicationCall, ask: OutwardAsk, way: OutwardWay) {
+        val wait = ClientWait(ask.keepalive, ask.edit, ask.whole, outside = true)
+        answered(call, wait) { answer -> taken(call, ask, way, answer) }
+    }
+
+    /** [ask] asked of [way]'s servers, one at a time. The first that takes a connection is the one whose answer, or
+     *  whose silence after it, the client gets. One that takes none got nothing of the request, so the next is
+     *  asked. */
+    private suspend fun taken(
+        call: ApplicationCall,
+        ask: OutwardAsk,
+        way: OutwardWay,
+        answer: AtomicReference<HttpResponse<InputStream>>,
+    ): Sent {
         // The answer is read here when it is a stream to edit, so the server is asked to send it as it is.
         val own = ask.headers.own + (HttpHeaders.AcceptEncoding to "identity")
-        try {
-            val sent = send(request(call, ask.target, body, own) { it in ask.headers.carried }, answer, wait)
-            if (sent.exceptionOrNull()?.let(failures::neverConnected) == true) return false
-            answers.given(call, sent, wait)
-            return true
-        } finally {
-            hangUp(answer)
+        var server = way.next()
+        while (server != null) {
+            val request = request(call, server.target, ask.body, own) { it in ask.headers.carried }
+            val sent = send(request, answer, server.name)
+            val failure = sent.exceptionOrNull() ?: return Sent.Answered(sent.getOrThrow(), server.name)
+            if (!failures.neverConnected(failure)) return Sent.Silent(silent(server.name))
+            server = way.next()
         }
+        return Sent.Silent(way.noneTook())
     }
 
     /** [turn] on its head, under the head's own body limits. */
@@ -145,7 +164,7 @@ public class ShareRelay(
         val signed = mapOf(HttpHeaders.Authorization to "Bearer $bearer") + proof + turn.named
         val target = URI.create("http://127.0.0.1:${head.port}${turn.path}")
         val request = request(call, target, body, signed) { it !in turn.held }
-        forward(call, request, ClientWait(who, turn.keepalive?.takeIf { streamed.asks(body) }))
+        forward(call, request, who, ClientWait(turn.keepalive?.takeIf { streamed.asks(body) }))
     }
 
     /** The control plane's statusline for [head], fed the session's JSON as Claude Code feeds its statusline, once
@@ -157,7 +176,7 @@ public class ShareRelay(
         val who = "$machine's statusline for ${head.command}"
         val signed = mapOf(HttpHeaders.Authorization to "Bearer ${turnKey.get()}")
         val target = URI.create("http://127.0.0.1:$controlPort/statusline/${head.key}")
-        forward(call, request(call, target, body, signed), ClientWait(who))
+        forward(call, request(call, target, body, signed), who)
     }
 
     /** [body] for [target], with the [signed] headers in place of whatever the other machine sent under those names:
@@ -184,14 +203,27 @@ public class ShareRelay(
         return request.build()
     }
 
-    /** [request] sent, and its answer given to [call]. A client that is kept alive does not wait on a silent head for
-     *  its stream to open: a head that has not answered within [HEAD_SOON_MS] finds the stream open when it does. */
-    private suspend fun forward(call: ApplicationCall, request: HttpRequest, wait: ClientWait) {
+    /** [request] sent to [who], as the client hears the head or the control plane named, and the answer given to
+     *  [call]. */
+    private suspend fun forward(
+        call: ApplicationCall,
+        request: HttpRequest,
+        who: String,
+        wait: ClientWait = ClientWait(),
+    ) {
+        answered(call, wait) { answer ->
+            send(request, answer, who).fold({ Sent.Answered(it, who) }, { Sent.Silent(silent(who)) })
+        }
+    }
+
+    /** What [asking] ends in, given to [call]. A client that is kept alive does not wait in silence for its stream
+     *  to open: when [asking] has not ended within [HEAD_SOON_MS], it finds the stream open when it does. */
+    private suspend fun answered(call: ApplicationCall, wait: ClientWait, asking: Asking) {
         val answer = AtomicReference<HttpResponse<InputStream>>()
         try {
-            if (wait.every == null) return answers.given(call, send(request, answer, wait), wait)
+            if (wait.every == null) return answers.given(call, asking.sent(answer), wait)
             coroutineScope {
-                val sending = async { send(request, answer, wait) }
+                val sending = async { asking.sent(answer) }
                 if (clock.endedWithin(HEAD_SOON_MS, sending)) {
                     answers.given(call, sending.await(), wait)
                 } else {
@@ -203,6 +235,9 @@ public class ShareRelay(
         }
     }
 
+    /** What a client hears when [who] gives no answer. */
+    private fun silent(who: String): String = "$who is not answering"
+
     /** However the answer ended, a relay cancelled before it read a byte included: the head is hung up on. */
     private fun hangUp(answer: AtomicReference<HttpResponse<InputStream>>) {
         answer.get()?.let { response ->
@@ -213,18 +248,18 @@ public class ShareRelay(
         }
     }
 
-    /** The head's answer to [request], kept in [answer] from the moment there is one, so it is closed however the
-     *  relay ends; a head that does not answer is said in the log. */
+    /** [who]'s answer to [request], kept in [answer] from the moment there is one, so it is closed however the relay
+     *  ends; one that does not answer is said in the log. */
     private suspend fun send(
         request: HttpRequest,
         answer: AtomicReference<HttpResponse<InputStream>>,
-        wait: ClientWait,
+        who: String,
     ): Result<HttpResponse<InputStream>> = runInterruptible(io) {
         Cancellables.runCatchingCancellable {
             http.send(request, HttpResponse.BodyHandlers.ofInputStream()).also(answer::set)
         }
     }.onFailure { failure ->
-        log("[${speaker.tag}] ${wait.silent} on :${request.uri().port}: ${SafeFailureText.render(failure)}\n")
+        log("[${speaker.tag}] ${silent(who)} on :${request.uri().port}: ${SafeFailureText.render(failure)}\n")
     }
 
     /** [call]'s body, or null once it is refused the way a head's own admission refuses one: 413 for a body declared
@@ -265,7 +300,8 @@ private const val RELAY_CONNECT_TIMEOUT_MS = 5_000L
 // why: a head that refuses a turn (a body it cannot read, a model it does not serve, a cap of its own) does so in
 // milliseconds, and its own status reaches the client only while no stream is open; a head still silent after a
 // second is waiting on its model server, and a client that asked to be kept alive has its stream opened then, well
-// inside the two seconds server mode promises one (docs/specs/server-mode.md, F4).
+// inside the two seconds server mode promises one (docs/specs/server-mode.md, F4). A provider's own server asked for
+// an OpenAI-style client is given the same second, for the same reasons.
 private const val HEAD_SOON_MS = 1_000L
 
 // why: Claude Code's statusline input is one session's JSON, a few KiB; 256 KiB holds it with room, and nothing larger

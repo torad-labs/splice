@@ -8,11 +8,20 @@ package splice.server
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import splice.core.topology.ServerLimits
 import splice.core.util.LogSink
 import splice.share.StreamEdit
+import splice.upstream.Waiter
+import splice.upstream.codemode.ProcessWaiter
+import java.io.InputStream
 import java.net.InetSocketAddress
 import java.net.URI
 import java.net.http.HttpClient
@@ -46,8 +55,18 @@ internal class ScriptedBox(private val name: String) {
     /** What a streamed completion waits for before it answers. */
     @Volatile var gate: CountDownLatch? = null
 
+    /** What every completion waits for before anything of its answer, a refusal included: the server says nothing,
+     *  as one does while it prefills a long prompt. */
+    @Volatile var prefill: CountDownLatch? = null
+
     /** The status a completion is refused with; null answers it. */
     @Volatile var refuses: Int? = null
+
+    /** What a request the server refuses is told; null says the server's own error, in OpenAI's shape. */
+    @Volatile var refusal: String? = null
+
+    /** While set, a completion is hung up on with nothing answered. */
+    @Volatile var hangsUp = false
 
     /** The status the models list is refused with; null answers it. */
     @Volatile var listRefuses: Int? = null
@@ -66,6 +85,7 @@ internal class ScriptedBox(private val name: String) {
 
     fun stop() {
         gate?.countDown()
+        prefill?.countDown()
         server.stop(0)
     }
 
@@ -73,15 +93,28 @@ internal class ScriptedBox(private val name: String) {
         val body = exchange.requestBody.use { String(it.readBytes()) }
         val headers = exchange.requestHeaders.entries.associate { (key, values) -> key.lowercase() to values.first() }
         asked += Asked(exchange.requestURI.toString(), headers, body)
-        val models = exchange.requestURI.path.endsWith("/models")
-        val refused = if (models) listRefuses else refuses
+        if (exchange.requestURI.path.endsWith("/models")) models(exchange) else completion(exchange, body)
+    }
+
+    private fun models(exchange: HttpExchange) {
+        val refused = listRefuses
+        if (refused == null) whole(exchange, BOX_MODELS) else whole(exchange, said(refused), refused)
+    }
+
+    private fun completion(exchange: HttpExchange, body: String) {
+        prefill?.await(GATE_SECONDS, TimeUnit.SECONDS)
+        val refused = refuses
         when {
-            refused != null -> whole(exchange, """{"error":{"message":"$name says $refused"}}""", refused)
-            models -> whole(exchange, BOX_MODELS)
+            // Nothing is sent, so closing the exchange hangs up on whoever asked.
+            hangsUp -> Unit
+            refused != null -> whole(exchange, said(refused), refused)
             "\"stream\":true" in body -> stream(exchange)
             else -> whole(exchange, """{"choices":[{"message":{"content":"from $name"}}],$BOX_USAGE}""")
         }
     }
+
+    /** What a request refused with [status] is told. */
+    private fun said(status: Int): String = refusal ?: OWN_ERROR.format(name, status)
 
     private fun whole(exchange: HttpExchange, json: String, status: Int = 200) {
         val bytes = json.toByteArray()
@@ -137,8 +170,11 @@ internal class OpenAiRig(
     upstreams: HeadUpstreams,
     limits: ServerLimits = ServerLimits(),
     log: LogSink = LogSink { },
+    /** `[server] keepalive_seconds`, whose silences are waited out on [waiter]. */
+    keepaliveSeconds: Int = 0,
+    waiter: Waiter = ProcessWaiter(),
 ) {
-    private val rig = ServerRig(log = log, upstreams = upstreams)
+    private val rig = ServerRig(log = log, upstreams = upstreams, waiter = waiter)
     val port = rig.port
     private val http = HttpClient.newHttpClient()
 
@@ -160,7 +196,11 @@ internal class OpenAiRig(
         start()
     }
 
-    private val mode = rig.open(state, listOf(StandInHead(head.address.port)), rig.config.copy(limits = limits))
+    private val mode = rig.open(
+        state,
+        listOf(StandInHead(head.address.port)),
+        rig.config.copy(limits = limits, keepaliveSeconds = keepaliveSeconds),
+    )
 
     fun close() {
         rig.close()
@@ -195,6 +235,10 @@ internal class OpenAiRig(
     fun chatLater(key: String, body: String): CompletableFuture<HttpResponse<String>> =
         http.sendAsync(request("chat/completions", key, body), HttpResponse.BodyHandlers.ofString())
 
+    /** A chat completion sent without waiting for its answer, whose body is then read as it comes (Hearing). */
+    fun chatHeard(key: String, body: String): CompletableFuture<HttpResponse<InputStream>> =
+        http.sendAsync(request("chat/completions", key, body), HttpResponse.BodyHandlers.ofInputStream())
+
     /** A streamed chat completion's `data:` lines, each with the milliseconds since its headers came. */
     fun stream(key: String, body: String, extra: ClientHeaders = emptyList()): List<Pair<Long, String>> {
         val answer = http.send(request("chat/completions", key, body, extra), HttpResponse.BodyHandlers.ofLines())
@@ -228,6 +272,17 @@ internal class OpenAiRig(
 /** Headers a client sends of its own, beside its key and its body's type. */
 internal typealias ClientHeaders = List<Pair<String, String>>
 
+/** The error [said], as a body or as the data of a stream's event, which must be one the server says in OpenAI's
+ *  shape: one `error` object and nothing beside it, with the fields OpenAI's API gives one, in the server's name. */
+internal fun openAiError(said: String): JsonObject {
+    val body = Json.parseToJsonElement(said).jsonObject
+    assertEquals(setOf("error"), body.keys, said)
+    val error = body.getValue("error").jsonObject
+    assertEquals(setOf("message", "type", "param", "code"), error.keys, said)
+    assertTrue(error.getValue("message").jsonPrimitive.content.startsWith("splice server: "), said)
+    return error
+}
+
 internal const val BOX_KEY = "box-key-never-a-persons"
 
 // The provider server's list: a model as OpenAI's API lists one, and one the way some servers do, its id an
@@ -245,6 +300,9 @@ internal const val HEAD_REQUEST_ID = "req-head-1"
 internal const val CHAT = """{"model":"team-model","messages":[{"role":"user","content":"hi"}]}"""
 internal const val STREAMED_CHAT =
     """{"model":"team-model","stream":true,"messages":[{"role":"user","content":"hi"}]}"""
+
+// A scripted server's own error: its name, and the status it refuses with.
+private const val OWN_ERROR = """{"error":{"message":"%s says %d"}}"""
 
 // What every completion a scripted server answers whole says it used.
 private const val BOX_USAGE = """"usage":{"prompt_tokens":7}"""

@@ -23,8 +23,15 @@
 // A chat completion is a turn. It takes one of its person's slots under the same caps as a turn on the Messages route,
 // and a client that leaves gives the slot back. A provider that is several servers is asked on the one its pool gives
 // the person (their preferred one while it is healthy), and when that one takes no connection, on the next, the way a
-// head's own turn moves on (PoolWalk). Every refusal here is in OpenAI's error shape, the 401 of a missing key
+// head's own turn moves on (ProviderWay). Every refusal here is in OpenAI's error shape, the 401 of a missing key
 // included: that is the shape the asking client reads.
+//
+// With `[server] keepalive_seconds` a streamed completion is kept alive through a long prefill as a streamed turn is
+// (F4, openai-keepalive): when the provider's server has not started its answer within a second, the stream is opened
+// to the client then and carries an SSE comment, which OpenAI's SDKs skip, at least that often until the answer comes
+// and whenever it falls silent after. The answer follows as it comes, ending with `[DONE]`. The status went out as 200
+// by then, so a refusal or a failure of the server's after that is one error event in OpenAI's shape, the server's own
+// error where it gave one. A completion that asks for no stream is one JSON body, and carries none.
 //
 // Claude Code asks a command for its models too, of the head and in Anthropic's shape. The two are told apart by the
 // header every Anthropic client sends: a list or a lookup asked without `anthropic-version` is an OpenAI-style
@@ -37,26 +44,23 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.httpMethod
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
-import splice.core.pool.PoolWalk
-import splice.core.pool.UpstreamPool
 import splice.core.util.LogSink
 import splice.core.wire.ANTHROPIC_VERSION_HEADER
-import splice.core.wire.HttpStatus
 import splice.share.HEAD_API_ROOT
 import splice.share.OutwardAsk
-import splice.share.OutwardHeaders
 import splice.share.RefusalShape
 import splice.share.RefusalVoice
 import splice.share.ShareCatalog
 import splice.share.SharedHead
-import splice.share.WholeEdit
-import java.net.URI
+import kotlin.time.Duration
 
 internal class OpenAiRoute(
     private val parts: ServerParts,
     /** Blocking work runs here: reading the provider's key, and the relay's JDK I/O. */
     private val io: CoroutineDispatcher,
     log: LogSink,
+    /** How often a streamed completion's client is sent a keepalive while its answer is silent; null sends none. */
+    private val keepalive: Duration?,
 ) {
     /** How this route refuses, the 401 of a request that names it included. */
     val voice = RefusalVoice(SERVER_ERROR_PREFIX, RefusalShape.OPENAI)
@@ -75,13 +79,6 @@ internal class OpenAiRoute(
     /** What a request asks of the provider: the route of its API, as its [path] under the API root, and for a lookup
      *  of one model the [model] it names, which is read out of the list that path answers. */
     private data class Api(val path: String, val model: String? = null)
-
-    /** One request ready for a server: its [path] under the server's API root, the [headers] it carries, its body
-     *  with what reads a stream that answers it, and what reads an answer that is no stream ([whole]; null: none). */
-    private class Ready(val path: String, val headers: OutwardHeaders, val ask: ChatAsk, val whole: WholeEdit?) {
-        /** This request for the server whose API root is [base], which its client hears named as [server]. */
-        fun at(base: String, server: String) = OutwardAsk(URI.create(base + path), headers, server, ask.stream, whole)
-    }
 
     /** Whether [path], asked the way [call] asks it, is an OpenAI-style client's. */
     fun asks(call: ApplicationCall, path: List<String>): Boolean = api(call, path) != null
@@ -128,41 +125,23 @@ internal class OpenAiRoute(
         watched.turn(call, slot) { relayed(call, asked, api) }
     }
 
-    /** [call]'s request, asked of the provider's [api] and answered as the provider's server answers it. */
+    /** [call]'s request, asked of the provider's [api] and answered as the provider's server answers it, or as no
+     *  server of the provider's took it. */
     private suspend fun relayed(call: ApplicationCall, asked: Asked, api: Api) {
         val sent = relay.sent(call, asked.head) ?: return
-        val ask = if (api.path == CHAT_API) asked.server.chat(sent) else ChatAsk(sent, stream = null)
+        val chat = if (api.path == CHAT_API) asked.server.chat(sent) else ChatAsk(sent, stream = null)
         val own = withContext(io) { asked.server.headers() }
         val headers = bound.headers(call, parts.upstreams.forwarded(asked.head.key), own)
         val lookup = api.model?.let { ModelLookup(it, asked.head.command) }
-        val ready = Ready(api.path + bound.query(paths.query(call)), headers, ask, lookup)
-        val pool = parts.upstreams.pool(asked.head.key)
-        val server = "the model server behind ${asked.head.command}"
-        val taken = if (pool == null) {
-            relay.outward(call, ready.at(asked.server.base, server), ask.body)
-        } else {
-            pooled(call, asked, pool, ready)
-        }
-        if (taken) return
-        val silent = parts.upstreams.noneUp(asked.head.key) ?: "$server is not answering"
-        voice.refuse(call, HttpStatus.SERVICE_UNAVAILABLE, silent)
-    }
-
-    /** [ready] asked of [pool]'s servers, one at a time, as [PoolWalk] names them: the one the person prefers while it
-     *  is healthy, else the healthy one with the least in flight, and when that one takes no connection, the next.
-     *  False, with nothing answered, once none is left to ask. */
-    private suspend fun pooled(call: ApplicationCall, asked: Asked, pool: UpstreamPool, ready: Ready): Boolean {
-        if (!pool.up) return false
-        val walk = PoolWalk(pool, parts.people.of(asked.key.person).preferred)
+        // Only an answer asked for as a stream is kept alive: a comment has no place in any other body.
+        val ask = OutwardAsk(chat.body, headers, chat.stream, lookup, keepalive?.takeIf { chat.stream != null })
+        val path = api.path + bound.query(paths.query(call))
+        val preferred = parts.people.of(asked.key.person).preferred
+        val way = ProviderWay(asked.head, path, asked.server.base, parts.upstreams, preferred)
         try {
-            do {
-                val server = walk.server()
-                val named = "upstream ${server.name} of ${pool.provider}"
-                if (relay.outward(call, ready.at(server.url, named), ready.ask.body)) return true
-            } while (walk.moved())
-            return false
+            relay.outward(call, ask, way)
         } finally {
-            walk.end()
+            way.end()
         }
     }
 }

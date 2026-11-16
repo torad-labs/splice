@@ -16,7 +16,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
-import org.junit.jupiter.api.fail
 import org.junit.jupiter.api.io.TempDir
 import splice.core.testing.TestPorts
 import splice.core.topology.ServerLimits
@@ -118,17 +117,7 @@ internal class ServerKeepaliveTest {
     }
 
     /** What the client hears of [sent] from its headers on, which have come by now. */
-    private fun heard(sent: CompletableFuture<HttpResponse<InputStream>>): Hearing = try {
-        Hearing(sent.get(HEARD_WITHIN_MS, TimeUnit.MILLISECONDS), workers)
-    } catch (_: TimeoutException) {
-        fail("the client never had its answer's headers")
-    }
-
-    /** Whether [block] is one an SSE reader skips: a comment, which is what a keepalive is. */
-    private fun keepalive(block: String?): Boolean {
-        val lines = block.orEmpty().lines().filter(String::isNotEmpty)
-        return lines.isNotEmpty() && lines.all { it.startsWith(":") }
-    }
+    private fun heard(sent: CompletableFuture<HttpResponse<InputStream>>): Hearing = hearing(sent, workers)
 
     /** Back once the head holds a turn and says nothing. */
     private fun headHolds() {
@@ -346,9 +335,6 @@ private const val REFUSAL = """{"type":"error","error":{"type":"invalid_request_
 // As a head may write it: on more than one line, which an event's data may not be.
 private const val OVERLOADED =
     "{\"type\":\"error\",\n \"error\":{\"type\":\"overloaded_error\",\"message\":\"the box is busy\"}}"
-
-// How long the one test that proves an absence looks for a stream that must not open.
-private const val NO_STREAM_WINDOW_MS = 500L
 
 // The pause between two looks at a slot that is being freed, inside a poll that has a deadline.
 private const val POLL_MS = 50L

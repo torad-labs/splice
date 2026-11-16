@@ -44,12 +44,7 @@ internal class ServerOpenAiModelTest {
     private fun body(answer: HttpResponse<String>): JsonObject = Json.parseToJsonElement(answer.body()).jsonObject
 
     /** The error of [refused], which must be in OpenAI's shape: one `error` object and nothing beside it. */
-    private fun openAiError(refused: HttpResponse<String>): JsonObject {
-        assertEquals(setOf("error"), body(refused).keys, refused.body())
-        val error = body(refused).getValue("error").jsonObject
-        assertEquals(setOf("message", "type", "param", "code"), error.keys, refused.body())
-        return error
-    }
+    private fun openAiError(refused: HttpResponse<String>): JsonObject = openAiError(refused.body())
 
     @Test
     fun `a model the provider's server lists is answered with that server's own object for it`() {

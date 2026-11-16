@@ -13,10 +13,12 @@ import splice.upstream.Waiter
 import java.io.IOException
 import java.io.InputStream
 import java.net.http.HttpResponse
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executor
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 /** The relay's clock in a test's hands. A wait the relay asks for ends when the test says its time has passed
  *  ([pass]), or the moment it is asked for where a silence lasts any length of time ([flies]). */
@@ -102,8 +104,24 @@ internal class Hearing(response: HttpResponse<InputStream>, readers: Executor) {
     }
 }
 
+/** What the client hears of [sent] from its headers on, which have come by now; its body is read on [readers]. */
+internal fun hearing(sent: CompletableFuture<HttpResponse<InputStream>>, readers: Executor): Hearing = try {
+    Hearing(sent.get(HEARD_WITHIN_MS, TimeUnit.MILLISECONDS), readers)
+} catch (_: TimeoutException) {
+    fail("the client never had its answer's headers")
+}
+
+/** Whether [block] is one an SSE reader skips: a comment, which is what a keepalive is. */
+internal fun keepalive(block: String?): Boolean {
+    val lines = block.orEmpty().lines().filter(String::isNotEmpty)
+    return lines.isNotEmpty() && lines.all { it.startsWith(":") }
+}
+
 // The deadline for anything a keepalive test waits to happen. Nothing waits this long unless the test is failing.
 internal const val HEARD_WITHIN_MS = 20_000L
+
+// How long a test that proves an absence looks for a stream that must not open.
+internal const val NO_STREAM_WINDOW_MS = 500L
 
 // The blank line that ends an SSE event or comment.
 private const val BLOCK_END = "\n\n"

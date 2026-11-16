@@ -48,16 +48,6 @@ internal class ServerOpenAiRouteTest {
     /** The error of [answer], which must be in OpenAI's shape: one `error` object and nothing beside it. */
     private fun openAiError(answer: HttpResponse<String>): JsonObject = openAiError(answer.body())
 
-    /** The error [said] in OpenAI's shape, as a body or as the data of a stream's event. */
-    private fun openAiError(said: String): JsonObject {
-        val body = Json.parseToJsonElement(said).jsonObject
-        assertEquals(setOf("error"), body.keys, said)
-        val error = body.getValue("error").jsonObject
-        assertEquals(setOf("message", "type", "param", "code"), error.keys, said)
-        assertTrue(error.getValue("message").jsonPrimitive.content.startsWith("splice server: "), said)
-        return error
-    }
-
     private fun text(error: JsonObject, field: String): String = error.getValue(field).jsonPrimitive.content
 
     @Test

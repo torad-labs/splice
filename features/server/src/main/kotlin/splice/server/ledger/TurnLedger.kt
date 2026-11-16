@@ -7,17 +7,25 @@
 //
 // A row is written once the answer has ended, on the ledger's own scope: the response is never held open while a head
 // is still writing its own row, and a stop waits a moment for the rows still being written.
+//
+// A head can say its row comes later than its answer: code mode returns a turn while the round that writes its script
+// still streams, and the turn's bill is whole only once that round settles (ServedTurnBoard.holds). Such a row waits
+// for its head however long that is, so the request is billed what it cost; a ledger that stops writes it with what
+// it has.
 package splice.server.ledger
 
 import io.ktor.server.application.ApplicationCall
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.future.await
+import kotlinx.coroutines.future.asDeferred
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
+import splice.core.server.ServedTurn
 import splice.core.server.ServedTurnBoard
 import splice.core.topology.ServerTeams
 import splice.core.util.Cancellables
@@ -28,9 +36,11 @@ import splice.core.wire.HttpStatus
 import splice.server.ServerKey
 import splice.server.ServerPeople
 import splice.server.UpstreamApi
+import splice.share.AnsweredStatus
 import splice.share.SharedHead
 import splice.upstream.LifecycleScope
 import java.time.Clock
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 
@@ -50,15 +60,18 @@ internal class TurnLedger(private val parts: LedgerParts, io: CoroutineDispatche
     private val job = scope.coroutineContext.job
     private val rows = LedgerRows(parts)
 
-    // Each row still being written, by whose turn it is.
-    private val pending = ConcurrentHashMap<Job, String>()
+    // Each row still being written, by the turn it is of.
+    private val pending = ConcurrentHashMap<Job, LedgerTurn>()
+
+    // Completed as the ledger stops: a row still waiting on its head is then written with what it has.
+    private val stopping = CompletableDeferred<Unit>()
 
     // Why the ledger last refused rows, while it does; the log says so once as it stops and once as it starts again.
     private val broken = AtomicReference<String?>(null)
 
-    /** A turn of [key]'s person on [head], arriving now on [route]. */
+    /** A turn of [key]'s person on [head], arriving now on [route], for the team they are on now. */
     fun arrived(key: ServerKey, head: SharedHead, route: String): LedgerTurn =
-        LedgerTurn(key, head, route, parts.clock.millis())
+        LedgerTurn(key, head, route, parts.clock.millis(), parts.people.team(key.person, parts.teams))
 
     /** The header that names [turn] to its head, which from now on is expected to say how it went. */
     fun named(turn: LedgerTurn): Pair<String, String> {
@@ -81,35 +94,54 @@ internal class TurnLedger(private val parts: LedgerParts, io: CoroutineDispatche
         return null
     }
 
-    /** [turn] ended, answered as [call] was: its row is written once its head, if it had one, has said how it went. */
+    /** [turn] ended, answered as [call] was: its row is written once its head, if it had one, has said how it went.
+     *  The status is the one the answer was given under, which a stream opened before it no longer says. */
     fun ended(call: ApplicationCall, turn: LedgerTurn) {
-        val status = call.response.status()?.value ?: HttpStatus.OK
+        val status = AnsweredStatus.of(call) ?: HttpStatus.OK
         val durationMs = turn.since(parts.clock.millis())
         val row = scope.launch(start = CoroutineStart.LAZY) {
-            val served = turn.served?.let { withTimeoutOrNull(HEAD_WORD_MS) { it.await() } }
+            val served = turn.served?.let { word(turn.id, it) }
             parts.board.forget(turn.id)
             val end = LedgerEnd(status, durationMs, served)
             Cancellables.runCatchingCancellable { parts.ledger.add(rows.of(turn, end)) }
                 .onFailure { log("[server] a ledger row was not written: ${SafeFailureText.render(it)}\n") }
         }
-        pending[row] = turn.key.person
+        pending[row] = turn
         row.invokeOnCompletion { pending.remove(row) }
         row.start()
     }
 
-    /** Waits, a moment at most, for the rows still being written of [person]'s turns and their team's. */
+    /** What the head of turn [id] said of it: within a moment of its answer ending, or, where the head said its row
+     *  waits on a round the turn left streaming, once that round settles. A head that stops writes such a row with
+     *  what it knows; null from a head that never says, and for a row still waited for as the ledger stops. */
+    private suspend fun word(id: String, said: CompletableFuture<ServedTurn>): ServedTurn? {
+        // why: awaited as a Deferred, because a future's own await cancels the future when its wait is cut short, and
+        // this one is waited for again past the moment.
+        val word = said.asDeferred()
+        val soon = withTimeoutOrNull(HEAD_WORD_MS) { word.await() }
+        if (soon != null || !parts.board.holds(id)) return soon
+        return select {
+            word.onAwait { it }
+            stopping.onAwait { null }
+        }
+    }
+
+    /** Waits, a moment at most, for the rows still being written of [person]'s turns and their team's. A row its head
+     *  holds for a round still streaming has no bill yet, so nothing waits on it. */
     suspend fun settled(person: String) {
         val team = parts.people.team(person, parts.teams)
-        val theirs = pending.filterValues { it == person || onTeam(it, team) }
+        val theirs = pending.filterValues { !parts.board.holds(it.id) && (it.key.person == person || onTeam(it, team)) }
         withTimeoutOrNull(HEAD_WORD_MS) { theirs.keys.forEach { it.join() } }
     }
 
-    /** Whether [other] is on [team] now; never when there is no team. */
-    private fun onTeam(other: String, team: String?): Boolean =
-        team != null && parts.people.team(other, parts.teams) == team
+    /** Whether [turn] counts toward [team]'s budget, as the turn of someone on it when it arrived; never when there
+     *  is no team. */
+    private fun onTeam(turn: LedgerTurn, team: String?): Boolean = team != null && turn.team == team
 
-    /** Waits a moment for the rows still being written, then stops. */
+    /** Waits a moment for the rows still being written, then stops. A row still waiting on its head is written with
+     *  what it has. */
     suspend fun close() {
+        stopping.complete(Unit)
         withTimeoutOrNull(ROWS_CLOSE_WAIT_MS) { job.children.forEach { it.join() } }
         job.cancelAndJoin()
     }
@@ -117,6 +149,7 @@ internal class TurnLedger(private val parts: LedgerParts, io: CoroutineDispatche
 
 // why: a head writes its own row as its answer ends, a few milliseconds either side of the relay's own end; two
 // seconds is far past that, and a head that never says (one that refused the turn before it began) costs only that.
+// A head whose row waits on a round still streaming says so in the same moment, and is waited for past it.
 private const val HEAD_WORD_MS = 2_000L
 
 // why: a stop waits this long for rows still waiting on their head, the longest one waits, and a little more.

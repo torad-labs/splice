@@ -9,7 +9,8 @@
 // is no stream: response headers alone start nothing, because one server holds them back through its prefill and
 // another sends them at once and prefills after them (AnswerBody), and the client of either hears nothing until
 // something is written to it. The status has gone out as 200 by then, so a head that refuses such a turn late, or
-// does not answer it, is said as the stream's `error` event, in the head's own words where it gave them. A head
+// does not answer it, is said as the stream's `error` event, in the head's own words where it gave them, and the
+// status it stands for is kept beside the call for whoever records how the request went (AnsweredStatus). A head
 // whose answer starts within the second answers as it always did, its own status included. The second and the
 // interval are waited out on the relay's clock (RelayClock). No thread waits on an answer through any of it, so the
 // number of turns that wait on their model servers at once is no limit on any of them (AnswerBody, RelayClient).
@@ -129,18 +130,24 @@ internal class HeadAnswers(
                 val wire = quiet(out, wait)
                 wire.keepalive()
                 when (val sent = wire.during { sending.await() }) {
-                    is Sent.Answered -> late(sent, wire, wait)
-                    is Sent.Silent -> wire.error(said(HttpStatus.SERVICE_UNAVAILABLE, sent.why))
+                    is Sent.Answered -> late(call, sent, wire, wait)
+                    is Sent.Silent -> {
+                        AnsweredStatus.late(call, HttpStatus.SERVICE_UNAVAILABLE)
+                        wire.error(said(HttpStatus.SERVICE_UNAVAILABLE, sent.why))
+                    }
                 }
             },
         )
     }
 
-    /** An answer on a stream that is already open: its events, or what was answered in their place. */
-    private suspend fun late(answered: Sent.Answered, wire: QuietWire, wait: ClientWait) {
+    /** An answer on a stream that is already open: its events, or what was answered in their place, which [call]
+     *  remembers the status of (AnsweredStatus): its own went out as 200 before anyone had answered. */
+    private suspend fun late(call: ApplicationCall, answered: Sent.Answered, wire: QuietWire, wait: ClientWait) {
         val response = answered.response
         if (typeOf(response).match(ContentType.Text.EventStream)) return pump(answered, wire, wait)
-        val whole = whole(answered) ?: return wire.error(said(HttpStatus.BAD_GATEWAY, answered.cut))
+        val whole = whole(answered)
+        AnsweredStatus.late(call, if (whole == null) HttpStatus.BAD_GATEWAY else response.statusCode())
+        if (whole == null) return wire.error(said(HttpStatus.BAD_GATEWAY, answered.cut))
         wire.error(errors.event(errors.relayed(response.statusCode(), String(whole), answered.who)))
     }
 

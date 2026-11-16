@@ -7,6 +7,8 @@
 // second from a keepalive's interval, which no stepped clock does, and one holds a hundred completions at once.
 package splice.server
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -21,6 +23,7 @@ import splice.core.topology.UpstreamConfig
 import splice.core.util.LogSink
 import splice.upstream.Waiter
 import splice.upstream.codemode.ProcessWaiter
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -141,6 +144,22 @@ internal class ServerOpenAiKeepaliveTest {
         val heard = openedEarly(rig, key)
         goOn.countDown()
         assertEquals("""{"error":{"message":"box says 503"}}""", endingError(heard), "the server's own words")
+    }
+
+    /** The stream went out as a 200 before the server answered, and the ledger still says what the server said: a
+     *  rate limit that came late is a refusal under its own status, never an upstream error. */
+    @Test
+    fun `a refusal that comes once the stream is open is a refusal in the ledger, under the status that came`() {
+        val (rig, key) = serve(keepaliveSeconds = 3)
+        box.refuses = 429
+        val heard = openedEarly(rig, key)
+        goOn.countDown()
+        endingError(heard)
+        val ledger = state.resolve("server").resolve("ledger.jsonl")
+        rig.await("the turn's row") { Files.exists(ledger) && Files.readAllLines(ledger).any(String::isNotBlank) }
+        val row = Json.parseToJsonElement(Files.readAllLines(ledger).single(String::isNotBlank)).jsonObject
+        assertEquals("refused", row.getValue("outcome").jsonPrimitive.content, row.toString())
+        assertEquals("429", row.getValue("status").jsonPrimitive.content, row.toString())
     }
 
     @Test

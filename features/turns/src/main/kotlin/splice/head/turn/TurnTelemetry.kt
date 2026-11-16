@@ -88,7 +88,7 @@ internal class TurnTelemetry(
     private val retiredTurns = RetiredTurns(perfStats, spend, events)
 
     /** Rows waiting on a source round, so a head stop can write them ([flushHeld]). */
-    private val held = HeldRows()
+    private val held = HeldRows { served?.waits(it) }
 
     /** The rows splice writes for requests it answered or declined itself, with no model turn behind them. */
     val localAnswers = LocalAnswerRows(headKey, perfStats, log, clock)
@@ -125,7 +125,7 @@ internal class TurnTelemetry(
         drive.perf.mark(PerfKeys.TOTAL)
         drive.perf.setCount(PerfKeys.ATTEMPTS, drive.perfCounter(PerfKeys.ATTEMPTS))
         val ending = RowEnding(outcomeTag, rateLimited, failure, perfStats.clock(), cause)
-        held.write(drive.sourceRow) { usage -> writeRow(drive, ending, usage) }
+        held.write(drive.sourceRow, drive.meta) { usage -> writeRow(drive, ending, usage) }
     }
 
     /** A retry horizon also schedules a held session, but only an actual quota reset describes a spent window. */

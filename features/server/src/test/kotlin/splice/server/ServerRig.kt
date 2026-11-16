@@ -24,6 +24,9 @@ import splice.upstream.Waiter
 import splice.upstream.codemode.ProcessWaiter
 import java.nio.file.Path
 import java.time.Clock
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZoneOffset
 
 /** A head this machine offers, standing in for one the daemon runs: it is up at [port] (down while [up] is false),
  *  has nothing to launch and holds no login. */
@@ -101,5 +104,21 @@ internal class ServerRig(
     /** Closes the server, as the daemon does at stop. */
     fun close() {
         runBlocking { mode?.close() }
+    }
+}
+
+/** A clock the test sets, so a key's expiry and a person's minute pass when the test says. */
+internal class SetClock : Clock() {
+    @Volatile
+    private var now = Instant.parse("2026-11-15T12:00:00Z")
+
+    override fun instant(): Instant = now
+
+    override fun getZone(): ZoneId = ZoneOffset.UTC
+
+    override fun withZone(zone: ZoneId): Clock = this
+
+    fun pass(seconds: Long) {
+        now = now.plusSeconds(seconds)
     }
 }

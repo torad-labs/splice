@@ -15,6 +15,7 @@
 //                                  an OpenAI-style client's, for a command whose provider speaks openai-chat: relayed
 //                                  to that provider's own server, refusals in OpenAI's error shape (OpenAiRoute)
 //   ANY  /server/api/...           the server's own API, for a key whose person is an admin (ServerAdmin)
+//   GET  /server/metrics           each person's traffic, live, as Prometheus text, for an admin's key (F6)
 //
 // A key arrives as `x-api-key` or as `Authorization: Bearer`. A missing, unknown, revoked or expired one is a 401
 // `authentication_error` that says which and never repeats the key, and nothing reaches a head. Only the commands
@@ -69,7 +70,6 @@ import splice.core.util.LogSink
 import splice.core.wire.HttpStatus
 import splice.http.listen.HttpListenerThreads
 import splice.server.ledger.ROUTE_MESSAGES
-import splice.server.ledger.UsageApi
 import splice.share.HEAD_API_ROOT
 import splice.share.HEAD_LAUNCH_ROUTE
 import splice.share.HeadTurn
@@ -85,8 +85,8 @@ internal class ServerListener(
     private val parts: ServerParts,
     /** Its TLS identity when it speaks HTTPS itself; null for plain HTTP. */
     private val tls: KeyStore?,
-    /** The ledger's reports, which an admin reads over the listener. */
-    usage: UsageApi,
+    /** The ledger's reports and the live metrics, which an admin reads over the listener. */
+    reads: AdminReads,
     /** Blocking work runs here: reading a head's launch, and the relay's JDK I/O. */
     io: CoroutineDispatcher,
     private val log: LogSink,
@@ -95,7 +95,7 @@ internal class ServerListener(
 ) {
     private val voice = RefusalVoice(SERVER_ERROR_PREFIX)
     private val catalog = ShareCatalog(parts.heads, io, voice)
-    private val admin = ServerAdmin(server, KeyApi(parts.keys, log), usage, voice)
+    private val admin = ServerAdmin(server, KeyApi(parts.keys, log), reads, voice)
     private val addresses = ClientAddresses(server.trustedProxies)
     private val signins = SigninRoute(signin, KeyApi(parts.keys, log), addresses, voice, log)
     private val refusedCallers = RefusedCallers(log)

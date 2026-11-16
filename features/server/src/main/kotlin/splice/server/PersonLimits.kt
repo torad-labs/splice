@@ -57,6 +57,10 @@ internal class PersonUse {
     fun ended() {
         inflight--
     }
+
+    /** How many of this person's turns are in flight now. */
+    @Synchronized
+    fun held(): Int = inflight
 }
 
 internal class PersonLimits(
@@ -70,6 +74,12 @@ internal class PersonLimits(
     /** Starts a turn for [person], or refuses it. An admitted turn's slot must be released when the turn ends. */
     fun begin(person: String): LimitVerdict =
         uses.computeIfAbsent(person) { PersonUse() }.begin(person, capsOf(person), clock.millis())
+
+    /** How many of [person]'s turns are in flight now (F6). */
+    fun inflight(person: String): Int = uses[person]?.held() ?: 0
+
+    /** The most turns [person] may hold in flight at once; null when nothing caps them (F6). */
+    fun inflightCap(person: String): Int? = capsOf(person).inflightPerPerson.takeIf { it > 0 }
 
     /** [person]'s caps: their own where the operator set one, else the server's. */
     private fun capsOf(person: String): ServerLimits {

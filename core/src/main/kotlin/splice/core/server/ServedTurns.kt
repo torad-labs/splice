@@ -20,6 +20,10 @@ import java.util.concurrent.ConcurrentHashMap
  *  second ([decodeTps]), as llama-server's `timings` report them; null where the server reported none. */
 public data class TurnSpeed(val prefillTps: Double?, val decodeTps: Double?)
 
+/** When a turn's words came: [ttftMs] after it arrived the first did, and [stallMs] the longest it then waited for
+ *  the next (F6); each null where the turn said nothing, and [stallMs] null where it streamed no words to its client. */
+public data class TurnPace(val ttftMs: Long?, val stallMs: Long? = null)
+
 /** One served turn as its head saw it end. [outcome] is the head's outcome tag (splice.core.perf.OutcomeTag), tokens
  *  are null when the provider billed none, and [costUsd] is null when the model has no rate card. */
 public data class ServedTurn(
@@ -28,7 +32,7 @@ public data class ServedTurn(
     val outcome: String,
     val tokens: ServedTokens?,
     val costUsd: Double?,
-    val ttftMs: Long?,
+    val pace: TurnPace,
     val speed: TurnSpeed?,
 )
 

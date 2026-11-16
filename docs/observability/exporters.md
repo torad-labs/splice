@@ -54,4 +54,14 @@ OpenTelemetry Java is pinned to **1.68.0**. The custom GenAI mapping is pinned t
 
 Each SDK export uses an explicit policy of at most two attempts, 750 ms per attempt/connect timeout, and exponential retry backoff starting at 100 ms and capped at 200 ms (multiplier 2). The worker waits at most 2.5 seconds per signal for actual completion. The next five-second collection exports the latest cumulative metrics again; failed logs/spans are dropped and counted, so an unavailable collector cannot accumulate an unbounded retry backlog. `flush()` waits at most ten seconds; `close()` waits at most twenty seconds. Only worker code reads aggregate snapshots and performs network work. Record admission never waits for the collector. Status contains queue counts, per-signal accepted/exported/failed/dropped/pending counts, last successful exports, coverage and worker failures. Metric counts refer to exported metric families; log counts refer to events; trace counts refer to completed spans. Queue counters include span-start observations.
 
+## Server mode's per-person families
+
+A daemon with a `[server]` listener keeps a second, separate set of families about the people it serves (docs/specs/server-mode.md, F6). Unlike everything above, these carry `person` and `team` labels by design; they never enter the identity-free families, their scrape or their budget.
+
+- `splice_server_requests_total{person,team,command,status_class}` and `splice_server_tokens_total{person,team,kind}` (`prompt`, `cached`, `completion`, as the provider billed them).
+- Histograms by `{person,team}`: `splice_server_ttft_seconds`, `splice_server_duration_seconds` (every request the server did not refuse), `splice_server_prefill_tokens_per_second` and `splice_server_decode_tokens_per_second` (from the model server's own timings), and `splice_server_stream_stall_seconds` (the longest wait for the upstream's next words after the first).
+- Gauges by `{person}`: `splice_server_inflight` and `splice_server_inflight_limit` (`+Inf` where no cap applies).
+
+Counts start at zero when the daemon starts. Every person holding a live key has every series from startup, at zero until they send something; a person with no live key has none. An admin's key scrapes them as Prometheus text from the listener at `GET /server/metrics` (401 without a key, 403 for anyone else); `prometheus_enabled` does not apply to that route. When `[telemetry.operator]` sends `metrics`, the same snapshot goes to the same OTLP endpoint every five seconds under the instrumentation scope `splice.server`, cumulative, with the same transport limits as above.
+
 See [Collector](examples/collector.yaml), [Prometheus](examples/prometheus.yaml), and [Grafana](examples/grafana-datasource.yaml). Supply management and collector credentials through your operator secret store; examples contain none.

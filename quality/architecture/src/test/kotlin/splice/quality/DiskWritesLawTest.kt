@@ -126,6 +126,11 @@ internal object DiskWrites {
                 "Prefix.appendText(StringBuilder) joins in-memory recovery segments into a builder, never a file",
                 matches = 2,
             ),
+            NotAFile(
+                "features/share/src/main/kotlin/splice/share/AnswerBody.kt",
+                ".writeBytes(",
+                "AnswerBody.whole() gathers an upstream answer's pieces into a ByteArrayOutputStream, never a file",
+            ),
         ),
         sites = SHIPPED_SITES,
     )

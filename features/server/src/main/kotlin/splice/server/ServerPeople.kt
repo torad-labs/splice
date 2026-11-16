@@ -10,6 +10,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import splice.core.topology.ServerTeams
+import splice.share.StateFile
 import java.nio.file.Path
 
 /** One person's own settings. A null leaves that setting to the server's; a cap of 0 is no cap. [upstream] is the

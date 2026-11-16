@@ -1,7 +1,7 @@
-// NEW: server mode (docs/specs/server-mode.md, F1). One daemon's server mode, as the daemon holds it: the keys and the
-// people it keeps under `<state>/server`, the operations each door asks of them, and the listener that answers key
-// holders. The daemon builds it when splice.toml has a `[server]`, opens it once its heads are up, and closes it first
-// at stop.
+// NEW: server mode (docs/specs/server-mode.md, F1 and F2). One daemon's server mode, as the daemon holds it: the keys
+// and the people it keeps under `<state>/server`, the operations each door asks of them, the identity provider a team
+// member signs in with, and the listener that answers key holders. The daemon builds it when splice.toml has a
+// `[server]`, opens it once its heads are up, and closes it first at stop.
 package splice.server
 
 import kotlinx.coroutines.CoroutineDispatcher
@@ -75,8 +75,15 @@ public class ServerMode(
 
     /** Opens the listener on [address], serving the heads of [heads] that `[server] commands` names. [configDir] is
      *  splice.toml's directory, which a relative PEM path is under. Throws when the address cannot be bound or the
-     *  PEM files cannot be read. */
-    public fun open(address: ServerAddress, heads: SharedHeads, reach: ServerReach, configDir: Path) {
+     *  PEM files cannot be read. [signinSecret] is the client secret `[server.signin] client_secret_env` names, as
+     *  the daemon's environment holds it (F2). */
+    public fun open(
+        address: ServerAddress,
+        heads: SharedHeads,
+        reach: ServerReach,
+        configDir: Path,
+        signinSecret: String? = null,
+    ) {
         val speaker = RelaySpeaker(RefusalVoice(SERVER_ERROR_PREFIX), SERVER_LOG_TAG)
         val parts = ServerParts(
             keys = keys,
@@ -88,7 +95,11 @@ public class ServerMode(
             books = books.open(reach),
         )
         val tls = server.pem(configDir)?.let { PemTls(it).keyStore() }
-        val opened = ServerListener(server, parts, tls, books.usageApi, io, log)
+        val signin = server.signin?.let { signin ->
+            val issuer = SigninIssuer(SigninClient(signin, signinSecret), io, clock)
+            SigninParts(signin, issuer, IdTokens(signin, issuer, clock))
+        }
+        val opened = ServerListener(server, parts, tls, books.usageApi, io, log, signin)
         opened.start(address)
         listener = opened
         books.exporting(reach.env)

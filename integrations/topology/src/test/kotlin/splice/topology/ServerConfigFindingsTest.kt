@@ -146,6 +146,51 @@ class ServerConfigFindingsTest {
         assertEquals("server.tls_key", finding.path)
         assertTrue(listOf("PKCS#8", "openssl pkcs8 -topk8").all(finding.message::contains), finding.message)
     }
+
+    @Test
+    fun `a sign-in table boots with its issuer, client, domains and key days, and a loopback issuer may be http`() {
+        val lines = """
+            [server.signin]
+            issuer = "http://127.0.0.1:9000"
+            client_id = "splice-team"
+            client_secret_env = "SPLICE_SIGNIN_SECRET"
+            domains = ["@Team.example"]
+            key_days = 7
+        """.trimIndent()
+        val read = ConfigFindings.read(server(lines) + head(), directory, configDir = directory)
+        val signin = assertInstanceOf(ConfigRead.Ready::class.java, read, read.toString()).topology.server.signin
+        assertEquals("splice-team", signin?.clientId)
+        assertEquals(7, signin?.keyDays)
+        assertTrue(signin?.admits("dana@team.example") == true, "the domain written with @ and capitals admits nobody")
+        assertTrue(signin?.admits("dana@other.example") == false, "a person in another domain is admitted")
+    }
+
+    @Test
+    fun `each wrong sign-in field is refused by its key, and an issuer off this machine must be https`() {
+        val lines = """
+            [server.signin]
+            issuer = "http://login.team.example"
+            client_id = " "
+            client_secret_env = ""
+            domains = ["team"]
+            key_days = 0
+            rate_per_minute = -1
+        """.trimIndent()
+        val found = refused(server(lines) + head())
+        assertEquals(
+            setOf(
+                "server.signin.issuer",
+                "server.signin.client_id",
+                "server.signin.client_secret_env",
+                "server.signin.domains",
+                "server.signin.key_days",
+                "server.signin.rate_per_minute",
+            ),
+            found.map { it.path }.toSet(),
+        )
+        val issuer = found.single { it.path == "server.signin.issuer" }.message
+        assertTrue("https" in issuer, issuer)
+    }
 }
 
 private const val API_KEY = """{ kind = "api-key", env = "BOX_KEY" }"""

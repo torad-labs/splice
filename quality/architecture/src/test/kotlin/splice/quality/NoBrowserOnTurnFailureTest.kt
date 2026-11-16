@@ -22,16 +22,18 @@ import java.nio.file.Paths
 class NoBrowserOnTurnFailureTest {
 
     @Test
-    fun `the browser primitive is called from exactly the three operator-initiated surfaces`() {
+    fun `the browser primitive is called from exactly the four operator-initiated surfaces`() {
         // Sorted, module-relative. OAuthLoginFlow and DeviceLoginFlow are the two login verbs'
         // flows. ConsoleCommand is `splice console`, which the operator types to open the console.
-        // Nothing else may reach it. The primitive has two spellings since LAYOUT-01:
+        // ServerLogin is `splice login <server>` (Nov 16, 2026), the login verb for a team's server,
+        // which the operator types to sign in there. Nothing else may reach it. The primitive has two spellings since LAYOUT-01:
         // LoginIo.openBrowser, and a constructed SystemBrowserOpener, which each flow defaults to.
         assertEquals(
             listOf(
                 "integrations/oauth/src/main/kotlin/splice/oauth/OAuthLoginFlow.kt",
                 "integrations/oauth/src/main/kotlin/splice/oauth/DeviceLoginFlow.kt",
                 "app/src/main/kotlin/splice/app/cli/status/ConsoleCommand.kt",
+                "app/src/main/kotlin/splice/app/cli/server/ServerLogin.kt",
             ).sorted(),
             browserPrimitive().filterNot { it.endsWith("splice/oauth/LoginIo.kt") }.sorted(),
             "a new browser call site is a new way to open the operator's browser — sanction it here " +

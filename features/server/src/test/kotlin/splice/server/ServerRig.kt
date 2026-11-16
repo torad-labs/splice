@@ -68,8 +68,14 @@ internal class ServerRig(
     private var mode: ServerMode? = null
 
     /** Opens [server] as the daemon does, over the machine `gpu-box` and the [heads] it offers. [state] holds the
-     *  daemon's state and is splice.toml's folder too. A rig that was closed opens again on the same port. */
-    fun open(state: Path, heads: List<SharedHead>, server: ServerConfig = config): ServerMode {
+     *  daemon's state and is splice.toml's folder too. A rig that was closed opens again on the same port.
+     *  [signinSecret] is the client secret the daemon would read from `[server.signin] client_secret_env`. */
+    fun open(
+        state: Path,
+        heads: List<SharedHead>,
+        server: ServerConfig = config,
+        signinSecret: String? = null,
+    ): ServerMode {
         val machine = object : SharedHeads {
             override val machine: String = "gpu-box"
 
@@ -78,7 +84,7 @@ internal class ServerRig(
         val reach = ServerReach(TurnKey(MgmtKey(StatePaths(baseOverride = state))), TestPorts.reserve(), board)
         val opened = ServerMode(server, state.resolve("server"), Dispatchers.IO, log, clock, upstreams, waiter)
         mode = opened
-        opened.open(ServerAddress("127.0.0.1", port), machine, reach, state)
+        opened.open(ServerAddress("127.0.0.1", port), machine, reach, state, signinSecret)
         return opened
     }
 

@@ -6,7 +6,6 @@ package splice.server
 
 import splice.core.topology.ServerLimits
 import java.time.Clock
-import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -30,13 +29,11 @@ internal sealed class LimitVerdict {
 /** One person's turns: how many are in flight, and when each of the last minute's began. */
 internal class PersonUse {
     private var inflight = 0
-    private val starts = ArrayDeque<Long>()
-    private val minute = Duration.ofMinutes(1)
+    private val starts = MinuteStarts()
 
     /** Starts a turn at [now] under [caps], or says how the caps refuse it. */
     @Synchronized
     fun begin(person: String, caps: ServerLimits, now: Long): LimitVerdict {
-        while (starts.isNotEmpty() && now - starts.first() >= minute.toMillis()) starts.removeFirst()
         val inflightCap = caps.inflightPerPerson
         val rpmCap = caps.rpmPerPerson
         if (inflightCap > 0 && inflight >= inflightCap) {
@@ -44,16 +41,15 @@ internal class PersonUse {
                 "(inflight_per_person = $inflightCap); the next can start when one of them ends"
             return LimitVerdict.Refused(why, INFLIGHT_RETRY_SECONDS)
         }
-        if (rpmCap > 0 && starts.size >= rpmCap) {
-            // The whole seconds, rounded up, until the oldest of the minute's turns leaves it: a retry then is served.
-            val left = minute.minusMillis(now - starts.first())
-            val wait = left.plusSeconds(1).minusNanos(1).seconds.coerceIn(1, minute.seconds)
+        // The whole seconds until the oldest of the minute's turns leaves it: a retry then is served.
+        val wait = starts.waitFor(rpmCap, now)
+        if (wait != null) {
             val why = "$person started $rpmCap turns in the last minute, the most one person may start here " +
                 "(rpm_per_person = $rpmCap); the next can start in $wait s"
             return LimitVerdict.Refused(why, wait)
         }
         inflight++
-        starts.addLast(now)
+        starts.add(now)
         return LimitVerdict.Admitted(TurnSlot(this))
     }
 

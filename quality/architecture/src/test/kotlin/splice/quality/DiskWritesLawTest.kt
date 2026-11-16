@@ -483,7 +483,9 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // A peer's own send limit (Oct 27, 2026), in the README's limit.json row.
     "features/sessions/src/main/kotlin/splice/sessions/peer/store/PeerLimits.kt" to mapOf("writeAtomic0600(" to 1),
     // Server mode's keys and people (Nov 15, 2026), in the README's server/keys.json row.
-    "features/server/src/main/kotlin/splice/server/StateFile.kt" to mapOf("writeAtomic0600(" to 1),
+    "features/share/src/main/kotlin/splice/share/StateFile.kt" to mapOf("writeAtomic0600(" to 1),
+    // A laptop's key for each server it signed in to (Nov 16, 2026), in the README's server-logins row.
+    "features/share/src/main/kotlin/splice/share/ServerLogins.kt" to mapOf("writeAtomic0600(" to 1),
     // Server mode's usage ledger (Nov 16, 2026), in the README's server/ledger.jsonl row.
     "features/server/src/main/kotlin/splice/server/ledger/UsageLedger.kt" to mapOf("JsonlSink.appendLine(" to 1),
     // Server mode's hourly usage export to a folder (Nov 16, 2026), in the README's `[server.export]` folder row.

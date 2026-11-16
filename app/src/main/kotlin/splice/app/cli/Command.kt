@@ -13,6 +13,7 @@ import splice.app.TraceWiring
 import splice.app.cli.auth.KeyCommand
 import splice.app.cli.auth.LoginCommand
 import splice.app.cli.auth.RotateKeyCommand
+import splice.app.cli.server.ServerLogin
 import splice.app.cli.sessions.SessionsRelaunchCommand
 import splice.app.cli.setup.SetupCommand
 import splice.app.cli.status.CONSOLE_NO_BROWSER
@@ -125,7 +126,20 @@ public sealed class Command {
      *  Claude head it saves or switches the head's login, and `--discard` lets a switch drop a login
      *  saved under no label (V4-276). */
     public data class Login(val head: String?, val label: String? = null, val discard: Boolean = false) : Command() {
-        override suspend fun run(): Int = outcomeExitCode(LoginCommand().login(head, label, discard))
+        override suspend fun run(): Int {
+            val server = ServerLogin()
+            return when {
+                head == null || !server.names(head) -> outcomeExitCode(LoginCommand().login(head, label, discard))
+                label != null -> refusal("--label names another login of a head; a server signs in one person")
+                else -> server.login(head)
+            }
+        }
+    }
+
+    /** Server mode (docs/specs/server-mode.md, F2): `splice logout <server>` forgets the key this laptop holds
+     *  there. */
+    public data class Logout(val server: String) : Command() {
+        override suspend fun run(): Int = ServerLogin().logout(server)
     }
     public data object Setup : Command() {
         override suspend fun run(): Int = outcomeExitCode(SetupCommand().setup())

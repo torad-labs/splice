@@ -10,7 +10,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import splice.core.config.KnobWords
-import splice.server.StateFile
+import splice.share.StateFile
 import java.nio.file.Path
 
 /** One budget: whose it is ([scope] and [name]), its limits (null: none that long), and its [action]. */

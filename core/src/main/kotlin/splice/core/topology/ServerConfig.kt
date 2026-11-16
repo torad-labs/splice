@@ -27,6 +27,14 @@ public data class ServerConfig(
     /** How often a streamed turn's client is sent an SSE keepalive while its answer is silent, as a model server
      *  prefilling a long prompt is; the stream is opened to the client at once for it. 0 sends none. */
     @SerialName("keepalive_seconds") val keepaliveSeconds: Int = 0,
+    /** What the same tokens would cost on a hosted model, beside each report's own cost (F5). */
+    val reference: ServerReference = ServerReference(),
+    /** Which team a person is on when the operator set none for them (decision 5). */
+    val teams: ServerTeams = ServerTeams(),
+    /** Where the ledger is copied, hour by hour (F5). */
+    val export: ServerExport = ServerExport(),
+    /** What each person may spend (F3). */
+    val budgets: ServerBudgets = ServerBudgets(),
 ) {
     /** Whether the file carries a `[server]` table at all, whatever it holds. */
     val declared: Boolean get() = this != ServerConfig()

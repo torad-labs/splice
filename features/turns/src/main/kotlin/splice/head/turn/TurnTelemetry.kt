@@ -38,6 +38,8 @@ import splice.head.perf.PerfStats
 import splice.head.perf.PerfTranscriptIds
 import splice.head.perf.UsageObservation
 import splice.head.usage.RetiredTurns
+import splice.head.usage.ServedTurnReport
+import splice.head.usage.ServedWay
 import splice.head.usage.TurnSpend
 import splice.head.wire.TurnTrace
 
@@ -75,6 +77,9 @@ internal class TurnTelemetry(
      *  class directly; the one production site (TurnDriver) passes the head's own, and HeadEventsTest
      *  fails if a served turn stops reaching it. */
     private val events: HeadEvents = NoHeadEvents,
+    /** Server mode (F5): where a turn the server listener relayed is reported once its row is written. Defaulted
+     *  like [events], because tests build this class directly and relay nothing. */
+    private val served: ServedTurnReport? = null,
 ) {
     private val cache = TurnCacheLine(headKey)
     private val line = TurnLine(headKey)
@@ -200,7 +205,7 @@ internal class TurnTelemetry(
                     responseMessageId = drive.emitter.responseMessageId,
                     messagesHash = drive.meta.scope.messagesHash,
                     conversationKey = drive.meta.scope.conversationKey,
-                    door = drive.meta.route.door,
+                    door = drive.meta.route.relay.door,
                 ),
             ),
             snap,
@@ -217,6 +222,7 @@ internal class TurnTelemetry(
         }
         // V4-134: the turn's end goes to the console only once its row exists, carrying that row's
         // key, so the stream never names a row /api/perf/turns has not been handed.
+        served?.ended(drive.meta, outcomeTag, snap, ServedWay(drive.route?.served(), drive.speed))
         events.turnEnded(rowTs.toString(), outcomeTag, drive.meta.scope.sessionId)
         toolsOpened(drive)
         spend.spend(rowTs, drive.upstreamModel, snap.counters, accountLabel, outcomeTag)
@@ -302,10 +308,11 @@ internal class TurnTelemetry(
                 turns = PerfTurnIds(trace = trace?.turnId),
                 sessionId = meta.scope.sessionId,
                 messagesHash = meta.scope.messagesHash,
-                door = meta.route.door,
+                door = meta.route.relay.door,
             ),
         )
         val rowTs = perfStats.record(rowMeta, snap)
+        served?.ended(meta, tag, snap)
         // V4-134: a local refusal is a turn that ended too — it has a perf row, so it has a turn.end.
         events.turnEnded(rowTs.toString(), tag, meta.scope.sessionId)
         // The tag is printed VERBATIM, the same spelling the perf row carries

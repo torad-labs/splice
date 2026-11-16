@@ -8,7 +8,6 @@ import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
-import splice.core.wire.HttpStatus
 import splice.daemonclient.ControlPlaneClient
 import splice.daemonclient.ControlReply
 import splice.daemonclient.MgmtKeyRead
@@ -21,7 +20,7 @@ import java.nio.file.Path
 
 // why: register waits up to 10 s for the helper's record (spec 3.2), and revoke up to 5 s before SIGKILL; a webhook
 // test waits on the receiver's 10 s timeout. 20 s covers each with room for a loaded machine.
-private const val CALL_TIMEOUT_MS = 20_000
+internal const val CALL_TIMEOUT_MS = 20_000
 
 private const val PEER_KEY_FILE_ENV = "SPLICE_PEER_KEY_FILE"
 
@@ -78,12 +77,18 @@ internal class PeerCall(
     fun settingsDir(): Path = KeyStorePath.defaultPath(env).toAbsolutePath().parent
 
     /** A call with no body (GET, DELETE, or a POST that carries nothing). */
-    fun call(method: String, path: String, bearer: String): PeerAnswer =
-        answer(ControlPlaneClient.send(url(path), method, bearer, CALL_TIMEOUT_MS))
+    fun call(method: String, path: String, bearer: String, waitMs: Int = CALL_TIMEOUT_MS): PeerAnswer =
+        answer(ControlPlaneClient.send(url(path), method, bearer, waitMs))
 
     /** A call with a JSON body. A connection cut after the body went up may have acted, and says so. */
-    fun call(method: String, path: String, bearer: String, body: JsonObject): PeerAnswer =
-        when (val read = ControlPlaneClient.withBody(url(path), method, bearer, body.toString(), CALL_TIMEOUT_MS)) {
+    fun call(
+        method: String,
+        path: String,
+        bearer: String,
+        body: JsonObject,
+        waitMs: Int = CALL_TIMEOUT_MS,
+    ): PeerAnswer =
+        when (val read = ControlPlaneClient.withBody(url(path), method, bearer, body.toString(), waitMs)) {
             is PostReading.Answered -> answer(read.reply)
             PostReading.NotConnected -> answer(null)
             PostReading.CutAfterSending -> {
@@ -101,13 +106,7 @@ internal class PeerCall(
         if (reply.status in ControlPlaneClient.OK_RANGE) return PeerAnswer.Ok(body ?: JsonObject(emptyMap()))
         val reason = JsonScalars.str(body, "error") ?: "the daemon answered ${reply.status}"
         fail("$reason (${reply.status})")
-        return PeerAnswer.Exit(
-            when (reply.status) {
-                HttpStatus.TOO_MANY_REQUESTS -> PeerExit.RATE_LIMITED
-                HttpStatus.BAD_GATEWAY, HttpStatus.SERVICE_UNAVAILABLE -> PeerExit.TRANSPORT
-                else -> PeerExit.REFUSED
-            },
-        )
+        return PeerAnswer.Exit(PeerExit.refused(reply.status))
     }
 
     private fun url(path: String): String = "http://127.0.0.1:${AdminSupport.controlPort(env)}$path"

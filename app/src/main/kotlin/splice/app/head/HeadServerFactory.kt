@@ -16,6 +16,7 @@ import splice.core.config.SpliceConfig
 import splice.core.config.TurnKey
 import splice.core.config.UserHome
 import splice.core.prompt.SystemPromptLayers
+import splice.core.server.ServedTurnBoard
 import splice.core.topology.ProjectConfig
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
@@ -71,6 +72,10 @@ internal class HeadServerFactory(
     /** Assigned beside [credentialAccountNames]: hears each head's sent credential digests under that head's key and
      *  the session each request named. */
     internal var sentCredentials: HeadSentCredentials = HeadSentCredentials { _, _, _ -> }
+
+    /** Server mode (F5): the one board every head tells how a turn the server listener relayed went, and the listener
+     *  waits on. */
+    internal val served: ServedTurnBoard = ServedTurnBoard()
 
     // v0.4.0: what a launched session holds, derived from the management key (see [TurnKey]).
     private val turnKey = TurnKey(mgmtKey)
@@ -225,7 +230,7 @@ internal class HeadServerFactory(
             slotInstructions = console?.slots,
             compactionTail = compactionTail,
         ),
-        events = console?.forHead(key) ?: NoHeadEvents,
+        reports = HeadDeps.HeadReports(events = console?.forHead(key) ?: NoHeadEvents, served = served),
     )
 }
 

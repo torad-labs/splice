@@ -99,6 +99,11 @@
       "params": 13,
       "subsystems": 0,
       "reason": "2026-11-06: @Serializable saved settings/API rule record; keep its field layout compatible with existing JSON."
+    },
+    "features/server/src/main/kotlin/splice/server/ledger/LedgerRow.kt LedgerRow": {
+      "params": 18,
+      "subsystems": 0,
+      "reason": "server ledger, 2026-11-16: @Serializable mirror of one usage ledger row (docs/specs/server-mode.md F5), the line written to usage.jsonl and exported field by field; grouping its fields would change the format"
     }
   }
 }

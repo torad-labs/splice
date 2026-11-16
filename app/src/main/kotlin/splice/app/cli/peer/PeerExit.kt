@@ -8,6 +8,7 @@ package splice.app.cli.peer
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.terminal.TerminalOutput
+import splice.core.wire.HttpStatus
 import java.net.URLEncoder
 
 /** The exit codes of `splice peer` (docs/specs/peer-messaging.md 5); 0, 1 and 2 keep their meaning across the CLI. */
@@ -30,6 +31,14 @@ internal object PeerExit {
 
     // why: spec 5, 5 is a 502 or 503: the helper or the target's socket failed, and a later try may pass.
     const val TRANSPORT: Int = 5
+
+    /** The exit code of a call the daemon refused with [status]. */
+    fun refused(status: Int): Int =
+        when (status) {
+            HttpStatus.TOO_MANY_REQUESTS -> RATE_LIMITED
+            HttpStatus.BAD_GATEWAY, HttpStatus.SERVICE_UNAVAILABLE -> TRANSPORT
+            else -> REFUSED
+        }
 }
 
 /** What a call came to: the daemon's 2xx body, or the exit code with the reason already printed. */
@@ -39,8 +48,13 @@ internal sealed class PeerAnswer {
     data class Exit(val code: Int) : PeerAnswer()
 }
 
-/** One call on the control plane; [body] goes up as JSON when there is one. */
-internal data class ControlRequest(val method: String, val path: String, val body: JsonObject? = null)
+/** One call on the control plane; [body] goes up as JSON when there is one, and the answer is waited for [waitMs]. */
+internal data class ControlRequest(
+    val method: String,
+    val path: String,
+    val body: JsonObject? = null,
+    val waitMs: Int = CALL_TIMEOUT_MS,
+)
 
 /** How a verb asks the daemon and prints what it answers. */
 internal class PeerAsk(private val call: PeerCall, private val out: TerminalOutput) {
@@ -49,8 +63,8 @@ internal class PeerAsk(private val call: PeerCall, private val out: TerminalOutp
     fun managed(asked: ControlRequest, json: Boolean = false, line: PeerLine): Int {
         val key = call.managementKey() ?: return PeerExit.REFUSED
         val answer = when (val body = asked.body) {
-            null -> call.call(asked.method, asked.path, key)
-            else -> call.call(asked.method, asked.path, key, body)
+            null -> call.call(asked.method, asked.path, key, asked.waitMs)
+            else -> call.call(asked.method, asked.path, key, body, asked.waitMs)
         }
         return finish(answer, json, line)
     }

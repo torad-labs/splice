@@ -483,6 +483,10 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "features/sessions/src/main/kotlin/splice/sessions/peer/store/PeerLimits.kt" to mapOf("writeAtomic0600(" to 1),
     // Server mode's keys and people (Nov 15, 2026), in the README's server/keys.json row.
     "features/server/src/main/kotlin/splice/server/StateFile.kt" to mapOf("writeAtomic0600(" to 1),
+    // Server mode's usage ledger (Nov 16, 2026), in the README's server/ledger.jsonl row.
+    "features/server/src/main/kotlin/splice/server/ledger/UsageLedger.kt" to mapOf("JsonlSink.appendLine(" to 1),
+    // Server mode's hourly usage export to a folder (Nov 16, 2026), in the README's `[server.export]` folder row.
+    "features/server/src/main/kotlin/splice/server/export/FolderTarget.kt" to mapOf("writeAtomic0600(" to 1),
     "features/turns/src/main/kotlin/splice/head/compact/Compact.kt" to mapOf("JsonlSink.appendLine(" to 1),
     "features/turns/src/main/kotlin/splice/head/compaction/CompactionRecordings.kt" to mapOf("writeAtomic0600(" to 1),
     // The history-window cut rewrites the straddling generation in place: a 0600 sibling, the kept rows copied into

@@ -13,10 +13,15 @@ import splice.app.control.ServerModeSource
 import splice.app.share.ManagedSharedHeads
 import splice.core.config.ConfigService
 import splice.core.config.TurnKey
+import splice.core.model.TurnPrice
+import splice.core.perf.PerfKeys
 import splice.core.pool.UpstreamPool
+import splice.core.server.ServedTokens
+import splice.core.server.ServedTurnBoard
 import splice.core.topology.Dialect
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
+import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.server.ChatServer
@@ -45,6 +50,10 @@ internal class DaemonServer(
     @Volatile
     private var down: String = NO_SERVER
 
+    // The heads the server serves, once it opened: what an OpenAI-style turn is priced at is its head's rate card.
+    @Volatile
+    private var heads: Map<String, ManagedHead> = emptyMap()
+
     override fun mode(): ServerMode? = running
 
     override fun absent(): String = down
@@ -62,14 +71,28 @@ internal class DaemonServer(
     override fun forwarded(head: String): List<String> =
         topology.heads[head]?.let { topology.providers[it.provider] }?.forwarded?.carried.orEmpty()
 
-    /** Opens server mode when `[server]` names an address, serving [heads] through [controlPort]'s daemon. */
-    fun open(heads: Map<String, ManagedHead>, controlPort: Int) {
+    override fun price(head: String, model: String, tokens: ServedTokens): Double? {
+        val catalog = heads[head]?.statusline?.catalog ?: return null
+        val billed = mapOf(
+            PerfKeys.IN_TOKENS to tokens.prompt,
+            PerfKeys.CACHED_TOKENS to tokens.cached,
+            PerfKeys.OUT_TOKENS to tokens.completion,
+            PerfKeys.CACHE_WRITE_TOKENS to 0L,
+        )
+        return TurnPrice(catalog).usd(model, billed)
+    }
+
+    /** Opens server mode when `[server]` names an address, serving [heads] through [controlPort]'s daemon, which say
+     *  how each turn went on [served]. */
+    fun open(heads: Map<String, ManagedHead>, controlPort: Int, served: ServedTurnBoard) {
         val address = topology.server.address ?: return
+        this.heads = heads
         Cancellables.runCatchingBestEffort {
             val offered = ManagedSharedHeads(heads, topology, config, ShareMachine(log).name())
             val folder = stateDir.resolve(SERVER_STATE)
+            val reach = ServerReach(turnKey, controlPort, served, EnvReader(System::getenv))
             ServerMode(topology.server, folder, ProcessDispatchers().io(), log, upstreams = this)
-                .also { it.open(address, offered, ServerReach(turnKey, controlPort), configDir) }
+                .also { it.open(address, offered, reach, configDir) }
         }.onSuccess { running = it }.onFailure { failure ->
             val why = SafeFailureText.render(failure)
             down = "server mode did not start on ${topology.server.listen}: $why"

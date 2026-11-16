@@ -317,7 +317,7 @@ public class Daemon(
         // reads the share port at once.
         share.open(heads, controlPort)
         // And the server listener, with its keys: `splice server key create` asks the control plane for them.
-        server.open(heads, controlPort)
+        server.open(heads, controlPort, headServerFactory.served)
         controlPlane.serverMode = server
         // The desktop door, on the control port, choosing among these heads.
         desktop.open(heads, controlPort)

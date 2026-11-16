@@ -67,7 +67,7 @@ internal class LedgerRows(private val parts: LedgerParts) {
     }
 
     private fun fromHead(served: ServedTurn): Heard =
-        Heard(served.model, served.tokens, served.speed, served.ttftMs, served.upstream, served.costUsd)
+        Heard(served.model, served.tokens, served.speed, served.pace.ttftMs, served.upstream, served.costUsd)
 
     /** An OpenAI-style turn as the dialect read it, priced at its head's rate card; for a turn that never reached a
      *  provider's server, only the model it asked for. */

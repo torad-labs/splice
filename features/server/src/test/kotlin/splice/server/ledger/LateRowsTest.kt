@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.server.ServedTokens
 import splice.core.server.ServedTurn
+import splice.core.server.TurnPace
 import splice.core.turn.SERVED_TURN_HEADER
 import splice.server.ServerMode
 import splice.server.ServerRig
@@ -110,7 +111,7 @@ internal class LateRowsTest {
         outcome = "ok",
         tokens = ServedTokens(prompt, cached = 200, completion = 30),
         costUsd = 0.25,
-        ttftMs = 12,
+        pace = TurnPace(ttftMs = 12),
         speed = null,
     )
 

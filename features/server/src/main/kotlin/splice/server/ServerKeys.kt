@@ -35,7 +35,15 @@ public data class ServerKey(
     @SerialName("revoked_at") val revokedAt: Long? = null,
     /** The prefix of the newer sign-in key on the same device whose first use revoked this one. */
     @SerialName("superseded_by") val supersededBy: String? = null,
-)
+) {
+    /** Why this key is refused at [nowMs]: revoked, or expired by then; null while it admits. The one rule the
+     *  listener admits by (ServerKeys.admit) and the metrics list a person by (ServerKeys.livePeople, F6). */
+    public fun refusalAt(nowMs: Long): KeyVerdict? = when {
+        revokedAt != null -> KeyVerdict.Revoked(this)
+        expiresAt != null && nowMs >= expiresAt -> KeyVerdict.Expired(this)
+        else -> null
+    }
+}
 
 @Serializable
 internal data class KeyFile(val keys: List<ServerKey> = emptyList())
@@ -98,6 +106,12 @@ public class ServerKeys(
         .map(::withUse)
         .sortedWith(compareBy({ it.createdAt }, { it.prefix }))
 
+    /** Everyone who holds a key the listener would admit now: by the same rule admit() refuses one by. */
+    public fun livePeople(): Set<String> {
+        val now = clock.millis()
+        return byHash.values.filter { it.refusalAt(now) == null }.mapTo(sortedSetOf()) { it.person }
+    }
+
     public suspend fun mint(request: KeyRequest): MintedKey = mutation.withLock {
         val prefix = mint.prefix(byHash.values.mapTo(HashSet()) { it.prefix })
         val key = mint.key(prefix)
@@ -141,16 +155,11 @@ public class ServerKeys(
         val key = presented?.takeIf { it.startsWith(KEY_MARK) }?.let { byHash[mint.hash(it)] }
             ?: return KeyVerdict.Unknown
         val now = clock.millis()
-        return when {
-            key.revokedAt != null -> KeyVerdict.Revoked(key)
-            key.expiresAt != null && now >= key.expiresAt -> KeyVerdict.Expired(key)
-            else -> {
-                if (key.lastUsedAt == null && !used.containsKey(key.prefix)) supersedeElders(key)
-                used[key.prefix] = now
-                useChanged = true
-                KeyVerdict.Admitted(key)
-            }
-        }
+        key.refusalAt(now)?.let { return it }
+        if (key.lastUsedAt == null && !used.containsKey(key.prefix)) supersedeElders(key)
+        used[key.prefix] = now
+        useChanged = true
+        return KeyVerdict.Admitted(key)
     }
 
     /** Revokes the live sign-in keys of [newer]'s person and device that were minted before it, each marked as

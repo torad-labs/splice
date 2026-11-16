@@ -29,9 +29,10 @@
 // With `[server] keepalive_seconds` a streamed completion is kept alive through a long prefill as a streamed turn is
 // (F4, openai-keepalive): when the provider's server has not started its answer within a second, the stream is opened
 // to the client then and carries an SSE comment, which OpenAI's SDKs skip, at least that often until the answer comes
-// and whenever it falls silent after. The answer follows as it comes, ending with `[DONE]`. The status went out as 200
-// by then, so a refusal or a failure of the server's after that is one error event in OpenAI's shape, the server's own
-// error where it gave one. A completion that asks for no stream is one JSON body, and carries none.
+// and whenever it falls silent after. A server that has sent its response headers and no chunk has not started it:
+// some send those at once and prefill after. The answer follows as it comes, ending with `[DONE]`. The status went
+// out as 200 by then, so a refusal or a failure of the server's after that is one error event in OpenAI's shape, the
+// server's own error where it gave one. A completion that asks for no stream is one JSON body, and carries none.
 //
 // Claude Code asks a command for its models too, of the head and in Anthropic's shape. The two are told apart by the
 // header every Anthropic client sends: a list or a lookup asked without `anthropic-version` is an OpenAI-style

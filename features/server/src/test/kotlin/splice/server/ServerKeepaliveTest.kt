@@ -2,7 +2,8 @@
 // in front of a head that says nothing for a while, the way one does while its model server prefills a long prompt.
 // No test here sits through that silence. The head holds a turn until the test lets it go on, the relay's clock is
 // the test's (SteppedClock), and the client's answer is read as it comes (Hearing). Each test writes what the head
-// does, says when time passes, and reads what the client has heard by then.
+// does, says when time passes, and reads what the client has heard by then. One test waits out the relay's own one
+// second on the real clock, because it has to tell that second from a keepalive's interval.
 package splice.server
 
 import com.sun.net.httpserver.HttpExchange
@@ -43,6 +44,9 @@ internal class ServerKeepaliveTest {
     private val clock = SteppedClock()
     private val rig = ServerRig(waiter = clock)
     private val port = rig.port
+
+    /** The server on the real clock, for the one test that waits on it. */
+    private val timed = ServerRig()
     private val http = HttpClient.newHttpClient()
     private val workers = Executors.newCachedThreadPool()
 
@@ -89,27 +93,34 @@ internal class ServerKeepaliveTest {
         start()
     }
 
-    /** Server mode as the daemon opens it, with `[server] keepalive_seconds` as given, and the key of one person. */
+    /** Server mode as the daemon opens it, [on] the stepped clock's server unless the real one's is given, with
+     *  `[server] keepalive_seconds` as given, and the key of one person. */
     private fun serve(
         keepaliveSeconds: Int,
         limits: ServerLimits = ServerLimits(),
         headPort: Int = head.address.port,
+        on: ServerRig = rig,
     ): String {
-        val server = rig.config.copy(limits = limits, keepaliveSeconds = keepaliveSeconds)
-        rig.open(state, listOf(StandInHead(headPort)), server)
-        return rig.keyFor("lia@team.example")
+        val server = on.config.copy(limits = limits, keepaliveSeconds = keepaliveSeconds)
+        on.open(state, listOf(StandInHead(headPort)), server)
+        return on.keyFor("lia@team.example")
     }
 
     @AfterEach
     fun stop() {
         rig.close()
+        timed.close()
         head.stop(0)
         workers.shutdownNow()
     }
 
-    /** A turn [key]'s holder sends. Its answer's headers come when the listener sends them. */
-    private fun send(key: String, body: String = STREAMED): CompletableFuture<HttpResponse<InputStream>> {
-        val request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:$port/claude-team/v1/messages"))
+    /** A turn [key]'s holder sends, to the server on [to]. Its answer's headers come when the listener sends them. */
+    private fun send(
+        key: String,
+        body: String = STREAMED,
+        to: Int = port,
+    ): CompletableFuture<HttpResponse<InputStream>> {
+        val request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:$to/claude-team/v1/messages"))
             .header("Content-Type", "application/json")
             .header("x-api-key", key)
             .POST(HttpRequest.BodyPublishers.ofString(body))
@@ -178,6 +189,25 @@ internal class ServerKeepaliveTest {
         clock.pass()
         goOn.release()
         assertEquals(DELTA + STOP, heard.rest("the rest of the answer"), "something was written inside an event")
+    }
+
+    @Test
+    fun `a head that opens its stream and then says nothing has its client's stream opened a second in too`() {
+        // A head's response headers are no answer yet. With a keepalive only each minute, a stream its client has by
+        // the deadline was opened for the relay's one second, and not by a keepalive that happened to fall due.
+        val key = serve(keepaliveSeconds = 60, on = timed)
+        script = HeadScript { turn ->
+            turn.opens()
+            turn.prefills()
+            turn.says(START + STOP)
+            turn.ends()
+        }
+        val heard = heard(send(key, to = timed.port))
+        assertEquals(200, heard.status)
+        assertEquals("text/event-stream", heard.type)
+        assertTrue(keepalive(heard.block("a keepalive as its stream opens")))
+        goOn.release()
+        assertEquals(START + STOP, heard.rest("the head's answer"), "the head's events and nothing after them")
     }
 
     @Test

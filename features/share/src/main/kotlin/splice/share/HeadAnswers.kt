@@ -3,12 +3,15 @@
 // chunk by chunk as the head writes it, and any other answer goes back whole, under the head's own status.
 //
 // Server mode keeps a streamed turn's client alive while its answer is silent (QuietWire). A model server prefilling
-// a long prompt keeps the head silent before its first byte, headers included, so a streamed turn whose head has not
-// answered in a second has its stream opened to the client then, a keepalive written at once and at each interval,
-// and the head's events after them when they come. The status has gone out as 200 by then, so a head that refuses
-// such a turn late, or does not answer it, is said as the stream's `error` event, in the head's own words where it
-// gave them. A head that answers within the second answers as it always did, its own status included. The second
-// and the interval are waited out on the relay's clock (RelayClock).
+// a long prompt keeps the head silent before its first byte, so a streamed turn whose answer has not started in a
+// second has its stream opened to the client then, a keepalive written at once and at each interval, and the head's
+// events after them when they come. An answer has started when the first byte of it has come, or when it came and
+// is no stream: response headers alone start nothing, because one server holds them back through its prefill and
+// another sends them at once and prefills after them (AnswerReads), and the client of either hears nothing until
+// something is written to it. The status has gone out as 200 by then, so a head that refuses such a turn late, or
+// does not answer it, is said as the stream's `error` event, in the head's own words where it gave them. A head
+// whose answer starts within the second answers as it always did, its own status included. The second and the
+// interval are waited out on the relay's clock (RelayClock).
 //
 // A relay that answers for a provider's own server (F4, openai-route) reads that server's stream through a StreamEdit,
 // event by event, and gives it its ending only when the server ended it whole. An answer of that server's that is no
@@ -65,8 +68,13 @@ internal data class ClientWait(
 
 /** How asking for an answer ended. */
 internal sealed class Sent {
-    /** [who] gave [response]; [who] is how the client hears that one named, should the answer break off. */
-    class Answered(val response: HttpResponse<InputStream>, val who: String) : Sent() {
+    /** [who] gave [response]; [who] is how the client hears that one named, should the answer break off. [reads]
+     *  is the reading of its event stream when that was begun ahead of relaying it (HeadAnswers.started). */
+    class Answered(
+        val response: HttpResponse<InputStream>,
+        val who: String,
+        val reads: AnswerReads? = null,
+    ) : Sent() {
         /** What the client hears when [who] broke its answer off before it ended. */
         val cut: String get() = "$who broke off its answer before it ended"
     }
@@ -96,6 +104,15 @@ internal class HeadAnswers(
         returned(call, response, wait)
         call.response.status(HttpStatusCode.fromValue(response.statusCode()))
         call.respond(SseChannelResponse { out -> pump(answered, quiet(out, wait), wait) })
+    }
+
+    /** [sent], back once its answer has started: an event stream when its first bytes have come, or it has ended or
+     *  broken off without any, and whatever else [sent] is, as it stands. A relay that keeps its client alive waits
+     *  on this, so a server that sent its response headers and then fell silent is still one that has not answered. */
+    suspend fun started(sent: Sent): Sent {
+        if (sent !is Sent.Answered || !typeOf(sent.response).match(ContentType.Text.EventStream)) return sent
+        val reads = AnswerReads(sent.response.body(), io).also { it.begin() }
+        return Sent.Answered(sent.response, sent.who, reads)
     }
 
     /** An answer that is no stream, given to [call]. It is read whole before any of it is given, so one that breaks
@@ -172,14 +189,12 @@ internal class HeadAnswers(
      *  event at a time, and a stream that ended whole is given the edit's ending. A stream that broke off ends the
      *  relay there, after the relay's error event when it is read through an edit. */
     private suspend fun pump(answered: Sent.Answered, wire: QuietWire, wait: ClientWait) {
-        val buffer = ByteArray(PUMP_BUFFER_BYTES)
         val edited = wait.edit?.let { EditedWire(wire, it) }
         answered.response.body().use { input ->
+            // A read made ahead, to learn that the answer had started, is the first thing relayed.
+            val reads = answered.reads ?: AnswerReads(input, io)
             while (true) {
-                val read = wire.during {
-                    runInterruptible(io) { Cancellables.runCatchingCancellable { input.read(buffer) } }
-                }
-                val count = read.getOrElse { failure ->
+                val count = reads.next(wire).getOrElse { failure ->
                     brokeOff(failure, answered)
                     if (edited != null) wire.error(said(HttpStatus.BAD_GATEWAY, answered.cut))
                     return
@@ -188,7 +203,7 @@ internal class HeadAnswers(
                     edited?.end()
                     return
                 }
-                if (edited == null) wire.write(buffer, count) else edited.write(buffer, count)
+                if (edited == null) wire.write(reads.bytes, count) else edited.write(reads.bytes, count)
             }
         }
     }
@@ -204,13 +219,6 @@ internal class HeadAnswers(
     // Framing the response re-chunks, and the type each answer sets itself.
     private val notReturned = setOf("content-length", "transfer-encoding", "connection", "keep-alive", "content-type")
 }
-
-// why: one read of the head's answer: an SSE event is a few hundred bytes, so 16 KiB carries a whole burst per flush
-// while holding little memory for each relayed stream.
-private const val PUMP_BUFFER_BYTES = 16 * 1024
-
-// What InputStream.read answers at the end of the stream.
-private const val END_OF_STREAM = -1
 
 // The one header of a refusal that is for the client whoever refused: how long to wait before asking again.
 private const val RETRY_AFTER = "retry-after"

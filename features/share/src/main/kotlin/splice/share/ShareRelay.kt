@@ -13,10 +13,10 @@
 // Each blocking step (the send, each read of the answer) is interruptible, so a caller that cancels the relay, as the
 // server listener does when a turn's client hangs up, ends it at once and hangs up on the head, which then sees its own
 // client leave: no head goes on computing an answer nobody is waiting for. A turn the server listener asks to be kept
-// alive, and that asks for a stream, is not left waiting on a silent head: after a second its stream is opened to the
-// client and kept alive until the head answers (HeadAnswers.early). That second, and each interval between two
-// keepalives, goes by the relay's clock (RelayClock): the process clock in production, and in a test one the test
-// steps.
+// alive, and that asks for a stream, is not left waiting on a silent head: after a second without the first byte of
+// an answer its stream is opened to the client and kept alive until the head answers (HeadAnswers.early). That
+// second, and each interval between two keepalives, goes by the relay's clock (RelayClock): the process clock in
+// production, and in a test one the test steps.
 //
 // Server mode also answers OpenAI-style clients for a command's provider itself (F4, openai-route): `outward` sends
 // such a request to that provider's server, and gives the answer back the same way a head's is given. That server is
@@ -217,13 +217,14 @@ public class ShareRelay(
     }
 
     /** What [asking] ends in, given to [call]. A client that is kept alive does not wait in silence for its stream
-     *  to open: when [asking] has not ended within [HEAD_SOON_MS], it finds the stream open when it does. */
+     *  to open: when no answer has started within [HEAD_SOON_MS], the answer finds the stream open when it does. */
     private suspend fun answered(call: ApplicationCall, wait: ClientWait, asking: Asking) {
         val answer = AtomicReference<HttpResponse<InputStream>>()
         try {
             if (wait.every == null) return answers.given(call, asking.sent(answer), wait)
             coroutineScope {
-                val sending = async { asking.sent(answer) }
+                // Response headers alone start no answer: a server may send them at once and then prefill in silence.
+                val sending = async { answers.started(asking.sent(answer)) }
                 if (clock.endedWithin(HEAD_SOON_MS, sending)) {
                     answers.given(call, sending.await(), wait)
                 } else {
@@ -301,7 +302,8 @@ private const val RELAY_CONNECT_TIMEOUT_MS = 5_000L
 // milliseconds, and its own status reaches the client only while no stream is open; a head still silent after a
 // second is waiting on its model server, and a client that asked to be kept alive has its stream opened then, well
 // inside the two seconds server mode promises one (docs/specs/server-mode.md, F4). A provider's own server asked for
-// an OpenAI-style client is given the same second, for the same reasons.
+// an OpenAI-style client is given the same second, for the same reasons. The second is for the first byte of an
+// answer, not for its response headers, which some model servers send before they prefill.
 private const val HEAD_SOON_MS = 1_000L
 
 // why: Claude Code's statusline input is one session's JSON, a few KiB; 256 KiB holds it with room, and nothing larger

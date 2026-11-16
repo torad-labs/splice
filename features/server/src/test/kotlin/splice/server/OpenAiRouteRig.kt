@@ -59,6 +59,10 @@ internal class ScriptedBox(private val name: String) {
      *  as one does while it prefills a long prompt. */
     @Volatile var prefill: CountDownLatch? = null
 
+    /** What a streamed completion waits for between its response headers and its first event: a server that streams
+     *  from a generator answers 200 at once, and prefills after that. */
+    @Volatile var afterHeaders: CountDownLatch? = null
+
     /** The status a completion is refused with; null answers it. */
     @Volatile var refuses: Int? = null
 
@@ -86,6 +90,7 @@ internal class ScriptedBox(private val name: String) {
     fun stop() {
         gate?.countDown()
         prefill?.countDown()
+        afterHeaders?.countDown()
         server.stop(0)
     }
 
@@ -132,6 +137,7 @@ internal class ScriptedBox(private val name: String) {
         exchange.responseHeaders.add("Content-Type", "text/event-stream")
         // A stream that is broken off declares more than it sends, so closing it cuts the connection mid-answer.
         exchange.sendResponseHeaders(200, if (cut == null) 0 else CUT_STREAM_LENGTH)
+        afterHeaders?.await(GATE_SECONDS, TimeUnit.SECONDS)
         events.take(cut ?: events.size).forEachIndexed { at, event ->
             if (at > 0) LockSupport.parkNanos(gapMs * NANOS_PER_MS)
             exchange.responseBody.write("$event\n\n".toByteArray())

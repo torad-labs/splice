@@ -3,7 +3,8 @@
 // model server does while it prefills a long prompt. No test here sits through that silence. The server holds a
 // completion until the test lets it go on, the relay's clock is the test's (SteppedClock), and the client's answer is
 // read as it comes (Hearing). Each test writes what the server does, says when time passes, and reads what the client
-// has heard by then.
+// has heard by then. One test waits out the relay's own one second on the real clock, because it has to tell that
+// second from a keepalive's interval, which no stepped clock does.
 package splice.server
 
 import kotlinx.serialization.json.jsonPrimitive
@@ -18,6 +19,8 @@ import splice.core.pool.UpstreamPool
 import splice.core.testing.TestPorts
 import splice.core.topology.UpstreamConfig
 import splice.core.util.LogSink
+import splice.upstream.Waiter
+import splice.upstream.codemode.ProcessWaiter
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -41,9 +44,13 @@ internal class ServerOpenAiKeepaliveTest {
     }
 
     /** Server mode over `claude-team` with `[server] keepalive_seconds` as given, its provider what [upstreams] says,
-     *  and the key of one person. */
-    private fun serve(keepaliveSeconds: Int, upstreams: HeadUpstreams = alone): Pair<OpenAiRig, String> {
-        val rig = OpenAiRig(state, upstreams, keepaliveSeconds = keepaliveSeconds, waiter = clock).also { opened = it }
+     *  its silences waited out on [waiter], and the key of one person. */
+    private fun serve(
+        keepaliveSeconds: Int,
+        upstreams: HeadUpstreams = alone,
+        waiter: Waiter = clock,
+    ): Pair<OpenAiRig, String> {
+        val rig = OpenAiRig(state, upstreams, keepaliveSeconds = keepaliveSeconds, waiter = waiter).also { opened = it }
         return rig to rig.keyFor("ola@example.com")
     }
 
@@ -91,6 +98,22 @@ internal class ServerOpenAiKeepaliveTest {
         val intervals = clock.asked.drop(1)
         assertTrue(intervals.all { it <= 3_000 }, "with keepalive_seconds = 3 a keepalive waited longer: $intervals")
         assertEquals(STREAMED_CHAT, box.asked.single().body, "the server was asked once, for what the client sent")
+    }
+
+    @Test
+    fun `a server that answers 200 at once and then prefills has its client's stream opened a second in too`() {
+        // As a server that streams from a generator does (vLLM): its response headers come at once and its first chunk
+        // after the prefill. With a keepalive only each minute, a stream its client has by the deadline was opened
+        // for the relay's one second, and not by a keepalive that happened to fall due.
+        val (rig, key) = serve(keepaliveSeconds = 60, waiter = ProcessWaiter())
+        box.prefill = null
+        box.afterHeaders = goOn
+        val heard = hearing(rig.chatHeard(key, STREAMED_CHAT), workers)
+        assertEquals(200, heard.status)
+        assertEquals("text/event-stream", heard.type)
+        assertTrue(keepalive(heard.block("a keepalive as its stream opens")))
+        goOn.countDown()
+        assertEquals("$WORD_EVENT\n\n$DONE_EVENT\n\n", heard.rest("the server's answer"), "the answer whole")
     }
 
     @Test

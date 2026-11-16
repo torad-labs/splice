@@ -7,6 +7,7 @@ package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
 import splice.app.TokenUrlRefreshCall
+import splice.app.server.UpstreamPools
 import splice.core.config.StatePaths
 import splice.core.topology.AuthCompatibility
 import splice.core.topology.Dialect
@@ -33,7 +34,7 @@ internal class ProviderAssembly(
     private val passthroughAssembly = PassthroughAssembly()
 
     /** Server mode (F4): the pools of the providers that list upstreams, which server mode reads. */
-    internal val upstreamPools = UpstreamPools(probeScope, log)
+    internal val upstreamPools = UpstreamPools(probeScope, log, JdkHealthHttp())
     private val chatArm = ChatArm(probeScope, log, grokRefresh, upstreamPools)
     internal val claudePoolChanges = claudeChanges
     private val passthroughArm = PassthroughArm(passthroughAssembly, claudeAccounts, claudePoolChanges)

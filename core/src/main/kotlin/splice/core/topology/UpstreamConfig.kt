@@ -22,7 +22,7 @@ public data class UpstreamConfig(val name: String, val url: String) {
 
 /** What `[[providers.<p>.upstreams]]` and `health_seconds` hold that no pool could serve. */
 internal class UpstreamChecks(private val providers: Map<String, ProviderConfig>) {
-    private val nameShape = Regex("""^[A-Za-z0-9][A-Za-z0-9._-]{0,$NAME_MAX}$""")
+    private val nameShape = Regex("""^[A-Za-z0-9][A-Za-z0-9._-]{0,$UPSTREAM_NAME_MAX}$""")
 
     fun findings(): List<TopologyFinding> = providers.flatMap { (key, provider) -> of(key, provider) }
 
@@ -67,11 +67,11 @@ internal class UpstreamChecks(private val providers: Map<String, ProviderConfig>
 }
 
 /** How often a pool asks each of its servers `/health` when its provider sets no `health_seconds`. */
-public const val DEFAULT_HEALTH_SECONDS: Int = 5
+internal const val DEFAULT_HEALTH_SECONDS: Int = 5
 
 // The API root an OpenAI-compatible server's routes sit under, and where its health route sits beside it.
 private const val API_ROOT = "/v1"
 private const val HEALTH_PATH = "/health"
 
 // why: an upstream's name is typed after `--upstream` and read in a list; 64 characters hold any such name.
-private const val NAME_MAX = 63
+private const val UPSTREAM_NAME_MAX = 63

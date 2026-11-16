@@ -6,7 +6,6 @@
 // (ChatPassthrough): the listener's module knows neither the provider nor its wire.
 package splice.app.server
 
-import splice.app.provider.UpstreamPools
 import splice.core.topology.ProviderConfig
 import splice.dialect.chat.ChatPassthrough
 import splice.dialect.chat.PassedChatStream

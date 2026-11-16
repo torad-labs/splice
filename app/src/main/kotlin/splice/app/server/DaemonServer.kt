@@ -9,7 +9,6 @@ package splice.app.server
 
 import splice.app.control.ManagedHead
 import splice.app.control.ServerModeSource
-import splice.app.provider.UpstreamPools
 import splice.app.share.ManagedSharedHeads
 import splice.core.config.ConfigService
 import splice.core.config.TurnKey

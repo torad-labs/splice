@@ -10,9 +10,9 @@
       "reason": "model_slots, V4-254, 2026-09-30: tier map split from the models allowlist"
     },
     "core/src/main/kotlin/splice/core/topology/Topology.kt ProviderConfig": {
-      "params": 14,
+      "params": 16,
       "subsystems": 1,
-      "reason": "provider headers for a gateway, 2026-11-14: forward_headers and send_version; the class mirrors splice.toml's [providers.<key>] table field by field, the outside-format exception to LongParameterList (2026-10-09)"
+      "reason": "server mode upstream pools, 2026-11-15: upstreams and health_seconds, the [[providers.<key>.upstreams]] servers a provider balances over and how often each is asked /health. Before that, provider headers for a gateway, 2026-11-14: forward_headers and send_version; the class mirrors splice.toml's [providers.<key>] table field by field, the outside-format exception to LongParameterList (2026-10-09)"
     },
     "core/src/main/kotlin/splice/core/topology/QuirksConfig.kt QuirksConfig": {
       "params": 33,

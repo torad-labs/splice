@@ -116,7 +116,7 @@ public class PersonApi(
             ?: return refused("the person must be an email, as in ada@team.example")
         val inflight = body?.get("inflight")
         val rpm = body?.get("rpm")
-        val upstream = body?.get(UPSTREAM)
+        val upstream = body?.get(UPSTREAM_FIELD)
         val change = PersonSettings(cap(inflight), cap(rpm), name(upstream))
         val why = when {
             listOfNotNull(inflight, rpm, upstream).isEmpty() -> "name at least one setting: inflight, rpm or upstream"
@@ -134,7 +134,7 @@ public class PersonApi(
                 put(PERSON, who)
                 put("inflight", now.inflight)
                 put("rpm", now.rpm)
-                put(UPSTREAM, now.preferred)
+                put(UPSTREAM_FIELD, now.preferred)
             },
         )
     }
@@ -187,4 +187,4 @@ private const val NAME_MAX = 64
 private const val PERSON = "person"
 
 // The field a person's preferred upstream is set and answered in.
-private const val UPSTREAM = "upstream"
+private const val UPSTREAM_FIELD = "upstream"

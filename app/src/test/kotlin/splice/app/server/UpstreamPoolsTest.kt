@@ -1,7 +1,7 @@
 // Server mode (docs/specs/server-mode.md, F4): the daemon's pools and their health checks, as the upstream list
 // reads them. Each server is asked `/health` when its pool is made and again every `health_seconds`; the test stands
 // in for the servers and for the clock between checks, so each reading follows from an answer it chose.
-package splice.app.provider
+package splice.app.server
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel

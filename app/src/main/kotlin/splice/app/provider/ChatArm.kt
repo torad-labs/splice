@@ -7,6 +7,7 @@
 package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
+import splice.app.server.UpstreamPools
 import splice.core.auth.Credentials
 import splice.core.topology.AuthKind
 import splice.core.topology.ProviderConfig
@@ -28,7 +29,7 @@ internal class ChatArm(
     private val log: LogSink,
     private val grokRefresh: GrokRefresh,
     /** Server mode (F4): the pools of the providers that list upstreams, shared by every head of each. */
-    private val pools: UpstreamPools = UpstreamPools(probeScope, log),
+    private val pools: UpstreamPools = UpstreamPools(probeScope, log, JdkHealthHttp()),
 ) {
     private val overlay = QuirksOverlay()
     private val probeInputs = LocalProbeInputs()

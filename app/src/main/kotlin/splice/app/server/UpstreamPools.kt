@@ -6,7 +6,7 @@
 //
 // It also keeps, for every provider a chat head was built for, pool or not, the headers the daemon's own requests to
 // that provider's server carry: server mode relays an OpenAI-style client's requests with them (F4, openai-route).
-package splice.app.provider
+package splice.app.server
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -25,8 +25,6 @@ import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.codemode.ProcessTicker
 import splice.upstream.transport.LocalHttp
 import splice.upstream.transport.LocalHttpReply
-import java.net.http.HttpClient
-import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
 
 /** The headers a request the daemon itself makes of a provider's server carries (a health check, an OpenAI-style
@@ -37,7 +35,7 @@ internal fun interface ServerHeaders {
     fun now(): Map<String, String>
 }
 
-/** How a health check reaches a server: the JDK client in production, a scripted one in a test. */
+/** How a health check reaches a server: the JDK client in production (JdkHealthHttp), a scripted one in a test. */
 internal fun interface HealthHttp {
     fun with(headers: Map<String, String>): LocalHttp
 }
@@ -46,19 +44,13 @@ internal class UpstreamPools(
     /** The daemon's own scope, which its stop cancels: the health loops end with it. */
     private val scope: CoroutineScope,
     private val log: LogSink,
+    private val http: HealthHttp,
     private val dispatcher: CoroutineDispatcher = ProcessDispatchers().io(),
     private val ticker: Ticker = ProcessTicker(),
-    http: HealthHttp? = null,
 ) {
     private val pools = ConcurrentHashMap<String, UpstreamPool>()
     private val order = ConcurrentHashMap<String, Int>()
     private val carried = ConcurrentHashMap<String, ServerHeaders>()
-
-    // One client for every check: a JDK client holds a selector thread of its own.
-    private val client by lazy {
-        HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(HEALTH_CONNECT_SECONDS)).build()
-    }
-    private val http = http ?: HealthHttp { headers -> JdkLocalHttp(headers, client) }
 
     /** The pool of the provider [key], or null when it lists no upstreams. The first call for a provider makes its
      *  pool and starts its health checks, which carry [headers]. With a pool or without, the provider's requests
@@ -126,10 +118,6 @@ internal class UpstreamPools(
         }
     }
 }
-
-// why: a server on the team's own network accepts at once; one still connecting after two seconds is read as down,
-// the bound the local-runtime probes use (JdkLocalHttp).
-private const val HEALTH_CONNECT_SECONDS = 2L
 
 // The statuses that say a server can take a turn, the 2xx: llama-server answers 200 once its model is loaded and 503
 // before.

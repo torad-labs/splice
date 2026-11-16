@@ -1,14 +1,20 @@
 // NEW: what a launch resumes, out of LaunchService (concentration, 2026-10-27): a bare -c bounded to the head's own
-// newest session (V4-183), a `-r SESSION_ID` another head wrote copied in (V4-115), and the sentence the operator is
-// told about it.
+// newest session (V4-183), a `-r SESSION_ID` another head wrote copied in (V4-115), a `-r NAME` of such a session
+// refused (Nov 16, 2026), and the sentence the operator is told about each.
 package splice.launch.recipe
 
 import splice.client.resume.CallingRoster
 import splice.client.resume.ContinueResolution
 import splice.client.resume.HeadBoundedContinue
 import splice.client.resume.MovingTrust
+import splice.client.resume.NamedSessions
 import splice.client.resume.ResumeAcrossHeads
 import splice.client.resume.SessionAdoption
+import splice.core.util.Cancellables
+import splice.core.util.DaemonLog
+import splice.core.util.LogSafe
+import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.launch.LaunchSpec
 import java.nio.file.Path
 
@@ -20,6 +26,9 @@ internal class LaunchResume(
 ) {
     /** V4-183: a bare -c resolves to this head's own newest session in the launch cwd. */
     private val headBoundedContinue = HeadBoundedContinue()
+
+    private val named = NamedSessions()
+    private val log = LogSink(DaemonLog::write)
 
     // why: the shape of the id Claude Code gives every session; a -r word of another shape is a name or a search
     private val sessionUuid = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
@@ -45,13 +54,44 @@ internal class LaunchResume(
             spec.trees.own,
             spec.trees.siblings + listOfNotNull(spec.trees.vanilla),
             sessionId,
-            CallingRoster(
-                spec.models.pinnedModel,
-                spec.models.availableModelIds.takeUnless { spec.gateway.clientModels },
-                spec.signIn.headKey.ifBlank { null },
-                cwd,
-            ),
+            roster(spec, cwd),
         )
+    }
+
+    private fun roster(spec: LaunchSpec, cwd: String?): CallingRoster = CallingRoster(
+        spec.models.pinnedModel,
+        spec.models.availableModelIds.takeUnless { spec.gateway.clientModels },
+        spec.signIn.headKey.ifBlank { null },
+        cwd,
+    )
+
+    /** Nov 16, 2026: a `-r` word that is a session's NAME is Claude Code's to resolve, and it resolves it among every
+     *  head's sessions (the shared tree, V4-168). A session whose answers this head would have to move was then opened
+     *  where it lay: `claude -r NAME` on a session another command wrote kept asking for that command's model, the
+     *  provider refused every turn, and two clients wrote one transcript. Such a launch is refused here, in a sentence
+     *  that carries the id its copy is made by ([adopt]). Null for every other launch: an id, the picker, a name of a
+     *  session whose answers all stay, a name no one session of the folder carries, and a shim that sent no cwd. */
+    fun refusedName(spec: LaunchSpec, extraArgs: List<String>, cwd: String?): String? {
+        val word = headBoundedContinue.requestedSessionId(extraArgs)?.takeUnless(sessionUuid::matches)
+        val folder = cwd?.takeIf { it.isNotBlank() }
+        val session = word?.let { name -> folder?.let { named.find(spec.trees.own, it, name) } }
+            ?.takeIf { sessionUuid.matches(it.id) } ?: return null
+        // a transcript that cannot be read for its models is the client's to open, after its own restore notice
+        val moving = Cancellables.runCatchingCancellable {
+            resumeAcrossHeads.rewriter.pending(session.transcript, roster(spec, cwd))
+        }.onFailure { cause ->
+            log(
+                "[resume] session ${LogSafe.str(session.id)} could not be read for its models " +
+                    "(${LogSafe.str(SafeFailureText.render(cause))}); " +
+                    "its name goes to the client as typed\n",
+            )
+        }.getOrDefault(0)
+        val command = spec.signIn.headKey.ifBlank { "this command" }
+        val refusal = "this -r names session ${session.id}, and $moving of its answers are on a model $command does " +
+            "not serve, so it was not opened here: every turn would ask $command for that model. The session is as " +
+            "it was. Go on with it on the command that serves its model, or continue a copy of it here with " +
+            "-r ${session.id}"
+        return refusal.takeIf { moving > 0 }
     }
 
     /** THE RETRY LAW: no refusal is bare and none invents a cause. Each sentence says what happened,

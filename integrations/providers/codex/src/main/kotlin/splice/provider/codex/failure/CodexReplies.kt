@@ -34,7 +34,7 @@ import splice.upstream.failure.ReplyFacts
 import java.time.Instant
 
 /**
- * Three answers the ChatGPT backend gives that the Responses standard reads differently.
+ * Four answers the ChatGPT backend gives that the Responses standard reads differently.
  *
  * usage_limit_reached is a spent plan window, not a burst: its body names the reset and the window's own length
  * (V4-377, CodexPlanLimitBody). A 429 that names it is a limit until that instant, firmly, and the window it names
@@ -46,6 +46,15 @@ import java.time.Instant
  *
  * websocket_connection_limit_reached is the backend's own capacity, so the round waits and comes back, rather than
  * ending as the rate limit its type spells.
+ *
+ * misalignment_policy_violation is the backend's safety monitor stopping a conversation. The monitor reviews what the
+ * model reasoned and did, apart from the round it answers, and once it has flagged a conversation every later message
+ * in it meets the same stop, whatever the message says: on a websocket's failure terminal and in band on a failed
+ * round, as it came here, and by its users' reports as a 403 before any stream. No table named it, so on Nov 16 one
+ * flagged conversation went up 56 times in half an hour: each websocket round was re-served over HTTP, sent once more
+ * from scratch and sent again by the client, and every ending read as a failure splice did not recognize. Read as the
+ * monitor's refusal it is sent once and reported as what it is. splice sends it under no other login and in no other
+ * shape: whether to go on in a new session is the person's to decide.
  *
  * And one answer the standard reads as a finished round: gpt-5.5, gpt-5.6-luna and gpt-5.6-terra intermittently stop
  * their own reasoning at exactly 518n-2 tokens (516, 1034, 1552, ...) and finalize a shallower answer; gpt-5.6-sol does
@@ -85,11 +94,12 @@ public object CodexReplies : ProviderDeviation {
         reply.takeIf { it.status == HttpStatus.TOO_MANY_REQUESTS }
             ?.let { planLimits.read(it.body, it.answeredAt.epochSecond) }
 
-    /** The two readings a code decides, over HTTP and in band alike; [lift] is what the answer stated, if it did. */
+    /** The three readings a code decides, over HTTP and in band alike; [lift] is what the answer stated, if it did. */
     private fun coded(error: OpenAiError, lift: Lift): FailureCause.Provider? {
         val said = OpenAiReplies.said(error)
         return when {
             POLICY_CODES.any(error::names) -> FailureCause.Provider.Refused(RefusedBy.POLICY, said)
+            error.names(MONITOR_STOP) -> FailureCause.Provider.Refused(RefusedBy.MONITOR, said)
             error.names(WEBSOCKET_LIMIT) -> FailureCause.Provider.Overloaded(lift, loading = false, said)
             else -> null
         }
@@ -118,6 +128,9 @@ public object CodexReplies : ProviderDeviation {
 
 /** The codes the Trusted-Access gate refuses with; the standard reads OpenAI's own content-policy codes. */
 private val POLICY_CODES = listOf("cyber_policy", "bio_policy")
+
+/** The backend's safety monitor stopped the conversation. */
+private const val MONITOR_STOP = "misalignment_policy_violation"
 
 /** The backend's own websocket capacity. */
 private const val WEBSOCKET_LIMIT = "websocket_connection_limit_reached"

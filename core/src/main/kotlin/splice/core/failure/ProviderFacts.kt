@@ -1,7 +1,12 @@
 // NEW: failure-handling slice 1 (2026-10-26). The facts a provider leaf of FailureCause carries.
 package splice.core.failure
 
-public enum class RefusedBy { MODEL, POLICY, FILTER }
+/**
+ * Who answered no. [MONITOR] is a provider's safety monitor, which stops the conversation and not the one request: it
+ * reviews what the model reasoned and did, and once it has flagged a conversation every later message in it meets the
+ * same stop. Sending again never clears it, so its line sends the person to a new session.
+ */
+public enum class RefusedBy { MODEL, POLICY, FILTER, MONITOR }
 
 public enum class LimitWindow { FIVE_HOUR, WEEKLY, MODEL_WEEKLY, BILLING_CYCLE, OTHER }
 

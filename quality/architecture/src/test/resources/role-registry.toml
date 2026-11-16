@@ -99,6 +99,7 @@ names = [
     "CodeModeCleanup",
     "ConfigRevisionChanged",
     "FileIoTask",
+    "FirstMintGate",
     "FragmentReleased",
     "HandoffMark",
     "HoldChange",
@@ -157,7 +158,7 @@ successfully, so the detached drive may keep its recording only if its terminal 
 this acknowledgement never runs after failed completion, unlike the earlier HandoffMark or the \
 provider resource release at TurnEnd, proved by TurnStreamerCleanupTest), RestoreStep \
 (undo one already-applied upgrade step), FileIoTask (the body to run on the file-IO dispatcher), \
-MuseMintWriteGuard (the pre-write assertion before a minted key is persisted), ListingReturned (a hosted \
+MuseMintWriteGuard (the pre-write assertion before a minted key is persisted), FirstMintGate (runs before a key file's quiet first mint, when no key file is there yet, and throws to refuse it: the management key refuses a start whose older state root could not be inspected, and the desktop key lets every first mint through; it is in core beside the file-held key, which cannot import the Muse provider's guard, and that guard runs before every write of a minted key while this one runs once, before the first), ListingReturned (a hosted \
 child's tools/list answer is back and the cache has not kept it yet: the one instant a change notification can \
 land, which the cache's own test uses to force that interleaving), HandoffMark (the \
 turn has been handed to upstream — a MARK the pipeline sets once, which is why it is a name of \

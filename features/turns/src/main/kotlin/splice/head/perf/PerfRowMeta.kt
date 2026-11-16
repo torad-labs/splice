@@ -35,6 +35,7 @@ public data class PerfRowMeta(
         transcript.sessionId?.let { into.put("session_id", it) }
         transcript.responseMessageId?.let { into.put("response_message_id", it) }
         transcript.messagesHash?.let { into.put("messages_hash", it) }
+        transcript.door?.let { into.put("door", it) }
         transcript.turns.trace?.let { into.put("turn", it) }
         transcript.turns.request?.let { into.put("turn_id", it) }
         // V4-444: whether a capture was kept for this turn, said OUTRIGHT on every row. A null `turn` already
@@ -86,4 +87,7 @@ public data class PerfTranscriptIds(
     /** The hash of the request's messages, on a request that named a session: Requests links a cut turn's row to
      *  the re-send of the same messages in the same session. */
     val messagesHash: String? = null,
+    /** The door the turn came through (desktop-door, decision 7), or null for a turn that came straight to its head;
+     *  the row then carries no `door`. */
+    val door: String? = null,
 )

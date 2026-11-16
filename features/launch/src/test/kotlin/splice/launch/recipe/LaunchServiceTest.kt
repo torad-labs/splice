@@ -481,6 +481,11 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
                 "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
                 "ANTHROPIC_AUTH_TOKEN",
                 "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
+                // desktop-door: a shell inside a Code tab session carries the door's switch, and a machine set up for
+                // Bedrock carries its own; either sends the session past its head.
+                "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY",
+                "CLAUDE_CODE_USE_MANTLE", "ANTHROPIC_BEDROCK_BASE_URL",
+                "ANTHROPIC_BEDROCK_MANTLE_BASE_URL", "AWS_BEARER_TOKEN_BEDROCK",
             ),
             recipe.unset,
         )

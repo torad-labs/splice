@@ -9,15 +9,20 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.client.Keys
 import splice.client.MaterializeSpec
+import splice.client.desktop.DesktopSettings
 
 /** Pure model-selection and picker policy; the materializer owns filesystem writes and hooks. */
 internal object ClaudeModelSettings {
     private const val MODEL_OPTIONS_CACHE = "additionalModelOptionsCache"
+    private val desktop = DesktopSettings()
 
     fun base(global: JsonObject, saved: String?, spec: MaterializeSpec): JsonObject {
         val allow = spec.availableModelIds
         return buildJsonObject {
-            global.forEach { (key, value) -> if (carried(key, clientPicks = allow == null)) put(key, value) }
+            // desktop-door: a head with a folder of its own carries nothing of the door the person's file may hold
+            desktop.inherited(global).forEach { (key, value) ->
+                if (carried(key, clientPicks = allow == null)) put(key, value)
+            }
             if (allow != null) {
                 putJsonArray(Keys.AVAILABLE_MODELS) { allow.forEach { add(it) } }
                 put("enforceAvailableModels", true)

@@ -14,7 +14,10 @@
     ".claude/hooks/tsconfig.json",
     "tools/instrumentation-bench/tsconfig.json",
     ".campaign/checks/server/tsconfig.json",
-    ".campaign/checks/speed/tsconfig.json"
+    ".campaign/checks/speed/tsconfig.json",
+    ".campaign/checks/desktop/tsconfig.json",
+    ".campaign/cases/tsconfig.json",
+    ".campaign/checks/muse/tsconfig.json"
   ],
   "excused": {},
   "baseline": {}

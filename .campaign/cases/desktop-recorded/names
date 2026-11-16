@@ -1,0 +1,13 @@
+before any turn has come through the door last_turn is null
+a turn through the door is on /api/perf/turns as its head's row
+the row of a turn through the door carries the model that ran
+the row of a turn through the door says door is desktop
+the row of a turn that named a tier carries the model that ran
+the row of a turn that did not come through the door carries no door
+last_turn gives the session of the last turn through the door
+last_turn gives the head the turn ran on
+last_turn gives model_asked as the request named it
+last_turn gives the model that ran
+last_turn gives when the turn came
+last_turn follows the newest turn through the door
+a turn on a head's own route is not the last turn through the door

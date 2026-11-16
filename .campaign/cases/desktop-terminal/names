@@ -1,0 +1,17 @@
+a launch's recipe unsets CLAUDE_CODE_USE_BEDROCK
+a launch's recipe unsets CLAUDE_CODE_USE_MANTLE
+a launch's recipe unsets CLAUDE_CODE_USE_VERTEX
+a launch's recipe unsets CLAUDE_CODE_USE_FOUNDRY
+a launch's recipe unsets ANTHROPIC_BEDROCK_BASE_URL
+a launch's recipe unsets ANTHROPIC_BEDROCK_MANTLE_BASE_URL
+a launch's recipe unsets AWS_BEARER_TOKEN_BEDROCK
+the recipe of the claude command's own launch unsets them too
+a head started from inside a Code tab session is left none of the file's switch
+a head started from inside a Code tab session runs its turn on its head
+a head with a config folder of its own carries nothing of the door in its settings
+the wrapped claude's overlay sets every variable on wrote to the launch's own value or to the empty string
+the wrapped claude's overlay carries a picker with none of the door's rows
+where the file's model holds a selector the wrapped claude's launch says so in its warning
+splice writes one file in the claude command's folder
+with Desktop off splice leaves the settings file alone when its heads change
+the README says that splice desktop writes the claude command's settings file

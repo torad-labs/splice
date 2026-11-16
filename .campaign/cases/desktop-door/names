@@ -1,0 +1,31 @@
+the door's address is under /desktop
+POST /desktop/v1/messages is answered
+POST /desktop/v1/messages?beta=true is answered
+a streamed turn through the door is answered as Anthropic's stream
+POST /desktop/v1/messages/count_tokens is answered
+POST /desktop/v1/messages/count_tokens?beta=true is answered
+a request that names a selector runs that model on its head
+a selector of another head runs that model on that head
+every ID a head's own /v1/models lists is a selector the door runs on that head
+a session that has named no selector is on the head of the default model
+a session is on the head of the last selector it named
+the Mantle spelling of Opus runs the model the head names for its opus tier
+the Mantle spelling of Haiku runs the model the head names for its haiku tier
+an ID with the region prefix us. runs its tier's model
+an ID with the region prefix global. runs its tier's model
+an ID with a version suffix runs its tier's model
+an ID with a region prefix and a version suffix runs its tier's model
+the bare ID of Opus runs the opus tier's model
+the bare ID of Haiku runs the haiku tier's model
+the alias opus runs the opus tier's model
+the alias haiku runs the haiku tier's model
+a tier the head names no model for runs the head's pinned model
+the alias of a tier the head names no model for runs the head's pinned model
+a model the door does not serve is refused 400 invalid_request_error
+the refusal of a model the door does not serve names splice desktop
+a refused model sends nothing upstream
+a selector of a head that is not in the door is refused with nothing sent upstream
+a selector of no head is refused with nothing sent upstream
+a model its head does not list is refused with nothing sent upstream
+a failure of the head's provider is answered through the door as the head's own route answers it
+a restart does not move the door

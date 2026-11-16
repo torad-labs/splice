@@ -49,8 +49,10 @@ describe("speed-commands", () => {
     expect(ultra).not.toBeNull();
     expect(fast!.meta.description).toContain("Fast");
     expect(fast!.meta.description).toContain(FAST.description);
+    expect(fast!.meta.description).toContain("2.5x");
     expect(ultra!.meta.description).toContain("Ultrafast");
     expect(ultra!.meta.description).toContain(ULTRAFAST.description);
+    expect(ultra!.meta.description).toContain("8x");
     for (const sk of [fast!, ultra!]) {
       // Only the person runs these: a model that could switch them would spend their plan faster on its own say.
       expect(sk.meta["disable-model-invocation"]).toBe("true");

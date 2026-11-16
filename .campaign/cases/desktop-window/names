@@ -1,0 +1,10 @@
+on declares one window in the file
+a turn that is not streamed reports the share of the declared window its counts are of its model's
+a streamed turn reports the share of the declared window its counts are of its model's
+a turn that is not streamed on a model with another window reports its own share
+a streamed turn on a model with another window reports its own share
+after a switch of model a session's turn is reported against the model it ran on
+a count_tokens answer is the share of the declared window that the count is of its model's
+a count_tokens answer on a model with another window is its own share
+the same text counts four times as much on a model with a quarter of the window
+the turn's recorded counts are the provider's own

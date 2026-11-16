@@ -1,0 +1,22 @@
+the picker has one row for each model of each head in the door
+the picker's rows are in splice.toml's order of heads
+a row's model is the ID its head's own /v1/models lists
+a row's label is the model's own label
+a row's description names splice and its head's command
+splice desktop --json lists the same models as the picker
+each model splice desktop --json lists has its model, label, head and command
+a head that forwards the caller's own Claude login has no row
+left_out names the head that forwards the caller's own Claude login, with that reason
+splice desktop names the head that forwards the caller's own Claude login
+a head whose login is missing has no row
+left_out names the head whose login is missing
+splice desktop names the head whose login is missing with the command that signs it in
+a head signed in again is in the picker with no command run
+a head signed in again is no longer left out
+the door and its key stay as the file held them when the lineup changes
+a head added to splice is in the picker with no command run
+the picker keeps splice.toml's order of heads when a head is added
+a model of a head that was added runs through the door the file held before
+a head removed from splice leaves the picker
+a removed head's selectors are refused
+a head whose login is removed leaves the picker

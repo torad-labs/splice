@@ -1,0 +1,24 @@
+the desktop key opens the door
+a request with no key is answered 401 authentication_error
+the refusal of a request with no key names splice desktop
+a request with no key sends nothing upstream
+a request with a wrong key is answered 401 authentication_error
+the refusal of a request with a wrong key names splice desktop
+a request with a wrong key sends nothing upstream
+a count_tokens request with no key is answered 401
+the turn key does not open the door
+the management key does not open the door
+a head's own routes refuse the desktop key
+the control API refuses the desktop key
+the desktop key is not forwarded to the provider
+the desktop key is kept in splice's state folder
+splice's own copy of the desktop key is for its owner only
+splice rotate-key leaves the desktop key as it is
+splice desktop rotate-key writes a new desktop key into the settings file when Desktop is on
+the new desktop key opens the door
+a request with a replaced key is answered 401 authentication_error
+the refusal of a request with a replaced key names splice desktop
+a request with a replaced key sends nothing upstream
+with Desktop off, splice desktop rotate-key writes nothing into the settings file
+a key replaced while Desktop was off is refused once Desktop is on again
+the daemon's log holds no desktop key

@@ -7,27 +7,15 @@
 
 package splice.app.desktop
 
-import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.client.desktop.DESKTOP_SETTINGS_FILE
+import splice.client.desktop.DesktopSettingsRead
+import splice.client.desktop.SettingsRead
 import splice.core.config.UserHome
-import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
-import java.io.IOException
 import java.nio.file.Files
-import java.nio.file.NoSuchFileException
 import java.nio.file.Path
-
-/** What the settings file holds when it is read. */
-internal sealed class SettingsRead {
-    data object Absent : SettingsRead()
-
-    data class Held(val file: JsonObject) : SettingsRead()
-
-    /** There, and not a JSON object splice can write into without losing what the person wrote: [why]. */
-    data class Unreadable(val why: String) : SettingsRead()
-}
 
 internal class DesktopSettingsFile(val path: Path = UserHome.claudeDir().resolve(DESKTOP_SETTINGS_FILE)) {
     private val json = Json {
@@ -35,21 +23,7 @@ internal class DesktopSettingsFile(val path: Path = UserHome.claudeDir().resolve
         prettyPrintIndent = "  "
     }
 
-    fun read(): SettingsRead = try {
-        val text = Files.readString(path)
-        if (text.isBlank()) {
-            SettingsRead.Held(JsonObject(emptyMap()))
-        } else {
-            (json.parseToJsonElement(text) as? JsonObject)?.let { SettingsRead.Held(it) }
-                ?: SettingsRead.Unreadable("$path is not a JSON object")
-        }
-    } catch (_: NoSuchFileException) {
-        SettingsRead.Absent
-    } catch (e: IOException) {
-        SettingsRead.Unreadable("$path could not be read (${SafeFailureText.render(e)})")
-    } catch (e: SerializationException) {
-        SettingsRead.Unreadable("$path is not valid JSON (${SafeFailureText.render(e)})")
-    }
+    fun read(): SettingsRead = DesktopSettingsRead(path).read()
 
     /** [file], written whole and atomically, as Claude Code writes the file: two spaces, a newline at the end. */
     fun write(file: JsonObject) {

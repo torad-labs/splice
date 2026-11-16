@@ -85,13 +85,14 @@ internal class DesktopDoor(
      *  Anthropic's shape, with nothing sent upstream, when it presents none, a wrong one or one that was replaced. */
     suspend fun guarded(call: ApplicationCall, route: MgmtRoute) {
         if (key.matchesBearer(call.request.headers[HttpHeaders.Authorization])) return route()
-        voice.refuse(call, HttpStatus.UNAUTHORIZED, NO_KEY)
+        voice.refuse(call, HttpStatus.UNAUTHORIZED, NO_DESKTOP_KEY)
     }
 
     private suspend fun answer(call: ApplicationCall, counting: Boolean) {
         val lineup = heads.lineup()
         val request = read(call, lineup) ?: return
-        val ask = DoorAsk(request, JsonScalars.str(request, MODEL).orEmpty(), call.request.headers[SESSION_HEADER])
+        val model = JsonScalars.str(request, REQUEST_MODEL).orEmpty()
+        val ask = DoorAsk(request, model, call.request.headers[SESSION_HEADER])
         val route = route(lineup, ask.model, ask.session)
             ?: return voice.refuse(call, HttpStatus.BAD_REQUEST, "model \"${ask.model}\" $NOT_IN_DOOR")
         send(call, route, ask, counting)
@@ -108,7 +109,7 @@ internal class DesktopDoor(
 
     /** [ask] relayed to [route]'s head as the model it runs there, and a count scaled to the declared window. */
     private suspend fun send(call: ApplicationCall, route: DoorRoute, ask: DoorAsk, counting: Boolean) {
-        val rewritten = JsonWire.bytes(JsonObject(ask.request + (MODEL to JsonPrimitive(route.upstream))))
+        val rewritten = JsonWire.bytes(JsonObject(ask.request + (REQUEST_MODEL to JsonPrimitive(route.upstream))))
         val window = records.get().window
         if (!counting) {
             if (window != null) route.head.windows?.record(ask.session, window)
@@ -171,12 +172,13 @@ internal class DesktopDoor(
 /** What every refusal the door answers with starts with, so a person reading it in the Code tab knows where to look. */
 internal const val DESKTOP_ERROR_PREFIX = "splice desktop: "
 
-private const val NO_KEY = "no desktop key, or one that was replaced; `splice desktop on` writes the current one"
+private const val NO_DESKTOP_KEY =
+    "no desktop key, or one that was replaced; `splice desktop on` writes the current one"
 private const val NO_HEAD = "no head is in the door; `splice desktop` says why"
 private const val NOT_JSON = "the request body is not a JSON object"
 private const val NOT_IN_DOOR = "is not in the door; `splice desktop` lists the models it serves"
 
-private const val MODEL = "model"
+private const val REQUEST_MODEL = "model"
 private const val INPUT_TOKENS = "input_tokens"
 private const val MESSAGES_PATH = "/v1/messages"
 private const val COUNT_PATH = "/v1/messages/count_tokens"

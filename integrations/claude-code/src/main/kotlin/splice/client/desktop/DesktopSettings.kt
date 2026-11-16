@@ -157,9 +157,9 @@ public class DesktopSettings {
         val out = JsonObject(file + (ENV to JsonObject(env - dropped.toSet())))
         if (!door) return out
         val rows = ((file[PICKER] as? JsonObject)?.get(OPTIONS) as? JsonArray).orEmpty()
-            .mapNotNull { JsonScalars.str(it as? JsonObject, MODEL) }
-        val picked = JsonScalars.str(file, MODEL) in rows
-        return JsonObject(if (picked) out - PICKER - MODEL else out - PICKER)
+            .mapNotNull { JsonScalars.str(it as? JsonObject, DESKTOP_FILE_MODEL) }
+        val picked = JsonScalars.str(file, DESKTOP_FILE_MODEL) in rows
+        return JsonObject(if (picked) out - PICKER - DESKTOP_FILE_MODEL else out - PICKER)
     }
 
     private fun picker(rows: List<DesktopRow>): JsonObject = buildJsonObject {
@@ -215,10 +215,12 @@ public const val DESKTOP_KEY_PREFIX: String = "splice-desktop-"
 /** The file's key for Claude Code's picker. */
 public const val DESKTOP_PICKER: String = "modelPicker"
 
+/** The file's key for the model the person picked, in the Code tab or in Claude Code. */
+public const val DESKTOP_FILE_MODEL: String = Keys.MODEL
+
 private const val ENV = "env"
 private const val PICKER = DESKTOP_PICKER
 private const val OPTIONS = "options"
-private const val MODEL = "model"
 private const val REPLACE_BUILT_IN = "replaceBuiltInOptions"
 
 // The record's own keys: whether the file and its env block were there before `on`.

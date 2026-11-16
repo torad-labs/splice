@@ -6,19 +6,18 @@
 // the `claude` command does not serve, so the launch starts on its head's own default and says so.
 package splice.launch.recipe
 
-import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import splice.client.desktop.DESKTOP_FILE_MODEL
 import splice.client.desktop.DESKTOP_MODEL
 import splice.client.desktop.DESKTOP_SETTINGS_FILE
 import splice.client.desktop.DesktopSettings
+import splice.client.desktop.DesktopSettingsRead
+import splice.client.desktop.SettingsRead
 import splice.client.wrap.WrappedLaunch
 import splice.core.util.JsonScalars
-import java.io.IOException
-import java.nio.file.Files
-import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 
 /** Claude Desktop's door as a launch of the `claude` command sees it. The daemon's; assigned before routes serve. */
@@ -39,7 +38,6 @@ internal data class DesktopCancelled(val overlay: JsonObject, val warning: Strin
 
 internal class DesktopCancel(private val desktop: LaunchDesktop?) {
     private val settings = DesktopSettings()
-    private val json = Json { ignoreUnknownKeys = true }
 
     /** For a launch over the `claude` command's folder, [wrapped], whose environment sets [env] and whose head
      *  starts on [pinned] when it pins one; null for any other launch, and while Desktop is off, when the launch is as
@@ -57,23 +55,15 @@ internal class DesktopCancel(private val desktop: LaunchDesktop?) {
     private fun started(cancel: JsonObject, picked: String, start: String): DesktopCancelled {
         val warning = "the settings file's model is $picked, a model of Claude Desktop's door that this command " +
             "doesn't serve, so the session starts on $start"
-        return DesktopCancelled(JsonObject(cancel + (MODEL to JsonPrimitive(start))), warning)
+        return DesktopCancelled(JsonObject(cancel + (DESKTOP_FILE_MODEL to JsonPrimitive(start))), warning)
     }
 
     /** The `model` the settings file in [configDir] holds, or null when it holds none or can't be read. */
-    private fun fileModel(configDir: Path): String? = try {
-        val text = Files.readString(configDir.resolve(DESKTOP_SETTINGS_FILE))
-        JsonScalars.str(JsonScalars.objectOrNull(json, text), MODEL)
-    } catch (_: NoSuchFileException) {
-        null
-    } catch (_: IOException) {
-        null
-    } catch (_: SerializationException) {
-        null
+    private fun fileModel(configDir: Path): String? {
+        val read = DesktopSettingsRead(configDir.resolve(DESKTOP_SETTINGS_FILE)).read()
+        return JsonScalars.str((read as? SettingsRead.Held)?.file, DESKTOP_FILE_MODEL)
     }
 }
-
-private const val MODEL = "model"
 
 // Claude Code's own word for the model it recommends, which a launch whose head names no model starts on.
 private const val CLAUDE_CODE_DEFAULT = "default"

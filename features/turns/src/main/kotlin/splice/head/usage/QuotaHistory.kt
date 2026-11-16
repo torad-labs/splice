@@ -17,7 +17,7 @@ import java.nio.file.Path
 
 // why: a line is about 200 bytes and one is written per point a plan moves, so this holds years of a single login
 // and weeks of a head with many; JsonlSink keeps one rolled generation beyond it.
-private const val HISTORY_MAX_BYTES = 4L * 1024 * 1024
+private const val QUOTA_HISTORY_MAX_BYTES = 4L * 1024 * 1024
 
 /**
  * One login's readings in its head's history file. A line is written when the reading moves: a window's used
@@ -51,7 +51,7 @@ public class QuotaHistory(
         last = reading
         if (before != null && sameStanding(before, reading)) return
         val line = "{\"login\":${JsonPrimitive(login)},\"reading\":$text}"
-        Cancellables.runCatchingCancellable { JsonlSink.appendLine(file, line, HISTORY_MAX_BYTES) }
+        Cancellables.runCatchingCancellable { JsonlSink.appendLine(file, line, QUOTA_HISTORY_MAX_BYTES) }
             .onFailure { log("[quota] ${file.fileName} write FAILED (${SafeFailureText.render(it)})\n") }
     }
 

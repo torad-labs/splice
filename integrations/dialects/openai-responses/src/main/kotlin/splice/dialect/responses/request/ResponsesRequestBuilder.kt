@@ -55,6 +55,7 @@ import splice.dialect.responses.ResponsesToolChanges
 import splice.dialect.responses.admission.ResponsesRequestControls
 import splice.dialect.responses.reasoning.ResponsesReasoningKnobs
 import splice.dialect.responses.stream.ResponsesLooseFields
+import splice.dialect.responses.tools.HistoryTools
 import splice.dialect.responses.tools.ResponsesToolPlan
 import splice.dialect.responses.tools.TOOL_CALLER_NAME
 import splice.dialect.responses.tools.ToolCaller

@@ -20,6 +20,7 @@ import splice.core.wire.UnknownBlock
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesToolChanges
 import splice.dialect.responses.reasoning.ResponsesReasoningInject
+import splice.dialect.responses.tools.ResponsesArrivedTools
 import splice.dialect.responses.tools.TOOL_CALLER_NAME
 import splice.dialect.responses.tools.ToolCaller
 import splice.dialect.responses.tools.ToolSearchOutput

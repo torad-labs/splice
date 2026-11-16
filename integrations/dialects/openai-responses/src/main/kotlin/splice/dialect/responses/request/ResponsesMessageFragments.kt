@@ -22,6 +22,7 @@ import splice.dialect.responses.reasoning.ResponsesAssistantPhaseRecords
 import splice.dialect.responses.reasoning.ResponsesHistoryInput
 import splice.dialect.responses.reasoning.ResponsesHistoryMemo
 import splice.dialect.responses.stream.LoopGuard
+import splice.dialect.responses.tools.HistoryTools
 import splice.upstream.ToolNameShortener
 import splice.upstream.memory.FragmentContextKey
 import splice.upstream.memory.MessageFragmentContext

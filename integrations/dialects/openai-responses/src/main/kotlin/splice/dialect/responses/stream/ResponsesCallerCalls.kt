@@ -10,6 +10,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
+import splice.core.wire.FIELD_TYPE
 import splice.dialect.responses.tools.NamedCall
 import splice.dialect.responses.tools.TOOL_CALLER_NAME
 import splice.dialect.responses.tools.ToolCaller
@@ -52,16 +53,16 @@ internal class ResponsesCallerCalls(private val caller: ToolCaller = ToolCaller(
         return when {
             type in ROUND_ENDS -> unfinished() + event
             at == null -> listOf(event)
-            type == ITEM_ADDED && callsCaller(event) -> hold(at, event)
+            type == CALL_ITEM_ADDED && callsCaller(event) -> hold(at, event)
             call == null -> listOf(event)
             else -> next(at, call, type, event)
         }
     }
 
     private fun callsCaller(event: JsonObject): Boolean {
-        val item = event[FIELD_ITEM] as? JsonObject
-        val call = JsonScalars.str(item, FIELD_TYPE) == FUNCTION_CALL
-        return call && JsonScalars.str(item, FIELD_NAME) == TOOL_CALLER_NAME
+        val item = event[EVENT_ITEM] as? JsonObject
+        val call = JsonScalars.str(item, FIELD_TYPE) == FUNCTION_CALL_ITEM
+        return call && JsonScalars.str(item, ITEM_NAME) == TOOL_CALLER_NAME
     }
 
     private fun hold(at: Int, event: JsonObject): List<JsonObject> {
@@ -72,8 +73,8 @@ internal class ResponsesCallerCalls(private val caller: ToolCaller = ToolCaller(
     /** The next event of the held call [call]. */
     private fun next(at: Int, call: HeldCall, type: String, event: JsonObject): List<JsonObject> = when (type) {
         ARGUMENTS_DELTA -> call.arrive(event)
-        ARGUMENTS_DONE -> whole(at, call, event, JsonScalars.str(event, FIELD_ARGUMENTS))
-        ITEM_DONE -> whole(at, call, event, JsonScalars.str(event[FIELD_ITEM] as? JsonObject, FIELD_ARGUMENTS))
+        ARGUMENTS_DONE -> whole(at, call, event, JsonScalars.str(event, ITEM_ARGUMENTS))
+        CALL_ITEM_DONE -> whole(at, call, event, JsonScalars.str(event[EVENT_ITEM] as? JsonObject, ITEM_ARGUMENTS))
             .also { held.remove(at) }
         else -> listOf(event)
     }
@@ -90,7 +91,7 @@ internal class ResponsesCallerCalls(private val caller: ToolCaller = ToolCaller(
             }
             opened == null -> {
                 call.named = named
-                val opening = JsonObject(call.added + (FIELD_ITEM to item(call.added, named, arguments = "")))
+                val opening = JsonObject(call.added + (EVENT_ITEM to item(call.added, named, arguments = "")))
                 listOf(opening, ended(event, named))
             }
             else -> listOf(ended(event, named))
@@ -105,19 +106,19 @@ internal class ResponsesCallerCalls(private val caller: ToolCaller = ToolCaller(
     }
 
     /** [event], the end of a call's arguments or of the call itself, as the end of [named]'s. */
-    private fun ended(event: JsonObject, named: NamedCall): JsonObject = if (event[FIELD_ITEM] is JsonObject) {
-        JsonObject(event + (FIELD_ITEM to item(event, named, named.arguments)))
+    private fun ended(event: JsonObject, named: NamedCall): JsonObject = if (event[EVENT_ITEM] is JsonObject) {
+        JsonObject(event + (EVENT_ITEM to item(event, named, named.arguments)))
     } else {
         JsonObject(
-            event + (FIELD_NAME to JsonPrimitive(named.tool)) + (FIELD_ARGUMENTS to JsonPrimitive(named.arguments)),
+            event + (ITEM_NAME to JsonPrimitive(named.tool)) + (ITEM_ARGUMENTS to JsonPrimitive(named.arguments)),
         )
     }
 
     /** The call item [event] carries, as a call of [named]'s tool with [arguments]. */
     private fun item(event: JsonObject, named: NamedCall, arguments: String): JsonObject = JsonObject(
-        (event[FIELD_ITEM] as? JsonObject).orEmpty() +
-            (FIELD_NAME to JsonPrimitive(named.tool)) +
-            (FIELD_ARGUMENTS to JsonPrimitive(arguments)),
+        (event[EVENT_ITEM] as? JsonObject).orEmpty() +
+            (ITEM_NAME to JsonPrimitive(named.tool)) +
+            (ITEM_ARGUMENTS to JsonPrimitive(arguments)),
     )
 }
 
@@ -136,13 +137,12 @@ private class HeldCall(val added: JsonObject) {
     }
 }
 
-private const val FIELD_TYPE = "type"
-private const val FIELD_ITEM = "item"
-private const val FIELD_NAME = "name"
-private const val FIELD_ARGUMENTS = "arguments"
-private const val FUNCTION_CALL = "function_call"
-private const val ITEM_ADDED = "response.output_item.added"
-private const val ITEM_DONE = "response.output_item.done"
+private const val EVENT_ITEM = "item"
+private const val ITEM_NAME = "name"
+private const val ITEM_ARGUMENTS = "arguments"
+private const val FUNCTION_CALL_ITEM = "function_call"
+private const val CALL_ITEM_ADDED = "response.output_item.added"
+private const val CALL_ITEM_DONE = "response.output_item.done"
 private const val ARGUMENTS_DELTA = "response.function_call_arguments.delta"
 private const val ARGUMENTS_DONE = "response.function_call_arguments.done"
 

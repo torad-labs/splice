@@ -29,6 +29,7 @@ import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.ReasoningTextEmitter
 import splice.dialect.responses.reasoning.ResponsesHistoryInput
 import splice.dialect.responses.reasoning.ResponsesReasoningInject
+import splice.dialect.responses.tools.HistoryTools
 import splice.upstream.ToolNameShortener
 
 internal class ResponsesInputBuilder(

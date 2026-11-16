@@ -30,25 +30,25 @@ internal class ToolCaller {
         name = TOOL_CALLER_NAME,
         description = "Calls a tool that arrived during this conversation: one that ToolSearch loaded or a server " +
             "added. Such a tool is not in your tool list. Its definition is written in the conversation where it " +
-            "arrived, inside <tool_definition> tags. Pass its name as `$FIELD_TOOL` and its arguments, exactly as " +
-            "its definition describes them, as `$FIELD_ARGUMENTS`.",
+            "arrived, inside <tool_definition> tags. Pass its name as `$CALLER_TOOL` and its arguments, exactly as " +
+            "its definition describes them, as `$CALLER_ARGUMENTS`.",
         inputSchema = buildJsonObject {
             put("type", TYPE_OBJECT)
             put(
                 "properties",
                 buildJsonObject {
                     put(
-                        FIELD_TOOL,
+                        CALLER_TOOL,
                         buildJsonObject {
                             put("type", TYPE_STRING)
-                            put(FIELD_DESCRIPTION, "The tool's name.")
+                            put(SCHEMA_DESCRIPTION, "The tool's name.")
                         },
                     )
                     put(
-                        FIELD_ARGUMENTS,
+                        CALLER_ARGUMENTS,
                         buildJsonObject {
                             put("type", TYPE_OBJECT)
-                            put(FIELD_DESCRIPTION, "The tool's arguments.")
+                            put(SCHEMA_DESCRIPTION, "The tool's arguments.")
                             put("additionalProperties", true)
                         },
                     )
@@ -57,8 +57,8 @@ internal class ToolCaller {
             put(
                 "required",
                 buildJsonArray {
-                    add(FIELD_TOOL)
-                    add(FIELD_ARGUMENTS)
+                    add(CALLER_TOOL)
+                    add(CALLER_ARGUMENTS)
                 },
             )
         },
@@ -73,7 +73,7 @@ internal class ToolCaller {
     fun written(tool: ToolDefinition, listedAs: String? = null): String {
         val definition = buildJsonObject {
             put("name", tool.name)
-            tool.description?.let { put(FIELD_DESCRIPTION, it) }
+            tool.description?.let { put("description", it) }
             put("input_schema", tool.inputSchema ?: buildJsonObject { put("type", TYPE_OBJECT) })
         }
         val where = if (listedAs == null) {
@@ -82,16 +82,16 @@ internal class ToolCaller {
             "${tool.name} is available again, with the definition below. The $listedAs in your tool list still has " +
                 "the schema it had before, so do not call it directly"
         }
-        return "$where: call it through the $TOOL_CALLER_NAME tool, with \"${tool.name}\" as `$FIELD_TOOL` and its " +
-            "arguments as `$FIELD_ARGUMENTS`.\n<tool_definition>${JsonWire.string(definition)}</tool_definition>"
+        return "$where: call it through the $TOOL_CALLER_NAME tool, with \"${tool.name}\" as `$CALLER_TOOL` and its " +
+            "arguments as `$CALLER_ARGUMENTS`.\n<tool_definition>${JsonWire.string(definition)}</tool_definition>"
     }
 
     /** The arguments of the caller's call of the tool [name] with [input]: how a call Claude Code sends back in the
      *  history goes to the backend again, the way the model made it. */
     fun arguments(name: String, input: JsonObject): String = JsonWire.string(
         buildJsonObject {
-            put(FIELD_TOOL, name)
-            put(FIELD_ARGUMENTS, input)
+            put(CALLER_TOOL, name)
+            put(CALLER_ARGUMENTS, input)
         },
     )
 
@@ -100,8 +100,8 @@ internal class ToolCaller {
      *  tool or its arguments are no object: there is no tool to hand that call to. */
     fun named(arguments: String): NamedCall? {
         val call = JsonScalars.objectOrNull(Json, arguments)
-        val tool = JsonScalars.str(call, FIELD_TOOL).orEmpty()
-        val given = given(call?.get(FIELD_ARGUMENTS))
+        val tool = JsonScalars.str(call, CALLER_TOOL).orEmpty()
+        val given = given(call?.get(CALLER_ARGUMENTS))
         return if (tool.isEmpty() || given == null) null else NamedCall(tool, JsonWire.string(given))
     }
 
@@ -117,6 +117,5 @@ internal class ToolCaller {
  *  start with `mcp__`. */
 internal const val TOOL_CALLER_NAME = "CallToolByName"
 
-private const val FIELD_TOOL = "tool"
-private const val FIELD_ARGUMENTS = "arguments"
-private const val FIELD_DESCRIPTION = "description"
+private const val CALLER_TOOL = "tool"
+private const val CALLER_ARGUMENTS = "arguments"

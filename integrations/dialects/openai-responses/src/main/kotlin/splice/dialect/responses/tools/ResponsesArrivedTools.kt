@@ -2,14 +2,14 @@
 // whose tool list never changes. Until then every tool a Muse conversation loaded moved the whole conversation out of
 // Meta's prompt cache, to be paid for again in full, because the loaded tool joined the request's tool list and Meta
 // caches by prefix with the tool list before the input.
-package splice.dialect.responses.request
+package splice.dialect.responses.tools
 
 import splice.core.wire.ToolDefinition
 
 /** The tools a request's history gives the model, beside the ones its tool list does. */
 internal data class HistoryTools(
     /** Deferred tools of the head's own tool surface that a call in the transcript names: each is declared before its
-     *  first call ([ResponsesInputTools.appendToolUse]). */
+     *  first call (ResponsesInputTools.appendToolUse in the request package). */
     val declareByName: Map<String, ToolDefinition> = emptyMap(),
     /** The tool list the conversation's first request sent, the caller included, on a head that writes a later tool
      *  into the history ([splice.dialect.responses.ResponsesToolChanges.THROUGH_CALLER]). Null on any

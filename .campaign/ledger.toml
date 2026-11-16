@@ -93,7 +93,7 @@ notes = [
 id = 'upstream-pool'
 title = 'An upstream pool with health, balance, preference and failover'
 feature = 'server-upstreams'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'person-limits',
@@ -109,13 +109,14 @@ reviews = [
 ]
 notes = [
   '2026-11-15 07:46 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-15 18:26 CT campaign: done in round 2 of server-upstreams: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'prefill-keepalive'
 title = 'Keepalives through a long prefill; tokens relayed as they come'
 feature = 'server-upstreams'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'server-keys',
@@ -131,13 +132,14 @@ reviews = [
 ]
 notes = [
   '2026-11-15 07:46 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-15 18:26 CT campaign: done in round 3 of server-upstreams: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'openai-route'
 title = 'The OpenAI-compatible route on the same keys and limits'
 feature = 'server-upstreams'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'person-limits',
@@ -153,6 +155,7 @@ reviews = [
 ]
 notes = [
   '2026-11-15 07:46 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-15 18:26 CT campaign: done in round 2 of server-upstreams: its checks, its feature review, its code review passed',
 ]
 
 [[row]]

@@ -314,7 +314,7 @@ notes = [
 id = 'server-metrics'
 title = 'Per-person Prometheus and OTLP metrics'
 feature = 'server-metrics'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'ledger-rows',
@@ -330,6 +330,7 @@ reviews = [
 ]
 notes = [
   '2026-11-15 07:47 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 15:05 CT campaign: done in round 2 of server-metrics: its checks, its feature review, its code review passed',
 ]
 
 [[row]]

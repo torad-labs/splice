@@ -35,13 +35,15 @@ export interface Ran {
   err: string;
 }
 
-/** One provider and one head on an OpenAI-compatible upstream, served under `command`. */
-export function mockHead(o: { key: string; command: string; port: number; url: string; model: string; window?: number }): string {
+/** One provider and one head on an OpenAI-compatible upstream, served under `command`. `provider` is more lines of the
+ *  provider's table. */
+export function mockHead(o: { key: string; command: string; port: number; url: string; model: string; window?: number; provider?: string }): string {
   return `
 [providers.${o.key}]
 dialect = "openai-chat"
 base_url = "${o.url}"
 auth = { kind = "api-key", env = "MOCK_UPSTREAM_KEY" }
+${o.provider ?? ""}
 
 [[providers.${o.key}.models]]
 id = "${o.model}"

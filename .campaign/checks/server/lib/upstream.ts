@@ -19,6 +19,8 @@ export interface Behaviour {
   noDone: boolean;
   /** Answer every completion with this status and an error body instead. */
   status: number | null;
+  /** Milliseconds before that refusal is answered (a server that refuses only once it has prefilled). */
+  refuseAfterMs: number;
   /** The usage the reply reports. */
   usage: { prompt: number; cached: number; completion: number };
   /** llama-server's `timings` on the final chunk. */
@@ -27,6 +29,10 @@ export interface Behaviour {
   healthy: boolean;
   /** Reply with these words instead of the upstream's name and numbered words. */
   say: string | null;
+  /** Headers of the server's own on every answer to a completion, refusals included (a cookie, a request id). */
+  replyHeaders: Record<string, string>;
+  /** Report a streamed reply's usage on its finish chunk instead of on a chunk of its own, as some servers do. */
+  usageOnFinish: boolean;
 }
 
 export interface Seen {
@@ -45,10 +51,13 @@ const DEFAULTS: Behaviour = {
   breakAfter: null,
   noDone: false,
   status: null,
+  refuseAfterMs: 0,
   usage: { prompt: 1200, cached: 200, completion: 40 },
   timings: { prompt_n: 1000, cache_n: 200, predicted_n: 40, prompt_ms: 500, predicted_ms: 800 },
   healthy: true,
   say: null,
+  replyHeaders: {},
+  usageOnFinish: false,
 };
 
 export class Upstream {
@@ -123,7 +132,8 @@ export class Upstream {
     const b = this.behaviour;
     if (!b.healthy) return Response.json({ error: { message: "down", type: "unavailable_error" } }, { status: 503 });
     if (b.status !== null) {
-      return Response.json({ error: { message: `upstream ${this.name} says ${b.status}`, type: "server_error" } }, { status: b.status });
+      await Bun.sleep(b.refuseAfterMs);
+      return Response.json({ error: { message: `upstream ${this.name} says ${b.status}`, type: "server_error" } }, { status: b.status, headers: b.replyHeaders });
     }
     this.inflight++;
     const release = (() => {
@@ -145,7 +155,7 @@ export class Upstream {
     const id = `chatcmpl-${this.name}-${Date.now()}`;
     if (body?.stream !== true) {
       release();
-      return Response.json({
+      const whole = JSON.stringify({
         id,
         object: "chat.completion",
         created,
@@ -154,6 +164,20 @@ export class Upstream {
         usage,
         ...(b.timings ? { timings: this.timings() } : {}),
       });
+      const headers = { "content-type": "application/json", ...b.replyHeaders };
+      if (b.breakAfter === null) return new Response(whole, { headers });
+      // With breakAfter, a JSON answer breaks too: half of it is sent, and then the connection is torn.
+      const half = new TextEncoder().encode(whole.slice(0, Math.floor(whole.length / 2)));
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start: async (controller) => {
+            controller.enqueue(half);
+            await Bun.sleep(50);
+            controller.error(new Error("upstream tore the answer"));
+          },
+        }),
+        { headers },
+      );
     }
     const includeUsage = (body.stream_options as { include_usage?: boolean } | undefined)?.include_usage === true;
     const chunk = (delta: Record<string, unknown>, finish: string | null, extra: Record<string, unknown> = {}) =>
@@ -173,8 +197,9 @@ export class Upstream {
             else if (i > 0) await Bun.sleep(b.gapMs);
             controller.enqueue(enc.encode(chunk({ content: (i ? " " : "") + words[i] }, null)));
           }
-          controller.enqueue(enc.encode(chunk({}, "stop", b.timings ? { timings: this.timings() } : {})));
-          if (includeUsage) {
+          const onFinish = includeUsage && b.usageOnFinish ? { usage } : {};
+          controller.enqueue(enc.encode(chunk({}, "stop", { ...(b.timings ? { timings: this.timings() } : {}), ...onFinish })));
+          if (includeUsage && !b.usageOnFinish) {
             controller.enqueue(enc.encode(`data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model: this.model, choices: [], usage })}\n\n`));
           }
           if (!b.noDone) controller.enqueue(enc.encode("data: [DONE]\n\n"));
@@ -186,7 +211,7 @@ export class Upstream {
       },
       cancel: () => release(),
     });
-    return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache" } });
+    return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache", ...b.replyHeaders } });
   }
 
   private timings(): Record<string, number> {

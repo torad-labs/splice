@@ -24,6 +24,9 @@ goal = "A team member signs in once with the company's identity provider and the
 [feature."server-metrics"]
 goal = "Whoever runs the box sees each person's traffic live, from Prometheus on the listener and from the operator's OTLP collector. Spec: docs/specs/server-mode.md, F6."
 
+[feature."server-hardening"]
+goal = "What the server-upstreams reviewers found past its items' words: a person's key stays at the server on the Messages route as it does on the OpenAI route, an answer the upstream cuts short is an error the client sees, the provider's own response headers and usage nobody asked for stay at the server, the OpenAI route answers a lookup of one model, and it is kept alive through a long prefill as the Messages route is. Spec: docs/specs/server-mode.md, F1 and F4."
+
 [[row]]
 id = 'server-listener'
 title = 'A [server] listener that answers only keys'
@@ -310,4 +313,104 @@ reviews = [
 ]
 notes = [
   '2026-11-15 07:47 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'messages-key-stays'
+title = "A person's key never rides a forwarded header on the Messages route"
+feature = 'server-hardening'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "On the Messages route, a header the provider's forward_headers names rides on to the provider unchanged, unless its value holds one of the server's keys (the person's own or another person's, anywhere in the value): then that header stays behind, the turn is still answered, streamed or not, and the daemon log names the header and never the key. The README already says this of splice's own keys; it holds for every key the server minted. See docs/specs/server-mode.md, F1."
+checks = [
+  'bun test ./.campaign/checks/server/messages-key.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-15 19:33 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'openai-cut'
+title = 'An answer the upstream cuts short is an error the OpenAI client sees'
+feature = 'server-hardening'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "On the OpenAI route, when the upstream's connection breaks partway through an answer, the client is told. A streamed completion ends, after the chunks already relayed, with one error event in OpenAI's shape (data: {\"error\": {\"message\": ..., \"type\": ...}}) and no [DONE], so the OpenAI SDKs raise it; a non-streamed one is answered 502 with OpenAI's error body. An answer the upstream ends whole is relayed as before. See docs/specs/server-mode.md, F4."
+checks = [
+  'bun test ./.campaign/checks/server/openai-cut.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-15 19:33 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'openai-reply-headers'
+title = "The provider's own response headers stay at the server"
+feature = 'server-hardening'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "On the OpenAI route the client gets the upstream's status, its body as relayed, its content-type and, on a refusal, its Retry-After. None of the provider's own response headers reach the client: not a Set-Cookie it sends, not its request ids, nothing else of its own. A finish chunk that carries usage reaches a client that did not ask for usage without it, as a usage chunk of its own already does. See docs/specs/server-mode.md, F4."
+checks = [
+  'bun test ./.campaign/checks/server/openai-reply.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-15 19:33 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'openai-model-get'
+title = 'The OpenAI route answers a lookup of one model'
+feature = 'server-hardening'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "GET /<command>/v1/models/<id> answers a key holder as the OpenAI API does: the model object (its id, object = model) of a model the command's provider serves, a 404 in OpenAI's error shape for any other id, and 401 without a key. See docs/specs/server-mode.md, F4."
+checks = [
+  'bun test ./.campaign/checks/server/openai-model.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-15 19:33 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'openai-keepalive'
+title = 'Keepalives on the OpenAI route through a long prefill'
+feature = 'server-hardening'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "With [server] keepalive_seconds, a streamed OpenAI-route completion whose upstream has not started its answer within a second has its response headers then, and an SSE comment at least every keepalive_seconds, which OpenAI clients skip, then the whole answer relayed as it comes and ending with [DONE]. A refusal or failure from the upstream after the stream opened arrives as one error event in OpenAI's shape. A completion that asks for no stream answers one JSON body as before. This is what prefill-keepalive gives the Messages route. See docs/specs/server-mode.md, F4."
+checks = [
+  'bun test ./.campaign/checks/server/openai-keepalive.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-15 19:34 CT: added; 1 of 1 checks fail, as they should before the work',
 ]

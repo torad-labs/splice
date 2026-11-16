@@ -12,7 +12,7 @@ import splice.core.perf.observation.PerfAggregatePoint
 import splice.core.perf.observation.PerfMetricRegistry
 import splice.observability.OBSERVABILITY_NANOS_PER_MILLISECOND
 
-/** Pinned OTel 1.67.0 immutable data factories; upgrading the SDK requires these conversion tests. */
+/** Pinned OTel 1.68.0 immutable data factories; upgrading the SDK requires these conversion tests. */
 internal object OtlpMetricData {
     fun of(points: List<PerfAggregatePoint>): List<MetricData> = points.groupBy { it.metric }.map { (id, family) ->
         val metric = ExportSchema.metrics.getValue(id)

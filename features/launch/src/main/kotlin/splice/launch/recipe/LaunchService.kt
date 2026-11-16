@@ -86,6 +86,10 @@ public class LaunchService(
      *  Assigned by the daemon before routes serve requests; null launches heads only. */
     public var remotes: RemoteCommands? = null
 
+    /** gpt-speed: the speeds each head's launch offers as /fast and /ultrafast. Assigned by the daemon before routes serve
+     *  requests; null offers none, and every head keeps Claude Code's own /fast. */
+    public var speeds: LaunchSpeeds? = null
+
     /** The words Claude Code's --effort takes (`claude --help`, 2.1.312). */
     private val clientEfforts = setOf("low", "medium", "high", "xhigh", "max")
 
@@ -171,7 +175,7 @@ public class LaunchService(
         // carries the head's settings as a --settings overlay below.
         val modelOverrides = effective.models.tiers.modelOverrides
             .takeUnless { effective.gateway.clientModels }.orEmpty()
-        materializeLaunch(materialize, trust, modelOverrides, effective.gateway.keyHelper, wrapped)
+        val speed = materializeLaunch(materialize, trust, modelOverrides, effective.gateway.keyHelper, wrapped)
         // V4-276: a launch never writes a head's .credentials.json. V4-129 copied the selected stored
         // login over it here, and Claude Code's refresh tokens rotate, so every launch put back a
         // superseded token and upstream revoked the login (V4-237, V4-250). The live login is
@@ -188,7 +192,7 @@ public class LaunchService(
         val adoption = resume.adopt(held, bounded.args, caller.cwd)
         // V4-445: Claude Code reads ~/.claude.json only while CLAUDE_CONFIG_DIR is unset. Set to the vanilla dir it
         // reads ~/.claude/.claude.json, a file that holds none of the operator's mcpServers, projects or account.
-        val environment = launchEnvironment(spec, held, slots, wrapped, caller.inheritedConfigDir)
+        val environment = speed.environment(launchEnvironment(spec, held, slots, wrapped, caller.inheritedConfigDir))
         val hub = hubArgs(caller, wrapped, effective, claude)
         val argv = buildList {
             // V4-129: the real absolute path when `claude` on PATH is currently the wrap shim itself
@@ -243,14 +247,19 @@ public class LaunchService(
         return hubLaunch?.args(launch) ?: HubLaunchArgs(emptyList())
     }
 
+    /** Writes the head's config unless the launch is [wrapped], which materializes nothing. gpt-speed: a head signed in
+     *  with ChatGPT also offers its pinned model's tiers as /fast and /ultrafast, which this answers; a wrapped launch
+     *  offers none. */
     private fun materializeLaunch(
         spec: MaterializeSpec,
         trust: TrustedLaunch?,
         modelOverrides: Map<String, String>,
         keyHelper: String?,
         wrapped: WrappedLaunch?,
-    ) {
-        if (wrapped == null) materializer.materialize(spec, trust, modelOverrides, keyHelper)
+    ): SpeedOffer {
+        val tiers = speeds?.takeIf { wrapped == null }?.offered(spec.signIn.headKey)
+        if (wrapped == null) materializer.materialize(spec, trust, modelOverrides, keyHelper, tiers)
+        return SpeedOffer(tiers)
     }
 
     /** Everything the operator must be told about this launch, in one sentence. A cross-head adoption

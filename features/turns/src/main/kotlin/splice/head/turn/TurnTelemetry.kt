@@ -13,6 +13,7 @@ import splice.core.model.TurnBill
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
 import splice.core.perf.PerfTurnIds
+import splice.core.perf.SpeedCounters
 import splice.core.perf.TurnPerf
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
@@ -171,6 +172,8 @@ internal class TurnTelemetry(
         billed?.let {
             drive.perf.setCount(PerfKeys.NO_REQUEST, 0L)
             TurnBill.counters(it).forEach { (key, value) -> drive.perf.setCount(key, value) }
+            // gpt-speed: the speed the request asked for and the one the backend served it at, priced by the latter.
+            SpeedCounters.counters(drive.requestBody, it).forEach { (key, value) -> drive.perf.setCount(key, value) }
         }
         val snap = billingSnapshot(drive)
         // The cache line is the row's own numbers, so it is written here, once the row's bill is whole.

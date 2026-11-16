@@ -6,6 +6,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import splice.core.model.TurnBill
 import splice.core.perf.PerfKeys
+import splice.core.perf.SpeedCounters
 import splice.core.perf.UsageMeasurementStamp
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
@@ -75,5 +76,7 @@ internal class TurnUsageStamp(
         drive.perf.setCount(PerfKeys.NO_REQUEST, 0L)
         TurnBill.counters(usage).forEach { (key, value) -> drive.perf.setCount(key, value) }
         UsageMeasurementStamp.counters(usage).forEach { (key, value) -> drive.perf.setCount(key, value) }
+        // gpt-speed: the speed the request asked for and the one the backend served it at, priced by the latter.
+        SpeedCounters.counters(drive.requestBody, usage).forEach { (key, value) -> drive.perf.setCount(key, value) }
     }
 }

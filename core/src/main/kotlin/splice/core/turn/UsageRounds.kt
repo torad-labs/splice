@@ -51,6 +51,7 @@ internal object UsageRounds {
                     cutRounds = prior.cutRounds + latest.cutRounds + missingBills(prior, latest, observations),
                 ),
                 measured = UsageMeasurements.combined(prior, latest),
+                servedTier = latest.servedTier ?: prior.servedTier,
             ),
             reported = observations,
         )

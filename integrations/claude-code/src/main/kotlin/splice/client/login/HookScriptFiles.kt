@@ -49,6 +49,11 @@ internal object HookScriptFiles {
     /** The hook event both installers register on (the key-setup advertiser and the resume hook). */
     const val SESSION_START: String = "SessionStart"
 
+    /** [value] as one single-quoted shell word, safe whatever it holds: every generated hook script quotes its
+     *  literals (paths, regexes, the JSON it prints) through this one copy. Bash has NO escape sequence inside
+     *  `'...'`; close-escape-reopen is the only safe splice. */
+    fun shellSingleQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
+
     /** The real [HookExecProbe]: write a throwaway owner-only `exit 0` script beside the hooks and
      *  RUN it through [exec]. Executability is a property of the mount + mode + uid, not of content,
      *  so a sibling probe file proves exactly what the hook needs without executing any hook logic.

@@ -189,6 +189,19 @@ internal object PerfLegacy3 {
 
     private fun part6(): List<PerfMetricDefinition> = listOf(
         entry(
+            PerfKeys.SPEED_ASKED,
+            SPEED_CODE,
+            "gpt-speed: the speed the turn's request asked for, as its Speed code (0 standard, 1 fast, " +
+                "2 ultrafast). Written only beside [SPEED].",
+        ),
+        entry(
+            PerfKeys.SPEED,
+            SPEED_CODE,
+            "gpt-speed: the speed the backend says it served the turn at, from the response's " +
+                "service_tier, as its Speed code; the row is priced at that speed's card. Written only on " +
+                "a turn whose answer named a tier, so an absent key says nothing about speed.",
+        ),
+        entry(
             PerfKeys.INFLIGHT,
             PerfLegacyMetrics.COUNT_UNIT,
             "Concurrent turns in flight on this head at admission ; the live-concurrency gauge.",
@@ -277,3 +290,4 @@ internal object PerfLegacy3 {
 }
 
 private const val TOKENS = "tokens"
+private const val SPEED_CODE = "code"

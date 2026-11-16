@@ -29,6 +29,10 @@ internal class ProviderAssembly(
     private val claudeAccounts: ClaudeAccountWiring = ClaudeAccountWiring(statePaths, log),
     private val claudeChanges: splice.app.auth.claude.ClaudePoolChanges = splice.app.auth.claude.ClaudePoolChanges(),
 ) {
+    /** gpt-speed: each Claude Code session's speed, kept across restarts, read by every ChatGPT head's turns and set by
+     *  the speed hook (the daemon's one record). */
+    internal val sessionSpeeds = splice.core.speed.SessionSpeeds(statePaths.sessionSpeedsFile, log)
+
     private val kimiArm = KimiPassthroughArm(statePaths, probeScope, log)
     private val grokRefresh = GrokRefresh(log)
     private val passthroughAssembly = PassthroughAssembly()
@@ -43,7 +47,7 @@ internal class ProviderAssembly(
         claudeAccounts.accounts(head, auth)
     private val grokResponsesArm = GrokResponsesArm(probeScope, log, grokRefresh, statePaths)
     private val apiKeyResponsesArm = ApiKeyResponsesArm(statePaths)
-    private val codexResponsesArm = CodexResponsesArm(statePaths, probeScope, log, refreshCall)
+    private val codexResponsesArm = CodexResponsesArm(statePaths, probeScope, log, refreshCall, sessionSpeeds)
     internal var performance: splice.app.observability.PerfTelemetry? = null
         set(value) { field = value; codexResponsesArm.performance = value }
     internal val codeModeControls get() = codexResponsesArm.codeModeControls

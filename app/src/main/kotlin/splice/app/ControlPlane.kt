@@ -26,6 +26,7 @@ import splice.app.control.ProcessReads
 import splice.app.control.ServerModeSource
 import splice.app.daemon.BootedTopology
 import splice.app.head.HeadProbeReadings
+import splice.app.head.LaunchSpeedWiring
 import splice.app.peer.PeersWiring
 import splice.app.provider.ClaudeAccountWiring
 import splice.app.provider.HeadBuildInputs
@@ -159,6 +160,9 @@ internal class ControlPlane(
             }
         }
 
+    /** gpt-speed: /fast and /ultrafast over the speeds every head's turns read ([ProviderAssembly.sessionSpeeds]). */
+    private val speeds = LaunchSpeedWiring(providerAssembly.sessionSpeeds, modelRosters)
+
     /** The daemon's one LaunchService, built at [start]: it fills [claudeLogin] as it wires the Claude login arm. */
     private val launch = ControlLaunchWiring(
         daemon,
@@ -227,7 +231,10 @@ internal class ControlPlane(
             readings = ControlReadings(health.report(heads, failedHeads, headCount, probes, signals), signals),
             runtime = ControlRuntime(
                 launchService = launch.service(home, sharing, controlPort, mcp.hubLive)
-                    .also { it.remotes = remoteCommands },
+                    .also {
+                        it.remotes = remoteCommands
+                        it.speeds = speeds.of(heads)
+                    },
                 shutdownDaemon = shutdownDaemon,
                 sessions = sessions,
                 mcpHost = mcpHost,

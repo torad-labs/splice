@@ -38,6 +38,9 @@ public data class Usage(
     /** Only these observed buckets may become retained billing counters. Explicit zeros remain observations. */
     val reported: Set<UsageField> = ALL_USAGE_FIELDS,
 ) {
+    /** gpt-speed: the tier the backend says it served the request at ([UsageOrigin.servedTier]). */
+    public val servedTier: String? get() = origin.servedTier
+
     /** Actual measured components, separate from billing's default-zero policy. Old producers remain unknown. */
     public val measured: Set<UsageMeasure> get() = origin.measured
 
@@ -88,6 +91,7 @@ public data class Usage(
             clientContext = other.origin.clientContext ?: origin.clientContext,
             history = origin.history + other.origin.history,
             measured = UsageMeasurements.added(this, other),
+            servedTier = other.servedTier ?: servedTier,
         ),
         reported = reported + other.reported,
     )
@@ -133,4 +137,7 @@ public data class UsageOrigin(
     val history: UsageHistory = UsageHistory(request = if (localStep) UsageRequest.NONE else UsageRequest.POSTED),
     /** Actual measurement presence; billing defaults and unmodified producers do not provide proof. */
     val measured: Set<UsageMeasure> = emptySet(),
+    /** gpt-speed: the `service_tier` the backend says it served the request at (`priority`, `fast`, `ultrafast`,
+     *  `default`), in its own word; null where the wire names none. A turn of several requests carries its last one's. */
+    val servedTier: String? = null,
 )

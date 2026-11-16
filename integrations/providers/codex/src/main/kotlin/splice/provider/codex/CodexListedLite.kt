@@ -6,6 +6,7 @@ package splice.provider.codex
 
 import splice.core.model.DiscoveredModel
 import splice.core.model.HeadDiscoveredModels
+import splice.core.model.ListedModels
 import splice.dialect.responses.ResponsesListedLite
 
 /**
@@ -29,13 +30,8 @@ public class CodexListedLite(private val roster: HeadDiscoveredModels, private v
         return kept?.lite ?: lookUp(listed, model).also { last = Answer(listed, model, it) }
     }
 
-    private fun lookUp(listed: List<DiscoveredModel>, model: String): Boolean {
-        val id = model.trim().lowercase()
-        return listed.flatMap { row -> row.spellings.map { it.trim().lowercase() to row } }
-            .filter { (spelling, _) -> spelling.isNotEmpty() && id.startsWith(spelling) }
-            .maxByOrNull { (spelling, _) -> spelling.length }
-            ?.second?.useResponsesLite ?: false
-    }
+    private fun lookUp(listed: List<DiscoveredModel>, model: String): Boolean =
+        ListedModels.matching(listed, model)?.useResponsesLite ?: false
 
     private data class Answer(val listed: List<DiscoveredModel>, val model: String, val lite: Boolean)
 }

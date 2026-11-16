@@ -24,6 +24,7 @@ public data class DiscoveredModel(
     public val supportsImageDetailOriginal: Boolean get() = runtimeMetadata.supportsImageDetailOriginal
     public val modelMessages: kotlinx.serialization.json.JsonObject? get() = runtimeMetadata.modelMessages
     public val useResponsesLite: Boolean get() = runtimeMetadata.useResponsesLite
+    public val serviceTiers: List<ServiceTier> get() = runtimeMetadata.serviceTiers
 
     /** Whether the endpoint runs this model on the one-`exec` code-mode surface (V4-441): its `tool_mode`
      *  is `code_mode_only`, which is how the Codex backend marks the models it trained on that surface. */
@@ -39,6 +40,8 @@ public data class ModelRuntimeMetadata(
     val modelMessages: kotlinx.serialization.json.JsonObject? = null,
     val useResponsesLite: Boolean = false,
     val toolMode: String? = null,
+    /** gpt-speed: the speed tiers the endpoint lists for the model (`service_tiers`), in its own words. */
+    val serviceTiers: List<ServiceTier> = emptyList(),
 )
 
 /** The `tool_mode` the Codex backend publishes for a model it runs on the code-mode surface alone. */
@@ -58,4 +61,18 @@ public fun interface HeadDiscoveredModels {
      *  the list it keeps when no answer comes. A turn waits on this before it is admitted, so the turn sent the moment
      *  after a sign-in reads that sign-in's list (fix 3, Oct 27). The default has nothing to wait for. */
     public suspend fun awaitCurrent(key: String): Unit = Unit
+}
+
+/** Which listed model stands for a model id, as Codex finds one (codex-rs models-manager manager.rs,
+ *  find_model_by_longest_prefix): the listed model whose id or alias is the longest prefix of it. */
+public object ListedModels {
+    /** The listed model [model] takes its facts from, or null when no listed id or alias begins it. Hidden models
+     *  count: a list marks them too. */
+    public fun matching(listed: List<DiscoveredModel>, model: String): DiscoveredModel? {
+        val id = model.trim().lowercase()
+        return listed.flatMap { row -> row.spellings.map { it.trim().lowercase() to row } }
+            .filter { (spelling, _) -> spelling.isNotEmpty() && id.startsWith(spelling) }
+            .maxByOrNull { (spelling, _) -> spelling.length }
+            ?.second
+    }
 }

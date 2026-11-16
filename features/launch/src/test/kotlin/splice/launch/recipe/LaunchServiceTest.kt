@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
+import splice.client.desktop.providerSwitches
 import splice.client.resume.ResumeAcrossHeads
 import splice.client.resume.TranscriptModelRewrite
 import splice.client.resume.originals.TranscriptOriginals
@@ -481,7 +482,7 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
                 "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
                 "ANTHROPIC_AUTH_TOKEN",
                 "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
-            ),
+            ) + providerSwitches, // desktop-door: a shell inside a Code tab session carries the door's switch
             recipe.unset,
         )
     }

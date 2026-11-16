@@ -74,6 +74,11 @@ public sealed class Command {
         override suspend fun run(): Int = splice.app.cli.share.ShareCommand().run(args)
     }
 
+    /** `splice desktop [<verb>]`: point Claude Desktop's Code tab at splice, or back (docs/specs/desktop-door.md). */
+    public data class Desktop(val args: List<String>) : Command() {
+        override suspend fun run(): Int = splice.app.cli.desktop.DesktopCommand().run(args)
+    }
+
     /** `splice remote [<verb>]`: run commands another of the person's machines shares (docs/specs/lan-share.md). */
     public data class Remote(val args: List<String>) : Command() {
         override suspend fun run(): Int = splice.app.cli.share.RemoteCommand().run(args)

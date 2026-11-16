@@ -77,6 +77,9 @@ internal class ControlPlane(
     /** Server mode (docs/specs/server-mode.md), assigned by Daemon before [start]; null answers its routes 409. */
     internal var serverMode: ServerModeSource? = null
 
+    /** Claude Desktop's door (docs/specs/desktop-door.md), assigned by Daemon before [start]. */
+    internal var desktop: splice.app.desktop.DaemonDesktop? = null
+
     /** Captures the owner only at send time, after launch composition has wired the live native places. */
     internal val credentialAccountNames = HeadDeps.CredentialAccountNames { key ->
         // The row records the account's ref, never its email or id (labels only, 2026-10-12).
@@ -227,7 +230,10 @@ internal class ControlPlane(
             readings = ControlReadings(health.report(heads, failedHeads, headCount, probes, signals), signals),
             runtime = ControlRuntime(
                 launchService = launch.service(home, sharing, controlPort, mcp.hubLive)
-                    .also { it.remotes = remoteCommands },
+                    .also {
+                        it.remotes = remoteCommands
+                        it.desktop = desktop?.launching
+                    },
                 shutdownDaemon = shutdownDaemon,
                 sessions = sessions,
                 mcpHost = mcpHost,
@@ -263,6 +269,7 @@ internal class ControlPlane(
         srv.ports.compaction = compactionInstructions
         srv.ports.claudeLogins = claudeLogin.owner
         srv.ports.serverMode = serverMode
+        srv.ports.desktop = desktop
         srv.ports.quotaReadFailures = quotaReadFailures
         srv.ports.sessionFallbacks = sessionFallbacks
         srv.ports.lifecycle.keyRotation = KeyRotation(daemon.mgmtKey, daemon.mcpAccess, statePaths, log)

@@ -125,6 +125,9 @@ public data class PerfTranscriptLink(
     /** The hash of the request's messages (LiveTurns' MessagesHash): a request splice cut when it restarted and the
      *  client's re-send of it carry the same one in the same session, which is how Requests links the two. */
     val messagesHash: String? = null,
+    /** The door the client came through to the head (desktop-door: `desktop` for Claude Desktop's Code tab), or null
+     *  for a turn that came straight to its head. */
+    val door: String? = null,
 )
 
 /** What one coherent read of the perf files yields for a window (v0.4.0, FEATURES.md §3). */

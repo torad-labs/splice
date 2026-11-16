@@ -16,6 +16,7 @@ import splice.client.ClaudeConfigMaterializer
 import splice.client.MaterializeSignIn
 import splice.client.MaterializeSpec
 import splice.client.TrustedLaunch
+import splice.client.desktop.providerSwitches
 import splice.client.mcp.HubLaunchArgs
 import splice.client.mcp.HubLaunchFor
 import splice.client.mcp.McpHubLaunch
@@ -85,6 +86,11 @@ public class LaunchService(
     /** LAN share: the commands another machine serves, launched when a name no head here carries is asked for.
      *  Assigned by the daemon before routes serve requests; null launches heads only. */
     public var remotes: RemoteCommands? = null
+
+    /** Claude Desktop's door: while it is on, a launch over the `claude` command's folder lays its own settings over
+     *  what `splice desktop on` wrote there (LaunchDesktop). Assigned by the daemon before routes serve requests; null
+     *  launches as if Desktop were off. */
+    public var desktop: LaunchDesktop? = null
 
     /** The words Claude Code's --effort takes (`claude --help`, 2.1.312). */
     private val clientEfforts = setOf("low", "medium", "high", "xhigh", "max")
@@ -190,6 +196,7 @@ public class LaunchService(
         // reads ~/.claude/.claude.json, a file that holds none of the operator's mcpServers, projects or account.
         val environment = launchEnvironment(spec, held, slots, wrapped, caller.inheritedConfigDir)
         val hub = hubArgs(caller, wrapped, effective, claude)
+        val cancelled = DesktopCancel(desktop).of(wrapped, environment.env, held.models.pinnedModel)
         val argv = buildList {
             // V4-129: the real absolute path when `claude` on PATH is currently the wrap shim itself
             // (see [wrapState]'s KDoc) — bare [claudeBinary] otherwise, byte-identical to every launch
@@ -198,16 +205,15 @@ public class LaunchService(
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
             // a launch on macOS carries splice's mark in its --settings, the one sign of it a hardened claude's
             // arguments keep there (LaunchMarker); elsewhere the arguments are as they were
-            val overlay = overlayOf(wrapped, roster, held.gateway, keyed)
-            addAll(LaunchMarker.settingsArgs(overlay))
+            addAll(LaunchMarker.settingsArgs(overlayOf(wrapped, roster, held.gateway, keyed, cancelled)))
             addAll(hub.args + effortArgs(held)) // the effort after the hub's: a relaunch reads it as its own
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.
             // V4-169: a session another head wrote goes on as the copy the client resumes.
             addAll(resume.resumingAs(bounded.args, adoption))
         }
-        val adopted = resume.warning(adoption)
-        val warning = launchWarning(spec, dangerouslySkipPermissions, adopted, bounded.warning, hub.warning)
+        val warnings = listOf(resume.warning(adoption), bounded.warning, hub.warning, cancelled?.warning)
+        val warning = launchWarning(spec, dangerouslySkipPermissions, warnings)
         return LaunchOutcome.Ready(environment.recipe(argv, warning))
     }
 
@@ -219,10 +225,13 @@ public class LaunchService(
         roster: List<String>?,
         gateway: LaunchGateway,
         head: LaunchSpec,
+        cancelled: DesktopCancelled?,
     ): String? {
         if (wrapped == null) return null
         val hooks = materializer.startupHook(head.trees.own, head.signIn.headKey)
-        return wrapped.settingsOverlay(roster, gateway.statuslineCommand, LaunchMarker.here, gateway.keyHelper, hooks)
+        val marked = LaunchMarker.here
+        val overlay = wrapped.settingsOverlay(roster, gateway.statuslineCommand, marked, gateway.keyHelper, hooks)
+        return cancelled?.over(overlay) ?: overlay
     }
 
     /** MCP hub step 6: what the hub adds to this launch. A wrapped launch reads the user's own config home and falls
@@ -261,9 +270,7 @@ public class LaunchService(
     private fun launchWarning(
         spec: LaunchSpec,
         dangerouslySkipPermissions: Boolean,
-        adoptionWarning: String?,
-        continueWarning: String?,
-        hubWarning: String?,
+        others: List<String?>,
     ): String? {
         val danger = if (dangerouslySkipPermissions) {
             "dangerouslySkipPermissions engaged for ${spec.trees.own}: Claude Code runs with " +
@@ -271,7 +278,7 @@ public class LaunchService(
         } else {
             null
         }
-        return listOfNotNull(danger, adoptionWarning, continueWarning, hubWarning)
+        return (listOf(danger) + others).filterNotNull()
             .takeIf { it.isNotEmpty() }
             ?.joinToString("; ")
     }
@@ -323,7 +330,10 @@ public class LaunchService(
         val env = if (wrapped == null) planted else planted - CONFIG_DIR_ENV
         return LaunchEnvironment(
             env,
-            auth + "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY" + absentTiers + clientModels + config,
+            // desktop-door: a shell inside a Code tab session carries the door's switch, and a session that inherits
+            // any provider switch goes past its head
+            auth + "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY" + absentTiers + clientModels + config +
+                providerSwitches,
         )
     }
 

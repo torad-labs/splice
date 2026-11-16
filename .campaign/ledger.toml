@@ -675,6 +675,7 @@ reviews = [
 ]
 notes = [
   '2026-11-16 03:02 CT: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-16 04:45 CT: plan cut again after round 1's dispute (commit 55666f79c): the pair holds the cache on the real head but Meta returns the handed-over tool's calls with no arguments, so the tool is written where it arrived and called through a caller tool the list holds from the first request; the stand-in's model follows what the real head showed, and the cases that asked for the pair are gone",
 ]
 
 [[row]]

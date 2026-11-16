@@ -77,7 +77,7 @@ internal fun interface StartQuotaPoller {
 
 // why: the name a head's own sign-in goes by wherever a reading names its login (QuotaAccount.label), for the
 // history line of a head that wired no account of its own.
-private const val OWN_LOGIN = "primary"
+private const val HISTORY_OWN_LOGIN = "primary"
 
 /** Observes the primary quota tracker at assembly so a test can see which tracker was wired.
  *  The production body is a no-op and nothing in production consumes the callback — unlike
@@ -341,7 +341,7 @@ internal class ManagedHeadFactory(
     private fun ownQuota(key: String): QuotaTracker = QuotaTracker(
         statePaths.quotaFile(key),
         extraFamily = CodexQuotaHeaderFamily(),
-        history = QuotaHistory(statePaths.quotaFile(key), OWN_LOGIN),
+        history = QuotaHistory(statePaths.quotaFile(key), HISTORY_OWN_LOGIN),
     )
 
     /** The primary's snapshot stays where every install before 0.4.0 wrote it (per HEAD, under the

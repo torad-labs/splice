@@ -1,13 +1,20 @@
 // The Muse checks' stand-in for Meta's Model API, the backend a Muse head talks to: the model list (`GET
-// /v1/models`) and the Responses route (`POST /v1/responses`). What it does comes from two places, and
+// /v1/models`) and the Responses route (`POST /v1/responses`). What it does comes from three places, and
 // docs/specs/muse-tool-cache.md ("What Meta's API does") says which is which:
 //   - from Meta's documentation (dev.meta.ai, read 2026-11-16): it caches a request by prefix, in the order
 //     instructions, tools, input, among the requests that carry the same `prompt_cache_key`, and says how much of each
-//     request it read from that cache; the tools its model may call are the function tools in the request's tool list
-//     and the tools a `tool_search_output` in the input hands over;
-//   - from Meta's own answers on 2026-11-16 and 2026-10-27: the three requests it refuses, in its words.
-// Its model calls a tool when the conversation's last words ask it to (`CALL <tool> WITH <json> END`), if the request
-// lets it call that tool and the arguments fit the schema the request gave for it.
+//     request it read from that cache;
+//   - from Meta's own answers on 2026-11-16 and 2026-10-27: the three requests it refuses, in its words;
+//   - from the real head on 2026-11-16, 04:04 to 04:41 CT, which is where its model's three ways with a tool come from:
+//       a function tool the tool list declares outright is called, and the call comes back whole;
+//       a tool a `tool_search_output` in the input hands over is called under its name, and the call comes back with
+//       no arguments (10 of 10);
+//       a tool whose definition is written in the conversation is called through the listed tool made for that, the
+//       one that takes a tool's name and its arguments, and that call comes back whole (3 of 3).
+// Its model calls a tool when the conversation's last words ask it to (`CALL <tool> WITH <json> END`), with arguments
+// that fit the newest schema the request shows it for that tool.
+// It counts the cache to the character. Meta's own count trails the request before by up to a block of 128 tokens
+// (6,772 read of the 6,815 sent before).
 // It records every request it is sent, so a check can say what reached the backend and what that request cost.
 
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
@@ -48,7 +55,8 @@ export interface Turn {
   fresh: number;
   /** The names of the tools the request's tool list declares, in order. */
   listed: string[];
-  /** The names of the tools the model may call on this request, as the backend knows them. */
+  /** The names of the tools whose call comes back whole on this request: the ones the tool list declares outright,
+   *  and the ones written in the conversation when the list holds the tool that calls them. */
   callable: string[];
 }
 
@@ -117,7 +125,7 @@ export class MetaBackend {
     const key = typeof body.prompt_cache_key === "string" ? body.prompt_cache_key : "";
     const prefix = [JSON.stringify(body.instructions ?? ""), ...tools.map((t) => JSON.stringify(t)), ...input.map((i) => JSON.stringify(i))].join(SEPARATOR);
     const total = Math.ceil(prefix.length / TOKEN_CHARS);
-    const callable = callableTools(tools, input);
+    const model = toolsOf(tools, input);
     const turn: Turn = {
       headers,
       body,
@@ -127,7 +135,7 @@ export class MetaBackend {
       cached: 0,
       fresh: total,
       listed: tools.map((t) => t.name ?? t.type ?? ""),
-      callable: callable.map((t) => t.name ?? ""),
+      callable: [...model.listed, ...(model.via ? model.written : [])].map((t) => t.name ?? ""),
     };
     this.record.push(turn);
     const refused = refuses(tools, input);
@@ -139,30 +147,31 @@ export class MetaBackend {
     turn.cached = Math.ceil(Math.max(0, ...earlier.map((e) => shared(e, prefix))) / TOKEN_CHARS);
     turn.fresh = total - turn.cached;
     this.cache.set(key, [...earlier, prefix]);
-    return this.stream(body, turn, callable, asked(input));
+    return this.stream(body, turn, decide(model, asked(input)));
   }
 
-  /** The answer as Meta streams it: one message, or one call of a tool the request lets the model call, then the
-   *  usage and the subscription's meter. */
-  private stream(body: Record<string, unknown>, turn: Turn, callable: WireTool[], ask: Ask | null): Response {
+  /** The answer as Meta streams it: one message, or one call of a tool, then the usage and the subscription's
+   *  meter. */
+  private stream(body: Record<string, unknown>, turn: Turn, said: Said): Response {
     const n = ++this.n;
     const id = `resp_${n}`;
-    const tool = ask ? callable.find((t) => t.name === ask.tool || (t.description ?? "").includes(`[[${ask.tool}]]`)) : undefined;
     const events: Record<string, unknown>[] = [
       { type: "response.created", response: { id, status: "in_progress", model: body.model, output: [] } },
       { type: "response.in_progress", response: { id, status: "in_progress", model: body.model, output: [] } },
     ];
     let item: Record<string, unknown>;
-    if (ask && tool && fits(tool, ask.args)) {
-      item = { type: "function_call", id: `fc_${n}`, call_id: `call_${n}`, name: tool.name, arguments: ask.args, status: "completed" };
+    if ("call" in said) {
+      const args = said.args;
+      item = { type: "function_call", id: `fc_${n}`, call_id: `call_${n}`, name: said.call, arguments: args, status: "completed" };
       events.push(
         { type: "response.output_item.added", output_index: 0, item: { ...item, arguments: "", status: "in_progress" } },
-        { type: "response.function_call_arguments.delta", output_index: 0, item_id: item.id, delta: ask.args },
-        { type: "response.function_call_arguments.done", output_index: 0, item_id: item.id, arguments: ask.args },
+        // A call that comes back with no arguments carries no delta: Meta sent only the `done` (2026-11-16).
+        ...(args === "{}" ? [] : [{ type: "response.function_call_arguments.delta", output_index: 0, item_id: item.id, delta: args }]),
+        { type: "response.function_call_arguments.done", output_index: 0, item_id: item.id, arguments: args },
         { type: "response.output_item.done", output_index: 0, item },
       );
     } else {
-      const text = !ask ? "OK" : tool ? `THE ARGUMENTS DO NOT FIT ${ask.tool}` : `NO SUCH TOOL ${ask.tool}`;
+      const text = said.text;
       item = { type: "message", id: `msg_${n}`, role: "assistant", status: "completed", content: [{ type: "output_text", text, annotations: [] }] };
       events.push(
         { type: "response.output_item.added", output_index: 0, item: { ...item, status: "in_progress", content: [] } },
@@ -203,16 +212,125 @@ function shared(a: string, b: string): number {
   return at;
 }
 
-/** The tools the model may call: the function tools the tool list declares outright, then the tools each
- *  `tool_search_output` in the input hands over. A name handed over again takes its newest definition. */
-function callableTools(tools: WireTool[], input: WireItem[]): WireTool[] {
-  const by = new Map<string, WireTool>();
-  for (const t of tools) if (t.type === "function" && t.name && t.defer_loading !== true) by.set(t.name, t);
+/** What a request shows the model of its tools. */
+interface ModelTools {
+  /** The function tools the tool list declares outright. */
+  listed: WireTool[];
+  /** The tools a `tool_search_output` in the input hands over, the newest definition of each name. */
+  handed: WireTool[];
+  /** The tools whose definition is written in the conversation, the newest definition of each name. */
+  written: WireTool[];
+  /** The listed tool that calls a written one, the parameter that takes its name and the one that takes its
+   *  arguments. Null when the list holds no such tool, or more than one. */
+  via: { tool: WireTool; name: string; args: string } | null;
+}
+
+function toolsOf(tools: WireTool[], input: WireItem[]): ModelTools {
+  const listed = tools.filter((t) => t.type === "function" && !!t.name && t.defer_loading !== true);
+  const handed = new Map<string, WireTool>();
   for (const item of input) {
     if (item.type !== "tool_search_output") continue;
-    for (const t of item.tools ?? []) if (t.type === "function" && t.name) by.set(t.name, t);
+    for (const t of item.tools ?? []) if (t.type === "function" && t.name) handed.set(t.name, t);
+  }
+  return { listed, handed: [...handed.values()], written: writtenTools(input), via: caller(listed) };
+}
+
+/** The listed tool made to call a tool the conversation wrote: its parameters are a string, the tool's name, and an
+ *  object, the tool's arguments, both required and nothing else. That is the tool Meta took and its model used on the
+ *  real head (2026-11-16). */
+function caller(listed: WireTool[]): ModelTools["via"] {
+  const found = listed.flatMap((tool) => {
+    const schema = (tool.parameters ?? {}) as { properties?: Record<string, { type?: unknown }>; required?: string[] };
+    const props = Object.entries(schema.properties ?? {});
+    const name = props.filter(([, p]) => p?.type === "string").map(([k]) => k);
+    const args = props.filter(([, p]) => p?.type === "object").map(([k]) => k);
+    const required = schema.required ?? [];
+    if (props.length !== 2 || name.length !== 1 || args.length !== 1) return [];
+    if (!required.includes(name[0]!) || !required.includes(args[0]!)) return [];
+    return [{ tool, name: name[0]!, args: args[0]! }];
+  });
+  return found.length === 1 ? found[0]! : null;
+}
+
+/** The tools whose definition is written in the conversation: every JSON object, in the text of a message or of a
+ *  tool's result, that names a tool and gives its schema (`input_schema` or `parameters`). The newest definition of a
+ *  name is the one the model holds. */
+function writtenTools(input: WireItem[]): WireTool[] {
+  const by = new Map<string, WireTool>();
+  const read = (v: unknown): void => {
+    if (Array.isArray(v)) return v.forEach(read);
+    if (!v || typeof v !== "object") return;
+    const o = v as Record<string, unknown>;
+    const schema = o.input_schema ?? o.parameters;
+    if (typeof o.name === "string" && o.name && schema && typeof schema === "object" && !Array.isArray(schema)) {
+      by.set(o.name, { type: "function", name: o.name, description: typeof o.description === "string" ? o.description : "", parameters: schema });
+      return;
+    }
+    Object.values(o).forEach(read);
+  };
+  for (const item of input) {
+    const type = item.type ?? (item.role ? "message" : "");
+    if (type !== "message" && type !== "function_call_output") continue;
+    for (const text of strings(item)) embedded(text).forEach(read);
   }
   return [...by.values()];
+}
+
+/** Every JSON object a text holds, outermost first. */
+function embedded(text: string): unknown[] {
+  const out: unknown[] = [];
+  let at = text.indexOf("{");
+  while (at >= 0) {
+    const end = closing(text, at);
+    let parsed: unknown;
+    try {
+      parsed = end < 0 ? undefined : JSON.parse(text.slice(at, end + 1));
+    } catch {
+      parsed = undefined;
+    }
+    if (parsed !== undefined) out.push(parsed);
+    at = text.indexOf("{", parsed !== undefined ? end + 1 : at + 1);
+  }
+  return out;
+}
+
+/** Where the brace opened at `from` closes, minding strings, or -1. */
+function closing(text: string, from: number): number {
+  let depth = 0;
+  let quoted = false;
+  for (let at = from; at < text.length; at++) {
+    const c = text[at];
+    if (quoted) {
+      if (c === "\\") at++;
+      else if (c === '"') quoted = false;
+    } else if (c === '"') quoted = true;
+    else if (c === "{") depth++;
+    else if (c === "}" && --depth === 0) return at;
+  }
+  return -1;
+}
+
+/** What the model says to a request: a call, or words. */
+type Said = { call: string; args: string } | { text: string };
+
+/** The model's three ways with the tool it is asked to call, as the real head showed them on 2026-11-16. */
+function decide(model: ModelTools, ask: Ask | null): Said {
+  if (!ask) return { text: "OK" };
+  const named = (t: WireTool) => t.name === ask.tool || (t.description ?? "").includes(`[[${ask.tool}]]`);
+  const unfit: Said = { text: `THE ARGUMENTS DO NOT FIT ${ask.tool}` };
+  // A tool the list declares outright: the call comes back whole.
+  const listed = model.listed.find(named);
+  if (listed) return fits(listed, ask.args) ? { call: listed.name!, args: ask.args } : unfit;
+  // A tool written in the conversation: called through the listed tool that takes a name and arguments.
+  const written = model.written.find(named);
+  if (written && model.via) {
+    if (!fits(written, ask.args)) return unfit;
+    return { call: model.via.tool.name!, args: JSON.stringify({ [model.via.name]: written.name, [model.via.args]: JSON.parse(ask.args) }) };
+  }
+  // A tool a tool-search pair handed over: Meta returns its call with no arguments.
+  const handed = model.handed.find(named);
+  if (handed) return { call: handed.name!, args: "{}" };
+  return { text: `NO SUCH TOOL ${ask.tool}` };
 }
 
 /** Whether `args` fit the schema the backend holds for `tool`: every required property, and none it does not name.
@@ -263,8 +381,8 @@ interface Ask {
   args: string;
 }
 
-/** What the conversation's last words ask the model to call. Only the newest thing the person or a tool said counts:
- *  once the model has answered it, or a tool's result has come back after it, the ask is spent. */
+/** What the conversation's last words ask the model to call. Only what was said since the model last spoke or a tool
+ *  last answered counts: once the model has answered it, or a tool's result has come back after it, the ask is spent. */
 function asked(input: WireItem[]): Ask | null {
   for (let at = input.length - 1; at >= 0; at--) {
     const item = input[at]!;
@@ -272,7 +390,7 @@ function asked(input: WireItem[]): Ask | null {
     if (item.role === "system" || item.role === "developer") continue;
     if (item.role !== "user") return null;
     const m = /CALL (\S+) WITH (\{.*?\}) END/.exec(strings(item).join("\n"));
-    return m ? { tool: m[1]!, args: m[2]! } : null;
+    if (m) return { tool: m[1]!, args: m[2]! };
   }
   return null;
 }

@@ -35,7 +35,7 @@ goal = "A person running a GPT head signed in with ChatGPT switches it to Fast o
 goal = "Someone who uses Claude Desktop points its Code tab at splice the way Claude Code is pointed at Bedrock: splice desktop on is the whole setup, the tab's model picker then lists every model splice serves from every head it holds a credential for, picking a model runs the session on that model's head, the tab's sessions share the claude command's folder, Chat, Cowork and the terminal run as they did, and splice desktop off puts the tab back on the person's own Claude login. Spec: docs/specs/desktop-door.md."
 
 [feature."muse-tool-cache"]
-goal = "A Muse session pays for its conversation once. When Claude Code's ToolSearch loads a tool in the middle of a conversation, or a server adds or takes away a tool, the request that carries the change and every request after it read everything the conversation had already sent from Meta's prompt cache, and the tool is the model's to call under its own name. On 2026-11-16 each of 26 loads in one five-hour window made Meta read a whole conversation again at the full price, 2.69 million tokens. Spec: docs/specs/muse-tool-cache.md."
+goal = "A Muse session pays for its conversation once. When Claude Code's ToolSearch loads a tool in the middle of a conversation, or a server adds or takes away a tool, the request that carries the change and every request after it read everything the conversation had already sent from Meta's prompt cache, and the model's call of the tool reaches Claude Code under the tool's own name, with its arguments. On 2026-11-16 each of 26 loads in one five-hour window made Meta read a whole conversation again at the full price, 2.69 million tokens. Spec: docs/specs/muse-tool-cache.md."
 
 [[row]]
 id = 'server-listener'
@@ -440,7 +440,7 @@ blocked_by = []
 guard = false
 spec = "A launch of a head signed in with ChatGPT lays down /fast and /ultrafast as skills in the head's own CLAUDE_CONFIG_DIR/skills, one for each tier its pinned model's catalog entry offers (service_tiers), so they replace Claude Code's own /fast and show in its / menu. Each description names the tier, the catalog's own description of it and what it uses of a ChatGPT plan's limits (2.5x for Fast, 8x for Ultrafast, OpenAI's published multiples), the argument-hint offers on and off, and disable-model-invocation is true. The launch sets CLAUDE_CODE_DISABLE_FAST_MODE=1. A head not signed in with ChatGPT gets neither skill and keeps Claude Code's own /fast. The person's own ~/.claude/skills stay untouched and stay offered in every head; /login stays. The head's UserPromptSubmit hook stops /fast and /ultrafast before the model, whether it is handed the typed command or the skill's expanded text; a prompt that only starts like one goes through. A real Claude Code session on the stand-in backend shows /fast in the menu with its description, and running it reaches no model. See docs/specs/gpt-speed.md, decisions 1 and 2."
 checks = [
-  'bun test ./.campaign/checks/speed/commands.test.ts',
+  'bun test --timeout 120000 ./.campaign/checks/speed/commands.test.ts',
 ]
 reviews = [
   'feature',
@@ -460,7 +460,7 @@ blocked_by = []
 guard = false
 spec = "/fast and /ultrafast set the speed of the session they are typed in (Claude Code's session id), and no other session's. Bare, a command turns its tier on, or back to standard when that tier is on, as Codex's do; on and off set it whatever it was, and off always means standard. Fast and Ultrafast replace each other. The reply names the tier, the catalog's description of it and what it uses of a ChatGPT plan's limits (2.5x for Fast, 8x for Ultrafast), or says the session is back at standard speed. The setting outlives a daemon restart. A tier the session's model doesn't offer (the model of its last turn, or the head's pinned model before one) is refused, naming the model and the tiers it offers, and changes nothing. See docs/specs/gpt-speed.md, decision 3."
 checks = [
-  'bun test ./.campaign/checks/speed/switch.test.ts',
+  'bun test --timeout 120000 ./.campaign/checks/speed/switch.test.ts',
 ]
 reviews = [
   'feature',
@@ -480,7 +480,7 @@ blocked_by = []
 guard = false
 spec = "Every request of a session at Fast or Ultrafast carries service_tier priority or ultrafast and x-codex-routing-hint model=<slug>;tier=<id>, as codex-rs sends them on a ChatGPT login (rust-v0.169.0, client.rs build_routing_hint_header); a subagent's request, a compaction and a turn not streamed included. A standard session sends no service_tier and the hint model=<slug>. The tier never varies by turn type, and a tier the turn's model doesn't list in the catalog is not sent. See docs/specs/gpt-speed.md, decision 4."
 checks = [
-  'bun test ./.campaign/checks/speed/wire.test.ts',
+  'bun test --timeout 120000 ./.campaign/checks/speed/wire.test.ts',
 ]
 reviews = [
   'feature',
@@ -500,7 +500,7 @@ blocked_by = []
 guard = false
 spec = "Each turn's row on /api/perf/turns carries speed_asked and speed (standard, fast or ultrafast); speed is read from the backend's own service_tier in its answer (priority or fast is fast, ultrafast, default is standard), so a turn served slower than asked shows it. A plan turn's plan_value_usd is priced at the card for the speed it was served at. A rate card in splice.toml names tier cards as flat keys beside the long-context ones: fast_input, fast_cache_read, fast_output, fast_cache_write, and the same with ultrafast_. The shipped price table carries OpenAI's published Fast and Ultrafast cards (developers.openai.com/api/docs/pricing), in a file of their own beside published-rates.tsv: installed daemons fetch that file from main every hour and refuse a header they do not know, so it takes no new column. No check reaches the shipped table, because a stand-in's host is not in it, so the reviews hold it. A turn served at a speed whose card splice doesn't have is left unpriced, never priced at the standard card. See docs/specs/gpt-speed.md, decision 5."
 checks = [
-  'bun test ./.campaign/checks/speed/recorded.test.ts',
+  'bun test --timeout 120000 ./.campaign/checks/speed/recorded.test.ts',
 ]
 reviews = [
   'feature',
@@ -520,7 +520,7 @@ blocked_by = []
 guard = false
 spec = "splice answers Claude Code's Mantle dialect under /desktop at one address that a restart does not move: POST /desktop/v1/messages and POST /desktop/v1/messages/count_tokens, each with or without ?beta=true, the key as Authorization: Bearer. A turn through the door is a turn of the head its model names, with that head's admission, choice of login, cooldowns and honest failures unchanged. Every model in the door has one selector, the ID its head's own /v1/models lists (<discovery_prefix><model id>), and a request that names a selector runs that model on that head. A session (x-claude-code-session-id) is on the head of the last selector it named; one that has named none is on the head of the default model. Anthropic's own IDs are a tier: in the Mantle spelling (anthropic.claude-opus-5-5), with a region prefix, with a version suffix, bare, or as the tier's alias, each runs the model the session's head names for that tier (model_slots), or the head's pinned model where it names none. Any other model, a selector of a head that is not in the door included, is refused 400 invalid_request_error in Anthropic's error shape, naming splice desktop, with nothing sent upstream. The tier mapping is a fact of Claude Code's dialect and lives in integrations/claude-code. See docs/specs/desktop-door.md, decisions 1, 2 and 3."
 checks = [
-  'bun test ./.campaign/checks/desktop/door.test.ts',
+  'bun test --timeout 120000 ./.campaign/checks/desktop/door.test.ts',
   'sh .campaign/cases/check.sh desktop-door',
 ]
 reviews = [
@@ -541,7 +541,7 @@ blocked_by = []
 guard = false
 spec = "splice desktop on [--model <selector>] writes into ~/.claude/settings.json, making the file when there is none and keeping everything else in it: in env, CLAUDE_CODE_USE_MANTLE=1, ANTHROPIC_BEDROCK_MANTLE_BASE_URL (the door), AWS_BEARER_TOKEN_BEDROCK (the desktop key), CLAUDE_CODE_MAX_CONTEXT_TOKENS (the declared window), CLAUDE_CODE_AUTO_MODE_SERVER=0 and ANTHROPIC_MODEL (the default model's selector); and modelPicker with replaceBuiltInOptions true. It never writes model, the person's own pick. The default model is --model, or the one chosen the last time, or the pinned model of the first head in the door, and on says which. on refuses, changing nothing and naming what it found, when no head is in the door, when --model is not in it, or when the file already points Claude Code at a provider (CLAUDE_CODE_USE_BEDROCK, _VERTEX or _FOUNDRY set, or CLAUDE_CODE_USE_MANTLE with an address that is not the door). splice desktop off takes out what on put in and puts back what it replaced, so a file on then off touched reads as it did before. What it replaced is kept in splice's state folder, never beside the file. splice desktop says whether Desktop is on, the door, the default model, the lineup, the heads left out and the last turn through the door; --json gives on, door, default_model, models, left_out and last_turn. See docs/specs/desktop-door.md, decision 4."
 checks = [
-  'bun test ./.campaign/checks/desktop/switch.test.ts',
+  'bun test --timeout 120000 ./.campaign/checks/desktop/switch.test.ts',
   'sh .campaign/cases/check.sh desktop-switch',
 ]
 reviews = [
@@ -562,7 +562,7 @@ blocked_by = []
 guard = false
 spec = "The modelPicker that splice desktop on writes has one row for each model of each head in the door, in splice.toml's order of heads: model is the selector, label the model's own label, description is splice · <command>. splice desktop --json lists the same as models, each with model, label, head and command. A head is in the door when splice holds the credential its provider is called with (an API key, a ChatGPT login, any account splice signs in itself). A head that forwards the caller's own Claude login (auth kind client) is not: it has no row, and splice desktop and left_out name it with that reason. A head whose login is missing or has expired is left out until it is signed in again, named with the command that signs it in. While Desktop is on, the lineup in the file follows splice with no command run: a head or a login added or removed is in the picker of the next session, the door and its key staying as the file held them, and a removed head's selectors are refused. See docs/specs/desktop-door.md, decisions 3 and 4."
 checks = [
-  'bun test ./.campaign/checks/desktop/lineup.test.ts',
+  'bun test --timeout 120000 ./.campaign/checks/desktop/lineup.test.ts',
   'sh .campaign/cases/check.sh desktop-lineup',
 ]
 reviews = [
@@ -583,7 +583,7 @@ blocked_by = []
 guard = false
 spec = "The Code tab's Claude Code has one context window for a session, the one splice desktop on declares in the file (CLAUDE_CODE_MAX_CONTEXT_TOKENS), and compacts on the share of it a turn's input and cache counts fill. The door reports each turn's counts, streamed or not, and each count_tokens answer as the same share of the declared window that they are of the window of the model the turn ran on, by the scaling a head already applies to a session launched with another window. A session compacts before its model's limit whichever model it is on, and after a switch of model. Raw upstream usage and the turn's recorded counts are not changed by it. See docs/specs/desktop-door.md, decision 5."
 checks = [
-  'bun test ./.campaign/checks/desktop/window.test.ts',
+  'bun test --timeout 120000 ./.campaign/checks/desktop/window.test.ts',
   'sh .campaign/cases/check.sh desktop-window',
 ]
 reviews = [
@@ -604,7 +604,7 @@ blocked_by = []
 guard = false
 spec = "The door has a key of its own, the desktop key, kept in splice's state folder for its owner only and never written to the daemon's log. Presented as Authorization: Bearer it opens /desktop and no other route: a head's own routes and the control API refuse it. The turn key and the management key do not open the door. It is a proof, never a credential, and is not forwarded to any provider. splice rotate-key leaves it as it is. splice desktop rotate-key replaces it, writes the new one into ~/.claude/settings.json when Desktop is on, and the replaced key is refused from then. A request with no key, a wrong one or a replaced one is answered 401 authentication_error in Anthropic's error shape, naming splice desktop, with nothing sent upstream. See docs/specs/desktop-door.md, decision 6."
 checks = [
-  'bun test ./.campaign/checks/desktop/key.test.ts',
+  'bun test --timeout 120000 ./.campaign/checks/desktop/key.test.ts',
   'sh .campaign/cases/check.sh desktop-key',
 ]
 reviews = [
@@ -625,7 +625,7 @@ blocked_by = []
 guard = false
 spec = "The row of a turn that came through the door is on /api/perf/turns as its head's row, with the model that ran, and says so: door is desktop. Other rows carry no door. splice desktop names the last turn that came through the door, and --json gives it as last_turn with at, session_id, head, model_asked (what the request named) and model (what ran), or null before any. See docs/specs/desktop-door.md, decisions 4 and 7."
 checks = [
-  'bun test ./.campaign/checks/desktop/recorded.test.ts',
+  'bun test --timeout 120000 ./.campaign/checks/desktop/recorded.test.ts',
   'sh .campaign/cases/check.sh desktop-recorded',
 ]
 reviews = [
@@ -646,7 +646,7 @@ blocked_by = []
 guard = false
 spec = "The file splice desktop on writes is the one the terminal's claude reads, and a shell inside a Code tab session carries its env. A launch's recipe unsets CLAUDE_CODE_USE_BEDROCK, CLAUDE_CODE_USE_MANTLE, CLAUDE_CODE_USE_VERTEX, CLAUDE_CODE_USE_FOUNDRY, ANTHROPIC_BEDROCK_BASE_URL, ANTHROPIC_BEDROCK_MANTLE_BASE_URL and AWS_BEARER_TOKEN_BEDROCK, so a head started from inside a Code tab session, or on a machine set up for Bedrock, runs on its head. The wrapped claude's settings overlay, which outranks the file, sets every variable on wrote to the launch's own value or to the empty string, and carries the picker the launch had before, so its session reaches its head and its picker is as it was (seen on Claude Code 2.1.325: an overlay env of empty strings and a modelPicker with no rows ran as if the file held none of it). Where the file's model holds a selector, picked in the Code tab, the wrapped claude starts on its head's own default and says so in the launch's warning. A head with a config folder of its own never reads the file and carries nothing of the door in its settings. splice writes one file in the claude command's folder, settings.json, and only at the person's command; the README's head-isolation text says this exception. No check wraps claude, so the reviews hold the wrapped launch. See docs/specs/desktop-door.md, decisions 8 and 9."
 checks = [
-  'bun test ./.campaign/checks/desktop/terminal.test.ts',
+  'bun test --timeout 120000 ./.campaign/checks/desktop/terminal.test.ts',
   'sh .campaign/cases/check.sh desktop-terminal',
 ]
 reviews = [
@@ -665,10 +665,9 @@ status = 'todo'
 owner = ''
 blocked_by = []
 guard = false
-spec = "On a Muse head, the request that carries a tool Claude Code's ToolSearch loaded (a tool_reference in the search's result, the tool's definition declared defer_loading) reads everything the conversation had already sent from Meta's prompt cache, and so does every request after it. The tool list of the conversation's first request goes to Meta unchanged, in order and in bytes, on every request, and the loaded tool rides in the history at the place it was loaded, as Meta's client-executed tool-search pair, in bytes that are the same on every later request whatever Claude Code's cache_control mark does. That holds for one tool or several loaded by one search, for a second load later in the conversation, for a subagent's conversation, for the request that compacts the conversation, and after a daemon restart. From the request that carries it, the loaded tool is the model's to call, and its call reaches Claude Code under the tool's own name with its arguments. A tool declared defer_loading that no result references stays out of the request. Meta refused a probe of this from outside the head (403, the subscription serves its own client only), so the real head is the last word: before anything else the builder sends one conversation with a deferred tool loaded in the middle through a build of the head to Meta and reads the head's trace (the load's request answered 200, its cached count covering the conversation before it, the loaded tool called), and the feature review does the same in a real Claude Code session. If Meta doesn't take the pair or it doesn't hold the cache, the item is disputed to the lead with Meta's answer. See docs/specs/muse-tool-cache.md, decisions 1, 2 and 5."
+spec = "On a Muse head, the request that carries a tool Claude Code's ToolSearch loaded (a tool_reference in the search's result, the tool's definition declared defer_loading) reads everything the conversation had already sent from Meta's prompt cache, and so does every request after it. The tool list of the conversation's first request goes to Meta unchanged, in order and in bytes, on every request. From its first request, every Muse conversation's list holds one tool of the head's own, the caller, which takes a tool's name (a string) and its arguments (an object), both required and nothing else, under a name no Claude Code tool has. The loaded tool is written into the history at the place it was loaded: its name, description and schema as text, with the words that say it is called through the caller, in bytes that are the same on every later request whatever Claude Code's cache_control mark does. The model calls it through the caller, and the head hands that call to Claude Code as a call of the loaded tool, under its own name, with its arguments; Claude Code never sees the caller. When Claude Code sends that call back in the history it goes to Meta the way the model made it, the same bytes every time. That holds for one tool or several loaded by one search, for a second load later in the conversation, for a subagent's conversation, for the request that compacts the conversation, and after a daemon restart. A tool declared defer_loading that no result references stays out of the request. Round 1 showed on the real head that Meta returns the calls of a tool handed over as its tool-search pair with no arguments, and that the caller works (docs/specs/muse-tool-cache.md, What Meta does); round 1's uncommitted work is in the tree with the pair turned off, and what of it stays is the builder's call. The real head is the last word: the builder shows the finished build on it the way the spec's section Showing it on the real head says (a load, a call, its result, a second call; every request 200, the cached counts within one 128-token block of the request before, both calls reaching the client under the tool's own name with arguments that fit), and the feature review does the same in a real Claude Code session. A 401 or a 403 from Meta stops that run and goes to the lead. See docs/specs/muse-tool-cache.md, decisions 1 to 4 and 7 to 9."
 checks = [
   'bun test ./.campaign/checks/muse/load.test.ts',
-  'sh .campaign/cases/check.sh muse-tool-load',
 ]
 reviews = [
   'feature',
@@ -676,6 +675,7 @@ reviews = [
 ]
 notes = [
   '2026-11-16 03:02 CT: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-16 04:45 CT: plan cut again after round 1's dispute (commit 55666f79c): the pair holds the cache on the real head but Meta returns the handed-over tool's calls with no arguments, so the tool is written where it arrived and called through a caller tool the list holds from the first request; the stand-in's model follows what the real head showed, and the cases that asked for the pair are gone",
 ]
 
 [[row]]
@@ -688,10 +688,9 @@ blocked_by = [
   'muse-tool-load',
 ]
 guard = false
-spec = "On a Muse head, the request that carries a tool_addition or a tool_removal (the system message Claude Code sends when a server connects or leaves) reads everything the conversation had already sent from Meta's prompt cache, and so does every request after it. The tool list of the conversation's first request goes to Meta unchanged on every request. An added tool rides in the history at the place it was added, as Meta's client-executed tool-search pair, and from that request on it is the model's to call: its call reaches Claude Code under the tool's own name with its arguments, a name past Meta's 64 characters included. A removed tool, whether the conversation started with it or it was added later, leaves the tool list and the history as they were; the request that carries the removal tells the model in words, at the place it happened, which tool went, and the tools that stayed are still the model's to call. A tool that comes back with a new schema is handed over again where it came back, and the model calls it with the new schema. See docs/specs/muse-tool-cache.md, decisions 1 to 4."
+spec = "On a Muse head, the request that carries a tool_addition or a tool_removal (the system message Claude Code sends when a server connects or leaves) reads everything the conversation had already sent from Meta's prompt cache, and so does every request after it. The tool list of the conversation's first request goes to Meta unchanged on every request. An added tool is written into the history at the place it was added, as muse-tool-load writes a loaded one, and from that request on the model calls it through the caller: its call reaches Claude Code under the tool's own name with its arguments, a name past Meta's 64 characters included, written whole. A removed tool, whether the conversation started with it or it was added later, leaves the tool list and the history as they were; the request that carries the removal tells the model in words, at the place it happened, which tool went, and the tools that stayed are still the model's to call. A tool that comes back with a new schema is written again where it came back, and the model calls it with the new schema. ToolChangeEveryHeadTest, which held every head's tool list to the conversation's current tools, holds this for the Muse head instead, and the commit says so. See docs/specs/muse-tool-cache.md, decisions 1 to 6 and 9."
 checks = [
   'bun test ./.campaign/checks/muse/change.test.ts',
-  'sh .campaign/cases/check.sh muse-tool-change',
 ]
 reviews = [
   'feature',

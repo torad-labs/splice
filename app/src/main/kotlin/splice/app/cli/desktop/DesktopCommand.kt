@@ -149,7 +149,8 @@ private class DesktopSaid(private val out: TerminalOutput) {
         } else {
             val asked = JsonScalars.str(last, "model_asked")
             val ran = JsonScalars.str(last, "model")
-            out.line("Last turn: ${text(last, "at")} on ${text(last, "head")}, asked $asked, ran $ran")
+            val session = JsonScalars.str(last, "session_id")?.let { " in session $it" }.orEmpty()
+            out.line("Last turn: ${text(last, "at")} on ${text(last, "head")}$session, asked $asked, ran $ran")
         }
     }
 

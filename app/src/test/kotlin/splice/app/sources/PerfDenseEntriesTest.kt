@@ -10,6 +10,7 @@ import splice.app.sources.dense.PerfDenseCodec
 import splice.app.sources.dense.PerfDenseEntries
 import splice.app.sources.dense.PerfGenerationRef
 import splice.app.sources.dense.PerfLinkedEntries
+import splice.core.turn.DESKTOP_DOOR
 import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfTranscriptLink
 import splice.usage.perf.PerfTurnFacts
@@ -55,7 +56,11 @@ class PerfDenseEntriesTest {
                     compact = listOf(null, false, true)[random.nextInt(3)],
                     captured = listOf(null, false, true)[random.nextInt(3)],
                 ),
-                transcript = PerfTranscriptLink(sessionId = text(random, pool)),
+                // desktop-door: a row that came through the door says so after it is kept dense, and no other row does.
+                transcript = PerfTranscriptLink(
+                    sessionId = text(random, pool),
+                    door = listOf(null, DESKTOP_DOOR)[random.nextInt(2)],
+                ),
                 cause = text(random, pool),
             )
         }
@@ -78,6 +83,7 @@ class PerfDenseEntriesTest {
             entry.line.probe,
             row?.ts, row?.outcome, row?.cause, row?.facts?.model, row?.facts?.session, row?.facts?.account,
             row?.facts?.cacheCold, row?.facts?.compact, row?.facts?.captured, row?.transcript?.sessionId,
+            row?.transcript?.door,
             row?.fields?.filterKeys { it != "ts" }?.toSortedMap(),
         )
     }

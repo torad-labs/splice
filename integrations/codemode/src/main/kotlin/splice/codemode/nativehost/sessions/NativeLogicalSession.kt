@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import splice.codemode.nativehost.NativeFrames
 import splice.codemode.nativehost.NativeRequests
 import splice.codemode.nativehost.NativeSessionBinding
+import splice.codemode.nativehost.NativeSessionDiagnostics
 import splice.codemode.nativehost.trace.NativeTraceContext
 import splice.core.util.Cancellables
 import splice.upstream.failure.CODE_MODE_RUNTIME_REPLACED_ERROR
@@ -27,6 +28,7 @@ internal class NativeLogicalSession(
     private val connection: NativeSessionConnection,
     private val heapBytes: Long,
     private val maxYieldTimeMs: Long?,
+    private val diagnostics: NativeSessionDiagnostics = NativeSessionDiagnostics(),
 ) {
     private val opening = Mutex()
     private val state = Any()
@@ -45,7 +47,10 @@ internal class NativeLogicalSession(
         // Capture before waiting for admission: every already queued old-generation request is rejected.
         val expected = binding
         val current = getOrOpen()
-        if (expected != null && expected !== current) throw CodeModeToolException(CODE_MODE_RUNTIME_REPLACED_ERROR)
+        if (expected != null && expected !== current) {
+            diagnostics.replaced(expected, current)
+            throw CodeModeToolException(CODE_MODE_RUNTIME_REPLACED_ERROR)
+        }
         return current
     }
 

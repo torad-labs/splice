@@ -27,6 +27,9 @@ goal = "Whoever runs the box sees each person's traffic live, from Prometheus on
 [feature."server-hardening"]
 goal = "What the server-upstreams reviewers found past its items' words: a person's key stays at the server on the Messages route as it does on the OpenAI route, an answer the upstream cuts short is an error the client sees, the provider's own response headers and usage nobody asked for stay at the server, the OpenAI route answers a lookup of one model, and it is kept alive through a long prefill as the Messages route is. Spec: docs/specs/server-mode.md, F1 and F4."
 
+[feature."gpt-speed"]
+goal = "A person running a GPT head signed in with ChatGPT switches it to Fast or Ultrafast as in Codex: /fast and /ultrafast in Claude Code's own menu, told at once what each costs, applied to that session's turns on the wire as Codex sends them, and recorded at the speed each turn was served at. Spec: docs/specs/gpt-speed.md."
+
 [[row]]
 id = 'server-listener'
 title = 'A [server] listener that answers only keys'
@@ -418,4 +421,84 @@ reviews = [
 notes = [
   '2026-11-15 19:34 CT: added; 1 of 1 checks fail, as they should before the work',
   '2026-11-15 23:55 CT campaign: done in round 3 of server-hardening: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'speed-commands'
+title = "/fast and /ultrafast in a GPT head's menu, caught before the model"
+feature = 'gpt-speed'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "A launch of a head signed in with ChatGPT lays down /fast and /ultrafast as skills in the head's own CLAUDE_CONFIG_DIR/skills, one for each tier its model's catalog entry offers (service_tiers), so they replace Claude Code's own /fast and show in its / menu. Each description names the tier and the catalog's own description of it (what it costs), the argument-hint offers on and off, and disable-model-invocation is true. The launch sets CLAUDE_CODE_DISABLE_FAST_MODE=1. A head not signed in with ChatGPT gets neither skill and keeps Claude Code's own /fast. The person's own ~/.claude/skills stay untouched and stay offered in every head; /login stays. The head's UserPromptSubmit hook stops /fast and /ultrafast before the model, whether it is handed the typed command or the skill's expanded text; a prompt that only starts like one goes through. A real Claude Code session on the stand-in backend shows /fast in the menu with its description, and running it reaches no model. See docs/specs/gpt-speed.md, decisions 1 and 2."
+checks = [
+  'bun test ./.campaign/checks/speed/commands.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-16 00:57 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'speed-switch'
+title = "The speed is the session's: toggled, set, kept across a restart"
+feature = 'gpt-speed'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "/fast and /ultrafast set the speed of the session they are typed in (Claude Code's session id), and no other session's. Bare, a command turns its tier on, or back to standard when that tier is on, as Codex's do; on and off set it whatever it was, and off always means standard. Fast and Ultrafast replace each other. The reply names the tier and the catalog's description of it, or says the session is back at standard speed. The setting outlives a daemon restart. A tier the head's model doesn't offer is refused, naming the model and the tiers it offers, and changes nothing. See docs/specs/gpt-speed.md, decision 3."
+checks = [
+  'bun test ./.campaign/checks/speed/switch.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-16 00:57 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'speed-wire'
+title = "A fast session's requests ask for the tier as Codex does"
+feature = 'gpt-speed'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "Every request of a session at Fast or Ultrafast carries service_tier priority or ultrafast and x-codex-routing-hint model=<slug>;tier=<id>, as codex-rs sends them on a ChatGPT login (rust-v0.169.0, client.rs build_routing_hint_header); a subagent's request, a compaction and a turn not streamed included. A standard session sends no service_tier and the hint model=<slug>. The tier never varies by turn type, and a tier the turn's model doesn't list in the catalog is not sent. See docs/specs/gpt-speed.md, decision 4."
+checks = [
+  'bun test ./.campaign/checks/speed/wire.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-16 00:58 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'speed-recorded'
+title = 'Each turn recorded and valued at the speed it was served at'
+feature = 'gpt-speed'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "Each turn's row on /api/perf/turns carries speed_asked and speed (standard, fast or ultrafast); speed is read from the backend's own service_tier in its answer (priority or fast is fast, ultrafast, default is standard), so a turn served slower than asked shows it. A plan turn's plan_value_usd is priced at the card for the speed it was served at. A rate card in splice.toml names tier cards as flat keys beside the long-context ones: fast_input, fast_cache_read, fast_output, fast_cache_write, and the same with ultrafast_. The shipped price table carries OpenAI's published Fast and Ultrafast cards (developers.openai.com/api/docs/pricing). A turn served at a speed whose card splice doesn't have is left unpriced, never priced at the standard card. See docs/specs/gpt-speed.md, decision 5."
+checks = [
+  'bun test ./.campaign/checks/speed/recorded.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-16 00:58 CT: added; 1 of 1 checks fail, as they should before the work',
 ]

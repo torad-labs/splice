@@ -135,8 +135,10 @@ public object TurnBill {
     /** Charge only observed buckets. An inclusive input group must be complete or entirely absent,
      *  or its cache subtraction cannot be priced safely. Missing output contributes no charge.
      *  With nonnegative rates, this never exceeds the cost of the unreported tokens as well. */
-    public fun lowerBoundUsd(row: Map<String, Long>, rates: ModelRates?, cost: TokenCost = TokenCost()): Double? {
+    public fun lowerBoundUsd(row: Map<String, Long>, standard: ModelRates?, cost: TokenCost = TokenCost()): Double? {
         val noRequest = noRequestZero(row)
+        // gpt-speed: priced at the card for the speed the row was served at, or left unpriced (ServedCard).
+        val rates = ServedCard.of(row, standard)
         if (noRequest || rates == null) return if (noRequest) 0.0 else null
         val inputKeys = inputBillingKeys.count(row::containsKey)
         if (inputKeys != 0 && inputKeys != inputBillingKeys.size) return null

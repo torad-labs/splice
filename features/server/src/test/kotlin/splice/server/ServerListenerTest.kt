@@ -28,10 +28,6 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.file.Path
-import java.time.Clock
-import java.time.Instant
-import java.time.ZoneId
-import java.time.ZoneOffset
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
@@ -76,22 +72,6 @@ internal class ServerListenerTest {
             exchange.responseBody.use { it.write(answer) }
         }
         start()
-    }
-
-    /** A clock the test sets, so a key's expiry and a person's minute pass when the test says. */
-    private class SetClock : Clock() {
-        @Volatile
-        private var now = Instant.parse("2026-11-15T12:00:00Z")
-
-        override fun instant(): Instant = now
-
-        override fun getZone(): ZoneId = ZoneOffset.UTC
-
-        override fun withZone(zone: ZoneId): Clock = this
-
-        fun pass(seconds: Long) {
-            now = now.plusSeconds(seconds)
-        }
     }
 
     /** Opens server mode as the daemon does, over this machine's two heads: `claude-team` and `claude-own`. */

@@ -293,6 +293,10 @@ public class StatePaths(
      *  session, written when the person presses and removed when the move ends, either way (MovingTrust). */
     public val movingTrustDir: Path = stateDir.resolve("moving-trust")
 
+    /** Server mode on a laptop (docs/specs/server-mode.md, F2): what `splice login <server>` keeps of each server it
+     *  signed in to, the key apart in an owner-only file of its own that the session's apiKeyHelper prints. */
+    public val serverLoginsDir: Path = stateDir.resolve("server-logins")
+
     /** Raw MCP tool results privately correlated with the code-mode callback that the client actually executed. */
     public val mcpToolResultsDir: Path = stateDir.resolve("mcp-tool-results")
 
@@ -351,6 +355,10 @@ public class StatePaths(
      *  picker back to splice.toml's rows — and refusing every turn a session was already running on a
      *  discovered model. */
     public fun modelRosterFile(headKey: String): Path = stateDir.resolve("$headKey-models.json")
+
+    /** gpt-speed: each Claude Code session's speed and its last turn's model (SessionSpeeds), daemon-wide, since a
+     *  session id names one session whichever head runs it. */
+    public val sessionSpeedsFile: Path = stateDir.resolve("session-speeds.json")
 
     /** Nov 12, 2026: the price table as the project's main branch last served it (PriceRefresh), read at a start
      *  ahead of the copy in the build when it is not older. */

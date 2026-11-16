@@ -5,6 +5,7 @@
 package splice.core.turn
 
 import kotlinx.serialization.Serializable
+import splice.core.server.TurnSpeed
 
 /** Token buckets observed by the provider, distinct from the numeric defaults used on the client wire. */
 @Serializable
@@ -38,6 +39,12 @@ public data class Usage(
     /** Only these observed buckets may become retained billing counters. Explicit zeros remain observations. */
     val reported: Set<UsageField> = ALL_USAGE_FIELDS,
 ) {
+    /** How fast a self-hosted model server read the prompt and wrote the answer, as [UsageServing.speed] says. */
+    public val speed: TurnSpeed? get() = origin.serving.speed
+
+    /** gpt-speed: the tier the backend says it served the request at ([UsageServing.tier]). */
+    public val servedTier: String? get() = origin.serving.tier
+
     /** Actual measured components, separate from billing's default-zero policy. Old producers remain unknown. */
     public val measured: Set<UsageMeasure> get() = origin.measured
 
@@ -88,6 +95,7 @@ public data class Usage(
             clientContext = other.origin.clientContext ?: origin.clientContext,
             history = origin.history + other.origin.history,
             measured = UsageMeasurements.added(this, other),
+            serving = origin.serving.then(other.origin.serving),
         ),
         reported = reported + other.reported,
     )
@@ -133,4 +141,17 @@ public data class UsageOrigin(
     val history: UsageHistory = UsageHistory(request = if (localStep) UsageRequest.NONE else UsageRequest.POSTED),
     /** Actual measurement presence; billing defaults and unmodified producers do not provide proof. */
     val measured: Set<UsageMeasure> = emptySet(),
+    /** How the provider's server served the request, beside its bill. */
+    val serving: UsageServing = UsageServing(),
 )
+
+/**
+ * How the provider's server served a request, beside its bill; never billed. [speed] is how fast a self-hosted model
+ * server read the prompt and wrote the answer (llama-server's `timings`), for the server ledger. [tier] is the
+ * `service_tier` the backend says it served the request at (`priority`, `fast`, `ultrafast`, `default`), in its own
+ * word (gpt-speed). Each is null where the wire names none.
+ */
+public data class UsageServing(val speed: TurnSpeed? = null, val tier: String? = null) {
+    /** This with what [later] says where it says it: a turn of several requests carries its last one's. */
+    public fun then(later: UsageServing): UsageServing = UsageServing(later.speed ?: speed, later.tier ?: tier)
+}

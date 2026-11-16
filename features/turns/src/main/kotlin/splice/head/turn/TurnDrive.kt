@@ -7,6 +7,7 @@ package splice.head.turn
 import kotlinx.serialization.json.JsonObject
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.server.TurnSpeed
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
@@ -162,6 +163,11 @@ internal data class TurnDrive(
     /** Where the provider routes this turn's requests ([splice.upstream.Provider.route]): set once, by the factory that
      *  assembles the drive, and told how each request and the turn itself ended. */
     var route: VendorRoute? = null
+
+    /** How fast the model server read and wrote this turn, from its own `timings`, once a round finished with them;
+     *  the server ledger carries it (server mode, F5). */
+    @Volatile
+    var speed: TurnSpeed? = null
 
     /** The turn's one retry ledger and its waits (failure-handling slice 4): set once, by the factory that assembles the
      *  drive, and handed to every post of the turn, so a budget one spends is spent for all. Null for a drive built

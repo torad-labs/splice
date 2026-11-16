@@ -1,8 +1,8 @@
 // NEW: server mode (docs/specs/server-mode.md, F1 and the limits half of F3). The `[server]` table splice.toml carries
 // on a machine that is a team's front door: where it listens, which commands it serves, the PEM files it speaks TLS
 // from, the proxies whose word on a client's address it takes, who administers it, what each person may hold at
-// once, and how often a silent stream is kept alive (F4). A file with no `[server]` decodes to the defaults, which
-// serve nothing.
+// once, how often a silent stream is kept alive (F4), and the identity provider a person signs in with (F2). A file
+// with no `[server]` decodes to the defaults, which serve nothing.
 package splice.core.topology
 
 import kotlinx.serialization.SerialName
@@ -27,6 +27,16 @@ public data class ServerConfig(
     /** How often a streamed turn's client is sent an SSE keepalive while its answer is silent, as a model server
      *  prefilling a long prompt is; the stream is opened to the client at once for it. 0 sends none. */
     @SerialName("keepalive_seconds") val keepaliveSeconds: Int = 0,
+    /** What the same tokens would cost on a hosted model, beside each report's own cost (F5). */
+    val reference: ServerReference = ServerReference(),
+    /** Which team a person is on when the operator set none for them (decision 5). */
+    val teams: ServerTeams = ServerTeams(),
+    /** Where the ledger is copied, hour by hour (F5). */
+    val export: ServerExport = ServerExport(),
+    /** What each person may spend (F3). */
+    val budgets: ServerBudgets = ServerBudgets(),
+    /** `[server.signin]`: the identity provider a person signs in with to get a key; null when nobody signs in. */
+    val signin: ServerSignin? = null,
 ) {
     /** Whether the file carries a `[server]` table at all, whatever it holds. */
     val declared: Boolean get() = this != ServerConfig()
@@ -53,6 +63,37 @@ public data class ServerLimits(
     /** Turns one person may start in any minute. */
     @SerialName("rpm_per_person") val rpmPerPerson: Int = 0,
 )
+
+/** `[server.signin]` (F2): the OpenID Connect provider a team member signs in with, the client this server is
+ *  registered there as, the email domains it admits, how long a key minted by a sign-in lives, and how many sign-ins
+ *  one address may try in a minute. */
+@Serializable
+public data class ServerSignin(
+    /** The provider's issuer URL, which its `/.well-known/openid-configuration` is under and its ID tokens name. */
+    val issuer: String = "",
+    @SerialName("client_id") val clientId: String = "",
+    /** The environment variable the client secret is read from; the secret itself is never in splice.toml. */
+    @SerialName("client_secret_env") val clientSecretEnv: String? = null,
+    /** The email domains whose people may sign in, as in `["team.example"]`. */
+    val domains: List<String> = emptyList(),
+    @SerialName("key_days") val keyDays: Int = DEFAULT_SIGNIN_KEY_DAYS,
+    /** Sign-ins one client address may try in any minute; 0 is no cap. */
+    @SerialName("rate_per_minute") val ratePerMinute: Int = DEFAULT_SIGNIN_RATE_PER_MINUTE,
+) {
+    /** Whether [email], a lowercased one, is in one of [domains]. */
+    public fun admits(email: String): Boolean {
+        val domain = email.substringAfterLast('@', "")
+        return domain.isNotEmpty() && domains.any { it.trim().lowercase().removePrefix("@") == domain }
+    }
+}
+
+// why: a month, as the spec's example sets it: a laptop that signs in at the start of each month never sees its key
+// expire, and a person who left is out within the month even if nobody offboards them.
+private const val DEFAULT_SIGNIN_KEY_DAYS = 30
+
+// why: a person signs in a few times a day at most; twenty a minute from one address covers an office behind one NAT
+// all signing in at nine, and holds a script trying codes to a trickle.
+private const val DEFAULT_SIGNIN_RATE_PER_MINUTE = 20
 
 /** The listener's TLS material: the certificate chain and the private key, each a PEM file. */
 public data class ServerPem(val cert: Path, val key: Path) {

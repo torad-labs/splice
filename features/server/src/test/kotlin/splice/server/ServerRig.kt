@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertInstanceOf
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.config.TurnKey
+import splice.core.server.ServedTurnBoard
 import splice.core.testing.TestPorts
 import splice.core.topology.ServerAddress
 import splice.core.topology.ServerConfig
@@ -23,15 +24,19 @@ import splice.upstream.Waiter
 import splice.upstream.codemode.ProcessWaiter
 import java.nio.file.Path
 import java.time.Clock
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZoneOffset
 
-/** A head this machine offers, standing in for one the daemon runs: it is up at [port], has nothing to launch and
- *  holds no login. */
+/** A head this machine offers, standing in for one the daemon runs: it is up at [port] (down while [up] is false),
+ *  has nothing to launch and holds no login. */
 internal class StandInHead(
     override val port: Int,
     override val key: String = "team",
     override val command: String = "claude-team",
+    private val up: Boolean = true,
 ) : SharedHead {
-    override fun running(): Boolean = true
+    override fun running(): Boolean = up
 
     override fun launch(): LaunchSpec? = null
 
@@ -59,20 +64,30 @@ internal class ServerRig(
      *  with what it sets. */
     val config: ServerConfig = ServerConfig(listen = "127.0.0.1:$port", commands = listOf("claude-team"))
 
+    /** The board the heads of this machine say on how each turn the listener handed them went; a test plays a
+     *  head's part on it. */
+    val board: ServedTurnBoard = ServedTurnBoard()
+
     private var mode: ServerMode? = null
 
     /** Opens [server] as the daemon does, over the machine `gpu-box` and the [heads] it offers. [state] holds the
-     *  daemon's state and is splice.toml's folder too. A rig that was closed opens again on the same port. */
-    fun open(state: Path, heads: List<SharedHead>, server: ServerConfig = config): ServerMode {
+     *  daemon's state and is splice.toml's folder too. A rig that was closed opens again on the same port.
+     *  [signinSecret] is the client secret the daemon would read from `[server.signin] client_secret_env`. */
+    fun open(
+        state: Path,
+        heads: List<SharedHead>,
+        server: ServerConfig = config,
+        signinSecret: String? = null,
+    ): ServerMode {
         val machine = object : SharedHeads {
             override val machine: String = "gpu-box"
 
             override fun offered(): List<SharedHead> = heads
         }
-        val reach = ServerReach(TurnKey(MgmtKey(StatePaths(baseOverride = state))), TestPorts.reserve())
+        val reach = ServerReach(TurnKey(MgmtKey(StatePaths(baseOverride = state))), TestPorts.reserve(), board)
         val opened = ServerMode(server, state.resolve("server"), Dispatchers.IO, log, clock, upstreams, waiter)
         mode = opened
-        opened.open(ServerAddress("127.0.0.1", port), machine, reach, state)
+        opened.open(ServerAddress("127.0.0.1", port), machine, reach, state, signinSecret)
         return opened
     }
 
@@ -89,5 +104,21 @@ internal class ServerRig(
     /** Closes the server, as the daemon does at stop. */
     fun close() {
         runBlocking { mode?.close() }
+    }
+}
+
+/** A clock the test sets, so a key's expiry and a person's minute pass when the test says. */
+internal class SetClock : Clock() {
+    @Volatile
+    private var now = Instant.parse("2026-11-15T12:00:00Z")
+
+    override fun instant(): Instant = now
+
+    override fun getZone(): ZoneId = ZoneOffset.UTC
+
+    override fun withZone(zone: ZoneId): Clock = this
+
+    fun pass(seconds: Long) {
+        now = now.plusSeconds(seconds)
     }
 }

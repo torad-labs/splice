@@ -3,7 +3,10 @@
 // the wall kt-embedded-server-loopback exempts this file, by that spec's decision. LAN share answers anyone on the
 // person's own network and holds no identity; this listener answers only keys, each one a person's, from anywhere:
 //
-//   GET  /health                   open: the listener is up. Nothing else is answered without a key.
+//   GET  /health                   open: the listener is up.
+//   GET  /server/signin, POST /server/signin/token
+//                                  open: how a team member signs in and gets a key (F2, SigninRoute). Nothing else is
+//                                  answered without a key.
 //   GET  /                         what this server offers the key's holder: each command, its head and models
 //   GET  /<command>/launch         what a laptop's launch of that command needs (as share mode serves it)
 //   ANY  /<command>/v1/...         relayed to the head on loopback with this machine's turn key in place of the
@@ -12,6 +15,7 @@
 //                                  an OpenAI-style client's, for a command whose provider speaks openai-chat: relayed
 //                                  to that provider's own server, refusals in OpenAI's error shape (OpenAiRoute)
 //   ANY  /server/api/...           the server's own API, for a key whose person is an admin (ServerAdmin)
+//   GET  /server/metrics           each person's traffic, live, as Prometheus text, for an admin's key (F6)
 //
 // A key arrives as `x-api-key` or as `Authorization: Bearer`. A missing, unknown, revoked or expired one is a 401
 // `authentication_error` that says which and never repeats the key, and nothing reaches a head. Only the commands
@@ -65,46 +69,39 @@ import splice.core.topology.ServerConfig
 import splice.core.util.LogSink
 import splice.core.wire.HttpStatus
 import splice.http.listen.HttpListenerThreads
+import splice.server.ledger.ROUTE_MESSAGES
 import splice.share.HEAD_API_ROOT
 import splice.share.HEAD_LAUNCH_ROUTE
 import splice.share.HeadTurn
 import splice.share.RefusalVoice
 import splice.share.ShareCatalog
-import splice.share.ShareRelay
 import splice.share.SharedHead
-import splice.share.SharedHeads
 import java.security.KeyStore
 import java.time.Instant
 import kotlin.time.Duration.Companion.seconds
 
-/** What the listener serves from: the keys it answers, each person's limits, the heads `[server] commands` names,
- *  the relay that hands their turns to those heads, its TLS identity when it speaks HTTPS itself, each person's
- *  settings, and the servers behind those heads' providers. */
-internal data class ServerParts(
-    val keys: ServerKeys,
-    val limits: PersonLimits,
-    val heads: SharedHeads,
-    val relay: ShareRelay,
-    val tls: KeyStore? = null,
-    val people: ServerPeople,
-    val upstreams: UpstreamApi,
-)
-
 internal class ServerListener(
     private val server: ServerConfig,
     private val parts: ServerParts,
+    /** Its TLS identity when it speaks HTTPS itself; null for plain HTTP. */
+    private val tls: KeyStore?,
+    /** The ledger's reports and the live metrics, which an admin reads over the listener. */
+    reads: AdminReads,
     /** Blocking work runs here: reading a head's launch, and the relay's JDK I/O. */
     io: CoroutineDispatcher,
     private val log: LogSink,
+    /** How a sign-in is checked, when `[server.signin]` is set (F2). */
+    signin: SigninParts? = null,
 ) {
     private val voice = RefusalVoice(SERVER_ERROR_PREFIX)
     private val catalog = ShareCatalog(parts.heads, io, voice)
-    private val admin = ServerAdmin(server, KeyApi(parts.keys, log), voice)
+    private val admin = ServerAdmin(server, KeyApi(parts.keys, log), reads, voice)
     private val addresses = ClientAddresses(server.trustedProxies)
+    private val signins = SigninRoute(signin, KeyApi(parts.keys, log), addresses, voice, log)
     private val refusedCallers = RefusedCallers(log)
     private val watched = WatchedRelay()
     private val paths = RequestPaths()
-    private val admission = TurnAdmission(parts, voice)
+    private val admission = TurnAdmission(parts, voice, catalog, watched)
     private val bound = ProviderBound(parts.keys, log)
 
     /** How often a streamed turn's client is sent a keepalive while its answer is silent; null sends none. */
@@ -119,7 +116,6 @@ internal class ServerListener(
 
     /** Opens the listener on [address], `[server] listen` as boot read it. */
     fun start(address: ServerAddress) {
-        val tls = parts.tls
         val server = embeddedServer(
             Netty,
             serverConfig { module { intercept(ApplicationCallPipeline.Call) { answer(call) } } },
@@ -155,6 +151,7 @@ internal class ServerListener(
         val path = paths.read(call)
         val read = call.request.httpMethod == HttpMethod.Get
         if (read && path == listOf(HEALTH_ROUTE)) return call.respondText(HEALTH_BODY, ContentType.Application.Json)
+        if (path != null && signins.asks(path)) return signins.answer(call, path)
         // A request refused before its route is known is still refused in the shape its client reads.
         val key = admitted(call, if (path != null && openAi.asks(call, path)) openAi.voice else voice) ?: return
         if (path == null) noSuchPath(call) else routed(call, key, path)
@@ -179,7 +176,7 @@ internal class ServerListener(
             ?: BearerScheme.bearerToken(headers[HttpHeaders.Authorization])
         val why = when (val verdict = parts.keys.admit(presented)) {
             is KeyVerdict.Admitted -> return verdict.key
-            is KeyVerdict.Revoked -> "this key was revoked; ask the server's operator for a new one"
+            is KeyVerdict.Revoked -> revoked(verdict.key)
             is KeyVerdict.Expired -> expired(verdict.key)
             KeyVerdict.Unknown -> if (presented == null) NO_KEY_SENT else "this key is not one this server issued"
         }
@@ -187,6 +184,13 @@ internal class ServerListener(
         refusedCallers.refused(addresses.of(call.request.origin.remoteAddress, forwarded), why)
         voice.refuse(call, HttpStatus.UNAUTHORIZED, why)
         return null
+    }
+
+    private fun revoked(key: ServerKey): String = when (val newer = key.supersededBy) {
+        null -> "this key was revoked; ask the server's operator for a new one"
+        else ->
+            "this key was replaced by a newer sign-in on the same device ($newer); " +
+                "sign in again (`splice login <server>`) if this device has lost it"
     }
 
     private fun expired(key: ServerKey): String {
@@ -205,17 +209,34 @@ internal class ServerListener(
         }
     }
 
-    /** Relays [path] to [head] for [key]'s person. A turn takes one of the person's slots first, or is refused. */
+    /** Relays [path] to [head] for [key]'s person. A turn takes one of the person's slots first, or is refused, and
+     *  leaves its row in the ledger however it ends. */
     private suspend fun turn(call: ApplicationCall, key: ServerKey, head: SharedHead, path: List<String>) {
-        if (!head.running()) return catalog.notRunning(call, head)
-        val counted = call.request.httpMethod == HttpMethod.Post && path == turnPath
-        val slot = if (counted) admission.slot(call, key, head) ?: return else null
+        if (call.request.httpMethod != HttpMethod.Post || path != turnPath) {
+            if (!head.running()) return catalog.notRunning(call, head)
+            val asked = headTurn(call, key, head, path, emptyMap())
+            watched.turn(call, slot = null) { parts.relay.turn(call, asked) }
+            return
+        }
+        admission.served(call, key, head, ROUTE_MESSAGES) { turn ->
+            val asked = headTurn(call, key, head, path, mapOf(parts.books.turns.named(turn)))
+            parts.relay.turn(call, asked)
+        }
+    }
+
+    /** [path] as [head] is handed it for [key]'s person, with [named] beside the upstream they prefer. */
+    private fun headTurn(
+        call: ApplicationCall,
+        key: ServerKey,
+        head: SharedHead,
+        path: List<String>,
+        named: Map<String, String>,
+    ): HeadTurn {
         val preferred = parts.people.of(key.person).preferred
-        val named = listOfNotNull(preferred?.let { PREFERRED_UPSTREAM_HEADER to it }).toMap()
+        val chosen = listOfNotNull(preferred?.let { PREFERRED_UPSTREAM_HEADER to it }).toMap()
         // The head sends its provider the headers `forward_headers` names, and knows none of this server's keys.
         val held = bound.keyed(call, parts.upstreams.forwarded(head.key))
-        val turn = HeadTurn(head, paths.spell(path) + paths.query(call), named, keepalive, held)
-        watched.turn(call, slot) { parts.relay.turn(call, turn) }
+        return HeadTurn(head, paths.spell(path) + paths.query(call), chosen + named, keepalive, held)
     }
 
     private suspend fun noSuchPath(call: ApplicationCall) {
@@ -232,8 +253,8 @@ private const val API_KEY_HEADER = "x-api-key"
 private const val HEALTH_ROUTE = "health"
 private const val HEALTH_BODY = """{"status":"ok"}"""
 
-// The first path segment of the server's own routes; no command may be named it.
-private const val SERVER_ROOT = "server"
+/** The first path segment of the server's own routes; no command may be named it. */
+internal const val SERVER_ROOT: String = "server"
 
 private const val NO_KEY_SENT = "no key was sent; send yours as x-api-key or as Authorization: Bearer"
 

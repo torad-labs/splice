@@ -9,6 +9,8 @@ import splice.core.turn.RoundHandoffs
 import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.turn.UsageOrigin
+import splice.core.turn.UsageServing
 import splice.dialect.responses.ResponsesTurnState
 import splice.dialect.responses.StreamTurnContext
 
@@ -42,6 +44,7 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
             state.cachedTokens,
             state.reasoningTokens,
             reported = state.reportedUsage.toSet(),
+            origin = UsageOrigin(serving = UsageServing(tier = state.servedTier)),
         ),
         text = RoundText(
             thinkingText = state.thinkingBuf.toString(),
@@ -117,5 +120,6 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
         cachedTokens = state.cachedTokens,
         reasoningTokens = state.reasoningTokens,
         reported = state.reportedUsage.toSet(),
+        origin = UsageOrigin(serving = UsageServing(tier = state.servedTier)),
     )
 }

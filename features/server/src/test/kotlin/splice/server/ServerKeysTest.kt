@@ -76,7 +76,10 @@ internal class ServerKeysTest {
         val row = listed(server).single()
         assertEquals(text(minted, "prefix"), text(row, "prefix"))
         assertEquals(
-            setOf("prefix", "person", "name", "source", "created_at", "expires_at", "last_used_at", "revoked_at"),
+            setOf(
+                "prefix", "person", "name", "source", "device", "created_at", "expires_at", "last_used_at",
+                "revoked_at", "superseded_by",
+            ),
             row.keys,
         )
         assertFalse(row.toString().contains(secret), "a list shows the key")

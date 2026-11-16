@@ -5,7 +5,8 @@
 // the rest of the daemon serving. It is also how server mode reads the servers behind a head (F4): the pool of the
 // provider that head's splice.toml table names, the caller's headers that provider's `forward_headers` names, and
 // that provider itself when it speaks openai-chat, which is where an OpenAI-style client's requests are relayed
-// (DaemonChatServer).
+// (DaemonChatServer). While it runs, its per-person metrics go to the operator's OTLP collector when
+// `[telemetry.operator]` sends metrics (F6).
 package splice.app.server
 
 import splice.app.control.ManagedHead
@@ -13,12 +14,18 @@ import splice.app.control.ServerModeSource
 import splice.app.share.ManagedSharedHeads
 import splice.core.config.ConfigService
 import splice.core.config.TurnKey
+import splice.core.model.TurnPrice
+import splice.core.perf.PerfKeys
 import splice.core.pool.UpstreamPool
+import splice.core.server.ServedTokens
+import splice.core.server.ServedTurnBoard
 import splice.core.topology.Dialect
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
+import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import splice.observability.served.ServedMetricsExport
 import splice.server.ChatServer
 import splice.server.HeadUpstreams
 import splice.server.ServerMode
@@ -45,6 +52,14 @@ internal class DaemonServer(
     @Volatile
     private var down: String = NO_SERVER
 
+    // The server's per-person metrics on their way to the operator's OTLP collector (F6), while server mode runs.
+    @Volatile
+    private var metricsExport: ServedMetricsExport? = null
+
+    // The heads the server serves, once it opened: what an OpenAI-style turn is priced at is its head's rate card.
+    @Volatile
+    private var heads: Map<String, ManagedHead> = emptyMap()
+
     override fun mode(): ServerMode? = running
 
     override fun absent(): String = down
@@ -62,24 +77,52 @@ internal class DaemonServer(
     override fun forwarded(head: String): List<String> =
         topology.heads[head]?.let { topology.providers[it.provider] }?.forwarded?.carried.orEmpty()
 
-    /** Opens server mode when `[server]` names an address, serving [heads] through [controlPort]'s daemon. */
-    fun open(heads: Map<String, ManagedHead>, controlPort: Int) {
+    override fun price(head: String, model: String, tokens: ServedTokens): Double? {
+        val catalog = heads[head]?.statusline?.catalog ?: return null
+        val billed = mapOf(
+            PerfKeys.IN_TOKENS to tokens.prompt,
+            PerfKeys.CACHED_TOKENS to tokens.cached,
+            PerfKeys.OUT_TOKENS to tokens.completion,
+            PerfKeys.CACHE_WRITE_TOKENS to 0L,
+        )
+        return TurnPrice(catalog).usd(model, billed)
+    }
+
+    /** Opens server mode when `[server]` names an address, serving [heads] through [controlPort]'s daemon, which say
+     *  how each turn went on [served]. */
+    fun open(heads: Map<String, ManagedHead>, controlPort: Int, served: ServedTurnBoard) {
         val address = topology.server.address ?: return
+        this.heads = heads
         Cancellables.runCatchingBestEffort {
             val offered = ManagedSharedHeads(heads, topology, config, ShareMachine(log).name())
             val folder = stateDir.resolve(SERVER_STATE)
+            val reach = ServerReach(turnKey, controlPort, served, EnvReader(System::getenv))
             ServerMode(topology.server, folder, ProcessDispatchers().io(), log, upstreams = this)
-                .also { it.open(address, offered, ServerReach(turnKey, controlPort), configDir) }
-        }.onSuccess { running = it }.onFailure { failure ->
+                .also { it.open(address, offered, reach, configDir, secret()) }
+        }.onSuccess { mode ->
+            running = mode
+            metricsExport = ServedMetricsExport(config.getConfig().perfExportConfig(), mode.metrics, log)
+        }.onFailure { failure ->
             val why = SafeFailureText.render(failure)
             down = "server mode did not start on ${topology.server.listen}: $why"
             log("[server] not serving on ${topology.server.listen}: $why\n")
         }
     }
 
+    /** The sign-in's client secret from the variable `client_secret_env` names; a variable named and unset is said,
+     *  since the identity provider will then refuse every code this server trades. */
+    private fun secret(): String? {
+        val name = topology.server.signin?.clientSecretEnv?.trim()?.takeIf(String::isNotEmpty) ?: return null
+        val value = EnvReader(System::getenv)(name)?.takeIf(String::isNotEmpty)
+        if (value == null) log("[server] sign-in: $name is not set, so the identity provider will refuse every code\n")
+        return value
+    }
+
     suspend fun close() {
         running?.close()
         running = null
+        metricsExport?.close()
+        metricsExport = null
     }
 }
 

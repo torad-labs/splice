@@ -16,6 +16,8 @@ import splice.core.perf.observation.PerfRecorder
 import splice.core.perf.observation.PerfRecorders
 import splice.core.prompt.HeadSystemPrompt
 import splice.core.prompt.SystemPromptLayers
+import splice.core.server.ServedTurnBoard
+import splice.core.server.ServedTurns
 import splice.core.session.ActivityAction
 import splice.core.turn.LiveWatchdogBudget
 import splice.core.util.ElapsedClock
@@ -252,12 +254,21 @@ public data class HeadDeps(
         val requestMaterializationGate: RequestMaterializationGate = RequestMaterializationGate(),
         val clientVersions: ClientVersionTracker = ClientVersionTracker(),
         val session: SessionSeams = SessionSeams(),
-        /** A production head reports to its console; a head without one reports to nobody. */
-        val events: HeadEvents = NoHeadEvents,
+        val reports: HeadReports = HeadReports(),
     ) {
         public val ticker: Ticker get() = ticks.client
         public val watchdogTicker: Ticker get() = ticks.watchdog
+        public val events: HeadEvents get() = reports.events
     }
+
+    /** Who hears how a head's turns go: its console, and the server listener that relayed a turn to it. */
+    public data class HeadReports(
+        /** A production head reports to its console; a head without one reports to nobody. */
+        val events: HeadEvents = NoHeadEvents,
+        /** Server mode (F5): where a turn the server listener relayed is told how it went. A head no listener relays
+         *  to has a board nobody waits on, which drops what it is told. */
+        val served: ServedTurns = ServedTurnBoard(),
+    )
 
     /** Separate ticking consumers keep the pinger's cadence independent of watchdog progress. */
     public data class HeadTicks(

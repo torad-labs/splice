@@ -28,6 +28,8 @@ internal class PoolRoute(
 
     override fun places(): List<String> = pool.upstreams.map { it.name }
 
+    override fun served(): String? = walk.taken
+
     override fun sending(): Map<String, String> = emptyMap()
 
     override fun body(round: RoundBody): RoundBody? = null

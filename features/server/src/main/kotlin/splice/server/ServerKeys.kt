@@ -1,7 +1,9 @@
-// NEW: server mode (docs/specs/server-mode.md, F1 and decision 4). The keys a server answers: each bound to one
-// person, minted by the operator (or, later, by sign-in), listed without its secret, and revoked one at a time or for a
-// whole person on their last day. The daemon holds each key's hash and nothing else; a revoke replaces the map the
-// listener reads before it returns, so the key fails on the very next request. When a key was last used is kept in
+// NEW: server mode (docs/specs/server-mode.md, F1, F2 and decision 4). The keys a server answers: each bound to one
+// person, minted by the operator or by a sign-in, listed without its secret, and revoked one at a time or for a
+// whole person on their last day. A key a sign-in minted is bound to the device that signed in too: a newer sign-in
+// on that device leaves the older key working until the newer one is first used, so a session still holding the
+// older key is never cut off mid-turn, and the older key is then superseded; another device's keys are never touched.
+// The daemon holds each key's hash and nothing else; a revoke replaces the map the listener reads before it returns, so the key fails on the very next request. When a key was last used is kept in
 // memory as it happens and written with the next change, or once a minute, so a turn never waits on the disk.
 package splice.server
 
@@ -11,6 +13,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import splice.share.StateFile
 import java.nio.file.Path
 import java.security.SecureRandom
 import java.time.Clock
@@ -24,21 +27,35 @@ public data class ServerKey(
     val person: String,
     val name: String? = null,
     val source: String = OPERATOR_SOURCE,
+    /** The device a sign-in minted this key for, as the laptop names itself; null for an operator's key. */
+    val device: String? = null,
     @SerialName("created_at") val createdAt: Long,
     @SerialName("expires_at") val expiresAt: Long? = null,
     @SerialName("last_used_at") val lastUsedAt: Long? = null,
     @SerialName("revoked_at") val revokedAt: Long? = null,
-)
+    /** The prefix of the newer sign-in key on the same device whose first use revoked this one. */
+    @SerialName("superseded_by") val supersededBy: String? = null,
+) {
+    /** Why this key is refused at [nowMs]: revoked, or expired by then; null while it admits. The one rule the
+     *  listener admits by (ServerKeys.admit) and the metrics list a person by (ServerKeys.livePeople, F6). */
+    public fun refusalAt(nowMs: Long): KeyVerdict? = when {
+        revokedAt != null -> KeyVerdict.Revoked(this)
+        expiresAt != null && nowMs >= expiresAt -> KeyVerdict.Expired(this)
+        else -> null
+    }
+}
 
 @Serializable
 internal data class KeyFile(val keys: List<ServerKey> = emptyList())
 
-/** What a mint asks for: the [person] (a lowercased email), a [name] for the key, and how long it lives. */
+/** What a mint asks for: the [person] (a lowercased email), a [name] for the key, how long it lives, and for a key a
+ *  sign-in mints, the [device] it is for. */
 public data class KeyRequest(
     val person: String,
     val name: String? = null,
     val lifetimeMs: Long? = null,
     val source: String = OPERATOR_SOURCE,
+    val device: String? = null,
 )
 
 /** A key just minted, and [row], what the server keeps of it. The key is held out of sight, so nothing that prints or
@@ -89,6 +106,12 @@ public class ServerKeys(
         .map(::withUse)
         .sortedWith(compareBy({ it.createdAt }, { it.prefix }))
 
+    /** Everyone who holds a key the listener would admit now: by the same rule admit() refuses one by. */
+    public fun livePeople(): Set<String> {
+        val now = clock.millis()
+        return byHash.values.filter { it.refusalAt(now) == null }.mapTo(sortedSetOf()) { it.person }
+    }
+
     public suspend fun mint(request: KeyRequest): MintedKey = mutation.withLock {
         val prefix = mint.prefix(byHash.values.mapTo(HashSet()) { it.prefix })
         val key = mint.key(prefix)
@@ -99,6 +122,7 @@ public class ServerKeys(
             person = request.person,
             name = request.name,
             source = request.source,
+            device = request.device,
             createdAt = now,
             expiresAt = request.lifetimeMs?.let { now + it },
         )
@@ -124,18 +148,34 @@ public class ServerKeys(
         live.size
     }
 
-    /** What [presented] opens. It is hashed and the hash looked up, so the time this takes says nothing of a key. */
-    public fun admit(presented: String?): KeyVerdict {
+    /** What [presented] opens. It is hashed and the hash looked up, so the time this takes says nothing of a key. A
+     *  sign-in key's first use supersedes the older live keys of its device before it answers, so the very next
+     *  request on one of them is refused. */
+    public suspend fun admit(presented: String?): KeyVerdict {
         val key = presented?.takeIf { it.startsWith(KEY_MARK) }?.let { byHash[mint.hash(it)] }
             ?: return KeyVerdict.Unknown
         val now = clock.millis()
-        return when {
-            key.revokedAt != null -> KeyVerdict.Revoked(key)
-            key.expiresAt != null && now >= key.expiresAt -> KeyVerdict.Expired(key)
-            else -> {
-                used[key.prefix] = now
-                useChanged = true
-                KeyVerdict.Admitted(key)
+        key.refusalAt(now)?.let { return it }
+        if (key.lastUsedAt == null && !used.containsKey(key.prefix)) supersedeElders(key)
+        used[key.prefix] = now
+        useChanged = true
+        return KeyVerdict.Admitted(key)
+    }
+
+    /** Revokes the live sign-in keys of [newer]'s person and device that were minted before it, each marked as
+     *  superseded by it. Nothing happens for an operator's key, or a device with no older key. */
+    private suspend fun supersedeElders(newer: ServerKey) {
+        val device = newer.device?.takeIf { newer.source == SIGNIN_SOURCE } ?: return
+        val elder = { key: ServerKey ->
+            key.source == SIGNIN_SOURCE && key.device == device && key.person == newer.person &&
+                key.revokedAt == null && key.prefix != newer.prefix && key.createdAt <= newer.createdAt
+        }
+        if (byHash.values.none(elder)) return
+        mutation.withLock {
+            val now = clock.millis()
+            val elders = byHash.values.filter(elder)
+            if (elders.isNotEmpty()) {
+                publish(byHash + elders.map { it.hash to it.copy(revokedAt = now, supersededBy = newer.prefix) })
             }
         }
     }
@@ -166,6 +206,9 @@ public class ServerKeys(
 
 /** The source of a key the operator issued, from the CLI, the control plane or an admin's key. */
 internal const val OPERATOR_SOURCE: String = "operator"
+
+/** The source of a key a person's own sign-in minted (F2). */
+internal const val SIGNIN_SOURCE: String = "signin"
 
 // why: an operator reads "last used" to find the keys nobody uses, in days; a minute of it lost to a crash changes
 // no such answer, and one write a minute is nothing to the disk.

@@ -5,6 +5,8 @@ import kotlinx.coroutines.CoroutineScope
 import splice.app.TokenUrlRefreshCall
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.config.StatePaths
+import splice.core.speed.SessionSpeeds
+import splice.core.speed.SpeedCatalog
 import splice.core.topology.AuthKind
 import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
@@ -14,6 +16,7 @@ import splice.provider.codex.CodexProvider
 import splice.provider.codex.CodexQuirks
 import splice.provider.codex.auth.CodexAuthProvider
 import splice.provider.codex.auth.CodexOAuthEndpoints
+import splice.provider.codex.speed.CodexSpeed
 import splice.topology.TopologyLoader
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
@@ -26,6 +29,8 @@ internal class CodexResponsesArm(
     private val probeScope: CoroutineScope,
     private val log: LogSink,
     private val refreshCall: TokenUrlRefreshCall,
+    /** gpt-speed: each Claude Code session's speed, which every request of a session asks the backend for. */
+    private val speeds: SessionSpeeds = SessionSpeeds(),
     /** Code mode's half of the arm: each head's bridge and model lists, and the daemon's one liveness poller. */
     private val codeMode: CodexCodeModeAssembly = CodexCodeModeAssembly(statePaths, probeScope, log),
 ) {
@@ -71,6 +76,8 @@ internal class CodexResponsesArm(
                 // codex-rs sends it on every request of a ChatGPT sign-in; only a config that turns it off keeps it off.
                 accountIdHeader = providerCfg.quirks.accountIdHeader ?: true,
                 codeMode = codeMode.wiring(ctx),
+                // gpt-speed: the session's tier, as Codex asks for it, where the turn's model lists it in the catalog
+                speed = CodexSpeed(speeds, SpeedCatalog(ctx.roster.discovered), key),
             ),
             auth,
             accounts,

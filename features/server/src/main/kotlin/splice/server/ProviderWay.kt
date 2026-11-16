@@ -42,6 +42,9 @@ internal class ProviderWay(
 
     override fun noneTook(): String = upstreams.noneUp(head.key) ?: "$alone is not answering"
 
+    /** The upstream of the pool that took the request, or null for a provider that is one server. */
+    fun served(): String? = walk?.taken
+
     /** The request is over, however it ended: its place in the pool is given back. */
     fun end() {
         walk?.end()

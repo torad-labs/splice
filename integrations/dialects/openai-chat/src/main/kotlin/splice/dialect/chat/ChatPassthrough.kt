@@ -12,6 +12,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 
 /** One chat request as it goes on to the server: its [body], and whether its answer is a stream. */
@@ -19,22 +20,29 @@ public class PassedChat internal constructor(
     public val body: ByteArray,
     public val streamed: Boolean,
     private val usageAsked: Boolean,
+    /** The model the client asked for, or null when its body names none. */
+    public val model: String? = null,
 ) {
+    /** What the server's answer to this request used, read as it is relayed (server mode's ledger, F5). */
+    public val meter: ChatAnswerMeter = ChatAnswerMeter()
+
     /** The reader of this request's stream, which knows whether its client asked for usage. */
-    public fun stream(): PassedChatStream = PassedChatStream(usageAsked)
+    public fun stream(): PassedChatStream = PassedChatStream(usageAsked, meter)
 }
 
 public class ChatPassthrough {
     /** [sent] as the server gets it. A body that asks for no stream, or is no JSON object, goes on byte for byte; a
      *  streamed one goes on with `stream_options.include_usage` true and every other field as the client wrote it. */
     public fun request(sent: ByteArray): PassedChat {
-        val asked = objectOf(String(sent))?.takeIf { it[STREAM_FLAG] == JsonPrimitive(true) }
-            ?: return PassedChat(sent, streamed = false, usageAsked = false)
+        val read = objectOf(String(sent))
+        val model = JsonScalars.str(read, "model")
+        val asked = read?.takeIf { it[STREAM_FLAG] == JsonPrimitive(true) }
+            ?: return PassedChat(sent, streamed = false, usageAsked = false, model)
         val options = asked[STREAM_OPTIONS] as? JsonObject
         val usageAsked = options?.get(INCLUDE_USAGE) == JsonPrimitive(true)
         val withUsage = JsonObject(options.orEmpty() + (INCLUDE_USAGE to JsonPrimitive(true)))
         val body = JsonWire.bytes(JsonObject(asked + (STREAM_OPTIONS to withUsage)))
-        return PassedChat(body, streamed = true, usageAsked)
+        return PassedChat(body, streamed = true, usageAsked, model)
     }
 
     internal fun objectOf(text: String): JsonObject? = try {
@@ -46,7 +54,10 @@ public class ChatPassthrough {
 }
 
 /** One relayed chat stream, read event by event. */
-public class PassedChatStream internal constructor(private val usageAsked: Boolean) {
+public class PassedChatStream internal constructor(
+    private val usageAsked: Boolean,
+    private val meter: ChatAnswerMeter,
+) {
     private val json = ChatPassthrough()
     private var done = false
 
@@ -57,6 +68,7 @@ public class PassedChatStream internal constructor(private val usageAsked: Boole
         val data = event.lineSequence().filter { it.startsWith(DATA_FIELD) }
             .joinToString("\n") { it.removePrefix(DATA_FIELD).trim() }
         if (data == CHAT_DONE) done = true
+        meter.data(data)
         val frame = unasked(data) ?: return event
         if ((frame[FRAME_CHOICES] as? JsonArray).isNullOrEmpty()) return null
         val plain = "$DATA_FIELD ${JsonWire.string(JsonObject(frame - FRAME_USAGE))}"
@@ -64,7 +76,10 @@ public class PassedChatStream internal constructor(private val usageAsked: Boole
     }
 
     /** What ends a stream the server ended cleanly: `data: [DONE]` when the server sent none of its own, else null. */
-    public fun ending(): String? = "$DATA_FIELD $CHAT_DONE".takeUnless { done }
+    public fun ending(): String? {
+        meter.closed()
+        return "$DATA_FIELD $CHAT_DONE".takeUnless { done }
+    }
 
     /** [data] as the frame it is, when it carries usage this stream's client did not ask for; else null. */
     private fun unasked(data: String): JsonObject? =
@@ -75,8 +90,8 @@ public class PassedChatStream internal constructor(private val usageAsked: Boole
 private const val STREAM_FLAG = "stream"
 private const val STREAM_OPTIONS = "stream_options"
 private const val FRAME_USAGE = "usage"
-private const val FRAME_CHOICES = "choices"
+internal const val FRAME_CHOICES = "choices"
 
 // An SSE event's data line, and the data that ends an OpenAI chat stream.
 private const val DATA_FIELD = "data:"
-private const val CHAT_DONE = "[DONE]"
+internal const val CHAT_DONE = "[DONE]"

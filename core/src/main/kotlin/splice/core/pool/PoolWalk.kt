@@ -14,14 +14,20 @@ public class PoolWalk(private val pool: UpstreamPool, private val preferred: Str
     private var lease: UpstreamLease? = null
     private var ended = false
 
+    /** The name of the server the request last went to, kept once it ended; null before it asked where to go. */
+    @Volatile
+    public var taken: String? = null
+        private set
+
     // Servers this request left because they took no connection.
     private var left = 0
 
     /** The server the request goes to now, taken when it is first asked for. A request that asks after it ended
      *  holds no place: it is counted nowhere, since nothing would ever give its place back. */
     @Synchronized
-    public fun server(): UpstreamLease = lease ?: pool.lease(preferred).also { taken ->
-        if (ended) taken.release() else lease = taken
+    public fun server(): UpstreamLease = lease ?: pool.lease(preferred).also { leased ->
+        taken = leased.name
+        if (ended) leased.release() else lease = leased
     }
 
     /** The server the request is on took no connection: it reads down from now and the request's place there is

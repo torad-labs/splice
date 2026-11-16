@@ -17,8 +17,8 @@ import splice.core.topology.RemoteAddressRead
 import splice.core.topology.RemoteAddresses
 import splice.core.topology.RemoteConfig
 import splice.core.topology.Topology
+import splice.share.Asked
 import splice.share.ShareDirectory
-import splice.share.ShareDirectoryRead
 import splice.share.ShareInfo
 import splice.share.ShareOffer
 import java.net.URI
@@ -121,8 +121,8 @@ internal class RemoteAdd(
     }
 
     private suspend fun info(server: String): ShareInfo? = when (val read = directory.read(server)) {
-        is ShareDirectoryRead.Read -> read.info
-        is ShareDirectoryRead.Refused -> refused(read.why)
+        is Asked.Had -> read.value
+        is Asked.Refused -> refused(read.why)
     }
 
     private fun notOffered(info: ShareInfo, head: String): String {

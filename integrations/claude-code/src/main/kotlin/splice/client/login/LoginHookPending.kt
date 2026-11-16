@@ -23,6 +23,8 @@
 // is a sign-in the user started in a terminal: it is named and left alone (review 2026-09-14).
 package splice.client.login
 
+import splice.client.login.HookScriptFiles.shellSingleQuote
+
 /** Characters that mean something in a POSIX ERE (pgrep -f): escaped when the head lands in one. */
 private val PENDING_ERE_META = Regex("[^A-Za-z0-9_-]")
 
@@ -30,8 +32,6 @@ internal object LoginHookPending {
 
     /** The environment assignment every hook-started login carries, as it appears in a command line. */
     const val ORIGIN_MARKER: String = "SPLICE_LOGIN_ORIGIN=hook"
-
-    private fun shellSingleQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
 
     /** Defines `login_pids <hook|other>`, prints [foreignDecision] and exits when a sign-in the hook
      *  did not start is waiting, else cancels the hook's own (TERM, up to 2 s, then KILL, up to

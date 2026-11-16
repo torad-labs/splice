@@ -13,6 +13,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import splice.client.login.HookScriptFiles.shellSingleQuote
 
 // The slot the runtime receipt text is spliced into, after the JSON is serialized. Only characters
 // that JSON encodes verbatim, so the split lands where it was placed.
@@ -34,8 +35,7 @@ internal object LoginHookScripts {
     // Claude Code parses as the hook's decision. Two layers, and neither may depend on the other's
     // characters being absent — so shell quoting and JSON encoding are both done properly, once.
 
-    /** Bash has NO escape sequence inside `'...'`; close-escape-reopen is the only safe splice. */
-    private fun shellSingleQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
+    // Shell quoting is HookScriptFiles.shellSingleQuote, the one copy every generated hook uses.
 
     /** For a value landing inside a `#` comment: a newline would end the comment and hand the rest
      *  of the line to bash as code. */

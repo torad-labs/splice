@@ -20,9 +20,9 @@
 // GIT_INDEX_FILE, which git sets for `git commit -- <paths>`). It runs the walls on those staged blobs and no gradle;
 // the compile, detekt and tests a commit's modules need belong to the pre-push tier.
 //
-// PRE-PUSH judges the PUSHED COMMIT, and the verdict line says so. It moves the persistent build tree under the git
-// directory (prepush-tree.ts) to the commit, so a half-finished edit in the shared checkout never reddens a push and the
-// build output of the last push is still there. It lints the tip's subject, then scopes the push to its own diff
+// PRE-PUSH judges the PUSHED COMMIT, and the verdict line says so. It makes a build tree of the commit under the git
+// directory (prepush-tree.ts), so a half-finished edit in the shared checkout never reddens a push, and removes the tree
+// with its build output once it has the verdict. It lints the tip's subject, then scopes the push to its own diff
 // (prepush-scope.ts, selector.ts, tools/gate/config/scope.json): the ladder rows whose inputs the diff touches run, and
 // gradle runs the changed modules and the modules that depend on them, in parallel, through the slot. The log says why
 // each module and each check was selected or skipped. The full suite runs only when a changed path is one scope.json
@@ -131,7 +131,7 @@ export interface HookDeps {
   readonly openRun?: (head: string, tree: string) => ReturnType<typeof acquireRunSentinel>;
   /** The ladder rows pre-push scopes by. Read from the checkout when absent. */
   readonly legs?: readonly Leg[];
-  /** How the commit is checked out for judgement. The default is the persistent pre-push build tree under the git directory. */
+  /** How the commit is checked out for judgement. The default is the pre-push build tree under the git directory. */
   readonly tree?: (repoRoot: string, sha: string) => PrePushTree;
   /** Whether another gradle process is live: the evidence a collision needs. The default reads the process list. */
   readonly rivalLive?: () => boolean;

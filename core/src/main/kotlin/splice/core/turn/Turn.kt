@@ -38,6 +38,9 @@ public data class TurnRoute(
      *  `server person set --upstream`). The turn goes there while it is healthy. Null when its person set none, and
      *  for every turn of a provider that is one server. */
     val preferredUpstream: String? = null,
+    /** The door the turn came through ([DESKTOP_DOOR]), as the listener that relayed it named it; null for every turn
+     *  that came straight to the head. */
+    val door: String? = null,
 )
 
 /** How a turn reasons and how that reasoning reaches the client. */

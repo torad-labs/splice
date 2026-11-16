@@ -91,7 +91,7 @@ internal class PerfEvidenceCursorScan(
 
     private fun accept(value: PerfObservation, position: PerfCursorPosition, index: FileChannel) {
         val duplicate = seen.add(PerfEvidenceCodec.identity(value), PerfEvidenceCodec.fingerprint(value))
-        if (duplicate == PerfEvidenceDuplicate.CONFLICT && CONFLICT !in issues) issues += CONFLICT
+        if (duplicate == PerfEvidenceDuplicate.CONFLICT && DUPLICATE_CONFLICT !in issues) issues += DUPLICATE_CONFLICT
         if (duplicate == PerfEvidenceDuplicate.NEW && selected(value)) {
             if ((matching + 1) * PERF_CURSOR_ENTRY_BYTES > indexLimit) {
                 throw PerfReadRefusal(
@@ -107,4 +107,4 @@ internal class PerfEvidenceCursorScan(
     }
 }
 
-private const val CONFLICT = "evidence_duplicate_conflict"
+private const val DUPLICATE_CONFLICT = "evidence_duplicate_conflict"

@@ -318,6 +318,9 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/mcp/NativeCodexSocketProxy.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeAccountFolders.kt" to mapOf("writeAtomic0600(" to 4),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeCredentialProfiles.kt" to mapOf("writeAtomic0600(" to 1),
+    // Claude Desktop's door: its record, and the env and picker `splice desktop on` writes into settings.json.
+    "app/src/main/kotlin/splice/app/desktop/DesktopRecord.kt" to mapOf("writeAtomic0600(" to 1),
+    "app/src/main/kotlin/splice/app/desktop/DesktopSettingsFile.kt" to mapOf("writeAtomic0600(" to 1),
     // The console launch page, 0600, documented in the console-open.html README row.
     "app/src/main/kotlin/splice/app/cli/status/ConsoleCommand.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/config/ConfigService.kt" to mapOf("writeAtomic0600(" to 1),
@@ -361,9 +364,9 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "integrations/claude-code/src/main/kotlin/splice/client/mcp/PluginFlagVerdicts.kt" to
         mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/config/KeyStore.kt" to mapOf("FileChannel.open(" to 1, "writeAtomic0600(" to 1),
-    // Oct 26: the first-run mint and the on-purpose replace (key rotation) write the same key file, in the mgmt-key
-    // README row.
-    "core/src/main/kotlin/splice/core/config/MgmtKey.kt" to mapOf("writeAtomic0600(" to 2),
+    // A key held in one state file: the management key and the desktop key, minted and replaced through one write,
+    // in the mgmt-key and desktop-key README rows.
+    "core/src/main/kotlin/splice/core/config/FileHeldKey.kt" to mapOf("writeAtomic0600(" to 1),
     // The digests of the keys a rotation retired, owner-only, in the retired-keys README row.
     "core/src/main/kotlin/splice/core/config/RetiredKeys.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/config/TurnKey.kt" to mapOf("writeAtomic0600(" to 1),

@@ -96,6 +96,12 @@ internal class ManagedSharedHeads(
         Offered(key, topology.heads[key]?.claude?.command ?: key, head, spec)
     }
 
+    /** Every head with a launch, by its key, offered or not: what Claude Desktop's door (desktop-door) chooses its heads
+     *  from, by rules of its own. */
+    fun every(): Map<String, SharedHead> = heads.mapNotNull { (key, head) ->
+        head.launchSpec?.let { key to Offered(key, topology.heads[key]?.claude?.command ?: key, head, it) }
+    }.toMap()
+
     /** Whether [head] holds every login it serves on: it has some, and none is the caller's own sign-in, whose label
      *  no added account may take. */
     private fun holdsEveryLogin(head: ManagedHead): Boolean {

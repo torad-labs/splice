@@ -29,6 +29,9 @@ private const val ACCOUNT_KEY = "account"
 private const val CACHE_COLD_KEY = "cache_cold"
 private const val COMPACT_KEY = "compact"
 
+// desktop-door: the door a turn came through, on its row only when it came through one.
+private const val DOOR_KEY = "door"
+
 // Trace lookup and request ownership stay separate, including on a head with capture off.
 private const val TURN_KEY = "turn"
 private const val REQUEST_TURN_KEY = "turn_id"
@@ -63,6 +66,7 @@ internal class PerfRowShape {
                 sessionId = text(obj, SESSION_ID_KEY),
                 responseMessageId = text(obj, RESPONSE_ID_KEY),
                 messagesHash = text(obj, MESSAGES_HASH_KEY),
+                door = text(obj, DOOR_KEY),
             ),
             turns = PerfTurnIds(trace = text(obj, TURN_KEY), request = text(obj, REQUEST_TURN_KEY)),
         )

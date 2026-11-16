@@ -11,6 +11,7 @@ import splice.core.failure.FailureCause
 import splice.core.perf.OutcomeTag
 import splice.core.util.LogSink
 import splice.head.HeadHealthCounters
+import splice.upstream.transport.NoPlaceLeft
 import splice.upstream.transport.SseFrameTooLarge
 import splice.upstream.transport.StreamTornBeforeClient
 import splice.upstream.transport.UpstreamAuthMissing
@@ -31,6 +32,7 @@ internal class TurnEnding(
             is UpstreamAuthMissing -> knownEnd.emitAuthMissing(drive)
             is UpstreamFailed -> knownEnd.emitFailed(drive, ending)
             is StreamTornBeforeClient -> connEnd.emitTorn(drive, ending)
+            is NoPlaceLeft -> connEnd.emitNoPlace(drive, ending)
             is SseFrameTooLarge -> connEnd.emitOversized(drive, ending)
         }
     }

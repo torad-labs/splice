@@ -135,7 +135,7 @@ public class ShareListener(
             if (refusal != null) return ShareErrors.refuse(call, HttpStatus.BAD_REQUEST, refusal)
         }
         val query = call.request.queryString().takeIf(String::isNotEmpty)?.let { "?$it" }.orEmpty()
-        relay.turn(call, head, path.joinToString("/", prefix = "/") + query)
+        relay.turn(call, HeadTurn(head, path.joinToString("/", prefix = "/") + query))
     }
 
     /** Whether [call] says its body is application/json, in any case and with any parameters. Read from the header as

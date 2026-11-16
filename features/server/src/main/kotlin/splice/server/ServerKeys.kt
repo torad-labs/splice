@@ -140,6 +140,11 @@ public class ServerKeys(
         }
     }
 
+    /** Whether [text] holds a key this server issued, live or not, anywhere in it. What a caller sends beside the key
+     *  that admitted it is asked this before any of it leaves the machine: a person's key stays at the server. Each
+     *  run with a key's shape is hashed and looked up, as [admit] does, and nothing is marked used. */
+    internal fun heldIn(text: String): Boolean = mint.shapedIn(text).any { mint.hash(it) in byHash }
+
     /** Writes when each key was last used, if any was used since the last write and that write is [olderThanMs] old.
      *  The listener asks after a turn; the daemon's stop asks with 0, so nothing is lost at a restart. */
     public suspend fun keepUse(olderThanMs: Long = USE_KEPT_EVERY_MS) {

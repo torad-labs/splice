@@ -12,4 +12,5 @@ dependencies {
     testImplementation(libs.ktor.client.cio)
     testImplementation(project(":features-turns"))
     testImplementation(testFixtures(project(":features-turns")))
+    testImplementation(testFixtures(project(":core"))) // Reserved closed ports for a pool server that is gone
 }

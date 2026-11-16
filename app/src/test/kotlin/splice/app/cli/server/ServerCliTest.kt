@@ -74,10 +74,40 @@ class ServerCliTest {
             [heads.box.claude]
             command = "claude-team"
         """.trimIndent() + "\n"
-        server = boot(tmp.resolve("server"), team)
+        server = boot(tmp.resolve("server"), team + farm())
         plain = boot(tmp.resolve("plain"), "[daemon]\ncontrol_port = $plainControl\n")
         awaitListening(control, listen, plainControl)
     }
+
+    /** A provider that is two servers, behind a command of its own: the upstreams a person can be set to. */
+    private fun farm(): String = """
+
+        [providers.farm]
+        dialect = "openai-chat"
+        auth = { kind = "api-key", env = "SPLICE_TEST_BOX_KEY" }
+        health_seconds = 60
+
+        [[providers.farm.upstreams]]
+        name = "gpu-1"
+        url = "http://127.0.0.1:${TestPorts.reserve()}/v1"
+
+        [[providers.farm.upstreams]]
+        name = "gpu-2"
+        url = "http://127.0.0.1:${TestPorts.reserve()}/v1"
+
+        [[providers.farm.models]]
+        id = "team-model"
+        label = "team-model"
+        context_window = 131072
+
+        [heads.farm]
+        provider = "farm"
+        port = ${TestPorts.reserve()}
+        discovery_prefix = "claude-farm--"
+        pinned_model = "team-model"
+        [heads.farm.claude]
+        command = "claude-farm"
+    """.trimIndent() + "\n"
 
     private fun boot(dir: Path, toml: String): Machine {
         val config = Files.createDirectories(dir).resolve("splice.toml")
@@ -210,6 +240,25 @@ class ServerCliTest {
         val second = splice(server, "person", "set", "carl@team.example", "--rpm", "0")
         assertEquals(0, second.code, second.toString())
         assertTrue(listOf("in flight at most 1", "a minute not capped").all(second.out::contains), second.out)
+    }
+
+    @Test
+    fun `person set --upstream keeps the upstream a person prefers, and refuses a name no provider lists`() {
+        val set = splice(server, "person", "set", "dana@team.example", "--upstream", "gpu-2", "--inflight", "2")
+        assertEquals(0, set.code, set.toString())
+        assertTrue(listOf("dana@team.example", "in flight at most 2", "upstream gpu-2").all(set.out::contains), set.out)
+
+        val unknown = splice(server, "person", "set", "dana@team.example", "--upstream", "gpu-9")
+        assertEquals(1, unknown.code, unknown.toString())
+        assertTrue(listOf("gpu-9", "gpu-1, gpu-2").all(unknown.err::contains), unknown.err)
+
+        val kept = splice(server, "person", "set", "dana@team.example", "--rpm", "30")
+        assertEquals(0, kept.code, kept.toString())
+        assertTrue(kept.out.contains("upstream gpu-2"), "a refused name or a later cap changed it: ${kept.out}")
+
+        val back = splice(server, "person", "set", "dana@team.example", "--upstream", "")
+        assertEquals(0, back.code, back.toString())
+        assertTrue(back.out.contains("upstream the least busy"), back.out)
     }
 
     @Test

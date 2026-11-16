@@ -105,6 +105,8 @@ internal class ServerChecks(
             TopologyFinding("$SERVER_TABLE.limits.inflight_per_person", rule)
                 .takeIf { server.limits.inflightPerPerson < 0 },
             TopologyFinding("$SERVER_TABLE.limits.rpm_per_person", rule).takeIf { server.limits.rpmPerPerson < 0 },
+            TopologyFinding("$SERVER_TABLE.keepalive_seconds", "must be 0 (no keepalive) or a number of seconds")
+                .takeIf { server.keepaliveSeconds < 0 },
         )
     }
 }

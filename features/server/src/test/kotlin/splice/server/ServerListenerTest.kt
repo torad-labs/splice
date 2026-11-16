@@ -3,7 +3,6 @@
 package splice.server
 
 import com.sun.net.httpserver.HttpServer
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -19,17 +18,9 @@ import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.config.MgmtKey
-import splice.core.config.StatePaths
-import splice.core.config.TurnKey
-import splice.core.testing.TestPorts
-import splice.core.topology.ServerAddress
 import splice.core.topology.ServerConfig
 import splice.core.topology.ServerLimits
 import splice.core.util.LogSink
-import splice.launch.LaunchSpec
-import splice.share.SharedHead
-import splice.share.SharedHeads
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.URI
@@ -52,12 +43,12 @@ import java.util.concurrent.locks.LockSupport
 internal class ServerListenerTest {
     @TempDir lateinit var state: Path
 
-    private val port = TestPorts.reserve()
     private val http = HttpClient.newHttpClient()
     private val logged = CopyOnWriteArrayList<String>()
     private val clock = SetClock()
-    private val base = ServerConfig(listen = "127.0.0.1:$port", commands = listOf("claude-team"))
-    private var mode: ServerMode? = null
+    private val rig = ServerRig(LogSink { logged += it }, clock)
+    private val port = rig.port
+    private val base = rig.config
 
     /** What the head was sent as its credential, one entry per request that reached it. */
     private val heard = CopyOnWriteArrayList<String>()
@@ -87,20 +78,6 @@ internal class ServerListenerTest {
         start()
     }
 
-    private class Head(override val key: String, override val command: String, override val port: Int) : SharedHead {
-        override fun running(): Boolean = true
-
-        override fun launch(): LaunchSpec? = null
-
-        override fun logins(): List<String> = emptyList()
-
-        override fun pin(login: String, session: String): Boolean = false
-
-        override fun maxRequestBytes(): Int = 1_000_000
-
-        override fun requestReadTimeoutMs(): Long = 5_000
-    }
-
     /** A clock the test sets, so a key's expiry and a person's minute pass when the test says. */
     private class SetClock : Clock() {
         @Volatile
@@ -119,37 +96,19 @@ internal class ServerListenerTest {
 
     /** Opens server mode as the daemon does, over this machine's two heads: `claude-team` and `claude-own`. */
     private fun serve(server: ServerConfig = base): ServerMode {
-        val machine = object : SharedHeads {
-            override val machine: String = "gpu-box"
-
-            override fun offered(): List<SharedHead> = listOf(
-                Head("team", "claude-team", head.address.port),
-                Head("own", "claude-own", head.address.port),
-            )
-        }
-        val reach = ServerReach(TurnKey(MgmtKey(StatePaths(baseOverride = state))), TestPorts.reserve())
-        val opened = ServerMode(server, state.resolve("server"), Dispatchers.IO, LogSink { logged += it }, clock)
-        opened.open(ServerAddress("127.0.0.1", port), machine, reach, state)
-        mode = opened
-        return opened
+        val heads = listOf(
+            StandInHead(head.address.port),
+            StandInHead(head.address.port, key = "own", command = "claude-own"),
+        )
+        return rig.open(state, heads, server)
     }
 
     @AfterEach
     fun stop() {
         release.countDown()
-        runBlocking { mode?.close() }
+        rig.close()
         head.stop(0)
         workers.shutdownNow()
-    }
-
-    /** A key for [person], minted as the operator's CLI mints it. */
-    private fun keyFor(person: String, expires: String? = null): String {
-        val asked = buildJsonObject {
-            put("person", person)
-            expires?.let { put("expires", it) }
-        }
-        val answer = runBlocking { checkNotNull(mode).keyApi.create(asked) }
-        return assertInstanceOf(ServerAnswer.Done::class.java, answer).body.getValue("key").jsonPrimitive.content
     }
 
     private fun prefixOf(key: String): String = key.split('_').take(2).joinToString("_")
@@ -238,7 +197,7 @@ internal class ServerListenerTest {
     @Test
     fun `a person's key opens a turn as x-api-key and as a bearer, and the head is never sent it`() {
         serve()
-        val key = keyFor("ada@team.example")
+        val key = rig.keyFor("ada@team.example")
         val asApiKey = turn(key)
         val asBearer = send(request("POST", TURN_PATH, key = null, TURN).header("Authorization", "Bearer $key"))
         for (answer in listOf(asApiKey, asBearer)) {
@@ -252,8 +211,8 @@ internal class ServerListenerTest {
     @Test
     fun `a revoked key stops at the next request and an expired one when its time comes, each said as what it is`() {
         val mode = serve()
-        val revocable = keyFor("ada@team.example")
-        val shortLived = keyFor("bo@team.example", expires = "6s")
+        val revocable = rig.keyFor("ada@team.example")
+        val shortLived = rig.keyFor("bo@team.example", expires = "6s")
         assertEquals(200, turn(revocable).statusCode())
         runBlocking { mode.keyApi.revoke(prefixOf(revocable)) }
         val revoked = turn(revocable)
@@ -271,7 +230,7 @@ internal class ServerListenerTest {
     @Test
     fun `only the commands the server lists are offered and served`() {
         serve()
-        val key = keyFor("ada@team.example")
+        val key = rig.keyFor("ada@team.example")
         val offered = get("/", key)
         assertEquals(200, offered.statusCode())
         assertTrue(offered.body().contains("claude-team"), offered.body())
@@ -285,8 +244,8 @@ internal class ServerListenerTest {
     @Test
     fun `the server's own API answers an admin's key and refuses a member's`() {
         serve(base.copy(admins = listOf("ops@team.example")))
-        val admin = keyFor("Ops@Team.example")
-        val member = keyFor("ada@team.example")
+        val admin = rig.keyFor("Ops@Team.example")
+        val member = rig.keyFor("ada@team.example")
         val refused = get("/server/api/keys", member)
         assertEquals(403, refused.statusCode())
         assertEquals("permission_error", error(refused).first)
@@ -311,8 +270,8 @@ internal class ServerListenerTest {
     @Test
     fun `a turn past the in-flight cap is refused at once, naming the cap, while another person is served`() {
         serve(base.copy(limits = ServerLimits(inflightPerPerson = 2)))
-        val ada = keyFor("ada@team.example")
-        val bo = keyFor("bo@team.example")
+        val ada = rig.keyFor("ada@team.example")
+        val bo = rig.keyFor("bo@team.example")
         val inFlight = listOf(turnHeld(ada), turnHeld(ada))
         awaitHeld(turns = 2)
 
@@ -331,7 +290,7 @@ internal class ServerListenerTest {
     @Test
     fun `a client that hangs up mid-turn frees its slot while the head is still busy with it`() {
         serve(base.copy(limits = ServerLimits(inflightPerPerson = 1)))
-        val ada = keyFor("ada@team.example")
+        val ada = rig.keyFor("ada@team.example")
         Socket("127.0.0.1", port).use { client ->
             client.getOutputStream().apply {
                 write(onTheWire(TURN_PATH, ada, HELD_TURN))
@@ -346,7 +305,7 @@ internal class ServerListenerTest {
     @Test
     fun `a turn whose path is spelled another way is held to its person's cap, or is not served as a turn`() {
         serve(base.copy(limits = ServerLimits(inflightPerPerson = 1)))
-        val ada = keyFor("ada@team.example")
+        val ada = rig.keyFor("ada@team.example")
         val inFlight = turnHeld(ada)
         awaitHeld(turns = 1)
 
@@ -380,7 +339,7 @@ internal class ServerListenerTest {
         val mode = serve(base.copy(limits = ServerLimits(inflightPerPerson = 2)))
         val set = runBlocking { mode.personApi.set("Carl@team.example", buildJsonObject { put("inflight", 1) }) }
         assertInstanceOf(ServerAnswer.Done::class.java, set)
-        val carl = keyFor("carl@team.example")
+        val carl = rig.keyFor("carl@team.example")
         val inFlight = turnHeld(carl)
         awaitHeld(turns = 1)
         val second = turn(carl)
@@ -394,7 +353,7 @@ internal class ServerListenerTest {
     fun `a person past their turns a minute waits out the minute, and nobody else waits`() {
         val mode = serve()
         runBlocking { mode.personApi.set("rex@team.example", buildJsonObject { put("rpm", 3) }) }
-        val rex = keyFor("rex@team.example")
+        val rex = rig.keyFor("rex@team.example")
         repeat(3) { assertEquals(200, turn(rex).statusCode(), "turn ${it + 1} of 3 a minute") }
         clock.pass(seconds = 20)
 
@@ -404,7 +363,7 @@ internal class ServerListenerTest {
         val wait = fourth.headers().firstValue("retry-after").orElse("")
         assertEquals("40", wait, "the wait is not what is left of the minute")
         assertTrue(error(fourth).second.contains("rpm_per_person = 3"), fourth.body())
-        assertEquals(200, turn(keyFor("ada@team.example")).statusCode(), "one person's minute held up another")
+        assertEquals(200, turn(rig.keyFor("ada@team.example")).statusCode(), "one person's minute held up another")
 
         clock.pass(seconds = 40)
         assertEquals(200, turn(rex).statusCode(), "the minute passed and the person is still refused")
@@ -430,7 +389,7 @@ internal class ServerListenerTest {
     @Test
     fun `a restart keeps every key, and when each was last used`() {
         val before = serve()
-        val key = keyFor("ada@team.example")
+        val key = rig.keyFor("ada@team.example")
         assertEquals(200, turn(key).statusCode())
         runBlocking { before.close() }
 

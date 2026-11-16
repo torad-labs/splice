@@ -1,11 +1,13 @@
-// NEW: server mode (docs/specs/server-mode.md, F1 and F3). The control plane's routes on a server's keys and people,
-// behind the management key on loopback, which is how `splice server` reaches the daemon that holds them:
+// NEW: server mode (docs/specs/server-mode.md, F1, F3 and F4). The control plane's routes on a server's keys, people
+// and upstreams, behind the management key on loopback, which is how `splice server` reaches the daemon that holds
+// them:
 //
 //   GET    /api/server/keys[?person=]          every key, or one person's; no secret in it
 //   POST   /api/server/keys                    mint one: {"person", "name"?, "expires"?}; the key is answered once
 //   DELETE /api/server/keys/{prefix}           revoke one
 //   DELETE /api/server/people/{person}/keys    offboarding: revoke every key of one person
-//   PUT    /api/server/people/{person}         that person's own caps: {"inflight"?, "rpm"?}
+//   PUT    /api/server/people/{person}         that person's own settings: {"inflight"?, "rpm"?, "upstream"?}
+//   GET    /api/server/upstreams               every upstream: provider, name, url, healthy, inflight
 //
 // A daemon with no server mode answers each 409, saying why it has none.
 package splice.app.control
@@ -43,6 +45,7 @@ internal class ServerModeRoutes(private val ports: ConsolePorts, private val gua
         route.delete("/api/server/keys/{$PREFIX_PARAM}") { guard.guarded(call) { revokeKey(call) } }
         route.delete("/api/server/people/{$PERSON_PARAM}/keys") { guard.guarded(call) { revokePerson(call) } }
         route.put("/api/server/people/{$PERSON_PARAM}") { guard.guarded(call) { setPerson(call) } }
+        route.get("/api/server/upstreams") { guard.guarded(call) { listUpstreams(call) } }
     }
 
     private suspend fun listKeys(call: ApplicationCall) {
@@ -68,6 +71,11 @@ internal class ServerModeRoutes(private val ports: ConsolePorts, private val gua
     private suspend fun setPerson(call: ApplicationCall) {
         val mode = running(call) ?: return
         say(call, mode.personApi.set(call.parameters[PERSON_PARAM].orEmpty(), jsonBody.parse(call)))
+    }
+
+    private suspend fun listUpstreams(call: ApplicationCall) {
+        val mode = running(call) ?: return
+        say(call, mode.upstreamApi.list())
     }
 
     /** The running server mode, or null with the 409 answered. */

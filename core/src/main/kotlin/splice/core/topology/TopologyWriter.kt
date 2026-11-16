@@ -371,7 +371,7 @@ private class TopologyChecks(
     fun findings(): List<TopologyFinding> =
         references() + auth() + ports() + (if (withRosters) rosters() else statics()) + knobs() + prompts() +
             compaction() + daemon() + remotes() + relays() + ServerChecks(topology, configDir).findings() +
-            topology.telemetry.operator.findings() +
+            UpstreamChecks(topology.providers).findings() + topology.telemetry.operator.findings() +
             topology.providers.mapNotNull { (key, provider) -> provider.forwarded.finding(key) }
 
     /** An auth kind its provider's dialect cannot carry, asked the way head assembly asks it ([AuthCompatibility]), so

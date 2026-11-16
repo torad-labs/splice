@@ -2,11 +2,6 @@
 // the certificate and its key as two PEM files beside splice.toml, and a client that trusts that certificate.
 package splice.server
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
@@ -14,15 +9,6 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.config.MgmtKey
-import splice.core.config.StatePaths
-import splice.core.config.TurnKey
-import splice.core.testing.TestPorts
-import splice.core.topology.ServerAddress
-import splice.core.topology.ServerConfig
-import splice.core.util.LogSink
-import splice.share.SharedHead
-import splice.share.SharedHeads
 import java.io.IOException
 import java.net.URI
 import java.net.http.HttpClient
@@ -40,13 +26,11 @@ import javax.net.ssl.TrustManagerFactory
 internal class ServerTlsTest {
     @TempDir lateinit var dir: Path
 
-    private val port = TestPorts.reserve()
-    private var mode: ServerMode? = null
+    private val rig = ServerRig()
+    private val port = rig.port
 
     @AfterEach
-    fun stop() {
-        runBlocking { mode?.close() }
-    }
+    fun stop() = rig.close()
 
     /** A self-signed certificate for 127.0.0.1 and its key, made by the JDK's own keytool and read back. */
     private fun identity(): KeyStore.PrivateKeyEntry {
@@ -71,23 +55,8 @@ internal class ServerTlsTest {
     }
 
     /** Opens server mode as the daemon does, with the two PEM files named the way splice.toml names them: beside it. */
-    private fun serve(): ServerMode {
-        val server = ServerConfig(
-            listen = "127.0.0.1:$port",
-            commands = listOf("claude-team"),
-            tlsCert = "fullchain.pem",
-            tlsKey = "privkey.pem",
-        )
-        val machine = object : SharedHeads {
-            override val machine: String = "gpu-box"
-
-            override fun offered(): List<SharedHead> = emptyList()
-        }
-        val reach = ServerReach(TurnKey(MgmtKey(StatePaths(baseOverride = dir))), TestPorts.reserve())
-        val opened = ServerMode(server, dir.resolve("server"), Dispatchers.IO, LogSink { })
-        mode = opened
-        opened.open(ServerAddress("127.0.0.1", port), machine, reach, dir)
-        return opened
+    private fun serve() {
+        rig.open(dir, heads = emptyList(), rig.config.copy(tlsCert = "fullchain.pem", tlsKey = "privkey.pem"))
     }
 
     /** A client that trusts [certificate] and nothing else, and checks the name it is for, as Claude Code does. */
@@ -107,9 +76,8 @@ internal class ServerTlsTest {
         val identity = identity()
         Files.writeString(dir.resolve("fullchain.pem"), pem("CERTIFICATE", identity.certificate.encoded))
         Files.writeString(dir.resolve("privkey.pem"), pem("PRIVATE KEY", identity.privateKey.encoded))
-        val server = serve()
-        val minted = runBlocking { server.keyApi.create(buildJsonObject { put("person", "tess@team.example") }) }
-        val key = assertInstanceOf(ServerAnswer.Done::class.java, minted).body.getValue("key").jsonPrimitive.content
+        serve()
+        val key = rig.keyFor("tess@team.example")
         val https = trusting(identity.certificate)
 
         val health = HttpRequest.newBuilder(URI("https://127.0.0.1:$port/health")).build()

@@ -56,11 +56,12 @@ internal class ServerLines(private val zone: ZoneId = ZoneId.systemDefault()) {
         }
     }
 
-    /** One person's own caps as they now stand. */
+    /** One person's own settings as they now stand. */
     fun person(reply: JsonObject): String {
         val inflight = cap(JsonScalars.long(reply, "inflight"))
         val rpm = cap(JsonScalars.long(reply, "rpm"))
-        return "${JsonScalars.str(reply, "person")}: turns in flight $inflight, turns a minute $rpm"
+        val upstream = JsonScalars.str(reply, "upstream")?.let { "$it while it is healthy" } ?: "the least busy"
+        return "${JsonScalars.str(reply, "person")}: turns in flight $inflight, turns a minute $rpm, upstream $upstream"
     }
 
     private fun cap(set: Long?): String = when (set) {

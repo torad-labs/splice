@@ -109,7 +109,7 @@ internal class RetrySteps(
         if (step !is RetryStep.Again || step.how != How.SAME) return ended
         ctx.onRetry(
             "stream torn before first client frame, reissue ${state.ledger.attempts}/$MAX_ATTEMPTS_OUTSIDE_HOLDS: " +
-                "${e::class.simpleName} ${TransportFaultLine.of(e, ctx.url).take(ERR_SNIPPET)}",
+                "${e::class.simpleName} ${TransportFaultLine.of(e, ctx.target).take(ERR_SNIPPET)}",
         )
         state.lastTear = StreamTornBeforeClient(e)
         state.lastThrown = null

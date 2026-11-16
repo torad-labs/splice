@@ -34,6 +34,10 @@ public data class TurnRoute(
     /** The client's stop_sequences, for a dialect whose backend has none and cuts the answer itself
      *  (splice.upstream.sse.StopSequenceCut). Empty when the request sent none. */
     val stopSequences: List<String> = emptyList(),
+    /** The server of the provider's pool this turn's person prefers, by its name in splice.toml (server mode's
+     *  `server person set --upstream`). The turn goes there while it is healthy. Null when its person set none, and
+     *  for every turn of a provider that is one server. */
+    val preferredUpstream: String? = null,
 )
 
 /** How a turn reasons and how that reasoning reaches the client. */

@@ -14,6 +14,7 @@ import io.ktor.http.decodeURLPart
 import io.ktor.http.encodeURLPathPart
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.path
+import io.ktor.server.request.queryString
 
 internal class RequestPaths {
     /** [call]'s path as its segments: split at `/`, the empty ones dropped, each percent-decoded once. Null when a `%`
@@ -27,4 +28,8 @@ internal class RequestPaths {
     /** [segments] as a path that reads back to exactly them: what in a segment would split a path or end it (`/`, `?`,
      *  `#`, `%`) goes escaped. */
     fun spell(segments: List<String>): String = segments.joinToString("/", prefix = "/") { it.encodeURLPathPart() }
+
+    /** [call]'s query as it follows a path, `?` included; empty when it has none. */
+    fun query(call: ApplicationCall): String =
+        call.request.queryString().takeIf(String::isNotEmpty)?.let { "?$it" }.orEmpty()
 }

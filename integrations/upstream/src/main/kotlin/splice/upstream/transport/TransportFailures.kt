@@ -42,7 +42,7 @@ internal object FailureChain {
     private const val NATIVE_THREAD_REFUSED = "unable to create native thread"
 }
 
-internal class TransportFailures {
+public class TransportFailures {
     /** The failure's links, bounded ([FailureChain.links]) — Ktor wraps engine exceptions, so the class
      *  that decides "retryable transport" or "DNS" is never the one thrown. Every rule below reads the
      *  links through this one, lazily, so the phase and DNS rules cannot drift apart. */
@@ -51,15 +51,21 @@ internal class TransportFailures {
     /** Per-node classification, split out of [classifyTransport] so the loop shape and the
      *  allowlist `when` each stay under detekt's CyclomaticComplexMethod ceiling. */
     private fun transportPhaseOf(t: Throwable): TransportFailurePhase? = when {
-        t is java.nio.channels.UnresolvedAddressException ||
-            t is java.net.UnknownHostException ||
-            t is java.net.ConnectException ||
-            t is io.ktor.client.network.sockets.ConnectTimeoutException -> TransportFailurePhase.CONNECT
+        madeNoConnection(t) -> TransportFailurePhase.CONNECT
         t is java.net.SocketException ||
             t is java.net.SocketTimeoutException ||
             t is io.ktor.client.network.sockets.SocketTimeoutException -> TransportFailurePhase.POST_SEND
         else -> null
     }
+
+    /** Whether [t] is a connection that was never made: a name that did not resolve, a refusal, or a connect that
+     *  ran out of time, as Ktor's engines say it and as the JDK's own client does (the relay's, ShareRelay). */
+    private fun madeNoConnection(t: Throwable): Boolean =
+        t is java.nio.channels.UnresolvedAddressException ||
+            t is java.net.UnknownHostException ||
+            t is java.net.ConnectException ||
+            t is java.net.http.HttpConnectTimeoutException ||
+            t is io.ktor.client.network.sockets.ConnectTimeoutException
 
     /** The first link of [causeChain] that classifies as a transport failure — the retryable
      *  set by phase instead of a bare Boolean. Deliberately conservative — everything else
@@ -77,6 +83,15 @@ internal class TransportFailures {
         } else {
             causeChain(e).firstNotNullOfOrNull { transportPhaseOf(it) }
         }
+
+    /** Whether [e] says no connection was made to the server at all: a refusal, a name that did not resolve, a
+     *  connect that ran out of time. Narrower than [TransportFailurePhase.CONNECT], which also holds a request this
+     *  machine could not start or finish writing: those say nothing about whether the server is there. The one
+     *  reading of "took no connection" for every request the daemon sends a provider's server: a head's turn
+     *  (RouteMoves) and one the server listener relays itself (ShareRelay.outward). */
+    public fun neverConnected(e: Throwable): Boolean =
+        causeChain(e).none { it is RequestWriteStalled || it is RefusedBeforeSend } &&
+            classifyTransport(e) == TransportFailurePhase.CONNECT
 
     /**
      * Connection-phase failures worth a silent retry: name resolution, TCP connect/reset,

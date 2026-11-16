@@ -242,7 +242,15 @@ public class Daemon(
     private val share = DaemonShare(topology, config, TurnKey(mgmtKey), log, statePaths.stateDir)
 
     /** Server mode: a team's keys and the listener that answers them, when splice.toml has a `[server]`. */
-    private val server = DaemonServer(topology, config, TurnKey(mgmtKey), log, statePaths.stateDir, topologyDir)
+    private val server = DaemonServer(
+        topology,
+        config,
+        TurnKey(mgmtKey),
+        log,
+        statePaths.stateDir,
+        topologyDir,
+        controlPlane.providerAssembly.upstreamPools,
+    )
     private val stopLock = Mutex()
     private var stopped = false
 

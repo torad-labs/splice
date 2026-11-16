@@ -3,6 +3,7 @@
 // :upstream, and the JDK client — the thing that actually dials — lives here in :app.
 package splice.app.provider
 
+import splice.app.server.HealthHttp
 import splice.upstream.transport.LocalHttp
 import splice.upstream.transport.LocalHttpReply
 import java.io.IOException
@@ -55,4 +56,15 @@ internal class JdkLocalHttp(
         val reply = client.send(request, HttpResponse.BodyHandlers.ofString())
         return LocalHttpReply(reply.statusCode(), reply.body())
     }
+}
+
+/** Server mode's health checks (F4) over the JDK client: one client for every check of every pool, because a JDK
+ *  client holds a selector thread of its own, made at the first check. A server still connecting after the probes'
+ *  two seconds is read as down. */
+internal class JdkHealthHttp : HealthHttp {
+    private val client by lazy {
+        HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_S)).build()
+    }
+
+    override fun with(headers: Map<String, String>): LocalHttp = JdkLocalHttp(headers, client)
 }

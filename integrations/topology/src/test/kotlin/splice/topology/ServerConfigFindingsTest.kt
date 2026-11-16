@@ -46,7 +46,7 @@ class ServerConfigFindingsTest {
     }
 
     @Test
-    fun `a server on an API-key head boots, with its proxies, admins, limits and TLS files`() {
+    fun `a server on an API-key head boots, with its proxies, admins, keepalive, limits and TLS files`() {
         Files.writeString(directory.resolve("fullchain.pem"), "-----BEGIN CERTIFICATE-----\n")
         Files.writeString(directory.resolve("privkey.pem"), "-----BEGIN PRIVATE KEY-----\n")
         val lines = """
@@ -54,6 +54,7 @@ class ServerConfigFindingsTest {
             tls_key = "privkey.pem"
             trusted_proxies = ["10.0.0.0/8", "fd00::/8", "192.168.1.7"]
             admins = ["Ops@Team.example"]
+            keepalive_seconds = 10
             [server.limits]
             inflight_per_person = 12
             rpm_per_person = 0
@@ -62,6 +63,7 @@ class ServerConfigFindingsTest {
         val topology = assertInstanceOf(ConfigRead.Ready::class.java, read, read.toString()).topology
         assertEquals(listOf("claude-team"), topology.server.commands)
         assertEquals(12, topology.server.limits.inflightPerPerson)
+        assertEquals(10, topology.server.keepaliveSeconds)
         assertTrue(topology.server.admin("ops@team.example"), "an admin written with capitals does not administer")
     }
 
@@ -103,11 +105,12 @@ class ServerConfigFindingsTest {
     }
 
     @Test
-    fun `an address, a TLS pair, a proxy, an admin and a cap that cannot be served are each refused at their key`() {
+    fun `an address, a TLS pair, a proxy, an admin, a keepalive and a cap that cannot be served are each refused`() {
         val lines = """
             tls_cert = "fullchain.pem"
             trusted_proxies = ["the-proxy"]
             admins = ["ops"]
+            keepalive_seconds = -5
             [server.limits]
             rpm_per_person = -1
         """.trimIndent()
@@ -118,6 +121,7 @@ class ServerConfigFindingsTest {
                 "server.tls_key",
                 "server.trusted_proxies",
                 "server.admins",
+                "server.keepalive_seconds",
                 "server.limits.rpm_per_person",
             ),
             refused(toml).map { it.path }.toSet(),

@@ -760,6 +760,9 @@ val codeModePackagedTest = tasks.register<Test>("codeModePackagedTest") {
 tasks.named("check") { dependsOn(codeModePackagedTest) }
 
 tasks.withType<ShadowJar>().configureEach {
+    // Never stored in Gradle's build cache. The jar is some 200 MB and a new one for every change to any module, and it
+    // is put together again from the cached classes in seconds; stored, it was most of what the cache held on disk.
+    outputs.doNotCacheIf("the fat jar is rebuilt from cached classes faster than it is worth keeping") { true }
     // JS and regex are separate Truffle languages; both registrations must survive the single-JAR build.
     mergeServiceFiles()
     filesMatching(listOf("META-INF/services/**", "META-INF/*.kotlin_module")) {

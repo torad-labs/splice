@@ -1,10 +1,11 @@
 # ---
 # MANAGED FILE — do not edit here.
-# Synced from an organization template; local edits are overwritten on the next sync.
+# Source: torad-labs/github-operator templates/dependabot-automerge.yml
+# Synced by `operator sync`; local edits are overwritten on the next sync.
 # ---
 # Auto-merge green Dependabot PRs (patch/minor; majors wait for a human).
 #
-# This is the CONSUMING half of the Dependabot standard. The organization distributed
+# This is the CONSUMING half of the Dependabot standard. The operator distributed
 # .github/dependabot.yml — which OPENS PRs — on 2026-07-31 without this, and by
 # the next day 17 of 18 repos had no way to merge what Dependabot opened: 27
 # fully-green PRs sat untouched across the fleet. Opening PRs nobody merges is
@@ -19,7 +20,7 @@
 #
 # SAFETY: `gh pr merge --auto` only ENABLES auto-merge; GitHub merges after the
 # base branch's required checks pass. On a repo with NO required checks that is
-# effectively an immediate merge — which is why the organization asserts branch
+# effectively an immediate merge — which is why the operator asserts branch
 # protection fleet-wide and the org ruleset supplies gates that apply everywhere.
 #
 # WHO MERGES: the App, never GITHUB_TOKEN. GitHub performs the eventual merge
@@ -50,7 +51,8 @@
 # can keep it off a runner: the key lives in the arm job alone, which runs only
 # after the pins job, which runs no action, found the file this run loaded to be
 # the base branch's, byte for byte.
-# A Dependabot PR that changes this file waits for a person. It loses little: the template sync sets this
+# A Dependabot PR that changes this file waits for a person (review of
+# torad-fleet#288, round 2). It loses little: the operator's sync sets this
 # file's pins in every repo regardless.
 name: automerge
 
@@ -83,8 +85,8 @@ jobs:
   # "Automated" is deliberately narrow and matched two ways, because the author
   # alone is not sufficient: a sync PR opened with a personal token carries a
   # HUMAN login even though nothing about it is human. So:
-  #   * any Bot author (dependabot, renovate, the organization App), or
-  #   * the organization's own template-sync branch, whoever opened it.
+  #   * any Bot author (dependabot, renovate, the operator App), or
+  #   * the operator's own template-sync branch, whoever opened it.
   # Anything else — a feature, a fix, a bugfix, a refactor — is not eligible,
   # regardless of who wrote it or how green it is.
   automated:
@@ -92,7 +94,7 @@ jobs:
     # only shape automation takes:
     #
     #   Bot author            dependabot, renovate, anything acting as an App
-    #   operator/* branch     the organization's own remediation PRs — a gitleaks
+    #   operator/* branch     the operator's own remediation PRs — a gitleaks
     #                         allowlist fix or a fleet repair is automation work
     #                         even when the token opening it belongs to a human,
     #                         which is precisely the case this originally missed
@@ -147,7 +149,7 @@ jobs:
           echo "Auto-merge armed; GitHub merges once required checks pass." >> "$GITHUB_STEP_SUMMARY"
 
       # Private repos run CI when a PR opens and when a label is added, never on
-      # a push. A person re-adds `ci` when ready to merge;
+      # a push (Marcos, 2026-11-02). A person re-adds `ci` when ready to merge;
       # nobody does for an automated PR, so a push to one (the template sync
       # onto its open PR) would leave the armed merge without its required
       # checks. The App adds the label: GitHub starts no workflow for a label
@@ -363,7 +365,7 @@ jobs:
   # does, not only the plan: on a PR that changes this file the classifier runs
   # the PR's own fetch-metadata, which can hang past its timeout or take its
   # runner down before the plan writes anything, and an App arm from an earlier
-  # head must still come off.
+  # head must still come off (review of github-operator#139, round 1).
   #
   # What is disarmed: an auto-merge automation enabled (this App, or
   # github-actions[bot] in copies from before the App armed), and one a person

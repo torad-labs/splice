@@ -10,13 +10,15 @@
 // Code prints, never a 529 it retries in silence as "overloaded".
 //
 // Server mode (docs/specs/server-mode.md) relays a key holder's turn through this same class, under its own voice.
-// Each blocking step (the send, each read of the answer) is interruptible, so a caller that cancels the relay, as the
-// server listener does when a turn's client hangs up, ends it at once and hangs up on the head, which then sees its own
-// client leave: no head goes on computing an answer nobody is waiting for. A turn the server listener asks to be kept
-// alive, and that asks for a stream, is not left waiting on a silent head: after a second without the first byte of
-// an answer its stream is opened to the client and kept alive until the head answers (HeadAnswers.early). That
-// second, and each interval between two keepalives, goes by the relay's clock (RelayClock): the process clock in
-// production, and in a test one the test steps.
+// No thread waits on a head: the relay is suspended on the send and on each piece of the answer (RelayClient,
+// AnswerBody), so however many turns wait on their model servers, each is relayed as if it were the only one. A
+// caller that cancels the relay, as the server listener does when a turn's client hangs up, ends it at once and hangs
+// up on the head, which then sees its own client leave: no head goes on computing an answer nobody is waiting for.
+//
+// A turn the server listener asks to be kept alive, and that asks for a stream, is not left waiting on a silent head:
+// after a second without the first byte of an answer its stream is opened to the client and kept alive until the
+// head answers (HeadAnswers.early). That second, and each interval between two keepalives, goes by the relay's clock
+// (RelayClock): the process clock in production, and in a test one the test steps.
 //
 // Server mode also answers OpenAI-style clients for a command's provider itself (F4, openai-route): `outward` sends
 // such a request to that provider's server, and gives the answer back the same way a head's is given. That server is
@@ -38,7 +40,6 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.io.readByteArray
@@ -51,12 +52,9 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.wire.HttpStatus
 import splice.upstream.transport.TransportFailures
-import java.io.InputStream
 import java.net.URI
-import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
-import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
 
 /** Whose words a relay refuses in, and the name its log lines carry. */
@@ -80,16 +78,16 @@ internal fun interface RidingHeader {
 }
 
 /** What asks for one request's answer and says how that ended: a head's one send, or a way through a provider's
- *  servers. An answer is kept in the reference it is handed from the moment there is one. */
+ *  servers. An answer is kept in what it is handed from the moment there is one. */
 internal fun interface Asking {
-    suspend fun sent(answer: AtomicReference<HttpResponse<InputStream>>): Sent
+    suspend fun sent(held: HeldAnswer): Sent
 }
 
 public class ShareRelay(
     private val turnKey: TurnKey,
     private val controlPort: Int,
     private val machine: String,
-    /** Blocking JDK I/O runs here: the send, and each read of the answer. */
+    /** Blocking work runs here: what a statusline's admission reads. No wait on a head does (RelayClient). */
     private val io: CoroutineDispatcher,
     private val log: LogSink,
     private val speaker: RelaySpeaker = RelaySpeaker(ShareErrors.voice, "share"),
@@ -97,7 +95,8 @@ public class ShareRelay(
     private val clock: RelayClock = RelayClock(),
 ) {
     private val errors get() = speaker.errors
-    private val answers = HeadAnswers(io, speaker, clock, log)
+    private val answers = HeadAnswers(speaker, clock, log)
+    private val client = RelayClient()
     private val streamed = StreamedBodies()
     private val failures = TransportFailures()
 
@@ -107,11 +106,6 @@ public class ShareRelay(
         /** Why [body]'s statusline may not be drawn, or null once it may. */
         fun refusal(body: ByteArray): String?
     }
-
-    private val http: HttpClient = HttpClient.newBuilder()
-        .version(HttpClient.Version.HTTP_1_1)
-        .connectTimeout(java.time.Duration.ofMillis(RELAY_CONNECT_TIMEOUT_MS))
-        .build()
 
     /** This relay with [voice] for its refusals: the same machine and the same heads, for a client that reads errors
      *  in another shape. */
@@ -126,7 +120,7 @@ public class ShareRelay(
      *  answer given to [call]; or, once none of them took one, what [way] says of that. */
     public suspend fun outward(call: ApplicationCall, ask: OutwardAsk, way: OutwardWay) {
         val wait = ClientWait(ask.keepalive, ask.edit, ask.whole, outside = true)
-        answered(call, wait) { answer -> taken(call, ask, way, answer) }
+        answered(call, wait) { held -> taken(call, ask, way, held) }
     }
 
     /** [ask] asked of [way]'s servers, one at a time. The first that takes a connection is the one whose answer, or
@@ -136,14 +130,14 @@ public class ShareRelay(
         call: ApplicationCall,
         ask: OutwardAsk,
         way: OutwardWay,
-        answer: AtomicReference<HttpResponse<InputStream>>,
+        held: HeldAnswer,
     ): Sent {
         // The answer is read here when it is a stream to edit, so the server is asked to send it as it is.
         val own = ask.headers.own + (HttpHeaders.AcceptEncoding to "identity")
         var server = way.next()
         while (server != null) {
             val request = request(call, server.target, ask.body, own) { it in ask.headers.carried }
-            val sent = send(request, answer, server.name)
+            val sent = send(request, held, server.name)
             val failure = sent.exceptionOrNull() ?: return Sent.Answered(sent.getOrThrow(), server.name)
             if (!failures.neverConnected(failure)) return Sent.Silent(silent(server.name))
             server = way.next()
@@ -211,20 +205,20 @@ public class ShareRelay(
         who: String,
         wait: ClientWait = ClientWait(),
     ) {
-        answered(call, wait) { answer ->
-            send(request, answer, who).fold({ Sent.Answered(it, who) }, { Sent.Silent(silent(who)) })
+        answered(call, wait) { held ->
+            send(request, held, who).fold({ Sent.Answered(it, who) }, { Sent.Silent(silent(who)) })
         }
     }
 
     /** What [asking] ends in, given to [call]. A client that is kept alive does not wait in silence for its stream
      *  to open: when no answer has started within [HEAD_SOON_MS], the answer finds the stream open when it does. */
     private suspend fun answered(call: ApplicationCall, wait: ClientWait, asking: Asking) {
-        val answer = AtomicReference<HttpResponse<InputStream>>()
+        val held = HeldAnswer()
         try {
-            if (wait.every == null) return answers.given(call, asking.sent(answer), wait)
+            if (wait.every == null) return answers.given(call, asking.sent(held), wait)
             coroutineScope {
                 // Response headers alone start no answer: a server may send them at once and then prefill in silence.
-                val sending = async { answers.started(asking.sent(answer)) }
+                val sending = async { answers.started(asking.sent(held)) }
                 if (clock.endedWithin(HEAD_SOON_MS, sending)) {
                     answers.given(call, sending.await(), wait)
                 } else {
@@ -232,36 +226,24 @@ public class ShareRelay(
                 }
             }
         } finally {
-            hangUp(answer)
+            // However the answer ended, a relay cancelled before it read a byte included: the head is hung up on.
+            held.hangUp()
         }
     }
 
     /** What a client hears when [who] gives no answer. */
     private fun silent(who: String): String = "$who is not answering"
 
-    /** However the answer ended, a relay cancelled before it read a byte included: the head is hung up on. */
-    private fun hangUp(answer: AtomicReference<HttpResponse<InputStream>>) {
-        answer.get()?.let { response ->
-            Cancellables.discard(
-                Cancellables.runCatchingCancellable { response.body().close() },
-                "closing an answer already read to its end or already closed changes nothing",
-            )
-        }
-    }
-
-    /** [who]'s answer to [request], kept in [answer] from the moment there is one, so it is closed however the relay
-     *  ends; one that does not answer is said in the log. */
+    /** [who]'s answer to [request], kept in [held] from the moment there is one, so it is hung up on however the
+     *  relay ends; one that does not answer is said in the log. */
     private suspend fun send(
         request: HttpRequest,
-        answer: AtomicReference<HttpResponse<InputStream>>,
+        held: HeldAnswer,
         who: String,
-    ): Result<HttpResponse<InputStream>> = runInterruptible(io) {
-        Cancellables.runCatchingCancellable {
-            http.send(request, HttpResponse.BodyHandlers.ofInputStream()).also(answer::set)
+    ): Result<HttpResponse<AnswerBody>> = Cancellables.runCatchingCancellable { client.send(request, held) }
+        .onFailure { failure ->
+            log("[${speaker.tag}] ${silent(who)} on :${request.uri().port}: ${SafeFailureText.render(failure)}\n")
         }
-    }.onFailure { failure ->
-        log("[${speaker.tag}] ${silent(who)} on :${request.uri().port}: ${SafeFailureText.render(failure)}\n")
-    }
 
     /** [call]'s body, or null once it is refused the way a head's own admission refuses one: 413 for a body declared
      *  or read past [cap], 408 for one still arriving after [readTimeoutMs]. */
@@ -293,10 +275,6 @@ public class ShareRelay(
         "warning", "from", "origin", "referer", LAUNCH_PROOF_HEADER, PREFERRED_UPSTREAM_HEADER,
     )
 }
-
-// why: the head and the control plane are on this machine's loopback, where a live listener accepts at once; a connect
-// still waiting after five seconds is one that is not answering, and the other machine hears that in words.
-private const val RELAY_CONNECT_TIMEOUT_MS = 5_000L
 
 // why: a head that refuses a turn (a body it cannot read, a model it does not serve, a cap of its own) does so in
 // milliseconds, and its own status reaches the client only while no stream is open; a head still silent after a

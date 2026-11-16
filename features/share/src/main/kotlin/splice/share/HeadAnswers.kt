@@ -7,11 +7,12 @@
 // second has its stream opened to the client then, a keepalive written at once and at each interval, and the head's
 // events after them when they come. An answer has started when the first byte of it has come, or when it came and
 // is no stream: response headers alone start nothing, because one server holds them back through its prefill and
-// another sends them at once and prefills after them (AnswerReads), and the client of either hears nothing until
+// another sends them at once and prefills after them (AnswerBody), and the client of either hears nothing until
 // something is written to it. The status has gone out as 200 by then, so a head that refuses such a turn late, or
 // does not answer it, is said as the stream's `error` event, in the head's own words where it gave them. A head
 // whose answer starts within the second answers as it always did, its own status included. The second and the
-// interval are waited out on the relay's clock (RelayClock).
+// interval are waited out on the relay's clock (RelayClock). No thread waits on an answer through any of it, so the
+// number of turns that wait on their model servers at once is no limit on any of them (AnswerBody, RelayClient).
 //
 // A relay that answers for a provider's own server (F4, openai-route) reads that server's stream through a StreamEdit,
 // event by event, and gives it its ending only when the server ended it whole. An answer of that server's that is no
@@ -40,18 +41,11 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
 import io.ktor.utils.io.ByteWriteChannel
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.runInterruptible
-import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.wire.HttpStatus
 import splice.http.SseChannelResponse
-import java.io.IOException
-import java.io.InputStream
 import java.net.http.HttpResponse
 import kotlin.time.Duration
 
@@ -68,13 +62,8 @@ internal data class ClientWait(
 
 /** How asking for an answer ended. */
 internal sealed class Sent {
-    /** [who] gave [response]; [who] is how the client hears that one named, should the answer break off. [reads]
-     *  is the reading of its event stream when that was begun ahead of relaying it (HeadAnswers.started). */
-    class Answered(
-        val response: HttpResponse<InputStream>,
-        val who: String,
-        val reads: AnswerReads? = null,
-    ) : Sent() {
+    /** [who] gave [response]; [who] is how the client hears that one named, should the answer break off. */
+    class Answered(val response: HttpResponse<AnswerBody>, val who: String) : Sent() {
         /** What the client hears when [who] broke its answer off before it ended. */
         val cut: String get() = "$who broke off its answer before it ended"
     }
@@ -84,8 +73,6 @@ internal sealed class Sent {
 }
 
 internal class HeadAnswers(
-    /** Blocking JDK I/O runs here: each read of the answer. */
-    private val io: CoroutineDispatcher,
     private val speaker: RelaySpeaker,
     /** What a kept-alive client's silences are timed on. */
     private val clock: RelayClock,
@@ -110,9 +97,10 @@ internal class HeadAnswers(
      *  broken off without any, and whatever else [sent] is, as it stands. A relay that keeps its client alive waits
      *  on this, so a server that sent its response headers and then fell silent is still one that has not answered. */
     suspend fun started(sent: Sent): Sent {
-        if (sent !is Sent.Answered || !typeOf(sent.response).match(ContentType.Text.EventStream)) return sent
-        val reads = AnswerReads(sent.response.body(), io).also { it.begin() }
-        return Sent.Answered(sent.response, sent.who, reads)
+        if (sent is Sent.Answered && typeOf(sent.response).match(ContentType.Text.EventStream)) {
+            sent.response.body().begin()
+        }
+        return sent
     }
 
     /** An answer that is no stream, given to [call]. It is read whole before any of it is given, so one that breaks
@@ -157,7 +145,7 @@ internal class HeadAnswers(
 
     /** The headers of [response] that go back with it. A head's all do, but the ones that frame it. Of a server's
      *  that is outside this machine, only `Retry-After`, and only when it refused. */
-    private fun returned(call: ApplicationCall, response: HttpResponse<InputStream>, wait: ClientWait) {
+    private fun returned(call: ApplicationCall, response: HttpResponse<AnswerBody>, wait: ClientWait) {
         val refused = response.statusCode() >= HttpStatus.BAD_REQUEST
         response.headers().map().forEach { (name, values) ->
             val back = name.lowercase().let { if (wait.outside) refused && it == RETRY_AFTER else it !in notReturned }
@@ -171,48 +159,39 @@ internal class HeadAnswers(
     /** [message] under [status], as the event that says it on a stream already open. */
     private fun said(status: Int, message: String): String = errors.event(errors.body(status, message))
 
-    private fun typeOf(response: HttpResponse<InputStream>): ContentType =
+    private fun typeOf(response: HttpResponse<AnswerBody>): ContentType =
         response.headers().firstValue("content-type").map { ContentType.parse(it) }
             .orElse(ContentType.Application.OctetStream)
 
     /** The whole of an answer that is no stream, or null when it broke off before its end. */
-    private suspend fun whole(answered: Sent.Answered): ByteArray? {
-        val read = runInterruptible(io) {
-            Cancellables.runCatchingCancellable { answered.response.body().use(InputStream::readAllBytes) }
-        }
-        return read.getOrElse { failure -> null.also { brokeOff(failure, answered) } }
-    }
+    private suspend fun whole(answered: Sent.Answered): ByteArray? =
+        answered.response.body().use { it.whole() }.getOrElse { failure -> null.also { brokeOff(failure, answered) } }
 
-    /** [answered]'s stream, chunk by chunk, flushed each time: an event (or the head's keepalive ping) reaches the
-     *  other machine the moment it is written. A client that went away fails the write, and closing the stream then
-     *  hangs up on the one that answered, which sees its own client leave. With an edit the chunks go through it, an
+    /** [answered]'s stream, piece by piece, flushed each time: an event (or the head's keepalive ping) reaches the
+     *  other machine the moment it is written. A client that went away fails the write, and closing the body then
+     *  hangs up on the one that answered, which sees its own client leave. With an edit the pieces go through it, an
      *  event at a time, and a stream that ended whole is given the edit's ending. A stream that broke off ends the
      *  relay there, after the relay's error event when it is read through an edit. */
     private suspend fun pump(answered: Sent.Answered, wire: QuietWire, wait: ClientWait) {
         val edited = wait.edit?.let { EditedWire(wire, it) }
-        answered.response.body().use { input ->
-            // A read made ahead, to learn that the answer had started, is the first thing relayed.
-            val reads = answered.reads ?: AnswerReads(input, io)
+        answered.response.body().use { body ->
             while (true) {
-                val count = reads.next(wire).getOrElse { failure ->
+                val piece = wire.during { body.next() }.getOrElse { failure ->
                     brokeOff(failure, answered)
                     if (edited != null) wire.error(said(HttpStatus.BAD_GATEWAY, answered.cut))
                     return
                 }
-                if (count == END_OF_STREAM) {
+                if (piece == null) {
                     edited?.end()
                     return
                 }
-                if (edited == null) wire.write(reads.bytes, count) else edited.write(reads.bytes, count)
+                if (edited == null) wire.write(piece, piece.size) else edited.write(piece, piece.size)
             }
         }
     }
 
-    /** A read of [answered]'s answer ended in [failure]: the answer broke off, which is said in the log. A relay that
-     *  was cancelled fails its read too, and ends here as cancelled. */
-    private suspend fun brokeOff(failure: Throwable, answered: Sent.Answered) {
-        currentCoroutineContext().ensureActive()
-        if (failure !is IOException) throw failure
+    /** [answered]'s answer broke off before its end, with [failure], which is said in the log. */
+    private fun brokeOff(failure: Throwable, answered: Sent.Answered) {
         log("[${speaker.tag}] ${answered.cut}: ${SafeFailureText.render(failure)}\n")
     }
 

@@ -3,8 +3,8 @@
 // model server does while it prefills a long prompt. No test here sits through that silence. The server holds a
 // completion until the test lets it go on, the relay's clock is the test's (SteppedClock), and the client's answer is
 // read as it comes (Hearing). Each test writes what the server does, says when time passes, and reads what the client
-// has heard by then. One test waits out the relay's own one second on the real clock, because it has to tell that
-// second from a keepalive's interval, which no stepped clock does.
+// has heard by then. Two tests wait on the real clock, for a second or two: one has to tell the relay's own one
+// second from a keepalive's interval, which no stepped clock does, and one holds a hundred completions at once.
 package splice.server
 
 import kotlinx.serialization.json.jsonPrimitive
@@ -117,6 +117,24 @@ internal class ServerOpenAiKeepaliveTest {
     }
 
     @Test
+    fun `a hundred completions waiting on the server at once are each opened a second in, kept alive and answered`() {
+        val (rig, key) = serve(keepaliveSeconds = 1, waiter = ProcessWaiter())
+        val heard = List(WAITING_AT_ONCE) { rig.chatHeard(key, STREAMED_CHAT) }.map { hearing(it, workers) }
+        for (one in heard) {
+            assertEquals(200, one.status)
+            assertTrue(keepalive(one.block("a keepalive as its stream opens")))
+            assertTrue(keepalive(one.block("a keepalive after one more interval of silence")))
+        }
+        // None waits its turn behind another: the server has every one of them while it says nothing.
+        assertEquals(WAITING_AT_ONCE, box.asked.size, "completions the model server was asked while it prefilled")
+        goOn.countDown()
+        for (one in heard) {
+            val events = one.rest("the server's answer").split("\n\n").filterNot { keepalive(it) || it.isEmpty() }
+            assertEquals(listOf(WORD_EVENT, DONE_EVENT), events, "the answer whole, after its keepalives")
+        }
+    }
+
+    @Test
     fun `a server that refuses once the stream is open ends it with its own error, as one event in OpenAI's shape`() {
         val (rig, key) = serve(keepaliveSeconds = 3)
         box.refuses = 503
@@ -212,3 +230,7 @@ internal class ServerOpenAiKeepaliveTest {
         rig.await("an ended completion is in flight nowhere") { pool.readings().all { it.inflight == 0 } }
     }
 }
+
+// why: more turns than the threads the daemon's blocking work runs on (64), so a wait on the model server that held
+// one of those would leave the later completions unsent and every one of them unopened.
+private const val WAITING_AT_ONCE = 100

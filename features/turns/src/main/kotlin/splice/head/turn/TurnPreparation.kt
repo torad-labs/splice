@@ -45,6 +45,10 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.pool.PREFERRED_UPSTREAM_HEADER
 import splice.core.session.ActivityAction
+import splice.core.turn.DESKTOP_DOOR
+import splice.core.turn.SERVED_TURN_HEADER
+import splice.core.turn.TURN_DOOR_HEADER
+import splice.core.turn.TurnRelay
 import splice.core.util.Cancellables
 import splice.core.wire.AnthropicRequest
 import splice.head.ActivityLabel
@@ -315,7 +319,15 @@ internal class TurnPreparation(
             it.copy(sessionId = it.sessionId ?: sessionId, messagesHash = messagesHash)
         }
         // The server its person prefers among the provider's upstreams, as the listener that relayed the turn named it.
-        val route = fromProvider.meta.route.copy(preferredUpstream = call.request.headers[PREFERRED_UPSTREAM_HEADER])
+        // And the id it named the turn by, so the turn tells it how it went (server mode's ledger, F5), and the
+        // door it came through (desktop-door, decision 7), as the relay in front of the head named it.
+        val headers = call.request.headers
+        val relay = TurnRelay(
+            preferredUpstream = headers[PREFERRED_UPSTREAM_HEADER],
+            servedTurn = headers[SERVED_TURN_HEADER],
+            door = headers[TURN_DOOR_HEADER]?.takeIf { it == DESKTOP_DOOR },
+        )
+        val route = fromProvider.meta.route.copy(relay = relay)
         val prepared = fromProvider.copy(meta = fromProvider.meta.copy(scope = scope, route = route))
         toolLoop.join(prepared.meta, parsed, parsed.agentId)
         // The caller's headers that ride upstream (ClientAuth.upstreamHeaders). Per-turn headers already outrank the

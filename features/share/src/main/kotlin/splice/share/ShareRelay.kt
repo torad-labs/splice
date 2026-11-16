@@ -47,6 +47,8 @@ import splice.core.config.LAUNCH_PROOF_HEADER
 import splice.core.config.TurnKey
 import splice.core.pool.PREFERRED_UPSTREAM_HEADER
 import splice.core.topology.SHARE_NODE_TOKEN
+import splice.core.turn.SERVED_TURN_HEADER
+import splice.core.turn.TURN_DOOR_HEADER
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
@@ -138,6 +140,13 @@ public class ShareRelay(
     public suspend fun turn(call: ApplicationCall, turn: HeadTurn) {
         val head = turn.head
         val body = body(call, head.maxRequestBytes(), head.requestReadTimeoutMs()) ?: return
+        turn(call, turn, body)
+    }
+
+    /** [turn] on its head with [body], read already ([sent]) and perhaps rewritten by the listener, in place of what
+     *  the caller sent; an answer that is no stream is given as [whole] reads it (null: as it is). */
+    public suspend fun turn(call: ApplicationCall, turn: HeadTurn, body: ByteArray, whole: WholeEdit? = null) {
+        val head = turn.head
         val who = "${head.command} on $machine"
         // A head that takes the caller's own login refuses this machine's turn key as a credential to send upstream.
         // It gets the node's word instead, which opens nothing: its pool sends a login it holds in that word's place.
@@ -147,7 +156,7 @@ public class ShareRelay(
         val signed = mapOf(HttpHeaders.Authorization to "Bearer $bearer") + proof + turn.named
         val target = URI.create("http://127.0.0.1:${head.port}${turn.path}")
         val request = request(call, target, body, signed) { it !in turn.held }
-        forward(call, request, who, ClientWait(turn.keepalive?.takeIf { streamed.asks(body) }))
+        forward(call, request, who, ClientWait(turn.keepalive?.takeIf { streamed.asks(body) }, whole = whole))
     }
 
     /** The control plane's statusline for [head], fed the session's JSON as Claude Code feeds its statusline, once
@@ -257,11 +266,13 @@ public class ShareRelay(
 
     // Hop-by-hop, framing, the other machine's own token, and the names java.net.http refuses to set. Host becomes
     // 127.0.0.1, which the head's own DNS-rebinding guard requires. Which upstream a turn prefers is the relaying
-    // listener's to say, from what the operator set for the person, and never the other machine's.
+    // listener's to say, from what the operator set for the person, and never the other machine's; and so is the id a
+    // server listener names its turn by (SERVED_TURN_HEADER).
     private val notForwarded = setOf(
         "host", "connection", "content-length", "transfer-encoding", "upgrade", "expect", "keep-alive", "te",
         "trailer", "proxy-authorization", "proxy-connection", "authorization", "x-api-key", "date", "via",
-        "warning", "from", "origin", "referer", LAUNCH_PROOF_HEADER, PREFERRED_UPSTREAM_HEADER,
+        "warning", "from", "origin", "referer", LAUNCH_PROOF_HEADER, PREFERRED_UPSTREAM_HEADER, SERVED_TURN_HEADER,
+        TURN_DOOR_HEADER,
     )
 }
 

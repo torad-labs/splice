@@ -27,7 +27,6 @@ import splice.app.control.ServerModeSource
 import splice.app.daemon.BootedTopology
 import splice.app.head.HeadProbeReadings
 import splice.app.head.LaunchSpeedWiring
-import splice.app.peer.PeersWiring
 import splice.app.provider.ClaudeAccountWiring
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ModelRosters
@@ -77,6 +76,9 @@ internal class ControlPlane(
 
     /** Server mode (docs/specs/server-mode.md), assigned by Daemon before [start]; null answers its routes 409. */
     internal var serverMode: ServerModeSource? = null
+
+    /** Claude Desktop's door (docs/specs/desktop-door.md), assigned by Daemon before [start]. */
+    internal var desktop: splice.app.desktop.DaemonDesktop? = null
 
     /** Captures the owner only at send time, after launch composition has wired the live native places. */
     internal val credentialAccountNames = HeadDeps.CredentialAccountNames { key ->
@@ -233,6 +235,7 @@ internal class ControlPlane(
                 launchService = launch.service(home, sharing, controlPort, mcp.hubLive)
                     .also {
                         it.remotes = remoteCommands
+                        it.desktop = desktop?.launching
                         it.speeds = speeds.of(heads)
                     },
                 shutdownDaemon = shutdownDaemon,
@@ -244,7 +247,7 @@ internal class ControlPlane(
         )
         wireConsolePorts(srv)
         // Oct 19, 2026: the peer helpers and their journals, over the same store the guard admits peer keys from.
-        srv.peerServices = PeersWiring().services(guard.peers, statePaths.stateDir, probeScope, log)
+        parts.wirePeers(srv, guard, probeScope)
         parts.wireRestartSuccessor(srv, controlPort)
         return if (ownership.bind(srv, controlPort, listen.handOn(guard))) srv.also { mcpServices.refresh() } else null
     }
@@ -270,6 +273,7 @@ internal class ControlPlane(
         srv.ports.compaction = compactionInstructions
         srv.ports.claudeLogins = claudeLogin.owner
         srv.ports.serverMode = serverMode
+        srv.ports.desktop = desktop
         srv.ports.quotaReadFailures = quotaReadFailures
         srv.ports.sessionFallbacks = sessionFallbacks
         srv.ports.lifecycle.keyRotation = KeyRotation(daemon.mgmtKey, daemon.mcpAccess, statePaths, log)

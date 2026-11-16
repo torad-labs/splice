@@ -24,14 +24,15 @@ import splice.upstream.codemode.ProcessWaiter
 import java.nio.file.Path
 import java.time.Clock
 
-/** A head this machine offers, standing in for one the daemon runs: it is up at [port], has nothing to launch and
- *  holds no login. */
+/** A head this machine offers, standing in for one the daemon runs: it is up at [port] (down while [up] is false),
+ *  has nothing to launch and holds no login. */
 internal class StandInHead(
     override val port: Int,
     override val key: String = "team",
     override val command: String = "claude-team",
+    private val up: Boolean = true,
 ) : SharedHead {
-    override fun running(): Boolean = true
+    override fun running(): Boolean = up
 
     override fun launch(): LaunchSpec? = null
 

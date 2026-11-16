@@ -128,6 +128,10 @@ public class ConsolePorts {
      *  request; null answers the `/api/server` routes with a named 409. */
     internal var serverMode: ServerModeSource? = null
 
+    /** Claude Desktop's door (desktop-door), assigned by ControlPlane and asked at each request; null, or not yet opened,
+     *  answers its routes with a named 503. */
+    internal var desktop: splice.app.desktop.DaemonDesktop? = null
+
     /** Each login's last failed limits read, assigned by ControlPlane; null reads as no failure on any login. */
     public var quotaReadFailures: QuotaReadFailureSource? = null
 

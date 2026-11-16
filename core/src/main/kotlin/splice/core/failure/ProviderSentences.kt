@@ -7,6 +7,11 @@
 // until it has a sentence.
 package splice.core.failure
 
+/** What a person does once a provider's safety monitor has stopped a conversation: one sentence, short enough that
+ *  the line still has room for the provider's own words. */
+private const val AFTER_MONITOR_STOP =
+    "Sending again meets the same stop, so check what this session did and continue in a new session."
+
 /** The fourteen leaves a provider reports. [ongoing]: the line opens a recovery, said as it happens. */
 internal class ProviderSentences(private val spoken: Spoken) {
     fun said(cause: FailureCause.Provider, at: Position, facts: LineFacts, ongoing: Boolean): Said = when (cause) {
@@ -29,7 +34,7 @@ internal class ProviderSentences(private val spoken: Spoken) {
         return when (cause) {
             is FailureCause.Provider.Forbidden -> AccountSentences.forbidden(cause, facts)
             is FailureCause.Provider.Rejected -> Said(rejected(cause.staleReasoning, head), cause.said)
-            is FailureCause.Provider.Refused -> Said(refused(cause.by, head), cause.said)
+            is FailureCause.Provider.Refused -> refused(cause, head)
             is FailureCause.Provider.Unrecognized -> unrecognized(cause, head)
             is FailureCause.Provider.ModelMissing -> missing(cause.model, facts)
             is FailureCause.Provider.Empty -> empty(cause, head)
@@ -145,10 +150,14 @@ internal class ProviderSentences(private val spoken: Spoken) {
         next = Next.Resend(SEND_AGAIN),
     )
 
-    private fun refused(by: RefusedBy, head: String): String = when (by) {
-        RefusedBy.MODEL -> "The model on $head declined to answer"
-        RefusedBy.POLICY -> "$head declined this request under its usage policy"
-        RefusedBy.FILTER -> "$head's content filter stopped this answer"
+    /** A refusal quotes the provider. A safety monitor stopped the conversation, so its line also says where the
+     *  work goes on: the same conversation meets the same stop, whatever is sent in it. */
+    private fun refused(cause: FailureCause.Provider.Refused, head: String): Said = when (cause.by) {
+        RefusedBy.MODEL -> Said("The model on $head declined to answer", cause.said)
+        RefusedBy.POLICY -> Said("$head declined this request under its usage policy", cause.said)
+        RefusedBy.FILTER -> Said("$head's content filter stopped this answer", cause.said)
+        RefusedBy.MONITOR ->
+            Said("$head's safety monitor stopped this conversation", cause.said, Next.Then(AFTER_MONITOR_STOP))
     }
 
     private fun unrecognized(cause: FailureCause.Provider.Unrecognized, head: String): Said =

@@ -190,7 +190,7 @@ class HeadServerLivenessProbeTest {
         val stores = headStores(tmp, economics = economics, trace = trace)
         val deps = headDeps(
             tmp,
-            seams = HeadDeps.HeadSeams(events = events),
+            seams = HeadDeps.HeadSeams(reports = HeadDeps.HeadReports(events = events)),
         ).copy(
             policy = HeadDeps.HeadPolicy(forwardClientAuth = forward),
         ).copy(

@@ -15,6 +15,7 @@ import splice.head.admission.AdmissionErrorBody
 import splice.http.ingress.HeapIngress
 import splice.lifecycle.restart.DetachedDaemonSuccessor
 import splice.lifecycle.restart.SuccessorInstall
+import splice.upstream.LifecycleScope
 import splice.upstream.memory.JvmHeap
 import java.nio.file.Path
 
@@ -47,6 +48,12 @@ internal class ControlServerParts(
     /** Pin the environment override to the live state directory, not its parent: the wrong parent
      *  mints a second management key and strands the daemon's prior history after restart. */
     fun successorStateDir(): Path = daemon.statePaths.stateDir
+
+    /** The peer helpers and their journals for [srv], over the same store [guard] admits peer keys from, running in
+     *  [scope]. */
+    fun wirePeers(srv: ControlServer, guard: ControlGuard, scope: LifecycleScope) {
+        srv.peerServices = PeersWiring().services(guard.peers, daemon.statePaths.stateDir, scope, log)
+    }
 
     /** The cold successor reuses this daemon's jar, home, config, state, and bound control port. */
     fun wireRestartSuccessor(srv: ControlServer, controlPort: Int) {

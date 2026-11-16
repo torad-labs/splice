@@ -269,6 +269,12 @@ public class StatePaths(
 
     public val daemonLockFile: Path = stateDir.resolve("daemon.lock")
 
+    /** desktop-door: the key Claude Desktop's door opens to, owner-only, and the door's own record (whether it is on,
+     *  its default model and window, what `splice desktop on` replaced in the settings file, and its last turn). */
+    public val desktopKeyFile: Path = stateDir.resolve("desktop-key")
+
+    public val desktopFile: Path = stateDir.resolve("desktop.json")
+
     /** V4-174: where a traced head's day files live (`<head>-YYYY-MM-DD.jsonl`), owner-only. ONE
      *  path for the daemon that writes them and the `splice trace` verb that reads them. */
     public val traceDir: Path = stateDir.resolve("trace")

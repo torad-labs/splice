@@ -230,7 +230,7 @@ private class Rig(root: Path, private val credentialsPresent: Boolean = true) {
         deps = headDeps(
             tmp = tmp,
             upstream = UpstreamClient(totalTimeoutMs = 30_000L),
-            seams = HeadDeps.HeadSeams(events = events),
+            seams = HeadDeps.HeadSeams(reports = HeadDeps.HeadReports(events = events)),
         ).copy(
             quotaBundle = quotaFor(primaryQuota, pool, mapOf("primary" to primaryQuota, "backup" to backupQuota)),
         ).copy(stores = headStores(tmp).copy(perfStats = PerfStats(perfFile))),

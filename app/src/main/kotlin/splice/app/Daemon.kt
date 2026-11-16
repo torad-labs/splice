@@ -20,6 +20,7 @@ import splice.app.control.ManagedHead
 import splice.app.daemon.BootedTopology
 import splice.app.daemon.HeadCatalogs
 import splice.app.daemon.TopologyWindows
+import splice.app.desktop.DaemonDesktop
 import splice.app.head.HEAD_STOP_BUDGET_MS
 import splice.app.head.HeadBoot
 import splice.app.head.HeadKeptFiles
@@ -251,6 +252,9 @@ public class Daemon(
         topologyDir,
         controlPlane.providerAssembly.upstreamPools,
     )
+
+    /** Claude Desktop's Code tab (docs/specs/desktop-door.md): its door on the control port, and `splice desktop`. */
+    private val desktop = DaemonDesktop(topology, config, TurnKey(mgmtKey), statePaths, log)
     private val stopLock = Mutex()
     private var stopped = false
 
@@ -313,8 +317,11 @@ public class Daemon(
         // reads the share port at once.
         share.open(heads, controlPort)
         // And the server listener, with its keys: `splice server key create` asks the control plane for them.
-        server.open(heads, controlPort)
+        server.open(heads, controlPort, headServerFactory.served)
         controlPlane.serverMode = server
+        // The desktop door, on the control port, choosing among these heads.
+        desktop.open(heads, controlPort)
+        controlPlane.desktop = desktop
         controlPlane.start(
             controlPort = controlPort,
             heads = heads,
@@ -328,6 +335,8 @@ public class Daemon(
         ) ?: return closeListeners()
         // MCP hub step 6: each installed Claude Code version's --plugin-dir-no-mcp verdict, checked in the background.
         controlPlane.pluginFlagChecks.request()
+        // While Desktop is on, its picker follows the heads this start serves.
+        desktop.watch(controlPlane.probeScope)
         prices.start()
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")

@@ -18,6 +18,7 @@ package splice.head.turn
 
 import io.ktor.server.application.ApplicationCall
 import splice.core.failure.HeadVoice
+import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.TurnMeta
@@ -34,6 +35,7 @@ import splice.head.transport.SseRoundPost
 import splice.head.transport.TearAwareEvents
 import splice.head.transport.WsRoundDriver
 import splice.head.transport.ZeroEventFailure
+import splice.head.usage.ServedTurnReport
 import splice.head.usage.TurnSpend
 import splice.head.usage.TurnStreamAnswers
 import splice.head.wire.DetachOwner
@@ -64,6 +66,7 @@ internal class TurnDriver(
             deps.seams.clock,
             TurnSpend(deps.stores.economicsStore, deps.quotaBundle.budget, deps.stores.perfStats.retired),
             deps.seams.events,
+            ServedTurnReport(deps.seams.reports.served, TurnPrice(provider.catalog)),
         )
     private val health = HeadHealthCounters()
     private val failures = TurnFailures(provider)

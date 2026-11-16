@@ -179,6 +179,8 @@ internal class OpenAiRig(
     /** `[server] keepalive_seconds`, whose silences are waited out on [waiter]. */
     keepaliveSeconds: Int = 0,
     waiter: Waiter = ProcessWaiter(),
+    /** Whether the command's head is running; a head that is down is never asked anything. */
+    headUp: Boolean = true,
 ) {
     private val rig = ServerRig(log = log, upstreams = upstreams, waiter = waiter)
     val port = rig.port
@@ -204,7 +206,7 @@ internal class OpenAiRig(
 
     private val mode = rig.open(
         state,
-        listOf(StandInHead(head.address.port)),
+        listOf(StandInHead(head.address.port, up = headUp)),
         rig.config.copy(limits = limits, keepaliveSeconds = keepaliveSeconds),
     )
 

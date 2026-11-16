@@ -13,21 +13,23 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
 import splice.core.topology.PersonEmails
+import splice.core.topology.ServerDurations
 import splice.core.util.JsonScalars
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import java.time.Instant
-import java.time.temporal.ChronoUnit
 
 /** What an operation answers: the JSON to send, or why it is refused. */
 public sealed class ServerAnswer {
     public data class Done(val status: HttpStatusCode, val body: JsonObject) : ServerAnswer()
 
     public data class Refused(val status: HttpStatusCode, val why: String) : ServerAnswer()
+
+    /** A body that is no JSON, such as a CSV report, of [contentType]. */
+    public data class Text(val status: HttpStatusCode, val contentType: String, val text: String) : ServerAnswer()
 }
 
 public class KeyApi(private val keys: ServerKeys, private val log: LogSink) {
-    private val lifetimes = KeyLifetimes()
     private val nameShape = Regex("""^[^\p{Cntrl}]{1,$NAME_MAX}$""")
 
     /** Every key, or only [person]'s when one is named: `{"keys": [...]}`, no secret in it. */
@@ -42,7 +44,7 @@ public class KeyApi(private val keys: ServerKeys, private val log: LogSink) {
         val person = JsonScalars.str(body, PERSON)?.let(PersonEmails::read)
         val name = JsonScalars.str(body, "name")?.trim()?.takeIf(String::isNotEmpty)
         val expires = JsonScalars.str(body, "expires")
-        val lifetime = expires?.let(lifetimes::read)
+        val lifetime = expires?.let(ServerDurations::read)
         return when {
             person == null -> notAnEmail()
             expires != null && lifetime == null -> refused("expires must be a duration such as 12h, 30d or 8w")
@@ -108,35 +110,49 @@ public class PersonApi(
     private val upstreams: UpstreamApi,
 ) {
 
-    /** Sets what `{"inflight"?: N, "rpm"?: N, "upstream"?: name}` names for [person] and answers their settings as
-     *  they now stand. A cap is 0 (no cap) or more; an upstream is one this server's providers list, or "" for no
-     *  preference. */
+    /** Sets what `{"inflight"?: N, "rpm"?: N, "upstream"?: name, "team"?: name}` names for [person] and answers
+     *  their settings as they now stand. A cap is 0 (no cap) or more; an upstream is one this server's providers list,
+     *  or "" for no preference; a team is any name, or "" for none of their own. */
     public suspend fun set(person: String, body: JsonObject?): ServerAnswer {
         val who = PersonEmails.read(person)
             ?: return refused("the person must be an email, as in ada@team.example")
-        val inflight = body?.get("inflight")
-        val rpm = body?.get("rpm")
-        val upstream = body?.get(UPSTREAM_FIELD)
-        val change = PersonSettings(cap(inflight), cap(rpm), name(upstream))
-        val why = when {
-            listOfNotNull(inflight, rpm, upstream).isEmpty() -> "name at least one setting: inflight, rpm or upstream"
-            unread(inflight, change.inflight) || unread(rpm, change.rpm) ->
-                "inflight and rpm must each be a whole number, 0 (no cap) or more"
-            upstream != null -> notAnUpstream(change.upstream)
-            else -> null
-        }
-        if (why != null) return refused(why)
+        val change = PersonSettings(
+            cap(body?.get(INFLIGHT_FIELD)),
+            cap(body?.get(RPM_FIELD)),
+            name(body?.get(UPSTREAM_FIELD)),
+            name(body?.get(TEAM_FIELD)),
+        )
+        whyNot(body, change)?.let { return refused(it) }
         val now = people.set(who, change)
         log("[server] settings of ${LogSafe.str(who)} changed\n")
         return ServerAnswer.Done(
             HttpStatusCode.OK,
             buildJsonObject {
                 put(PERSON, who)
-                put("inflight", now.inflight)
-                put("rpm", now.rpm)
+                put(INFLIGHT_FIELD, now.inflight)
+                put(RPM_FIELD, now.rpm)
                 put(UPSTREAM_FIELD, now.preferred)
+                put(TEAM_FIELD, now.ownTeam)
             },
         )
+    }
+
+    /** Why [body] cannot set [change], as it read: nothing named, a cap or a team that is none, or no such upstream;
+     *  null when it can. */
+    private fun whyNot(body: JsonObject?, change: PersonSettings): String? {
+        val inflight = body?.get(INFLIGHT_FIELD)
+        val rpm = body?.get(RPM_FIELD)
+        val upstream = body?.get(UPSTREAM_FIELD)
+        val team = body?.get(TEAM_FIELD)
+        return when {
+            listOfNotNull(inflight, rpm, upstream, team).isEmpty() ->
+                "name at least one setting: inflight, rpm, upstream or team"
+            unread(inflight, change.inflight) || unread(rpm, change.rpm) ->
+                "inflight and rpm must each be a whole number, 0 (no cap) or more"
+            team != null && change.team == null -> "team must be a name, or \"\" for none of their own"
+            upstream != null -> notAnUpstream(change.upstream)
+            else -> null
+        }
     }
 
     /** Whether a cap was [asked] and could not be [read] as one. */
@@ -161,30 +177,19 @@ public class PersonApi(
     private fun refused(why: String): ServerAnswer = ServerAnswer.Refused(HttpStatusCode.BadRequest, why)
 }
 
-/** Reads how long a key lives: a whole number and a unit, `90s`, `45m`, `12h`, `30d`, `8w`. */
-internal class KeyLifetimes {
-    private val shape = Regex("""^(\d{1,9})([smhdw])$""")
-    private val units = mapOf(
-        's' to ChronoUnit.SECONDS,
-        'm' to ChronoUnit.MINUTES,
-        'h' to ChronoUnit.HOURS,
-        'd' to ChronoUnit.DAYS,
-        'w' to ChronoUnit.WEEKS,
-    )
-
-    /** [text] in milliseconds, or null when it is no such duration or is zero. */
-    fun read(text: String): Long? {
-        val found = shape.matchEntire(text.trim().lowercase()) ?: return null
-        val unit = units.getValue(found.groupValues[2].single()).duration
-        return unit.multipliedBy(found.groupValues[1].toLong()).toMillis().takeIf { it > 0 }
-    }
-}
-
 // why: a key's name is a label an operator reads in a list ("laptop", "ci"); 64 characters hold any such label.
 private const val NAME_MAX = 64
 
 // The field every answer names a person in.
-private const val PERSON = "person"
+// A person, as every server answer and query names one.
+internal const val PERSON = "person"
 
 // The field a person's preferred upstream is set and answered in.
 private const val UPSTREAM_FIELD = "upstream"
+
+// The field a person's own team is set and answered in.
+private const val TEAM_FIELD = "team"
+
+// The fields a person's own caps are set and answered in.
+private const val INFLIGHT_FIELD = "inflight"
+private const val RPM_FIELD = "rpm"

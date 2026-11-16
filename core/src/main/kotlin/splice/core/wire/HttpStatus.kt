@@ -69,6 +69,10 @@ public object HttpStatus {
     /** Request Timeout; the one 4xx besides 429 that the retry matrix treats as transient. */
     public const val REQUEST_TIMEOUT: Int = 408
 
+    /** Conflict; a control act refused because of the state it found (`splice desktop on` over a file set for another
+     *  provider), with nothing changed. */
+    public const val CONFLICT: Int = 409
+
     /** Content Too Large; the admission plane's answer when a request body beats the byte cap. */
     public const val CONTENT_TOO_LARGE: Int = 413
 

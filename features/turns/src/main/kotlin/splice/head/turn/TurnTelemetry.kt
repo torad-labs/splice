@@ -13,12 +13,10 @@ import splice.core.model.TurnBill
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
 import splice.core.perf.PerfTurnIds
-import splice.core.perf.SpeedCounters
 import splice.core.perf.TurnPerf
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.core.turn.UsageRequest
 import splice.core.turn.noRequestUsage
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
@@ -39,6 +37,8 @@ import splice.head.perf.PerfStats
 import splice.head.perf.PerfTranscriptIds
 import splice.head.perf.UsageObservation
 import splice.head.usage.RetiredTurns
+import splice.head.usage.ServedTurnReport
+import splice.head.usage.ServedWay
 import splice.head.usage.TurnSpend
 import splice.head.wire.TurnTrace
 
@@ -47,20 +47,6 @@ import splice.head.wire.TurnTrace
 // meaning, so the same upstream message appeared at two lengths in one investigation. This value
 // was the one KEPT because it is what FailureText.kt and TurnKnownEnd.kt use for text the client
 // can SEE, and those bytes are oracle-pinned; the two log-only surfaces widened to match.
-
-/** A posted round without a token report must not persist an invented zero in any billing bucket. */
-private val UNREPORTED_TOKEN_FIELDS = setOf(
-    PerfKeys.IN_TOKENS,
-    PerfKeys.OUT_TOKENS,
-    PerfKeys.CACHED_TOKENS,
-    PerfKeys.CACHE_WRITE_TOKENS,
-    PerfKeys.CACHE_WRITE_1H_TOKENS,
-    PerfKeys.ABSORBED_IN_TOKENS,
-    PerfKeys.ABSORBED_OUT_TOKENS,
-    PerfKeys.ABSORBED_CACHED_TOKENS,
-    PerfKeys.ABSORBED_CACHE_WRITE_TOKENS,
-    PerfKeys.ABSORBED_CACHE_WRITE_1H_TOKENS,
-)
 
 /** Renders the per-turn observability: the turn line, error lines, the perf row+line, and the
  *  cache log line. Split out so the driver stays drive-only (the audit's god-file finding). */
@@ -76,6 +62,9 @@ internal class TurnTelemetry(
      *  class directly; the one production site (TurnDriver) passes the head's own, and HeadEventsTest
      *  fails if a served turn stops reaching it. */
     private val events: HeadEvents = NoHeadEvents,
+    /** Server mode (F5): where a turn the server listener relayed is reported once its row is written. Defaulted
+     *  like [events], because tests build this class directly and relay nothing. */
+    private val served: ServedTurnReport? = null,
 ) {
     private val cache = TurnCacheLine(headKey)
     private val line = TurnLine(headKey)
@@ -167,15 +156,10 @@ internal class TurnTelemetry(
     /** [usage] is the turn's whole usage once a source round it held settled; its counters replace the turn's. */
     private fun writeRow(drive: TurnDrive, ending: RowEnding, usage: Usage?) {
         val outcomeTag = ending.outcomeTag
+        val bill = RowBill(drive)
         // A held row may carry an interceptor's assembled step, not the raw rounds this drive posted.
-        val billed = drive.rawRoundUsage() ?: usage
-        billed?.let {
-            drive.perf.setCount(PerfKeys.NO_REQUEST, 0L)
-            TurnBill.counters(it).forEach { (key, value) -> drive.perf.setCount(key, value) }
-            // gpt-speed: the speed the request asked for and the one the backend served it at, priced by the latter.
-            SpeedCounters.counters(drive.requestBody, it).forEach { (key, value) -> drive.perf.setCount(key, value) }
-        }
-        val snap = billingSnapshot(drive)
+        (drive.rawRoundUsage() ?: usage)?.let(bill::stamp)
+        val snap = bill.snapshot()
         // The cache line is the row's own numbers, so it is written here, once the row's bill is whole.
         cache.rowLine(drive.upstreamModel, snap.counters, drive.meta.compact)?.let { log(it) }
         UsageObservation.record(drive.perf, snap)
@@ -203,6 +187,7 @@ internal class TurnTelemetry(
                     responseMessageId = drive.emitter.responseMessageId,
                     messagesHash = drive.meta.scope.messagesHash,
                     conversationKey = drive.meta.scope.conversationKey,
+                    door = drive.meta.route.relay.door,
                 ),
             ),
             snap,
@@ -219,6 +204,7 @@ internal class TurnTelemetry(
         }
         // V4-134: the turn's end goes to the console only once its row exists, carrying that row's
         // key, so the stream never names a row /api/perf/turns has not been handed.
+        served?.ended(drive.meta, outcomeTag, snap, ServedWay(drive.route?.served(), drive.speed))
         events.turnEnded(rowTs.toString(), outcomeTag, drive.meta.scope.sessionId)
         toolsOpened(drive)
         spend.spend(rowTs, drive.upstreamModel, snap.counters, accountLabel, outcomeTag)
@@ -237,21 +223,6 @@ internal class TurnTelemetry(
         val tools = drive.perf.wire.toolUseIds
         val session = drive.meta.scope.sessionId ?: return
         if (tools.isNotEmpty() && drive.emitter.endedCleanly) events.toolsOpened(session, tools)
-    }
-
-    private fun billingSnapshot(drive: TurnDrive): PerfSnapshot {
-        val snap = drive.perf.snapshot()
-        val raw = drive.rawRoundUsage()
-        val started = (snap.counters[PerfKeys.TRANSPORT_ATTEMPT_STARTS] ?: 0L) > 0L
-        val posted = raw?.origin?.history?.request?.let { it == UsageRequest.POSTED } ?: started
-        if (drive.roundInterceptor == null || !posted) return snap
-        val counters = snap.counters - PerfKeys.LOCAL_STEP - PerfKeys.NO_REQUEST
-        val observed = raw?.reported.orEmpty().isNotEmpty()
-        return if (TurnBill.isEmpty(counters) && !observed) {
-            snap.copy(counters = counters.filterKeys { it !in UNREPORTED_TOKEN_FIELDS })
-        } else {
-            snap.copy(counters = counters)
-        }
     }
 
     /** V4-404: the one place a turn's trace is closed, from both endings (a drive's perf row and a local
@@ -304,9 +275,11 @@ internal class TurnTelemetry(
                 turns = PerfTurnIds(trace = trace?.turnId),
                 sessionId = meta.scope.sessionId,
                 messagesHash = meta.scope.messagesHash,
+                door = meta.route.relay.door,
             ),
         )
         val rowTs = perfStats.record(rowMeta, snap)
+        served?.ended(meta, tag, snap)
         // V4-134: a local refusal is a turn that ended too — it has a perf row, so it has a turn.end.
         events.turnEnded(rowTs.toString(), tag, meta.scope.sessionId)
         // The tag is printed VERBATIM, the same spelling the perf row carries

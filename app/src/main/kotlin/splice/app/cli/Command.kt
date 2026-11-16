@@ -27,8 +27,6 @@ import splice.core.util.EnvReader
 import splice.diagnostics.logs.LogsCommand
 import splice.diagnostics.wire.WireCommand
 import splice.launch.install.InstallResult
-import splice.lifecycle.upgrade.UpgradeVerb
-import splice.lifecycle.upgrade.VersionedRestart
 import splice.sessions.list.LocalSessions
 import splice.sessions.list.SessionsCommand
 import splice.sessions.list.SessionsJson
@@ -72,6 +70,11 @@ public sealed class Command {
      *  (docs/specs/lan-share.md). */
     public data class Share(val args: List<String>) : Command() {
         override suspend fun run(): Int = splice.app.cli.share.ShareCommand().run(args)
+    }
+
+    /** `splice desktop [<verb>]`: point Claude Desktop's Code tab at splice, or back (docs/specs/desktop-door.md). */
+    public data class Desktop(val args: List<String>) : Command() {
+        override suspend fun run(): Int = splice.app.cli.desktop.DesktopCommand().run(args)
     }
 
     /** `splice remote [<verb>]`: run commands another of the person's machines shares (docs/specs/lan-share.md). */
@@ -150,20 +153,7 @@ public sealed class Command {
 
     /** v0.4.0 (FEATURES.md §5): `splice upgrade [--to vX] [--now] [--rollback]`. */
     public data class Upgrade(val args: List<String>) : Command() {
-        override suspend fun run(): Int {
-            val verb = UpgradeVerb(
-                TerminalOutput(::println),
-                TerminalOutput(System.err::println),
-                EnvReader(System::getenv),
-                // The upgrade waited for every turn itself (or was told --now): no second wait here.
-                VersionedRestart {
-                    LifecycleWiring.restart(it, waitForCompactions = false, launchJar = LifecycleWiring.installedJar())
-                },
-                InstallWiring.units(EnvReader(System::getenv)),
-                LifecycleWiring.cliUpdateSettings(),
-            )
-            return outcomeExitCode(verb.upgrade(args))
-        }
+        override suspend fun run(): Int = outcomeExitCode(LifecycleWiring.upgradeVerb().upgrade(args))
     }
 
     public data object Status : Command() { override suspend fun run(): Int = success { StatusCommand().status() } }

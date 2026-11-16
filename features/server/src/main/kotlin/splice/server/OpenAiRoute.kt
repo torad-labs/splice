@@ -3,6 +3,7 @@
 //
 //   POST /<command>/v1/chat/completions   a chat completion, relayed to the provider's server as the client sent it
 //   GET  /<command>/v1/models             that server's own list of models
+//   GET  /<command>/v1/models/<id>        one model of that list, or a 404 for an id it does not list (ModelLookup)
 //
 // Such a request does not pass through the command's head, which speaks Anthropic's API to Claude Code. It goes to the
 // provider's own server, with the provider's headers and key and, of the client's own headers, only the ones the
@@ -26,8 +27,9 @@
 // included: that is the shape the asking client reads.
 //
 // Claude Code asks a command for its models too, of the head and in Anthropic's shape. The two are told apart by the
-// header every Anthropic client sends: a list asked without `anthropic-version` is an OpenAI-style client's. A command
-// whose provider speaks another dialect has no such route, and its head answers these paths as it always did.
+// header every Anthropic client sends: a list or a lookup asked without `anthropic-version` is an OpenAI-style
+// client's. A command whose provider speaks another dialect has no such route, and its head answers these paths as it
+// always did.
 package splice.server
 
 import io.ktor.http.HttpMethod
@@ -47,6 +49,7 @@ import splice.share.RefusalShape
 import splice.share.RefusalVoice
 import splice.share.ShareCatalog
 import splice.share.SharedHead
+import splice.share.WholeEdit
 import java.net.URI
 
 internal class OpenAiRoute(
@@ -69,11 +72,15 @@ internal class OpenAiRoute(
     /** One request on this route: whose it is, the command it names, and that command's provider. */
     private data class Asked(val key: ServerKey, val head: SharedHead, val server: ChatServer)
 
-    /** One request ready for a server: its [path] under the server's API root, the [headers] it carries, and its
-     *  body with what reads its answer. */
-    private class Ready(val path: String, val headers: OutwardHeaders, val ask: ChatAsk) {
+    /** What a request asks of the provider: the route of its API, as its [path] under the API root, and for a lookup
+     *  of one model the [model] it names, which is read out of the list that path answers. */
+    private data class Api(val path: String, val model: String? = null)
+
+    /** One request ready for a server: its [path] under the server's API root, the [headers] it carries, its body
+     *  with what reads a stream that answers it, and what reads an answer that is no stream ([whole]; null: none). */
+    private class Ready(val path: String, val headers: OutwardHeaders, val ask: ChatAsk, val whole: WholeEdit?) {
         /** This request for the server whose API root is [base], which its client hears named as [server]. */
-        fun at(base: String, server: String) = OutwardAsk(URI.create(base + path), headers, server, ask.stream)
+        fun at(base: String, server: String) = OutwardAsk(URI.create(base + path), headers, server, ask.stream, whole)
     }
 
     /** Whether [path], asked the way [call] asks it, is an OpenAI-style client's. */
@@ -89,40 +96,46 @@ internal class OpenAiRoute(
         return server != null
     }
 
-    /** [asked] for the provider's [api]: a completion as the turn it is, the models list as it is asked. */
-    private suspend fun answer(call: ApplicationCall, asked: Asked, api: String) {
+    /** [asked] for the provider's [api]: a completion as the turn it is, the models as they are asked. */
+    private suspend fun answer(call: ApplicationCall, asked: Asked, api: Api) {
         when {
             !asked.head.running() -> catalog.notRunning(call, asked.head)
-            api == CHAT_API -> chat(call, asked)
+            api.path == CHAT_API -> chat(call, asked, api)
             else -> watched.turn(call, slot = null) { relayed(call, asked, api) }
         }
     }
 
-    /** The route of a provider's API that [path] asks for, or null when it is not one this route answers. */
-    private fun api(call: ApplicationCall, path: List<String>): String? {
+    /** What [path] asks of a provider's API, or null when it is nothing this route answers. */
+    private fun api(call: ApplicationCall, path: List<String>): Api? {
+        val method = call.request.httpMethod
+        val rest = path.drop(1)
         // Claude Code and the Anthropic SDKs send this header on every request, and no OpenAI-style client does.
-        val anthropic = ANTHROPIC_VERSION_HEADER in call.request.headers
-        return when (call.request.httpMethod to path.drop(1)) {
-            HttpMethod.Post to chatPath -> CHAT_API
-            HttpMethod.Get to modelsPath -> MODELS_API.takeUnless { anthropic }
+        val models = method == HttpMethod.Get && ANTHROPIC_VERSION_HEADER !in call.request.headers
+        return when {
+            method == HttpMethod.Post && rest == chatPath -> Api(CHAT_API)
+            models && rest == modelsPath -> Api(MODELS_API)
+            // An id may hold a slash (`org/model`), which a client writes as it is: all that follows is the id.
+            models && rest.take(modelsPath.size) == modelsPath ->
+                Api(MODELS_API, model = rest.drop(modelsPath.size).joinToString("/"))
             else -> null
         }
     }
 
     /** A chat completion: it takes one of its person's slots, or is refused, and holds it until its answer ends or
      *  its client leaves. */
-    private suspend fun chat(call: ApplicationCall, asked: Asked) {
+    private suspend fun chat(call: ApplicationCall, asked: Asked, api: Api) {
         val slot = admission.slot(call, asked.key, asked.head) ?: return
-        watched.turn(call, slot) { relayed(call, asked, CHAT_API) }
+        watched.turn(call, slot) { relayed(call, asked, api) }
     }
 
     /** [call]'s request, asked of the provider's [api] and answered as the provider's server answers it. */
-    private suspend fun relayed(call: ApplicationCall, asked: Asked, api: String) {
+    private suspend fun relayed(call: ApplicationCall, asked: Asked, api: Api) {
         val sent = relay.sent(call, asked.head) ?: return
-        val ask = if (api == CHAT_API) asked.server.chat(sent) else ChatAsk(sent, stream = null)
+        val ask = if (api.path == CHAT_API) asked.server.chat(sent) else ChatAsk(sent, stream = null)
         val own = withContext(io) { asked.server.headers() }
         val headers = bound.headers(call, parts.upstreams.forwarded(asked.head.key), own)
-        val ready = Ready(api + bound.query(paths.query(call)), headers, ask)
+        val lookup = api.model?.let { ModelLookup(it, asked.head.command) }
+        val ready = Ready(api.path + bound.query(paths.query(call)), headers, ask, lookup)
         val pool = parts.upstreams.pool(asked.head.key)
         val server = "the model server behind ${asked.head.command}"
         val taken = if (pool == null) {

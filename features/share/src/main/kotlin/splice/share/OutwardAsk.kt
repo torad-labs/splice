@@ -7,13 +7,15 @@ package splice.share
 import java.net.URI
 
 /** One request for a server that is no head of this machine: where it goes, the headers it carries, how its client
- *  hears the [server] named when it gives no answer or breaks one off (`upstream gpu-1 of box`), and what reads the
- *  events of a streamed answer on their way back ([edit]; null: byte for byte). */
+ *  hears the [server] named when it gives no answer or breaks one off (`upstream gpu-1 of box`), what reads the
+ *  events of a streamed answer on their way back ([edit]; null: byte for byte), and what reads an answer that is no
+ *  stream ([whole]; null: it goes back as it is). */
 public data class OutwardAsk(
     val target: URI,
     val headers: OutwardHeaders,
     val server: String,
     val edit: StreamEdit? = null,
+    val whole: WholeEdit? = null,
 )
 
 /** What a request to a server that is no head of this machine carries: of the caller's own headers the ones named

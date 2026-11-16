@@ -11,7 +11,8 @@
 // and the interval are waited out on the relay's clock (RelayClock).
 //
 // A relay that answers for a provider's own server (F4, openai-route) reads that server's stream through a StreamEdit,
-// event by event, and gives it its ending only when the server ended it whole.
+// event by event, and gives it its ending only when the server ended it whole. An answer of that server's that is no
+// stream may be read too, through a WholeEdit, when its client asked for less than the server answers.
 //
 // An answer that breaks off before its end is never passed on as if it had ended (F4, "an answer the upstream cuts
 // short is an error the client sees"). One that is no stream is read whole before any of it is given, so a body that
@@ -29,6 +30,7 @@ package splice.share
 
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.isSuccess
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
@@ -50,12 +52,13 @@ import kotlin.time.Duration
 
 /** What a relay tells its client of one request: [who] it waits on, as the client hears it named when that one gives
  *  no answer or breaks one off, a keepalive each [every] while a streamed answer is silent (null: none), and a
- *  streamed answer as [edit] reads it (null: byte for byte). [outside] says the answer is a server's that is no part
- *  of this machine, whose own headers stay here. */
+ *  streamed answer as [edit] reads it (null: byte for byte), or one that is no stream as [whole] does (null: as it
+ *  is). [outside] says the answer is a server's that is no part of this machine, whose own headers stay here. */
 internal data class ClientWait(
     val who: String,
     val every: Duration? = null,
     val edit: StreamEdit? = null,
+    val whole: WholeEdit? = null,
     val outside: Boolean = false,
 ) {
     /** What the client hears when [who] gives no answer. */
@@ -78,16 +81,25 @@ internal class HeadAnswers(
     /** [sent] as [call]'s answer: the head's own, or that it is not answering. */
     suspend fun given(call: ApplicationCall, sent: Result<HttpResponse<InputStream>>, wait: ClientWait) {
         val response = sent.getOrElse { return errors.refuse(call, HttpStatus.SERVICE_UNAVAILABLE, wait.silent) }
+        if (!typeOf(response).match(ContentType.Text.EventStream)) return unstreamed(call, response, wait)
+        returned(call, response, wait)
+        call.response.status(HttpStatusCode.fromValue(response.statusCode()))
+        call.respond(SseChannelResponse { out -> response.body().use { pump(it, quiet(out, wait), wait) } })
+    }
+
+    /** An answer that is no stream, given to [call]. It is read whole before any of it is given, so one that breaks
+     *  off is a 502 and never half a body; and one the server did not refuse is given as [wait]'s reader of whole
+     *  answers reads it, when it has one. */
+    private suspend fun unstreamed(call: ApplicationCall, response: HttpResponse<InputStream>, wait: ClientWait) {
+        val whole = whole(response, wait) ?: return errors.refuse(call, HttpStatus.BAD_GATEWAY, wait.cut)
         val status = HttpStatusCode.fromValue(response.statusCode())
-        val type = typeOf(response)
-        if (type.match(ContentType.Text.EventStream)) {
-            returned(call, response, wait)
-            call.response.status(status)
-            call.respond(SseChannelResponse { out -> response.body().use { pump(it, quiet(out, wait), wait) } })
-        } else {
-            val whole = whole(response, wait) ?: return errors.refuse(call, HttpStatus.BAD_GATEWAY, wait.cut)
-            returned(call, response, wait)
-            call.respondBytes(whole, type, status)
+        val edit = wait.whole?.takeIf { status.isSuccess() }
+        when (val read = edit?.read(whole) ?: WholeAnswer.Given(whole)) {
+            is WholeAnswer.Refused -> errors.refuse(call, read.status, read.why)
+            is WholeAnswer.Given -> {
+                returned(call, response, wait)
+                call.respondBytes(read.body, typeOf(response), status)
+            }
         }
     }
 

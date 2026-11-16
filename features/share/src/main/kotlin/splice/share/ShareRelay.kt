@@ -119,7 +119,7 @@ public class ShareRelay(
      *  another server, or say that none answers. */
     public suspend fun outward(call: ApplicationCall, ask: OutwardAsk, body: ByteArray): Boolean {
         val answer = AtomicReference<HttpResponse<InputStream>>()
-        val wait = ClientWait(ask.server, edit = ask.edit, outside = true)
+        val wait = ClientWait(ask.server, edit = ask.edit, whole = ask.whole, outside = true)
         // The answer is read here when it is a stream to edit, so the server is asked to send it as it is.
         val own = ask.headers.own + (HttpHeaders.AcceptEncoding to "identity")
         try {

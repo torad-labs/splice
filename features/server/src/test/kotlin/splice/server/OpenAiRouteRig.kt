@@ -49,6 +49,9 @@ internal class ScriptedBox(private val name: String) {
     /** The status a completion is refused with; null answers it. */
     @Volatile var refuses: Int? = null
 
+    /** The status the models list is refused with; null answers it. */
+    @Volatile var listRefuses: Int? = null
+
     /** Headers of the server's own on every answer it gives, a refusal included: a cookie, a request id. */
     @Volatile var replies: Map<String, String> = emptyMap()
 
@@ -70,10 +73,11 @@ internal class ScriptedBox(private val name: String) {
         val body = exchange.requestBody.use { String(it.readBytes()) }
         val headers = exchange.requestHeaders.entries.associate { (key, values) -> key.lowercase() to values.first() }
         asked += Asked(exchange.requestURI.toString(), headers, body)
-        val refused = refuses
+        val models = exchange.requestURI.path.endsWith("/models")
+        val refused = if (models) listRefuses else refuses
         when {
-            exchange.requestURI.path.endsWith("/models") -> whole(exchange, BOX_MODELS)
             refused != null -> whole(exchange, """{"error":{"message":"$name says $refused"}}""", refused)
+            models -> whole(exchange, BOX_MODELS)
             "\"stream\":true" in body -> stream(exchange)
             else -> whole(exchange, """{"choices":[{"message":{"content":"from $name"}}],$BOX_USAGE}""")
         }
@@ -203,6 +207,10 @@ internal class OpenAiRig(
     fun models(key: String?, vararg extra: Pair<String, String>): HttpResponse<String> =
         http.send(request("models", key, body = null, extra.toList()), HttpResponse.BodyHandlers.ofString())
 
+    /** The lookup of the one model [id] names, asked with [extra] as headers of the caller's own. */
+    fun model(key: String?, id: String, vararg extra: Pair<String, String>): HttpResponse<String> =
+        http.send(request("models/$id", key, body = null, extra.toList()), HttpResponse.BodyHandlers.ofString())
+
     /** A turn on the Messages route, as Claude Code sends one. */
     fun turn(key: String): HttpResponse<String> =
         http.send(request("messages", key, """{"model":"m","messages":[]}"""), HttpResponse.BodyHandlers.ofString())
@@ -221,7 +229,13 @@ internal class OpenAiRig(
 internal typealias ClientHeaders = List<Pair<String, String>>
 
 internal const val BOX_KEY = "box-key-never-a-persons"
-internal const val BOX_MODELS = """{"object":"list","data":[{"id":"team-model","object":"model","owned_by":"box"}]}"""
+
+// The provider server's list: a model as OpenAI's API lists one, and one the way some servers do, its id an
+// `org/name` and its entry without the `object` field.
+internal const val TEAM_MODEL = """{"id":"team-model","object":"model","owned_by":"box"}"""
+internal const val BOX_MODELS =
+    """{"object":"list","data":[$TEAM_MODEL,{"id":"team/coder-32b","owned_by":"box"}]}"""
+
 internal const val HEAD_MODELS = """{"data":[{"type":"model","id":"claude-team--team-model"}],"has_more":false}"""
 internal const val HEAD_NO_ROUTE = """{"type":"error","error":{"type":"not_found_error","message":"head: no route"}}"""
 

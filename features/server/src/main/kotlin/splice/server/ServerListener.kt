@@ -8,7 +8,7 @@
 //   GET  /<command>/launch         what a laptop's launch of that command needs (as share mode serves it)
 //   ANY  /<command>/v1/...         relayed to the head on loopback with this machine's turn key in place of the
 //                                  person's key, and the answer streamed back as it arrives
-//   POST /<command>/v1/chat/completions, GET /<command>/v1/models
+//   POST /<command>/v1/chat/completions, GET /<command>/v1/models, GET /<command>/v1/models/<id>
 //                                  an OpenAI-style client's, for a command whose provider speaks openai-chat: relayed
 //                                  to that provider's own server, refusals in OpenAI's error shape (OpenAiRoute)
 //   ANY  /server/api/...           the server's own API, for a key whose person is an admin (ServerAdmin)

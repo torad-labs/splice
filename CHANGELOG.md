@@ -1,5 +1,29 @@
 # Changelog
 
+## splice v0.5.1: a conversation OpenAI's safety monitor stopped is reported once - 2026-11-16
+
+### Highlights
+- **A ChatGPT conversation OpenAI's safety monitor stopped says so, once.** When the monitor flags a conversation,
+  OpenAI refuses every later request of it, whatever the message says. splice didn't know that refusal, so it sent
+  the conversation again and again and told you only that the turn had failed. It now ends the turn at the first
+  refusal, with a line that says what stopped the conversation and that the work goes on in a new session.
+
+### Upgrading from 0.5.0
+- Run the install command again, or `splice upgrade`. Nothing in `splice.toml` has to change.
+
+### Fixed
+- **A conversation OpenAI's safety monitor stopped is sent once and says what stopped it.** OpenAI's safety monitor
+  reviews what a model reasoned and did, apart from the round it answers. Once it flags a conversation, the ChatGPT
+  backend ends every later round of it with `misalignment_policy_violation`, whatever the message says. splice read
+  that as a failure it did not recognize: each websocket round was sent once more over HTTP and ended as an error
+  Claude Code sends again, so the session stopped on every turn with "claudex failed in a way splice does not
+  recognize", and one flagged conversation went up 56 times in half an hour. The stop is now a refusal of its own
+  kind. The round is sent once, Claude Code reads `invalid_request_error` and does not send it again, and the line
+  says: "claudex's safety monitor stopped this conversation: This request was blocked by our safety systems.
+  Sending again meets the same stop, so check what this session did and continue in a new session." splice sends
+  the conversation under no other login and in no other shape; whether to go on in a new session is yours to
+  decide.
+
 ## splice v0.5.0: Claude Desktop's Code tab on splice, one splice serving a team, and Muse sessions that keep their cache - 2026-11-16
 
 ### Highlights

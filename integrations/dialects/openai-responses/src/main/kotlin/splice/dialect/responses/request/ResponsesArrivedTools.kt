@@ -35,6 +35,9 @@ internal class ResponsesArrivedTools(listed: List<ToolDefinition>) {
         written.add(name)
     }
 
+    /** Whether the tool list declares a tool named [name], whatever schema the conversation gave it since. */
+    fun lists(name: String): Boolean = name in listed
+
     /** Whether, from this point of the conversation, the model calls [name] under its own name. */
     fun listsCurrent(name: String): Boolean = name in listed && name !in written
 }

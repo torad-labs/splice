@@ -67,16 +67,23 @@ internal class ToolCaller {
     /** What tells the model that [tool] is its to call from here on: its name, its description and its schema as the
      *  conversation gave them, and the words that say it is called through the caller. The name is written whole,
      *  since only a name in the tool list is shortened. Nothing here depends on the turn, so it is the same bytes on
-     *  every request that carries it. */
-    fun written(tool: ToolDefinition): String {
+     *  every request that carries it. A tool the tool list already declares, as [listedAs], is one that came back with
+     *  a schema of its own: the words say the list's entry keeps the schema it had, so the model calls this one through
+     *  the caller. */
+    fun written(tool: ToolDefinition, listedAs: String? = null): String {
         val definition = buildJsonObject {
             put("name", tool.name)
             tool.description?.let { put(FIELD_DESCRIPTION, it) }
             put("input_schema", tool.inputSchema ?: buildJsonObject { put("type", TYPE_OBJECT) })
         }
-        return "${tool.name} is now available. It is not in your tool list: call it through the $TOOL_CALLER_NAME " +
-            "tool, with \"${tool.name}\" as `$FIELD_TOOL` and its arguments as `$FIELD_ARGUMENTS`.\n" +
-            "<tool_definition>${JsonWire.string(definition)}</tool_definition>"
+        val where = if (listedAs == null) {
+            "${tool.name} is now available. It is not in your tool list"
+        } else {
+            "${tool.name} is available again, with the definition below. The $listedAs in your tool list still has " +
+                "the schema it had before, so do not call it directly"
+        }
+        return "$where: call it through the $TOOL_CALLER_NAME tool, with \"${tool.name}\" as `$FIELD_TOOL` and its " +
+            "arguments as `$FIELD_ARGUMENTS`.\n<tool_definition>${JsonWire.string(definition)}</tool_definition>"
     }
 
     /** The arguments of the caller's call of the tool [name] with [input]: how a call Claude Code sends back in the

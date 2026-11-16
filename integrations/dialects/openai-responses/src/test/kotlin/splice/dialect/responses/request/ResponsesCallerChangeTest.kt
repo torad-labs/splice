@@ -142,7 +142,10 @@ class ResponsesCallerChangeTest {
         )
 
         assertEquals(listOf("Bash", "mcp__desk__run_process", CALLER), listed(request))
-        assertTrue("cwd" in text(input(request)), "the new schema is written")
+        val written = text(input(request))
+        assertTrue("cwd" in written, "the new schema is written")
+        assertTrue("not in your tool list" !in written, "the list does hold it, so the words never say otherwise")
+        assertTrue("still has the schema it had before" in written, "the words say the listed entry is the old one")
         val call = input(request).single { it["type"]?.jsonPrimitive?.content == "function_call" }
         assertEquals(CALLER, call["name"]?.jsonPrimitive?.content)
     }

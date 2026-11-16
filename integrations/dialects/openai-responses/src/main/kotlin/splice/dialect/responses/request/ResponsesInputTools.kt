@@ -157,7 +157,8 @@ internal class ResponsesInputTools(
             // The tool list stays the conversation's first, so the tool is written here, where the conversation added
             // it, and called through the caller from here on. One the list holds that comes back is written again:
             // the list still carries the schema it left with.
-            sink.add(parts.roleText(ResponsesContextMessage.CLIENT_ROLE, caller.written(tool)))
+            val listedAs = if (arrived.lists(tool.name)) names.shorten(tool.name) else null
+            sink.add(parts.roleText(ResponsesContextMessage.CLIENT_ROLE, caller.written(tool, listedAs)))
             arrived.wrote(tool.name)
         }
     }

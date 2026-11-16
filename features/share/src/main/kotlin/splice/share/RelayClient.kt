@@ -18,21 +18,21 @@ import kotlin.coroutines.resumeWithException
  *  to its end, broken off, or cancelled before a byte of it was read, by a cancel that crossed the answer on its way
  *  included. */
 internal class HeldAnswer {
-    private val answer = AtomicReference<HttpResponse<AnswerBody>?>()
+    private val answer = AtomicReference<AnswerBody?>()
 
     @Volatile
     private var over = false
 
-    /** [response] is the answer, kept from now; one that came for a relay already over is hung up on at once. */
-    fun take(response: HttpResponse<AnswerBody>) {
-        answer.set(response)
-        if (over) response.body().close()
+    /** [body] is the answer, kept from now; one that came for a relay already over is hung up on at once. */
+    fun take(body: AnswerBody) {
+        answer.set(body)
+        if (over) body.close()
     }
 
     /** The relay is over: its answer is hung up on, now or when it comes. One read to its end is left as it is. */
     fun hangUp() {
         over = true
-        answer.get()?.body()?.close()
+        answer.get()?.close()
     }
 }
 
@@ -57,7 +57,7 @@ internal class RelayClient {
             val sending = http.sendAsync(request, answering)
             sending.whenComplete { response, failure ->
                 if (failure == null) {
-                    held.take(response)
+                    held.take(response.body())
                     waiting.resume(response)
                 } else {
                     // A future says what failed inside a wrapper of its own.

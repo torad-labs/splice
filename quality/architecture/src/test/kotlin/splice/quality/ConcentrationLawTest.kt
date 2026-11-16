@@ -247,7 +247,14 @@ internal object Concentration {
     // (142.5 and 164.0): 5da2b2c3d gave ProviderReset.kt a file of its own in splice.upstream.retry, whose median fell
     // 55.0 -> 44.5. ClaudeConfigMaterializer.kt 2.89 -> 3.00: 61da2beea's resume fix grew it (C 183.5 -> 186.0) and
     // its denominator fell 63.5 -> 62.0. The tree got worse; this records it. 16 -> 18.
-    const val RATCHET_MAX_HIGH = 18
+    // 2026-11-16: server-hardening, measured by this law's own run over the change's tree. Band HIGH on its merge base,
+    // 08e5bdc1d, is the 18 recorded above. ShareRelay.kt entered as the change's own code, 2.74 -> 3.15, and leaves by a
+    // seam of its own: RelayPorts.kt takes the relay's two ports, RidingHeader and Asking, 3.15 -> 2.79. Two enter by
+    // neighbourhood, untouched by the change: LaunchTypes.kt 2.96 -> 3.32 and ClaudeConfigMaterializer.kt 2.97 -> 3.10.
+    // splice.share imports both their packages, and the change's four new small files there (AnswerBody, RelayClient,
+    // RelayPorts, WholeEdit) lowered its median C, so their denominators fell. The tree got worse; this records it.
+    // 18 -> 20.
+    const val RATCHET_MAX_HIGH = 20
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

@@ -11,11 +11,14 @@ import splice.upstream.retry.RetryAfter
 
 /** Facts a failed reply states in HTTP's own terms or in plain words, whatever its API type. */
 public object ReplyFacts {
+    /** HTTP's own Retry-After header, by the lowercase name every reader looks it up by. */
+    public const val RETRY_AFTER_HEADER: String = "retry-after"
+
     private val retryAfter = RetryAfter()
 
     /** The pushback a reply's Retry-After asks for, in milliseconds from when it came; null when it names none. */
     public fun retryAfterMs(reply: FailedReply): Long? =
-        retryAfter.retryAfterMs(reply.header("retry-after"), WallClock { reply.answeredAt.toEpochMilli() })
+        retryAfter.retryAfterMs(reply.header(RETRY_AFTER_HEADER), WallClock { reply.answeredAt.toEpochMilli() })
 
     /** When a reply's Retry-After says to come back, as the instant it names. */
     public fun retryAfterLift(reply: FailedReply): Lift.At? =

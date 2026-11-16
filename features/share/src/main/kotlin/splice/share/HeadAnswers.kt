@@ -46,6 +46,7 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.wire.HttpStatus
 import splice.http.SseChannelResponse
+import splice.upstream.failure.ReplyFacts.RETRY_AFTER_HEADER
 import java.net.http.HttpResponse
 import kotlin.time.Duration
 
@@ -148,7 +149,9 @@ internal class HeadAnswers(
     private fun returned(call: ApplicationCall, response: HttpResponse<AnswerBody>, wait: ClientWait) {
         val refused = response.statusCode() >= HttpStatus.BAD_REQUEST
         response.headers().map().forEach { (name, values) ->
-            val back = name.lowercase().let { if (wait.outside) refused && it == RETRY_AFTER else it !in notReturned }
+            val back = name.lowercase().let {
+                if (wait.outside) refused && it == RETRY_AFTER_HEADER else it !in notReturned
+            }
             if (back) values.forEach { call.response.headers.append(name, it) }
         }
     }
@@ -198,6 +201,3 @@ internal class HeadAnswers(
     // Framing the response re-chunks, and the type each answer sets itself.
     private val notReturned = setOf("content-length", "transfer-encoding", "connection", "keep-alive", "content-type")
 }
-
-// The one header of a refusal that is for the client whoever refused: how long to wait before asking again.
-private const val RETRY_AFTER = "retry-after"

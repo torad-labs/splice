@@ -51,7 +51,7 @@ internal object UsageRounds {
                     cutRounds = prior.cutRounds + latest.cutRounds + missingBills(prior, latest, observations),
                 ),
                 measured = UsageMeasurements.combined(prior, latest),
-                speed = latest.speed ?: prior.speed,
+                serving = prior.origin.serving.then(latest.origin.serving),
             ),
             reported = observations,
         )

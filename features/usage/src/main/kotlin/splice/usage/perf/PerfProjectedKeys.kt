@@ -42,6 +42,9 @@ public object PerfProjectedKeys {
         PerfKeys.ABSORBED_CACHE_WRITE_TOKENS,
         PerfKeys.ABSORBED_CACHE_WRITE_1H_TOKENS,
         PerfKeys.ABSORBED_OUT_TOKENS,
+        // gpt-speed: a row is priced at the card for the speed it was served at, and says both speeds.
+        PerfKeys.SPEED_ASKED,
+        PerfKeys.SPEED,
         // The summary folds the same window (PerfSummary): its retries, refreshes, stream ends, dropped writes and
         // activity side queries, so it reads the compact window beside the turns route instead of the full-row tier.
         PerfKeys.RETRIES,

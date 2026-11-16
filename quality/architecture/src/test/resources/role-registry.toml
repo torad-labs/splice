@@ -518,6 +518,7 @@ reason = """Three link operations at three levels, each a seam for a DIFFERENT s
 signature = "(String)->String?"
 dated = "2026-09-17"
 names = [
+    "ChatGptHeads",
     "CredentialAccountNames",
     "EnvReader",
     "HeadOfSession",
@@ -593,7 +594,12 @@ run on while every login is held on the model it asks for, read from the daemon'
 null is the ordinary answer and means "this session waits": splice never picks a model for a session. Its answer is \
 a model id the turn is sent upstream on. Served by SessionServedOf, the model splice last served a session would \
 become the model its next held turn is rewritten to, a fallback nobody chose; served by HeadOfSession, a head key \
-would stand in the request's model field."""
+would stand in the request's model field. \
+ChatGptHeads (Nov 16, 2026, gpt-speed) is a TENTH source: a head key to the model pinned on that head when the head is \
+signed in with ChatGPT, which decides whether a launch lays down /fast and /ultrafast and which model's tiers they \
+name. Its null means "this head is not signed in with ChatGPT": the launch keeps Claude Code's own /fast. Served by \
+SessionFallbacks or SessionServedOf it would be asked with a session id where a head key is expected; served by any \
+lookup that answers for every head, an API-key head would offer a ChatGPT plan's speed tiers."""
 
 # ── 5 names, () -> T ──────────────────────────────────────────────────────────────────────────────
 [[groups]]

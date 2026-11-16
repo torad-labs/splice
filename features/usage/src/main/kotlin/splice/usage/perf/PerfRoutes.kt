@@ -36,6 +36,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
+import splice.core.perf.SpeedCounters
 import splice.core.util.WallClock
 import splice.usage.USAGE_READ_PENDING_HEADER
 import splice.usage.UsageHead
@@ -353,6 +354,10 @@ public class PerfRoutes(
         put("cost_reason", gaps.of(row)?.wire)
         // A plan covered this request: what it would have cost at the API rates, kept apart from any cost.
         put("plan_value_usd", gaps.value(row).takeIf { gaps.onPlan(row) })
+        // gpt-speed: the speed the request asked for and the one it was served at, in words, over the codes the row
+        // stores them as; null on a row that names no speed.
+        put(PerfKeys.SPEED_ASKED, SpeedCounters.asked(row.fields)?.word)
+        put(PerfKeys.SPEED, SpeedCounters.served(row.fields)?.word)
     }
 
     /** What a reply of `in_tokens` and `out_tokens` on `head` costs: the decision a recorded request gets. */

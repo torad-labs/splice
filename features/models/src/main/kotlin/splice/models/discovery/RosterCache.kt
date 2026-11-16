@@ -15,6 +15,7 @@ import splice.core.config.StatePaths
 import splice.core.model.DiscoveredModel
 import splice.core.model.ModelRates
 import splice.core.model.ModelRuntimeMetadata
+import splice.core.model.ServiceTier
 import splice.core.topology.ProviderConfig
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
@@ -90,6 +91,7 @@ public class RosterCache(
             model.supportsImageDetailOriginal,
             model.modelMessages,
             model.useResponsesLite,
+            model.serviceTiers.map { CachedTier(it.id, it.name, it.description) },
         )
 }
 
@@ -117,6 +119,9 @@ private data class CachedModel(
     @SerialName("supports_image_detail_original") val supportsImageDetailOriginal: Boolean = false,
     @SerialName("model_messages") val modelMessages: kotlinx.serialization.json.JsonObject? = null,
     @SerialName("use_responses_lite") val useResponsesLite: Boolean = false,
+    /** gpt-speed: the speed tiers the endpoint listed, kept so a start with the backend down still offers them. A file
+     *  written before it decodes to none. */
+    @SerialName("service_tiers") val serviceTiers: List<CachedTier> = emptyList(),
 ) {
     fun model(): DiscoveredModel = DiscoveredModel(
         id,
@@ -125,9 +130,19 @@ private data class CachedModel(
         aliases,
         rates,
         maxContextWindow,
-        ModelRuntimeMetadata(supportsImageDetailOriginal, modelMessages, useResponsesLite, toolMode),
+        ModelRuntimeMetadata(
+            supportsImageDetailOriginal,
+            modelMessages,
+            useResponsesLite,
+            toolMode,
+            serviceTiers.map { ServiceTier(it.id, it.name, it.description) },
+        ),
     )
 }
+
+/** One kept speed tier, as the endpoint listed it. */
+@Serializable
+private data class CachedTier(val id: String, val name: String = "", val description: String = "")
 
 // why: the first versioned layout of a kept roster's runtime metadata. A file written before it has no
 // metadata_version, which reads as 0, so its picker rows stay usable and its metadata reads as unknown.

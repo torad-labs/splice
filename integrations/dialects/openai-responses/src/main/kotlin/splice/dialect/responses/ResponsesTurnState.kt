@@ -95,6 +95,10 @@ internal class ResponsesTurnState {
     var textBuf = StringBuilder()
     var finalResponse: JsonObject? = null
 
+    /** gpt-speed: the `service_tier` the backend says it served this response at, as it spelled it; null until a
+     *  response names one. */
+    var servedTier: String? = null
+
     /** The response.failed or error event the backend sent, as it sent it: the head's own reader reads it once, at
      *  the terminal (ResponsesTerminalDecision). */
     var upstreamFailure: JsonObject? = null

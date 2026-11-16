@@ -36,6 +36,7 @@ import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
 import splice.core.model.ModelRuntimeMetadata
 import splice.core.model.ModelTierSuffix
+import splice.core.model.ServiceTier
 import splice.core.topology.ModelDiscoveryConfig
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
@@ -141,8 +142,18 @@ internal class UpstreamRosterParser(private val json: Json = Json { ignoreUnknow
             modelMessages = ModelMessagesInput.of(row),
             useResponsesLite = row["use_responses_lite"] == JsonPrimitive(true),
             toolMode = JsonScalars.str(row, "tool_mode"),
+            serviceTiers = serviceTiers(row),
         ),
     )
+
+    /** gpt-speed: the speed tiers a row lists (`service_tiers: [{ id, name, description }]`, the ChatGPT backend's
+     *  shape). A tier with no id cannot be asked for, so it is left out. */
+    private fun serviceTiers(row: JsonObject): List<ServiceTier> =
+        (row["service_tiers"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.mapNotNull { tier ->
+            JsonScalars.str(tier, "id")?.takeIf(String::isNotBlank)?.let { id ->
+                ServiceTier(id, JsonScalars.str(tier, "name").orEmpty(), JsonScalars.str(tier, "description").orEmpty())
+            }
+        }
 
     /** What the row itself says against serving a Claude Code turn, in the three forms endpoints use
      *  (all measured 2026-09-22). Absence of a field is never a verdict: xAI, Moonshot and DeepSeek

@@ -6,7 +6,8 @@
 // prompt_cache_key, a different backend replica. The cache is routed by the key AND by connection
 // locality, and codex-rs pins that locality with headers splice never sent: `session-id` and
 // `thread-id` (codex-rs `build_session_headers`; the underscore spellings were dropped 2026-05-13)
-// and `x-codex-routing-hint` (`model=<model>`, codex backend only). They ride BuiltTurn.extraHeaders,
+// and `x-codex-routing-hint` (`model=<model>`, codex backend only; written by CodexSpeed, its one author, since the hint
+// also names the tier a session asks for, gpt-speed). They ride BuiltTurn.extraHeaders,
 // so the SSE POST and the WS handshake carry them alike. Because per-turn headers are part
 // of the WS connection identity, they are CONSTANT for a session: the thread id derives from the
 // session id, not the conversation, so a compaction (a new first message, a new chain) keeps the
@@ -28,9 +29,8 @@ import java.util.UUID
 
 internal class CodexRoutingHeaders {
 
-    /** No session id (a bare curl, the e2e probe) = the routing hint alone. */
+    /** No session id (a bare curl, the e2e probe) = none of them. */
     fun forTurn(meta: TurnMeta): Map<String, String> = buildMap {
-        put(HEADER_ROUTING_HINT, "model=${meta.route.upstreamModel}")
         val session = meta.scope.sessionId?.takeIf { it.isNotBlank() } ?: return@buildMap
         val thread = threadIdFor(session)
         put(HEADER_SESSION_ID, session)
@@ -59,5 +59,4 @@ private const val HEADER_THREAD_ID = "thread-id"
 private const val HEADER_CLIENT_REQUEST_ID = "x-client-request-id"
 private const val CLIENT_METADATA = "client_metadata"
 private const val THREAD_ID_FIELD = "thread_id"
-private const val HEADER_ROUTING_HINT = "x-codex-routing-hint"
 private const val THREAD_NAMESPACE = "splice-thread"

@@ -20,6 +20,7 @@ import splice.dialect.responses.websocket.CODEX_TURN_STATE_HEADER
 import splice.dialect.responses.websocket.ResponsesWebSocketPolicy
 import splice.provider.codex.failure.CodexReplies
 import splice.provider.codex.request.CodexRequestConstraints
+import splice.provider.codex.speed.CodexSpeed
 import splice.upstream.BuiltTurn
 import splice.upstream.ProviderTuning
 import splice.upstream.RequestRefusal
@@ -35,6 +36,8 @@ public class CodexProvider(
      *  /mgmt/logs and not stderr alone (wall kt-no-println, 2026-07-27). */
     log: LogSink = LogSink(DaemonLog::write),
     private val codeMode: CodexCodeModeWiring = CodexCodeModeWiring(),
+    /** gpt-speed: each session's speed tier on its requests (CodexSpeed). The default asks for none. */
+    private val speed: CodexSpeed = CodexSpeed(),
 ) : ResponsesProvider(
     tuning,
     reasoning,
@@ -64,8 +67,10 @@ public class CodexProvider(
 
     /** This path sees numeric max_tokens, not whether the caller chose it or Claude CLI supplied its default.
      *  It does not enforce a generation ceiling. Reported usage and deadlines are not token-cap enforcement. */
-    override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn =
-        routing.oneThread(codeModeTurns.prepare(body, sessionId, super.buildTurn(body, compact, sessionId)))
+    override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
+        val built = routing.oneThread(codeModeTurns.prepare(body, sessionId, super.buildTurn(body, compact, sessionId)))
+        return speed.applied(built, sessionId, body.agentId)
+    }
 
     override fun cancelTurnResources() {
         codeMode.onHeadStop()

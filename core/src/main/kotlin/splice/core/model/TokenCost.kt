@@ -44,6 +44,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+import splice.core.speed.Speed
 
 /** USD per MILLION tokens for one model.
  *
@@ -66,7 +67,19 @@ public data class ModelRates(
      *  positionally in the pins and in AddProfileCatalog, so a field beside [cacheWrite] would
      *  re-read those literals as a different price. */
     val cacheWriteHourly: Double? = null,
+    /** gpt-speed: the model's card at Fast and at Ultrafast ([SpeedRates]); null where none is known. Appended last
+     *  for the reason [cacheWriteHourly] is. */
+    val fast: SpeedRates? = null,
+    val ultrafast: SpeedRates? = null,
 ) {
+    /** The card a turn served at [speed] is billed at: this one at standard, the tier's own card at Fast or
+     *  Ultrafast, and null when the tier has no card, so the turn is left unpriced rather than priced at this one. */
+    public fun atSpeed(speed: Speed): ModelRates? = when (speed) {
+        Speed.STANDARD -> this
+        Speed.FAST -> fast?.card()
+        Speed.ULTRAFAST -> ultrafast?.card()
+    }
+
     /** The card a turn that ran at [atMs] is billed at: [peak]'s multiple of this one inside its hours, else this
      *  one. A turn with no known time is billed at this card. */
     public fun at(atMs: Long?): ModelRates {
@@ -88,6 +101,8 @@ public data class ModelRates(
                 )
             },
             cacheWriteHourly = cacheWriteHourly?.times(f),
+            fast = fast?.times(f),
+            ultrafast = ultrafast?.times(f),
         )
     }
 }
@@ -134,16 +149,26 @@ internal object ModelRatesToml : KSerializer<ModelRates> {
                 tierOutput = tier?.output,
                 tierCacheWrite = tier?.cacheWrite,
                 tierCacheWriteHourly = tier?.cacheWriteHourly,
+                fastInput = value.fast?.input,
+                fastCacheRead = value.fast?.cacheRead,
+                fastOutput = value.fast?.output,
+                fastCacheWrite = value.fast?.cacheWrite,
+                ultrafastInput = value.ultrafast?.input,
+                ultrafastCacheRead = value.ultrafast?.cacheRead,
+                ultrafastOutput = value.ultrafast?.output,
+                ultrafastCacheWrite = value.ultrafast?.cacheWrite,
             ),
         )
     }
 }
 
+// gpt-speed: every key is optional here and the three a card cannot do without are required in [TomlRates.rates], so a
+// missing one is refused where the config is read, as a half-declared tier is.
 @Serializable
 internal data class TomlRates(
-    val input: Double,
-    @SerialName("cache_read") val cacheRead: Double,
-    val output: Double,
+    val input: Double? = null,
+    @SerialName("cache_read") val cacheRead: Double? = null,
+    val output: Double? = null,
     @SerialName("cache_write") val cacheWrite: Double? = null,
     @SerialName("cache_write_1h") val cacheWriteHourly: Double? = null,
     @SerialName("long_context_over_input_tokens") val tierOver: Long? = null,
@@ -152,14 +177,30 @@ internal data class TomlRates(
     @SerialName("long_context_output") val tierOutput: Double? = null,
     @SerialName("long_context_cache_write") val tierCacheWrite: Double? = null,
     @SerialName("long_context_cache_write_1h") val tierCacheWriteHourly: Double? = null,
+    @SerialName("fast_input") val fastInput: Double? = null,
+    @SerialName("fast_cache_read") val fastCacheRead: Double? = null,
+    @SerialName("fast_output") val fastOutput: Double? = null,
+    @SerialName("fast_cache_write") val fastCacheWrite: Double? = null,
+    @SerialName("ultrafast_input") val ultrafastInput: Double? = null,
+    @SerialName("ultrafast_cache_read") val ultrafastCacheRead: Double? = null,
+    @SerialName("ultrafast_output") val ultrafastOutput: Double? = null,
+    @SerialName("ultrafast_cache_write") val ultrafastCacheWrite: Double? = null,
 ) {
     fun rates(): ModelRates = ModelRates(
-        input = input,
-        cacheRead = cacheRead,
-        output = output,
+        input = requireNotNull(input) { INCOMPLETE_CARD },
+        cacheRead = requireNotNull(cacheRead) { INCOMPLETE_CARD },
+        output = requireNotNull(output) { INCOMPLETE_CARD },
         cacheWrite = cacheWrite,
         longContext = tier(),
         cacheWriteHourly = cacheWriteHourly,
+        fast = SpeedCards.of("fast_", fastInput, fastCacheRead, fastOutput, fastCacheWrite),
+        ultrafast = SpeedCards.of(
+            "ultrafast_",
+            ultrafastInput,
+            ultrafastCacheRead,
+            ultrafastOutput,
+            ultrafastCacheWrite,
+        ),
     )
 
     /** None of the tier's keys is no tier. Some of them is a card that would price a long request at a
@@ -177,6 +218,8 @@ internal data class TomlRates(
         )
     }
 }
+
+private const val INCOMPLETE_CARD = "a rate card needs input, cache_read and output"
 
 private const val INCOMPLETE_TIER = "a rate card's long-context tier needs long_context_over_input_tokens, " +
     "long_context_input, long_context_cache_read and long_context_output together " +

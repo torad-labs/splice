@@ -15,10 +15,12 @@ import splice.dialect.responses.ResponsesReasoningQuirks
 import splice.dialect.responses.ResponsesRequestControlQuirks
 import splice.dialect.responses.ResponsesRoundTripQuirks
 import splice.dialect.responses.ResponsesServiceTierSupport
+import splice.dialect.responses.ResponsesToolChanges
 import splice.dialect.responses.ResponsesToolQuirks
 import splice.dialect.responses.tools.ToolDeferralPolicy
 import splice.dialect.responses.tools.ToolSearchMode
 import splice.oauth.muse.MuseRefresh
+import splice.provider.muse.MUSE_CALLS_ARRIVED_TOOLS_THROUGH_A_CALLER
 import splice.provider.muse.MUSE_CONSTRAINS_OUTPUT_WITHOUT_STRICT
 import splice.provider.muse.MUSE_CONTINUES_REASONING_ONLY
 import splice.provider.muse.MUSE_TAKES_INLINE_TOOL_CHANGES
@@ -93,7 +95,7 @@ internal class MuseResponsesArm(
             tools = ResponsesToolQuirks(
                 emitToolChoice = true,
                 toolSurface = ToolDeferralPolicy(mode = ToolSearchMode.HOSTED),
-                acceptsInlineToolChanges = MUSE_TAKES_INLINE_TOOL_CHANGES,
+                toolChanges = museToolChanges(),
                 outputSchema = ResponsesOutputSchemaPolicy.ConstrainedWithoutStrict
                     .takeIf { MUSE_CONSTRAINS_OUTPUT_WITHOUT_STRICT } ?: ResponsesOutputSchemaPolicy.StrictAsGiven,
             ),
@@ -104,6 +106,13 @@ internal class MuseResponsesArm(
         ),
         ctx.cfg,
     )
+
+    /** How a tool change reaches Muse, from what the Muse provider module knows of Meta. */
+    private fun museToolChanges(): ResponsesToolChanges = when {
+        MUSE_TAKES_INLINE_TOOL_CHANGES -> ResponsesToolChanges.INLINE
+        MUSE_CALLS_ARRIVED_TOOLS_THROUGH_A_CALLER -> ResponsesToolChanges.THROUGH_CALLER
+        else -> ResponsesToolChanges.LISTED
+    }
 
     private fun wiredAccounts(accounts: List<MuseOAuthAccount>, headers: Map<String, String>): List<WiredAccount> =
         accounts.map { account ->

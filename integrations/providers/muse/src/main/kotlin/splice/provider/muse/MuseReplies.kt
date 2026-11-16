@@ -106,10 +106,39 @@ public const val MUSE_CONTINUES_REASONING_ONLY: Boolean = true
 
 /** Muse refuses the `additional_tools` input item. On 2026-10-27, once Claude Code added three tools in a
  *  system message, Muse answered 400 "`input[8]` did not match any supported type", and input[8] was the item splice
- *  sent for them. So a tool the conversation adds or ToolSearch loads rides in the request's tool list, and a removed
- *  one leaves it. The app sets the Responses dialect's accepts_inline_tool_changes quirk from this, so the fact stays
- *  in this module. */
+ *  sent for them. The app sets the Responses dialect's tool_changes quirk from this, so the fact stays in this
+ *  module. How a tool change reaches Muse instead is [MUSE_CALLS_ARRIVED_TOOLS_THROUGH_A_CALLER]. */
 public const val MUSE_TAKES_INLINE_TOOL_CHANGES: Boolean = false
+
+/** A tool that arrives in the middle of a Muse conversation, one ToolSearch loaded or a server added, never joins the
+ *  request's tool list. Meta caches a request by prefix, in the order instructions, tools, input, so a tool that
+ *  joins the list moves the whole conversation out of the cache, and Meta reads all of it again at the full price on
+ *  every load. The list holds one tool of the
+ *  head's own from the first request, the caller, the arrived tool is written into the conversation where it arrived,
+ *  and the model calls it through the caller.
+ *
+ *  What the real head showed, each time in short conversations sent by a build of the head (2026-11-16):
+ *  - Handed over as Meta's client-executed tool-search pair (a `tool_search_call` and a `tool_search_output` whose
+ *    `tools` hold the tool), a tool cannot be used. From 04:04 to 04:17 CT Meta answered 200, the request that carried
+ *    the pair read the conversation before it from the cache (7,412 cached tokens of the 7,514 sent before it), and
+ *    the model named the tool's parameters and called it under its own name. But every call of such a tool, 10 of 10,
+ *    came back with `arguments` "{}", while the listed tool beside it kept its arguments. It was the same with the
+ *    pair alone, beside the head's hosted tool search, with Meta's client-executed `tool_search` tool in the tool
+ *    list, with `status` on the call, and without `defer_loading` on the handed-over tool. Meta's documentation
+ *    (dev.meta.ai/docs/tool-search, read that day) says a tool loaded this way "is callable like any other function".
+ *  - Written as text and called through a listed tool that takes a tool's name and its arguments, a tool is called
+ *    whole. Meta answered 200, the request that carried the load read 6,772 tokens from the cache of the 6,815 sent
+ *    before it, and the model called the listed tool with the loaded tool's name and arguments that fit its schema,
+ *    parameter names nobody would guess included. Two tools loaded by one search, one with a nested schema, came back
+ *    as two whole calls, and the request after them read 7,156 of 7,278.
+ *  - The head built this way, at 05:56 CT: a ToolSearch load of a tool whose parameter names nobody would guess, a
+ *    call of it, its result and a second call. Every request was answered 200. The request that carried the load read
+ *    7,412 tokens from the cache of the 7,473 sent before it, the one after the first call 7,668 of 7,711, and the one
+ *    after the second 7,924 of 7,956. Both calls reached the client under the tool's own name, with arguments that
+ *    fit its schema.
+ *
+ *  The app sets the Responses dialect's tool_changes quirk from this, so the fact stays in this module. */
+public const val MUSE_CALLS_ARRIVED_TOOLS_THROUGH_A_CALLER: Boolean = true
 
 /** Muse holds every answer to a json_schema text format to that schema, strict or not: Meta's structured-output docs
  *  (https://dev.meta.ai/docs/structured-output) say output is always schema-constrained, that strict false constrains

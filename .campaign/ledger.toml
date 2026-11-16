@@ -263,7 +263,7 @@ notes = [
 id = 'signin-server'
 title = 'OIDC sign-in on the server mints per-device keys'
 feature = 'server-signin'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'server-keys',
@@ -279,13 +279,14 @@ reviews = [
 ]
 notes = [
   '2026-11-15 07:47 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 14:05 CT campaign: done in round 2 of server-signin: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'signin-client'
 title = 'splice login on the laptop, with a key helper'
 feature = 'server-signin'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'signin-server',
@@ -301,6 +302,7 @@ reviews = [
 ]
 notes = [
   '2026-11-15 07:47 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 14:05 CT campaign: done in round 2 of server-signin: its checks, its feature review, its code review passed',
 ]
 
 [[row]]

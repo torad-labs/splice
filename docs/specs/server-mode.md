@@ -169,6 +169,20 @@ keepalive_seconds = 10
   limits. `stream_options.include_usage` is always asked of the upstream; the usage chunk reaches the client only
   when it asked.
 
+What F4's reviewers found outside its items' words was built next as the feature `server-hardening`
+(`messages-key.test.ts`, `openai-cut.test.ts`, `openai-reply.test.ts`, `openai-model.test.ts`,
+`openai-keepalive.test.ts`):
+
+- A header the provider's `forward_headers` names never carries one of the server's keys to the provider, on the
+  Messages route as on the OpenAI route. The header stays behind, the turn is still answered, and the log names
+  the header, never the key.
+- On the OpenAI route, an answer the upstream cuts short is an error the client sees: a stream ends with one error
+  event in OpenAI's shape and no `[DONE]`, and a JSON answer is a 502 with OpenAI's error body.
+- The client gets the upstream's status, body, content type and, on a refusal, its `Retry-After`, and none of the
+  provider's own response headers. Usage on a finish chunk reaches only a client that asked for it.
+- `GET /<command>/v1/models/<id>` answers the provider's own object, or a 404 in OpenAI's error shape.
+- A streamed chat completion is kept alive through a long prefill as a streamed turn is, however many wait at once.
+
 ### F5 ledger-rows, ledger-reports and ledger-export (`ledger.test.ts`, `reports.test.ts`, `export.test.ts`)
 
 ```toml

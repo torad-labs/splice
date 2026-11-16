@@ -1,9 +1,11 @@
 // NEW: server mode (docs/specs/server-mode.md, F4, openai-route). An OpenAI-style client's own chat request, relayed
 // to the provider's server as the client sent it, and the two places the relay touches it. A streamed request always
-// asks the server for its usage frame (stream_options.include_usage), because the server's operator needs what a
-// turn used whether or not its client asked; and the frame that carries nothing but that usage reaches the client
-// only when it asked. Everything else, in both directions, is the client's and the server's own bytes. A stream the
-// server ended cleanly without `[DONE]` is given that line, which every OpenAI client reads as the end.
+// asks the server for its usage (stream_options.include_usage), because the server's operator needs what a turn
+// used whether or not its client asked; and that usage reaches the client only when it asked. OpenAI's API sends it
+// on a frame of its own, with no choice, which a client that did not ask never gets. Some servers put it on the
+// frame that finishes the answer instead, and a client that did not ask gets that frame without it. Everything
+// else, in both directions, is the client's and the server's own bytes. A stream the server ended cleanly without
+// `[DONE]` is given that line, which every OpenAI client reads as the end.
 package splice.dialect.chat
 
 import kotlinx.serialization.json.Json
@@ -49,22 +51,24 @@ public class PassedChatStream internal constructor(private val usageAsked: Boole
     private var done = false
 
     /** [event], one event of the server's stream without the blank line that ends it, as the client gets it: itself,
-     *  or null for the frame that carries only the usage this client did not ask for. */
+     *  unless it carries usage this client did not ask for. Then the frame that carries nothing else is null, and one
+     *  that carries a choice too is that frame without its usage. */
     public fun event(event: String): String? {
         val data = event.lineSequence().filter { it.startsWith(DATA_FIELD) }
             .joinToString("\n") { it.removePrefix(DATA_FIELD).trim() }
         if (data == CHAT_DONE) done = true
-        return event.takeUnless { !usageAsked && usageOnly(data) }
+        val frame = unasked(data) ?: return event
+        if ((frame[FRAME_CHOICES] as? JsonArray).isNullOrEmpty()) return null
+        val plain = "$DATA_FIELD ${JsonWire.string(JsonObject(frame - FRAME_USAGE))}"
+        return (event.lineSequence().filterNot { it.startsWith(DATA_FIELD) } + plain).joinToString("\n")
     }
 
     /** What ends a stream the server ended cleanly: `data: [DONE]` when the server sent none of its own, else null. */
     public fun ending(): String? = "$DATA_FIELD $CHAT_DONE".takeUnless { done }
 
-    /** Whether [data] is the frame OpenAI sends last when usage was asked: no choice, and the stream's usage. */
-    private fun usageOnly(data: String): Boolean {
-        val frame = json.objectOf(data) ?: return false
-        return frame[FRAME_USAGE] is JsonObject && (frame[FRAME_CHOICES] as? JsonArray).isNullOrEmpty()
-    }
+    /** [data] as the frame it is, when it carries usage this stream's client did not ask for; else null. */
+    private fun unasked(data: String): JsonObject? =
+        if (usageAsked) null else json.objectOf(data)?.takeIf { it[FRAME_USAGE] is JsonObject }
 }
 
 // The two fields of a chat request the relay reads, and the two of a stream's frame.

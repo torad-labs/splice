@@ -35,6 +35,14 @@ public class RefusalVoice(private val prefix: String, private val shape: Refusal
         return """{"error":{"message":$said,"type":"${openAiType(status)}","param":null,"code":$code}}"""
     }
 
+    /** [envelope], one of this voice's error bodies on its one line, as the event that says it on a stream already
+     *  open. Anthropic's API names that event `error`. OpenAI's sends the error as an event's data and nothing more,
+     *  which is what its SDKs raise from a stream. */
+    internal fun event(envelope: String): String = when (shape) {
+        RefusalShape.ANTHROPIC -> "event: $ERROR\ndata: $envelope"
+        RefusalShape.OPENAI -> "data: $envelope"
+    }
+
     private fun anthropicType(status: Int): String = when (status) {
         HttpStatus.BAD_REQUEST, HttpStatus.REQUEST_TIMEOUT -> "invalid_request_error"
         HttpStatus.UNAUTHORIZED -> "authentication_error"
@@ -59,16 +67,25 @@ public class RefusalVoice(private val prefix: String, private val shape: Refusal
         else -> null
     }
 
-    /** What a head answered with [status] where its event stream was expected, as the one line an event's data is:
-     *  the head's own error when [answer] is one in the Anthropic shape, else this voice saying what came. */
-    internal fun relayed(status: Int, answer: String): String {
+    /** What [who] answered with [status] where its event stream was expected, as the one line an event's data is:
+     *  its own error when [answer] is one in this voice's shape, else this voice saying what came. */
+    internal fun relayed(status: Int, answer: String, who: String): String {
         val own = try {
             Json.parseToJsonElement(answer) as? JsonObject
         } catch (_: IllegalArgumentException) {
             null
         }
-        return own?.takeIf { it[TYPE] == JsonPrimitive(ERROR) }?.let(JsonWire::string)
-            ?: body(status, "the head answered HTTP $status where its event stream was expected")
+        // An answer that refused nothing is still no stream, and that is its server's failure, not the request's.
+        val failed = status.takeIf { it >= HttpStatus.BAD_REQUEST } ?: HttpStatus.BAD_GATEWAY
+        return own?.takeIf(::isError)?.let(JsonWire::string)
+            ?: body(failed, "$who answered HTTP $status where its event stream was expected")
+    }
+
+    /** Whether [answer] is an error in this voice's shape. Anthropic's envelope says so in its type; OpenAI's is an
+     *  object under `error` and nothing more. */
+    private fun isError(answer: JsonObject): Boolean = when (shape) {
+        RefusalShape.ANTHROPIC -> answer[TYPE] == JsonPrimitive(ERROR)
+        RefusalShape.OPENAI -> answer[ERROR] is JsonObject
     }
 
     public suspend fun refuse(call: ApplicationCall, status: Int, message: String) {
@@ -85,7 +102,7 @@ internal object ShareErrors {
     }
 }
 
-// An Anthropic error envelope's own type, by its key.
+// An Anthropic error envelope's own type, by its key; `error` is also the key both shapes put the error under.
 private const val TYPE = "type"
 private const val ERROR = "error"
 

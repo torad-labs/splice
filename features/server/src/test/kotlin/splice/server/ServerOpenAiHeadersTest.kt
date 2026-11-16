@@ -26,9 +26,11 @@ internal class ServerOpenAiHeadersTest {
     /** Server mode over `claude-team`, whose provider speaks openai-chat on [box] and names [forwarded] in its
      *  `forward_headers`. */
     private fun serve(vararg forwarded: String): OpenAiRig {
-        val provider = BoxServer(box.base, forwarded.toList())
+        val provider = BoxServer(box.base)
         val upstreams = object : HeadUpstreams {
             override fun chat(head: String): ChatServer? = provider.takeIf { head == "team" }
+
+            override fun forwarded(head: String): List<String> = forwarded.toList().takeIf { head == "team" }.orEmpty()
         }
         return OpenAiRig(state, upstreams, log = LogSink { logged += it }).also { opened = it }
     }

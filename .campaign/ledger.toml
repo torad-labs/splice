@@ -319,7 +319,7 @@ notes = [
 id = 'messages-key-stays'
 title = "A person's key never rides a forwarded header on the Messages route"
 feature = 'server-hardening'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -333,13 +333,14 @@ reviews = [
 ]
 notes = [
   '2026-11-15 19:33 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-15 23:55 CT campaign: done in round 1 of server-hardening: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'openai-cut'
 title = 'An answer the upstream cuts short is an error the OpenAI client sees'
 feature = 'server-hardening'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -353,13 +354,14 @@ reviews = [
 ]
 notes = [
   '2026-11-15 19:33 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-15 23:55 CT campaign: done in round 1 of server-hardening: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'openai-reply-headers'
 title = "The provider's own response headers stay at the server"
 feature = 'server-hardening'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -373,13 +375,14 @@ reviews = [
 ]
 notes = [
   '2026-11-15 19:33 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-15 23:55 CT campaign: done in round 1 of server-hardening: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'openai-model-get'
 title = 'The OpenAI route answers a lookup of one model'
 feature = 'server-hardening'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -393,13 +396,14 @@ reviews = [
 ]
 notes = [
   '2026-11-15 19:33 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-15 23:55 CT campaign: done in round 1 of server-hardening: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'openai-keepalive'
 title = 'Keepalives on the OpenAI route through a long prefill'
 feature = 'server-hardening'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -413,4 +417,5 @@ reviews = [
 ]
 notes = [
   '2026-11-15 19:34 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-15 23:55 CT campaign: done in round 3 of server-hardening: its checks, its feature review, its code review passed',
 ]

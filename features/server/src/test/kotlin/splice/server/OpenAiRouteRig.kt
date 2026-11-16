@@ -8,11 +8,20 @@ package splice.server
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import splice.core.topology.ServerLimits
 import splice.core.util.LogSink
 import splice.share.StreamEdit
+import splice.upstream.Waiter
+import splice.upstream.codemode.ProcessWaiter
+import java.io.InputStream
 import java.net.InetSocketAddress
 import java.net.URI
 import java.net.http.HttpClient
@@ -39,14 +48,35 @@ internal class ScriptedBox(private val name: String) {
     /** The pause before each event after the first. */
     @Volatile var gapMs = 0L
 
-    /** How many events go out before the server breaks the stream off; null sends them all and ends it whole. */
+    /** How many events go out before the server breaks the stream off; null sends them all and ends it whole. While
+     *  it is set, an answer that is no stream breaks off halfway too. */
     @Volatile var cutAfter: Int? = null
 
     /** What a streamed completion waits for before it answers. */
     @Volatile var gate: CountDownLatch? = null
 
+    /** What every completion waits for before anything of its answer, a refusal included: the server says nothing,
+     *  as one does while it prefills a long prompt. */
+    @Volatile var prefill: CountDownLatch? = null
+
+    /** What a streamed completion waits for between its response headers and its first event: a server that streams
+     *  from a generator answers 200 at once, and prefills after that. */
+    @Volatile var afterHeaders: CountDownLatch? = null
+
     /** The status a completion is refused with; null answers it. */
     @Volatile var refuses: Int? = null
+
+    /** What a request the server refuses is told; null says the server's own error, in OpenAI's shape. */
+    @Volatile var refusal: String? = null
+
+    /** While set, a completion is hung up on with nothing answered. */
+    @Volatile var hangsUp = false
+
+    /** The status the models list is refused with; null answers it. */
+    @Volatile var listRefuses: Int? = null
+
+    /** Headers of the server's own on every answer it gives, a refusal included: a cookie, a request id. */
+    @Volatile var replies: Map<String, String> = emptyMap()
 
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
         executor = Executors.newCachedThreadPool()
@@ -59,6 +89,8 @@ internal class ScriptedBox(private val name: String) {
 
     fun stop() {
         gate?.countDown()
+        prefill?.countDown()
+        afterHeaders?.countDown()
         server.stop(0)
     }
 
@@ -66,28 +98,46 @@ internal class ScriptedBox(private val name: String) {
         val body = exchange.requestBody.use { String(it.readBytes()) }
         val headers = exchange.requestHeaders.entries.associate { (key, values) -> key.lowercase() to values.first() }
         asked += Asked(exchange.requestURI.toString(), headers, body)
+        if (exchange.requestURI.path.endsWith("/models")) models(exchange) else completion(exchange, body)
+    }
+
+    private fun models(exchange: HttpExchange) {
+        val refused = listRefuses
+        if (refused == null) whole(exchange, BOX_MODELS) else whole(exchange, said(refused), refused)
+    }
+
+    private fun completion(exchange: HttpExchange, body: String) {
+        prefill?.await(GATE_SECONDS, TimeUnit.SECONDS)
         val refused = refuses
         when {
-            exchange.requestURI.path.endsWith("/models") -> whole(exchange, BOX_MODELS)
-            refused != null -> whole(exchange, """{"error":{"message":"$name says $refused"}}""", refused)
+            // Nothing is sent, so closing the exchange hangs up on whoever asked.
+            hangsUp -> Unit
+            refused != null -> whole(exchange, said(refused), refused)
             "\"stream\":true" in body -> stream(exchange)
             else -> whole(exchange, """{"choices":[{"message":{"content":"from $name"}}],$BOX_USAGE}""")
         }
     }
 
+    /** What a request refused with [status] is told. */
+    private fun said(status: Int): String = refusal ?: OWN_ERROR.format(name, status)
+
     private fun whole(exchange: HttpExchange, json: String, status: Int = 200) {
         val bytes = json.toByteArray()
+        replies.forEach { (name, value) -> exchange.responseHeaders.add(name, value) }
         exchange.responseHeaders.add("Content-Type", "application/json")
         exchange.sendResponseHeaders(status, bytes.size.toLong())
-        exchange.responseBody.write(bytes)
+        // An answer that is broken off declared all of itself, so closing it after half cuts the connection.
+        exchange.responseBody.write(bytes, 0, if (cutAfter == null) bytes.size else bytes.size / 2)
     }
 
     private fun stream(exchange: HttpExchange) {
         gate?.await(GATE_SECONDS, TimeUnit.SECONDS)
         val cut = cutAfter
+        replies.forEach { (name, value) -> exchange.responseHeaders.add(name, value) }
         exchange.responseHeaders.add("Content-Type", "text/event-stream")
         // A stream that is broken off declares more than it sends, so closing it cuts the connection mid-answer.
         exchange.sendResponseHeaders(200, if (cut == null) 0 else CUT_STREAM_LENGTH)
+        afterHeaders?.await(GATE_SECONDS, TimeUnit.SECONDS)
         events.take(cut ?: events.size).forEachIndexed { at, event ->
             if (at > 0) LockSupport.parkNanos(gapMs * NANOS_PER_MS)
             exchange.responseBody.write("$event\n\n".toByteArray())
@@ -96,13 +146,10 @@ internal class ScriptedBox(private val name: String) {
     }
 }
 
-/** A provider that speaks openai-chat, as the daemon describes one to the listener: its `forward_headers` names
- *  [forwarded], and its `extra_headers` say `x-box-team: blue`. A request goes on as it was sent, and the stream of
- *  one that asked for a stream is read by [UsageHidden]. */
-internal class BoxServer(
-    override val base: String,
-    override val forwarded: List<String> = emptyList(),
-) : ChatServer {
+/** A provider that speaks openai-chat, as the daemon describes one to the listener: its `extra_headers` say
+ *  `x-box-team: blue`. A request goes on as it was sent, and the stream of one that asked for a stream is read by
+ *  [UsageHidden]. */
+internal class BoxServer(override val base: String) : ChatServer {
     override fun headers(): Map<String, String> = mapOf("Authorization" to "Bearer $BOX_KEY", "x-box-team" to "blue")
 
     override fun chat(sent: ByteArray): ChatAsk =
@@ -129,8 +176,11 @@ internal class OpenAiRig(
     upstreams: HeadUpstreams,
     limits: ServerLimits = ServerLimits(),
     log: LogSink = LogSink { },
+    /** `[server] keepalive_seconds`, whose silences are waited out on [waiter]. */
+    keepaliveSeconds: Int = 0,
+    waiter: Waiter = ProcessWaiter(),
 ) {
-    private val rig = ServerRig(log = log, upstreams = upstreams)
+    private val rig = ServerRig(log = log, upstreams = upstreams, waiter = waiter)
     val port = rig.port
     private val http = HttpClient.newHttpClient()
 
@@ -144,6 +194,7 @@ internal class OpenAiRig(
                     else -> 404 to HEAD_NO_ROUTE
                 }
                 it.responseHeaders.add("Content-Type", "application/json")
+                it.responseHeaders.add("Request-Id", HEAD_REQUEST_ID)
                 it.sendResponseHeaders(status, answer.toByteArray().size.toLong())
                 it.responseBody.write(answer.toByteArray())
             }
@@ -151,7 +202,11 @@ internal class OpenAiRig(
         start()
     }
 
-    private val mode = rig.open(state, listOf(StandInHead(head.address.port)), rig.config.copy(limits = limits))
+    private val mode = rig.open(
+        state,
+        listOf(StandInHead(head.address.port)),
+        rig.config.copy(limits = limits, keepaliveSeconds = keepaliveSeconds),
+    )
 
     fun close() {
         rig.close()
@@ -186,6 +241,10 @@ internal class OpenAiRig(
     fun chatLater(key: String, body: String): CompletableFuture<HttpResponse<String>> =
         http.sendAsync(request("chat/completions", key, body), HttpResponse.BodyHandlers.ofString())
 
+    /** A chat completion sent without waiting for its answer, whose body is then read as it comes (Hearing). */
+    fun chatHeard(key: String, body: String): CompletableFuture<HttpResponse<InputStream>> =
+        http.sendAsync(request("chat/completions", key, body), HttpResponse.BodyHandlers.ofInputStream())
+
     /** A streamed chat completion's `data:` lines, each with the milliseconds since its headers came. */
     fun stream(key: String, body: String, extra: ClientHeaders = emptyList()): List<Pair<Long, String>> {
         val answer = http.send(request("chat/completions", key, body, extra), HttpResponse.BodyHandlers.ofLines())
@@ -197,6 +256,10 @@ internal class OpenAiRig(
     /** The models list, asked with [extra] as headers of the caller's own. */
     fun models(key: String?, vararg extra: Pair<String, String>): HttpResponse<String> =
         http.send(request("models", key, body = null, extra.toList()), HttpResponse.BodyHandlers.ofString())
+
+    /** The lookup of the one model [id] names, asked with [extra] as headers of the caller's own. */
+    fun model(key: String?, id: String, vararg extra: Pair<String, String>): HttpResponse<String> =
+        http.send(request("models/$id", key, body = null, extra.toList()), HttpResponse.BodyHandlers.ofString())
 
     /** A turn on the Messages route, as Claude Code sends one. */
     fun turn(key: String): HttpResponse<String> =
@@ -215,14 +278,37 @@ internal class OpenAiRig(
 /** Headers a client sends of its own, beside its key and its body's type. */
 internal typealias ClientHeaders = List<Pair<String, String>>
 
+/** The error [said], as a body or as the data of a stream's event, which must be one the server says in OpenAI's
+ *  shape: one `error` object and nothing beside it, with the fields OpenAI's API gives one, in the server's name. */
+internal fun openAiError(said: String): JsonObject {
+    val body = Json.parseToJsonElement(said).jsonObject
+    assertEquals(setOf("error"), body.keys, said)
+    val error = body.getValue("error").jsonObject
+    assertEquals(setOf("message", "type", "param", "code"), error.keys, said)
+    assertTrue(error.getValue("message").jsonPrimitive.content.startsWith("splice server: "), said)
+    return error
+}
+
 internal const val BOX_KEY = "box-key-never-a-persons"
-internal const val BOX_MODELS = """{"object":"list","data":[{"id":"team-model","object":"model","owned_by":"box"}]}"""
+
+// The provider server's list: a model as OpenAI's API lists one, and one the way some servers do, its id an
+// `org/name` and its entry without the `object` field.
+internal const val TEAM_MODEL = """{"id":"team-model","object":"model","owned_by":"box"}"""
+internal const val BOX_MODELS =
+    """{"object":"list","data":[$TEAM_MODEL,{"id":"team/coder-32b","owned_by":"box"}]}"""
+
 internal const val HEAD_MODELS = """{"data":[{"type":"model","id":"claude-team--team-model"}],"has_more":false}"""
 internal const val HEAD_NO_ROUTE = """{"type":"error","error":{"type":"not_found_error","message":"head: no route"}}"""
+
+// What the head sends beside every answer, for its client.
+internal const val HEAD_REQUEST_ID = "req-head-1"
 
 internal const val CHAT = """{"model":"team-model","messages":[{"role":"user","content":"hi"}]}"""
 internal const val STREAMED_CHAT =
     """{"model":"team-model","stream":true,"messages":[{"role":"user","content":"hi"}]}"""
+
+// A scripted server's own error: its name, and the status it refuses with.
+private const val OWN_ERROR = """{"error":{"message":"%s says %d"}}"""
 
 // What every completion a scripted server answers whole says it used.
 private const val BOX_USAGE = """"usage":{"prompt_tokens":7}"""

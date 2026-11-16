@@ -27,6 +27,11 @@ public interface HeadUpstreams {
     /** The provider of the head [head] as an OpenAI-style client's requests reach it; null when that provider does
      *  not speak openai-chat, which is what the default answers. */
     public fun chat(head: String): ChatServer? = null
+
+    /** The caller's headers that ride on to the provider of the head [head], by lowercase name: the ones that
+     *  provider's `forward_headers` names, whatever dialect it speaks and whichever route the request came on. Every
+     *  other header a caller sends stays on this machine. None by default. */
+    public fun forwarded(head: String): List<String> = emptyList()
 }
 
 /** A provider that speaks openai-chat, as the listener relays an OpenAI-style client's requests to it. */
@@ -34,10 +39,6 @@ public interface ChatServer {
     /** Its API root, without a trailing slash. A provider that is several servers is asked where its pool says
      *  instead ([HeadUpstreams.of]). */
     public val base: String
-
-    /** The caller's headers that ride on to it, by lowercase name: the ones the provider's `forward_headers` names,
-     *  as on a head's own turn. Every other header a caller sends stays on this machine. */
-    public val forwarded: List<String>
 
     /** What a request to it carries in place of the caller's key: the provider's configured headers and its own key
      *  as it stands now. Blocking: the key may be read from its file. */
@@ -85,6 +86,9 @@ public class UpstreamApi(private val upstreams: HeadUpstreams) {
 
     /** The provider of the head [head] as an OpenAI-style client reaches it; null when it does not speak openai-chat. */
     internal fun chat(head: String): ChatServer? = upstreams.chat(head)
+
+    /** The caller's headers the provider of the head [head] has named to ride on to it, by lowercase name. */
+    internal fun forwarded(head: String): List<String> = upstreams.forwarded(head)
 
     /** Why a turn for the head [head] cannot be served now, or null while its provider has a server up or is one
      *  server: the sentence names the provider and each of its upstreams, which the person passes on to the

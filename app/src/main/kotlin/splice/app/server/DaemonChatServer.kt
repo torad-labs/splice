@@ -1,9 +1,9 @@
 // NEW: server mode (docs/specs/server-mode.md, F4, openai-route). The daemon's side of the server listener's OpenAI
 // route: one provider that speaks openai-chat, as the listener relays an OpenAI-style client's requests to it. Where
-// the provider's server is, and which of a caller's headers ride on to it (forward_headers), come from splice.toml;
-// what a request to it carries of the provider's own is what its head's turns and health checks carry
-// (UpstreamPools); and what the relay does to a chat request and to its stream is the chat dialect's
-// (ChatPassthrough): the listener's module knows neither the provider nor its wire.
+// the provider's server is comes from splice.toml; what a request to it carries of the provider's own is what its
+// head's turns and health checks carry (UpstreamPools); and what the relay does to a chat request and to its stream
+// is the chat dialect's (ChatPassthrough): the listener's module knows neither the provider nor its wire. Which of a
+// caller's headers ride on to it (forward_headers) the daemon says of every head's provider (DaemonServer).
 package splice.app.server
 
 import splice.core.topology.ProviderConfig
@@ -22,8 +22,6 @@ internal class DaemonChatServer(
     private val passthrough = ChatPassthrough()
 
     override val base: String = provider.baseUrl.trimEnd('/')
-
-    override val forwarded: List<String> = provider.forwarded.carried
 
     override fun headers(): Map<String, String> = pools.headers(key)
 

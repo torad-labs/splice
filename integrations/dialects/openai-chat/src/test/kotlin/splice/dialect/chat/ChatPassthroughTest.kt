@@ -62,13 +62,25 @@ class ChatPassthroughTest {
         val plain = sent("""{"stream":true,"messages":[]}""").stream()
         assertEquals(USAGE_FRAME, asked.event(USAGE_FRAME))
         assertNull(plain.event(USAGE_FRAME))
-        // A frame with a choice is the client's, whatever else it carries.
+        // A frame that reports no usage is the client's as the server wrote it, whoever asked for what.
         for (stream in listOf(asked, plain)) {
             assertEquals(WORD_FRAME, stream.event(WORD_FRAME))
-            assertEquals(LAST_WORD_WITH_USAGE, stream.event(LAST_WORD_WITH_USAGE))
             assertEquals(NULL_USAGE_FRAME, stream.event(NULL_USAGE_FRAME))
             assertEquals(": a comment", stream.event(": a comment"))
         }
+    }
+
+    @Test
+    fun `usage a server puts on its finish frame reaches a client that asked, and no other`() {
+        val asked = sent("""{"stream":true,"stream_options":{"include_usage":true},"messages":[]}""").stream()
+        assertEquals(LAST_WORD_WITH_USAGE, asked.event(LAST_WORD_WITH_USAGE), "byte for byte, for a client that asked")
+
+        val plain = sent("""{"stream":true,"messages":[]}""").stream()
+        val got = checkNotNull(plain.event("id: 7\n$LAST_WORD_WITH_USAGE")) { "the frame that finishes the answer" }
+        assertEquals(listOf("id: 7"), got.lines().filterNot { it.startsWith("data:") }, "the event's other lines stay")
+        val frame = Json.parseToJsonElement(got.lines().single { it.startsWith("data:") }.removePrefix("data:"))
+        val written = Json.parseToJsonElement(LAST_WORD_WITH_USAGE.removePrefix("data:")).jsonObject
+        assertEquals(written - "usage", frame.jsonObject.toMap(), "the frame as the server wrote it, less its usage")
     }
 
     @Test

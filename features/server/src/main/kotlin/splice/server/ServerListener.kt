@@ -8,7 +8,7 @@
 //   GET  /<command>/launch         what a laptop's launch of that command needs (as share mode serves it)
 //   ANY  /<command>/v1/...         relayed to the head on loopback with this machine's turn key in place of the
 //                                  person's key, and the answer streamed back as it arrives
-//   POST /<command>/v1/chat/completions, GET /<command>/v1/models
+//   POST /<command>/v1/chat/completions, GET /<command>/v1/models, GET /<command>/v1/models/<id>
 //                                  an OpenAI-style client's, for a command whose provider speaks openai-chat: relayed
 //                                  to that provider's own server, refusals in OpenAI's error shape (OpenAiRoute)
 //   ANY  /server/api/...           the server's own API, for a key whose person is an admin (ServerAdmin)
@@ -20,6 +20,11 @@
 // `rate_limit_error` with `Retry-After` (TurnAdmission). Every error is in the Anthropic shape, so Claude Code prints
 // its message.
 //
+// A person's key is the server's secret on the way out as well. A head sends its provider the caller's headers that
+// provider's `forward_headers` names, and one of those whose value holds a key this server issued, the caller's own
+// or another person's, is not handed to the head at all: the turn is served without it, and the log names the header
+// and never the key (ProviderBound).
+//
 // A command whose provider is several servers (F4): a turn is handed to its head naming the upstream its person
 // prefers, which the head sends it to while that one is healthy; and while none of the provider's servers is up the
 // turn is refused here, a 503 naming them, before it takes a slot or reaches the head.
@@ -27,7 +32,7 @@
 // With `[server] keepalive_seconds` a streamed turn is not left silent while its model server prefills a long prompt:
 // its stream is opened within two seconds and carries an SSE keepalive at least that often until the answer comes,
 // and after it whenever the answer falls silent (HeadAnswers, QuietWire). A turn that asks for no stream answers one
-// JSON body as before.
+// JSON body as before. An OpenAI-style client's streamed completion is kept alive the same way (OpenAiRoute).
 //
 // A path is read the way a head reads one, percent-escapes decoded, and a head is handed the path as it was read
 // (RequestPaths): what a head serves as a turn is what the caps counted, however the client spelled it.
@@ -100,10 +105,11 @@ internal class ServerListener(
     private val watched = WatchedRelay()
     private val paths = RequestPaths()
     private val admission = TurnAdmission(parts, voice)
-    private val openAi = OpenAiRoute(parts, io, log)
+    private val bound = ProviderBound(parts.keys, log)
 
     /** How often a streamed turn's client is sent a keepalive while its answer is silent; null sends none. */
     private val keepalive = server.keepaliveSeconds.takeIf { it > 0 }?.seconds
+    private val openAi = OpenAiRoute(parts, io, log, keepalive)
 
     /** The path, after the command, of the one request that runs a turn on the Messages route. */
     private val turnPath = listOf(HEAD_API_ROOT, "messages")
@@ -206,7 +212,9 @@ internal class ServerListener(
         val slot = if (counted) admission.slot(call, key, head) ?: return else null
         val preferred = parts.people.of(key.person).preferred
         val named = listOfNotNull(preferred?.let { PREFERRED_UPSTREAM_HEADER to it }).toMap()
-        val turn = HeadTurn(head, paths.spell(path) + paths.query(call), named, keepalive)
+        // The head sends its provider the headers `forward_headers` names, and knows none of this server's keys.
+        val held = bound.keyed(call, parts.upstreams.forwarded(head.key))
+        val turn = HeadTurn(head, paths.spell(path) + paths.query(call), named, keepalive, held)
         watched.turn(call, slot) { parts.relay.turn(call, turn) }
     }
 

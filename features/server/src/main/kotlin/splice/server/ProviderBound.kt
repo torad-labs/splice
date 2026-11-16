@@ -1,15 +1,19 @@
-// NEW: server mode (docs/specs/server-mode.md, F4, openai-route). What of a caller's request goes on to a provider's
-// own server, when the listener relays it there itself. That server is not this machine, so the rule is the one a
-// head's turn follows (README, "Headers for a gateway in front of a provider"): the provider's own headers and key,
-// and of what the caller sent only the headers the provider's `forward_headers` names. Everything else the caller
-// sent stays here: the key that admitted it, wherever it was put (`api-key`, a header of the client's own), its
-// cookies, its address, what it runs on.
+// NEW: server mode (docs/specs/server-mode.md, F1 and F4). What of a caller's request goes on toward a provider's own
+// server, on either route the listener serves. That server is not this machine, so the rule is the one a head's turn
+// follows (README, "Headers for a gateway in front of a provider"): the provider's own headers and key, and of what
+// the caller sent only the headers the provider's `forward_headers` names. Everything else the caller sent stays
+// here: the key that admitted it, wherever it was put (`api-key`, a header of the client's own), its cookies, its
+// address, what it runs on.
 //
 // A person's key is the server's secret, so nothing that holds one of this server's keys goes on, whoever's key it
 // is: not a named header, not the body's type, not a parameter of the query. Each is left off and the request goes
-// on without it, where refusing it would stop the client; the log says what was left off and never repeats it. A
-// named header that rides replaces the provider's `extra_headers` value of the same name, as on a head. The body's
-// type rides with the body, which is relayed as the client sent it.
+// on without it, where refusing it would stop the client; the log says what was left off and never repeats it.
+//
+// An OpenAI-style client's request is relayed to the provider's server by the listener itself (OpenAiRoute), which
+// asks here for all of what it carries. A named header that rides replaces the provider's `extra_headers` value of the
+// same name, as on a head. The body's type rides with the body, which is relayed as the client sent it. A turn on the
+// Messages route goes through the command's head, which sends the named headers on itself and knows none of this
+// server's keys: so the listener asks here which of them hold one ([keyed]), and the head is never handed those.
 package splice.server
 
 import io.ktor.http.HttpHeaders
@@ -22,9 +26,10 @@ import splice.share.OutwardHeaders
 internal class ProviderBound(private val keys: ServerKeys, private val log: LogSink) {
     private val bodyType = listOf(HttpHeaders.ContentType.lowercase())
 
-    /** The headers [call]'s request carries to [server], whose [own] headers are the provider's as they stand now. */
-    fun headers(call: ApplicationCall, server: ChatServer, own: Map<String, String>): OutwardHeaders {
-        val named = keyFree(call, server.forwarded)
+    /** The headers [call]'s request carries to a provider's server: of the caller's own the ones among [forwarded],
+     *  the names its `forward_headers` lists, and the provider's [own] headers as they stand now. */
+    fun headers(call: ApplicationCall, forwarded: List<String>, own: Map<String, String>): OutwardHeaders {
+        val named = keyFree(call, forwarded)
         return OutwardHeaders(named + keyFree(call, bodyType), own.filterKeys { it.lowercase() !in named })
     }
 
@@ -40,14 +45,20 @@ internal class ProviderBound(private val keys: ServerKeys, private val log: LogS
         return free.joinToString("&").takeIf(String::isNotEmpty)?.let { "?$it" }.orEmpty()
     }
 
-    /** The headers among [names] that [call] sent and that hold none of this server's keys, by lowercase name. */
-    private fun keyFree(call: ApplicationCall, names: List<String>): Set<String> {
-        val sent = names.filter { name -> call.request.headers.getAll(name).orEmpty().any(String::isNotBlank) }
-        val keyed = sent.filter { name -> call.request.headers.getAll(name).orEmpty().any(keys::heldIn) }
+    /** The headers among [names], lowercase, in which [call] sent one of this server's keys, anywhere in a value.
+     *  None of them goes on, and the log names each and never what it held. */
+    fun keyed(call: ApplicationCall, names: List<String>): Set<String> {
+        val keyed = names.filter { name -> call.request.headers.getAll(name).orEmpty().any(keys::heldIn) }
         if (keyed.isNotEmpty()) {
             log("[server] did not forward ${keyed.joinToString()}: it carried one of this server's keys\n")
         }
-        return sent.toSet() - keyed.toSet()
+        return keyed.toSet()
+    }
+
+    /** The headers among [names] that [call] sent and that hold none of this server's keys, by lowercase name. */
+    private fun keyFree(call: ApplicationCall, names: List<String>): Set<String> {
+        val sent = names.filter { name -> call.request.headers.getAll(name).orEmpty().any(String::isNotBlank) }
+        return sent.toSet() - keyed(call, sent)
     }
 
     private fun decoded(parameter: String): String = try {

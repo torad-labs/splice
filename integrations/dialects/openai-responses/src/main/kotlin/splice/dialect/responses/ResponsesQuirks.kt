@@ -150,12 +150,9 @@ public data class ResponsesToolQuirks(
     /** Deferred tool surface. Null keeps non-Muse providers off; Muse supplies a hosted base.
      *  CLIENT is responses-lite-only, HOSTED uses Meta's Responses tool search on normal turns. */
     val toolSurface: ToolDeferralPolicy? = null,
-    /** Whether this backend takes a tool change at its place in the conversation: an `additional_tools` input item for
-     *  a tool the conversation added or ToolSearch loaded, and `allowed_tools` for one it removed. False, the default,
-     *  sends the tools the conversation holds now as the request's tool list instead, since a backend that does not
-     *  know the item refuses the whole request (Muse, 2026-10-27: 400 "`input[8]` did not match any supported type").
-     *  The provider that knows its backend takes the item sets it. */
-    val acceptsInlineToolChanges: Boolean = false,
+    /** How a tool that arrives or leaves in the middle of a conversation reaches this backend ([ResponsesToolChanges]).
+     *  The provider that knows its backend sets it. */
+    val toolChanges: ResponsesToolChanges = ResponsesToolChanges.LISTED,
     /** How the backend is asked to hold the answer to a caller's json_schema text format: strict over the schema as
      *  written unless the provider states its vendor's strict subset or that its backend needs no strict. */
     val outputSchema: ResponsesOutputSchemaPolicy = ResponsesOutputSchemaPolicy.StrictAsGiven,
@@ -277,3 +274,23 @@ public data class PromptCachePolicy(
 )
 
 public enum class CacheKeyStrategy { FIRST_MESSAGE_HASH, SESSION_ID, SESSION_OR_FIRST_MESSAGE_HASH, OFF }
+
+/** How a tool change in the middle of a conversation (a tool a server adds or takes away, or one ToolSearch loads)
+ *  reaches the backend. */
+public enum class ResponsesToolChanges {
+    /** The request lists the tools the conversation holds now, each with the schema it last gave. The default, since a
+     *  backend that does not know the `additional_tools` item refuses the whole request (Muse, 2026-10-27: 400
+     *  "`input[8]` did not match any supported type"). */
+    LISTED,
+
+    /** Each change rides at its place in the conversation: an `additional_tools` input item for a tool that arrived,
+     *  and `allowed_tools` for one that left. Only a backend that reads the item takes it. */
+    INLINE,
+
+    /** The tool list stays the conversation's first and holds one tool of the head's own, the caller, from the first
+     *  request. A tool that arrives is written into the history where it arrived, its name, description and schema as
+     *  words; the model calls it through the caller, and Claude Code is handed that call under the tool's own name. A
+     *  tool that leaves is told in words where it left. So a backend that caches by prefix, tool list before input,
+     *  keeps reading the conversation from its cache when its tools change. */
+    THROUGH_CALLER,
+}

@@ -4,6 +4,11 @@
 // tell by reading the request a head would send: the tools its model can call, with the schema the conversation last
 // gave each, are the ones the conversation holds now, and nothing in it is an item or block that head refuses.
 //
+// The Muse head is held to more (muse-tool-cache, 2026-11-16): Meta caches by prefix with the tool list before the
+// input, so its list is the conversation's first request's on every request, the caller included. A tool that arrives
+// is written into the history where it arrived, for the model to call through the caller, and a tool that leaves is
+// told in words where it left, so the model may still know a tool the conversation no longer holds.
+//
 // Oct 27: Muse answered 400 "`input[8]` did not match any supported type" to every claude-muse turn once
 // Claude Code added three Claude Docs tools in a system message, because splice sent each added tool as an
 // `additional_tools` input item, which only the Codex backend takes. The same afternoon claude-kimi dropped the
@@ -13,6 +18,7 @@ package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -51,6 +57,10 @@ private const val KIMI = "claude-kimi"
 private const val OPENAI = "claude-openai"
 private const val XAI = "claude-xai"
 
+/** The tool of the Muse head's own that calls a tool written in the conversation, and how one is written there. */
+private const val CALLER = "CallToolByName"
+private val WRITTEN_TOOL = Regex("<tool_definition>(.*?)</tool_definition>")
+
 /** Each head and the model its requests name. */
 private val MODELS = mapOf(
     MUSE to "muse-wonder-full-1.0",
@@ -87,12 +97,13 @@ private val ADDED_MCP = listOf(
     "mcp__figma__get_design",
 )
 
-/** One generated request, the tools its conversation holds at its end (each with its schema's property names), and the
- *  same request with every tool_addition and tool_removal block taken out. */
+/** One generated request, the tools its conversation holds at its end (each with its schema's property names), the
+ *  same request with every tool_addition and tool_removal block taken out, and the conversation's first request. */
 private data class ToolChangeCase(
     val request: JsonObject,
     val current: Map<String, Set<String>>,
     val stripped: JsonObject,
+    val first: JsonObject,
 )
 
 /** Claude Code's shape: a tool list, some of it deferred, and a conversation that adds, removes and loads tools between
@@ -110,7 +121,12 @@ private class ToolChangeConversation(private val random: Random) {
         repeat(random.nextInt(9)) { event() }
         messages += message("user", JsonPrimitive("carry on"))
         val request = request(tools, messages)
-        return ToolChangeCase(request, current.toMap(), request(tools, messages.map(::withoutChanges)))
+        return ToolChangeCase(
+            request,
+            current.toMap(),
+            request(tools, messages.map(::withoutChanges)),
+            request(tools, messages.take(1)),
+        )
     }
 
     private fun clientTools(): List<JsonObject> {
@@ -298,6 +314,39 @@ private fun referencedTools(content: JsonElement?): List<String> = (content as? 
 
 private fun callable(head: String, body: JsonObject): Map<String, Set<String>> =
     if (head == KIMI) anthropicCallable(body) else responsesCallable(body)
+
+/** The tools a Muse request gives its model, each with its schema's property names: the function tools its list
+ *  declares, the caller aside, then each tool written in the history for the caller to call, the later writing
+ *  winning. */
+private fun museKnown(body: JsonObject): Map<String, Set<String>> {
+    val known = linkedMapOf<String, Set<String>>()
+    offerTools(body["tools"], known)
+    known.remove(CALLER)
+    body.getValue("input").jsonArray.flatMap { stringsOf(it) }.forEach { text ->
+        WRITTEN_TOOL.findAll(text).forEach { match ->
+            val tool = Json.parseToJsonElement(match.groupValues[1]).jsonObject
+            known[nameOf(tool)] = propsOf(tool["input_schema"])
+        }
+    }
+    return known
+}
+
+/** Every string [element] holds: a message's words and a tool result's output, however they ride. */
+private fun stringsOf(element: JsonElement): List<String> = when (element) {
+    is JsonPrimitive -> if (element.isString) listOf(element.content) else emptyList()
+    is JsonArray -> element.flatMap(::stringsOf)
+    is JsonObject -> element.values.flatMap(::stringsOf)
+}
+
+/** The names of the function tools [body]'s list declares, in order. */
+private fun listedNames(body: JsonObject): List<String> = (body["tools"] as? JsonArray).orEmpty()
+    .map { it.jsonObject }.filter { typeOf(it) == "function" }.map(::nameOf)
+
+/** The request's input items as text, its last one (the turn's newest words) left out. */
+private fun inputBefore(body: JsonObject): List<String> =
+    body.getValue("input").jsonArray.dropLast(1).map { it.toString() }
+
+private fun inputOf(body: JsonObject): List<String> = body.getValue("input").jsonArray.map { it.toString() }
 
 /** What in [body] its [head]'s backend refuses: an `additional_tools` item on a head that takes no inline change, and
  *  on Kimi's head a tool change block anywhere in a message, a tool_result's content included. */
@@ -558,7 +607,7 @@ private object DocsServer {
 class ToolChangeEveryHeadTest {
 
     @Test
-    fun `every head offers exactly the conversation's current tools and nothing its backend refuses`(
+    fun `every head gives its model the conversation's current tools and sends nothing its backend refuses`(
         @TempDir tmp: Path,
     ) = runTest {
         val heads = ToolChangeHeads(tmp, backgroundScope)
@@ -569,7 +618,14 @@ class ToolChangeEveryHeadTest {
                 for (head in MODELS.keys) {
                     val request = heads.request(head, case.request)
                     val why = Supplier<String?> { "$head built ${request["tools"]} for ${case.request}" }
-                    assertEquals(case.current, callable(head, request), why)
+                    if (head == MUSE) {
+                        // Muse is told a removal in words and keeps the tool where it was, so its model may know more
+                        // than the conversation holds; every tool it holds is known, with the schema it last gave.
+                        val known = museKnown(request)
+                        assertEquals(case.current, case.current.mapValues { known[it.key] }, why)
+                    } else {
+                        assertEquals(case.current, callable(head, request), why)
+                    }
                     assertEquals(emptyList<String>(), refused(head, request), why)
                 }
             }
@@ -579,13 +635,15 @@ class ToolChangeEveryHeadTest {
     }
 
     @Test
-    fun `on a head that takes no inline change, a tool change moves only the tool list`(@TempDir tmp: Path) = runTest {
+    fun `on a head that lists the conversation's current tools, a tool change moves only the tool list`(
+        @TempDir tmp: Path,
+    ) = runTest {
         val heads = ToolChangeHeads(tmp, backgroundScope)
         try {
             val random = Random(2610)
             repeat(RUNS) {
                 val case = ToolChangeConversation(random).case()
-                for (head in NO_INLINE_CHANGES + KIMI) {
+                for (head in NO_INLINE_CHANGES - MUSE + KIMI) {
                     val changed = heads.request(head, case.request)
                     val without = heads.request(head, case.stripped)
                     assertEquals(JsonObject(without - "tools"), JsonObject(changed - "tools")) {
@@ -599,7 +657,27 @@ class ToolChangeEveryHeadTest {
     }
 
     @Test
-    fun `muse offers the Claude Docs tools from its tool list, and drops them when the server disconnects`(
+    fun `muse sends every request of a conversation the first request's tool list, its caller included`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val heads = ToolChangeHeads(tmp, backgroundScope)
+        try {
+            val random = Random(2610)
+            repeat(RUNS) {
+                val case = ToolChangeConversation(random).case()
+                val first = heads.request(MUSE, case.first)
+                val request = heads.request(MUSE, case.request)
+                assertEquals(first["tools"], request["tools"]) { "the tool list moved for ${case.request}" }
+                val listed = listedNames(first)
+                assertTrue(CALLER in listed, "the caller is listed from the first request: $listed")
+            }
+        } finally {
+            heads.close()
+        }
+    }
+
+    @Test
+    fun `muse writes the Claude Docs tools and the loaded one where they arrived, and tells the disconnect`(
         @TempDir tmp: Path,
     ) = runTest {
         val heads = ToolChangeHeads(tmp, backgroundScope)
@@ -607,17 +685,19 @@ class ToolChangeEveryHeadTest {
             val points = listOf(
                 DocsServer.connected to DocsServer.callableConnected,
                 DocsServer.loaded to DocsServer.callableLoaded,
-                DocsServer.disconnected to DocsServer.callableDisconnected,
-            )
-            for ((sent, expected) in points) {
-                val request = heads.request(MUSE, sent)
+                DocsServer.disconnected to DocsServer.callableLoaded,
+            ).map { (sent, expected) -> heads.request(MUSE, sent) to expected }
+            for ((request, expected) in points) {
                 val input = request.getValue("input").jsonArray.mapNotNull(::typeOf)
                 assertTrue("additional_tools" !in input, "Muse refuses the additional_tools item: $input")
-                val listed = request.getValue("tools").jsonArray.map { it.jsonObject }
-                    .filter { typeOf(it) == "function" }
-                    .associate { nameOf(it) to propsOf(it["parameters"]) }
-                assertEquals(expected, listed, "Muse's tool list is what the conversation holds now")
+                assertEquals(points.first().first["tools"], request["tools"], "Muse's tool list never moves")
+                assertEquals(expected, museKnown(request), "each tool is the model's with its schema")
             }
+            val (connected, loaded, disconnected) = points.map { it.first }
+            assertEquals(inputBefore(connected), inputOf(loaded).take(inputBefore(connected).size))
+            assertEquals(inputBefore(loaded), inputOf(disconnected).take(inputBefore(loaded).size))
+            val told = inputOf(disconnected).drop(inputBefore(loaded).size).joinToString()
+            assertTrue(DocsServer.ADDED.all { it in told }, "the disconnect names each tool that went: $told")
         } finally {
             heads.close()
         }

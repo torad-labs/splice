@@ -51,10 +51,13 @@ import splice.core.turn.TurnToolSurface
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.ToolDefinition
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.ResponsesToolChanges
 import splice.dialect.responses.admission.ResponsesRequestControls
 import splice.dialect.responses.reasoning.ResponsesReasoningKnobs
 import splice.dialect.responses.stream.ResponsesLooseFields
 import splice.dialect.responses.tools.ResponsesToolPlan
+import splice.dialect.responses.tools.TOOL_CALLER_NAME
+import splice.dialect.responses.tools.ToolCaller
 import splice.upstream.ToolNameShortener
 
 internal class ResponsesRequestBuilder(
@@ -73,26 +76,35 @@ internal class ResponsesRequestBuilder(
     private val pairing = ResponsesCallPairing()
     private val messages = ResponsesMessageFragments(quirks, toolNames)
     private val controls = ResponsesRequestControls(quirks)
+    private val caller = ToolCaller()
 
     public fun build(body: AnthropicRequest, raw: JsonObject, opts: BuildOptions): BuiltRequest {
         // A head that takes tool changes inline holds its initial direct-function surface in tools and appends later
-        // declarations at their source boundaries; any other head lists the tools the conversation holds now. A
+        // declarations at their source boundaries. A head with a caller holds that surface and the caller, and writes
+        // a later tool into the history where it arrived. Any other head lists the tools the conversation holds now. A
         // source-deferred definition stays in the catalog for a future tool_reference but is not offered before it.
         val output = ResponsesOutputSchema.plan(body, raw, quirks.tools.outputSchema)
         val outputFormat = output.format
         val rawControls = controls.wire(raw)
         val wireBody = ResponsesOutputSchema.wireBody(body, outputFormat)
         val dynamicTools = ResponsesDynamicToolChanges.availability(wireBody)
-        val inline = quirks.tools.acceptsInlineToolChanges
+        val inline = quirks.tools.toolChanges == ResponsesToolChanges.INLINE
         // Lite is a wire shape, not an executor strategy. Providers that replace this direct
         // surface own their nested catalog and outer tool choice after shared conversion.
         val forcedSchema = outputFormat != null && ResponsesOutputSchema.forcesTool(body)
-        val surfaceBody = wireBody.copy(tools = directTools(inline, forcedSchema, dynamicTools))
+        // What the history is written against is the conversation's list, whatever this one turn lists: a turn that
+        // must answer in a schema lists no tool and still sends the conversation in the bytes every other turn does.
+        val listed = (ResponsesDynamicToolChanges.initiallyAvailable(body.tools) + caller.definition)
+            .takeIf { quirks.tools.toolChanges == ResponsesToolChanges.THROUGH_CALLER }
+        val surfaceBody = surface(wireBody, directTools(inline, forcedSchema, dynamicTools, listed), listed)
         val partition = toolPlan.partition(surfaceBody, opts)
-        val declareByName = toolPlan.declarationCandidates(surfaceBody, partition)
+        val historyTools = HistoryTools(
+            declareByName = toolPlan.declarationCandidates(surfaceBody, partition),
+            listed = listed,
+        )
         val effort = knobs.resolveEffort(body, raw, opts)
         val summary = knobs.resolveSummary(raw, opts, effort)
-        val walked = messages.walk(body, raw, opts, declareByName, effort)
+        val walked = messages.walk(body, raw, opts, historyTools, effort)
         // replay_reasoning=false: the gateway cache must not put an earlier turn's reasoning back, and the current
         // turn keeps its own. A compaction is built exactly like a turn, so it follows the same rule.
         val replayed = if (opts.handoff.replay.v) {
@@ -124,17 +136,35 @@ internal class ResponsesRequestBuilder(
     }
 
     /** The function tools this request lists. A head that takes tool changes inline lists the initial ones and hears
-     *  each change where the conversation made it ([ResponsesInputTools]); any other head lists the tools the
-     *  conversation holds now, with the schema it last gave each. A turn that must answer in the caller's schema
-     *  ([forcedSchema]) lists none, whatever the conversation added. */
+     *  each change where the conversation made it ([ResponsesInputTools]). A head with a caller lists [listed], the
+     *  initial ones and the caller, on every request, and reads each change in the history as words. Any other head
+     *  lists the tools the conversation holds now, with the schema it last gave each. A turn that must answer in the
+     *  caller's schema ([forcedSchema]) lists none, whatever the conversation added. */
     private fun directTools(
         inline: Boolean,
         forcedSchema: Boolean,
         tools: ResponsesDynamicToolChanges.Availability,
+        listed: List<ToolDefinition>?,
     ): List<ToolDefinition> = when {
         inline -> tools.initiallyAvailable
         forcedSchema -> emptyList()
-        else -> tools.currentDefinitions
+        else -> listed ?: tools.currentDefinitions
+    }
+
+    /** The request as this head sends it: [wireBody] with the [tools] it lists. On a head with a caller ([listed]),
+     *  a choice that forces a tool the list does not hold forces the caller, which is how the model calls that tool.
+     *  The backend would refuse a choice of a function it was not sent. */
+    private fun surface(
+        wireBody: AnthropicRequest,
+        tools: List<ToolDefinition>,
+        listed: List<ToolDefinition>?,
+    ): AnthropicRequest {
+        val forced = wireBody.toolChoice?.takeIf { listed != null && it.type == CHOICE_OF_ONE_TOOL }
+        val unlisted = forced != null && tools.none { it.name == forced.name }
+        return wireBody.copy(
+            tools = tools,
+            toolChoice = if (unlisted) forced.copy(name = TOOL_CALLER_NAME) else wireBody.toolChoice,
+        )
     }
 
     private fun turnMeta(
@@ -188,3 +218,6 @@ internal class ResponsesRequestBuilder(
 }
 
 private const val DEFAULT_INSTRUCTIONS = "You are a helpful assistant."
+
+/** Claude Code's tool choice that forces one named tool. */
+private const val CHOICE_OF_ONE_TOOL = "tool"

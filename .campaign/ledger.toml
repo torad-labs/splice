@@ -434,7 +434,7 @@ notes = [
 id = 'speed-commands'
 title = "/fast and /ultrafast in a GPT head's menu, caught before the model"
 feature = 'gpt-speed'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -448,13 +448,14 @@ reviews = [
 ]
 notes = [
   '2026-11-16 00:57 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 13:02 CT campaign: done in round 2 of gpt-speed: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'speed-switch'
 title = "The speed is the session's: toggled, set, kept across a restart"
 feature = 'gpt-speed'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -468,13 +469,14 @@ reviews = [
 ]
 notes = [
   '2026-11-16 00:57 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 13:02 CT campaign: done in round 1 of gpt-speed: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'speed-wire'
 title = "A fast session's requests ask for the tier as Codex does"
 feature = 'gpt-speed'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -488,13 +490,14 @@ reviews = [
 ]
 notes = [
   '2026-11-16 00:58 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 13:02 CT campaign: done in round 2 of gpt-speed: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'speed-recorded'
 title = 'Each turn recorded and valued at the speed it was served at'
 feature = 'gpt-speed'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -508,6 +511,7 @@ reviews = [
 ]
 notes = [
   '2026-11-16 00:58 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 13:02 CT campaign: done in round 1 of gpt-speed: its checks, its feature review, its code review passed',
 ]
 
 [[row]]

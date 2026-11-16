@@ -12,6 +12,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.wire.ToolDefinition
 import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.ResponsesToolChanges
 import splice.dialect.responses.ResponsesToolQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.tools.ToolWireObjects
@@ -67,7 +68,7 @@ class ResponsesStrictnessSerializationTest {
             """.trimIndent()
         // A profile that takes tool changes inline declares each added tool where the conversation added it; any other
         // profile lists it. Both write every strictness choice explicitly.
-        val inline = quirks.copy(tools = quirks.tools.copy(acceptsInlineToolChanges = true))
+        val inline = quirks.copy(tools = quirks.tools.copy(toolChanges = ResponsesToolChanges.INLINE))
         val declared = build(body, inline).getValue("input").jsonArray
             .map { it.jsonObject }
             .filter { it["type"]?.jsonPrimitive?.content == "additional_tools" }

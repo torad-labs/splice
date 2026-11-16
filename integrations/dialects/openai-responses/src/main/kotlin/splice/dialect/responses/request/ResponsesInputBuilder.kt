@@ -29,19 +29,20 @@ import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.ReasoningTextEmitter
 import splice.dialect.responses.reasoning.ResponsesHistoryInput
 import splice.dialect.responses.reasoning.ResponsesReasoningInject
+import splice.dialect.responses.tools.HistoryTools
 import splice.upstream.ToolNameShortener
 
 internal class ResponsesInputBuilder(
     private val quirks: ResponsesQuirks,
     private val loopGuardDirectives: Map<String, String> = emptyMap(),
     names: ToolNameShortener = ToolNameShortener(),
-    private val declareByName: Map<String, ToolDefinition> = emptyMap(),
-    private val knownTools: MutableMap<String, ToolDefinition> = mutableMapOf(),
+    private val historyTools: HistoryTools = HistoryTools(),
+    knownTools: MutableMap<String, ToolDefinition> = mutableMapOf(),
 ) {
 
     private val parts = ResponsesInputParts(quirks.request.minImageEdgePx)
     private val documents = ResponsesDocumentParts(quirks)
-    private val tools = ResponsesInputTools(quirks, loopGuardDirectives, names)
+    private val tools = ResponsesInputTools(quirks, loopGuardDirectives, names, knownTools, historyTools.listed)
     private val inject = ResponsesReasoningInject()
     private val liteShape = ResponsesLiteShape(quirks)
 
@@ -105,7 +106,7 @@ internal class ResponsesInputBuilder(
             is ImageBlock -> appendImage(sink, block)
             is DocumentBlock -> appendDocument(sink, block)
             is RedactedThinkingBlock -> inject.appendRedactedThinking(sink, block, opts)
-            is ToolUseBlock -> tools.appendToolUse(sink, block, opts, declareByName)
+            is ToolUseBlock -> tools.appendToolUse(sink, block, opts, historyTools.declareByName)
             is ToolResultBlock -> appendToolResult(sink, block, opts)
             is ThinkingBlock -> Unit // visible thinking never rides back upstream
             is UnknownBlock -> appendUnknown(sink, role, block)
@@ -118,14 +119,15 @@ internal class ResponsesInputBuilder(
         // outer executor owns its nested catalog, so it must not receive a direct function.
         if (!liteShape.isLite(opts)) {
             block.content.filterIsInstance<UnknownBlock>().forEach { loaded ->
-                tools.appendLoadedTool(sink, loaded, knownTools)
+                tools.appendLoadedTool(sink, loaded)
             }
         }
     }
 
     /** A block kind splice does not enumerate (search results, server tool results from a session that began on
-     *  another head) cannot ride this wire; it leaves an honest marker, except source removals, whose current
-     *  callable surface rides the request's tool list, or its allowed_tools on a head that takes changes inline. */
+     *  another head) cannot ride this wire; it leaves an honest marker, except source removals. A head with a caller
+     *  tells a removal in words where it happened. On any other, the current callable surface rides the request's
+     *  tool list, or its allowed_tools on a head that takes changes inline, and nothing is written here. */
     private fun appendUnknown(
         sink: JsonArrayBuilder,
         role: String,
@@ -133,9 +135,9 @@ internal class ResponsesInputBuilder(
     ) {
         when {
             role == ResponsesContextMessage.CLIENT_ROLE && block.type == SOURCE_TOOL_ADDITION ->
-                tools.appendToolAddition(sink, block, knownTools)
+                tools.appendToolAddition(sink, block)
             role == ResponsesContextMessage.CLIENT_ROLE && block.type == SOURCE_TOOL_REMOVAL ->
-                Unit // the tool list, or request-level allowed_tools, preserves the current direct-function surface
+                tools.appendToolRemoval(sink, block)
             else -> sink.add(parts.roleText("user", tools.omission(block)))
         }
     }

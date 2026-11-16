@@ -119,7 +119,9 @@ every = "3s"
     const k = srv.mint("dee@example.com");
     for (let i = 0; i < 2; i++) expect((await srv.turn(k.key)).status).toBe(200);
     await until("2 rows", () => count(srv) >= 2, 20_000);
-    expect(srv.cli(["server", "usage", "export", "--now"]).code).toBe(0);
+    // The bucket is served by this process, so the command runs beside it: `cli` would hold the bucket still, and
+    // an export that waits for its PUTs to be answered could never end.
+    expect((await srv.run(["server", "usage", "export", "--now"])).code).toBe(0);
     expect(s3.refused).toEqual([]);
     const objects = s3.texts("gateway/");
     const keys = Object.keys(objects);

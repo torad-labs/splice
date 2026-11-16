@@ -14,6 +14,7 @@ import splice.dialect.responses.ResponsesReasoningQuirks
 import splice.dialect.responses.ResponsesRequestControlQuirks
 import splice.dialect.responses.ResponsesRoundTripQuirks
 import splice.dialect.responses.ResponsesServiceTierSupport
+import splice.dialect.responses.ResponsesToolChanges
 import splice.dialect.responses.ResponsesToolQuirks
 import splice.dialect.responses.StrictSchemaSubset
 
@@ -35,7 +36,7 @@ public class GrokQuirks {
             emitToolChoice = true,
             emitStrict = true,
             // xAI is not known to read the `additional_tools` input item, so the tool list carries each tool change.
-            acceptsInlineToolChanges = false,
+            toolChanges = ResponsesToolChanges.LISTED,
             outputSchema = ResponsesOutputSchemaPolicy.StrictWithin(strictOutput()),
         ),
         request = ResponsesRequestControlQuirks(

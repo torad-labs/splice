@@ -24,6 +24,7 @@ import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.ResponsesToolChanges
 import splice.dialect.responses.ResponsesToolQuirks
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
@@ -58,7 +59,7 @@ private class DynamicToolTestProvider(
     quirks = ResponsesQuirks(
         providerTag = "test",
         lite = ResponsesLiteQuirks(responsesLiteModelRegex = if (lite) Regex("test-model") else null),
-        tools = ResponsesToolQuirks(acceptsInlineToolChanges = true),
+        tools = ResponsesToolQuirks(toolChanges = ResponsesToolChanges.INLINE),
     ),
 )
 

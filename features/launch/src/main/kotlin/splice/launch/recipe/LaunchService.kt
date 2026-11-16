@@ -143,7 +143,6 @@ public class LaunchService(
         val chosen = wrapState.claude()
         if (chosen is ClaudeToRun.Refused) return LaunchOutcome.Refused(chosen.reason)
         val claude = (chosen as? ClaudeToRun.Wrapped)?.path ?: claudeBinary
-        val cwd = caller.cwd
         val wrapped = caller.wrapped
         val keyed = if (keyPresentNow) withoutTokenCapture(spec) else spec
         val effective = wrapped?.let { keyed.copy(trees = keyed.trees.copy(own = it.configDir)) } ?: keyed
@@ -190,8 +189,9 @@ public class LaunchService(
         // V4-183 BEFORE the adoption: a bounded -c becomes a named resume, and a named resume is what
         // adoptResume judges. Read from the head's own index, a wrapped launch's too (round 6 of #247): the hook
         // route records every session of the head there, and nothing records one under ~/.claude.
-        val bounded = resume.bounded(keyed.trees.own, extraArgs, cwd)
-        val adoption = resume.adopt(held, bounded.args, cwd)
+        val bounded = resume.bounded(keyed.trees.own, extraArgs, caller.cwd)
+        resume.refusedName(held, bounded.args, caller.cwd)?.let { return LaunchOutcome.Refused(it) }
+        val adoption = resume.adopt(held, bounded.args, caller.cwd)
         // V4-445: Claude Code reads ~/.claude.json only while CLAUDE_CONFIG_DIR is unset. Set to the vanilla dir it
         // reads ~/.claude/.claude.json, a file that holds none of the operator's mcpServers, projects or account.
         val environment = launchEnvironment(spec, held, slots, wrapped, caller.inheritedConfigDir)

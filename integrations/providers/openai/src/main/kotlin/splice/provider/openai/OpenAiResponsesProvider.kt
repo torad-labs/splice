@@ -15,6 +15,7 @@ import splice.dialect.responses.ResponsesOutputSchemaPolicy
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesReasoningQuirks
+import splice.dialect.responses.ResponsesToolChanges
 import splice.dialect.responses.ResponsesToolQuirks
 import splice.dialect.responses.StrictSchemaLimits
 import splice.dialect.responses.StrictSchemaSubset
@@ -52,7 +53,7 @@ public class OpenAiQuirks {
             // This profile serves every OpenAI-compatible Responses endpoint, not only api.openai.com. OpenAI documents
             // the `additional_tools` input item, but OpenRouter's Responses beta refuses it (gakonst/nanocode#981), so
             // the tool list carries each tool change: one prompt-cache miss per change, and no refused request.
-            acceptsInlineToolChanges = false,
+            toolChanges = ResponsesToolChanges.LISTED,
             outputSchema = ResponsesOutputSchemaPolicy.StrictWithin(strictOutput()),
         ),
     )

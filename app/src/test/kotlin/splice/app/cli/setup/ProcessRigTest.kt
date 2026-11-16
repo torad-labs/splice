@@ -7,6 +7,7 @@ package splice.app.cli.setup
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.app.EndedProcesses
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -23,7 +24,7 @@ class ProcessRigTest {
         try {
             val run = running.get(RUN_WAIT_S, TimeUnit.SECONDS)
             assertEquals(RigRun(KILLED, "", "sh -c sleep 60 | cat did not finish within 1 s"), run)
-            awaitUntil("the pipeline's sleep (pid ${sleep.pid()}) died with the run") { !sleep.isAlive }
+            awaitUntil("the pipeline's sleep (pid ${sleep.pid()}) died with the run") { EndedProcesses.ended(sleep) }
             drains.shutdown()
             assertTrue(
                 drains.awaitTermination(DRAIN_WAIT_S, TimeUnit.SECONDS),

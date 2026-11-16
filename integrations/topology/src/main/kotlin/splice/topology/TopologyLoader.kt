@@ -334,10 +334,11 @@ historyRetentionDays = "$HISTORY_DEFAULT_DAYS"
         return decode(text)
     }
 
-    /** The decode alone, without the structural guards: ktoml's type failure becomes the safe one-key diagnosis. */
+    /** The decode alone, without the structural guards: ktoml's type failure becomes the safe one-key diagnosis. A
+     *  provider that lists upstreams in place of a base_url reads its first upstream's as its own from here on. */
     internal fun decode(text: String): Topology {
         return try {
-            Toml.decodeFromString(text)
+            Toml.decodeFromString<Topology>(text).withPoolBases()
         } catch (failure: TomlDecodingException) {
             val mismatch = TopologyTypeMismatch.first(text) ?: throw failure
             throw TopologyTypeFailure(mismatch.key, mismatch.line, mismatch.expected)

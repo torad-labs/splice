@@ -1,6 +1,7 @@
 package splice.codemode.nativehost.grpc
 
 import io.grpc.Status
+import io.grpc.StatusException
 import io.grpc.StatusRuntimeException
 import splice.core.util.SafeFailureText
 import splice.upstream.codemode.json.CodeModeDiagnosticText
@@ -39,6 +40,16 @@ internal object NativeGrpcErrors {
         Status.Code.DATA_LOSS to "Unrecoverable data loss or corruption",
         Status.Code.UNAUTHENTICATED to "The request does not have valid authentication credentials",
     )
+
+    /** Durable operator diagnostics must never quote a native status description or guest exception message. */
+    fun classification(error: Throwable): String {
+        val status = when (error) {
+            is StatusRuntimeException -> " grpc=${error.status.code.name}"
+            is StatusException -> " grpc=${error.status.code.name}"
+            else -> ""
+        }
+        return "${error::class.simpleName}$status${SafeFailureText.site(error)}"
+    }
 
     fun render(error: Throwable, operation: String): String = when (error) {
         is CodeModeToolException -> error.diagnostic

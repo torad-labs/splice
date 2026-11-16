@@ -58,6 +58,7 @@ modules = [
     ":features-lifecycle",
     ":features-models",
     ":features-sessions",
+    ":features-server",
     ":features-share",
     ":features-turns",
     ":features-usage",

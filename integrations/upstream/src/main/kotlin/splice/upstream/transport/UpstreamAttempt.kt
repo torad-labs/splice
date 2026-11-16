@@ -42,6 +42,10 @@ public data class PostContext(
     val limits: PostLimits = PostLimits(),
     val observers: PostObservers = PostObservers(),
 ) {
+    /** Where the attempt about to be sent goes: the server the vendor's route has this turn on, for a vendor that is
+     *  several ([splice.upstream.VendorRoute.target]), and otherwise [url]. */
+    internal val target: String get() = recovery.route?.target() ?: url
+
     /** Why each attempt is retried or given up, as the post's observers hear it. */
     public val onRetry: RetryNotice get() = observers.onRetry
 

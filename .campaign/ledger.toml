@@ -1,0 +1,504 @@
+# The campaign ledger. Read and changed through `campaign` (run `campaign help`).
+# Hand edits are fine; keep everything in fields, comments are not kept.
+
+[campaign]
+goal = "Server mode (docs/specs/server-mode.md, issue #604): one splice is a team's front door to a shared model, with per-person keys and sign-in, limits and budgets, an upstream pool for self-hosted servers, a content-free usage ledger with reports and export, and per-person metrics."
+base = 'main'
+judged = [
+  '.campaign/checks/',
+]
+agent = 'campaign seat'
+
+[feature."server-front"]
+goal = "A splice daemon serves a team on a listener of its own: every request carries a person's key (operator-issued, hashed at rest, revocable one at a time or per person), admins manage keys from the CLI, the control plane or the listener, and each person is held to an in-flight cap and an optional requests-per-minute cap. Spec: docs/specs/server-mode.md, F1 and the limits half of F3."
+
+[feature."server-upstreams"]
+goal = "Self-hosted OpenAI-compatible servers are first-class upstreams: several per provider, health-checked and balanced with a person's preference and failover; long prefills keep the client's connection alive; OpenAI-style clients use the same keys and limits. Spec: docs/specs/server-mode.md, F4."
+
+[feature."server-ledger"]
+goal = 'Every request a person sends leaves one durable, content-free row, honestly classed, priced from the rate card and a reference card; the operator reports on it by person, team, day, model or device in JSON, CSV or markdown, exports it hourly to a folder or S3-compatible bucket, and sets daily and monthly budgets per person and team that warn or block. Spec: docs/specs/server-mode.md, F5 and the budgets half of F3.'
+
+[feature."server-signin"]
+goal = "A team member signs in once with the company's identity provider and their laptop gets a per-device key it rotates without breaking a running session; the server hands the laptop everything it needs. Spec: docs/specs/server-mode.md, F2."
+
+[feature."server-metrics"]
+goal = "Whoever runs the box sees each person's traffic live, from Prometheus on the listener and from the operator's OTLP collector. Spec: docs/specs/server-mode.md, F6."
+
+[feature."server-hardening"]
+goal = "What the server-upstreams reviewers found past its items' words: a person's key stays at the server on the Messages route as it does on the OpenAI route, an answer the upstream cuts short is an error the client sees, the provider's own response headers and usage nobody asked for stay at the server, the OpenAI route answers a lookup of one model, and it is kept alive through a long prefill as the Messages route is. Spec: docs/specs/server-mode.md, F1 and F4."
+
+[feature."gpt-speed"]
+goal = "A person running a GPT head signed in with ChatGPT switches it to Fast or Ultrafast as in Codex: /fast and /ultrafast in Claude Code's own menu, told at once what each costs, applied to that session's turns on the wire as Codex sends them, and recorded at the speed each turn was served at. Spec: docs/specs/gpt-speed.md."
+
+[[row]]
+id = 'server-listener'
+title = 'A [server] listener that answers only keys'
+feature = 'server-front'
+status = 'done'
+owner = ''
+blocked_by = []
+guard = false
+spec = 'With [server] in splice.toml (listen, commands, optional tls_cert/tls_key, trusted_proxies, admins), the daemon serves the listed commands on that address: GET /health open; GET /, GET /<command>/launch and ANY /<command>/v1/... only with a valid key (x-api-key or Bearer), else 401 authentication_error that never echoes the key and sends nothing upstream. TLS from PEM files; X-Forwarded-For honoured only from trusted_proxies. check-config refuses [server] beside an enabled [share], an unknown command, and a command whose head signs with a consumer subscription login (Claude or ChatGPT plan), naming why. See docs/specs/server-mode.md, decisions 1-3 and F1.'
+checks = [
+  'bun test ./.campaign/checks/server/listener.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-15 07:46 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-15 10:47 CT campaign: done in round 2 of server-front: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'server-keys'
+title = 'Per-person keys: create, list, revoke, offboard'
+feature = 'server-front'
+status = 'done'
+owner = ''
+blocked_by = []
+guard = false
+spec = 'splice server key create --person <email> [--name] [--expires <duration>] --json mints spk_<8>_<32+> keys bound to a lowercased email; only a hash is stored and no file in the home or log holds a key. key list --json [--person] shows prefix, person, name, source, created/expires/last_used/revoked times and never the secret. key revoke <prefix> and key revoke-person <email> take effect on the next request (401 naming revoked or expired). The same through the control plane (/api/server/keys, /api/server/people/<email>/keys) and, for admins, the listener (/server/api/keys; non-admin 403). See docs/specs/server-mode.md, decision 4 and F1.'
+checks = [
+  'bun test ./.campaign/checks/server/keys.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-15 07:46 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-15 10:47 CT campaign: done in round 1 of server-front: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'person-limits'
+title = 'Per-person in-flight and per-minute caps'
+feature = 'server-front'
+status = 'done'
+owner = ''
+blocked_by = [
+  'server-keys',
+]
+guard = false
+spec = '[server.limits] inflight_per_person and rpm_per_person cap each person; over a cap a turn is refused at once with 429 rate_limit_error, Retry-After >= 1 and a message naming the cap, while other people are served. A client that disconnects frees its slot. splice server person set <email> --inflight N --rpm N overrides per person (the same command later carries --team and --upstream). See docs/specs/server-mode.md, decision 6 and F3.'
+checks = [
+  'bun test ./.campaign/checks/server/limits.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-15 07:46 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-15 10:47 CT campaign: done in round 3 of server-front: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'upstream-pool'
+title = 'An upstream pool with health, balance, preference and failover'
+feature = 'server-upstreams'
+status = 'done'
+owner = ''
+blocked_by = [
+  'person-limits',
+]
+guard = false
+spec = "A provider may list [[providers.<p>.upstreams]] (name, url) instead of one base_url, with health_seconds. Each is health-checked on /health; a turn goes to the healthy upstream with the least in flight, or the person's preferred one (server person set --upstream) while it is healthy; a refused connection fails over at once; with none up a turn is refused within seconds naming the upstreams. GET /api/server/upstreams lists provider, name, url, healthy, inflight. See docs/specs/server-mode.md, F4."
+checks = [
+  'bun test ./.campaign/checks/server/pool.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-15 07:46 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-15 18:26 CT campaign: done in round 2 of server-upstreams: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'prefill-keepalive'
+title = 'Keepalives through a long prefill; tokens relayed as they come'
+feature = 'server-upstreams'
+status = 'done'
+owner = ''
+blocked_by = [
+  'server-keys',
+]
+guard = false
+spec = 'With [server] keepalive_seconds, a streamed turn whose upstream is still prefilling has its response headers within 2 s and an SSE keepalive at least every keepalive_seconds, then the whole answer ending in message_stop; tokens are relayed as the upstream sends them, never buffered to the end; a non-streamed turn behind a long prefill answers one well-formed JSON body. See docs/specs/server-mode.md, F4.'
+checks = [
+  'bun test ./.campaign/checks/server/keepalive.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-15 07:46 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-15 18:26 CT campaign: done in round 3 of server-upstreams: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'openai-route'
+title = 'The OpenAI-compatible route on the same keys and limits'
+feature = 'server-upstreams'
+status = 'done'
+owner = ''
+blocked_by = [
+  'person-limits',
+]
+guard = false
+spec = "A served command whose provider speaks openai-chat answers /<command>/v1/chat/completions and /<command>/v1/models to key holders (401 without). Requests are relayed as sent; streams are relayed incrementally and end with [DONE]; stream_options.include_usage is always asked of the upstream and the usage chunk reaches only a client that asked for it; the person's limits refuse with 429 and Retry-After in OpenAI's error shape. See docs/specs/server-mode.md, F4."
+checks = [
+  'bun test ./.campaign/checks/server/openai-route.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-15 07:46 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-15 18:26 CT campaign: done in round 2 of server-upstreams: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'ledger-rows'
+title = 'One content-free ledger row per request, classed honestly'
+feature = 'server-ledger'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'openai-route',
+]
+guard = false
+spec = 'Each request through the listener leaves one row in the state directory that survives restarts: at, person, team then, device (key prefix), command, model, route (messages or chat_completions), upstream, status, outcome (ok, upstream_error as 502 for a broken body or an upstream failure, client_gone as 499, refused keeping its 4xx, cut_off for an OpenAI stream without [DONE], splice_error as 500), prompt/cached/completion tokens, ttft_ms, duration_ms, prefill_tps and decode_tps from llama-server timings, cost_usd from the rate card. No prompt or reply text anywhere. splice server usage rows [--since|--from/--to] [--person] --json. See docs/specs/server-mode.md, F5.'
+checks = [
+  'bun test ./.campaign/checks/server/ledger.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-15 07:46 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'ledger-reports'
+title = 'Usage reports by person, team, day, model and device'
+feature = 'server-ledger'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'ledger-rows',
+]
+guard = false
+spec = "splice server usage report --by person|team|current-team|day|model|device over --since or --from/--to, --format json|csv|md; each group has requests, errors, client_gone, tokens, cost_usd and reference_cost_usd from [server.reference]. Teams come from [server.teams] by_domain or server person set --team; rows keep the team they ran under, current-team regroups by today's. The same from GET /api/server/usage and, for admins, GET /server/api/usage. See docs/specs/server-mode.md, decision 5 and F5."
+checks = [
+  'bun test ./.campaign/checks/server/reports.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-15 07:46 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'ledger-export'
+title = 'Hourly JSONL export to a folder or an S3-compatible bucket'
+feature = 'server-ledger'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'ledger-rows',
+]
+guard = false
+spec = "[server.export] to = file:///dir or s3://bucket/prefix (endpoint, region, path_style, access_key_env, secret_key_env), every = duration. splice server usage export --now, and the daemon every 'every', write <prefix>/splice-usage/YYYY/MM/DD/HH.jsonl by each row's UTC hour, rewriting an hour whole so every row is there exactly once. S3 requests are SigV4-signed; the secret is never written to the home. See docs/specs/server-mode.md, F5."
+checks = [
+  'bun test ./.campaign/checks/server/export.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-15 07:47 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'person-budgets'
+title = 'Daily and monthly budgets per person and team'
+feature = 'server-ledger'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'ledger-rows',
+]
+guard = false
+spec = '[server.budgets] person_daily_usd and action; splice server budget set --person|--team <name> --daily-usd N --monthly-usd N --action block|warn and budget list --json (scope, name, limits, action, spent today and this month, state ok|over). A blocked budget refuses the next turn before the upstream, naming the budget; warn serves and reads over; a team budget holds every member; spend survives a restart. See docs/specs/server-mode.md, F3.'
+checks = [
+  'bun test ./.campaign/checks/server/budgets.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-15 07:47 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'signin-server'
+title = 'OIDC sign-in on the server mints per-device keys'
+feature = 'server-signin'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'server-keys',
+]
+guard = false
+spec = "[server.signin] issuer, client_id, client_secret_env, domains, key_days, rate_per_minute. GET /server/signin (open) gives issuer, client_id, authorization_endpoint, scopes, domains and never the secret. POST /server/signin/token trades the code with PKCE, verifies the ID token (JWKS signature, iss, aud, exp, nonce, verified email in an allowed domain) and mints a key with source signin, the device and a key_days expiry; any failure is 401 and mints nothing. On one device the old key works until the new key's first use; other devices are untouched. Sign-in is rate-limited per address with 429 and Retry-After. See docs/specs/server-mode.md, F2."
+checks = [
+  'bun test ./.campaign/checks/server/signin.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-15 07:47 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'signin-client'
+title = 'splice login on the laptop, with a key helper'
+feature = 'server-signin'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'signin-server',
+]
+guard = false
+spec = 'splice login <server> runs authorization code with PKCE through a loopback redirect (printing the URL it opens) and keeps the key; splice remote add <server>/<command> links the command with a launch recipe whose environment holds no key, giving Claude Code an apiKeyHelper that prints the current key; a new sign-in rotates what the helper hands out; splice logout <server> forgets it. See docs/specs/server-mode.md, F2.'
+checks = [
+  'bun test ./.campaign/checks/server/signin-client.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-15 07:47 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'server-metrics'
+title = 'Per-person Prometheus and OTLP metrics'
+feature = 'server-metrics'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'ledger-rows',
+]
+guard = false
+spec = 'GET /server/metrics for admins (401 without a key, 403 for others): splice_server_requests_total{person,team,command,status_class}, splice_server_tokens_total{person,team,kind}, histograms splice_server_ttft_seconds, _duration_seconds, _prefill_tokens_per_second, _decode_tokens_per_second, _stream_stall_seconds, gauges splice_server_inflight{person} and splice_server_inflight_limit{person}. Every person with a live key reads 0 from startup; a person with none has no series. The same series reach the [telemetry.operator] OTLP collector with person and team. See docs/specs/server-mode.md, F6.'
+checks = [
+  'bun test ./.campaign/checks/server/metrics.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-15 07:47 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'messages-key-stays'
+title = "A person's key never rides a forwarded header on the Messages route"
+feature = 'server-hardening'
+status = 'done'
+owner = ''
+blocked_by = []
+guard = false
+spec = "On the Messages route, a header the provider's forward_headers names rides on to the provider unchanged, unless its value holds one of the server's keys (the person's own or another person's, anywhere in the value): then that header stays behind, the turn is still answered, streamed or not, and the daemon log names the header and never the key. The README already says this of splice's own keys; it holds for every key the server minted. See docs/specs/server-mode.md, F1."
+checks = [
+  'bun test ./.campaign/checks/server/messages-key.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-15 19:33 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-15 23:55 CT campaign: done in round 1 of server-hardening: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'openai-cut'
+title = 'An answer the upstream cuts short is an error the OpenAI client sees'
+feature = 'server-hardening'
+status = 'done'
+owner = ''
+blocked_by = []
+guard = false
+spec = "On the OpenAI route, when the upstream's connection breaks partway through an answer, the client is told. A streamed completion ends, after the chunks already relayed, with one error event in OpenAI's shape (data: {\"error\": {\"message\": ..., \"type\": ...}}) and no [DONE], so the OpenAI SDKs raise it; a non-streamed one is answered 502 with OpenAI's error body. An answer the upstream ends whole is relayed as before. See docs/specs/server-mode.md, F4."
+checks = [
+  'bun test ./.campaign/checks/server/openai-cut.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-15 19:33 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-15 23:55 CT campaign: done in round 1 of server-hardening: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'openai-reply-headers'
+title = "The provider's own response headers stay at the server"
+feature = 'server-hardening'
+status = 'done'
+owner = ''
+blocked_by = []
+guard = false
+spec = "On the OpenAI route the client gets the upstream's status, its body as relayed, its content-type and, on a refusal, its Retry-After. None of the provider's own response headers reach the client: not a Set-Cookie it sends, not its request ids, nothing else of its own. A finish chunk that carries usage reaches a client that did not ask for usage without it, as a usage chunk of its own already does. See docs/specs/server-mode.md, F4."
+checks = [
+  'bun test ./.campaign/checks/server/openai-reply.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-15 19:33 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-15 23:55 CT campaign: done in round 1 of server-hardening: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'openai-model-get'
+title = 'The OpenAI route answers a lookup of one model'
+feature = 'server-hardening'
+status = 'done'
+owner = ''
+blocked_by = []
+guard = false
+spec = "GET /<command>/v1/models/<id> answers a key holder as the OpenAI API does: the model object (its id, object = model) of a model the command's provider serves, a 404 in OpenAI's error shape for any other id, and 401 without a key. See docs/specs/server-mode.md, F4."
+checks = [
+  'bun test ./.campaign/checks/server/openai-model.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-15 19:33 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-15 23:55 CT campaign: done in round 1 of server-hardening: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'openai-keepalive'
+title = 'Keepalives on the OpenAI route through a long prefill'
+feature = 'server-hardening'
+status = 'done'
+owner = ''
+blocked_by = []
+guard = false
+spec = "With [server] keepalive_seconds, a streamed OpenAI-route completion whose upstream has not started its answer within a second has its response headers then, and an SSE comment at least every keepalive_seconds, which OpenAI clients skip, then the whole answer relayed as it comes and ending with [DONE]. A refusal or failure from the upstream after the stream opened arrives as one error event in OpenAI's shape. A completion that asks for no stream answers one JSON body as before. This is what prefill-keepalive gives the Messages route. See docs/specs/server-mode.md, F4."
+checks = [
+  'bun test ./.campaign/checks/server/openai-keepalive.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-15 19:34 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-15 23:55 CT campaign: done in round 3 of server-hardening: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'speed-commands'
+title = "/fast and /ultrafast in a GPT head's menu, caught before the model"
+feature = 'gpt-speed'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "A launch of a head signed in with ChatGPT lays down /fast and /ultrafast as skills in the head's own CLAUDE_CONFIG_DIR/skills, one for each tier its model's catalog entry offers (service_tiers), so they replace Claude Code's own /fast and show in its / menu. Each description names the tier and the catalog's own description of it (what it costs), the argument-hint offers on and off, and disable-model-invocation is true. The launch sets CLAUDE_CODE_DISABLE_FAST_MODE=1. A head not signed in with ChatGPT gets neither skill and keeps Claude Code's own /fast. The person's own ~/.claude/skills stay untouched and stay offered in every head; /login stays. The head's UserPromptSubmit hook stops /fast and /ultrafast before the model, whether it is handed the typed command or the skill's expanded text; a prompt that only starts like one goes through. A real Claude Code session on the stand-in backend shows /fast in the menu with its description, and running it reaches no model. See docs/specs/gpt-speed.md, decisions 1 and 2."
+checks = [
+  'bun test ./.campaign/checks/speed/commands.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-16 00:57 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'speed-switch'
+title = "The speed is the session's: toggled, set, kept across a restart"
+feature = 'gpt-speed'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "/fast and /ultrafast set the speed of the session they are typed in (Claude Code's session id), and no other session's. Bare, a command turns its tier on, or back to standard when that tier is on, as Codex's do; on and off set it whatever it was, and off always means standard. Fast and Ultrafast replace each other. The reply names the tier and the catalog's description of it, or says the session is back at standard speed. The setting outlives a daemon restart. A tier the head's model doesn't offer is refused, naming the model and the tiers it offers, and changes nothing. See docs/specs/gpt-speed.md, decision 3."
+checks = [
+  'bun test ./.campaign/checks/speed/switch.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-16 00:57 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'speed-wire'
+title = "A fast session's requests ask for the tier as Codex does"
+feature = 'gpt-speed'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "Every request of a session at Fast or Ultrafast carries service_tier priority or ultrafast and x-codex-routing-hint model=<slug>;tier=<id>, as codex-rs sends them on a ChatGPT login (rust-v0.169.0, client.rs build_routing_hint_header); a subagent's request, a compaction and a turn not streamed included. A standard session sends no service_tier and the hint model=<slug>. The tier never varies by turn type, and a tier the turn's model doesn't list in the catalog is not sent. See docs/specs/gpt-speed.md, decision 4."
+checks = [
+  'bun test ./.campaign/checks/speed/wire.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-16 00:58 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'speed-recorded'
+title = 'Each turn recorded and valued at the speed it was served at'
+feature = 'gpt-speed'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "Each turn's row on /api/perf/turns carries speed_asked and speed (standard, fast or ultrafast); speed is read from the backend's own service_tier in its answer (priority or fast is fast, ultrafast, default is standard), so a turn served slower than asked shows it. A plan turn's plan_value_usd is priced at the card for the speed it was served at. A rate card in splice.toml names tier cards as flat keys beside the long-context ones: fast_input, fast_cache_read, fast_output, fast_cache_write, and the same with ultrafast_. The shipped price table carries OpenAI's published Fast and Ultrafast cards (developers.openai.com/api/docs/pricing). A turn served at a speed whose card splice doesn't have is left unpriced, never priced at the standard card. See docs/specs/gpt-speed.md, decision 5."
+checks = [
+  'bun test ./.campaign/checks/speed/recorded.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-16 00:58 CT: added; 1 of 1 checks fail, as they should before the work',
+]

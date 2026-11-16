@@ -370,7 +370,8 @@ private class TopologyChecks(
 
     fun findings(): List<TopologyFinding> =
         references() + auth() + ports() + (if (withRosters) rosters() else statics()) + knobs() + prompts() +
-            compaction() + daemon() + remotes() + relays() + topology.telemetry.operator.findings() +
+            compaction() + daemon() + remotes() + relays() + ServerChecks(topology, configDir).findings() +
+            UpstreamChecks(topology.providers).findings() + topology.telemetry.operator.findings() +
             topology.providers.mapNotNull { (key, provider) -> provider.forwarded.finding(key) }
 
     /** An auth kind its provider's dialect cannot carry, asked the way head assembly asks it ([AuthCompatibility]), so
@@ -476,6 +477,7 @@ private class TopologyChecks(
                 val at = when (owner) {
                     in topology.heads -> "heads.$owner.port"
                     SHARE_PORT_OWNER -> SHARE_PORT_OWNER
+                    SERVER_LISTEN_OWNER -> SERVER_LISTEN_OWNER
                     else -> "daemon.control_port"
                 }
                 TopologyFinding(at, "port $port is shared by ${owners.joinToString(", ")}; give each its own port")

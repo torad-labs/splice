@@ -41,6 +41,7 @@ export const JVM_COVERAGE_MODULES = [
   "features-launch",
   "features-configuration",
   "features-share",
+  "features-server",
   "app",
   "quality-architecture",
   "quality-compiler-plugin",
@@ -84,6 +85,7 @@ const SHARD_MODULES = [
     "features-launch",
     "features-configuration",
     "features-share",
+    "features-server",
     "quality-compiler-plugin",
   ],
 ] as const;

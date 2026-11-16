@@ -43,7 +43,10 @@ import splice.core.failure.StoppedBy
 import splice.core.parse.AnthropicTurnBody
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.pool.PREFERRED_UPSTREAM_HEADER
 import splice.core.session.ActivityAction
+import splice.core.turn.DESKTOP_DOOR
+import splice.core.turn.TURN_DOOR_HEADER
 import splice.core.util.Cancellables
 import splice.core.wire.AnthropicRequest
 import splice.head.ActivityLabel
@@ -313,7 +316,13 @@ internal class TurnPreparation(
         val scope = fromProvider.meta.scope.let {
             it.copy(sessionId = it.sessionId ?: sessionId, messagesHash = messagesHash)
         }
-        val prepared = fromProvider.copy(meta = fromProvider.meta.copy(scope = scope))
+        // The server its person prefers among the provider's upstreams, as the listener that relayed the turn named it.
+        // The door it came through (desktop-door, decision 7), as the relay in front of the head named it.
+        val route = fromProvider.meta.route.copy(
+            preferredUpstream = call.request.headers[PREFERRED_UPSTREAM_HEADER],
+            door = call.request.headers[TURN_DOOR_HEADER]?.takeIf { it == DESKTOP_DOOR },
+        )
+        val prepared = fromProvider.copy(meta = fromProvider.meta.copy(scope = scope, route = route))
         toolLoop.join(prepared.meta, parsed, parsed.agentId)
         // The caller's headers that ride upstream (ClientAuth.upstreamHeaders). Per-turn headers already outrank the
         // provider's own in TurnDriver's merge, so a forwarded value REPLACES a configured default (e.g. the caller's

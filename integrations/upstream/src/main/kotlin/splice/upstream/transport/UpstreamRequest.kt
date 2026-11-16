@@ -97,7 +97,7 @@ internal class UpstreamRequest(
         val bodyToken = bodies?.register(wire.bodyBytes)
         var ending = OutcomeTag.UPSTREAM_FAILED.wire
         try {
-            val statement = prepare(ctx.url, wire, token, bodyToken)
+            val statement = prepare(ctx.target, wire, token, bodyToken)
             val handler = UpstreamHandler<T> { response ->
                 block(response.also { it.postedAtMs = postedAtMs })
             }

@@ -344,8 +344,12 @@ async function readAll({ asks = true } = {}) {
 function planAccount(row) {
   const windows = [windowOf(row.five_hour_used_percent, row.five_hour_reset_epoch_seconds, row.five_hour_window_seconds, "short", row.five_hour_current),
     windowOf(row.seven_day_used_percent, row.seven_day_reset_epoch_seconds, row.seven_day_window_seconds, "long", row.seven_day_current)].filter(Boolean);
-  // a login held at its limit carries the limit's own sentence as its refusal, and it is held, not signed out
-  const out = !row.token_renews && (!row.credential_present || row.auth_exclusion_reason === "credential_missing" || (!!row.refusal && !windows.some(atLimit)));
+  // a login held at its limit carries the limit's own sentence as its refusal, and it is held, not signed out. A login
+  // whose last read the provider refused for its credential is signed out even with its file in place: on Nov 15, 2026
+  // two Claude logins whose refresh tokens Anthropic rejected drew their week-old readings with only a "Read" time, and
+  // nothing on the card said they needed signing in (a read that answers clears the failure, and the card with it)
+  const refusedRead = row.last_read_failure?.reason === "signed_out";
+  const out = !row.token_renews && (!row.credential_present || row.auth_exclusion_reason === "credential_missing" || refusedRead || (!!row.refusal && !windows.some(atLimit)));
   // Claude Code's own login place that holds no account is no account: signed out, no proved
   // account, no reading. Its Sign in only adds an account, as Add account does, and the place still read Signed out
   // after it. One that was signed in and expired keeps its account, and shows.

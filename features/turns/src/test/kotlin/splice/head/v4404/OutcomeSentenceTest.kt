@@ -218,7 +218,7 @@ class OutcomeSentenceTest {
         fun finish(deps: HeadDeps) = TurnFinish(
             ElapsedClock { 5L },
             log,
-            TurnUsageStamp(deps.stores.usageStore, log, telemetry),
+            TurnUsageStamp(deps.stores.usageStore),
             HeadHealthCounters(),
             telemetry,
         )
@@ -228,7 +228,7 @@ class OutcomeSentenceTest {
             log,
             telemetry,
             HeadHealthCounters(),
-            TurnUsageStamp(deps.stores.usageStore, log, telemetry),
+            TurnUsageStamp(deps.stores.usageStore),
         )
 
         /** The turn record the trace wrote, once the async writer has drained. */

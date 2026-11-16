@@ -10,6 +10,8 @@ dependencies {
     implementation(project(":integrations-claude-code"))
     implementation(project(":integrations-http"))
     implementation(project(":features-launch"))
+    // a relay that keeps its client alive waits on the runtime's Waiter seam (RelayClock's constructor names it).
+    implementation(project(":integrations-upstream"))
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.netty)
     implementation(libs.kotlinx.serialization.json)

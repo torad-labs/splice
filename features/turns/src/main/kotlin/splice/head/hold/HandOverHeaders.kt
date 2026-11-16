@@ -9,6 +9,7 @@ package splice.head.hold
 import splice.core.failure.LimitWindow
 import splice.core.failure.RECHECK_SECONDS
 import splice.core.failure.WireAnswer
+import splice.upstream.failure.ReplyFacts.RETRY_AFTER_HEADER
 import java.util.concurrent.TimeUnit
 
 /** The headers a handed-over limit is answered with. */
@@ -20,7 +21,7 @@ internal object HandOverHeaders {
         val recheckAt = nowMs + TimeUnit.SECONDS.toMillis(RECHECK_SECONDS)
         val toldAt = if (reset == null || answer.recheck) minOf(recheckAt, reset ?: recheckAt) else reset
         val headers = linkedMapOf(
-            RETRY_AFTER to secondsUntil(toldAt, nowMs).toString(),
+            RETRY_AFTER_HEADER to secondsUntil(toldAt, nowMs).toString(),
             UNIFIED_STATUS to UNIFIED_REJECTED,
             UNIFIED_RESET to ceilSeconds(toldAt).toString(),
         )
@@ -41,7 +42,6 @@ internal object HandOverHeaders {
     private fun ceilSeconds(ms: Long): Long = TimeUnit.MILLISECONDS.toSeconds(ms + TimeUnit.SECONDS.toMillis(1L) - 1L)
 }
 
-private const val RETRY_AFTER = "retry-after"
 private const val UNIFIED_STATUS = "anthropic-ratelimit-unified-status"
 private const val UNIFIED_RESET = "anthropic-ratelimit-unified-reset"
 private const val FIVE_HOUR_RESET = "anthropic-ratelimit-unified-5h-reset"

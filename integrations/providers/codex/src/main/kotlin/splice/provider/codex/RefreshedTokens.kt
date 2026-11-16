@@ -11,6 +11,7 @@ import splice.dialect.responses.ResponsesReasoningQuirks
 import splice.dialect.responses.ResponsesRequestControlQuirks
 import splice.dialect.responses.ResponsesRoundTripQuirks
 import splice.dialect.responses.ResponsesServiceTierSupport
+import splice.dialect.responses.ResponsesToolChanges
 import splice.dialect.responses.ResponsesToolQuirks
 import splice.dialect.responses.StrictSchemaLimits
 import splice.dialect.responses.StrictSchemaSubset
@@ -110,7 +111,7 @@ public class CodexQuirks {
             // The ChatGPT backend reads a tool change where the conversation made it: codex-rs itself declares tools
             // with the `additional_tools` input item, so a tool Claude Code adds or loads rides that item and the tool
             // list, the head of this head's prompt cache, stays as the client first sent it.
-            acceptsInlineToolChanges = true,
+            toolChanges = ResponsesToolChanges.INLINE,
             outputSchema = ResponsesOutputSchemaPolicy.StrictWithin(strictOutput()),
         ),
         request = ResponsesRequestControlQuirks(

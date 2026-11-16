@@ -66,7 +66,7 @@ internal class RetryState(var cooldown: RateLimitCooldown, val t0: Long, val ret
     fun recorderFor(ctx: PostContext, body: RequestBody, clock: ElapsedClock): AttemptRecorder? {
         sent += 1
         ledger.sent()
-        return ctx.observers.wire?.let { AttemptRecorder(sent, ctx.url, body.json, body.encoding, clock) }
+        return ctx.observers.wire?.let { AttemptRecorder(sent, ctx.target, body.json, body.encoding, clock) }
     }
 
     /** V4-174: the attempt is reported once, after it ended either way — a thrown transport

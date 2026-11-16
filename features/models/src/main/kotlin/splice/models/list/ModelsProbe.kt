@@ -17,12 +17,12 @@ import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
 import splice.core.util.WallClock
+import splice.core.wire.ANTHROPIC_VERSION_HEADER
 import splice.core.wire.HttpStatus
 import java.time.Instant
 
-/** The Anthropic wire requires a version header on every request; a provider that declares its own
- *  in `extra_headers` overrides this default. */
-private const val ANTHROPIC_VERSION_HEADER = "anthropic-version"
+/** The Anthropic wire requires a version header on every request ([ANTHROPIC_VERSION_HEADER]); a provider that
+ *  declares its own in `extra_headers` overrides this default. */
 private const val ANTHROPIC_VERSION_DEFAULT = "2023-06-01"
 
 /** One provider's answer, with the URL that produced it so the operator can re-run it by hand. */

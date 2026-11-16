@@ -22,11 +22,12 @@ internal const val NATIVE_YIELD_CAPABILITY: String = "yield-observation"
 
 /** Owns one stdio connection. Host loss fails retained cells; it never silently replays accepted source. */
 internal class NativeConnection(
-    process: Process,
+    private val process: Process,
     scope: CoroutineScope,
     ioDispatcher: CoroutineDispatcher,
     private val onClosed: NativeConnectionClosed,
     val tracing: NativeTracing = NativeTracing(),
+    private val diagnostics: NativeSessionDiagnostics = NativeSessionDiagnostics(),
 ) : AutoCloseable {
     val generation: String = UUID.randomUUID().toString()
     private val closed = AtomicBoolean()
@@ -117,11 +118,15 @@ internal class NativeConnection(
     }
 
     fun fail(cause: Throwable) {
-        val error = CodeModeToolException(CODE_MODE_SESSION_CLOSED_ERROR, cause)
-        ready.completeExceptionally(error)
-        operations.fail(error)
-        events.fail(error)
-        close()
+        try {
+            diagnostics.lost(generation, process, cause)
+        } finally {
+            val error = CodeModeToolException(CODE_MODE_SESSION_CLOSED_ERROR, cause)
+            ready.completeExceptionally(error)
+            operations.fail(error)
+            events.fail(error)
+            close()
+        }
     }
 
     fun afterExit(action: Runnable) {
@@ -133,7 +138,11 @@ internal class NativeConnection(
     fun hasSession(id: String): Boolean = transport.hasSession(id)
 
     fun failSession(sessionId: String, cause: Throwable) {
-        events.failSession(sessionId, CodeModeToolException(CODE_MODE_SESSION_CLOSED_ERROR, cause))
+        try {
+            diagnostics.lost(generation, process, cause, sessionId)
+        } finally {
+            events.failSession(sessionId, CodeModeToolException(CODE_MODE_SESSION_CLOSED_ERROR, cause))
+        }
     }
 
     override fun close() {

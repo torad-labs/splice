@@ -371,6 +371,86 @@ The first machine answers machines on its own LAN only: private and link-local a
 
 A machine that ran the first build of this (October 22 to 24) still has a head for each command it imported then. splice refuses to start until those are replaced, and says so for each one: run `splice remote add` with the first machine's address, and each old head is replaced by the address under its own name, its key removed from `keys.toml` in the same step.
 
+## Claude Desktop's Code tab on splice
+
+`splice desktop on` points Claude Desktop's Code tab at splice. From its next session, the tab's model picker lists every model of every head splice holds a login for, each with the command it belongs to, and a model you pick runs on its head, with that head's logins, cooldowns and failures. Chat, Cowork and the terminal stay as they were, and the tab keeps its sessions where the terminal's `claude` keeps its own.
+
+`on` writes Claude Code's Mantle switch, splice's door (`http://127.0.0.1:<control_port>/desktop`), the desktop key and the default model into the `env` of `~/.claude/settings.json`, which the tab reads, and a `modelPicker` listing the lineup. It never writes `model`, which holds your pick. `--model <id>` names the model a session starts on; without it, splice keeps the last one chosen, or takes the first head's pinned model, and says which. It refuses, and changes nothing, when no head can serve the tab, when the model isn't one of the tab's, or when the file already points Claude Code at Bedrock, Vertex, Foundry or another Mantle address.
+
+While Desktop is on, the picker follows splice: a head or a login added, removed, signed in or signed out shows in the next session's picker with no command run. A head that forwards your own Claude login is left out, since the tab doesn't send that login through splice, and so is a head whose login is missing or expired, until you run its `login`. `splice desktop` says what is so, `--json` as data: whether it is on, the door, the default model, the lineup, each head left out and why, and the last turn through the door. Each turn through the door is its head's row on `/api/perf/turns`, with the model that ran and `door` set to `"desktop"`; no other row carries a `door`.
+
+The door opens only with the desktop key, kept in splice's state folder, and the management and turn keys don't open it. `splice rotate-key` leaves it alone; `splice desktop rotate-key` replaces it, and writes the new one into the file while Desktop is on. `splice desktop off` takes out what `on` put in and puts back what it replaced. The terminal's `claude`, launched through splice, lays its own settings over the file meanwhile, so it runs as it did; a model picked in the tab that only the tab serves makes it start on its own default, and say so.
+
+## Serve a team from one machine
+
+Sharing is for your own machines on one LAN. To serve a team, give one splice a `[server]` table in `splice.toml`: it then serves the commands you list on an address of its own, to anyone holding a key it issued, and to nobody else.
+
+```toml
+[server]
+listen = "0.0.0.0:3443"
+commands = ["claude-team"]
+tls_cert = "/etc/splice/tls/fullchain.pem"   # both, or neither when a proxy in front of it speaks TLS
+tls_key = "/etc/splice/tls/privkey.pem"
+trusted_proxies = ["10.0.0.0/8"]             # the proxies whose X-Forwarded-For names the client
+admins = ["ops@team.example"]
+keepalive_seconds = 10                       # keeps a streamed turn's connection alive through a long prefill
+
+[server.limits]
+inflight_per_person = 3                      # 0, or no line, is no cap
+rpm_per_person = 30
+```
+
+Give each person a key, and take it back the same way:
+
+```bash
+splice server key create --person ann@team.example --name laptop --expires 90d   # prints the key, once
+splice server key list --person ann@team.example
+splice server key revoke spk_ab12cd34                # one key, by the prefix the list shows
+splice server key revoke-person ann@team.example     # every key of someone who left
+splice server person set ann@team.example --inflight 5 --rpm 60 --upstream gpu-2
+```
+
+A person runs Claude Code against a command with their key, as against any Anthropic-compatible gateway:
+
+```bash
+ANTHROPIC_BASE_URL=https://gateway.team.example:3443/claude-team ANTHROPIC_API_KEY=spk_… claude
+```
+
+`GET /health` is open, and everything else needs a live key, as `x-api-key` or `Authorization: Bearer`. A missing, unknown, revoked or expired key is a 401 that never repeats the key, and nothing reaches the model. A revoke holds from the key's next request. The server keeps each key only as its SHA-256, bound to the person's email (see [What splice keeps on your disk](#what-splice-keeps-on-your-disk)), and an admin's key also manages keys over the listener at `/server/api/keys`. A person past a cap gets a 429 with `Retry-After` naming the cap, and everyone else is still served.
+
+A key is the server's secret on the way out too. A head sends its provider the headers that provider's `forward_headers` names ([Headers for a gateway in front of a provider](#headers-for-a-gateway-in-front-of-a-provider)), and one whose value holds a key the server issued, the person's own or anyone else's, anywhere in it, is not sent on: the turn is answered without that header, streamed or not, and the daemon log names the header and never the key.
+
+A team's model often runs on more than one machine. A provider that speaks `openai-chat` can list its servers in place of its one `base_url`:
+
+```toml
+[providers.box]
+dialect = "openai-chat"
+auth = { kind = "api-key", env = "BOX_KEY" }
+health_seconds = 5                           # how often each server is asked /health; 5 when left out
+
+[[providers.box.upstreams]]
+name = "gpu-1"
+url = "http://10.0.0.21:8080/v1"
+
+[[providers.box.upstreams]]
+name = "gpu-2"
+url = "http://10.0.0.22:8080/v1"
+```
+
+splice asks each server `GET /health` beside its API root (`http://10.0.0.21:8080/health`), where llama-server and vLLM answer it, and a server that answers anything but a 2xx takes no turn until it does again. A turn goes to the healthy server with the fewest turns in flight, or to the one its person was set to with `--upstream` while that one is healthy (`--upstream ""` takes the preference back). A server that refuses a connection is left at once and the same turn goes to another. With none up, a turn is refused within seconds in words that name them: with a 503 once a health check or an earlier turn has found them down, and with an overloaded error from the turn that finds them down itself. `GET /api/server/upstreams` on the control plane lists each server's provider, name, address, health and turns in flight.
+
+A model server prefilling a long prompt can say nothing for minutes, and a proxy in front of the server closes a connection that carries nothing for that long. With `keepalive_seconds` set, a streamed turn whose answer has not started within a second has its stream opened then, and is sent an SSE comment (`: keepalive`), which Claude Code and every SSE client skip, at least that often until the answer comes and whenever it falls silent after. Tokens are relayed as the model server sends them. Such a turn has answered 200 before its model server did, so a failure after that arrives as the stream's `error` event. A turn that asks for no stream gets one JSON body and no keepalive, so give those the proxy's longer read timeout. Without the key, or at 0, a turn waits on its model server as before.
+
+A script or another tool that speaks OpenAI's API uses the same server and the same keys. A command whose provider speaks `openai-chat` also answers `POST /<command>/v1/chat/completions`, `GET /<command>/v1/models` and `GET /<command>/v1/models/<id>`:
+
+```bash
+OPENAI_BASE_URL=https://gateway.team.example:3443/claude-team/v1 OPENAI_API_KEY=spk_… python script.py
+```
+
+Such a request's body goes to the provider's own server as the client sent it, under the provider's key and its `extra_headers`. Of the client's own headers, only the ones the provider's `forward_headers` names ride on, as on a turn ([Headers for a gateway in front of a provider](#headers-for-a-gateway-in-front-of-a-provider)). The person's key stays on the server in whatever header the client sent it (some tools send it as `api-key` beside `Authorization`), and so do the client's cookies, its address and its `User-Agent`; a named header or a query parameter that holds one of the server's keys is not sent on, and the daemon log says so. The answer comes back as that server gave it, a stream event by event as it is written: its status, its body, its content type and, when the server refused, its `Retry-After`. The server's other response headers (a cookie it sets, its request ids, its rate-limit counts) stay on the server. A streamed request always asks the server for its usage (`stream_options.include_usage`), and that usage reaches a client only when it asked for it, whether the server sends it as a chunk of its own or on the chunk that finishes the answer; a stream the server ended whole ends with `data: [DONE]`. An answer the server breaks off partway is an error the client sees: a stream ends, after the chunks already relayed, with one error event (`data: {"error": {…}}`) and no `[DONE]`, which the OpenAI SDKs raise, and an answer that is no stream is a 502 with an error body; the daemon log names the server that broke off. A chat completion counts against its person's caps like any turn, and a provider that is several servers places it like one. On these routes a refusal is in OpenAI's error shape: a 401 without a live key, a 429 with `Retry-After` at a cap, a 503 naming the upstreams when none is up. With `keepalive_seconds` set, a streamed chat completion is kept alive as a streamed turn is: when its model server has not started its answer within a second, the stream is opened then and is sent an SSE comment, which the OpenAI SDKs skip, at least that often until the answer comes and whenever it falls silent after; the answer follows as the server sends it, ending with `data: [DONE]`. Such a completion has answered 200 before its model server did, so a refusal or a failure after that arrives as one error event (`data: {"error": {…}}`), the model server's own error where it gave one. A completion that asks for no stream gets one JSON body and no keepalive. The models list is the provider server's own, and a lookup of one model is answered from it: that server's own object for a model it lists, and a 404 in OpenAI's error shape for any other id. Claude Code's request for a command's models, which carries `anthropic-version`, is answered by the command as before, and a command whose provider speaks another dialect answers no chat completions.
+
+splice refuses to start a server beside `splice share on`, with a command no head here runs, or with a command whose head signs in with a person's plan login (a Claude or ChatGPT subscription, for example): a plan's terms are for one person, so a server serves only heads that sign with an API key or a self-hosted provider. There is no sign-in, budget, usage report or per-person metric yet; [server mode's spec](docs/specs/server-mode.md) is the plan for them.
+
 ## Troubleshooting
 
 `splice doctor` checks prerequisites, install integrity, config, daemon, and auth, then prints
@@ -545,7 +625,8 @@ send_version = true
   name stays on your machine, so nothing rides on until you name it. A forwarded value replaces an `extra_headers`
   value of the same name. A login or connection header (`Authorization`, `x-api-key`, `Cookie`, `Host`,
   `Content-Length` and the like) can't be named: the daemon refuses to start and names the provider. A value that
-  holds one of splice's own keys is not forwarded, and the daemon log names the header.
+  holds one of splice's own keys, or a key a [team's server](#serve-a-team-from-one-machine) issued, is not forwarded,
+  and the daemon log names the header.
 - `send_version = true` adds `Via: 1.1 splice (splice/<version>)` to every request splice sends this provider. Via
   is the header HTTP has a gateway add to a request it passes on (RFC 9110, section 7.6.3), here with splice's
   version. Claude Code's own `User-Agent` is left as it is. It is off by default, so a provider sees nothing of splice
@@ -632,7 +713,10 @@ custom state directory's parent is not made owner-only.
 Topology, API keys and subscription sign-ins normally live in `~/.config/splice`. The management
 key, runtime settings, config backups and saved Claude logins live in the state directory.
 Every credential splice writes is 0600. splice also writes into the Claude Code config directories it launches
-(`~/.claude-<head>/`), and the install lives in `~/.local/share/splice` and `~/.local/bin`.
+(`~/.claude-<head>/`), and the install lives in `~/.local/share/splice` and `~/.local/bin`. Each head keeps to its own
+folder, with one stated exception: `splice desktop on` writes Claude Code's switch, splice's door and the desktop key into
+the `claude` command's `~/.claude/settings.json`, so Claude Desktop's Code tab runs on splice, and `splice desktop off`
+takes them out. It is the one settings file of the `claude` command splice writes, and only at your command.
 
 "Only you" below means owner-only: the file is 0600, or it sits inside an owner-only state or log directory.
 The tables use new-install defaults, with the state root at `~/.splice/state`. On an install upgraded from
@@ -698,10 +782,13 @@ Each of these is password-equivalent. See [credential locations](#credential-loc
 | `~/.config/splice/auth/<kind>/<file>/<label>-quota.json.orphaned-<yyyyMMdd-HHmmss>` | A plan account's old usage record, set aside before its label is signed in again; a linked quota is moved as a link, never read | Only you (regular quota snapshots are 0600; a linked target keeps its own permissions) | Kept until you delete it; splice never deletes the set-aside record | `OAuthAccountWrites.kt` |
 | Kimi's `device_id` beside its credential, `<label>-device_id` beside a labelled account's, or `~/.splice/state/<head>-device_id` for a Kimi API-key head | A random id Kimi's API asks for; not a credential | Only you (0600) | Written once, kept | `KimiDeviceIdentity.kt` |
 | `~/.config/splice/keys.toml` and its empty `keys.toml.lock` | API keys from `splice key set`, a head's `login` or a key-capture hook | Only you for `keys.toml` (0600); the empty lock gets your umask | Keys until `splice key unset`; the lock is never removed | `KeyStore.kt` |
-| `~/.splice/state/mgmt-key` | The management key that opens the control plane | Only you (0600) | Kept; replaced when missing or unreadable, and by `splice rotate-key` | `MgmtKey.kt` |
+| `~/.splice/state/mgmt-key` | The management key that opens the control plane | Only you (0600) | Kept; replaced when missing or unreadable, and by `splice rotate-key` | `FileHeldKey.kt` |
 | `~/.splice/state/console-open.html` | The page `splice console` opens; its address carries a single-use sign-in code after `#`, never a key. The code signs one browser in within two minutes and then opens nothing | Only you (0600) | Replaced by each `splice console` | `ConsoleCommand.kt` |
 | `~/.splice/state/turn-auth-header` | A launched session's turn key, derived one way from the management key | Only you (0600) | Rewritten when the management key changes | `TurnKey.kt` |
 | `~/.splice/state/retired-keys` | The SHA-256 of each management key `splice rotate-key` replaced and of the turn key made from it, one per line, so splice still knows them as its own; a digest opens nothing | Only you (0600) | Kept; each rotation adds two lines | `RetiredKeys.kt` |
+| `~/.splice/state/desktop-key` | The key Claude Desktop's Code tab presents at splice's door. It opens the door and nothing else, and is never logged or sent upstream | Only you (0600) | Kept; minted when missing, minted again when blank or unreadable (said in splice's log first), replaced by `splice desktop rotate-key` and never by `splice rotate-key` | `FileHeldKey.kt` |
+| `~/.splice/state/desktop.json` | Whether Desktop is on, its default model and declared window, the values `splice desktop on` replaced in `~/.claude/settings.json` (so `off` can put them back), and the last turn through the door: when, the session id, the head, the model asked for and the model that ran | Only you (0600) | Kept; rewritten by `splice desktop on`, `off` and each turn through the door | `DesktopRecord.kt` |
+| `~/.claude/settings.json` (only its `env` and `modelPicker` keys) | While Desktop is on: Claude Code's Mantle switch, splice's door address and the desktop key, the declared window, auto mode's server off, the default model, and a picker listing the models of splice's heads. The one file splice writes in `~/.claude`, and only at your command | Only you (0600 from the first write, since it holds the desktop key) | `splice desktop off` takes out what `on` put in and puts back what it replaced, deleting the file when `on` created it. While on, the picker follows the heads splice serves | `DesktopSettingsFile.kt` |
 | `~/.config/splice/peers/<name>/peer.key` | A peer's own key, which opens only that peer's `/api/peers/self` routes; the daemon keeps only its SHA-256, in `peer.json` | Only you (0600, in a 0700 folder) | Until `splice peer rotate` replaces it or `splice peer revoke` deletes the folder | `PeerStore.kt` |
 | `~/.config/splice/peers/<name>/webhook.secret` and `webhook.bearer` | The secret a peer's webhook pushes are signed with, and the optional bearer copied from `--bearer-file` for the receiver | Only you (0600) | Until the webhook is set again, cleared, or the peer revoked | `PeerStore.kt` |
 | `~/.claude/sessions/<helper pid>.<sha256 of its socket path>.key` | A running peer helper's `peerToken`, which a sender presents on its socket, minted fresh at each helper start | Only you (0600) | Until the helper exits; a killed helper's file is skipped because its pid is dead | `PeerRegistryRecord.kt` |
@@ -724,6 +811,7 @@ These files hold settings and statistics. Custom compaction instructions and tea
 | `~/.local/share/systemd/user/splice.service`, `app-mcp.slice`, `splice-mcp-front.socket`, `splice-mcp-front.service`, `splice-control.socket` and one `splice-head-<head>.socket` per head | Splice's own systemd user units, each under a `# splice-owned unit` line: the daemon's, which runs the `splice` command on the JDK the install ran on, the MCP hub's, and the listener sockets through which systemd holds splice's ports across a restart. No key or secret | Anyone who can read your home directory (0644, as systemd units are) | Replaced by every `splice install --all` on Linux, the hub's only beside an installed hub front; laying one never enables, starts or restarts it. `splice restart` lays, enables and starts the listener sockets. `splice uninstall --all` stops, disables and removes every one of them. A unit of the same name in `~/.config/systemd/user` overrides splice's, and splice writes nothing there and removes only the hub copies its own earlier installs wrote. `splice setup` with MCP sharing on enables and starts `splice-mcp-front.socket` only over splice's own hub units | `SpliceUnits.kt` |
 | `~/.config/splice/peers/<name>/peer.json` | A peer's registration: its name, session id, working directory, send scope, its key's id and SHA-256, and its webhook URL. No key or secret | Only you (0600, in a 0700 folder) | Until `splice peer revoke` | `PeerStore.kt` |
 | `~/.config/splice/peers/<name>/limit.json` | A peer's own send limit, once `splice peer limit` gave it one: sends a minute and its burst | Only you (0600, in a 0700 folder) | Until `splice peer limit <name> --default` or `splice peer revoke` | `PeerLimits.kt` |
+| `~/.splice/state/server/keys.json` and `people.json` | Only on a machine whose `splice.toml` has a `[server]`, which serves its commands to a team's keys. `keys.json` holds each key the server issued as its prefix, the SHA-256 of the whole key, the person's email it is bound to, its name, who issued it, and when it was created, last used, expires and was revoked. `people.json` holds the caps and the preferred upstream `splice server person set` gave a person. Never a key or the secret part of one | Only you (0600) | Until you delete the file. A revoked or expired key's record is kept, so `splice server key list` still shows it | `StateFile.kt` |
 | `~/.splice/state/mcp-hub/units-written` | Which of the hub's systemd units splice's earlier installs wrote into `~/.config/systemd/user`, each with the SHA-256 of the bytes written. No key or secret | Only you (0600) | A line goes when `splice install --all` lays its unit in `~/.local/share/systemd/user`, and the old copy goes with it while it still holds those bytes; the file goes with its last line | `SpliceUnits.kt` |
 | `~/.config/splice/mcp-front.env` | Where the MCP hub keeps its state and the control port the hub front reports to, which `splice-mcp-front.service` reads at start. No key or secret | Only you (0600) | Rewritten by `splice init` when either value changes, which it reports as a config migration, because a running front keeps the values it started with. Linux only | `McpFrontEnv.kt` |
 | `~/.config/splice/splice.toml` | Your topology: providers, heads, models and ports, and any header values you put in `extra_headers` | Only you (0600): the daemon holds it owner-only at every start, and any `splice.toml.bak-<time>-<hash>` an older splice left beside it | Yours. Written once from a template on first run; `PUT /api/topology`, `PATCH /api/config?head=<key>` and `splice add` edit it, at its target when it is a link; the fix session a `splice` command offers when a boot refusal lists findings edits it too, after a backup. Every save holds an empty `.splice.toml.lock` beside the file's target across its re-read and rename, kept so each writer locks the same file | `TopologyLoader.kt`, `TopologyWriter.kt`, `AddWrite.kt`, `ConfigFixSession.kt` |
@@ -781,6 +869,7 @@ These files hold settings and statistics. Custom compaction instructions and tea
 | `~/.splice/state/<head>-perf-reprice.json` | Each past hour the hourly view has priced again at the current rate cards: the hour, the figures it was checked against, its repriced cost, the models and accounts its requests ran on, and a key over the splice build, those models' rate cards and those accounts' plan answers. No request content | Only you (0600) | Rewritten when an hour settles; a restart reuses it only while its key matches, so a new build, a changed card or a changed plan prices every hour again. Deleting it costs only that decode at the next start | `RepriceKept.kt` |
 | `~/.splice/state/<head>-usage.json`, `-ratelimit.json`, `-quota.json` (codex and grok keep `codex-*` and `grok-*`) | Output tokens per minute; the provider's latest rate-limit and quota readings. On a Codex head the quota reading names its account as `"account": {"ref": ..., "label": ...}`: the 8-character ref the Accounts page shows, and the label the head signs it in under (`primary` for its own sign-in) | Only you (0600) | Replaced as they change; usage covers the last 5 hours | `UsageRingFile.kt`, `RateLimitFile.kt`, `QuotaTracker.kt` |
 | `~/.splice/state/<head>-quota-<ref>.json` (codex: `codex-quota-<ref>.json`) | One Codex account's latest quota reading, in the same shape with its `account`. The ref is the first 8 hex characters of SHA-256 over the ChatGPT account id (`tokens.account_id` in the sign-in file), the `ref` of that account's row in `/api/accounts`. No account id, email or token | Only you (0600) | Replaced at each reading of that account; kept when the head signs in to another account | `QuotaTracker.kt` |
+| `~/.splice/state/<head>-quota-history.jsonl`, `.jsonl.lock` and `.jsonl.1` (codex: `codex-quota-history.jsonl`) | Each change in the head's plan readings, one line per change: `{"login": <label>, "reading": <the quota reading at that moment>}`, where the reading is the same shape as `<head>-quota.json` (its windows, plan, time and, on a Codex head, account ref). A reading that repeats the one before it adds no line, so a busy head adds a line per point of its plan, not one per turn. Read beside `<head>-perf.jsonl`, it shows which hours used which share of a plan. No prompt, token or credential | Only you | Rolled at 4 MB to `.jsonl.1`, which the next roll replaces | `QuotaHistory.kt` |
 | `~/.splice/state/<head>-provider-hold.json`, and `<head>-<account>-provider-hold.json` for each account of a pool | When the provider said it stops refusing turns: the reset instant of a spent limit and the plan window it named, as timestamps and a window name, no content | Only you (0600) | Removed once the reset passes or a turn is answered | `ProviderHoldStore.kt` |
 | `~/.splice/state/<head>-<account>-provider-hold-login.json` for each account of a pool, and `<head>-native%<place>-provider-hold-login.json` for each login Claude Code holds itself | The hold a refusal put on that login itself: when the hold ends, how many refusals in a row led to it, the step the provider said the account's owner has to take and where, the provider's id for that account, and the credential file's change time, size and content digest. No token, email or response text | Only you (0600) | Rewritten when the hold changes; removed when the login answers a turn or its hold is let go, and at a start that finds another credential there. A restart reads it, so a login its provider refused is not sent there again before its hold ends | `LoginHoldStore.kt` |
 | `~/.splice/state/<head>-client-windows.json` and `<head>-client-windows.json.tmp` | The context window Claude Code reported for each session; the sibling stages a replacement | Only you | The 512 most recent sessions; the temporary sibling is moved into place on success and can remain after failure | `ClientWindows.kt` |
@@ -793,7 +882,7 @@ These files hold settings and statistics. Custom compaction instructions and tea
 
 | File | What it holds | Who can read it | How long it stays | Written by |
 | --- | --- | --- | --- | --- |
-| `~/.claude-<head>/settings.json` and `.claude.json` | The head's settings: its models, status line and hooks. `.claude.json` carries Claude Code's own keys forward. The `claude` head has no such folder: it runs over `~/.claude`, which splice does not rewrite, and carries its settings on the command line | Only you (0600) | Rewritten at each launch | `ClaudeConfigMaterializer.kt` |
+| `~/.claude-<head>/settings.json` and `.claude.json` | The head's settings: its models, status line and hooks. `.claude.json` carries Claude Code's own keys forward. The `claude` head has no such folder: it runs over `~/.claude`, which splice does not rewrite (save `settings.json` while `splice desktop` is on, below), and carries its settings on the command line | Only you (0600) | Rewritten at each launch | `ClaudeConfigMaterializer.kt` |
 | `~/.claude-<head>/.splice-hook-origins.json` | Hook settings before and after the last materialization, with only the inherited entries splice actually appended; no callback IDs or launch owner | Only you (0600) | Rewritten at each launch, before the atomic settings swap | `ClaudeConfigMaterializer.kt` |
 | `~/.claude-<head>/.credentials.json` of a second Claude command, and the account in its `.claude.json` | Written by `splice login <head> --label <name>` only when it switches the head to a saved login: the saved copy, and its account's id and email. Adding an account signs the head out, which deletes the file. Claude Code writes both itself on `/login` | Only you (0600) | Until the next switch, `/login` or `/logout` | `ClaudeLogins.kt`, `ClaudeLoginFiles.kt` |
 | Links in `~/.claude-<head>/` to `~/.claude/` | The config a head shares: agents, commands, skills, hooks, plugins, `CLAUDE.md`, and, when shared, `sessions` and `projects`, whose existing files are merged into `~/.claude` the first time | Links only | Until you change what the head shares | `ClaudeConfigMaterializer.kt`, `SessionRegistryLink.kt`, `ProjectsLink.kt` |
@@ -1038,7 +1127,7 @@ A single tool result larger than the runner's 64 KiB text frame is truncated at 
 Reasons to walk away:
 
 - **One tested Claude Code version per release.** The launch handshake checks the daemon's version. Doctor and the status line report when Claude Code is newer than the version tested with that release.
-- **Single-user by design.** There is no multi-user story, remote access, or TLS. A team wanting a shared model gateway should run one built for that job (LiteLLM, for example).
+- **A team server that is only starting.** One splice can [serve a team](#serve-a-team-from-one-machine) on keys it issues, over TLS, with per-person caps, but there is no sign-in, budget, usage ledger or per-person metric yet, and it serves only heads that sign with an API key or a self-hosted provider, never a person's plan login. A team that needs those today should run a gateway built for that job (LiteLLM, for example).
 - **A JVM daemon.** Java 21 is a hard dependency. The daemon has no fixed heap ceiling: its heap may grow to 75% of RAM, and G1 is tuned to keep committed memory close to the live data. The JVM options live in one place, `SPLICE_JVM_OPTS` in the `splice-launch` launcher, which every daemon start runs through; set that variable to override them.
 - **A one-person project.** The release gates are strict: every release is checksummed, provenance-attested, and installed hermetically in CI before it ships. One person maintains the project.
 

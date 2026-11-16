@@ -90,6 +90,7 @@ public class UpstreamClient(
         credentialCooldowns.forHeaders(headers, declaredCarrier)
     private val budget = RetryBudget(totalTimeoutMs, clock)
     private val steps = RetrySteps(budget, pacing.wall, transportFailures)
+    private val moves = RouteMoves(transportFailures)
 
     /** NF-01: head restart is a real escape hatch — HeadServer.startLocked() clears the armed
      *  horizon alongside driver.resetHealth(), instead of the cooldown outliving the restart. */
@@ -252,7 +253,10 @@ public class UpstreamClient(
         }
         // Exhaustively dispatch the attempt's delivered value, HTTP failure, or transport error.
         return when (outcome) {
-            null -> steps.thrown(checkNotNull(transportError), ctx, streamHandedOff, state)
+            null -> {
+                val error = checkNotNull(transportError)
+                moves.elsewhere(error, ctx, state, streamHandedOff) ?: steps.thrown(error, ctx, streamHandedOff, state)
+            }
             is RetryOutcome.Done -> readStep(outcome.read, ctx, state)
             is RetryOutcome.Failed -> failedStep(ctx, outcome, body, state)
         }

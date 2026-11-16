@@ -23,9 +23,9 @@ import splice.app.control.HandOver
 import splice.app.control.KeyRotation
 import splice.app.control.ManagedHead
 import splice.app.control.ProcessReads
+import splice.app.control.ServerModeSource
 import splice.app.daemon.BootedTopology
 import splice.app.head.HeadProbeReadings
-import splice.app.peer.PeersWiring
 import splice.app.provider.ClaudeAccountWiring
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ModelRosters
@@ -72,6 +72,12 @@ internal class ControlPlane(
     /** LAN share: the commands this machine runs on another's heads, assigned by Daemon before [start] (the launch
      *  service asks them for a name no head here has). Null runs none. */
     internal var remoteCommands: RemoteCommands? = null
+
+    /** Server mode (docs/specs/server-mode.md), assigned by Daemon before [start]; null answers its routes 409. */
+    internal var serverMode: ServerModeSource? = null
+
+    /** Claude Desktop's door (docs/specs/desktop-door.md), assigned by Daemon before [start]. */
+    internal var desktop: splice.app.desktop.DaemonDesktop? = null
 
     /** Captures the owner only at send time, after launch composition has wired the live native places. */
     internal val credentialAccountNames = HeadDeps.CredentialAccountNames { key ->
@@ -223,7 +229,10 @@ internal class ControlPlane(
             readings = ControlReadings(health.report(heads, failedHeads, headCount, probes, signals), signals),
             runtime = ControlRuntime(
                 launchService = launch.service(home, sharing, controlPort, mcp.hubLive)
-                    .also { it.remotes = remoteCommands },
+                    .also {
+                        it.remotes = remoteCommands
+                        it.desktop = desktop?.launching
+                    },
                 shutdownDaemon = shutdownDaemon,
                 sessions = sessions,
                 mcpHost = mcpHost,
@@ -233,7 +242,7 @@ internal class ControlPlane(
         )
         wireConsolePorts(srv)
         // Oct 19, 2026: the peer helpers and their journals, over the same store the guard admits peer keys from.
-        srv.peerServices = PeersWiring().services(guard.peers, statePaths.stateDir, probeScope, log)
+        parts.wirePeers(srv, guard, probeScope)
         parts.wireRestartSuccessor(srv, controlPort)
         return if (ownership.bind(srv, controlPort, listen.handOn(guard))) srv.also { mcpServices.refresh() } else null
     }
@@ -258,6 +267,8 @@ internal class ControlPlane(
         srv.ports.turns.foreground = foregroundTools
         srv.ports.compaction = compactionInstructions
         srv.ports.claudeLogins = claudeLogin.owner
+        srv.ports.serverMode = serverMode
+        srv.ports.desktop = desktop
         srv.ports.quotaReadFailures = quotaReadFailures
         srv.ports.sessionFallbacks = sessionFallbacks
         srv.ports.lifecycle.keyRotation = KeyRotation(daemon.mgmtKey, daemon.mcpAccess, statePaths, log)

@@ -1,8 +1,14 @@
 // NEW: Oct 19, 2026, moved verbatim out of PeerCall.kt by concern (ConcentrationLawTest): what a `splice peer` call
 // comes to, and the exit code each outcome leaves.
+//
+// Nov 15, 2026, from the second review of server mode's per-person limits: PeerAsk, what a verb does around its call,
+// kept once. Presenting the management key, turning the answer into the printed line and the exit code, and spelling
+// a name into a path were private to PeerCommand, so `splice server`'s verbs wrote them again. Both ask through it now.
 package splice.app.cli.peer
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.terminal.TerminalOutput
+import java.net.URLEncoder
 
 /** The exit codes of `splice peer` (docs/specs/peer-messaging.md 5); 0, 1 and 2 keep their meaning across the CLI. */
 internal object PeerExit {
@@ -31,4 +37,35 @@ internal sealed class PeerAnswer {
     data class Ok(val body: JsonObject) : PeerAnswer()
 
     data class Exit(val code: Int) : PeerAnswer()
+}
+
+/** One call on the control plane; [body] goes up as JSON when there is one. */
+internal data class ControlRequest(val method: String, val path: String, val body: JsonObject? = null)
+
+/** How a verb asks the daemon and prints what it answers. */
+internal class PeerAsk(private val call: PeerCall, private val out: TerminalOutput) {
+    /** Makes [asked] with the management key and prints its answer as [finish] does. With no key to present, the
+     *  reason is already printed and the exit code is the CLI's refusal. */
+    fun managed(asked: ControlRequest, json: Boolean = false, line: PeerLine): Int {
+        val key = call.managementKey() ?: return PeerExit.REFUSED
+        val answer = when (val body = asked.body) {
+            null -> call.call(asked.method, asked.path, key)
+            else -> call.call(asked.method, asked.path, key, body)
+        }
+        return finish(answer, json, line)
+    }
+
+    /** Prints a 2xx and answers 0: [line]'s text, or for [json] the daemon's whole answer on one line. Anything else
+     *  is the exit code the call already chose, its reason already printed. */
+    fun finish(answer: PeerAnswer, json: Boolean = false, line: PeerLine): Int = when (answer) {
+        is PeerAnswer.Exit -> answer.code
+        is PeerAnswer.Ok -> {
+            val text = if (json) answer.body.toString() else line(answer.body)
+            text?.let { out.line(it) }
+            PeerExit.DONE
+        }
+    }
+
+    /** [name] as it goes into a path or a query: an email's `@` and `+` arrive as they were typed. */
+    fun segment(name: String): String = URLEncoder.encode(name, Charsets.UTF_8)
 }

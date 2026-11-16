@@ -14,6 +14,7 @@ import splice.dialect.responses.reasoning.ReasoningPositionIndex
 import splice.dialect.responses.reasoning.ResponsesReanchorPolicy
 import splice.dialect.responses.reasoning.TurnReasoningSink
 import splice.dialect.responses.request.AssistantPhase
+import splice.dialect.responses.stream.ResponsesCallerTranslator
 import splice.dialect.responses.stream.ResponsesFoldPolicy
 import splice.dialect.responses.stream.ResponsesStreamTranslator
 import splice.upstream.FoldPolicy
@@ -43,7 +44,15 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
     private val liteShape = ResponsesLiteShape(deps.quirks)
     private val turnPositions = TurnReasoningPositions()
 
-    fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator =
+    /** A round's translator. On a head with a caller it reads the backend's stream with each call of the caller
+     *  already turned into the call of the tool it names, so Claude Code never sees the caller. */
+    fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator {
+        val round = roundTranslator(meta, signals)
+        val throughCaller = deps.quirks.tools.toolChanges == ResponsesToolChanges.THROUGH_CALLER
+        return if (throughCaller) ResponsesCallerTranslator(round) else round
+    }
+
+    private fun roundTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator =
         summaryOwner(meta).let { summaryOwner ->
             ResponsesStreamTranslator(
                 StreamTurnContext(

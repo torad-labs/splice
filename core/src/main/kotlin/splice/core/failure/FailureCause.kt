@@ -175,8 +175,15 @@ public sealed class FailureCause {
 
     /** Nobody answered: the path broke. This keeps the G20 split, since no provider report is involved. */
     public sealed class Path : FailureCause() {
-        /** The request never got an answer. [local]: the address is this machine's own runtime. */
-        public data class Unreachable(val why: Unreach, val local: Boolean) : Path() {
+        /** The request never got an answer. [local]: the address is this machine's own runtime. [noneOf]: the
+         *  provider is several servers and the turn ran out of them, each one down or refusing its connection: their
+         *  names, which the line tells the person (docs/specs/server-mode.md, F4). Empty for a provider that is one
+         *  place. */
+        public data class Unreachable(
+            val why: Unreach,
+            val local: Boolean,
+            val noneOf: List<String> = emptyList(),
+        ) : Path() {
             override val persisted: PersistedCause
                 get() =
                     if (why == Unreach.REFUSED) PersistedCause.CONNECT_REFUSED else PersistedCause.UPSTREAM_CONN_RESET

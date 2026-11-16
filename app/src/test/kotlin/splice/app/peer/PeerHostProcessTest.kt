@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.EndedProcesses
 import splice.core.util.SecureFile
 import splice.sessions.peer.helper.HelperFile
 import splice.sessions.peer.helper.HelperFiles
@@ -117,8 +118,7 @@ class PeerHostProcessTest {
 
             host.destroyForcibly()
             val anchor = ProcessHandle.of(bravo.pid).orElseThrow()
-            assertTrue(anchor.onExit().completeOnTimeout(null, WAIT_MS, TimeUnit.MILLISECONDS).get() != null)
-            assertFalse(anchor.isAlive, "a dead host leaves no peer that looks alive")
+            fixture.until("a dead host leaves no peer that looks alive") { EndedProcesses.ended(anchor) }
         }
     }
 

@@ -107,8 +107,9 @@ die () {
 #   splice: gradle starts in the gradle slot, or it does not start.
 #
 #   ONE GRADLE AT A TIME IS A LOCK, NOT A CONVENTION. tools/gate's slot serialises every gradle in
-#   this checkout and all its worktrees, but it only serialises the runs that TAKE it. On
-#   2026-10-10 a session ran three one-task checks straight through this wrapper beside a run inside
+#   this project directory (a worktree is a directory of its own, with its own slot), but it only
+#   serialises the runs that TAKE it. On 2026-10-10 a session ran three one-task checks straight
+#   through this wrapper beside a run inside
 #   the slot. Two writers then shared one test-results directory, and gradle's reporter closed onto
 #   a file the other had already moved: SerializableTestResultStore$Writer.close does
 #   `Files.move(in-progress-results-generic.bin, results-generic.bin, REPLACE_EXISTING)`, so an

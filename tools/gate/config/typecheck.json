@@ -12,7 +12,9 @@
     "tools/screen-review/tsconfig.json",
     "tools/console/tsconfig.json",
     ".claude/hooks/tsconfig.json",
-    "tools/instrumentation-bench/tsconfig.json"
+    "tools/instrumentation-bench/tsconfig.json",
+    ".campaign/checks/server/tsconfig.json",
+    ".campaign/checks/speed/tsconfig.json"
   ],
   "excused": {},
   "baseline": {}

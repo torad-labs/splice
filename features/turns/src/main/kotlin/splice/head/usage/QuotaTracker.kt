@@ -37,6 +37,8 @@ public class QuotaTracker(
     private val extraFamily: QuotaHeaderFamily? = null,
     /** Names each reading's account in [file] and writes the reading to that account's own file too. */
     private val accounts: QuotaAccountFiles? = null,
+    /** Where each change in this login's reading is kept, so a reading can be read back by the hour. */
+    private val history: QuotaHistory? = null,
 ) : CredentialQuotaReceiver {
     private val codec = QuotaJson()
     private val headers = QuotaHeaders(clock)
@@ -96,9 +98,13 @@ public class QuotaTracker(
                     Cancellables.runCatchingCancellable { SecureFile.writeAtomic0600(target, text) }
                         .onFailure { log("[quota] $target write FAILED (${SafeFailureText.render(it)})\n") }
                 }
+                history?.kept(snapshot, text)
             }
         }
     }
+
+    /** This head's history under [login]'s name, for a login that joins the head while it runs. */
+    public fun historyFor(login: String): QuotaHistory? = history?.forLogin(login)
 
     /** V4-452: the window the CURRENT reading names fully used, and its reset ([QuotaSnapshot.fullAt]). A reading,
      *  never a refusal: surfaces print it beside a head that stays ready. */

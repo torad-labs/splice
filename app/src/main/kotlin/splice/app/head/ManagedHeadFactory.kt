@@ -46,6 +46,7 @@ import splice.head.usage.AccountOnPlan
 import splice.head.usage.CredentialQuotaFiles
 import splice.head.usage.EconomicsStore
 import splice.head.usage.QuotaAccountFiles
+import splice.head.usage.QuotaHistory
 import splice.head.usage.QuotaTracker
 import splice.head.usage.UsageStore
 import splice.oauth.AuthHttpClientFactory
@@ -73,6 +74,10 @@ internal fun interface StartQuotaPoller {
         intervalMs: QuotaIntervalMs,
     ): QuotaPoller?
 }
+
+// why: the name a head's own sign-in goes by wherever a reading names its login (QuotaAccount.label), for the
+// history line of a head that wired no account of its own.
+private const val OWN_LOGIN = "primary"
 
 /** Observes the primary quota tracker at assembly so a test can see which tracker was wired.
  *  The production body is a no-op and nothing in production consumes the callback — unlike
@@ -189,7 +194,7 @@ internal class ManagedHeadFactory(
         val accountQuotas = accountQuotas(key, wired)
         val primaryQuota = wired.accounts.singleOrNull { it.primary && it.nativePlace == null }
             ?.let { accountQuotas.getValue(it.label) }
-            ?: QuotaTracker(statePaths.quotaFile(key), extraFamily = CodexQuotaHeaderFamily())
+            ?: ownQuota(key)
         quotaSeams.primaryWired(primaryQuota)
         val stores = headStores(ctx, wired, primaryQuota, accountQuotas)
         val polling = quotaSeams.pollingFor(ctx, quotaProbes, accountOrders)
@@ -332,6 +337,13 @@ internal class ManagedHeadFactory(
             keeping = KeepingRecordings { ctx.cfg.current().keepCompactionSummaries },
         )
 
+    /** The tracker of a head that wired no account of its own: its readings and their history sit under the head. */
+    private fun ownQuota(key: String): QuotaTracker = QuotaTracker(
+        statePaths.quotaFile(key),
+        extraFamily = CodexQuotaHeaderFamily(),
+        history = QuotaHistory(statePaths.quotaFile(key), OWN_LOGIN),
+    )
+
     /** The primary's snapshot stays where every install before 0.4.0 wrote it (per HEAD, under the
      *  state dir): an upgrade boots with its windows intact, and two heads of one kind never share a
      *  file. Labeled accounts persist next to their credential. Each reading also names the account its credential
@@ -342,7 +354,14 @@ internal class ManagedHeadFactory(
             val file =
                 if (account.primary && account.nativePlace == null) statePaths.quotaFile(key) else account.quota.file
             val named = QuotaAccountFiles(statePaths.quotaFile(key), account.label, account.auth)
-            account.label to QuotaTracker(file, extraFamily = CodexQuotaHeaderFamily(), accounts = named).also {
+            // Every login of the head writes its changes to the head's one history file, under its own name.
+            val history = QuotaHistory(statePaths.quotaFile(key), account.label)
+            account.label to QuotaTracker(
+                file,
+                extraFamily = CodexQuotaHeaderFamily(),
+                accounts = named,
+                history = history,
+            ).also {
                 it.credentialListener = account.quota.read as? splice.head.usage.CredentialQuotaListener
             }
         }

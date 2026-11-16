@@ -514,7 +514,7 @@ notes = [
 id = 'desktop-door'
 title = 'One door under /desktop, and the model a request names picks the head'
 feature = 'desktop-door'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -529,13 +529,14 @@ reviews = [
 ]
 notes = [
   '2026-11-16 02:20 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 08:49 CT campaign: done in round 1 of desktop-door: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'desktop-switch'
 title = "splice desktop on and off write and restore the Code tab's switch in ~/.claude/settings.json"
 feature = 'desktop-door'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -550,13 +551,14 @@ reviews = [
 ]
 notes = [
   '2026-11-16 02:21 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 08:49 CT campaign: done in round 1 of desktop-door: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'desktop-lineup'
 title = 'The picker lists every model of every head in the door, and follows splice'
 feature = 'desktop-door'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -571,13 +573,14 @@ reviews = [
 ]
 notes = [
   '2026-11-16 02:21 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 08:49 CT campaign: done in round 1 of desktop-door: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'desktop-window'
 title = "One declared window, and every model's counts reported against it"
 feature = 'desktop-door'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -592,13 +595,14 @@ reviews = [
 ]
 notes = [
   '2026-11-16 02:21 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 08:49 CT campaign: done in round 1 of desktop-door: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'desktop-key'
 title = "The door's own key opens the door and nothing else"
 feature = 'desktop-door'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -613,13 +617,14 @@ reviews = [
 ]
 notes = [
   '2026-11-16 02:21 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 08:49 CT campaign: done in round 2 of desktop-door: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'desktop-recorded'
 title = "A turn through the door is its head's row, marked, and splice desktop names the last one"
 feature = 'desktop-door'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -634,13 +639,14 @@ reviews = [
 ]
 notes = [
   '2026-11-16 02:22 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 08:49 CT campaign: done in round 1 of desktop-door: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'desktop-terminal'
 title = "With Desktop on, the terminal's claude and every head run as they did"
 feature = 'desktop-door'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -655,6 +661,7 @@ reviews = [
 ]
 notes = [
   '2026-11-16 02:22 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 08:49 CT campaign: done in round 2 of desktop-door: its checks, its feature review, its code review passed',
 ]
 
 [[row]]

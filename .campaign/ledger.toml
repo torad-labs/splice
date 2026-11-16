@@ -225,7 +225,7 @@ blocked_by = [
   'ledger-rows',
 ]
 guard = false
-spec = "[server.export] to = file:///dir or s3://bucket/prefix (endpoint, region, path_style, access_key_env, secret_key_env), every = duration. splice server usage export --now, and the daemon every 'every', write <prefix>/splice-usage/YYYY/MM/DD/HH.jsonl by each row's UTC hour, rewriting an hour whole so every row is there exactly once. S3 requests are SigV4-signed; the secret is never written to the home. See docs/specs/server-mode.md, F5."
+spec = "[server.export] to = file:///dir or s3://bucket/prefix (endpoint, region, path_style, access_key_env, secret_key_env), every = duration. splice server usage export --now, and the daemon every 'every', write <prefix>/splice-usage/YYYY/MM/DD/HH.jsonl by each row's UTC hour, rewriting an hour whole so every row is there exactly once. export --now ends with exit 0 only once every write of that run has been answered, so its files or objects are there when it returns. S3 requests are SigV4-signed; the secret is never written to the home. See docs/specs/server-mode.md, F5."
 checks = [
   'bun test ./.campaign/checks/server/export.test.ts',
 ]
@@ -235,6 +235,7 @@ reviews = [
 ]
 notes = [
   '2026-11-15 07:47 CT: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-16 08:54 CT: dispute decided for the builder (lead, 2026-11-16): the bucket case called the CLI with the harness's blocking cli while the bucket is served by the same test process, so no build could pass it. The case now awaits the command with the harness's run (a460d7e99); run against the server-ledger build the check went from 4 of 5 to 5 of 5. The spec now says export --now returns only once its writes are answered, which the case reads.",
 ]
 
 [[row]]

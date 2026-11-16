@@ -12,8 +12,15 @@ import splice.share.SharedHead
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
 
-/** One turn, from its arrival to its row. */
-internal class LedgerTurn(val key: ServerKey, val head: SharedHead, val route: String, val startedMs: Long) {
+/** One turn, from its arrival to its row. [team] is the team its person was on when it arrived, the one whose budget
+ *  it was admitted under: a person moved to another team while their turn runs leaves that turn where it began. */
+internal class LedgerTurn(
+    val key: ServerKey,
+    val head: SharedHead,
+    val route: String,
+    val startedMs: Long,
+    val team: String?,
+) {
     /** The id its head is told it by, on the Messages route. */
     val id: String = UUID.randomUUID().toString()
 

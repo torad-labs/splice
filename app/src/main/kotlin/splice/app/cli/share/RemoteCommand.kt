@@ -7,7 +7,6 @@
 package splice.app.cli.share
 
 import splice.app.cli.peer.PeerExit
-import splice.core.config.StatePaths
 import splice.core.terminal.CYAN
 import splice.core.terminal.DIM
 import splice.core.terminal.GREEN
@@ -21,7 +20,7 @@ import splice.core.util.EnvReader
 import splice.launch.install.InstallCommand
 import splice.launch.install.InstallResult
 import splice.share.Asked
-import splice.share.ServerLogins
+import splice.share.LaptopLogins
 import splice.share.ShareDirectory
 import splice.share.ShareInfo
 import splice.upstream.codemode.ProcessDispatchers
@@ -35,7 +34,7 @@ internal class RemoteCommand(
 ) {
     private val file = ShareTopologyFile(err, REMOTE_VERB, env)
     private val restart = ShareRestart(out, err, env, REMOTE_VERB)
-    private val logins = ServerLogins(StatePaths(envReader = env).serverLoginsDir)
+    private val logins = LaptopLogins(env).logins
     private val directory = ShareDirectory(ProcessDispatchers().io(), logins)
     private val install = InstallCommand(out, err)
     private val relays = FirstBuildRelays(out, err, env)

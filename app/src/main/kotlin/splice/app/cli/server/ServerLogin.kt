@@ -9,7 +9,6 @@
 package splice.app.cli.server
 
 import splice.app.cli.peer.PeerExit
-import splice.core.config.StatePaths
 import splice.core.terminal.CYAN
 import splice.core.terminal.GREEN
 import splice.core.terminal.RESET
@@ -20,7 +19,7 @@ import splice.oauth.BrowserOpener
 import splice.oauth.OAuthLoginFlow
 import splice.oauth.SystemBrowserOpener
 import splice.share.Asked
-import splice.share.ServerLogins
+import splice.share.LaptopLogins
 import splice.share.ServerSignedIn
 import splice.share.ServerSignins
 import splice.share.ShareMachine
@@ -32,7 +31,7 @@ internal class ServerLogin(
     env: EnvReader = EnvReader(System::getenv),
     private val browser: BrowserOpener = SystemBrowserOpener(out),
 ) {
-    private val logins = ServerLogins(StatePaths(envReader = env).serverLoginsDir)
+    private val logins = LaptopLogins(env).logins
     private val signins = ServerSignins(ProcessDispatchers().io())
 
     /** Whether [word], the argument of `splice login` or `logout`, names a server rather than a head. */

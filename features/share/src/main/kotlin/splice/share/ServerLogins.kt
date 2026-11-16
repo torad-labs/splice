@@ -10,6 +10,8 @@ package splice.share
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import splice.core.config.StatePaths
+import splice.core.util.EnvReader
 import splice.core.util.SecureFile
 import java.net.URI
 import java.net.URISyntaxException
@@ -41,6 +43,12 @@ public class ServerSignedIn(
     public fun reveal(): String = key
 
     override fun toString(): String = "ServerSignedIn(person=$person, prefix=$prefix, key=<redacted>)"
+}
+
+/** The logins of the splice whose state [env] names, kept under `<state>/server-logins`: where every command of a laptop
+ *  reads them, so `splice login`, `splice logout` and `splice remote` agree on the folder. */
+public class LaptopLogins(env: EnvReader) {
+    public val logins: ServerLogins = ServerLogins(StatePaths(envReader = env).serverLoginsDir)
 }
 
 public class ServerLogins(

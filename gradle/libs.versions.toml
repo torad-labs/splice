@@ -23,7 +23,7 @@ junit = "6.1.3"
 # Current gRPC embeds the gateway's Netty floor; protobuf stays on its ABI-compatible 3.x line.
 grpc = "1.85.1"
 protobuf = "3.25.9"
-opentelemetry = "1.67.0"
+opentelemetry = "1.68.0"
 # Self-contained code-mode feasibility probe; community artifacts, no Codex/Node installation.
 graaljs = "25.5.5.0.3"
 # slf4j-api arrives under ktor; this pins the no-op provider that rides beside it (2026-09-25). Keep it
@@ -40,7 +40,7 @@ netty = "4.2.20.Final"          # 4.2.16.Final resolved; GHSA-8c42-7qj2-3j46 (CO
 # Jackson core ships in the Usage and Claude Code transcript streaming parsers.
 # Plugin classpaths need separate floors: build-logic keeps the detekt floor, and app/build.gradle.kts
 # floors CycloneDX's jackson-core/databind from this version because project dependencies cannot reach it.
-jackson = "2.22.4"              # Security floor for shipped parsers and plugin classpaths; GHSA-7hhh-6rmp-j9qf, GHSA-p6pp-m3f8-5c89
+jackson = "2.23.0"              # Security floor for shipped parsers and plugin classpaths; GHSA-7hhh-6rmp-j9qf, GHSA-p6pp-m3f8-5c89
 # freemarker rides in on the ROOT script classpath under kover (kover-gradle-plugin -> kover-features-jvm
 # -> intellij-coverage-reporter -> coverage-report), floored by a buildscript classpath constraint in
 # the root build.gradle.kts. Build-time only, never in the shipped jar. No bump reaches it: kover
@@ -70,7 +70,7 @@ opentelemetry-sdk-logs = { module = "io.opentelemetry:opentelemetry-sdk-logs", v
 opentelemetry-exporter-otlp = { module = "io.opentelemetry:opentelemetry-exporter-otlp", version.ref = "opentelemetry" }
 graaljs-polyglot = { module = "org.graalvm.polyglot:polyglot", version.ref = "graaljs" }
 graaljs-community = { module = "org.graalvm.polyglot:js-community", version.ref = "graaljs" }
-zstd-jni = { module = "com.github.luben:zstd-jni", version = "1.5.7-25" }
+zstd-jni = { module = "com.github.luben:zstd-jni", version = "1.5.7-26" }
 slf4j-nop = { module = "org.slf4j:slf4j-nop", version.ref = "slf4j" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }

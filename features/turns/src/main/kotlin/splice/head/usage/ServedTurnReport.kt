@@ -37,6 +37,12 @@ internal class ServedTurnReport(private val served: ServedTurns, private val pri
         )
         served.ended(id, turn)
     }
+
+    /** [meta]'s row waits on a round its turn left streaming: the listener that relayed it is told, so it waits for
+     *  the row instead of recording a request that billed nothing. */
+    fun waits(meta: TurnMeta) {
+        meta.route.relay.servedTurn?.let(served::held)
+    }
 }
 
 /** Where a turn went beyond its row: the pool's server that took it, and how fast that server worked. */

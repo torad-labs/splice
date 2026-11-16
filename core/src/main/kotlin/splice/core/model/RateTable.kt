@@ -81,18 +81,18 @@ public class RateTable internal constructor(private val text: String) {
 }
 
 /** One line of the file, its cells by column name. An empty cell is a price the vendor does not publish. */
-private class RateRow(private val cells: Map<String, String>) {
+internal class RateRow(private val cells: Map<String, String>, private val invalid: String = INVALID) {
     /** A number a fetched file cannot make absurd: finite, never negative, and under [MAX_NUMBER]. */
     fun optional(column: String): Double? = cells.getValue(column).takeIf(String::isNotEmpty)?.let { cell ->
-        checkNotNull(cell.toDoubleOrNull()?.takeIf { it >= 0.0 && it <= MAX_NUMBER }) { INVALID }
+        checkNotNull(cell.toDoubleOrNull()?.takeIf { it >= 0.0 && it <= MAX_NUMBER }) { invalid }
     }
 
-    fun price(column: String): Double = checkNotNull(optional(column)) { INVALID }
+    fun price(column: String): Double = checkNotNull(optional(column)) { invalid }
 
     /** `1-4,6-10`: each span's end is exclusive, so DeepSeek's 01:00 to 04:00 is `1-4`. */
     fun hours(column: String): List<IntRange> = cells.getValue(column).split(',').map { span ->
-        val ends = span.split('-').map { checkNotNull(it.toIntOrNull()) { INVALID } }
-        check(ends.size == 2) { INVALID }
+        val ends = span.split('-').map { checkNotNull(it.toIntOrNull()) { invalid } }
+        check(ends.size == 2) { invalid }
         ends.first() until ends.last()
     }
 
@@ -100,7 +100,7 @@ private class RateRow(private val cells: Map<String, String>) {
     fun days(column: String): Boolean = when (cells.getValue(column)) {
         WEEKDAYS -> true
         "" -> false
-        else -> error(INVALID)
+        else -> error(invalid)
     }
 }
 
@@ -117,7 +117,7 @@ private const val HEADER = "host\tmodel\tinput\tcache_read\toutput\tcache_write\
 private const val INVALID = "invalid $RATES_FILE row"
 
 // why: lines that cite each vendor's source start with this and are not rows.
-private const val SOURCE_LINE = "#"
+internal const val SOURCE_LINE: String = "#"
 
 // why: a source line that starts with this is read: `#! updated 2026-11-12`, `#! tested_claude_code 2.1.323 from_splice 0.4.0`.
 private const val DIRECTIVE = "#!"

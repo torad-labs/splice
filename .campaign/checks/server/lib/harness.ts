@@ -235,24 +235,6 @@ export class Splice {
     return { code: r.status ?? -1, out: r.stdout ?? "", err: r.stderr ?? "" };
   }
 
-  /** `splice <args>` against this daemon while this process goes on serving: for a command that only ends once
-   *  something this process serves has answered it (an export to the checks' own bucket). `cli` holds the whole
-   *  process still until the command ends, so a fake in it could never answer. */
-  run(args: string[], env: Record<string, string> = {}, ms = 120_000): Promise<Ran> {
-    return new Promise((resolve) => {
-      const p = spawn("java", this.java(args), { cwd: this.home, env: { ...this.env(), ...env }, stdio: ["ignore", "pipe", "pipe"] });
-      let out = "";
-      let err = "";
-      p.stdout?.on("data", (d: Buffer) => (out += d.toString()));
-      p.stderr?.on("data", (d: Buffer) => (err += d.toString()));
-      const cut = setTimeout(() => p.kill("SIGKILL"), ms);
-      p.on("close", (code) => {
-        clearTimeout(cut);
-        resolve({ code: code ?? -1, out, err });
-      });
-    });
-  }
-
   /** `splice <args>` left running, for commands that wait (a sign-in). */
   spawnCli(args: string[], env: Record<string, string> = {}): ChildProcess {
     return spawn("java", this.java(args), { cwd: this.home, env: { ...this.env(), ...env }, stdio: ["pipe", "pipe", "pipe"] });

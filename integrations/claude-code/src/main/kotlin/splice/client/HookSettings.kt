@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonObject
 import splice.client.login.LoginInterception
 import splice.client.resume.ForegroundHook
 import splice.client.resume.ResumeHook
+import splice.client.speed.SpeedHook
 import splice.core.util.JsonScalars
 import java.nio.file.Path
 
@@ -67,6 +68,7 @@ internal object HookSettings {
         val owned = LoginInterception.ownedHookCommands(configDir) + setOf(
             configDir.resolve(ResumeHook.RESUME_HOOK_SH).toString(),
             configDir.resolve(ForegroundHook.SCRIPT).toString(),
+            configDir.resolve(SpeedHook.SPEED_HOOK_SH).toString(),
         )
         val localEvents = local as? JsonObject
         val globalEvents = global as? JsonObject

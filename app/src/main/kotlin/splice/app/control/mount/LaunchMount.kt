@@ -18,6 +18,7 @@ import splice.launch.recipe.LaunchRoutes
 import splice.launch.recipe.LaunchService
 import splice.launch.resume.ForegroundHookRoute
 import splice.launch.resume.ResumeHookRoute
+import splice.launch.speed.SpeedHookRoute
 import splice.launch.wrap.ClaudeHeadRoutes
 
 internal class LaunchMount(
@@ -51,10 +52,17 @@ internal class LaunchMount(
         ResumeHookRoute.RemoteSessionTrees { command -> launchService?.remotes?.ownTree(command) },
     )
 
+    // gpt-speed: /fast and /ultrafast, caught by the hook a head signed in with ChatGPT carries. A server built without a
+    // LaunchService lays down no such hook, and serves no route for one.
+    private val speedRoute = launchService?.speeds?.let { SpeedHookRoute(launchHeads, it, log) }
+
     fun register(route: Route) {
         route.post("/launch/{head}") { guard.guarded(call) { launchRoutes.launch(call) } }
         route.post("/hooks/resume/{head}") { guard.guarded(call, Door.SESSION) { resumeHookRoute.resume(call) } }
         route.post("/hooks/foreground/{head}") { guard.guarded(call, Door.SESSION) { foregroundRoute.receive(call) } }
+        speedRoute?.let { speed ->
+            route.post("/hooks/speed/{head}") { guard.guarded(call, Door.SESSION) { speed.speed(call) } }
+        }
         route.get("/api/claude-head") { guard.guarded(call) { claudeHeadRoutes.status(call) } }
         route.post("/api/claude-head/wrap") { guard.guarded(call) { claudeHeadRoutes.wrap(call) } }
         route.post("/api/claude-head/unwrap") { guard.guarded(call) { claudeHeadRoutes.unwrap(call) } }

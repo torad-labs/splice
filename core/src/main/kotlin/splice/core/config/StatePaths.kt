@@ -356,6 +356,10 @@ public class StatePaths(
      *  discovered model. */
     public fun modelRosterFile(headKey: String): Path = stateDir.resolve("$headKey-models.json")
 
+    /** gpt-speed: each Claude Code session's speed and its last turn's model (SessionSpeeds), daemon-wide, since a
+     *  session id names one session whichever head runs it. */
+    public val sessionSpeedsFile: Path = stateDir.resolve("session-speeds.json")
+
     /** Nov 12, 2026: the price table as the project's main branch last served it (PriceRefresh), read at a start
      *  ahead of the copy in the build when it is not older. */
     public val publishedRatesFile: Path = stateDir.resolve("published-rates.tsv")

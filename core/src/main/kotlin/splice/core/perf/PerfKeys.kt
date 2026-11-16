@@ -272,6 +272,14 @@ public object PerfKeys {
      *  a dialect that reports none, or from before this counter, and reads as null rather than zero. */
     public const val REASONING_TOKENS: String = "reasoning_tokens"
 
+    /** gpt-speed: the speed the turn's request asked for and the one the backend says it served it at, each stored as
+     *  its [splice.core.speed.Speed.code] (splice.core.perf.SpeedCounters). Written only on a turn whose answer named
+     *  a service tier, so an absent key is a backend that names none, or a row from before these counters. [SPEED] is
+     *  what the row is priced by (splice.core.model.TurnBill): a turn is billed at the card for the speed it was served
+     *  at, which can be slower than the one asked. */
+    public const val SPEED_ASKED: String = "speed_asked"
+    public const val SPEED: String = "speed"
+
     /** Source rounds this turn cut while they still streamed ([splice.core.turn.Usage.cutRounds]): steering a
      *  parked code-mode script ends its round before the backend's terminal, so the tokens that round used are
      *  billed upstream and never reported here. Written only when the turn cut one, so an absent key reads as none. */

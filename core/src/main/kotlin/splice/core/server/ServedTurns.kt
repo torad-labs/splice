@@ -7,6 +7,10 @@
 // The listener names each turn it relays with a fresh id in SERVED_TURN_HEADER (TurnRelay) and waits on the board for that id once
 // the answer has ended; the head, when its turn's row is written, ends the id on the board. Both run in one JVM, so the
 // board is a map. An id nobody expects (a head reached some other way) is dropped, so nothing accumulates.
+//
+// A row can be written long after its answer ended: code mode returns a turn while the round that writes its script
+// still streams, and that round's bill lands on the turn's row only once it settles (SourceRowHold). The head says so
+// as the turn ends (held), and the listener then waits for the row instead of recording a request that billed nothing.
 package splice.core.server
 
 import java.util.concurrent.CompletableFuture
@@ -32,13 +36,20 @@ public data class ServedTurn(
 public data class ServedTokens(val prompt: Long, val cached: Long, val completion: Long)
 
 /** Where a head ends a served turn. */
-public fun interface ServedTurns {
+public interface ServedTurns {
     public fun ended(id: String, turn: ServedTurn)
+
+    /** [id]'s row waits on a round its turn left streaming, so its head ends it later than its answer ended: once that
+     *  round settles, or when the head stops. */
+    public fun held(id: String)
 }
 
 /** The daemon's one board between its heads and its server listener. */
 public class ServedTurnBoard : ServedTurns {
     private val waiting = ConcurrentHashMap<String, CompletableFuture<ServedTurn>>()
+
+    // The expected turns whose heads said their rows come later than their answers.
+    private val late: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     /** The turn [id] will be, once its head ends it. Call before the turn is relayed and [forget] it after. */
     public fun expect(id: String): CompletableFuture<ServedTurn> = waiting.computeIfAbsent(id) { CompletableFuture() }
@@ -47,7 +58,17 @@ public class ServedTurnBoard : ServedTurns {
         waiting[id]?.complete(turn)
     }
 
+    override fun held(id: String) {
+        late += id
+        // An id nobody expects, or one forgotten meanwhile, is dropped here too.
+        if (!waiting.containsKey(id)) late -= id
+    }
+
+    /** Whether [id]'s head said its row waits on a round still streaming. */
+    public fun holds(id: String): Boolean = id in late
+
     public fun forget(id: String) {
         waiting.remove(id)
+        late.remove(id)
     }
 }

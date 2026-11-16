@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertInstanceOf
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.config.TurnKey
+import splice.core.server.ServedTurnBoard
 import splice.core.testing.TestPorts
 import splice.core.topology.ServerAddress
 import splice.core.topology.ServerConfig
@@ -60,6 +61,10 @@ internal class ServerRig(
      *  with what it sets. */
     val config: ServerConfig = ServerConfig(listen = "127.0.0.1:$port", commands = listOf("claude-team"))
 
+    /** The board the heads of this machine say on how each turn the listener handed them went; a test plays a
+     *  head's part on it. */
+    val board: ServedTurnBoard = ServedTurnBoard()
+
     private var mode: ServerMode? = null
 
     /** Opens [server] as the daemon does, over the machine `gpu-box` and the [heads] it offers. [state] holds the
@@ -76,7 +81,7 @@ internal class ServerRig(
 
             override fun offered(): List<SharedHead> = heads
         }
-        val reach = ServerReach(TurnKey(MgmtKey(StatePaths(baseOverride = state))), TestPorts.reserve())
+        val reach = ServerReach(TurnKey(MgmtKey(StatePaths(baseOverride = state))), TestPorts.reserve(), board)
         val opened = ServerMode(server, state.resolve("server"), Dispatchers.IO, log, clock, upstreams, waiter)
         mode = opened
         opened.open(ServerAddress("127.0.0.1", port), machine, reach, state, signinSecret)

@@ -175,7 +175,7 @@ notes = [
 id = 'ledger-rows'
 title = 'One content-free ledger row per request, classed honestly'
 feature = 'server-ledger'
-status = 'done'
+status = 'todo'
 owner = ''
 blocked_by = [
   'openai-route',
@@ -191,14 +191,13 @@ reviews = [
 ]
 notes = [
   '2026-11-15 07:46 CT: added; 1 of 1 checks fail, as they should before the work',
-  '2026-11-16 10:50 CT campaign: done in round 3 of server-ledger: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'ledger-reports'
 title = 'Usage reports by person, team, day, model and device'
 feature = 'server-ledger'
-status = 'done'
+status = 'todo'
 owner = ''
 blocked_by = [
   'ledger-rows',
@@ -214,20 +213,19 @@ reviews = [
 ]
 notes = [
   '2026-11-15 07:46 CT: added; 1 of 1 checks fail, as they should before the work',
-  '2026-11-16 10:50 CT campaign: done in round 1 of server-ledger: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'ledger-export'
 title = 'Hourly JSONL export to a folder or an S3-compatible bucket'
 feature = 'server-ledger'
-status = 'done'
+status = 'todo'
 owner = ''
 blocked_by = [
   'ledger-rows',
 ]
 guard = false
-spec = "[server.export] to = file:///dir or s3://bucket/prefix (endpoint, region, path_style, access_key_env, secret_key_env), every = duration. splice server usage export --now, and the daemon every 'every', write <prefix>/splice-usage/YYYY/MM/DD/HH.jsonl by each row's UTC hour, rewriting an hour whole so every row is there exactly once. export --now ends with exit 0 only once every write of that run has been answered, so its files or objects are there when it returns. S3 requests are SigV4-signed; the secret is never written to the home. See docs/specs/server-mode.md, F5."
+spec = "[server.export] to = file:///dir or s3://bucket/prefix (endpoint, region, path_style, access_key_env, secret_key_env), every = duration. splice server usage export --now, and the daemon every 'every', write <prefix>/splice-usage/YYYY/MM/DD/HH.jsonl by each row's UTC hour, rewriting an hour whole so every row is there exactly once. S3 requests are SigV4-signed; the secret is never written to the home. See docs/specs/server-mode.md, F5."
 checks = [
   'bun test ./.campaign/checks/server/export.test.ts',
 ]
@@ -237,15 +235,13 @@ reviews = [
 ]
 notes = [
   '2026-11-15 07:47 CT: added; 1 of 1 checks fail, as they should before the work',
-  "2026-11-16 08:54 CT: dispute decided for the builder (lead, 2026-11-16): the bucket case called the CLI with the harness's blocking cli while the bucket is served by the same test process, so no build could pass it. The case now awaits the command with the harness's run (a460d7e99); run against the server-ledger build the check went from 4 of 5 to 5 of 5. The spec now says export --now returns only once its writes are answered, which the case reads.",
-  '2026-11-16 10:50 CT campaign: done in round 1 of server-ledger: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'person-budgets'
 title = 'Daily and monthly budgets per person and team'
 feature = 'server-ledger'
-status = 'done'
+status = 'todo'
 owner = ''
 blocked_by = [
   'ledger-rows',
@@ -261,7 +257,6 @@ reviews = [
 ]
 notes = [
   '2026-11-15 07:47 CT: added; 1 of 1 checks fail, as they should before the work',
-  '2026-11-16 10:50 CT campaign: done in round 1 of server-ledger: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
@@ -439,7 +434,7 @@ notes = [
 id = 'speed-commands'
 title = "/fast and /ultrafast in a GPT head's menu, caught before the model"
 feature = 'gpt-speed'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -453,13 +448,14 @@ reviews = [
 ]
 notes = [
   '2026-11-16 00:57 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 13:02 CT campaign: done in round 2 of gpt-speed: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'speed-switch'
 title = "The speed is the session's: toggled, set, kept across a restart"
 feature = 'gpt-speed'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -473,13 +469,14 @@ reviews = [
 ]
 notes = [
   '2026-11-16 00:57 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 13:02 CT campaign: done in round 1 of gpt-speed: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'speed-wire'
 title = "A fast session's requests ask for the tier as Codex does"
 feature = 'gpt-speed'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -493,13 +490,14 @@ reviews = [
 ]
 notes = [
   '2026-11-16 00:58 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 13:02 CT campaign: done in round 2 of gpt-speed: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'speed-recorded'
 title = 'Each turn recorded and valued at the speed it was served at'
 feature = 'gpt-speed'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -513,13 +511,14 @@ reviews = [
 ]
 notes = [
   '2026-11-16 00:58 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 13:02 CT campaign: done in round 1 of gpt-speed: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'desktop-door'
 title = 'One door under /desktop, and the model a request names picks the head'
 feature = 'desktop-door'
-status = 'done'
+status = 'todo'
 owner = ''
 blocked_by = []
 guard = false
@@ -534,14 +533,13 @@ reviews = [
 ]
 notes = [
   '2026-11-16 02:20 CT: added; 1 of 1 checks fail, as they should before the work',
-  '2026-11-16 08:49 CT campaign: done in round 1 of desktop-door: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'desktop-switch'
 title = "splice desktop on and off write and restore the Code tab's switch in ~/.claude/settings.json"
 feature = 'desktop-door'
-status = 'done'
+status = 'todo'
 owner = ''
 blocked_by = []
 guard = false
@@ -556,14 +554,13 @@ reviews = [
 ]
 notes = [
   '2026-11-16 02:21 CT: added; 1 of 1 checks fail, as they should before the work',
-  '2026-11-16 08:49 CT campaign: done in round 1 of desktop-door: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'desktop-lineup'
 title = 'The picker lists every model of every head in the door, and follows splice'
 feature = 'desktop-door'
-status = 'done'
+status = 'todo'
 owner = ''
 blocked_by = []
 guard = false
@@ -578,14 +575,13 @@ reviews = [
 ]
 notes = [
   '2026-11-16 02:21 CT: added; 1 of 1 checks fail, as they should before the work',
-  '2026-11-16 08:49 CT campaign: done in round 1 of desktop-door: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'desktop-window'
 title = "One declared window, and every model's counts reported against it"
 feature = 'desktop-door'
-status = 'done'
+status = 'todo'
 owner = ''
 blocked_by = []
 guard = false
@@ -600,14 +596,13 @@ reviews = [
 ]
 notes = [
   '2026-11-16 02:21 CT: added; 1 of 1 checks fail, as they should before the work',
-  '2026-11-16 08:49 CT campaign: done in round 1 of desktop-door: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'desktop-key'
 title = "The door's own key opens the door and nothing else"
 feature = 'desktop-door'
-status = 'done'
+status = 'todo'
 owner = ''
 blocked_by = []
 guard = false
@@ -622,14 +617,13 @@ reviews = [
 ]
 notes = [
   '2026-11-16 02:21 CT: added; 1 of 1 checks fail, as they should before the work',
-  '2026-11-16 08:49 CT campaign: done in round 2 of desktop-door: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'desktop-recorded'
 title = "A turn through the door is its head's row, marked, and splice desktop names the last one"
 feature = 'desktop-door'
-status = 'done'
+status = 'todo'
 owner = ''
 blocked_by = []
 guard = false
@@ -644,14 +638,13 @@ reviews = [
 ]
 notes = [
   '2026-11-16 02:22 CT: added; 1 of 1 checks fail, as they should before the work',
-  '2026-11-16 08:49 CT campaign: done in round 1 of desktop-door: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'desktop-terminal'
 title = "With Desktop on, the terminal's claude and every head run as they did"
 feature = 'desktop-door'
-status = 'done'
+status = 'todo'
 owner = ''
 blocked_by = []
 guard = false
@@ -666,7 +659,6 @@ reviews = [
 ]
 notes = [
   '2026-11-16 02:22 CT: added; 1 of 1 checks fail, as they should before the work',
-  '2026-11-16 08:49 CT campaign: done in round 2 of desktop-door: its checks, its feature review, its code review passed',
 ]
 
 [[row]]

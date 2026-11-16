@@ -325,6 +325,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/cli/status/ConsoleCommand.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/config/ConfigService.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/retired/RetiredHeads.kt" to mapOf("writeAtomic0600(" to 1),
+    "core/src/main/kotlin/splice/core/speed/SessionSpeeds.kt" to mapOf("writeAtomic0600(" to 1),
     // The private MCP receipt row: two platform branches create the same lock, one atomic publication writes each entry.
     "core/src/main/kotlin/splice/core/mcp/McpToolResultFiles.kt" to mapOf(
         "FileChannel.open(" to 2,
@@ -588,9 +589,15 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "Files.createTempFile(" to 1,
         "Files.move(" to 1,
     ),
-    "integrations/claude-code/src/main/kotlin/splice/client/wrap/HeadCommandsDir.kt" to mapOf(
+    "integrations/claude-code/src/main/kotlin/splice/client/speed/SpeedSkills.kt" to mapOf(
+        "writeAtomic0600(" to 1,
+    ),
+    // The re-linked entries, and the stage-and-swap (HeadRealDir) of the commands and skills dirs.
+    "integrations/claude-code/src/main/kotlin/splice/client/wrap/GlobalEntryLinks.kt" to mapOf(
         "Files.createSymbolicLink(" to 2,
         "Files.move(" to 2,
+    ),
+    "integrations/claude-code/src/main/kotlin/splice/client/wrap/HeadCommandsDir.kt" to mapOf(
         "writeAtomic0600(" to 1,
     ),
     "integrations/claude-code/src/main/kotlin/splice/client/wrap/ProjectsLink.kt" to mapOf(

@@ -17,7 +17,6 @@ import splice.core.perf.TurnPerf
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.core.turn.UsageRequest
 import splice.core.turn.noRequestUsage
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
@@ -49,20 +48,6 @@ import splice.head.wire.TurnTrace
 // was the one KEPT because it is what FailureText.kt and TurnKnownEnd.kt use for text the client
 // can SEE, and those bytes are oracle-pinned; the two log-only surfaces widened to match.
 
-/** A posted round without a token report must not persist an invented zero in any billing bucket. */
-private val UNREPORTED_TOKEN_FIELDS = setOf(
-    PerfKeys.IN_TOKENS,
-    PerfKeys.OUT_TOKENS,
-    PerfKeys.CACHED_TOKENS,
-    PerfKeys.CACHE_WRITE_TOKENS,
-    PerfKeys.CACHE_WRITE_1H_TOKENS,
-    PerfKeys.ABSORBED_IN_TOKENS,
-    PerfKeys.ABSORBED_OUT_TOKENS,
-    PerfKeys.ABSORBED_CACHED_TOKENS,
-    PerfKeys.ABSORBED_CACHE_WRITE_TOKENS,
-    PerfKeys.ABSORBED_CACHE_WRITE_1H_TOKENS,
-)
-
 /** Renders the per-turn observability: the turn line, error lines, the perf row+line, and the
  *  cache log line. Split out so the driver stays drive-only (the audit's god-file finding). */
 internal class TurnTelemetry(
@@ -88,7 +73,7 @@ internal class TurnTelemetry(
     private val retiredTurns = RetiredTurns(perfStats, spend, events)
 
     /** Rows waiting on a source round, so a head stop can write them ([flushHeld]). */
-    private val held = HeldRows()
+    private val held = HeldRows { served?.waits(it) }
 
     /** The rows splice writes for requests it answered or declined itself, with no model turn behind them. */
     val localAnswers = LocalAnswerRows(headKey, perfStats, log, clock)
@@ -125,7 +110,7 @@ internal class TurnTelemetry(
         drive.perf.mark(PerfKeys.TOTAL)
         drive.perf.setCount(PerfKeys.ATTEMPTS, drive.perfCounter(PerfKeys.ATTEMPTS))
         val ending = RowEnding(outcomeTag, rateLimited, failure, perfStats.clock(), cause)
-        held.write(drive.sourceRow) { usage -> writeRow(drive, ending, usage) }
+        held.write(drive.sourceRow, drive.meta) { usage -> writeRow(drive, ending, usage) }
     }
 
     /** A retry horizon also schedules a held session, but only an actual quota reset describes a spent window. */
@@ -171,13 +156,10 @@ internal class TurnTelemetry(
     /** [usage] is the turn's whole usage once a source round it held settled; its counters replace the turn's. */
     private fun writeRow(drive: TurnDrive, ending: RowEnding, usage: Usage?) {
         val outcomeTag = ending.outcomeTag
+        val bill = RowBill(drive)
         // A held row may carry an interceptor's assembled step, not the raw rounds this drive posted.
-        val billed = drive.rawRoundUsage() ?: usage
-        billed?.let {
-            drive.perf.setCount(PerfKeys.NO_REQUEST, 0L)
-            TurnBill.counters(it).forEach { (key, value) -> drive.perf.setCount(key, value) }
-        }
-        val snap = billingSnapshot(drive)
+        (drive.rawRoundUsage() ?: usage)?.let(bill::stamp)
+        val snap = bill.snapshot()
         // The cache line is the row's own numbers, so it is written here, once the row's bill is whole.
         cache.rowLine(drive.upstreamModel, snap.counters, drive.meta.compact)?.let { log(it) }
         UsageObservation.record(drive.perf, snap)
@@ -241,21 +223,6 @@ internal class TurnTelemetry(
         val tools = drive.perf.wire.toolUseIds
         val session = drive.meta.scope.sessionId ?: return
         if (tools.isNotEmpty() && drive.emitter.endedCleanly) events.toolsOpened(session, tools)
-    }
-
-    private fun billingSnapshot(drive: TurnDrive): PerfSnapshot {
-        val snap = drive.perf.snapshot()
-        val raw = drive.rawRoundUsage()
-        val started = (snap.counters[PerfKeys.TRANSPORT_ATTEMPT_STARTS] ?: 0L) > 0L
-        val posted = raw?.origin?.history?.request?.let { it == UsageRequest.POSTED } ?: started
-        if (drive.roundInterceptor == null || !posted) return snap
-        val counters = snap.counters - PerfKeys.LOCAL_STEP - PerfKeys.NO_REQUEST
-        val observed = raw?.reported.orEmpty().isNotEmpty()
-        return if (TurnBill.isEmpty(counters) && !observed) {
-            snap.copy(counters = counters.filterKeys { it !in UNREPORTED_TOKEN_FIELDS })
-        } else {
-            snap.copy(counters = counters)
-        }
     }
 
     /** V4-404: the one place a turn's trace is closed, from both endings (a drive's perf row and a local

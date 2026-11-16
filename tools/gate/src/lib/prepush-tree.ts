@@ -1,9 +1,11 @@
-// The pre-push build tree: ONE persistent detached worktree of the repository, kept under the git directory and moved to
-// each pushed sha. Pre-push judges the pushed commit there, never the shared checkout, so a session's half-finished
-// edit cannot redden another session's push. The tree is persistent on purpose: untracked source is removed on every
-// move, but the ignored build outputs, Kotlin's incremental state and gradle's caches stay, so the next push compiles
-// and tests only what its commit changed. One lock serialises users of the tree. Node modules are linked from the
-// shared checkout (the pinned ast-grep and the gate's own dependencies); every tracked file comes from the commit.
+// The pre-push build tree: ONE detached worktree of the repository, made under the git directory for the pushed sha and
+// removed when its gate ends. Pre-push judges the pushed commit there, never the shared checkout, so a session's
+// half-finished edit cannot redden another session's push. A gate leaves nothing on the disk once it has its verdict:
+// kept between pushes, the two trees held gigabytes of build output that only the next gate would read. What a later
+// gate can reuse comes from Gradle's build cache, which Gradle trims by itself. A tree a killed gate left behind is
+// moved to the next sha, without its untracked source, and goes when that gate ends. One lock serialises users of the
+// tree. Node modules are linked from the shared checkout (the pinned ast-grep and the gate's own dependencies); every
+// tracked file comes from the commit.
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
@@ -13,7 +15,7 @@ export interface PrePushTree {
   readonly path: string;
   /** Milliseconds spent moving the tree to the sha, the lock wait excluded. */
   readonly setupMs: number;
-  /** Frees the tree for the next push. Safe to call twice. */
+  /** Removes the tree, with every file its gate built, and frees its place for the next push. Safe to call twice. */
   readonly release: () => void;
 }
 
@@ -31,8 +33,8 @@ function must(cwd: string, args: readonly string[]): string {
 }
 
 /** Where the ktlint Gradle plugin keeps what its lint step found: every finding named by absolute path, and read back by the
- *  next run for the files that did not change. A tree that is kept between pushes must not carry the previous run's, because
- *  one that was once restored from another tree's cache entry names that tree's files, and they would be reported in this
+ *  next run for the files that did not change. A tree a killed gate left behind must not carry that run's, because one
+ *  that was once restored from another tree's cache entry names that tree's files, and they would be reported in this
  *  tree's verdict. Gradle project directories sit at most three deep. */
 const LINT_RESULTS = ["*/build/intermediates/ktLint", "*/*/build/intermediates/ktLint", "*/*/*/build/intermediates/ktLint"];
 
@@ -55,7 +57,7 @@ export function prePushHome(repoRoot: string): string {
   return home;
 }
 
-/** Moves the persistent tree [name] to [sha] and returns it, locked. Throws when git cannot, or when the lock stays busy. */
+/** Makes the tree [name] at [sha] and returns it, locked. Throws when git cannot, or when the lock stays busy. */
 export function preparePrePushTree(repoRoot: string, sha: string, waitMs: number = LOCK_WAIT_MS, name: string = PRE_PUSH_TREE): PrePushTree {
   const home = prePushHome(repoRoot);
   const slot = takeExclusive(join(home, `${name}.lock`), waitMs);
@@ -63,8 +65,8 @@ export function preparePrePushTree(repoRoot: string, sha: string, waitMs: number
   return moveTree(repoRoot, home, name, sha, slot);
 }
 
-/** The pre-push tree moved to [sha] and locked, when no one holds it now; undefined, at once, when someone does. Throws when git
- *  cannot move it. A caller that waits does so between calls, so its process keeps running while it waits. */
+/** The pre-push tree made at [sha] and locked, when no one holds it now; undefined, at once, when someone does. Throws when git
+ *  cannot make it. A caller that waits does so between calls, so its process keeps running while it waits. */
 export function takePrePushTreeNow(repoRoot: string, sha: string): PrePushTree | undefined {
   const home = prePushHome(repoRoot);
   const slot = takeExclusive(join(home, `${PRE_PUSH_TREE}.lock`), 0);
@@ -78,10 +80,12 @@ function moveTree(repoRoot: string, home: string, name: string, sha: string, slo
     if (existsSync(join(path, ".git"))) {
       must(path, ["checkout", "--detach", "--force", "-q", sha]);
       must(path, ["reset", "--hard", "-q", sha]);
-      // Untracked source goes; ignored build output and caches stay.
+      // A gate that was killed left this tree. Its untracked source goes here, and the rest of it when this gate ends.
       must(path, ["clean", "-fdq"]);
       dropLintResults(path);
     } else {
+      // What is left of a tree whose removal was cut short is no worktree; it goes before the new one is made.
+      rmSync(path, { recursive: true, force: true });
       git(repoRoot, ["worktree", "prune"]);
       must(repoRoot, ["worktree", "add", "--detach", "--force", path, sha]);
     }
@@ -91,5 +95,22 @@ function moveTree(repoRoot: string, home: string, name: string, sha: string, slo
     slot.release();
     throw error;
   }
-  return { path, setupMs: performance.now() - started, release: () => slot.release() };
+  let gone = false;
+  const release = (): void => {
+    if (gone) return;
+    gone = true;
+    try {
+      removeTree(repoRoot, path);
+    } finally {
+      slot.release();
+    }
+  };
+  return { path, setupMs: performance.now() - started, release };
+}
+
+/** Removes the tree at [path] and git's record of it. The link to the shared checkout's node modules is unlinked, never
+ *  followed. */
+function removeTree(repoRoot: string, path: string): void {
+  rmSync(path, { recursive: true, force: true });
+  git(repoRoot, ["worktree", "prune"]);
 }

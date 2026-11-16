@@ -8,6 +8,7 @@ import splice.core.turn.Usage
 import splice.core.turn.UsageField
 import splice.core.turn.UsageMeasure
 import splice.core.turn.UsageOrigin
+import splice.core.turn.UsageServing
 import splice.core.util.JsonScalars
 
 /** The chat dialect's usage accounting: the three token buckets and the CX-18 alias chain that
@@ -29,7 +30,7 @@ internal class ChatUsage {
         outputTokens,
         cachedTokens,
         reported = reported.toSet(),
-        origin = UsageOrigin(measured = measured.toSet(), speed = speed),
+        origin = UsageOrigin(measured = measured.toSet(), serving = UsageServing(speed = speed)),
     )
 
     /** The backend has reported the round's output tokens: the bill a finished stream sends last. */

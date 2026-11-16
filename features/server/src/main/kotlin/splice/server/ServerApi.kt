@@ -17,6 +17,7 @@ import splice.core.topology.ServerDurations
 import splice.core.util.JsonScalars
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
+import java.time.Duration
 import java.time.Instant
 
 /** What an operation answers: the JSON to send, or why it is refused. */
@@ -49,18 +50,27 @@ public class KeyApi(private val keys: ServerKeys, private val log: LogSink) {
             person == null -> notAnEmail()
             expires != null && lifetime == null -> refused("expires must be a duration such as 12h, 30d or 8w")
             name != null && !nameShape.matches(name) -> refused("name must be one line of at most $NAME_MAX characters")
-            else -> minted(KeyRequest(person, name, lifetime))
+            else -> minted(KeyRequest(person, name, lifetime), HttpStatusCode.Created)
         }
     }
 
-    private suspend fun minted(request: KeyRequest): ServerAnswer {
+    /** [person]'s own key after their sign-in (F2): minted for [device] with the source `signin`, living [days],
+     *  and answered with the key, once. */
+    internal suspend fun signedIn(person: String, device: String, days: Int): ServerAnswer {
+        val lifetime = Duration.ofDays(days.toLong()).toMillis()
+        val request = KeyRequest(person, lifetimeMs = lifetime, source = SIGNIN_SOURCE, device = device)
+        return minted(request, HttpStatusCode.OK)
+    }
+
+    private suspend fun minted(request: KeyRequest, status: HttpStatusCode): ServerAnswer {
         val minted = keys.mint(request)
-        log("[server] key ${minted.row.prefix} issued to ${LogSafe.str(request.person)}\n")
+        val how = request.device?.let { " by a sign-in on the device ${LogSafe.str(it)}" }.orEmpty()
+        log("[server] key ${minted.row.prefix} issued to ${LogSafe.str(request.person)}$how\n")
         val answer = buildJsonObject {
             put("key", minted.reveal())
             row(minted.row).forEach { (field, value) -> put(field, value) }
         }
-        return ServerAnswer.Done(HttpStatusCode.Created, answer)
+        return ServerAnswer.Done(status, answer)
     }
 
     /** Revokes the key [prefix] names; 404 when no key has that prefix. */
@@ -89,10 +99,12 @@ public class KeyApi(private val keys: ServerKeys, private val log: LogSink) {
         put(PERSON, key.person)
         put("name", key.name)
         put("source", key.source)
+        put("device", key.device)
         put("created_at", at(key.createdAt))
         put("expires_at", key.expiresAt?.let(::at))
         put("last_used_at", key.lastUsedAt?.let(::at))
         put("revoked_at", key.revokedAt?.let(::at))
+        put("superseded_by", key.supersededBy)
     }
 
     private fun at(millis: Long): String = Instant.ofEpochMilli(millis).toString()

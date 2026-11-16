@@ -110,7 +110,7 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
     // `login <head> [--label <name>] [--discard]` (v0.4.0, FEATURES.md §11): the value after the flag,
     // wherever it sits. --discard (V4-276) takes no value and only means something with --label.
     "login" to CommandRegistration(
-        "<head> [--label <name> [--discard]]",
+        "<head> [--label <name> [--discard]] | <server>",
         CommandFactory { a ->
             val flag = a.indexOf(LABEL_FLAG)
             val label = if (flag > 0) a.getOrNull(flag + 1) else null
@@ -125,6 +125,11 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
                 discard && (label == null || a.count { it == DISCARD_FLAG } > 1)
             if (malformed) null else Command.Login(positional.firstOrNull(), label, discard)
         },
+    ),
+    // Nov 16, 2026: server mode (docs/specs/server-mode.md, F2); `login <server>` signs in, this forgets the key.
+    "logout" to CommandRegistration(
+        "<server>",
+        CommandFactory { a -> a.getOrNull(1)?.takeIf { a.size == 2 }?.let(Command::Logout) },
     ),
     "setup" to CommandRegistration("", CommandFactory.Alone(Command.Setup)),
     "add" to CommandRegistration(

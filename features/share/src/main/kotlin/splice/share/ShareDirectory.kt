@@ -1,34 +1,26 @@
 // NEW: LAN share (docs/specs/lan-share.md). What a sharing machine offers, as its `GET /` answers it: the commands
-// `splice share status` prints on the server, and `splice remote` checks an address against and lists on a node.
+// `splice share status` prints on the server, and `splice remote` checks an address against and lists on a node. A
+// server-mode server (docs/specs/server-mode.md) offers the same to a key holder, so the ask carries this laptop's key
+// for it when `splice login` signed in there.
 package splice.share
 
 import kotlinx.coroutines.CoroutineDispatcher
-import splice.core.wire.HttpStatus
 import java.net.URI
 
-/** What reading a sharing machine's offer came to: the offer, or why it could not be had, in words naming it. */
-public sealed class ShareDirectoryRead {
-    public data class Read(val info: ShareInfo) : ShareDirectoryRead()
-
-    public data class Refused(val why: String) : ShareDirectoryRead()
-}
-
-public class ShareDirectory(io: CoroutineDispatcher) {
+public class ShareDirectory(
+    io: CoroutineDispatcher,
+    /** The key this laptop holds for a server, which a server-mode server needs to answer at all (F2). */
+    private val logins: ServerLogins? = null,
+) {
     private val http = ShareHttp(io)
 
-    /** What [server] (`http://devbox.lan:3097`) offers. */
-    public suspend fun read(server: String): ShareDirectoryRead {
-        val asked = when (val answer = http.get(URI.create("$server/"))) {
-            is ShareAnswer.Unreachable -> return refused("$server can't be reached: ${answer.why}")
-            is ShareAnswer.Answered -> answer
-        }
-        val info = asked.takeIf { it.status == HttpStatus.OK }?.let { http.decoded(it.body, ShareInfo.serializer()) }
-        return when {
-            asked.status != HttpStatus.OK -> refused("$server refused: ${http.said(asked.body)}")
-            info == null -> refused("$server answered, but not as a machine sharing splice commands")
-            else -> ShareDirectoryRead.Read(info)
-        }
-    }
-
-    private fun refused(why: String): ShareDirectoryRead = ShareDirectoryRead.Refused(why)
+    /** What [server] (`http://devbox.lan:3097`) offers, or why it could not be had, in words naming it. Only a
+     *  server-mode server answers 401 (a LAN share holds no identity): its key is missing, expired or revoked, so the
+     *  refusal says how to sign in. */
+    public suspend fun read(server: String): Asked<ShareInfo> = http.read(
+        server,
+        http.get(URI.create("$server/"), logins?.of(server)),
+        not = "not as a machine sharing splice commands",
+        unauthorized = "; sign in there first: splice login $server",
+    ) { http.decoded(it, ShareInfo.serializer()) }
 }

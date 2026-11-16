@@ -84,10 +84,20 @@ public class OAuthLoginFlow(
      *  null for the CLI. Present means this call is being WATCHED off-request: [awaitCode] reports
      *  the authorize URL through it instead of opening a browser on the daemon's own desktop. */
     public suspend fun run(spec: LoginSpec, observer: LoginObserver? = null): Boolean {
+        val code = code(spec.callback.port, observer) { spec.browser } ?: return false
+        return exchangeAndPersist(spec, code)
+    }
+
+    /** The authorization code a browser sign-in brings back to a loopback listener on [port], 0 taking any free one,
+     *  or null, said. [signInAt] builds the sign-in for the port the listener holds, so a redirect that names a free
+     *  port is built once it is bound and never raced for. Only the code is fetched: what it is traded for, and where,
+     *  is the caller's (server mode's `splice login <server>` trades it at the server, F2). */
+    public suspend fun code(port: Int, observer: LoginObserver? = null, signInAt: BrowserSignInAt): String? {
         val codeRef = AtomicReference<String?>(null)
         val errRef = AtomicReference<String?>(null)
         val latch = CountDownLatch(1)
-        val server = createServer(spec.callback.port) ?: return false
+        val server = createServer(port) ?: return null
+        val spec = signInAt(server.address.port)
         val pool = Executors.newSingleThreadExecutor()
         server.executor = pool
         server.createContext(spec.callback.path) { ex ->
@@ -97,8 +107,7 @@ public class OAuthLoginFlow(
         try {
             // The wait parks its thread for up to five minutes. Interruptible, so a cancelled sign-in leaves it at
             // once and the listener's port is free for the next one; until Nov 11, 2026 nothing could end it early.
-            val code = runInterruptible { awaitCode(spec, latch, codeRef, errRef, observer) } ?: return false
-            return exchangeAndPersist(spec, code)
+            return runInterruptible { awaitCode(spec, latch, codeRef, errRef, observer) }
         } finally {
             server.stop(0)
             pool.shutdownNow()
@@ -118,7 +127,7 @@ public class OAuthLoginFlow(
 
     /** Open the browser, then block for the provider's callback; the authorization code or null. */
     private fun awaitCode(
-        spec: LoginSpec,
+        spec: BrowserSignIn,
         latch: CountDownLatch,
         codeRef: AtomicReference<String?>,
         errRef: AtomicReference<String?>,
@@ -173,7 +182,7 @@ public class OAuthLoginFlow(
      *  calls on every way out. Null without a terminal (a detached run, the console's off-request
      *  sign-in), which prints no prompt and reads nothing. */
     private fun pasteFallback(
-        spec: LoginSpec,
+        spec: BrowserSignIn,
         latch: CountDownLatch,
         codeRef: AtomicReference<String?>,
     ): PasteReading? {
@@ -267,7 +276,7 @@ public class OAuthLoginFlow(
 
     private fun handleCallback(
         ex: HttpExchange,
-        spec: LoginSpec,
+        spec: BrowserSignIn,
         codeRef: AtomicReference<String?>,
         errRef: AtomicReference<String?>,
         latch: CountDownLatch,

@@ -1,10 +1,14 @@
 // NEW: server mode (docs/specs/server-mode.md, decisions 1 to 3). What the decode accepts in `[server]` but the daemon
 // may not serve: a server beside an enabled share, a command no head here runs, a command whose head signs with one
 // person's plan, an address it cannot listen on, half a TLS pair, a proxy that is no address, an admin that is no
-// email. Each is a boot finding beside every other, naming its key and never a value an operator wrote in confidence.
+// email, a sign-in (F2) no laptop could complete. Each is a boot finding beside every other, naming its key and never
+// a value an operator wrote in confidence.
 package splice.core.topology
 
 import splice.core.listen.IpLiterals
+import splice.core.util.LoopbackOverride
+import java.net.URI
+import java.net.URISyntaxException
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -16,7 +20,8 @@ internal class ServerChecks(
     private val server = topology.server
 
     fun findings(): List<TopologyFinding> = if (server.declared) {
-        listen() + exclusive() + commands() + tls() + people() + limits() + ServerLedgerChecks(server).findings()
+        listen() + exclusive() + commands() + tls() + people() + limits() + signin() +
+            ServerLedgerChecks(server).findings()
     } else {
         emptyList()
     }
@@ -112,9 +117,49 @@ internal class ServerChecks(
                 .takeIf { server.keepaliveSeconds < 0 },
         )
     }
+
+    /** F2: a sign-in a laptop can complete, against an issuer reached safely, admitting someone. */
+    private fun signin(): List<TopologyFinding> {
+        val signin = server.signin ?: return emptyList()
+        val domainShape = Regex("""^@?[^@\s.]+(\.[^@\s.]+)+$""")
+        return listOfNotNull(
+            issuer(signin.issuer)?.let { TopologyFinding("$SERVER_SIGNIN.issuer", it) },
+            TopologyFinding("$SERVER_SIGNIN.client_id", "must be the client id this server is registered as there")
+                .takeIf { signin.clientId.isBlank() },
+            TopologyFinding(
+                "$SERVER_SIGNIN.client_secret_env",
+                "must name an environment variable, as in \"SPLICE_SIGNIN_SECRET\"",
+            ).takeIf { signin.clientSecretEnv?.isBlank() == true },
+            TopologyFinding(
+                "$SERVER_SIGNIN.domains",
+                "list the email domains whose people may sign in, as in [\"team.example\"]",
+            ).takeIf { signin.domains.isEmpty() || !signin.domains.all { domainShape.matches(it.trim()) } },
+            TopologyFinding("$SERVER_SIGNIN.key_days", "must be a number of days, 1 or more")
+                .takeIf { signin.keyDays < 1 },
+            TopologyFinding("$SERVER_SIGNIN.rate_per_minute", "must be 0 (no cap) or more")
+                .takeIf { signin.ratePerMinute < 0 },
+        )
+    }
+
+    /** What is wrong with [named] as the issuer: no http(s) URL, or one that is not https off this machine. */
+    private fun issuer(named: String): String? {
+        val issuer = try {
+            URI(named.trim())
+        } catch (_: URISyntaxException) {
+            null
+        }
+        return when {
+            issuer?.host == null || issuer.scheme !in setOf("http", "https") ->
+                "must be the identity provider's issuer URL, as in \"https://accounts.google.com\""
+            issuer.scheme == "http" && !LoopbackOverride.isLoopback(named) ->
+                "must be https: the codes a laptop trades and the keys they mint would cross the network in the clear"
+            else -> null
+        }
+    }
 }
 
 private const val SERVER_TABLE = "server"
+private const val SERVER_SIGNIN = "$SERVER_TABLE.signin"
 private const val SERVER_COMMANDS = "$SERVER_TABLE.commands"
 private const val SERVER_TLS_CERT = "$SERVER_TABLE.tls_cert"
 private const val SERVER_TLS_KEY = "$SERVER_TABLE.tls_key"

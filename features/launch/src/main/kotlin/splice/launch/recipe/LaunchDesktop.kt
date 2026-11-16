@@ -16,6 +16,7 @@ import splice.client.desktop.DESKTOP_SETTINGS_FILE
 import splice.client.desktop.DesktopSettings
 import splice.client.desktop.DesktopSettingsRead
 import splice.client.desktop.SettingsRead
+import splice.client.desktop.providerSwitches
 import splice.client.wrap.WrappedLaunch
 import splice.core.util.JsonScalars
 import java.nio.file.Path
@@ -38,6 +39,11 @@ internal data class DesktopCancelled(val overlay: JsonObject, val warning: Strin
 
 internal class DesktopCancel(private val desktop: LaunchDesktop?) {
     private val settings = DesktopSettings()
+
+    /** What every launch clears from the environment it inherits, with Desktop on or off: Claude Code's provider
+     *  switches. A shell inside a Code tab session carries the door's, and a session that inherits any of them goes
+     *  past its head. */
+    val cleared: List<String> = providerSwitches
 
     /** For a launch over the `claude` command's folder, [wrapped], whose environment sets [env] and whose head
      *  starts on [pinned] when it pins one; null for any other launch, and while Desktop is off, when the launch is as

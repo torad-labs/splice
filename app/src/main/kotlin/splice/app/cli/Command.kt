@@ -27,8 +27,6 @@ import splice.core.util.EnvReader
 import splice.diagnostics.logs.LogsCommand
 import splice.diagnostics.wire.WireCommand
 import splice.launch.install.InstallResult
-import splice.lifecycle.upgrade.UpgradeVerb
-import splice.lifecycle.upgrade.VersionedRestart
 import splice.sessions.list.LocalSessions
 import splice.sessions.list.SessionsCommand
 import splice.sessions.list.SessionsJson
@@ -155,20 +153,7 @@ public sealed class Command {
 
     /** v0.4.0 (FEATURES.md §5): `splice upgrade [--to vX] [--now] [--rollback]`. */
     public data class Upgrade(val args: List<String>) : Command() {
-        override suspend fun run(): Int {
-            val verb = UpgradeVerb(
-                TerminalOutput(::println),
-                TerminalOutput(System.err::println),
-                EnvReader(System::getenv),
-                // The upgrade waited for every turn itself (or was told --now): no second wait here.
-                VersionedRestart {
-                    LifecycleWiring.restart(it, waitForCompactions = false, launchJar = LifecycleWiring.installedJar())
-                },
-                InstallWiring.units(EnvReader(System::getenv)),
-                LifecycleWiring.cliUpdateSettings(),
-            )
-            return outcomeExitCode(verb.upgrade(args))
-        }
+        override suspend fun run(): Int = outcomeExitCode(LifecycleWiring.upgradeVerb().upgrade(args))
     }
 
     public data object Status : Command() { override suspend fun run(): Int = success { StatusCommand().status() } }

@@ -12,7 +12,6 @@
 package splice.app.cli.desktop
 
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -43,7 +42,7 @@ internal class DesktopCommand(
     }
 
     fun run(args: List<String>): Int = when {
-        args.isEmpty() || args == listOf(JSON_FLAG) -> asked(json = args.isNotEmpty())
+        args.isEmpty() || args == listOf("--json") -> asked(json = args.isNotEmpty())
         args.first() == "on" -> on(args.drop(1))
         args.singleOrNull() in PLAIN_ACTS -> acted(args.first(), NO_BODY)
         else -> refused("usage: splice desktop $DESKTOP_USAGE")
@@ -52,7 +51,7 @@ internal class DesktopCommand(
     /** `on`, or `on --model <selector>`. */
     private fun on(rest: List<String>): Int = when {
         rest.isEmpty() -> acted("on", NO_BODY)
-        rest.size == 2 && rest.first() == MODEL_FLAG ->
+        rest.size == 2 && rest.first() == "--model" ->
             acted("on", buildJsonObject { put("model", rest.last()) }.toString())
         else -> refused("usage: splice desktop $DESKTOP_USAGE")
     }
@@ -81,7 +80,7 @@ internal class DesktopCommand(
     /** The daemon's 200 answer to `GET /api/desktop`, or null once what went wrong is said. */
     private fun read(): ControlReply? {
         val (port, key) = reached() ?: return null
-        val reply = ControlPlaneClient.send(api(port, ""), "GET", key, READ_MS)
+        val reply = ControlPlaneClient.send(api(port, ""), "GET", key, STATE_MS)
             ?: return null.also { refused("the daemon didn't answer") }
         return reply.takeIf { it.status == HttpStatus.OK } ?: null.also { refused(why(reply)) }
     }
@@ -116,7 +115,7 @@ internal class DesktopCommand(
     private fun parsed(reply: ControlReply): JsonObject? = JsonScalars.objectOrNull(json, reply.body)
 
     private fun why(reply: ControlReply): String = when (reply.status) {
-        HttpStatus.NOT_FOUND -> OLDER_DAEMON
+        HttpStatus.NOT_FOUND -> NO_DESKTOP_ROUTES
         else -> JsonScalars.str(parsed(reply), "error") ?: "the daemon answered HTTP ${reply.status}"
     }
 
@@ -126,49 +125,16 @@ internal class DesktopCommand(
     }
 }
 
-/** `splice desktop` in words. */
-private class DesktopSaid(private val out: TerminalOutput) {
-    fun state(state: JsonObject) {
-        val on = JsonScalars.str(state, "on") == "true"
-        out.line("Desktop: ${if (on) "on" else "off"}")
-        out.line("Door: ${JsonScalars.str(state, "door").orEmpty()}")
-        out.line("Default model: ${JsonScalars.str(state, "default_model") ?: "none: no head is in the door"}")
-        val models = (state["models"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
-        out.line(if (models.isEmpty()) "Models: none" else "Models:")
-        models.forEach { m ->
-            out.line("  ${text(m, "model")}  ${text(m, "label")}  (${text(m, "command")})")
-        }
-        val left = (state["left_out"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
-        if (left.isNotEmpty()) out.line("Left out:")
-        left.forEach { h ->
-            out.line("  ${text(h, "command")} (${text(h, "head")}): ${text(h, "reason")}")
-        }
-        val last = state["last_turn"] as? JsonObject
-        if (last == null) {
-            out.line("Last turn: none yet")
-        } else {
-            val asked = JsonScalars.str(last, "model_asked")
-            val ran = JsonScalars.str(last, "model")
-            val session = JsonScalars.str(last, "session_id")?.let { " in session $it" }.orEmpty()
-            out.line("Last turn: ${text(last, "at")} on ${text(last, "head")}$session, asked $asked, ran $ran")
-        }
-    }
-
-    private fun text(from: JsonObject, key: String): String = JsonScalars.str(from, key).orEmpty()
-}
-
-private const val JSON_FLAG = "--json"
-private const val MODEL_FLAG = "--model"
 private const val NO_BODY = "{}"
 private val PLAIN_ACTS = setOf("off", "rotate-key")
 private const val UNREADABLE = "the daemon's answer could not be read"
 private const val NOT_CONNECTED = "the daemon didn't answer; nothing was changed"
 private const val CUT = "the connection dropped before the daemon answered; run `splice desktop` to see what is so"
-private const val OLDER_DAEMON =
+private const val NO_DESKTOP_ROUTES =
     "the daemon that is running is older than this splice; run `splice restart`, then try again"
 
 // why: reading the door's state reads each head's login; a busy daemon still answers well inside this
-private const val READ_MS = 15_000
+private const val STATE_MS = 15_000
 
 // why: an act writes two small files; a daemon busy with turns still answers well inside this
 private const val ACT_MS = 30_000

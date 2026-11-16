@@ -22,22 +22,6 @@ import kotlinx.serialization.json.putJsonObject
 import splice.client.Keys
 import splice.core.util.JsonScalars
 
-/** One row of the Code tab's picker. */
-public data class DesktopRow(val model: String, val label: String, val description: String)
-
-/** What `on` writes: the door's address, the desktop key, the declared window, the default model's selector and the
- *  picker's rows. */
-public data class DesktopWrite(
-    val door: String,
-    val key: String,
-    val window: Long,
-    val model: String,
-    val rows: List<DesktopRow>,
-)
-
-/** A settings file once `on` has written into it, and the record of what it replaced there. */
-public data class DesktopOn(val file: JsonObject, val replaced: JsonObject)
-
 /** The settings file's `env` and `modelPicker`, as `splice desktop` writes and restores them. */
 public class DesktopSettings {
     /** Why `on` must not write into [file] (a provider switch set to anything but the door at [door], or a file not
@@ -183,25 +167,25 @@ public class DesktopSettings {
 }
 
 /** The Mantle switch, its base URL and its bearer: the door, and the desktop key. */
-public const val DESKTOP_USE_MANTLE: String = "CLAUDE_CODE_USE_MANTLE"
-public const val DESKTOP_MANTLE_URL: String = "ANTHROPIC_BEDROCK_MANTLE_BASE_URL"
-public const val DESKTOP_BEARER: String = "AWS_BEARER_TOKEN_BEDROCK"
+internal const val DESKTOP_USE_MANTLE: String = "CLAUDE_CODE_USE_MANTLE"
+internal const val DESKTOP_MANTLE_URL: String = "ANTHROPIC_BEDROCK_MANTLE_BASE_URL"
+internal const val DESKTOP_BEARER: String = "AWS_BEARER_TOKEN_BEDROCK"
 
 /** The one window the Code tab's Claude Code holds for a model it does not know. */
-public const val DESKTOP_WINDOW: String = "CLAUDE_CODE_MAX_CONTEXT_TOKENS"
+internal const val DESKTOP_WINDOW: String = "CLAUDE_CODE_MAX_CONTEXT_TOKENS"
 
 /** Auto mode's classifier server, which runs on claude.ai and is no part of a provider; off. */
-public const val DESKTOP_AUTO_MODE: String = "CLAUDE_CODE_AUTO_MODE_SERVER"
+internal const val DESKTOP_AUTO_MODE: String = "CLAUDE_CODE_AUTO_MODE_SERVER"
 
 /** The model a session starts on. */
 public const val DESKTOP_MODEL: String = "ANTHROPIC_MODEL"
 
 /** Every variable `on` writes into the file's `env`, in the order it writes them. */
-public val desktopEnv: List<String> =
+private val desktopEnv: List<String> =
     listOf(DESKTOP_USE_MANTLE, DESKTOP_MANTLE_URL, DESKTOP_BEARER, DESKTOP_WINDOW, DESKTOP_AUTO_MODE, DESKTOP_MODEL)
 
 /** The other providers' switches: a file that sets one is pointed elsewhere, and `on` leaves it alone. */
-public val otherProviders: List<String> =
+private val otherProviders: List<String> =
     listOf("CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY")
 
 /** Claude Code's provider switches and what goes with them, which a launch clears from the environment it inherits:
@@ -213,7 +197,7 @@ public val providerSwitches: List<String> =
 public const val DESKTOP_KEY_PREFIX: String = "splice-desktop-"
 
 /** The file's key for Claude Code's picker. */
-public const val DESKTOP_PICKER: String = "modelPicker"
+internal const val DESKTOP_PICKER: String = "modelPicker"
 
 /** The file's key for the model the person picked, in the Code tab or in Claude Code. */
 public const val DESKTOP_FILE_MODEL: String = Keys.MODEL

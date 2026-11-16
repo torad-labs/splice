@@ -26,7 +26,6 @@ import splice.app.control.ProcessReads
 import splice.app.control.ServerModeSource
 import splice.app.daemon.BootedTopology
 import splice.app.head.HeadProbeReadings
-import splice.app.peer.PeersWiring
 import splice.app.provider.ClaudeAccountWiring
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ModelRosters
@@ -243,7 +242,7 @@ internal class ControlPlane(
         )
         wireConsolePorts(srv)
         // Oct 19, 2026: the peer helpers and their journals, over the same store the guard admits peer keys from.
-        srv.peerServices = PeersWiring().services(guard.peers, statePaths.stateDir, probeScope, log)
+        parts.wirePeers(srv, guard, probeScope)
         parts.wireRestartSuccessor(srv, controlPort)
         return if (ownership.bind(srv, controlPort, listen.handOn(guard))) srv.also { mcpServices.refresh() } else null
     }

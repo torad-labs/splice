@@ -343,9 +343,12 @@ USD per million tokens, on a row (`rates = { ... }`) or on a head (`[heads.<key>
 wins for the ids it names). Required: `input`, `cache_read`, `output`. Optional: `cache_write`, `cache_write_1h`.
 A long-context tier comes as a set: `long_context_over_input_tokens`, `long_context_input`,
 `long_context_cache_read`, `long_context_output`, optional `long_context_cache_write` and
-`long_context_cache_write_1h`. No card means "no rate card", never zero. Budgets live in `budgets.json`, not here.
+`long_context_cache_write_1h`. A card at Fast or Ultrafast (a head signed in with ChatGPT) comes as a set
+the same way: `fast_input`, `fast_cache_read`, `fast_output`, optional `fast_cache_write`, and the same with
+`ultrafast_`. A turn is priced at the card for the speed it was served at; a speed with no card leaves it unpriced.
+No card means "no rate card", never zero. Budgets live in `budgets.json`, not here.
 
-Source: TokenCost.kt (TomlRates, lines 142-175); HeadConfig.kt (lines 44-54); splice.example.toml (lines 709-713, 731-732).
+Source: TokenCost.kt (TomlRates, lines 168-212); SpeedRates.kt; HeadConfig.kt (lines 44-54); splice.example.toml (lines 709-713, 731-732).
 
 ## 6. [heads.<key>]
 

@@ -75,7 +75,7 @@ internal class HookInstaller(
 internal object LoginInterception {
     private const val CAPTURE_HOOK_SH = "splice-key-capture-hook.sh"
     private const val KEYSETUP_HOOK_SH = "splice-keysetup-hook.sh"
-    private const val USER_PROMPT_SUBMIT = "UserPromptSubmit"
+    const val USER_PROMPT_SUBMIT: String = "UserPromptSubmit"
 
     /**
      * Materialize the /login command + hooks. [signInLabel] names the provider for the UX text;

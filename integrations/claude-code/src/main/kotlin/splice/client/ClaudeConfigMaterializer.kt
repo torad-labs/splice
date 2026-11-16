@@ -43,7 +43,9 @@ import splice.client.resume.ResumeHook
 import splice.client.resume.ResumeHookTarget
 import splice.client.resume.STARTUP_SOURCE
 import splice.client.resume.SessionRegistryLink
+import splice.client.speed.SpeedMaterial
 import splice.client.wrap.ProjectsLink
+import splice.core.model.ServiceTier
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.JsonScalars
@@ -93,6 +95,8 @@ public class ClaudeConfigMaterializer(
     private val hookExecProbe: HookExecProbe? = hookExec?.let { exec ->
         HookExecProbe { dir, chmod -> HookScriptFiles.probeExecutability(dir, chmod, exec) }
     }
+    private val speed =
+        SpeedMaterial(log, HookInstaller(log = log, execProbe = hookExecProbe), resumeHook, globalDir().resolve(SKILLS))
 
     /** Materialize a head's isolated CLAUDE_CONFIG_DIR from [spec]. [trust] carries the folder-trust
      *  records the operator already granted for the launch's cwd into the head (V4-283, FolderTrust);
@@ -102,12 +106,15 @@ public class ClaudeConfigMaterializer(
      *  nothing and leaves a shared value as it was. A wrapped `claude` never comes through here:
      *  it writes nothing into the operator's own ~/.claude, which this entry point refuses (V4-445). [keyHelper] is
      *  written as settings.json `apiKeyHelper`, the command a session of a head that checks the turn key reads it
-     *  through (key rotation, Oct 26); null writes none. */
+     *  through (key rotation, Oct 26); null writes none. [speedTiers] (gpt-speed) is non-null for a head signed in with
+     *  ChatGPT: the tiers its pinned model's catalog entry offers, laid down as /fast and /ultrafast skills with the hook
+     *  that catches them; null lays down neither and removes splice's earlier ones. */
     public fun materialize(
         spec: MaterializeSpec,
         trust: TrustedLaunch? = null,
         modelOverrides: Map<String, String> = emptyMap(),
         keyHelper: String? = null,
+        speedTiers: List<ServiceTier>? = null,
     ): MaterializeResult {
         requireIsolatedDir(spec.configDir)
         // Validate every ABORTING source BEFORE any mutation (DR-11 redo, codex ordering catch).
@@ -127,6 +134,7 @@ public class ClaudeConfigMaterializer(
         val hookOrigins = jsonReads.tolerant(spec.configDir.resolve(HookSettings.ORIGINS))
         Files.createDirectories(spec.configDir)
         linkShared(spec.configDir, spec.policy, spec.signIn.headKey)
+        speed.skills(spec.configDir, speedTiers, spec.policy.shares(SKILLS))
         val hookAdditions = LoginInterception.concat(
             LoginInterception.wire(
                 configDir = spec.configDir,
@@ -146,10 +154,13 @@ public class ClaudeConfigMaterializer(
                 } else {
                     emptyMap()
                 },
-                resumeHook?.let { target ->
-                    val hooks = HookInstaller(log = log, execProbe = hookExecProbe)
-                    ResumeHook.install(spec.configDir, target, spec.signIn.headKey, hooks)
-                } ?: emptyMap(),
+                LoginInterception.concat(
+                    resumeHook?.let { target ->
+                        val hooks = HookInstaller(log = log, execProbe = hookExecProbe)
+                        ResumeHook.install(spec.configDir, target, spec.signIn.headKey, hooks)
+                    } ?: emptyMap(),
+                    speed.hook(spec.configDir, spec.signIn.headKey, speedTiers),
+                ),
             ),
         )
         writeSettings(spec, hookAdditions, existingSettings, LaunchSettings(modelOverrides, keyHelper), hookOrigins)
@@ -273,7 +284,7 @@ public class ClaudeConfigMaterializer(
         // item-by-item — see this file's header).
         val dst = configDir.resolve(item)
         if (Files.isDirectory(dst, NOFOLLOW_LINKS) && !dst.isSymbolicLink()) {
-            if (item != Keys.COMMANDS) {
+            if (item != Keys.COMMANDS && item != SKILLS) {
                 log(
                     "[materialize] shared '$item' kept as this head's own real directory at $dst; " +
                         "the operator's global copy is not linked\n",
@@ -461,3 +472,6 @@ private val EMPTY_JSON = JsonObject(emptyMap())
 // via .claude.json. A set rather than two `!=` legs so the loop stays under its complexity budget
 // now that it dispatches two generated-vs-linked shapes (sessions, everything else).
 private val MERGED_ITEMS = setOf(Keys.SETTINGS_FILE_NAME, Keys.MCPS)
+
+// The shared skills item: a head signed in with ChatGPT holds it as a real dir with /fast and /ultrafast (SpeedSkills).
+private const val SKILLS = "skills"

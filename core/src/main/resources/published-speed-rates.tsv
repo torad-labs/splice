@@ -1,0 +1,40 @@
+# Each vendor's published API price for a model at a faster speed tier, USD per million tokens: the cards a turn
+#   served at that speed is priced at. A file of its own beside published-rates.tsv because daemons in the field fetch
+#   that file every hour and refuse a header they do not know; this one has its own header and is read from the build.
+# speed: fast or ultrafast. A model with no row for a speed has no card at it, and a turn served at that speed is left
+#   unpriced, never priced at the standard card. The standard card is published-rates.tsv's row for the same host and
+#   model; a speed card is used only beside one.
+# These are the short-context cards (input at or under 272K tokens). A request past a model's long-context threshold at
+#   a speed is left unpriced.
+# cache_write is the 30-minute write, as published-rates.tsv's cache_write is for these models.
+# OpenAI: developers.openai.com/api/docs/pricing, the "Fast" and "Ultrafast" tabs, read Nov 16, 2026. Fast was named
+#   Priority processing until July 30, 2026. Ultrafast is published for gpt-6-astra and gpt-6.1-sol only. GPT-5.6 Sol's
+#   Fast price follows its promotional standard price, which the page says holds until November 30, 2026: re-read it
+#   then. The chatgpt.com rows carry the same cards: a plan turn priced here reads as what the same work would cost on
+#   the API at the speed it was served at.
+host	model	speed	input	cache_read	output	cache_write
+chatgpt.com	gpt-6-astra	fast	20	2	100	25
+chatgpt.com	gpt-6-astra	ultrafast	60	6	300	75
+chatgpt.com	gpt-6.1-sol	fast	4	0.2	20	5
+chatgpt.com	gpt-6.1-sol	ultrafast	12	0.6	60	15
+chatgpt.com	gpt-6-sol	fast	4	0.4	20	5
+chatgpt.com	gpt-6-luna	fast	0.2	0.02	1	0.25
+chatgpt.com	gpt-5.6-sol	fast	8	0.8	40	10
+chatgpt.com	gpt-5.6-terra	fast	4	0.4	24	5
+chatgpt.com	gpt-5.6-luna	fast	0.4	0.04	2.4	0.5
+api.openai.com	gpt-6-astra	fast	20	2	100	25
+api.openai.com	gpt-6-astra	ultrafast	60	6	300	75
+api.openai.com	gpt-6.1-sol	fast	4	0.2	20	5
+api.openai.com	gpt-6.1-sol	ultrafast	12	0.6	60	15
+api.openai.com	gpt-6-sol	fast	4	0.4	20	5
+api.openai.com	gpt-6-luna	fast	0.2	0.02	1	0.25
+api.openai.com	gpt-5.6-sol	fast	8	0.8	40	10
+api.openai.com	gpt-5.6-terra	fast	4	0.4	24	5
+api.openai.com	gpt-5.6-luna	fast	0.4	0.04	2.4	0.5
+api.openai.com	gpt-5.5	fast	12.5	1.25	75	
+api.openai.com	gpt-5.4	fast	5	0.5	30	
+api.openai.com	gpt-5.4-mini	fast	1.5	0.15	9	
+api.openai.com	gpt-5.2	fast	3.5	0.35	28	
+api.openai.com	gpt-5.1	fast	2.5	0.25	20	
+api.openai.com	gpt-5	fast	2.5	0.25	20	
+api.openai.com	gpt-5-mini	fast	0.45	0.045	3.6	

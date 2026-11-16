@@ -31,6 +31,12 @@ public object PublishedRates {
 
     private val taken = AtomicReference<RateTable?>()
 
+    /** gpt-speed: the Fast and Ultrafast cards this build ships, beside the table ([SpeedRateTable]). */
+    private val speeds: SpeedRateTable by lazy {
+        val resource = checkNotNull(javaClass.getResourceAsStream(SPEED_RESOURCE)) { "missing $SPEED_RESOURCE" }
+        SpeedRateTable(resource.bufferedReader().use { it.readText() })
+    }
+
     /** The table in use: the last one [take] accepted, else the one in this build. It is the same object until
      *  another is taken, so whatever was priced under it knows when the prices moved. */
     public fun table(): RateTable = taken.get() ?: shipped
@@ -63,9 +69,11 @@ public object PublishedRates {
         } catch (_: URISyntaxException) {
             null
         } ?: return null
-        return table().cardOf(host, ModelTierSuffix.strip(model))
+        val bare = ModelTierSuffix.strip(model)
+        return table().cardOf(host, bare)?.let { speeds.withSpeeds(host, bare, it) }
     }
 
     // why: the file sits at the classpath root beside compaction-reserve.tsv, the other table core ships.
     private const val RESOURCE = "/published-rates.tsv"
+    private const val SPEED_RESOURCE = "/published-speed-rates.tsv"
 }

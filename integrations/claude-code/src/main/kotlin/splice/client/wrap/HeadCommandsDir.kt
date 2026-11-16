@@ -7,14 +7,11 @@ package splice.client.wrap
 import splice.client.login.LoginHookScripts
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
-import splice.core.util.PathProbe
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
-import kotlin.io.path.isDirectory
 import kotlin.io.path.isSymbolicLink
 
 internal object HeadCommandsDir {
@@ -43,22 +40,16 @@ internal object HeadCommandsDir {
     }
 
     fun write(configDir: Path, signInLabel: String, globalCommands: Path?, sentinel: String) {
-        val dst = configDir.resolve(COMMANDS_DIR)
-        val symlinked = dst.isSymbolicLink()
-        // A whole-dir commands symlink must become the real dir login.md lives in — but the old
-        // delete-then-createDirectories-then-populate lost the WORKING commands dir whenever a step
-        // after the delete failed (DR-39: ENOSPC/EPERM mid-populate). The real dir is now staged
-        // COMPLETE beside the link first; only unlink+rename remain after it is whole. A stale
-        // stage from a crashed attempt is a createDirectories no-op (dir) or a loud pre-delete
-        // failure (file) that leaves the link untouched.
-        val target = if (symlinked) {
-            Files.createDirectories(configDir.resolve(".$COMMANDS_DIR.staged-${ProcessHandle.current().pid()}"))
-        } else {
-            Files.createDirectories(dst)
+        // A whole-dir commands symlink must become the real dir login.md lives in (HeadRealDir, DR-39).
+        HeadRealDir.write(configDir, COMMANDS_DIR) { target ->
+            if (globalCommands != null) linkGlobalCommandsInto(target, globalCommands)
+            writeLoginMd(target, signInLabel, sentinel)
         }
-        if (globalCommands != null) linkGlobalCommandsInto(target, globalCommands)
-        // DR-180: stage-and-swap, not truncate-in-place. When `symlinked` is true the whole staged
-        // DIRECTORY is moved into place below, so login.md was already published atomically; the
+    }
+
+    private fun writeLoginMd(target: Path, signInLabel: String, sentinel: String) {
+        // DR-180: stage-and-swap, not truncate-in-place. When the dir was a link the whole staged
+        // DIRECTORY is moved into place by HeadRealDir, so login.md was already published atomically; the
         // other branch writes straight into the LIVE commands dir, where Files.writeString truncates
         // the running head's /login command and refills it — a crash or a concurrent read in that
         // window yields a half-written or empty command file, and following a pre-planted symlink at
@@ -71,52 +62,9 @@ internal object HeadCommandsDir {
             target.resolve(LOGIN_MD),
             LoginHookScripts.loginCommandMd(signInLabel, sentinel),
         )
-        if (symlinked) {
-            Files.delete(dst)
-            Files.move(target, dst)
-        }
     }
 
     private fun linkGlobalCommandsInto(dst: Path, globalCommands: Path) {
-        // DR-39 redo 2 (codex): `isDirectory` was an absence PRE-gate, and it lies false for an
-        // untraversable parent — the login leg then "succeeded" with login.md while every shared
-        // command silently vanished. Opening the stream is the only honest probe (class law): a
-        // no-commands operator is the one quiet skip, proven by NoSuchFileException with no
-        // NOFOLLOW entry; everything else present-but-unreadable (denied parent, dangling link,
-        // regular file) throws into the caller's existing loud leg.
-        val entries = Cancellables.runCatchingCancellable { Files.newDirectoryStream(globalCommands) }
-            .getOrElse { failure ->
-                val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
-                    !Files.exists(globalCommands, NOFOLLOW_LINKS)
-                if (genuinelyAbsent) return
-                throw failure
-            }
-        entries.use { stream ->
-            stream.filter { it.fileName.toString() != LOGIN_MD }.forEach { linkOneInto(dst, it) }
-        }
-    }
-
-    private fun linkOneInto(dir: Path, src: Path) {
-        val dst = dir.resolve(src.fileName.toString())
-        val present = Files.exists(dst, NOFOLLOW_LINKS)
-        // Steady state first (DR-39): commands reconcile on EVERY launch, and most launches find
-        // the link already correct — the old unconditional delete-and-recreate churned the inode
-        // and opened a window where a crash between the two syscalls left the command MISSING. A
-        // correct link is a no-op; a real directory is operator content and stays; only a stale
-        // file or wrong-target link is replaced, via a staged sibling published in ONE atomic
-        // rename so no reader ever sees the name absent. A staged-name collision (crashed attempt
-        // debris, or a fault-injection double) fails BEFORE dst is touched.
-        val alreadyCorrect = present && dst.isSymbolicLink() &&
-            // An unreadable link is not "already correct"; it is replaced below.
-            PathProbe.linkTarget(dst) == src
-        when {
-            alreadyCorrect || (present && dst.isDirectory(NOFOLLOW_LINKS)) -> Unit
-            !present -> Files.createSymbolicLink(dst, src)
-            else -> {
-                val staged = dir.resolve(".${dst.fileName}.staged-${ProcessHandle.current().pid()}")
-                Files.createSymbolicLink(staged, src)
-                Files.move(staged, dst, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-            }
-        }
+        GlobalEntryLinks(setOf(LOGIN_MD)).linkInto(dst, globalCommands)
     }
 }

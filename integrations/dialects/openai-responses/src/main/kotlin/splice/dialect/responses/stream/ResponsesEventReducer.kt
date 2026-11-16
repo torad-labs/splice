@@ -141,5 +141,6 @@ internal class ResponsesEventReducer(
         if (u.outputTokens > 0) state.outputTokens = u.outputTokens
         if (u.cachedTokens > 0) state.cachedTokens = u.cachedTokens
         if (u.reasoningTokens > 0) state.reasoningTokens = u.reasoningTokens
+        JsonScalars.str(resp, "service_tier")?.let { state.servedTier = it }
     }
 }

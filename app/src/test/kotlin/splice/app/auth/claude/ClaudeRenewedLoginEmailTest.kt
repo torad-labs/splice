@@ -38,6 +38,7 @@ import splice.core.util.LogSink
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.random.Random
+import kotlin.time.Duration.Companion.minutes
 
 private const val HEAD = "claude-splice"
 private const val LABEL = "account-2"
@@ -45,6 +46,11 @@ private const val MINUTE_MS = 60_000L
 private const val HOUR_MS = 60 * MINUTE_MS
 private const val RUNS = 200
 private const val STEPS = 12
+
+/** The generated runs write real files, 2,400 steps of them. runTest's default bound is a minute of wall clock, which a
+ *  loaded machine running the whole check has passed (Nov 16, 2026: 32 s alone, over a minute beside every other
+ *  module's tests). */
+private val GENERATED_RUNS_BOUND = 10.minutes
 private val TORAD = ClaudeAccountIdentity("uuid-torad", "alice@work.example")
 private val SEEK = ClaudeAccountIdentity("uuid-seek", "alice@personal.example")
 private val NOTHING: Pair<String?, String?> = null to null
@@ -139,7 +145,7 @@ class ClaudeRenewedLoginEmailTest {
 
     @Test
     fun `over any run of renewals, sign-ins, restarts and profile answers, a card names only its live account`() =
-        runTest {
+        runTest(timeout = GENERATED_RUNS_BOUND) {
             repeat(RUNS) { seed ->
                 val random = Random(seed)
                 val world = LoginWorld(this, StatePaths(baseOverride = tmp.resolve("run-$seed")))

@@ -5,6 +5,7 @@
 //   GET    /server/api/keys[?person=]   every key, or one person's
 //   POST   /server/api/keys             mint one: {"person", "name"?, "expires"?}
 //   DELETE /server/api/keys/<prefix>    revoke one
+//   GET    /server/api/usage            the usage report (F5): by, since or from and to, format, as UsageApi reads them
 package splice.server
 
 import io.ktor.http.ContentType
@@ -15,11 +16,13 @@ import io.ktor.server.response.respondText
 import splice.core.topology.ServerConfig
 import splice.core.wire.HttpStatus
 import splice.http.JsonBody
+import splice.server.ledger.UsageApi
 import splice.share.RefusalVoice
 
 internal class ServerAdmin(
     private val server: ServerConfig,
     private val keys: KeyApi,
+    private val usage: UsageApi,
     private val voice: RefusalVoice,
 ) {
     private val jsonBody = JsonBody()
@@ -40,6 +43,8 @@ internal class ServerAdmin(
     private suspend fun asked(call: ApplicationCall, path: List<String>): ServerAnswer? {
         val prefix = path.getOrNull(1)
         return when {
+            path == listOf(USAGE_ROUTE) && call.request.httpMethod == HttpMethod.Get ->
+                usage.report(call.request.queryParameters)
             path.firstOrNull() != KEYS_ROUTE || path.size > 2 -> null
             prefix == null -> everyKey(call)
             call.request.httpMethod == HttpMethod.Delete -> keys.revoke(prefix)
@@ -61,6 +66,7 @@ internal class ServerAdmin(
                 call.respondText(answer.body.toString(), ContentType.Application.Json, answer.status)
             }
             is ServerAnswer.Refused -> voice.refuse(call, answer.status.value, answer.why)
+            is ServerAnswer.Text -> call.respondText(answer.text, ContentType.parse(answer.contentType), answer.status)
         }
     }
 
@@ -71,3 +77,4 @@ internal class ServerAdmin(
 
 private const val API_ROUTE = "api"
 private const val KEYS_ROUTE = "keys"
+private const val USAGE_ROUTE = "usage"

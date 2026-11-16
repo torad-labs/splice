@@ -3,6 +3,7 @@
 package splice.dialect.chat
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.server.TurnSpeed
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
 import splice.core.turn.UsageMeasure
@@ -17,6 +18,9 @@ internal class ChatUsage {
     internal var outputTokens = 0L
     internal var cachedTokens = 0L
 
+    /** How fast a llama-server read and wrote this round, from its `timings`; null from any other server. */
+    internal var speed: TurnSpeed? = null
+
     private val reported = mutableSetOf<UsageField>()
     private val measured = mutableSetOf<UsageMeasure>()
 
@@ -25,13 +29,14 @@ internal class ChatUsage {
         outputTokens,
         cachedTokens,
         reported = reported.toSet(),
-        origin = UsageOrigin(measured = measured.toSet()),
+        origin = UsageOrigin(measured = measured.toSet(), speed = speed),
     )
 
     /** The backend has reported the round's output tokens: the bill a finished stream sends last. */
     internal val billed: Boolean get() = UsageField.OUTPUT in reported
 
     internal fun usage(evt: JsonObject) {
+        ChatTimings.of(evt)?.let { speed = it }
         val u = evt["usage"] as? JsonObject ?: return
         // CX-18: OpenRouter's Responses-shaped routes and several OpenAI-compatible servers report
         // the two main buckets under the input_/output_ spelling; reading only prompt_/completion_
@@ -47,6 +52,10 @@ internal class ChatUsage {
             reported += UsageField.OUTPUT
             measured += UsageMeasure.OUTPUT
         }
+        cached(u)
+    }
+
+    private fun cached(u: JsonObject) {
         // Prompt-cache read tokens — surfaced so the HUD/cache-log see a real hit rate. Details
         // field first (OpenAI standard: prompt_tokens_details.cached_tokens), then flat `cached_tokens`,
         // then DeepSeek's `prompt_cache_hit_tokens`. RAW here: prompt_tokens already INCLUDES this

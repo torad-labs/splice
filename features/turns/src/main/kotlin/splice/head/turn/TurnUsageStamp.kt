@@ -34,6 +34,7 @@ internal class TurnUsageStamp(
     }
 
     suspend fun stampSuccess(drive: TurnDrive, success: TurnOutcome.Success) = withContext(NonCancellable) {
+        drive.speed = success.usage.speed ?: drive.speed
         if (!drive.claimUsageStamp()) return@withContext
         // The posting drive owns its raw rounds, even when a durable script claim returns a local step.
         val raw = drive.rawRoundUsage()

@@ -12,6 +12,8 @@
 // `() -> Boolean`. Naming the question is the only thing that keeps them apart.
 package splice.app.control
 
+import splice.server.ServerMode
+
 /**
  * Live count of heads that failed to ASSEMBLE or start — a gauge, read fresh per request.
  *
@@ -83,4 +85,14 @@ public fun interface RuntimeUnread {
  */
 public fun interface MgmtRoute {
     public suspend operator fun invoke()
+}
+
+/** Nov 15, 2026: how the `/api/server` routes reach the daemon's server mode: asked at each request, since the daemon opens it after the control
+ *  server is built, and a daemon whose splice.toml has no `[server]` never has one. */
+internal interface ServerModeSource {
+    /** The running server mode, or null when this daemon has none. */
+    fun mode(): ServerMode?
+
+    /** Why [mode] is null, in words an operator can act on. */
+    fun absent(): String
 }

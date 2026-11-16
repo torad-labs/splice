@@ -13,7 +13,10 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.pool.UpstreamPool
+import splice.core.server.AnswerReading
+import splice.core.server.ServedTokens
 import splice.share.StreamEdit
+import splice.share.WholeEdit
 
 /** The daemon's pools: one for each provider that lists `[[providers.<p>.upstreams]]` and has a head. A daemon whose
  *  providers are each one server has none, which is what the defaults answer. */
@@ -32,6 +35,10 @@ public interface HeadUpstreams {
      *  provider's `forward_headers` names, whatever dialect it speaks and whichever route the request came on. Every
      *  other header a caller sends stays on this machine. None by default. */
     public fun forwarded(head: String): List<String> = emptyList()
+
+    /** What [tokens] on [model] cost at the rate card of the head [head]'s provider, in USD; null when the model has no
+     *  card there, which is what the default answers. */
+    public fun price(head: String, model: String, tokens: ServedTokens): Double? = null
 }
 
 /** A provider that speaks openai-chat, as the listener relays an OpenAI-style client's requests to it. */
@@ -48,9 +55,16 @@ public interface ChatServer {
     public fun chat(sent: ByteArray): ChatAsk
 }
 
-/** One chat request on its way to a provider's server: its [body], and what reads the events of its answer when that
- *  is a stream ([stream]; null for a request that asks for none). */
-public data class ChatAsk(val body: ByteArray, val stream: StreamEdit?)
+/** One chat request on its way to a provider's server: its [body], what reads the events of its answer when that is a
+ *  stream ([stream]; null for a request that asks for none), what reads it when it is not ([whole]), what both read of
+ *  it for the ledger ([reading]), and the [model] the client asked for. */
+public data class ChatAsk(
+    val body: ByteArray,
+    val stream: StreamEdit?,
+    val whole: WholeEdit? = null,
+    val reading: AnswerReading? = null,
+    val model: String? = null,
+)
 
 public class UpstreamApi(private val upstreams: HeadUpstreams) {
 
@@ -89,6 +103,10 @@ public class UpstreamApi(private val upstreams: HeadUpstreams) {
 
     /** The caller's headers the provider of the head [head] has named to ride on to it, by lowercase name. */
     internal fun forwarded(head: String): List<String> = upstreams.forwarded(head)
+
+    /** What [tokens] on [model] cost at the rate card of the head [head]'s provider; null when there is no card. */
+    internal fun price(head: String, model: String, tokens: ServedTokens): Double? =
+        upstreams.price(head, model, tokens)
 
     /** Why a turn for the head [head] cannot be served now, or null while its provider has a server up or is one
      *  server: the sentence names the provider and each of its upstreams, which the person passes on to the

@@ -5,6 +5,7 @@
 package splice.core.turn
 
 import kotlinx.serialization.Serializable
+import splice.core.server.TurnSpeed
 
 /** Token buckets observed by the provider, distinct from the numeric defaults used on the client wire. */
 @Serializable
@@ -38,6 +39,9 @@ public data class Usage(
     /** Only these observed buckets may become retained billing counters. Explicit zeros remain observations. */
     val reported: Set<UsageField> = ALL_USAGE_FIELDS,
 ) {
+    /** How fast a self-hosted model server read the prompt and wrote the answer, as [UsageOrigin.speed] says. */
+    public val speed: TurnSpeed? get() = origin.speed
+
     /** Actual measured components, separate from billing's default-zero policy. Old producers remain unknown. */
     public val measured: Set<UsageMeasure> get() = origin.measured
 
@@ -88,6 +92,7 @@ public data class Usage(
             clientContext = other.origin.clientContext ?: origin.clientContext,
             history = origin.history + other.origin.history,
             measured = UsageMeasurements.added(this, other),
+            speed = other.speed ?: speed,
         ),
         reported = reported + other.reported,
     )
@@ -133,4 +138,7 @@ public data class UsageOrigin(
     val history: UsageHistory = UsageHistory(request = if (localStep) UsageRequest.NONE else UsageRequest.POSTED),
     /** Actual measurement presence; billing defaults and unmodified producers do not provide proof. */
     val measured: Set<UsageMeasure> = emptySet(),
+    /** How fast a self-hosted model server read the prompt and wrote the answer (llama-server's `timings`), for the
+     *  server ledger; null from every backend that reports none. Never billed. */
+    val speed: TurnSpeed? = null,
 )

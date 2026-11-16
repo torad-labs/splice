@@ -6,8 +6,10 @@ package splice.server
 
 import kotlinx.coroutines.CoroutineDispatcher
 import splice.core.config.TurnKey
+import splice.core.server.ServedTurnBoard
 import splice.core.topology.ServerAddress
 import splice.core.topology.ServerConfig
+import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.share.RefusalVoice
 import splice.share.RelayClock
@@ -27,8 +29,15 @@ internal class ServedHeads(private val all: SharedHeads, private val commands: L
     override fun offered(): List<SharedHead> = all.offered().filter { it.command in commands || it.key in commands }
 }
 
-/** How the listener reaches this machine's heads: the turn key they admit, and the control port beside them. */
-public data class ServerReach(val turnKey: TurnKey, val controlPort: Int)
+/** How the listener reaches this machine's heads: the turn key they admit, the control port beside them, and the board
+ *  they say on how each turn the listener handed them went (F5); and the environment a bucket export's key is read
+ *  from (F5). */
+public data class ServerReach(
+    val turnKey: TurnKey,
+    val controlPort: Int,
+    val served: ServedTurnBoard = ServedTurnBoard(),
+    val env: EnvReader = EnvReader { null },
+)
 
 public class ServerMode(
     private val server: ServerConfig,
@@ -56,6 +65,11 @@ public class ServerMode(
     /** Each person's settings, as the CLI and the control plane set them. */
     public val personApi: PersonApi = PersonApi(people, log, upstreamApi)
 
+    /** The server's books (F5): its usage ledger and reports, its budgets, and the ledger's export, as the CLI, the
+     *  control plane and an admin's key ask them. */
+    public val books: ServerBookkeeping =
+        ServerBookkeeping(folder, server, people, upstreamApi, BookRun(io, clock, waiter, log))
+
     @Volatile
     private var listener: ServerListener? = null
 
@@ -69,19 +83,22 @@ public class ServerMode(
             limits = PersonLimits(server.limits, people, clock),
             heads = ServedHeads(heads, server.commands),
             relay = ShareRelay(reach.turnKey, reach.controlPort, heads.machine, io, log, speaker, RelayClock(waiter)),
-            tls = server.pem(configDir)?.let { PemTls(it).keyStore() },
             people = people,
             upstreams = upstreamApi,
+            books = books.open(reach),
         )
-        val opened = ServerListener(server, parts, io, log)
+        val tls = server.pem(configDir)?.let { PemTls(it).keyStore() }
+        val opened = ServerListener(server, parts, tls, books.usageApi, io, log)
         opened.start(address)
         listener = opened
+        books.exporting(reach.env)
     }
 
     /** Closes the listener and writes when each key was last used, so a restart loses none of it. */
     public suspend fun close() {
         listener?.stop()
         listener = null
+        books.close()
         keys.keepUse(olderThanMs = 0)
     }
 }

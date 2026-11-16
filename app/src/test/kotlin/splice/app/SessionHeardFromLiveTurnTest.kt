@@ -114,7 +114,7 @@ class SessionHeardFromLiveTurnTest {
                 tmp = root,
                 upstream = UpstreamClient(totalTimeoutMs = 60_000),
                 gate = InflightGate(maxInflight = { 4 }, maxQueued = { 4 }),
-                seams = HeadDeps.HeadSeams(events = publisher.forHead("claudex")),
+                seams = HeadDeps.HeadSeams(reports = HeadDeps.HeadReports(events = publisher.forHead("claudex"))),
             ).let { it.copy(traffic = it.traffic.copy(liveTurns = turns)) },
         )
     }

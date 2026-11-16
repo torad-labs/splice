@@ -15,8 +15,11 @@ internal class ServerChecks(
 ) {
     private val server = topology.server
 
-    fun findings(): List<TopologyFinding> =
-        if (server.declared) listen() + exclusive() + commands() + tls() + people() + limits() else emptyList()
+    fun findings(): List<TopologyFinding> = if (server.declared) {
+        listen() + exclusive() + commands() + tls() + people() + limits() + ServerLedgerChecks(server).findings()
+    } else {
+        emptyList()
+    }
 
     private fun listen(): List<TopologyFinding> {
         val address = server.address

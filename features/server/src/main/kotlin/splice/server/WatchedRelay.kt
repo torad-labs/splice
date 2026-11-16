@@ -19,13 +19,16 @@ internal fun interface RelayedTurn {
 
 internal class WatchedRelay {
     /** Runs [turn] for [call], holding [slot] when the turn counts against its person. The slot is released when
-     *  the turn ends, and before that the moment the client's connection closes, which cancels the turn as well. */
-    suspend fun turn(call: ApplicationCall, slot: TurnSlot?, turn: RelayedTurn) {
+     *  the turn ends, and before that the moment the client's connection closes, which cancels the turn as well.
+     *  Answers whether the client left before the turn ended. */
+    suspend fun turn(call: ApplicationCall, slot: TurnSlot?, turn: RelayedTurn): Boolean {
+        var left = false
         try {
             coroutineScope {
                 val relayed = launch { turn.relay() }
                 val gone = launch {
                     ClientConnectionClose.await(call)
+                    left = true
                     slot?.release()
                     relayed.cancel()
                 }
@@ -35,5 +38,6 @@ internal class WatchedRelay {
         } finally {
             slot?.release()
         }
+        return left
     }
 }

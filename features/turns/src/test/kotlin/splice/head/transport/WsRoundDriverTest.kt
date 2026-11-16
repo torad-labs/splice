@@ -186,6 +186,17 @@ private const val POLICY_REFUSAL =
 private const val POLICY_REFUSAL_LINE =
     "[splice] claudex declined this request under its usage policy: This request was flagged."
 
+/** The ChatGPT backend's safety monitor stopping a conversation, in the shape it ended a websocket round with on
+ *  Nov 16. */
+private const val MONITOR_STOP_EVENT =
+    """{"type":"error","error":{"type":"invalid_request_error","code":"misalignment_policy_violation",""" +
+        """"message":"This request was blocked by our safety systems. Reason: Potentially unintended activity."}}"""
+
+/** The head's line for it: what stopped the conversation, in the vendor's first sentence, and where to go on. */
+private const val MONITOR_STOP_LINE =
+    "[splice] claudex's safety monitor stopped this conversation: This request was blocked by our safety systems. " +
+        "Sending again meets the same stop, so check what this session did and continue in a new session."
+
 /** A round that opens one text part and streams one delta into it, so a client frame goes out. */
 private val TEXT_ROUND = listOf(
     """{"type":"response.created","response":{"id":"r1"}}""",
@@ -2041,6 +2052,28 @@ class WsRoundFailureTest(@param:TempDir private val tmp: Path) {
             // Failure-handling slice 2 (final-design.md section 10, Refused(POLICY)): the line quotes the vendor's
             // first sentence a person can read.
             assertTrue(sse.contains(POLICY_REFUSAL_LINE), "the vendor's sentence: $sse")
+        } finally {
+            runBlocking { h.stop() }
+        }
+    }
+
+    /** Nov 16: a conversation the backend's safety monitor had flagged met this stop on every round for half an
+     *  hour. Each websocket round was re-served over SSE and sent once more, Claude Code sent the turn again, and
+     *  every ending read as a failure splice did not recognize. The stop is the conversation's, so it is sent once:
+     *  the client reads the class it does not re-send, and a line that says what stopped it and where to go on. */
+    @Test
+    fun `a safety monitor's stop reaches the client once, saying what stopped the conversation and where to go on`() {
+        val runner = ScriptedRunner(listOf(MONITOR_STOP_EVENT))
+        val h = head(runner)
+        runBlocking { h.start() }
+        try {
+            val before = mock.upstreamBodies.size
+            val sse = turn(h.port)
+            assertEquals(0, runner.bypassed, "the stop was re-served over SSE")
+            assertEquals(before, mock.upstreamBodies.size, "an SSE request re-sent the stopped conversation")
+            assertEquals(1, runner.attempts, "the stopped conversation was re-sent over the websocket")
+            assertTrue(sse.contains("\"type\":\"invalid_request_error\""), "not the bad-request class: $sse")
+            assertTrue(sse.contains(MONITOR_STOP_LINE), "what stopped it and where to go on: $sse")
         } finally {
             runBlocking { h.stop() }
         }

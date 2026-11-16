@@ -1,7 +1,7 @@
-// NEW: failure-handling slice 3. The ChatGPT backend's three deviations from the Responses standard, held over
-// generated replies: a usage_limit_reached 429 names the plan window it spent, a Trusted-Access policy code is a
-// refusal, and a websocket connection limit is an overload. Every other answer is the standard's row, so the
-// deviation claims none of them (final-design.md section 12, D1's second property).
+// NEW: failure-handling slice 3. The ChatGPT backend's deviations from the Responses standard, held over generated
+// replies: a usage_limit_reached 429 names the plan window it spent, a Trusted-Access policy code is a refusal, a
+// safety monitor's stop is the monitor's refusal, and a websocket connection limit is an overload. Every other answer
+// is the standard's row, so the deviation claims none of them (final-design.md section 12, D1's second property).
 package splice.provider.codex.failure
 
 import kotlinx.serialization.json.buildJsonObject
@@ -34,6 +34,11 @@ private const val WEEK_MINUTES = 10_080L
 
 /** The policy codes the ChatGPT backend answers a Trusted-Access refusal with (DR-72, live on claudex Aug 31). */
 private val POLICY_CODES = listOf("cyber_policy", "bio_policy")
+
+/** The code its safety monitor stops a conversation with, and the sentence it sends with it (Nov 16). */
+private const val MONITOR_STOP = "misalignment_policy_violation"
+private const val MONITOR_SAID =
+    "This request was blocked by our safety systems. Reason: Potentially unintended activity."
 
 /** Its websocket connection limit. */
 private const val WS_LIMIT = "websocket_connection_limit_reached"
@@ -134,6 +139,18 @@ class CodexRepliesPropertyTest {
     }
 
     @Test
+    fun `a safety monitor's stop is the monitor's refusal, over HTTP and in band alike`() {
+        val random = Random(355)
+        repeat(RUNS) {
+            val body = errorBody(MONITOR_STOP, MONITOR_SAID)
+            val expected = FailureCause.Provider.Refused(RefusedBy.MONITOR, ProviderWordsFilter.of(MONITOR_SAID))
+
+            assertEquals(expected, CodexReplies.http(reply(STATUSES.random(random), body, answeredAt(random))), body)
+            assertEquals(expected, CodexReplies.event(failed(body, random)), body)
+        }
+    }
+
+    @Test
     fun `a websocket connection limit is an overload, not a refusal of the request`() {
         val random = Random(353)
         repeat(RUNS) {
@@ -152,7 +169,7 @@ class CodexRepliesPropertyTest {
     }
 
     @Test
-    fun `every reply that lacks those three shapes is left to the Responses standard`() {
+    fun `every reply that lacks those shapes is left to the Responses standard`() {
         val random = Random(354)
         repeat(RUNS) {
             val code = STANDARD_CODES.random(random)

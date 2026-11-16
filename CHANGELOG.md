@@ -1,5 +1,82 @@
 # Changelog
 
+## splice v0.6.0: a team server's ledger, budgets, company sign-in and metrics, and Fast and Ultrafast on ChatGPT heads - 2026-11-16
+
+### Highlights
+- **A team server keeps its books.** Every turn a person sends through a `[server]` splice is one row in a ledger:
+  who sent it and on which team, the command and model, the provider's own token counts, the price and how fast it
+  was served. `splice server usage` reports it, `[server.export]` copies it to a folder or an S3-compatible bucket,
+  and `splice server budget` holds a person or a team to a daily and a monthly budget.
+- **People sign in to a team server with their company login.** `splice login <server>` opens your identity
+  provider and comes back with a key for that person and device. Claude Code never holds the key in its
+  environment.
+- **A team server answers Prometheus and OTLP.** `GET /server/metrics` gives an admin requests, tokens, time to the
+  first token, speed and in-flight counts by person and team, and the same series reach an OTLP collector.
+- **`/fast` and `/ultrafast` on a head signed in with ChatGPT.** A session moves to OpenAI's Fast or Ultrafast tier
+  from Claude Code's own menu, told at once what the tier uses of the plan's limits, and each turn records the
+  speed it was served at.
+
+### Upgrading from 0.5.1
+- Run the install command again, or `splice upgrade`. Nothing in `splice.toml` has to change.
+- A splice with a `[server]` table starts its ledger at the first turn, in `<state>/server/ledger.jsonl`, with no
+  setting. Export, sign-in and budgets are off until you add `[server.export]`, `[server.signin]` or a budget.
+
+### Added
+- **Server mode: the usage ledger.** One line per turn in `<state>/server/ledger.jsonl`: when it arrived, the
+  person and their team, the key's prefix, the command, model, route and upstream, the status and an honest
+  outcome, the provider's own token counts, the price at the model's rate card, the time to the first word and,
+  for a llama-server, its read and write speed. Never a word of a prompt or an answer. A turn is refused while its
+  row could not be written.
+- **Server mode: reports.** `splice server usage rows` and
+  `splice server usage report --by person|team|current-team|day|model|device`, over `--since` or `--from/--to`, as
+  a table, JSON, CSV or Markdown. An admin's key reads the same over the listener.
+- **Server mode: export.** `[server.export]` copies the ledger out as hourly JSONL files
+  (`splice-usage/YYYY/MM/DD/HH.jsonl`, UTC) to a folder or to any S3-compatible bucket signed with SigV4, on its
+  own every `every` and at once with `splice server usage export --now`. An export rewrites its hours whole, so
+  each row is in them once. The bucket's key pair is read from the environment at each export and written nowhere.
+  It was checked against a stand-in S3 server that verifies SigV4, not against a cloud bucket.
+- **Server mode: budgets.** `splice server budget set|list` gives a person or a team a daily and a monthly budget in
+  USD that blocks or warns, counted from the ledger's rows.
+- **Server mode: sign-in with a company login.** A `[server.signin]` table (`issuer`, `client_id`,
+  `client_secret_env`, `domains`, `key_days`, `rate_per_minute`) turns on OIDC sign-in. `GET /server/signin` is
+  open and gives what a client needs to start, never the secret. `POST /server/signin/token` trades the code with
+  PKCE, verifies the ID token (signature, issuer, audience, expiry, nonce, and a verified email in an allowed
+  domain) and mints a key for that person and device that expires after `key_days`. Any failure is a 401 that
+  mints nothing. A device that signs in again gets a new key, and its old key works until the new one is first
+  used. Sign-in is limited per address, with 429 and `Retry-After`.
+- **`splice login`, `splice remote add` and `splice logout` for a team server.** `splice login <server>` runs the
+  authorization code flow with PKCE through a loopback redirect, prints the URL it opens, and keeps the key in an
+  owner-only file of its own. `splice remote add <server>/<command>` links the command with a launch whose
+  environment holds no key: Claude Code gets a key helper that prints the current one, so a new sign-in reaches a
+  running session the next time Claude Code asks. `splice logout <server>` forgets the key and keeps the device's
+  name, so signing in again is the same device to the server.
+- **Server mode: metrics.** `GET /server/metrics` answers an admin's key in Prometheus text; no key is a 401 and
+  anyone else a 403. Counters `splice_server_requests_total{person,team,command,status_class}` and
+  `splice_server_tokens_total{person,team,kind}`; histograms `splice_server_ttft_seconds`,
+  `splice_server_duration_seconds`, `splice_server_prefill_tokens_per_second`,
+  `splice_server_decode_tokens_per_second` and `splice_server_stream_stall_seconds`; gauges
+  `splice_server_inflight{person}` and `splice_server_inflight_limit{person}`. Every person with a live key reads 0
+  from startup, so a rate over a quiet person is a number and not a gap. The same series reach the
+  `[telemetry.operator]` OTLP collector, with person and team.
+- **`/fast` and `/ultrafast` on a head signed in with ChatGPT.** A launch lays the two commands down as skills in
+  the head's own config folder, one for each tier its model offers, so they show in Claude Code's menu in place of
+  its own `/fast`. Each says the tier and what it uses of a ChatGPT plan's limits (2.5x for Fast, 8x for
+  Ultrafast). The command sets the speed of the session it is typed in and no other: bare, it turns its tier on, or
+  back to standard when that tier is on, and `on` and `off` set it whatever it was. The setting outlives a daemon
+  restart, and a tier the session's model does not offer is refused with the tiers it has. A head not signed in
+  with ChatGPT gets neither command and keeps Claude Code's own `/fast`.
+- **A turn's row says the speed it was asked for and the speed it was served at.** Each row on `/api/perf/turns`
+  carries `speed_asked` and `speed`, the second read from the backend's own answer, so a turn served slower than
+  asked shows it. A plan turn is valued at the card for the speed it was served at, and a rate card names tier
+  cards as flat `fast_` and `ultrafast_` keys.
+
+### Changed
+- **OpenTelemetry 1.68.0, Jackson 2.23.0 and zstd-jni 1.5.7-26**, each with its checksums in the verification
+  metadata.
+- **A push's gate leaves no build tree behind, and the fat jar stays out of Gradle's build cache.** For people
+  building splice: the gate's build tree is removed when the gate ends, and the 200 MB jar, put together again
+  from cached classes in seconds, is no longer stored once for every change.
+
 ## splice v0.5.1: a conversation OpenAI's safety monitor stopped is reported once - 2026-11-16
 
 ### Highlights

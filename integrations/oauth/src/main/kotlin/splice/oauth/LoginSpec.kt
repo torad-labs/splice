@@ -14,7 +14,23 @@ public data class LoginSpec(
     public val exchange: TokenExchange,
     public val authPath: Path,
     public val account: OAuthLoginAccount? = null,
+) {
+    /** The browser's part of this login: what it opens and where the code comes back. */
+    public val browser: BrowserSignIn get() = BrowserSignIn(head, authorizeUrl, callback)
+}
+
+/** A browser sign-in's own part, before any code is traded: the [head] it is for (named on the confirmation page),
+ *  the [authorizeUrl] it opens, and the loopback [callback] the provider sends the code back to. */
+public data class BrowserSignIn(
+    public val head: String,
+    public val authorizeUrl: String,
+    public val callback: LoopbackCallback,
 )
+
+/** Builds a browser sign-in for the loopback port its listener took. */
+public fun interface BrowserSignInAt {
+    public operator fun invoke(port: Int): BrowserSignIn
+}
 
 /** The local redirect endpoint of an OAuth login: where the listener binds and which state it accepts. */
 public data class LoopbackCallback(

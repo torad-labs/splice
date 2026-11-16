@@ -92,12 +92,21 @@ internal class DaemonServer(
             val folder = stateDir.resolve(SERVER_STATE)
             val reach = ServerReach(turnKey, controlPort, served, EnvReader(System::getenv))
             ServerMode(topology.server, folder, ProcessDispatchers().io(), log, upstreams = this)
-                .also { it.open(address, offered, reach, configDir) }
+                .also { it.open(address, offered, reach, configDir, secret()) }
         }.onSuccess { running = it }.onFailure { failure ->
             val why = SafeFailureText.render(failure)
             down = "server mode did not start on ${topology.server.listen}: $why"
             log("[server] not serving on ${topology.server.listen}: $why\n")
         }
+    }
+
+    /** The sign-in's client secret from the variable `client_secret_env` names; a variable named and unset is said,
+     *  since the identity provider will then refuse every code this server trades. */
+    private fun secret(): String? {
+        val name = topology.server.signin?.clientSecretEnv?.trim()?.takeIf(String::isNotEmpty) ?: return null
+        val value = EnvReader(System::getenv)(name)?.takeIf(String::isNotEmpty)
+        if (value == null) log("[server] sign-in: $name is not set, so the identity provider will refuse every code\n")
+        return value
     }
 
     suspend fun close() {

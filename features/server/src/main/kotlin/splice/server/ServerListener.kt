@@ -3,7 +3,10 @@
 // the wall kt-embedded-server-loopback exempts this file, by that spec's decision. LAN share answers anyone on the
 // person's own network and holds no identity; this listener answers only keys, each one a person's, from anywhere:
 //
-//   GET  /health                   open: the listener is up. Nothing else is answered without a key.
+//   GET  /health                   open: the listener is up.
+//   GET  /server/signin, POST /server/signin/token
+//                                  open: how a team member signs in and gets a key (F2, SigninRoute). Nothing else is
+//                                  answered without a key.
 //   GET  /                         what this server offers the key's holder: each command, its head and models
 //   GET  /<command>/launch         what a laptop's launch of that command needs (as share mode serves it)
 //   ANY  /<command>/v1/...         relayed to the head on loopback with this machine's turn key in place of the
@@ -87,11 +90,14 @@ internal class ServerListener(
     /** Blocking work runs here: reading a head's launch, and the relay's JDK I/O. */
     io: CoroutineDispatcher,
     private val log: LogSink,
+    /** How a sign-in is checked, when `[server.signin]` is set (F2). */
+    signin: SigninParts? = null,
 ) {
     private val voice = RefusalVoice(SERVER_ERROR_PREFIX)
     private val catalog = ShareCatalog(parts.heads, io, voice)
     private val admin = ServerAdmin(server, KeyApi(parts.keys, log), usage, voice)
     private val addresses = ClientAddresses(server.trustedProxies)
+    private val signins = SigninRoute(signin, KeyApi(parts.keys, log), addresses, voice, log)
     private val refusedCallers = RefusedCallers(log)
     private val watched = WatchedRelay()
     private val paths = RequestPaths()
@@ -145,6 +151,7 @@ internal class ServerListener(
         val path = paths.read(call)
         val read = call.request.httpMethod == HttpMethod.Get
         if (read && path == listOf(HEALTH_ROUTE)) return call.respondText(HEALTH_BODY, ContentType.Application.Json)
+        if (path != null && signins.asks(path)) return signins.answer(call, path)
         // A request refused before its route is known is still refused in the shape its client reads.
         val key = admitted(call, if (path != null && openAi.asks(call, path)) openAi.voice else voice) ?: return
         if (path == null) noSuchPath(call) else routed(call, key, path)
@@ -169,7 +176,7 @@ internal class ServerListener(
             ?: BearerScheme.bearerToken(headers[HttpHeaders.Authorization])
         val why = when (val verdict = parts.keys.admit(presented)) {
             is KeyVerdict.Admitted -> return verdict.key
-            is KeyVerdict.Revoked -> "this key was revoked; ask the server's operator for a new one"
+            is KeyVerdict.Revoked -> revoked(verdict.key)
             is KeyVerdict.Expired -> expired(verdict.key)
             KeyVerdict.Unknown -> if (presented == null) NO_KEY_SENT else "this key is not one this server issued"
         }
@@ -177,6 +184,13 @@ internal class ServerListener(
         refusedCallers.refused(addresses.of(call.request.origin.remoteAddress, forwarded), why)
         voice.refuse(call, HttpStatus.UNAUTHORIZED, why)
         return null
+    }
+
+    private fun revoked(key: ServerKey): String = when (val newer = key.supersededBy) {
+        null -> "this key was revoked; ask the server's operator for a new one"
+        else ->
+            "this key was replaced by a newer sign-in on the same device ($newer); " +
+                "sign in again (`splice login <server>`) if this device has lost it"
     }
 
     private fun expired(key: ServerKey): String {
@@ -239,8 +253,8 @@ private const val API_KEY_HEADER = "x-api-key"
 private const val HEALTH_ROUTE = "health"
 private const val HEALTH_BODY = """{"status":"ok"}"""
 
-// The first path segment of the server's own routes; no command may be named it.
-private const val SERVER_ROOT = "server"
+/** The first path segment of the server's own routes; no command may be named it. */
+internal const val SERVER_ROOT: String = "server"
 
 private const val NO_KEY_SENT = "no key was sent; send yours as x-api-key or as Authorization: Bearer"
 

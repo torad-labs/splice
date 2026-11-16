@@ -10,6 +10,7 @@ import splice.app.auth.claude.OWN_SIGN_IN_LABEL
 import splice.app.control.ManagedHead
 import splice.client.ClaudePolicy
 import splice.core.config.ConfigService
+import splice.core.config.StatePaths
 import splice.core.config.TurnKey
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
@@ -19,6 +20,7 @@ import splice.launch.LaunchSpec
 import splice.launch.RemoteCommands
 import splice.share.RemoteLaunches
 import splice.share.RemoteTrees
+import splice.share.ServerLogins
 import splice.share.ShareListener
 import splice.share.ShareMachine
 import splice.share.SharedHead
@@ -35,12 +37,15 @@ internal class DaemonShare(
     /** splice's state folder, where the first LAN-share build kept the machines that joined this one. */
     private val stateDir: Path,
 ) {
+    /** What `splice login <server>` keeps of the servers a command here launches on with a key (server mode, F2). */
+    private val logins = ServerLogins(StatePaths(baseOverride = stateDir).serverLoginsDir)
+
     @Volatile
     private var listener: ShareListener? = null
 
     /** The commands this machine runs on another's heads, launched from [trees] under [policy]. */
     fun remotes(trees: RemoteTrees, policy: ClaudePolicy): RemoteCommands =
-        RemoteLaunches(topology.remote, trees, policy, ProcessDispatchers().io())
+        RemoteLaunches(topology.remote, trees, policy, ProcessDispatchers().io(), logins)
 
     /** Opens the listener when `[share]` turns it on, offering [heads] and [controlPort]'s statusline. */
     fun open(heads: Map<String, ManagedHead>, controlPort: Int) {

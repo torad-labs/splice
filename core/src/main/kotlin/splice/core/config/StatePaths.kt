@@ -293,6 +293,10 @@ public class StatePaths(
      *  session, written when the person presses and removed when the move ends, either way (MovingTrust). */
     public val movingTrustDir: Path = stateDir.resolve("moving-trust")
 
+    /** Server mode on a laptop (docs/specs/server-mode.md, F2): what `splice login <server>` keeps of each server it
+     *  signed in to, the key apart in an owner-only file of its own that the session's apiKeyHelper prints. */
+    public val serverLoginsDir: Path = stateDir.resolve("server-logins")
+
     /** Raw MCP tool results privately correlated with the code-mode callback that the client actually executed. */
     public val mcpToolResultsDir: Path = stateDir.resolve("mcp-tool-results")
 

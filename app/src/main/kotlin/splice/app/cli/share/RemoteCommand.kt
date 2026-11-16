@@ -7,6 +7,7 @@
 package splice.app.cli.share
 
 import splice.app.cli.peer.PeerExit
+import splice.core.config.StatePaths
 import splice.core.terminal.CYAN
 import splice.core.terminal.DIM
 import splice.core.terminal.GREEN
@@ -19,8 +20,10 @@ import splice.core.topology.Topology
 import splice.core.util.EnvReader
 import splice.launch.install.InstallCommand
 import splice.launch.install.InstallResult
+import splice.share.Asked
+import splice.share.ServerLogins
 import splice.share.ShareDirectory
-import splice.share.ShareDirectoryRead
+import splice.share.ShareInfo
 import splice.upstream.codemode.ProcessDispatchers
 
 internal const val REMOTE_USAGE = "[list] | add <address> [--as <command>] | remove <command>"
@@ -32,7 +35,8 @@ internal class RemoteCommand(
 ) {
     private val file = ShareTopologyFile(err, REMOTE_VERB, env)
     private val restart = ShareRestart(out, err, env, REMOTE_VERB)
-    private val directory = ShareDirectory(ProcessDispatchers().io())
+    private val logins = ServerLogins(StatePaths(envReader = env).serverLoginsDir)
+    private val directory = ShareDirectory(ProcessDispatchers().io(), logins)
     private val install = InstallCommand(out, err)
     private val relays = FirstBuildRelays(out, err, env)
 
@@ -94,7 +98,7 @@ internal class RemoteCommand(
             out.line("  then here: ${CYAN}splice remote add <address>$RESET")
             return PeerExit.DONE
         }
-        val servers = mutableMapOf<String, ShareDirectoryRead>()
+        val servers = mutableMapOf<String, Asked<ShareInfo>>()
         topology.remote.forEach { (command, remote) ->
             val state = when (val read = RemoteAddresses.read(remote.url)) {
                 is RemoteAddressRead.Refused -> "not an address it can run on: ${read.why}"
@@ -107,10 +111,10 @@ internal class RemoteCommand(
     }
 
     /** Whether [address]'s command runs on its server now, as the server's offer [read] says. */
-    private fun state(address: RemoteAddress, read: ShareDirectoryRead): String {
+    private fun state(address: RemoteAddress, read: Asked<ShareInfo>): String {
         val info = when (read) {
-            is ShareDirectoryRead.Refused -> return read.why
-            is ShareDirectoryRead.Read -> read.info
+            is Asked.Refused -> return read.why
+            is Asked.Had -> read.value
         }
         val offer = info.commands.firstOrNull { it.command == address.head }
             ?: info.commands.firstOrNull { it.head == address.head }

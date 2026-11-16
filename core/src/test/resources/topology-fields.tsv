@@ -195,6 +195,13 @@ server.reference
 server.reference.cached_usd_per_mtok	
 server.reference.input_usd_per_mtok	
 server.reference.output_usd_per_mtok	
+server.signin	
+server.signin.client_id	
+server.signin.client_secret_env	
+server.signin.domains	
+server.signin.issuer	
+server.signin.key_days	
+server.signin.rate_per_minute	
 server.teams	
 server.teams.by_domain	
 server.teams.by_domain.*	

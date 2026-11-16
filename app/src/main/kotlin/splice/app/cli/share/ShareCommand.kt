@@ -16,9 +16,9 @@ import splice.core.topology.ShareConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
+import splice.share.Asked
 import splice.share.ShareAddresses
 import splice.share.ShareDirectory
-import splice.share.ShareDirectoryRead
 import splice.share.ShareInfo
 import splice.upstream.codemode.ProcessDispatchers
 import java.net.BindException
@@ -71,8 +71,8 @@ internal class ShareCommand(
             return PeerExit.DONE
         }
         return when (val read = directory.read("http://127.0.0.1:${share.port}")) {
-            is ShareDirectoryRead.Read -> offered(share, read.info)
-            is ShareDirectoryRead.Refused -> {
+            is Asked.Had -> offered(share, read.value)
+            is Asked.Refused -> {
                 err.line("$SHARE_VERB: sharing is on in ${file.path}, but nothing here answers on it: ${read.why}")
                 err.line("  is splice running? ${CYAN}splice restart$RESET")
                 PeerExit.REFUSED
@@ -111,7 +111,7 @@ internal class ShareCommand(
     private suspend fun saved(wanted: Topology, current: Topology): Boolean {
         val port = wanted.share.port
         val refusal = if (wanted.share.enabled) bindRefusal(port) else null
-        if (refusal != null && directory.read("http://127.0.0.1:$port") !is ShareDirectoryRead.Read) {
+        if (refusal != null && directory.read("http://127.0.0.1:$port") !is Asked.Had) {
             val another = "${CYAN}splice share on --port <N>$RESET"
             err.line("$SHARE_VERB: port $port can't be opened here ($refusal); choose another with $another")
             return false

@@ -661,7 +661,7 @@ notes = [
 id = 'muse-tool-load'
 title = 'A tool ToolSearch loads costs a Muse session only what it adds'
 feature = 'muse-tool-cache'
-status = 'done'
+status = 'todo'
 owner = ''
 blocked_by = []
 guard = false
@@ -676,14 +676,13 @@ reviews = [
 notes = [
   '2026-11-16 03:02 CT: added; 1 of 1 checks fail, as they should before the work',
   "2026-11-16 04:45 CT: plan cut again after round 1's dispute (commit 55666f79c): the pair holds the cache on the real head but Meta returns the handed-over tool's calls with no arguments, so the tool is written where it arrived and called through a caller tool the list holds from the first request; the stand-in's model follows what the real head showed, and the cases that asked for the pair are gone",
-  '2026-11-16 07:29 CT campaign: done in round 1 of muse-tool-cache: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'muse-tool-change'
 title = "A tool a server adds or takes away leaves a Muse conversation's cache standing"
 feature = 'muse-tool-cache'
-status = 'done'
+status = 'todo'
 owner = ''
 blocked_by = [
   'muse-tool-load',
@@ -699,6 +698,4 @@ reviews = [
 ]
 notes = [
   '2026-11-16 03:03 CT: added; 1 of 1 checks fail, as they should before the work',
-  "2026-11-16 06:44 CT: round 3's dispute is decided for the reviewer's case (plan commit of 06:4x CT): the real head, asked at 06:39 CT, called a starting tool that came back with a new schema with that schema, so the stand-in's model now follows the newest definition of a tool, also of one the list declares outright",
-  '2026-11-16 07:29 CT campaign: done in round 1 of muse-tool-cache: its checks, its feature review, its code review passed',
 ]

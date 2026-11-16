@@ -10,12 +10,7 @@
 //       a tool a `tool_search_output` in the input hands over is called under its name, and the call comes back with
 //       no arguments (10 of 10);
 //       a tool whose definition is written in the conversation is called through the listed tool made for that, the
-//       one that takes a tool's name and its arguments, and that call comes back whole (3 of 3);
-//       a tool the list declares outright that the conversation later writes again with another schema, with the
-//       words that say to call it through that tool, is called with the written schema (06:39 CT, 1 of 1: the call
-//       reached the client under the tool's own name with a parameter only the written definition names). Which
-//       way that call left Meta was not seen: no trace was saved, the disk being under the trace store's floor. The
-//       model here takes the way the written words ask for.
+//       one that takes a tool's name and its arguments, and that call comes back whole (3 of 3).
 // Its model calls a tool when the conversation's last words ask it to (`CALL <tool> WITH <json> END`), with arguments
 // that fit the newest schema the request shows it for that tool.
 // It counts the cache to the character. Meta's own count trails the request before by up to a block of 128 tokens
@@ -323,17 +318,15 @@ function decide(model: ModelTools, ask: Ask | null): Said {
   if (!ask) return { text: "OK" };
   const named = (t: WireTool) => t.name === ask.tool || (t.description ?? "").includes(`[[${ask.tool}]]`);
   const unfit: Said = { text: `THE ARGUMENTS DO NOT FIT ${ask.tool}` };
-  // A tool written in the conversation: called through the listed tool that takes a name and arguments. What the
-  // conversation wrote is newer than the list, so it is the definition the model holds, also of a tool the list
-  // declares outright.
+  // A tool the list declares outright: the call comes back whole.
+  const listed = model.listed.find(named);
+  if (listed) return fits(listed, ask.args) ? { call: listed.name!, args: ask.args } : unfit;
+  // A tool written in the conversation: called through the listed tool that takes a name and arguments.
   const written = model.written.find(named);
   if (written && model.via) {
     if (!fits(written, ask.args)) return unfit;
     return { call: model.via.tool.name!, args: JSON.stringify({ [model.via.name]: written.name, [model.via.args]: JSON.parse(ask.args) }) };
   }
-  // A tool the list declares outright: the call comes back whole.
-  const listed = model.listed.find(named);
-  if (listed) return fits(listed, ask.args) ? { call: listed.name!, args: ask.args } : unfit;
   // A tool a tool-search pair handed over: Meta returns its call with no arguments.
   const handed = model.handed.find(named);
   if (handed) return { call: handed.name!, args: "{}" };

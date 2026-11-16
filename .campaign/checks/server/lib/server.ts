@@ -90,11 +90,6 @@ export class Server {
     return this.s.cli(args, input);
   }
 
-  /** A command that ends only once something this process serves has answered it ([Splice.run]). */
-  run(args: string[]): Promise<Ran> {
-    return this.s.run(args);
-  }
-
   async dispose(): Promise<void> {
     await this.s.dispose();
     this.up.stop();

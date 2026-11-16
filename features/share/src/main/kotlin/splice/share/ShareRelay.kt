@@ -23,7 +23,8 @@
 // no part of this machine, so of what the client sent only the headers the listener names ride on, under the
 // provider's own headers; a request for a head carries all but the few a hop never passes on, because the head is
 // the one that decides what leaves the machine. A server that took no connection got nothing of the request, and the
-// caller is told so instead of the client, so it can ask another of the provider's servers.
+// caller is told so instead of the client, so it can ask another of the provider's servers. And of that server's
+// answer the client gets nothing of the server's own but what the answer is for (HeadAnswers).
 package splice.share
 
 import io.ktor.http.HttpHeaders
@@ -118,7 +119,7 @@ public class ShareRelay(
      *  another server, or say that none answers. */
     public suspend fun outward(call: ApplicationCall, ask: OutwardAsk, body: ByteArray): Boolean {
         val answer = AtomicReference<HttpResponse<InputStream>>()
-        val wait = ClientWait(ask.server, edit = ask.edit)
+        val wait = ClientWait(ask.server, edit = ask.edit, outside = true)
         // The answer is read here when it is a stream to edit, so the server is asked to send it as it is.
         val own = ask.headers.own + (HttpHeaders.AcceptEncoding to "identity")
         try {

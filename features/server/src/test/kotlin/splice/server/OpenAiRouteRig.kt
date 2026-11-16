@@ -49,6 +49,9 @@ internal class ScriptedBox(private val name: String) {
     /** The status a completion is refused with; null answers it. */
     @Volatile var refuses: Int? = null
 
+    /** Headers of the server's own on every answer it gives, a refusal included: a cookie, a request id. */
+    @Volatile var replies: Map<String, String> = emptyMap()
+
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
         executor = Executors.newCachedThreadPool()
         createContext("/v1") { exchange -> exchange.use(::answer) }
@@ -78,6 +81,7 @@ internal class ScriptedBox(private val name: String) {
 
     private fun whole(exchange: HttpExchange, json: String, status: Int = 200) {
         val bytes = json.toByteArray()
+        replies.forEach { (name, value) -> exchange.responseHeaders.add(name, value) }
         exchange.responseHeaders.add("Content-Type", "application/json")
         exchange.sendResponseHeaders(status, bytes.size.toLong())
         // An answer that is broken off declared all of itself, so closing it after half cuts the connection.
@@ -87,6 +91,7 @@ internal class ScriptedBox(private val name: String) {
     private fun stream(exchange: HttpExchange) {
         gate?.await(GATE_SECONDS, TimeUnit.SECONDS)
         val cut = cutAfter
+        replies.forEach { (name, value) -> exchange.responseHeaders.add(name, value) }
         exchange.responseHeaders.add("Content-Type", "text/event-stream")
         // A stream that is broken off declares more than it sends, so closing it cuts the connection mid-answer.
         exchange.sendResponseHeaders(200, if (cut == null) 0 else CUT_STREAM_LENGTH)
@@ -143,6 +148,7 @@ internal class OpenAiRig(
                     else -> 404 to HEAD_NO_ROUTE
                 }
                 it.responseHeaders.add("Content-Type", "application/json")
+                it.responseHeaders.add("Request-Id", HEAD_REQUEST_ID)
                 it.sendResponseHeaders(status, answer.toByteArray().size.toLong())
                 it.responseBody.write(answer.toByteArray())
             }
@@ -218,6 +224,9 @@ internal const val BOX_KEY = "box-key-never-a-persons"
 internal const val BOX_MODELS = """{"object":"list","data":[{"id":"team-model","object":"model","owned_by":"box"}]}"""
 internal const val HEAD_MODELS = """{"data":[{"type":"model","id":"claude-team--team-model"}],"has_more":false}"""
 internal const val HEAD_NO_ROUTE = """{"type":"error","error":{"type":"not_found_error","message":"head: no route"}}"""
+
+// What the head sends beside every answer, for its client.
+internal const val HEAD_REQUEST_ID = "req-head-1"
 
 internal const val CHAT = """{"model":"team-model","messages":[{"role":"user","content":"hi"}]}"""
 internal const val STREAMED_CHAT =

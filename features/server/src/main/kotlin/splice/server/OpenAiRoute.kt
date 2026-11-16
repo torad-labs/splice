@@ -16,6 +16,9 @@
 // ends, after the events already relayed, with one error event in OpenAI's shape (`data: {"error": {...}}`) and no
 // `[DONE]`, which the OpenAI SDKs raise; an answer that is no stream is a 502 with OpenAI's error body.
 //
+// Of the server's answer the client gets what the answer is for: its status, its body, the body's type and, on a
+// refusal, its `Retry-After`. The headers the server sends for itself (a cookie, its request ids) stay here.
+//
 // A chat completion is a turn. It takes one of its person's slots under the same caps as a turn on the Messages route,
 // and a client that leaves gives the slot back. A provider that is several servers is asked on the one its pool gives
 // the person (their preferred one while it is healthy), and when that one takes no connection, on the next, the way a

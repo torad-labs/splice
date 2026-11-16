@@ -19,6 +19,12 @@
 // two events when the server's breaks, so it ends with the relay's error event and never with the ending of a whole
 // one. A stream relayed byte for byte may have broken inside an event, where nothing well-formed can follow: it ends
 // there, as it always did. Each is said in the log, and a relay that was cancelled broke nothing off.
+//
+// A head's answer goes back with the head's own headers: the head is this machine's, and what it sends back it means
+// for its client. A provider's own server is not (F4, "the provider's own response headers stay at the server"): what
+// it sends beside its answer (a cookie, its request ids, its rate-limit counts) is its business with this machine and
+// never the client's. Of such an answer the client gets the status, the body, the body's type and, when the server
+// refused, its `Retry-After`, which says when to ask again.
 package splice.share
 
 import io.ktor.http.ContentType
@@ -44,8 +50,14 @@ import kotlin.time.Duration
 
 /** What a relay tells its client of one request: [who] it waits on, as the client hears it named when that one gives
  *  no answer or breaks one off, a keepalive each [every] while a streamed answer is silent (null: none), and a
- *  streamed answer as [edit] reads it (null: byte for byte). */
-internal data class ClientWait(val who: String, val every: Duration? = null, val edit: StreamEdit? = null) {
+ *  streamed answer as [edit] reads it (null: byte for byte). [outside] says the answer is a server's that is no part
+ *  of this machine, whose own headers stay here. */
+internal data class ClientWait(
+    val who: String,
+    val every: Duration? = null,
+    val edit: StreamEdit? = null,
+    val outside: Boolean = false,
+) {
     /** What the client hears when [who] gives no answer. */
     val silent: String get() = "$who is not answering"
 
@@ -69,12 +81,12 @@ internal class HeadAnswers(
         val status = HttpStatusCode.fromValue(response.statusCode())
         val type = typeOf(response)
         if (type.match(ContentType.Text.EventStream)) {
-            returned(call, response)
+            returned(call, response, wait)
             call.response.status(status)
             call.respond(SseChannelResponse { out -> response.body().use { pump(it, quiet(out, wait), wait) } })
         } else {
             val whole = whole(response, wait) ?: return errors.refuse(call, HttpStatus.BAD_GATEWAY, wait.cut)
-            returned(call, response)
+            returned(call, response, wait)
             call.respondBytes(whole, type, status)
         }
     }
@@ -101,10 +113,13 @@ internal class HeadAnswers(
         wire.error(errors.event(errors.relayed(response.statusCode(), String(whole))))
     }
 
-    /** The answer's own headers, given back with it. */
-    private fun returned(call: ApplicationCall, response: HttpResponse<InputStream>) {
+    /** The headers of [response] that go back with it. A head's all do, but the ones that frame it. Of a server's
+     *  that is outside this machine, only `Retry-After`, and only when it refused. */
+    private fun returned(call: ApplicationCall, response: HttpResponse<InputStream>, wait: ClientWait) {
+        val refused = response.statusCode() >= HttpStatus.BAD_REQUEST
         response.headers().map().forEach { (name, values) ->
-            if (name.lowercase() !in notReturned) values.forEach { call.response.headers.append(name, it) }
+            val back = name.lowercase().let { if (wait.outside) refused && it == RETRY_AFTER else it !in notReturned }
+            if (back) values.forEach { call.response.headers.append(name, it) }
         }
     }
 
@@ -169,3 +184,6 @@ private const val PUMP_BUFFER_BYTES = 16 * 1024
 
 // What InputStream.read answers at the end of the stream.
 private const val END_OF_STREAM = -1
+
+// The one header of a refusal that is for the client whoever refused: how long to wait before asking again.
+private const val RETRY_AFTER = "retry-after"

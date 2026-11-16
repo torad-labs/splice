@@ -63,10 +63,10 @@ import splice.app.control.mount.TraceMount
 import splice.app.control.mount.TurnsMount
 import splice.app.control.peer.PeerServices
 import splice.app.control.peer.PeersMount
+import splice.app.control.server.ServerMount
 import splice.app.control.usage.UsageMount
 import splice.app.head.HeadRemovalAssembly
 import splice.app.peer.PeersWiring
-import splice.client.mcp.McpServerInput
 import splice.core.config.ConfigService
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
@@ -193,8 +193,9 @@ internal class ControlServer(
     @Volatile
     internal var peerServices: PeerServices = PeerServices()
 
-    // Nov 15, 2026: a server's keys and people (docs/specs/server-mode.md), which `splice server` asks for.
-    private val serverMode = ServerModeRoutes(ports, guard)
+    // Nov 15, 2026: a server's keys, people, usage ledger and budgets (docs/specs/server-mode.md), which
+    // `splice server` asks for.
+    private val serverMode = ServerMount(ports, guard)
 
     // Nov 16, 2026: Claude Desktop's Code tab (docs/specs/desktop-door.md): its door and `splice desktop`.
     private val desktop = DesktopRoutes(ports, guard)
@@ -208,12 +209,7 @@ internal class ControlServer(
         McpMount(
             host,
             guard,
-            McpLaunchFolders(
-                sessions,
-                McpServerClasses { servers: List<McpServerInput> ->
-                    host.sharing.plan(servers)
-                },
-            ),
+            McpLaunchFolders(sessions, McpServerClasses { host.sharing.plan(it) }),
             runtime.mcpServices,
         )
     }

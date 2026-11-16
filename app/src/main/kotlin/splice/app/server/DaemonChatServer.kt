@@ -12,6 +12,8 @@ import splice.dialect.chat.PassedChatStream
 import splice.server.ChatAsk
 import splice.server.ChatServer
 import splice.share.StreamEdit
+import splice.share.WholeAnswer
+import splice.share.WholeEdit
 
 internal class DaemonChatServer(
     /** The provider's key in splice.toml. */
@@ -27,7 +29,13 @@ internal class DaemonChatServer(
 
     override fun chat(sent: ByteArray): ChatAsk {
         val passed = passthrough.request(sent)
-        return ChatAsk(passed.body, if (passed.streamed) PassedEdit(passed.stream()) else null)
+        val meter = passed.meter
+        if (passed.streamed) {
+            return ChatAsk(passed.body, PassedEdit(passed.stream()), reading = meter, model = passed.model)
+        }
+        // An answer that is no stream goes back as the server gave it, read on its way for the ledger.
+        val whole = WholeEdit { body -> WholeAnswer.Given(body).also { meter.whole(body) } }
+        return ChatAsk(passed.body, stream = null, whole, meter, passed.model)
     }
 }
 

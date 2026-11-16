@@ -83,7 +83,7 @@ public class OpenAiChatProvider(
     /** The turn's place among this provider's servers: its person's preferred one while that is healthy, else the
      *  healthy one with the least in flight (server mode, F4). Null for a provider that is one server. */
     override fun route(meta: TurnMeta): VendorRoute? =
-        pool?.let { PoolRoute(it, meta.route.preferredUpstream, CHAT_PATH) }
+        pool?.let { PoolRoute(it, meta.route.relay.preferredUpstream, CHAT_PATH) }
 
     /** An unknown vendor error code before any content is sent once more (retry totality); nothing else re-anchors. */
     override fun reanchorPolicy(meta: TurnMeta): ReanchorPolicy = ChatResendOnce

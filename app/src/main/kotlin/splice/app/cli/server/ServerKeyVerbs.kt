@@ -49,6 +49,6 @@ internal class ServerKeyVerbs(private val ask: PeerAsk) {
 
 internal const val KEYS_PATH = "/api/server/keys"
 internal const val PEOPLE_PATH = "/api/server/people"
-private const val PERSON_FLAG = "--person"
+internal const val PERSON_FLAG = "--person"
 private const val NAME_FLAG = "--name"
 private const val EXPIRES_FLAG = "--expires"

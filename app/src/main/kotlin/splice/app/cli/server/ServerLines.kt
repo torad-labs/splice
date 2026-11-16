@@ -11,7 +11,7 @@ import java.time.format.DateTimeFormatter
 
 internal class ServerLines(private val zone: ZoneId = ZoneId.systemDefault()) {
     private val minute = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-    private val headings = listOf("PREFIX", "PERSON", "NAME", "SOURCE", "CREATED", "LAST USED", "STATE")
+    private val table = TextTable(listOf("PREFIX", "PERSON", "NAME", "SOURCE", "CREATED", "LAST USED", "STATE"))
 
     /** A new key: the key alone on the first line, so a script can take it, then whose it is and that it is not
      *  shown again. */
@@ -27,21 +27,19 @@ internal class ServerLines(private val zone: ZoneId = ZoneId.systemDefault()) {
     fun keys(reply: JsonObject): String {
         val rows = (reply["keys"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
         if (rows.isEmpty()) return "no keys; `splice server key create --person <email>` issues one"
-        val table = listOf(headings) + rows.map { row ->
-            listOf(
-                JsonScalars.str(row, "prefix").orEmpty(),
-                JsonScalars.str(row, "person").orEmpty(),
-                JsonScalars.str(row, "name") ?: NONE,
-                JsonScalars.str(row, "source").orEmpty(),
-                JsonScalars.str(row, "created_at")?.let(::at) ?: NONE,
-                JsonScalars.str(row, "last_used_at")?.let(::at) ?: "never",
-                state(row),
-            )
-        }
-        val widths = headings.indices.map { column -> table.maxOf { it[column].length } }
-        return table.joinToString("\n") { row ->
-            row.mapIndexed { column, cell -> cell.padEnd(widths[column]) }.joinToString("  ").trimEnd()
-        }
+        return table.of(
+            rows.map { row ->
+                listOf(
+                    JsonScalars.str(row, "prefix").orEmpty(),
+                    JsonScalars.str(row, "person").orEmpty(),
+                    JsonScalars.str(row, "name") ?: NONE,
+                    JsonScalars.str(row, "source").orEmpty(),
+                    JsonScalars.str(row, "created_at")?.let(::at) ?: NONE,
+                    JsonScalars.str(row, "last_used_at")?.let(::at) ?: "never",
+                    state(row),
+                )
+            },
+        )
     }
 
     fun revoked(reply: JsonObject): String =
@@ -61,7 +59,9 @@ internal class ServerLines(private val zone: ZoneId = ZoneId.systemDefault()) {
         val inflight = cap(JsonScalars.long(reply, "inflight"))
         val rpm = cap(JsonScalars.long(reply, "rpm"))
         val upstream = JsonScalars.str(reply, "upstream")?.let { "$it while it is healthy" } ?: "the least busy"
-        return "${JsonScalars.str(reply, "person")}: turns in flight $inflight, turns a minute $rpm, upstream $upstream"
+        val team = JsonScalars.str(reply, "team")?.let { ", team $it" }.orEmpty()
+        val person = JsonScalars.str(reply, "person")
+        return "$person: turns in flight $inflight, turns a minute $rpm, upstream $upstream$team"
     }
 
     private fun cap(set: Long?): String = when (set) {
@@ -86,4 +86,5 @@ internal class ServerLines(private val zone: ZoneId = ZoneId.systemDefault()) {
     private fun at(instant: String): String = minute.format(Instant.parse(instant).atZone(zone))
 }
 
-private const val NONE = "-"
+// A cell with no value, in every table `splice server` prints.
+internal const val NONE = "-"

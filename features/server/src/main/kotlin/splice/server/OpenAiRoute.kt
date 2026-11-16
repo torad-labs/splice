@@ -47,6 +47,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import splice.core.util.LogSink
 import splice.core.wire.ANTHROPIC_VERSION_HEADER
+import splice.server.ledger.LedgerTurn
+import splice.server.ledger.ROUTE_CHAT
 import splice.share.HEAD_API_ROOT
 import splice.share.OutwardAsk
 import splice.share.RefusalShape
@@ -67,9 +69,9 @@ internal class OpenAiRoute(
     val voice = RefusalVoice(SERVER_ERROR_PREFIX, RefusalShape.OPENAI)
     private val catalog = ShareCatalog(parts.heads, io, voice)
     private val relay = parts.relay.speaking(voice)
-    private val admission = TurnAdmission(parts, voice)
     private val bound = ProviderBound(parts.keys, log)
     private val watched = WatchedRelay()
+    private val admission = TurnAdmission(parts, voice, catalog, watched)
     private val paths = RequestPaths()
     private val chatPath = listOf(HEAD_API_ROOT, "chat", "completions")
     private val modelsPath = listOf(HEAD_API_ROOT, "models")
@@ -97,8 +99,9 @@ internal class OpenAiRoute(
     /** [asked] for the provider's [api]: a completion as the turn it is, the models as they are asked. */
     private suspend fun answer(call: ApplicationCall, asked: Asked, api: Api) {
         when {
+            api.path == CHAT_API ->
+                admission.served(call, asked.key, asked.head, ROUTE_CHAT) { turn -> relayed(call, asked, api, turn) }
             !asked.head.running() -> catalog.notRunning(call, asked.head)
-            api.path == CHAT_API -> chat(call, asked, api)
             else -> watched.turn(call, slot = null) { relayed(call, asked, api) }
         }
     }
@@ -119,26 +122,22 @@ internal class OpenAiRoute(
         }
     }
 
-    /** A chat completion: it takes one of its person's slots, or is refused, and holds it until its answer ends or
-     *  its client leaves. */
-    private suspend fun chat(call: ApplicationCall, asked: Asked, api: Api) {
-        val slot = admission.slot(call, asked.key, asked.head) ?: return
-        watched.turn(call, slot) { relayed(call, asked, api) }
-    }
-
     /** [call]'s request, asked of the provider's [api] and answered as the provider's server answers it, or as no
-     *  server of the provider's took it. */
-    private suspend fun relayed(call: ApplicationCall, asked: Asked, api: Api) {
+     *  server of the provider's took it. A completion's [turn] learns what went and which way. */
+    private suspend fun relayed(call: ApplicationCall, asked: Asked, api: Api, turn: LedgerTurn? = null) {
         val sent = relay.sent(call, asked.head) ?: return
         val chat = if (api.path == CHAT_API) asked.server.chat(sent) else ChatAsk(sent, stream = null)
         val own = withContext(io) { asked.server.headers() }
         val headers = bound.headers(call, parts.upstreams.forwarded(asked.head.key), own)
         val lookup = api.model?.let { ModelLookup(it, asked.head.command) }
         // Only an answer asked for as a stream is kept alive: a comment has no place in any other body.
-        val ask = OutwardAsk(chat.body, headers, chat.stream, lookup, keepalive?.takeIf { chat.stream != null })
+        val whole = lookup ?: chat.whole
+        val ask = OutwardAsk(chat.body, headers, chat.stream, whole, keepalive?.takeIf { chat.stream != null })
         val path = api.path + bound.query(paths.query(call))
         val preferred = parts.people.of(asked.key.person).preferred
         val way = ProviderWay(asked.head, path, asked.server.base, parts.upstreams, preferred)
+        turn?.chat = chat
+        turn?.way = way
         try {
             relay.outward(call, ask, way)
         } finally {

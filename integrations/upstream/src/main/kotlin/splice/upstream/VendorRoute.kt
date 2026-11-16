@@ -25,6 +25,11 @@ public interface VendorRoute {
      *  told which are down. Empty (the default) for a vendor with one place. */
     public fun places(): List<String> = emptyList()
 
+    /** The name of the place that took the turn's last request, for a vendor that is several servers (the server
+     *  ledger names it, docs/specs/server-mode.md F5); null (the default) for a vendor with one place, or before any
+     *  request was sent. Still answered once the turn has ended. */
+    public fun served(): String? = null
+
     /** The headers that route the request about to be sent. */
     public fun sending(): Map<String, String>
 

@@ -493,6 +493,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "features/server/src/main/kotlin/splice/server/export/FolderTarget.kt" to mapOf("writeAtomic0600(" to 1),
     "features/turns/src/main/kotlin/splice/head/compact/Compact.kt" to mapOf("JsonlSink.appendLine(" to 1),
     "features/turns/src/main/kotlin/splice/head/compaction/CompactionRecordings.kt" to mapOf("writeAtomic0600(" to 1),
+    // A thread's capability record (Nov 17, 2026), in the README's `heads/<head>/capabilities/` row.
+    "features/turns/src/main/kotlin/splice/head/harness/ThreadRecords.kt" to mapOf("writeAtomic0600(" to 1),
     // The history-window cut rewrites the straddling generation in place: a 0600 sibling, the kept rows copied into
     // it, then one atomic move over the original. Three calls, one rewrite.
     // Oct 10, 2026: the row-exact cut over a day store. createNew0600 makes the `.cut` sibling,

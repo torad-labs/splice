@@ -1093,6 +1093,13 @@ bytes and cache breakpoints stay unchanged. splice ships no strip patterns. `spl
 shows information rows for replace and strip, and warns when a head's strip has no pattern list.
 Each head receives only its own configured prompt layers.
 
+A standing prompt rides on a session's turns, the main thread's and its subagents'. A subagent's own
+instructions are in the system field too, so a `"replace"` head runs every subagent on your text in place of
+its definition; `"strip"` removes the paragraphs you name and leaves the rest. Claude Code's side requests,
+which carry no tools (a title, a label for a run of tool calls, a probe), and its auto-mode review go to the
+provider as Claude Code wrote them, with no prompt layer and no team slot text: the instruction such a request
+carries is its whole question.
+
 A repository can carry its own prompt too. `[projects."<root>"]` takes the same three keys and
 applies to every head working under that root, and `[projects."<root>".heads.<key>]` applies to
 one head there. The root is an absolute path or starts with `~/`. A relative `system_prompt_file`

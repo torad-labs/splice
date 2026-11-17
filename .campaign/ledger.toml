@@ -983,7 +983,7 @@ notes = [
 id = 'door-claude-lane'
 title = 'claude runs on the door'
 feature = 'door-default'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -998,13 +998,14 @@ reviews = [
 notes = [
   '2026-11-17 00:02 CT: added; 1 of 1 checks fail, as they should before the work',
   "2026-11-17 02:55 CT: Code review of pass 2 (Nov 17), still owed now that the plan is cut again: duplicated logic, twice. (1) cli/claude/ClaudeCommand.kt:32-66 copies cli/desktop/DesktopCommand.kt:30-66: door() is on() line for line, and asked() and acted() are the same read-parse-say and post-parse-say flows with only the Said class and the door/on key swapped. Put the shared read-and-say, act-and-say and the --model body in one place both commands use. (2) desktop/ClaudeLane.kt:43-57, 73-75 and 101 re-write DesktopSwitch.kt:75-77 and 138-150: the kept-default-still-in-the-lineup check, the first head's pinnedOf with its reason, the '--model X is not in the door' refusal, and refused(status, why). The terminal's rule adds one step (the first signed-in head) to the same chain: share the chain and the refusal instead of two copies that will drift.",
+  '2026-11-17 06:26 CT campaign: done in round 4 of door-default: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'door-picker'
 title = '/model lists the models of signed-in accounts'
 feature = 'door-default'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'door-claude-lane',
@@ -1020,13 +1021,14 @@ reviews = [
 ]
 notes = [
   '2026-11-17 00:02 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 06:26 CT campaign: done in round 1 of door-default: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'door-login'
 title = "/login opens splice's accounts"
 feature = 'door-default'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'door-claude-lane',
@@ -1042,13 +1044,14 @@ reviews = [
 ]
 notes = [
   '2026-11-17 00:03 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 06:26 CT campaign: done in round 2 of door-default: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'door-install-default'
 title = 'A fresh install puts claude on the door'
 feature = 'door-default'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'door-claude-lane',
@@ -1064,13 +1067,14 @@ reviews = [
 ]
 notes = [
   '2026-11-17 00:03 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 06:26 CT campaign: done in round 1 of door-default: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'heads-deprecated'
 title = 'Head commands say they are going away'
 feature = 'door-default'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'door-claude-lane',
@@ -1086,6 +1090,7 @@ reviews = [
 ]
 notes = [
   '2026-11-17 00:03 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 06:26 CT campaign: done in round 1 of door-default: its checks, its feature review, its code review passed',
 ]
 
 [[row]]

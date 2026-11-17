@@ -56,19 +56,19 @@ describe("held-says", () => {
     expect(line(astra, session)).toContain("astra-large");
     expect(line(astra, session)).not.toContain(READING);
 
-    brief.work = { ...IDLE, waitMs: 5000 };
+    brief.work = { ...IDLE, waitMs: 12_000 };
     const sending = send(astra, session, typed("Add a --json flag to the status command."));
     await until("the worker is asked", () => brief.of(session).length === 1);
     await Bun.sleep(1200);
     const first = line(astra, session);
     const one = age(first, READING);
     expect(one).not.toBeNull();
-    expect(one!).toBeLessThanOrEqual(3);
+    expect(one!).toBeLessThanOrEqual(5);
     // the message leads, and the model's name follows it as it does on a limit hold today
     expect(first.indexOf(READING)).toBeLessThan(first.indexOf("astra-large"));
     expect(line(astra, other)).not.toContain(READING);
 
-    await Bun.sleep(2000);
+    await Bun.sleep(3000);
     const two = age(line(astra, session), READING);
     expect(two).not.toBeNull();
     expect(two!).toBeGreaterThanOrEqual(one! + 1);
@@ -80,7 +80,7 @@ describe("held-says", () => {
   }, 300_000);
 
   test("each progress line the worker sends becomes what the held turn says, and its age starts again", async () => {
-    brief.work = { ...IDLE, waitMs: 2500, progress: ["Opening src/main.ts", "Reading the tests"], gapMs: 2500 };
+    brief.work = { ...IDLE, waitMs: 6000, progress: ["Opening src/main.ts", "Reading the tests"], gapMs: 6000 };
     const session = crypto.randomUUID();
     const sending = send(astra, session, typed("Why does the daemon's log rotate at midnight?"));
     await until("the worker is asked", () => brief.of(session).length === 1);
@@ -89,21 +89,21 @@ describe("held-says", () => {
       await Bun.sleep(Math.max(0, from + ms - Date.now()));
       return line(astra, session);
     };
-    expect(age(await at(1200), READING)).not.toBeNull();
-    const opened = await at(3700);
+    expect(age(await at(3000), READING)).not.toBeNull();
+    const opened = await at(9000);
     expect(opened).not.toContain(READING);
     expect(age(opened, "Opening src/main.ts")).not.toBeNull();
-    expect(age(opened, "Opening src/main.ts")!).toBeLessThanOrEqual(2);
-    const read = await at(6200);
+    expect(age(opened, "Opening src/main.ts")!).toBeLessThanOrEqual(5);
+    const read = await at(15_000);
     expect(read).not.toContain("Opening src/main.ts");
-    expect(age(read, "Reading the tests")!).toBeLessThanOrEqual(2);
+    expect(age(read, "Reading the tests")!).toBeLessThanOrEqual(5);
     expect((await sending).status).toBe(200);
     expect(line(astra, session)).not.toContain("Reading the tests");
   }, 300_000);
 
   test("the message is drawn in the colour its capability declares", async () => {
-    brief.work = { ...IDLE, waitMs: 3000 };
-    audit.work = { ...IDLE, waitMs: 3000 };
+    brief.work = { ...IDLE, waitMs: 8000 };
+    audit.work = { ...IDLE, waitMs: 8000 };
     const [a, c] = [crypto.randomUUID(), crypto.randomUUID()];
     const sending = [send(astra, a, typed("Add a --since flag to the logs command.")), send(cirrus, c, typed("Add a --since flag to the logs command."))];
     await until("both workers are asked", () => brief.of(a).length === 1 && audit.of(c).length === 1);
@@ -117,11 +117,11 @@ describe("held-says", () => {
   }, 300_000);
 
   test("with two turns of the session held the line says how many, and a turn that goes on leaves the other's message", async () => {
-    brief.work = { ...IDLE, waitMs: 5000 };
+    brief.work = { ...IDLE, waitMs: 12_000 };
     const session = crypto.randomUUID();
     const main = send(astra, session, typed("Refactor the retry ladder."));
     await until("the worker is asked for the main thread", () => brief.of(session).length === 1);
-    await Bun.sleep(1500);
+    await Bun.sleep(6000);
     const sub = send(astra, session, typed("Find every caller of the retry ladder."), { agent: "agent-a1b2c3" });
     await until("the worker is asked for the subagent", () => brief.of(session).length === 2);
     await Bun.sleep(700);

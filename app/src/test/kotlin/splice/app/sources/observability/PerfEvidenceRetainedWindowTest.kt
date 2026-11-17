@@ -36,7 +36,7 @@ class PerfEvidenceRetainedWindowTest {
     fun `full day and week summaries and series preserve production-written request populations`(@TempDir root: Path) {
         val budget = WorkBudgetMark()
         checkNotNull(PerfWorkBudget.acquire(5L * 1_024 * 1_024)).use {
-            RetainedEvidenceFixture(root).use { fixture ->
+            RetainedEvidenceFixture(root.resolve("evidence")).use { fixture ->
                 fixture.seed()
                 windows(fixture)
             }

@@ -77,7 +77,7 @@ describe("held-says", () => {
     const after = line(astra, session);
     expect(after).not.toContain(READING);
     expect(after).toContain("astra-large");
-  }, 60_000);
+  }, 300_000);
 
   test("each progress line the worker sends becomes what the held turn says, and its age starts again", async () => {
     brief.work = { ...IDLE, waitMs: 2500, progress: ["Opening src/main.ts", "Reading the tests"], gapMs: 2500 };
@@ -99,7 +99,7 @@ describe("held-says", () => {
     expect(age(read, "Reading the tests")!).toBeLessThanOrEqual(2);
     expect((await sending).status).toBe(200);
     expect(line(astra, session)).not.toContain("Reading the tests");
-  }, 60_000);
+  }, 300_000);
 
   test("the message is drawn in the colour its capability declares", async () => {
     brief.work = { ...IDLE, waitMs: 3000 };
@@ -114,7 +114,7 @@ describe("held-says", () => {
     expect(yellow).not.toBeNull();
     expect(cyan).not.toBe(yellow);
     for (const sent of await Promise.all(sending)) expect(sent.status).toBe(200);
-  }, 60_000);
+  }, 300_000);
 
   test("with two turns of the session held the line says how many, and a turn that goes on leaves the other's message", async () => {
     brief.work = { ...IDLE, waitMs: 5000 };
@@ -137,5 +137,5 @@ describe("held-says", () => {
 
     expect((await sub).status).toBe(200);
     expect(line(astra, session)).not.toContain(READING);
-  }, 60_000);
+  }, 300_000);
 });

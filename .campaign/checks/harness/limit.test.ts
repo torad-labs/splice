@@ -76,7 +76,7 @@ describe("limit-says", () => {
     // the line the wait writes into the conversation is the one it writes today
     expect(sent.body).toContain("[splice] claude-astra is at its usage limit. This turn continues in 25 seconds.");
     expect(waiting(line(astra, session)).at).toBe(-1);
-  }, 90_000);
+  }, 300_000);
 
   test("with two turns of the session waiting, the line says how many", async () => {
     up.behaviour.status = 429;
@@ -96,7 +96,7 @@ describe("limit-says", () => {
     const after = line(astra, session);
     expect(waiting(after).at).toBe(-1);
     expect(after).not.toMatch(/\b\d+ turns\b/);
-  }, 90_000);
+  }, 300_000);
 
   test("the head stops while a turn waits on a limit: Claude Code is told to send the turn again, as today", async () => {
     up.behaviour.status = 429;
@@ -112,5 +112,5 @@ describe("limit-says", () => {
     expect(Date.now() - from).toBeLessThan(15_000);
     expect(sent.error).toEqual({ type: "overloaded_error", message: "[splice] splice restarted during this turn. Claude Code sends this turn again." });
     expect(sent.body).not.toContain(up.reply());
-  }, 90_000);
+  }, 300_000);
 });

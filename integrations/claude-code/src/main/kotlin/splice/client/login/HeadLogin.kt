@@ -1,6 +1,10 @@
-// NEW: the /login interception of ONE head: what its sign-in is called and runs, and the staging of the
-// commands/login.md plus the UserPromptSubmit hook that catches the sentinel. Split from LoginHookScripts.kt, where
-// its fields were a parameter object with nothing to do.
+// NEW: the /login interception of ONE head: whether it has one, and the staging of the commands/login.md plus the
+// UserPromptSubmit hook that catches it. Split from LoginHookScripts.kt, where its fields were a parameter object with
+// nothing to do.
+//
+// door-default (docs/specs/door-default.md, decision 5): on a head splice holds the credential for, /login opens
+// splice's accounts page, where every account is signed in, in place of starting that head's own sign-in (LoginScript).
+// A command another machine serves says where its logins live.
 package splice.client.login
 
 import kotlinx.serialization.json.JsonObject
@@ -8,34 +12,37 @@ import splice.client.wrap.HeadCommandsDir
 import java.nio.file.Path
 
 internal const val LOGIN_HOOK_SH = "splice-login-hook.sh"
-internal const val LOGIN_SENTINEL = "SPLICE_CODEX_LOGIN"
 
-/** How one head signs in. [canCapturePaste] is true when the head also holds a [TokenCaptureSpec], which decides the
- *  whole shape of /login for an api-key head (see [LoginHookScripts.loginHookScript]); [outcomeFile] is its login
- *  receipt (LoginOutcomeFile); [headKey] lets a sign-in started as `splice login <key>` be found too. [signsInOn]
- *  is the machine holding the logins of a command another machine serves (LAN share), empty for a head here. */
+/** How one head signs in. [loginCommand] is its terminal sign-in, empty for a head with none; [outcomeFile] its login
+ *  receipt (LoginOutcomeFile); [signsInOn] the machine holding the logins of a command another machine serves (LAN
+ *  share), empty for a head here, named [headKey]. */
 internal class HeadLogin(
     val loginCommand: String,
-    val signInLabel: String,
-    val viaBrowser: Boolean,
     val outcomeFile: String = "",
-    val canCapturePaste: Boolean = false,
     val headKey: String = "",
     val signsInOn: String = "",
 ) {
     /** False for a head with no login command: it gets no /login interception, and a stale one is reconciled away. */
     val offered: Boolean get() = loginCommand.isNotBlank()
 
+    private val script: LoginScript
+        get() {
+            val elsewhere = signsInOn.takeIf { it.isNotBlank() }?.let {
+                "$headKey signs in on $it: its logins live there, and this machine holds none. To sign in or add a " +
+                    "login, run `$loginCommand` on $it, or use the Accounts page of its console."
+            }
+            return LoginScript(elsewhere, if (elsewhere == null) outcomeFile else "")
+        }
+
     /** Writes the head's commands/login.md and its hook script, and answers the settings.json entry for the script.
      *  Throws on an I/O failure; the caller owns that leg's best-effort policy. */
     fun stage(configDir: Path, globalCommands: Path?, hooks: HookInstaller): JsonObject {
-        HeadCommandsDir.write(configDir, signInLabel, globalCommands, LOGIN_SENTINEL)
-        val script = HookScriptFiles.writeHookScript(
-            configDir,
-            LOGIN_HOOK_SH,
-            LoginHookScripts.loginHookScript(this),
-            hooks.chmod,
-        )
-        return HookScriptFiles.hookEntry(script, HookScriptFiles.HOOK_TIMEOUT_SECONDS)
+        val login = script
+        HeadCommandsDir.write(configDir, login.command(), globalCommands)
+        val written = HookScriptFiles.writeHookScript(configDir, LOGIN_HOOK_SH, login.hook(), hooks.chmod)
+        return HookScriptFiles.hookEntry(written, LOGIN_TIMEOUT_SECONDS)
     }
 }
+
+/** `/login` runs `splice console`, a JVM start and a call to the daemon, inside the hook: well inside this. */
+internal const val LOGIN_TIMEOUT_SECONDS = 30

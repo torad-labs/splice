@@ -14,6 +14,7 @@ import splice.client.resume.TranscriptModelRewrite
 import splice.client.resume.originals.TranscriptOriginals
 import splice.core.util.LogSink
 import splice.http.JsonBody
+import splice.launch.recipe.DoorNow
 import splice.launch.recipe.LaunchRoutes
 import splice.launch.recipe.LaunchService
 import splice.launch.resume.ForegroundHookRoute
@@ -38,7 +39,8 @@ internal class LaunchMount(
     // `claude` through (LaunchService.wrap), so what /api/claude-head/wrap writes is what /launch
     // reads. A server built without a LaunchService launches nothing, and keeps the default wrap.
     private val claudeHeadRoutes =
-        launchService?.let { ClaudeHeadRoutes(launchHeads, wrappedHead = it.wrap) } ?: ClaudeHeadRoutes(launchHeads)
+        launchService?.let { ClaudeHeadRoutes(launchHeads, wrappedHead = it.wrap, door = DoorNow { it.door }) }
+            ?: ClaudeHeadRoutes(launchHeads)
 
     // V4-169: the SessionStart resume hook's receiving end — session-guarded like the statusline, and
     // reachable only from loopback, because the daemon binds there.

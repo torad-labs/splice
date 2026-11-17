@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased: `claude` runs on splice's door, and head commands are deprecated
+
+### Highlights
+- **`claude` on the door is how splice is used.** The terminal's plain `claude` runs on splice's door, the one
+  Claude Desktop's Code tab uses, with a key of its own. Its `/model` picker lists the models of every account you
+  signed in to with a ChatGPT, Grok, Kimi or Muse login, each labelled `splice · <command>`, and a sign-in shows in
+  the next session with no restart. The session runs over your own `~/.claude`; splice writes nothing there.
+- **`/login` opens splice's accounts page.** In a session on the door, and on every head here, `/login` runs
+  `splice console` and the turn goes no further. Claude Code's own `/login` and `/logout` are off on the door. With
+  no account signed in, a turn is refused with a message that says to type `/login`.
+- **Head commands are deprecated.** `claudex`, `claude-grok`, `claude-kimi`, `claude-muse`, `claude` on its head
+  and every command `splice add` links keep working, and each says it is deprecated when it starts. No head is
+  removed, and no date is set for removing one.
+
+### Upgrading
+- With no choice made, `claude` is on the door unless `splice.toml` has a head whose command is `claude`, so a
+  machine set up with the `claude` head keeps it. `splice claude door [--model <selector>]` moves it to the door,
+  and `splice claude head` moves it back. The choice is kept across restarts and upgrades.
+
+### Added
+- `splice claude [--json]`: the lane, the door, the model a session starts on and why, the picker's models, and
+  each head left out of it and why. `splice status` and `splice doctor` name the lane.
+- `splice setup` links `claude` on the door on a machine with no head for it, and no longer offers the Claude plan
+  in its list; `splice add claude` still adds that head.
+
+### Changed
+- A head's `/login` opens splice's accounts page instead of signing in inside the session. `<command> login` in a
+  terminal still signs in.
+
 ## splice v0.6.2: Claude Desktop's door leaves your settings file alone, your own model picker included - 2026-11-16
 
 ### Highlights

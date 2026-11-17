@@ -47,11 +47,11 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.pool.PREFERRED_UPSTREAM_HEADER
 import splice.core.session.ActivityAction
-import splice.core.turn.DESKTOP_DOOR
 import splice.core.turn.SERVED_NOTICE_HEADER
 import splice.core.turn.SERVED_TURN_HEADER
 import splice.core.turn.TURN_DOOR_HEADER
 import splice.core.turn.TurnRelay
+import splice.core.turn.turnDoors
 import splice.core.util.Cancellables
 import splice.core.wire.AnthropicRequest
 import splice.head.ActivityLabel
@@ -350,7 +350,7 @@ internal class TurnPreparation(
         val relay = TurnRelay(
             preferredUpstream = headers[PREFERRED_UPSTREAM_HEADER],
             servedTurn = headers[SERVED_TURN_HEADER],
-            door = headers[TURN_DOOR_HEADER]?.takeIf { it == DESKTOP_DOOR },
+            door = headers[TURN_DOOR_HEADER]?.takeIf { it in turnDoors },
         )
         val route = fromProvider.meta.route.copy(relay = relay)
         val prepared = fromProvider.copy(meta = fromProvider.meta.copy(scope = scope, route = route))

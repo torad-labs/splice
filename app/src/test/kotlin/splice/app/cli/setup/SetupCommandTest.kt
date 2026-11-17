@@ -37,7 +37,12 @@ class SetupCommandTest {
     fun `headless setup writes the captured no-plan topology`(@TempDir home: Path) {
         val topology = withHome(home) {
             seedShim(home)
-            runBlocking { SetupCommand(loginHead = NO_REAL_LOGIN).setup() }
+            runBlocking {
+                SetupCommand(
+                    loginHead = NO_REAL_LOGIN,
+                    effects = SetupEffects(EnvReader(System::getenv), wrap = NO_REAL_WRAP),
+                ).setup()
+            }
             Files.readString(home.resolve(".config").resolve("splice").resolve("splice.toml"))
         }
         assertEquals(HEADLESS_ORACLE, topology)
@@ -62,6 +67,7 @@ class SetupCommandTest {
                         spinner = Spinner(StringBuilder(), tty = false),
                     ),
                     loginHead = NO_REAL_LOGIN,
+                    effects = SetupEffects(EnvReader(System::getenv), wrap = NO_REAL_WRAP),
                     detect = { emptyFacts() },
                 ).setup()
             }
@@ -75,7 +81,12 @@ class SetupCommandTest {
         val log = captureStdout {
             withHome(home) {
                 seedShim(home)
-                runBlocking { SetupCommand(loginHead = NO_REAL_LOGIN).setup() }
+                runBlocking {
+                    SetupCommand(
+                        loginHead = NO_REAL_LOGIN,
+                        effects = SetupEffects(EnvReader(System::getenv), wrap = NO_REAL_WRAP),
+                    ).setup()
+                }
             }
         }
         // Pinned by COMMAND, not by label. The 2026-09-22 redesign dropped the Launch/Dashboard/
@@ -155,6 +166,7 @@ class SetupCommandTest {
                             spinner = Spinner(tty = false),
                         ),
                         loginHead = { true },
+                        effects = SetupEffects(EnvReader(System::getenv), wrap = NO_REAL_WRAP),
                     ).setup()
                 }
             }
@@ -181,6 +193,7 @@ class SetupCommandTest {
                         spinner = Spinner(StringBuilder(), tty = false),
                     ),
                     loginHead = NO_REAL_LOGIN,
+                    effects = SetupEffects(EnvReader(System::getenv), wrap = NO_REAL_WRAP),
                     detect = { emptyFacts() },
                 ).setup()
             }
@@ -201,12 +214,69 @@ class SetupCommandTest {
                         spinner = Spinner(StringBuilder(), tty = false),
                     ),
                     loginHead = NO_REAL_LOGIN,
+                    effects = SetupEffects(EnvReader(System::getenv), wrap = NO_REAL_WRAP),
                     detect = { emptyFacts() },
                 ).setup()
             }
         }
         assertTrue(ok)
         assertFalse(Files.exists(path))
+    }
+
+    /** What setup does about `claude` (docs/specs/door-default.md, decision 8): on a machine with no head `claude` can
+     *  go back to, it links `claude` to splice on the door and says so before installing; where splice.toml has one,
+     *  it links nothing. Seen as the person sees it: the Summary, the line the link answered, and splice.toml. */
+    @Nested
+    inner class ClaudeLink {
+        @Test
+        fun `a machine with no splice_toml links claude on the door and adds no claude head`(@TempDir home: Path) {
+            val log = setupOn(home)
+            val toml = Files.readString(home.resolve(".config").resolve("splice").resolve("splice.toml"))
+
+            assertTrue("Claude: linked to splice" in log && "on its door" in log, "the Summary says so: $log")
+            assertTrue(LINKED in log, "setup prints what linking answered: $log")
+            assertFalse("[heads.claude]" in toml, toml)
+            assertFalse(Regex("(?m)^command = \"claude\"$").containsMatchIn(toml), toml)
+        }
+
+        @Test
+        fun `a machine whose splice_toml has a claude head links nothing`(@TempDir home: Path) {
+            val log = setupOn(home, CLAUDE_HEAD_TOML)
+
+            assertFalse("Claude: linked to splice" in log, log)
+            assertFalse(LINKED in log, "no link was made: $log")
+        }
+
+        @Test
+        fun `a claude another machine serves counts as its head, as the daemon counts it`(@TempDir home: Path) {
+            val log = setupOn(home, "[remote.claude]\nurl = \"http://devbox.lan:3097/claude\"\n")
+
+            assertFalse("Claude: linked to splice" in log, log)
+            assertFalse(LINKED in log, "no link was made: $log")
+        }
+
+        /** `splice setup` with nothing ticked, on a home holding [toml] as its splice.toml (none when null). */
+        private fun setupOn(home: Path, toml: String? = null): String = captureStdout {
+            withHome(home) {
+                seedShim(home)
+                toml?.let {
+                    val cfg = Files.createDirectories(home.resolve(".config").resolve("splice"))
+                    Files.writeString(cfg.resolve("splice.toml"), "[daemon]\ncontrol_port = 3096\n$it")
+                }
+                runBlocking {
+                    SetupCommand(
+                        prompts = SetupPrompts(spinner = Spinner(tty = false)),
+                        loginHead = NO_REAL_LOGIN,
+                        detect = { emptyFacts() },
+                        effects = SetupEffects(
+                            EnvReader(System::getenv),
+                            wrap = NO_REAL_WRAP,
+                            add = ProfileAdd { error("nothing is ticked") },
+                        ),
+                    ).setup()
+                }
+            }
+        }
     }
 
     @Nested
@@ -230,6 +300,7 @@ class SetupCommandTest {
                         detect = { emptyFacts() },
                         effects = SetupEffects(
                             EnvReader(System::getenv),
+                            wrap = NO_REAL_WRAP,
                             add = ProfileAdd { error("empty tick must not add") },
                         ),
                     ).setup()
@@ -243,13 +314,11 @@ class SetupCommandTest {
             assertFalse("api-key" in offered)
             assertTrue("local" in named, "a local model needs a name, URL and model before adding: $log")
             assertFalse("local" in offered, "the wizard cannot tick an incomplete local profile")
-            // V4-175: `claude` is TICKABLE now. It was excluded with "needs a name", which was
-            // never true of that row (AddPrepare.kt:42 falls back to profile.headKey, and the
-            // catalogue gives it `claude-splice`), and the wrong reason is what kept the lane
-            // choice off the wizard. The invariant above — offered OR excluded by name, never
-            // silently absent — is unchanged and still what this arm is for.
-            assertTrue("claude" in offered, log)
-            assertFalse("claude" in named, log)
+            // door-default (docs/specs/door-default.md, decision 8): the Claude plan left the tick list, since `claude`
+            // runs on the door; it is named by its command instead, as a deprecated head. This replaces V4-175's
+            // "claude is tickable" arm, which pinned the old behaviour.
+            assertTrue("claude" in named, log)
+            assertFalse("claude" in offered, log)
         }
 
         @Test
@@ -263,6 +332,7 @@ class SetupCommandTest {
                         loginHead = NO_REAL_LOGIN,
                         effects = SetupEffects(
                             EnvReader(System::getenv),
+                            wrap = NO_REAL_WRAP,
                             add = ProfileAdd { name ->
                                 added += name
                                 true
@@ -295,6 +365,7 @@ class SetupCommandTest {
                         detect = { emptyFacts() },
                         effects = SetupEffects(
                             EnvReader(System::getenv),
+                            wrap = NO_REAL_WRAP,
                             add = ProfileAdd { name ->
                                 added += name
                                 name != "grok"
@@ -321,6 +392,7 @@ class SetupCommandTest {
                         detect = { emptyFacts() },
                         effects = SetupEffects(
                             EnvReader(System::getenv),
+                            wrap = NO_REAL_WRAP,
                             add = ProfileAdd { true },
                             restart = DaemonRestart {
                                 restarts += 1
@@ -345,6 +417,7 @@ class SetupCommandTest {
                             pickHeads = HeadPicker { _, _ -> MultiSelectOutcome.Chosen(listOf("muse", "deepseek")) },
                         ),
                         loginHead = NO_REAL_LOGIN,
+                        effects = SetupEffects(EnvReader(System::getenv), wrap = NO_REAL_WRAP),
                         detect = { emptyFacts() },
                     ).setup()
                 }
@@ -373,6 +446,7 @@ class SetupCommandTest {
                         detect = { emptyFacts() },
                         effects = SetupEffects(
                             EnvReader(System::getenv),
+                            wrap = NO_REAL_WRAP,
                             add = ProfileAdd { error("empty tick must not add") },
                         ),
                     ).setup()
@@ -409,6 +483,7 @@ class SetupCommandTest {
                         ),
                         effects = SetupEffects(
                             EnvReader(System::getenv),
+                            wrap = NO_REAL_WRAP,
                             add = ProfileAdd { error("empty tick must not add") },
                         ),
                     ).setup()
@@ -437,6 +512,7 @@ class SetupCommandTest {
                         detect = { emptyFacts().copy(spliceOwned = setOf("chatgpt-oauth")) },
                         effects = SetupEffects(
                             EnvReader(System::getenv),
+                            wrap = NO_REAL_WRAP,
                             add = ProfileAdd { error("empty tick must not add") },
                         ),
                     ).setup()
@@ -460,6 +536,7 @@ class SetupCommandTest {
                         detect = { emptyFacts() },
                         effects = SetupEffects(
                             EnvReader(System::getenv),
+                            wrap = NO_REAL_WRAP,
                             add = ProfileAdd { name ->
                                 added += name
                                 true
@@ -558,6 +635,28 @@ class SetupCommandTest {
  *  sign-in. Every construction here passes this instead, and LoginIo's wall now fails any test that
  *  forgets. */
 private val NO_REAL_LOGIN = HeadSignIn { true }
+
+/** A wrap that reaches no daemon: setup now links `claude` on a machine with no head of it, and a test must never
+ *  ask a real one. */
+private val NO_REAL_WRAP = ClaudeWrap { LINKED }
+
+/** What [NO_REAL_WRAP] answers, which setup prints once it has linked `claude`. */
+private const val LINKED = "wrapped: claude now runs through splice"
+
+/** A splice.toml's Claude head as splice.example.toml writes one: its command is `claude`. */
+private const val CLAUDE_HEAD_TOML = """
+[providers.anthropic]
+dialect = "anthropic-passthrough"
+base_url = "https://x"
+auth = { kind = "api-key", env = "TEST_ANTHROPIC_KEY" }
+[heads.claude]
+provider = "anthropic"
+port = 3099
+discovery_prefix = "claude--"
+pinned_model = "claude-sonnet-5-5"
+[heads.claude.claude]
+command = "claude"
+"""
 
 /** An env var no machine sets, so the close's readiness check cannot find a key for it. */
 private const val CLOSE_KEY = "TEST_SETUP_CLOSE_KEY"

@@ -74,7 +74,7 @@ public class DesktopSettings {
 
     /** The models [file]'s picker lists. */
     private fun rows(file: JsonObject): List<String> =
-        ((file[PICKER] as? JsonObject)?.get(OPTIONS) as? JsonArray).orEmpty()
+        ((file[PICKER] as? JsonObject)?.get(PICKER_OPTIONS) as? JsonArray).orEmpty()
             .mapNotNull { JsonScalars.str(it as? JsonObject, DESKTOP_FILE_MODEL) }
 
     /** [env] with every variable `on` wrote taken out, and put back as [was] held it before `on`. */
@@ -149,7 +149,9 @@ internal const val DESKTOP_FILE_MODEL: String = Keys.MODEL
 
 private const val ENV = "env"
 private const val PICKER = DESKTOP_PICKER
-private const val OPTIONS = "options"
+
+// The key of the picker's rows inside [DESKTOP_PICKER].
+internal const val PICKER_OPTIONS = "options"
 
 // The record's own keys: whether the file and its env block were there before `on`.
 private const val EXISTED = "file_existed"

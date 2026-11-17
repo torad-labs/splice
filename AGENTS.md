@@ -134,6 +134,30 @@ session's cwd (`SessionProject`). Appends stack as trailing blocks; a replace dr
 field and every earlier layer. No projects table = V4-36's bytes. Resolver:
 `core/.../prompt/SystemPromptLayers.kt`; applied in `TurnPrompts.applySystemPrompt`.
 
+## How splice is used: `claude` on the door (door-default, Nov 17, 2026)
+
+splice is used through its **door** (docs/specs/door-default.md): the terminal's plain `claude`, launched through
+splice, talks to `/desktop` on the control port with a terminal key of its own (`TerminalCaller`), and Claude Desktop's
+Code tab talks to the same door with Desktop's key (`DesktopCaller`). The model a turn names picks the head
+(`DoorRouting`); the picker lists the models of the heads signed in with an OAuth login. A launch on the door sets
+Claude Code's Mantle variables, `ANTHROPIC_MODEL` and `DISABLE_LOGIN_COMMAND`/`DISABLE_LOGOUT_COMMAND`, lays a
+`--settings` overlay carrying the picker and the hook that answers `/login`, and sets no `CLAUDE_CONFIG_DIR`. The one
+file it lays in `~/.claude` is its bare `/login`, `commands/login.md` (`DoorLogin`), which opens the accounts page
+through `splice console`: laid where it is missing, never over a `/login` the person wrote, and taken out by
+`splice claude head` and `splice uninstall`.
+
+- **Head commands are deprecated, and kept.** `claudex`, `claude-grok`, `claude-kimi`, `claude-muse`, `claude` on
+  its head and every command `splice add` links still launch and answer. Each head launch's warning carries
+  `HEADS_DEPRECATED` (`features/launch/.../recipe/ClaudeDoor.kt`), which names `splice claude door`; a launch on the
+  door carries none. `splice status` and `splice doctor` name the lane. Do not remove, rename or refuse a head, and
+  set no removal date.
+- **The lane** is in `claude-lane.json` in the state folder (`ClaudeLaneRecords`): the one chosen with `splice claude
+  door` or `head`, or with none chosen, the head while `splice.toml` has a head whose command is `claude` (or a
+  `[remote.claude]`), and the door otherwise. `splice setup` links `claude` on the door and adds no head keyed
+  `claude`.
+- **Isolation holds.** The terminal key and Desktop's key are separate files; `splice desktop off` and
+  `rotate-key` never touch the terminal's, and `splice claude head` replaces it.
+
 ## Control plane (spliced)
 
 > **Wire contract, Kotlin implementation.** Same caveat as above: the control plane is now

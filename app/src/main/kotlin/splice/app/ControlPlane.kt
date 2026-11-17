@@ -236,6 +236,7 @@ internal class ControlPlane(
                     .also {
                         it.remotes = remoteCommands
                         it.speeds = speeds.of(heads)
+                        it.door = desktop?.claude
                     },
                 shutdownDaemon = shutdownDaemon,
                 sessions = sessions,

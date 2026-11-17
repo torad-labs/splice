@@ -14,7 +14,7 @@
 
 # Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 # — bump both together whenever this shim's behavior changes. No code generation.
-SPLICE_SHIM_VERSION="shim-26"
+SPLICE_SHIM_VERSION="shim-27"
 # Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 SPLICE_GATEWAY_VERSION="0.6.3"
 
@@ -23,28 +23,28 @@ NL='
 
 fail() {
   printf '%s\n' "$1" >&2
-  [ "$CLAUDE_DIRECT" = 1 ] && claude_direct
+  without_splice
   exit 1
 }
 
-# shim-22: the wrapped plain `claude` must never be left unusable by splice. While main() is
-# getting a launch for it, any failure (no daemon, a failed handshake, no recipe) runs Claude Code directly on its own
-# login instead, as it would unwrapped, and says so once. Named heads keep failing in words: they have no direct path.
-CLAUDE_DIRECT=0
-CLAUDE_DIRECT_ARGS=""
-claude_direct() {
-  CLAUDE_DIRECT=0 # a failure below ends the launch instead of coming back here
-  cd_file=$STATE_DIR/claude-head-wrap.json
-  cd_binary=""
-  [ -r "$cd_file" ] && cd_binary=$(json_string real_binary_path "$cd_file")
-  case $cd_binary in /*) ;; *) return 0 ;; esac
-  { [ -x "$cd_binary" ] && [ -f "$cd_binary" ] && ! [ "$cd_binary" -ef "$SELF" ]; } || return 0
-  warn "splice: not reachable; running Claude Code directly on your own login (this session does not go through splice)"
-  eval "set -- $CLAUDE_DIRECT_ARGS"
-  exec "$cd_binary" "$@"
+# shim-27: a wrapped plain `claude` goes through splice or it does not start. When main() cannot get a launch for it,
+# the reason is said and the launch ends there, followed by the one line that runs Claude Code without splice, for the
+# person who wants that. Until shim-27 the launcher ran it that way by itself (shim-22) and said so once. A session
+# started around splice never comes back through it: it stays on the caller's own login for its whole life, no other
+# login can take its turns, and a launch the daemon had refused in words was opened anyway. Named heads say only the
+# reason: they have no path of their own.
+CLAUDE_PLAIN=0
+without_splice() {
+  [ "$CLAUDE_PLAIN" = 1 ] || return 0
+  ws_file=$STATE_DIR/claude-head-wrap.json
+  ws_binary=""
+  [ -r "$ws_file" ] && ws_binary=$(json_string real_binary_path "$ws_file")
+  case $ws_binary in /*) ;; *) return 0 ;; esac
+  { [ -x "$ws_binary" ] && [ -f "$ws_binary" ] && ! [ "$ws_binary" -ef "$SELF" ]; } || return 0
+  warn "splice: claude was not started. To run Claude Code without splice this once, on its own login: $ws_binary"
 }
 
-# One shell word per argument, so claude_direct can rebuild the caller's words exactly.
+# One shell word per argument, so the daemon's supervisor can rebuild its words exactly.
 quote_words() {
   for qw_word in "$@"; do
     printf "'%s' " "$(printf '%s' "$qw_word" | sed "s/'/'\\\\''/g")"
@@ -324,7 +324,8 @@ fi
 # hw.memsize on macOS, or the memory limit of this process's control group or of a group above it where one is lower:
 # a container, or a unit with MemoryMax, from which the JVM takes its own 75% too. Read with builtins; when nothing
 # reads as a number, the JVM's 75% stands. 22369622 KiB is the memory whose 75% is 16 GiB.
-heap_ceiling_flags() {
+# usable_memory_kb leaves that memory in hcf_kb, in KiB, or leaves it empty.
+usable_memory_kb() {
   hcf_kb=""
   if [ -r /proc/meminfo ]; then
     while read -r hcf_key hcf_value _; do
@@ -365,6 +366,10 @@ heap_ceiling_flags() {
       done
     done </proc/self/cgroup
   fi
+}
+
+heap_ceiling_flags() {
+  usable_memory_kb
   case $hcf_kb in
     '' | *[!0-9]*) printf '%s' "-XX:MaxRAMPercentage=75" ;;
     *)
@@ -374,6 +379,19 @@ heap_ceiling_flags() {
         printf '%s' "-XX:MaxRAMPercentage=75"
       fi
       ;;
+  esac
+}
+
+# shim-27: the heap's ceiling for every command but the daemon (`splice trace`, `splice status` and the rest). They
+# ran with no heap flag, so the JVM took its default, a quarter of the machine: on a 120 GiB machine one
+# `splice trace --last 4000 --json` grew to 20 GiB and the kernel killed another program for the memory (Nov 17,
+# 2026). 4 GiB is that quarter on a 16 GiB machine, and a smaller machine keeps the JVM's own quarter. A read that
+# needs more is refused in words (HeapBudget), not grown into. Override with SPLICE_CLI_JVM_OPTS; empty lifts it.
+cli_heap_flag() {
+  usable_memory_kb
+  case $hcf_kb in
+    '' | *[!0-9]*) ;;
+    *) if [ "$hcf_kb" -ge 16777216 ]; then printf '%s' "-Xmx4g"; fi ;;
   esac
 }
 
@@ -482,7 +500,11 @@ exec_cli() {
       supervise_daemon "$@"
     fi
   else
-    set -- -Djdk.console=java.base "-Duser.home=$SHIM_HOME" -jar "$JAR" "$@"
+    ec_cli=${SPLICE_CLI_JVM_OPTS-$(cli_heap_flag)}
+    set -f
+    # shellcheck disable=SC2086
+    set -- -Djdk.console=java.base "-Duser.home=$SHIM_HOME" $ec_cli -jar "$JAR" "$@"
+    set +f
   fi
   exec_argv "$JAVA" "$@"
 }
@@ -764,7 +786,7 @@ handshake() {
     warn "splice: last boot output ($BOOT_LOG):"
     warn "$hs_boot"
   fi
-  [ "$CLAUDE_DIRECT" = 1 ] && claude_direct
+  without_splice
   exit 1
 }
 
@@ -1002,11 +1024,9 @@ launcher_under_home() {
 }
 
 main() {
-  # From here to the recipe, a wrapped plain `claude` that cannot get a launch runs Claude Code directly (shim-22).
-  if [ "$HEAD" = claude ] && [ "${1-}" != login ]; then
-    CLAUDE_DIRECT_ARGS=$(quote_words "$@")
-    CLAUDE_DIRECT=1
-  fi
+  # From here to the recipe, a wrapped plain `claude` that cannot get a launch is told how to run without splice
+  # (shim-27): it is never run that way for it.
+  if [ "$HEAD" = claude ] && [ "${1-}" != login ]; then CLAUDE_PLAIN=1; fi
   if read_launcher_owner; then has_owner=1; else has_owner=0; fi
   if [ "$has_owner" = 1 ] && [ "$HEAD" = claude ] && ! same_home "$OWNER_HOME"; then
     unwrapped_claude "$OWNER_HOME" "$OWNER_STATE_DIR" "" "$@"

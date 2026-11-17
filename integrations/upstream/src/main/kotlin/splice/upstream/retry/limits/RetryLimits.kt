@@ -39,7 +39,9 @@ internal object RetryLimits {
         if (lift is Lift.Unstated && turn.at.moment == Moment.MID_CONTENT) return turn.end
         val stated = turn.pastFloor(lift)
         return when {
-            lift is Lift.Unstated -> turn.switchOr(throttle(turn))
+            // A bare limit does not say whose it is, so another login is asked once. The same answer there is the
+            // request's on any login, or a throttle the logins share: the turn stops moving and waits where it is.
+            lift is Lift.Unstated -> if (turn.ledger.bareMoves > 0) throttle(turn) else turn.switchOr(throttle(turn))
             stated != null -> stated(turn, stated)
             else -> bursts(turn, turn.insideFloor(lift) ?: 0L, RetryStep.Hold(null, Probes.UNSTATED))
         }

@@ -32,5 +32,7 @@ internal object LaunchHeadAdapter {
         override fun launched(key: String, argv: List<String>) = audit.launch(key, argv)
 
         override fun warned(message: String) = audit.warning(message)
+
+        override fun refused(key: String, reason: String) = audit.launchRefused(key, reason)
     }
 }

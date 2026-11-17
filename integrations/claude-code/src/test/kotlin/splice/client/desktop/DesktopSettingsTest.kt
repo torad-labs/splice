@@ -1,114 +1,115 @@
-// NEW: desktop-door — what `splice desktop on` leaves in the person's own settings file, what `off` gives back, and
-// what the terminal's `claude` lays over it meanwhile, read as the file Claude Code reads.
+// NEW: desktop-door: the person's own settings file once an older splice's door is taken out of it, what in it would
+// send the Code tab past the door, and what a head with a folder of its own inherits, read as the file Claude Code
+// reads. The Desktop values come from Desktop's own store, and the person sets them there.
+//
+// Changed in 0.6.1: `splice desktop on` no longer writes the file, so the tests of what it wrote there (its env, its
+// picker, a second `on`) and of the terminal's overlay over it are gone; the files below are written as 0.6.0's `on`
+// left them.
 package splice.client.desktop
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 
 class DesktopSettingsTest {
     private val settings = DesktopSettings()
-    private val door = "http://127.0.0.1:8100/desktop"
-    private val write = DesktopWrite(
-        door = door,
-        key = "splice-desktop-k",
-        window = 400_000,
-        model = "claude-astra--astra-large",
-        rows = listOf(DesktopRow("claude-astra--astra-large", "astra-large", "splice · claude-astra")),
-    )
+    private val selectors = DoorSelectors { it.startsWith("claude-astra--") }
 
     private fun file(text: String): JsonObject = Json.parseToJsonElement(text).jsonObject
 
+    // What 0.6.0's `on` wrote into a file whose env held FOO and whose picker listed opus.
+    private val doorEnv = """"CLAUDE_CODE_USE_MANTLE":"1",
+        "ANTHROPIC_BEDROCK_MANTLE_BASE_URL":"http://127.0.0.1:8100/desktop",
+        "AWS_BEARER_TOKEN_BEDROCK":"splice-desktop-abc","CLAUDE_CODE_MAX_CONTEXT_TOKENS":"400000",
+        "CLAUDE_CODE_AUTO_MODE_SERVER":"0","ANTHROPIC_MODEL":"claude-astra--astra-large""""
+    private val doorPicker =
+        """"modelPicker":{"replaceBuiltInOptions":true,"options":[{"model":"claude-astra--astra-large"}]}"""
+    private val replaced = file(
+        """{"file_existed":true,"env_existed":true,"env":{"CLAUDE_CODE_USE_MANTLE":null,
+        "ANTHROPIC_BEDROCK_MANTLE_BASE_URL":null,"AWS_BEARER_TOKEN_BEDROCK":null,
+        "CLAUDE_CODE_MAX_CONTEXT_TOKENS":null,"CLAUDE_CODE_AUTO_MODE_SERVER":null,"ANTHROPIC_MODEL":"sonnet"},
+        "modelPicker":{"options":[{"model":"opus"}]}}""",
+    )
+
     @Test
-    fun `on writes the switch, the door, the key, the window and the picker, and leaves the person's own keys`() {
+    fun `taking an older door out gives the person back the file they had`() {
+        val left = file("""{"theme":"dark","env":{"FOO":"1",$doorEnv},$doorPicker}""")
+        val mine = file(
+            """{"theme":"dark","env":{"FOO":"1","ANTHROPIC_MODEL":"sonnet"},
+            "modelPicker":{"options":[{"model":"opus"}]}}""",
+        )
+        assertEquals(mine, settings.withoutDoor(left, replaced, selectors))
+    }
+
+    @Test
+    fun `a model the Code tab picked from the door is taken out with it`() {
+        val left = file("""{"model":"claude-astra--astra-large","env":{$doorEnv},$doorPicker}""")
+        val out = settings.withoutDoor(left, replaced, selectors)!!
+        assertNull(out["model"])
+    }
+
+    @Test
+    fun `a door selector an older off left in model is taken out, and nothing else changes`() {
+        val left = file("""{"theme":"dark","model":"claude-astra--astra-large","env":{"FOO":"1"}}""")
+        assertEquals(file("""{"theme":"dark","env":{"FOO":"1"}}"""), settings.withoutDoor(left, null, selectors))
         val mine = file("""{"theme":"dark","model":"opus","env":{"FOO":"1"}}""")
-        val on = settings.on(mine, write, null).file
-        val env = on["env"]!!.jsonObject
-        assertEquals("1", env[DESKTOP_USE_MANTLE]!!.jsonPrimitive.content)
-        assertEquals(door, env[DESKTOP_MANTLE_URL]!!.jsonPrimitive.content)
-        assertEquals("splice-desktop-k", env[DESKTOP_BEARER]!!.jsonPrimitive.content)
-        assertEquals("400000", env[DESKTOP_WINDOW]!!.jsonPrimitive.content)
-        assertEquals("0", env[DESKTOP_AUTO_MODE]!!.jsonPrimitive.content)
-        assertEquals("claude-astra--astra-large", env[DESKTOP_MODEL]!!.jsonPrimitive.content)
-        assertEquals("1", env["FOO"]!!.jsonPrimitive.content)
-        assertEquals("dark", on["theme"]!!.jsonPrimitive.content)
-        assertEquals("opus", on["model"]!!.jsonPrimitive.content)
-        val picker = on[DESKTOP_PICKER]!!.jsonObject
-        assertEquals(JsonPrimitive(true), picker["replaceBuiltInOptions"])
-        val row = picker["options"]!!.jsonArray.single().jsonObject
-        assertEquals("splice · claude-astra", row["description"]!!.jsonPrimitive.content)
+        assertEquals(mine, settings.withoutDoor(mine, null, selectors))
     }
 
     @Test
-    fun `off after on gives the person back the file they had`() {
-        val mine = file("""{"theme":"dark","env":{"ANTHROPIC_MODEL":"sonnet"},"modelPicker":{"options":[]}}""")
-        val on = settings.on(mine, write, null)
-        assertEquals(mine, settings.off(on.file, on.replaced))
+    fun `a file the older door made is removed with it`() {
+        val made = file(
+            """{"file_existed":false,"env_existed":false,"env":{"ANTHROPIC_MODEL":null},"modelPicker":null}""",
+        )
+        assertNull(settings.withoutDoor(file("""{"env":{$doorEnv},$doorPicker}"""), made, selectors))
     }
 
     @Test
-    fun `off after on removes a file that was not there before`() {
-        val on = settings.on(null, write, null)
-        assertNull(settings.off(on.file, on.replaced))
+    fun `an older door is found at any address, and Mantle with no desktop key is not one`() {
+        val moved = doorEnv.replace("8100", "9200")
+        assertEquals(true, settings.holdsDoor(file("""{"env":{$moved}}""")))
+        val mantle = """{"env":{"CLAUDE_CODE_USE_MANTLE":"1","AWS_BEARER_TOKEN_BEDROCK":"theirs"}}"""
+        assertEquals(false, settings.holdsDoor(file(mantle)))
     }
 
     @Test
-    fun `a second on keeps what the first replaced, so off still gives back the person's own`() {
-        val mine = file("""{"env":{"ANTHROPIC_MODEL":"sonnet"}}""")
-        val first = settings.on(mine, write, null)
-        val second = settings.on(first.file, write.copy(model = "claude-astra--astra-small"), first.replaced)
-        assertEquals(mine, settings.off(second.file, second.replaced))
-    }
-
-    @Test
-    fun `a file pointed at another provider or another Mantle address is refused`() {
-        assertNotNull(settings.refusal(file("""{"env":{"CLAUDE_CODE_USE_BEDROCK":"1"}}"""), door))
-        assertNotNull(settings.refusal(file("""{"env":{"CLAUDE_CODE_USE_VERTEX":"true"}}"""), door))
+    fun `a provider switch of the person's own would send the Code tab past the door`() {
+        assertNotNull(settings.refusal(file("""{"env":{"CLAUDE_CODE_USE_BEDROCK":"1"}}""")))
+        assertNotNull(settings.refusal(file("""{"env":{"CLAUDE_CODE_USE_VERTEX":"true"}}""")))
         val elsewhere = """{"env":{"CLAUDE_CODE_USE_MANTLE":"1","ANTHROPIC_BEDROCK_MANTLE_BASE_URL":"https://x"}}"""
-        assertNotNull(settings.refusal(file(elsewhere), door))
-        assertNull(settings.refusal(file("""{"env":{"CLAUDE_CODE_USE_BEDROCK":"0"}}"""), door))
-        assertNull(settings.refusal(settings.on(null, write, null).file, door))
+        assertNotNull(settings.refusal(file(elsewhere)))
+        assertNull(settings.refusal(file("""{"env":{"CLAUDE_CODE_USE_BEDROCK":"0"}}""")))
+        assertNull(settings.refusal(file("""{"env":{$doorEnv}}""")))
     }
 
     @Test
-    fun `the terminal's overlay blanks what on wrote, keeps the launch's own values and the person's picker`() {
-        val mine = file("""{"env":{"ANTHROPIC_MODEL":"sonnet"},"modelPicker":{"options":[{"model":"opus"}]}}""")
-        val on = settings.on(mine, write, null)
-        val overlay = settings.cancel(on.replaced, mapOf(DESKTOP_WINDOW to "200000"))
-        val env = overlay["env"]!!.jsonObject
-        assertEquals("", env[DESKTOP_USE_MANTLE]!!.jsonPrimitive.content)
-        assertEquals("", env[DESKTOP_BEARER]!!.jsonPrimitive.content)
-        assertEquals("200000", env[DESKTOP_WINDOW]!!.jsonPrimitive.content)
-        assertEquals("sonnet", env[DESKTOP_MODEL]!!.jsonPrimitive.content)
-        val options = overlay[DESKTOP_PICKER]!!.jsonObject["options"]!!.jsonArray
-        val rows = options.map { it.jsonObject["model"]!!.jsonPrimitive.content }
-        assertEquals(listOf("opus"), rows)
-        assertFalse(overlay.toString().contains("splice-desktop-k"))
-    }
-
-    @Test
-    fun `with no picker of the person's own the overlay's picker has no rows`() {
-        val on = settings.on(null, write, null)
-        val picker = settings.cancel(on.replaced, emptyMap())[DESKTOP_PICKER]!!.jsonObject
-        assertEquals(0, picker["options"]!!.jsonArray.size)
-        assertEquals(JsonPrimitive(false), picker["replaceBuiltInOptions"])
-    }
-
-    @Test
-    fun `a head with a folder of its own inherits none of the door, and none of a provider switch`() {
-        val mine = file("""{"theme":"dark","env":{"FOO":"1"},"modelPicker":{"options":[{"model":"opus"}]}}""")
-        val on = settings.on(mine, write.copy(key = "splice-desktop-abc"), null).file
-        val picked = JsonObject(on + ("model" to JsonPrimitive("claude-astra--astra-large")))
-        assertEquals(file("""{"theme":"dark","env":{"FOO":"1"}}"""), settings.inherited(picked))
+    fun `a head with a folder of its own inherits none of an older door, and none of a provider switch`() {
+        val left = file(
+            """{"theme":"dark","model":"claude-astra--astra-large","env":{"FOO":"1",$doorEnv},$doorPicker}""",
+        )
+        assertEquals(file("""{"theme":"dark","env":{"FOO":"1"}}"""), settings.inherited(left))
         val bedrock = file("""{"env":{"CLAUDE_CODE_USE_BEDROCK":"1","FOO":"1"},"modelPicker":{"options":[]}}""")
         assertEquals(file("""{"env":{"FOO":"1"},"modelPicker":{"options":[]}}"""), settings.inherited(bedrock))
+    }
+
+    @Test
+    fun `Desktop is given Mantle, the door, the key, the window and auto mode off, and names them to remove`() {
+        val environment = DesktopEnvironment()
+        val env = environment.of("http://127.0.0.1:8100/desktop", "splice-desktop-k", 400_000)
+        assertEquals(
+            listOf(
+                "CLAUDE_CODE_USE_MANTLE" to "1",
+                "ANTHROPIC_BEDROCK_MANTLE_BASE_URL" to "http://127.0.0.1:8100/desktop",
+                "AWS_BEARER_TOKEN_BEDROCK" to "splice-desktop-k",
+                "CLAUDE_CODE_MAX_CONTEXT_TOKENS" to "400000",
+                "CLAUDE_CODE_AUTO_MODE_SERVER" to "0",
+            ),
+            env,
+        )
+        assertEquals(env.map { it.first }, environment.names)
     }
 }

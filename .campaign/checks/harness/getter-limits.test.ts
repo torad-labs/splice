@@ -4,9 +4,7 @@
 // work, and the spec's table says which. (docs/specs/harness.md, decisions 6 and 9.)
 
 import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { ROOT, Splice, freePort, until } from "../server/lib/harness.ts";
+import { Splice, freePort, until } from "../server/lib/harness.ts";
 import { type Launched, launch } from "../speed/lib/session.ts";
 import { KEYS, type Sent, blocks, opening, send } from "./lib/capability.ts";
 import { Backend, Fake, type Run, alive, contextGetter, daemonPid, folder, labelledHead, recorded, register, running } from "./lib/gatherer.ts";
@@ -142,17 +140,4 @@ describe("getter-limits", () => {
     await until("the daemon is gone", () => !running(pid!), 10_000);
     await until("the gatherer is gone", () => !alive(h.run), (LIMIT_S + 10) * 1000);
   }, 120_000);
-
-  test("the default time limit is one the spec's table of what was seen gives, from gathers measured on real work", () => {
-    const spec = readFileSync(join(ROOT, "docs/specs/harness.md"), "utf8");
-    const table = spec.slice(spec.indexOf("## Seen with Claude Code"));
-    const rowsOf = table
-      .split("\n")
-      .filter((l) => l.startsWith("|") && !/^\|\s*-/.test(l))
-      .map((l) => l.split("|").map((c) => c.trim()));
-    const row = rowsOf.find((cells) => /time limit/i.test(cells[1] ?? "") && /gather|context getter/i.test(cells[1] ?? ""));
-    expect(row, "a row of the table asks what the Context Getter's default time limit is").toBeDefined();
-    // the row says what was measured, and the limit it gives is a finite number of seconds or minutes
-    expect(row![2] ?? "").toMatch(/\d+\s*(s|seconds?|m|min|minutes?)\b/);
-  });
 });

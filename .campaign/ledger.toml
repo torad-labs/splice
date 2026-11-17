@@ -1534,6 +1534,7 @@ guard = false
 spec = "docs/specs/harness.md decision 9, Limits. The gatherer is ended at the time limit, when the client leaves, when the head stops and when the daemon shuts down, and it runs under a deadline of its own, so a daemon killed outright leaves none behind. Each ending is recorded as the capability's failure with its reason, and the turn goes on as decision 6 says. The default time limit is set from gathers measured on real work (72 to 101 s on this repo on Haiku at its own level, November 17), and the spec's table says which numbers it came from."
 checks = [
   'bun test ./.campaign/checks/harness/getter-limits.test.ts',
+  'bun test ./.campaign/checks/harness/getter-default.test.ts',
 ]
 reviews = [
   'feature',

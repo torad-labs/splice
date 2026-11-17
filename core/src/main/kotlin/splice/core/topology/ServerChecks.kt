@@ -1,8 +1,8 @@
 // NEW: server mode (docs/specs/server-mode.md, decisions 1 to 3). What the decode accepts in `[server]` but the daemon
 // may not serve: a server beside an enabled share, a command no head here runs, a command whose head signs with one
 // person's plan, an address it cannot listen on, half a TLS pair, a proxy that is no address, an admin that is no
-// email, a sign-in (F2) no laptop could complete. Each is a boot finding beside every other, naming its key and never
-// a value an operator wrote in confidence.
+// email, a minimum client (F9) that is no version, a sign-in (F2) no laptop could complete. Each is a boot finding
+// beside every other, naming its key and never a value an operator wrote in confidence.
 package splice.core.topology
 
 import splice.core.listen.IpLiterals
@@ -20,7 +20,7 @@ internal class ServerChecks(
     private val server = topology.server
 
     fun findings(): List<TopologyFinding> = if (server.declared) {
-        listen() + exclusive() + commands() + tls() + people() + limits() + signin() +
+        listen() + exclusive() + commands() + tls() + people() + limits() + client() + signin() +
             ServerLedgerChecks(server).findings()
     } else {
         emptyList()
@@ -113,10 +113,17 @@ internal class ServerChecks(
             TopologyFinding("$SERVER_TABLE.limits.inflight_per_person", rule)
                 .takeIf { server.limits.inflightPerPerson < 0 },
             TopologyFinding("$SERVER_TABLE.limits.rpm_per_person", rule).takeIf { server.limits.rpmPerPerson < 0 },
+            TopologyFinding("$SERVER_TABLE.limits.tpm_per_person", rule).takeIf { server.limits.tpmPerPerson < 0 },
             TopologyFinding("$SERVER_TABLE.keepalive_seconds", "must be 0 (no keepalive) or a number of seconds")
                 .takeIf { server.keepaliveSeconds < 0 },
         )
     }
+
+    /** F9: a minimum a laptop's version can be compared with, number by number. */
+    private fun client(): List<TopologyFinding> = listOfNotNull(
+        TopologyFinding("$SERVER_TABLE.client.minimum", "must be a splice version, as in \"0.10.0\"")
+            .takeIf { server.client.minimum != null && server.client.floor == null },
+    )
 
     /** F2: a sign-in a laptop can complete, against an issuer reached safely, admitting someone. */
     private fun signin(): List<TopologyFinding> {

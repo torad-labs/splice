@@ -47,6 +47,7 @@ import splice.core.config.LAUNCH_PROOF_HEADER
 import splice.core.config.TurnKey
 import splice.core.pool.PREFERRED_UPSTREAM_HEADER
 import splice.core.topology.SHARE_NODE_TOKEN
+import splice.core.turn.SERVED_NOTICE_HEADER
 import splice.core.turn.SERVED_TURN_HEADER
 import splice.core.turn.TURN_DOOR_HEADER
 import splice.core.util.Cancellables
@@ -267,12 +268,13 @@ public class ShareRelay(
     // Hop-by-hop, framing, the other machine's own token, and the names java.net.http refuses to set. Host becomes
     // 127.0.0.1, which the head's own DNS-rebinding guard requires. Which upstream a turn prefers is the relaying
     // listener's to say, from what the operator set for the person, and never the other machine's; and so is the id a
-    // server listener names its turn by (SERVED_TURN_HEADER).
+    // server listener names its turn by (SERVED_TURN_HEADER), and the notice it has a head answer a turn with
+    // (SERVED_NOTICE_HEADER).
     private val notForwarded = setOf(
         "host", "connection", "content-length", "transfer-encoding", "upgrade", "expect", "keep-alive", "te",
         "trailer", "proxy-authorization", "proxy-connection", "authorization", "x-api-key", "date", "via",
         "warning", "from", "origin", "referer", LAUNCH_PROOF_HEADER, PREFERRED_UPSTREAM_HEADER, SERVED_TURN_HEADER,
-        TURN_DOOR_HEADER,
+        TURN_DOOR_HEADER, SERVED_NOTICE_HEADER,
     )
 }
 

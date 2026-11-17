@@ -176,6 +176,7 @@ nothing and watches nothing. The shape:
 
 ```
 {"version":1,"commands":[{"head":"<head key>","command":"<what the person types>","next":"<label>"|null,
+  "next_model":"<model>"|null,
   "accounts":[{"label":"<label>"|null,"name":"<display name>","kind":"<kind>","plan":"<plan>"|null,
     "five_hour":{"used_percent":N,"resets_at_epoch_seconds":N,"current":true|false}|null,
     "seven_day":{"used_percent":N,"resets_at_epoch_seconds":N,"current":true|false}|null,
@@ -185,7 +186,10 @@ nothing and watches nothing. The shape:
 ```
 
 `next` is the login the command's next request goes to, where the command has several; which login a running
-session is on is that session's own fact and is not here. `label` is the name the command's pool knows a login by,
+session is on is that session's own fact and is not here. `next_model` is the model that answer is for: the one most
+of the command's recent turns asked for, null until a turn has named one. A login can be out of one model's week and
+still serve the others, so a turn of another model may go to another login, and `held` says which models each login
+cannot serve. `label` is the name the command's pool knows a login by,
 which is what `next` holds, and null for a command with one login. A window is null where the provider gave no reading of it, and its
 `current` is false once its reset has passed with no newer reading. `models` holds a plan's per-model weeks,
 `held` the models a login cannot serve yet and until when, `observed_at_epoch_seconds` when the login was last

@@ -39,12 +39,13 @@ internal class LocalAnswerRows(
         log("[$headKey] request refused at the gate: ${tag.wire}\n")
     }
 
-    /** Claude Code's activity side query is answered by the head with no model. It leaves a row of its own,
-     *  marked as a local step so no turn figure counts it, and as an activity query so a view can name its kind. */
-    fun activityAnswer(sessionId: String?, wireModel: String, perf: TurnPerf) {
+    /** A request the head answers with no model: Claude Code's activity side query, or a team server's notice. It
+     *  leaves a row of its own, marked as a local step so no turn figure counts it, and, for an [activity] query, as
+     *  one so a view can name its kind. */
+    fun localAnswer(sessionId: String?, wireModel: String, perf: TurnPerf, activity: Boolean) {
         perf.mark(PerfKeys.TOTAL)
         perf.setCount(PerfKeys.LOCAL_STEP, 1)
-        perf.setCount(PerfKeys.ACTIVITY_QUERY, 1)
+        if (activity) perf.setCount(PerfKeys.ACTIVITY_QUERY, 1)
         UsageObservation.record(perf, perf.snapshot())
         perfStats.record(
             PerfRowMeta(

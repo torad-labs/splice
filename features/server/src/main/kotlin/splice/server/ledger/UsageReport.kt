@@ -56,13 +56,30 @@ internal class UsageReport(
         ModelRates(input = input, cacheRead = it.cachedUsdPerMtok ?: input, output = it.outputUsdPerMtok ?: 0.0)
     }
 
-    /** [rows], which ran in [window], grouped [by], as `{"window": {"from", "to"}, "by", "groups": [...]}`. */
-    fun of(rows: List<LedgerRow>, window: UsageWindow, by: ReportBy): JsonObject {
+    /** [rows], which ran in [window], grouped [by], beside what the providers paid for by the hour cost over it
+     *  ([fixed]), as `{"window": {"from", "to"}, "by", "groups": [...], "fixed": [...], "totals": {...}}`. */
+    fun of(rows: List<LedgerRow>, window: UsageWindow, by: ReportBy, fixed: List<FixedCost>): JsonObject {
         val groups = rows.groupBy { keyOf(it, by) }.toSortedMap().map { (key, grouped) -> group(key, grouped) }
         return buildJsonObject {
             put("window", window.json())
             put("by", by.wire)
             put("groups", buildJsonArray { groups.forEach { add(UsageTables.json(it)) } })
+            put("fixed", buildJsonArray { fixed.forEach { add(it.json()) } })
+            put("totals", totals(rows, fixed))
+        }
+    }
+
+    /** The window's whole cost: `cost_usd` at the rate cards, `fixed_usd` for the hours of the providers paid by the
+     *  hour, `actual_usd` the two together, which is what the team paid, and `reference_cost_usd` beside them, null
+     *  while `[server.reference]` is not set, as each group's is. */
+    private fun totals(rows: List<LedgerRow>, fixed: List<FixedCost>): JsonObject {
+        val card = rows.sumOf { it.costUsd ?: 0.0 }
+        val hourly = fixed.sumOf { it.costUsd }
+        return buildJsonObject {
+            put("cost_usd", card)
+            put("fixed_usd", hourly)
+            put("actual_usd", card + hourly)
+            put("reference_cost_usd", referenceRates?.let { rates -> rows.sumOf { referenceUsd(it, rates) } })
         }
     }
 

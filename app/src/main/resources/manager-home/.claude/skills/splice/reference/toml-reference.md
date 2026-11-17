@@ -362,7 +362,7 @@ Source: TokenCost.kt (TomlRates, lines 168-212); SpeedRates.kt; HeadConfig.kt (l
 | `model_slots` | map of tier to id | empty | tiers without restricting the picker. Never with slots inside `models` |
 | `context_window` | int, positive | absent | forces one window onto every selected row (live) |
 | `overrides` | map of knob to string | empty | knobs for this head only, section 4 |
-| `system_prompt` / `system_prompt_file` | string | absent | standing text on every turn; never both. A relative file is beside splice.toml |
+| `system_prompt` / `system_prompt_file` | string | absent | standing text on every turn of a session (not on Claude Code's side requests, which carry no tools, or its auto-mode review); never both. A relative file is beside splice.toml |
 | `system_prompt_mode` | string | `"append"` | `"append"`, `"replace"` or `"strip"` (a list of regex, one paragraph each) |
 | `rates` | map of id to rates | absent | this head's own cards, section 5.6 |
 

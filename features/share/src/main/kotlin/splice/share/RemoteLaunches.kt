@@ -61,7 +61,7 @@ public class RemoteLaunches(
     override suspend fun launch(command: String): RemoteLaunch? {
         val remote = remotes[command] ?: return null
         return when (val read = RemoteAddresses.read(remote.url)) {
-            is RemoteAddressRead.Read -> asked(command, read.address)
+            is RemoteAddressRead.Read -> asked(command, read.address, remote.window)
             is RemoteAddressRead.Refused ->
                 RemoteLaunch.Refused("$command's address in splice.toml is not one it can run on: ${read.why}")
         }
@@ -69,8 +69,9 @@ public class RemoteLaunches(
 
     override fun ownTree(command: String): Path? = if (command in remotes) trees.of(command).own else null
 
-    /** [command]'s launch as [address]'s server answers it, or why it can't be had. */
-    private suspend fun asked(command: String, address: RemoteAddress): RemoteLaunch {
+    /** [command]'s launch as [address]'s server answers it, on the [window] this machine pinned for it if it did, or
+     *  why it can't be had. */
+    private suspend fun asked(command: String, address: RemoteAddress, window: Long?): RemoteLaunch {
         val where = "$command runs on ${http.hostOf(address.server)} (${address.server})"
         val answer = when (val asked = http.get(launchUri(address), logins?.of(address.server))) {
             is ShareAnswer.Unreachable -> return RemoteLaunch.Refused("$where, which can't be reached: ${asked.why}")
@@ -78,7 +79,7 @@ public class RemoteLaunches(
         }
         val launch = launchOf(command, address, answer)
         return when {
-            launch != null -> RemoteLaunch.Ready(spec(command, address, launch))
+            launch != null -> RemoteLaunch.Ready(spec(command, address, launch, window))
             answer.status != HttpStatus.OK -> {
                 val why = http.said(answer.body) + signIn(address, answer.status)
                 RemoteLaunch.Refused("$where, which refused it: $why")
@@ -118,8 +119,9 @@ public class RemoteLaunches(
     /** The recipe a head here gets, pointed at [address]: the server's models, timeout and statusline, this machine's
      *  own tree for [command], a token that opens nothing (or, on a server this laptop signed in to, the apiKeyHelper
      *  that prints its key), and a /login that says where the logins live. A head whose
-     *  client picks its own models there leaves them to the person here too. */
-    private fun spec(command: String, address: RemoteAddress, shared: SharedLaunch): LaunchSpec {
+     *  client picks its own models there leaves them to the person here too. The context window is the server's for
+     *  the model it pins, or the [window] this machine pinned in its place (F7). */
+    private fun spec(command: String, address: RemoteAddress, shared: SharedLaunch, window: Long?): LaunchSpec {
         val signIn = LaunchSignIn(
             loginCommand = shared.signIn.command,
             signInLabel = "${shared.signIn.label} on ${shared.machine}",
@@ -136,7 +138,9 @@ public class RemoteLaunches(
             remote = address.turns,
             remoteClaude = shared.clientModels,
         )
-        return LaunchSpec(trees.of(command), shared.models.launchModels(), signIn, gateway, policy)
+        val served = shared.models.launchModels()
+        val models = window?.let { served.copy(contextWindow = it) } ?: served
+        return LaunchSpec(trees.of(command), models, signIn, gateway, policy)
     }
 
     private fun launchUri(address: RemoteAddress): URI {

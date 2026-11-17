@@ -12,15 +12,17 @@ import splice.upstream.RoundBody
 import splice.upstream.VendorRoute
 import splice.upstream.failure.FailedReply
 
-/** A turn's route into [pool]: on [preferred] while a server of that name is healthy, and otherwise on the healthy
- *  server with the least in flight. The turn counts as in flight on its server from its first request until it ends.
- *  [path] is the route its requests are sent to under the server's API root. */
+/** A turn's route into [pool]: on the server that served its [session]'s last turn while that one is healthy, else on
+ *  [preferred] while a server of that name is healthy, and otherwise on the healthy server with the least in flight.
+ *  The turn counts as in flight on its server from its first request until it ends. [path] is the route its requests
+ *  are sent to under the server's API root. */
 internal class PoolRoute(
     private val pool: UpstreamPool,
     preferred: String?,
+    session: String?,
     private val path: String,
 ) : VendorRoute {
-    private val walk = PoolWalk(pool, preferred)
+    private val walk = PoolWalk(pool, preferred, session)
 
     override fun target(): String = walk.server().url + path
 

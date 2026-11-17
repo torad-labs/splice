@@ -48,6 +48,10 @@ private const val LIVE_OUTPUT_BYTES = 4096
 // Allow the killed foreground check to exit without making its cleanup an unbounded wait.
 private const val LIVE_EXIT_WAIT_SECONDS = 2L
 
+// No MCP server for the check turn, in the shape Claude Code reads: since 2.1.326 a bare `{}` is refused before any
+// request ("mcpServers: expected record"), which would fail the check on a head that works.
+private const val EMPTY_MCP_CONFIG = """{"mcpServers":{}}"""
+
 internal object AddWiring {
 
     /** [restart] is the plain `splice restart` unless a caller owns the restart itself: setup adds its
@@ -169,7 +173,7 @@ internal class CommandLiveTurn(private val timeoutMs: Long = 120_000L) : AddLive
 
     private fun arguments(wrapper: Path, model: String): List<String> = listOf(
         wrapper.toString(), "--model", model, "-p", "Reply with the single word pong.",
-        "--tools", "", "--strict-mcp-config", "--mcp-config", "{}", "--output-format", "text",
+        "--tools", "", "--strict-mcp-config", "--mcp-config", EMPTY_MCP_CONFIG, "--output-format", "text",
         "--no-session-persistence", "--system-prompt", "This is a connection check. Reply only to the prompt.",
     )
 }

@@ -167,10 +167,12 @@ internal class TurnDriver(
     suspend fun stream(call: ApplicationCall, inputs: TurnInputs): Boolean =
         streamer.stream(call, inputs)
 
-    /** Claude Code's activity side query, answered by the proxy (ActivityLabel): no upstream turn. */
+    /** A request the proxy answers itself with no upstream turn: Claude Code's activity side query (ActivityLabel),
+     *  or a team server's notice. */
     suspend fun answerLocally(call: ApplicationCall, local: Preparation.Local, perf: TurnPerf) {
         localResponses.answer(call, local, perf)
-        telemetry.localAnswers.activityAnswer(local.sessionId, provider.catalog.stripSuffixes(local.model), perf)
+        val model = provider.catalog.stripSuffixes(local.model)
+        telemetry.localAnswers.localAnswer(local.sessionId, model, perf, activity = local.activity)
     }
 
     /** Drive one turn, emit classified failures, and — if a cancellation lands (head stop,

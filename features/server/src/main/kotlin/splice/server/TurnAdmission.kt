@@ -1,10 +1,12 @@
-// NEW: server mode (docs/specs/server-mode.md, F3 and F4). What a turn passes before it is relayed, on either route
-// the listener serves one on: the Messages route Claude Code speaks, and the chat completions an OpenAI-style client
+// NEW: server mode (docs/specs/server-mode.md, F3, F4 and F12). What a turn passes before it is relayed, on either
+// route the listener serves one on: the Messages route Claude Code speaks, and the chat completions an OpenAI-style client
 // asks. The caps are a person's, not a route's, so both take their slots here, and each refuses in its own client's
 // error shape (decision 6): a turn whose provider has no server up is a 503 naming its upstreams, which counts toward
 // no cap; a turn of a person whose budget, or whose team's, is spent and blocks is a 400 naming that budget (F5), the
-// way a head refuses its own spent budget; and a turn past a cap is a 429 with `Retry-After`. Before all of them, while
-// splice cannot write its usage ledger, every turn is a 500: splice's own failure, never served uncounted (F5).
+// way a head refuses its own spent budget; and a turn past a cap (its person's turns in flight, turns a minute, or
+// tokens a minute, F12) is a 429 with `Retry-After`. Before all of them, while splice cannot write its usage ledger,
+// every turn is a 500: splice's own failure, never served uncounted (F5). And first, a turn on a command its person
+// may not use is a 403 naming the command, and reaches no head (F12).
 //
 // Both routes open and close a turn here (served), so every turn on either leaves its row in the ledger however it
 // ends: refused, relayed to its end, or left by its client.
@@ -44,10 +46,18 @@ internal class TurnAdmission(
         }
     }
 
-    /** The slot [turn] takes among those of its person, or null with it refused: one past a cap, before that one past
-     *  a budget that blocks, before that one whose provider has no server up, before that one splice cannot record,
-     *  and first one whose head is not running. */
+    /** The slot [turn] takes among those of its person, or null with it refused: first one on a command its person may
+     *  not use (F12), then as [admitted] says. */
     private suspend fun slot(call: ApplicationCall, turn: LedgerTurn): TurnSlot? {
+        val forbidden = parts.limits.access.refusal(turn.key.person, turn.head) ?: return admitted(call, turn)
+        voice.refuse(call, HttpStatus.FORBIDDEN, forbidden)
+        return null
+    }
+
+    /** The slot [turn] takes, or null with it refused: one past a cap (a minute's tokens first, then the turns in flight
+     *  and a minute's turns), before that one past a budget that blocks, before that one whose provider has no server
+     *  up, before that one splice cannot record, and first one whose head is not running. */
+    private suspend fun admitted(call: ApplicationCall, turn: LedgerTurn): TurnSlot? {
         if (!turn.head.running()) {
             // A head of splice's own that is down is splice's failure, never the upstream's (F5).
             turn.failedOwn = true
@@ -59,7 +69,8 @@ internal class TurnAdmission(
             voice.refuse(call, refused.status, refused.why)
             return null
         }
-        return when (val verdict = parts.limits.begin(turn.key.person)) {
+        val person = turn.key.person
+        return when (val verdict = overTokens(person) ?: parts.limits.begin(person)) {
             is LimitVerdict.Admitted -> verdict.slot
             is LimitVerdict.Refused -> {
                 call.response.headers.append(HttpHeaders.RetryAfter, verdict.retryAfterSeconds.toString())
@@ -81,6 +92,15 @@ internal class TurnAdmission(
         if (!parts.books.budgets.holds(person)) return null
         parts.books.turns.settled(person)
         return parts.books.budgets.refusal(person)
+    }
+
+    /** Why [person]'s next turn waits on the tokens of their turns that ended in the last minute (F12); null while
+     *  those are under their cap, and when nothing caps them. Their turns that ended and are still being written are
+     *  counted first, as a budget's are, so a turn never slips past a cap its last turn reached. */
+    private suspend fun overTokens(person: String): LimitVerdict.Refused? {
+        val cap = parts.limits.tokenCap(person) ?: return null
+        parts.books.turns.settled(person)
+        return parts.books.tokens.refusal(person, cap)
     }
 }
 

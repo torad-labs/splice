@@ -1,6 +1,7 @@
-// NEW: server mode (docs/specs/server-mode.md, F1, F3, F4 and F5): `splice server`, the operator's verbs on a team's
-// keys, people, usage and budgets. Every verb is a call on the daemon's control plane with the management key, since
-// the daemon holds what the listener answers by: a key minted or revoked here is the listener's on its next request.
+// NEW: server mode (docs/specs/server-mode.md, F1, F3, F4, F5 and F12): `splice server`, the operator's verbs on a
+// team's keys, people, teams, usage and budgets. Every verb is a call on the daemon's control plane with the management
+// key, since the daemon holds what the listener answers by: a key minted or revoked here is the listener's on its next
+// request.
 package splice.app.cli.server
 
 import splice.app.cli.peer.PeerAsk
@@ -12,7 +13,8 @@ import splice.core.util.EnvReader
 internal const val SERVER_USAGE =
     "key create --person <email> [--name <name>] [--expires <duration>] [--json] | " +
         "key list [--person <email>] [--json] | key revoke <prefix> | key revoke-person <email> | " +
-        "person set <email> [--inflight N] [--rpm N] [--upstream NAME] [--team NAME] | " +
+        "person set <email> [--inflight N] [--rpm N] [--tpm N] [--upstream NAME] [--team NAME] " +
+        "[--commands a,b|all] | team set <team> --commands a,b | " +
         "usage rows [--since D | --from T --to T] [--person <email>] [--json] | usage export --now | " +
         "usage report [--by person|team|current-team|day|model|device] [--since D | --from T --to T] " +
         "[--format json|csv|md] | budget set --person <email>|--team <name> [--daily-usd N] [--monthly-usd N] " +
@@ -23,7 +25,8 @@ internal fun interface ServerVerb {
     fun run(args: List<String>): Int?
 }
 
-/** `splice server <key|person> <verb>`. [out] is stdout, [err] stderr, so `--json | jq` never reads a refusal. */
+/** `splice server <key|person|team|usage|budget> <verb>`. [out] is stdout, [err] stderr, so `--json | jq` never
+ *  reads a refusal. */
 internal class ServerCommand(
     out: TerminalOutput = TerminalOutput(::println),
     private val err: TerminalOutput = TerminalOutput(System.err::println),
@@ -32,6 +35,7 @@ internal class ServerCommand(
     private val ask = PeerAsk(PeerCall(env, err, "server"), out)
     private val keys = ServerKeyVerbs(ask)
     private val people = ServerPersonVerbs(ask)
+    private val teams = ServerTeamVerbs(ask)
     private val usage = ServerUsageVerbs(ask)
     private val budgets = ServerBudgetVerbs(ask)
 
@@ -42,6 +46,7 @@ internal class ServerCommand(
         "key revoke" to ServerVerb(keys::revoke),
         "key revoke-person" to ServerVerb(keys::revokePerson),
         "person set" to ServerVerb(people::set),
+        "team set" to ServerVerb(teams::set),
         "usage rows" to ServerVerb(usage::rows),
         "usage report" to ServerVerb(usage::report),
         "usage export" to ServerVerb(usage::export),

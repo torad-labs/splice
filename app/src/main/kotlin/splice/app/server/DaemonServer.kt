@@ -20,6 +20,7 @@ import splice.core.pool.UpstreamPool
 import splice.core.server.ServedTokens
 import splice.core.server.ServedTurnBoard
 import splice.core.topology.Dialect
+import splice.core.topology.HourlyPrices
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
@@ -87,6 +88,8 @@ internal class DaemonServer(
         )
         return TurnPrice(catalog).usd(model, billed)
     }
+
+    override fun hourly(): Map<String, Double> = HourlyPrices(topology.providers).prices()
 
     /** Opens server mode when `[server]` names an address, serving [heads] through [controlPort]'s daemon, which say
      *  how each turn went on [served]. */

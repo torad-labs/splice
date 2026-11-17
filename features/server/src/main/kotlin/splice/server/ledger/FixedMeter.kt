@@ -37,9 +37,7 @@ internal class FixedMeter(private val boot: HostBoot, private val clock: Clock) 
     private fun upHours(window: UsageWindow): Double {
         val start = maxOf(boot.at(), window.from)
         val end = minOf(clock.instant(), window.to)
-        val ms = Duration.between(start, end).toMillis().coerceAtLeast(0)
-        return ms.toDouble() / MS_PER_HOUR
+        val up = Duration.between(start, end).coerceAtLeast(Duration.ZERO)
+        return up.toMillis().toDouble() / Duration.ofHours(1).toMillis()
     }
 }
-
-private const val MS_PER_HOUR = 3_600_000.0

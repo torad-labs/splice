@@ -4,10 +4,16 @@
 // memory: a daemon restart forgets it, and a session's next turn is balanced like a new one's.
 package splice.core.pool
 
+import splice.core.util.LruSizing
+
 /** The server each recent session was last served by, at most [HOMES_KEPT] of them, the least recently used going
  *  first. Read and changed only under its pool's lock. */
 internal class SessionHomes {
-    private val homes = object : LinkedHashMap<String, String>(INITIAL_CAPACITY, LOAD_FACTOR, true) {
+    private val homes = object : LinkedHashMap<String, String>(
+        LruSizing.INITIAL_CAPACITY,
+        LruSizing.LOAD_FACTOR,
+        true,
+    ) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean = size > HOMES_KEPT
     }
 
@@ -24,7 +30,3 @@ internal class SessionHomes {
 // llama-server keeps a handful of slots), so forgetting it costs nothing; ten thousand names of ~40 bytes keep the map
 // under a megabyte however long the daemon runs.
 private const val HOMES_KEPT = 10_000
-
-// why: LinkedHashMap's own defaults, spelled because the access-order constructor asks for them.
-private const val INITIAL_CAPACITY = 16
-private const val LOAD_FACTOR = 0.75f

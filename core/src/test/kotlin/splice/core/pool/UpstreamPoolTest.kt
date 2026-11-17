@@ -49,7 +49,7 @@ class UpstreamPoolTest {
     }
 
     @Test
-    fun `a session's later turns go back to the server that served it, however busy; new sessions are balanced`() {
+    fun `a session's later turns go back to the server that served it, however busy, and new sessions are balanced`() {
         val pool = pool("a", "b")
         val first = listOf("s1", "s2", "s3", "s4").associateWith { pool.lease(session = it).name }
         assertEquals(mapOf("s1" to "a", "s2" to "b", "s3" to "a", "s4" to "b"), first)

@@ -1,6 +1,6 @@
-// What the desktop-door checks share: heads on stand-in model servers, the settings file `splice desktop on` writes,
-// read the way the Code tab's Claude Code reads it, and requests sent the way that Claude Code sends them in Mantle
-// mode (docs/specs/desktop-door.md).
+// What the desktop-door checks share: heads on stand-in model servers, the door as `splice desktop on` says to set it
+// in Claude Desktop's own Code environment, the terminal's settings file splice must leave alone, and requests sent the
+// way the Code tab's Claude Code sends them in Mantle mode (docs/specs/desktop-door.md).
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -74,47 +74,61 @@ export function writeSettings(s: Splice, value: Record<string, unknown>): void {
   writeFileSync(settingsFile(s), `${JSON.stringify(value, null, 2)}\n`);
 }
 
-/** The file's `env` block, which Claude Code applies to every local session. */
-export function fileEnv(s: Splice): Record<string, string> {
-  return (readSettings(s).env ?? {}) as Record<string, string>;
-}
-
-export interface Row {
-  model: string;
-  label?: string;
-  description?: string;
-}
-
-/** The picker's rows, as the file holds them. */
-export function lineup(s: Splice): Row[] {
-  return (readSettings(s).modelPicker as { options?: Row[] } | undefined)?.options ?? [];
-}
-
 export interface Door {
   /** The address the Code tab's Claude Code calls. */
   url: string;
   /** The desktop key. */
   key: string;
-  /** The context window the file declares to Claude Code. */
+  /** The context window declared to Claude Code. */
   window: number;
   /** The model a session starts on. */
   model: string;
+  /** Every variable `splice desktop on` says to set in Desktop's Code environment, as a Code tab session's shell
+   *  carries them. */
+  env: Record<string, string>;
 }
 
-/** The door, as the file gives it to the Code tab's Claude Code. */
-export function door(s: Splice): Door {
-  const env = fileEnv(s);
+/** The `NAME=value` lines splice prints for Desktop's Code environment. */
+export function printedEnv(out: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const m of out.matchAll(/^\s+([A-Z][A-Z0-9_]*)=(\S*)\s*$/gm)) env[m[1]!] = m[2]!;
+  return env;
+}
+
+const DOORS = new WeakMap<Splice, Door>();
+
+/** The door from what `splice desktop on` or `rotate-key` printed ([out]): its variables, and the model a session starts
+ *  on, which `on` names and `rotate-key` leaves as it was. */
+function doorOf(s: Splice, out: string): Door {
+  const env = printedEnv(out);
   const url = env.ANTHROPIC_BEDROCK_MANTLE_BASE_URL;
   const key = env.AWS_BEARER_TOKEN_BEDROCK;
-  if (!url || !key) throw new Error("the settings file names no door address or no desktop key");
-  return { url, key, window: Number(env.CLAUDE_CODE_MAX_CONTEXT_TOKENS), model: env.ANTHROPIC_MODEL ?? "" };
+  if (!url || !key) throw new Error(`splice printed no door address or no desktop key:\n${out}`);
+  const model = /a session starts on (\S+)/.exec(out)?.[1] ?? DOORS.get(s)?.model ?? "";
+  const d = { url, key, window: Number(env.CLAUDE_CODE_MAX_CONTEXT_TOKENS), model, env };
+  DOORS.set(s, d);
+  return d;
 }
 
-/** `splice desktop on`, then the door it wrote. */
+/** The door as `splice desktop on` or `rotate-key` last said it. */
+export function door(s: Splice): Door {
+  const d = DOORS.get(s);
+  if (!d) throw new Error("splice desktop on has not said the door yet");
+  return d;
+}
+
+/** `splice desktop on`, then the door it says to set in Desktop. */
 export function turnOn(s: Splice, ...args: string[]): Door {
   const r = s.cli(["desktop", "on", ...args]);
   if (r.code !== 0) throw new Error(`splice desktop on exited ${r.code}:\n${r.out}\n${r.err}`);
-  return door(s);
+  return doorOf(s, `${r.out}\n${r.err}`);
+}
+
+/** `splice desktop rotate-key` while Desktop is on, then the door with the new key it says to set. */
+export function rotateKey(s: Splice): Door {
+  const r = s.cli(["desktop", "rotate-key"]);
+  if (r.code !== 0) throw new Error(`splice desktop rotate-key exited ${r.code}:\n${r.out}\n${r.err}`);
+  return doorOf(s, `${r.out}\n${r.err}`);
 }
 
 export interface Desk {

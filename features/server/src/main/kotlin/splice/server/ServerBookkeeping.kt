@@ -46,7 +46,7 @@ public class ServerBookkeeping internal constructor(
     private val budgets = BudgetGate(budgetBook, spend, people, server.teams, server.budgets)
 
     /** The ledger's rows and reports, as the CLI, the control plane and an admin's key ask them. */
-    public val usageApi: UsageApi = UsageApi(ledger, people, server, run.clock)
+    public val usageApi: UsageApi = UsageApi(ledger, people, server, run.clock, upstreams)
 
     /** Each person's and team's budgets, as the CLI and the control plane set and list them. */
     public val budgetApi: BudgetApi = BudgetApi(budgetBook, budgets, run.log)

@@ -1,16 +1,20 @@
-// door-login: in a session splice launches, Claude Code's own /login is off and /login is splice's. It is in the
-// session's menu, typing it opens the console's accounts page in the person's browser and sends the model nothing, and
-// a head's /login does the same in place of that head's own sign-in. With no head in the door, a turn is refused with
-// a message that names /login. (docs/specs/door-default.md, decisions 5 and 6.)
+// door-login: in a session splice launches, Claude Code's own /login is off and /login is splice's. It is the bare
+// /login, in the session's menu: one command file, the only thing splice lays in the person's own Claude folder, and
+// never over a /login the person wrote. Typing it opens the console's accounts page in the person's browser and sends
+// the model nothing, and a head's /login does the same in place of that head's own sign-in. With no head in the door, a
+// turn is refused with a message that names /login. (docs/specs/door-default.md, decisions 5 and 6.)
+// (Changed Nov 17 after the builder's dispute: the check took a plugin folder's command for the bare /login, which
+// Claude Code 2.1.326 offers only as /splice:login.)
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { clientHead } from "../desktop/lib/desktop.ts";
 import { Splice, freePort, until } from "../server/lib/harness.ts";
 import { CodexBackend, gptEnv, gptHead } from "../speed/lib/codex.ts";
 import { expanded, prompt } from "../speed/lib/session.ts";
-import { type Desk, type Session, ask, desk, session, slash, toDoor, under } from "./lib/claude.ts";
+import { type Desk, SPLICE_LOGIN, type Session, ask, desk, session, slash, toDoor, under } from "./lib/claude.ts";
 
 const logins = `/tmp/claude-1000/door-login-${process.pid}`;
 let backend: CodexBackend;
@@ -19,8 +23,10 @@ let d: Desk;
 
 beforeAll(async () => {
   backend = CodexBackend.start([{ slug: "gpt-6-astra", tiers: [] }]);
+  // the machine also has a head for claude, so splice claude head has somewhere to go back to
   s = await Splice.create(
-    gptHead({ key: "astra", command: "claude-astra", port: await freePort(), backend: backend.url, model: "gpt-6-astra", dir: logins }),
+    gptHead({ key: "astra", command: "claude-astra", port: await freePort(), backend: backend.url, model: "gpt-6-astra", dir: logins }) +
+      clientHead({ key: "claude", command: "claude", port: await freePort(), url: backend.url }),
     gptEnv(backend.url),
   );
   await s.start();
@@ -63,13 +69,13 @@ describe("door-login", () => {
     expect(x.sets.DISABLE_LOGOUT_COMMAND).toBe("1");
   });
 
-  test("the session offers /login as splice's accounts, and nothing is laid in the person's own folder", async () => {
+  test("the session offers the bare /login as splice's accounts, and it is the one file splice lays in the person's folder", async () => {
     const x = await session(s);
     const command = slash(x, "login");
     expect(command).not.toBeNull();
     expect(command!.meta.description ?? "").toMatch(/account/i);
     expect(command!.meta.description ?? "").toMatch(/splice/i);
-    expect(under(join(s.home, ".claude"))).toEqual([]);
+    expect(under(join(s.home, ".claude"))).toEqual([SPLICE_LOGIN]);
   });
 
   test("typing /login opens the accounts page in the browser and sends the model nothing", async () => {
@@ -94,7 +100,44 @@ describe("door-login", () => {
     await expectAccounts(await opened(before));
   }, 60_000);
 
+  test("a /login the person wrote is left as it is, splice claude says so, and splice's comes back when theirs is gone", async () => {
+    const file = join(s.home, ".claude", SPLICE_LOGIN);
+    const theirs = "---\ndescription: My own login\n---\nDo my own thing.\n";
+    rmSync(file, { force: true });
+    mkdirSync(join(s.home, ".claude", "commands"), { recursive: true });
+    writeFileSync(file, theirs);
+    toDoor(s);
+    await session(s);
+    expect(readFileSync(file, "utf8")).toBe(theirs);
+    const said = s.cli(["claude"]);
+    expect(said.code).toBe(0);
+    expect(said.out + said.err).toContain(SPLICE_LOGIN);
+
+    rmSync(file);
+    const command = slash(await session(s), "login");
+    expect(command).not.toBeNull();
+    expect(command!.meta.description ?? "").toMatch(/account/i);
+  });
+
+  test("splice claude head takes splice's /login out of the person's folder, and leaves one they wrote", async () => {
+    const file = join(s.home, ".claude", SPLICE_LOGIN);
+    await session(s);
+    expect(existsSync(file)).toBe(true);
+    expect(s.cli(["claude", "head"]).code).toBe(0);
+    expect(existsSync(file)).toBe(false);
+
+    const theirs = "---\ndescription: My own login\n---\nDo my own thing.\n";
+    mkdirSync(join(s.home, ".claude", "commands"), { recursive: true });
+    writeFileSync(file, theirs);
+    toDoor(s);
+    expect(s.cli(["claude", "head"]).code).toBe(0);
+    expect(readFileSync(file, "utf8")).toBe(theirs);
+  });
+
   test("with no head in the door, claude still starts, and a turn is refused with a message that names /login", async () => {
+    // back on the door, with no /login of the person's in the folder, whatever the test before left
+    rmSync(join(s.home, ".claude", SPLICE_LOGIN), { force: true });
+    toDoor(s);
     rmSync(join(logins, "astra-auth.json"));
     const x = await session(s);
     expect(x.sets.CLAUDE_CODE_USE_MANTLE).toBe("1");

@@ -141,13 +141,16 @@ function read(file: string): Skill {
   return { meta, body: m[2] ?? "" };
 }
 
-/** The command `/name` runs in this session: from a plugin folder the launch hands Claude Code, or from the
- *  session's own folder. Null when the session has none. */
+/** The one file splice lays in the person's own Claude folder: its `/login`, by its path from that folder. */
+export const SPLICE_LOGIN = "commands/login.md";
+
+/** The command a bare `/name` runs in this session, read where Claude Code offers a command under its bare name: the
+ *  session's own Claude folder. Seen on Claude Code 2.1.326: a plugin folder's command is offered only under the plugin's
+ *  prefix (`/plugin:name`) and the bare name answers "Unknown command", and a folder handed by `--add-dir` opens every
+ *  session on a trust dialog. Neither counts. Null when the session has none. */
 export function slash(x: Session, name: string): Skill | null {
-  for (const base of [...x.plugins, x.dir]) {
-    for (const file of [join(base, "commands", `${name}.md`), join(base, "skills", name, "SKILL.md")]) {
-      if (existsSync(file)) return read(file);
-    }
+  for (const file of [join(x.dir, "commands", `${name}.md`), join(x.dir, "skills", name, "SKILL.md")]) {
+    if (existsSync(file)) return read(file);
   }
   return null;
 }

@@ -1,5 +1,5 @@
 // door-claude-lane: `splice claude door` puts the terminal's `claude` on the door. Its launch points Claude Code at
-// the door with a key of the terminal's own, over the person's own Claude folder, where splice writes nothing. A model's
+// the door with a key of the terminal's own, over the person's own Claude folder, where splice changes nothing of theirs. A model's
 // selector runs it on its head, a fresh session runs the model the lane says it starts on, and Desktop's switch and
 // key leave the terminal as it was. (docs/specs/door-default.md, decisions 1 to 4.)
 
@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { doorTurn, readSettings, rotateKey, rows, slottedHead, turnOn, writeSettings } from "../desktop/lib/desktop.ts";
 import { Splice, freePort, until } from "../server/lib/harness.ts";
 import { Upstream } from "../server/lib/upstream.ts";
-import { DOOR_VARS, ELSEWHERE, ask, lane, session, toDoor, under } from "./lib/claude.ts";
+import { DOOR_VARS, ELSEWHERE, SPLICE_LOGIN, ask, lane, session, toDoor, under } from "./lib/claude.ts";
 
 const ASTRA_BIG = "claude-astra--astra-large";
 const BOREALIS_BIG = "claude-borealis--borealis-large";
@@ -66,12 +66,13 @@ describe("door-claude-lane", () => {
     for (const name of DOOR_VARS) expect([name, x.recipe.unset.includes(name)]).toEqual([name, false]);
   });
 
-  test("the session runs over the person's own Claude folder, and splice writes nothing in it", async () => {
+  test("the session runs over the person's own Claude folder, and splice changes nothing of theirs in it", async () => {
     const x = await session(s);
     expect(x.sets.CLAUDE_CONFIG_DIR).toBeUndefined();
     expect((await ask(x, { model: ASTRA_BIG })).status).toBe(200);
     expect(readSettings(s)).toEqual(MINE);
-    expect(under(join(s.home, ".claude"))).toEqual(["settings.json"]);
+    // the one file splice may lay there is its own /login (door-login)
+    expect(under(join(s.home, ".claude")).filter((f) => f !== SPLICE_LOGIN)).toEqual(["settings.json"]);
   });
 
   test("a model's selector runs it on its head, through the one address", async () => {

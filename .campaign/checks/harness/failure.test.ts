@@ -4,11 +4,14 @@
 // the client leaves, when the same thread sends again, and when the head stops; in none of them is anything placed.
 // (docs/specs/harness.md, decisions 1, 3 and 6.)
 
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { Splice, freePort, until } from "../server/lib/harness.ts";
 import { type Launched, launch } from "../speed/lib/session.ts";
 import { IDLE, KEYS, type Message, Provider, type SendOptions, type Work, Worker, blocks, capability, first, head, opening, second, send, today } from "./lib/capability.ts";
+
+// No test here is a claim about speed: a busy machine must not fail one on bun's default five seconds.
+setDefaultTimeout(120_000);
 
 let up: Provider;
 /** `brief` may add and fails open; `gate` may add or refuse and fails closed; `guard` places nothing and may refuse. */

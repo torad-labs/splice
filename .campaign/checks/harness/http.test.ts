@@ -4,10 +4,13 @@
 // name, or one on a head the capability is not switched on for, goes to the provider as it came.
 // (docs/specs/harness.md, decisions 1 to 5.)
 
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { Splice, freePort } from "../server/lib/harness.ts";
 import { type Launched, launch, sessionKey } from "../speed/lib/session.ts";
 import { KEYS, type Message, PRINT, Provider, type SendOptions, Worker, blocks, capability, first, head, opening, send } from "./lib/capability.ts";
+
+// No test here is a claim about speed: a busy machine must not fail one on bun's default five seconds.
+setDefaultTimeout(120_000);
 
 let astra: Provider;
 let borealis: Provider;

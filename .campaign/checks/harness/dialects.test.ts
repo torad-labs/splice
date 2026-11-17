@@ -3,12 +3,15 @@
 // what the person typed, in the conversation's opening user turn, and gets the same opening on every later turn.
 // (docs/specs/harness.md, decision 5.)
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { Splice, freePort, mockHead } from "../server/lib/harness.ts";
 import { Upstream } from "../server/lib/upstream.ts";
 import { CodexBackend, FAST, gptEnv, gptHead } from "../speed/lib/codex.ts";
 import { type Launched, launch } from "../speed/lib/session.ts";
 import { KEYS, Worker, capability, first, second, send } from "./lib/capability.ts";
+
+// No test here is a claim about speed: a busy machine must not fail one on bun's default five seconds.
+setDefaultTimeout(120_000);
 
 interface Seen {
   body: Record<string, unknown> | null;

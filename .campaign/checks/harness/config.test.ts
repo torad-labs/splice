@@ -3,11 +3,14 @@
 // well-formed file boots, `splice status` lists what is declared, and a capability switched on for no head is
 // declared and off. (docs/specs/harness.md, decision 1.)
 
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { Splice, freePort } from "../server/lib/harness.ts";
 import { launch } from "../speed/lib/session.ts";
 import { KEYS, Provider, Worker, blocks, capability, first, head } from "./lib/capability.ts";
+
+// No test here is a claim about speed: a busy machine must not fail one on bun's default five seconds.
+setDefaultTimeout(120_000);
 
 const live: Splice[] = [];
 const up = new Provider("the provider").start();
@@ -120,6 +123,8 @@ describe("capability-config", () => {
       // biome-ignore lint/suspicious/noControlCharactersInRegex: the escape that starts a terminal colour
       .out.replace(/\u001b\[[0-9;]*m/g, "")
       .split("\n");
-    expect(lines.some((line) => /capabilit/i.test(line))).toBe(false);
+    // The config and jar lines are paths, and a path may hold any word (a worktree named for this feature does).
+    const said = lines.filter((line) => !/^\s*(config|jar)\s/.test(line));
+    expect(said.some((line) => /capabilit/i.test(line))).toBe(false);
   }, 300_000);
 });

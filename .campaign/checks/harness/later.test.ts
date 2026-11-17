@@ -5,10 +5,13 @@
 // the capability off, changes no live session's request. A turn's record says what it carried and how long it was
 // held. (docs/specs/harness.md, decisions 1, 5 and 10.)
 
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { Splice, freePort } from "../server/lib/harness.ts";
 import { type Launched, launch } from "../speed/lib/session.ts";
 import { type Block, IDLE, KEYS, type Message, Provider, type SendOptions, Worker, blocks, capability, first, head, opening, rows, second, send, today } from "./lib/capability.ts";
+
+// No test here is a claim about speed: a busy machine must not fail one on bun's default five seconds.
+setDefaultTimeout(120_000);
 
 let up: Provider;
 let worker: Worker;

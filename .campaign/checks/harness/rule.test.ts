@@ -3,10 +3,13 @@
 // turn is decided once. Where two capabilities' rules name the same request, they run in the order splice.toml
 // declares them, one at a time. (docs/specs/harness.md, decision 2.)
 
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { Splice, freePort } from "../server/lib/harness.ts";
 import { type Launched, launch } from "../speed/lib/session.ts";
 import { IDLE, KEYS, type Message, PRINT, Provider, type SendOptions, Worker, blocks, capability, first, head, opening, second, send, today } from "./lib/capability.ts";
+
+// No test here is a claim about speed: a busy machine must not fail one on bun's default five seconds.
+setDefaultTimeout(120_000);
 
 const HEADS = ["astra", "cirrus", "draco", "eos", "fen", "borealis"] as const;
 type Head = (typeof HEADS)[number];

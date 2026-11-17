@@ -1,8 +1,9 @@
 // NEW: Nov 16, 2026: `-r NAME`. Claude Code resolves a name among every command's sessions of the folder, so a name was
 // a way around the copy a `-r SESSION_ID` of another command's session is given: `claude -r NAME` opened a session a
 // GPT command wrote where it lay, asked Anthropic for the GPT model on every turn, and wrote the same transcript the
-// other command was still writing. Each test here launches by name and reads what the person is told and what the
-// client would be handed.
+// other command was still writing. Nov 16 refused such a launch with the id to use; since Nov 17 the name goes on as
+// that id does, as the session's copy. Each test here launches by name and reads what the person is told and what
+// the client would be handed.
 package splice.launch.recipe
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -86,20 +87,22 @@ class LaunchResumeByNameTest(@param:TempDir private val tmp: Path) {
         (outcome as? LaunchOutcome.Ready)?.recipe?.argv ?: error("the launch was refused: $outcome")
 
     @Test
-    fun `a name of a session on a model this command does not serve is refused, and nothing is opened or written`() {
+    fun `a name of a session on a model this command does not serve goes on as its copy, and the session stays`() {
         val transcript = session(NIGHT_RUN, "night-run", model = "k3-256k")
         val before = Files.readString(transcript)
 
-        val outcome = launch("-r", "night-run")
+        val recipe = (launch("-r", "night-run") as? LaunchOutcome.Ready)?.recipe ?: error("the name was refused")
 
-        val refused = outcome as? LaunchOutcome.Refused ?: error("the client would have been started: $outcome")
-        assertTrue(refused.reason.contains("-r $NIGHT_RUN"), "the id a copy is made by: ${refused.reason}")
+        val copy = recipe.argv.last()
+        val told = recipe.warning.orEmpty()
+        assertTrue(told.contains("goes on here as its copy $copy"), "said in words: $told")
+        assertTrue(copy != NIGHT_RUN && copy != "night-run", "the client resumes the copy: ${recipe.argv}")
         assertEquals(before, Files.readString(transcript), "the session is as it was")
-        assertEquals(listOf("$NIGHT_RUN.jsonl"), inTheFolder(), "and no copy of it was made")
+        assertEquals(setOf("$NIGHT_RUN.jsonl", "$copy.jsonl"), inTheFolder().toSet(), "beside its one copy")
     }
 
     @Test
-    fun `the id the refusal gives resumes the session as a copy on this command's model`() {
+    fun `an id resumes the session as a copy on this command's model`() {
         session(NIGHT_RUN, "night-run", model = "k3-256k")
 
         val recipe = (launch("-r", NIGHT_RUN) as? LaunchOutcome.Ready)?.recipe ?: error("the id was refused")
@@ -109,12 +112,24 @@ class LaunchResumeByNameTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `every spelling of a named resume is refused alike, whatever the letter case`() {
+    fun `every spelling of the name goes on with the same copy, whatever the letter case`() {
         session(NIGHT_RUN, "night-run", model = "k3-256k")
 
-        for (args in listOf(listOf("--resume", "night-run"), listOf("-r=night-run"), listOf("--resume=Night-Run"))) {
-            assertTrue(launch(*args.toTypedArray()) is LaunchOutcome.Refused, "$args started the client")
-        }
+        val copy = handedToTheClient(launch("-r", "night-run")).last()
+
+        assertEquals(listOf("--resume", copy), handedToTheClient(launch("--resume", "night-run")).takeLast(2))
+        assertEquals("-r=$copy", handedToTheClient(launch("-r=night-run")).last())
+        assertEquals("--resume=$copy", handedToTheClient(launch("--resume=Night-Run")).last())
+        assertEquals(2, inTheFolder().size, "one copy, however often the name is launched: ${inTheFolder()}")
+    }
+
+    @Test
+    fun `a name this command's own session shares with another command's opens its own`() {
+        session(NIGHT_RUN, "night-run", model = "k3-256k")
+        session(OTHER_RUN, "night-run", model = "gpt-5.6-sol")
+
+        assertEquals(listOf("-r", OTHER_RUN), handedToTheClient(launch("-r", "night-run")).takeLast(2))
+        assertEquals(2, inTheFolder().size, "and no copy is made: ${inTheFolder()}")
     }
 
     @Test
@@ -125,7 +140,7 @@ class LaunchResumeByNameTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `a name two sessions carry is the client's picker's to ask about`() {
+    fun `a name two sessions of another command carry is the client's picker's to ask about`() {
         session(NIGHT_RUN, "night-run", model = "k3-256k")
         session(OTHER_RUN, "night-run", model = "k3-256k")
 

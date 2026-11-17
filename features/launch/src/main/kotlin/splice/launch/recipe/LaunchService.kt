@@ -171,8 +171,9 @@ public class LaunchService(
         // adoptResume judges. Read from the head's own index, a wrapped launch's too (round 6 of #247): the hook
         // route records every session of the head there, and nothing records one under ~/.claude.
         val bounded = resume.bounded(keyed.trees.own, extraArgs, caller.cwd)
-        resume.refusedName(held, bounded.args, caller.cwd)?.let { return LaunchOutcome.Refused(it) }
-        val adoption = resume.adopt(held, bounded.args, caller.cwd)
+        // a -r NAME of a session another command wrote is the id it stands for, so it is adopted as that id is
+        val asked = resume.named(held, bounded.args, caller.cwd)
+        val adoption = resume.adopt(held, asked, caller.cwd)
         // V4-445: Claude Code reads ~/.claude.json only while CLAUDE_CONFIG_DIR is unset. Set to the vanilla dir it
         // reads ~/.claude/.claude.json, a file that holds none of the operator's mcpServers, projects or account.
         val environment = speed.environment(launchEnvironment(spec, held, slots, wrapped, caller.inheritedConfigDir))
@@ -190,7 +191,7 @@ public class LaunchService(
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.
             // V4-169: a session another head wrote goes on as the copy the client resumes.
-            addAll(resume.resumingAs(bounded.args, adoption))
+            addAll(resume.resumingAs(asked, adoption))
         }
         val warnings = listOf(resume.warning(adoption), bounded.warning, hub.warning)
         // door-default (docs/specs/door-default.md, decision 7): the launch of a head's command says heads are going

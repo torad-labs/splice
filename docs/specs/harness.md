@@ -174,6 +174,12 @@ turn's latest message, in its colour, and how long ago that message came. With m
 held, it also says how many. A message that keeps changing reads as working, and one that stops changing reads as
 stuck. When the turn goes on, the status line is what it was.
 
+The held turn's part leads the line, and the model's name follows it as it follows a limit hold today. It reads
+`<message> · <age>`, and with more than one turn of the session held, `<message> · <age> · <N> turns`, where the
+message is the one that came last among them. The age is `Ns ago` under a minute and `Nm ago` from there, counted
+from when that message came to when the line is drawn. Each progress line a worker sends becomes the message, and
+its age starts again. The interval at which Claude Code draws the line is not changed here.
+
 Messages are kept per held turn, so a subagent's wait and the main thread's wait in one session do not overwrite
 each other. A client that runs no status line shows Claude Code's own working line, and the turn waits the same.
 
@@ -181,8 +187,8 @@ each other. A client that runs no status line shows Claude Code's own working li
 
 Holding a turn and saying why is one piece, which knows nothing of why a turn is held. A turn that waits on a
 usage limit, an overload or credit keeps what it does today: its wait, what wakes it, and the line it writes into
-the conversation. Its message now reaches the status line through that piece, per turn, with the count of
-decision 7, and a head that drains tells the turns it holds.
+the conversation. Its message now reaches the status line through that piece, per turn, with the age and the count
+of decision 7, and a head that drains tells the turns it holds.
 
 ### 9. The Context Getter
 

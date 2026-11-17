@@ -118,6 +118,7 @@ internal class ServerLogin(
     }
 }
 
-private const val EXAMPLE_SERVER = "https://ai.team.example"
+/** How a server address is written, in the sentences that refuse one (here and in `splice remote refresh`). */
+internal const val EXAMPLE_SERVER = "https://ai.team.example"
 private const val LOGIN = "login"
 private const val LOGOUT = "logout"

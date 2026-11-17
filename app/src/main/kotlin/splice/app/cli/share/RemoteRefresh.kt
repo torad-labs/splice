@@ -6,6 +6,7 @@
 // while the server keeps offering it. A profile that lists what it listed before changes nothing.
 package splice.app.cli.share
 
+import splice.app.cli.server.EXAMPLE_SERVER
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.RemoteAddressRead
 import splice.core.topology.RemoteAddresses
@@ -34,7 +35,9 @@ internal class RemoteRefresh(
     /** [text], a server, followed; null, said, when it could not be. */
     suspend fun refresh(text: String, unlink: Unlinks): RemoteRefreshed? {
         val server = names.serverOnly(names.address(text))
-            ?: return names.refused("$text names more than a server; refresh takes the server alone, as in $EXAMPLE")
+            ?: return names.refused(
+                "$text names more than a server; refresh takes the server alone, as in $EXAMPLE_SERVER",
+            )
         val topology = file.loaded() ?: return null
         return offered(server)?.let { followed(server, topology, it, unlink) }
     }
@@ -75,5 +78,3 @@ internal class RemoteRefresh(
         }.toMap()
     }
 }
-
-private const val EXAMPLE = "https://ai.team.example"

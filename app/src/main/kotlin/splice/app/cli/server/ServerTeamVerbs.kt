@@ -10,6 +10,7 @@ import kotlinx.serialization.json.buildJsonObject
 import splice.app.cli.peer.ControlRequest
 import splice.app.cli.peer.PeerArgsParser
 import splice.app.cli.peer.PeerAsk
+import splice.server.COMMANDS_FIELD
 
 internal class ServerTeamVerbs(private val ask: PeerAsk) {
     private val lines = ServerLines()
@@ -33,6 +34,5 @@ internal class CommandsFlag {
 }
 
 internal const val COMMANDS_FLAG = "--commands"
-internal const val COMMANDS_FIELD = "commands"
 private const val ALL = "all"
 private const val TEAMS_PATH = "/api/server/teams"

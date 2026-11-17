@@ -119,4 +119,4 @@ private const val RPM_FIELD = "rpm"
 private const val TPM_FIELD = "tpm"
 
 /** The field a team's and a person's commands are set and answered in (F12). */
-internal const val COMMANDS_FIELD: String = "commands"
+public const val COMMANDS_FIELD: String = "commands"

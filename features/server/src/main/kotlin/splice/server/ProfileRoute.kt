@@ -7,12 +7,15 @@
 package splice.server
 
 import io.ktor.http.ContentType
+import io.ktor.http.HttpMethod
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.request.httpMethod
 import io.ktor.server.response.respondText
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import splice.core.topology.ServerConfig
+import splice.share.PROFILE_PATH
 import splice.share.ProfileClient
 import splice.share.ProfileCommand
 import splice.share.ProfileKey
@@ -30,6 +33,13 @@ internal class ProfileRoute(
     private val io: CoroutineDispatcher,
 ) {
     private val json = Json { encodeDefaults = true }
+
+    /** The path a laptop asks the profile at, after the server's address. */
+    private val route = PROFILE_PATH.split('/')
+
+    /** Whether [call], for [path], asks for the profile. */
+    fun asks(call: ApplicationCall, path: List<String>): Boolean =
+        path == route && call.request.httpMethod == HttpMethod.Get
 
     /** Answers [key]'s holder the profile. */
     suspend fun answer(call: ApplicationCall, key: ServerKey) {

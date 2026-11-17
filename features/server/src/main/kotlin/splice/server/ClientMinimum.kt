@@ -10,13 +10,18 @@ import io.ktor.server.application.ApplicationCall
 import splice.core.client.ClientVersionParser
 import splice.core.client.SPLICE_CLIENT_HEADER
 import splice.core.topology.ServerClient
+import splice.core.turn.SERVED_NOTICE_HEADER
 
 internal class ClientMinimum(client: ServerClient) {
     private val versions = ClientVersionParser()
     private val floor = client.floor
 
+    /** What [call]'s head is handed to answer it with in place of a turn, when its laptop's splice is older than the
+     *  minimum: the header that carries what the laptop is told. Null for a laptop the server serves. */
+    fun notice(call: ApplicationCall): Map<String, String>? = told(call)?.let { mapOf(SERVED_NOTICE_HEADER to it) }
+
     /** What [call]'s laptop is told in place of an answer, when its splice is older than the minimum; else null. */
-    fun notice(call: ApplicationCall): String? {
+    private fun told(call: ApplicationCall): String? {
         val floor = floor ?: return null
         val runs = versions.parse(call.request.headers[SPLICE_CLIENT_HEADER])?.takeIf { it < floor } ?: return null
         return "This laptop runs splice $runs, and this team server serves splice $floor or newer. " +

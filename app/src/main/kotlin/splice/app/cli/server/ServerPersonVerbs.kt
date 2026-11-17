@@ -12,6 +12,7 @@ import kotlinx.serialization.json.put
 import splice.app.cli.peer.ControlRequest
 import splice.app.cli.peer.PeerArgsParser
 import splice.app.cli.peer.PeerAsk
+import splice.server.COMMANDS_FIELD
 
 internal class ServerPersonVerbs(private val ask: PeerAsk) {
     private val lines = ServerLines()

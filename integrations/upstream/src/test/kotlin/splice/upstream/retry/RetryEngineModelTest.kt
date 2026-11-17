@@ -101,7 +101,8 @@ internal object PlanModel {
     private fun fresh(met: Met, ledger: RetryLedger): RetryStep =
         if (ledger.count(Spend.FRESH_REISSUE) < 2) again(How.SAME) else end(met)
 
-    /** Named exhaustion can move to a free login. A bare throttle moves first, or spends a bounded burst. */
+    /** Named exhaustion can move to a free login. A bare throttle moves once, to learn whose it is, and is waited out
+     *  where the turn stands after that: a bounded burst. */
     private val limited = Row { met, ledger ->
         val cause = met.cause as FailureCause.Provider.Limited
         val ms = waitMs(cause.lift)
@@ -114,7 +115,7 @@ internal object PlanModel {
                 val n = ledger.count(Spend.THROTTLE)
                 val waits = listOf(2_000L, 4_000L, 8_000L, 16_000L, 30_000L, 30_000L, 30_000L)
                 val retry = if (n < waits.size) again(How.SAME, waits[n]) else end(met)
-                switchOr(met, retry)
+                if (ledger.bareMoves > 0) retry else switchOr(met, retry)
             }
             lift is Lift.At && (ms ?: 0L) > FLOOR -> stated(met, lift, ms ?: 0L)
             else -> bursts(met, ledger, ms?.coerceAtLeast(0L) ?: 0L, Probes.UNSTATED)

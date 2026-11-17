@@ -253,11 +253,8 @@ class LaunchServiceWrapTest(@param:TempDir private val tmp: Path) {
         val again = service.launch(head, listOf("-c"), dangerouslySkipPermissions = false, caller = caller)
 
         assertEquals(listOf("--resume", SESSION), again.argv.takeLast(2), "${again.argv}, warned: ${again.warning}")
-        assertEquals(
-            HEADS_DEPRECATED,
-            again.warning,
-            "going on with one's own session says nothing but the heads notice",
-        )
+        // a launch of `claude` carries no heads notice (decision 7): this pinned the notice while every launch had it
+        assertNull(again.warning, "going on with one's own session through `claude` says nothing")
 
         assertEquals(
             listOf("projects"),

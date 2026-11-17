@@ -52,6 +52,10 @@ public sealed class FailureCause {
              *  A bare 429 does not establish quota exhaustion. Another pooled login may still answer either kind. */
             public val isExhausted: Boolean
                 get() = window == LimitWindow.BILLING_CYCLE || (lift is Lift.Unstated && window != null)
+
+            /** A limit that states nothing: no reset, no pushback, no window. It does not say whose it is, the
+             *  login's or the request's on any login, so one such answer marks no login (RetryLedger.leftBare). */
+            public val isBare: Boolean get() = lift is Lift.Unstated && window == null
         }
 
         /** The provider is over capacity: a 502, or a code that spells an overload. */

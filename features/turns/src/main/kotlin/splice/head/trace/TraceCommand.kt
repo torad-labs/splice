@@ -6,6 +6,7 @@
 package splice.head.trace
 
 import splice.core.memory.HeapBudget
+import splice.core.memory.HeapCapacityException
 import splice.core.storage.DayPurge
 import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
@@ -79,9 +80,18 @@ public class TraceCommand(
         }
     }
 
-    /** V4-286: a trace dir or day that cannot be read is said, never an empty table blaming the knob. */
+    /** V4-286: a trace dir or day that cannot be read is said, never an empty table blaming the knob. More turns than
+     *  the command's memory holds is said as that, with what to ask for instead: every turn asked for is held whole
+     *  before any is printed, and a turn carries its whole conversation. */
     private fun unreadable(head: String, traceDir: Path, failure: Throwable): Boolean =
-        fail("cannot read $head's trace under $traceDir: ${SafeFailureText.render(failure)}")
+        if (failure is HeapCapacityException) {
+            fail(
+                "the turns asked for do not fit in this command's memory; " +
+                    "ask for fewer with --last N, or for one with --turn ID",
+            )
+        } else {
+            fail("cannot read $head's trace under $traceDir: ${SafeFailureText.render(failure)}")
+        }
 
     /** Deletes the head's day files and says what went and what stayed; nothing else in the directory
      *  is touched. A file that stayed, or a directory that could not be listed, fails the command. */

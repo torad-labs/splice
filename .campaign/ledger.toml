@@ -1296,7 +1296,7 @@ notes = [
 id = 'harness-own-module'
 title = 'The harness is a module of its own, and every capability works as it did'
 feature = 'harness-module'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -1317,6 +1317,7 @@ reviews = [
 notes = [
   '2026-11-17 14:19 CT: added; 1 of 7 checks fail, as they should before the work',
   "2026-11-17 16:02 CT: lead, 16:02 CT: the dispute stands. The cause was the gate's hook judging a worktree's staged paths against the main checkout's settings.gradle.kts; 13142162f makes a hook judge the tree git started it in. The checks are unchanged. Commit the work as it is.",
+  '2026-11-17 16:29 CT campaign: done in round 2 of harness-module: its checks, its feature review, its code review passed',
 ]
 
 [[row]]

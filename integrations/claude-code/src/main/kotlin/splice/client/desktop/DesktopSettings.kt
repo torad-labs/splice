@@ -49,12 +49,12 @@ public class DesktopSettings {
     }
 
     /** [file] with an older splice's door taken out: what its `on` wrote, with what that replaced put back by
-     *  [replaced] (with no record, only what it wrote is taken out), and a `model` the Code tab picked from its door,
-     *  one of its picker's rows or one of [selectors], which no terminal session serves. Null when nothing is left of
-     *  a file that was not there before that `on`; [file] itself when none of it is there. */
+     *  [replaced] (with no record, only what it wrote is taken out), and a `model` the Code tab picked from that
+     *  door. Null when nothing is left of a file that was not there before that `on`; [file] itself when none of it
+     *  is there. */
     public fun withoutDoor(file: JsonObject, replaced: JsonObject?, selectors: DoorSelectors): JsonObject? {
         val out = LinkedHashMap<String, JsonElement>(file)
-        if (pickedFromDoor(file, selectors)) out.remove(DESKTOP_FILE_MODEL)
+        if (pickedFromDoor(file, replaced, selectors)) out.remove(DESKTOP_FILE_MODEL)
         if (!holdsDoor(file)) return JsonObject(out)
         (file[ENV] as? JsonObject)?.let { env ->
             val restored = restoredEnv(env, replaced?.get(ENV) as? JsonObject)
@@ -65,11 +65,13 @@ public class DesktopSettings {
         return if (out.isEmpty() && !existed(replaced, EXISTED)) null else JsonObject(out)
     }
 
-    /** Whether [file]'s `model` was picked from a door: one of [selectors], or one of its picker's rows while the door
-     *  is in it. A picker in a file with no door is the person's own, and so is a pick from it. */
-    private fun pickedFromDoor(file: JsonObject, selectors: DoorSelectors): Boolean {
+    /** Whether [file]'s `model` was picked from an older splice's door: one of [selectors] or of its picker's rows
+     *  while that door is in the file, or one of [selectors] while splice's record of what that door replaced
+     *  ([replaced]) is still held. In any other file a selector is the person's own pick: the terminal's `claude` on
+     *  the door picks one with `/model` and Claude Code writes it here, and so is a picker and a pick from it. */
+    private fun pickedFromDoor(file: JsonObject, replaced: JsonObject?, selectors: DoorSelectors): Boolean {
         val picked = JsonScalars.str(file, DESKTOP_FILE_MODEL) ?: return false
-        return selectors(picked) || (holdsDoor(file) && picked in rows(file))
+        return if (holdsDoor(file)) selectors(picked) || picked in rows(file) else replaced != null && selectors(picked)
     }
 
     /** The models [file]'s picker lists. */

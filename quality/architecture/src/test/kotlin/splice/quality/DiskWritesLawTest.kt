@@ -76,8 +76,9 @@ internal object DiskWrites {
         helpers = listOf(
             Helper(
                 "core/src/main/kotlin/splice/core/util/SecureFile.kt",
-                Regex("""\b(writeAtomic0600|createNew0600)\s*\("""),
-                "the owner-only writes: the atomic replace every credential and state file goes through, and the " +
+                Regex("""\b(writeAtomic0600|writeAtomic|createNew0600)\s*\("""),
+                "the owner-only writes: the atomic replace every credential and state file goes through, the same " +
+                    "replace at a mode the caller names (Claude Code's settings file, which keeps its own), and the " +
                     "exclusive create of the first-run splice.toml",
             ),
             Helper(
@@ -318,10 +319,11 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/mcp/NativeCodexSocketProxy.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeAccountFolders.kt" to mapOf("writeAtomic0600(" to 4),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeCredentialProfiles.kt" to mapOf("writeAtomic0600(" to 1),
-    // The door's records (Desktop's and the terminal `claude`'s lane), and the env and picker `splice desktop on`
-    // writes into settings.json.
+    // The door's records (Desktop's and the terminal `claude`'s lane), and settings.json with an older splice's door
+    // taken out of it: at the file's own mode, or owner-only where the filesystem keeps no modes.
     "app/src/main/kotlin/splice/app/desktop/StateRecords.kt" to mapOf("writeAtomic0600(" to 1),
-    "app/src/main/kotlin/splice/app/desktop/DesktopSettingsFile.kt" to mapOf("writeAtomic0600(" to 1),
+    "app/src/main/kotlin/splice/app/desktop/DesktopSettingsFile.kt" to
+        mapOf("writeAtomic0600(" to 1, "writeAtomic(" to 1),
     // The console launch page, 0600, documented in the console-open.html README row.
     "app/src/main/kotlin/splice/app/cli/status/ConsoleCommand.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/config/ConfigService.kt" to mapOf("writeAtomic0600(" to 1),

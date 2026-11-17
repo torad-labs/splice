@@ -3,7 +3,7 @@
 // out and named with the reason, and an account signed in while splice runs is in the next session's picker.
 // (docs/specs/door-default.md, decision 4.)
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { readSettings, slottedHead } from "../desktop/lib/desktop.ts";
@@ -11,6 +11,9 @@ import { Splice, freePort, until } from "../server/lib/harness.ts";
 import { Upstream } from "../server/lib/upstream.ts";
 import { CodexBackend, gptEnv, gptHead } from "../speed/lib/codex.ts";
 import { ask, lane, picker, session, toDoor } from "./lib/claude.ts";
+
+// No test here is a claim about speed: a busy machine must not fail one on bun's default five seconds.
+setDefaultTimeout(120_000);
 
 const ASTRA = "claude-astra--gpt-6-astra";
 const TERRA = "claude-terra--gpt-6.1-terra";

@@ -7,7 +7,7 @@
 // Claude Code 2.1.326 offers only as /splice:login. Changed again the same day: the file also runs in a Claude Code
 // splice did not start, which is accepted and said, and the hook is handed the bare command by 2.1.326.)
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,6 +16,9 @@ import { Splice, freePort, until } from "../server/lib/harness.ts";
 import { CodexBackend, gptEnv, gptHead } from "../speed/lib/codex.ts";
 import { expanded, prompt } from "../speed/lib/session.ts";
 import { type Desk, SPLICE_LOGIN, type Session, ask, desk, session, slash, toDoor, under } from "./lib/claude.ts";
+
+// No test here is a claim about speed: a busy machine must not fail one on bun's default five seconds.
+setDefaultTimeout(120_000);
 
 const logins = `/tmp/claude-1000/door-login-${process.pid}`;
 let backend: CodexBackend;

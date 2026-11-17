@@ -3,11 +3,14 @@
 // the head, retires the terminal's key and says heads are going away, and refuses when there is no head to go back to.
 // (docs/specs/door-default.md, decisions 1, 3 and 8.)
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { clientHead, slottedHead } from "../desktop/lib/desktop.ts";
 import { Splice, freePort } from "../server/lib/harness.ts";
 import { Upstream } from "../server/lib/upstream.ts";
 import { ask, lane, session, toDoor } from "./lib/claude.ts";
+
+// No test here is a claim about speed: a busy machine must not fail one on bun's default five seconds.
+setDefaultTimeout(120_000);
 
 const ASTRA_BIG = "claude-astra--astra-large";
 

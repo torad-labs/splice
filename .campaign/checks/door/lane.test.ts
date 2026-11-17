@@ -3,12 +3,15 @@
 // selector runs it on its head, a fresh session runs the model the lane says it starts on, and Desktop's switch and
 // key leave the terminal as it was. (docs/specs/door-default.md, decisions 1 to 4.)
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
 import { doorTurn, readSettings, rotateKey, rows, slottedHead, turnOn, writeSettings } from "../desktop/lib/desktop.ts";
 import { Splice, freePort, until } from "../server/lib/harness.ts";
 import { Upstream } from "../server/lib/upstream.ts";
 import { DOOR_VARS, ELSEWHERE, SPLICE_LOGIN, ask, lane, session, toDoor, under } from "./lib/claude.ts";
+
+// No test here is a claim about speed: a busy machine must not fail one on bun's default five seconds.
+setDefaultTimeout(120_000);
 
 const ASTRA_BIG = "claude-astra--astra-large";
 const BOREALIS_BIG = "claude-borealis--borealis-large";

@@ -2,12 +2,15 @@
 // away and what replaces it: on the launch itself, and in `splice status` and `splice doctor` while `claude` is on its
 // head. A `claude` on the door carries no such notice. (docs/specs/door-default.md, decision 7.)
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { clientHead, recipe, slottedHead } from "../desktop/lib/desktop.ts";
 import { Splice, freePort } from "../server/lib/harness.ts";
 import { Upstream } from "../server/lib/upstream.ts";
 import { ask, launch } from "../speed/lib/session.ts";
 import { lane, toDoor } from "./lib/claude.ts";
+
+// No test here is a claim about speed: a busy machine must not fail one on bun's default five seconds.
+setDefaultTimeout(120_000);
 
 const MOVE = "splice claude door";
 

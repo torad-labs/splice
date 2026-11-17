@@ -48,7 +48,7 @@ function table(name: string, change: Record<string, string | null> = {}): string
 const WRONG: { name: string; change: Record<string, string | null>; says: string }[] = [
   { name: "extra-key", change: { colour: '"cyan"' }, says: "colour" },
   { name: "no-such-head", change: { heads: '["nowhere"]' }, says: "nowhere" },
-  { name: "agent-called", change: { call: '"agent"' }, says: "call" },
+  { name: "odd-caller", change: { call: '"whenever"' }, says: "call" },
   { name: "odd-turn", change: { when: '{ turn = "second" }' }, says: "turn" },
   { name: "odd-rule-key", change: { when: '{ weekday = "monday" }' }, says: "weekday" },
   { name: "odd-place", change: { place: '"system-prompt"' }, says: "place" },
@@ -60,7 +60,7 @@ const WRONG: { name: string; change: Record<string, string | null>; says: string
   { name: "odd-field", change: { send: '["first_user_message", "api_key"]' }, says: "api_key" },
   { name: "text-nowhere", change: { place: '"none"', may: '"add"' }, says: "place" },
   { name: "every-turn-text", change: { when: '{ turn = "any" }' }, says: "turn" },
-  { name: "odd-worker", change: { worker: '{ kind = "mcp", server = "files" }' }, says: "kind" },
+  { name: "odd-worker", change: { worker: '{ kind = "ftp", url = "ftp://files" }' }, says: "kind" },
   { name: "no-such-builtin", change: { worker: '{ kind = "builtin", name = "nothing-like-it" }' }, says: "nothing-like-it" },
   { name: "no-url", change: { worker: '{ kind = "http" }' }, says: "url" },
   { name: "Odd_Name", change: {}, says: "Odd_Name" },

@@ -59,6 +59,18 @@ goal = "A capability is a piece of work splice runs around a session's turn, dec
 [feature."held-status"]
 goal = "A person sees on the session's status line what a held turn is doing, how long ago it last said so and how many turns are held, whether a capability or a usage limit holds it."
 
+[feature."harness-module"]
+goal = "The harness lives in a module of its own (docs/specs/harness.md, decision 11): the capabilities, their rule and workers, the Context Getter and the agent's call grow there without touching the turn, which knows them only through a port it owns, and every capability works for a person exactly as it did."
+
+[feature."context-getter"]
+goal = "On a session's first turn, the head's fast model explores the session's folder at its own effort and the session's model starts with what it found, as if the person had pasted it: on the drain task this cut the time to the first code from 16 and 23 minutes to 4 and 6. The person sees each step it takes, splice owns its process, and it works on the door (docs/specs/harness.md, decision 9)."
+
+[feature."capability-mcp"]
+goal = "A capability's work can be a tool of an MCP server the hub runs, declared in splice.toml like an HTTP worker, with its progress shown while the turn waits (docs/specs/harness.md, decision 13)."
+
+[feature."agent-call"]
+goal = "The model calls a capability itself, as a tool the client never sees: splice answers the call while the turn waits, streams the rest as one response, and keeps the call in the provider's history byte for byte so every cache prefix holds (docs/specs/harness.md, decision 12)."
+
 [[row]]
 id = 'server-listener'
 title = 'A [server] listener that answers only keys'
@@ -1272,4 +1284,186 @@ reviews = [
 ]
 notes = [
   '2026-11-17 08:43 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'harness-own-module'
+title = 'The harness is a module of its own, and every capability works as it did'
+feature = 'harness-module'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "docs/specs/harness.md decision 11. :features-harness (package splice.harness) holds the capabilities, their rule and their workers. :features-turns holds the turn and the held turn, knows the harness only through a port it owns (called when a thread is first seen, before each request goes upstream, and for each round the agent's call will answer) and never depends on it; :app wires the two. The module law lists the harness's edges (:core, :features-turns, :features-sessions, :features-launch, :integrations-claude-code, :integrations-http, :integrations-upstream, :integrations-mcp) and the layer map classifies it as a feature. What the harness needs of a turn (its session's folder, its thread, a way to hold it and say what it is doing) reaches it through the port, never by reaching into the turn's packages. Nothing a person sees changes: every capability check passes as it does today. Move the files rather than rewrite them, so their history follows: the held-status feature has edits in flight in Harness.kt, CapabilityCall.kt and HarnessStep.kt and merges onto the move."
+checks = [
+  'bun test ./.campaign/checks/harness/module.test.ts',
+  'bun test ./.campaign/checks/harness/http.test.ts',
+  'bun test ./.campaign/checks/harness/config.test.ts',
+  'bun test ./.campaign/checks/harness/rule.test.ts',
+  'bun test ./.campaign/checks/harness/later.test.ts',
+  'bun test ./.campaign/checks/harness/failure.test.ts',
+  'bun test ./.campaign/checks/harness/dialects.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:19 CT: added; 1 of 7 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'agent-call-offered'
+title = 'A capability the agent may call is offered to the model as a tool'
+feature = 'agent-call'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'harness-own-module',
+]
+guard = false
+spec = "docs/specs/harness.md decision 12, Offered and Dialects, and decision 1. call = \"agent\" and \"both\" boot with a tool = { name, description, input }. On every request that carries tools, of a thread the rule allows (when.thread, when.mode, when.models), the tool is added after the client's tools as the same bytes every time; the client's tools and system text are not changed. A request without tools, one decision 2's own conditions rule out, a head it is not on for, and call = \"rule\" offer nothing. Config findings: agent or both with no tool, a tool with call = \"rule\", place or when.turn named with call = \"agent\", agent or both on a head whose dialect is not Anthropic's Messages."
+checks = [
+  'bun test ./.campaign/checks/harness/agent-offered.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:20 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'agent-call-answered'
+title = "The model's call of a capability is answered inside splice, and the client gets one response"
+feature = 'agent-call'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'agent-call-offered',
+]
+guard = false
+spec = "docs/specs/harness.md decision 12, Answered and Failure. When the model's message calls the capability's tool and nothing else, the client never sees the call: splice holds the turn, sends the worker the tool's input as the field input beside the fields send names, sends the provider the same request with the model's message and a tool_result carrying the worker's text, and streams that answer as the rest of the same response. The client receives one assistant message: the model's blocks before the call, then the answer's. An answer that calls the tool again is answered the same way. on_failure open: the tool result says the capability failed and why and the model goes on; closed: the turn is refused as decision 6 says; a refusal from a worker that may refuse refuses the turn; Esc, the client leaving and a drain as decision 6 says. Fill in the spec's row on a hidden call and its answer reaching Claude Code as one response, from a real session."
+checks = [
+  'bun test ./.campaign/checks/harness/agent-answered.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:20 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'agent-call-history'
+title = "A call the model made stays in the provider's history byte for byte"
+feature = 'agent-call'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'agent-call-answered',
+]
+guard = false
+spec = "docs/specs/harness.md decision 12, Kept. splice stores the call and its result keyed by the content of the client's copy of that assistant message, and on every later request of the session, the compaction request included, puts them back where the model made them, byte for byte, thinking blocks and their signatures included, so the provider sees the conversation it produced and every cached prefix holds. The record is on disk before the answer reaches the client, so a restarted daemon puts it back the same way. A later request whose record is gone still goes upstream in a shape the provider accepts. Fill in the spec's row on a later turn keeping its cache, from a real session."
+checks = [
+  'bun test ./.campaign/checks/harness/agent-history.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:20 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'agent-call-parallel'
+title = "A call of a capability beside the client's own calls is answered beside them"
+feature = 'agent-call'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'agent-call-answered',
+]
+guard = false
+spec = "docs/specs/harness.md decision 12, Beside the client's calls. When one message calls the capability's tool and tools of the client's, the client gets its own calls and never the capability's. The worker runs while the client runs its tools, and when the client sends its results splice adds the capability's result beside them, in the order the calls were made, with the model's message whole."
+checks = [
+  'bun test ./.campaign/checks/harness/agent-parallel.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:20 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'agent-call-says'
+title = "While the model's call of a capability runs, the status line says so"
+feature = 'agent-call'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'agent-call-answered',
+  'held-says',
+]
+guard = false
+spec = "docs/specs/harness.md decisions 7 and 12. While the agent's call holds the turn, the session's status line says the capability's message in its colour, then each progress line its worker sends, its age starting again; when the answer streams, the line is what it was."
+checks = [
+  'bun test ./.campaign/checks/harness/agent-says.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:20 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'mcp-worker'
+title = "A capability's worker can be a tool of an MCP server the hub runs"
+feature = 'capability-mcp'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'harness-own-module',
+]
+guard = false
+spec = "docs/specs/harness.md decision 13. worker = { kind = \"mcp\", server, tool } boots, and on the rule's turn splice calls that tool through the MCP hub with the declared fields as its arguments (and input, for the agent's call). The server is the one the hub would give a session in that session's folder, so a server of the folder's own is found there. The tool's text content is the result and is placed as an HTTP worker's is. An error result, a result with no text, a server or tool the hub cannot find for the session's folder, or the time limit is a failure handled by on_failure. An MCP worker with no server or tool is a config finding. splice status shows mcp <server>/<tool>."
+checks = [
+  'bun test ./.campaign/checks/harness/mcp.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:20 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'mcp-says'
+title = "An MCP worker's progress notifications reach the status line"
+feature = 'capability-mcp'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'mcp-worker',
+  'held-says',
+]
+guard = false
+spec = "docs/specs/harness.md decisions 7 and 13. Each MCP progress notification the worker's tool sends becomes what the held turn says on the session's status line, its age starting again. Fill in the spec's row on an MCP worker's progress, from a real session."
+checks = [
+  'bun test ./.campaign/checks/harness/mcp-says.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:20 CT: added; 1 of 1 checks fail, as they should before the work',
 ]

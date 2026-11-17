@@ -1467,3 +1467,92 @@ reviews = [
 notes = [
   '2026-11-17 14:20 CT: added; 1 of 1 checks fail, as they should before the work',
 ]
+
+[[row]]
+id = 'getter-runs'
+title = "The Context Getter gathers for a session's first turn at its own model's effort, and what it found reaches the provider"
+feature = 'context-getter'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'harness-own-module',
+]
+guard = false
+spec = "docs/specs/harness.md decision 9 as amended. With [capabilities.context-getter] switched on for a head, a session's first main turn of an interactive session starts a normal claude -p in the session's folder on the head's fast model (its small tier, or worker.model), thinking at that model's own level: the person's modelSettings.<model>.effortLevel when their settings name one, else Claude Code's own default, never the head's effort or a launcher's. It runs with CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES=1, the head's login, the MCP hub's tools and the person's settings, and its input holds the first user message inside the gathering prompt. Its stream's final result is placed in the first user message on that request and, byte for byte, on every later one. Its requests carry the splice header naming the session they work for; such a request never calls a capability, casts no vote on the head's usual model, and its record names that session. It fails open. A session whose folder cannot be found, or a head with no login that can serve the fast model, is recorded as not called, with the reason. Fill in the spec's Seen with Claude Code row on a gatherer started the planned way, from a real session."
+checks = [
+  'bun test ./.campaign/checks/harness/getter.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:32 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'getter-says'
+title = 'While the Context Getter works, the status line says what it is exploring'
+feature = 'context-getter'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'getter-runs',
+  'held-says',
+]
+guard = false
+spec = "docs/specs/harness.md decisions 7 and 9. While the gatherer holds the turn, the session's status line says Exploring files with <the fast model's label>, then each of the gatherer's tool-use summaries as it comes (each tool_use_summary event of its stream, its age starting again), and Exploring stopped, continuing without it when it stops before a result. Fill in the spec's row on the tool-use summaries (what they look like, and whether each costs a request of its own), from a real session."
+checks = [
+  'bun test ./.campaign/checks/harness/getter-says.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:33 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'getter-limits'
+title = "splice owns the gatherer's process, and its time limit comes from measured gathers"
+feature = 'context-getter'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'getter-runs',
+]
+guard = false
+spec = "docs/specs/harness.md decision 9, Limits. The gatherer is ended at the time limit, when the client leaves, when the head stops and when the daemon shuts down, and it runs under a deadline of its own, so a daemon killed outright leaves none behind. Each ending is recorded as the capability's failure with its reason, and the turn goes on as decision 6 says. The default time limit is set from gathers measured on real work (72 to 101 s on this repo on Haiku at its own level, November 17), and the spec's table says which numbers it came from."
+checks = [
+  'bun test ./.campaign/checks/harness/getter-limits.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:33 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'getter-door'
+title = 'On the door, the gatherer reaches the head that holds the waiting turn'
+feature = 'context-getter'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'getter-runs',
+]
+guard = false
+spec = "docs/specs/harness.md decision 9, On the door, and docs/specs/door-default.md. A session on the door is gathered for on the head that holds its waiting turn: the gatherer names a selector of that head, so the door sends its requests there, with that head's login and fast model. Fill in the spec's row on the door from a real session."
+checks = [
+  'bun test ./.campaign/checks/harness/getter-door.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:33 CT: added; 1 of 1 checks fail, as they should before the work',
+]

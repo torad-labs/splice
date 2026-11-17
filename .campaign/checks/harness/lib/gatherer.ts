@@ -279,6 +279,8 @@ export class Fake {
     );
     chmodSync(claude, 0o755);
     this.write();
+    // A check whose beforeAll fails never reaches its afterAll: the folder goes when the test process does.
+    process.on("exit", () => rmSync(this.dir, { recursive: true, force: true }));
   }
 
   /** The PATH a daemon runs with to start this stand-in as `claude`. */

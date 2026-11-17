@@ -13,7 +13,14 @@
 // its turn state, and a websocket frame's client_metadata echoes it. A member quoted INSIDE a JSON string goes the
 // same way, whatever its nesting: a refusal that quotes the headers it refused carries the member as `\"name\":\"…\"`
 // one level in, and the next level doubles each backslash, so the quoting a match found is the quoting it writes back.
+//
+// Nov 17, 2026: the header a launched session proves itself in carries the head's turn key, and its name is kept free
+// of every word above on purpose, so Claude Code does not copy it onto requests of its own. The name class missed it,
+// and a trace of a launched session's turn held the turn key whole. It is redacted by its constant, in a header map
+// and wherever a body or a stream carries it as a member.
 package splice.upstream.transport
+
+import splice.core.config.LAUNCH_PROOF_HEADER
 
 /** A JSON member name shaped like a header: words joined by '-'. A name spelled with '_' is a JSON field, not a header
  *  (input_tokens, prompt_cache_key), and is never matched. */
@@ -40,8 +47,10 @@ public object HeaderRedaction {
         RegexOption.DOT_MATCHES_ALL,
     )
 
-    /** True when a header of this name may carry a credential. */
-    public fun isSecret(name: String): Boolean = secretName.containsMatchIn(name)
+    /** True when a header of this name may carry a credential: its name says so, or it is the launch proof, whose
+     *  name says nothing and whose value is the head's turn key. */
+    public fun isSecret(name: String): Boolean =
+        secretName.containsMatchIn(name) || name.equals(LAUNCH_PROOF_HEADER, ignoreCase = true)
 
     /** The same map, every secret-named value replaced by [REDACTED]. Names and order are kept. */
     public fun redact(headers: Map<String, String>): Map<String, String> =

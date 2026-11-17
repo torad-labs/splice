@@ -40,6 +40,12 @@ goal = "A Muse session pays for its conversation once. When Claude Code's ToolSe
 [feature."server-profile"]
 goal = 'A laptop takes its commands from the team server it joins: the server answers a key holder with what it offers (each command, its models and their windows, the sign-in configuration, the telemetry relay and the minimum client), a person keeps an operator-issued key as a sign-in keeps its own, links every command the server offers in one step, follows the server as it adds and drops commands, and pins a window of its own when it wants one. Spec: docs/specs/server-mode.md, F7.'
 
+[feature."server-policy"]
+goal = "An operator decides who may use what on the team server: which commands a team and a person may use, how many tokens a person may spend in a minute, and the oldest splice a laptop may run, with an older laptop told in the conversation what to upgrade to. Spec: docs/specs/server-mode.md, F9 (the server's half) and F12."
+
+[feature."server-pool-costs"]
+goal = "The team server keeps a session's turns on the upstream that has its prompt cached, and its usage reports count what a box rented by the hour costs beside the per-token prices. Spec: docs/specs/server-mode.md, F10 and F11."
+
 [[row]]
 id = 'server-listener'
 title = 'A [server] listener that answers only keys'
@@ -787,4 +793,104 @@ reviews = [
 ]
 notes = [
   '2026-11-16 19:45 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'server-access'
+title = "A team's and a person's commands decide what they may use"
+feature = 'server-policy'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "splice server team set <team> --commands a,b and splice server person set <email> --commands a,b|all set which commands a team and a person may use; the person's setting wins over the team's, a change holds from the person's next turn with the keys they already hold, and someone with no setting may use every command. A turn on a command the person may not use is a 403 permission_error naming it, and nothing reaches the upstream. A command the server does not serve, or an empty list, is refused at the CLI. See docs/specs/server-mode.md, F12."
+checks = [
+  'bun test ./.campaign/checks/server/access.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-16 19:51 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'server-token-cap'
+title = "A person's tokens per minute are capped"
+feature = 'server-policy'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "[server.limits] tpm_per_person caps the tokens of one person's turns that ended in the last minute; once they reach it, the person's next turn, streamed or not, is a 429 rate_limit_error with a Retry-After from 1 to 60 seconds, nothing reaches the upstream, and other people are served. splice server person set <email> --tpm N overrides the server's cap for that person; a cap that is not a positive number is refused. See docs/specs/server-mode.md, F12."
+checks = [
+  'bun test ./.campaign/checks/server/token-cap.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-16 19:51 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'server-client-version'
+title = "A laptop older than the server's minimum is told to upgrade, in the conversation"
+feature = 'server-policy'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = '[server.client] minimum names the oldest splice a laptop may run. A Messages turn whose x-splice-client header names an older version is answered 200 with an assistant message (a whole Messages stream when streamed) naming that version, the minimum and splice upgrade, and nothing reaches the upstream. A version at or past the minimum, compared by number part by part, is served, and so is a request with no x-splice-client header. See docs/specs/server-mode.md, F9.'
+checks = [
+  'bun test ./.campaign/checks/server/client-version.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-16 19:51 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'server-affinity'
+title = "A session's turns stay on the upstream that served it"
+feature = 'server-pool-costs'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "A turn carrying X-Claude-Code-Session-Id goes to the upstream that served that session's last turn while it is healthy, even when another upstream has less in flight; a new session is balanced as before. A session whose upstream goes down moves once to a healthy one and stays there when the old one is back. See docs/specs/server-mode.md, F11."
+checks = [
+  'bun test ./.campaign/checks/server/affinity.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-16 19:52 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'server-fixed-cost'
+title = 'A provider paid by the hour is metered in usage reports'
+feature = 'server-pool-costs'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "hourly_usd on a provider prices it by the hour. splice server usage report meters it over the report's window from the host's boot time read when the report is made (the hours the host was up inside the window; a daemon restart does not restart it), and the JSON report carries fixed: [{provider, hours, cost_usd}] and totals: {cost_usd, fixed_usd, actual_usd, reference_cost_usd}, where actual is the rate card's cost plus the fixed cost. A server with no hourly price has fixed: [] and a fixed_usd of 0. See docs/specs/server-mode.md, F10."
+checks = [
+  'bun test ./.campaign/checks/server/fixed-cost.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-16 19:52 CT: added; 1 of 1 checks fail, as they should before the work',
 ]

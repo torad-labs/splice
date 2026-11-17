@@ -495,9 +495,14 @@ private class TopologyChecks(
             .takeIf { topology.resolveHeadKeys(command).isNotEmpty() }
         val unread = (RemoteAddresses.read(remote.url) as? RemoteAddressRead.Refused)?.why
         val copy = "copy the address `splice share status` prints on the machine that shares it"
+        val window = remote.window?.takeIf { it <= 0 }?.let {
+            "window $it is not a positive number of tokens; " +
+                "`splice remote set $command --window server` gives it the server's"
+        }
         listOfNotNull(
             taken?.let { TopologyFinding("remote.$command", it) },
             unread?.let { TopologyFinding("remote.$command.url", "$it; $copy") },
+            window?.let { TopologyFinding("remote.$command.window", it) },
         )
     }
 

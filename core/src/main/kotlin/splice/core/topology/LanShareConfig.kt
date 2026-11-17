@@ -23,9 +23,11 @@ public data class ShareConfig(
 )
 
 /** `[remote.<command>]`: a command this machine runs as Claude Code pointed at another machine's head, by [url], the
- *  address that machine's `splice share status` prints, with `auth=` and `models=` when the person chose them. */
+ *  address that machine's `splice share status` prints, with `auth=` and `models=` when the person chose them; and the
+ *  context [window] this machine pinned for it (`splice remote set <command> --window N`, server mode F7), which its
+ *  launch takes in place of the server's; null takes the server's. */
 @Serializable
-public data class RemoteConfig(val url: String)
+public data class RemoteConfig(val url: String, val window: Long? = null)
 
 /** A remote command's address, read: the [server] (`http://devbox.lan:3097`), the [head] it runs there, the
  *  server's login [auth] names, and the [models] the command is shown (empty: every model the head has). */

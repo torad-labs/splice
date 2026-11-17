@@ -36,6 +36,7 @@ import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.core.wire.HttpStatus
 import splice.http.JsonBody
+import splice.server.caller.ClientAddresses
 import splice.share.Asked
 import splice.share.RefusalVoice
 import java.time.Clock
@@ -150,11 +151,11 @@ internal class SigninRoute(
         if (cap <= 0) return null
         val now = clock.millis()
         if (tries.size > MAX_TRACKED_ADDRESSES) {
-            tries.entries.removeIf { (_, idle) -> synchronized(idle) { idle.count(now) == 0 } }
+            tries.entries.removeIf { (_, idle) -> synchronized(idle) { idle.count(now) == 0L } }
         }
         val starts = tries.computeIfAbsent(address) { MinuteStarts() }
         return synchronized(starts) {
-            val wait = starts.waitFor(cap, now)
+            val wait = starts.waitFor(cap.toLong(), now)
             if (wait == null) starts.add(now)
             wait
         }

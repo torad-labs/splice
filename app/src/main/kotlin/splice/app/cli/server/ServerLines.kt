@@ -60,8 +60,21 @@ internal class ServerLines(private val zone: ZoneId = ZoneId.systemDefault()) {
         val rpm = cap(JsonScalars.long(reply, "rpm"))
         val upstream = JsonScalars.str(reply, "upstream")?.let { "$it while it is healthy" } ?: "the least busy"
         val team = JsonScalars.str(reply, "team")?.let { ", team $it" }.orEmpty()
+        val tpm = JsonScalars.long(reply, "tpm")?.let { "at most $it" } ?: "as [server.limits] sets"
+        val commands = commands(reply) ?: "as their team's"
         val person = JsonScalars.str(reply, "person")
-        return "$person: turns in flight $inflight, turns a minute $rpm, upstream $upstream$team"
+        return "$person: turns in flight $inflight, turns a minute $rpm, tokens a minute $tpm, upstream $upstream" +
+            "$team, commands $commands"
+    }
+
+    /** One team's settings as they now stand. */
+    fun team(reply: JsonObject): String =
+        "team ${JsonScalars.str(reply, "team")}: commands ${commands(reply) ?: "every one served"}"
+
+    /** The commands [reply] names, `all` or a list; null when it names none. */
+    private fun commands(reply: JsonObject): String? {
+        val named = reply["commands"]
+        return (named as? JsonArray)?.mapNotNull(JsonScalars::str)?.joinToString(", ") ?: JsonScalars.str(named)
     }
 
     private fun cap(set: Long?): String = when (set) {

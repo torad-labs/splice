@@ -7,7 +7,9 @@
 //
 // TWO MORE OUTCOMES (2026-09-05), both "this head answers without an upstream turn": Local — the
 // activity side query Claude Code sends every 30 s (ActivityLabel), and Replay — a compaction retry
-// whose bytes match a compaction that outlived its first client (CompactionReplay).
+// whose bytes match a compaction that outlived its first client (CompactionReplay). Local also answers
+// (2026-11-16, server mode F9) a turn the server listener hands on with its notice (SERVED_NOTICE_HEADER): an older
+// laptop told what to upgrade to, in the conversation, with nothing sent upstream.
 //
 // V4-130: every parsed request is also where the console's session facts are observed, because this
 // is the one place that holds the typed request and the session header together: SendMessage edges
@@ -46,6 +48,7 @@ import splice.core.perf.TurnPerf
 import splice.core.pool.PREFERRED_UPSTREAM_HEADER
 import splice.core.session.ActivityAction
 import splice.core.turn.DESKTOP_DOOR
+import splice.core.turn.SERVED_NOTICE_HEADER
 import splice.core.turn.SERVED_TURN_HEADER
 import splice.core.turn.TURN_DOOR_HEADER
 import splice.core.turn.TurnRelay
@@ -97,8 +100,15 @@ internal sealed class Preparation {
      *  claudex turn for 67 minutes and the log, the perf file and the trace held nothing of it. */
     data class Rejected(val cause: FailureCause.Splice, val request: RefusedRequest = RefusedRequest()) : Preparation()
 
-    /** Answered by the proxy itself: the activity side query (ActivityLabel). No upstream turn. */
-    data class Local(val text: String, val model: String, val sessionId: String?, val stream: Boolean) : Preparation()
+    /** Answered by the proxy itself, with no upstream turn: the activity side query (ActivityLabel), or, with
+     *  [activity] false, the notice a team server sent in place of the turn (an out-of-date laptop's, server mode). */
+    data class Local(
+        val text: String,
+        val model: String,
+        val sessionId: String?,
+        val stream: Boolean,
+        val activity: Boolean = true,
+    ) : Preparation()
 
     /** A byte-identical retry of a compaction whose first client gave up: served from its recording.
      *  [model] is the row id the retry asked for, for the honest error frame a follower is sealed
@@ -204,6 +214,20 @@ internal class TurnPreparation(
         received: AnthropicTurnBody,
         named: RefusedRequest,
     ): Preparation {
+        // A turn the server listener hands on to be answered with its notice alone (server mode, F9: a laptop older
+        // than the server's minimum is told what to upgrade to), in the conversation, whatever model it asked.
+        val notice = call.request.headers[SERVED_NOTICE_HEADER]?.takeIf(String::isNotBlank)
+        if (notice != null) {
+            perf.mark(PerfKeys.PARSE)
+            deps.log("[${provider.key}] server notice answered locally (${who(named.sessionId)}no upstream turn)\n")
+            return Preparation.Local(
+                notice,
+                received.typed.model,
+                named.sessionId,
+                received.typed.stream,
+                activity = false,
+            )
+        }
         // Before anything reads the model: a refusal past here names the model the turn would have gone upstream as.
         val parsed = heldFallback.applied(received, named.sessionId)
         val asked = named.copy(model = parsed.typed.model)

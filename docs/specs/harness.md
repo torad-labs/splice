@@ -335,11 +335,17 @@ agent's call.
 ### 13. The MCP worker
 
 `worker = { kind = "mcp", server = "<a server the MCP hub runs>", tool = "<its tool>" }` calls that tool through the
-MCP hub, with the declared fields (and `input`, for the agent's call) as its arguments. The server is the one the hub
-would give a session in that session's folder, so a server of the folder's own is found there and a per-session
-server starts there. Each MCP progress notification is a progress message. The tool's text content is the result.
-An error result, a result with no text, a server or tool the hub cannot find for the session's folder, or the time
-limit is a failure handled by `on_failure`. `splice status` shows `mcp <server>/<tool>`.
+MCP hub, with the declared fields (and `input`, for the agent's call) as its arguments and nothing else; the
+capability's name and the session and turn ids go in the call's `_meta`. The server is the one the hub would give a
+session in that session's folder: a server the folder's own `.mcp.json` declares is found there, and where nothing
+hosts it for that folder yet (the hub's front is not running, or the server runs one copy per session) splice starts
+it in that folder for the call and stops it when the session ends. splice asks for progress (a `progressToken`),
+and each progress notification is a progress message; one with no message keeps the message and starts its age
+again. The tool's text content is the result. An error result, a JSON-RPC error, a result with no text, a server or
+tool the hub cannot find for the session's folder, a session whose folder cannot be found, or the time limit is a
+failure handled by `on_failure`. When the work is stopped (the time limit, Esc, the client leaving, a drain) the
+server is sent `notifications/cancelled`. An MCP worker with no `server` or `tool` is a config finding naming
+`worker.server` or `worker.tool`. `splice status` shows `mcp <server>/<tool>`.
 
 
 ## Not in this change

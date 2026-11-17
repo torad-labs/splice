@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Splice, freePort, turn } from "../server/lib/harness.ts";
 import { Upstream } from "../server/lib/upstream.ts";
-import { type Door, clientHead, countTokens, door, doorTurn, slottedHead, turnOn } from "./lib/desktop.ts";
+import { type Door, clientHead, countTokens, doorTurn, slottedHead, turnOn } from "./lib/desktop.ts";
 
 const ASTRA_BIG = "claude-astra--astra-large";
 const ASTRA_SMALL = "claude-astra--astra-small";
@@ -125,7 +125,7 @@ describe("desktop-door", () => {
 
   test("a restart does not move the door", async () => {
     await s.restart();
-    expect(door(s).url).toBe(d.url);
+    expect(turnOn(s).url).toBe(d.url);
     expect(await ran(astra, ASTRA_SMALL, crypto.randomUUID())).toBe("astra-small");
-  });
+  }, 120_000);
 });

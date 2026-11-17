@@ -1,12 +1,13 @@
-// desktop-lineup: the Code tab's picker lists every model splice serves from every head it holds a credential for,
-// one row a model, and follows splice while Desktop is on. A head that forwards the caller's own Claude login is
-// left out and named with the reason.
+// desktop-lineup: the door serves every model of every head splice holds a credential for, one selector a model, and
+// `splice desktop` lists them, read from splice.toml's heads at each use. A head that forwards the caller's own Claude
+// login is left out and named with the reason. Nothing of the lineup is written into the terminal's settings file.
+// (Rewritten for 0.6.1: the picker the old door wrote into that file is gone.)
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Splice, freePort, until } from "../server/lib/harness.ts";
 import { Upstream } from "../server/lib/upstream.ts";
 import { launch, sessionKey } from "../speed/lib/session.ts";
-import { type Door, clientHead, desktop, door, doorTurn, lineup, readSettings, slottedHead, turnOn } from "./lib/desktop.ts";
+import { type Door, clientHead, desktop, doorTurn, readSettings, slottedHead, turnOn } from "./lib/desktop.ts";
 
 let astra: Upstream;
 let borealis: Upstream;
@@ -40,26 +41,11 @@ afterAll(async () => {
   cygnus?.stop();
 });
 
+/** The selectors `splice desktop` lists. */
+const selectors = () => desktop(s).models.map((m) => m.model);
+
 describe("desktop-lineup", () => {
-  test("the picker shows only splice's rows: one for each model of each head in the door, in splice.toml's order", () => {
-    expect((readSettings(s).modelPicker as { replaceBuiltInOptions?: boolean }).replaceBuiltInOptions).toBe(true);
-    expect(lineup(s)).toEqual([
-      { model: "claude-astra--astra-large", label: "astra-large", description: "splice · claude-astra" },
-      { model: "claude-astra--astra-small", label: "astra-small", description: "splice · claude-astra" },
-      { model: "claude-borealis--borealis-large", label: "borealis-large", description: "splice · claude-borealis" },
-      { model: "claude-borealis--borealis-small", label: "borealis-small", description: "splice · claude-borealis" },
-    ]);
-  });
-
-  test("a row's model is the ID its head's own /v1/models lists", async () => {
-    const key = sessionKey(await launch(s, "claude-astra"));
-    const r = await fetch(`http://127.0.0.1:${astraPort}/v1/models`, { headers: { "x-api-key": key, "anthropic-version": "2023-06-01" } });
-    expect(r.status).toBe(200);
-    const ids = ((await r.json()) as { data: { id: string }[] }).data.map((m) => m.id);
-    for (const row of lineup(s).filter((x) => x.description === "splice · claude-astra")) expect(ids).toContain(row.model);
-  });
-
-  test("splice desktop lists the same models, each with its head and its command", () => {
+  test("splice desktop lists one model for each model of each head in the door, in splice.toml's order", () => {
     expect(desktop(s).models).toEqual([
       { model: "claude-astra--astra-large", label: "astra-large", head: "astra", command: "claude-astra" },
       { model: "claude-astra--astra-small", label: "astra-small", head: "astra", command: "claude-astra" },
@@ -68,8 +54,21 @@ describe("desktop-lineup", () => {
     ]);
   });
 
-  test("a head that forwards the caller's own Claude login has no row, and splice desktop names it with the reason", () => {
-    expect(lineup(s).filter((r) => r.model.startsWith("claude-corvus--"))).toEqual([]);
+  test("nothing of the lineup is written into the terminal's settings file", () => {
+    expect(readSettings(s).modelPicker).toBeUndefined();
+    expect(readSettings(s).model).toBeUndefined();
+  });
+
+  test("a model's selector is the ID its head's own /v1/models lists", async () => {
+    const key = sessionKey(await launch(s, "claude-astra"));
+    const r = await fetch(`http://127.0.0.1:${astraPort}/v1/models`, { headers: { "x-api-key": key, "anthropic-version": "2023-06-01" } });
+    expect(r.status).toBe(200);
+    const ids = ((await r.json()) as { data: { id: string }[] }).data.map((m) => m.id);
+    for (const m of desktop(s).models.filter((x) => x.head === "astra")) expect(ids).toContain(m.model);
+  });
+
+  test("a head that forwards the caller's own Claude login has no model, and splice desktop names it with the reason", () => {
+    expect(selectors().filter((m) => m.startsWith("claude-corvus--"))).toEqual([]);
     const out = desktop(s).left_out;
     expect(out.map((h) => [h.head, h.command])).toEqual([["corvus", "claude-corvus"]]);
     expect(out[0]!.reason).toMatch(/login/i);
@@ -78,12 +77,12 @@ describe("desktop-lineup", () => {
     expect(said.out).toContain("claude-corvus");
   });
 
-  test("a head added to splice is in the picker with no command run, and its models run through the same door", async () => {
+  test("a head added to splice is in the door with no command run, and its models run through the same door", async () => {
     const cygnusHead = slottedHead({ key: "cygnus", command: "claude-cygnus", port: await freePort(), url: cygnus.url, big: "cygnus-large", small: "cygnus-small" });
     s.writeConfig(astraHead + borealisHead + corvusHead + cygnusHead);
     await s.restart();
-    await until("the picker lists the new head's models", () => lineup(s).some((r) => r.model === "claude-cygnus--cygnus-large"));
-    expect(lineup(s).map((r) => r.model)).toEqual([
+    await until("the door lists the new head's models", () => selectors().includes("claude-cygnus--cygnus-large"));
+    expect(selectors()).toEqual([
       "claude-astra--astra-large",
       "claude-astra--astra-small",
       "claude-borealis--borealis-large",
@@ -91,23 +90,24 @@ describe("desktop-lineup", () => {
       "claude-cygnus--cygnus-large",
       "claude-cygnus--cygnus-small",
     ]);
-    // the door and its key are the ones the file held before
-    expect(door(s).url).toBe(d.url);
-    expect(door(s).key).toBe(d.key);
+    // the door and its key are the ones set in Desktop before
+    const again = turnOn(s);
+    expect(again.url).toBe(d.url);
+    expect(again.key).toBe(d.key);
     const t = await doorTurn(d.url, { key: d.key, model: "claude-cygnus--cygnus-small", session: crypto.randomUUID() });
     expect(t.status).toBe(200);
     expect(t.reply).toBe(cygnus.reply());
-  });
+  }, 120_000);
 
-  test("a head taken out of splice leaves the picker, and its models are refused", async () => {
+  test("a head taken out of splice leaves the door, and its models are refused", async () => {
     s.writeConfig(astraHead + corvusHead);
     await s.restart();
-    await until("the picker has dropped the removed heads", () => !lineup(s).some((r) => r.model.startsWith("claude-borealis--")));
-    expect(lineup(s).map((r) => r.model)).toEqual(["claude-astra--astra-large", "claude-astra--astra-small"]);
+    await until("the door has dropped the removed heads", () => !selectors().some((m) => m.startsWith("claude-borealis--")));
+    expect(selectors()).toEqual(["claude-astra--astra-large", "claude-astra--astra-small"]);
     const before = borealis.completions().length;
     const t = await doorTurn(d.url, { key: d.key, model: "claude-borealis--borealis-large", session: crypto.randomUUID() });
     expect(t.status).toBe(400);
     expect(t.error?.type).toBe("invalid_request_error");
     expect(borealis.completions().length).toBe(before);
-  });
+  }, 120_000);
 });

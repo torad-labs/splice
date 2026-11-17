@@ -7,10 +7,14 @@
 // them without end.
 package splice.core.pool
 
-/** A request's place in [pool]: on [preferred] while a server of that name is healthy, and otherwise on the healthy
- *  server with the least in flight. The request counts as in flight on its server from the first time it asks where
- *  to go until it [end]s. */
-public class PoolWalk(private val pool: UpstreamPool, private val preferred: String?) {
+/** A request's place in [pool]: on the server that served [session]'s last turn while it is healthy, else on
+ *  [preferred] while a server of that name is healthy, and otherwise on the healthy server with the least in flight.
+ *  The request counts as in flight on its server from the first time it asks where to go until it [end]s. */
+public class PoolWalk(
+    private val pool: UpstreamPool,
+    private val preferred: String?,
+    private val session: String? = null,
+) {
     private var lease: UpstreamLease? = null
     private var ended = false
 
@@ -25,7 +29,7 @@ public class PoolWalk(private val pool: UpstreamPool, private val preferred: Str
     /** The server the request goes to now, taken when it is first asked for. A request that asks after it ended
      *  holds no place: it is counted nowhere, since nothing would ever give its place back. */
     @Synchronized
-    public fun server(): UpstreamLease = lease ?: pool.lease(preferred).also { leased ->
+    public fun server(): UpstreamLease = lease ?: pool.lease(preferred, session).also { leased ->
         taken = leased.name
         if (ended) leased.release() else lease = leased
     }

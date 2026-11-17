@@ -8,6 +8,8 @@
 //                                  open: how a team member signs in and gets a key (F2, SigninRoute). Nothing else is
 //                                  answered without a key.
 //   GET  /                         what this server offers the key's holder: each command, its head and models
+//   GET  /server/profile           what a laptop builds its commands from: each command, its models and their
+//                                  windows, the sign-in configuration, the telemetry relay, the minimum client (F7)
 //   GET  /<command>/launch         what a laptop's launch of that command needs (as share mode serves it)
 //   ANY  /<command>/v1/...         relayed to the head on loopback with this machine's turn key in place of the
 //                                  person's key, and the answer streamed back as it arrives
@@ -76,6 +78,7 @@ import splice.server.ledger.ROUTE_MESSAGES
 import splice.share.HEAD_API_ROOT
 import splice.share.HEAD_LAUNCH_ROUTE
 import splice.share.HeadTurn
+import splice.share.PROFILE_PATH
 import splice.share.RefusalVoice
 import splice.share.ShareCatalog
 import splice.share.SharedHead
@@ -111,9 +114,13 @@ internal class ServerListener(
     /** How often a streamed turn's client is sent a keepalive while its answer is silent; null sends none. */
     private val keepalive = server.keepaliveSeconds.takeIf { it > 0 }?.seconds
     private val openAi = OpenAiRoute(parts, io, log, keepalive)
+    private val profile = ProfileRoute(server, parts.heads, io)
 
     /** The path, after the command, of the one request that runs a turn on the Messages route. */
     private val turnPath = listOf(HEAD_API_ROOT, "messages")
+
+    /** What a key holder asks for the server's profile at (F7): the path the laptop asks it at. */
+    private val profilePath = PROFILE_PATH.split('/')
 
     @Volatile
     private var engine: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -167,6 +174,7 @@ internal class ServerListener(
         when {
             path.isEmpty() && call.request.httpMethod == HttpMethod.Get -> catalog.directory(call)
             path.isEmpty() -> noSuchPath(call)
+            path == profilePath && call.request.httpMethod == HttpMethod.Get -> profile.answer(call, key)
             path.first() == SERVER_ROOT -> admin.answer(call, key, path.drop(1))
             else -> if (!openAi.answered(call, key, path)) command(call, key, path)
         }

@@ -105,6 +105,7 @@ providers.*.extra_windows[].id
 providers.*.extra_windows[].max_context_window	
 providers.*.forward_headers	
 providers.*.health_seconds	
+providers.*.hourly_usd	
 providers.*.local	
 providers.*.models	
 providers.*.models[].client_model	
@@ -188,6 +189,7 @@ providers.*.window_rules[].context_window
 providers.*.window_rules[].prefix	
 remote	
 remote.*.url	
+remote.*.window	
 server	
 server.admins	
 server.budgets	

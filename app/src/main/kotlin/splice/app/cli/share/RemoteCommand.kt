@@ -3,7 +3,9 @@
 // splice.toml holding the address `splice share status` printed there, and a command link like every other; nothing
 // else is kept, no credential and no copy of the server's models. `add` checks the address against the server first
 // (RemoteAdd), `remove` takes a command and its link out, and the bare verb lists them, each with whether its server
-// answers now.
+// answers now. On a team's server (docs/specs/server-mode.md, F7) `refresh` follows the commands it adds and drops
+// (RemoteRefresh), and `set <command> --window` pins a context window on this laptop or gives the server's back
+// (RemoteWindow); the list shows a pinned window.
 package splice.app.cli.share
 
 import splice.app.cli.peer.PeerExit
@@ -21,11 +23,13 @@ import splice.launch.install.InstallCommand
 import splice.launch.install.InstallResult
 import splice.share.Asked
 import splice.share.LaptopLogins
+import splice.share.ServerProfiles
 import splice.share.ShareDirectory
 import splice.share.ShareInfo
 import splice.upstream.codemode.ProcessDispatchers
 
-internal const val REMOTE_USAGE = "[list] | add <address> [--as <command>] | remove <command>"
+internal const val REMOTE_USAGE = "[list] | add <address> [--as <command>] | refresh <server> | " +
+    "set <command> --window <tokens>|server | remove <command>"
 
 internal class RemoteCommand(
     private val out: TerminalOutput = TerminalOutput(::println),
@@ -35,15 +39,20 @@ internal class RemoteCommand(
     private val file = ShareTopologyFile(err, REMOTE_VERB, env)
     private val restart = ShareRestart(out, err, env, REMOTE_VERB)
     private val logins = LaptopLogins(env).logins
-    private val directory = ShareDirectory(ProcessDispatchers().io(), logins)
+    private val asks = ProcessDispatchers().io().let { io ->
+        RemoteAsks(ShareDirectory(io, logins), ServerProfiles(io, logins), logins)
+    }
     private val install = InstallCommand(out, err)
     private val relays = FirstBuildRelays(out, err, env)
+    private val names = RemoteNames(err, relays) { install.runsShim(it, env) }
 
     suspend fun run(args: List<String>): Int {
         val rest = args.drop(1)
         return when (args.firstOrNull()) {
             null, "list" -> if (rest.isEmpty()) list() else usage()
             "add" -> add(rest)
+            "refresh" -> refresh(rest)
+            "set" -> set(rest)
             "remove" -> rest.singleOrNull()?.let(::remove) ?: usage()
             else -> usage()
         }
@@ -53,12 +62,33 @@ internal class RemoteCommand(
     private suspend fun add(rest: List<String>): Int {
         val named = rest.size == AS_ARGS && rest[1] == "--as"
         if (rest.size != 1 && !named) return usage()
-        val add = RemoteAdd(out, err, file, directory, relays) { install.runsShim(it, env) }
+        val add = RemoteAdd(out, file, asks, relays, names)
         val added = add.add(rest[0], if (named) rest[2] else null) ?: return PeerExit.REFUSED
         // Every command is linked, even after one is refused, so each refusal is said.
         val whole = added.commands.map { link(it, added.machine) }.all { it } && added.complete
         val followed = restart.followed(added.topology)
         return if (followed && whole) PeerExit.DONE else PeerExit.REFUSED
+    }
+
+    /** `refresh <server>`: the commands the server started offering linked, the ones it dropped unlinked, each
+     *  said. */
+    private suspend fun refresh(rest: List<String>): Int {
+        val server = rest.singleOrNull() ?: return usage()
+        val refreshed = RemoteRefresh(out, file, asks, names).refresh(server) { install.uninstall(it, env) }
+            ?: return PeerExit.REFUSED
+        refreshed.unlinked.forEach { out.line("$GREEN✓$RESET $CYAN$it$RESET unlinked: $server no longer offers it") }
+        // Every command is linked, even after one is refused, so each refusal is said.
+        val whole = refreshed.linked.map { link(it, server) }.all { it } && refreshed.complete
+        val changed = refreshed.linked.isNotEmpty() || refreshed.unlinked.isNotEmpty()
+        val followed = !changed || restart.followed(refreshed.topology)
+        return if (followed && whole) PeerExit.DONE else PeerExit.REFUSED
+    }
+
+    /** `set <command> --window <tokens>|server`. */
+    private fun set(rest: List<String>): Int {
+        if (rest.size != SET_ARGS || rest[1] != "--window") return usage()
+        val pinned = RemoteWindow(out, file, names).set(rest[0], rest[2]) ?: return PeerExit.REFUSED
+        return if (!pinned.changed || restart.followed(pinned.topology)) PeerExit.DONE else PeerExit.REFUSED
     }
 
     /** [command]'s link, to the launch shim as every command's is; false, said, when it was not made. */
@@ -101,10 +131,13 @@ internal class RemoteCommand(
         topology.remote.forEach { (command, remote) ->
             val state = when (val read = RemoteAddresses.read(remote.url)) {
                 is RemoteAddressRead.Refused -> "not an address it can run on: ${read.why}"
-                is RemoteAddressRead.Read ->
-                    state(read.address, servers.getOrPut(read.address.server) { directory.read(read.address.server) })
+                is RemoteAddressRead.Read -> {
+                    val server = read.address.server
+                    state(read.address, servers.getOrPut(server) { asks.directory.read(server) })
+                }
             }
-            out.line("  ${command.padEnd(COMMAND_PAD)} ${remote.url}  $DIM$state$RESET")
+            val window = remote.window?.let { "  window $it, pinned here" }.orEmpty()
+            out.line("  ${command.padEnd(COMMAND_PAD)} ${remote.url}$window  $DIM$state$RESET")
         }
         return PeerExit.DONE
     }
@@ -134,6 +167,9 @@ internal const val REMOTE_VERB = "splice remote"
 
 // why: `add <address> --as <command>` is three words after the verb.
 private const val AS_ARGS = 3
+
+// why: `set <command> --window <tokens>` is three words after the verb.
+private const val SET_ARGS = 3
 
 // why: the command column of `splice remote` and `splice share status`: `claude-` and a head name of up to eleven
 // characters line their addresses up, and a longer command pushes only its own row.

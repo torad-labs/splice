@@ -35,10 +35,14 @@ internal class StandInHead(
     override val key: String = "team",
     override val command: String = "claude-team",
     private val up: Boolean = true,
+    /** Each model it launches and the window it declares for it. */
+    private val windows: Map<String, Long> = emptyMap(),
 ) : SharedHead {
     override fun running(): Boolean = up
 
     override fun launch(): LaunchSpec? = null
+
+    override fun windows(): Map<String, Long> = windows
 
     override fun logins(): List<String> = emptyList()
 

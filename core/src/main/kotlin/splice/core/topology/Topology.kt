@@ -215,6 +215,10 @@ public data class ProviderConfig(
     val upstreams: List<UpstreamConfig> = emptyList(),
     /** The seconds between health checks of each of [upstreams]. */
     @SerialName("health_seconds") val healthSeconds: Int = DEFAULT_HEALTH_SECONDS,
+    /** Server mode (docs/specs/server-mode.md, F10): what this provider costs an hour in USD, for a box rented by the
+     *  hour whatever its traffic. A usage report meters it over the hours the host was up in its window. Absent =
+     *  priced by the token alone. */
+    @Serializable(with = TomlDollars::class) @SerialName("hourly_usd") val hourlyUsd: Double? = null,
 ) {
     /** Whether this provider is a local runtime: what the operator said, else the loopback rule. */
     public val isLocal: Boolean

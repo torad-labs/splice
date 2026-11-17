@@ -24,6 +24,10 @@ public interface SharedHead {
     /** Its launch as a session here gets it now, live windows and all; null for a head that launches nothing. */
     public fun launch(): LaunchSpec?
 
+    /** Every model its launch offers, in that order, with the context window this head declares for each now; empty
+     *  for a head that launches nothing. What a server's profile tells a laptop (server mode, F7). */
+    public fun windows(): Map<String, Long>
+
     /** Its logins, by label: what an address's `auth=` may name. */
     public fun logins(): List<String>
 

@@ -1,5 +1,6 @@
 // NEW (2026-09-05): Claude Code's activity side query is answered by the head itself — through the
-// REAL production path (HeadServer over HTTP, both response shapes) — and the upstream never sees it.
+// REAL production path (HeadServer over HTTP, both response shapes) — and the upstream never sees it. So is the
+// notice a team server hands on in place of a turn (server mode, F9: an out-of-date laptop is told to upgrade).
 package splice.head
 
 import io.ktor.client.HttpClient
@@ -29,6 +30,7 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.SERVED_NOTICE_HEADER
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.dialect.responses.ReasoningSettings
@@ -158,6 +160,32 @@ class HeadServerLocalAnswerTest {
         assertEquals("ok", row.getValue("outcome").jsonPrimitive.content)
         assertEquals("gpt-5.6-sol", row.getValue("model").jsonPrimitive.content)
     }
+
+    @Test
+    fun `a server's notice is the whole answer, streamed or not, and no upstream turn follows`() =
+        runBlocking {
+            val before = mock.upstreamBodies.size
+            val notice = "This laptop runs splice 0.5.0; run `splice upgrade`."
+            val ask = """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,""" +
+                """"messages":[{"role":"user","content":"fix it"}]}"""
+            val sse = client.post("http://127.0.0.1:$port/v1/messages") {
+                header("Content-Type", "application/json")
+                header(SERVED_NOTICE_HEADER, notice)
+                setBody(ask)
+            }.bodyAsText()
+            assertTrue(sse.contains("event: message_start"), sse)
+            assertTrue(sse.contains("splice upgrade"), sse)
+            assertTrue(sse.contains("\"stop_reason\":\"end_turn\""), sse)
+            assertTrue(sse.contains("event: message_stop"), sse)
+            val json = client.post("http://127.0.0.1:$port/v1/messages") {
+                header("Content-Type", "application/json")
+                header(SERVED_NOTICE_HEADER, notice)
+                setBody(ask.replace("\"stream\":true", "\"stream\":false"))
+            }.bodyAsText()
+            assertTrue(json.contains("splice 0.5.0"), json)
+            assertTrue(json.contains("\"stop_reason\":\"end_turn\""), json)
+            assertEquals(before, mock.upstreamBodies.size, "no upstream turn may happen for a notice")
+        }
 
     @Test
     fun `the non-stream side query gets the same answer as one JSON body`() = runBlocking {

@@ -1,7 +1,8 @@
-// NEW: server mode (docs/specs/server-mode.md, F5). What a server keeps of the turns it serves, built once beside its
-// keys and people: the usage ledger every turn leaves its row in, what each person and team spent (counted from those
-// rows), their budgets, and the ledger's hourly export. ServerMode opens it with its listener and closes it after the
-// listener, so the last turns' rows are written before the daemon goes.
+// NEW: server mode (docs/specs/server-mode.md, F5 and F12). What a server keeps of the turns it serves, built once
+// beside its keys and people: the usage ledger every turn leaves its row in, what each person and team spent and the
+// tokens each person's turns used in the last minute (both counted from those rows), their budgets, and the ledger's
+// hourly export. ServerMode opens it with its listener and closes it after the listener, so the last turns' rows are
+// written before the daemon goes.
 package splice.server
 
 import kotlinx.coroutines.CoroutineDispatcher
@@ -15,6 +16,7 @@ import splice.server.budget.ServerSpend
 import splice.server.export.ExportClock
 import splice.server.export.UsageExport
 import splice.server.ledger.LedgerParts
+import splice.server.ledger.RowWatch
 import splice.server.ledger.TurnLedger
 import splice.server.ledger.UsageApi
 import splice.server.ledger.UsageLedger
@@ -40,7 +42,17 @@ public class ServerBookkeeping internal constructor(
     private val spend = ServerSpend(run.clock)
 
     // Every turn's row, as the reports, the exports and the budgets read them.
-    private val ledger = UsageLedger(folder.resolve(USAGE_LEDGER_FILE), run.io, spend)
+    // The tokens of each person's turns that ended in the last minute, counted from the same rows (F12).
+    private val tokens = MinuteTokens(run.clock)
+
+    private val ledger = UsageLedger(
+        folder.resolve(USAGE_LEDGER_FILE),
+        run.io,
+        RowWatch { row ->
+            spend.counted(row)
+            tokens.counted(row)
+        },
+    )
 
     private val budgetBook = BudgetBook(folder.resolve(SERVER_BUDGETS_FILE), run.io)
     private val budgets = BudgetGate(budgetBook, spend, people, server.teams, server.budgets)
@@ -64,7 +76,7 @@ public class ServerBookkeeping internal constructor(
         val parts = LedgerParts(ledger, reach.served, people, server.teams, upstreams, run.clock, metrics)
         val opened = TurnLedger(parts, run.io, run.log)
         turns = opened
-        return ServerBooks(opened, budgets)
+        return ServerBooks(opened, budgets, tokens)
     }
 
     /** Starts the export on its own schedule, with the bucket's key read from [env] at each one. */

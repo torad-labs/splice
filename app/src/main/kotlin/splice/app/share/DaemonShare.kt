@@ -128,6 +128,13 @@ internal class ManagedSharedHeads(
 
         override fun launch(): LaunchSpec = head.statusline.catalog?.let(spec::withWindows) ?: spec
 
+        // A head with no catalog of its own launches every model on its one launch window.
+        override fun windows(): Map<String, Long> {
+            val models = launch().models
+            val catalog = head.statusline.catalog?.live()
+            return models.availableModelIds.associateWith { catalog?.contextWindowFor(it) ?: models.contextWindow }
+        }
+
         override fun logins(): List<String> =
             head.authSurface.accountPool?.view(null)?.accounts?.map { it.label }.orEmpty()
 

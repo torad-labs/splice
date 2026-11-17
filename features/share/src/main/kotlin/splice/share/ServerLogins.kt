@@ -31,6 +31,9 @@ internal data class ServerLoginRecord(
     /** The launch each command on the server last answered, by command, so a launch the server refuses for want of
      *  a key still starts Claude Code, whose helper then says how to sign in. */
     val launches: Map<String, JsonElement> = emptyMap(),
+    /** The commands the server's profile listed when this laptop last linked them (F7), so a refresh links only the
+     *  ones it starts offering after that, and unlinks only the ones it drops; null before the first. */
+    val offered: List<String>? = null,
 )
 
 /** A sign-in the server answered: the [person] it names and the [key] it minted, shown by [prefix] everywhere. */
@@ -107,6 +110,7 @@ public class ServerLogins(
                 prefix = signedIn.prefix,
                 expiresAt = signedIn.expiresAt,
                 launches = kept?.launches.orEmpty(),
+                offered = kept?.offered,
             ),
         )
     }
@@ -142,6 +146,17 @@ public class ServerLogins(
         val kept = files.record.read() ?: return
         if (kept.launches[command] == launch) return
         files.record.write(kept.copy(launches = kept.launches + (command to launch)))
+    }
+
+    /** The commands [server]'s profile listed when this laptop last linked them, or null when it never linked from
+     *  one there (F7). */
+    public fun offered(server: String): List<String>? = record(server)?.offered
+
+    /** Keeps [commands] as what [server]'s profile lists now, on a server this laptop holds a login for. */
+    public fun keepOffered(server: String, commands: List<String>) {
+        val files = files(server) ?: return
+        val kept = files.record.read() ?: return
+        if (kept.offered != commands) files.record.write(kept.copy(offered = commands))
     }
 
     private fun record(server: String): ServerLoginRecord? = files(server)?.record?.read()

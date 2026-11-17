@@ -3,7 +3,7 @@
 // send. So it is believed only on a connection from an address in `[server] trusted_proxies`, and read from the right:
 // the last address a trusted proxy did not add itself. From anyone else the header is ignored, and the connection's
 // own address stands. Refused keys are said in the daemon log by that address, once each, then by count.
-package splice.server
+package splice.server.caller
 
 import splice.core.listen.IpLiterals
 import splice.core.util.LogSafe

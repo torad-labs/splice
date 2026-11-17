@@ -8,6 +8,8 @@
 //                                  open: how a team member signs in and gets a key (F2, SigninRoute). Nothing else is
 //                                  answered without a key.
 //   GET  /                         what this server offers the key's holder: each command, its head and models
+//   GET  /server/profile           what a laptop builds its commands from: each command, its models and their
+//                                  windows, the sign-in configuration, the telemetry relay, the minimum client (F7)
 //   GET  /<command>/launch         what a laptop's launch of that command needs (as share mode serves it)
 //   ANY  /<command>/v1/...         relayed to the head on loopback with this machine's turn key in place of the
 //                                  person's key, and the answer streamed back as it arrives
@@ -18,11 +20,14 @@
 //   GET  /server/metrics           each person's traffic, live, as Prometheus text, for an admin's key (F6)
 //
 // A key arrives as `x-api-key` or as `Authorization: Bearer`. A missing, unknown, revoked or expired one is a 401
-// `authentication_error` that says which and never repeats the key, and nothing reaches a head. Only the commands
-// `[server] commands` lists are served; any other name is 404 naming those. A `POST /<command>/v1/messages` is a turn:
-// it counts against its person's in-flight and per-minute caps (PersonLimits), and one past a cap is a 429
-// `rate_limit_error` with `Retry-After` (TurnAdmission). Every error is in the Anthropic shape, so Claude Code prints
-// its message.
+// `authentication_error` that says which and never repeats the key, and nothing reaches a head (KeyAdmission). Only
+// the commands `[server] commands` lists are served; any other name is 404 naming those. A
+// `POST /<command>/v1/messages` is a turn: it counts against its person's in-flight, per-minute and token caps
+// (PersonLimits), and one past a cap is a 429 `rate_limit_error` with `Retry-After` (TurnAdmission); one on a command
+// its person may not use is a 403 `permission_error` naming it (CommandAccess). Every error is in the Anthropic
+// shape, so Claude Code prints its message. A turn from a laptop whose splice is older than `[server.client] minimum`
+// is answered 200 by its head, in the conversation, with what to upgrade to, and reaches no upstream and no cap
+// (ClientMinimum).
 //
 // A person's key is the server's secret on the way out as well. A head sends its provider the caller's headers that
 // provider's `forward_headers` names, and one of those whose value holds a key this server issued, the caller's own
@@ -46,7 +51,6 @@
 package splice.server
 
 import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.ApplicationCallPipeline
@@ -58,17 +62,17 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.engine.sslConnector
 import io.ktor.server.netty.Netty
 import io.ktor.server.netty.NettyApplicationEngine
-import io.ktor.server.plugins.origin
 import io.ktor.server.request.httpMethod
 import io.ktor.server.response.respondText
 import kotlinx.coroutines.CoroutineDispatcher
-import splice.core.auth.BearerScheme
 import splice.core.pool.PREFERRED_UPSTREAM_HEADER
 import splice.core.topology.ServerAddress
 import splice.core.topology.ServerConfig
 import splice.core.util.LogSink
 import splice.core.wire.HttpStatus
 import splice.http.listen.HttpListenerThreads
+import splice.server.caller.ClientAddresses
+import splice.server.caller.KeyAdmission
 import splice.server.ledger.ROUTE_MESSAGES
 import splice.share.HEAD_API_ROOT
 import splice.share.HEAD_LAUNCH_ROUTE
@@ -77,7 +81,6 @@ import splice.share.RefusalVoice
 import splice.share.ShareCatalog
 import splice.share.SharedHead
 import java.security.KeyStore
-import java.time.Instant
 import kotlin.time.Duration.Companion.seconds
 
 internal class ServerListener(
@@ -98,15 +101,17 @@ internal class ServerListener(
     private val admin = ServerAdmin(server, KeyApi(parts.keys, log), reads, voice)
     private val addresses = ClientAddresses(server.trustedProxies)
     private val signins = SigninRoute(signin, KeyApi(parts.keys, log), addresses, voice, log)
-    private val refusedCallers = RefusedCallers(log)
+    private val keyAdmission = KeyAdmission(parts.keys, addresses, log)
     private val watched = WatchedRelay()
     private val paths = RequestPaths()
     private val admission = TurnAdmission(parts, voice, catalog, watched)
     private val bound = ProviderBound(parts.keys, log)
+    private val minimum = ClientMinimum(server.client)
 
     /** How often a streamed turn's client is sent a keepalive while its answer is silent; null sends none. */
     private val keepalive = server.keepaliveSeconds.takeIf { it > 0 }?.seconds
     private val openAi = OpenAiRoute(parts, io, log, keepalive)
+    private val profile = ProfileRoute(server, parts.heads, io)
 
     /** The path, after the command, of the one request that runs a turn on the Messages route. */
     private val turnPath = listOf(HEAD_API_ROOT, "messages")
@@ -153,7 +158,8 @@ internal class ServerListener(
         if (read && path == listOf(HEALTH_ROUTE)) return call.respondText(HEALTH_BODY, ContentType.Application.Json)
         if (path != null && signins.asks(path)) return signins.answer(call, path)
         // A request refused before its route is known is still refused in the shape its client reads.
-        val key = admitted(call, if (path != null && openAi.asks(call, path)) openAi.voice else voice) ?: return
+        val voiced = if (path != null && openAi.asks(call, path)) openAi.voice else voice
+        val key = keyAdmission.admitted(call, voiced) ?: return
         if (path == null) noSuchPath(call) else routed(call, key, path)
         parts.keys.keepUse()
     }
@@ -163,39 +169,10 @@ internal class ServerListener(
         when {
             path.isEmpty() && call.request.httpMethod == HttpMethod.Get -> catalog.directory(call)
             path.isEmpty() -> noSuchPath(call)
+            profile.asks(call, path) -> profile.answer(call, key)
             path.first() == SERVER_ROOT -> admin.answer(call, key, path.drop(1))
             else -> if (!openAi.answered(call, key, path)) command(call, key, path)
         }
-    }
-
-    /** The key [call] presents, once it is a live one; else null with the 401 answered in [voice], in words that say
-     *  which of missing, unknown, revoked and expired it was and never repeat the key. */
-    private suspend fun admitted(call: ApplicationCall, voice: RefusalVoice): ServerKey? {
-        val headers = call.request.headers
-        val presented = headers[API_KEY_HEADER]?.trim()?.takeIf(String::isNotEmpty)
-            ?: BearerScheme.bearerToken(headers[HttpHeaders.Authorization])
-        val why = when (val verdict = parts.keys.admit(presented)) {
-            is KeyVerdict.Admitted -> return verdict.key
-            is KeyVerdict.Revoked -> revoked(verdict.key)
-            is KeyVerdict.Expired -> expired(verdict.key)
-            KeyVerdict.Unknown -> if (presented == null) NO_KEY_SENT else "this key is not one this server issued"
-        }
-        val forwarded = headers.getAll(HttpHeaders.XForwardedFor)?.joinToString(",")
-        refusedCallers.refused(addresses.of(call.request.origin.remoteAddress, forwarded), why)
-        voice.refuse(call, HttpStatus.UNAUTHORIZED, why)
-        return null
-    }
-
-    private fun revoked(key: ServerKey): String = when (val newer = key.supersededBy) {
-        null -> "this key was revoked; ask the server's operator for a new one"
-        else ->
-            "this key was replaced by a newer sign-in on the same device ($newer); " +
-                "sign in again (`splice login <server>`) if this device has lost it"
-    }
-
-    private fun expired(key: ServerKey): String {
-        val since = key.expiresAt?.let { " on ${Instant.ofEpochMilli(it)}" }.orEmpty()
-        return "this key expired$since; ask the server's operator for a new one"
     }
 
     /** [path] names a served command first: its turns, or its launch. */
@@ -210,11 +187,14 @@ internal class ServerListener(
     }
 
     /** Relays [path] to [head] for [key]'s person. A turn takes one of the person's slots first, or is refused, and
-     *  leaves its row in the ledger however it ends. */
+     *  leaves its row in the ledger however it ends; one from an older laptop is its head's to answer (F9). */
     private suspend fun turn(call: ApplicationCall, key: ServerKey, head: SharedHead, path: List<String>) {
-        if (call.request.httpMethod != HttpMethod.Post || path != turnPath) {
+        val isTurn = call.request.httpMethod == HttpMethod.Post && path == turnPath
+        // An older laptop's turn is answered by its head with what to upgrade to, and takes no slot (F9).
+        val notice = if (isTurn) minimum.notice(call) else null
+        if (!isTurn || notice != null) {
             if (!head.running()) return catalog.notRunning(call, head)
-            val asked = headTurn(call, key, head, path, emptyMap())
+            val asked = headTurn(call, key, head, path, notice.orEmpty())
             watched.turn(call, slot = null) { parts.relay.turn(call, asked) }
             return
         }
@@ -247,16 +227,11 @@ internal class ServerListener(
 /** What every error the server listener answers with starts with. */
 internal const val SERVER_ERROR_PREFIX: String = "splice server: "
 
-// The header Claude Code and the Anthropic SDKs send an API key in.
-private const val API_KEY_HEADER = "x-api-key"
-
 private const val HEALTH_ROUTE = "health"
 private const val HEALTH_BODY = """{"status":"ok"}"""
 
 /** The first path segment of the server's own routes; no command may be named it. */
 internal const val SERVER_ROOT: String = "server"
-
-private const val NO_KEY_SENT = "no key was sent; send yours as x-api-key or as Authorization: Bearer"
 
 // why: a stop lets requests already in the listener finish for a second before it closes; a relayed turn still
 // streaming is cut, and its client's Claude Code retries it as it retries any cut turn.

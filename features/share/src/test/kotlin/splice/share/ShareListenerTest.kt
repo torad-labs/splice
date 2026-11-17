@@ -48,6 +48,8 @@ internal class ShareListenerTest {
 
         override fun launch(): LaunchSpec? = null
 
+        override fun windows(): Map<String, Long> = emptyMap()
+
         override fun logins(): List<String> = listOf("primary")
 
         override fun pin(login: String, session: String): Boolean = login == "primary"

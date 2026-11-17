@@ -48,8 +48,8 @@ What `POST /launch/claude` answers the launch shim while `claude` is on the door
 - In `unset`: everything that would send the session somewhere else: `ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY`,
   `ANTHROPIC_AUTH_TOKEN`, and the Bedrock, Vertex and Foundry switches.
 - No `CLAUDE_CONFIG_DIR`: the session runs over the person's own Claude folder, as the wrapped `claude` head does.
-  splice writes nothing in that folder. What the session needs from splice rides the launch: a `--settings`
-  overlay for the picker and hooks, and whatever else Claude Code accepts per launch.
+  splice changes nothing of theirs in that folder and lays one file of its own there, its `/login` (decision 5).
+  Everything else the session needs from splice rides the launch: a `--settings` overlay for the picker and hooks.
 - The lane answers whether or not a head keyed `claude` exists, and whether or not anything is signed in.
 
 ### 3. The terminal has a key of its own
@@ -86,9 +86,21 @@ typing it opens the console's accounts page in the person's browser, signed in, 
 `splice console` opens. It is caught before it reaches the model: no turn is sent. On a head it replaces the
 `/login` that started that head's own sign-in; signing in to a provider is done on the accounts page.
 
-It has to be the bare `/login`. A command reachable only under a plugin's prefix does not meet this, and neither does
-a file written into the person's own Claude folder. If the installed Claude Code offers no way to both, the item
-goes back to its lead with what was seen.
+It has to be the bare `/login`. Claude Code 2.1.326 offers a bare command from two places only (see the table
+below): a folder handed by `--add-dir`, which opens every session on a trust dialog, and the session's own Claude
+folder. So on the door lane splice lays one file in the person's folder, `commands/login.md`, and nothing else:
+
+- `splice claude door` and every launch of `claude` on the door lay it when it is not there. The daemon starting
+  does not.
+- A `/login` the person wrote themselves, as a command or a skill, is never replaced. splice leaves it as it is,
+  and `splice claude` says that their own `/login` is in the way and where it is.
+- `splice claude head` and uninstalling splice take splice's file out, and only splice's.
+- The file reads sensibly in a session that has no hook to catch it: its text says what it is for and how to open
+  the accounts page (`splice console`).
+- In a session where Claude Code's own `/login` is on (one not started by splice that shares the folder), `/login`
+  stays Claude Code's own. If the file would take its place there, the item goes back to its lead.
+
+A head keeps its `/login` where it already is, in the head's own folder.
 
 A head that forwards the caller's own Claude login keeps Claude Code's `/login`, which is that login's own door.
 

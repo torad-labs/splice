@@ -24,7 +24,7 @@ class OneLoginNoticeTest {
         ""","seven_day_used_percent":$percent,"seven_day_reset_epoch_seconds":$ONE_LOGIN_RESET"""
 
     @Test
-    fun `a command with one login says when that login nears its weekly limit, and again at the second mark`() {
+    fun `a command with one login says once that the login has passed 80 percent of its weekly limit`() {
         val near = notices.of(roster(week(82))).single()
         assertTrue(
             near.text.startsWith("solo has one login, and Work has used 82% of its weekly limit, which resets "),
@@ -32,14 +32,13 @@ class OneLoginNoticeTest {
         )
         assertTrue(near.text.endsWith(". When it runs out, sessions on solo wait."), near.text)
 
-        val last = notices.of(roster(week(96))).single()
-        assertTrue(last.text.startsWith("solo has one login, and Work has used 96% of its weekly limit"), last.text)
-        assertTrue(near.key != last.key, "the second mark is a notice of its own, so it is said too")
-        assertEquals(emptyList<LoginNotice>(), notices.of(roster(week(79))), "below the first mark nothing is said")
+        // Nov 17, 2026: there is no second mark. Past 95% it is the notice already said, so nothing more is sent.
+        assertEquals(near.key, notices.of(roster(week(96))).single().key)
+        assertEquals(emptyList<LoginNotice>(), notices.of(roster(week(79))), "below the mark nothing is said")
     }
 
     @Test
-    fun `a command whose one login has used up its week says its sessions wait, and says when it is back`() {
+    fun `a command whose one login has used up its week says its sessions wait and when it comes back`() {
         val out = notices.of(roster(week(100))).single()
         assertTrue(
             out.text.startsWith(
@@ -48,37 +47,25 @@ class OneLoginNoticeTest {
             ),
             out.text,
         )
-        assertEquals(emptyList<LoginNotice>(), notices.back(roster(week(100))), "it is not back while it is out")
-
-        val back = notices.back(roster(week(3))).single()
-        assertEquals("solo's login can serve again: Work. Sessions that waited for it go on.", back.text)
-        assertEquals(out.key.removeSuffix(LOGIN_NOTICE_NONE), back.key.removeSuffix(LOGIN_NOTICE_BACK))
+        // Nov 17, 2026: that the login serves again is no longer a notice. Once it does, nothing is said.
+        assertEquals(emptyList<LoginNotice>(), notices.of(roster(week(3))))
     }
 
     @Test
-    fun `below the first mark a login that fills fast says when it runs out, and one that fills slowly says nothing`() {
+    fun `below the mark a login that fills fast says nothing`() {
         var at = ONE_LOGIN_AT
-        val paced = LoginNotices(WallClock { at * 1_000L })
-        assertEquals(emptyList<LoginNotice>(), paced.of(roster(week(40))), "one reading shows no pace")
-        at += 300L
-        assertEquals(emptyList<LoginNotice>(), paced.of(roster(week(43))), "five minutes of readings are too few")
-        at += 300L
-        // Seven points in ten minutes: the 53 that are left go in about an hour and a quarter.
-        val soon = paced.of(roster(week(47))).single()
-        assertTrue(
-            soon.text.startsWith(
-                "solo has one login, and Work has used 47% of its weekly limit. At the pace it is being used it " +
-                    "runs out around ",
-            ),
-            soon.text,
-        )
-        assertTrue(soon.text.endsWith(". When it does, sessions on solo wait."), soon.text)
-
-        at = ONE_LOGIN_AT
-        val slow = LoginNotices(WallClock { at * 1_000L })
-        slow.of(roster(week(40)))
+        val read = LoginNotices(WallClock { at * 1_000L })
+        // Seven points in ten minutes was a notice of its own until Nov 17, 2026. The mark is the one warning now.
+        assertEquals(emptyList<LoginNotice>(), read.of(roster(week(40))))
         at += 600L
-        assertEquals(emptyList<LoginNotice>(), slow.of(roster(week(41))), "a point in ten minutes leaves ten hours")
+        assertEquals(emptyList<LoginNotice>(), read.of(roster(week(47))))
+    }
+
+    @Test
+    fun `a notice an earlier build said at its second mark is the one notice of this build`() {
+        val near = notices.of(roster(week(96))).single()
+        assertEquals(near.key, notices.carried("solo|login|weekly limit|95"))
+        assertEquals(near.key, notices.carried(near.key), "a key of this build is itself")
     }
 
     @Test

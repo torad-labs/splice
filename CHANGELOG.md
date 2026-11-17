@@ -41,6 +41,10 @@
 ### Changed
 - A head's `/login` opens splice's accounts page instead of signing in inside the session. `<command> login` in a
   terminal still signs in.
+- **Login alerts are two, each said once.** The daemon's `alert_command` and webhook are told when a command's last
+  login that can serve has passed 80% of a limit, and when no login can serve. The warning about the pace below 80%,
+  the repeat at 95% and the notice that a login can serve again are gone: one login running out sent up to five
+  messages, and two of them were acted on.
 
 ### Fixed
 - A model picked with `/model` stays picked across a restart. At each start, and at `splice desktop on` and `off`,

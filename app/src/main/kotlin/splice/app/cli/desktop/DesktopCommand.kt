@@ -1,14 +1,13 @@
-// NEW: desktop-door (docs/specs/desktop-door.md, decision 4). `splice desktop`: point Claude Desktop's Code tab at
-// splice, or back at the person's own Claude login, and say what is so. The daemon holds the door, the key and the
-// heads, so every verb asks the running daemon (starting it when none runs) with the management key on disk, and
-// prints its answer: what changed, which model a session starts on and why, or what it found that made it refuse.
+// NEW: desktop-door (docs/specs/desktop-door.md, decision 4). `splice desktop`: open Claude Desktop's door to splice,
+// or close it, and say what is so. The daemon holds the door, the key and the heads, so every verb asks the running
+// daemon (starting it when none runs) with the management key on disk, and prints its answer: what changed, which
+// model a session starts on and why, what to set in Desktop's own environment store, or what made it refuse.
 //
 //   splice desktop [--json]                 whether Desktop is on, the door, the default model, the lineup, the heads
 //                                           left out and why, and the last turn through the door
-//   splice desktop on [--model <selector>]  write Claude Code's switch, the door and its key into
-//                                           ~/.claude/settings.json
-//   splice desktop off                      take out what `on` put in, and put back what it replaced
-//   splice desktop rotate-key               replace the desktop key
+//   splice desktop on [--model <selector>]  open the door, and say what to set once in Desktop's environment store
+//   splice desktop off                      close the door, and say what to remove there
+//   splice desktop rotate-key               replace the desktop key, and say the new one while Desktop is on
 package splice.app.cli.desktop
 
 import kotlinx.serialization.json.Json
@@ -74,6 +73,7 @@ internal class DesktopCommand(
         val state = parsed(reply) ?: return refused(UNREADABLE)
         JsonScalars.str(state, "said")?.let { out.line("splice: $it.") }
         if (verb == "on") JsonScalars.str(state, "default_from")?.let { out.line("splice: a session starts on $it.") }
+        DesktopSaid(out).env(state)
         return 0
     }
 

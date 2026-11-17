@@ -3,9 +3,10 @@
 //   POST /desktop/v1/messages[?beta=true]               a turn, behind the desktop key and no other
 //   POST /desktop/v1/messages/count_tokens[?beta=true]  a count, behind the desktop key and no other
 //   GET  /api/desktop                                   what `splice desktop` says, behind the management key
-//   POST /api/desktop/on                                {"model"?}: `splice desktop on [--model]`
+//   POST /api/desktop/on                                {"model"?}: `splice desktop on [--model]`, answered with
+//                                                       what to set in Desktop's environment store (desktop_env)
 //   POST /api/desktop/off                               `splice desktop off`
-//   POST /api/desktop/rotate-key                        `splice desktop rotate-key`
+//   POST /api/desktop/rotate-key                        `splice desktop rotate-key`, with desktop_env while on
 //
 // The door is on the control port, whose number splice.toml fixes, so its address is the same at every start. The
 // desktop key opens only the two door routes, and the management and turn keys do not open them.
@@ -16,8 +17,12 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.put
 import splice.app.control.api.ControlBodies
 import splice.app.control.mount.ControlGuard
 import splice.app.desktop.DESKTOP_ERROR_PREFIX
@@ -67,7 +72,18 @@ internal class DesktopRoutes(private val ports: ConsolePorts, private val guard:
                 JsonReply(HttpStatusCode.fromValue(done.status), ControlBodies.errorJson(done.why)).send(call)
             is DesktopAct.Done -> {
                 val said = mapOf("said" to JsonPrimitive(done.said), "default_from" to JsonPrimitive(done.default))
-                JsonReply(HttpStatusCode.OK, JsonObject(desktop.state() + said).toString()).send(call)
+                val env = done.env?.let { mapOf(DESKTOP_ENV to envJson(it)) }.orEmpty()
+                JsonReply(HttpStatusCode.OK, JsonObject(desktop.state() + said + env).toString()).send(call)
+            }
+        }
+    }
+
+    /** What to set in Desktop's environment store, each variable as `{name, value}`, in order. */
+    private fun envJson(env: List<Pair<String, String>>): JsonArray = buildJsonArray {
+        env.forEach { (name, value) ->
+            addJsonObject {
+                put("name", name)
+                put("value", value)
             }
         }
     }
@@ -95,6 +111,9 @@ internal class DesktopRoutes(private val ports: ConsolePorts, private val guard:
 internal fun interface DesktopDoing {
     suspend operator fun invoke(desktop: DesktopService): DesktopAct
 }
+
+/** The key an act's answer carries what to set in Desktop's environment store under. */
+internal const val DESKTOP_ENV = "desktop_env"
 
 // What the routes answer before the daemon has opened the door: its heads are still starting.
 private const val NOT_OPEN = "splice desktop: the door opens once the daemon's heads are up"

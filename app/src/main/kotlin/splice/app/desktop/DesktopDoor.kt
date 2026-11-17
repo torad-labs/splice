@@ -1,9 +1,10 @@
 // NEW: desktop-door (docs/specs/desktop-door.md, decisions 1, 2, 5 and 7). A turn of the Code tab's Claude Code,
 // answered under /desktop on the control port, which a restart does not move.
 //
-// The desktop key opens the door and no other key does. The model a request names picks the head (DoorRouting); a
-// model the door does not serve is refused here, in Anthropic's shape, and nothing is sent upstream. A turn with a
-// route goes to its head as the model that head runs it as (DoorRelay).
+// The desktop key opens the door and no other key does. While Desktop is off the door refuses every turn, saying how
+// to open it or leave it, and nothing is sent upstream. The model a request names picks the head (DoorRouting); a model
+// the door does not serve is refused here, in Anthropic's shape, and nothing is sent upstream. A turn with a route goes
+// to its head as the model that head runs it as (DoorRelay).
 package splice.app.desktop
 
 import io.ktor.http.HttpHeaders
@@ -12,6 +13,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.app.control.MgmtRoute
+import splice.client.desktop.DESKTOP_ENV_PLACE
+import splice.client.desktop.DesktopEnvironment
 import splice.core.client.SESSION_HEADER
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
@@ -31,7 +34,7 @@ internal data class DoorAsk(val request: JsonObject, val model: String, val sess
 internal class DesktopDoor(
     private val relay: ShareRelay,
     private val heads: DesktopHeads,
-    records: DesktopRecords,
+    private val records: DesktopRecords,
     private val key: DesktopKey,
     log: LogSink,
     clock: WallClock = WallClock(System::currentTimeMillis),
@@ -40,6 +43,8 @@ internal class DesktopDoor(
     private val json = Json { ignoreUnknownKeys = true }
     private val routing = DoorRouting(records)
     private val toHead = DoorRelay(relay, records, log, clock)
+    private val closed = "the door is off. `splice desktop on` opens it; to put the Code tab back on your own Claude " +
+        "login, remove ${DesktopEnvironment().names.joinToString()} in $DESKTOP_ENV_PLACE"
 
     /** `POST /desktop/v1/messages`, with or without `?beta=true`. */
     suspend fun messages(call: ApplicationCall) = answer(call, counting = false)
@@ -55,6 +60,7 @@ internal class DesktopDoor(
     }
 
     private suspend fun answer(call: ApplicationCall, counting: Boolean) {
+        if (!records.get().on) return voice.refuse(call, HttpStatus.FORBIDDEN, closed)
         val lineup = heads.lineup()
         val request = read(call, lineup) ?: return
         val model = JsonScalars.str(request, REQUEST_MODEL).orEmpty()
@@ -79,7 +85,7 @@ internal class DesktopDoor(
 internal const val DESKTOP_ERROR_PREFIX = "splice desktop: "
 
 private const val NO_DESKTOP_KEY =
-    "no desktop key, or one that was replaced; `splice desktop on` writes the current one"
+    "no desktop key, or one that was replaced; `splice desktop on` says the current one"
 private const val NO_HEAD = "no head is in the door; `splice desktop` says why"
 private const val NOT_JSON = "the request body is not a JSON object"
 private const val NOT_IN_DOOR = "is not in the door; `splice desktop` lists the models it serves"

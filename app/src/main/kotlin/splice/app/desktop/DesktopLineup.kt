@@ -5,6 +5,7 @@
 // Its models are each a selector, the ID the head's own /v1/models lists, in splice.toml's order of heads.
 package splice.app.desktop
 
+import splice.app.auth.API_KEY
 import splice.app.control.ManagedHead
 import splice.core.auth.AuthDescription
 import splice.core.model.ClientWindows
@@ -83,7 +84,18 @@ internal class DesktopHeads(private val running: RunningHeads) {
         val auth = described.getOrElse { failure ->
             return "its login could not be read (${SafeFailureText.render(failure)}); sign in with `$signIn`"
         }
-        return if (signedIn(auth)) null else "it is signed out; sign in with `$signIn`"
+        return when {
+            signedIn(auth) -> null
+            auth.kind == API_KEY -> keyless(auth)
+            else -> "it is signed out; sign in with `$signIn`"
+        }
+    }
+
+    /** Why a head on an API key with none is not in the door, and how to give it one: its key file, or the key store. */
+    private fun keyless(auth: AuthDescription): String {
+        auth.fields[KEY_FILE_FIELD]?.let { return "its key file $it holds no key" }
+        val name = auth.fields[KEY_ENV_FIELD] ?: return "it has no API key"
+        return "it has no API key; set one with `printf '%s' \"\$KEY\" | splice key set $name --stdin`"
     }
 
     /** A login that is there and has not expired: an access token that no refresh can renew any more is gone. */
@@ -92,3 +104,8 @@ internal class DesktopHeads(private val running: RunningHeads) {
 
 // The field a login's description carries once its refresh has been refused for good (an invalid grant).
 private const val EXPIRED_FIELD = "refresh_latched"
+
+// The fields an API-key login's description names its key's place by: the key file it reads, or the variable it is
+// stored under.
+private const val KEY_FILE_FIELD = "key_file"
+private const val KEY_ENV_FIELD = "env_var"

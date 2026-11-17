@@ -335,8 +335,6 @@ public class Daemon(
         ) ?: return closeListeners()
         // MCP hub step 6: each installed Claude Code version's --plugin-dir-no-mcp verdict, checked in the background.
         controlPlane.pluginFlagChecks.request()
-        // While Desktop is on, its picker follows the heads this start serves.
-        desktop.watch(controlPlane.probeScope)
         prices.start()
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")

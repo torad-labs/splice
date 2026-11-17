@@ -17,16 +17,10 @@ internal class DesktopService(
     private val heads: DesktopHeads,
     private val records: DesktopRecords,
 ) {
-    /** While Desktop is on, the file's picker made to list the heads splice serves now. */
-    suspend fun follow() {
-        switch.follow(heads.lineup())
-    }
-
     /** What `splice desktop --json` says: whether Desktop is on, the door, the default model, the lineup, each head
      *  left out with the reason, and the last turn through the door. */
     suspend fun state(): JsonObject {
         val lineup = heads.lineup()
-        switch.follow(lineup)
         val record = records.get()
         return buildJsonObject {
             put("on", record.on)

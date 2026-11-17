@@ -97,8 +97,15 @@ folder. So on the door lane splice lays one file in the person's folder, `comman
 - `splice claude head` and uninstalling splice take splice's file out, and only splice's.
 - The file reads sensibly in a session that has no hook to catch it: its text says what it is for and how to open
   the accounts page (`splice console`).
-- In a session where Claude Code's own `/login` is on (one not started by splice that shares the folder), `/login`
-  stays Claude Code's own. If the file would take its place there, the item goes back to its lead.
+- The file is in the person's own folder, so a Claude Code that splice did not start and that shares the folder (an
+  editor's extension, a plain `claude`) runs it too: Claude Code 2.1.326 lists its own `/login` beside splice's and
+  runs the file for either row (see the table). That is accepted while `claude` is on the door, and it is said. The
+  file's text, which is what such a session submits, says that `/login` is splice's on this machine and names both
+  ways on: `splice console` for splice's accounts, and `claude auth login` for Claude Code's own sign-in to
+  Anthropic. `splice claude` says the same in one line while `claude` is on the door, and so does the README where
+  it describes the door.
+- The hook catches `/login` as Claude Code hands it over: 2.1.326 hands the bare command, and the file's text is
+  caught too.
 
 A head keeps its `/login` where it already is, in the head's own folder.
 

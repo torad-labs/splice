@@ -4,7 +4,8 @@
 //   rows     since | from, to; person                 every row of the window, oldest first: {"window", "rows"}
 //   report   since | from, to; by; format             the window's rows grouped `by` person (the default), team,
 //                                                     current-team, day, model or device, as json (the default),
-//                                                     csv or md
+//                                                     csv or md; the json also carries what the providers paid
+//                                                     for by the hour cost over the window, and its totals (F10)
 package splice.server.ledger
 
 import io.ktor.http.HttpStatusCode
@@ -18,6 +19,7 @@ import splice.core.topology.ServerConfig
 import splice.server.PERSON
 import splice.server.ServerAnswer
 import splice.server.ServerPeople
+import splice.server.UpstreamApi
 import java.time.Clock
 
 public class UsageApi internal constructor(
@@ -25,9 +27,14 @@ public class UsageApi internal constructor(
     people: ServerPeople,
     server: ServerConfig,
     clock: Clock,
+    /** The providers behind the server, for what those paid for by the hour cost (F10). */
+    private val upstreams: UpstreamApi,
+    /** When the host came up, read at each report: the kernel's boot time. */
+    boot: HostBoot = KernelBoot(),
 ) {
     private val windows = UsageWindows(clock)
     private val report = UsageReport(people, server.teams, server.reference)
+    private val fixed = FixedMeter(boot, clock)
     private val json = Json { encodeDefaults = true }
 
     /** The rows of the window [asked] names, only one person's when it names `person`. */
@@ -62,7 +69,7 @@ public class UsageApi internal constructor(
     }
 
     private fun reportOf(window: UsageWindow, by: ReportBy, format: ReportFormat): ServerAnswer {
-        val body = report.of(ledger.between(window.from, window.to), window, by)
+        val body = report.of(ledger.between(window.from, window.to), window, by, fixed.of(upstreams.hourly(), window))
         if (format == ReportFormat.JSON) return ServerAnswer.Done(HttpStatusCode.OK, body)
         return ServerAnswer.Text(HttpStatusCode.OK, format.contentType, UsageTables.text(body, format))
     }

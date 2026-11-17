@@ -53,6 +53,9 @@ goal = "A team's server relays each person's Claude Code telemetry to the operat
 [feature."door-default"]
 goal = "One command, claude, reaches every model a person is signed in to: it runs on the door Claude Desktop already uses, /model lists the models of signed-in accounts, /login opens splice's accounts page where any account is signed in, a fresh install works this way from the first run, and whoever still starts a session through a head's own command is told that those commands are going away. Spec: docs/specs/door-default.md."
 
+[feature."capabilities"]
+goal = "A capability is a piece of work splice runs around a session's turn, declared in splice.toml and run by a worker that can live outside splice: splice calls it by rule, holds the turn while it works, and puts its text into the session's first user message, where it stays on every later request; a failure lets the turn go on or refuses it, as declared (docs/specs/harness.md, decisions 1 to 6 and 10)."
+
 [[row]]
 id = 'server-listener'
 title = 'A [server] listener that answers only keys'
@@ -1083,4 +1086,134 @@ reviews = [
 ]
 notes = [
   '2026-11-17 00:03 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'capability-http'
+title = "A capability with an HTTP worker is called on a session's first turn, and its text reaches the provider"
+feature = 'capabilities'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "A capability declared in splice.toml ([capabilities.<name>], docs/specs/harness.md decisions 1 to 5) with an HTTP worker is called by the default rule: a thread's first request that streams and carries tools, on the main thread, from an interactive Claude Code, with no assistant message in its history. splice posts the worker one JSON object (capability, session, turn, and the fields the declaration names and no others) with the worker's own key from auth_env as a bearer, and none of the session's or the provider's credentials. While the worker answers in JSON lines (progress lines, then one result), the turn is held the way a usage-limit hold holds one: the response is open and pinged at once, and the request goes to the provider only when the worker is done. The result's text reaches the provider as a text block of its own at the end of the first user message, after the client's blocks, which are not changed, and it names neither splice nor a model. A subagent's request, a print-mode run, a session first seen mid-conversation, a side request without tools, and any request on a head the capability is not switched on for go to the provider as they do today, and the worker is not asked. Fill in the rows of the spec's table (Seen with Claude Code) that this item can answer, from a real session."
+checks = [
+  'bun test ./.campaign/checks/harness/http.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 04:30 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'capability-config'
+title = 'Boot fails closed on a wrong capability declaration, and splice status lists what is declared'
+feature = 'capabilities'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'capability-http',
+]
+guard = false
+spec = "docs/specs/harness.md decision 1. A wrong declaration is a config finding and the daemon does not start: an unknown key, a head splice.toml does not have, a value outside the lists (call, when's keys and values, place, may, color, timeout_s outside 1 to 3600, on_failure, send), a place and may that do not fit, turn any with a place, a worker kind or a built-in worker splice does not have, an HTTP worker with no url, a name that is not lowercase letters, digits and -. Every finding is listed at once, each naming its capability and the key or value at fault and never a value that could be a secret; the well-formed tables beside them are not named. A well-formed file boots. splice status lists each declared capability on a line of its own: its name, the heads it is on for (off when none) and its worker. A capability on for no head is asked for nothing. With none declared, splice status says nothing of capabilities and every request is the bytes it is today. The manager skill's reference and the README say how a capability is declared."
+checks = [
+  'bun test ./.campaign/checks/harness/config.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 04:31 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'capability-rule'
+title = 'The rule chooses the requests a capability is called for'
+feature = 'capabilities'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'capability-http',
+]
+guard = false
+spec = "docs/specs/harness.md decision 2. when chooses the requests a capability is called for, and a request has to meet all of it: mode (interactive, print, any) from the user agent's client name compared whole; thread (main, subagent, any) from Claude Code's agent header, each subagent a thread of its own by its agent id, with a first turn of its own; models, the request's model after splice resolved it; turn first or any, where any is for a capability that places nothing and is called on every turn, a session first seen mid-conversation included, and each of those turns can be refused. A thread's first turn is decided once. Where two capabilities' rules name one request they run in the order splice.toml declares them, one at a time, and both blocks are placed in that order and stay on later turns. splice's own conditions hold for every rule: never for Claude Code's auto-mode review, and never for a turn that holds a model-server slot of its own."
+checks = [
+  'bun test ./.campaign/checks/harness/rule.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 04:31 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'capability-later-turns'
+title = "A capability's text stays in the first user message on every later request"
+feature = 'capabilities'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'capability-http',
+]
+guard = false
+spec = "docs/specs/harness.md decisions 5 and 10. The client never saw the block a capability added, so its history does not hold it. splice stores the text with a hash of the first user message's content as the client sent it (cache_control marks left out, since Claude Code moves them) and adds the same block, through one function, to every request of the thread whose first user message has that hash: later turns and the request that compacts the conversation; the worker is not asked again. After a compaction the first message is the summary, and nothing is added. A subagent's request goes as it came. A thread first seen mid-conversation is never called, not even for the one message a compaction leaves. Every state a thread can be in for a capability (called and waiting, placed, failed, never called) is on disk under splice's state folder before the first turn goes upstream, so restarting the daemon changes no live session's request; switching a capability off stops new calls and a session that carries a block keeps it. A turn's record on the perf route gains capability_text_chars (the size of the capabilities' text the request carried, 0 with none), held_on (the capabilities it was held on, in order, joined by commas, null when not held) and held_ms."
+checks = [
+  'bun test ./.campaign/checks/harness/later.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 04:31 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'capability-failure'
+title = 'A capability that fails lets the turn go on or refuses it, as declared'
+feature = 'capabilities'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'capability-http',
+]
+guard = false
+spec = "docs/specs/harness.md decisions 3 and 6. The worker fails (cannot be reached, answers anything but 200, sends a line that is not one of the three, ends with no result, refuses where it may only add) or passes timeout_s: with on_failure open the turn goes to the provider with today's bytes and the thread is not asked for again; with closed the turn is refused, naming the capability, and nothing goes to the provider. A refusal from a capability that may refuse refuses the turn with the worker's reason; a refused turn was not the thread's first turn, so the next request that meets the rule is called. A capability with place none adds nothing and lets a turn pass as it came or refuses it. The response is already open when a turn is refused, so the refusal reaches Claude Code as the stream's error in Anthropic's error shape. The work is stopped and nothing is placed when the client leaves (nothing goes to the provider), when a second request of the same thread arrives while the first waits (both go on as today), and when the head stops (the held turn goes to the provider as today and ends inside the drain). The log says which capability failed and why, and never holds the worker's key. A turn over its budget is refused before the capability is called."
+checks = [
+  'bun test ./.campaign/checks/harness/failure.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 04:31 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'capability-dialects'
+title = "A capability's text is placed in each dialect's own shape"
+feature = 'capabilities'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'capability-later-turns',
+]
+guard = false
+spec = "docs/specs/harness.md decision 5. The text goes into the first user message in the dialect's own shape for its provider, behind one seam each dialect implements, so no shared file learns a vendor's format. On a head that speaks OpenAI's Chat Completions and on one that speaks the Responses API, the provider gets the text after what the person typed, in the conversation's opening user turn (a dialect that sends each text block as an item of its own sends one more user item after them, before the first answer), and gets the same opening on every later turn, with the worker asked once. A head the capability is not on for sends what it sends today. A dialect that cannot place the text leaves the body alone, and the turn's record says so."
+checks = [
+  'bun test ./.campaign/checks/harness/dialects.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 04:31 CT: added; 1 of 1 checks fail, as they should before the work',
 ]

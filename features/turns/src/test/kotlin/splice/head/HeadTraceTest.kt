@@ -32,6 +32,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.config.LAUNCH_PROOF_HEADER
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.storage.ActivityDays
@@ -179,6 +180,8 @@ class HeadTraceTest {
         runBlocking {
             val response = client.post("http://127.0.0.1:$port/v1/messages") {
                 header("Authorization", "Bearer $MGMT_KEY")
+                // as a session splice launched sends it: the turn key, in a header whose name says nothing
+                header(LAUNCH_PROOF_HEADER, MGMT_KEY)
                 header("Content-Type", "application/json")
                 header("x-claude-code-session-id", session)
                 setBody(body)
@@ -223,6 +226,7 @@ class HeadTraceTest {
         assertEquals("POST", turn.at("client", "method"))
         assertEquals("/v1/messages", turn.at("client", "path"))
         assertEquals("[redacted]", turn.at("client", "headers", "Authorization"))
+        assertEquals("[redacted]", turn.at("client", "headers", LAUNCH_PROOF_HEADER))
         assertEquals(streamed, turn.at("answer", "body"), "what the client read, frame for frame")
         assertEquals("ok", turn.at("outcome"))
         assertEquals("1", turn.at("rounds"))

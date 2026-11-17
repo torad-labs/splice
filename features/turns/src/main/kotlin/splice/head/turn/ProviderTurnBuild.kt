@@ -13,6 +13,7 @@ import splice.core.turn.TurnCompaction
 import splice.head.HeadDeps
 import splice.head.compaction.CompactionReplay
 import splice.head.turn.review.AutoModeReview
+import splice.head.turn.review.SideRequest
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
 
@@ -23,21 +24,30 @@ internal class ProviderTurnBuild(
 ) {
     private val prompts = TurnPrompts(provider, deps)
     private val review = AutoModeReview()
+    private val side = SideRequest()
 
-    fun build(parsed: AnthropicTurnBody, compact: Boolean, sessionId: String?, perf: TurnPerf): BuiltTurn {
+    /** [client] is the client's user agent, which says whether the request is Claude Code's. */
+    fun build(
+        parsed: AnthropicTurnBody,
+        compact: Boolean,
+        sessionId: String?,
+        perf: TurnPerf,
+        client: String?,
+    ): BuiltTurn {
         val effective = deps.seams.session.compactionTail.resolve(
             compact,
             provider.catalog.stripSuffixes(parsed.typed.model),
             sessionId,
         )
-        // Claude Code's auto-mode review goes upstream with the policy it wrote and nothing of the head's.
-        val reviewing = review.recognized(parsed.typed, perf)
+        // Claude Code's auto-mode review and its side requests go upstream with what Claude Code wrote and nothing of
+        // the head's.
+        val aside = review.recognized(parsed.typed, perf) || side.recognized(parsed.typed, client, perf)
         val base = provider.buildTurn(parsed, compact, sessionId)
         return endingOnFailure(base) {
             val withTail = tailed(base, effective, compact)
             // AFTER the tail, so the compaction request hash and its applied check keep reading the
             // provider body BEFORE any tail — a retry must still match its recording byte for byte.
-            if (reviewing) {
+            if (aside) {
                 withTail
             } else {
                 prompts.applySlotPrompt(prompts.applySystemPrompt(withTail, sessionId, perf), sessionId, perf)

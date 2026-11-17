@@ -70,7 +70,7 @@ class ReplayHashRoutingTest {
     private fun hashesOfTwoTries(tmp: Path, provider: Provider): List<String?> {
         val build = ProviderTurnBuild(provider, headDeps(tmp), CompactionReplay())
         val parsed = AnthropicBodyParse().parse(REQUEST).getOrThrow()
-        return List(2) { build.build(parsed, compact = true, sessionId = "session-v4166", perf = TurnPerf()) }
+        return List(2) { build.build(parsed, compact = true, sessionId = "session-v4166", TurnPerf(), client = null) }
             .map { it.meta.compaction.requestHash }
     }
 

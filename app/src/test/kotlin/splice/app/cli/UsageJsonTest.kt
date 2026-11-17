@@ -27,7 +27,8 @@ class UsageJsonTest {
         """"display_name":"Claude","kind":"client","heads":["claude-splice"]}"""
 
     private val reply = """{"accounts":[$single,$pooled,$native],""" +
-        """"head_pools":{"claude-splice":{"account_pool":{"next_target_label":"native:claude"}}}}"""
+        """"head_pools":{"claude-splice":{"account_pool":""" +
+        """{"next_target_label":"native:claude","usual_model":"claude-opus-5-5"}}}}"""
 
     @Test
     fun `each command lists its logins by the names its next login is given in, with their plan windows`() {
@@ -48,8 +49,9 @@ class UsageJsonTest {
             """"seven_day":null,"models":[],"held":[],"observed_at_epoch_seconds":null}"""
         assertEquals(
             """{"version":1,"commands":[""" +
-                """{"head":"claude-splice","command":"claude","next":"native:claude","accounts":[$work,$own]},""" +
-                """{"head":"claudex","command":"claudex","next":null,"accounts":[$chatgpt]}]}""",
+                """{"head":"claude-splice","command":"claude","next":"native:claude",""" +
+                """"next_model":"claude-opus-5-5","accounts":[$work,$own]},""" +
+                """{"head":"claudex","command":"claudex","next":null,"next_model":null,"accounts":[$chatgpt]}]}""",
             document.toString(),
         )
     }

@@ -18,6 +18,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -44,6 +45,7 @@ import splice.head.admission.AdmissionResponses
 import splice.head.headDeps
 import splice.head.turn.review.AUTO_MODE_REVIEW
 import splice.head.turn.review.AUTO_MODE_REVIEW_NEAR_MISS
+import splice.head.turn.review.SIDE_REQUEST
 import splice.sessions.prompt.SLOT_PROMPT_CHANGED
 import splice.sessions.prompt.SlotInstructions
 import splice.sessions.teams.Team
@@ -71,6 +73,25 @@ private const val REWORDED_POLICY = "You are the security monitor for an autonom
 private fun reviewRequest(system: String): String =
     """{"model":"claude-kimi--$MODEL","stream":false,"max_tokens":64,""" +
         """"system":[{"type":"text","text":"$system"}],"messages":[{"role":"user","content":"Bash: rm -rf build"}]}"""
+
+private const val CLAUDE_CODE = "claude-cli/2.1.326 (external, sdk-cli)"
+private const val API_CALLER = "python-httpx/0.27.0"
+private const val SUMMARY_INSTRUCTION = "Write a short summary label describing what these tool calls accomplished."
+
+/** A request with no system text and no tools, as Claude Code sends a probe. */
+private const val PROBE =
+    """{"model":"claude-kimi--$MODEL","stream":false,"max_tokens":1,"messages":[{"role":"user","content":"quota"}]}"""
+
+/** A session's turn: Claude Code's own prompt in the system field, and tools. */
+private const val TURN_WITH_TOOLS =
+    """{"model":"claude-kimi--$MODEL","stream":false,"max_tokens":16,""" +
+        """"system":[{"type":"text","text":"house rules"}],"messages":[{"role":"user","content":"hello"}],""" +
+        """"tools":[{"name":"Read","description":"Read a file.","input_schema":{"type":"object"}}]}"""
+
+/** A request whose system text is [instruction] and that carries no tools, as Claude Code sends a side request. */
+private fun sideRequest(instruction: String): String =
+    """{"model":"claude-kimi--$MODEL","stream":false,"max_tokens":64,""" +
+        """"system":[{"type":"text","text":"$instruction"}],"messages":[{"role":"user","content":"Tool: Bash"}]}"""
 
 private class SlotTestAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("token", "account")
@@ -150,11 +171,40 @@ class SlotPromptTurnTest {
         assertNull(counters[AUTO_MODE_REVIEW])
     }
 
+    @Test
+    fun `a Claude Code request without tools reaches the upstream with its own instruction and nothing of the head`() {
+        bindBuilder("run the gate")
+        val (turn, counters) = turn(SystemPromptMode.REPLACE, sideRequest(SUMMARY_INSTRUCTION), CLAUDE_CODE)
+        assertEquals(listOf(SUMMARY_INSTRUCTION), systemTexts(turn), "neither the replacing layer nor the slot text")
+        assertEquals(1L, counters[SIDE_REQUEST])
+        assertNull(counters[SYSTEM_PROMPT_LAYERS], "no layer was applied, so none is counted")
+
+        val (probe, _) = turn(SystemPromptMode.REPLACE, PROBE, CLAUDE_CODE)
+        assertFalse("system" in probe.requestBody, "a request with no system text gains none")
+        val (appended, _) = turn(SystemPromptMode.APPEND, sideRequest(SUMMARY_INSTRUCTION), CLAUDE_CODE)
+        assertEquals(listOf(SUMMARY_INSTRUCTION), systemTexts(appended), "an appending layer stays out too")
+    }
+
+    @Test
+    fun `a Claude Code turn that carries tools, and another client's request without them, get the head layers`() {
+        val (turn, counters) = turn(SystemPromptMode.REPLACE, TURN_WITH_TOOLS, CLAUDE_CODE)
+        assertEquals(listOf("N"), systemTexts(turn))
+        assertNull(counters[SIDE_REQUEST])
+
+        val (other, otherCounters) = turn(SystemPromptMode.REPLACE, sideRequest(SUMMARY_INSTRUCTION), API_CALLER)
+        assertEquals(listOf("N"), systemTexts(other), "an operator's prompt rides on an API caller's request")
+        assertNull(otherCounters[SIDE_REQUEST])
+    }
+
     private fun systemTexts(turn: BuiltTurn): List<String> = turn.requestBody.getValue("system").jsonArray
         .map { it.jsonObject.getValue("text").jsonPrimitive.content }
 
     /** One request through a head wired with the shared [slots], and the turn's perf counters. */
-    private fun turn(headMode: SystemPromptMode, body: String = REQUEST): Pair<BuiltTurn, Map<String, Long>> {
+    private fun turn(
+        headMode: SystemPromptMode,
+        body: String = REQUEST,
+        userAgent: String? = null,
+    ): Pair<BuiltTurn, Map<String, Long>> {
         val deps = headDeps(
             tmp = tmp,
             upstream = UpstreamClient(totalTimeoutMs = 1_000),
@@ -194,6 +244,7 @@ class SlotPromptTurnTest {
             client.post("/v1/messages") {
                 header(HttpHeaders.ContentType, "application/json")
                 header("x-claude-code-session-id", SESSION)
+                userAgent?.let { header(HttpHeaders.UserAgent, it) }
                 setBody(body)
             }
         }

@@ -63,20 +63,31 @@ internal class PassthroughUsage {
             reported += UsageField.CACHED
             measured += UsageMeasure.CACHE_READ
         }
-        cacheCreationTokens(u)?.let {
-            cacheCreation = it
-            cacheCreationHourly = hourlyCacheCreationTokens(u).coerceAtMost(it)
-            reported += UsageField.CACHE_WRITE
-            measured += UsageMeasure.CACHE_WRITE
-            measured -= UsageMeasure.CACHE_WRITE_1H
-            val hourly = JsonScalars.firstLong(u["cache_creation"] as? JsonObject, HOURLY_WRITE_KEY)
-            if (hourly?.let { value -> value in 0L..it } == true) measured += UsageMeasure.CACHE_WRITE_1H
-        }
+        cacheCreationTokens(u)?.let { harvestCacheWrite(u, it) }
         JsonScalars.firstLong(u, "output_tokens")?.let {
             outputTokens = it
             reported += UsageField.OUTPUT
             measured += UsageMeasure.OUTPUT
         }
+    }
+
+    /** One usage object's cache write of [total] tokens, and the share of it held for an hour.
+     *
+     *  Nov 17, 2026: Anthropic's message_delta repeats the write's total with no breakdown of its own (the breakdown
+     *  is in message_start, and again under `iterations`). Reading that as "no hourly share" put every 1-hour write
+     *  of a streamed turn back at the five-minute rate, and no perf row carried the hourly count. The split an
+     *  earlier usage object gave for the same total still describes it, so it is kept. */
+    private fun harvestCacheWrite(u: JsonObject, total: Long) {
+        val breakdown = u["cache_creation"] as? JsonObject
+        val repeated = breakdown == null && total == cacheCreation && UsageMeasure.CACHE_WRITE in measured
+        cacheCreation = total
+        reported += UsageField.CACHE_WRITE
+        measured += UsageMeasure.CACHE_WRITE
+        if (repeated) return
+        cacheCreationHourly = hourlyCacheCreationTokens(u).coerceAtMost(total)
+        measured -= UsageMeasure.CACHE_WRITE_1H
+        val hourly = JsonScalars.firstLong(breakdown, HOURLY_WRITE_KEY)
+        if (hourly != null && hourly in 0L..total) measured += UsageMeasure.CACHE_WRITE_1H
     }
 
     private fun inclusiveMeasured(): Set<UsageMeasure> = if (

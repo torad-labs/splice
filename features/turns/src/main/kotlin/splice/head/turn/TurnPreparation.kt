@@ -322,7 +322,8 @@ internal class TurnPreparation(
         val compactProbe = compactClassifier.classifyCompact(parsed.typed)
         deps.stores.shadow.record(parsed.typed, compactProbe)
         perf.mark(PerfKeys.PARSE)
-        val fromProvider = providerTurns.build(parsed, compactProbe.compact, arrival.sessionId, perf)
+        val client = call.request.headers[HttpHeaders.UserAgent]
+        val fromProvider = providerTurns.build(parsed, compactProbe.compact, arrival.sessionId, perf, client)
         return providerTurns.endingOnFailure(fromProvider) { handedOn(call, parsed, arrival, perf, fromProvider) }
     }
 

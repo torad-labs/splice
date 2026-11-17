@@ -1,5 +1,25 @@
 # Changelog
 
+## splice v0.6.2: Claude Desktop's door leaves your settings file alone, your own model picker included - 2026-11-16
+
+### Highlights
+- **0.6.1's Desktop fix, without its slip.** 0.6.1 moved the door for Claude Desktop's Code tab out of
+  `~/.claude/settings.json`, so turning it on no longer moves your terminal sessions. But its cleanup of what an
+  older version wrote there also took out your `model` setting when your own `modelPicker` listed that model. 0.6.1
+  was never published, and 0.6.2 carries everything in it with that fixed. Its notes are below.
+
+### Upgrading from 0.6.0
+- Run the install command again, or `splice upgrade`. Nothing in `splice.toml` has to change. The steps under 0.6.1
+  below apply: run `splice desktop on` and set the variables it prints in Claude Desktop → Settings → Claude Code →
+  Environment variables.
+
+### Fixed
+- **A model picker of your own, and your pick from it, are left alone.** When the daemon starts, and on
+  `splice desktop on` and `off`, splice takes out of your settings file what an older version's `on` wrote there.
+  It counted every row of the file's `modelPicker` as one the door had written, so a picker of your own lost you the
+  `model` you had picked from it. A picker's rows now count as the door's only while the door is still in the file.
+  A model that is one of splice's door selectors is still taken out, since no terminal session can run it.
+
 ## splice v0.6.1: Claude Desktop's door no longer touches your terminal sessions - 2026-11-16
 
 ### Highlights

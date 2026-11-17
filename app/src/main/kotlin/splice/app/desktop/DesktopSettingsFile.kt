@@ -81,6 +81,8 @@ private const val POSIX_VIEW = "posix"
 // The status file of this process, whose `Umask:` line holds the umask on Linux.
 private const val PROC_STATUS = "/proc/self/status"
 private const val UMASK_FIELD = "Umask:"
+
+// why: the kernel writes the umask in octal (`Umask:\t0002`), so it is read in base 8.
 private const val OCTAL = 8
 
 // why: rw-rw-rw-, the mode Node gives a file it creates before the umask takes its share, as Claude Code creates this

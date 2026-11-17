@@ -144,7 +144,7 @@ public const val DESKTOP_KEY_PREFIX: String = "splice-desktop-"
 internal const val DESKTOP_PICKER: String = "modelPicker"
 
 /** The file's key for the model the person picked, in the Code tab or in Claude Code. */
-public const val DESKTOP_FILE_MODEL: String = Keys.MODEL
+internal const val DESKTOP_FILE_MODEL: String = Keys.MODEL
 
 private const val ENV = "env"
 private const val PICKER = DESKTOP_PICKER

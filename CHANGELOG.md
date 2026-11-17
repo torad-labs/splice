@@ -28,6 +28,10 @@
 ### Changed
 - A head's `/login` opens splice's accounts page instead of signing in inside the session. `<command> login` in a
   terminal still signs in.
+- **Login alerts are two, each said once.** The daemon's `alert_command` and webhook are told when a command's last
+  login that can serve has passed 80% of a limit, and when no login can serve. The warning about the pace below 80%,
+  the repeat at 95% and the notice that a login can serve again are gone: one login running out sent up to five
+  messages, and two of them were acted on.
 
 ### Fixed
 - A model picked with `/model` stays picked across a restart. At each start, and at `splice desktop on` and `off`,
@@ -56,6 +60,10 @@
   its default, a quarter of the machine: on a 120 GiB machine one `splice trace --last 4000 --json` grew to 20 GiB.
   A command's heap now stops at 4 GiB, or at Java's own quarter on a machine under 16 GiB, and `splice trace` asked
   for more turns than fit says so and what to ask for instead. `SPLICE_CLI_JVM_OPTS` replaces the ceiling.
+- **`claude -r NAME` goes on with another command's session.** A session resumed by name that another command wrote
+  was refused, with the `-r <id>` to type instead. The name now goes on as that id does: the session continues as
+  a copy on this command's model, the original stays as it was, and the launch says both ids. Launched by the same
+  name again, the command goes on with that copy and makes no other.
 
 ## splice v0.6.3: Claude Code's side requests keep their own instruction, a laptop links a team server's commands, and a 1-hour cache write keeps its price - 2026-11-17
 

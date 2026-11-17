@@ -10,7 +10,9 @@ Getter: on a session's first turn, the provider's fast model explores the folder
 the request with what it found.
 
 This spec covers three features, built in this order: capabilities (decisions 1 to 6), what a held turn tells the
-person (decisions 7 and 8), and the Context Getter (decision 9).
+person (decisions 7 and 8), and the Context Getter (decision 9). A second round makes the harness a module of its own
+(decision 11), lets the model call a capability itself (decision 12), and adds a worker reached through an MCP
+server (decision 13).
 
 ## What a person sees
 
@@ -47,8 +49,8 @@ worker = { kind = "http", url = "http://127.0.0.1:9000/check", auth_env = "POLIC
 - The table's name is the capability's name: lowercase letters, digits and `-`.
 - `heads`: the heads it is switched on for, by key. Absent or empty, it is declared and off. Switching a
   capability off stops new calls only: a session that already carries its result keeps it (decision 5).
-- `call`: who may call it. `"rule"` is splice, by the rule in `when`. A capability the agent calls itself is not
-  in this change, and `"agent"` or `"both"` is a finding.
+- `call`: who may call it. `"rule"` is splice, by the rule in `when`. `"agent"` is the model, through a tool splice
+  offers it (decision 12), and `"both"` is either.
 - `when`: the rule, from facts splice already reads from a request (decision 2).
 - `place`: where the result goes. `"first-user-message"`, or `"none"` for a capability that only lets a turn pass
   or refuses it.
@@ -66,7 +68,9 @@ worker = { kind = "http", url = "http://127.0.0.1:9000/check", auth_env = "POLIC
 Boot fails closed. A declaration that names an unknown key, a head splice.toml does not have, a value outside the
 lists above, a `place` and `may` that do not fit (`"none"` with anything but `"refuse"`, text with no place), a
 `turn = "any"` with `place = "first-user-message"`, a worker kind or a built-in worker splice does not have, or an
-HTTP worker with no `url`, is a config finding: every one is listed at once, and the daemon does not start. Each finding names its capability
+HTTP worker with no `url`, an MCP worker with no `server` or `tool`, a `tool` with `call = "rule"`, a `call` of
+`"agent"` or `"both"` with no `tool` or on a head whose dialect is not Anthropic's Messages, or `place` or
+`when.turn` named with `call = "agent"`, is a config finding: every one is listed at once, and the daemon does not start. Each finding names its capability
 and the key or value at fault, never a value that could be a secret; a `place` and `may` that do not fit names
 `place`.
 
@@ -128,7 +132,7 @@ first user message, its text blocks joined, as the client sent them.
 **Built in.** `worker = { kind = "builtin", name = "<name>" }` names a worker that ships with splice. The Context
 Getter's is the first (decision 9).
 
-A worker reached through an MCP server is not in this change.
+**MCP.** A worker reached through an MCP server is decision 13.
 
 ### 5. Where the result goes
 
@@ -205,9 +209,12 @@ main turn of an interactive session, the result goes into the first user message
 and its message is `Exploring files with <the fast model's label>`.
 
 **What runs.** A normal Claude Code session in print mode (`claude -p`), in the session's folder, on the head's
-fast model: by default the head's small tier, or `worker.model`. Nothing about its tools or its thinking is
-restricted. splice starts it the way it starts any session on that head, so it has the head's login, the MCP hub's
-tools and the person's settings, and mints its session id. Its input is the first user message as the client sent
+fast model: by default the head's small tier, or `worker.model`. Nothing about its tools is restricted. It thinks
+at its own model's level: the person's Claude Code setting for that model when their settings name one
+(`modelSettings.<model>.effortLevel`), else Claude Code's own default for it, and never the head's effort or a
+launcher's. A gather of this repo at `xhigh` thought 140k tokens and was still running after 15 minutes; at Haiku's
+own level it took 81 s. splice otherwise starts it as it starts any session on that head: the head's login, the MCP
+hub's tools and the person's settings, and it mints its session id. Its input is the first user message as the client sent
 it, inside a prompt that asks for what another agent needs to start on that request: the files that matter with
 paths and line ranges, the entry points, how the project builds and tests, and what in the repo's own instructions
 applies, as facts with their locations, changing nothing and not doing the task. Its result is the final result of
@@ -218,7 +225,9 @@ they work for. A request with that header never calls a capability, casts no vot
 its record names the session it worked for.
 
 **What the person sees.** The held turn says `Exploring files with <label>`, then each step the gatherer reports
-(its tool-use summaries), and `Exploring stopped, continuing without it` if it stops.
+(its tool-use summaries), and `Exploring stopped, continuing without it` if it stops. The summaries come from Claude
+Code itself: the gatherer runs with `CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES=1`, and each `tool_use_summary` event of
+its stream is a progress message.
 
 **When it does not run.** Beside decision 2's rule: the session's folder cannot be found (a session relayed from
 another machine has none here), or the head has no login that can serve the fast model. Each is recorded as not
@@ -226,8 +235,9 @@ called, with the reason.
 
 **Limits.** splice owns the gatherer's process: it is ended at the time limit, when the client leaves, when the
 head stops and when the daemon shuts down, and it runs under a deadline of its own, so a killed daemon leaves none
-behind. The default time limit and whether the Context Getter is switched on by default come from measuring it on
-real work, before the feature is released.
+behind. The default time limit is set from gathers measured on real work, and the table at the end of this spec
+says which numbers it came from. Whether the Context Getter is switched on by default is decided from the same
+measurements, before the feature is released.
 
 **On the door.** A session on the door (`docs/specs/door-default.md`) is gathered for on the head that holds the
 waiting turn: the gatherer names a selector of that head, so the door sends it there.
@@ -241,12 +251,104 @@ time to the first byte can be read without it. A turn the person left during a h
 with those fields and the outcome a turn the client left has today. A gatherer's records carry the session it
 worked for, so the two can be joined.
 
+### 11. The harness is a module of its own
+
+`:features-harness` (package `splice.harness`) holds the capabilities, their rule, their workers, the built-in
+Context Getter and the agent's call. `:features-turns` holds the turn and the held turn, and knows the harness only
+through a port it owns: called when a thread is first seen, before each request goes upstream, and for each round
+the agent's call answers. The harness implements that port, so it depends on `:features-turns` and never the other
+way. `:app` wires the two. The module law lists the harness's edges: `:core`, `:features-turns`,
+`:features-sessions`, `:features-launch`, `:integrations-claude-code`, `:integrations-http`,
+`:integrations-upstream` and `:integrations-mcp` (the daemon's side of the MCP hub; `:integrations-mcp-hub` is the
+hub's own native program, which nothing depends on). Nothing under `features/turns` is in `splice.harness`, and
+nothing in `:features-turns` names a capability's worker, its rule or the Context Getter.
+
+The held turn knows nothing of why it holds a turn (decision 8); the harness and a usage limit are two of its users.
+What the harness needs of a turn (its session's folder, its thread, a way to hold it and say what it is doing) comes
+to it through the port, never by reaching into the turn's own packages.
+
+### 12. The agent's call
+
+`call = "agent"` or `"both"` offers the capability to the model as a tool. The declaration names it:
+
+```toml
+[capabilities.advisor]
+heads = ["claude"]
+call = "agent"
+message = "Asking the advisor"
+color = "magenta"
+timeout_s = 600
+on_failure = "open"
+worker = { kind = "http", url = "http://127.0.0.1:9100/advise" }
+
+[capabilities.advisor.tool]
+name = "ask_advisor"
+description = "Ask a second model for a review of a plan."
+input = { type = "object", properties = { question = { type = "string" } }, required = ["question"] }
+```
+
+The tool reaches the model as `name`, `description` and `input` as its `input_schema`. What the worker returns goes
+into the tool result, so a capability with `call = "agent"` names no `place`; `may` keeps its meaning (`"add"`
+returns text, `"refuse"` may refuse the turn), and a worker that may refuse and lets the turn pass returns its text
+like any other.
+
+Claude models from 4.6 on refuse a request that ends with an assistant message ("This model does not support
+assistant message prefill"), so the call cannot be a block the model leaves empty for splice to fill and continue
+in place. The one pause the API keeps, with thinking on, is a tool call answered by a tool result, and that is the
+agent's call.
+
+- **Offered.** On every request that carries tools, of a thread the rule allows (`when.thread`, `when.mode` and
+  `when.models`; `turn` does not apply), the tool is added after the client's tools, as the same bytes every time.
+  The client's tools and system text are not changed. A request without tools, and one decision 2's own conditions
+  rule out (a worker's own session, the auto-mode review), is not offered it. With `call = "rule"` nothing is
+  offered. A request that carries a kept call (below) carries the tool too, whether or not it is offered there, so
+  the provider never sees a call of a tool it was not given.
+- **Answered.** When the model's message calls that tool and nothing else, the client never sees the call. splice
+  holds the turn as decision 3 does, though its response has begun, saying the capability's message in its colour
+  (decision 7), sends the worker the tool's input as the field `input` beside the fields `send` names, then sends
+  the provider the same request with the model's message and a `tool_result` carrying the worker's text, and streams
+  that answer to the client as the rest of the same response. The client receives one assistant message: the
+  model's blocks before the call, then the answer's. The model knows it called the tool and reads what came back.
+  An answer that calls the tool again is answered the same way. The first response's ending (its `stop_reason` of
+  `tool_use`) never reaches the client: the message has one start and one end, its blocks numbered in order, and
+  its usage is the answer request's input and cache counts with the output tokens of both, since the answer's
+  request holds the whole conversation. A turn refused before any of the model's blocks reached the client is
+  refused the way a rule-called capability's refusal is (decision 6), which Claude Code does not send again.
+- **Kept.** splice stores the call and its result, keyed by the content of the client's copy of that assistant
+  message (its `cache_control` marks left out, as decision 5 leaves them out), and on every later request of the session puts them back where the model made them, byte for byte,
+  thinking blocks and their signatures included. The provider sees the conversation it produced and every cached
+  prefix holds; the client's history is never what changes. A compaction request carries them like any other. The
+  record is on disk before the answer reaches the client, so a restarted daemon puts it back the same way. A later
+  request whose record is gone (removed, or the session copied to another head) still goes upstream in a shape the
+  provider accepts.
+- **Beside the client's calls.** When one message calls the capability's tool and tools of the client's, the client
+  gets its own calls and never the capability's. The worker runs while the client runs its tools, and when the
+  client sends its results splice adds the capability's result beside them, in the order the calls were made. A
+  failure with `on_failure = "closed"` refuses the request that carries the client's results. When the client's
+  next request answers none of its calls (the person pressed Esc), the capability's call is left out with them.
+- **Failure.** With `on_failure = "open"` the tool result says the capability failed and why, and the model goes on.
+  With `"closed"` the turn is refused as decision 6 says. A refusal from a worker that `may` refuse refuses the turn.
+  Esc, the client leaving, a drain: decision 6.
+- **Dialects.** The Anthropic Messages dialect in this change. A capability with `call = "agent"` or `"both"` on a
+  head whose dialect is another is a config finding.
+
+### 13. The MCP worker
+
+`worker = { kind = "mcp", server = "<a server the MCP hub runs>", tool = "<its tool>" }` calls that tool through the
+MCP hub, with the declared fields (and `input`, for the agent's call) as its arguments. The server is the one the hub
+would give a session in that session's folder, so a server of the folder's own is found there and a per-session
+server starts there. Each MCP progress notification is a progress message. The tool's text content is the result.
+An error result, a result with no text, a server or tool the hub cannot find for the session's folder, or the time
+limit is a failure handled by `on_failure`. `splice status` shows `mcp <server>/<tool>`.
+
+
 ## Not in this change
 
-- A capability the agent calls itself (the empty block), and a worker behind an MCP server.
 - Switching a capability on per model or per session.
 - Results placed anywhere but the first user message.
-- Capabilities that hold a turn the model has already started to answer.
+- A capability called by rule that holds a turn the model has already started to answer (the agent's call is the
+  one capability that does, decision 12).
+- The agent's call in a dialect other than Anthropic's Messages.
 - Keeping a session's cache warm during a long hold.
 
 ## Seen with Claude Code
@@ -261,3 +363,7 @@ Filled in by whoever builds each part, from a real session, with the Claude Code
 | A gatherer started the planned way, with the header naming its session, runs and returns a result | |
 | The gatherer's tool-use summaries: what they look like, and whether each costs a request of its own | |
 | On the door: a `claude -p` run with the door's settings reaches the head that holds the waiting turn | |
+| The agent's call: a call the client never sees and the answer after it reach Claude Code as one assistant message, with no retry | |
+| The agent's call: a later turn after one reads the provider's cache up to the turn before it | |
+| An MCP worker's progress notifications reach the status line as the held turn's message | |
+| The agent's call: Claude Code sends back the one assistant message it was streamed, both thinking blocks unchanged, and the provider accepts it as the client holds it when no record puts the call back | |

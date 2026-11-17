@@ -30,6 +30,19 @@ export interface ServerOptions {
   /** The provider and head tables in place of the one-upstream default, given the default upstream's URL and a
    *  free port for the head. They must serve COMMAND. */
   head?: (url: string, port: number) => string;
+  /** The commands [server] serves, COMMAND alone by default. Every one must be some head's command. */
+  commands?: string[];
+}
+
+/** The whole splice.toml of a server: [server], then the head tables, then the options' own tables. */
+function compose(o: ServerOptions, url: string, port: number, headPort: number): string {
+  const tls = o.tls ? `tls_cert = "${o.tls.cert}"\ntls_key = "${o.tls.key}"\n` : "";
+  const commands = (o.commands ?? [COMMAND]).map((c) => `"${c}"`).join(", ");
+  return (
+    `[server]\nlisten = "127.0.0.1:${port}"\ncommands = [${commands}]\n${tls}${o.server ?? ""}\n` +
+    (o.head ? o.head(url, headPort) : mockHead({ key: "mock", command: COMMAND, port: headPort, url, model: MODEL })) +
+    (o.toml ?? "")
+  );
 }
 
 export class Server {
@@ -38,24 +51,22 @@ export class Server {
   readonly port: number;
   readonly scheme: "http" | "https";
 
-  private constructor(s: Splice, up: Upstream, port: number, scheme: "http" | "https") {
+  private readonly headPort: number;
+
+  private constructor(s: Splice, up: Upstream, port: number, scheme: "http" | "https", headPort: number) {
     this.s = s;
     this.up = up;
     this.port = port;
     this.scheme = scheme;
+    this.headPort = headPort;
   }
 
   static async boot(o: ServerOptions = {}): Promise<Server> {
     const up = new Upstream("a", MODEL, o.upstream).start();
     const port = await freePort();
-    const tls = o.tls ? `tls_cert = "${o.tls.cert}"\ntls_key = "${o.tls.key}"\n` : "";
     const headPort = await freePort();
-    const toml =
-      `[server]\nlisten = "127.0.0.1:${port}"\ncommands = ["${COMMAND}"]\n${tls}${o.server ?? ""}\n` +
-      (o.head ? o.head(up.url, headPort) : mockHead({ key: "mock", command: COMMAND, port: headPort, url: up.url, model: MODEL })) +
-      (o.toml ?? "");
-    const s = await Splice.create(toml, o.env);
-    const srv = new Server(s, up, port, o.tls ? "https" : "http");
+    const s = await Splice.create(compose(o, up.url, port, headPort), o.env);
+    const srv = new Server(s, up, port, o.tls ? "https" : "http", headPort);
     if (o.noStart) return srv;
     try {
       await s.start();
@@ -64,6 +75,12 @@ export class Server {
       throw e;
     }
     return srv;
+  }
+
+  /** Write [o] as this server's whole config, on the same ports and upstream, and restart it. */
+  async reconfigure(o: ServerOptions): Promise<void> {
+    this.s.writeConfig(compose(o, this.up.url, this.port, this.headPort));
+    await this.s.restart();
   }
 
   get base(): string {

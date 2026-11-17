@@ -8,7 +8,7 @@ judged = [
   '.campaign/checks/',
   '.campaign/cases/',
 ]
-agent = 'campaign seat'
+agent = 'campaign seat --model claude-opus-5-5 --effort high'
 
 [feature."server-front"]
 goal = "A splice daemon serves a team on a listener of its own: every request carries a person's key (operator-issued, hashed at rest, revocable one at a time or per person), admins manage keys from the CLI, the control plane or the listener, and each person is held to an in-flight cap and an optional requests-per-minute cap. Spec: docs/specs/server-mode.md, F1 and the limits half of F3."
@@ -36,6 +36,9 @@ goal = "Someone who uses Claude Desktop points its Code tab at splice the way Cl
 
 [feature."muse-tool-cache"]
 goal = "A Muse session pays for its conversation once. When Claude Code's ToolSearch loads a tool in the middle of a conversation, or a server adds or takes away a tool, the request that carries the change and every request after it read everything the conversation had already sent from Meta's prompt cache, and the model's call of the tool reaches Claude Code under the tool's own name, with its arguments. On 2026-11-16 each of 26 loads in one five-hour window made Meta read a whole conversation again at the full price, 2.69 million tokens. Spec: docs/specs/muse-tool-cache.md."
+
+[feature."server-profile"]
+goal = 'A laptop takes its commands from the team server it joins: the server answers a key holder with what it offers (each command, its models and their windows, the sign-in configuration, the telemetry relay and the minimum client), a person keeps an operator-issued key as a sign-in keeps its own, links every command the server offers in one step, follows the server as it adds and drops commands, and pins a window of its own when it wants one. Spec: docs/specs/server-mode.md, F7.'
 
 [[row]]
 id = 'server-listener'
@@ -720,4 +723,68 @@ notes = [
   '2026-11-16 03:03 CT: added; 1 of 1 checks fail, as they should before the work',
   "2026-11-16 06:44 CT: round 3's dispute is decided for the reviewer's case (plan commit of 06:4x CT): the real head, asked at 06:39 CT, called a starting tool that came back with a new schema with that schema, so the stand-in's model now follows the newest definition of a tool, also of one the list declares outright",
   '2026-11-16 07:29 CT campaign: done in round 1 of muse-tool-cache: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'server-profile-route'
+title = 'GET /server/profile tells a key holder what the server offers'
+feature = 'server-profile'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "GET /server/profile on the server listener, for any live key (401 with none, an unknown one or a revoked one), answers JSON: commands, each with its models and each model's context window; signin with issuer, client_id and domains, or null, and never the client secret; telemetry with the OTLP relay address, or null; client with minimum, or null. It is read from the config the server runs, so a command it stops serving leaves it. See docs/specs/server-mode.md, F7."
+checks = [
+  'bun test ./.campaign/checks/server/profile.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-16 19:45 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'server-remote-sync'
+title = 'A laptop links and follows every command a server offers'
+feature = 'server-profile'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'server-profile-route',
+]
+guard = false
+spec = "splice login <server> --key-stdin checks the key against the server, refuses one it rejects and keeps none of it, and keeps one it accepts where a sign-in keeps its own key (never in a config file), saying whose it is. splice remote add <server> links every command in the server's profile, each launched against <server>/<command> with the key reaching Claude Code only through a helper. splice remote refresh <server> links the commands the server starts offering and unlinks those it drops, says which, leaves the laptop's own commands alone, and changes nothing when nothing changed. See docs/specs/server-mode.md, F7."
+checks = [
+  'bun test ./.campaign/checks/server/remote-sync.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-16 19:45 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'server-remote-window'
+title = "A linked command takes the server's window, or one the laptop pins"
+feature = 'server-profile'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'server-remote-sync',
+]
+guard = false
+spec = "A command linked from a server launches with the context window the server's profile declares for its model. splice remote set <command> --window N pins another on the laptop (kept across a daemon restart, and listed by splice remote), and --window server gives the server's back. A window that is not a positive number, or a command not linked from a server, is refused. See docs/specs/server-mode.md, F7."
+checks = [
+  'bun test ./.campaign/checks/server/remote-window.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-16 19:45 CT: added; 1 of 1 checks fail, as they should before the work',
 ]

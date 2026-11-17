@@ -913,7 +913,7 @@ notes = [
 id = 'server-telemetry-relay'
 title = "The server relays each person's Claude Code telemetry to the operator's collector, with the person on it"
 feature = 'server-telemetry'
-status = 'todo'
+status = 'blocked'
 owner = ''
 blocked_by = []
 guard = false
@@ -927,13 +927,15 @@ reviews = [
 ]
 notes = [
   '2026-11-16 22:44 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 00:14 CT: status blocked',
+  "2026-11-17 00:14 CT: Paused by the lead on Nov 16: relaying each person's Claude Code telemetry to the operator is tracking of people, and the founder wants that planned with him before any of it is built. A design where a person sees their own usage is fine. Not to be built until that plan exists.",
 ]
 
 [[row]]
 id = 'server-telemetry-recipe'
 title = 'A command linked from a server with a relay sends its telemetry there, with the key kept out of the environment'
 feature = 'server-telemetry'
-status = 'todo'
+status = 'blocked'
 owner = ''
 blocked_by = [
   'server-telemetry-relay',
@@ -949,6 +951,8 @@ reviews = [
 ]
 notes = [
   '2026-11-16 22:44 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 00:14 CT: status blocked',
+  "2026-11-17 00:14 CT: Paused by the lead on Nov 16: relaying each person's Claude Code telemetry to the operator is tracking of people, and the founder wants that planned with him before any of it is built. A design where a person sees their own usage is fine. Not to be built until that plan exists.",
 ]
 
 [[row]]

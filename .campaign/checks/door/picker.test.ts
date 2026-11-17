@@ -17,13 +17,15 @@ const TERRA = "claude-terra--gpt-6.1-terra";
 const BOREALIS_BIG = "claude-borealis--borealis-large";
 
 const logins = `/tmp/claude-1000/door-picker-${process.pid}`;
+// Each ChatGPT login has a catalog of its own, with one model: a head lists what its login's catalog serves.
 let backend: CodexBackend;
+let terraBackend: CodexBackend;
 let borealis: Upstream;
 let s: Splice;
 let terraPort = 0;
 
 /** The head `terra` and its ChatGPT login: written, it is signed in. */
-const terra = () => gptHead({ key: "terra", command: "claude-terra", port: terraPort, backend: backend.url, model: "gpt-6.1-terra", dir: logins });
+const terra = () => gptHead({ key: "terra", command: "claude-terra", port: terraPort, backend: terraBackend.url, model: "gpt-6.1-terra", dir: logins });
 
 /** The selectors the next session's picker lists. */
 async function listed(): Promise<string[]> {
@@ -31,10 +33,8 @@ async function listed(): Promise<string[]> {
 }
 
 beforeAll(async () => {
-  backend = CodexBackend.start([
-    { slug: "gpt-6-astra", tiers: [] },
-    { slug: "gpt-6.1-terra", tiers: [] },
-  ]);
+  backend = CodexBackend.start([{ slug: "gpt-6-astra", tiers: [] }]);
+  terraBackend = CodexBackend.start([{ slug: "gpt-6.1-terra", tiers: [] }]);
   borealis = new Upstream("borealis", "borealis-large").start();
   terraPort = await freePort();
   const toml =
@@ -51,6 +51,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await s?.dispose();
   backend?.stop();
+  terraBackend?.stop();
   borealis?.stop();
   rmSync(logins, { recursive: true, force: true });
 });
@@ -102,7 +103,8 @@ describe("door-picker", () => {
     expect(await listed()).toEqual([ASTRA, TERRA]);
     const marker = `door-picker-terra-${crypto.randomUUID()}`;
     expect((await ask(await session(s), { model: TERRA, content: marker })).status).toBe(200);
-    expect(backend.turnsWith(marker).length).toBe(1);
+    expect(terraBackend.turnsWith(marker).length).toBe(1);
+    expect(backend.turnsWith(marker).length).toBe(0);
   }, 60_000);
 
   test("nothing of the picker is written into the person's settings file", () => {

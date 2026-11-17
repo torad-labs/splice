@@ -13,6 +13,10 @@
 - **Head commands are deprecated.** `claudex`, `claude-grok`, `claude-kimi`, `claude-muse`, `claude` on its head
   and every command `splice add` links keep working, and each says it is deprecated when it starts. No head is
   removed, and no date is set for removing one.
+- **A capability runs work before a session's first turn.** A `[capabilities.<name>]` table in `splice.toml`
+  names an HTTP worker you write: a policy check, a reviewer, a helper that gathers context. splice holds the turn
+  while it works, and what it returns goes into the session's first user message and stays there, byte for byte,
+  on every later request. A capability that fails lets the turn go on or refuses it, as its table says.
 
 ### Upgrading
 - With no choice made, `claude` is on the door unless `splice.toml` has a head whose command is `claude`, so a
@@ -20,6 +24,15 @@
   and `splice claude head` moves it back. The choice is kept across restarts and upgrades.
 
 ### Added
+- **Capabilities.** A `[capabilities.<name>]` table has `heads`, `call`, `when` (`turn`, `thread`, `mode`,
+  `models`), `place`, `may`, `message`, `color`, `timeout_s`, `on_failure`, `send` and `worker`. splice posts
+  the worker one JSON object holding only the fields `send` names, and never a session's or a provider's
+  credentials. The worker answers with JSON lines: progress, then a result's text or a refusal's reason. The text
+  is placed in each dialect's own shape, on Anthropic, Chat Completions and Responses heads. A table splice cannot
+  read stops the daemon from starting, with every finding listed at once, and `splice status` lists each
+  capability with the heads it is on for and its worker. A turn's row on `/api/perf/turns` carries
+  `capability_text_chars`, `held_on` and `held_ms`. With none declared, every request is the bytes it is today.
+  The design is `docs/specs/harness.md`.
 - `splice claude [--json]`: the lane, the door, the model a session starts on and why, the picker's models, and
   each head left out of it and why. `splice status` and `splice doctor` name the lane.
 - `splice setup` links `claude` on the door on a machine with no head for it, and no longer offers the Claude plan

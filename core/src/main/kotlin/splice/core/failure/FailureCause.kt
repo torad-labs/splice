@@ -239,13 +239,12 @@ public sealed class FailureCause {
         public data class HoldOutlasted(val why: Outlast, val held: FailureCause, val nextReset: Instant?) : Splice() {
             override val resumeAt: Instant? get() = nextReset ?: held.resumeAt
 
-            /** A hold that never began, its reset too far or past the session's wall,
+            /** A hold that never began, its reset too far or past the session's wall, or another model with room,
              *  is the held cause's own ending. */
             override val persisted: PersistedCause
-                get() = if (why == Outlast.TOO_FAR || why == Outlast.WALL) {
-                    held.persisted
-                } else {
-                    PersistedCause.HOLD_OUTLASTED
+                get() = when (why) {
+                    Outlast.TOO_FAR, Outlast.WALL, Outlast.MOVES -> held.persisted
+                    Outlast.MISSED_RESETS, Outlast.MAX_HOLD -> PersistedCause.HOLD_OUTLASTED
                 }
             override val providerReported: Boolean get() = held.providerReported
             override val permanent: Boolean get() = held.permanent

@@ -45,8 +45,20 @@
   login that can serve has passed 80% of a limit, and when no login can serve. The warning about the pace below 80%,
   the repeat at 95% and the notice that a login can serve again are gone: one login running out sent up to five
   messages, and two of them were acted on.
+- **A session whose model is spent on every login goes on under a model that has room.** Until now only a session
+  given a fallback model moved; every other one waited for the reset, days for a spent week. splice now picks the
+  model: the session's own fallback first, then the head's declared models in their order, then the models the
+  sessions' own turns ask for. A turn that would begin a hold on a spent model ends at once instead, and Claude Code
+  sends it again under the model with room. A turn already held asks every minute and moves the minute one has room.
+  The first turn a login can serve the session's own model goes back to it.
 
 ### Fixed
+- **A login whose token can't be renewed hands the turn to another login.** When every other login was held for
+  the turn's model, the turn ended "login expired and could not be renewed" though other logins were signed in. It
+  now moves to the one whose hold ends soonest, or to a model with room.
+- **`-r NAME` resumes the newest session of that name** when several sessions in the folder carry it and none of
+  them belongs to this command. The name used to go to Claude Code as typed, which could open another command's
+  session and refuse its turns.
 - A model picked with `/model` stays picked across a restart. At each start, and at `splice desktop on` and `off`,
   splice took any model of its door out of `~/.claude/settings.json` as a leftover of 0.6.0's Desktop door. It now
   does so only while that older door is in the file, and it leaves a file Claude Code wrote in the meantime as

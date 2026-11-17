@@ -564,7 +564,7 @@ accounts when its quota is exhausted, its credential is rejected or a provider h
 unavailable; it does not return to the primary just because that account's window reset. When a login refuses a turn
 with a limit that waiting cannot clear, and no output has reached the client yet, that same turn moves to a free login. The first turn after a switch pays one cold prompt-cache read, and its perf row says
 so and names the account. When every account is out before a turn starts, the turn is refused
-and names the earliest reset across the pool. If every login runs out during a turn, it ends with the refused login's own limit message. When the head holds more than one login, the status line names the one the session runs on. `splice status` and `splice doctor`
+and names the earliest reset across the pool. If every login runs out during a turn, it ends with the refused login's own limit message. When the model a session asks for is spent on every login and another model has room, the turn goes on under that one: the session's own fallback model first (`splice fallback <session> <model>`), then the head's declared models, then the models its sessions ask for; the first turn a login can serve the session's own model goes back to it. When the head holds more than one login, the status line names the one the session runs on. `splice status` and `splice doctor`
 show the head's accounts and its last switch, a pinned one included, with its reason; the daemon log
 records each switch once under `[<head>]`.
 

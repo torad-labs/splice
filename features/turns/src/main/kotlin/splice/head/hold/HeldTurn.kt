@@ -7,6 +7,10 @@
 // longer on the same login; a probe the login's schedule sends; another turn's answer on the same login; a quota
 // reading turned allowed; a login joining the head; the console's try-now. It ends at the session's wall, 30 s before
 // the client's own timeout, at seven days, or at once when the client leaves.
+//
+// A HOLD FOLLOWS THE MODELS WITH ROOM (Nov 17, 2026). A turn held on a model spent on every login asks each minute
+// whether another model has room, and ends as a re-send that goes on under it the minute one does: a session sat 55
+// minutes behind one model's week while another had room on every login.
 package splice.head.hold
 
 import kotlinx.coroutines.CompletableDeferred
@@ -21,6 +25,7 @@ import splice.upstream.retry.HoldAsk
 import splice.upstream.retry.HoldEnd
 import splice.upstream.retry.HoldWake
 import splice.upstream.retry.MAX_HOLD_MS
+import splice.upstream.retry.MODEL_ROOM_CHECK_MS
 import splice.upstream.retry.WAKE_STAGGER_MS
 import splice.upstream.retry.WAKE_STAGGER_STEP_MS
 
@@ -148,21 +153,28 @@ internal class HeldTurn(
             it + WAKE_STAGGER_MS + registry.rank(this) * WAKE_STAGGER_STEP_MS
         }
         val probeAt = registry.nextProbeMs(this, ask)
-        val next = listOfNotNull(resetAt, probeAt, wallEndMs, maxAt).min()
+        val roomAt = ask.moves.model?.let { now + MODEL_ROOM_CHECK_MS }
+        val next = listOfNotNull(resetAt, probeAt, roomAt, wallEndMs, maxAt).min()
         return when (race(next - now, registry.waitFor(this), lost)) {
-            Woke.Timer -> timerEnded(resetAt, probeAt)
+            Woke.Timer -> timerEnded(ask, resetAt, probeAt)
             Woke.ClientGone -> HoldEnd.CLIENT_GONE
             Woke.Signaled -> signaled(ask)
         }
     }
 
-    private fun timerEnded(resetAt: Long?, probeAt: Long?): HoldEnd? {
+    /** A timer came: the reset or the login's probe sends again; otherwise the turn leaves for another model where one
+     *  has room now and every login is held for its own (Nov 17, 2026). */
+    private fun timerEnded(ask: HoldAsk, resetAt: Long?, probeAt: Long?): HoldEnd? {
         val at = wall()
         return when {
             resetAt != null && at >= resetAt -> resumed(at)
             probeAt != null && at >= probeAt -> {
                 registry.probed(this, at)
                 HoldEnd.RESUME
+            }
+            ask.moves.model?.invoke(ask.cause) == true -> {
+                registry.leave(this)
+                HoldEnd.MODEL_ROOM
             }
             else -> null
         }
@@ -193,7 +205,7 @@ internal class HeldTurn(
             HoldEnd.RESUME
         }
         HoldWake.Allowed, is HoldWake.TryNow -> HoldEnd.RESUME
-        HoldWake.Joined -> if (ask.moves?.invoke(ask.cause) == false) {
+        HoldWake.Joined -> if (ask.moves.login?.invoke(ask.cause) == false) {
             null
         } else {
             registry.leave(this)

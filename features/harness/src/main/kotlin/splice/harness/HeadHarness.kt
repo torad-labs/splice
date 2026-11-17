@@ -17,9 +17,11 @@ public class HeadHarness {
             .followRedirects(HttpClient.Redirect.NEVER)
             .connectTimeout(Duration.ofSeconds(CONNECT_S))
             .build()
-        val worker = HttpWorker(client, ProcessDispatchers().io(), inputs.keys)
+        val io = ProcessDispatchers().io()
+        val http = HttpWorker(client, io, inputs.keys)
+        val mcp = McpWorker(inputs.mcpServers, client, io)
         val records = ThreadRecords(inputs.recordsDir, log)
-        return Harness(head, inputs.capabilities, records, CapabilityCall(worker), log, clock)
+        return Harness(head, inputs.capabilities, records, CapabilityCall(http, mcp), log, clock)
     }
 }
 

@@ -32,14 +32,31 @@ internal sealed class CallEnd {
 /** The facts a call sends: the turn it is for and the request's own. */
 internal data class CallFor(val head: String, val turn: HarnessTurn, val request: HarnessRequest)
 
-internal class CapabilityCall(private val worker: HttpWorker) {
+internal class CapabilityCall(private val http: HttpWorker, private val mcp: McpWorker) {
     suspend fun call(capability: Capability, on: CallFor): CallEnd {
-        val http = capability.work.worker as? CapabilityWorker.Http
-            ?: return CallEnd.Failed("its worker does not run in this version")
         val limitMs = capability.limits.timeoutS * MS_PER_S
-        val end = withTimeoutOrNull(limitMs) { worker.call(http, body(capability, on), WorkerProgress { }) }
+        val end = withTimeoutOrNull(limitMs) { worked(capability, on) }
             ?: return CallEnd.Failed("it passed its time limit of ${capability.limits.timeoutS} s")
         return meaning(capability, end)
+    }
+
+    /** The capability's worker, run for the turn [on]. */
+    private suspend fun worked(
+        capability: Capability,
+        on: CallFor,
+    ): WorkerEnd = when (val worker = capability.work.worker) {
+        is CapabilityWorker.Http -> http.call(worker, body(capability, on), WorkerProgress { })
+        is CapabilityWorker.Mcp -> {
+            val folder = on.turn.folder(on.request.sessionId)
+            mcp.call(
+                worker,
+                on.head,
+                folder,
+                McpToolCall(fields(capability, on), identity(capability, on)),
+                WorkerProgress { },
+            )
+        }
+        is CapabilityWorker.Builtin -> WorkerEnd.Failed("its worker does not run in this version")
     }
 
     /** A result is placed where the capability places text, and lets the turn pass where it places none; a refusal
@@ -60,16 +77,19 @@ internal class CapabilityCall(private val worker: HttpWorker) {
 
     /** The one object a worker is posted: the capability, the session and the turn, and the fields its declaration
      *  names, no others. */
-    private fun body(capability: Capability, on: CallFor): JsonObject = buildJsonObject {
+    private fun body(capability: Capability, on: CallFor): JsonObject =
+        JsonObject(identity(capability, on) + ("fields" to fields(capability, on)))
+
+    /** The fields the declaration names, each as the request has it. */
+    private fun fields(capability: Capability, on: CallFor): JsonObject = buildJsonObject {
+        capability.work.send.forEach { field -> put(field.wire, value(field, on)) }
+    }
+
+    /** Which capability and which turn the call is for: an HTTP worker's body carries it, and an MCP call's `_meta`. */
+    private fun identity(capability: Capability, on: CallFor): JsonObject = buildJsonObject {
         put("capability", capability.name)
         put("session", on.request.sessionId)
         put("turn", on.turn.id)
-        put(
-            "fields",
-            buildJsonObject {
-                capability.work.send.forEach { field -> put(field.wire, value(field, on)) }
-            },
-        )
     }
 
     private fun value(field: CapabilityField, on: CallFor) = when (field) {

@@ -178,6 +178,10 @@ internal class LaunchSpecFactory(
     internal fun headProjectsTrees(): List<Path> =
         topology.heads.map { (key, head) -> configDirOf(key, head.claude.configDir).resolve("projects") }
 
+    /** Each served head's CLAUDE_CONFIG_DIR, by head key: the home the servers a session loads are planned under. */
+    internal fun headConfigDirs(): Map<String, Path> =
+        topology.heads.mapValues { (key, head) -> configDirOf(key, head.claude.configDir) }
+
     private fun configDirOf(headKey: String, declared: String?): Path = HeadConfigDirs.of(headKey, declared)
 }
 

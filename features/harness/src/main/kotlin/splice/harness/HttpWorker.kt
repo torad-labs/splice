@@ -5,7 +5,6 @@ package splice.harness
 
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.runInterruptible
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.json.JsonObject
 import splice.core.capability.CapabilityWorker
 import splice.core.util.JsonWire
@@ -18,9 +17,6 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.CompletionException
-import kotlin.coroutines.resumeWithException
 
 /** Hears each progress message a worker sends, for what the held turn says. */
 internal fun interface WorkerProgress {
@@ -33,6 +29,7 @@ internal class HttpWorker(
     private val keys: WorkerKeys,
 ) {
     private val lines = WorkerLines()
+    private val sends = SentRequests()
 
     /** Posts [body] to [worker] and reads its answer to the line that ends the work. */
     suspend fun call(worker: CapabilityWorker.Http, body: JsonObject, progress: WorkerProgress): WorkerEnd {
@@ -41,7 +38,7 @@ internal class HttpWorker(
             is Built.Failed -> return built.end
         }
         val response = try {
-            sent(client.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream()))
+            sends.response(client.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream()))
         } catch (_: IOException) {
             return WorkerEnd.Failed("it could not be reached")
         }
@@ -79,21 +76,6 @@ internal class HttpWorker(
 
         class Failed(val end: WorkerEnd) : Built()
     }
-
-    /** The response [future] answers. A cancelled call cancels it with `cancel(true)`, the one way the JDK's client
-     *  drops the request (a plain cancel leaves it open until the worker answers). */
-    private suspend fun sent(future: CompletableFuture<HttpResponse<InputStream>>): HttpResponse<InputStream> =
-        suspendCancellableCoroutine { continuation ->
-            continuation.invokeOnCancellation { future.cancel(true) }
-            future.whenComplete { response, failure ->
-                if (failure == null) {
-                    // A response that comes after the call was cancelled has its body closed, which drops it.
-                    continuation.resume(response) { _, late, _ -> late.body().close() }
-                } else {
-                    continuation.resumeWithException((failure as? CompletionException)?.cause ?: failure)
-                }
-            }
-        }
 
     private suspend fun read(stream: InputStream, progress: WorkerProgress): WorkerEnd = try {
         runInterruptible(io) {

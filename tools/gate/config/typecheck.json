@@ -17,7 +17,8 @@
     ".campaign/checks/speed/tsconfig.json",
     ".campaign/checks/desktop/tsconfig.json",
     ".campaign/cases/tsconfig.json",
-    ".campaign/checks/muse/tsconfig.json"
+    ".campaign/checks/muse/tsconfig.json",
+    ".campaign/checks/door/tsconfig.json"
   ],
   "excused": {},
   "baseline": {}

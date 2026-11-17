@@ -802,7 +802,7 @@ notes = [
 id = 'server-access'
 title = "A team's and a person's commands decide what they may use"
 feature = 'server-policy'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -816,13 +816,14 @@ reviews = [
 ]
 notes = [
   '2026-11-16 19:51 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 22:14 CT campaign: done in round 1 of server-policy: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'server-token-cap'
 title = "A person's tokens per minute are capped"
 feature = 'server-policy'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -836,13 +837,14 @@ reviews = [
 ]
 notes = [
   '2026-11-16 19:51 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 22:14 CT campaign: done in round 1 of server-policy: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'server-client-version'
 title = "A laptop older than the server's minimum is told to upgrade, in the conversation"
 feature = 'server-policy'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -856,6 +858,7 @@ reviews = [
 ]
 notes = [
   '2026-11-16 19:51 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 22:14 CT campaign: done in round 2 of server-policy: its checks, its feature review, its code review passed',
 ]
 
 [[row]]

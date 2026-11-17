@@ -211,7 +211,7 @@ and its message is `Exploring files with <the fast model's label>`.
 **What runs.** A normal Claude Code session in print mode (`claude -p`), in the session's folder, on the head's
 fast model: by default the head's small tier, or `worker.model`. Nothing about its tools is restricted. It thinks
 at its own model's level: the person's Claude Code setting for that model when their settings name one
-(`modelSettings.<model>.effortLevel`), else Claude Code's own default for it, and never the head's effort or a
+(`modelSettings.<model>.effortLevel`, keyed by the model id the gatherer is started with), else Claude Code's own default for it, and never the head's effort or a
 launcher's. A gather of this repo at `xhigh` thought 140k tokens and was still running after 15 minutes; at Haiku's
 own level it took 81 s. splice otherwise starts it as it starts any session on that head: the head's login, the MCP
 hub's tools and the person's settings, and it mints its session id. Its input is the first user message as the client sent
@@ -220,18 +220,18 @@ paths and line ranges, the entry points, how the project builds and tests, and w
 applies, as facts with their locations, changing nothing and not doing the task. Its result is the final result of
 its stream.
 
-**Its own session never calls a capability.** The gatherer's requests carry one splice header naming the session
-they work for. A request with that header never calls a capability, casts no vote on the head's usual model, and
-its record names the session it worked for.
+**Its own session never calls a capability.** The gatherer's requests carry one splice header, `x-splice-gathers-for`,
+naming the session they work for. A request with that header never calls a capability, casts no vote on the head's
+usual model, and its record names the session it worked for (`worked_for`, decision 10).
 
 **What the person sees.** The held turn says `Exploring files with <label>`, then each step the gatherer reports
-(its tool-use summaries), and `Exploring stopped, continuing without it` if it stops. The summaries come from Claude
+(its tool-use summaries), and `Exploring stopped, continuing without it` if it stops before a result; that message stays until the turn's answer begins. The summaries come from Claude
 Code itself: the gatherer runs with `CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES=1`, and each `tool_use_summary` event of
 its stream is a progress message.
 
 **When it does not run.** Beside decision 2's rule: the session's folder cannot be found (a session relayed from
 another machine has none here), or the head has no login that can serve the fast model. Each is recorded as not
-called, with the reason.
+called, with the reason, in the log and in the turn's record (`capability_skipped`: the capability and the reason).
 
 **Limits.** splice owns the gatherer's process: it is ended at the time limit, when the client leaves, when the
 head stops and when the daemon shuts down, and it runs under a deadline of its own, so a killed daemon leaves none
@@ -249,7 +249,7 @@ capabilities' text the request carried (0 with none); `held_on`, the capabilitie
 and joined by commas (null when it was not held); and `held_ms`, how long it was held, as a count of its own, so
 time to the first byte can be read without it. A turn the person left during a hold has its record like any other,
 with those fields and the outcome a turn the client left has today. A gatherer's records carry the session it
-worked for, so the two can be joined.
+worked for as `worked_for`, so the two can be joined.
 
 ### 11. The harness is a module of its own
 
@@ -373,3 +373,4 @@ Filled in by whoever builds each part, from a real session, with the Claude Code
 | The agent's call: a later turn after one reads the provider's cache up to the turn before it | |
 | An MCP worker's progress notifications reach the status line as the held turn's message | |
 | The agent's call: Claude Code sends back the one assistant message it was streamed, both thinking blocks unchanged, and the provider accepts it as the client holds it when no record puts the call back | |
+| The Context Getter's default time limit, and the gathers on real work it was set from | |

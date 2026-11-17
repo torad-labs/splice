@@ -120,20 +120,32 @@ internal class DesktopSwitch(
     }
 
     /** What an older splice's `on` wrote into the settings file taken out, and a sentence saying so, empty when there
-     *  was none. A file splice can't read is said in the sentence and left as it is. */
-    private fun tidied(): String = when (val read = file.read()) {
+     *  was none. A file splice can't read is said in the sentence and left as it is, and so is one Claude Code wrote
+     *  each time splice looked. */
+    private fun tidied(): String = (1..LOOKS).firstNotNullOfOrNull { looked() }
+        ?: ". ${file.path} changed each time splice looked, so what an older splice wrote there may still be in it"
+
+    /** One look at the settings file: the sentence, or null when Claude Code wrote the file while the old door was
+     *  being taken out of it, so it is looked at again. */
+    private fun looked(): String? = when (val read = file.read()) {
         is SettingsRead.Unreadable -> ". The old door's values could not be looked for: ${read.why}"
-        SettingsRead.Absent -> ""
+        SettingsRead.Absent -> "".also { spent() }
         is SettingsRead.Held -> tidied(read.file)
     }
 
-    /** [held], the settings file, with what an older splice's `on` wrote taken out, and a sentence saying so. */
-    private fun tidied(held: JsonObject): String {
+    /** [held], the settings file, with what an older splice's `on` wrote taken out, and a sentence saying so; null
+     *  when the file changed before it could be written. */
+    private fun tidied(held: JsonObject): String? {
         val restored = settings.withoutDoor(held, records.get().replaced, selectors)
-        if (restored == held) return ""
-        if (restored == null) file.remove() else file.restore(restored)
+        if (restored != held && !file.replace(held, restored)) return null
+        spent()
+        return if (restored == held) "" else ". What an older splice wrote into ${file.path} for Desktop was taken out"
+    }
+
+    /** The record of what an older `on` replaced is spent once the file was looked at: it is put back, or the file
+     *  holds none of that door. Kept past that, it would take a selector the person picks later for the old door's. */
+    private fun spent() {
         if (records.get().replaced != null) records.update { it.copy(replaced = null) }
-        return ". What an older splice wrote into ${file.path} for Desktop was taken out"
     }
 
     /** The model a Code tab session starts on in [lineup]: the one chosen the last time, or the pinned model of the
@@ -143,6 +155,10 @@ internal class DesktopSwitch(
 
 // What `on` answers when the default it chose has left the door between two reads.
 private const val NO_MODEL = "no model is in the door"
+
+// why: Claude Code writes its settings file at a pick or a setting, seconds apart at the quickest, so a second look
+// finds it still; the third is for a write that lands between the first two.
+private const val LOOKS = 3
 
 // How `off` tells the person to leave the door, before the variables' names.
 private const val LEAVE = "To put the Code tab back on your own Claude login, remove"

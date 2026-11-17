@@ -30,22 +30,29 @@ internal class DesktopSettingsFile(
 
     fun read(): SettingsRead = DesktopSettingsRead(path).read()
 
-    /** [file], with an older splice's door taken out, written whole and atomically as Claude Code writes the file: two
-     *  spaces, a newline at the end. The file keeps its mode, and one that door left readable by its owner alone gets
-     *  the mode Claude Code gives a file it creates, where the umask can be read. On a filesystem without POSIX modes
-     *  the write is all there is. */
-    fun restore(file: JsonObject) {
+    /** The file, read as [was], replaced by [with], an older splice's door taken out of it; taken away when [with] is
+     *  null, since nothing is left of a file that was not there before that splice wrote it. Claude Code writes this
+     *  file too and holds no lock splice could wait on, so the file is read once more just before: when it no longer
+     *  reads as [was], it is left as Claude Code wrote it and the answer is false, for the caller to look again. */
+    fun replace(was: JsonObject, with: JsonObject?): Boolean {
         val target = target()
-        val posix = Files.getFileStore(target).supportsFileAttributeView(POSIX_VIEW)
-        val before = if (posix) Files.getPosixFilePermissions(target) else null
-        SecureFile.writeAtomic0600(target, json.encodeToString(JsonObject.serializer(), file) + "\n")
-        val mode = if (before != null && before.none { it in OTHERS_MODES }) created() else before
-        mode?.let { Files.setPosixFilePermissions(target, it) }
+        if ((read() as? SettingsRead.Held)?.file != was) return false
+        if (with == null) Files.deleteIfExists(target) else write(target, with)
+        return true
     }
 
-    /** The file taken away, when nothing is left of one that was not there before an older splice wrote it. */
-    fun remove() {
-        Files.deleteIfExists(target())
+    /** [file] written whole and atomically as Claude Code writes it: two spaces, a newline at the end. The file keeps
+     *  its mode, and one an older splice's door left readable by its owner alone gets the mode Claude Code gives a
+     *  file it creates, where the umask can be read; it is under its name at no other mode, not for an instant. On a
+     *  filesystem without POSIX modes the write is all there is. */
+    private fun write(target: Path, file: JsonObject) {
+        val text = json.encodeToString(JsonObject.serializer(), file) + "\n"
+        if (!Files.getFileStore(target).supportsFileAttributeView(POSIX_VIEW)) {
+            SecureFile.writeAtomic0600(target, text)
+            return
+        }
+        val before = Files.getPosixFilePermissions(target)
+        SecureFile.writeAtomic(target, text, if (before.none { it in OTHERS_MODES }) created() ?: before else before)
     }
 
     /** Where a write lands: through a link to the file it names, so the link is kept. */

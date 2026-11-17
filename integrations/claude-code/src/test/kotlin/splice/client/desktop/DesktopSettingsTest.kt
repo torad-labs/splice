@@ -52,12 +52,20 @@ class DesktopSettingsTest {
         assertNull(out["model"])
     }
 
+    // Rewritten for the door as the terminal's `claude`: a selector in a file with no door used to be taken out as an
+    // older `off`'s leftover. It is now the model the person picked with `/model`, and stays.
     @Test
-    fun `a door selector an older off left in model is taken out, and nothing else changes`() {
-        val left = file("""{"theme":"dark","model":"claude-astra--astra-large","env":{"FOO":"1"}}""")
-        assertEquals(file("""{"theme":"dark","env":{"FOO":"1"}}"""), settings.withoutDoor(left, null, selectors))
-        val mine = file("""{"theme":"dark","model":"opus","env":{"FOO":"1"}}""")
+    fun `a selector picked in the terminal stays in a file that holds no door`() {
+        val mine = file("""{"theme":"dark","model":"claude-astra--astra-large","env":{"FOO":"1"}}""")
         assertEquals(mine, settings.withoutDoor(mine, null, selectors))
+    }
+
+    @Test
+    fun `a selector is taken out of a file with no door only while the record of an older on is held`() {
+        val left = file("""{"theme":"dark","model":"claude-astra--astra-large","env":{"FOO":"1"}}""")
+        assertEquals(file("""{"theme":"dark","env":{"FOO":"1"}}"""), settings.withoutDoor(left, replaced, selectors))
+        val mine = file("""{"theme":"dark","model":"opus","env":{"FOO":"1"}}""")
+        assertEquals(mine, settings.withoutDoor(mine, replaced, selectors))
     }
 
     @Test

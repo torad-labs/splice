@@ -4,7 +4,7 @@
 // title for the conversation, a probe with no system text at all. Such a request carries no tools, and its system text
 // is the question's own instruction. A head's standing prompt layers and a team slot's text were written for the coding
 // agent's turns. A head in replace mode put its prompt where the instruction was, so the model was never asked the
-// question: on one day 135 of 213 tool-use summaries read "I don't see a request in your message", and a probe with no
+// question: most of a session's tool-use summaries read "I don't see a request in your message", and a probe with no
 // system text gained the head's whole prompt. The auto-mode review was the first of these found (AutoModeReview,
 // Nov 14, 2026); this is the rest of the class.
 //

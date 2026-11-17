@@ -859,7 +859,7 @@ notes = [
 id = 'server-affinity'
 title = "A session's turns stay on the upstream that served it"
 feature = 'server-pool-costs'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -873,13 +873,14 @@ reviews = [
 ]
 notes = [
   '2026-11-16 19:52 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 20:43 CT campaign: done in round 1 of server-pool-costs: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'server-fixed-cost'
 title = 'A provider paid by the hour is metered in usage reports'
 feature = 'server-pool-costs'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -893,4 +894,5 @@ reviews = [
 ]
 notes = [
   '2026-11-16 19:52 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 20:43 CT campaign: done in round 1 of server-pool-costs: its checks, its feature review, its code review passed',
 ]

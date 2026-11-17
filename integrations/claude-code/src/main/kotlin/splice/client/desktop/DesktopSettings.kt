@@ -65,10 +65,11 @@ public class DesktopSettings {
         return if (out.isEmpty() && !existed(replaced, EXISTED)) null else JsonObject(out)
     }
 
-    /** Whether [file]'s `model` was picked from a door: one of its picker's rows, or one of [selectors]. */
+    /** Whether [file]'s `model` was picked from a door: one of [selectors], or one of its picker's rows while the door
+     *  is in it. A picker in a file with no door is the person's own, and so is a pick from it. */
     private fun pickedFromDoor(file: JsonObject, selectors: DoorSelectors): Boolean {
         val picked = JsonScalars.str(file, DESKTOP_FILE_MODEL) ?: return false
-        return selectors(picked) || picked in rows(file)
+        return selectors(picked) || (holdsDoor(file) && picked in rows(file))
     }
 
     /** The models [file]'s picker lists. */

@@ -300,8 +300,12 @@ describe("splice.torad.ai's website", () => {
     const copies = [...band.matchAll(/\bdata-copy="([^"]*)"/g)].map((m) => m[1]!.replace(/&amp;/g, "&"));
     expect(copies).toContain(one);
     expect(page).toContain('href="#share"');
-    const verbs = (path: string, name: string) =>
-      new RegExp(`${name} = "([^"]+)"`).exec(source(path))![1]!.split("|").map((p) => p.trim().replace(/^\[|\]$/g, "").split(/\s+/)[0]!);
+    // A usage string is one constant, written as one literal or as several joined with `+` where a line would run long.
+    const verbs = (path: string, name: string) => {
+      const literals = new RegExp(`${name} =((?:\\s*\\+?\\s*"[^"]*")+)`).exec(source(path))![1]!;
+      const usage = [...literals.matchAll(/"([^"]*)"/g)].map((m) => m[1]!).join("");
+      return usage.split(" | ").map((p) => p.trim().replace(/^\[|\]$/g, "").split(/\s+/)[0]!);
+    };
     const share = verbs("app/src/main/kotlin/splice/app/cli/share/ShareCommand.kt", "SHARE_USAGE");
     const remote = verbs("app/src/main/kotlin/splice/app/cli/share/RemoteCommand.kt", "REMOTE_USAGE");
     const all = words(page);

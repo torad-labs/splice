@@ -49,6 +49,49 @@ class UpstreamPoolTest {
     }
 
     @Test
+    fun `a session's later turns go back to the server that served it, however busy, and new sessions are balanced`() {
+        val pool = pool("a", "b")
+        val first = listOf("s1", "s2", "s3", "s4").associateWith { pool.lease(session = it).name }
+        assertEquals(mapOf("s1" to "a", "s2" to "b", "s3" to "a", "s4" to "b"), first)
+        repeat(3) { pool.lease(session = "s1") }
+        assertEquals(mapOf("a" to 5, "b" to 2), inflight(pool))
+        assertEquals("a", pool.lease(session = "s3").name, "b has less in flight, but s3's prompt is cached on a")
+        assertEquals("b", pool.lease(session = "s5").name, "a session not seen before goes to the least busy")
+        assertEquals("b", pool.lease().name, "a turn that names no session is balanced as before")
+    }
+
+    @Test
+    fun `a session whose server went down moves once, and stays where it moved when the old one is back`() {
+        val pool = pool("a", "b")
+        assertEquals("a", pool.lease(session = "mover").name)
+        pool.checked("a", healthy = false, said = "HTTP 503")
+        assertEquals("b", pool.lease(session = "mover").name)
+        pool.checked("a", healthy = true, said = "HTTP 200")
+        assertEquals(listOf("b", "b", "b"), List(3) { pool.lease(session = "mover").name })
+    }
+
+    @Test
+    fun `a session's server outranks its person's preferred one, which places only a new session`() {
+        val pool = pool("a", "b")
+        assertEquals("a", pool.lease(session = "old").name)
+        assertEquals("a", pool.lease("b", session = "old").name, "its prompt is cached on a")
+        assertEquals("b", pool.lease("b", session = "new").name)
+    }
+
+    @Test
+    fun `a turn sent while no server is up leaves its session's server as it was`() {
+        val pool = pool("a", "b")
+        assertEquals("b", pool.lease("b", session = "s").name)
+        pool.checked("a", healthy = false, said = "HTTP 503")
+        pool.checked("b", healthy = false, said = "HTTP 503")
+        pool.lease(session = "s")
+        pool.lease(session = "s")
+        pool.checked("a", healthy = true, said = "HTTP 200")
+        pool.checked("b", healthy = true, said = "HTTP 200")
+        assertEquals("b", pool.lease(session = "s").name, "no down server served it, so its home is still b")
+    }
+
+    @Test
     fun `a server that failed its health check takes no turn until a check passes`() {
         val pool = pool("a", "b")
         pool.checked("a", healthy = false, said = "HTTP 503")

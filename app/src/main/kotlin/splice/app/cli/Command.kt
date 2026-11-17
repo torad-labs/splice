@@ -124,13 +124,22 @@ public sealed class Command {
 
     /** v0.4.0 (FEATURES.md §11): `--label <name>` signs in a further account of the head's kind; on a
      *  Claude head it saves or switches the head's login, and `--discard` lets a switch drop a login
-     *  saved under no label (V4-276). */
-    public data class Login(val head: String?, val label: String? = null, val discard: Boolean = false) : Command() {
+     *  saved under no label (V4-276). `<server> --key-stdin` keeps a key the server's operator issued, read from stdin,
+     *  where a sign-in keeps its own (server mode, F7). */
+    public data class Login(
+        val head: String?,
+        val label: String? = null,
+        val discard: Boolean = false,
+        val keyStdin: Boolean = false,
+    ) : Command() {
         override suspend fun run(): Int {
             val server = ServerLogin()
+            val named = head != null && server.names(head)
             return when {
-                head == null || !server.names(head) -> outcomeExitCode(LoginCommand().login(head, label, discard))
+                keyStdin && !named -> refusal("--key-stdin keeps a key a server issued; name the server it is for")
+                !named -> outcomeExitCode(LoginCommand().login(head, label, discard))
                 label != null -> refusal("--label names another login of a head; a server signs in one person")
+                keyStdin -> server.keep(head, readlnOrNull().orEmpty())
                 else -> server.login(head)
             }
         }

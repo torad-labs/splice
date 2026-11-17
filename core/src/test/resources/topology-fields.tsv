@@ -188,6 +188,7 @@ providers.*.window_rules[].context_window
 providers.*.window_rules[].prefix	
 remote	
 remote.*.url	
+remote.*.window	
 server	
 server.admins	
 server.budgets	

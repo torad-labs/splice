@@ -44,6 +44,7 @@ internal fun interface CommandFactory {
 // CyclomaticComplexMethod). The COMMANDS are the sealed type; this is just parsing.
 private const val LABEL_FLAG = "--label"
 private const val DISCARD_FLAG = "--discard"
+private const val KEY_STDIN_FLAG = "--key-stdin"
 
 // record-launch names its verb, PID, head, base URL, kind and origin, in that wire order.
 private const val OWNER_ARG_COUNT = 6
@@ -108,22 +109,24 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
         CommandFactory.OneHead { a -> Command.Uninstall(a.getOrNull(1)) },
     ),
     // `login <head> [--label <name>] [--discard]` (v0.4.0, FEATURES.md §11): the value after the flag,
-    // wherever it sits. --discard (V4-276) takes no value and only means something with --label.
+    // wherever it sits. --discard (V4-276) takes no value and only means something with --label. --key-stdin (server
+    // mode, F7) takes none either: the key a server's operator issued arrives on stdin.
     "login" to CommandRegistration(
-        "<head> [--label <name> [--discard]] | <server>",
+        "<head> [--label <name> [--discard]] | <server> [--key-stdin]",
         CommandFactory { a ->
             val flag = a.indexOf(LABEL_FLAG)
             val label = if (flag > 0) a.getOrNull(flag + 1) else null
             val discard = DISCARD_FLAG in a
+            val keyStdin = KEY_STDIN_FLAG in a
             val positional = a.filterIndexed { i, word ->
-                i > 0 && word != DISCARD_FLAG && (flag < 1 || i != flag && i != flag + 1)
+                i > 0 && word != DISCARD_FLAG && word != KEY_STDIN_FLAG && (flag < 1 || i != flag && i != flag + 1)
             }
             // A bare --label, a second --label or a second positional is a mistake, not an unlabeled
             // login: the parse fails and usage prints, nothing is silently dropped. So is --discard
             // without --label, or twice.
             val malformed = flag > 0 && label == null || a.count { it == LABEL_FLAG } > 1 || positional.size > 1 ||
-                discard && (label == null || a.count { it == DISCARD_FLAG } > 1)
-            if (malformed) null else Command.Login(positional.firstOrNull(), label, discard)
+                discard && (label == null || a.count { it == DISCARD_FLAG } > 1) || a.count { it == KEY_STDIN_FLAG } > 1
+            if (malformed) null else Command.Login(positional.firstOrNull(), label, discard, keyStdin)
         },
     ),
     // Nov 16, 2026: server mode (docs/specs/server-mode.md, F2); `login <server>` signs in, this forgets the key.

@@ -46,6 +46,9 @@ goal = "An operator decides who may use what on the team server: which commands 
 [feature."server-pool-costs"]
 goal = "The team server keeps a session's turns on the upstream that has its prompt cached, and its usage reports count what a box rented by the hour costs beside the per-token prices. Spec: docs/specs/server-mode.md, F10 and F11."
 
+[feature."server-telemetry"]
+goal = "A team's server relays each person's Claude Code telemetry to the operator's collector with the person stamped on it, every laptop launch sends it there and says which splice it runs, so the operator sees who used what and which laptops to upgrade."
+
 [[row]]
 id = 'server-listener'
 title = 'A [server] listener that answers only keys'
@@ -901,4 +904,66 @@ reviews = [
 notes = [
   '2026-11-16 19:52 CT: added; 1 of 1 checks fail, as they should before the work',
   '2026-11-16 20:43 CT campaign: done in round 1 of server-pool-costs: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'server-telemetry-relay'
+title = "The server relays each person's Claude Code telemetry to the operator's collector, with the person on it"
+feature = 'server-telemetry'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "[server.telemetry] forward_to names the operator's OTLP collector. Claude Code on a laptop sends its own telemetry to POST /server/otlp/v1/{metrics,logs,traces} with the person's key, as JSON or protobuf. The server sets splice.person, splice.team and user.email on every resource, whatever the client claimed, keeps everything else, and forwards the request to the collector in the same encoding, without the person's key. The profile names the relay. No key is a 401; a server with no relay has no such route."
+checks = [
+  'bun test ./.campaign/checks/server/telemetry-relay.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-16 22:44 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'server-telemetry-recipe'
+title = 'A command linked from a server with a relay sends its telemetry there, with the key kept out of the environment'
+feature = 'server-telemetry'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'server-telemetry-relay',
+]
+guard = false
+spec = "A command linked from a server whose profile names a telemetry relay launches Claude Code with CLAUDE_CODE_ENABLE_TELEMETRY=1, metrics and logs exported over OTLP/HTTP to <server>/server/otlp, and an otelHeadersHelper that sends the person's key, which is never in the environment. Prompts are never logged (no OTEL_LOG_USER_PROMPTS). Where the command's organisation-managed settings (remote-settings.json) set telemetry of their own, splice adds none; managed settings that set none leave the relay on. A server with no relay gets no telemetry from splice."
+checks = [
+  'bun test ./.campaign/checks/server/telemetry-recipe.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-16 22:44 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'server-client-header'
+title = 'Every launch of a linked command tells the server which splice the laptop runs'
+feature = 'server-telemetry'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "Every launch of a command linked from a server sends x-splice-client: <version> in ANTHROPIC_CUSTOM_HEADERS, beside any headers the command already sends, and the server's profile names its minimum client. An older laptop's turns are then answered with the version to upgrade to (server-client-version); this is the laptop's half."
+checks = [
+  'bun test ./.campaign/checks/server/client-header.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-16 22:45 CT: added; 1 of 1 checks fail, as they should before the work',
 ]

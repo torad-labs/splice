@@ -71,6 +71,9 @@ goal = "A capability's work can be a tool of an MCP server the hub runs, declare
 [feature."agent-call"]
 goal = "The model calls a capability itself, as a tool the client never sees: splice answers the call while the turn waits, streams the rest as one response, and keeps the call in the provider's history byte for byte so every cache prefix holds (docs/specs/harness.md, decision 12)."
 
+[feature."harness-says"]
+goal = "While a capability of round two holds a turn, the session's status line says what it is doing: the Context Getter's exploring and its tool-use summaries, an MCP worker's progress, and the agent's call. These wait on held-status's status-line piece (held-says), so they are a feature of their own and the round's other features don't wait on it."
+
 [[row]]
 id = 'server-listener'
 title = 'A [server] listener that answers only keys'
@@ -1403,7 +1406,7 @@ notes = [
 [[row]]
 id = 'agent-call-says'
 title = "While the model's call of a capability runs, the status line says so"
-feature = 'agent-call'
+feature = 'harness-says'
 status = 'todo'
 owner = ''
 blocked_by = [
@@ -1448,7 +1451,7 @@ notes = [
 [[row]]
 id = 'mcp-says'
 title = "An MCP worker's progress notifications reach the status line"
-feature = 'capability-mcp'
+feature = 'harness-says'
 status = 'todo'
 owner = ''
 blocked_by = [
@@ -1493,7 +1496,7 @@ notes = [
 [[row]]
 id = 'getter-says'
 title = 'While the Context Getter works, the status line says what it is exploring'
-feature = 'context-getter'
+feature = 'harness-says'
 status = 'todo'
 owner = ''
 blocked_by = [

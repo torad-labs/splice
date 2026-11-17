@@ -1097,7 +1097,7 @@ notes = [
 id = 'capability-http'
 title = "A capability with an HTTP worker is called on a session's first turn, and its text reaches the provider"
 feature = 'capabilities'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -1111,13 +1111,14 @@ reviews = [
 ]
 notes = [
   '2026-11-17 04:30 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 08:39 CT campaign: done in round 1 of capabilities: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'capability-config'
 title = 'Boot fails closed on a wrong capability declaration, and splice status lists what is declared'
 feature = 'capabilities'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'capability-http',
@@ -1133,13 +1134,14 @@ reviews = [
 ]
 notes = [
   '2026-11-17 04:31 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 08:39 CT campaign: done in round 1 of capabilities: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'capability-rule'
 title = 'The rule chooses the requests a capability is called for'
 feature = 'capabilities'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'capability-http',
@@ -1155,13 +1157,14 @@ reviews = [
 ]
 notes = [
   '2026-11-17 04:31 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 08:39 CT campaign: done in round 3 of capabilities: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'capability-later-turns'
 title = "A capability's text stays in the first user message on every later request"
 feature = 'capabilities'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'capability-http',
@@ -1177,13 +1180,14 @@ reviews = [
 ]
 notes = [
   '2026-11-17 04:31 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 08:39 CT campaign: done in round 2 of capabilities: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'capability-failure'
 title = 'A capability that fails lets the turn go on or refuses it, as declared'
 feature = 'capabilities'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'capability-http',
@@ -1199,13 +1203,14 @@ reviews = [
 ]
 notes = [
   '2026-11-17 04:31 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 08:39 CT campaign: done in round 2 of capabilities: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'capability-dialects'
 title = "A capability's text is placed in each dialect's own shape"
 feature = 'capabilities'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'capability-later-turns',
@@ -1221,4 +1226,5 @@ reviews = [
 ]
 notes = [
   '2026-11-17 04:31 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 08:39 CT campaign: done in round 3 of capabilities: its checks, its feature review, its code review passed',
 ]

@@ -2,8 +2,8 @@
 // sessions (LoginNotices), through the outlets they set: [daemon] alert_command in splice.toml and the webhook saved in
 // the console.
 //
-// A COMMAND TOLD IT HAD NO LOGIN IS TOLD WHEN IT HAS ONE AGAIN (Nov 12, 2026). That evening a login was reset while
-// seven sessions waited, the sessions went on, and nothing said so: the person logged in again by hand.
+// TWO NOTICES, NO MORE (Nov 17, 2026): the last login has passed 80% of a limit, and no login can serve. That a login
+// can serve again is no longer said, nor a second mark, nor the pace below the first (LoginNotices says why).
 //
 // SAID ONCE: a notice has a key that changes when what it says changes, and the keys already said are kept in a file,
 // so a restart does not say them again. A key is forgotten once its notice has not held for half an hour: a login
@@ -27,8 +27,6 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
-import splice.diagnostics.doctor.accounts.LOGIN_NOTICE_BACK
-import splice.diagnostics.doctor.accounts.LOGIN_NOTICE_NONE
 import splice.diagnostics.doctor.accounts.LoginNotice
 import splice.diagnostics.doctor.accounts.LoginNotices
 import splice.upstream.Ticker
@@ -49,7 +47,7 @@ private const val FORGET_MS = 1_800_000L
 internal const val LOGIN_ALERTS_FILE = "login-alerts.json"
 
 private const val HELLO = "splice will tell you here when a command is on the last login that can serve its " +
-    "sessions and that login is near a limit."
+    "sessions and that login has used 80% of a limit, and when no login can serve them."
 
 /** What has been said: the command greeted, and the keys of the notices said and not forgotten. */
 @Serializable
@@ -91,22 +89,15 @@ internal class LoginAlerting(
         val before = onDisk ?: SaidAlerts()
         val greeted = greeted(before.greeted)
         val at = now()
-        val read = roster.json()
-        val holding = notices.of(read).filter { it.key in before.said || tell(it) }.map { it.key }
-        val back = toldBack(read, before.said, holding)
+        // what an earlier build said, by the keys this build gives the same notices
+        val said = before.said.map(notices::carried).toSet()
+        val holding = notices.of(roster.json()).filter { it.key in said || tell(it) }.map { it.key }
         holding.forEach { held[it] = at }
-        val remembered = before.said.filter { it !in back && at - held.getOrPut(it) { at } < FORGET_MS }
+        val remembered = said.filter { at - held.getOrPut(it) { at } < FORGET_MS }
         held.keys.retainAll(remembered + holding)
         val after = SaidAlerts(greeted, (remembered + holding).toSet())
         if (after != onDisk) SecureFile.writeAtomic0600(file, json.encodeToString(SaidAlerts.serializer(), after))
     }
-
-    /** A command told it had no login for a model is told when it has one again. Answers the "none" keys of [said]
-     *  that are forgotten with it, so the next time such a command has none is said too. */
-    private suspend fun toldBack(read: String, said: Set<String>, holding: List<String>): List<String> =
-        notices.back(read).map { it to it.key.removeSuffix(LOGIN_NOTICE_BACK) + LOGIN_NOTICE_NONE }
-            .filter { (notice, none) -> none in said && none !in holding && tell(notice) }
-            .map { (_, none) -> none }
 
     private suspend fun greeted(before: String?): String? {
         val due = command.set && before != command.mark

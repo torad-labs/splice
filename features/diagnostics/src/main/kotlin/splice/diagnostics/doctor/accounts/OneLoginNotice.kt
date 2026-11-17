@@ -37,29 +37,8 @@ internal class OneLoginNotice(
         (refused + weeks + plan).filter { it.resetsAt == null || it.resetsAt > atSeconds }.maxByOrNull { it.percent }
     }
 
-    /** That the login is out, or near a limit past a mark; null below the first mark and with no window. */
+    /** That the login is out, or past [NEAR_MARK] of a limit; null below the mark and with no window. */
     fun notice(): LoginNotice? = fullest?.let { if (it.percent >= USED_UP_PERCENT) out(it) else near(it) }
-
-    /** Below the first mark: that the login's fullest window fills fast enough to be used up soon ([LoginPace]). */
-    fun soon(pace: LoginPace): LoginNotice? = fullest?.takeIf { it.percent < NEAR_MARK }?.let { window ->
-        val key = "$head|login|${window.words}"
-        pace.usedUpSoon(key, window, atSeconds)?.let { usedUpAt ->
-            LoginNotice(
-                head,
-                "$key|$LOGIN_NOTICE_SOON",
-                "$head has one login, and $name has used ${window.percent.roundToInt()}% of its ${window.words}. " +
-                    "At the pace it is being used it runs out around ${AccountResetText.forPerson(usedUpAt)}. " +
-                    "When it does, sessions on $head wait.",
-            )
-        }
-    }
-
-    /** That the login can serve again; null while a window reads used up. */
-    fun back(): LoginNotice? = LoginNotice(
-        head,
-        "$head|login|$LOGIN_NOTICE_BACK",
-        "$head's login can serve again: $name. Sessions that waited for it go on.",
-    ).takeIf { (fullest?.percent ?: 0.0) < USED_UP_PERCENT }
 
     private fun out(window: LimitWindow): LoginNotice {
         val back = window.resetsAt?.let { " It comes back ${AccountResetText.forPerson(it)}." }.orEmpty()
@@ -70,12 +49,13 @@ internal class OneLoginNotice(
         )
     }
 
+    /** The same notice from the mark on, so it is said once (LoginNotices, Nov 17, 2026). */
     private fun near(window: LimitWindow): LoginNotice? {
-        val mark = listOf(NEAR_MARK, LAST_MARK).lastOrNull { window.percent >= it } ?: return null
+        if (window.percent < NEAR_MARK) return null
         val resets = window.resetsAt?.let { ", which resets ${AccountResetText.forPerson(it)}" }.orEmpty()
         return LoginNotice(
             head,
-            "$head|login|${window.words}|$mark",
+            "$head|login|${window.words}|$NEAR_MARK",
             "$head has one login, and $name has used ${window.percent.roundToInt()}% of its ${window.words}$resets. " +
                 "When it runs out, sessions on $head wait.",
         )

@@ -1,12 +1,13 @@
 // NEW: what a launch resumes, out of LaunchService (concentration, 2026-10-27): a bare -c bounded to the head's own
 // newest session (V4-183), a `-r SESSION_ID` another head wrote copied in (V4-115), a `-r NAME` of such a session
-// refused (Nov 16, 2026), and the sentence the operator is told about each.
+// read as the id it stands for (Nov 17, 2026), and the sentence the operator is told about each.
 package splice.launch.recipe
 
 import splice.client.resume.CallingRoster
 import splice.client.resume.ContinueResolution
 import splice.client.resume.HeadBoundedContinue
 import splice.client.resume.MovingTrust
+import splice.client.resume.NamedSession
 import splice.client.resume.NamedSessions
 import splice.client.resume.ResumeAcrossHeads
 import splice.client.resume.SessionAdoption
@@ -68,16 +69,35 @@ internal class LaunchResume(
     /** Nov 16, 2026: a `-r` word that is a session's NAME is Claude Code's to resolve, and it resolves it among every
      *  head's sessions (the shared tree, V4-168). A session whose answers this head would have to move was then opened
      *  where it lay: `claude -r NAME` on a session another command wrote kept asking for that command's model, the
-     *  provider refused every turn, and two clients wrote one transcript. Such a launch is refused here, in a sentence
-     *  that carries the id its copy is made by ([adopt]). Null for every other launch: an id, the picker, a name of a
-     *  session whose answers all stay, a name no one session of the folder carries, and a shim that sent no cwd. */
-    fun refusedName(spec: LaunchSpec, extraArgs: List<String>, cwd: String?): String? {
+     *  provider refused every turn, and two clients wrote one transcript. Nov 16 refused such a launch with the id its
+     *  copy is made by, which left the person a second command to type. Since Nov 17 the name is read here as the id
+     *  it stands for, and the launch goes on as [adopt] makes of that id:
+     *  - the one session of the name, with answers to move: its id, so it goes on as its copy;
+     *  - several sessions of the name, one of them with no answer to move: that one's id. It is this command's own
+     *    line of the work, the copy an earlier launch made among them, and the others are another command's.
+     *  [extraArgs] as given for every other launch: an id, the picker, a name whose one session's answers all stay, a
+     *  name no session of the folder carries, several sessions this command can all go on with or none of which it
+     *  can (the client's picker asks which), and a shim that sent no cwd. */
+    fun named(spec: LaunchSpec, extraArgs: List<String>, cwd: String?): List<String> {
         val word = headBoundedContinue.requestedSessionId(extraArgs)?.takeUnless(sessionUuid::matches)
         val folder = cwd?.takeIf { it.isNotBlank() }
-        val session = word?.let { name -> folder?.let { named.find(spec.trees.own, it, name) } }
-            ?.takeIf { sessionUuid.matches(it.id) } ?: return null
+        val carrying = word?.let { name -> folder?.let { named.all(spec.trees.own, it, name) } }.orEmpty()
+            .filter { sessionUuid.matches(it.id) }
         // a transcript that cannot be read for its models is the client's to open, after its own restore notice
-        val moving = Cancellables.runCatchingCancellable {
+        val moves = carrying.map { moving(it, spec, cwd) ?: return extraArgs }
+        val staying = carrying.filterIndexed { at, _ -> moves[at] == 0 }
+        val meant = when {
+            carrying.size == 1 && staying.isEmpty() -> carrying.single()
+            carrying.size > 1 && staying.size == 1 -> staying.single()
+            else -> null
+        }
+        return headBoundedContinue.resumingAs(extraArgs, meant?.id)
+    }
+
+    /** How many of [session]'s answers this command would have to move, or null where its transcript cannot be read
+     *  for its models, which is said once in the log. */
+    private fun moving(session: NamedSession, spec: LaunchSpec, cwd: String?): Int? =
+        Cancellables.runCatchingCancellable {
             resumeAcrossHeads.rewriter.pending(session.transcript, roster(spec, cwd))
         }.onFailure { cause ->
             log(
@@ -85,14 +105,7 @@ internal class LaunchResume(
                     "(${LogSafe.str(SafeFailureText.render(cause))}); " +
                     "its name goes to the client as typed\n",
             )
-        }.getOrDefault(0)
-        val command = spec.signIn.headKey.ifBlank { "this command" }
-        val refusal = "this -r names session ${session.id}, and $moving of its answers are on a model $command does " +
-            "not serve, so it was not opened here: every turn would ask $command for that model. The session is as " +
-            "it was. Go on with it on the command that serves its model, or continue a copy of it here with " +
-            "-r ${session.id}"
-        return refusal.takeIf { moving > 0 }
-    }
+        }.getOrNull()
 
     /** THE RETRY LAW: no refusal is bare and none invents a cause. Each sentence says what happened,
      *  what is still true (nothing copied / that tree untouched), and the operator's next action. */

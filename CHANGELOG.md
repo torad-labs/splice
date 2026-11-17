@@ -29,6 +29,81 @@
 - A head's `/login` opens splice's accounts page instead of signing in inside the session. `<command> login` in a
   terminal still signs in.
 
+## splice v0.6.3: Claude Code's side requests keep their own instruction, a laptop links a team server's commands, and a 1-hour cache write keeps its price - 2026-11-17
+
+### Highlights
+- **A head with a standing prompt no longer answers Claude Code's side questions with it.** Beside a session's
+  turns Claude Code asks a model small questions of its own, such as a label for a run of tool calls or a title for
+  the conversation. On a head whose `system_prompt_mode` is `"replace"`, splice put the head's prompt where the
+  question's instruction was, so the model was never asked the question and the labels read "I don't see a request
+  in your message". These requests now go to the provider as Claude Code wrote them.
+- **A laptop links everything a team server offers.** `splice remote add <server>` links every command the server
+  offers and `splice remote refresh <server>` follows what it adds and drops. The operator sets which commands a
+  team and a person may use, and how many tokens a minute a person may spend.
+- **A trace no longer keeps the turn key.** Every traced turn of a session splice launched wrote the install's turn
+  key into the trace file. The header that carries it is now redacted. See the upgrade steps for the rows an older
+  version wrote.
+- **A 1-hour cache write is priced as one.** On a head that passes Anthropic's API through, a streamed turn's
+  1-hour cache write was counted at the five-minute rate, so a session's cost read low.
+
+### Upgrading from 0.6.2
+- Run the install command again, or `splice upgrade`. Nothing in `splice.toml` has to change.
+- Trace files an older version wrote still hold the turn key, in `~/.splice/state/trace/`. They are readable only
+  by you. `splice rotate-key` replaces the key so the one in those files opens nothing, `splice sessions relaunch`
+  moves running sessions that still hold the old key onto the new one, and `splice trace <head> --purge` removes a
+  head's trace files.
+- A head with a standing prompt (`system_prompt` or `system_prompt_file`, in any `system_prompt_mode`) stops
+  applying it to Claude Code's requests that carry no tools. A session's own turns, its subagents' included, get the
+  prompt as before.
+
+### Added
+- **Server mode: a laptop links a server's commands.** `GET /server/profile` tells a key holder which commands the
+  server offers, each model's context window and the server's sign-in, never its client secret.
+  `splice remote add <server>` links every command the server offers, `splice remote refresh <server>` links the
+  ones it starts offering and unlinks the ones it drops, and `splice remote set <command> --window N|server` pins a
+  context window on the laptop or gives the server's back.
+- **Server mode: a key the operator issued.** `splice login <server> --key-stdin` reads a key made with
+  `splice server key create` from stdin, checks it against the server, says whose it is, and keeps it where a
+  sign-in keeps its own. A key the server refuses is said in the server's words and none of it is kept.
+- **Server mode: who may use what.** `splice server team set <team> --commands …` and
+  `splice server person set <person> --commands …` decide which commands a team and a person may use, and a
+  person's own setting wins over their team's. A turn on any other command is a 403 that names it, and nothing
+  reaches the upstream.
+- **Server mode: tokens per minute.** `[server.limits] tpm_per_person`, and `--tpm` for one person, cap the tokens
+  of a person's turns that ended in the last minute, with a 429 and a `Retry-After`.
+- **Server mode: a minimum client version.** With `[server.client] minimum`, a laptop that says it runs an older
+  splice is answered in the conversation with the version to upgrade to, and nothing reaches the upstream. A
+  request that names no version is served.
+- **Server mode: a session stays on the upstream it started on.** A pool keeps each Claude Code session on its
+  upstream however busy that one is, and balances only new sessions, so a session's prompt cache stays warm.
+- **Server mode: a provider billed by the hour.** A provider's table can say `hourly_usd`.
+  `splice server usage report --format json` then meters its hours over the report's window, counted from the
+  host's boot time so a daemon restart does not restart the meter: `fixed` lists each such provider with its hours
+  and cost, and `totals` carries the fixed cost beside the metered tokens.
+- **`splice usage --json` says which model its next login is for.** Each command carries `next_model` beside
+  `next`: the model most of the command's recent turns asked for, null until a turn has named one. A login can be
+  out of one model's week and still serve the others, so `next` alone could be read as the next login for a model
+  it is held out of. The field is added within version 1 of the document.
+
+### Fixed
+- **Claude Code's side requests keep their own instruction.** A request from Claude Code that carries no tools is
+  one it sends beside a session's turns, and the instruction in its system field is the whole question. splice now
+  sends it upstream with no prompt layer of the head's and no team slot text, as it already did for the auto-mode
+  review. A perf row for such a turn carries `side_request`. Another client's request is never matched, so a prompt
+  an operator set for a team's API callers still rides on it.
+- **The launch proof is redacted in traces.** A session splice launched proves itself to a head with the turn key
+  in a header whose name is kept free of "key", "token" and "auth", so Claude Code does not copy it onto requests
+  of its own. The trace chose what to redact by those words, so it kept the value. It now redacts that header by
+  name, in a header map and in a body or stream that carries it.
+- **A 1-hour cache write keeps its price when the stream's closing usage repeats the total.** Anthropic's
+  `message_start` gives a cache write's total and its split by lifetime, and its `message_delta` repeats the total
+  without the split. The passthrough read the closing usage as a write with no 1-hour share, so the write was
+  priced at 1.25 times input instead of 2 times and no perf row carried the hourly count. A closing usage that
+  repeats the same total now keeps the split read before it.
+- **`splice add`'s connection check works with Claude Code 2.1.326.** The check passed an empty MCP config that
+  this version refuses before any request, so a working head was reported as broken. It now passes one every
+  Claude Code reads as no servers.
+
 ## splice v0.6.2: Claude Desktop's door leaves your settings file alone, your own model picker included - 2026-11-16
 
 ### Highlights

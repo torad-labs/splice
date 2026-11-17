@@ -39,6 +39,10 @@ public interface HeadUpstreams {
     /** What [tokens] on [model] cost at the rate card of the head [head]'s provider, in USD; null when the model has no
      *  card there, which is what the default answers. */
     public fun price(head: String, model: String, tokens: ServedTokens): Double? = null
+
+    /** Each provider paid for by the hour (F10, `hourly_usd`), by its key in splice.toml, with what it costs an hour in
+     *  USD. None by default. */
+    public fun hourly(): Map<String, Double> = emptyMap()
 }
 
 /** A provider that speaks openai-chat, as the listener relays an OpenAI-style client's requests to it. */
@@ -107,6 +111,9 @@ public class UpstreamApi(private val upstreams: HeadUpstreams) {
     /** What [tokens] on [model] cost at the rate card of the head [head]'s provider; null when there is no card. */
     internal fun price(head: String, model: String, tokens: ServedTokens): Double? =
         upstreams.price(head, model, tokens)
+
+    /** Each provider paid for by the hour, with what it costs an hour in USD. */
+    internal fun hourly(): Map<String, Double> = upstreams.hourly()
 
     /** Why a turn for the head [head] cannot be served now, or null while its provider has a server up or is one
      *  server: the sentence names the provider and each of its upstreams, which the person passes on to the

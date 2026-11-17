@@ -4,6 +4,9 @@
 //
 //   - a turn takes a lease on the healthy server with the least in flight, the first listed among equals, or on the
 //     one its person prefers while that one is healthy, and gives the lease back when it ends;
+//   - a Claude Code session's turn goes back to the server that served its last one while that one is healthy (F11),
+//     however busy, since its prompt is cached there; a session whose server went down moves once, and its new
+//     server is its home from then, the old one back or not;
 //   - a health check that fails takes a server out, and so does a connection it refuses, at once and before the next
 //     check; only a health check that passes brings it back;
 //   - with none healthy a lease is still given, on the least busy of them all: whoever sends a turn anyway then hears
@@ -42,6 +45,7 @@ public class UpstreamPool(
     private val log: LogSink,
 ) {
     private val members = upstreams.map(::UpstreamMember)
+    private val homes = SessionHomes()
 
     /** The servers as the file lists them: their names, and where each is asked for its health. */
     public val upstreams: List<UpstreamConfig> = upstreams.toList()
@@ -54,14 +58,18 @@ public class UpstreamPool(
     @Synchronized
     public fun readings(): List<UpstreamReading> = members.map { it.reading(provider) }
 
-    /** A place on the server a turn goes to now: [preferred] while a server of that name is healthy, else the healthy
-     *  one with the least in flight; with none healthy, the least busy of them all. The turn counts as in flight
-     *  there until the lease is released. */
+    /** A place on the server a turn goes to now: the one that served [session]'s last turn while it is healthy, else
+     *  [preferred] while a server of that name is healthy, else the healthy one with the least in flight; with none
+     *  healthy, the least busy of them all. A healthy server chosen for [session] is where its next turn goes. The
+     *  turn counts as in flight there until the lease is released. */
     @Synchronized
-    public fun lease(preferred: String? = null): UpstreamLease {
+    public fun lease(preferred: String? = null, session: String? = null): UpstreamLease {
         val healthy = members.filter { it.healthy }
-        val chosen = healthy.firstOrNull { it.config.name == preferred }
+        val home = session?.let(homes::of)
+        val chosen = healthy.firstOrNull { it.config.name == home }
+            ?: healthy.firstOrNull { it.config.name == preferred }
             ?: healthy.ifEmpty { members }.minBy { it.inflight }
+        if (session != null && chosen.healthy) homes.served(session, chosen.config.name)
         chosen.inflight++
         return UpstreamLease(this, chosen)
     }

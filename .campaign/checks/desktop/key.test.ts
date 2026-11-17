@@ -1,13 +1,13 @@
 // desktop-key: the door has a key of its own. It opens the door and nothing else, no other key of splice's opens the
 // door, it is never sent to a provider, it outlives `splice rotate-key`, and `splice desktop rotate-key` replaces it
-// in the settings file too.
+// and says the new one to set in Desktop.
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { statSync } from "node:fs";
 import { Splice, freePort, turn } from "../server/lib/harness.ts";
 import { Upstream } from "../server/lib/upstream.ts";
 import { launch, sessionKey } from "../speed/lib/session.ts";
-import { type Door, door, doorTurn, settingsFile, slottedHead, turnOn } from "./lib/desktop.ts";
+import { type Door, doorTurn, rotateKey, settingsFile, slottedHead, turnOn } from "./lib/desktop.ts";
 
 const MODEL = "claude-astra--astra-large";
 
@@ -86,13 +86,12 @@ describe("desktop-key", () => {
 
   test("splice rotate-key leaves it working", async () => {
     expect(s.cli(["rotate-key"]).code).toBe(0);
-    expect(door(s).key).toBe(d.key);
+    expect(turnOn(s).key).toBe(d.key);
     expect((await doorTurn(d.url, { key: d.key, model: MODEL, session: crypto.randomUUID() })).status).toBe(200);
   });
 
-  test("splice desktop rotate-key replaces it: the file holds the new key, and the old one is refused", async () => {
-    expect(s.cli(["desktop", "rotate-key"]).code).toBe(0);
-    const next = door(s).key;
+  test("splice desktop rotate-key replaces it: it says the new key to set, and the old one is refused", async () => {
+    const next = rotateKey(s).key;
     expect(next).not.toBe(d.key);
     await refused(d.key);
     expect((await doorTurn(d.url, { key: next, model: MODEL, session: crypto.randomUUID() })).status).toBe(200);

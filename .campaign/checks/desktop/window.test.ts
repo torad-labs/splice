@@ -1,7 +1,7 @@
-// desktop-window: the Code tab's Claude Code has one context window for a session, the one the settings file
-// declares, and the models in the door have windows of their own. The door reports a turn's counts as the same share
-// of the declared window that they are of the model's own, so a session compacts before its model's limit whichever
-// model it is on.
+// desktop-window: the Code tab's Claude Code has one context window for a session, the one `splice desktop on` says
+// to set in Desktop, and the models in the door have windows of their own. The door reports a turn's counts as the
+// same share of the declared window that they are of the model's own, so a session compacts before its model's limit
+// whichever model it is on.
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Splice, freePort, mockHead } from "../server/lib/harness.ts";
@@ -41,7 +41,7 @@ async function share(selector: string, session: string, stream: boolean): Promis
 }
 
 describe("desktop-window", () => {
-  test("the file declares one window to Claude Code", () => {
+  test("on declares one window to Claude Code", () => {
     expect(Number.isInteger(d.window)).toBe(true);
     expect(d.window).toBeGreaterThan(0);
   });

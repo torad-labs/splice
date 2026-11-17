@@ -1,14 +1,14 @@
-// desktop-terminal: with Desktop on, the terminal is as it was. A head started from a shell that carries the
-// file's switch, as a shell inside a Code tab session does, still runs on its head, and splice writes one file in
-// the `claude` command's folder.
+// desktop-terminal: with Desktop on, the terminal is as it was. A head started from a shell that carries the door's
+// variables, as a shell inside a Code tab session does, still runs on its head, and splice writes nothing in the
+// `claude` command's folder. (Rewritten for 0.6.1, when the door left the settings file.)
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { readdirSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { Splice, freePort, until } from "../server/lib/harness.ts";
 import { Upstream } from "../server/lib/upstream.ts";
 import { ask, launch } from "../speed/lib/session.ts";
-import { type Door, doorTurn, fileEnv, recipe, rows, slottedHead, turnOn } from "./lib/desktop.ts";
+import { type Door, doorTurn, recipe, rotateKey, rows, slottedHead, turnOn } from "./lib/desktop.ts";
 
 /** Claude Code's provider switches and what goes with them: any of these reaching a session sends it past its head. */
 const SWITCHES = [
@@ -36,7 +36,7 @@ afterAll(async () => {
   astra?.stop();
 });
 
-/** Every file under `dir`, by its path from it. */
+/** Every file under `dir`, by its path from it; none when there is no such folder. */
 function under(dir: string): string[] {
   const out: string[] = [];
   const walk = (at: string, prefix: string) => {
@@ -45,7 +45,7 @@ function under(dir: string): string[] {
       else out.push(`${prefix}${e.name}`);
     }
   };
-  walk(dir, "");
+  if (existsSync(dir)) walk(dir, "");
   return out.sort();
 }
 
@@ -57,8 +57,8 @@ describe("desktop-terminal", () => {
   });
 
   test("a head started from a shell inside a Code tab session runs on its head, not through the door", async () => {
-    // the shell of a Code tab session carries the file's env block
-    const carried = fileEnv(s);
+    // the shell of a Code tab session carries the variables set in Desktop's Code environment
+    const carried = d.env;
     const saved = Object.fromEntries(Object.keys(carried).map((k) => [k, process.env[k]]));
     Object.assign(process.env, carried);
     try {
@@ -87,12 +87,12 @@ describe("desktop-terminal", () => {
     expect(JSON.stringify(l.settings)).not.toContain(d.key);
   });
 
-  test("splice writes one file in the claude command's folder, the settings file", async () => {
+  test("splice writes nothing in the claude command's folder", async () => {
     expect((await doorTurn(d.url, { key: d.key, model: d.model, session: crypto.randomUUID() })).status).toBe(200);
     await launch(s, "claude-astra");
-    expect(s.cli(["desktop", "rotate-key"]).code).toBe(0);
-    expect(under(join(s.home, ".claude"))).toEqual(["settings.json"]);
+    rotateKey(s);
+    expect(under(join(s.home, ".claude"))).toEqual([]);
     expect(s.cli(["desktop", "off"]).code).toBe(0);
-    expect(under(join(s.home, ".claude")).filter((f) => f !== "settings.json")).toEqual([]);
+    expect(under(join(s.home, ".claude"))).toEqual([]);
   });
 });

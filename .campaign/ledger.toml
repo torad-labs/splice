@@ -735,7 +735,7 @@ notes = [
 id = 'server-profile-route'
 title = 'GET /server/profile tells a key holder what the server offers'
 feature = 'server-profile'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -749,13 +749,14 @@ reviews = [
 ]
 notes = [
   '2026-11-16 19:45 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 22:07 CT campaign: done in round 1 of server-profile: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'server-remote-sync'
 title = 'A laptop links and follows every command a server offers'
 feature = 'server-profile'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'server-profile-route',
@@ -771,13 +772,14 @@ reviews = [
 ]
 notes = [
   '2026-11-16 19:45 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 22:07 CT campaign: done in round 2 of server-profile: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'server-remote-window'
 title = "A linked command takes the server's window, or one the laptop pins"
 feature = 'server-profile'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'server-remote-sync',
@@ -793,6 +795,7 @@ reviews = [
 ]
 notes = [
   '2026-11-16 19:45 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-16 22:07 CT campaign: done in round 1 of server-profile: its checks, its feature review, its code review passed',
 ]
 
 [[row]]

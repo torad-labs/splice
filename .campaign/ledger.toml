@@ -74,6 +74,9 @@ goal = "The model calls a capability itself, as a tool the client never sees: sp
 [feature."harness-says"]
 goal = "While a capability of round two holds a turn, the session's status line says what it is doing: the Context Getter's exploring and its tool-use summaries, an MCP worker's progress, and the agent's call. These wait on held-status's status-line piece (held-says), so they are a feature of their own and the round's other features don't wait on it."
 
+[feature."claude-adds"]
+goal = "Someone who runs Claude on their own Claude plan keeps it and gains every other account: claude stays on its head, starts on their own default as it did, and /model lists Claude's models with the models of their other signed-in accounts beside them. A request that names another account's model runs on that account, with its own login and its own window, and the person's Claude login never reaches another provider. A session that runs out on one provider moves to another with /model and keeps its conversation. Spec: docs/specs/door-default.md, decision 9."
+
 [[row]]
 id = 'server-listener'
 title = 'A [server] listener that answers only keys'
@@ -1313,6 +1316,7 @@ reviews = [
 ]
 notes = [
   '2026-11-17 14:19 CT: added; 1 of 7 checks fail, as they should before the work',
+  "2026-11-17 16:02 CT: lead, 16:02 CT: the dispute stands. The cause was the gate's hook judging a worktree's staged paths against the main checkout's settings.gradle.kts; 13142162f makes a hook judge the tree git started it in. The checks are unchanged. Commit the work as it is.",
 ]
 
 [[row]]
@@ -1558,4 +1562,90 @@ reviews = [
 ]
 notes = [
   '2026-11-17 14:33 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'adds-turn'
+title = 'claude on its head runs the model each request names'
+feature = 'claude-adds'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "A claude session on its head runs the model each request names. A selector of another signed-in account's head is relayed to that head as the door relays it, with that head's own login, cooldowns and failures, and the caller's Claude login is taken off the request first: no provider but Anthropic ever sees it. A name that starts as another head's selectors do and names no model of that head is refused by name with nothing sent upstream. Every other name goes to Anthropic with the caller's own login exactly as before, so a model Anthropic ships tomorrow runs the day it ships; count_tokens follows the same rule. A request that names a Claude model goes to Anthropic whatever the session's own model is. A session moves between a Claude model and a selector and keeps its conversation. A relayed turn is its head's row on /api/perf/turns, with the model that ran and door set to claude. See docs/specs/door-default.md, decision 9 (A turn, Records, Small requests)."
+checks = [
+  'bun test ./.campaign/checks/door/adds-turn.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 15:41 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'adds-window'
+title = "A relayed turn's counts fit the window the claude session holds"
+feature = 'claude-adds'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'adds-turn',
+]
+guard = false
+spec = "A claude session on its head holds Claude Code's own window for a model it does not know: 200,000 tokens, or 1,000,000 for a selector that ends in [1m]. A relayed turn's input counts are reported to the session as the same share of that window that they are of the model's own, on a stream and on a JSON answer and on count_tokens, so the session compacts before its model's limit. A Claude model's counts are Anthropic's own, untouched. See docs/specs/door-default.md, decision 9 (Counts)."
+checks = [
+  'bun test ./.campaign/checks/door/adds-window.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 15:47 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'adds-picker'
+title = "/model in claude keeps Claude's models and gains every signed-in account's"
+feature = 'claude-adds'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'adds-turn',
+]
+guard = false
+spec = "On a machine that has a head keyed claude, claude stays on it. A session starts as it did before the door: the head's address, the person's own Claude folder, their own default model, and nothing of the door's set (no Mantle switch, no key, no window). The launch's --settings overlay carries modelPicker with replaceBuiltInOptions false and the rows of decision 4: signed-in accounts only, with the same labels in the same order, so /model lists Claude Code's own models and after them the models of the signed-in accounts. With no account signed in the overlay carries no picker. An account signed in while splice runs is in the next session's picker. claude --model <selector> starts a session on a selector. splice claude --json gives lane head with models and left_out as on the door lane. See docs/specs/door-default.md, decision 9 (Launch, Picker, What splice says)."
+checks = [
+  'bun test ./.campaign/checks/door/adds-picker.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 15:50 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'adds-says'
+title = "splice says claude reaches every model, and only other providers' commands are deprecated"
+feature = 'claude-adds'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'adds-picker',
+]
+guard = false
+spec = "claude on its head is not deprecated. The launch of another provider's own command carries a one-line notice the shim prints before Claude Code starts: the command is deprecated, and claude runs this head's models, with what to type there: /model and the selector of the head's pinned model. On a machine with no head keyed claude and claude not on the door, it adds that splice claude door comes first. A launch of claude carries no notice, on either lane. splice status and splice doctor say which lane claude is on, and neither calls a lane deprecated. splice claude says claude is on its head with the other accounts' models. splice claude door still moves claude to the door, and on a machine that has a head keyed claude it says in the same answer that Claude's models no longer run in claude until splice claude head, which puts it back. README.md, AGENTS.md and the CHANGELOG describe claude as how splice is used and the other head commands as deprecated. See docs/specs/door-default.md, decisions 7 and 9."
+checks = [
+  'bun test ./.campaign/checks/door/adds-says.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 15:51 CT: added; 1 of 1 checks fail, as they should before the work',
 ]

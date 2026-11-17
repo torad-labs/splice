@@ -61,6 +61,14 @@ class DesktopSettingsTest {
     }
 
     @Test
+    fun `a picker of the person's own, and their pick from it, stay as they are`() {
+        val mine = file("""{"model":"opus","modelPicker":{"options":[{"model":"opus","label":"My Opus"}]}}""")
+        assertEquals(mine, settings.withoutDoor(mine, null, selectors))
+        val custom = file("""{"model":"my-gateway-model","modelPicker":{"options":[{"model":"my-gateway-model"}]}}""")
+        assertEquals(custom, settings.withoutDoor(custom, null, selectors))
+    }
+
+    @Test
     fun `a file the older door made is removed with it`() {
         val made = file(
             """{"file_existed":false,"env_existed":false,"env":{"ANTHROPIC_MODEL":null},"modelPicker":null}""",

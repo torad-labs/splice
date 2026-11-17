@@ -235,7 +235,6 @@ internal class ControlPlane(
                 launchService = launch.service(home, sharing, controlPort, mcp.hubLive)
                     .also {
                         it.remotes = remoteCommands
-                        it.desktop = desktop?.launching
                         it.speeds = speeds.of(heads)
                     },
                 shutdownDaemon = shutdownDaemon,

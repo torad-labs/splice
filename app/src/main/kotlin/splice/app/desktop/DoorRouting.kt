@@ -1,8 +1,10 @@
 // NEW: desktop-door (docs/specs/desktop-door.md, decisions 1 and 2). Which head a model named at the door runs on.
 //
 // A selector, the ID a head's own /v1/models lists, runs that model on that head, and the session is on that head
-// from then. Anthropic's own IDs are a tier (AnthropicTiers): they run the model the session's head names for that
-// tier, or its pinned model. Any other model has no route, and the door refuses it.
+// from then. Anthropic's own IDs are a tier (AnthropicTiers), which is all Desktop's own picker sends: in a session
+// that named a selector they run the model its head names for that tier, or its pinned model; in any other they run the
+// default model `splice desktop on` chose, and Claude Code's small tier, its side calls, runs the model that model's
+// head names for it, when it names one. Any other model has no route, and the door refuses it.
 package splice.app.desktop
 
 import splice.client.models.AnthropicTiers
@@ -25,18 +27,28 @@ internal class DoorRouting(private val records: DesktopRecords) {
         return DoorRoute(head, model.upstream)
     }
 
-    /** An Anthropic ID's tier, run on [session]'s head, else the default model's, as that head runs the tier. */
+    /** An Anthropic ID's tier: run on [session]'s head as that head runs the tier, or else as the default model, its
+     *  head's model for the small tier when it names one. With the default model no longer in the door, the first
+     *  head runs the tier. */
     private fun tiered(lineup: DesktopLineup, asked: String, session: String?): DoorRoute? {
         val tier = tiers.tierOf(asked) ?: return null
-        val held = session?.let(sessions::get)
-        val head = lineup.heads.firstOrNull { it.key == held } ?: defaultHead(lineup) ?: return null
-        return DoorRoute(head, head.tiers[tier] ?: head.pinned)
+        val held = session?.let(sessions::get)?.let { key -> lineup.heads.firstOrNull { it.key == key } }
+        return if (held != null) DoorRoute(held, held.tiers[tier] ?: held.pinned) else defaulted(lineup, tier)
     }
 
-    /** The head of the default model, or the first head in the door when that model is no longer in it. */
-    private fun defaultHead(lineup: DesktopLineup): DoorHead? =
-        records.get().defaultModel?.let { lineup.find(it)?.first } ?: lineup.heads.firstOrNull()
+    /** [tier] in a session that named no selector: the default model, or its head's model for the small tier; the
+     *  first head's model for [tier] when the default model is no longer in the door. */
+    private fun defaulted(lineup: DesktopLineup, tier: String): DoorRoute? {
+        val chosen = records.get().defaultModel?.let(lineup::find)
+            ?: return lineup.heads.firstOrNull()?.let { DoorRoute(it, it.tiers[tier] ?: it.pinned) }
+        val (head, model) = chosen
+        val small = head.tiers[SMALL_TIER]?.takeIf { tier == SMALL_TIER }
+        return DoorRoute(head, small ?: model.upstream)
+    }
 }
+
+// Claude Code's tier for its side calls (titles, summaries), which a head may map to a smaller model of its own.
+private const val SMALL_TIER = "haiku"
 
 /** Each session's head: the head of the last selector it named, for the tiers it asks for later. The session heard
  *  from longest ago goes first. */

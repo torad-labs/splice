@@ -1,7 +1,7 @@
 // NEW: desktop-door (docs/specs/desktop-door.md, decisions 4 and 7). The door's own record in splice's state folder:
-// whether Desktop is on, the default model and the window `on` declared, what `on` replaced in the settings file, so
-// `off` can put it back, and the last turn that came through the door. Kept here and never beside the settings file,
-// which is the person's own. Written whole and atomically before a change takes effect.
+// whether Desktop is on, the default model, the window Desktop is told, what an older splice's `on` replaced in the
+// settings file until it is put back, and the last turn sent through the door. Kept here and never beside the settings
+// file, which is the person's own. Written whole and atomically before a change takes effect.
 package splice.app.desktop
 
 import kotlinx.serialization.SerialName
@@ -17,8 +17,8 @@ import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 
-/** The last turn that came through the door: when, which session, the head, the model it asked for and the model
- *  that ran. */
+/** The last turn sent through the door: when, which session, the head, the model it asked for and the model it was
+ *  sent to the head as. Recorded as it is sent, so it says nothing of how the turn ended. */
 @Serializable
 internal data class DesktopLastTurn(
     val at: String,
@@ -33,9 +33,9 @@ internal data class DesktopRecord(
     val on: Boolean = false,
     /** The selector a session starts on: `--model`, or the one chosen the last time. */
     @SerialName("default_model") val defaultModel: String? = null,
-    /** The window `on` declared in the file, which every count the door reports is a share of. */
+    /** The window Desktop is told, set at the first `on` and kept: every count the door reports is a share of it. */
     val window: Long? = null,
-    /** What the last `on` replaced in the settings file (DesktopSettings.on), until `off` puts it back. */
+    /** What an older splice's `on` replaced in the settings file, until it is put back (withoutDoor). */
     val replaced: JsonObject? = null,
     @SerialName("last_turn") val lastTurn: DesktopLastTurn? = null,
 )

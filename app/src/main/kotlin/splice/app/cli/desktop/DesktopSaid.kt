@@ -4,6 +4,8 @@ package splice.app.cli.desktop
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import splice.app.control.DESKTOP_ENV
+import splice.client.desktop.DESKTOP_ENV_PLACE
 import splice.core.terminal.TerminalOutput
 import splice.core.util.JsonScalars
 
@@ -26,13 +28,22 @@ internal class DesktopSaid(private val out: TerminalOutput) {
         }
         val last = state["last_turn"] as? JsonObject
         if (last == null) {
-            out.line("Last turn: none yet")
+            out.line("Last turn sent: none yet")
         } else {
             val asked = JsonScalars.str(last, "model_asked")
             val ran = JsonScalars.str(last, "model")
             val session = JsonScalars.str(last, "session_id")?.let { " in session $it" }.orEmpty()
-            out.line("Last turn: ${text(last, "at")} on ${text(last, "head")}$session, asked $asked, ran $ran")
+            out.line("Last turn sent: ${text(last, "at")} on ${text(last, "head")}$session, asked $asked, sent as $ran")
         }
+    }
+
+    /** What to set in Desktop's environment store, when the act's answer carries it: one `NAME=value` line each. */
+    fun env(state: JsonObject) {
+        val env = (state[DESKTOP_ENV] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+        if (env.isEmpty()) return
+        out.line("splice: set these in $DESKTOP_ENV_PLACE, then start a new Code tab session:")
+        env.forEach { out.line("  ${text(it, "name")}=${text(it, "value")}") }
+        out.line("splice: they stay set until you remove them there; `splice desktop off` says which.")
     }
 
     private fun text(from: JsonObject, key: String): String = JsonScalars.str(from, key).orEmpty()

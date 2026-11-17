@@ -64,7 +64,8 @@ internal class RetrySteps(
         bodyJson: String,
         state: RetryState,
     ): LoopStep<Nothing> {
-        if (failed.limited) state.cooldown.observeLimit()
+        val bare = (failed.cause as? FailureCause.Provider.Limited)?.isBare == true
+        if (failed.limited && !bare) state.cooldown.observeLimit()
         state.lastErr = failed
         state.lastThrown = null
         state.lastTear = null
@@ -73,6 +74,8 @@ internal class RetrySteps(
         val moment = if (ctx.recovery.clientFrameEmitted()) Moment.MID_CONTENT else Moment.BEFORE_COMMIT
         val at = Position(moment, streamBegan = false)
         val step = next(cause, at, ctx, state)
+        // a bare limit is read on its login only where the turn stays on it (RetryLedger.bareMet)
+        if (bare && state.ledger.bareMet(stays = step != RetryStep.SwitchLogin)) state.cooldown.observeLimit()
         RetryNotes.failed(ctx, failed, step, state)
         return take(step, Asked(cause, at, failed), ctx, state)
     }
@@ -161,7 +164,7 @@ internal class RetrySteps(
                 How.AMEND_REASONING, How.REANCHOR, How.CONTINUE_REASONING, How.FOLD_CONTINUE ->
                     endings.done(asked.failed, null, state, ctx)
             }
-            RetryStep.SwitchLogin -> LoopStep.Done(UpstreamPost.Refused(endings.ended(asked.failed, null, state, ctx)))
+            RetryStep.SwitchLogin -> LoopStep.Done(UpstreamPost.Refused(endings.moved(asked.failed, state, ctx)))
             is RetryStep.End -> endings.done(asked.failed, step.cause, state, ctx)
             is RetryStep.Hold -> hold(step, asked, ctx, state)
             RetryStep.Keep -> endings.done(asked.failed, null, state, ctx)

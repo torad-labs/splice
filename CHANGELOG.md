@@ -10,9 +10,9 @@
 - **`/login` opens splice's accounts page.** In a session on the door, and on every head here, `/login` runs
   `splice console` and the turn goes no further. Claude Code's own `/login` and `/logout` are off on the door. With
   no account signed in, a turn is refused with a message that says to type `/login`.
-- **Head commands are deprecated.** `claudex`, `claude-grok`, `claude-kimi`, `claude-muse`, `claude` on its head
-  and every command `splice add` links keep working, and each says it is deprecated when it starts. No head is
-  removed, and no date is set for removing one.
+- **Head commands are deprecated.** `claudex`, `claude-grok`, `claude-kimi`, `claude-muse` and every command
+  `splice add` links keep working, and each says it is deprecated when it starts. `claude` on its own head says
+  nothing: it is your own Claude Code on your own login. No head is removed, and no date is set for removing one.
 - **A capability runs work before a session's first turn.** A `[capabilities.<name>]` table in `splice.toml`
   names an HTTP worker you write: a policy check, a reviewer, a helper that gathers context. splice holds the turn
   while it works, and what it returns goes into the session's first user message and stays there, byte for byte,
@@ -47,6 +47,28 @@
   splice took any model of its door out of `~/.claude/settings.json` as a leftover of 0.6.0's Desktop door. It now
   does so only while that older door is in the file, and it leaves a file Claude Code wrote in the meantime as
   Claude Code wrote it.
+- **Plain `claude` goes through splice or it does not start.** When the launcher could not get a launch for plain
+  `claude` (the daemon refused it in words, stayed busy past the retries, was older than the launcher, or could not
+  be reached), it ran Claude Code directly on its own login and said so in one line. A session started that way
+  stays outside splice for its whole life: no other login takes its turns when its own runs out, and a launch the
+  daemon had refused was opened anyway. The launch now ends with the reason, followed by the command that runs
+  Claude Code without splice, for when that is what you want. A launch the daemon refuses is written to its log.
+- **`claude` on a Claude head sends its small requests on its small model.** Claude Code takes any address but
+  Anthropic's for a gateway's, and behind one it sends its small requests (the usage check at startup, titles,
+  summaries) on the session's main model. Anthropic answers that usage check on most models with a 429, which
+  Claude Code showed as a limit reached. The launch of a head that reaches Anthropic now tells Claude Code that the
+  address is Anthropic's own, and the launch of any other head clears that word if a session passes it down.
+- **A refusal that names no limit is no longer read as every login's limit.** A 429 with no reset, no window and
+  no Retry-After does not say whose it is. On a head with several logins splice moved the turn through every one
+  of them, showed each as limited for 20 seconds and let go of a Use now pin. Now one other login is asked. The
+  same answer there is no login's: the turn waits it out where it is, no login is shown limited and the pin stays.
+  An answer there shows the first login as limited, as before.
+- A request that does not stream and fails no longer carries a login's usage windows. Claude Code read them on a
+  429 as the limit it had hit, and showed the spent week of the last login splice had asked.
+- **A `splice` command's memory has a ceiling.** Every command but the daemon ran with no heap limit, so Java took
+  its default, a quarter of the machine: on a 120 GiB machine one `splice trace --last 4000 --json` grew to 20 GiB.
+  A command's heap now stops at 4 GiB, or at Java's own quarter on a machine under 16 GiB, and `splice trace` asked
+  for more turns than fit says so and what to ask for instead. `SPLICE_CLI_JVM_OPTS` replaces the ceiling.
 
 ## splice v0.6.3: Claude Code's side requests keep their own instruction, a laptop links a team server's commands, and a 1-hour cache write keeps its price - 2026-11-17
 

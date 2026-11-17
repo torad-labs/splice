@@ -240,7 +240,10 @@ public class UpstreamClient(
                 ctx,
                 AttemptWire(auth.credentials, auth.headers, body.bytes, recorder),
                 auth,
-                onStreamStart = { streamHandedOff = true },
+                onStreamStart = {
+                    streamHandedOff = true
+                    state.ledger.accepted()
+                },
                 block,
             )
         }

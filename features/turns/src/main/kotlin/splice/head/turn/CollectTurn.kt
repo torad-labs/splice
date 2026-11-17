@@ -198,14 +198,16 @@ internal class CollectTurn(
         drive: TurnDrive,
         terminal: CollectingTerminal,
     ) {
-        // A limit handed to the client names its reset in the headers Claude Code sleeps on (slice 5); every other answer
-        // carries the quota windows the client reads.
-        val handedOver = terminal.answered?.let { HandOverHeaders.of(it, wall()) }.orEmpty()
-        if (handedOver.isEmpty()) {
+        // A limit handed to the client names its reset in the headers Claude Code sleeps on (slice 5). An answer the
+        // provider gave carries the quota windows the client reads. Any other failure carries neither, as on the
+        // streaming path: Claude Code reads the windows on a 429 as the limit it hit, and until Nov 17, 2026 a request
+        // the provider refused with no window at all was shown as the spent week of the last login that was asked.
+        val failure = terminal.answered
+        val handedOver = failure?.let { HandOverHeaders.of(it, wall()) }.orEmpty()
+        handedOver.forEach { (name, value) -> call.response.header(name, value) }
+        if (failure == null) {
             turnQuota.forSession(inputs.built.meta.scope.sessionId, drive.account)
                 ?.clientHeaders()?.forEach { (name, value) -> call.response.header(name, value) }
-        } else {
-            handedOver.forEach { (name, value) -> call.response.header(name, value) }
         }
         call.respond(
             CollectedReply(

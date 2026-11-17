@@ -487,6 +487,7 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
                 "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY",
                 "CLAUDE_CODE_USE_MANTLE", "ANTHROPIC_BEDROCK_BASE_URL",
                 "ANTHROPIC_BEDROCK_MANTLE_BASE_URL", "AWS_BEARER_TOKEN_BEDROCK",
+                "_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL",
             ),
             recipe.unset,
         )

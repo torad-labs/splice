@@ -56,6 +56,9 @@ goal = "One command, claude, reaches every model a person is signed in to: it ru
 [feature."capabilities"]
 goal = "A capability is a piece of work splice runs around a session's turn, declared in splice.toml and run by a worker that can live outside splice: splice calls it by rule, holds the turn while it works, and puts its text into the session's first user message, where it stays on every later request; a failure lets the turn go on or refuses it, as declared (docs/specs/harness.md, decisions 1 to 6 and 10)."
 
+[feature."held-status"]
+goal = "A person sees on the session's status line what a held turn is doing, how long ago it last said so and how many turns are held, whether a capability or a usage limit holds it."
+
 [[row]]
 id = 'server-listener'
 title = 'A [server] listener that answers only keys'
@@ -1227,4 +1230,46 @@ reviews = [
 notes = [
   '2026-11-17 04:31 CT: added; 1 of 1 checks fail, as they should before the work',
   '2026-11-17 08:39 CT campaign: done in round 3 of capabilities: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'held-says'
+title = "A turn a capability holds says what it is doing on the session's status line"
+feature = 'held-status'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "While a capability holds a turn, the session's status line leads with what the held turn says, in the colour its capability declares, then how long ago that message came (Reading the request · 4s ago), and the model's name follows. Each progress line the worker sends becomes the message and its age starts again. With two turns of the session held the line also says 2 turns, and when one goes on the other's message stays. When no turn is held the line is what it is today, and no other session's line ever changes. docs/specs/harness.md, decision 7."
+checks = [
+  'bun test ./.campaign/checks/harness/status.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 08:43 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'limit-says'
+title = 'A turn waiting on a usage limit says how long ago the wait began and how many turns wait'
+feature = 'held-status'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'held-says',
+]
+guard = false
+spec = "A turn that waits on a usage limit, an overload or credit reaches the status line through the same piece a capability's hold does. The line leads with the wait as it does today (plan limit reached: waiting until ... or a reset), and now says how long ago the wait began and, with two turns of the session waiting, 2 turns. The wait keeps what it does today: the line it writes into the conversation, what ends it, and what a held turn is told when the head stops. No other session's line changes. docs/specs/harness.md, decision 8."
+checks = [
+  'bun test ./.campaign/checks/harness/limit.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 08:43 CT: added; 1 of 1 checks fail, as they should before the work',
 ]

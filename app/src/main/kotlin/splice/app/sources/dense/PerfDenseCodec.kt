@@ -17,6 +17,7 @@ import splice.app.sources.PerfNumericSchema
 import splice.app.sources.PerfRetention
 import splice.core.perf.PerfTurnIds
 import splice.core.turn.DESKTOP_DOOR
+import splice.core.turn.TERMINAL_DOOR
 import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfTranscriptLink
 import splice.usage.perf.PerfTurnFacts
@@ -54,8 +55,11 @@ private const val COMPACT_SHIFT = 10
 // why: captured is a tri-state in flag bits 12 and 13.
 private const val CAPTURED_SHIFT = 12
 
-// why: flag bit 14: the row came through the desktop door, the one door there is (desktop-door, decision 7).
+// why: flag bit 14: the row came through the door from Claude Desktop (desktop-door, decision 7).
 private const val DESKTOP_DOOR_FLAG = 1 shl 14
+
+// why: flag bit 15: the row came through the door from the terminal's `claude` (door-default, decision 3).
+private const val TERMINAL_DOOR_FLAG = 1 shl 15
 
 // why: two bits hold absent, false or true.
 private const val TRI_MASK = 0x3
@@ -145,7 +149,10 @@ internal class PerfDenseCodec(private val names: PerfFieldNames, keys: List<Stri
         if (line.drops.candidate) flags = flags or DROPS_CANDIDATE
         if (line.drops.count != null) flags = flags or DROPS_COUNT
         flags = flags or (leadingKind(line) shl LEADING_SHIFT)
-        if (row?.transcript?.door == DESKTOP_DOOR) flags = flags or DESKTOP_DOOR_FLAG
+        when (row?.transcript?.door) {
+            DESKTOP_DOOR -> flags = flags or DESKTOP_DOOR_FLAG
+            TERMINAL_DOOR -> flags = flags or TERMINAL_DOOR_FLAG
+        }
         val facts = row?.facts ?: return flags
         return flags or (tri(facts.cacheCold) shl COLD_SHIFT) or (tri(facts.compact) shl COMPACT_SHIFT) or
             (tri(facts.captured) shl CAPTURED_SHIFT)
@@ -246,10 +253,17 @@ internal class PerfDenseCodec(private val names: PerfFieldNames, keys: List<Stri
             turns = noTurns,
             transcript = PerfTranscriptLink(
                 sessionId = sessionId,
-                door = DESKTOP_DOOR.takeIf { flags and DESKTOP_DOOR_FLAG != 0 },
+                door = doorOf(flags),
             ),
             cause = cause,
         )
+    }
+
+    /** The door a row's flags say its turn came through, or null for a turn that came straight to its head. */
+    private fun doorOf(flags: Int): String? = when {
+        flags and DESKTOP_DOOR_FLAG != 0 -> DESKTOP_DOOR
+        flags and TERMINAL_DOOR_FLAG != 0 -> TERMINAL_DOOR
+        else -> null
     }
 
     private fun schemaOf(mask: Long): PerfNumericSchema {

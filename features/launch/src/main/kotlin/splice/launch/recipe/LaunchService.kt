@@ -13,6 +13,7 @@
 package splice.launch.recipe
 
 import splice.client.ClaudeConfigMaterializer
+import splice.client.ClaudeTiers
 import splice.client.MaterializeSignIn
 import splice.client.MaterializeSpec
 import splice.client.TrustedLaunch
@@ -85,6 +86,13 @@ public class LaunchService(
      *  requests; null offers none, and every head keeps Claude Code's own /fast. */
     public var speeds: LaunchSpeeds? = null
 
+    /** door-default: the `claude` command's launch while it is on the door. Assigned by the daemon before routes serve
+     *  requests; null launches `claude` on its head, as before. */
+    public var door: ClaudeDoor? = null
+
+    /** What a launch of `claude` on the [door] runs. */
+    internal val onDoor = DoorRecipe(wrap, wrapState, claudeBinary)
+
     /** How the head's effort reaches the Claude Code this launch starts. */
     private val effort = LaunchEffort()
 
@@ -134,8 +142,7 @@ public class LaunchService(
             statuslineCommand = effective.gateway.statuslineCommand,
             signIn = MaterializeSignIn(
                 loginCommand = effective.signIn.loginCommand,
-                signInLabel = effective.signIn.signInLabel,
-                signInWay = effective.signIn.signInWay,
+                signsInOn = effective.signIn.signsInOn,
                 tokenCapture = effective.signIn.tokenCapture,
                 advertiseKeySetup = effective.signIn.advertiseKeySetup,
                 loginOutcomeFile = effective.signIn.loginOutcomeFile,
@@ -247,16 +254,12 @@ public class LaunchService(
         spec: LaunchSpec,
         dangerouslySkipPermissions: Boolean,
         others: List<String?>,
-    ): String? {
-        val danger = if (dangerouslySkipPermissions) {
-            "dangerouslySkipPermissions engaged for ${spec.trees.own}: Claude Code runs with " +
-                "--dangerously-skip-permissions (no permission prompts)."
-        } else {
-            null
-        }
-        return (listOf(danger) + others).filterNotNull()
-            .takeIf { it.isNotEmpty() }
-            ?.joinToString("; ")
+    ): String {
+        val danger = "dangerouslySkipPermissions engaged for ${spec.trees.own}: $DANGER"
+            .takeIf { dangerouslySkipPermissions }
+        // door-default (docs/specs/door-default.md, decision 7): every launch of a head says heads are going away and
+        // what replaces them; a launch on the door (DoorRecipe) does not.
+        return (listOf(danger) + others + HEADS_DEPRECATED).filterNotNull().joinToString("; ")
     }
 
     /** Vars a launched head must SCRUB from the inherited environment: app/src/main/dist/bin/splice-launch execs
@@ -285,15 +288,7 @@ public class LaunchService(
             ) + helperShadows(spec)
         }
         val emitted = slots.map { it.first }.toSet()
-        val absentTiers = listOf("OPUS", "SONNET", "HAIKU", "FABLE")
-            .filterNot { it in emitted }
-            .flatMap { tier ->
-                listOf(
-                    "ANTHROPIC_DEFAULT_${tier}_MODEL",
-                    "ANTHROPIC_DEFAULT_${tier}_MODEL_NAME",
-                    "ANTHROPIC_DEFAULT_${tier}_MODEL_DESCRIPTION",
-                )
-            }
+        val absentTiers = ClaudeTiers.names.filterNot { it in emitted }.flatMap(ClaudeTiers::variables)
         val dirs = listOf(spec.trees.own) + spec.trees.siblings
         val config = wrapped?.configRootUnsets(inheritedConfigDir, dirs).orEmpty()
         // V4-449: what this head no longer plants must not leak in from an outer head's session either.

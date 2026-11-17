@@ -18,7 +18,6 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.client.login.SignInWay
 import splice.client.login.TokenCaptureSpec
 import splice.core.util.LogSink
 import java.io.IOException
@@ -34,8 +33,6 @@ class ClaudeConfigMaterializerTest {
 
     private val openRouterSignIn = MaterializeSignIn(
         loginCommand = "claude-openrouter login",
-        signInLabel = "OpenRouter",
-        signInWay = SignInWay.Terminal,
         tokenCapture = TokenCaptureSpec("OPENROUTER_API_KEY", "sk-or-[A-Za-z0-9_-]{20,}", "OpenRouter"),
     )
 
@@ -343,7 +340,7 @@ class ClaudeConfigMaterializerTest {
                 defaultModel = "gpt-5.6-sol",
                 modelOptionsCache = optionsCache,
                 statuslineCommand = statusline,
-                signIn = MaterializeSignIn(loginCommand = "claude-grok login", signInLabel = "Grok (xAI)"),
+                signIn = MaterializeSignIn(loginCommand = "claude-grok login"),
             ),
         )
         // commands is now a REAL dir (a whole-dir symlink can't hold login.md), with the sentinel
@@ -351,12 +348,12 @@ class ClaudeConfigMaterializerTest {
         val commands = dir.resolve("commands")
         assertFalse(commands.isSymbolicLink())
         assertTrue(commands.resolve("login.md").readText().contains("SPLICE_CODEX_LOGIN"))
-        assertTrue(commands.resolve("login.md").readText().contains("Grok (xAI)")) // provider-correct UX
+        // door-default (decision 5): /login on a head splice holds the credential for opens splice's accounts page,
+        // in place of the head's own sign-in; this used to pin the head's login command and provider label.
+        assertTrue(commands.resolve("login.md").readText().contains("Open splice's accounts page"))
         assertTrue(commands.resolve("foo.md").isSymbolicLink())
-        // hook script written, carries the head's login command + provider label
         val hookText = dir.resolve("splice-login-hook.sh").readText()
-        assertTrue(hookText.contains("claude-grok login"))
-        assertTrue(hookText.contains("Grok (xAI)"))
+        assertTrue(hookText.contains("splice console"))
         // settings.json wires the UserPromptSubmit hook at the script
         val settings = Json.parseToJsonElement(dir.resolve("settings.json").readText()).jsonObject
         val ups = settings["hooks"]!!.jsonObject["UserPromptSubmit"]!!.jsonArray
@@ -399,11 +396,11 @@ class ClaudeConfigMaterializerTest {
         assertTrue(dir.resolve("splice-login-hook.sh").toFile().exists(), "/login itself still works")
     }
 
-    /** EVERY head keeps /login. A head without a known token shape cannot capture a paste, but it
-     *  still HAS a sign-in path (`<command> login` in a terminal) — so /login must still be wired
-     *  and must say so. Removing it for those heads was a regression this pins against. */
+    /** EVERY head keeps /login. A head without a known token shape cannot capture a paste, but /login is still wired:
+     *  door-default (decision 5) made it open splice's accounts page, where that head's key is set, in place of
+     *  naming the head's terminal command, which this test used to pin. */
     @Test
-    fun `api-key head WITHOUT capture still gets login, pointing at the terminal command`(@TempDir tmp: Path) {
+    fun `api-key head WITHOUT capture still gets login, opening splice's accounts page`(@TempDir tmp: Path) {
         seedGlobal(tmp)
         val dir = tmp.resolve(".claude-fireworks")
         materializer(tmp).materialize(
@@ -416,21 +413,18 @@ class ClaudeConfigMaterializerTest {
                 statuslineCommand = statusline,
                 signIn = MaterializeSignIn(
                     loginCommand = "claude-fireworks login",
-                    signInLabel = "Fireworks",
-                    signInWay = SignInWay.Terminal,
                     tokenCapture = null, // splice does not know this vendor's token shape
                 ),
             ),
         )
         val loginHook = dir.resolve("splice-login-hook.sh").readText()
-        assertTrue(loginHook.contains("claude-fireworks login"), "/login must still name the working command")
-        assertTrue(loginHook.contains("cannot be asked for from inside this session"), "and say why, plainly")
+        assertTrue(loginHook.contains("splice console"), "/login opens splice's accounts page")
+        assertTrue(loginHook.contains("Nothing was sent to the model"), "and says the turn went nowhere")
         assertFalse(loginHook.contains("nohup"), "still nothing spawned — a detached login has no TTY")
-        assertFalse(loginHook.contains("browser"))
     }
 
     @Test
-    fun `api-key head with capture tells the user the path that WORKS, and spawns nothing`(@TempDir tmp: Path) {
+    fun `api-key head with capture opens the accounts page on login and spawns nothing`(@TempDir tmp: Path) {
         seedGlobal(tmp)
         val dir = tmp.resolve(".claude-openrouter")
         materializer(tmp).materialize(
@@ -448,15 +442,10 @@ class ClaudeConfigMaterializerTest {
         // key" while spawning `<cmd> login` DETACHED with stdout to /dev/null — no TTY, so
         // System.console() was null, so the CLI printed its pipe-hint into the void and exited.
         // The prompt could never appear and the user waited on nothing (verified by running it).
-        // A capture-capable head is now told the path that actually works.
+        // door-default (decision 5): /login now opens splice's accounts page, where the key is set, in place of
+        // asking for a paste; this used to pin the paste prompt. A pasted key is still caught by the capture hook.
         val loginHook = dir.resolve("splice-login-hook.sh").readText()
-        assertTrue(loginHook.contains("Paste your OpenRouter API key as your next message"))
-        assertTrue(loginHook.contains("never sent upstream"), "the safety property must be stated")
-        assertTrue(
-            loginHook.contains("session log on disk still records"),
-            "and the residual must be stated too — the transcript keeps the pasted line",
-        )
-        assertFalse(loginHook.contains("browser"))
+        assertTrue(loginHook.contains("splice console"))
         assertFalse(
             loginHook.contains("nohup"),
             "nothing may be spawned: a detached api-key login has no TTY and cannot prompt",

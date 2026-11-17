@@ -9,7 +9,6 @@ import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderBuild
 import splice.client.ClaudePolicy
 import splice.client.login.LoginOutcomeFile
-import splice.client.login.SignInWay
 import splice.core.config.MgmtKey
 import splice.core.config.SpliceConfig
 import splice.core.config.StatePaths
@@ -84,7 +83,6 @@ internal class LaunchSpecFactory(
                 // start ONLY while the key is unconfigured (re-materialized each launch).
                 loginCommand = signIn.command,
                 signInLabel = signIn.label,
-                signInWay = if (signIn.viaBrowser) SignInWay.Browser else SignInWay.Terminal,
                 // The CAPABILITY rides ungated; whether it materializes is decided per LAUNCH by
                 // LaunchService against ManagedHead.keyPresence (DR-81 — this used to bake the
                 // boot-time key check in, so `splice key set` never disarmed the paste-capture hook:

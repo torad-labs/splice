@@ -318,8 +318,9 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/mcp/NativeCodexSocketProxy.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeAccountFolders.kt" to mapOf("writeAtomic0600(" to 4),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeCredentialProfiles.kt" to mapOf("writeAtomic0600(" to 1),
-    // Claude Desktop's door: its record, and the env and picker `splice desktop on` writes into settings.json.
-    "app/src/main/kotlin/splice/app/desktop/DesktopRecord.kt" to mapOf("writeAtomic0600(" to 1),
+    // The door's records (Desktop's and the terminal `claude`'s lane), and the env and picker `splice desktop on`
+    // writes into settings.json.
+    "app/src/main/kotlin/splice/app/desktop/StateRecords.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/desktop/DesktopSettingsFile.kt" to mapOf("writeAtomic0600(" to 1),
     // The console launch page, 0600, documented in the console-open.html README row.
     "app/src/main/kotlin/splice/app/cli/status/ConsoleCommand.kt" to mapOf("writeAtomic0600(" to 1),
@@ -545,6 +546,12 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     ),
     "integrations/claude-code/src/main/kotlin/splice/client/ClaudeLoginFiles.kt" to mapOf("writeAtomic0600(" to 5),
     "integrations/claude-code/src/main/kotlin/splice/client/ClaudeLogins.kt" to mapOf("writeAtomic0600(" to 2),
+    // splice's /login, the one file it lays in the person's Claude folder: created only where nothing is there, and
+    // one of splice's own written again (door-default, decision 5).
+    "integrations/claude-code/src/main/kotlin/splice/client/login/DoorLogin.kt" to mapOf(
+        "createNew0600(" to 1,
+        "writeAtomic0600(" to 1,
+    ),
     "integrations/claude-code/src/main/kotlin/splice/client/login/HookScriptFiles.kt" to mapOf(
         "Files.createTempFile(" to 2,
         "Files.move(" to 1,

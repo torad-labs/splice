@@ -12,7 +12,6 @@
 package splice.app.auth
 
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -65,20 +64,6 @@ class SignInPlanMatrixTest {
             assertEquals("${h.claude.command} login", plan.command, "the command must name the head's wrapper")
             assertTrue(plan.label.isNotBlank(), "$kind needs a label for the /login wording")
         }
-    }
-
-    /** Browser heads open a browser; api-key heads must NOT, because a detached login has no TTY
-     *  and the prompt it promises can never appear. */
-    @Test
-    fun `only browser-based kinds are marked viaBrowser`() {
-        assertTrue(planner.signInPlan(providerCfg("chatgpt-oauth"), head("codex", "claudex"), "codex").viaBrowser)
-        assertTrue(planner.signInPlan(providerCfg("grok-oauth"), head("xai", "claude-grok"), "xai").viaBrowser)
-        assertTrue(planner.signInPlan(providerCfg("kimi-oauth"), head("kimi", "claude-kimi"), "kimi").viaBrowser)
-        assertTrue(planner.signInPlan(providerCfg("muse-oauth"), head("muse", "claude-muse"), "muse").viaBrowser)
-        assertFalse(
-            planner.signInPlan(providerCfg(API_KEY), head("openrouter", "claude-openrouter"), "openrouter").viaBrowser,
-            "an api-key head has no browser flow — claiming one is what produced the dead-end prompt",
-        )
     }
 
     /** ONE PROVIDER AT A TIME: capture is opt-in per vendor whose token shape splice actually
@@ -153,7 +138,6 @@ class SignInPlanMatrixTest {
             val plan = planner.signInPlan(cfg, head("muse", wrapper), "muse-head")
             assertEquals("${wrapper ?: "muse-head"} login", plan.command)
             assertEquals("Muse (Meta)", plan.label)
-            assertTrue(plan.viaBrowser)
             assertNull(plan.tokenCapture)
         }
     }
@@ -162,7 +146,6 @@ class SignInPlanMatrixTest {
     fun `api-key commands remain prose-only and are not subject to browser wrapper validation`() {
         val plan = planner.signInPlan(providerCfg(API_KEY), head("fireworks", "custom wrapper"), "fireworks")
         assertEquals("custom wrapper login", plan.command)
-        assertFalse(plan.viaBrowser)
     }
 
     /** An UNKNOWN auth kind is the one case with no sign-in path, and it must stay blank so
@@ -205,7 +188,6 @@ class SignInPlanMatrixTest {
             plan.command.isBlank(),
             "a non-blank command makes wire() plant a /login that can never succeed: '${plan.command}'",
         )
-        assertFalse(plan.viaBrowser, "splice runs no browser flow for this kind")
         assertEquals(null, plan.tokenCapture, "there is no token for splice to capture")
         assertEquals("", plan.credentialFix, "a 401 names nothing splice can run, so the upstream's message stands")
     }

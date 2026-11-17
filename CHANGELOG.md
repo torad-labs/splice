@@ -1,5 +1,41 @@
 # Changelog
 
+## splice v0.6.1: Claude Desktop's door no longer touches your terminal sessions - 2026-11-16
+
+### Highlights
+- **`splice desktop on` leaves your terminal sessions alone.** The door for Claude Desktop's Code tab used to live
+  in `~/.claude/settings.json`, which every running Claude Code session in a terminal reloads as soon as it changes.
+  So turning the door on moved those sessions onto the door, and turning it off could leave a door model behind in
+  your settings. The door now lives in Desktop's own store for Code tab environment variables, which only the Code
+  tab reads. `splice desktop on` prints the five variables to set there once, and writes nothing in your settings.
+
+### Upgrading from 0.6.0
+- Run the install command again, or `splice upgrade`. Nothing in `splice.toml` has to change.
+- If you turned the door on with 0.6.0, the daemon takes what that version wrote out of `~/.claude/settings.json`
+  when it starts: the door's variables, its model picker, and a door model left in `model`. Then run
+  `splice desktop on` and set the variables it prints in Claude Desktop → Settings → Claude Code → Environment
+  variables.
+
+### Fixed
+- **The door's variables live where only the Code tab reads them.** Claude Desktop keeps a store of environment
+  variables for its Code tab in its own app-data folder (`ccd-environment-config.json`, encrypted with your system
+  keyring), and it puts them only in the environment of Code tab sessions. splice can't write a store encrypted
+  with your keyring, so `splice desktop on` prints `CLAUDE_CODE_USE_MANTLE`, `ANTHROPIC_BEDROCK_MANTLE_BASE_URL`,
+  `AWS_BEARER_TOKEN_BEDROCK`, `CLAUDE_CODE_MAX_CONTEXT_TOKENS` and `CLAUDE_CODE_AUTO_MODE_SERVER` with their values,
+  and you set them in Desktop once. `splice desktop rotate-key` prints the new key to put in their place.
+- **`splice desktop off` closes the door instead of editing your settings.** A Code tab turn that reaches the closed
+  door gets a refusal that names the variables to remove in Desktop to go back to your own Claude login.
+- **A settings file the old door made owner-only gets its usual mode back.** The new mode is the one a new file
+  would get under your umask.
+- **A model Desktop's picker names runs your default.** A Code tab session that asks for an Anthropic model by name
+  runs the model you set with `splice desktop on`. When the head names a haiku model, the haiku tier runs that one.
+- **The window is fixed at the first `on`.** Later `on`s keep it, and the head scales each session's token counts
+  to it, so a session compacts where its own model's window ends.
+- **A head on an API key with no key says how to set one.** `splice desktop` names
+  `printf '%s' "$KEY" | splice key set <name> --stdin` instead of a sign-in command.
+- **`splice desktop` says the last turn was sent.** It records what was sent and as which model, not how the turn
+  ended, and its line now says that.
+
 ## splice v0.6.0: a team server's ledger, budgets, company sign-in and metrics, and Fast and Ultrafast on ChatGPT heads - 2026-11-16
 
 ### Highlights

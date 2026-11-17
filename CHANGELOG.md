@@ -42,6 +42,12 @@
 - A head's `/login` opens splice's accounts page instead of signing in inside the session. `<command> login` in a
   terminal still signs in.
 
+### Fixed
+- A model picked with `/model` stays picked across a restart. At each start, and at `splice desktop on` and `off`,
+  splice took any model of its door out of `~/.claude/settings.json` as a leftover of 0.6.0's Desktop door. It now
+  does so only while that older door is in the file, and it leaves a file Claude Code wrote in the meantime as
+  Claude Code wrote it.
+
 ## splice v0.6.3: Claude Code's side requests keep their own instruction, a laptop links a team server's commands, and a 1-hour cache write keeps its price - 2026-11-17
 
 ### Highlights

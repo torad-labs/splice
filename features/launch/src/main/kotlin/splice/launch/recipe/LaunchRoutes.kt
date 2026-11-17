@@ -12,6 +12,7 @@ import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.respondText
 import kotlinx.serialization.json.JsonArray
 import splice.client.wrap.WrappedLaunch
+import splice.core.topology.CLAUDE_COMMAND
 import splice.core.topology.TopologyMessages
 import splice.core.util.JsonScalars
 import splice.http.JsonBody
@@ -46,6 +47,9 @@ public class LaunchRoutes(
 
     public suspend fun launch(call: ApplicationCall) {
         val key = call.parameters["head"].orEmpty()
+        // door-default: `claude` on the door runs no head here, whatever splice.toml holds.
+        val door = launchService?.door?.takeIf { key == CLAUDE_COMMAND }?.launch()
+        if (door != null) return doorReply(call, key, door)
         val targets = heads.targets(key)
         if (targets.size > 1) {
             call.respondText(
@@ -105,6 +109,17 @@ public class LaunchRoutes(
             is LaunchOutcome.Refused -> launch
         }
         answer(call, key, outcome)
+    }
+
+    /** `claude` on the door (docs/specs/door-default.md, decision 2): the recipe [door] carries, over the person's own
+     *  Claude folder. */
+    private suspend fun doorReply(call: ApplicationCall, key: String, door: DoorLaunchSpec) {
+        val service = requireNotNull(launchService)
+        val request = receiveLaunchRequest(call)
+        val caller = LaunchCaller(request.cwd, null, request.inheritedConfigDir, request.launch)
+        val headDirs = heads.all().mapNotNull { it.spec?.trees?.own }
+        val skip = request.dangerouslySkipPermissions
+        answer(call, key, service.onDoor.outcome(door, request.extraArgs, skip, caller, headDirs))
     }
 
     /** A command another machine serves: refused in that machine's words, or launched from the spec it answered,

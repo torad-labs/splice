@@ -5,12 +5,15 @@ package splice.app
 
 import splice.app.cli.AdminSupport
 import splice.app.manager.ManagerHome
+import splice.client.login.DoorLogin
 import splice.core.config.InstallPaths
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
+import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.launch.install.InstallCommand
 import splice.lifecycle.hub.HubUnits
 import splice.lifecycle.units.DAEMON_UNIT_NAME
@@ -53,6 +56,18 @@ internal object InstallWiring {
         if (!linux()) return
         val output = TerminalOutput(::println)
         UninstallUnits(unitFolder(env, output), output).retire()
+    }
+
+    /** After `splice uninstall --all`: splice's /login taken out of the person's Claude folder, and only splice's
+     *  (docs/specs/door-default.md, decision 5). A /login they wrote stays. */
+    fun retireLogin(target: String?, env: EnvReader) {
+        if (target != null && target != "--all") return
+        val login = DoorLogin(UserHome.claudeDir(env), StatePaths(envReader = env).doorLoginDir)
+        val output = TerminalOutput(::println)
+        Cancellables.runCatchingCancellable { login.remove() }.fold(
+            onSuccess = { if (it) output.line("splice: removed splice's /login from ${UserHome.claudeDir(env)}") },
+            onFailure = { output.line("splice: failed to remove splice's /login: ${SafeFailureText.render(it)}") },
+        )
     }
 
     /** The daemon's listening sockets as systemd units, which `splice restart` lays and starts so systemd holds

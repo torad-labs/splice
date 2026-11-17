@@ -353,12 +353,13 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `default recipe is safe - no skip-permissions flag, no warning`() {
+    fun `default recipe is safe - no skip-permissions flag, and only the heads notice`() {
+        // door-default (decision 7): a head launch carries the heads notice; this pinned "no warning" before.
         // V4-183: `-c` is no longer a pass-through word (HeadBoundedContinue); a plain flag stands in.
         val recipe = service.launch(spec("codex"), extraArgs = listOf("--verbose"), dangerouslySkipPermissions = false)
         assertFalse(recipe.argv.contains("--dangerously-skip-permissions"))
         assertTrue(recipe.argv.contains("--verbose"))
-        assertNull(recipe.warning)
+        assertEquals(HEADS_DEPRECATED, recipe.warning)
     }
 
     @Test
@@ -502,7 +503,7 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
 
         listOf(emptyList(), listOf("-r")).forEach { args ->
             val recipe = service.launch(mine, extraArgs = args, dangerouslySkipPermissions = false)
-            assertNull(recipe.warning, "a picker launch has nothing to report: ${recipe.warning}")
+            assertEquals(HEADS_DEPRECATED, recipe.warning, "a picker launch says only the heads notice")
         }
         // V4-183: a bare -c with no session of this head in the cwd is a NEW session, said once —
         // never the sibling's, and never the client's own newest-in-tree continue.

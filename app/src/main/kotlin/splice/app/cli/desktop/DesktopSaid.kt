@@ -10,8 +10,8 @@ import splice.core.terminal.TerminalOutput
 import splice.core.util.JsonScalars
 
 /** `splice desktop` in words. */
-internal class DesktopSaid(private val out: TerminalOutput) {
-    fun state(state: JsonObject) {
+internal class DesktopSaid(private val out: TerminalOutput) : DoorSaid {
+    override fun state(state: JsonObject) {
         val on = JsonScalars.str(state, "on") == "true"
         out.line("Desktop: ${if (on) "on" else "off"}")
         out.line("Door: ${JsonScalars.str(state, "door").orEmpty()}")
@@ -38,7 +38,7 @@ internal class DesktopSaid(private val out: TerminalOutput) {
     }
 
     /** What to set in Desktop's environment store, when the act's answer carries it: one `NAME=value` line each. */
-    fun env(state: JsonObject) {
+    override fun acted(state: JsonObject) {
         val env = (state[DESKTOP_ENV] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
         if (env.isEmpty()) return
         out.line("splice: set these in $DESKTOP_ENV_PLACE, then start a new Code tab session:")

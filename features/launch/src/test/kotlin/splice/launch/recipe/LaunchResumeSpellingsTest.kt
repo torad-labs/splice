@@ -12,7 +12,6 @@ package splice.launch.recipe
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -89,7 +88,11 @@ class LaunchResumeSpellingsTest(@param:TempDir private val tmp: Path) {
         )
         assertEquals(listOf("--resume", "own-session"), recipe.argv.takeLast(2), recipe.argv.toString())
         assertFalse(recipe.argv.contains("-c"))
-        assertNull(recipe.warning, "resuming one's own session is the quiet path: ${recipe.warning}")
+        assertEquals(
+            HEADS_DEPRECATED,
+            recipe.warning,
+            "resuming one's own session says nothing but the heads notice: ${recipe.warning}",
+        )
     }
 
     @Test
@@ -114,7 +117,7 @@ class LaunchResumeSpellingsTest(@param:TempDir private val tmp: Path) {
             caller = LaunchCaller(cwd = cwd),
         )
         assertEquals(listOf("--resume", "older"), recipe.argv.takeLast(2), recipe.argv.toString())
-        assertNull(recipe.warning, "an older usable own session is still a quiet continue")
+        assertEquals(HEADS_DEPRECATED, recipe.warning, "an older usable own session is still a quiet continue")
     }
 
     @Test

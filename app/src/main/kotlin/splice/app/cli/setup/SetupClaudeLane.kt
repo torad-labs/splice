@@ -1,4 +1,9 @@
-// NEW: V4-175 — what `splice setup` does about the Claude head: it wraps plain `claude`.
+// NEW: V4-175 — what `splice setup` does about `claude`: it wraps plain `claude`, so it goes through splice.
+//
+// door-default (Nov 17, 2026, docs/specs/door-default.md, decision 8): `claude` runs on splice's door, and the Claude
+// plan left the tick list. On a machine whose splice.toml has no head whose command is `claude`, setup links `claude`
+// to splice on the door, and adds no head keyed `claude`; `splice add claude` still adds it. A machine that has that
+// head keeps it as it is: what setup changes is linking, never a lane.
 //
 // ONE CLAUDE (Nov 13, 2026). Until then the wizard asked Separate or Wrap, and Separate laid a `claude-splice` command
 // beside the person's own `claude`. The head is keyed `claude` now, and plain `claude`, wrapped, is the only command
@@ -15,19 +20,26 @@
 package splice.app.cli.setup
 
 import kotlinx.serialization.json.Json
+import splice.app.LifecycleWiring
 import splice.app.cli.AdminSupport
+import splice.app.cli.desktop.DaemonUp
+import splice.app.cli.desktop.DoorOpening
+import splice.app.desktop.TopologyClaudeHead
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.daemonclient.ControlPlaneClient
 import splice.daemonclient.ControlReply
 import splice.daemonclient.MgmtKeyRead
+import splice.topology.TopologyLoader
+import java.nio.file.Files
+import java.nio.file.Path
 
 /** The catalogue row this question is about (AddProfileCatalog's `claude`). */
 internal const val CLAUDE_PROFILE: String = "claude"
 
-/** The one line on what Wrap takes over: the command, never the operator's config. */
+/** The one line on what linking takes over: the command, never the operator's config. */
 internal const val WRAP_HINT: String =
-    "claude itself goes through splice and stays wrapped across updates; " +
+    "claude itself goes through splice, on its door, and stays linked across updates; " +
         "your settings, MCP servers and other Claude state stay untouched"
 
 /** The wrap POST's own read budget. ControlPlaneClient's 3s default was sized for the shutdown
@@ -44,7 +56,7 @@ internal const val WRAP_LATER: String = "wrap it later with POST /api/claude-hea
 
 private const val UNWRAP_LATER: String = "undo it with POST /api/claude-head/unwrap on the control plane"
 
-/** Whether this run adds the Claude head, which is wrapped, or adds none. */
+/** Whether this run links `claude` to splice on the door, or leaves it as it is. */
 internal enum class ClaudeLane { NONE, WRAP }
 
 /** The wrap call, answering in one line the wizard prints verbatim. Production is
@@ -55,38 +67,52 @@ internal fun interface ClaudeWrap {
 
 internal class SetupClaudeLane(private val wrap: ClaudeWrap) {
 
-    /** WRAP when `claude` is among the ticked profiles, else NONE. */
-    fun ask(picked: List<String>): ClaudeLane = if (CLAUDE_PROFILE in picked) ClaudeLane.WRAP else ClaudeLane.NONE
+    /** WRAP when [path], splice.toml, is not there yet or has no head `claude` can go back to, else NONE: the rule the
+     *  daemon puts `claude` on a lane by when no choice is made (TopologyClaudeHead), so setup links `claude` for the
+     *  door exactly where the daemon runs it there. */
+    fun ask(path: Path): ClaudeLane {
+        val held = Files.exists(path) && TopologyClaudeHead(TopologyLoader.parse(Files.readString(path)))()
+        return if (held) ClaudeLane.NONE else ClaudeLane.WRAP
+    }
 
     /** The summary line, so the operator reads what the wrap takes over BEFORE confirming the install
      *  rather than after it has happened. */
-    fun summaryLine(): String = "Claude: wrapped ($WRAP_HINT)"
+    fun summaryLine(): String = "Claude: linked to splice ($WRAP_HINT)"
 
-    /** Run against what LANDED and after the daemon restarted, because wrap reads the live
-     *  `claude` head's spec. Returns the line to print, or null when there is nothing to
-     *  say; never throws, since a refused wrap leaves the head saved and must not fail the setup that built it. */
-    fun apply(lane: ClaudeLane, landed: List<String>): String? = when {
-        lane != ClaudeLane.WRAP -> null
-        CLAUDE_PROFILE !in landed -> "not wrapping: the claude head was not added"
-        else -> wrap()
-    }
+    /** Run after the daemon is up, which answers the wrap on the door. Returns the line to print, or null when there
+     *  is nothing to say; never throws, since a refused wrap must not fail the setup around it. */
+    fun apply(lane: ClaudeLane): String? = if (lane == ClaudeLane.WRAP) wrap() else null
 }
 
 /** POST /api/claude-head/wrap, reported in the daemon's own words. A collaborator rather than a
  *  factory function: every branch names what to do next, and "wrap failed" with no reason is the
- *  answer that sends an operator to the source. */
-internal class DaemonClaudeWrap(private val env: EnvReader = EnvReader(System::getenv)) : ClaudeWrap {
+ *  answer that sends an operator to the source.
+ *
+ *  THE DAEMON FIRST. The daemon answers the wrap, and on a machine where no head landed setup restarted nothing, so
+ *  [daemon] starts it when none runs, as `splice claude door` does. Until Nov 17, 2026 that setup printed "no
+ *  management key yet" and left `claude` unlinked: the door is meant to work with nothing signed in, so ticking no
+ *  plan is the ordinary first run. A daemon just started answers before its door is open, so a 503 is asked again
+ *  while the door opens (DoorOpening). */
+internal class DaemonClaudeWrap(
+    private val env: EnvReader = EnvReader(System::getenv),
+    private val daemon: DaemonUp = DaemonUp(LifecycleWiring::ensureDaemon),
+) : ClaudeWrap {
 
-    override fun invoke(): String = when (val read = AdminSupport.readMgmtKey(env)) {
-        is MgmtKeyRead.Present -> post(read.key)
-        MgmtKeyRead.Absent -> "not wrapping: no management key yet; $WRAP_LATER"
-        is MgmtKeyRead.Unreadable -> "not wrapping: the management key is unreadable (${read.reason})"
+    override fun invoke(): String {
+        val port = AdminSupport.controlPort(env)
+        if (!daemon.ensure(port)) return "not wrapping: the daemon isn't running and couldn't be started; $WRAP_LATER"
+        return when (val read = AdminSupport.readMgmtKey(env)) {
+            is MgmtKeyRead.Present -> post(port, read.key)
+            MgmtKeyRead.Absent -> "not wrapping: no management key yet; $WRAP_LATER"
+            is MgmtKeyRead.Unreadable -> "not wrapping: the management key is unreadable (${read.reason})"
+        }
     }
 
-    private fun post(key: String): String {
-        val base = "http://127.0.0.1:${AdminSupport.controlPort(env)}/api/claude-head"
-        val reply = ControlPlaneClient.send("$base/wrap", "POST", key, readTimeoutMs = WRAP_TIMEOUT_MS)
-            ?: return unconfirmed(base, key)
+    private fun post(port: Int, key: String): String {
+        val base = "http://127.0.0.1:$port/api/claude-head"
+        val reply = DoorOpening().reply {
+            ControlPlaneClient.send("$base/wrap", "POST", key, readTimeoutMs = WRAP_TIMEOUT_MS)
+        } ?: return unconfirmed(base, key)
         return replyLine(reply)
     }
 

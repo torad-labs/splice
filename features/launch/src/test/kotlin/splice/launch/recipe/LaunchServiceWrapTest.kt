@@ -253,7 +253,12 @@ class LaunchServiceWrapTest(@param:TempDir private val tmp: Path) {
         val again = service.launch(head, listOf("-c"), dangerouslySkipPermissions = false, caller = caller)
 
         assertEquals(listOf("--resume", SESSION), again.argv.takeLast(2), "${again.argv}, warned: ${again.warning}")
-        assertNull(again.warning, "going on with one's own session is the quiet path")
+        assertEquals(
+            HEADS_DEPRECATED,
+            again.warning,
+            "going on with one's own session says nothing but the heads notice",
+        )
+
         assertEquals(
             listOf("projects"),
             home.resolve(".claude").toFile().list().orEmpty().sorted(),

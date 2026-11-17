@@ -198,7 +198,7 @@ internal class ControlServer(
     private val serverMode = ServerMount(ports, guard)
 
     // Nov 16, 2026: Claude Desktop's Code tab (docs/specs/desktop-door.md): its door and `splice desktop`.
-    private val desktop = DesktopRoutes(ports, guard)
+    private val desktop = DesktopRoutes(ports, guard, ClaudeLink { launchService?.wrap })
 
     // Oct 16, 2026: what `splice console <action>` hands the open console to do, and the page's answer (ConsolePilot).
     private val consolePilot = ConsolePilotMount(guard)

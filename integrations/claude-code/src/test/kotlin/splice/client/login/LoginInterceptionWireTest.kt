@@ -63,9 +63,6 @@ class LoginInterceptionWireTest {
         configDir = configDir,
         login = HeadLogin(
             loginCommand = loginCommand,
-            signInLabel = "OpenRouter",
-            viaBrowser = false,
-            canCapturePaste = tokenCapture != null,
         ),
         globalCommands = null,
         tokenCapture = tokenCapture,
@@ -196,8 +193,6 @@ class LoginInterceptionWireTest {
                 configDir = tmp,
                 login = HeadLogin(
                     loginCommand = "",
-                    signInLabel = "OpenRouter",
-                    viaBrowser = false,
                 ),
                 globalCommands = null,
                 tokenCapture = capture,
@@ -233,8 +228,6 @@ class LoginInterceptionWireTest {
                 configDir = tmp,
                 login = HeadLogin(
                     loginCommand = "",
-                    signInLabel = "OpenRouter",
-                    viaBrowser = false,
                 ),
                 globalCommands = null,
                 tokenCapture = capture,
@@ -273,8 +266,6 @@ class LoginInterceptionWireTest {
                     configDir = tmp,
                     login = HeadLogin(
                         loginCommand = "",
-                        signInLabel = "OpenRouter",
-                        viaBrowser = false,
                     ),
                     globalCommands = null,
                     tokenCapture = capture,
@@ -343,8 +334,6 @@ class LoginInterceptionWireTest {
                 configDir = tmp,
                 login = HeadLogin(
                     loginCommand = "",
-                    signInLabel = "OpenRouter",
-                    viaBrowser = false,
                 ),
                 globalCommands = null,
                 tokenCapture = capture,
@@ -446,8 +435,6 @@ class LoginInterceptionWireTest {
             configDir = tmp,
             login = HeadLogin(
                 loginCommand = "openrouter login",
-                signInLabel = "OpenRouter",
-                viaBrowser = false,
             ),
             globalCommands = null,
             tokenCapture = null,

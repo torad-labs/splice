@@ -5,6 +5,7 @@ package splice.app.cli.status
 
 import splice.app.cli.AdminSupport
 import splice.app.cli.auth.CliSignIn
+import splice.app.desktop.ClaudeLaneLook
 import splice.core.GATEWAY_VERSION
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepthProbe
@@ -12,6 +13,7 @@ import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
+import splice.core.util.LogSink
 import splice.daemonclient.DaemonHealth
 import splice.daemonclient.DaemonProbe.HealthQuota
 import splice.daemonclient.DaemonProbe.HealthView
@@ -73,6 +75,13 @@ internal class StatusCommand(
         val readings = StatusReadings(failedHeads, quota.refusedUntil, notAnswering, quota.full, held, refusing)
         val rows = table.lines(topology, envReader, readings)
         for (line in rows) println(line)
+        // door-default (docs/specs/door-default.md, decision 7): the lane `claude` is on, and on its head, that heads are
+        // deprecated and how to move.
+        val lane =
+            ClaudeLaneLook(topology, TopologyStatePaths(envReader).of(topology), LogSink { System.err.print(it) })
+        val tone = if (lane.reading().onDoor) palette.live else palette.strain
+        println()
+        println("  " + palette.paint(tone, lane.line()))
         if (up) extras.printAccounts(port, envReader)
         println()
         // Paths sink below the table: they are reference, not the answer, and an operator who wants

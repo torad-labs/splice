@@ -7,9 +7,14 @@
 //                                                       what to set in Desktop's environment store (desktop_env)
 //   POST /api/desktop/off                               `splice desktop off`
 //   POST /api/desktop/rotate-key                        `splice desktop rotate-key`, with desktop_env while on
+//   GET  /api/claude                                    what `splice claude` says (docs/specs/door-default.md)
+//   POST /api/claude/door                               {"model"?}: `splice claude door [--model]`, linking
+//                                                       `claude` to splice where it is not yet (ClaudeLink)
+//   POST /api/claude/head                               `splice claude head`
 //
 // The door is on the control port, whose number splice.toml fixes, so its address is the same at every start. The
-// desktop key opens only the two door routes, and the management and turn keys do not open them.
+// desktop key and the terminal's key each open only the two door routes, and the management and turn keys do not
+// open them.
 package splice.app.control
 
 import io.ktor.http.HttpStatusCode
@@ -35,23 +40,30 @@ import splice.http.JsonBody
 import splice.http.JsonReply
 import splice.share.RefusalVoice
 
-internal class DesktopRoutes(private val ports: ConsolePorts, private val guard: ControlGuard) {
+internal class DesktopRoutes(
+    private val ports: ConsolePorts,
+    private val guard: ControlGuard,
+    private val link: ClaudeLink,
+) {
     private val jsonBody = JsonBody()
     private val voice = RefusalVoice(DESKTOP_ERROR_PREFIX)
 
     fun register(route: Route) {
         route.post("$DESKTOP_PATH/v1/messages") {
             val desktop = atDoor(call) ?: return@post
-            desktop.door.guarded(call) { desktop.door.messages(call) }
+            desktop.door.messages(call)
         }
         route.post("$DESKTOP_PATH/v1/messages/count_tokens") {
             val desktop = atDoor(call) ?: return@post
-            desktop.door.guarded(call) { desktop.door.countTokens(call) }
+            desktop.door.countTokens(call)
         }
         route.get("/api/desktop") { guard.guarded(call) { state(call) } }
         route.post("/api/desktop/on") { guard.guarded(call) { on(call) } }
         route.post("/api/desktop/off") { guard.guarded(call) { act(call) { it.switch.off() } } }
         route.post("/api/desktop/rotate-key") { guard.guarded(call) { act(call) { it.switch.rotate() } } }
+        route.get("/api/claude") { guard.guarded(call) { claudeState(call) } }
+        route.post("/api/claude/door") { guard.guarded(call) { toDoor(call) } }
+        route.post("/api/claude/head") { guard.guarded(call) { act(call, CLAUDE) { it.claude.toHead() } } }
     }
 
     private suspend fun state(call: ApplicationCall) {
@@ -59,13 +71,28 @@ internal class DesktopRoutes(private val ports: ConsolePorts, private val guard:
         JsonReply(HttpStatusCode.OK, desktop.state().toString()).send(call)
     }
 
+    private suspend fun claudeState(call: ApplicationCall) {
+        val desktop = opened(call) ?: return
+        JsonReply(HttpStatusCode.OK, desktop.claudeState().toString()).send(call)
+    }
+
+    private suspend fun toDoor(call: ApplicationCall) {
+        val model = JsonScalars.str(jsonBody.parse(call), "model")?.ifEmpty { null }
+        act(call, CLAUDE) { desktop ->
+            when (val done = desktop.claude.toDoor(model)) {
+                is DesktopAct.Done -> done.copy(said = link.linked(done.said))
+                is DesktopAct.Refused -> done
+            }
+        }
+    }
+
     private suspend fun on(call: ApplicationCall) {
         val model = JsonScalars.str(jsonBody.parse(call), "model")?.ifEmpty { null }
         act(call) { it.switch.on(model) }
     }
 
-    /** [doing] done, answered with what changed and the state after it, or refused with nothing changed. */
-    private suspend fun act(call: ApplicationCall, doing: DesktopDoing) {
+    /** [doing] done, answered with what changed and the state after it ([of]'s), or refused with nothing changed. */
+    private suspend fun act(call: ApplicationCall, of: DoorState = DESKTOP, doing: DesktopDoing) {
         val desktop = opened(call) ?: return
         when (val done = doing(desktop)) {
             is DesktopAct.Refused ->
@@ -73,7 +100,7 @@ internal class DesktopRoutes(private val ports: ConsolePorts, private val guard:
             is DesktopAct.Done -> {
                 val said = mapOf("said" to JsonPrimitive(done.said), "default_from" to JsonPrimitive(done.default))
                 val env = done.env?.let { mapOf(DESKTOP_ENV to envJson(it)) }.orEmpty()
-                JsonReply(HttpStatusCode.OK, JsonObject(desktop.state() + said + env).toString()).send(call)
+                JsonReply(HttpStatusCode.OK, JsonObject(of(desktop) + said + env).toString()).send(call)
             }
         }
     }
@@ -106,6 +133,14 @@ internal class DesktopRoutes(private val ports: ConsolePorts, private val guard:
         return desktop
     }
 }
+
+/** What `splice desktop` or `splice claude` says of the daemon's door. */
+internal fun interface DoorState {
+    suspend operator fun invoke(desktop: DesktopService): JsonObject
+}
+
+private val DESKTOP = DoorState { it.state() }
+private val CLAUDE = DoorState { it.claudeState() }
 
 /** One act of `splice desktop` on the daemon's door. */
 internal fun interface DesktopDoing {

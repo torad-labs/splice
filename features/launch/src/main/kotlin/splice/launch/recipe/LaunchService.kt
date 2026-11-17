@@ -16,6 +16,7 @@ import splice.client.ClaudeConfigMaterializer
 import splice.client.MaterializeSignIn
 import splice.client.MaterializeSpec
 import splice.client.TrustedLaunch
+import splice.client.desktop.providerSwitches
 import splice.client.mcp.HubLaunchArgs
 import splice.client.mcp.HubLaunchFor
 import splice.client.mcp.McpHubLaunch
@@ -79,11 +80,6 @@ public class LaunchService(
     /** LAN share: the commands another machine serves, launched when a name no head here carries is asked for.
      *  Assigned by the daemon before routes serve requests; null launches heads only. */
     public var remotes: RemoteCommands? = null
-
-    /** Claude Desktop's door: while it is on, a launch over the `claude` command's folder lays its own settings over
-     *  what `splice desktop on` wrote there (LaunchDesktop). Assigned by the daemon before routes serve requests; null
-     *  launches as if Desktop were off. */
-    public var desktop: LaunchDesktop? = null
 
     /** gpt-speed: the speeds each head's launch offers as /fast and /ultrafast. Assigned by the daemon before routes serve
      *  requests; null offers none, and every head keeps Claude Code's own /fast. */
@@ -174,7 +170,6 @@ public class LaunchService(
         // reads ~/.claude/.claude.json, a file that holds none of the operator's mcpServers, projects or account.
         val environment = speed.environment(launchEnvironment(spec, held, slots, wrapped, caller.inheritedConfigDir))
         val hub = hubArgs(caller, wrapped, effective, claude)
-        val cancelled = DesktopCancel(desktop).of(wrapped, environment.env, held.models.pinnedModel)
         val argv = buildList {
             // V4-129: the real absolute path when `claude` on PATH is currently the wrap shim itself
             // (see [wrapState]'s KDoc) — bare [claudeBinary] otherwise, byte-identical to every launch
@@ -183,14 +178,14 @@ public class LaunchService(
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
             // a launch on macOS carries splice's mark in its --settings, the one sign of it a hardened claude's
             // arguments keep there (LaunchMarker); elsewhere the arguments are as they were
-            addAll(LaunchMarker.settingsArgs(overlayOf(wrapped, roster, held.gateway, keyed, cancelled)))
+            addAll(LaunchMarker.settingsArgs(overlayOf(wrapped, roster, held.gateway, keyed)))
             addAll(hub.args + effort.args(held)) // the effort after the hub's: a relaunch reads it as its own
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.
             // V4-169: a session another head wrote goes on as the copy the client resumes.
             addAll(resume.resumingAs(bounded.args, adoption))
         }
-        val warnings = listOf(resume.warning(adoption), bounded.warning, hub.warning, cancelled?.warning)
+        val warnings = listOf(resume.warning(adoption), bounded.warning, hub.warning)
         val warning = launchWarning(spec, dangerouslySkipPermissions, warnings)
         return LaunchOutcome.Ready(environment.recipe(argv, warning))
     }
@@ -203,13 +198,11 @@ public class LaunchService(
         roster: List<String>?,
         gateway: LaunchGateway,
         head: LaunchSpec,
-        cancelled: DesktopCancelled?,
     ): String? {
         if (wrapped == null) return null
         val hooks = materializer.startupHook(head.trees.own, head.signIn.headKey)
         val marked = LaunchMarker.here
-        val overlay = wrapped.settingsOverlay(roster, gateway.statuslineCommand, marked, gateway.keyHelper, hooks)
-        return cancelled?.over(overlay) ?: overlay
+        return wrapped.settingsOverlay(roster, gateway.statuslineCommand, marked, gateway.keyHelper, hooks)
     }
 
     /** MCP hub step 6: what the hub adds to this launch. A wrapped launch reads the user's own config home and falls
@@ -313,8 +306,10 @@ public class LaunchService(
         val env = if (wrapped == null) planted else planted - CONFIG_DIR_ENV
         return LaunchEnvironment(
             env,
+            // Claude Code's provider switches, cleared from every launch: a shell inside a Code tab session carries
+            // the desktop door's, and a session that inherits any of them goes past its head.
             auth + "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY" + absentTiers + clientModels + config +
-                DesktopCancel(desktop).cleared,
+                providerSwitches,
         )
     }
 

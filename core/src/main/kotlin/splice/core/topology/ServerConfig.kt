@@ -1,12 +1,14 @@
-// NEW: server mode (docs/specs/server-mode.md, F1 and the limits half of F3). The `[server]` table splice.toml carries
-// on a machine that is a team's front door: where it listens, which commands it serves, the PEM files it speaks TLS
-// from, the proxies whose word on a client's address it takes, who administers it, what each person may hold at
-// once, how often a silent stream is kept alive (F4), and the identity provider a person signs in with (F2). A file
-// with no `[server]` decodes to the defaults, which serve nothing.
+// NEW: server mode (docs/specs/server-mode.md, F1, the limits half of F3, F9 and F12). The `[server]` table splice.toml
+// carries on a machine that is a team's front door: where it listens, which commands it serves, the PEM files it speaks
+// TLS from, the proxies whose word on a client's address it takes, who administers it, what each person may hold at
+// once, how often a silent stream is kept alive (F4), the oldest splice a laptop may run (F9), and the identity
+// provider a person signs in with (F2). A file with no `[server]` decodes to the defaults, which serve nothing.
 package splice.core.topology
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import splice.core.client.ClientVersion
+import splice.core.client.ClientVersionParser
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -35,6 +37,8 @@ public data class ServerConfig(
     val export: ServerExport = ServerExport(),
     /** What each person may spend (F3). */
     val budgets: ServerBudgets = ServerBudgets(),
+    /** The oldest splice a laptop may run against this server (F9). */
+    val client: ServerClient = ServerClient(),
     /** `[server.signin]`: the identity provider a person signs in with to get a key; null when nobody signs in. */
     val signin: ServerSignin? = null,
 ) {
@@ -62,7 +66,19 @@ public data class ServerLimits(
     @SerialName("inflight_per_person") val inflightPerPerson: Int = 0,
     /** Turns one person may start in any minute. */
     @SerialName("rpm_per_person") val rpmPerPerson: Int = 0,
+    /** Tokens, prompt and answer, of one person's turns that ended in the last minute, past which their next turn waits
+     *  (F12). */
+    @SerialName("tpm_per_person") val tpmPerPerson: Int = 0,
 )
+
+/** `[server.client]` (F9): the oldest splice a laptop may run against this server. [minimum] is a dotted splice
+ *  version, as in "0.10.0"; null lets every laptop in. A Messages turn from an older one is answered by its head, in
+ *  the conversation, with what to upgrade to, and reaches no upstream. */
+@Serializable
+public data class ServerClient(val minimum: String? = null) {
+    /** [minimum] as a version compared number by number, or null when none is set or it is no version. */
+    public val floor: ClientVersion? get() = ClientVersionParser().parse(minimum)
+}
 
 /** `[server.signin]` (F2): the OpenID Connect provider a team member signs in with, the client this server is
  *  registered there as, the email domains it admits, how long a key minted by a sign-in lives, and how many sign-ins

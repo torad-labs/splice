@@ -57,7 +57,7 @@ public class ServerMode(
 ) {
     private val keys = ServerKeys(folder.resolve(KEYS_FILE), io, clock)
     private val people = ServerPeople(folder.resolve(PEOPLE_FILE), io)
-    private val limits = PersonLimits(server.limits, people, clock)
+    private val limits = PersonLimits(server.limits, people, server.teams, clock)
 
     /** The keys' operations, as the CLI and the control plane ask them. */
     public val keyApi: KeyApi = KeyApi(keys, log)
@@ -66,7 +66,10 @@ public class ServerMode(
     public val upstreamApi: UpstreamApi = UpstreamApi(upstreams)
 
     /** Each person's settings, as the CLI and the control plane set them. */
-    public val personApi: PersonApi = PersonApi(people, log, upstreamApi)
+    public val personApi: PersonApi = PersonApi(people, log, upstreamApi, server.commands)
+
+    /** Each team's settings, as the CLI and the control plane set them (F12). */
+    public val teamApi: TeamApi = TeamApi(people, log, server.commands)
 
     /** The server's books (F5): its usage ledger and reports, its budgets, and the ledger's export, as the CLI, the
      *  control plane and an admin's key ask them. */

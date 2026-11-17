@@ -21,3 +21,8 @@ public data class TurnRelay(
 /** The header the server listener names a relayed turn in. The relay sets it itself and never passes on a client's
  *  own (ShareRelay). */
 public const val SERVED_TURN_HEADER: String = "x-splice-served-turn"
+
+/** The header the server listener hands its head a turn in that the head answers itself, in the conversation, with
+ *  the text it carries, sending nothing upstream: a laptop older than `[server.client] minimum` told what to upgrade
+ *  to (server mode, F9). The relay sets it itself and never passes on a client's own (ShareRelay). */
+public const val SERVED_NOTICE_HEADER: String = "x-splice-served-notice"

@@ -150,11 +150,11 @@ internal class SigninRoute(
         if (cap <= 0) return null
         val now = clock.millis()
         if (tries.size > MAX_TRACKED_ADDRESSES) {
-            tries.entries.removeIf { (_, idle) -> synchronized(idle) { idle.count(now) == 0 } }
+            tries.entries.removeIf { (_, idle) -> synchronized(idle) { idle.count(now) == 0L } }
         }
         val starts = tries.computeIfAbsent(address) { MinuteStarts() }
         return synchronized(starts) {
-            val wait = starts.waitFor(cap, now)
+            val wait = starts.waitFor(cap.toLong(), now)
             if (wait == null) starts.add(now)
             wait
         }

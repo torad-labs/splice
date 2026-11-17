@@ -20,9 +20,11 @@
 // A key arrives as `x-api-key` or as `Authorization: Bearer`. A missing, unknown, revoked or expired one is a 401
 // `authentication_error` that says which and never repeats the key, and nothing reaches a head. Only the commands
 // `[server] commands` lists are served; any other name is 404 naming those. A `POST /<command>/v1/messages` is a turn:
-// it counts against its person's in-flight and per-minute caps (PersonLimits), and one past a cap is a 429
-// `rate_limit_error` with `Retry-After` (TurnAdmission). Every error is in the Anthropic shape, so Claude Code prints
-// its message.
+// it counts against its person's in-flight, per-minute and token caps (PersonLimits), and one past a cap is a 429
+// `rate_limit_error` with `Retry-After` (TurnAdmission); one on a command its person may not use is a 403
+// `permission_error` naming it (CommandAccess). Every error is in the Anthropic shape, so Claude Code prints its
+// message. A turn from a laptop whose splice is older than `[server.client] minimum` is answered 200 by its head, in
+// the conversation, with what to upgrade to, and reaches no upstream and no cap (ClientMinimum).
 //
 // A person's key is the server's secret on the way out as well. A head sends its provider the caller's headers that
 // provider's `forward_headers` names, and one of those whose value holds a key this server issued, the caller's own
@@ -66,6 +68,7 @@ import splice.core.auth.BearerScheme
 import splice.core.pool.PREFERRED_UPSTREAM_HEADER
 import splice.core.topology.ServerAddress
 import splice.core.topology.ServerConfig
+import splice.core.turn.SERVED_NOTICE_HEADER
 import splice.core.util.LogSink
 import splice.core.wire.HttpStatus
 import splice.http.listen.HttpListenerThreads
@@ -103,6 +106,7 @@ internal class ServerListener(
     private val paths = RequestPaths()
     private val admission = TurnAdmission(parts, voice, catalog, watched)
     private val bound = ProviderBound(parts.keys, log)
+    private val minimum = ClientMinimum(server.client)
 
     /** How often a streamed turn's client is sent a keepalive while its answer is silent; null sends none. */
     private val keepalive = server.keepaliveSeconds.takeIf { it > 0 }?.seconds
@@ -210,11 +214,15 @@ internal class ServerListener(
     }
 
     /** Relays [path] to [head] for [key]'s person. A turn takes one of the person's slots first, or is refused, and
-     *  leaves its row in the ledger however it ends. */
+     *  leaves its row in the ledger however it ends; one from an older laptop is its head's to answer (F9). */
     private suspend fun turn(call: ApplicationCall, key: ServerKey, head: SharedHead, path: List<String>) {
-        if (call.request.httpMethod != HttpMethod.Post || path != turnPath) {
+        val isTurn = call.request.httpMethod == HttpMethod.Post && path == turnPath
+        // An older laptop's turn is answered by its head with what to upgrade to, and takes no slot (F9).
+        val notice = if (isTurn) minimum.notice(call) else null
+        if (!isTurn || notice != null) {
             if (!head.running()) return catalog.notRunning(call, head)
-            val asked = headTurn(call, key, head, path, emptyMap())
+            val named = notice?.let { mapOf(SERVED_NOTICE_HEADER to it) }.orEmpty()
+            val asked = headTurn(call, key, head, path, named)
             watched.turn(call, slot = null) { parts.relay.turn(call, asked) }
             return
         }

@@ -4,7 +4,8 @@
 // the model nothing, and a head's /login does the same in place of that head's own sign-in. With no head in the door, a
 // turn is refused with a message that names /login. (docs/specs/door-default.md, decisions 5 and 6.)
 // (Changed Nov 17 after the builder's dispute: the check took a plugin folder's command for the bare /login, which
-// Claude Code 2.1.326 offers only as /splice:login.)
+// Claude Code 2.1.326 offers only as /splice:login. Changed again the same day: the file also runs in a Claude Code
+// splice did not start, which is accepted and said, and the hook is handed the bare command by 2.1.326.)
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -40,11 +41,22 @@ afterAll(async () => {
   rmSync(logins, { recursive: true, force: true });
 });
 
-/** The person types `/login` in `x`, at a desk with `splice` on its PATH: what Claude Code submits is caught, or not. */
-function typeLogin(x: Session): { blocked: boolean; reason: string } {
+/** What Claude Code hands the session's hooks when the person types `/login` in `x`: the bare command (2.1.326), and
+ *  the command file's text. */
+function handed(x: Session): string[] {
   const command = slash(x, "login");
   if (!command) throw new Error("the session offers no /login");
-  return prompt({ ...x, env: { ...x.env, PATH: `${d.bin}:${x.env.PATH ?? ""}` } }, crypto.randomUUID(), expanded(command, ""));
+  return ["/login", expanded(command, "")];
+}
+
+/** `text` is submitted in `x`, at a desk with `splice` on its PATH: it is caught, or not. */
+function submit(x: Session, text: string): { blocked: boolean; reason: string } {
+  return prompt({ ...x, env: { ...x.env, PATH: `${d.bin}:${x.env.PATH ?? ""}` } }, crypto.randomUUID(), text);
+}
+
+/** The person types `/login` in `x`, as a Claude Code that hands its hooks the command file's text. */
+function typeLogin(x: Session): { blocked: boolean; reason: string } {
+  return submit(x, handed(x)[1]!);
 }
 
 /** Wait for the browser to be asked for one more page than `before`, and answer the page it was asked for. */
@@ -78,16 +90,30 @@ describe("door-login", () => {
     expect(under(join(s.home, ".claude"))).toEqual([SPLICE_LOGIN]);
   });
 
+  test("the file and splice claude name both ways on: splice's accounts, and Claude Code's own sign-in", async () => {
+    // a Claude Code splice did not start runs the file too, and submits its text
+    const command = slash(await session(s), "login");
+    expect(command).not.toBeNull();
+    expect(command!.body).toContain("splice console");
+    expect(command!.body).toContain("claude auth login");
+    const said = s.cli(["claude"]);
+    expect(said.code).toBe(0);
+    expect(said.out + said.err).toContain("/login");
+    expect(said.out + said.err).toContain("claude auth login");
+  });
+
   test("typing /login opens the accounts page in the browser and sends the model nothing", async () => {
     const x = await session(s);
-    const before = d.opened().length;
-    const turns = backend.turns().length;
-    const said = typeLogin(x);
-    expect(said.blocked).toBe(true);
-    expect(said.reason).toMatch(/account/i);
-    await expectAccounts(await opened(before));
-    expect(backend.turns().length).toBe(turns);
-  }, 60_000);
+    for (const text of handed(x)) {
+      const before = d.opened().length;
+      const turns = backend.turns().length;
+      const said = submit(x, text);
+      expect(said.blocked).toBe(true);
+      expect(said.reason).toMatch(/account/i);
+      await expectAccounts(await opened(before));
+      expect(backend.turns().length).toBe(turns);
+    }
+  }, 90_000);
 
   test("a head's /login opens the same page, in place of that head's own sign-in", async () => {
     const h = await session(s, "claude-astra");

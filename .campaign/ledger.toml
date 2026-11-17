@@ -49,6 +49,9 @@ goal = "The team server keeps a session's turns on the upstream that has its pro
 [feature."server-telemetry"]
 goal = "A team's server relays each person's Claude Code telemetry to the operator's collector with the person stamped on it, every laptop launch sends it there and says which splice it runs, so the operator sees who used what and which laptops to upgrade."
 
+[feature."door-default"]
+goal = "One command, claude, reaches every model a person is signed in to: it runs on the door Claude Desktop already uses, /model lists the models of signed-in accounts, /login opens splice's accounts page where any account is signed in, a fresh install works this way from the first run, and whoever still starts a session through a head's own command is told that those commands are going away. Spec: docs/specs/door-default.md."
+
 [[row]]
 id = 'server-listener'
 title = 'A [server] listener that answers only keys'
@@ -966,4 +969,112 @@ reviews = [
 ]
 notes = [
   '2026-11-16 22:45 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'door-claude-lane'
+title = 'claude runs on the door'
+feature = 'door-default'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "splice claude door [--model <selector>] puts the terminal's claude on the door, and splice claude (--json: lane, door, default_model, models, left_out) says which lane it is on. A launch of claude on the door hands Claude Code the Mantle variables at the door with a key of the terminal's own, ANTHROPIC_MODEL naming the model the session starts on, and unsets whatever would send it elsewhere. The session runs over the person's own Claude folder, with no CLAUDE_CONFIG_DIR, and splice writes nothing there. The door's grammar is unchanged: a selector runs its model on its head, an Anthropic ID is a tier of the session's head, anything else is refused by name with nothing sent upstream. The starting model is --model, or the one chosen last, or the pinned model of the first head in the picker, or with no account signed in the pinned model of the first head in the door; --model refuses a selector the door does not serve. The terminal's key is not Desktop's: splice desktop off and rotate-key leave claude running, a request without the terminal's key is refused, and the lane, its address and its key are the same after a restart. A turn through it is recorded as a door turn of the head that ran it. See docs/specs/door-default.md, decisions 1 to 4."
+checks = [
+  'bun test ./.campaign/checks/door/lane.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 00:02 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'door-picker'
+title = '/model lists the models of signed-in accounts'
+feature = 'door-default'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'door-claude-lane',
+]
+guard = false
+spec = "A claude session on the door lists, in /model, every model of every head whose provider is called with a login splice holds, while that login is good, in place of Claude Code's own models: one row a model in splice.toml's order of heads, model the selector, label the model's own label, description splice · <command>. The rows ride the launch's --settings overlay as modelPicker with replaceBuiltInOptions true; nothing is written into the person's settings file. splice claude --json lists the same rows as models. A head called with an API key or a local server has no row, and its selector still runs when named. A head whose login is missing or has expired is left out and named in splice claude and in left_out with the reason. An account signed in or out while splice runs is in or out of the next session's picker with no restart. See docs/specs/door-default.md, decision 4."
+checks = [
+  'bun test ./.campaign/checks/door/picker.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 00:02 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'door-login'
+title = "/login opens splice's accounts"
+feature = 'door-default'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'door-claude-lane',
+]
+guard = false
+spec = "In a claude session on the door, Claude Code's own /login and /logout are off (DISABLE_LOGIN_COMMAND, DISABLE_LOGOUT_COMMAND) and /login is splice's: it is in the session's menu, described as opening splice's accounts, and typing it opens the console's accounts page in the person's browser, signed in, by the single-use page splice console opens. It is caught before the model: no turn is sent. It is the bare /login, laid outside the person's own Claude folder; if the installed Claude Code allows no such thing, the item goes back to its lead with what was seen. On a head splice holds the credential for, /login does the same in place of starting that head's own sign-in. A head that forwards the caller's Claude login keeps Claude Code's own /login. With no head in the door, claude still starts, and a turn is refused in Anthropic's error shape with a 4xx Claude Code does not retry and a message that names /login, nothing sent upstream. What was seen in a real Claude Code session is written into the spec's table. See docs/specs/door-default.md, decisions 5 and 6."
+checks = [
+  'bun test ./.campaign/checks/door/login.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 00:03 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'door-install-default'
+title = 'A fresh install puts claude on the door'
+feature = 'door-default'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'door-claude-lane',
+]
+guard = false
+spec = "With no choice made, claude is on the door when splice.toml has no head whose command is claude, and on its head when it has one, so an upgrade changes no lane. A choice made with splice claude door or splice claude head is kept in splice's state across restarts and upgrades. splice claude head puts claude back on its head, says head commands are going away, and retires the terminal's key, so a session started on the door before it is refused afterwards with nothing sent upstream; it refuses, changing nothing, when there is no head to go back to. On the head lane splice claude names splice claude door. splice setup on a machine with no splice.toml links claude to splice on the door and adds no head keyed claude: the Claude plan leaves its tick list, and splice add claude still adds that head. See docs/specs/door-default.md, decisions 1, 3 and 8."
+checks = [
+  'bun test ./.campaign/checks/door/install.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 00:03 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'heads-deprecated'
+title = 'Head commands say they are going away'
+feature = 'door-default'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'door-claude-lane',
+]
+guard = false
+spec = "Starting a session through a head's own command is deprecated, and every such command keeps working. The launch of a head's command carries a one-line notice the shim prints before Claude Code starts: head commands are deprecated, claude on the door replaces them, and splice claude door is how to move. splice status and splice doctor say which lane claude is on, and while it is on its head, that the lane is deprecated and splice claude door moves it. A claude on the door carries no such notice. README.md, AGENTS.md and the CHANGELOG describe the door as how splice is used and head commands as deprecated. No head is removed, renamed or refused, and no removal date is set. See docs/specs/door-default.md, decision 7."
+checks = [
+  'bun test ./.campaign/checks/door/deprecated.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 00:03 CT: added; 1 of 1 checks fail, as they should before the work',
 ]

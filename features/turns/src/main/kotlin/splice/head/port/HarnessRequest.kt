@@ -1,6 +1,6 @@
-// NEW: the harness (docs/specs/harness.md, decision 2). What a request says about itself that a capability's rule
-// reads, taken once as the request is prepared, where the parsed body and the client's headers are both at hand.
-package splice.head.harness
+// NEW: the harness's port (docs/specs/harness.md, decisions 2 and 11). What a request says about itself that the
+// harness reads, taken once as the request is prepared, where the parsed body and the client's headers are both at hand.
+package splice.head.port
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -8,8 +8,8 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.parse.AnthropicTurnBody
 import splice.core.util.JsonScalars
 
-/** What a capability's rule reads from one request. */
-internal data class HarnessRequest(
+/** What the harness reads from one request. */
+public data class HarnessRequest(
     val sessionId: String?,
     /** Claude Code's agent header: null on the main thread, the subagent's id on a subagent's. */
     val agentId: String?,
@@ -22,16 +22,16 @@ internal data class HarnessRequest(
     val firstUser: JsonElement?,
 ) {
     /** Whether the history holds an assistant message. */
-    val answered: Boolean get() = shape.answered
+    public val answered: Boolean get() = shape.answered
 
     /** The thread the request belongs to: the session's main thread, or one subagent of it by its agent id. */
-    val thread: String? get() = sessionId?.let { session -> agentId?.let { "$session/$it" } ?: session }
+    public val thread: String? get() = sessionId?.let { session -> agentId?.let { "$session/$it" } ?: session }
 
     /** A request that can be a thread's turn: one that streams and carries tools. Side requests carry none. */
-    val turn: Boolean get() = shape.streams && shape.tools
+    public val turn: Boolean get() = shape.streams && shape.tools
 
     /** The text of the client's first user message, its text blocks joined, as the client sent them. */
-    fun firstUserText(): String {
+    public fun firstUserText(): String {
         val content = firstUser
         if (content !is JsonArray) return content?.let { JsonScalars.str(it) }.orEmpty()
         return content.mapNotNull { block ->
@@ -40,8 +40,8 @@ internal data class HarnessRequest(
     }
 }
 
-/** What a request is, for splice's own conditions on every rule. */
-internal data class HarnessShape(
+/** What a request is, for splice's own conditions on every capability. */
+public data class HarnessShape(
     val streams: Boolean,
     val tools: Boolean,
     /** Whether the history holds an assistant message. A first turn holds none, which rules out a compaction and the

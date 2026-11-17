@@ -1,7 +1,7 @@
 // NEW: the harness (docs/specs/harness.md, decision 4). An HTTP worker: splice posts it one JSON object, with the
 // worker's own key as a bearer when its declaration names one, and reads the JSON lines it answers in until one result
 // or one refusal. Cancelling the call (the client left, the time limit passed, the head stopped) drops the request.
-package splice.head.harness
+package splice.harness
 
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.runInterruptible

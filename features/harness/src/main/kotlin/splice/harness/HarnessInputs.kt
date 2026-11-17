@@ -1,6 +1,6 @@
 // NEW: the harness (docs/specs/harness.md). What a head's harness is built from, as the daemon hands it over: the
 // capabilities splice.toml declares, the folder the head's threads are recorded in, and how a worker's key is read.
-package splice.head.harness
+package splice.harness
 
 import splice.core.capability.Capability
 import java.nio.file.Path

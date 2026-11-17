@@ -1,6 +1,6 @@
 // NEW: what a capability's text does on a dialect's head (docs/specs/harness.md, decision 5), as one set of checks
 // each dialect's test runs on its own provider: real heads, real requests, and the bodies the provider got.
-package splice.head.harness
+package splice.harness
 
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.jsonPrimitive

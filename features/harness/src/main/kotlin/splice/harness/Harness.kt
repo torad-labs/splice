@@ -2,7 +2,7 @@
 // for its thread, whether this is the thread's first turn, calls the capabilities whose rules name the request in the
 // order splice.toml declares them while the turn is held, and answers with the texts the request carries: the ones
 // its thread's capabilities placed, for a first user message that is still the one they were placed in.
-package splice.head.harness
+package splice.harness
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -14,30 +14,15 @@ import splice.core.capability.Capability
 import splice.core.capability.CapabilityFailure
 import splice.core.capability.CapabilityTurn
 import splice.core.failure.Decline
+import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
+import splice.head.port.HarnessEnd
+import splice.head.port.HarnessRequest
+import splice.head.port.HarnessTurn
+import splice.head.port.Held
+import splice.head.port.TurnHarness
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
-
-/** Holds a turn while its capabilities work: the response opens and is pinged, the turn's notice is off and its
- *  place in the head's queue is given back; [release] takes one again before the turn goes on, and hears what the
- *  hold was, however it ended: the work done, a refusal, or the client leaving while it waited. */
-internal interface TurnHolding {
-    suspend fun hold()
-
-    suspend fun release(held: Held)
-}
-
-/** A hold as the turn's record keeps it: the capabilities it was held on, in order, and for how long. */
-internal data class Held(val on: List<String>, val ms: Long)
-
-/** What the harness makes of one request. */
-internal sealed class HarnessEnd {
-    /** The request goes on carrying [texts], in order, at the end of its first user message. */
-    data class Go(val texts: List<String>) : HarnessEnd()
-
-    /** The turn is refused, and nothing goes upstream. */
-    data class Refused(val why: Decline) : HarnessEnd()
-}
 
 /** The capabilities splice.toml declares, at head [head], over the threads' records. */
 internal class Harness(
@@ -46,8 +31,8 @@ internal class Harness(
     private val records: ThreadRecords,
     private val calls: CapabilityCall,
     private val log: LogSink,
-    private val clock: splice.core.util.ElapsedClock,
-) {
+    private val clock: ElapsedClock,
+) : TurnHarness {
     private val rules = CapabilityRules()
 
     /** The wait each thread's held turn is in, which a second request of the thread or the head's stop ends with the
@@ -58,28 +43,28 @@ internal class Harness(
     private val stopping = AtomicBoolean(false)
 
     /** The head stops: every held turn stops waiting and goes on as today, and no turn is held from now on. */
-    fun stop() {
+    override fun stop() {
         stopping.set(true)
         waits.values.forEach { it.complete(HEAD_STOPPED) }
     }
 
     /** The head runs again after a stop: turns are held again. */
-    fun started() {
+    override fun started() {
         stopping.set(false)
     }
 
-    /** [request] is null for a request the harness reads nothing of. [holdable] is false where the turn cannot be
-     *  held (a request that does not stream). */
-    suspend fun around(request: HarnessRequest?, turnId: String, holdable: Boolean, holding: TurnHolding): HarnessEnd {
+    /** [request] is null for a request the harness reads nothing of. The turn is held only where [turn] can be held
+     *  (a request that does not stream cannot). */
+    override suspend fun around(request: HarnessRequest?, turn: HarnessTurn): HarnessEnd {
         val thread = request?.thread ?: return HarnessEnd.Go(emptyList())
         // A second request of the thread ends the wait of the first: neither places anything, both go on as today.
         waits.remove(thread)?.complete(SUPERSEDED)
         val hash = records.hashOf(request.firstUser)
         val first = firstTurn(thread, request)
-        val due = if (holdable && !stopping.get()) due(request, first) else emptyList()
+        val due = if (turn.holdable && !stopping.get()) due(request, first) else emptyList()
         if (first) records.update(thread) { taken(it, due, hash) }
         if (due.isEmpty()) return HarnessEnd.Go(records.of(thread).placedFor(hash))
-        return held(thread, due, CallFor(head, turnId, request), holding, hash)
+        return held(thread, due, CallFor(head, turn, request), hash)
     }
 
     /** The capabilities whose rules name [request], in the order splice.toml declares them. */
@@ -107,19 +92,18 @@ internal class Harness(
         thread: String,
         due: List<Capability>,
         on: CallFor,
-        holding: TurnHolding,
         hash: String?,
     ): HarnessEnd {
         val startedMs = clock()
         val ended = CompletableDeferred<String>()
-        holding.hold()
+        on.turn.hold()
         waits[thread] = ended
         if (stopping.get()) ended.complete(HEAD_STOPPED)
         val outcome = try {
             runAll(thread, due, on, ended)
         } finally {
             waits.remove(thread, ended)
-            holding.release(Held(due.map { it.name }, clock() - startedMs))
+            on.turn.release(Held(due.map { it.name }, clock() - startedMs))
         }
         if (outcome == null) return HarnessEnd.Go(records.of(thread).placedFor(hash))
         // A refused turn was not the thread's first turn: the next request the rule names is called.

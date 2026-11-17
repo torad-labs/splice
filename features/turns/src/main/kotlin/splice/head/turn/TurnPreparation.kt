@@ -67,9 +67,9 @@ import splice.head.RequestBodyReader
 import splice.head.compact.CompactClassifier
 import splice.head.compaction.CompactionReplay
 import splice.head.compaction.HeldReply
-import splice.head.harness.HarnessRequest
-import splice.head.harness.HarnessRequests
-import splice.head.harness.HarnessShape
+import splice.head.port.HarnessRequest
+import splice.head.port.HarnessRequests
+import splice.head.port.HarnessShape
 import splice.head.turn.fallback.HeldModelFallback
 import splice.head.turn.review.AUTO_MODE_REVIEW
 import splice.head.wire.ClientInbound

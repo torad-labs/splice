@@ -7,7 +7,7 @@ import splice.core.failure.TurnVoice
 import splice.core.memory.HeapLease
 import splice.core.perf.TurnPerf
 import splice.head.admission.KeyNaming
-import splice.head.harness.HarnessRequest
+import splice.head.port.HarnessRequest
 import splice.head.usage.QuotaTracker
 import splice.head.wire.TurnTrace
 import splice.upstream.BuiltTurn

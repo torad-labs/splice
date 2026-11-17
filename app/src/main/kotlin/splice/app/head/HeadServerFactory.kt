@@ -233,7 +233,7 @@ internal class HeadServerFactory(
             sessionProject = SessionProjectLookup { prompts.sessionProject.projectFor(it) },
             slotInstructions = console?.slots,
             compactionTail = compactionTail,
-            harness = capabilities.forHead(key),
+            harness = capabilities.forHead(key, log),
         ),
         reports = HeadDeps.HeadReports(events = console?.forHead(key) ?: NoHeadEvents, served = served),
     )

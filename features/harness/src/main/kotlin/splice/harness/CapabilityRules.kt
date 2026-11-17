@@ -1,11 +1,12 @@
 // NEW: the harness (docs/specs/harness.md, decision 2). Whether a capability's rule names a request: its `when` table,
 // every key of which a request has to meet, and splice's own conditions, which hold for every rule.
-package splice.head.harness
+package splice.harness
 
 import splice.core.capability.Capability
 import splice.core.capability.CapabilityMode
 import splice.core.capability.CapabilityThread
 import splice.core.capability.CapabilityTurn
+import splice.head.port.HarnessRequest
 
 internal class CapabilityRules {
     /** Whether [capability]'s rule names [request] on head [head]. [first] is whether the request is its thread's first

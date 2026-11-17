@@ -1,5 +1,5 @@
 // NEW: the harness (docs/specs/harness.md, decisions 4 and 6). How a worker's work ended, and the lines it answers in.
-package splice.head.harness
+package splice.harness
 
 import splice.core.parse.lenientJson
 import splice.core.util.JsonScalars

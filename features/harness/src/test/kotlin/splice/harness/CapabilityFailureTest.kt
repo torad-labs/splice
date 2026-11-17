@@ -1,7 +1,7 @@
 // NEW: a capability that fails lets the turn go on or refuses it, as declared (docs/specs/harness.md, decisions 3 and
 // 6). Each test drives turns through a head against a worker outside splice that fails one way or another, and reads
 // what the client's stream carried and what the provider got.
-package splice.head.harness
+package splice.harness
 
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json

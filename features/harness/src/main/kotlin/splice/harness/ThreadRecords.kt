@@ -2,7 +2,7 @@
 // whether its first turn has been decided, the hash of its first user message as the client sent it, and each
 // capability's state there with the text it placed. Every state is on disk before the turn it is decided for goes
 // upstream, so a restarted daemon sends every live thread what it sent before.
-package splice.head.harness
+package splice.harness
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray

@@ -11,7 +11,6 @@ import kotlinx.coroutines.withContext
 import splice.core.perf.PerfKeys
 import splice.core.turn.HeadStopSignal
 import splice.head.HeadDeps
-import splice.head.harness.HeadHarness
 import splice.head.wire.Heartbeat
 import splice.head.wire.LostClient
 import splice.upstream.Provider
@@ -34,7 +33,7 @@ internal class TurnOneDrive(
     private val activeJobs = mutableMapOf<Job, TurnDrive>()
 
     /** The head's capabilities (docs/specs/harness.md), run before a turn's first round. */
-    private val harness = HarnessStep(provider, HeadHarness().of(provider.key, deps))
+    private val harness = HarnessStep(provider, deps.seams.session.harness, deps.seams.session.sessionProject)
 
     /** Stop unfinished child turns before the engine closes their client sockets. */
     fun stopActive() {

@@ -2,7 +2,7 @@
 // requests Claude Code sends: its user agent, its agent header, whether it streams with tools, whether its history
 // holds an answer. Each test sends real requests through a head and reads whether, and in what order, the worker
 // outside splice was posted, and what the provider got.
-package splice.head.harness
+package splice.harness
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch

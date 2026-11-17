@@ -2,7 +2,7 @@
 // answers on each dialect's own path (Anthropic's Messages, Chat Completions, Responses), a worker outside splice that
 // answers in JSON lines the way it is told to, and real heads with the capabilities a test declares, on the provider a
 // test hands in, which the test sends requests to the way Claude Code sends them.
-package splice.head.harness
+package splice.harness
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
@@ -37,11 +37,16 @@ import splice.core.capability.CapabilityWorker
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.WatchdogBudget
+import splice.core.util.ElapsedClock
+import splice.core.util.LogSink
+import splice.core.util.MonoClock
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.head.HeadDeps
 import splice.head.HeadServer
+import splice.head.compaction.SessionProjectLookup
 import splice.head.headDeps
+import splice.head.port.TurnHarness
 import splice.upstream.Provider
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
@@ -78,8 +83,8 @@ public data class Turn(
 /** How the worker answers: with [status] and, from a 200, [lines]; [held] answers only once the rig lets go. */
 public data class WorkerReply(val lines: List<String>, val status: Int = 200, val held: Boolean = false)
 
-/** What a worker was posted: the capability it was asked for and the session. */
-public data class Asked(val capability: String, val session: String)
+/** What a worker was posted: the capability it was asked for, the session, and the fields it was sent. */
+public data class Asked(val capability: String, val session: String, val fields: JsonObject = JsonObject(emptyMap()))
 
 public class CapabilityRig(private val tmp: Path) : AutoCloseable {
     /** Each request the provider was sent, its body as it arrived. */
@@ -108,7 +113,7 @@ public class CapabilityRig(private val tmp: Path) : AutoCloseable {
     private val worker = server("/work") { ex ->
         val body = Json.parseToJsonElement(ex.requestBody.readAllBytes().decodeToString()).jsonObject
         val capability = body.getValue("capability").jsonPrimitive.content
-        asked += Asked(capability, body.getValue("session").jsonPrimitive.content)
+        asked += Asked(capability, body.getValue("session").jsonPrimitive.content, body.getValue("fields").jsonObject)
         val now = reply(capability)
         if (now.held) letGo.get(HELD_S, TimeUnit.SECONDS)
         answer(ex, now.status, now.lines.joinToString("") { "$it\n" }, "application/x-ndjson")
@@ -135,25 +140,30 @@ public class CapabilityRig(private val tmp: Path) : AutoCloseable {
         work = CapabilityWork(CapabilityWorker.Http(url, null), listOf(CapabilityField.FIRST_USER_MESSAGE)),
     )
 
-    /** A started head declaring [capabilities] in this order, its threads recorded under [records], serving the
-     *  provider [dialect] builds from the head's tuning: Anthropic's Messages passed through, unless a test names
-     *  another. */
+    /** A started head declaring [capabilities] in this order, its threads recorded under [records], whose sessions all
+     *  work in [folder] (none when null), serving the provider [dialect] builds from the head's tuning: Anthropic's
+     *  Messages passed through, unless a test names another. */
     public fun head(
         capabilities: List<Capability>,
         records: Path = tmp.resolve("records"),
+        folder: Path? = null,
         dialect: (ProviderTuning) -> Provider = { PassthroughProvider(it, PassthroughQuirks(providerTag = HEAD)) },
     ): HeadServer = runBlocking {
         val dir = Files.createDirectories(tmp.resolve("head-${heads.size}"))
         val harness = HarnessInputs(capabilities, records, WorkerKeys { null }).takeIf { capabilities.isNotEmpty() }
+            ?.let { HeadHarness().of(HEAD, it, LogSink { }, ElapsedClock(MonoClock::nowMs)) }
         val server = HeadServer(
             provider = dialect(tuning()),
             listenPort = 0,
-            deps = headDeps(tmp = dir, seams = HeadDeps.HeadSeams(session = HeadDeps.SessionSeams(harness = harness))),
+            deps = headDeps(tmp = dir, seams = HeadDeps.HeadSeams(session = sessions(folder, harness))),
         )
         server.start()
         heads[server] = dir
         server
     }
+
+    private fun sessions(folder: Path?, harness: TurnHarness?) =
+        HeadDeps.SessionSeams(sessionProject = SessionProjectLookup { folder }, harness = harness)
 
     /** The perf rows [head] wrote, oldest first. */
     public fun perfRows(head: HeadServer): List<JsonObject> {

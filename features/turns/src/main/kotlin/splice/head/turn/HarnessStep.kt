@@ -4,17 +4,23 @@
 package splice.head.turn
 
 import splice.core.failure.FailureCause
-import splice.head.harness.Harness
-import splice.head.harness.HarnessEnd
-import splice.head.harness.Held
-import splice.head.harness.TurnHolding
+import splice.head.compaction.SessionProjectLookup
+import splice.head.port.HarnessEnd
+import splice.head.port.HarnessTurn
+import splice.head.port.Held
+import splice.head.port.TurnHarness
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.TurnDeclined
+import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 
-internal class HarnessStep(private val provider: Provider, private val harness: Harness?) {
+internal class HarnessStep(
+    private val provider: Provider,
+    private val harness: TurnHarness?,
+    private val folders: SessionProjectLookup,
+) {
     /** The gate slots of the turns held on a capability right now: a slot is one turn's, compared by identity. */
     private val held: MutableSet<InflightGate.Slot> = ConcurrentHashMap.newKeySet()
 
@@ -24,7 +30,7 @@ internal class HarnessStep(private val provider: Provider, private val harness: 
         val harness = harness ?: return null
         val request = drive.inputs.harness ?: return null
         val end = try {
-            harness.around(request, drive.sentTurnId(), holdable, Holding(drive, held))
+            harness.around(request, Holding(drive, holdable, held, folders))
         } finally {
             held -= drive.slot
         }
@@ -71,7 +77,16 @@ internal class HarnessStep(private val provider: Provider, private val harness: 
     /** The turn held as a usage-limit hold holds one: the response opens at once and is pinged, the notice for a
      *  long silent turn is off, and the turn gives its place in the head's queue back until it goes on. Its record
      *  says what the hold was before anything else is undone, so a turn the client left mid-hold keeps it too. */
-    private class Holding(private val drive: TurnDrive, private val held: MutableSet<InflightGate.Slot>) : TurnHolding {
+    private class Holding(
+        private val drive: TurnDrive,
+        override val holdable: Boolean,
+        private val held: MutableSet<InflightGate.Slot>,
+        private val folders: SessionProjectLookup,
+    ) : HarnessTurn {
+        override val id: String = drive.sentTurnId()
+
+        override fun folder(session: String?): Path? = folders(session)
+
         override suspend fun hold() {
             held += drive.slot
             drive.channel.statusGate?.open()

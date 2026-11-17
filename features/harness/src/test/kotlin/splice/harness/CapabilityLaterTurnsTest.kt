@@ -1,6 +1,6 @@
 // NEW: a capability's text stays in the first user message on every later request, and each turn's perf row says
 // what the capabilities did (docs/specs/harness.md, decisions 5 and 10), driven through a head with real requests.
-package splice.head.harness
+package splice.harness
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelAndJoin

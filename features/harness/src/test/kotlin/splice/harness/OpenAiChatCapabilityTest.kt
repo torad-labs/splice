@@ -1,14 +1,12 @@
 // NEW: a capability's text on a head that speaks OpenAI's Chat Completions (docs/specs/harness.md, decision 5),
 // through a real head on OpenAiChatProvider and the bodies the provider got.
-package splice.provider.openai
+package splice.harness
 
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.dialect.chat.ChatQuirks
-import splice.head.harness.CapabilityDialectChecks
-import splice.head.harness.CapabilityRig
-import splice.head.harness.HEAD
+import splice.provider.openai.OpenAiChatProvider
 import java.nio.file.Path
 
 class OpenAiChatCapabilityTest(@param:TempDir private val tmp: Path) {

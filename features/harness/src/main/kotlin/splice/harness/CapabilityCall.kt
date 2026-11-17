@@ -1,6 +1,6 @@
 // NEW: the harness (docs/specs/harness.md, decisions 4 and 6). One call of one capability's worker for one turn,
 // within its time limit, and what its end means for the turn: text to place, a turn let pass, a refusal, a failure.
-package splice.head.harness
+package splice.harness
 
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonNull
@@ -11,7 +11,8 @@ import kotlinx.serialization.json.put
 import splice.core.capability.Capability
 import splice.core.capability.CapabilityField
 import splice.core.capability.CapabilityWorker
-import splice.head.compaction.SessionProjectLookup
+import splice.head.port.HarnessRequest
+import splice.head.port.HarnessTurn
 
 /** What one capability's work came to for the turn. */
 internal sealed class CallEnd {
@@ -29,12 +30,9 @@ internal sealed class CallEnd {
 }
 
 /** The facts a call sends: the turn it is for and the request's own. */
-internal data class CallFor(val head: String, val turnId: String, val request: HarnessRequest)
+internal data class CallFor(val head: String, val turn: HarnessTurn, val request: HarnessRequest)
 
-internal class CapabilityCall(
-    private val worker: HttpWorker,
-    private val folders: SessionProjectLookup,
-) {
+internal class CapabilityCall(private val worker: HttpWorker) {
     suspend fun call(capability: Capability, on: CallFor): CallEnd {
         val http = capability.work.worker as? CapabilityWorker.Http
             ?: return CallEnd.Failed("its worker does not run in this version")
@@ -65,7 +63,7 @@ internal class CapabilityCall(
     private fun body(capability: Capability, on: CallFor): JsonObject = buildJsonObject {
         put("capability", capability.name)
         put("session", on.request.sessionId)
-        put("turn", on.turnId)
+        put("turn", on.turn.id)
         put(
             "fields",
             buildJsonObject {
@@ -76,7 +74,7 @@ internal class CapabilityCall(
 
     private fun value(field: CapabilityField, on: CallFor) = when (field) {
         CapabilityField.FIRST_USER_MESSAGE -> JsonPrimitive(on.request.firstUserText())
-        CapabilityField.FOLDER -> folders(on.request.sessionId)?.let { JsonPrimitive(it.toString()) } ?: JsonNull
+        CapabilityField.FOLDER -> on.turn.folder(on.request.sessionId)?.let { JsonPrimitive(it.toString()) } ?: JsonNull
         CapabilityField.MODEL -> JsonPrimitive(on.request.model)
         CapabilityField.HEAD -> JsonPrimitive(on.head)
     }

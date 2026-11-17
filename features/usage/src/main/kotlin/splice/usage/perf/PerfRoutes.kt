@@ -339,6 +339,8 @@ public class PerfRoutes(
         // upstream is what failed. Both pass through as the writer set them, null where the row carries neither.
         put("capture", row.facts.captured)
         put("provider_message", row.facts.providerMessage)
+        // The capabilities the turn was held on, comma-joined, null where it was not held (docs/specs/harness.md).
+        put("held_on", row.transcript.heldOn)
         // V4-345: the trace turn the console opens this row's request by; null where none was kept.
         put("turn", row.turn)
         put("turn_id", row.turnId)

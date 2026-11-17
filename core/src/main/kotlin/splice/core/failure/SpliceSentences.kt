@@ -90,12 +90,33 @@ internal class DeclineSentences(private val spoken: Spoken) {
             is Decline.Preflight -> preflight(why, head)
             is Decline.UnknownModel -> Said("$head does not serve ${spoken.model(why.model)}")
             is Decline.Untranslatable -> Said(untranslatable(why.what, head))
-            Decline.HeapBusy -> Said("splice is short of memory right now", next = Next.Resend(SEND_AGAIN))
-            Decline.ReadTimeout -> Said("This request took too long to reach splice", next = Next.Resend(SEND_AGAIN))
+            Decline.HeapBusy, Decline.ReadTimeout -> Said(busy(why), next = Next.Resend(SEND_AGAIN))
             is Decline.BadBody, is Decline.Unfit, Decline.ForeignHost, Decline.BadLocalKey, is Decline.SpliceKeyAsLogin,
             Decline.LivenessProbe, Decline.NoSharedLogin, Decline.NotLaunched,
             -> local(why, facts)
+            is Decline.CapabilityRefused, is Decline.CapabilityFailed -> capability(why, facts)
         }
+    }
+
+    /** The two refusals splice makes when it cannot take the request right now; the client sends it again. */
+    private fun busy(why: Decline): String = if (why == Decline.HeapBusy) {
+        "splice is short of memory right now"
+    } else {
+        "This request took too long to reach splice"
+    }
+
+    /** A capability refused the turn, or failed closed (docs/specs/harness.md, decision 6): its name, and why. */
+    private fun capability(why: Decline, facts: LineFacts): Said = when (why) {
+        // The sentence ends with its own full stop, so a reason the worker ended with one does not get two.
+        is Decline.CapabilityRefused ->
+            Said("${why.name} refused this turn: ${why.reason.trimEnd().removeSuffix(".")}")
+        is Decline.CapabilityFailed ->
+            Said("${why.name} could not finish its work (${why.why}), so the turn was not sent")
+        is Decline.TooLarge, is Decline.Budget, is Decline.Preflight, is Decline.UnknownModel,
+        is Decline.Untranslatable, Decline.HeapBusy, Decline.ReadTimeout, is Decline.BadBody, is Decline.Unfit,
+        Decline.ForeignHost, Decline.BadLocalKey, is Decline.SpliceKeyAsLogin, Decline.LivenessProbe,
+        Decline.NoSharedLogin, Decline.NotLaunched,
+        -> said(why, facts)
     }
 
     /** The head's door: a splice key that is not this head's, or a session that proved nothing on a head holding logins
@@ -123,7 +144,8 @@ internal class DeclineSentences(private val spoken: Spoken) {
                 "so the turn was not sent",
         )
         is Decline.TooLarge, is Decline.Budget, is Decline.Preflight, is Decline.UnknownModel,
-        is Decline.Untranslatable, Decline.HeapBusy, Decline.ReadTimeout,
+        is Decline.Untranslatable, Decline.HeapBusy, Decline.ReadTimeout, is Decline.CapabilityRefused,
+        is Decline.CapabilityFailed,
         -> said(why, facts)
     }
 

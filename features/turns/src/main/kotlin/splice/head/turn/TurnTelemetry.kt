@@ -188,6 +188,7 @@ internal class TurnTelemetry(
                     messagesHash = drive.meta.scope.messagesHash,
                     conversationKey = drive.meta.scope.conversationKey,
                     door = drive.meta.route.relay.door,
+                    held = drive.held,
                 ),
             ),
             snap,

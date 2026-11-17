@@ -86,6 +86,7 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
         private var compact: Boolean? = null
         private var captured: Boolean? = null
         private var providerMessage: String? = null
+        private var heldOn: String? = null
         var drops: Long? = null
             private set
 
@@ -116,11 +117,13 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
             }
         }
 
-        /** The keys that tie a row to its transcript, and the door it came through. */
+        /** The keys that tie a row to its transcript, and the door it came through, and the capabilities it was held
+         *  on. */
         private fun link(key: String, parser: JsonParser) {
             when (key) {
                 "messages_hash" -> messagesHash = text(parser)
                 "door" -> door = text(parser)
+                "held_on" -> heldOn = text(parser)
             }
         }
 
@@ -141,7 +144,7 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
                     captured = captured,
                     providerMessage = providerMessage,
                 ),
-                transcript = PerfTranscriptLink(sessionId, response, messagesHash, door),
+                transcript = PerfTranscriptLink(sessionId, response, messagesHash, door, heldOn),
                 turns = PerfTurnIds(trace = turn, request = turnId),
             )
         }

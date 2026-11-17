@@ -23,6 +23,7 @@ import splice.app.daemon.TopologyWindows
 import splice.app.desktop.DaemonDesktop
 import splice.app.head.HEAD_STOP_BUDGET_MS
 import splice.app.head.HeadBoot
+import splice.app.head.HeadCapabilities
 import splice.app.head.HeadKeptFiles
 import splice.app.head.HeadProbes
 import splice.app.head.HeadPromptInputs
@@ -214,6 +215,7 @@ public class Daemon(
             it.credentialAccountNames = controlPlane.credentialAccountNames
             it.sentCredentials = controlPlane.sentCredentials
             it.performance = performance
+            it.capabilities = HeadCapabilities(topology.capabilities, statePaths.headsDir)
         }
     private val managedHeadFactory = ManagedHeadFactory(
         statePaths = statePaths,

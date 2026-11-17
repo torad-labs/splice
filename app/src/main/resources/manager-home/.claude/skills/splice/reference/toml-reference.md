@@ -90,6 +90,7 @@ core/src/main/kotlin/splice/core/config/ConfigService.kt (coerceRejects, lines 2
 | `[providers.<key>]` | map of provider tables | one upstream each |
 | `[heads.<key>]` | map of head tables | one loopback port each |
 | `[projects."<root>"]` | map of project tables | standing prompts by working directory |
+| `[capabilities.<name>]` | map of capability tables | work splice runs before a session's first turn goes upstream (section 10) |
 | `[share]` | table | LAN share, the server's side: offers this machine's heads on its LAN (below) |
 | `[remote.<command>]` | map of tables | LAN share, a node's side: a command that runs on another machine's head (below) |
 
@@ -418,7 +419,49 @@ wins and replaces the others; `instructions = ""` opts a scope out. An unreadabl
 Source: core/src/main/kotlin/splice/core/compaction/CompactionScope.kt (lines 8-28); TopologyWriter.kt (lines 314-329);
 splice.example.toml (lines 43-55).
 
-## 10. Where the other topics live
+## 10. [capabilities.<name>]
+
+A capability is work an HTTP worker does for a session before its turn goes upstream; its text goes into the
+session's first user message. The table's name is the capability's: lowercase letters, digits and `-`. Restart.
+
+| field | type | default | effect |
+|---|---|---|---|
+| `heads` | array of head keys | empty | the heads it is on for; empty, it is declared and off. Off stops new calls; sessions keep a text already placed |
+| `call` | string | required | `"rule"`: splice calls it by `when`. `"agent"` and `"both"` are findings |
+| `when` | inline table | all defaults | `turn` (`"first"` or `"any"`, default `"first"`), `thread` (`"main"`, `"subagent"`, `"any"`, default `"main"`), `mode` (`"interactive"`, `"print"`, `"any"`, default `"interactive"`), `models` (model ids, default every model). A request must meet all of them |
+| `place` | string | required | `"first-user-message"`, or `"none"` for one that only passes or refuses a turn |
+| `may` | string | required | `"add"`, `"refuse"` or `"add-or-refuse"`. `place = "none"` takes only `"refuse"` |
+| `message`, `color` | strings | none | what the held turn says while it starts; `color` is a status-line colour name |
+| `timeout_s` | int | required | 1 to 3600 |
+| `on_failure` | string | required | `"open"`: a failed or late worker lets the turn go on as today; `"closed"`: the turn is refused, naming the capability |
+| `send` | array | empty | the fields the worker gets: `first_user_message`, `folder`, `model`, `head`. Name, session and turn always go |
+| `worker` | inline table | required | `{ kind = "http", url = "...", auth_env = "ENV_NAME" }`; `auth_env` names the variable that holds the worker's key, sent as a bearer. No built-in worker ships yet |
+
+```toml
+[capabilities.policy]
+heads = ["claude"]
+call = "rule"
+when = { turn = "first", thread = "main", mode = "interactive" }
+place = "first-user-message"
+may = "add"
+timeout_s = 60
+on_failure = "open"
+send = ["first_user_message", "folder", "model"]
+worker = { kind = "http", url = "http://127.0.0.1:9000/check", auth_env = "POLICY_WORKER_KEY" }
+```
+
+The worker is posted `{"capability", "session", "turn", "fields"}` and answers 200 with JSON lines: any number of
+`{"type": "progress", "message": "..."}`, then one `{"type": "result", "text": "..."}` or one
+`{"type": "refusal", "reason": "..."}`. Two capabilities that match one request run one at a time, in file order.
+splice never calls one for a side request without tools, for the auto-mode review, or for a session first seen
+mid-conversation. Any fault in a declaration refuses boot with every finding listed and no value quoted;
+`splice check-config` shows them. `splice status` lists each capability, its heads (`off` when none) and its worker.
+The thread records live in `<state>/heads/<head>/capabilities/`.
+
+Source: core/src/main/kotlin/splice/core/capability/ (Capability.kt, CapabilityDeclarations.kt);
+features/turns/src/main/kotlin/splice/head/harness/; docs/specs/harness.md.
+
+## 11. Where the other topics live
 
 | topic | in splice.toml | the rest |
 |---|---|---|

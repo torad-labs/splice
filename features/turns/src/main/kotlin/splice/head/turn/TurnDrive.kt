@@ -12,6 +12,7 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.noRequestUsage
+import splice.head.perf.PerfHeld
 import splice.head.perf.SourceRowHold
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.RoundUsage
@@ -106,12 +107,34 @@ internal data class TurnDrive(
         fun claimAccountBoundary(): Boolean = accountBoundaryClaim.compareAndSet(false, true)
     }
 
+    /** The request the turn sends once its capabilities placed their text (docs/specs/harness.md, decision 5): set
+     *  once, before the first round, by the drive; null while the built request goes as it was built. */
+    private class PlacedRequest {
+        @Volatile var body: JsonObject? = null
+
+        @Volatile var held: PerfHeld = PerfHeld()
+    }
+
+    private val placedRequest = PlacedRequest()
+
+    /** The turn sends [body] in place of the built request, from its first round on. */
+    internal fun place(body: JsonObject) {
+        placedRequest.body = body
+    }
+
+    /** What the turn's capabilities did, for its perf row (docs/specs/harness.md, decision 10). */
+    internal var held: PerfHeld
+        get() = placedRequest.held
+        set(value) {
+            placedRequest.held = value
+        }
+
     fun interface SourceRoundStarted {
         fun started(job: kotlinx.coroutines.Job)
     }
 
     /** The upstream request, typed: the wire itself, serialized per round by the round strategy. */
-    val requestBody: JsonObject get() = inputs.built.requestBody
+    val requestBody: JsonObject get() = placedRequest.body ?: inputs.built.requestBody
     val meta: TurnMeta get() = inputs.built.meta
     val slot: InflightGate.Slot get() = inputs.slot.held
     val t0: Long get() = inputs.t0

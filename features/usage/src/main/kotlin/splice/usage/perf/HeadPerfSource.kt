@@ -116,7 +116,7 @@ public data class PerfTurnFacts(
     val providerMessage: String? = null,
 )
 
-/** V4-354: what joins a perf row to the client's local transcript. */
+/** V4-354): what joins a perf row to the client's local transcript. */
 public data class PerfTranscriptLink(
     /** The full session id, not the truncated tag the row's session fact holds. */
     val sessionId: String? = null,
@@ -128,6 +128,9 @@ public data class PerfTranscriptLink(
     /** The door the client came through to the head (desktop-door: `desktop` for Claude Desktop's Code tab), or null
      *  for a turn that came straight to its head. */
     val door: String? = null,
+    /** The capabilities the turn was held on, in order and joined by commas (docs/specs/harness.md, decision 10);
+     *  null on a turn that was not held, and on a row a compact cache keeps. */
+    val heldOn: String? = null,
 )
 
 /** What one coherent read of the perf files yields for a window (v0.4.0, FEATURES.md §3). */

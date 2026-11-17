@@ -249,9 +249,9 @@ Filled in by whoever builds each part, from a real session, with the Claude Code
 
 | Question | What was seen |
 |---|---|
-| A turn held for the longest time limit a capability may have draws no retry and no second request | |
+| A turn held for the longest time limit a capability may have draws no retry and no second request | Claude Code 2.1.326, November 17, 2026, 06:24 to 07:24 CT: a capability with `timeout_s = 3600` held a session's first turn while its worker took 59 min 50 s to answer. The screen showed the usual spinner the whole time ("Baked for 59m 50s · done 7:24 AM") and no error. The worker was asked once; the provider got the title request at the start and the turn itself once, with the capability's 45 characters at the end of the first user message; no request was dropped and none came again. The perf row reads `held_on = "brief"`, `held_ms = 3590025`. |
 | The status line is drawn again often enough to follow a capability's steps, and what its interval costs across a machine's sessions | |
-| A turn refused once its response is open shows the capability's reason to the person | |
+| A turn refused once its response is open shows the capability's reason to the person | Claude Code 2.1.326, November 17, 2026, 06:23 CT: a capability that may refuse refused a session's first turn 3 s in. The screen showed "Thought for 3s" (splice's notice block, finished just before the error), then printed `API Error: [splice] brief refused this turn: the request names no file to change.` and sent nothing more; the provider got only the session's title request. Without that notice (the error alone, before any block) 2.1.326 sent the same turn again 30 ms later without streaming, which no rule names, so it reached the provider without the capability and the person saw the provider's answer instead of the refusal. |
 | A gatherer started the planned way, with the header naming its session, runs and returns a result | |
 | The gatherer's tool-use summaries: what they look like, and whether each costs a request of its own | |
 | On the door: a `claude -p` run with the door's settings reaches the head that holds the waiting turn | |

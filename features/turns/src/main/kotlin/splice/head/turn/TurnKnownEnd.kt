@@ -13,6 +13,7 @@ import splice.head.HeadHealthCounters
 import splice.head.perf.PerfFailure
 import splice.upstream.Provider
 import splice.upstream.transport.HeaderRedaction
+import splice.upstream.transport.TurnDeclined
 import splice.upstream.transport.UpstreamFailed
 
 internal class TurnKnownEnd(
@@ -32,6 +33,16 @@ internal class TurnKnownEnd(
         telemetry.recordPerf(drive, OutcomeTag.AUTH_MISSING.wire, ending = cause)
         health.local() // no upstream call ever happened: missing local credentials
         drive.emitter.emitError(cause)
+    }
+
+    /** splice refused the turn on its own word once the response was open (a capability's refusal, or one that failed
+     *  closed): nothing went upstream, and the refusal is the stream's error. */
+    suspend fun emitDeclined(drive: TurnDrive, e: TurnDeclined) {
+        log(telemetry.errTurn("refused", drive, ": refused before it went upstream"))
+        telemetry.recordPerf(drive, OutcomeTag.REFUSED.wire, ending = e.cause)
+        health.local() // no upstream call ever happened: splice refused the turn itself
+        drive.emitter.noticeRefusal(e.cause)
+        drive.emitter.emitError(e.cause)
     }
 
     /** The upstream host's own refusal after retries. Its cause was read once, where the retry loop gave up; V4-242's

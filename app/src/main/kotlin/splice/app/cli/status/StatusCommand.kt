@@ -83,6 +83,7 @@ internal class StatusCommand(
         println()
         println("  " + palette.paint(tone, lane.line()))
         if (up) extras.printAccounts(port, envReader)
+        extras.printCapabilities(topology)
         println()
         // Paths sink below the table: they are reference, not the answer, and an operator who wants
         // them knows they are here. Above the heads they read as though something were wrong.

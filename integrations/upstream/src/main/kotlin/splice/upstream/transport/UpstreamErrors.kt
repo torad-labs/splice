@@ -21,6 +21,10 @@ public sealed class UpstreamEnding
 /** No local credentials to send. Never retried; the turn ends in an authentication error with the login hint. */
 public class UpstreamAuthMissing : UpstreamEnding()
 
+/** splice refused the turn on its own word before anything went upstream (docs/specs/harness.md, decision 6: a
+ *  capability that refused it, or failed closed), after the response had opened: it ends as the stream's error. */
+public class TurnDeclined(public val cause: FailureCause.Splice.Declined) : UpstreamEnding()
+
 /** G5: a transport tear BEFORE any client frame, which the retry loop may re-issue. The original tear rides as [cause]
  *  so the transport classifiers walk it exactly as they walk a raw IOException. */
 public class StreamTornBeforeClient(public val cause: java.io.IOException) : UpstreamEnding()

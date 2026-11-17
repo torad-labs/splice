@@ -41,6 +41,9 @@ private const val REQUEST_TURN_KEY = "turn_id"
 private const val CAPTURE_KEY = "capture"
 private const val PROVIDER_MESSAGE_KEY = "provider_message"
 
+// The capabilities a turn was held on (docs/specs/harness.md, decision 10).
+private const val HELD_ON_KEY = "held_on"
+
 /** What one parsed perf JSON object says about its turn, read by name. Split out of Scan. */
 internal class PerfRowShape {
     fun row(ts: Long, obj: JsonObject, fields: Map<String, Long>): PerfRow {
@@ -67,6 +70,7 @@ internal class PerfRowShape {
                 responseMessageId = text(obj, RESPONSE_ID_KEY),
                 messagesHash = text(obj, MESSAGES_HASH_KEY),
                 door = text(obj, DOOR_KEY),
+                heldOn = text(obj, HELD_ON_KEY),
             ),
             turns = PerfTurnIds(trace = text(obj, TURN_KEY), request = text(obj, REQUEST_TURN_KEY)),
         )

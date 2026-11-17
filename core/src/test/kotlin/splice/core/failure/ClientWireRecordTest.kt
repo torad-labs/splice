@@ -152,7 +152,7 @@ private object Section11 {
         Decline.BadLocalKey, Decline.NotLaunched, is Decline.SpliceKeyAsLogin -> Fam.LOGIN
         is Decline.TooLarge, is Decline.Unfit, is Decline.Budget, is Decline.BadBody, is Decline.UnknownModel,
         Decline.ForeignHost, Decline.LivenessProbe, Decline.NoSharedLogin,
-        is Decline.Untranslatable,
+        is Decline.Untranslatable, is Decline.CapabilityRefused, is Decline.CapabilityFailed,
         -> Fam.P
     }
 

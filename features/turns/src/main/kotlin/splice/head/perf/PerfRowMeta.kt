@@ -20,6 +20,16 @@ public data class PerfRowMeta(
     val failure: PerfFailure = PerfFailure(),
     val transcript: PerfTranscriptIds = PerfTranscriptIds(),
 ) {
+    /** What the turn's capabilities did (docs/specs/harness.md, decision 10), on every row: 0 and null for a turn they
+     *  did not touch. */
+    internal fun putHeldFacts(into: JsonObjectBuilder) {
+        into.put("capability_text_chars", transcript.held.textChars)
+        into.put("held_on", transcript.held.on)
+        into.put("held_ms", transcript.held.ms)
+        // Only where it happened: a dialect that could not place a text left the body as the client sent it.
+        if (transcript.held.unplaced) into.put("capability_unplaced", true)
+    }
+
     /** Why the turn failed, beside its outcome tag: the cause, the retry loop's own attempt count (only when non-zero,
      *  so a row without retries is unchanged) and, V4-444, the upstream's own words where the upstream is what failed.
      *  Those words lose the value of any header they quote (fix 4, Oct 27): the console reads this row, and a refusal
@@ -90,4 +100,17 @@ public data class PerfTranscriptIds(
     /** The door the turn came through (desktop-door, decision 7), or null for a turn that came straight to its head;
      *  the row then carries no `door`. */
     val door: String? = null,
+    /** Which capabilities held the turn and what they placed (docs/specs/harness.md, decision 10): like the door, how
+     *  the turn reached its provider, joined to the capabilities splice.toml names. */
+    val held: PerfHeld = PerfHeld(),
+)
+
+/** What a turn's capabilities did: the size of the text its request carried, the capabilities it was held on, in
+ *  order and joined by commas (null when it was not held), and how long it was held. */
+public data class PerfHeld(
+    val textChars: Long = 0L,
+    val on: String? = null,
+    val ms: Long = 0L,
+    /** A text a capability returned that the head's dialect could not place, so the request went without it. */
+    val unplaced: Boolean = false,
 )

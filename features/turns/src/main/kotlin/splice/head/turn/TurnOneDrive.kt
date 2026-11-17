@@ -11,6 +11,7 @@ import kotlinx.coroutines.withContext
 import splice.core.perf.PerfKeys
 import splice.core.turn.HeadStopSignal
 import splice.head.HeadDeps
+import splice.head.harness.HeadHarness
 import splice.head.wire.Heartbeat
 import splice.head.wire.LostClient
 import splice.upstream.Provider
@@ -32,25 +33,33 @@ internal class TurnOneDrive(
     private var stopSignal = HeadStopSignal()
     private val activeJobs = mutableMapOf<Job, TurnDrive>()
 
+    /** The head's capabilities (docs/specs/harness.md), run before a turn's first round. */
+    private val harness = HarnessStep(provider, HeadHarness().of(provider.key, deps))
+
     /** Stop unfinished child turns before the engine closes their client sockets. */
     fun stopActive() {
+        // A turn held on a capability stops waiting and goes upstream as today, so it is kept, not cut: the head's
+        // seal wait lets it finish (docs/specs/harness.md, decision 6).
+        val held = harness.stop()
         val jobs = synchronized(lifecycle) {
             stopSignal.stop()
-            activeJobs.keys.toList()
+            activeJobs.filterValues { it.slot !in held }.keys.toList()
         }
         jobs.forEach { it.cancel(HeadRestart()) }
     }
 
     /** #523: the cut a retiring head makes, and how many turns it kept. A turn whose upstream has begun answering is
      *  kept to its end, because Claude Code does not send again a turn cut after its answer began: the session stops
-     *  until someone types into it. Every other turn is cut as [stopActive] cuts it: its client has read nothing but
+     *  until someone types into it. A turn held on a capability is kept too: its wait ends and it goes upstream as today.
+     *  Every other turn is cut as [stopActive] cuts it: its client has read nothing but
      *  pings, so it sends the turn again and the next daemon answers. */
     fun retireActive(): Int {
+        val held = harness.stop()
         val (kept, cut) = synchronized(lifecycle) {
             // #525 (2026-11-12): retired, not stopping, so a kept code-mode round is not told to stop.
             stopSignal.retire()
             activeJobs.entries.map { it.key to it.value }.partition { (_, drive) ->
-                drive.perf.hasMark(PerfKeys.FIRST_BYTE)
+                drive.perf.hasMark(PerfKeys.FIRST_BYTE) || drive.slot in held
             }
         }
         cut.forEach { (job, _) -> job.cancel(HeadRestart()) }
@@ -59,6 +68,7 @@ internal class TurnOneDrive(
 
     /** The same driver is used after a head restart; new turns may run again. */
     fun headStarted() {
+        harness.started()
         synchronized(lifecycle) {
             if (stopSignal.refusesNewTurns) stopSignal = HeadStopSignal()
         }
@@ -126,6 +136,8 @@ internal class TurnOneDrive(
                 val pacing = if (pingClient) launchPacing(drive, self, turnJob) else null
                 val capPoller = drive.watchdog.launchTotalCap(self, turnJob)
                 try {
+                    // The response is open and pinged while the turn's capabilities work; a refusal ends it here.
+                    harness.before(drive, holdable = pingClient)?.let { return@withContext it }
                     roundRun.run(drive, self, turnJob).also {
                         pacing?.let { drive.channel.finishPacing(it, deps.seams.clock) }
                     }

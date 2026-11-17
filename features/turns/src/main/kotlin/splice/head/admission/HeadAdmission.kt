@@ -258,6 +258,7 @@ internal class HeadAdmission(
                 admitted.slot,
                 clientWallMs = ClientWallHeader.ms(call),
                 heapLease = admitted.heapLease,
+                harness = prepared.harness,
             ) { admitted.markHandedOff() },
             admitted.t0,
             admitted.perf,

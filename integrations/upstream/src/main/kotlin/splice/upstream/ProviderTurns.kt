@@ -28,7 +28,11 @@ public data class BuiltTurn(
      *  id_slot. A request's identity (the compaction replay key) leaves them out, because a retry of
      *  the same request may be routed elsewhere. Empty = every field is the request. */
     val routingFields: Set<String> = emptySet(),
-)
+) {
+    /** This turn sending [body], or this same instance where [body] is its own request unchanged: that is how a
+     *  dialect's placement says it could not place a text ([RequestPlacements.withFirstUserText]). */
+    public fun sending(body: JsonObject): BuiltTurn = if (body === requestBody) this else copy(requestBody = body)
+}
 
 /** The end of one built turn, heard by the provider that built it (see [BuiltTurn.onEnd]). [ended]
  *  must not throw: it runs in the finally that releases the admission slot, where a throw would

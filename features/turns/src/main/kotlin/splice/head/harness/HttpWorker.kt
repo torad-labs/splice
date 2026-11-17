@@ -1,0 +1,119 @@
+// NEW: the harness (docs/specs/harness.md, decision 4). An HTTP worker: splice posts it one JSON object, with the
+// worker's own key as a bearer when its declaration names one, and reads the JSON lines it answers in until one result
+// or one refusal. Cancelling the call (the client left, the time limit passed, the head stopped) drops the request.
+package splice.head.harness
+
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.serialization.json.JsonObject
+import splice.core.capability.CapabilityWorker
+import splice.core.util.JsonWire
+import java.io.BufferedReader
+import java.io.IOException
+import java.io.InputStream
+import java.io.InputStreamReader
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.nio.charset.StandardCharsets
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CompletionException
+import kotlin.coroutines.resumeWithException
+
+/** Hears each progress message a worker sends, for what the held turn says. */
+internal fun interface WorkerProgress {
+    fun said(message: String)
+}
+
+internal class HttpWorker(
+    private val client: HttpClient,
+    private val io: CoroutineDispatcher,
+    private val keys: WorkerKeys,
+) {
+    private val lines = WorkerLines()
+
+    /** Posts [body] to [worker] and reads its answer to the line that ends the work. */
+    suspend fun call(worker: CapabilityWorker.Http, body: JsonObject, progress: WorkerProgress): WorkerEnd {
+        val request = when (val built = request(worker, body)) {
+            is Built.Request -> built.request
+            is Built.Failed -> return built.end
+        }
+        val response = try {
+            sent(client.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream()))
+        } catch (_: IOException) {
+            return WorkerEnd.Failed("it could not be reached")
+        }
+        return response.body().use { stream ->
+            if (response.statusCode() != HTTP_OK) {
+                WorkerEnd.Failed("it answered ${response.statusCode()}")
+            } else {
+                read(stream, progress)
+            }
+        }
+    }
+
+    /** The request [worker] is posted: its URL, and its own key as a bearer when its declaration names one. */
+    private fun request(worker: CapabilityWorker.Http, body: JsonObject): Built {
+        val uri = try {
+            URI(worker.url)
+        } catch (_: java.net.URISyntaxException) {
+            return Built.Failed(WorkerEnd.Failed("its url is not a URL"))
+        }
+        val env = worker.authEnv
+        val key = env?.let(keys::key)
+        if (env != null && key == null) return Built.Failed(WorkerEnd.Failed("$env holds no key"))
+        val request = HttpRequest.newBuilder(uri)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/x-ndjson")
+            .apply { if (key != null) header("Authorization", "Bearer $key") }
+            .POST(HttpRequest.BodyPublishers.ofByteArray(JsonWire.bytes(body)))
+            .build()
+        return Built.Request(request)
+    }
+
+    /** A request ready to post, or the failure that keeps it from being made. */
+    private sealed class Built {
+        class Request(val request: HttpRequest) : Built()
+
+        class Failed(val end: WorkerEnd) : Built()
+    }
+
+    /** The response [future] answers. A cancelled call cancels it with `cancel(true)`, the one way the JDK's client
+     *  drops the request (a plain cancel leaves it open until the worker answers). */
+    private suspend fun sent(future: CompletableFuture<HttpResponse<InputStream>>): HttpResponse<InputStream> =
+        suspendCancellableCoroutine { continuation ->
+            continuation.invokeOnCancellation { future.cancel(true) }
+            future.whenComplete { response, failure ->
+                if (failure == null) {
+                    // A response that comes after the call was cancelled has its body closed, which drops it.
+                    continuation.resume(response) { _, late, _ -> late.body().close() }
+                } else {
+                    continuation.resumeWithException((failure as? CompletionException)?.cause ?: failure)
+                }
+            }
+        }
+
+    private suspend fun read(stream: InputStream, progress: WorkerProgress): WorkerEnd = try {
+        runInterruptible(io) {
+            val reader = BufferedReader(InputStreamReader(stream, StandardCharsets.UTF_8))
+            // splice stops reading at the line that ends the work: whatever the worker sends after it is not read.
+            generateSequence { reader.readLine() }.firstNotNullOfOrNull { heard(it, progress) } ?: lines.unended()
+        }
+    } catch (_: IOException) {
+        WorkerEnd.Failed("its answer broke off")
+    }
+
+    /** What one line of the answer says: the end of the work, or null for a progress line or a blank one. */
+    private fun heard(line: String, progress: WorkerProgress): WorkerEnd? {
+        if (line.isBlank()) return null
+        return when (val read = lines.read(line)) {
+            is WorkerLine.Progress -> null.also { progress.said(read.message) }
+            is WorkerLine.Ended -> read.end
+        }
+    }
+}
+
+/** why: a worker's answer is read only from a 200. */
+private const val HTTP_OK = 200

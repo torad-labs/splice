@@ -67,7 +67,11 @@ import splice.head.RequestBodyReader
 import splice.head.compact.CompactClassifier
 import splice.head.compaction.CompactionReplay
 import splice.head.compaction.HeldReply
+import splice.head.harness.HarnessRequest
+import splice.head.harness.HarnessRequests
+import splice.head.harness.HarnessShape
 import splice.head.turn.fallback.HeldModelFallback
+import splice.head.turn.review.AUTO_MODE_REVIEW
 import splice.head.wire.ClientInbound
 import splice.head.wire.FrameRecording
 import splice.upstream.BuiltTurn
@@ -89,6 +93,8 @@ internal sealed class Preparation {
         /** Whether a session sent this turn itself. A turn Claude Code sends for a subagent is served like any other
          *  and has no say in the model the command's logins are named for (AskedModels, Nov 12, 2026). */
         val own: Boolean = true,
+        /** What the harness's capabilities read of the request (docs/specs/harness.md, decision 2). */
+        val harness: HarnessRequest? = null,
     ) : Preparation() {
         /** Transfers the raw request to its trace without retaining a second post-handoff owner. */
         fun takeInbound(): ClientInbound? = inbound.also { inbound = null }
@@ -164,6 +170,9 @@ internal class TurnPreparation(
     /** Fix 4 of the Oct 27 Responses fixes: which earlier request of the same Claude Code turn each request
      *  continues, so the turn state its backend returned rides every request of that turn (ToolLoopTurns). */
     private val toolLoop = ToolLoopTurns()
+
+    /** What a capability's rule reads of each request (docs/specs/harness.md, decision 2). */
+    private val harnessRequests = HarnessRequests()
 
     /** [Materialized.TooLarge] rather than a [Preparation] case: the 413 belongs to the admission
      *  gate, which writes it while the lease is still held, exactly where the thrown refusal used
@@ -373,6 +382,7 @@ internal class TurnPreparation(
         // A non-stream turn of any kind is held the same way since 2026-11-09 (CollectTurn): a Claude Code subagent
         // re-sent one stream:false request 228 times in 25 hours, each re-send restarting its five minutes from zero.
         val replayed = heldFor(built, parsed.typed.stream)
+        val answered = parsed.typed.messages.any { it.role == "assistant" }
         // V4-165: a replayed turn is never driven, so what its build holds ends here, not at a drive.
         replayed?.let { built.onEnd?.ended() }
         return replayed ?: Preparation.Ready(
@@ -381,8 +391,21 @@ internal class TurnPreparation(
             arrival.inbound,
             // V4-319: what a stop of this turn marks. A collect is never listed, so only a stream carries it there.
             messagesHash.takeIf { parsed.typed.stream },
-            hasPriorExchange = parsed.typed.messages.any { it.role == "assistant" },
+            hasPriorExchange = answered,
             own = parsed.agentId == null,
+            harness = harnessRequests.of(
+                parsed,
+                sessionId,
+                call.request.headers[HttpHeaders.UserAgent],
+                built.meta.route.upstreamModel,
+                HarnessShape(
+                    streams = parsed.typed.stream,
+                    tools = parsed.typed.tools.isNotEmpty(),
+                    answered = answered,
+                    review = perf.count(AUTO_MODE_REVIEW) > 0L,
+                    slotHeld = built.onEnd != null,
+                ),
+            ),
         )
     }
 

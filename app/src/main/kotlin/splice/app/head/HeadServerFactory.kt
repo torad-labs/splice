@@ -73,6 +73,10 @@ internal class HeadServerFactory(
      *  the session each request named. */
     internal var sentCredentials: HeadSentCredentials = HeadSentCredentials { _, _, _ -> }
 
+    /** The harness (docs/specs/harness.md): the capabilities splice.toml declares, assigned by Daemon before any head
+     *  is built, like [adopted]. The default declares none. */
+    internal var capabilities: HeadCapabilities = HeadCapabilities()
+
     /** Server mode (F5): the one board every head tells how a turn the server listener relayed went, and the listener
      *  waits on. */
     internal val served: ServedTurnBoard = ServedTurnBoard()
@@ -229,6 +233,7 @@ internal class HeadServerFactory(
             sessionProject = SessionProjectLookup { prompts.sessionProject.projectFor(it) },
             slotInstructions = console?.slots,
             compactionTail = compactionTail,
+            harness = capabilities.forHead(key),
         ),
         reports = HeadDeps.HeadReports(events = console?.forHead(key) ?: NoHeadEvents, served = served),
     )

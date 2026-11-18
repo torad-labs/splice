@@ -49,6 +49,10 @@ private val launchMark: List<String> =
 // why: a gateway head's session reads its turn key through this command (GatewayBearer.Helper); any one will do here
 private const val KEY_HELPER = "sed -n 's/^Authorization: Bearer //p' /run/turn-auth-header"
 
+// What a launch of a head pinned to gpt-5.6-sol says, with no door to say `claude` already runs it (decision 9)
+private const val HEADS_NOTICE = "this command is deprecated, and `claude` runs this head's models: " +
+    "after `splice claude door`, type `/model gpt-5.6-sol` in `claude`"
+
 class LaunchServiceTest(@param:TempDir private val tmp: Path) {
 
     private val service = LaunchService(
@@ -355,11 +359,12 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
     @Test
     fun `default recipe is safe - no skip-permissions flag, and only the heads notice`() {
         // door-default (decision 7): a head launch carries the heads notice; this pinned "no warning" before.
+        // Decision 9 rewrote the notice to name the model to type in `claude`; with no door here, the move comes first.
         // V4-183: `-c` is no longer a pass-through word (HeadBoundedContinue); a plain flag stands in.
         val recipe = service.launch(spec("codex"), extraArgs = listOf("--verbose"), dangerouslySkipPermissions = false)
         assertFalse(recipe.argv.contains("--dangerously-skip-permissions"))
         assertTrue(recipe.argv.contains("--verbose"))
-        assertEquals(HEADS_DEPRECATED, recipe.warning)
+        assertEquals(HEADS_NOTICE, recipe.warning)
     }
 
     @Test
@@ -504,7 +509,7 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
 
         listOf(emptyList(), listOf("-r")).forEach { args ->
             val recipe = service.launch(mine, extraArgs = args, dangerouslySkipPermissions = false)
-            assertEquals(HEADS_DEPRECATED, recipe.warning, "a picker launch says only the heads notice")
+            assertEquals(HEADS_NOTICE, recipe.warning, "a picker launch says only the heads notice")
         }
         // V4-183: a bare -c with no session of this head in the cwd is a NEW session, said once —
         // never the sibling's, and never the client's own newest-in-tree continue.

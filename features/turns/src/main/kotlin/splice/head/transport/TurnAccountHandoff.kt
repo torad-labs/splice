@@ -15,6 +15,7 @@ import splice.core.failure.FailureCause
 import splice.core.failure.Lift
 import splice.core.failure.LimitWindow
 import splice.core.failure.LoginOwner
+import splice.head.HeldLogins
 import splice.head.admission.TurnQuota
 import splice.head.turn.TurnDrive
 import splice.head.turn.fallback.HeldModelFallback
@@ -30,6 +31,8 @@ internal class TurnAccountHandoff(
     private val pool: AccountPool,
     private val quotas: TurnQuota,
     private val fallback: HeldModelFallback? = null,
+    /** The logins a turn holding the node's word may move to: a door turn never moves onto the person's own login. */
+    private val held: HeldLogins = HeldLogins { true },
 ) {
     /** Each login that refused this turn, with the pool's join count when it did ([AccountPool.joins], PoolJoins.count). */
     private val refused = linkedMapOf<String, Long>()
@@ -61,9 +64,7 @@ internal class TurnAccountHandoff(
         var adopted = false
         try {
             currentCoroutineContext().ensureActive()
-            // LAN share: a node's word cannot move onto a login that forwards it; the vendor would see the word.
-            adopted = !CallerCredential.unheldNodeWord(drive.turnHeaders, next.account.auth) &&
-                adopt(drive, pending.previous, next)
+            adopted = takes(drive, next) && adopt(drive, pending.previous, next)
             return adopted
         } finally {
             if (!adopted) next.releaseCredentialProbe()
@@ -148,6 +149,13 @@ internal class TurnAccountHandoff(
      *  login again, since what refused before may be another account now or signed in again, and a login still spent
      *  is kept out by the hold its own refusal left on it. Called under this monitor. */
     private fun tried(): Set<String> = pool.joins.count.let { now -> refused.filterValues { it == now }.keys.toSet() }
+
+    /** Whether [next] may take [drive]'s turn. A turn holding the node's word cannot move onto a login that forwards
+     *  the caller's (LAN share: the vendor would see the word), and a turn through a door not onto a login of the
+     *  person's own ([held]): it runs on a Claude account added to splice or not at all (Marcos, Nov 17, 2026). */
+    private suspend fun takes(drive: TurnDrive, next: AccountSelection): Boolean =
+        !CallerCredential.unheldNodeWord(drive.turnHeaders, next.account.auth) &&
+            (drive.meta.route.relay.door == null || held.held(next.account.label))
 
     @Synchronized
     private fun adopt(drive: TurnDrive, previous: AccountSelection, next: AccountSelection): Boolean {

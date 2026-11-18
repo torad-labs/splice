@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import splice.core.topology.CLAUDE_COMMAND
 
 /** The door, its switch, the terminal's lane, and what `splice desktop` and `splice claude` say, for the routes. */
 internal class DesktopService(
@@ -46,10 +47,18 @@ internal class DesktopService(
     }
 
     /** What `splice claude --json` says: the lane, and on the door the door, the model a session starts on and why,
-     *  the picker's rows and the heads left out with the reason. */
+     *  the picker's rows and the heads left out with the reason. On its head (decision 9): the rows it adds after
+     *  Claude Code's own models and the heads left out, less the one `claude` runs on, whose models are Claude's. */
     suspend fun claudeState(): JsonObject {
         val lane = claude.lane()
-        if (lane != DOOR_LANE) return buildJsonObject { put("lane", lane) }
+        if (lane != DOOR_LANE) {
+            val lineup = heads.lineup()
+            return buildJsonObject {
+                put("lane", lane)
+                put("models", lineupJson.models(lineup.signedIn))
+                put("left_out", lineupJson.leftOut(lineup.leftOut.filterNot { it.command == CLAUDE_COMMAND }))
+            }
+        }
         val lineup = heads.lineup()
         val (starting, why) = claude.starting(lineup)
         return buildJsonObject {

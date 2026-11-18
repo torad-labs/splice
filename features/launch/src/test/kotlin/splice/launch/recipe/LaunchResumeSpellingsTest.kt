@@ -32,6 +32,10 @@ import splice.launch.launch
 import java.nio.file.Files
 import java.nio.file.Path
 
+// What a launch of a head pinned to gpt-5.6-sol says, with no door to say `claude` already runs it (decision 9)
+private const val HEADS_NOTICE = "this command is deprecated, and `claude` runs this head's models: " +
+    "after `splice claude door`, type `/model gpt-5.6-sol` in `claude`"
+
 class LaunchResumeSpellingsTest(@param:TempDir private val tmp: Path) {
 
     private val service = LaunchService(
@@ -89,7 +93,7 @@ class LaunchResumeSpellingsTest(@param:TempDir private val tmp: Path) {
         assertEquals(listOf("--resume", "own-session"), recipe.argv.takeLast(2), recipe.argv.toString())
         assertFalse(recipe.argv.contains("-c"))
         assertEquals(
-            HEADS_DEPRECATED,
+            HEADS_NOTICE,
             recipe.warning,
             "resuming one's own session says nothing but the heads notice: ${recipe.warning}",
         )
@@ -117,7 +121,7 @@ class LaunchResumeSpellingsTest(@param:TempDir private val tmp: Path) {
             caller = LaunchCaller(cwd = cwd),
         )
         assertEquals(listOf("--resume", "older"), recipe.argv.takeLast(2), recipe.argv.toString())
-        assertEquals(HEADS_DEPRECATED, recipe.warning, "an older usable own session is still a quiet continue")
+        assertEquals(HEADS_NOTICE, recipe.warning, "an older usable own session is still a quiet continue")
     }
 
     @Test

@@ -3,16 +3,22 @@
 // the one module that may see both the models feature's port and the integration it adapts.
 package splice.app.auth
 
+import splice.app.auth.claude.AddedLoginHeaders
 import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
 import splice.models.list.ModelCredentialSource
 import splice.oauth.StoredCredential
 
 /** The model probe's view of [StoredCredential]: the bearer a request presents and when it expires. */
-internal class StoredModelCredentials(private val stored: StoredCredential = StoredCredential()) :
-    ModelCredentialSource {
+internal class StoredModelCredentials(
+    private val stored: StoredCredential = StoredCredential(),
+    /** The Claude accounts added to each head, which a head that forwards the caller's login is asked with. */
+    private val added: AddedLoginHeaders? = null,
+) : ModelCredentialSource {
     override fun bearer(provider: ProviderConfig, key: String, env: EnvReader): String? =
         stored.bearer(provider, key, env)
 
     override fun expiresAtMs(provider: ProviderConfig): Long? = stored.expiresAtMs(provider)
+
+    override fun heldLogin(key: String): Map<String, String>? = added?.of(key)
 }

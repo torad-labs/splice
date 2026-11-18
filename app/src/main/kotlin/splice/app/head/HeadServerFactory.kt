@@ -7,6 +7,7 @@ package splice.app.head
 import splice.app.AdoptedServing
 import splice.app.ConsoleEventPublisher
 import splice.app.HeadSentCredentials
+import splice.app.auth.claude.AddedClaudeLogins
 import splice.app.provider.ProviderBuild
 import splice.core.budget.NoHeadBudget
 import splice.core.compaction.SessionProject
@@ -23,6 +24,7 @@ import splice.core.version.ClientVersionTracker
 import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.NoHeadEvents
+import splice.head.OtherHeads
 import splice.head.admission.RequestMaterializationGate
 import splice.head.compact.ShadowClassifier
 import splice.head.compaction.CompactionRecordings
@@ -76,6 +78,10 @@ internal class HeadServerFactory(
     /** The harness (docs/specs/harness.md): the capabilities splice.toml declares, assigned by Daemon before any head
      *  is built, like [adopted]. The default declares none. */
     internal var capabilities: HeadCapabilities = HeadCapabilities()
+
+    /** door-default (docs/specs/door-default.md, decision 9): what each head hands to other heads, assigned by Daemon
+     *  before any head is built, like [adopted]. The default hands nothing on. */
+    internal var others: HeadOthers = HeadOthers { OtherHeads { null } }
 
     /** Server mode (F5): the one board every head tells how a turn the server listener relayed went, and the listener
      *  waits on. */
@@ -176,6 +182,9 @@ internal class HeadServerFactory(
         liveTurns = liveTurnsFor(ctx.key),
         // Fix 3 (Oct 27): a turn waits for this head's list to follow the credential it is sent with (ModelRosters).
         models = HeadDeps.CurrentModels { ctx.roster.discovered.awaitCurrent(ctx.key) },
+        others = others.forHead(ctx.key),
+        // a turn through the door runs on the Claude accounts added to splice, never on the person's own login
+        held = AddedClaudeLogins(),
     )
 
     /** The head's stores. Its own function since V4-216 added the compaction recordings, which took
@@ -237,6 +246,11 @@ internal class HeadServerFactory(
         ),
         reports = HeadDeps.HeadReports(events = console?.forHead(key) ?: NoHeadEvents, served = served),
     )
+}
+
+/** The requests each head hands to other heads, by the head's key. */
+internal fun interface HeadOthers {
+    fun forHead(key: String): OtherHeads
 }
 
 /** One head's view of the daemon's credential resolver: it names through that resolver and reports each sent digest

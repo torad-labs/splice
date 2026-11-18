@@ -2,10 +2,11 @@
 // on, and the two verbs that move it. The daemon holds the lane, the key and the heads, so every verb asks the running
 // daemon (DoorClient) and prints its answer.
 //
-//   splice claude [--json]                    the lane, and on the door the door, the model a session starts on, the
-//                                             picker's rows and the heads left out and why
+//   splice claude [--json]                    the lane, the picker's rows and the heads left out and why, and on the
+//                                             door the door and the model a session starts on
 //   splice claude door [--model <selector>]   put `claude` on the door, starting on <selector> when named
-//   splice claude head                        put `claude` back on its head, which is deprecated
+//   splice claude head                        put `claude` back on its head, which carries the door's models
+//                                             beside Claude's (decision 9)
 package splice.app.cli.claude
 
 import splice.app.LifecycleWiring

@@ -160,6 +160,12 @@ public data class HeadDeps(
         /** Fix 3 (Oct 27): what a turn waits on before [gate] admits it. The default waits for nothing, a head with no
          *  model list (tests, tools); HeadServerFactory gives every production head the daemon's roster. */
         val models: CurrentModels = CurrentModels {},
+        /** door-default, decision 9: the requests another head answers in this one's place. The default claims none;
+         *  HeadServerFactory gives the head keyed `claude` the door's models. */
+        val others: OtherHeads = OtherHeads { null },
+        /** The logins a turn through a door may run on (HeldLogins). The default takes every one; the daemon leaves
+         *  out the person's own Claude login. */
+        val held: HeldLogins = HeldLogins { true },
     )
 
     /** A head's model list, as a turn waits on it: the list its provider gives the credential the turn will be sent

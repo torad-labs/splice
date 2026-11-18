@@ -31,5 +31,5 @@ internal class ClaudeLaneRecords(file: Path, log: LogSink) :
 /** The lane `claude` runs on through the door. */
 internal const val DOOR_LANE = "door"
 
-/** The lane `claude` runs on through its head, which is deprecated. */
+/** The lane `claude` runs on through its head, which carries the door's models (decision 9). */
 internal const val HEAD_LANE = "head"

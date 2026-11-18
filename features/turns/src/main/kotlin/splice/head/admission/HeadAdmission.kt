@@ -9,8 +9,6 @@ package splice.head.admission
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import splice.core.auth.CredentialKey
-import splice.core.failure.EndingHeard
-import splice.core.failure.RequestFacts
 import splice.core.memory.HeapCapacityException
 import splice.core.turn.LiveWatchdogBudget
 import splice.core.util.Cancellables
@@ -254,17 +252,9 @@ internal class HeadAdmission(
         }
         if (oversized) return
         admitted.retainRequest()
-        val scope = prepared.built.meta.scope
-        val facts = RequestFacts(
-            compaction = prepared.built.meta.compact,
-            firstExchange = !prepared.hasPriorExchange,
-            repeated = resends.repeated(scope.sessionId, scope.messagesHash),
-            otherLogin = (deps.quotaBundle.activePool?.members?.size ?: 0) > 1,
-        )
-        // A hold handed to the client (family L) is not an ending to repeat: its re-send holds anew (slice 5).
-        val heard = EndingHeard { answer ->
-            if (answer.clientResends && !answer.handedOver) resends.endedForResend(scope.sessionId, scope.messagesHash)
-        }
+        val meta = prepared.built.meta
+        val otherLogin = (deps.quotaBundle.activePool?.members?.size ?: 0) > 1
+        val voice = resends.voiceOf(driver.voice, meta.scope, meta.compact, !prepared.hasPriorExchange, otherLogin)
         val inputs = TurnInputs(
             prepared.built,
             TurnSlot(
@@ -276,7 +266,7 @@ internal class HeadAdmission(
             admitted.perf,
             trace = trace,
             accountQuota = running,
-            voice = driver.voice.turn(facts, heard),
+            voice = voice,
         )
         if (prepared.stream) driver.stream(call, inputs) else driver.collect(call, inputs)
     }

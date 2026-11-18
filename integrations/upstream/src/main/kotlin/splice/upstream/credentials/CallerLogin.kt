@@ -19,6 +19,11 @@ internal class CallerLogin(
      *  the turn, which then waits for its reset or moves to a model with room. */
     val never: Set<String> = emptySet(),
 ) {
+    /** The caller login of a turn among a pool's accounts as they are at one try of its selection. */
+    fun interface Among {
+        operator fun invoke(accounts: List<PoolAccount>): CallerLogin
+    }
+
     private val mark: CallerMark? = key?.let { presented ->
         accounts.singleOrNull { it.auth.observedCredentialKey() == presented }?.let {
             CallerMark(it.label, (it.auth as? AccountCredentialIdentitySource)?.credentialAccount())
@@ -45,7 +50,7 @@ internal class CallerLogin(
         byLabel: Map<String, PoolAccount>,
         preference: List<PoolAccount>,
         at: Long,
-    ): PoolAccount? = previous?.label?.takeIf { session != null }?.let(byLabel::get)
+    ): PoolAccount? = previous?.label?.takeIf { session != null && it !in never }?.let(byLabel::get)
         ?.let { AccountAvailability.Warm.stays(it, stampOf(previous)?.at, preference, at, model) }
 
     /** [stays] as an operator surface previews it: no caller login is presented there, so only a pin can pull the

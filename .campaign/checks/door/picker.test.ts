@@ -76,7 +76,7 @@ describe("door-picker", () => {
     expect(lane(s).default_model).toBe(ASTRA);
     expect(x.sets.ANTHROPIC_MODEL).toBe(ASTRA);
     const marker = `door-picker-first-${crypto.randomUUID()}`;
-    const t = await ask(x, { content: marker });
+    const t = await ask(x, { model: x.sets.ANTHROPIC_MODEL, content: marker });
     expect(t.status).toBe(200);
     expect(backend.turnsWith(marker).length).toBe(1);
   });

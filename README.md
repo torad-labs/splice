@@ -572,9 +572,9 @@ records each switch once under `[<head>]`.
 
 In the console's Accounts page, a ChatGPT head signs in through the same browser sign-in as
 `claudex login`. The page opens OpenAI's sign-in and finishes by itself once you approve, with no code
-to type and nothing to turn on in your ChatGPT settings. The sign-in returns to the machine running
-splice (`localhost:1455`), so open the console in a browser on that machine. A sign-in not finished
-within five minutes leaves the login Not completed on the page, with Try again. Pick a label when you sign in, or leave it unnamed:
+to type and nothing to turn on in your ChatGPT settings. A sign-in not finished within five minutes
+leaves the login Not completed on the page, with Try again. A Claude account signs in the same way:
+the page opens Claude's sign-in, which finishes by itself. Pick a label when you sign in, or leave it unnamed:
 an unnamed login reads as its plan word ("Max"), then "Max 2" and so on, counted per provider in the order splice
 first saw each. "Sign in again" on a head's first account replaces it in place under its own label.
 No page and no API answer shows an email address or an account id: every login is shown by its label, and

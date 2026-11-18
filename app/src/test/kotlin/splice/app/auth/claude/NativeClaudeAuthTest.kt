@@ -5,6 +5,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -65,7 +66,7 @@ class NativeClaudeAuthTest {
             NativeAuthStart { process },
         )
         (auth.begin(home.resolve("pending")) as NativeSignIn.Running).run.use { child ->
-            assertTrue(child.await { announced += it })
+            assertTrue(child.await { announced += it.url })
         }
         assertEquals(listOf(good), announced.toList())
     }
@@ -90,10 +91,62 @@ class NativeClaudeAuthTest {
                 NativeAuthStart { process },
             )
             (auth.begin(home.resolve("pending")) as NativeSignIn.Running).run.use { child ->
-                assertTrue(child.await { announced += it })
+                assertTrue(child.await { announced += it.url })
             }
             assertEquals(listOf(good), announced.toList())
         }
+
+    /** Nov 17, 2026: a Claude sign-in asked for a code only sometimes. Claude Code opens a link that returns to its own
+     *  listener and finishes by itself, and prints another whose page ends in a code; the console showed the printed
+     *  one. The link Claude Code hands BROWSER is the one shown now, with no code, and the printed one is not. */
+    @Test
+    fun `the link Claude Code opens is shown and asks for no code, and the printed code link is not shown`() =
+        runBlocking {
+            val opened = "https://claude.com/cai/oauth/authorize?code=true&client_id=fixture" +
+                "&redirect_uri=http%3A%2F%2Flocalhost%3A38947%2Fcallback&state=fixture"
+            val printed = "https://claude.com/cai/oauth/authorize?code=true&client_id=fixture" +
+                "&redirect_uri=https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback&state=fixture"
+            val said = "Opening browser to sign in…\nIf the browser didn't open, visit: $printed\n"
+            val process = NativeLoginTestProcess(said)
+            val announced = CopyOnWriteArrayList<NativeAuthLink>()
+            val auth = NativeClaudeAuth(
+                WrapStateRead { ClaudeToRun.Wrapped("unused-fixture") },
+                emptyMap(),
+                ProcessDispatchers().io(),
+                NativeAuthStart { builder ->
+                    // What Claude Code does with BROWSER: runs it with the link, through the real program splice laid.
+                    val browser = builder.environment().getValue("BROWSER")
+                    assertEquals(0, ProcessBuilder(browser, opened).start().waitFor())
+                    process
+                },
+            )
+            (auth.begin(home.resolve("pending")) as NativeSignIn.Running).run.use { child ->
+                val waiting = launch { child.await { announced += it } }
+                withTimeout(5_000) { while (announced.isEmpty()) yield() }
+                process.finish(0)
+                waiting.join()
+            }
+            assertEquals(listOf(NativeAuthLink(opened, pasteBack = false)), announced.toList())
+        }
+
+    @Test
+    fun `a Claude Code that opens no link leaves the printed one, whose page ends in a code`() = runBlocking {
+        val printed = "https://claude.com/cai/oauth/authorize?code=true&client_id=fixture" +
+            "&redirect_uri=https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback"
+        val process = NativeLoginTestProcess("If the browser didn't open, visit: $printed\n")
+        process.finish(0)
+        val announced = CopyOnWriteArrayList<NativeAuthLink>()
+        val auth = NativeClaudeAuth(
+            WrapStateRead { ClaudeToRun.Wrapped("unused-fixture") },
+            emptyMap(),
+            ProcessDispatchers().io(),
+            NativeAuthStart { process },
+        )
+        (auth.begin(home.resolve("pending")) as NativeSignIn.Running).run.use { child ->
+            assertTrue(child.await { announced += it })
+        }
+        assertEquals(listOf(NativeAuthLink(printed, pasteBack = true)), announced.toList())
+    }
 
     @Test
     fun `open stdin accepts one fallback code and cancellation stops the child before returning`() = runBlocking {

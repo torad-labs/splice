@@ -2,8 +2,8 @@
 // its holder (ServerProfile), written from the config the server runs at each ask, so a command it stops serving
 // leaves the profile with the restart that stops serving it. Each command is a head `[server] commands` names, with
 // every model its launch offers and the window the head declares for each now. The sign-in is `[server.signin]`
-// without its client secret, which only the server ever holds. This build relays no telemetry and keeps no client
-// version policy (F8, F9), so the profile says so: telemetry null and no minimum.
+// without its client secret, which only the server ever holds. This build relays no telemetry (F8), so the profile
+// says telemetry null. The minimum client is `[server.client] minimum` (F9), null when it takes any.
 package splice.server
 
 import io.ktor.http.ContentType
@@ -53,7 +53,7 @@ internal class ProfileRoute(
             commands = commands,
             signin = server.signin?.let { ProfileSignin(it.issuer, it.clientId, it.domains) },
             telemetry = null,
-            client = ProfileClient(minimum = null),
+            client = ProfileClient(minimum = server.client.minimum),
         )
         call.respondText(json.encodeToString(ServerProfile.serializer(), profile), ContentType.Application.Json)
     }

@@ -10,7 +10,7 @@
 // key in place of the fixed word, so no key sits in the session's environment and a new sign-in reaches a session
 // that is running. A server that refuses the ask for its key (signed out, or the key expired or was revoked) is
 // launched from the last launch it answered, when there is one: Claude Code starts, and its helper or the server says
-// to sign in.
+// to sign in. Every launch of a command on such a server names this laptop's splice to it (F9).
 package splice.share
 
 import kotlinx.coroutines.CoroutineDispatcher
@@ -139,7 +139,8 @@ public class RemoteLaunches(
         )
         val served = shared.models.launchModels()
         val models = window?.let { served.copy(contextWindow = it) } ?: served
-        return LaunchSpec(trees.of(command), models, signIn, gateway, policy)
+        // A command on a team's server this laptop signed in to names this laptop's splice to it (F9).
+        return LaunchSpec(trees.of(command), models, signIn, gateway, policy, teamServer = helper != null)
     }
 
     private fun launchUri(address: RemoteAddress): URI {

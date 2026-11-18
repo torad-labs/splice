@@ -1259,7 +1259,7 @@ notes = [
 id = 'held-says'
 title = "A turn a capability holds says what it is doing on the session's status line"
 feature = 'held-status'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = []
 guard = false
@@ -1274,13 +1274,14 @@ reviews = [
 notes = [
   '2026-11-17 08:43 CT: added; 1 of 1 checks fail, as they should before the work',
   "2026-11-18 00:35 CT: Nov 18: started again on the new base, where the harness capabilities moved into features/harness. The last round's work (status-line piece, hold words, capability colours, StatuslineHeld and its tests) is kept as commit fd0c43199 on branch parked/held-status-round5; git diff 0a35d6063 fd0c43199 shows it whole. Carry what fits onto the moved files rather than writing it again.",
+  '2026-11-18 01:48 CT campaign: done in round 1 of held-status: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'limit-says'
 title = 'A turn waiting on a usage limit says how long ago the wait began and how many turns wait'
 feature = 'held-status'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'held-says',
@@ -1296,6 +1297,7 @@ reviews = [
 ]
 notes = [
   '2026-11-17 08:43 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-18 01:48 CT campaign: done in round 1 of held-status: its checks, its feature review, its code review passed',
 ]
 
 [[row]]

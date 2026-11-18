@@ -12,7 +12,8 @@
 // and the default never stands in for it. So in a session on no head yet, an Anthropic ID runs on the head that serves
 // that very model (the claude head, on the Claude accounts added to splice), and the session is on that head from
 // then. Where none serves it, it is refused by name, save Claude Code's own calls: its start-up check and its small
-// tier, which run as they do for Desktop. A session already on a head runs that head's model for the tier, as above.
+// tier, which run as they do for Desktop. A session already on a head runs the very model an Anthropic ID names where
+// that head serves it, and that head's model for the tier where it does not (a GPT head's side calls), as above.
 package splice.app.desktop
 
 import splice.client.models.AnthropicTiers
@@ -47,12 +48,28 @@ internal class DoorRouting {
      *  very model it names, where a head serves it. */
     private fun tiered(lineup: DesktopLineup, ask: DoorAsk, default: String?, named: Boolean): DoorRoute? {
         val tier = tiers.tierOf(ask.model) ?: return null
-        val held = ask.session?.let(sessions::get)?.let { key -> lineup.heads.firstOrNull { it.key == key } }
+        val held = heldHead(lineup, ask)
         return when {
-            held != null -> DoorRoute(held, held.tiers[tier] ?: held.pinned)
+            held != null -> onHeld(lineup, held, ask, tier)
             !named || ask.probe -> defaulted(lineup, tier, default)
             else -> served(lineup, ask) ?: defaulted(lineup, tier, default).takeIf { tier == SMALL_TIER }
         }
+    }
+
+    /** The head [ask]'s session is on, or null for a session on none. */
+    private fun heldHead(lineup: DesktopLineup, ask: DoorAsk): DoorHead? =
+        ask.session?.let(sessions::get)?.let { key -> lineup.heads.firstOrNull { it.key == key } }
+
+    /** [ask]'s [tier] on [head] the session is on: the very model it names where [head] serves it, else the head's
+     *  model for the tier, else its pinned model. A head with no tier for it ran its pinned model, which on a head that
+     *  declares none is the first model it lists: on Nov 17, 2026 every Opus turn of the door's sessions on the
+     *  claude head ran as Fable 5, spent on every account, and was held for two days. */
+    private fun onHeld(lineup: DesktopLineup, head: DoorHead, ask: DoorAsk, tier: String): DoorRoute {
+        val named = tiers.modelOf(ask.model)
+        val exact = lineup.models.firstOrNull {
+            it.head == head.key && named != null && tiers.modelOf(it.upstream) == named
+        }
+        return DoorRoute(head, exact?.upstream ?: head.tiers[tier] ?: head.pinned)
     }
 
     /** The head that serves the very model [ask] names, run as its selector would be; null when no head does. */

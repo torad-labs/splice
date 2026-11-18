@@ -69,7 +69,7 @@ internal class McpConversation(private val wire: McpWire) {
     }
 
     /** What the server says that is not the answer: a ping is answered, any other request of its is one this client does
-     *  not have, and a notification of progress on [token] says its message, when it has one. */
+     *  not have, and a notification of progress on [token] says its message, or says the last one again when it has none. */
     private suspend fun heard(message: JsonObject, token: JsonElement, progress: WorkerProgress?) {
         val method = JsonScalars.str(message, METHOD) ?: return
         val id = message[ID]
@@ -81,8 +81,9 @@ internal class McpConversation(private val wire: McpWire) {
     }
 
     private fun progressed(params: JsonObject?, token: JsonElement, progress: WorkerProgress?) {
-        val said = if (params?.get("progressToken") == token) JsonScalars.str(params, "message") else null
-        if (progress != null && !said.isNullOrBlank()) progress.said(said)
+        if (progress == null || params?.get("progressToken") != token) return
+        val said = JsonScalars.str(params, "message")
+        if (said.isNullOrBlank()) progress.again() else progress.said(said)
     }
 
     /** The server is told it need not answer request [id]; one that cannot be told is no reason to hold the stop. */

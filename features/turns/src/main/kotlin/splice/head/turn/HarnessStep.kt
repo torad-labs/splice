@@ -116,9 +116,13 @@ internal class HarnessStep(
             drive.watchdog.holdStarted()
         }
 
-        override fun says(message: String, color: String) {
+        override fun says(message: String, color: String) = said(message, color, untilAnswered = false)
+
+        override fun saysUntilAnswered(message: String, color: String) = said(message, color, untilAnswered = true)
+
+        private fun said(message: String, color: String, untilAnswered: Boolean) {
             synchronized(this) {
-                if (heldNow) liveTurns.says(drive.slot, message, color, wall())
+                if (heldNow) liveTurns.says(drive.slot, message, color, wall(), untilAnswered)
             }
         }
 

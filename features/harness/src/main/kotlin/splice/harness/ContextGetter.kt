@@ -24,6 +24,24 @@ internal class ContextGetter(private val heads: GathererHeads, private val run: 
         return NO_LOGIN.takeUnless { signedIn(head.launch) }
     }
 
+    /** What the held turn says as a gather for [on] starts: that it explores with [worker]'s model or the head's fast
+     *  one, by the label the head's models give it. */
+    fun message(worker: CapabilityWorker.Builtin, on: CallFor): String {
+        val head = heads.of(on.head)
+        val model = head?.let { fast(worker, it) } ?: worker.model
+        val label = if (head != null && model != null) label(head, model) else null
+        return "$EXPLORING ${label ?: model ?: FAST_ALIAS}"
+    }
+
+    /** The label [head]'s models give [model], as its catalog has it now, else as its launch has it. */
+    private fun label(head: GathererHead, model: String): String? =
+        head.launch.catalog?.live()?.models?.firstOrNull { it.id == model }?.label?.takeIf(String::isNotBlank)
+            ?: head.launch.spec?.models?.modelLabels?.get(model)
+
+    /** [worker]'s model, else the head's fast one, as the head's rows name it; null for a head that names none. */
+    private fun fast(worker: CapabilityWorker.Builtin, head: GathererHead): String? =
+        worker.model ?: head.launch.spec?.models?.tiers?.byTier?.get(SMALL_TIER)
+
     /** One gather for [on], on [worker]'s model or the head's fast one, its steps told to [progress], under a deadline
      *  of its own past [limitS]. */
     suspend fun call(worker: CapabilityWorker.Builtin, on: CallFor, limitS: Int, progress: WorkerProgress): WorkerEnd =
@@ -77,7 +95,7 @@ internal class ContextGetter(private val heads: GathererHeads, private val run: 
      *  for that model, else the catalog's spelling of it. Null for a head with no catalog or no fast model. */
     private fun selector(worker: CapabilityWorker.Builtin, head: GathererHead): String? {
         val catalog = head.launch.catalog ?: return null
-        val fast = worker.model ?: head.launch.spec?.models?.tiers?.byTier?.get(SMALL_TIER) ?: return null
+        val fast = fast(worker, head) ?: return null
         return catalog.discoveryRows().firstOrNull { catalog.unwrap(it.id) == fast }?.id ?: catalog.wrap(fast)
     }
 
@@ -144,6 +162,12 @@ private const val HEADERS_ENV = "ANTHROPIC_CUSTOM_HEADERS"
 /** why: Claude Code's effort word and its thinking budget. A launch plants the budget and a head's effort may plant the
  *  word; the daemon's own environment may carry either from whoever started it. */
 private val THINKING = setOf("CLAUDE_CODE_EFFORT_LEVEL", "MAX_THINKING_TOKENS")
+
+/** What the held turn says as a gather starts, before the model's label (decision 9). */
+private const val EXPLORING = "Exploring files with"
+
+/** What the held turn says once a gather stopped before its result, until the turn's answer begins (decision 9). */
+internal const val GATHER_STOPPED = "Exploring stopped, continuing without it"
 
 private const val NO_FOLDER = "the session's folder cannot be found"
 private const val NO_LAUNCH = "splice cannot start a session on this head"

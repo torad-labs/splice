@@ -164,7 +164,7 @@ internal class TurnAccountHandoff(
 
     /** Whether [next] may take [drive]'s turn. A turn holding the node's word cannot move onto a login that forwards
      *  the caller's (LAN share: the vendor would see the word), and a turn through a door not onto a login of the
-     *  person's own ([held]): it runs on a Claude account added to splice or not at all (Marcos, Nov 17, 2026). */
+     *  person's own ([held]): it runs on a Claude account added to splice or not at all (Nov 17, 2026). */
     private suspend fun takes(drive: TurnDrive, next: AccountSelection): Boolean =
         !CallerCredential.unheldNodeWord(drive.turnHeaders, next.account.auth) &&
             (drive.meta.route.relay.door == null || held.held(next.account.label))

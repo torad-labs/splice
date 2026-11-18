@@ -44,7 +44,7 @@ internal class ClaudeDoorLaunch(
     }
 
     /** The picker's rows: the models of the signed-in accounts, in splice.toml's order of heads. A model whose account
-     *  reads a plan window fully used stays listed, with the window marked beside its name (Marcos, Nov 17, 2026): the
+     *  reads a plan window fully used stays listed, with the window marked beside its name (Nov 17, 2026): the
      *  head still serves it, and the person sees before picking it that the account is spent. */
     private fun rowsOf(lineup: DesktopLineup): List<DoorPickerRow> =
         lineup.signedIn.map { DoorPickerRow(it.model, labelOf(it), it.command) }

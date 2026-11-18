@@ -4,7 +4,9 @@
 // the harness module implements it and :app hands the one to the other.
 package splice.head.port
 
+import kotlinx.serialization.json.JsonObject
 import splice.core.failure.Decline
+import splice.upstream.RoundInterceptor
 import java.nio.file.Path
 
 /** What works beside the turns of one head: called before each request goes upstream, for any thread, whichever turn
@@ -31,6 +33,10 @@ public interface HarnessTurn : TurnHolding {
 
     /** The folder session [session] works in, or null when the session is unknown. */
     public fun folder(session: String?): Path?
+
+    /** The request the turn sends upstream, as its provider built it: Anthropic's Messages shape on a head the model
+     *  may call a capability on (decision 12). */
+    public val sending: JsonObject
 }
 
 /** Holds a turn while its capabilities work: the response opens and is pinged, the turn's notice is off and its
@@ -47,8 +53,14 @@ public data class Held(val on: List<String>, val ms: Long)
 
 /** What the harness makes of one request. */
 public sealed class HarnessEnd {
-    /** The request goes on carrying [texts], in order, at the end of its first user message. */
-    public data class Go(val texts: List<String>) : HarnessEnd()
+    /** The request goes on carrying [texts], in order, at the end of its first user message. [sending], when set, is
+     *  the request it sends in place of the one it built (the model's tools offered and its calls put back, decision
+     *  12), and [rounds] answers the calls the model makes of a capability in each of its rounds. */
+    public data class Go(
+        val texts: List<String>,
+        val sending: JsonObject? = null,
+        val rounds: RoundInterceptor? = null,
+    ) : HarnessEnd()
 
     /** The turn is refused, and nothing goes upstream. */
     public data class Refused(val why: Decline) : HarnessEnd()

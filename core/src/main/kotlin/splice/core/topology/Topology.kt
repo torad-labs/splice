@@ -73,6 +73,10 @@ public data class Topology(
      *  the wrapper command). Callers that must tell those apart use [resolveHeadKeys]. */
     public fun resolveHeadKey(name: String): String? = resolveHeadKeys(name).singleOrNull()
 
+    /** The heads whose provider speaks [dialect]. */
+    public fun headsSpeaking(dialect: Dialect): Set<String> =
+        heads.filterValues { providers[it.provider]?.dialect == dialect }.keys
+
     /** LAN share: the remote commands splice links to its launch shim, every one but `claude`. That name is Claude
      *  Code's own link, which its updater re-points and splice's wrap points at the shim: a `[remote.claude]` is
      *  reached through the wrapped `claude`, and nothing that links or unlinks a remote command touches it. */

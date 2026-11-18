@@ -20,6 +20,7 @@ import splice.core.config.RetiredKnob
 import splice.core.config.UserHome
 import splice.core.config.retiredKnobsByKey
 import splice.core.perf.HISTORY_DEFAULT_DAYS
+import splice.core.topology.Dialect
 import splice.core.topology.Topology
 import splice.core.topology.TopologyFinding
 import splice.core.util.Cancellables
@@ -338,7 +339,9 @@ historyRetentionDays = "$HISTORY_DEFAULT_DAYS"
         TomlStructurePreflight.check(split.rest)
         val topology = decode(split.rest)
         if (split.tables.isEmpty()) return topology
-        return topology.copy(capabilities = CapabilityDeclarations(topology.heads.keys).read(split.tables).capabilities)
+        val messages = topology.headsSpeaking(Dialect.ANTHROPIC_PASSTHROUGH)
+        val read = CapabilityDeclarations(topology.heads.keys, messages = messages).read(split.tables)
+        return topology.copy(capabilities = read.capabilities)
     }
 
     /** The decode alone, without the structural guards: ktoml's type failure becomes the safe one-key diagnosis. A

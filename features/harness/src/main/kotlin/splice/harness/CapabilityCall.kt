@@ -3,6 +3,7 @@
 package splice.harness
 
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -29,17 +30,25 @@ internal sealed class CallEnd {
     data class Failed(val why: String) : CallEnd()
 }
 
-/** The facts a call sends: the turn it is for and the request's own. */
-internal data class CallFor(val head: String, val turn: HarnessTurn, val request: HarnessRequest)
+/** The facts a call sends: the turn it is for and the request's own, and the input of the model's call of its tool
+ *  (decision 12), which a call by rule has none of. */
+internal data class CallFor(
+    val head: String,
+    val turn: HarnessTurn,
+    val request: HarnessRequest,
+    val input: JsonElement? = null,
+)
 
 internal class CapabilityCall(private val worker: HttpWorker) {
-    suspend fun call(capability: Capability, on: CallFor): CallEnd {
+    suspend fun call(capability: Capability, on: CallFor): CallEnd = meaning(capability, work(capability, on))
+
+    /** How [capability]'s worker ended for [on], within its time limit; [posted] hears when it has been asked. */
+    suspend fun work(capability: Capability, on: CallFor, posted: WorkerPosted = WorkerPosted { }): WorkerEnd {
         val http = capability.work.worker as? CapabilityWorker.Http
-            ?: return CallEnd.Failed("its worker does not run in this version")
+            ?: return WorkerEnd.Failed("its worker does not run in this version")
         val limitMs = capability.limits.timeoutS * MS_PER_S
-        val end = withTimeoutOrNull(limitMs) { worker.call(http, body(capability, on), WorkerProgress { }) }
-            ?: return CallEnd.Failed("it passed its time limit of ${capability.limits.timeoutS} s")
-        return meaning(capability, end)
+        return withTimeoutOrNull(limitMs) { worker.call(http, body(capability, on), WorkerProgress { }, posted) }
+            ?: WorkerEnd.Failed("it passed its time limit of ${capability.limits.timeoutS} s")
     }
 
     /** A result is placed where the capability places text, and lets the turn pass where it places none; a refusal
@@ -67,6 +76,7 @@ internal class CapabilityCall(private val worker: HttpWorker) {
         put(
             "fields",
             buildJsonObject {
+                on.input?.let { put(INPUT, it) }
                 capability.work.send.forEach { field -> put(field.wire, value(field, on)) }
             },
         )
@@ -79,6 +89,9 @@ internal class CapabilityCall(private val worker: HttpWorker) {
         CapabilityField.HEAD -> JsonPrimitive(on.head)
     }
 }
+
+/** The field the model's call sends its tool's input in, beside the fields `send` names. */
+private const val INPUT = "input"
 
 /** why: `timeout_s` is in seconds, the wait in milliseconds. */
 private const val MS_PER_S = 1_000L

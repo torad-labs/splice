@@ -31,7 +31,6 @@ import splice.core.capability.CapabilityField
 import splice.core.capability.CapabilityLimits
 import splice.core.capability.CapabilityNotice
 import splice.core.capability.CapabilityResult
-import splice.core.capability.CapabilityRule
 import splice.core.capability.CapabilityWork
 import splice.core.capability.CapabilityWorker
 import splice.core.model.ModelCatalog
@@ -99,10 +98,14 @@ public class CapabilityRig(private val tmp: Path) : AutoCloseable {
     /** What a held answer waits for: the rig closing. */
     private val letGo = CompletableFuture<Unit>()
 
+    /** The Messages stream the provider answers a request body with, where a test scripts one; null answers as always. */
+    @Volatile public var messages: (String) -> String? = { null }
+
     private val upstream = server("/") { ex ->
-        provider += ex.requestBody.readAllBytes().decodeToString()
+        val body = ex.requestBody.readAllBytes().decodeToString()
+        provider += body
         val path = ex.requestURI.path
-        val stream = when {
+        val stream = messages(body) ?: when {
             path.endsWith("/chat/completions") -> CHAT_STREAM
             path.endsWith("/responses") -> RESPONSES_STREAM
             else -> MESSAGES_STREAM
@@ -133,7 +136,6 @@ public class CapabilityRig(private val tmp: Path) : AutoCloseable {
     public fun capability(name: String, url: String = workerUrl): Capability = Capability(
         name = name,
         heads = listOf(HEAD),
-        rule = CapabilityRule(),
         result = CapabilityResult(),
         notice = CapabilityNotice("Reading the task", "cyan"),
         limits = CapabilityLimits(timeoutS = 60, onFailure = CapabilityFailure.OPEN),

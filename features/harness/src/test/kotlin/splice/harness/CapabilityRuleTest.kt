@@ -11,6 +11,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.capability.Capability
 import splice.core.capability.CapabilityMode
 import splice.core.capability.CapabilityPlace
 import splice.core.capability.CapabilityResult
@@ -27,6 +28,9 @@ import java.nio.file.Path
 
 class CapabilityRuleTest(@param:TempDir private val tmp: Path) {
     private val rig = CapabilityRig(tmp)
+
+    /** [this] called by [rule] instead of the default one. */
+    private fun Capability.ruled(rule: CapabilityRule): Capability = copy(call = call.copy(rule = rule))
 
     @AfterEach
     fun close() = rig.close()
@@ -65,7 +69,7 @@ class CapabilityRuleTest(@param:TempDir private val tmp: Path) {
     @Test
     fun `the client name in the user agent is compared whole`() = runBlocking {
         val interactive = rig.capability("terminal")
-        val print = rig.capability("printed").copy(rule = CapabilityRule(mode = CapabilityMode.PRINT))
+        val print = rig.capability("printed").ruled(CapabilityRule(mode = CapabilityMode.PRINT))
         val head = rig.head(listOf(interactive, print))
 
         rig.send(head, Turn("in-terminal", opening("Fix the bug")))
@@ -80,7 +84,7 @@ class CapabilityRuleTest(@param:TempDir private val tmp: Path) {
     @Test
     fun `each subagent is a thread of its own, with a first turn of its own`() = runBlocking {
         val main = rig.capability("main")
-        val subagents = rig.capability("sub").copy(rule = CapabilityRule(thread = CapabilityThread.SUBAGENT))
+        val subagents = rig.capability("sub").ruled(CapabilityRule(thread = CapabilityThread.SUBAGENT))
         val head = rig.head(listOf(main, subagents))
 
         rig.send(head, Turn("s1", opening("Fix the bug")))
@@ -95,8 +99,7 @@ class CapabilityRuleTest(@param:TempDir private val tmp: Path) {
     fun `a session first seen mid-conversation has no first turn, and a capability on any turn is called on each`() =
         runBlocking {
             val first = rig.capability("first")
-            val every = rig.capability("every").copy(
-                rule = CapabilityRule(turn = CapabilityTurn.ANY),
+            val every = rig.capability("every").ruled(CapabilityRule(turn = CapabilityTurn.ANY)).copy(
                 result = CapabilityResult(place = CapabilityPlace.NONE),
             )
             val head = rig.head(listOf(first, every))
@@ -135,7 +138,7 @@ class CapabilityRuleTest(@param:TempDir private val tmp: Path) {
 
     @Test
     fun `models name the model splice resolved the request to`() = runBlocking {
-        val small = rig.capability("small").copy(rule = CapabilityRule(models = listOf("astra-small")))
+        val small = rig.capability("small").ruled(CapabilityRule(models = listOf("astra-small")))
         val head = rig.head(listOf(small))
 
         rig.send(head, Turn("large", opening("Fix the bug")))
@@ -147,10 +150,9 @@ class CapabilityRuleTest(@param:TempDir private val tmp: Path) {
 
     @Test
     fun `no capability is called for the auto-mode review or for a turn holding a model-server slot`() = runBlocking {
-        val any = rig.capability("any").copy(
-            rule = CapabilityRule(CapabilityTurn.ANY, CapabilityThread.ANY, CapabilityMode.ANY),
-            result = CapabilityResult(place = CapabilityPlace.NONE),
-        )
+        val any = rig.capability("any")
+            .ruled(CapabilityRule(CapabilityTurn.ANY, CapabilityThread.ANY, CapabilityMode.ANY))
+            .copy(result = CapabilityResult(place = CapabilityPlace.NONE))
         val head = rig.head(listOf(any))
         val slotted = rig.head(listOf(any)) { tuning ->
             SlotHolding(PassthroughProvider(tuning, PassthroughQuirks(providerTag = HEAD)))

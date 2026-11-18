@@ -427,9 +427,10 @@ session's first user message. The table's name is the capability's: lowercase le
 | field | type | default | effect |
 |---|---|---|---|
 | `heads` | array of head keys | empty | the heads it is on for; empty, it is declared and off. Off stops new calls; sessions keep a text already placed |
-| `call` | string | required | `"rule"`: splice calls it by `when`. `"agent"` and `"both"` are findings |
-| `when` | inline table | all defaults | `turn` (`"first"` or `"any"`, default `"first"`), `thread` (`"main"`, `"subagent"`, `"any"`, default `"main"`), `mode` (`"interactive"`, `"print"`, `"any"`, default `"interactive"`), `models` (model ids, default every model). A request must meet all of them |
-| `place` | string | required | `"first-user-message"`, or `"none"` for one that only passes or refuses a turn |
+| `call` | string | `"rule"` | `"rule"`: splice calls it by `when`. `"agent"`: the model calls it through `tool`. `"both"`: either. `"agent"` and `"both"` only on a head whose provider is `anthropic-passthrough` |
+| `tool` | inline table | none | with `call = "agent"` or `"both"`, required: `{ name = "...", description = "...", input = { type = "object", ... } }`, the tool the model is offered (`input` is its JSON schema). A finding with `call = "rule"` |
+| `when` | inline table | all defaults | `turn` (`"first"` or `"any"`, default `"first"`), `thread` (`"main"`, `"subagent"`, `"any"`, default `"main"`), `mode` (`"interactive"`, `"print"`, `"any"`, default `"interactive"`), `models` (model ids, default every model). A request must meet all of them. With `call = "agent"`, `turn` is a finding: the model calls its tool on any turn it is offered |
+| `place` | string | required | `"first-user-message"`, or `"none"` for one that only passes or refuses a turn. Not named with `call = "agent"`: the result goes into the tool's result |
 | `may` | string | required | `"add"`, `"refuse"` or `"add-or-refuse"`. `place = "none"` takes only `"refuse"` |
 | `message`, `color` | strings | none | what the held turn says while it starts; `color` is a status-line colour name |
 | `timeout_s` | int | required | 1 to 3600 |
@@ -457,6 +458,26 @@ splice never calls one for a side request without tools, for the auto-mode revie
 mid-conversation. Any fault in a declaration refuses boot with every finding listed and no value quoted;
 `splice check-config` shows them. `splice status` lists each capability, its heads (`off` when none) and its worker.
 The thread records live in `<state>/heads/<head>/capabilities/`.
+
+A capability the model calls is offered as its `tool`, after the client's tools, on every request with tools that its
+`when` allows (`turn` aside). The client never sees a call of it: splice holds the turn, posts the worker with the
+call's input as the field `input`, and sends the provider the same request with the model's message and the worker's
+text as the call's result; the answer streams on as the rest of the same response. A failure the capability fails
+open on becomes a result saying so; `on_failure = "closed"`, or a refusal from a worker that may refuse, refuses the
+turn. Each call and its result are kept in `<state>/heads/<head>/capabilities/agent-calls/` and put back on the
+session's later requests, so the provider sees the conversation it produced. A call made beside the client's own
+tool calls runs while the client runs them, and its result goes beside theirs on the next request.
+
+```toml
+[capabilities.advisor]
+heads = ["claude"]
+call = "agent"
+tool = { name = "ask_advisor", description = "Ask the advisor whether a plan is sound.", input = { type = "object", properties = { question = { type = "string" } }, required = ["question"] } }
+may = "add"
+timeout_s = 60
+on_failure = "open"
+worker = { kind = "http", url = "http://127.0.0.1:9000/advise" }
+```
 
 Source: core/src/main/kotlin/splice/core/capability/ (Capability.kt, CapabilityDeclarations.kt);
 features/turns/src/main/kotlin/splice/head/harness/; docs/specs/harness.md.

@@ -12,6 +12,7 @@ import splice.core.capability.CapabilityDeclarations
 import splice.core.capability.CapabilityToml
 import splice.core.config.retiredKnobsByKey
 import splice.core.model.HeadDiscoveredModels
+import splice.core.topology.Dialect
 import splice.core.topology.Topology
 import splice.core.topology.TopologyFinding
 import splice.core.topology.TopologyFindings
@@ -61,7 +62,10 @@ public object ConfigFindings {
         // (docs/specs/harness.md, decision 1); every other layer reads the file with them blanked out.
         val split = CapabilityToml.split(source)
         val text = split.rest
-        val declared = { topology: Topology? -> CapabilityDeclarations(topology?.heads?.keys).read(split.tables) }
+        val declared = { topology: Topology? ->
+            val messages = topology?.headsSpeaking(Dialect.ANTHROPIC_PASSTHROUGH)
+            CapabilityDeclarations(topology?.heads?.keys, messages = messages).read(split.tables)
+        }
         // A structural finding is answered BEFORE any decode: a head roster written as an array of strings sends the
         // decoder into the loop the preflight exists to prevent, so the decoder never sees such a file.
         val structural = TomlStructurePreflight.failures(text).map { finding(it) }

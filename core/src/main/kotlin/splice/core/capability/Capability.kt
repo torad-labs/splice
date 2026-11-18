@@ -2,15 +2,19 @@
 // called by a rule, held while it works, its text placed in the session's first user message.
 package splice.core.capability
 
+import kotlinx.serialization.json.JsonObject
+
 /** One `[capabilities.<name>]` table, read and found well-formed. [heads] empty is declared and off. */
 public data class Capability(
     val name: String,
     val heads: List<String>,
-    val rule: CapabilityRule,
     val result: CapabilityResult,
     val notice: CapabilityNotice,
     val limits: CapabilityLimits,
     val work: CapabilityWork,
+    /** `call`, `when` and `tool`: who may call it, the rule it is called or offered by, and the tool the model calls it
+     *  through (decision 12). */
+    val call: CapabilityCalling = CapabilityCalling(),
 ) {
     /** Whether this capability is switched on for head [key]. */
     public fun onFor(key: String): Boolean = key in heads
@@ -59,6 +63,38 @@ public sealed class CapabilityWorker {
         is Builtin -> "builtin $name"
     }
 }
+
+/** `call`: splice by its rule, the model through the tool it is offered (decision 12), or either. */
+public enum class CapabilityCaller(public val wire: String) {
+    RULE("rule"),
+    AGENT("agent"),
+    BOTH("both"),
+    ;
+
+    /** Whether splice calls it by the rule in `when`. */
+    public val byRule: Boolean get() = this != AGENT
+
+    /** Whether the model may call it, through its tool. */
+    public val byAgent: Boolean get() = this != RULE
+}
+
+/** Who may call a capability, the [rule] splice calls it by and offers its tool by, and the [tool] the model calls it
+ *  through: none for one only its rule calls. */
+public data class CapabilityCalling(
+    val caller: CapabilityCaller = CapabilityCaller.RULE,
+    val rule: CapabilityRule = CapabilityRule(),
+    val tool: CapabilityTool? = null,
+) {
+    /** Whether splice calls it by the rule in `when`. */
+    public val byRule: Boolean get() = caller.byRule
+
+    /** Whether the model may call it, through its tool. */
+    public val byAgent: Boolean get() = caller.byAgent
+}
+
+/** The tool a capability the model may call is offered as: its name, what it is for as the model reads it, and the
+ *  JSON schema of its input, as splice.toml declares them. */
+public data class CapabilityTool(val name: String, val description: String, val input: JsonObject)
 
 /** The values each key of a capability table takes, as splice.toml spells them. */
 public enum class CapabilityTurn(public val wire: String) { FIRST("first"), ANY("any") }

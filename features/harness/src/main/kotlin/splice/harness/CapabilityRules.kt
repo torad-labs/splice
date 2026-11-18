@@ -1,5 +1,6 @@
-// NEW: the harness (docs/specs/harness.md, decision 2). Whether a capability's rule names a request: its `when` table,
-// every key of which a request has to meet, and splice's own conditions, which hold for every rule.
+// NEW: the harness (docs/specs/harness.md, decisions 2 and 12). Whether a capability's rule names a request: its `when`
+// table, every key of which a request has to meet, and splice's own conditions, which hold for every rule. The model
+// is offered a capability's tool by the same rule, but for its turn, which does not apply to the model's call.
 package splice.harness
 
 import splice.core.capability.Capability
@@ -10,15 +11,24 @@ import splice.head.port.HarnessRequest
 
 internal class CapabilityRules {
     /** Whether [capability]'s rule names [request] on head [head]. [first] is whether the request is its thread's first
-     *  turn, decided once for the thread. */
-    fun names(capability: Capability, head: String, request: HarnessRequest, first: Boolean): Boolean {
-        val rule = capability.rule
+     *  turn, decided once for the thread. A capability only the model calls is never called by its rule. */
+    fun names(capability: Capability, head: String, request: HarnessRequest, first: Boolean): Boolean =
+        capability.call.byRule &&
+            allows(capability, head, request) &&
+            (capability.call.rule.turn == CapabilityTurn.ANY || first)
+
+    /** Whether the model is offered [capability]'s tool on [request] (decision 12): the rule's thread, mode and models,
+     *  and splice's own conditions. */
+    fun offers(capability: Capability, head: String, request: HarnessRequest): Boolean =
+        capability.call.byAgent && capability.call.tool != null && allows(capability, head, request)
+
+    private fun allows(capability: Capability, head: String, request: HarnessRequest): Boolean {
+        val rule = capability.call.rule
         return capability.onFor(head) &&
             spliceAllows(request) &&
             moded(rule.mode, request.client) &&
             threaded(rule.thread, request.agentId) &&
-            rule.models.let { models -> models == null || request.model in models } &&
-            (rule.turn == CapabilityTurn.ANY || first)
+            rule.models.let { models -> models == null || request.model in models }
     }
 
     /** splice's own conditions: a turn of a session (one that streams and carries tools, never a side request), and

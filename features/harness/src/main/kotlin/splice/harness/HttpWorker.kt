@@ -34,9 +34,15 @@ internal class HttpWorker(
 ) {
     private val lines = WorkerLines()
 
-    /** Posts [body] to [worker] and reads its answer to the line that ends the work. */
-    suspend fun call(worker: CapabilityWorker.Http, body: JsonObject, progress: WorkerProgress): WorkerEnd {
-        val request = when (val built = request(worker, body)) {
+    /** Posts [body] to [worker], telling [posted] once it is sent, and reads its answer to the line that ends the
+     *  work. */
+    suspend fun call(
+        worker: CapabilityWorker.Http,
+        body: JsonObject,
+        progress: WorkerProgress,
+        posted: WorkerPosted = WorkerPosted { },
+    ): WorkerEnd {
+        val request = when (val built = request(worker, body, posted)) {
             is Built.Request -> built.request
             is Built.Failed -> return built.end
         }
@@ -55,7 +61,7 @@ internal class HttpWorker(
     }
 
     /** The request [worker] is posted: its URL, and its own key as a bearer when its declaration names one. */
-    private fun request(worker: CapabilityWorker.Http, body: JsonObject): Built {
+    private fun request(worker: CapabilityWorker.Http, body: JsonObject, posted: WorkerPosted): Built {
         val uri = try {
             URI(worker.url)
         } catch (_: java.net.URISyntaxException) {
@@ -68,7 +74,7 @@ internal class HttpWorker(
             .header("Content-Type", "application/json")
             .header("Accept", "application/x-ndjson")
             .apply { if (key != null) header("Authorization", "Bearer $key") }
-            .POST(HttpRequest.BodyPublishers.ofByteArray(JsonWire.bytes(body)))
+            .POST(PostedBody(JsonWire.bytes(body), posted))
             .build()
         return Built.Request(request)
     }

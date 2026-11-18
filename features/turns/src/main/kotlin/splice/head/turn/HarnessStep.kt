@@ -3,6 +3,7 @@
 // one function, on its first turn and on every later one; a refusal ends the turn before anything goes upstream.
 package splice.head.turn
 
+import kotlinx.serialization.json.JsonObject
 import splice.core.failure.FailureCause
 import splice.head.compaction.SessionProjectLookup
 import splice.head.port.HarnessEnd
@@ -37,8 +38,10 @@ internal class HarnessStep(
         return when (end) {
             is HarnessEnd.Refused -> TurnDeclined(FailureCause.Splice.Declined(end.why))
             is HarnessEnd.Go -> {
-                val placing = placed(drive.inputs.built, end.texts)
-                if (placing.chars > 0) drive.place(placing.turn.requestBody)
+                val built = end.sending?.let { drive.inputs.built.sending(it) } ?: drive.inputs.built
+                val placing = placed(built, end.texts)
+                if (placing.chars > 0 || end.sending != null) drive.place(placing.turn.requestBody)
+                end.rounds?.let(drive::answering)
                 drive.held = drive.held.copy(textChars = placing.chars, unplaced = placing.unplaced)
                 null
             }
@@ -85,6 +88,8 @@ internal class HarnessStep(
     ) : HarnessTurn {
         override val id: String = drive.sentTurnId()
 
+        override val sending: JsonObject get() = drive.inputs.built.requestBody
+
         override fun folder(session: String?): Path? = folders(session)
 
         override suspend fun hold() {
@@ -96,8 +101,13 @@ internal class HarnessStep(
             drive.watchdog.holdStarted()
         }
 
+        /** A turn held more than once (the model called a capability in more than one round) keeps every hold, in order,
+         *  and their time together. */
         override suspend fun release(held: Held) {
-            drive.held = drive.held.copy(on = held.on.joinToString(","), ms = held.ms)
+            this.held -= drive.slot
+            val before = drive.held
+            val on = (listOfNotNull(before.on) + held.on).joinToString(",").ifEmpty { null }
+            drive.held = before.copy(on = on, ms = before.ms + held.ms)
             try {
                 drive.emitter.holding(false)
                 drive.slot.retakePermit()

@@ -113,6 +113,8 @@ internal data class TurnDrive(
         @Volatile var body: JsonObject? = null
 
         @Volatile var held: PerfHeld = PerfHeld()
+
+        @Volatile var rounds: RoundInterceptor? = null
     }
 
     private val placedRequest = PlacedRequest()
@@ -120,6 +122,12 @@ internal data class TurnDrive(
     /** The turn sends [body] in place of the built request, from its first round on. */
     internal fun place(body: JsonObject) {
         placedRequest.body = body
+    }
+
+    /** The turn's rounds pass through [rounds], which answers the model's calls of a capability (docs/specs/harness.md,
+     *  decision 12): set once, before the first round, on a head whose provider wraps none of its own rounds. */
+    internal fun answering(rounds: RoundInterceptor) {
+        placedRequest.rounds = rounds
     }
 
     /** What the turn's capabilities did, for its perf row (docs/specs/harness.md, decision 10). */
@@ -151,7 +159,7 @@ internal data class TurnDrive(
     val toolSearch: ToolSearchPolicy? get() = inputs.built.toolSearch
 
     /** Optional gateway-local wrapper around each posted round. */
-    val roundInterceptor: RoundInterceptor? get() = inputs.built.roundInterceptor
+    val roundInterceptor: RoundInterceptor? get() = inputs.built.roundInterceptor ?: placedRequest.rounds
 
     /** Current login. Only a pre-accept native refusal can replace it within this turn. */
     var account: AccountSelection? = inputs.accountQuota.account

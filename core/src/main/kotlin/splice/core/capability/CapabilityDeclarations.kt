@@ -21,9 +21,12 @@ public data class CapabilityRead(val capabilities: List<Capability>, val finding
 public class CapabilityDeclarations(
     private val heads: Set<String>?,
     private val builtins: Set<String> = CapabilityBuiltins.names,
+    /** The heads whose dialect is Anthropic's Messages, the only ones the model may call a capability on (decision
+     *  12); null leaves that check out. */
+    private val messages: Set<String>? = null,
 ) {
     public fun read(tables: List<CapabilityTable>): CapabilityRead {
-        val checks = tables.map { CapabilityCheck(CapabilityValues(it), heads, builtins) }
+        val checks = tables.map { CapabilityCheck(CapabilityValues(it), heads, builtins, messages) }
         return CapabilityRead(checks.mapNotNull { it.capability }, checks.flatMap { it.findings })
     }
 }
@@ -33,6 +36,7 @@ private class CapabilityCheck(
     private val values: CapabilityValues,
     private val heads: Set<String>?,
     private val builtins: Set<String>,
+    private val messages: Set<String>?,
 ) {
     private val keys = values.table.keys
     private val name = values.table.name
@@ -47,15 +51,16 @@ private class CapabilityCheck(
         if (rule?.turn == CapabilityTurn.ANY && result?.place == CapabilityPlace.FIRST_USER_MESSAGE) {
             values.fault(TURN_KEY, EVERY_TURN_PLACES)
         }
-        values.choice("call", keys["call"], CALLS, RULE)
+        val heads = heads()
+        val call = CapabilityCallCheck(values, messages).read(heads).copy(rule = rule ?: CapabilityRule())
         val capability = Capability(
             name = name,
-            heads = heads(),
-            rule = rule ?: CapabilityRule(),
+            heads = heads,
             result = result ?: CapabilityResult(),
             notice = notice(),
             limits = limits(),
             work = CapabilityWork(worker ?: CapabilityWorker.Builtin(""), send()),
+            call = call,
         )
         return capability.takeIf { values.findings.isEmpty() && worker != null }
     }
@@ -203,7 +208,10 @@ private class CapabilityWorkerCheck(private val values: CapabilityValues, privat
 
 private val NAME = Regex("[a-z0-9-]+")
 private val KEYS =
-    setOf("heads", "call", "when", "place", "may", "message", "color", "timeout_s", "on_failure", "send", "worker")
+    setOf(
+        "heads", "call", "tool", "when", "place", "may", "message", "color",
+        "timeout_s", "on_failure", "send", "worker",
+    )
 private val RULE_KEYS = setOf("turn", "thread", "mode", "models")
 private val HTTP_KEYS = setOf("kind", "url", "auth_env")
 private val BUILTIN_KEYS = setOf("kind", "name")
@@ -228,7 +236,5 @@ private const val EVERY_TURN_PLACES =
     "is any, and only a first turn places text in the first user message; set place to none"
 private const val PLACE = "place"
 private val ADDING = setOf(CapabilityMay.ADD, CapabilityMay.ADD_OR_REFUSE)
-private const val RULE = "rule"
-private val CALLS = mapOf(RULE to RULE)
 private const val HTTP = "http"
 private const val BUILTIN = "builtin"

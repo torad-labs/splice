@@ -32,6 +32,8 @@ internal class Harness(
     private val calls: CapabilityCall,
     private val log: LogSink,
     private val clock: ElapsedClock,
+    /** The model's calls of the capabilities (decision 12). */
+    private val agent: AgentCalls,
 ) : TurnHarness {
     private val rules = CapabilityRules()
 
@@ -46,16 +48,28 @@ internal class Harness(
     override fun stop() {
         stopping.set(true)
         waits.values.forEach { it.complete(HEAD_STOPPED) }
+        agent.stop()
     }
 
     /** The head runs again after a stop: turns are held again. */
     override fun started() {
         stopping.set(false)
+        agent.started()
     }
 
     /** [request] is null for a request the harness reads nothing of. The turn is held only where [turn] can be held
      *  (a request that does not stream cannot). */
     override suspend fun around(request: HarnessRequest?, turn: HarnessTurn): HarnessEnd {
+        val ruled = ruled(request, turn)
+        if (request == null || ruled !is HarnessEnd.Go) return ruled
+        return when (val agent = agent.around(request, turn)) {
+            is AgentEnd.Refused -> HarnessEnd.Refused(agent.why)
+            is AgentEnd.Go -> ruled.copy(sending = agent.sending, rounds = agent.rounds)
+        }
+    }
+
+    /** What the capabilities called by rule make of [request]. */
+    private suspend fun ruled(request: HarnessRequest?, turn: HarnessTurn): HarnessEnd {
         val thread = request?.thread ?: return HarnessEnd.Go(emptyList())
         // A second request of the thread ends the wait of the first: neither places anything, both go on as today.
         waits.remove(thread)?.complete(SUPERSEDED)
@@ -83,7 +97,9 @@ internal class Harness(
     /** The thread's first turn has come: the hash of its first message, and each capability's state, written down
      *  before any is called. */
     private fun taken(record: ThreadRecord, due: List<Capability>, hash: String?): ThreadRecord {
-        val firsts = capabilities.filter { it.rule.turn == CapabilityTurn.FIRST && it.onFor(head) }
+        val firsts = capabilities.filter {
+            it.call.byRule && it.call.rule.turn == CapabilityTurn.FIRST && it.onFor(head)
+        }
         val states = firsts.map { CapabilityState(it.name, if (it in due) WAITING else NEVER) }
         return states.fold(record.copy(first = FirstTurn.TAKEN, firstHash = hash)) { acc, state -> acc.with(state) }
     }
@@ -179,13 +195,13 @@ internal class Harness(
 
     /** A capability called on every turn keeps no state in the thread; one called on its first turn does. */
     private fun mark(thread: String, capability: Capability, state: CapabilityState) {
-        if (capability.rule.turn == CapabilityTurn.FIRST) records.update(thread) { it.with(state) }
+        if (capability.call.rule.turn == CapabilityTurn.FIRST) records.update(thread) { it.with(state) }
     }
 
     /** The thread after a refused turn: its first turn not yet come, and the capabilities called for it as if they
      *  never were. */
     private fun undone(record: ThreadRecord, due: List<Capability>): ThreadRecord {
-        if (due.none { it.rule.turn == CapabilityTurn.FIRST }) return record
+        if (due.none { it.call.rule.turn == CapabilityTurn.FIRST }) return record
         return record.copy(first = FirstTurn.UNDECIDED, firstHash = null, capabilities = emptyList())
     }
 }

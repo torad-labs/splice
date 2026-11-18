@@ -90,10 +90,20 @@ describe("door-claude-lane", () => {
 
   test("a session that has picked nothing runs the model the lane says it starts on", async () => {
     const x = await session(s);
-    // Anthropic's own Opus, as a session with no pick asks for it
-    const t = await ask(x);
+    // its first turn asks for the model the launch set (ANTHROPIC_MODEL), as a real session's does
+    const t = await ask(x, { model: x.sets.ANTHROPIC_MODEL });
     expect(t.status).toBe(200);
     expect(t.reply).toBe(astra.reply());
+  });
+
+  test("an Anthropic model no head serves is refused by name, never run as the lane's default", async () => {
+    const x = await session(s);
+    const before = astra.completions().length + borealis.completions().length;
+    // Anthropic's own Opus, which no head in this door serves (Nov 17, 2026: the default never stands in for it)
+    const t = await ask(x);
+    expect(t.status).toBe(400);
+    expect(t.error?.message).toContain("claude-opus-5-5");
+    expect(astra.completions().length + borealis.completions().length).toBe(before);
   });
 
   test("a model that is no selector and none of Anthropic's is refused by name, with nothing sent on", async () => {
@@ -133,7 +143,7 @@ describe("door-claude-lane", () => {
     expect(lane(s).default_model).toBe(BOREALIS_SMALL);
     const x = await session(s);
     expect(x.sets.ANTHROPIC_MODEL).toBe(BOREALIS_SMALL);
-    const t = await ask(x);
+    const t = await ask(x, { model: x.sets.ANTHROPIC_MODEL });
     expect(t.status).toBe(200);
     expect(t.reply).toBe(borealis.reply());
 

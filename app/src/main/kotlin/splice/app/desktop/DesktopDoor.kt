@@ -5,7 +5,8 @@
 // terminal's `claude`, each by its own key (DoorCaller), and no other key opens it. While a caller's switch is off the
 // door refuses its turns, saying how to open it, and nothing is sent upstream. The model a request names picks the head
 // (DoorRouting); a model the door does not serve is refused here, in Anthropic's shape, and nothing is sent upstream. A
-// turn with a route goes to its head as the model that head runs it as (DoorRelay).
+// turn with a route goes to its head as the model that head runs it as (DoorRelay). For the terminal's `claude`, a
+// model of Anthropic's that a request names runs where a head serves it, or is refused by name (DoorRouting).
 package splice.app.desktop
 
 import io.ktor.http.HttpHeaders
@@ -22,6 +23,12 @@ import splice.share.RefusalVoice
 
 /** What a door turn asks: its body, the model it names and the session it is a turn of. */
 internal data class DoorAsk(val request: JsonObject, val model: String, val session: String?) {
+    /** Whether this is Claude Code's start-up check: one token, not streamed (desktop-door.md's table), whose answer
+     *  no one reads. */
+    val probe: Boolean
+        get() = JsonScalars.long(request, REQUEST_MAX_TOKENS) == 1L &&
+            JsonScalars.str(request, REQUEST_STREAM) != "true"
+
     /** The body as a head takes it: the same request, asking for [upstream], the ID that head runs the model as. */
     fun asking(upstream: String): ByteArray =
         JsonWire.bytes(JsonObject(request + (REQUEST_MODEL to JsonPrimitive(upstream))))
@@ -51,7 +58,7 @@ internal class DesktopDoor(
         val request = read(call, caller, lineup) ?: return
         val model = JsonScalars.str(request, REQUEST_MODEL).orEmpty()
         val ask = DoorAsk(request, model, call.request.headers[SESSION_HEADER])
-        val route = routing.of(lineup, ask.model, ask.session, caller.default(lineup))
+        val route = routing.of(lineup, ask, caller.default(lineup), caller.runsNamedModels)
             ?: return caller.voice.refuse(call, HttpStatus.BAD_REQUEST, "model \"${ask.model}\" ${caller.notInDoor}")
         toHead.send(call, caller, route, ask, counting)
     }
@@ -91,3 +98,5 @@ private const val NO_DOOR_KEY =
 private const val NOT_JSON = "the request body is not a JSON object"
 
 private const val REQUEST_MODEL = "model"
+private const val REQUEST_MAX_TOKENS = "max_tokens"
+private const val REQUEST_STREAM = "stream"

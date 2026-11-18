@@ -51,9 +51,10 @@ internal class TurnAccountHandoff(
         val session = drive.meta.scope.sessionId
         // own = false: the turn was counted toward the command's usual model at its admission. Counted again here, a
         // login running out would hand that say to the helpers' turns it refused, at the moment the screens are read.
-        val available = pool.awaitingEvidence.select(session, pending.excluded, model = model, own = false)
+        val choosing = pool.awaitingEvidence.without(never(drive))
+        val available = choosing.select(session, pending.excluded, model = model, own = false)
         val selected = if (available is Selection.Exhausted && earlierHeld(drive)) {
-            pool.awaitingEvidence.select(session, model = model, own = false)
+            choosing.select(session, model = model, own = false)
         } else {
             available
         }
@@ -77,7 +78,7 @@ internal class TurnAccountHandoff(
         if (synchronized(this) { committed }) return false
         // A login that left the pool since, or whose label is another account's now, is not this turn's login any more.
         val current = drive.account?.account?.takeIf { held -> pool.members.any { it === held } }?.label
-        val tried = synchronized(this) { tried() }
+        val tried = synchronized(this) { tried() } + never(drive)
         val reset = when (cause) {
             is FailureCause.Provider.Limited -> (cause.lift as? Lift.At)?.at
             is FailureCause.Provider.NeedsPayment -> (cause.lift as? Lift.At)?.at
@@ -119,10 +120,21 @@ internal class TurnAccountHandoff(
         val view = pool.view(drive.meta.scope.sessionId, drive.meta.route.upstreamModel)
         val resets = view.blockedUntilEpochSecondsByLabel
         val currentReset = currentReset(view, current, reset, refused) ?: return false
+        val never = never(drive)
         return view.accounts.any { account ->
-            account.label != current && signedIn(account) && (resets[account.label] ?: Long.MAX_VALUE) < currentReset
+            account.label != current && account.label !in never && signedIn(account) &&
+                (resets[account.label] ?: Long.MAX_VALUE) < currentReset
         }
     }
+
+    /** The logins [drive]'s turn never moves to: for a turn through a door, every login not added to splice ([held]),
+     *  the person's own among them. None for any other turn. */
+    private fun never(drive: TurnDrive): Set<String> =
+        if (drive.meta.route.relay.door == null) {
+            emptySet()
+        } else {
+            pool.members.map { it.label }.filterNot(held::held).toSet()
+        }
 
     /** When [current] serves again, in epoch seconds: never where it was [refused] or is signed out, else at the
      *  [reset] just read or the one the pool holds; null where nothing holds it. */

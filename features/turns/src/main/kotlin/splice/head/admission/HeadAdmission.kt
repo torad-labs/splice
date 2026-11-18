@@ -9,8 +9,6 @@ package splice.head.admission
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import splice.core.auth.CredentialKey
-import splice.core.failure.EndingHeard
-import splice.core.failure.RequestFacts
 import splice.core.memory.HeapCapacityException
 import splice.core.turn.LiveWatchdogBudget
 import splice.core.util.Cancellables
@@ -195,9 +193,8 @@ internal class HeadAdmission(
         val callerKey = prepared.built.extraHeaders.takeIf { deps.policy.forwardClientAuth }
             ?.let(CredentialKey::fromHeaders)
         val selection = admitted.perf.timed(splice.core.perf.PerfKeys.ACCOUNT_CHECKS_MS) {
-            pool?.awaitingEvidence?.select(
+            pool?.awaitingEvidence?.without(unheld(prepared, pool))?.select(
                 prepared.built.meta.scope.sessionId,
-                excluded = unheld(prepared, pool),
                 callerCredentialKey = callerKey,
                 // a login whose provider refused another model for the week still serves this one (Nov 3, 2026)
                 model = prepared.built.meta.route.upstreamModel,
@@ -220,7 +217,10 @@ internal class HeadAdmission(
     }
 
     /** The logins of [pool] a turn through a door never runs on (HeldLogins): the person's own Claude login, which is
-     *  never sent for a door turn (Marcos, Nov 17, 2026). None for any other turn, another machine's included. */
+     *  never sent for a door turn (Marcos, Nov 17, 2026). None for any other turn, another machine's included. They
+     *  are left out of the choice, never counted as logins that refused the turn: those limit it to a free login, and
+     *  a door turn whose added accounts were all held for its model ended "has no login yet" instead of waiting for
+     *  the soonest reset or moving to a model with room. */
     private fun unheld(prepared: Preparation.Ready, pool: AccountPool?): Set<String> {
         if (pool == null || prepared.built.meta.route.relay.door == null) return emptySet()
         return pool.members.map { it.label }.filterNot(deps.traffic.held::held).toSet()
@@ -252,17 +252,9 @@ internal class HeadAdmission(
         }
         if (oversized) return
         admitted.retainRequest()
-        val scope = prepared.built.meta.scope
-        val facts = RequestFacts(
-            compaction = prepared.built.meta.compact,
-            firstExchange = !prepared.hasPriorExchange,
-            repeated = resends.repeated(scope.sessionId, scope.messagesHash),
-            otherLogin = (deps.quotaBundle.activePool?.members?.size ?: 0) > 1,
-        )
-        // A hold handed to the client (family L) is not an ending to repeat: its re-send holds anew (slice 5).
-        val heard = EndingHeard { answer ->
-            if (answer.clientResends && !answer.handedOver) resends.endedForResend(scope.sessionId, scope.messagesHash)
-        }
+        val meta = prepared.built.meta
+        val otherLogin = (deps.quotaBundle.activePool?.members?.size ?: 0) > 1
+        val voice = resends.voiceOf(driver.voice, meta.scope, meta.compact, !prepared.hasPriorExchange, otherLogin)
         val inputs = TurnInputs(
             prepared.built,
             TurnSlot(
@@ -275,7 +267,7 @@ internal class HeadAdmission(
             admitted.perf,
             trace = trace,
             accountQuota = running,
-            voice = driver.voice.turn(facts, heard),
+            voice = voice,
         )
         if (prepared.stream) driver.stream(call, inputs) else driver.collect(call, inputs)
     }

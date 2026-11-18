@@ -1,6 +1,6 @@
 // NEW: desktop-door (docs/specs/desktop-door.md, decision 3). Which heads are in the door, read from the running heads
 // at each use: a head is in it when splice holds the credential its provider is called with. A head that forwards the
-// caller's own Claude login is in it on the Claude accounts added to it (Marcos, Nov 17, 2026): a turn through the door
+// caller's own Claude login is in it on the Claude accounts added to it (Nov 17, 2026): a turn through the door
 // carries no Claude login, and the head runs it on one of those accounts, never on the person's own login
 // (AddedClaudeLogins); with none added it is left out. A head whose login is missing or has expired is left out until it
 // is signed in again. Its models are each a selector, the ID the head's own /v1/models lists, in splice.toml's order of
@@ -82,7 +82,7 @@ internal class DesktopHeads(private val running: RunningHeads) {
         running().forEach { (managed, relay) ->
             val spec = managed.launchSpec ?: return@forEach
             val catalog = managed.statusline.catalog ?: return@forEach
-            // Marcos, Nov 17, 2026: a head that forwards the caller's Claude login is in the door on the accounts
+            // Nov 17, 2026: a head that forwards the caller's Claude login is in the door on the accounts
             // added to it, which a turn through the door runs on, and never on the person's own login
             val read = if (relay.forwardsClientAuth) added(managed) else loginOf(managed, spec.signIn.loginCommand)
             if (read.why != null) {

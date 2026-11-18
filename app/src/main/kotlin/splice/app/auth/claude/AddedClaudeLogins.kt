@@ -1,4 +1,4 @@
-// NEW: door-default (docs/specs/door-default.md), Marcos's ruling of Nov 17, 2026: Claude's models run on the door on
+// NEW: door-default (docs/specs/door-default.md), the ruling of Nov 17, 2026: Claude's models run on the door on
 // the Claude accounts added to splice, and never on the person's own Claude login. The logins a turn through the door
 // may run on, by their labels in a head's pool: the added accounts (ClaudeAccountFolders), and no login of the
 // person's own, neither the sign-in a head forwards nor one read from the person's own Claude folder.

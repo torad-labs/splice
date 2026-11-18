@@ -1,4 +1,4 @@
-// NEW: door-default (docs/specs/door-default.md), Marcos's ruling of Nov 17, 2026. A Claude head forwards the
+// NEW: door-default (docs/specs/door-default.md), the ruling of Nov 17, 2026. A Claude head forwards the
 // caller's own login, so splice held no credential to ask Anthropic what it serves, and a head with no list kept
 // started with none: the door, which runs Claude's models on the Claude accounts added to splice, then had no Claude
 // model to list. The list is asked with an added account's token instead, read from its folder as it is now; the

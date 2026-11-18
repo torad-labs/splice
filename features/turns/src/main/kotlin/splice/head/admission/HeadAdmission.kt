@@ -217,7 +217,7 @@ internal class HeadAdmission(
     }
 
     /** The logins of [pool] a turn through a door never runs on (HeldLogins): the person's own Claude login, which is
-     *  never sent for a door turn (Marcos, Nov 17, 2026). None for any other turn, another machine's included. They
+     *  never sent for a door turn (Nov 17, 2026). None for any other turn, another machine's included. They
      *  are left out of the choice, never counted as logins that refused the turn: those limit it to a free login, and
      *  a door turn whose added accounts were all held for its model ended "has no login yet" instead of waiting for
      *  the soonest reset or moving to a model with room. */

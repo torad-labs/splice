@@ -8,7 +8,7 @@
 //
 // The terminal's `claude` runs the model a request names (DoorCaller.runsNamedModels). On Nov 17, 2026 seats launched
 // with `claude --model claude-opus-5-5` on the door ran on the lane's default model, a Grok, for an hour with nothing
-// said; splice's lead, for Marcos, set the rule: a named model runs on the head that serves it, or is refused by name,
+// said; the rule since: a named model runs on the head that serves it, or is refused by name,
 // and the default never stands in for it. So in a session on no head yet, an Anthropic ID runs on the head that serves
 // that very model (the claude head, on the Claude accounts added to splice), and the session is on that head from
 // then. Where none serves it, it is refused by name, save Claude Code's own calls: its start-up check and its small

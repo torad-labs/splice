@@ -2,7 +2,8 @@
 // a way around the copy a `-r SESSION_ID` of another command's session is given: `claude -r NAME` opened a session a
 // GPT command wrote where it lay, asked Anthropic for the GPT model on every turn, and wrote the same transcript the
 // other command was still writing. Nov 16 refused such a launch with the id to use; since Nov 17 the name goes on as
-// that id does, as the session's copy. Each test here launches by name and reads what the person is told and what
+// that id does, as the session's copy, and a name several of another command's sessions carry goes on as the newest
+// one's. Each test here launches by name and reads what the person is told and what
 // the client would be handed.
 package splice.launch.recipe
 
@@ -25,6 +26,7 @@ import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 
 private const val NIGHT_RUN = "11111111-2222-3333-4444-555555555555"
 private const val OTHER_RUN = "66666666-7777-8888-9999-000000000000"
@@ -140,11 +142,18 @@ class LaunchResumeByNameTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `a name two sessions of another command carry is the client's picker's to ask about`() {
+    fun `a name two sessions of another command carry goes on as a copy of the newer one`() {
         session(NIGHT_RUN, "night-run", model = "k3-256k")
-        session(OTHER_RUN, "night-run", model = "k3-256k")
+        val older = session(OTHER_RUN, "night-run", model = "k3-256k")
+        Files.setLastModifiedTime(older, FileTime.fromMillis(Files.getLastModifiedTime(older).toMillis() - 3_600_000L))
 
-        assertEquals(listOf("-r", "night-run"), handedToTheClient(launch("-r", "night-run")).takeLast(2))
+        val recipe = (launch("-r", "night-run") as? LaunchOutcome.Ready)?.recipe ?: error("the name was refused")
+
+        val copy = recipe.argv.last()
+        assertTrue(copy !in setOf(NIGHT_RUN, OTHER_RUN, "night-run"), "the client resumes a copy: ${recipe.argv}")
+        val told = recipe.warning.orEmpty()
+        assertTrue(told.contains("session $NIGHT_RUN goes on here as its copy $copy"), "the newer one, in words: $told")
+        assertEquals(3, inTheFolder().size, "beside the two sessions: ${inTheFolder()}")
     }
 
     @Test

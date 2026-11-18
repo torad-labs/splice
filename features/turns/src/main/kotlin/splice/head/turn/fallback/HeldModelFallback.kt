@@ -59,13 +59,20 @@ internal class HeldModelFallback(
     }
 
     /** The model a turn of [session] asking for [asked] goes on under, or null where it goes as asked. [heldToo]: logins
-     *  a turn just met a limit of [asked] on, with its reset in epoch seconds, which the pool has not published yet. */
-    fun instead(asked: String, session: String?, heldToo: Map<String, Long> = emptyMap()): String? {
+     *  a turn just met a limit of [asked] on, with its reset in epoch seconds, which the pool has not published yet;
+     *  [everyModel] where that limit is a window of the whole login, which holds them for every other model too. */
+    fun instead(
+        asked: String,
+        session: String?,
+        heldToo: Map<String, Long> = emptyMap(),
+        everyModel: Boolean = false,
+    ): String? {
         val pool = quota.activePool ?: return null
         if (!heldEverywhere(pool, asked, heldToo)) return null
         val named = session?.let(quota.sessionFallbacks::of)
         val models = listOfNotNull(named) + catalog.tierModelIds() + pool.asked.own() + pool.asked.lately()
-        return models.distinct().firstOrNull { it != asked && catalog.contains(it) && servable(pool, it) }
+        val out = if (everyModel) heldToo.keys else emptySet()
+        return models.distinct().firstOrNull { it != asked && catalog.contains(it) && servable(pool, it, out) }
     }
 
     /** No login serves [model] now, and every one held for it is held past a rate limit's wait. A login that needs a
@@ -81,6 +88,6 @@ internal class HeldModelFallback(
     private fun signedIn(login: AccountView): Boolean =
         login.credential.let { it.present && it.exclusionReason == null && it.block == null }
 
-    private fun servable(pool: AccountPool, model: String): Boolean =
-        pool.view(null, catalog.stripSuffixes(model)).accounts.any { it.available }
+    private fun servable(pool: AccountPool, model: String, out: Set<String>): Boolean =
+        pool.view(null, catalog.stripSuffixes(model)).accounts.any { it.available && it.label !in out }
 }

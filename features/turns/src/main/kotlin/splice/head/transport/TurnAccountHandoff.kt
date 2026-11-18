@@ -13,6 +13,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import splice.core.failure.FailureCause
 import splice.core.failure.Lift
+import splice.core.failure.LimitWindow
 import splice.core.failure.LoginOwner
 import splice.head.admission.TurnQuota
 import splice.head.turn.TurnDrive
@@ -94,9 +95,12 @@ internal class TurnAccountHandoff(
         if (synchronized(this) { committed }) return false
         val fallback = fallback ?: return false
         val current = drive.account?.account?.label
-        val reset = ((cause as? FailureCause.Provider.Limited)?.lift as? Lift.At)?.at?.epochSecond
+        val limited = cause as? FailureCause.Provider.Limited
+        val reset = (limited?.lift as? Lift.At)?.at?.epochSecond
         val heldToo = if (current != null && reset != null) mapOf(current to reset) else emptyMap()
-        return fallback.instead(drive.meta.route.originalModel, drive.meta.scope.sessionId, heldToo) != null
+        // One model's week leaves the login free for the model the turn would move to; any other window holds it there.
+        val everyModel = limited?.window != LimitWindow.MODEL_WEEKLY
+        return fallback.instead(drive.meta.route.originalModel, drive.meta.scope.sessionId, heldToo, everyModel) != null
     }
 
     /** A refusal of the login itself: no reset brings it back, only a sign-in or its owner's act. */

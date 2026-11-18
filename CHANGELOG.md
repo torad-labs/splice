@@ -33,6 +33,10 @@
   capability with the heads it is on for and its worker. A turn's row on `/api/perf/turns` carries
   `capability_text_chars`, `held_on` and `held_ms`. With none declared, every request is the bytes it is today.
   The design is `docs/specs/harness.md`.
+- **A held turn says what it is doing on the status line.** While a capability holds a turn, the session's status
+  line leads with the capability's `message` in its `color`, then each progress line its worker sends, with how long
+  ago it came (`Checking the request · 4s ago`). A turn waiting on a usage limit, an overload or credit keeps its
+  words and now says how long ago the wait began. With two turns of a session held, the line says `· 2 turns`.
 - `splice claude [--json]`: the lane, the door, the model a session starts on and why, the picker's models, and
   each head left out of it and why. `splice status` and `splice doctor` name the lane.
 - `splice setup` links `claude` on the door on a machine with no head for it, and no longer offers the Claude plan

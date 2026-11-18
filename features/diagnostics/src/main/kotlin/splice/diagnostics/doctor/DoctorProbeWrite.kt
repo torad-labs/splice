@@ -9,6 +9,7 @@ import splice.core.config.UserHome
 import splice.core.perf.LivenessProbe
 import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
+import splice.core.util.AgeText
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
@@ -129,7 +130,7 @@ internal class DoctorProbeWrite(
         val (outcome, ts, refusedPort) = failures.last()
         val ageMs = System.currentTimeMillis() - ts
         val refusal = refusedPort?.let { "; couldn't reach its runtime on :$it" }.orEmpty()
-        val last = "last failure: ${DoctorAge.ago(ageMs)} (${tag(outcome)})$refusal"
+        val last = "last failure: ${AgeText.ago(ageMs)} (${tag(outcome)})$refusal"
         val detail = "${failures.size} of last ${rows.size} turn(s) failed; $last$unread"
         // A row with no time (perfRow reads it as 0) is never called old.
         val recent = ts <= 0L || ageMs <= RECENT_FAILURE_MS

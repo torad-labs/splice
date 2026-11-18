@@ -33,7 +33,13 @@ internal class TurnOneDrive(
     private val activeJobs = mutableMapOf<Job, TurnDrive>()
 
     /** The head's capabilities (docs/specs/harness.md), run before a turn's first round. */
-    private val harness = HarnessStep(provider, deps.seams.session.harness, deps.seams.session.sessionProject)
+    private val harness = HarnessStep(
+        provider,
+        deps.seams.session.harness,
+        deps.seams.session.sessionProject,
+        deps.traffic.liveTurns,
+        deps.traffic.upstream.retryWall,
+    )
 
     /** Stop unfinished child turns before the engine closes their client sockets. */
     fun stopActive() {

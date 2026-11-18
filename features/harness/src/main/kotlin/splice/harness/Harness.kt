@@ -153,6 +153,8 @@ internal class Harness(
         failures: MutableList<String>,
     ): Decline? {
         for (capability in due) {
+            // The held turn says the capability's own message as its work starts, then each progress line it sends.
+            on.turn.says(capability.notice.message, capability.notice.color)
             val end = try {
                 raced(capability, on, ended)
             } catch (cancelled: CancellationException) {
@@ -188,7 +190,9 @@ internal class Harness(
     /** The capability's end, or null when the wait was ended first. */
     private suspend fun raced(capability: Capability, on: CallFor, ended: CompletableDeferred<String>): CallEnd? =
         coroutineScope {
-            val work = async { calls.call(capability, on) }
+            val work = async {
+                calls.call(capability, on) { message -> on.turn.says(message, capability.notice.color) }
+            }
             val stop = async { ended.await() }
             try {
                 kotlinx.coroutines.selects.select {

@@ -1183,6 +1183,14 @@ refusal ends the turn with the worker's reason, from a capability whose `may` al
 passes `timeout_s` lets the turn go on as today with `on_failure = "open"`, and refuses it, naming the
 capability, with `"closed"`. A turn over its budget is refused before the worker is called.
 
+While the turn is held, the session's status line leads with what it is doing, in the capability's `color`, and
+how long ago it said so: `Checking the request · 4s ago`, then the model's name. The capability's `message` is
+what it says first, and each progress line the worker sends takes its place, its age starting again. A message
+that keeps changing reads as working, and one whose age keeps growing reads as stuck. With two turns of the
+session held, a subagent's beside the main thread's, the line says `· 2 turns` after the latest message. A turn
+waiting on a usage limit says so in the same place, with how long ago the wait began. When no turn is held the
+line is as it always is, and no other session's line changes.
+
 A declaration splice cannot read stops the daemon from starting, with every finding listed at once and none
 quoting a value that could be a secret. `splice check-config` runs the same check. `splice status` lists each
 declared capability with the heads it is on for (`off` when none) and its worker. With none declared, splice says

@@ -29,7 +29,8 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.head.Head
 import splice.core.head.HeadHealth
-import splice.core.head.HeldTurnReading
+import splice.core.head.HeldSaying
+import splice.core.head.HeldSayings
 import splice.core.version.ClientVersionTracker
 import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.CompactView
@@ -82,11 +83,13 @@ class ClientVersionSurfaceTest {
     }
 
     @Test
-    fun `the status line of a session whose turn waits on a limit leads with that`(@TempDir tempDir: Path) = runTest {
+    fun `the status line of a session whose turn is held leads with what the turn says and how long ago`(
+        @TempDir tempDir: Path,
+    ) = runTest {
         val paths = StatePaths(baseOverride = tempDir.resolve("state"))
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
-        val waits = HeldTurnReading(1_794_542_400L, "work", "limit", 0L, session = "session-waits")
+        val waits = HeldSaying("session-waits", "Reading the request", "cyan", System.currentTimeMillis() - 4_000L)
         val server = controlServerFor(
             // the OS assigns the port at bind time; it is read back below, so nothing can take it first
             port = 0,
@@ -99,10 +102,11 @@ class ClientVersionSurfaceTest {
         try {
             val waiting = statusline(server.listeningPort, "session-waits")
             val running = statusline(server.listeningPort, "session-runs")
-            val said = Regex("plan limit reached: waiting until \\w{3} \\d\\d:\\d\\d or a reset")
+            // the turn's message in its colour, then how long ago it came, ahead of the model's name
+            val said = Regex("\u001B\\[36mReading the request\u001B\\[0m\u001B\\[2m · [4-9]s ago")
             assertTrue(said.containsMatchIn(waiting), waiting)
-            assertTrue(waiting.indexOf("plan limit reached") < waiting.indexOf("Model"), waiting)
-            assertFalse(running.contains("waiting"), running)
+            assertTrue(waiting.indexOf("Reading the request") < waiting.indexOf("Model"), waiting)
+            assertFalse(running.contains("Reading the request"), running)
         } finally {
             server.stop()
         }
@@ -120,7 +124,7 @@ class ClientVersionSurfaceTest {
             setBody("""{"session_id":"$session","model":{"id":"model","display_name":"Model"}}""")
         }.bodyAsText()
 
-    private fun managedHead(held: List<HeldTurnReading> = emptyList()) = ManagedHead(
+    private fun managedHead(held: List<HeldSaying> = emptyList()) = ManagedHead(
         head = object : Head {
             override val key: String = "test"
             override val label: String = "Test"
@@ -128,7 +132,7 @@ class ClientVersionSurfaceTest {
             override suspend fun start() = Unit
             override suspend fun stop() = Unit
             override fun healthSnapshot() = HeadHealth(true, true, port, "test")
-            override fun heldTurns() = held
+            override val heldSayings = HeldSayings { held }
         },
         auth = object : AuthProvider {
             override suspend fun credentials() = null

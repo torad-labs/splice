@@ -11,6 +11,11 @@ public fun interface CompactionHold {
     public fun hold(forMs: Long)
 }
 
+/** What each turn a head holds says right now, read at each tick of a status line. */
+public fun interface HeldSayings {
+    public fun now(): List<HeldSaying>
+}
+
 public interface Head {
     public val key: String
     public val label: String
@@ -76,6 +81,10 @@ public interface Head {
      *  Empty on a head that holds none. */
     public fun heldTurns(): List<HeldTurnReading> = emptyList()
 
+    /** What each turn this head holds says, whatever holds it: a capability or a usage limit (docs/specs/harness.md,
+     *  decisions 7 and 8). Null on a head that runs no turns. */
+    public val heldSayings: HeldSayings? get() = null
+
     /** 2026-11-09 audit: the head has refused requests in a row before any upstream turn, enough of them for one cause
      *  that it reads degraded, and has admitted none since; null while it admits turns. */
     public fun refusing(): RefusingReading? = null
@@ -88,14 +97,23 @@ public data class RefusingReading(val reason: String, val inRow: Int, val sinceE
 
 /** One held turn as status and the console show it: the reset it waits for (epoch seconds, null where none was
  *  stated), the login it waits on, what it met ("limit", "overload", "credit") and the bytes its request keeps in
- *  memory while it waits. [session] is the client's session id when it sent one, which is how that session's status
- *  line finds its own turn; /health does not carry it. */
+ *  memory while it waits. */
 public data class HeldTurnReading(
     val untilEpochSeconds: Long?,
     val login: String,
     val cause: String,
     val heapBytes: Long,
-    val session: String? = null,
+)
+
+/** What one held turn says on its session's status line (docs/specs/harness.md, decision 7): [message], drawn in
+ *  [color] (one of the status line's colour names), said at [saidAtEpochMs] on the wall clock. [session] is the
+ *  client's session id when it sent one, which is how that session's line finds its own turns. Whoever holds the turn
+ *  writes what it says; the reading knows nothing of why it is held. */
+public data class HeldSaying(
+    val session: String?,
+    val message: String,
+    val color: String,
+    val saidAtEpochMs: Long,
 )
 
 /** HTTP headers or a WebSocket response frame, never body completion or a local failure. No identifiers. */

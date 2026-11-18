@@ -7,6 +7,7 @@ package splice.diagnostics.doctor
 import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.pool.HeadAccountView
+import splice.core.util.AgeText
 import splice.core.util.WallClock
 import splice.upstream.credentials.AccountLabelPolicy
 import splice.upstream.credentials.AccountResetText
@@ -70,7 +71,7 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
             .filter { it.seconds > atMillis.milliseconds }.minOrNull()
         val at = reset?.let {
             val remaining = (it.seconds - atMillis.milliseconds).inWholeMilliseconds
-            "earliest reset ${AccountResetText.forPerson(it)}, ${DoctorAge.until(remaining)}"
+            "earliest reset ${AccountResetText.forPerson(it)}, ${AgeText.until(remaining)}"
         } ?: "no reset time reported"
         return DoctorCheck(
             headKey,
@@ -172,7 +173,7 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
         a.quota.sevenDay.usedPercent?.let { "7d ${it.roundToInt()}%" },
     ).takeIf { it.isNotEmpty() }?.joinToString(" · ")
 
-    private fun ago(atMillis: Long): String = DoctorAge.ago(now() - atMillis)
+    private fun ago(atMillis: Long): String = AgeText.ago(now() - atMillis)
 }
 
 // why: a login Claude Code itself holds is labelled by its place, `native:<place>`; an added login is `account-N`.

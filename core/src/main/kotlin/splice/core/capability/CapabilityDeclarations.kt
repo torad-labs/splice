@@ -254,9 +254,8 @@ private val FAILURES = CapabilityFailure.entries.associateBy { it.wire }
 private val FIELDS = CapabilityField.entries.associateBy { it.wire }
 private val OPEN = CapabilityFailure.OPEN
 
-/** The status line's own colour names: the terminal's eight and gray. */
-private val COLORS = listOf("black", "red", "green", "yellow", "blue", "magenta", "cyan", "white", "gray")
-    .associateWith { it }
+/** The colour names a capability may declare: the ones the status line can draw. */
+private val COLORS = CapabilityColors.escapes.keys.associateWith { it }
 private const val MAX_TIMEOUT_S = 3600L
 private val TIMEOUT_RANGE = 1L..MAX_TIMEOUT_S
 private const val DEFAULT_TIMEOUT_S = 60

@@ -75,7 +75,10 @@ The picker rides the launch's `--settings` overlay as `modelPicker` with `replac
 per model (`model` the selector, `label` the model's own label, `description` `splice · <command>`), in
 splice.toml's order of heads. The model a session starts on is `--model`, or the one chosen the last time, or the
 pinned model of the first head in the picker, or, for someone with keys and no sign-in, the pinned model of the first
-head in the door. With no account signed in the overlay carries no picker, and Claude Code lists its own models,
+head in the door. In the picker step the head whose command is `claude` goes first while its accounts are signed in
+(Nov 18, 2026), so a `claude` session leaves Claude's accounts for another provider only when none is in the door; and
+`splice claude head` takes the chosen model back, so a model named with `--model` does not return with the next
+`splice claude door`. With no account signed in the overlay carries no picker, and Claude Code lists its own models,
 which the door runs as tiers.
 
 ### 5. `/login`

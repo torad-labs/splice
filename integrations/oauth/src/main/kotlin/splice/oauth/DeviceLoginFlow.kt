@@ -138,14 +138,28 @@ public class DeviceLoginFlow(
 
     private fun announce(spec: DeviceLoginSpec, auth: DeviceAuthorization, loginIo: LoginIo, observer: LoginObserver?) {
         val url = auth.verificationUriComplete.ifEmpty { auth.verificationUri }
+        // A link that carries the code (Kimi's ?user_code=, Meta's ?code=) is approved on its page with nothing typed,
+        // as `kimi login` and `muse login` do it. Until Nov 17, 2026 the console drew the code with "Enter this code"
+        // beside that link, so these two read as the only sign-ins that asked for a code (operator, Nov 17, 2026).
+        val codeInLink = auth.verificationUriComplete.isNotEmpty()
         if (observer != null) {
             // Off-request (the console started this): report the code/link through the poll seam
             // instead of a terminal nobody reads and a browser on the DAEMON's own desktop.
-            observer.announced(LoginAnnouncement(userCode = auth.userCode, verificationUri = url))
+            val announcement = if (codeInLink) {
+                LoginAnnouncement(browserUrl = url)
+            } else {
+                LoginAnnouncement(userCode = auth.userCode, verificationUri = url)
+            }
+            observer.announced(announcement)
             return
         }
         output.line("")
-        output.line("  splice: to sign in to ${spec.head}, enter this code in your browser:")
+        val act = if (codeInLink) {
+            "approve it in your browser; the page shows this code"
+        } else {
+            "enter this code in your browser"
+        }
+        output.line("  splice: to sign in to ${spec.head}, $act:")
         output.line("")
         output.line("      ${auth.userCode}")
         output.line("")

@@ -48,12 +48,13 @@ internal class PeersWiring(private val env: EnvReader = EnvReader(System::getenv
     /**
      * The helper supervisor and the journal over the same [store] the routes and the PEER door use. The supervisor
      * adopts the helpers still running, then reconciles every 10 s, in [scope], which the daemon cancels at stop.
-     * No store means no peers at all, and nothing is started.
+     * No store means no peers at all, and nothing is started. [slice] is the mcpSlice knob's slice, where the host's
+     * scope runs under a unit.
      */
-    fun services(store: PeerStore?, stateDir: Path, scope: CoroutineScope, log: LogSink): PeerServices {
+    fun services(store: PeerStore?, stateDir: Path, slice: String, scope: CoroutineScope, log: LogSink): PeerServices {
         if (store == null) return PeerServices()
         val runtimeDir = env("XDG_RUNTIME_DIR")?.takeIf { it.isNotBlank() }?.let { Path.of(it) }
-        val places = PeerPlaces(settingsDir(), stateDir, registryDirs(), runtimeDir)
+        val places = PeerPlaces(settingsDir(), stateDir, registryDirs(), runtimeDir, slice)
         val supervisor = PeerSupervisor(store, places, env, ProcessDispatchers().io(), log)
         scope.launch { supervisor.run() }
         return PeerServices(supervisor, PeerMailbox(store, stateDir, log))

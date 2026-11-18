@@ -978,3 +978,9 @@ signature = "suspend ()->McpReply"
 dated = "2026-11-06"
 names = ["McpPerfAction", "McpServiceRefresh"]
 reason = """McpPerfAction is the body of one observed MCP transport invocation. McpPerfInvocation installs its performance coroutine context and finishes the tool observation on return, failure or cancellation unless ownership has transferred to the pending request. McpServiceRefresh is the app-owned service installation operation reused at daemon boot and the installer management call; it starts the registered local MCP service and installs its native client entry without restarting existing sessions. A transport invocation's observation lifetime is not the service registration and installation lifecycle, even though both return an McpReply."""
+
+[[groups]]
+signature = "(FailureCause)->Boolean"
+dated = "2026-11-17"
+names = ["OtherLoginFree", "OtherModelRoom"]
+reason = """OtherLoginFree says whether another login of the head can take the uncommitted turn now, so the turn moves to it under the same model. OtherModelRoom says whether no login serves the model the turn asks for while another model has room, so the turn ends as Outlast.MOVES and its re-send goes on under that model. Each is told the cause the turn just met. True means "re-send on this model elsewhere" for the first and "re-send under another model" for the second: a login check passed as the model check would hand a session another model while one of its own logins was free."""

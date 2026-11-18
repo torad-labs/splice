@@ -29,6 +29,9 @@ private const val ANTHROPIC_VERSION_DEFAULT = "2023-06-01"
 private const val NONE_HELD = "this provider forwards your own Claude login, and no Claude account is added to " +
     "splice to ask with: "
 
+// A release date at the end of an Anthropic model ID (`-20251001`).
+private val RELEASE_DATE = Regex("-\\d{8}$")
+
 /** One provider's answer, with the URL that produced it so the operator can re-run it by hand. */
 internal data class ProbedProvider(
     val key: String,
@@ -50,11 +53,24 @@ internal class ModelsProbe(
             // a Claude account added to the head is asked in the caller's place; the caller's own login never is
             val held = credentials.heldLogin(key) ?: return unpublished(key, provider, url, NONE_HELD + url)
             val answer = http(url, headers(provider, null) + held)
-            return ProbedProvider(key, provider, url, read(answer, url, provider, key, held = true))
+            return ProbedProvider(key, provider, url, undated(read(answer, url, provider, key, held = true)))
         }
         val bearer = credentials.bearer(provider, key, env)
         val answer = http(url, headers(provider, bearer))
         return ProbedProvider(key, provider, url, read(answer, url, provider, key, bearer != null))
+    }
+
+    /** Anthropic lists a model under its dated snapshot ID (`claude-haiku-4-5-20251001`), which its undated ID names
+     *  too. The undated ID joins the row's spellings, so a row splice.toml declares under it covers the listing and the
+     *  picker shows that model once, not twice under one name. */
+    private fun undated(roster: UpstreamRoster): UpstreamRoster = when (roster) {
+        is UpstreamRoster.Published -> UpstreamRoster.Published(
+            roster.models.map { model ->
+                val bare = model.id.replace(RELEASE_DATE, "")
+                if (bare == model.id || bare in model.aliases) model else model.copy(aliases = model.aliases + bare)
+            },
+        )
+        is UpstreamRoster.Unpublished, is UpstreamRoster.Unreadable -> roster
     }
 
     private fun unpublished(key: String, provider: ProviderConfig, url: String, why: String) =

@@ -195,9 +195,8 @@ internal class HeadAdmission(
         val callerKey = prepared.built.extraHeaders.takeIf { deps.policy.forwardClientAuth }
             ?.let(CredentialKey::fromHeaders)
         val selection = admitted.perf.timed(splice.core.perf.PerfKeys.ACCOUNT_CHECKS_MS) {
-            pool?.awaitingEvidence?.select(
+            pool?.awaitingEvidence?.without(unheld(prepared, pool))?.select(
                 prepared.built.meta.scope.sessionId,
-                excluded = unheld(prepared, pool),
                 callerCredentialKey = callerKey,
                 // a login whose provider refused another model for the week still serves this one (Nov 3, 2026)
                 model = prepared.built.meta.route.upstreamModel,
@@ -220,7 +219,10 @@ internal class HeadAdmission(
     }
 
     /** The logins of [pool] a turn through a door never runs on (HeldLogins): the person's own Claude login, which is
-     *  never sent for a door turn (Marcos, Nov 17, 2026). None for any other turn, another machine's included. */
+     *  never sent for a door turn (Marcos, Nov 17, 2026). None for any other turn, another machine's included. They
+     *  are left out of the choice, never counted as logins that refused the turn: those limit it to a free login, and
+     *  a door turn whose added accounts were all held for its model ended "has no login yet" instead of waiting for
+     *  the soonest reset or moving to a model with room. */
     private fun unheld(prepared: Preparation.Ready, pool: AccountPool?): Set<String> {
         if (pool == null || prepared.built.meta.route.relay.door == null) return emptySet()
         return pool.members.map { it.label }.filterNot(deps.traffic.held::held).toSet()

@@ -6,6 +6,7 @@
 // turn's hold; admission does not synthesize a quota refusal. A restart keeps the held login held.
 package splice.upstream.credentials
 
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -221,6 +222,23 @@ class AccountPoolFailoverTest {
         holdRefusal(two, resetInSeconds = 5 * 24 * HOUR_S)
 
         assertEquals("three", pool.chosen())
+    }
+
+    @Test
+    fun `a turn that never runs on one login still takes the nearest reset among the others when all are held`() {
+        val fixture = AccountPoolTest.Fixture()
+        val own = fixture.account("own", primary = true)
+        val two = fixture.account("two")
+        val three = fixture.account("three")
+        val pool = fixture.pool(own, two, three).also { it.order = listOf("own", "two", "three") }
+        limitNatively(two, resetInSeconds = 2 * HOUR_S)
+        limitNatively(three, resetInSeconds = 1 * HOUR_S)
+
+        val door = runBlocking { pool.awaitingEvidence.without(setOf("own")).select(SESSION) }
+
+        assertTrue(door is Selection.Chosen, "held logins among the others take the turn, never a refusal")
+        assertEquals("three", (door as Selection.Chosen).account.account.label)
+        assertEquals("own", pool.chosen("another"), "a turn with no such login keeps every login")
     }
 
     @Test

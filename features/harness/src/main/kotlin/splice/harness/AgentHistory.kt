@@ -22,7 +22,7 @@ internal class AgentHistory {
         val messages = wire.messages(body)
         return messages.indices.mapNotNull { at ->
             val message = messages[at]
-            if (wire.role(message) != ASSISTANT) return@mapNotNull null
+            if (wire.role(message) != wire.assistant) return@mapNotNull null
             val call = kept[marks.key(wire.content(message))]?.takeUnless { it.leftOut } ?: return@mapNotNull null
             Match(at, call).takeIf { call.beside.isEmpty() || answersClient(call, messages.getOrNull(at + 1)) }
         }

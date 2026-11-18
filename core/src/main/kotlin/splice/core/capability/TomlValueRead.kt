@@ -7,10 +7,18 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
+// why: TOML's `\uXXXX` escape names a code point in four hex digits.
 private const val UNICODE_SHORT = 4
+
+// why: TOML's `\UXXXXXXXX` escape names a code point in eight hex digits.
 private const val UNICODE_LONG = 8
+
+// why: the base those escape digits are written in.
 private const val HEX = 16
-private const val SCALAR_STOPS = ",]}\n\r# \t"
+
+/** What ends a bare number or boolean: a comma, the close of an array or inline table, a line break, a comment or a
+ *  space. */
+private const val INLINE_SCALAR_STOPS = ",]}\n\r# \t"
 private const val SPACES = " \t#"
 private const val BREAKS = "\n\r"
 private const val NOT_A_VALUE = "not a TOML value"
@@ -129,7 +137,7 @@ internal class TomlValueRead(private val text: String) {
 
     private fun scalar(): JsonElement {
         val start = at
-        while (at < text.length && text[at] !in SCALAR_STOPS) at++
+        while (at < text.length && text[at] !in INLINE_SCALAR_STOPS) at++
         val token = text.substring(start, at).replace("_", "")
         val number = token.toLongOrNull()?.let(::JsonPrimitive) ?: token.toDoubleOrNull()?.let(::JsonPrimitive)
         return when (token) {

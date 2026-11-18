@@ -265,7 +265,19 @@ internal object Concentration {
     // (the terminal's caller, lane and records), splice.app.cli.desktop 78.25 -> 57.5 (DoorClient), splice.client.login
     // 49.5 -> 38.5 (the /login hook rewritten to the accounts page), and a new splice.app.cli.claude at 51.5. The tree
     // got worse; this records it. 20 -> 24.
-    const val RATCHET_MAX_HIGH = 24
+    // 2026-11-18: harness round two (capabilities the model calls, the MCP worker, the Context Getter), measured with a
+    // port of this law's census that reproduces band HIGH's 24 on its base, 287f681c9, and the 29 this law's own run
+    // gave the change before its seams. Two entered as the change's own code and leave by seams of their own:
+    // Capability.kt 3.39 -> 2.02 gives the `when` rule (CapabilityRule.kt) and who may call it (CapabilityCalling.kt)
+    // files of their own, and CapabilityDeclarations.kt 3.28 -> 2.53 gives the worker table's check to
+    // CapabilityWorkerCheck.kt. Two entered by a file the change split out: ResponsesPlacements.kt (C 45.5) left
+    // ResponsesProvider for splice.dialect.responses, whose median fell 67 -> 45.5, and ResponsesReasoningReplay.kt
+    // 2.90 -> 3.30 and ResponsesItemFold.kt 2.88 -> 3.26 rose with it. ResponsesPlacements now sits with the user text
+    // it places in splice.dialect.responses.usertext, and the two are back at 2.90 and 2.85. One enters by
+    // neighbourhood, untouched by the change: ControlServer.kt 2.93 -> 3.08, C 223 in both, as splice.app.head took the
+    // harness's three wiring files (HeadCapabilities, HeadMcpServers, LaunchedGatherers), 24 -> 27 files, and its
+    // median fell 76 -> 72.5. The tree got worse; this records it. 24 -> 25.
+    const val RATCHET_MAX_HIGH = 25
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

@@ -1,6 +1,6 @@
 // NEW: the harness (docs/specs/harness.md, decision 13). What an MCP worker speaks over: JSON-RPC messages to a server
 // and the ones it sends back, the same whether the server is a process on stdio or a URL.
-package splice.harness
+package splice.harness.wire
 
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject

@@ -61,7 +61,7 @@ private class CapabilityCheck(
         val rule = CapabilityRuleCheck(values).read()
         val result = result()
         if (rule?.turn == CapabilityTurn.ANY && result?.place == CapabilityPlace.FIRST_USER_MESSAGE) {
-            values.fault(TURN_KEY, EVERY_TURN_PLACES)
+            values.fault(WHEN_TURN_KEY, EVERY_TURN_PLACES)
         }
         val heads = heads()
         val call = CapabilityCallCheck(values, messages).read(heads).copy(rule = rule ?: CapabilityRule())
@@ -147,7 +147,7 @@ private class CapabilityRuleCheck(private val values: CapabilityValues) {
     fun read(): CapabilityRule? {
         val keys = values.table.keys["when"] as? JsonObject ?: return absentOrWrong()
         keys.keys.filter { it !in RULE_KEYS }.forEach { values.fault("when.$it", "is not a key a rule has") }
-        val turn = values.choice(TURN_KEY, keys["turn"], TURNS, CapabilityTurn.FIRST)
+        val turn = values.choice(WHEN_TURN_KEY, keys["turn"], TURNS, CapabilityTurn.FIRST)
         val thread = values.choice("when.thread", keys["thread"], THREADS, CapabilityThread.MAIN)
         val mode = values.choice("when.mode", keys["mode"], MODES, CapabilityMode.INTERACTIVE)
         val models = keys["models"]?.let {
@@ -175,66 +175,6 @@ private class CapabilityRuleCheck(private val values: CapabilityValues) {
     private fun wrongModels() = values.fault("when.models", "must be a non-empty list of model ids")
 }
 
-/** The `worker` table: an http worker with its url, a tool of an MCP server, or a built-in worker splice ships. */
-private class CapabilityWorkerCheck(private val values: CapabilityValues, private val builtins: Set<String>) {
-    fun read(): CapabilityWorker? {
-        val keys = values.table.keys["worker"] as? JsonObject
-        if (keys == null) {
-            values.fault(
-                "worker",
-                "is required: { kind = \"http\", url = \"...\" }, " +
-                    "{ kind = \"mcp\", server = \"...\", tool = \"...\" } or { kind = \"builtin\", name = \"...\" }",
-            )
-            return null
-        }
-        return when (values.string(keys["kind"])) {
-            HTTP -> http(keys)
-            MCP -> mcp(keys)
-            BUILTIN -> builtin(keys)
-            else -> null.also { values.fault("worker.kind", "must be http, mcp or builtin") }
-        }
-    }
-
-    private fun http(keys: JsonObject): CapabilityWorker? {
-        keys.keys.filter { it !in HTTP_KEYS }.forEach { values.fault("worker.$it", "is not a key an http worker has") }
-        val url = values.string(keys["url"])?.takeIf { it.isNotBlank() }
-        val authEnv = keys["auth_env"]?.let { values.string(it)?.takeIf(String::isNotBlank) ?: "" }
-        if (authEnv == "") values.fault("worker.auth_env", "must name an environment variable")
-        if (url == null) values.fault("worker.url", "is required for an http worker")
-        return url?.let { CapabilityWorker.Http(it, authEnv) }
-    }
-
-    private fun mcp(keys: JsonObject): CapabilityWorker? {
-        keys.keys.filter { it !in MCP_KEYS }.forEach { values.fault("worker.$it", "is not a key an MCP worker has") }
-        val server = values.string(keys["server"])?.takeIf { it.isNotBlank() }
-        val tool = values.string(keys["tool"])?.takeIf { it.isNotBlank() }
-        if (server == null) values.fault("worker.server", "is required for an MCP worker")
-        if (tool == null) values.fault("worker.tool", "is required for an MCP worker")
-        return if (server != null && tool != null) CapabilityWorker.Mcp(server, tool) else null
-    }
-
-    private fun builtin(keys: JsonObject): CapabilityWorker? {
-        keys.keys.filter { it !in BUILTIN_KEYS }.forEach {
-            values.fault(
-                "worker.$it",
-                "is not a key a built-in worker has",
-            )
-        }
-        val name = values.string(keys["name"])
-        when {
-            name == null -> values.fault("worker.name", "is required for a built-in worker")
-            name !in builtins -> values.fault(
-                "worker.name",
-                "names built-in worker \"${values.safe(name)}\", which splice does not ship",
-            )
-        }
-        // `model`: the model a built-in worker runs on, where it runs one; absent is its own default.
-        val model = keys["model"]?.let { values.string(it)?.takeIf(String::isNotBlank) ?: "" }
-        if (model == "") values.fault("worker.model", "must name a model id")
-        return name?.takeIf { it in builtins && model != "" }?.let { CapabilityWorker.Builtin(it, model) }
-    }
-}
-
 private val NAME = Regex("[a-z0-9-]+")
 private val KEYS =
     setOf(
@@ -242,9 +182,6 @@ private val KEYS =
         "timeout_s", "on_failure", "send", "worker",
     )
 private val RULE_KEYS = setOf("turn", "thread", "mode", "models")
-private val HTTP_KEYS = setOf("kind", "url", "auth_env")
-private val BUILTIN_KEYS = setOf("kind", "name", "model")
-private val MCP_KEYS = setOf("kind", "server", "tool")
 private val TURNS = CapabilityTurn.entries.associateBy { it.wire }
 private val THREADS = CapabilityThread.entries.associateBy { it.wire }
 private val MODES = CapabilityMode.entries.associateBy { it.wire }
@@ -257,15 +194,20 @@ private val OPEN = CapabilityFailure.OPEN
 /** The status line's own colour names: the terminal's eight and gray. */
 private val COLORS = listOf("black", "red", "green", "yellow", "blue", "magenta", "cyan", "white", "gray")
     .associateWith { it }
+
+// why: an hour, the longest hold seen to draw no retry and no second request from Claude Code (2.1.326, a worker
+// that answered after 59 min 50 s; docs/specs/harness.md, Seen with Claude Code).
 private const val MAX_TIMEOUT_S = 3600L
 private val TIMEOUT_RANGE = 1L..MAX_TIMEOUT_S
+
+// why: the minute decision 1 of docs/specs/harness.md declares in its example. A capability whose worker needs
+// longer names its own `timeout_s`, and a built-in worker has its own default (CapabilityBuiltins.timeoutS).
 private const val DEFAULT_TIMEOUT_S = 60
 private const val DEFAULT_COLOR = "cyan"
-private const val TURN_KEY = "when.turn"
+private const val WHEN_TURN_KEY = "when.turn"
 private const val EVERY_TURN_PLACES =
     "is any, and only a first turn places text in the first user message; set place to none"
-private const val PLACE = "place"
+
+/** The `place` key of a capability table, which CapabilityCallCheck reads too. */
+internal const val PLACE = "place"
 private val ADDING = setOf(CapabilityMay.ADD, CapabilityMay.ADD_OR_REFUSE)
-private const val HTTP = "http"
-private const val MCP = "mcp"
-private const val BUILTIN = "builtin"

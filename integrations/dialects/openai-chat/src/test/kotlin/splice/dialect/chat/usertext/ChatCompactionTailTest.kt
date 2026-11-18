@@ -1,4 +1,4 @@
-package splice.dialect.chat
+package splice.dialect.chat.usertext
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray

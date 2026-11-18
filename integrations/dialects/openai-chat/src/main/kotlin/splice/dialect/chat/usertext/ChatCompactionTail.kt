@@ -1,6 +1,6 @@
 // NEW: v0.4.0 FEATURES.md §7 — the custom compaction text on the openai-chat wire, after the client's
 // summarizer prompt without introducing consecutive user messages.
-package splice.dialect.chat
+package splice.dialect.chat.usertext
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -10,7 +10,7 @@ import splice.core.util.JsonScalars
 
 /** Extends a trailing user message, preserving its fields and content prefix. Otherwise appends a
  *  final user message; an absent tail leaves the original request instance untouched. */
-public class ChatCompactionTail {
+internal class ChatCompactionTail {
     private val userContent = ChatUserContent()
 
     public fun append(request: JsonObject, text: String): JsonObject {

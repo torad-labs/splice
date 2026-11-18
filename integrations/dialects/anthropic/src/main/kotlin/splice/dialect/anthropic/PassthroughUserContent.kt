@@ -11,7 +11,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-public class PassthroughUserContent {
+internal class PassthroughUserContent {
     /** [content] with a text block of [text] at its end, or null where it is neither blocks nor a string. */
     public fun extended(content: JsonElement?, text: String): JsonArray? = when {
         content is JsonArray -> JsonArray(content + textBlock(text))

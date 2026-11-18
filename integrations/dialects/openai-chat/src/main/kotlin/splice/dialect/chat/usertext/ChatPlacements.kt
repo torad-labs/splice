@@ -2,9 +2,10 @@
 // placements to (`RequestPlacements by ChatPlacements()`): the compaction tail, the standing system prompt and a
 // capability's text (docs/specs/harness.md, decision 5), each placed as its own seam says. Split out of
 // OpenAiChatProvider (Nov 17, 2026), as ResponsesPlacements is out of ResponsesProvider.
-package splice.dialect.chat
+package splice.dialect.chat.usertext
 
 import splice.core.prompt.SystemPromptMode
+import splice.dialect.chat.ChatSystemPrompt
 import splice.upstream.BuiltTurn
 import splice.upstream.RequestPlacements
 

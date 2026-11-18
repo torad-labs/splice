@@ -8,6 +8,8 @@ import kotlinx.coroutines.runInterruptible
 import kotlinx.serialization.json.JsonObject
 import splice.core.capability.CapabilityWorker
 import splice.core.util.JsonWire
+import splice.core.wire.HttpStatus
+import splice.harness.wire.SentRequests
 import java.io.BufferedReader
 import java.io.IOException
 import java.io.InputStream
@@ -49,7 +51,8 @@ internal class HttpWorker(
             return WorkerEnd.Failed("it could not be reached")
         }
         return response.body().use { stream ->
-            if (response.statusCode() != HTTP_OK) {
+            // a worker's answer is read only from a 200
+            if (response.statusCode() != HttpStatus.OK) {
                 WorkerEnd.Failed("it answered ${response.statusCode()}")
             } else {
                 read(stream, progress)
@@ -102,6 +105,3 @@ internal class HttpWorker(
         }
     }
 }
-
-/** why: a worker's answer is read only from a 200. */
-private const val HTTP_OK = 200

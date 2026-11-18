@@ -1,6 +1,6 @@
 // NEW: the one user input item splice adds to a Responses request of its own (the compaction tail, a capability's
 // text), shared so both are sent in one shape.
-package splice.dialect.responses.request
+package splice.dialect.responses.usertext
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray

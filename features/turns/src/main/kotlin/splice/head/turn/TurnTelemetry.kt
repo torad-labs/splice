@@ -39,6 +39,7 @@ import splice.head.perf.UsageObservation
 import splice.head.usage.RetiredTurns
 import splice.head.usage.ServedTurnReport
 import splice.head.usage.ServedWay
+import splice.head.usage.TurnCacheLine
 import splice.head.usage.TurnSpend
 import splice.head.wire.TurnTrace
 

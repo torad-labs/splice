@@ -430,11 +430,11 @@ session's first user message. The table's name is the capability's: lowercase le
 | `call` | string | `"rule"` | `"rule"`: splice calls it by `when`. `"agent"`: the model calls it through `tool`. `"both"`: either. `"agent"` and `"both"` only on a head whose provider is `anthropic-passthrough` |
 | `tool` | inline table | none | with `call = "agent"` or `"both"`, required: `{ name = "...", description = "...", input = { type = "object", ... } }`, the tool the model is offered (`input` is its JSON schema). A finding with `call = "rule"` |
 | `when` | inline table | all defaults | `turn` (`"first"` or `"any"`, default `"first"`), `thread` (`"main"`, `"subagent"`, `"any"`, default `"main"`), `mode` (`"interactive"`, `"print"`, `"any"`, default `"interactive"`), `models` (model ids, default every model). A request must meet all of them. With `call = "agent"`, `turn` is a finding: the model calls its tool on any turn it is offered |
-| `place` | string | required | `"first-user-message"`, or `"none"` for one that only passes or refuses a turn. Not named with `call = "agent"`: the result goes into the tool's result |
-| `may` | string | required | `"add"`, `"refuse"` or `"add-or-refuse"`. `place = "none"` takes only `"refuse"` |
-| `message`, `color` | strings | none | what the held turn says while it starts; `color` is a status-line colour name |
-| `timeout_s` | int | required | 1 to 3600 |
-| `on_failure` | string | required | `"open"`: a failed or late worker lets the turn go on as today; `"closed"`: the turn is refused, naming the capability |
+| `place` | string | `"first-user-message"` | `"first-user-message"`, or `"none"` for one that only passes or refuses a turn. Not named with `call = "agent"`: the result goes into the tool's result |
+| `may` | string | `"add"` | `"add"`, `"refuse"` or `"add-or-refuse"`. `place = "none"` takes only `"refuse"` |
+| `message`, `color` | strings | the capability's name, `"cyan"` | what the held turn says while it starts; `color` is a status-line colour name |
+| `timeout_s` | int | `60` (the Context Getter's: `180`) | 1 to 3600 |
+| `on_failure` | string | `"open"` | `"open"`: a failed or late worker lets the turn go on as today; `"closed"`: the turn is refused, naming the capability |
 | `send` | array | empty | the fields the worker gets: `first_user_message`, `folder`, `model`, `head`. Name, session and turn always go |
 | `worker` | inline table | required | `{ kind = "http", url = "...", auth_env = "ENV_NAME" }`, where `auth_env` names the variable that holds the worker's key, sent as a bearer; `{ kind = "mcp", server = "...", tool = "..." }`, a tool of a server the MCP hub runs for the session's folder; or `{ kind = "builtin", name = "context-getter", model = "..." }`, the Context Getter (`model` optional) |
 

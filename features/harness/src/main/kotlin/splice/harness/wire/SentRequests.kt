@@ -1,6 +1,6 @@
 // NEW: the harness (docs/specs/harness.md, decisions 4 and 13). The one way a worker's HTTP request is waited for, so
 // that a call cancelled (the time limit, the client leaving, a drain) drops the request it made.
-package splice.harness
+package splice.harness.wire
 
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.InputStream

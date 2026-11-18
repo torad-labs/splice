@@ -60,6 +60,7 @@ import splice.head.OtherAnswer
 import splice.head.OtherAsk
 import splice.head.ReceivedBody
 import splice.head.RefusedRequest
+import splice.head.RelayHeaders
 import splice.head.RequestBodyReader
 import splice.head.compact.CompactClassifier
 import splice.head.compaction.CompactionReplay
@@ -166,7 +167,7 @@ internal class TurnPreparation(
     private val providerTurns = ProviderTurnBuild(provider, deps, replay)
 
     /** A session's own fallback model while the one it asks for is held on every login (Nov 13, 2026). */
-    private val heldFallback = HeldModelFallback(deps.quotaBundle, provider.catalog, deps.log)
+    private val heldFallback = HeldModelFallback(deps.quotaBundle, provider.catalog, deps.log, deps.traffic.held)
 
     /** Fix 4 of the Oct 27 Responses fixes: which earlier request of the same Claude Code turn each request
      *  continues, so the turn state its backend returned rides every request of that turn (ToolLoopTurns). */
@@ -243,7 +244,7 @@ internal class TurnPreparation(
             )
         }
         // Before anything reads the model: a refusal past here names the model the turn would have gone upstream as.
-        val parsed = heldFallback.applied(received, named.sessionId)
+        val parsed = heldFallback.applied(received, named.sessionId, RelayHeaders.of(call.request.headers).door)
         val asked = named.copy(model = parsed.typed.model)
         val sessionId = asked.sessionId
         val inbound = asked.inbound

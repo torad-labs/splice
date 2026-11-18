@@ -32,6 +32,7 @@ import splice.head.compaction.CompactionRecordings
 import splice.head.compaction.CompactionTail
 import splice.head.compaction.SessionProjectLookup
 import splice.head.perf.PerfStats
+import splice.head.port.TurnHarness
 import splice.head.turn.LiveTurns
 import splice.head.turn.fallback.SessionFallbacks
 import splice.head.usage.EconomicsStore
@@ -296,6 +297,10 @@ public data class HeadDeps(
          *  daemon's one resolver, pinned by that row's tests. */
         val slotInstructions: SlotInstructions? = null,
         val compactionTail: CompactionTail = CompactionTail(),
+        /** The harness (docs/specs/harness.md, decision 11), which the turn knows only through its port: the
+         *  capabilities splice.toml declares, over this head's threads. Null (tests, tools, a daemon that declares
+         *  none) calls nothing and places nothing. */
+        val harness: TurnHarness? = null,
     )
 
     /** What an operator sets, never what a turn produces — which is what makes it policy rather than state. Most of

@@ -45,7 +45,7 @@ const decided = (changed: readonly string[], name: string, legs: readonly Leg[] 
 describe("a pushed diff scopes the gate to what it touches", () => {
   test("a one-module diff checks that module and the modules that depend on it, and not a row whose inputs miss it", () => {
     const s = scope(["features/turns/src/main/kotlin/splice/head/HeadDeps.kt"]);
-    expect(checks(s.gradle)).toEqual([":app:check", ":features-turns:check"]);
+    expect(checks(s.gradle)).toEqual([":app:check", ":features-harness:check", ":features-turns:check"]);
     expect(s.gradle).not.toContain(":core:check");
     expect(s.legs.map((leg) => leg.task)).toEqual(["prTitle"]);
     expect(s.gradle).toContain(LAW_SUITES_TASK);
@@ -67,9 +67,9 @@ describe("a pushed diff scopes the gate to what it touches", () => {
   });
 
   test("a leaf module's diff checks that module and nothing that does not depend on it", () => {
-    const s = scope(["features/turns/src/main/kotlin/splice/head/HeadDeps.kt"]);
+    const s = scope(["features/harness/src/main/kotlin/splice/harness/AgentRounds.kt"]);
     const dependents = checks(s.gradle);
-    expect(dependents).toEqual([":app:check", ":features-turns:check"]);
+    expect(dependents).toEqual([":app:check", ":features-harness:check"]);
     expect(dependents.length).toBeLessThan(modules.length);
   });
 
@@ -152,7 +152,7 @@ describe("a pushed diff scopes the gate to what it touches", () => {
 
   test("a module build file, a rule file, package.json and a build-logic test do not check every module", () => {
     const narrow: Record<string, string[]> = {
-      "features/turns/build.gradle.kts": [":app:check", ":features-turns:check"],
+      "features/turns/build.gradle.kts": [":app:check", ":features-harness:check", ":features-turns:check"],
       "quality/rules/kotlin/kt-no-println.yml": [],
       "package.json": [],
       "build-logic/src/test/kotlin/splice/ladder/LadderTableTest.kt": [],
@@ -195,7 +195,7 @@ describe("a pushed diff scopes the gate to what it touches", () => {
     const s = scope(["features/turns/src/main/kotlin/splice/head/HeadDeps.kt"], legs);
     expect(s.legs.map((leg) => leg.task)).toEqual(["prTitle"]);
     expect(decided(["features/turns/src/main/kotlin/splice/head/HeadDeps.kt"], "walls", legs)?.why).toContain("**");
-    expect(checks(s.gradle)).toEqual([":app:check", ":features-turns:check"]);
+    expect(checks(s.gradle)).toEqual([":app:check", ":features-harness:check", ":features-turns:check"]);
   });
 });
 

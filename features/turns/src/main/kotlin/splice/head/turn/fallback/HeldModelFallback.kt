@@ -18,6 +18,7 @@ import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.head.HeadDeps
+import splice.head.HeldLogins
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountView
 
@@ -42,12 +43,17 @@ internal class HeldModelFallback(
     private val quota: HeadDeps.HeadQuota,
     private val catalog: ModelCatalog,
     private val log: LogSink,
+    /** The logins a turn through a door may run on. The others (the person's own Claude login) neither keep a door
+     *  turn on its model nor give it one: counted, the own login's room for the asked model kept a door turn waiting
+     *  behind its added accounts' holds, where every other turn moves to a model with room. */
+    private val held: HeldLogins = HeldLogins { true },
     private val now: WallClock = WallClock(System::currentTimeMillis),
 ) {
-    /** [parsed] as it goes upstream for [session]: under another model when the rule above holds. */
-    fun applied(parsed: AnthropicTurnBody, session: String?): AnthropicTurnBody {
+    /** [parsed] as it goes upstream for [session], through [door] (null for none): under another model when the rule
+     *  above holds. */
+    fun applied(parsed: AnthropicTurnBody, session: String?, door: String? = null): AnthropicTurnBody {
         val asked = parsed.typed.model
-        val instead = instead(asked, session) ?: return parsed
+        val instead = instead(asked, session, door) ?: return parsed
         log(
             "[fallback] session ${LogSafe.str(session ?: "none")}: ${LogSafe.str(asked)} is held on every login; " +
                 "sent as ${LogSafe.str(instead)}\n",
@@ -58,29 +64,38 @@ internal class HeldModelFallback(
         )
     }
 
-    /** The model a turn of [session] asking for [asked] goes on under, or null where it goes as asked. [heldToo]: logins
-     *  a turn just met a limit of [asked] on, with its reset in epoch seconds, which the pool has not published yet;
-     *  [everyModel] where that limit is a window of the whole login, which holds them for every other model too. */
+    /** The model a turn of [session] through [door] asking for [asked] goes on under, or null where it goes as asked.
+     *  [heldToo]: logins a turn just met a limit of [asked] on, with its reset in epoch seconds, which the pool has not
+     *  published yet; [everyModel] where that limit is a window of the whole login, which holds them for every other
+     *  model too. */
     fun instead(
         asked: String,
         session: String?,
+        door: String? = null,
         heldToo: Map<String, Long> = emptyMap(),
         everyModel: Boolean = false,
     ): String? {
         val pool = quota.activePool ?: return null
-        if (!heldEverywhere(pool, asked, heldToo)) return null
+        val never = held.never(pool, door)
+        if (!heldEverywhere(pool, asked, heldToo, never)) return null
         val named = session?.let(quota.sessionFallbacks::of)
         val models = listOfNotNull(named) + catalog.tierModelIds() + pool.asked.own() + pool.asked.lately()
-        val out = if (everyModel) heldToo.keys else emptySet()
+        val out = never + if (everyModel) heldToo.keys else emptySet()
         return models.distinct().firstOrNull { it != asked && catalog.contains(it) && servable(pool, it, out) }
     }
 
     /** No login serves [model] now, and every one held for it is held past a rate limit's wait. A login that needs a
-     *  sign-in or its owner's act serves nothing and comes back by no reset, so it is left out of both. */
-    private fun heldEverywhere(pool: AccountPool, model: String, heldToo: Map<String, Long>): Boolean {
+     *  sign-in or its owner's act serves nothing and comes back by no reset, so it is left out of both, as is a login
+     *  in [never], which this turn never runs on. */
+    private fun heldEverywhere(
+        pool: AccountPool,
+        model: String,
+        heldToo: Map<String, Long>,
+        never: Set<String>,
+    ): Boolean {
         val view = pool.view(null, catalog.stripSuffixes(model))
         val horizon = (now() + PLAN_HOLD_MS) / 1_000
-        val logins = view.accounts.filter(::signedIn)
+        val logins = view.accounts.filter { signedIn(it) && it.label !in never }
         val holds = logins.mapNotNull { heldToo[it.label] ?: view.blockedUntilEpochSecondsByLabel[it.label] }
         return logins.none { it.available && it.label !in heldToo } && holds.isNotEmpty() && holds.all { it > horizon }
     }

@@ -44,6 +44,7 @@ include(
     ":integrations-providers-muse",
     ":integrations-providers-openai",
     ":features-turns",
+    ":features-harness",
     ":features-sessions",
     ":features-models",
     ":features-heads",
@@ -87,6 +88,7 @@ project(":integrations-providers-kimi").projectDir = file("integrations/provider
 project(":integrations-providers-muse").projectDir = file("integrations/providers/muse")
 project(":integrations-providers-openai").projectDir = file("integrations/providers/openai")
 project(":features-turns").projectDir = file("features/turns")
+project(":features-harness").projectDir = file("features/harness")
 project(":features-sessions").projectDir = file("features/sessions")
 project(":features-models").projectDir = file("features/models")
 project(":features-heads").projectDir = file("features/heads")

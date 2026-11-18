@@ -1,4 +1,4 @@
-package splice.dialect.responses.request
+package splice.dialect.responses.usertext
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray

@@ -9,6 +9,7 @@ import splice.core.perf.LivenessProbe
 import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfTurnIds
 import splice.core.util.JsonScalars
+import splice.usage.perf.PerfHeldLink
 import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfTranscriptLink
 import splice.usage.perf.PerfTurnFacts
@@ -41,6 +42,12 @@ private const val REQUEST_TURN_KEY = "turn_id"
 private const val CAPTURE_KEY = "capture"
 private const val PROVIDER_MESSAGE_KEY = "provider_message"
 
+// The capabilities a turn was held on (docs/specs/harness.md, decision 10).
+private const val HELD_ON_KEY = "held_on"
+private const val SKIPPED_KEY = "capability_skipped"
+private const val FAILED_KEY = "capability_failed"
+private const val WORKED_FOR_KEY = "worked_for"
+
 /** What one parsed perf JSON object says about its turn, read by name. Split out of Scan. */
 internal class PerfRowShape {
     fun row(ts: Long, obj: JsonObject, fields: Map<String, Long>): PerfRow {
@@ -67,6 +74,8 @@ internal class PerfRowShape {
                 responseMessageId = text(obj, RESPONSE_ID_KEY),
                 messagesHash = text(obj, MESSAGES_HASH_KEY),
                 door = text(obj, DOOR_KEY),
+                held = PerfHeldLink(text(obj, HELD_ON_KEY), text(obj, SKIPPED_KEY), text(obj, FAILED_KEY)),
+                workedFor = text(obj, WORKED_FOR_KEY),
             ),
             turns = PerfTurnIds(trace = text(obj, TURN_KEY), request = text(obj, REQUEST_TURN_KEY)),
         )

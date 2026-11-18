@@ -221,10 +221,8 @@ internal class HeadAdmission(
      *  are left out of the choice, never counted as logins that refused the turn: those limit it to a free login, and
      *  a door turn whose added accounts were all held for its model ended "has no login yet" instead of waiting for
      *  the soonest reset or moving to a model with room. */
-    private fun unheld(prepared: Preparation.Ready, pool: AccountPool?): Set<String> {
-        if (pool == null || prepared.built.meta.route.relay.door == null) return emptySet()
-        return pool.members.map { it.label }.filterNot(deps.traffic.held::held).toSet()
-    }
+    private fun unheld(prepared: Preparation.Ready, pool: AccountPool?): Set<String> =
+        pool?.let { deps.traffic.held.never(it, prepared.built.meta.route.relay.door) }.orEmpty()
 
     /** The login this turn runs on: the account admission chose, its quota, and the key to record when no account
      *  was proved. Assembled here so the drive is handed one value rather than three. */
@@ -261,6 +259,7 @@ internal class HeadAdmission(
                 admitted.slot,
                 clientWallMs = ClientWallHeader.ms(call),
                 heapLease = admitted.heapLease,
+                harness = prepared.harness,
             ) { admitted.markHandedOff() },
             admitted.t0,
             admitted.perf,

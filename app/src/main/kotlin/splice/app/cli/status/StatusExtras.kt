@@ -7,6 +7,7 @@ import splice.app.cli.AdminSupport
 import splice.core.terminal.BOLD
 import splice.core.terminal.RESET
 import splice.core.terminal.YELLOW
+import splice.core.topology.Topology
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 import splice.diagnostics.doctor.AccountPoolRead
@@ -30,6 +31,18 @@ internal class StatusExtras(private val accountPools: AccountPoolRead) {
                     println("  accounts  $BOLD$key$RESET $text")
                 }
             }
+        }
+    }
+
+    /** The harness (docs/specs/harness.md, decision 1): each declared capability on a line of its own, with the heads
+     *  it is on for (`off` when none) and its worker. None declared prints nothing, and no blank line either. */
+    fun printCapabilities(topology: Topology) {
+        if (topology.capabilities.isEmpty()) return
+        println()
+        val width = topology.capabilities.maxOf { it.name.length }
+        topology.capabilities.forEach { c ->
+            val on = if (c.heads.isEmpty()) "off" else "on ${c.heads.joinToString(", ")}"
+            println("  capability  $BOLD${c.name.padEnd(width)}$RESET  $on  ${c.work.worker.describe()}")
         }
     }
 

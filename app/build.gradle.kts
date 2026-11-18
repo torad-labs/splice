@@ -69,6 +69,7 @@ dependencies {
     implementation(project(":integrations-providers-muse"))
     implementation(project(":integrations-providers-openai"))
     implementation(project(":features-turns"))
+    implementation(project(":features-harness"))
     implementation(project(":features-sessions"))
     implementation(project(":features-usage"))
     implementation(project(":features-models"))

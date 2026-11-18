@@ -85,7 +85,10 @@ internal class ClaudeLane(
             )
         }
         key.replace()
-        records.update { it.copy(lane = HEAD_LANE) }
+        // The move back takes the door's starting model with it: kept, a model named with `door --model` came back
+        // with the next `splice claude door`. On Nov 17, 2026 a Grok named at 9:33 AM, moved back from a minute later,
+        // came back that evening, and every `claude` session started or restarted with no model named ran on Grok.
+        records.update { it.copy(lane = HEAD_LANE, defaultModel = null) }
         val moved = "claude is on its head, with the models of your signed-in accounts beside Claude's. " +
             "Sessions started on the door are refused from now on"
         DesktopAct.Done(listOfNotNull(moved, login.removed()).joinToString("; "))

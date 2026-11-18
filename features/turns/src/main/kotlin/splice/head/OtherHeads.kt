@@ -22,7 +22,7 @@ public fun interface OtherAnswer {
 }
 
 /** Whether a turn through a door, which carries no Claude login of anyone's, may run on the pool's login [label].
- *  Marcos ruled on Nov 17, 2026 that the door runs Claude's models on the accounts added to splice and never on the
+ *  Since Nov 17, 2026 the door runs Claude's models on the accounts added to splice and never on the
  *  person's own Claude login, so a login that forwards the caller's sign-in or reads it from the person's own Claude
  *  folder is never one; every other login is. Another machine's turn (LAN share) is no door's, and keeps its rules. */
 public fun interface HeldLogins {

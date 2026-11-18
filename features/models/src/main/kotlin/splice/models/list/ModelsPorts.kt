@@ -25,7 +25,7 @@ public fun interface ModelCredentialSource {
     public fun expiresAtMs(provider: ProviderConfig): Long? = null
 
     /** For a provider that forwards the caller's own Claude login: the headers that present a login splice holds for
-     *  head [key] instead, a Claude account added to it (Marcos, Nov 17, 2026: the door lists and runs Claude's
+     *  head [key] instead, a Claude account added to it (Nov 17, 2026: the door lists and runs Claude's
      *  models on those accounts); null when none is added. */
     public fun heldLogin(key: String): Map<String, String>? = null
 }

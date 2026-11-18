@@ -77,9 +77,6 @@ goal = "While a capability of round two holds a turn, the session's status line 
 [feature."claude-adds"]
 goal = "Someone who runs Claude on their own Claude plan keeps it and gains every other account: claude stays on its head, starts on their own default as it did, and /model lists Claude's models with the models of their other signed-in accounts beside them. A request that names another account's model runs on that account, with its own login and its own window, and the person's Claude login never reaches another provider. A session that runs out on one provider moves to another with /model and keeps its conversation. Spec: docs/specs/door-default.md, decision 9."
 
-[feature."getter-says-line"]
-goal = "While the Context Getter gathers, the session's status line says it is exploring with the fast model, then each step it reports, and that it stopped when it stops before a result"
-
 [[row]]
 id = 'server-listener'
 title = 'A [server] listener that answers only keys'
@@ -1520,7 +1517,7 @@ notes = [
 [[row]]
 id = 'getter-says'
 title = 'While the Context Getter works, the status line says what it is exploring'
-feature = 'getter-says-line'
+feature = 'harness-says'
 status = 'todo'
 owner = ''
 blocked_by = [

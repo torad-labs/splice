@@ -5,6 +5,7 @@ package splice.head.turn
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.failure.FailureCause
+import splice.core.util.WallClock
 import splice.head.compaction.SessionProjectLookup
 import splice.head.port.HarnessEnd
 import splice.head.port.HarnessTurn
@@ -21,6 +22,9 @@ internal class HarnessStep(
     private val provider: Provider,
     private val harness: TurnHarness?,
     private val folders: SessionProjectLookup,
+    /** Where a held turn says what it is doing, and the wall clock its message is dated by. */
+    private val liveTurns: LiveTurns,
+    private val wall: WallClock,
 ) {
     /** The gate slots of the turns held on a capability right now: a slot is one turn's, compared by identity. */
     private val held: MutableSet<InflightGate.Slot> = ConcurrentHashMap.newKeySet()
@@ -31,7 +35,7 @@ internal class HarnessStep(
         val harness = harness ?: return null
         val request = drive.inputs.harness ?: return null
         val end = try {
-            harness.around(request, Holding(drive, holdable, held, folders))
+            harness.around(request, Holding(drive, holdable, held, folders, liveTurns, wall))
         } finally {
             held -= drive.slot
         }
@@ -89,6 +93,8 @@ internal class HarnessStep(
         override val holdable: Boolean,
         private val held: MutableSet<InflightGate.Slot>,
         private val folders: SessionProjectLookup,
+        private val liveTurns: LiveTurns,
+        private val wall: WallClock,
     ) : HarnessTurn {
         override val id: String = drive.sentTurnId()
 
@@ -96,13 +102,24 @@ internal class HarnessStep(
 
         override fun folder(session: String?): Path? = folders(session)
 
+        /** True while the turn is held: a progress line its worker's reader hears after the wait was cut says nothing,
+         *  so a turn gone on never shows a message from its hold. Guarded by this. */
+        private var heldNow = false
+
         override suspend fun hold() {
             held += drive.slot
+            synchronized(this) { heldNow = true }
             drive.channel.statusGate?.open()
             drive.emitter.ensureStarted()
             drive.emitter.holding(true)
             drive.slot.yieldPermit()
             drive.watchdog.holdStarted()
+        }
+
+        override fun says(message: String, color: String) {
+            synchronized(this) {
+                if (heldNow) liveTurns.says(drive.slot, message, color, wall())
+            }
         }
 
         /** A turn held more than once (the model called a capability in more than one round) keeps every hold, in order,
@@ -113,6 +130,10 @@ internal class HarnessStep(
             val on = (listOfNotNull(before.on) + held.on).joinToString(",").ifEmpty { null }
             val failed = (listOfNotNull(before.failed) + held.failed).joinToString("; ").ifEmpty { null }
             drive.held = before.copy(on = on, ms = before.ms + held.ms, failed = failed)
+            synchronized(this) {
+                heldNow = false
+                liveTurns.quiet(drive.slot)
+            }
             try {
                 drive.emitter.holding(false)
                 drive.slot.retakePermit()

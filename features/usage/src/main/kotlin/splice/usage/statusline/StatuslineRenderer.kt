@@ -12,7 +12,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.accounts.pool.HeadAccountPoolSource
 import splice.accounts.pool.HeadAccountPoolView
-import splice.core.head.HeldTurnReading
+import splice.core.head.HeldSaying
 import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
 import splice.core.usage.RateLimitState
@@ -52,6 +52,7 @@ internal class StatuslineRenderer(
     private val windowLearner = StatuslineWindowLearner(catalog, clientWindows)
 
     private val bars = StatuslineBars()
+    private val heldPart = StatuslineHeld()
 
     fun render(
         stdinJson: String,
@@ -92,10 +93,10 @@ internal class StatuslineRenderer(
         return if (segments.isEmpty()) dim(label) else segments.joinToString(SEPARATOR)
     }
 
-    /** [line] led by what [waiting], the session's own held turn, waits for: ahead of every other segment, where a
-     *  narrow terminal still shows it. [line] as it is for a session with no held turn. */
-    fun led(line: String, waiting: HeldTurnReading?): String =
-        bars.heldSegment(waiting)?.let { "$it$SEPARATOR$line" } ?: line
+    /** [line] led by what [held], the session's own held turns, say: ahead of every other segment, where a narrow
+     *  terminal still shows it. [line] as it is for a session with no held turn. */
+    fun led(line: String, held: List<HeldSaying>): String =
+        heldPart.segment(held, now())?.let { "$it$SEPARATOR$line" } ?: line
 
     private fun modelSegment(root: JsonObject): String? {
         val model = blob.obj(root, MODEL_FIELD) ?: return null

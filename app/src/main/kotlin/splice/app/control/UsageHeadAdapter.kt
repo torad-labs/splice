@@ -11,7 +11,6 @@ import splice.core.retired.RetiredHeads
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.models.roster.DeclaredHeads
-import splice.usage.HeldTurnsSource
 import splice.usage.UsageBilling
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
@@ -99,7 +98,7 @@ internal object UsageHeadAdapter {
         statusline = UsageHeadStatusline(
             catalog = head.statusline.catalog,
             clientWindows = head.statusline.clientWindows,
-            held = HeldTurnsSource { head.head.heldTurns() },
+            held = head.head.heldSayings,
         ),
         anthropicUpstream = head.authSurface.authKind == CLIENT_AUTH_KIND,
     )

@@ -24,6 +24,7 @@ import splice.core.failure.VoiceFacts
 import splice.core.head.CompactionHold
 import splice.core.head.Head
 import splice.core.head.HeadHealth
+import splice.core.head.HeldSayings
 import splice.core.head.HeldTurnReading
 import splice.core.topology.ForwardHeaders
 import splice.core.usage.QuotaFull
@@ -216,11 +217,12 @@ public class HeadServer(
 
     /** The turns this head holds until their cause lifts (failure-handling slice 5), oldest first. */
     override fun heldTurns(): List<HeldTurnReading> = deps.traffic.liveTurns.list()
-        .mapNotNull { turn -> (turn.state as? TurnState.Held)?.let { turn.session to it } }
-        .sortedBy { (_, held) -> held.since }
-        .map { (session, held) ->
-            HeldTurnReading(held.until?.epochSecond, held.login, held.cause, held.heapBytes, session)
-        }
+        .mapNotNull { it.state as? TurnState.Held }
+        .sortedBy { it.since }
+        .map { HeldTurnReading(it.until?.epochSecond, it.login, it.cause, it.heapBytes) }
+
+    /** What each turn this head holds says now, a capability's or a usage limit's (docs/specs/harness.md, 7 and 8). */
+    override val heldSayings: HeldSayings = HeldSayings { deps.traffic.liveTurns.sayings() }
 
     /** Degraded while it refuses every request before any upstream turn (2026-11-09 audit), null while it admits. */
     override fun refusing(): splice.core.head.RefusingReading? = admission.refusing()

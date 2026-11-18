@@ -45,6 +45,11 @@ public interface HarnessTurn : TurnHolding {
 public interface TurnHolding {
     public suspend fun hold()
 
+    /** The held turn now says [message], drawn in [color] (one of the status line's colour names), on its session's
+     *  status line, and its age starts again: a capability's own message as its work starts, then each progress line
+     *  its worker sends (docs/specs/harness.md, decision 7). A turn that is not held says nothing. */
+    public fun says(message: String, color: String)
+
     public suspend fun release(held: Held)
 }
 

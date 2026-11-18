@@ -16,6 +16,7 @@ import splice.accounts.pool.HeadAccountWindow
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.terminal.AgeText
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.ElapsedClock
@@ -220,10 +221,10 @@ class AccountStatusTest {
             0L to "in 0s",
             -1L to "in 0s",
         )) {
-            assertEquals(expected, DoctorAge.until(millis), "remaining milliseconds: $millis")
+            assertEquals(expected, AgeText.until(millis), "remaining milliseconds: $millis")
         }
-        assertEquals("1d ago", DoctorAge.ago(172740000L))
-        assertEquals("1h ago", DoctorAge.ago(7140000L))
+        assertEquals("1d ago", AgeText.ago(172740000L))
+        assertEquals("1h ago", AgeText.ago(7140000L))
     }
 
     private val atSeconds = Instant.parse("2026-09-16T20:02:52Z").epochSecond

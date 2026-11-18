@@ -33,6 +33,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import splice.app.DaemonBoundary
 import splice.app.auth.EndpointModels
 import splice.app.auth.HeadModelsSource
+import splice.app.auth.claude.AddedLoginHeaders
 import splice.core.config.StatePaths
 import splice.core.model.DiscoveredModel
 import splice.core.model.HeadDiscoveredModels
@@ -82,7 +83,7 @@ internal class ModelRosters(
     private val log: LogSink,
     /** Each head's endpoint, and the credential it presents, reread on [credentialTicker]'s beat and as a turn
      *  arrives: a changed one is asked for its list at once. */
-    private val source: HeadModelsSource = EndpointModels(log = log),
+    private val source: HeadModelsSource = EndpointModels(log = log, added = AddedLoginHeaders(statePaths.stateDir)),
     private val deadline: Duration = DISCOVERY_DEADLINE,
     private val ticker: Ticker = ProcessTicker(),
     private val credentialTicker: Ticker = ProcessTicker(),

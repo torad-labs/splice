@@ -21,6 +21,9 @@ internal class TerminalCaller(relay: ShareRelay, private val lane: ClaudeLane) :
         "no account is signed in, so no model is in the door; type /login to sign in on splice's accounts page"
 
     override val notInDoor: String = "is not in the door; `splice claude` lists the models it serves"
+
+    // A `claude --model claude-opus-5-5` session runs Opus, or is refused by name; never the lane's default model.
+    override val runsNamedModels: Boolean = true
 }
 
 /** What every refusal the door answers the terminal's `claude` with starts with. */

@@ -4,7 +4,8 @@
 // what an older splice's `splice desktop on` wrote into `~/.claude/settings.json` is taken out (DesktopSwitch.tidy).
 //
 // door-default (docs/specs/door-default.md): the terminal's `claude` is the door's second caller (TerminalDoor), with a
-// relay of its own.
+// relay of its own. Decision 9: `claude` on its head hands the door's models to their heads (ClaudeHeadLane), through
+// a relay of its own too.
 package splice.app.desktop
 
 import splice.app.control.ManagedHead
@@ -35,6 +36,9 @@ internal class DaemonDesktop(
     /** The terminal's `claude` on this door. */
     val claude = TerminalDoor(topology, statePaths, log)
 
+    /** `claude` on its head, which hands the door's models to their heads (door-default, decision 9). */
+    val headLane = ClaudeHeadLane(topology)
+
     /** The door and its switch once [open] has run; null before, which the routes answer as unavailable. */
     @Volatile
     var opened: DesktopService? = null
@@ -64,6 +68,8 @@ internal class DaemonDesktop(
         val switch = DesktopSwitch(lineups, records, key, DesktopSettingsFile(), door, selectors, log)
         switch.tidy()
         val (lane, terminal) = claude.open(terminalRelay, lineups, door)
+        val headLaneVoice = RelaySpeaker(terminalVoice.errors, HEAD_LANE_TAG)
+        headLane.open(ShareRelay(turnKey, controlPort, machine, io, log, headLaneVoice), lineups)
         val callers = listOf(DesktopCaller(relay, key, records, log), terminal)
         opened = DesktopService(DesktopDoor(callers, lineups), switch, lane, lineups, records)
     }
@@ -77,3 +83,6 @@ private const val DESKTOP_TAG = "desktop"
 
 // The tag the relay's log lines carry for a turn of the terminal's `claude`.
 private const val TERMINAL_TAG = "terminal"
+
+// The tag the relay's log lines carry for a turn `claude` on its head hands to another head.
+private const val HEAD_LANE_TAG = "claude"

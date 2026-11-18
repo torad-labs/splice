@@ -158,17 +158,7 @@ public class AccountPool(
         callerCredentialKey: String?,
         model: String? = null,
         own: Boolean = true,
-    ): Selection {
-        require(sessionId == null || sessionId.isNotBlank()) { "session id must not be blank" }
-        asked.asked(model, own)
-        while (true) {
-            val current = liveMembership
-            current.accounts.forEach { it.refreshCredentialEvidence() }
-            val caller = CallerLogin(callerCredentialKey, sessionId, current.accounts, model)
-            val selected = selectionCommit.select(sessionId, excluded, current, caller)
-            if (selected != null) return selected
-        }
-    }
+    ): Selection = awaitingEvidence.selectNow(sessionId, excluded, callerCredentialKey, model, own)
 
     private val selectionCommit = SelectionCommit()
 
@@ -179,7 +169,12 @@ public class AccountPool(
     public val awaitingEvidence: AwaitingEvidence = AwaitingEvidence()
 
     /** No suspension follows lease acquisition, so prompt cancellation cannot strand a probe lease. */
-    public inner class AwaitingEvidence internal constructor() {
+    public inner class AwaitingEvidence internal constructor(private val never: Set<String> = emptySet()) {
+        /** The same selection, never choosing a login in [labels] ([CallerLogin.never]): a turn through a door never
+         *  runs on the person's own login, and still waits for or moves among the others as any turn does. */
+        public fun without(labels: Set<String>): AwaitingEvidence =
+            if (labels.isEmpty()) this else AwaitingEvidence(never + labels)
+
         public suspend fun select(
             sessionId: String?,
             excluded: Set<String> = emptySet(),
@@ -190,17 +185,36 @@ public class AccountPool(
             require(sessionId == null || sessionId.isNotBlank()) { "session id must not be blank" }
             currentCoroutineContext().ensureActive()
             val loads = evidenceLoads
-                ?: return this@AccountPool.select(sessionId, excluded, callerCredentialKey, model, own)
+                ?: return selectNow(sessionId, excluded, callerCredentialKey, model, own)
             asked.asked(model, own)
             while (true) {
                 loads.ensureActive()
                 val current = runInterruptible(loads.ioDispatcher) { liveMembership }
                 current.accounts.forEach { it.refreshCredentialEvidence(loads) }
                 val caller = runInterruptible(loads.ioDispatcher) {
-                    CallerLogin(callerCredentialKey, sessionId, current.accounts, model)
+                    CallerLogin(callerCredentialKey, sessionId, current.accounts, model, never)
                 }
                 currentCoroutineContext().ensureActive()
                 loads.ensureActive()
+                val selected = selectionCommit.select(sessionId, excluded, current, caller)
+                if (selected != null) return selected
+            }
+        }
+
+        /** [select] without suspending: a pool with no evidence loads, and the synchronous control callers. */
+        internal fun selectNow(
+            sessionId: String?,
+            excluded: Set<String>,
+            callerCredentialKey: String?,
+            model: String?,
+            own: Boolean,
+        ): Selection {
+            require(sessionId == null || sessionId.isNotBlank()) { "session id must not be blank" }
+            asked.asked(model, own)
+            while (true) {
+                val current = liveMembership
+                current.accounts.forEach { it.refreshCredentialEvidence() }
+                val caller = CallerLogin(callerCredentialKey, sessionId, current.accounts, model, never)
                 val selected = selectionCommit.select(sessionId, excluded, current, caller)
                 if (selected != null) return selected
             }
@@ -479,10 +493,11 @@ public class AccountPool(
         )
         val order = (preference + candidates(caller.continuesFrom(previous), current, pinLabel, caller.model))
             .distinctBy(PoolAccount::label)
-            .filter { it.label !in excluded }
+            .filter { it.label !in excluded && it.label !in caller.never }
         // A warm session keeps its login through a short rate limit, which admission waits out: a move rebuilds its
         // whole cache on the next login. A pin or a changed caller login elsewhere still wins.
-        val stay = caller.stays(previous, current.byLabel, preference, at)?.takeIf { it.label !in excluded }
+        val stay = caller.stays(previous, current.byLabel, preference, at)
+            ?.takeIf { it.label !in excluded && it.label !in caller.never }
         val free = AccountAvailability.preferredFree(order, at, caller.model)
         val held = AccountAvailability.nearestHeld(order, at, caller.model)
         val eligible = listOfNotNull(stay.takeIf { free.isNotEmpty() }) + when {

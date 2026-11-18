@@ -167,9 +167,11 @@ internal class SetupHeads(
 // choice off the wizard entirely, which is the half of V4-175 the operator asked for. `api-key`
 // and `local` stay excluded: both need a name, base URL and model before they can be added, and
 // the tick list cannot collect those values. Each is said as what it is and the command that adds it.
-// What the wizard says of the Claude plan, which is no row of the list: claude runs on splice's door.
+// What the wizard says of the Claude plan, which is no row of the list: claude runs on splice's door, and a head keyed
+// claude puts it back on its own Claude login with the signed-in accounts' models beside Claude's (door-default,
+// decision 9), so the wizard no longer calls that head deprecated.
 private const val CLAUDE_BY_COMMAND =
-    "Claude's models on your own Claude plan run on a head of their own, which is deprecated: splice add claude"
+    "Claude's models on your own Claude plan, beside your signed-in accounts' in claude: splice add claude"
 
 private val BY_COMMAND = mapOf(
     "api-key" to "another service that takes an API key: splice add api-key --name NAME --base-url URL",

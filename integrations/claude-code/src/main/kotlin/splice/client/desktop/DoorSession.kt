@@ -5,15 +5,18 @@
 // changed there (splice's /login, DoorLogin, is the one file it lays): the picker rides the launch's `--settings`
 // overlay as `modelPicker`, with `replaceBuiltInOptions` so the picker lists those rows in place of Claude Code's own,
 // and so does the hook that answers /login. Facts of Claude Code's dialect, read on 2.1.325 (desktop-door.md's table).
+// Decision 9: on `claude`'s head the same rows ride without `replaceBuiltInOptions`, after Claude Code's own models
+// (DoorPicker), as seen on 2.1.326.
 package splice.client.desktop
 
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import kotlinx.serialization.json.putJsonObject
 import splice.client.ClaudeTiers
 import splice.client.Keys
 
@@ -53,23 +56,40 @@ public data class DoorSession(
         markKey: String,
         hooks: Map<String, List<JsonObject>> = emptyMap(),
     ): String = buildJsonObject {
-        if (rows.isNotEmpty()) {
-            putJsonObject(DESKTOP_PICKER) {
-                put(REPLACE_BUILT_IN, true)
-                putJsonArray(PICKER_OPTIONS) {
-                    rows.forEach { row ->
-                        addJsonObject {
-                            put("model", row.model)
-                            put("label", row.label)
-                            put("description", "splice · ${row.command}")
-                        }
+        DoorPicker(rows).json(replace = true)?.let { put(DESKTOP_PICKER, it) }
+        if (marked) put(markKey, true)
+        if (hooks.isNotEmpty()) put(Keys.HOOKS, JsonObject(hooks.mapValues { (_, entries) -> JsonArray(entries) }))
+    }.toString()
+}
+
+/** A session's picker as its `--settings` overlay carries it, one row per model of a signed-in account. On the door the
+ *  rows take the place of Claude Code's own models; on `claude`'s head they come after them (decision 9), and Claude
+ *  Code's own `Default`, `Opus` and the rest stay where they are. */
+public class DoorPicker(private val rows: List<DoorPickerRow>) {
+    /** The `modelPicker` value; null with no rows, so Claude Code lists its own models alone. */
+    public fun json(replace: Boolean): JsonObject? {
+        if (rows.isEmpty()) return null
+        return buildJsonObject {
+            put(REPLACE_BUILT_IN, replace)
+            putJsonArray(PICKER_OPTIONS) {
+                rows.forEach { row ->
+                    addJsonObject {
+                        put("model", row.model)
+                        put("label", row.label)
+                        put("description", "splice · ${row.command}")
                     }
                 }
             }
         }
-        if (marked) put(markKey, true)
-        if (hooks.isNotEmpty()) put(Keys.HOOKS, JsonObject(hooks.mapValues { (_, entries) -> JsonArray(entries) }))
-    }.toString()
+    }
+
+    /** [overlay], a `--settings` JSON object, with these rows added after Claude Code's own models; [overlay] as it is
+     *  with no rows. */
+    public fun addedTo(overlay: String): String {
+        val picker = json(replace = false) ?: return overlay
+        val settings = Json.parseToJsonElement(overlay).jsonObject
+        return JsonObject(settings + (DESKTOP_PICKER to picker)).toString()
+    }
 }
 
 /** Claude Code's own /login and /logout, which sign in to Anthropic alone: off on the door, where /login is splice's. */

@@ -14,6 +14,10 @@ internal class CallerLogin(
     /** The model the turn asks for, which a login's week of one model refuses alone (Nov 3, 2026); null reads the
      *  whole login's windows. */
     val model: String? = null,
+    /** The logins this turn never runs on: for a turn through a door, the person's own (Nov 17, 2026). Unlike a login
+     *  that refused the turn, they leave the rest of the choice as it is: a held login among the others still takes
+     *  the turn, which then waits for its reset or moves to a model with room. */
+    val never: Set<String> = emptySet(),
 ) {
     private val mark: CallerMark? = key?.let { presented ->
         accounts.singleOrNull { it.auth.observedCredentialKey() == presented }?.let {

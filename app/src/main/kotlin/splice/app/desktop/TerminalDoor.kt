@@ -4,6 +4,7 @@
 // builds the door both callers share.
 package splice.app.desktop
 
+import splice.client.desktop.DoorPicker
 import splice.client.login.DoorLogin
 import splice.core.config.FileHeldKey
 import splice.core.config.StatePaths
@@ -23,7 +24,7 @@ internal class TerminalDoor(topology: Topology, statePaths: StatePaths, private 
         log = log,
     )
     private val records = ClaudeLaneRecords(statePaths.claudeLaneFile, log)
-    private val headHere = TopologyClaudeHead(topology)
+    private val claudeHead = TopologyClaudeHead(topology)
     private val login = DoorLogin(UserHome.claudeDir(), statePaths.doorLoginDir)
 
     /** `claude`'s launch once [open] has run; null before. */
@@ -32,7 +33,7 @@ internal class TerminalDoor(topology: Topology, statePaths: StatePaths, private 
 
     /** The lane on [heads] at [door], and its caller, relaying through [relay]. */
     fun open(relay: ShareRelay, heads: DesktopHeads, door: String): Pair<ClaudeLane, DoorCaller> {
-        val lane = ClaudeLane(records, key, heads, door, headHere, ClaudeLogin(login, log))
+        val lane = ClaudeLane(records, key, heads, door, claudeHead, ClaudeLogin(login, log))
         launched = ClaudeDoorLaunch(lane, login, log)
         return lane to TerminalCaller(relay, lane)
     }
@@ -41,7 +42,13 @@ internal class TerminalDoor(topology: Topology, statePaths: StatePaths, private 
     override suspend fun launch(): DoorLaunchSpec? = launched?.launch()
 
     /** Whether `claude` is on the door: read from the lane record, so it holds before [open] too. */
-    override fun onDoor(): Boolean = records.lane(headHere) == DOOR_LANE
+    override fun onDoor(): Boolean = records.lane(claudeHead) == DOOR_LANE
+
+    /** The door's rows a launch of `claude` on its head adds after Claude Code's own (decision 9); null before [open],
+     *  on the door, and with no account signed in. */
+    override suspend fun headPicker(): DoorPicker? = launched?.headPicker()
+
+    override fun headHere(): Boolean = claudeHead()
 }
 
 // What the terminal's key starts with, so it is told from Desktop's at a glance.

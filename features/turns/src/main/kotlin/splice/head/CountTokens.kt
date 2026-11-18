@@ -11,8 +11,10 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.client.SESSION_HEADER
 import splice.core.failure.Decline
 import splice.core.failure.FailureCause
+import splice.core.parse.AnthropicTurnBody
 import splice.core.perf.PromptTokenEstimate
 import splice.core.util.JsonWire
 import splice.head.admission.AdmissionGate
@@ -36,6 +38,8 @@ internal class CountTokens(
         // materialization gate (fastFail: contention 529s instead of queueing, so a count_tokens
         // flood cannot camp the shared heap budget) plus the maxRequestBytes cap.
         var readBytes = 0L
+        // door-default, decision 9: a count of another head's model is that head's, scaled as its turns are.
+        var other: OtherAnswer? = null
         val prepared = admission.materializeBodyOrRespond(call, Materializing(fastFail = true)) {
             when (val read = bodyReader.receiveBodyBounded(call, deps.policy.maxRequestBytes())) {
                 // The 413 is the gate's to write, so the cap travels back as the case it is.
@@ -43,7 +47,10 @@ internal class CountTokens(
                 is BodyRead.Received -> {
                     readBytes = read.body.bytes.toLong()
                     Materialized.Done(
-                        bodyParse.parse(read.body.text).map { PromptTokenEstimate.forRequest(readBytes, it.typed) },
+                        bodyParse.parse(read.body.text).map { body ->
+                            other = deps.traffic.others.claim(counted(call, body))
+                            PromptTokenEstimate.forRequest(readBytes, body.typed)
+                        },
                     )
                 }
             }
@@ -56,11 +63,18 @@ internal class CountTokens(
             responses.respondRefusal(call, FailureCause.Splice.Declined(unread))
             return
         }
+        other?.let { return it.answer(call) }
         // Unicode-safe: UTF-8 bytes / 3 includes structural/tool overhead; images and documents count flat, not by base64 length.
         deps.log("[${provider.key}] count_tokens estimate=$estimate (local; no upstream turn)\n")
         call.respondText(
             JsonWire.string(buildJsonObject { put("input_tokens", estimate) }),
             ContentType.Application.Json,
         )
+    }
+
+    /** [body], a `count_tokens` of [call]'s, as another head is asked to count it. */
+    private fun counted(call: ApplicationCall, body: AnthropicTurnBody): OtherAsk {
+        val session = body.sessionId ?: call.request.headers[SESSION_HEADER]?.takeIf(String::isNotBlank)
+        return OtherAsk(body.typed.model, body.raw, session, counting = true)
     }
 }

@@ -1671,7 +1671,7 @@ function howFor(target) {
   if (target.startsWith("plan-")) {
     const row = S.accounts[Number(target.slice(5))], head = (row?.heads || [])[0];
     if (!row || !head) return null;
-    if (row.login_place) return { start: `/api/claude-logins/${encodeURIComponent(row.login_place.id)}/login`, body: { label: null }, poll: head, native: true };
+    if (row.login_place) return { start: `/api/claude-logins/${encodeURIComponent(row.login_place.id)}/login`, body: { label: null }, poll: head };
     const label = row.account_labels?.[head] || row.label;
     // a removed primary has no file to sign in to under its reserved name: signing in with no name is what makes it again
     return { start: `/api/auth/${encodeURIComponent(head)}/login`, body: label && !(label === "primary" && !row.credential_present) ? { label } : {}, poll: head };

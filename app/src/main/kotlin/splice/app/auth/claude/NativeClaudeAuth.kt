@@ -8,10 +8,16 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import splice.client.wrap.ClaudeToRun
 import splice.client.wrap.WrapStateRead
 import splice.core.util.Cancellables
+import splice.upstream.Ticker
+import splice.upstream.codemode.ProcessTicker
 import java.io.Closeable
+import java.io.IOException
 import java.net.URI
+import java.net.URLDecoder
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -33,9 +39,47 @@ private val AUTHORIZE_PATHS: Map<String, String> = mapOf(
     "platform.claude.com" to "/oauth/authorize",
 )
 
+// why: how often a sign-in looks for the link Claude Code handed its browser; it is there within milliseconds of the
+// start, so the console sees it on its first read.
+private const val OPENED_POLL_MS = 100L
+
+// why: the program splice names as BROWSER. Claude Code runs it with its sign-in link as the one argument, and it
+// writes that link beside itself for splice to read, opening nothing.
+private const val BROWSER_CATCH_SCRIPT = "#!/bin/sh\nprintf '%s\\n' \"\$1\" >> \"\$(dirname \"\$0\")/opened\"\n"
+
+/** A sign-in link to show the person: [pasteBack] when its page ends in a code to paste back here. */
+internal data class NativeAuthLink(val url: String, val pasteBack: Boolean)
+
 /** Announces only a validated native browser authorization URL, never arbitrary process output. */
 internal fun interface NativeAuthAnnouncement {
-    fun browser(url: String)
+    fun browser(link: NativeAuthLink)
+}
+
+/** The browser splice gives one Claude Code sign-in, in a folder of its own that [close] removes. Claude Code offers
+ *  two links: the one it hands its browser returns to its own listener on localhost and finishes by itself, and the
+ *  one it prints ends on a page with a code to paste back. Left with the daemon's browser, it opened the first on the
+ *  desktop when it could while the console showed the second, so a Claude sign-in asked for a code only sometimes
+ *  (operator, Nov 17, 2026). Caught here, the first is the one the console shows. */
+internal class NativeBrowserCatch : Closeable {
+    private val folder: Path = Files.createTempDirectory("splice-claude-signin-")
+    private val opened: Path = folder.resolve("opened")
+
+    /** What BROWSER names. */
+    val program: Path = folder.resolve("browser")
+
+    init {
+        Files.writeString(program, BROWSER_CATCH_SCRIPT)
+        check(program.toFile().setExecutable(true, true)) { "the sign-in's browser catch could not be made runnable" }
+    }
+
+    /** Every link Claude Code has handed its browser so far. */
+    fun links(): List<String> = if (Files.exists(opened)) Files.readAllLines(opened) else emptyList()
+
+    override fun close() {
+        Files.deleteIfExists(opened)
+        Files.deleteIfExists(program)
+        Files.deleteIfExists(folder)
+    }
 }
 
 /** Injected process creation keeps tests off real credentials and providers. */
@@ -75,7 +119,15 @@ internal class NativeClaudeAuth(
                 name == "CLAUDE_CODE_OAUTH_TOKEN" || name == "CLAUDE_CONFIG_DIR"
         }
         env["CLAUDE_CONFIG_DIR"] = configDir.toString()
-        return NativeSignIn.Running(NativeClaudeAuthRun(start.start(builder), dispatcher))
+        val browser = NativeBrowserCatch()
+        env["BROWSER"] = browser.program.toString()
+        val process = try {
+            start.start(builder)
+        } catch (e: IOException) {
+            browser.close()
+            throw e
+        }
+        return NativeSignIn.Running(NativeClaudeAuthRun(process, dispatcher, browser))
     }
 }
 
@@ -83,8 +135,15 @@ internal class NativeClaudeAuth(
 internal class NativeClaudeAuthRun(
     private val process: Process,
     private val dispatcher: CoroutineDispatcher,
+    private val browser: NativeBrowserCatch,
 ) : Closeable {
+    /** Set once the link that finishes by itself is shown; the printed code link is not shown after it. */
+    private val finishesItself = AtomicBoolean(false)
+
+    private val ticker: Ticker = ProcessTicker()
+
     suspend fun await(announcement: NativeAuthAnnouncement): Boolean = coroutineScope {
+        val opened = launch(dispatcher) { watchOpened(announcement) }
         val output = launch(dispatcher) { readOutput(announcement) }
         val exit = suspendCancellableCoroutine { continuation ->
             process.onExit().whenComplete { ended, failure ->
@@ -97,7 +156,48 @@ internal class NativeClaudeAuthRun(
             continuation.invokeOnCancellation { stopQuietly() }
         }
         output.join()
+        opened.cancel()
         exit == 0
+    }
+
+    /** Shows the link Claude Code handed its browser, the one that finishes by itself, as soon as it is there. */
+    private suspend fun watchOpened(announcement: NativeAuthAnnouncement) {
+        do {
+            opened(announcement)
+        } while (!finishesItself.get() && ticker.awaitTick(OPENED_POLL_MS))
+    }
+
+    /** Shows the link Claude Code has handed its browser, once, if it has handed one. */
+    @Synchronized
+    private fun opened(announcement: NativeAuthAnnouncement) {
+        if (finishesItself.get()) return
+        val url = browser.links().firstOrNull { authorization(it) != null && returnsHere(it) } ?: return
+        finishesItself.set(true)
+        announcement.browser(NativeAuthLink(url, pasteBack = false))
+    }
+
+    /** The printed link, whose page ends in a code to paste back: shown only while Claude Code has opened no other,
+     *  as a Claude Code that ignored BROWSER would. It opens its link before it prints this one, so that link is
+     *  looked for first. */
+    @Synchronized
+    private fun printed(url: String, announcement: NativeAuthAnnouncement) {
+        opened(announcement)
+        if (!finishesItself.get()) announcement.browser(NativeAuthLink(url, pasteBack = true))
+    }
+
+    /** Whether the sign-in [url] returns to Claude Code's own listener on this machine. */
+    private fun returnsHere(url: String): Boolean {
+        val redirect = URI(url).rawQuery.orEmpty().split('&')
+            .firstOrNull { it.startsWith("redirect_uri=") }
+            ?.substringAfter('=') ?: return false
+        return try {
+            val target = URI(URLDecoder.decode(redirect, Charsets.UTF_8))
+            target.scheme == "http" && (target.host == "localhost" || target.host == "127.0.0.1")
+        } catch (_: IllegalArgumentException) {
+            false // A redirect that does not decode is not a link back to this machine.
+        } catch (_: java.net.URISyntaxException) {
+            false // Likewise one that does not parse.
+        }
     }
 
     private fun readOutput(announcement: NativeAuthAnnouncement) {
@@ -138,7 +238,7 @@ internal class NativeClaudeAuthRun(
             if (end < 0) return
             val candidate = text.substring(beginning, end)
             scan.delete(0, end)
-            if (authorization(candidate) != null) announcement.browser(candidate)
+            if (authorization(candidate) != null && !returnsHere(candidate)) printed(candidate, announcement)
         }
     }
 
@@ -166,6 +266,7 @@ internal class NativeClaudeAuthRun(
         try {
             process.outputStream.close()
         } finally {
+            browser.close()
             process.destroy()
             if (!process.waitFor(1, TimeUnit.SECONDS)) {
                 process.destroyForcibly()

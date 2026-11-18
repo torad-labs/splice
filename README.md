@@ -1141,8 +1141,9 @@ it. A session whose directory splice cannot resolve gets the head layer only.
 ### Capabilities
 
 A capability is work splice runs for a session before its first turn goes upstream: a policy check, a reviewer,
-a helper that gathers context. It runs outside splice, as an HTTP worker you write, and what it returns goes into
-the session's first user message. Each one is a table of its own in `splice.toml`:
+a helper that gathers context. Its worker is an HTTP service you write, a tool of an MCP server, or the Context
+Getter that ships with splice, and what it returns goes into the session's first user message. Each one is a table
+of its own in `splice.toml`:
 
 ```toml
 [capabilities.policy]
@@ -1202,6 +1203,26 @@ description, input }` offers it as a tool after Claude Code's own, on a head tha
 Claude Code never sees that call: splice holds the turn, asks the worker with the call's input, gives the model the
 worker's text as the call's result, and streams the answer on as the rest of the same message. splice keeps each call and
 puts it back on the session's later requests, so the provider sees the conversation it produced.
+
+A worker can also be a tool of an MCP server the hub runs: `worker = { kind = "mcp", server = "<server>", tool =
+"<tool>" }`. splice calls the tool with the fields `send` names (and `input`, for a call the model made) as its
+arguments, finds the server the way the hub would for the session's folder, and starts it there for the call when
+nothing hosts it yet. The server's progress notifications are the held turn's messages, and its text content is the
+result.
+
+One capability ships with splice, off until you switch it on for a head: the Context Getter, which gathers what
+another agent needs to start on the session's first message (the files that matter, with paths and line ranges, how
+the project builds and tests, and what its instructions say) and places it in that message:
+
+```toml
+[capabilities.context-getter]
+heads = ["claude"]
+worker = { kind = "builtin", name = "context-getter" }   # model = "<id>" picks its model
+```
+
+It runs a Claude Code session in print mode, in the session's folder, on the head's fast model at that model's own
+effort, and the held turn says `Exploring files with <model>` and then each step it takes. It stops at 180 s unless
+`timeout_s` says otherwise, and the turn goes on without it when it stops early or cannot run.
 
 ### Code mode for ChatGPT
 

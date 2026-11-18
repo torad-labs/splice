@@ -93,7 +93,7 @@ internal class GathererRun(private val io: CoroutineDispatcher) {
         val started = process.descendants().toList()
         process.destroy()
         started.forEach { it.destroy() }
-        if (!process.waitFor(GRACE_MS, TimeUnit.MILLISECONDS)) process.destroyForcibly()
+        if (!process.waitFor(SESSION_STOP_GRACE_MS, TimeUnit.MILLISECONDS)) process.destroyForcibly()
         started.filter { it.isAlive }.forEach { it.destroyForcibly() }
     }
 }
@@ -106,4 +106,4 @@ private const val SUMMARY = "tool_use_summary"
 private const val RESULT = "result"
 
 /** why: a Claude Code session asked to stop flushes and exits well within this; one that does not is killed. */
-private const val GRACE_MS = 2_000L
+private const val SESSION_STOP_GRACE_MS = 2_000L

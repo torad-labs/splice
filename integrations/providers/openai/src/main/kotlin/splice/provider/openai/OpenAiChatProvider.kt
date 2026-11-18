@@ -10,7 +10,6 @@ import splice.core.pool.UpstreamPool
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.ReasoningDisplayNow
 import splice.core.turn.TurnMeta
-import splice.dialect.chat.ChatPlacements
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.ChatRequestBuilder
 import splice.dialect.chat.ChatResendOnce
@@ -19,6 +18,7 @@ import splice.dialect.chat.ChatTurnContext
 import splice.dialect.chat.ID_SLOT_FIELD
 import splice.dialect.chat.SlotAffinity
 import splice.dialect.chat.failure.ChatReplies
+import splice.dialect.chat.usertext.ChatPlacements
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
 import splice.upstream.ProviderIdentity

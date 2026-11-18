@@ -1,7 +1,7 @@
 // NEW: one way a text is added to a user message on the openai-chat wire, shared by the compaction tail
 // (ChatCompactionTail) and a capability's text (ChatFirstUserText, docs/specs/harness.md decision 5), so the two
 // can't drift: one more text part where the content is parts, a paragraph after the text where it is a string.
-package splice.dialect.chat
+package splice.dialect.chat.usertext
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -10,7 +10,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.JsonScalars
 
-public class ChatUserContent {
+internal class ChatUserContent {
     /** [content] with [text] added at its end, or null where it is neither parts nor a string. */
     public fun extended(content: JsonElement?, text: String): JsonElement? = when {
         content is JsonArray -> JsonArray(

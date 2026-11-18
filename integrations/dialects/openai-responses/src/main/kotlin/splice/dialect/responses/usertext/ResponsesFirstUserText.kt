@@ -1,7 +1,7 @@
 // NEW: the harness on the responses wire (docs/specs/harness.md, decision 5). The input carries each of the client's
 // text blocks as an item of its own, so a capability's text is one more user item after the conversation's opening
 // user items, before the first answer. Every item the client's request became keeps its bytes.
-package splice.dialect.responses.request
+package splice.dialect.responses.usertext
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement

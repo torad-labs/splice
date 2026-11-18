@@ -12,6 +12,10 @@ import kotlinx.serialization.json.JsonPrimitive
 import splice.core.capability.CapabilityWorker
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
+import splice.harness.wire.McpHttpWire
+import splice.harness.wire.McpStdioWire
+import splice.harness.wire.McpWire
+import splice.harness.wire.McpWireFailure
 import java.io.IOException
 import java.net.URI
 import java.net.URISyntaxException
@@ -20,6 +24,15 @@ import java.nio.file.Path
 
 /** What a call of a tool is sent: its [arguments], and the [meta] that rides beside them in the call's `_meta`. */
 internal data class McpToolCall(val arguments: JsonObject, val meta: JsonObject)
+
+/** One call of [tool] with [what], its progress to [progress], made over whichever wire the server's entry opens. */
+private class McpCallOf(
+    private val tool: String,
+    private val what: McpToolCall,
+    private val progress: WorkerProgress,
+) {
+    suspend fun over(wire: McpWire): WorkerEnd = McpConversation(wire).call(tool, what.arguments, what.meta, progress)
+}
 
 internal class McpWorker(
     private val servers: WorkerMcpServers,
@@ -38,7 +51,7 @@ internal class McpWorker(
         val entry = servers.servers(head, folder)[worker.server]
             ?: return WorkerEnd.Failed("the MCP hub has no server ${worker.server} for its session's folder")
         return try {
-            opened(entry, folder).use { McpConversation(it).call(worker.tool, what.arguments, what.meta, progress) }
+            conversed(entry, folder, McpCallOf(worker.tool, what, progress))
         } catch (failed: McpWireFailure) {
             WorkerEnd.Failed(failed.message.orEmpty())
         } catch (_: IOException) {
@@ -46,8 +59,9 @@ internal class McpWorker(
         }
     }
 
-    /** The wire to the server [entry] declares, started in [folder] when it is a command. */
-    private fun opened(entry: JsonObject, folder: Path): McpWire {
+    /** [call] over a wire to the server [entry] declares, started in [folder] when it is a command, and closed once
+     *  the call ends however it ends. Each wire is opened and closed in one expression, so its close is in sight. */
+    private suspend fun conversed(entry: JsonObject, folder: Path, call: McpCallOf): WorkerEnd {
         if (JsonWire.string(entry).contains(VARIABLE)) {
             throw McpWireFailure("its entry names an environment variable, which splice does not fill in")
         }
@@ -55,17 +69,17 @@ internal class McpWorker(
         val command = JsonScalars.str(entry, "command")
         val url = JsonScalars.str(entry, "url")
         return when {
-            command != null && (type == null || type == "stdio") ->
+            command != null && speaks(type, "stdio") ->
                 McpStdioWire(listOf(command) + strings(entry["args"]), pairs(entry["env"]), folder, io)
-            url != null && (type == null || type == "http") -> McpHttpWire(
-                client,
-                uri(url),
-                pairs(entry["headers"]),
-                io,
-            )
+                    .use { call.over(it) }
+            url != null && speaks(type, "http") ->
+                McpHttpWire(client, uri(url), pairs(entry["headers"]), io).use { call.over(it) }
             else -> throw McpWireFailure("its entry is not one splice can speak to")
         }
     }
+
+    /** Whether an entry of [type] is spoken to over [wire]: one that names no type is, by what else it names. */
+    private fun speaks(type: String?, wire: String): Boolean = type == null || type == wire
 
     private fun uri(url: String): URI = try {
         URI(url)

@@ -108,8 +108,8 @@ internal class AgentAnswers(
             }
             is Settled.Failed -> failed(asked, end.why)
             Settled.Stopped -> {
-                log("[$head] capability $name stopped: $STOPPED; the model is told\n")
-                Answer.Block(wire.result(asked.id, "The capability $name failed: $STOPPED.", error = true))
+                log("[$head] capability $name stopped: $DRAIN_STOPPED; the model is told\n")
+                Answer.Block(wire.result(asked.id, "The capability $name failed: $DRAIN_STOPPED.", error = true))
             }
         }
     }
@@ -134,4 +134,4 @@ internal class AgentAnswers(
 }
 
 /** why: what the model and the log are told of a call whose work the head's stop ended. */
-private const val STOPPED = "splice stopped its work while the head drained"
+private const val DRAIN_STOPPED = "splice stopped its work while the head drained"

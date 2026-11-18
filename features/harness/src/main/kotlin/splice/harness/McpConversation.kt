@@ -15,6 +15,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.JsonScalars
+import splice.harness.wire.McpWire
 import java.io.IOException
 
 internal class McpConversation(private val wire: McpWire) {
@@ -48,7 +49,7 @@ internal class McpConversation(private val wire: McpWire) {
         last += 1
         val id = JsonPrimitive(last)
         val request = buildJsonObject {
-            put(VERSION_KEY, JSONRPC)
+            put(VERSION_KEY, JSONRPC_VERSION)
             put(ID, id)
             put(METHOD, method)
             put(PARAMS, if (progress == null) params else asking(params, id))
@@ -90,7 +91,7 @@ internal class McpConversation(private val wire: McpWire) {
             try {
                 wire.post(
                     buildJsonObject {
-                        put(VERSION_KEY, JSONRPC)
+                        put(VERSION_KEY, JSONRPC_VERSION)
                         put(METHOD, "notifications/cancelled")
                         put(
                             PARAMS,
@@ -125,7 +126,7 @@ internal class McpConversation(private val wire: McpWire) {
     }
 
     private fun initialization() = buildJsonObject {
-        put("protocolVersion", PROTOCOL)
+        put("protocolVersion", MCP_PROTOCOL_VERSION)
         put("capabilities", JsonObject(emptyMap()))
         put(
             "clientInfo",
@@ -137,12 +138,12 @@ internal class McpConversation(private val wire: McpWire) {
     }
 
     private fun notification(method: String) = buildJsonObject {
-        put(VERSION_KEY, JSONRPC)
+        put(VERSION_KEY, JSONRPC_VERSION)
         put(METHOD, method)
     }
 
     private fun reply(id: JsonElement, key: String, value: JsonObject) = buildJsonObject {
-        put(VERSION_KEY, JSONRPC)
+        put(VERSION_KEY, JSONRPC_VERSION)
         put(ID, id)
         put(key, value)
     }
@@ -154,8 +155,11 @@ internal class McpConversation(private val wire: McpWire) {
 }
 
 private const val VERSION_KEY = "jsonrpc"
-private const val JSONRPC = "2.0"
-private const val PROTOCOL = "2025-06-18"
+private const val JSONRPC_VERSION = "2.0"
+private const val MCP_PROTOCOL_VERSION = "2025-06-18"
+
+// why: JSON-RPC 2.0 reserves -32601 for "Method not found" (spec section 5.1); a request the server sends this
+// client for a method it does not have is answered with it.
 private const val METHOD_NOT_FOUND = -32601
 private const val ID = "id"
 private const val METHOD = "method"

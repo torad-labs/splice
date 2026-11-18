@@ -37,6 +37,12 @@
   line leads with the capability's `message` in its `color`, then each progress line its worker sends, with how long
   ago it came (`Checking the request · 4s ago`). A turn waiting on a usage limit, an overload or credit keeps its
   words and now says how long ago the wait began. With two turns of a session held, the line says `· 2 turns`.
+- **The model can call a capability, a worker can be an MCP tool, and the Context Getter ships.** `call = "agent"`
+  (or `"both"`) with a `tool` offers a capability to the model as a tool on a head that passes Anthropic's Messages
+  through; Claude Code never sees the call, and the answer after it streams as the same message. `worker = { kind =
+  "mcp", server, tool }` calls a tool of a server the MCP hub runs for the session's folder. `[capabilities.context-getter]`
+  with `worker = { kind = "builtin", name = "context-getter" }` runs a print-mode Claude Code on the head's fast model
+  that gathers the files and commands the first message needs, and places them in it. It is off until a head is named.
 - `splice claude [--json]`: the lane, the door, the model a session starts on and why, the picker's models, and
   each head left out of it and why. `splice status` and `splice doctor` name the lane.
 - `splice setup` links `claude` on the door on a machine with no head for it, and no longer offers the Claude plan

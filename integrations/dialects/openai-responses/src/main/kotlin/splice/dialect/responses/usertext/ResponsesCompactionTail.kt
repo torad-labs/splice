@@ -1,6 +1,6 @@
 // NEW: v0.4.0 FEATURES.md §7 — the custom compaction text on the responses wire, appended as one user
 // input item after the client-built compaction input.
-package splice.dialect.responses.request
+package splice.dialect.responses.usertext
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject

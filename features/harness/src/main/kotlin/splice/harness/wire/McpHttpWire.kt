@@ -1,7 +1,7 @@
 // NEW: the harness (docs/specs/harness.md, decision 13). A server reached at a URL, which is how the hub gives a session
 // a server it runs for every session: MCP's streamable HTTP, each message posted, each answer read as the JSON it is or
 // as the stream of events it comes in.
-package splice.harness
+package splice.harness.wire
 
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.channels.Channel
@@ -72,7 +72,7 @@ internal class McpHttpWire(
             .header("Content-Type", "application/json")
             .header("Accept", "application/json, $EVENT_STREAM")
         headers.forEach { (name, value) -> builder.header(name, value) }
-        session?.let { builder.header(SESSION_HEADER, it) }
+        session?.let { builder.header(MCP_SESSION_HEADER, it) }
         version?.let { builder.header(PROTOCOL_HEADER, it) }
         val request = builder.POST(HttpRequest.BodyPublishers.ofByteArray(JsonWire.bytes(message))).build()
         val response = try {
@@ -80,7 +80,7 @@ internal class McpHttpWire(
         } catch (_: IOException) {
             throw McpWireFailure("it could not be reached")
         }
-        response.headers().firstValue(SESSION_HEADER).ifPresent { session = it }
+        response.headers().firstValue(MCP_SESSION_HEADER).ifPresent { session = it }
         if (response.statusCode() !in HTTP_OK_RANGE) {
             response.body().close()
             throw McpWireFailure("it answered ${response.statusCode()}")
@@ -105,8 +105,8 @@ internal class McpHttpWire(
         try {
             val data = StringBuilder()
             body.bufferedReader(StandardCharsets.UTF_8).forEachLine { line ->
-                if (line.startsWith(DATA)) {
-                    data.append(line.removePrefix(DATA).trimStart()).append('\n')
+                if (line.startsWith(SSE_DATA_PREFIX)) {
+                    data.append(line.removePrefix(SSE_DATA_PREFIX).trimStart()).append('\n')
                 } else if (line.isEmpty()) {
                     JsonScalars.objectOrNull(lenientJson, data.toString().trim())?.let { into.trySend(it) }
                     data.setLength(0)
@@ -122,7 +122,7 @@ internal class McpHttpWire(
     /** Ends the session the server gave, without waiting to hear that it did. */
     override fun close() {
         val id = session ?: return
-        val request = HttpRequest.newBuilder(url).DELETE().header(SESSION_HEADER, id)
+        val request = HttpRequest.newBuilder(url).DELETE().header(MCP_SESSION_HEADER, id)
         headers.forEach { (name, value) -> request.header(name, value) }
         client.sendAsync(request.build(), HttpResponse.BodyHandlers.discarding())
     }
@@ -130,7 +130,7 @@ internal class McpHttpWire(
 
 private const val CONTENT_TYPE = "Content-Type"
 private const val EVENT_STREAM = "text/event-stream"
-private const val SESSION_HEADER = "Mcp-Session-Id"
+private const val MCP_SESSION_HEADER = "Mcp-Session-Id"
 private const val PROTOCOL_HEADER = "MCP-Protocol-Version"
-private const val DATA = "data:"
+private const val SSE_DATA_PREFIX = "data:"
 private val HTTP_OK_RANGE = HttpStatus.OK..HttpStatus.MAX_SUCCESS

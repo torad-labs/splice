@@ -47,7 +47,7 @@ internal class Harness(
     /** The head stops: every held turn stops waiting and goes on as today, and no turn is held from now on. */
     override fun stop() {
         stopping.set(true)
-        waits.values.forEach { it.complete(HEAD_STOPPED) }
+        waits.values.forEach { it.complete(HEAD_STOPPING) }
         agent.stop()
     }
 
@@ -114,7 +114,7 @@ internal class Harness(
         val firsts = capabilities.filter {
             it.call.byRule && it.call.rule.turn == CapabilityTurn.FIRST && it.onFor(head)
         }
-        val states = firsts.map { CapabilityState(it.name, if (it in due) WAITING else NEVER) }
+        val states = firsts.map { CapabilityState(it.name, if (it in due) WAITING else NEVER_CALLED) }
         return states.fold(record.copy(first = FirstTurn.TAKEN, firstHash = hash)) { acc, state -> acc.with(state) }
     }
 
@@ -129,7 +129,7 @@ internal class Harness(
         val failures = mutableListOf<String>()
         on.turn.hold()
         waits[thread] = ended
-        if (stopping.get()) ended.complete(HEAD_STOPPED)
+        if (stopping.get()) ended.complete(HEAD_STOPPING)
         val outcome = try {
             runAll(thread, due, on, ended, failures)
         } finally {
@@ -159,11 +159,11 @@ internal class Harness(
                 raced(capability, on, ended)
             } catch (cancelled: CancellationException) {
                 // The turn itself was cancelled: a held turn is kept through a head's stop, so its client left.
-                failures += stopped(thread, due, capability, on, if (stopping.get()) HEAD_STOPPED else CLIENT_LEFT)
+                failures += stopped(thread, due, capability, on, if (stopping.get()) HEAD_STOPPING else CLIENT_LEFT)
                 throw cancelled
             }
             if (end == null) {
-                failures += stopped(thread, due, capability, on, if (ended.isCompleted) ended.await() else CUT)
+                failures += stopped(thread, due, capability, on, if (ended.isCompleted) ended.await() else CUT_SHORT)
                 return null
             }
             if (end is CallEnd.Failed) failures += "${capability.name}: ${end.why}"
@@ -213,7 +213,7 @@ internal class Harness(
         val session = on.request.sessionId
         return when (end) {
             is CallEnd.Placed -> null.also { mark(thread, capability, CapabilityState(name, PLACED, end.text)) }
-            CallEnd.Passed -> null.also { mark(thread, capability, CapabilityState(name, NEVER)) }
+            CallEnd.Passed -> null.also { mark(thread, capability, CapabilityState(name, NEVER_CALLED)) }
             is CallEnd.Refused -> Decline.CapabilityRefused(name, end.reason).also {
                 log("[$head] capability $name refused a turn (session $session): ${end.reason}\n")
             }
@@ -241,6 +241,6 @@ internal class Harness(
 
 /** why: what the log says ended a wait. */
 private const val SUPERSEDED = "a later request of the thread came"
-private const val HEAD_STOPPED = "the head is stopping"
-private const val CUT = "its work was cut short"
+private const val HEAD_STOPPING = "the head is stopping"
+private const val CUT_SHORT = "its work was cut short"
 private const val CLIENT_LEFT = "the client left"

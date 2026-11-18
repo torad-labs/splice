@@ -1,10 +1,8 @@
 // NEW: splice's own text on the responses wire, in one collaborator: the compaction tail, the standing system prompt
 // and a capability's text, each placed as its own seam says (split out of ResponsesProvider, Nov 17, 2026).
-package splice.dialect.responses
+package splice.dialect.responses.usertext
 
 import splice.core.prompt.SystemPromptMode
-import splice.dialect.responses.request.ResponsesCompactionTail
-import splice.dialect.responses.request.ResponsesFirstUserText
 import splice.dialect.responses.request.ResponsesSystemPrompt
 import splice.upstream.BuiltTurn
 import splice.upstream.RequestPlacements

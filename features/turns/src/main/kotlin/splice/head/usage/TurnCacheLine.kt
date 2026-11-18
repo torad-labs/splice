@@ -1,11 +1,10 @@
 // NEW: the cache log line + UsageHud, split from TurnTelemetry (concentration, 2026-08-19)
-// so the observability file is not billed for the hud's subsystem. Same-package.
-package splice.head.turn
+// so the observability file is not billed for the hud's subsystem. It lives beside the hud it renders.
+package splice.head.usage
 
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.perf.PerfKeys
-import splice.head.usage.UsageHud
 
 internal class TurnCacheLine(
     private val headKey: String,

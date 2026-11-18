@@ -9,7 +9,7 @@ import splice.core.util.JsonScalars
 
 /** Places a text block at the end of the first user message. A request with no user message, or one whose content
  *  is neither text nor blocks, is left the same instance, which says the text was not placed. */
-public class PassthroughFirstUserText {
+internal class PassthroughFirstUserText {
     private val userContent = PassthroughUserContent()
 
     public fun append(request: JsonObject, text: String): JsonObject {

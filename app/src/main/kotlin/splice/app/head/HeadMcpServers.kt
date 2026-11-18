@@ -12,7 +12,7 @@ import splice.core.config.UserHome
 import splice.harness.WorkerMcpServers
 import java.nio.file.Path
 
-/** [configDirs] are the heads' config homes, by head key; [statePaths] is where the Temple's registration is read. */
+/** [configDirs] are the heads' config homes, by head key; [statePaths] is where the planner reads its registrations. */
 internal class HeadMcpServers(private val configDirs: Map<String, Path>, statePaths: StatePaths) : WorkerMcpServers {
     private val planner = McpLaunchPlanner(UserHome.dir(), temple = TempleMcpEntry(UserHome.dir(), paths = statePaths))
 

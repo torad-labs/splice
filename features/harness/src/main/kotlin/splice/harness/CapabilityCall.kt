@@ -15,6 +15,7 @@ import splice.core.capability.CapabilityField
 import splice.core.capability.CapabilityWorker
 import splice.head.port.HarnessRequest
 import splice.head.port.HarnessTurn
+import java.util.concurrent.TimeUnit
 
 /** What one capability's work came to for the turn. */
 internal sealed class CallEnd {
@@ -62,7 +63,8 @@ internal class CapabilityCall(
         posted: WorkerPosted = WorkerPosted { },
         progress: WorkerProgress = WorkerProgress { },
     ): WorkerEnd {
-        val limitMs = capability.limits.timeoutS * MS_PER_S
+        // `timeout_s` is in seconds, the wait in milliseconds
+        val limitMs = TimeUnit.SECONDS.toMillis(capability.limits.timeoutS.toLong())
         return withTimeoutOrNull(limitMs) { worked(capability, on, progress, posted) }
             ?: WorkerEnd.Failed("it passed its time limit of ${capability.limits.timeoutS} s")
     }
@@ -144,6 +146,3 @@ internal class CapabilityCall(
 
 /** The field the model's call sends its tool's input in, beside the fields `send` names. */
 private const val INPUT = "input"
-
-/** why: `timeout_s` is in seconds, the wait in milliseconds. */
-private const val MS_PER_S = 1_000L

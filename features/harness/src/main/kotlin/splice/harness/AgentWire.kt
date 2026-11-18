@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.JsonScalars
+import splice.core.wire.ANTHROPIC_ASSISTANT_ROLE
 
 internal class AgentWire {
     fun messages(body: JsonObject): List<JsonObject> =
@@ -44,6 +45,9 @@ internal class AgentWire {
         put(CONTENT, JsonArray(blocks))
     }
 
+    /** The role the provider's answers carry in the conversation. */
+    val assistant: String = ANTHROPIC_ASSISTANT_ROLE
+
     fun type(block: JsonObject): String? = JsonScalars.str(block, TYPE)
 
     fun isCall(block: JsonObject): Boolean = type(block) == TOOL_USE
@@ -64,7 +68,6 @@ internal class AgentWire {
     }
 }
 
-internal const val ASSISTANT = "assistant"
 internal const val USER = "user"
 private const val MESSAGES = "messages"
 private const val TOOLS = "tools"

@@ -1,6 +1,6 @@
 // What a listener in front of a head says of a turn it relays, read off the turn's request headers once, as the head
 // prepares it (TurnPreparation).
-package splice.head.turn
+package splice.head
 
 import io.ktor.http.Headers
 import splice.core.pool.PREFERRED_UPSTREAM_HEADER

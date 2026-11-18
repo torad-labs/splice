@@ -117,6 +117,4 @@ internal class ThreadRecords(private val dir: Path?, private val log: LogSink) {
 internal const val WAITING = "waiting"
 internal const val PLACED = "placed"
 internal const val FAILED = "failed"
-internal const val NEVER = "never"
-
-private const val MARK = "cache_control"
+internal const val NEVER_CALLED = "never"

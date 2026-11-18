@@ -41,5 +41,6 @@ internal class CacheMarks {
     }
 }
 
-private const val MARK = "cache_control"
+/** The key a cache mark rides under on a content block. Declared once here: the thread records read past it too. */
+internal const val MARK = "cache_control"
 private val UNMARKABLE = setOf("thinking", "redacted_thinking")

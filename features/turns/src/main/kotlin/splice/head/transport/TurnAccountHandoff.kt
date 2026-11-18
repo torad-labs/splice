@@ -102,7 +102,9 @@ internal class TurnAccountHandoff(
         val heldToo = if (current != null && reset != null) mapOf(current to reset) else emptyMap()
         // One model's week leaves the login free for the model the turn would move to; any other window holds it there.
         val everyModel = limited?.window != LimitWindow.MODEL_WEEKLY
-        return fallback.instead(drive.meta.route.originalModel, drive.meta.scope.sessionId, heldToo, everyModel) != null
+        val route = drive.meta.route
+        val session = drive.meta.scope.sessionId
+        return fallback.instead(route.originalModel, session, route.relay.door, heldToo, everyModel) != null
     }
 
     /** A refusal of the login itself: no reset brings it back, only a sign-in or its owner's act. */
@@ -129,12 +131,7 @@ internal class TurnAccountHandoff(
 
     /** The logins [drive]'s turn never moves to: for a turn through a door, every login not added to splice ([held]),
      *  the person's own among them. None for any other turn. */
-    private fun never(drive: TurnDrive): Set<String> =
-        if (drive.meta.route.relay.door == null) {
-            emptySet()
-        } else {
-            pool.members.map { it.label }.filterNot(held::held).toSet()
-        }
+    private fun never(drive: TurnDrive): Set<String> = held.never(pool, drive.meta.route.relay.door)
 
     /** When [current] serves again, in epoch seconds: never where it was [refused] or is signed out, else at the
      *  [reset] just read or the one the pool holds; null where nothing holds it. */

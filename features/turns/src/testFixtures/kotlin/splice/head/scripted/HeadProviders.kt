@@ -8,7 +8,6 @@ import splice.core.parse.AnthropicTurnBody
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.util.LogSink
-import splice.dialect.chat.ChatPlacements
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.ChatRequestBuilder
 import splice.dialect.chat.ChatResendOnce
@@ -16,6 +15,7 @@ import splice.dialect.chat.ChatStreamTranslator
 import splice.dialect.chat.ChatTurnContext
 import splice.dialect.chat.ID_SLOT_FIELD
 import splice.dialect.chat.failure.ChatReplies
+import splice.dialect.chat.usertext.ChatPlacements
 import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesProvider

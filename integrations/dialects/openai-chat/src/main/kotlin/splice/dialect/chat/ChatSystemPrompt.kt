@@ -18,7 +18,7 @@ import splice.core.util.JsonScalars
  *  system messages — so the insertion point is the same on every turn of a conversation and the
  *  prompt cache keeps hitting. STRIP (V4-170) edits the client's system-role messages in place
  *  instead. A request whose messages are not an array is left untouched. */
-public class ChatSystemPrompt {
+internal class ChatSystemPrompt {
     public fun apply(request: JsonObject, text: String, mode: SystemPromptMode): JsonObject {
         if (text.isEmpty()) return request
         val messages = request["messages"] as? JsonArray ?: return request

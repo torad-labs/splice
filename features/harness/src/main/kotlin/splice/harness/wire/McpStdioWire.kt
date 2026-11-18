@@ -1,7 +1,7 @@
 // NEW: the harness (docs/specs/harness.md, decision 13). A server the session's folder declares with a command: splice
 // starts it in that folder for the call, speaks to it one JSON-RPC message a line, and stops it, and what it started
 // under it, when the call ends.
-package splice.harness
+package splice.harness.wire
 
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.channels.Channel
@@ -86,7 +86,7 @@ internal class McpStdioWire(
         }
         val started = process.descendants().toList()
         // a server that ends on its input closing, as most do, has been told it is cancelled and gets to end by itself
-        if (!process.waitFor(GRACE_MS, TimeUnit.MILLISECONDS)) process.destroyForcibly()
+        if (!process.waitFor(SERVER_EXIT_GRACE_MS, TimeUnit.MILLISECONDS)) process.destroyForcibly()
         started.forEach { it.destroyForcibly() }
     }
 }
@@ -95,4 +95,4 @@ private val LINE_END = "\n".toByteArray()
 
 /** why: long enough for a server to read a last line and leave, short enough that one that never leaves is not
  *  waited for. */
-private const val GRACE_MS = 300L
+private const val SERVER_EXIT_GRACE_MS = 300L

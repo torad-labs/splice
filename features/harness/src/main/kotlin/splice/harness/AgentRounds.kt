@@ -81,7 +81,10 @@ internal class AgentRounds(
             is Answered.Refused ->
                 Step.Ended(RoundResult.Ended(TurnDeclined(FailureCause.Splice.Declined(answered.why))))
             is Answered.Results -> {
-                val made = listOf(wire.message(ASSISTANT, message), wire.message(USER, answered.blocks))
+                val made = listOf(
+                    wire.message(wire.assistant, message),
+                    wire.message(USER, answered.blocks),
+                )
                 turn.produced += made
                 Step.Again(RoundBody.Tree(wire.withMessages(request, wire.messages(request) + made)))
             }
@@ -108,7 +111,7 @@ internal class AgentRounds(
     /** The last round ended the turn. When a call was answered on the way, what the provider produced is kept first. */
     private fun ended(turn: SoFar, made: Made): RoundResult {
         if (!turn.answered) return made.posted
-        val produced = turn.produced + wire.message(ASSISTANT, made.message)
+        val produced = turn.produced + wire.message(wire.assistant, made.message)
         keep.put(session, KeptCall(marks.key(turn.client), produced, offered))
         return RoundResult.Outcome(made.outcome.copy(usage = turn.usage(made.outcome.usage)))
     }
@@ -117,7 +120,7 @@ internal class AgentRounds(
     private suspend fun beside(turn: SoFar, made: Made, asked: List<ModelCall>): RoundResult {
         val call = KeptCall(
             marks.key(turn.client),
-            turn.produced + wire.message(ASSISTANT, made.message),
+            turn.produced + wire.message(wire.assistant, made.message),
             offered,
             beside = asked.map { KeptResult(it.id, it.capability.name) },
         )
@@ -159,17 +162,6 @@ internal class AgentRounds(
 
         /** The last request's input and cache counts, with the output of every round. */
         fun usage(last: Usage): Usage = last.copy(outputTokens = output)
-    }
-}
-
-/** Where the provider's messages are kept, and the calls made beside the client's are started. */
-internal class AgentKeep(private val records: AgentRecords, private val besides: AgentBeside) {
-    fun put(session: String, call: KeptCall) {
-        records.put(session, call)
-    }
-
-    suspend fun beside(session: String, call: KeptCall, asked: List<ModelCall>, on: CallFor) {
-        besides.start(session, call, asked, on)
     }
 }
 

@@ -17,7 +17,7 @@ public class HeadHarness {
         val client = HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1)
             .followRedirects(HttpClient.Redirect.NEVER)
-            .connectTimeout(Duration.ofSeconds(CONNECT_S))
+            .connectTimeout(Duration.ofSeconds(WORKER_CONNECT_S))
             .build()
         val io = ProcessDispatchers().io()
         val http = HttpWorker(client, io, inputs.keys)
@@ -38,7 +38,7 @@ public class HeadHarness {
 
 /** why: a worker on this machine or the next answers a connection in well under this; one that cannot be reached is a
  *  failure the turn should not wait its whole time limit for. */
-private const val CONNECT_S = 10L
+private const val WORKER_CONNECT_S = 10L
 
 /** why: the threads' records are named by their thread, a main thread's by its session; the kept calls are named by
  *  their session too, so they sit in a folder of their own. */

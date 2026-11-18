@@ -26,10 +26,10 @@ internal class CapabilityCallCheck(private val values: CapabilityValues, private
     /** A tool goes with a capability the model calls, and only with one. */
     private fun tooled(caller: CapabilityCaller) {
         when {
-            caller.byAgent && TOOL !in keys ->
-                values.fault(TOOL, "is required with call = ${caller.wire}: $TOOL_SHAPE")
-            !caller.byAgent && TOOL in keys ->
-                values.fault(TOOL, "is offered to the model only with call = agent or both")
+            caller.byAgent && TOOL_TABLE !in keys ->
+                values.fault(TOOL_TABLE, "is required with call = ${caller.wire}: $TOOL_SHAPE")
+            !caller.byAgent && TOOL_TABLE in keys ->
+                values.fault(TOOL_TABLE, "is offered to the model only with call = agent or both")
         }
     }
 
@@ -56,24 +56,26 @@ internal class CapabilityCallCheck(private val values: CapabilityValues, private
     /** The `tool` table: a name the API takes, a description and the input's schema as a table. */
     private fun tool(): CapabilityTool? {
         val tool = table() ?: return null
-        tool.keys.filter { it !in TOOL_KEYS }.forEach { values.fault("$TOOL.$it", "is not a key a tool has") }
+        tool.keys.filter { it !in TOOL_KEYS }.forEach { values.fault("$TOOL_TABLE.$it", "is not a key a tool has") }
         val name = required(tool, "name", "letters, digits, _ and -, at most 64") { TOOL_NAME.matches(it) }
         val description = required(tool, "description", "what the tool does, as the model reads it") { it.isNotBlank() }
         val input = tool["input"] as? JsonObject
-        if (input == null) values.fault("$TOOL.input", "is required: the JSON schema of the tool's input, as a table")
+        if (input == null) {
+            values.fault("$TOOL_TABLE.input", "is required: the JSON schema of the tool's input, as a table")
+        }
         return name?.let { named -> description?.let { said -> input?.let { CapabilityTool(named, said, it) } } }
     }
 
     /** The `tool` key as a table; null when it is not there, and a finding when it is something else. */
     private fun table(): JsonObject? {
-        val value = keys[TOOL] ?: return null
-        return value as? JsonObject ?: null.also { values.fault(TOOL, "must be a table: $TOOL_SHAPE") }
+        val value = keys[TOOL_TABLE] ?: return null
+        return value as? JsonObject ?: null.also { values.fault(TOOL_TABLE, "must be a table: $TOOL_SHAPE") }
     }
 
     /** The text at [key] of [tool] when [fits] takes it; otherwise a finding saying [what] it must be. */
     private fun required(tool: JsonObject, key: String, what: String, fits: TextFits): String? {
         val text = values.string(tool[key])?.takeIf { fits(it) }
-        if (text == null) values.fault("$TOOL.$key", "is required: $what")
+        if (text == null) values.fault("$TOOL_TABLE.$key", "is required: $what")
         return text
     }
 
@@ -84,8 +86,7 @@ internal class CapabilityCallCheck(private val values: CapabilityValues, private
 }
 
 private const val CALL = "call"
-private const val TOOL = "tool"
-private const val PLACE = "place"
+private const val TOOL_TABLE = "tool"
 private const val WHEN = "when"
 private const val TURN = "turn"
 private const val HEADS = "heads"

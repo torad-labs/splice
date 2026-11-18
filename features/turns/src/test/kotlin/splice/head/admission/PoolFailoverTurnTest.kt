@@ -6,6 +6,10 @@
 // locally.
 // No login is retried within a request, and splice adds no retry words.
 //
+// Nov 17, 2026: a login whose token is refused while every other one is held for the turn's model hands the turn on,
+// and where another model has room the client is told to send it again at once and it goes on under that model. It used
+// to end "login expired" while the other logins were signed in.
+//
 // Security: the logins such a head holds serve only a caller proven to be splice's, a session
 // splice launched (it names the head's turn key in the launch proof header) or one that already forwards a login the
 // pool holds (a session launched before the proof existed). Any other caller on this host, whatever it presents, is
@@ -118,6 +122,28 @@ class PoolFailoverTurnTest {
         try {
             assertEquals(HttpStatusCode.OK, rig.turn(stream = false).first)
             assertEquals(listOf("one", "two"), rig.requests)
+        } finally {
+            rig.close()
+        }
+    }
+
+    @Test
+    fun `a refused login with every other one held for the model goes on under a model with room`() = runBlocking {
+        val rig = FailoverRig(directory, limited = emptyMap())
+        rig.refused = setOf("one")
+        rig.weekSpent = setOf("two", "three")
+        rig.start()
+        try {
+            val body = rig.turn().second
+            assertFalse(body.contains("expired"), "the client is not told the login expired: $body")
+            assertTrue(body.contains("overloaded_error"), "an overload, which the client sends again at once: $body")
+            assertTrue(body.contains("goes on under a model that has room"), "said in words: $body")
+            assertEquals(listOf("one", "one", "two", "three"), rig.requests, "renewed once, then every other login")
+            val again = rig.turn()
+            assertEquals(HttpStatusCode.OK, again.first)
+            assertTrue(again.second.contains("synthetic success"), "and it is served: ${again.second}")
+            val sent = Json.parseToJsonElement(rig.bodies.last()).jsonObject["model"]?.jsonPrimitive?.content
+            assertEquals("model-b", sent, "under the model with room")
         } finally {
             rig.close()
         }
@@ -521,26 +547,46 @@ private class FailoverRig(
 
     val requests = CopyOnWriteArrayList<String>()
     val bodies = CopyOnWriteArrayList<String>()
+
+    /** The logins the provider refuses with a 401, as it does a login whose token can no longer be renewed. */
+    @Volatile
+    var refused: Set<String> = emptySet()
+
+    /** The logins whose week of `model` is spent: the provider refuses that model on them, as Anthropic refuses one
+     *  model's week, and serves every other. */
+    @Volatile
+    var weekSpent: Set<String> = emptySet()
     private val labels = listOf("one", "two", "three")
     private val logins = labels.associateWith(::SyntheticLogin)
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
         createContext("/v1/messages") { request ->
-            bodies += request.requestBody.use { it.readBytes().decodeToString() }
+            val sent = request.requestBody.use { it.readBytes().decodeToString() }
+            bodies += sent
             val login = request.requestHeaders.getFirst("Authorization").orEmpty().removePrefix("Bearer ")
             requests += login
-            val resetIn = limited[login]
-            val unauthorized = refusedStatus ?: 401.takeIf { login == SHARE_NODE_TOKEN }
+            val week = login in weekSpent && Regex(""""model"\s*:\s*"(synthetic--)?model"""").containsMatchIn(sent)
+            val resetIn = limited[login] ?: (2 * HOUR_S).takeIf { week }
+            val claim = if (week) "seven_day_overage_included" else "five_hour"
+            val unauthorized = refusedStatus ?: 401.takeIf { login == SHARE_NODE_TOKEN || login in refused }
             if (resetIn != null) fallsBackTo?.let(::fallBack)
             if (resetIn != null) {
                 val reset = (System.currentTimeMillis() / 1_000 + resetIn).toString()
-                mapOf(
-                    "anthropic-ratelimit-unified-status" to "rejected",
-                    "anthropic-ratelimit-unified-representative-claim" to "five_hour",
-                    "anthropic-ratelimit-unified-reset" to reset,
-                    "anthropic-ratelimit-unified-5h-status" to "rejected",
-                    "anthropic-ratelimit-unified-5h-utilization" to "1.0",
-                    "anthropic-ratelimit-unified-5h-reset" to reset,
-                ).forEach { (name, value) -> request.responseHeaders.add(name, value) }
+                val fiveHour = if (week) {
+                    emptyMap()
+                } else {
+                    mapOf(
+                        "anthropic-ratelimit-unified-5h-status" to "rejected",
+                        "anthropic-ratelimit-unified-5h-utilization" to "1.0",
+                        "anthropic-ratelimit-unified-5h-reset" to reset,
+                    )
+                }
+                (
+                    mapOf(
+                        "anthropic-ratelimit-unified-status" to "rejected",
+                        "anthropic-ratelimit-unified-representative-claim" to claim,
+                        "anthropic-ratelimit-unified-reset" to reset,
+                    ) + fiveHour
+                    ).forEach { (name, value) -> request.responseHeaders.add(name, value) }
             }
             val body = when {
                 unauthorized != null ->
@@ -596,7 +642,10 @@ private class FailoverRig(
                 name = ProviderName(key = "synthetic", label = "synthetic"),
                 catalog = ModelCatalog(
                     discoveryPrefix = "synthetic--",
-                    models = listOf(ModelEntry("model", "Synthetic", contextWindow = 200_000)),
+                    models = listOf(
+                        ModelEntry("model", "Synthetic", contextWindow = 200_000),
+                        ModelEntry("model-b", "Synthetic B", contextWindow = 200_000),
+                    ),
                     defaultContextWindow = 200_000,
                 ),
                 pinnedModel = "model",

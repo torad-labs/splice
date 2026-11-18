@@ -18,10 +18,11 @@ public class HeadHarness {
             .connectTimeout(Duration.ofSeconds(CONNECT_S))
             .build()
         val io = ProcessDispatchers().io()
-        val worker = HttpWorker(client, io, inputs.keys)
+        val http = HttpWorker(client, io, inputs.keys)
+        val mcp = McpWorker(inputs.mcpServers, client, io)
         val getter = ContextGetter(inputs.gatherers, GathererRun(io))
         val records = ThreadRecords(inputs.recordsDir, log)
-        return Harness(head, inputs.capabilities, records, CapabilityCall(worker, getter), log, clock)
+        return Harness(head, inputs.capabilities, records, CapabilityCall(http, mcp, getter), log, clock)
     }
 }
 

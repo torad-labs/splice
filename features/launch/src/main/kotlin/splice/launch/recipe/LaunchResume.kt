@@ -17,6 +17,8 @@ import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.launch.LaunchSpec
+import java.io.IOException
+import java.nio.file.Files
 import java.nio.file.Path
 
 /** One launch's resume words, read against the head's own index ([bounded]), the other heads' trees ([adopt]) and
@@ -75,9 +77,12 @@ internal class LaunchResume(
      *  - the one session of the name, with answers to move: its id, so it goes on as its copy;
      *  - several sessions of the name, one of them with no answer to move: that one's id. It is this command's own
      *    line of the work, the copy an earlier launch made among them, and the others are another command's.
+     *  - several sessions of the name and none or several with no answer to move: the newest of the ones with none,
+     *    else the newest of them all, so it goes on as its copy (Nov 17, 2026). Until then the name went to the client
+     *    as typed, which resolved it among every head's sessions and could open another command's: a resume that
+     *    could have gone on failed in front of the person.
      *  [extraArgs] as given for every other launch: an id, the picker, a name whose one session's answers all stay, a
-     *  name no session of the folder carries, several sessions this command can all go on with or none of which it
-     *  can (the client's picker asks which), and a shim that sent no cwd. */
+     *  name no session of the folder carries, and a shim that sent no cwd. */
     fun named(spec: LaunchSpec, extraArgs: List<String>, cwd: String?): List<String> {
         val word = headBoundedContinue.requestedSessionId(extraArgs)?.takeUnless(sessionUuid::matches)
         val folder = cwd?.takeIf { it.isNotBlank() }
@@ -86,10 +91,18 @@ internal class LaunchResume(
         // a transcript that cannot be read for its models is the client's to open, after its own restore notice
         val moves = carrying.map { moving(it, spec, cwd) ?: return extraArgs }
         val staying = carrying.filterIndexed { at, _ -> moves[at] == 0 }
+        val newest = { sessions: List<NamedSession> ->
+            sessions.maxByOrNull { session ->
+                try {
+                    Files.getLastModifiedTime(session.transcript).toMillis()
+                } catch (_: IOException) {
+                    0L
+                }
+            }
+        }
         val meant = when {
-            carrying.size == 1 && staying.isEmpty() -> carrying.single()
-            carrying.size > 1 && staying.size == 1 -> staying.single()
-            else -> null
+            carrying.size == 1 -> carrying.single().takeIf { staying.isEmpty() }
+            else -> newest(staying.ifEmpty { carrying })
         }
         return headBoundedContinue.resumingAs(extraArgs, meant?.id)
     }

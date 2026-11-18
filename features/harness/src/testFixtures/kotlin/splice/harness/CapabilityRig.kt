@@ -141,16 +141,22 @@ public class CapabilityRig(private val tmp: Path) : AutoCloseable {
     )
 
     /** A started head declaring [capabilities] in this order, its threads recorded under [records], whose sessions all
-     *  work in [folder] (none when null), serving the provider [dialect] builds from the head's tuning: Anthropic's
-     *  Messages passed through, unless a test names another. */
+     *  work in [folder] (none when null) and load the MCP servers [mcpServers] gives them, serving the provider
+     *  [dialect] builds from the head's tuning: Anthropic's Messages passed through, unless a test names another. */
     public fun head(
         capabilities: List<Capability>,
         records: Path = tmp.resolve("records"),
         folder: Path? = null,
+        mcpServers: WorkerMcpServers = WorkerMcpServers { _, _ -> emptyMap() },
         dialect: (ProviderTuning) -> Provider = { PassthroughProvider(it, PassthroughQuirks(providerTag = HEAD)) },
     ): HeadServer = runBlocking {
         val dir = Files.createDirectories(tmp.resolve("head-${heads.size}"))
-        val harness = HarnessInputs(capabilities, records, WorkerKeys { null }).takeIf { capabilities.isNotEmpty() }
+        val harness = HarnessInputs(
+            capabilities,
+            records,
+            WorkerKeys { null },
+            mcpServers = mcpServers,
+        ).takeIf { capabilities.isNotEmpty() }
             ?.let { HeadHarness().of(HEAD, it, LogSink { }, ElapsedClock(MonoClock::nowMs)) }
         val server = HeadServer(
             provider = dialect(tuning()),

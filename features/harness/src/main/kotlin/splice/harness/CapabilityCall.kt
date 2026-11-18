@@ -33,7 +33,11 @@ internal sealed class CallEnd {
 /** The facts a call sends: the turn it is for and the request's own. */
 internal data class CallFor(val head: String, val turn: HarnessTurn, val request: HarnessRequest)
 
-internal class CapabilityCall(private val worker: HttpWorker, private val getter: ContextGetter) {
+internal class CapabilityCall(
+    private val http: HttpWorker,
+    private val mcp: McpWorker,
+    private val getter: ContextGetter,
+) {
     /** Why [capability] is not called for [on] though its rule names it, or null when it is: only the Context Getter
      *  has reasons of its own (decision 9). */
     suspend fun notCalled(capability: Capability, on: CallFor): String? =
@@ -41,14 +45,22 @@ internal class CapabilityCall(private val worker: HttpWorker, private val getter
 
     suspend fun call(capability: Capability, on: CallFor): CallEnd {
         val limitMs = capability.limits.timeoutS * MS_PER_S
-        val end = withTimeoutOrNull(limitMs) { work(capability, on, WorkerProgress { }) }
+        val end = withTimeoutOrNull(limitMs) { worked(capability, on, WorkerProgress { }) }
             ?: return CallEnd.Failed("it passed its time limit of ${capability.limits.timeoutS} s")
         return meaning(capability, end)
     }
 
-    private suspend fun work(capability: Capability, on: CallFor, progress: WorkerProgress): WorkerEnd =
+    /** The capability's worker, run for the turn [on]. */
+    private suspend fun worked(capability: Capability, on: CallFor, progress: WorkerProgress): WorkerEnd =
         when (val worker = capability.work.worker) {
-            is CapabilityWorker.Http -> this.worker.call(worker, body(capability, on), progress)
+            is CapabilityWorker.Http -> http.call(worker, body(capability, on), progress)
+            is CapabilityWorker.Mcp -> mcp.call(
+                worker,
+                on.head,
+                on.turn.folder(on.request.sessionId),
+                McpToolCall(fields(capability, on), identity(capability, on)),
+                progress,
+            )
             is CapabilityWorker.Builtin -> if (gathers(worker)) {
                 getter.call(worker, on, capability.limits.timeoutS, progress)
             } else {
@@ -77,16 +89,19 @@ internal class CapabilityCall(private val worker: HttpWorker, private val getter
 
     /** The one object a worker is posted: the capability, the session and the turn, and the fields its declaration
      *  names, no others. */
-    private fun body(capability: Capability, on: CallFor): JsonObject = buildJsonObject {
+    private fun body(capability: Capability, on: CallFor): JsonObject =
+        JsonObject(identity(capability, on) + ("fields" to fields(capability, on)))
+
+    /** The fields the declaration names, each as the request has it. */
+    private fun fields(capability: Capability, on: CallFor): JsonObject = buildJsonObject {
+        capability.work.send.forEach { field -> put(field.wire, value(field, on)) }
+    }
+
+    /** Which capability and which turn the call is for: an HTTP worker's body carries it, and an MCP call's `_meta`. */
+    private fun identity(capability: Capability, on: CallFor): JsonObject = buildJsonObject {
         put("capability", capability.name)
         put("session", on.request.sessionId)
         put("turn", on.turn.id)
-        put(
-            "fields",
-            buildJsonObject {
-                capability.work.send.forEach { field -> put(field.wire, value(field, on)) }
-            },
-        )
     }
 
     private fun value(field: CapabilityField, on: CallFor) = when (field) {

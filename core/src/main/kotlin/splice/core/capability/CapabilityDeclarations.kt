@@ -170,21 +170,23 @@ private class CapabilityRuleCheck(private val values: CapabilityValues) {
     private fun wrongModels() = values.fault("when.models", "must be a non-empty list of model ids")
 }
 
-/** The `worker` table: an http worker with its url, or a built-in worker splice ships. */
+/** The `worker` table: an http worker with its url, a tool of an MCP server, or a built-in worker splice ships. */
 private class CapabilityWorkerCheck(private val values: CapabilityValues, private val builtins: Set<String>) {
     fun read(): CapabilityWorker? {
         val keys = values.table.keys["worker"] as? JsonObject
         if (keys == null) {
             values.fault(
                 "worker",
-                "is required: { kind = \"http\", url = \"...\" } or { kind = \"builtin\", name = \"...\" }",
+                "is required: { kind = \"http\", url = \"...\" }, " +
+                    "{ kind = \"mcp\", server = \"...\", tool = \"...\" } or { kind = \"builtin\", name = \"...\" }",
             )
             return null
         }
         return when (values.string(keys["kind"])) {
             HTTP -> http(keys)
+            MCP -> mcp(keys)
             BUILTIN -> builtin(keys)
-            else -> null.also { values.fault("worker.kind", "must be http or builtin") }
+            else -> null.also { values.fault("worker.kind", "must be http, mcp or builtin") }
         }
     }
 
@@ -195,6 +197,15 @@ private class CapabilityWorkerCheck(private val values: CapabilityValues, privat
         if (authEnv == "") values.fault("worker.auth_env", "must name an environment variable")
         if (url == null) values.fault("worker.url", "is required for an http worker")
         return url?.let { CapabilityWorker.Http(it, authEnv) }
+    }
+
+    private fun mcp(keys: JsonObject): CapabilityWorker? {
+        keys.keys.filter { it !in MCP_KEYS }.forEach { values.fault("worker.$it", "is not a key an MCP worker has") }
+        val server = values.string(keys["server"])?.takeIf { it.isNotBlank() }
+        val tool = values.string(keys["tool"])?.takeIf { it.isNotBlank() }
+        if (server == null) values.fault("worker.server", "is required for an MCP worker")
+        if (tool == null) values.fault("worker.tool", "is required for an MCP worker")
+        return if (server != null && tool != null) CapabilityWorker.Mcp(server, tool) else null
     }
 
     private fun builtin(keys: JsonObject): CapabilityWorker? {
@@ -225,6 +236,7 @@ private val KEYS =
 private val RULE_KEYS = setOf("turn", "thread", "mode", "models")
 private val HTTP_KEYS = setOf("kind", "url", "auth_env")
 private val BUILTIN_KEYS = setOf("kind", "name", "model")
+private val MCP_KEYS = setOf("kind", "server", "tool")
 private val TURNS = CapabilityTurn.entries.associateBy { it.wire }
 private val THREADS = CapabilityThread.entries.associateBy { it.wire }
 private val MODES = CapabilityMode.entries.associateBy { it.wire }
@@ -249,4 +261,5 @@ private val ADDING = setOf(CapabilityMay.ADD, CapabilityMay.ADD_OR_REFUSE)
 private const val RULE = "rule"
 private val CALLS = mapOf(RULE to RULE)
 private const val HTTP = "http"
+private const val MCP = "mcp"
 private const val BUILTIN = "builtin"

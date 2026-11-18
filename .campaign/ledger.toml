@@ -1435,7 +1435,7 @@ notes = [
 id = 'mcp-worker'
 title = "A capability's worker can be a tool of an MCP server the hub runs"
 feature = 'capability-mcp'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'harness-own-module',
@@ -1451,6 +1451,7 @@ reviews = [
 ]
 notes = [
   '2026-11-17 14:20 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 17:12 CT campaign: done in round 3 of capability-mcp: its checks, its feature review, its code review passed',
 ]
 
 [[row]]

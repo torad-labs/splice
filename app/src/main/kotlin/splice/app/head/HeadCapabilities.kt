@@ -12,6 +12,7 @@ import splice.harness.GathererHeads
 import splice.harness.HarnessInputs
 import splice.harness.HeadHarness
 import splice.harness.WorkerKeys
+import splice.harness.WorkerMcpServers
 import splice.head.port.TurnHarness
 import splice.provider.openai.ApiKeyAuthProvider
 import java.nio.file.Path
@@ -22,12 +23,13 @@ internal class HeadCapabilities(
     private val capabilities: List<Capability> = emptyList(),
     private val headsDir: Path? = null,
     private val gatherers: GathererHeads = GathererHeads { null },
+    private val mcpServers: WorkerMcpServers = WorkerMcpServers { _, _ -> emptyMap() },
 ) {
     private val keys = WorkerKeys { env -> ApiKeyAuthProvider(env).keyNow() }
 
     /** Head [key]'s harness, logging to [log], or none where splice.toml declares no capability. */
     fun forHead(key: String, log: LogSink): TurnHarness? = capabilities.takeIf { it.isNotEmpty() }?.let {
-        val inputs = HarnessInputs(it, headsDir?.resolve(key)?.resolve(RECORDS_DIR), keys, gatherers)
+        val inputs = HarnessInputs(it, headsDir?.resolve(key)?.resolve(RECORDS_DIR), keys, gatherers, mcpServers)
         HeadHarness().of(key, inputs, log, ElapsedClock(MonoClock::nowMs))
     }
 }

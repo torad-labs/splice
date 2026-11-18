@@ -955,6 +955,7 @@ notes = [
   '2026-11-17 00:14 CT: status blocked',
   "2026-11-17 00:14 CT: Paused by the lead on Nov 16: relaying each person's Claude Code telemetry to the operator is tracking of people, and the founder wants that planned with him before any of it is built. A design where a person sees their own usage is fine. Not to be built until that plan exists.",
   "2026-11-18 00:10 CT campaign: parked by server-telemetry: disputed: Not a wrong check: the item itself is paused. The ledger has this row blocked, with the lead's note of 2026-11-17 00:14 CT that the founder wants per-person telemetry relayed to the operator planned with him before any of it is built, since it is tracking of people. The same note and status are on feat/provider-gateway-headers (the base). No plan, ruling or unblock exists in the repo, docs/specs, handoff or rulings.md, so this builder seat stopped without building. Also note: code for both telemetry items is already in this branch from f8d9b46 (2026-11-17 20:30 CT). The lead should decide with the founder whether that code stays. (after 1 rounds)",
+  "2026-11-18 00:24 CT: Nov 18: its code, which reached feat/provider-gateway-headers with the feature's merge though the item was paused, is taken out again; the version header (server-client-header) stays. The code is kept on the local branch parked/server-telemetry-relay for the plan with the founder. Still paused until that plan exists.",
 ]
 
 [[row]]
@@ -980,6 +981,7 @@ notes = [
   '2026-11-17 00:14 CT: status blocked',
   "2026-11-17 00:14 CT: Paused by the lead on Nov 16: relaying each person's Claude Code telemetry to the operator is tracking of people, and the founder wants that planned with him before any of it is built. A design where a person sees their own usage is fine. Not to be built until that plan exists.",
   "2026-11-18 00:10 CT campaign: parked by server-telemetry: disputed: Not a wrong check: the item itself is paused. The ledger has this row blocked, with the lead's note of 2026-11-17 00:14 CT that the founder wants per-person telemetry relayed to the operator planned with him before any of it is built, since it is tracking of people. The same note and status are on feat/provider-gateway-headers (the base). No plan, ruling or unblock exists in the repo, docs/specs, handoff or rulings.md, so this builder seat stopped without building. Also note: code for both telemetry items is already in this branch from f8d9b46 (2026-11-17 20:30 CT). The lead should decide with the founder whether that code stays. (after 1 rounds)",
+  "2026-11-18 00:24 CT: Nov 18: its code, which reached feat/provider-gateway-headers with the feature's merge though the item was paused, is taken out again; the version header (server-client-header) stays. The code is kept on the local branch parked/server-telemetry-relay for the plan with the founder. Still paused until that plan exists.",
 ]
 
 [[row]]

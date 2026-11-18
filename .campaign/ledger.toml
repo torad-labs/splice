@@ -9,6 +9,7 @@ judged = [
   '.campaign/cases/',
 ]
 agent = 'campaign seat --model claude-opus-5-5 --effort high'
+rounds = 6
 
 [feature."server-front"]
 goal = "A splice daemon serves a team on a listener of its own: every request carries a person's key (operator-issued, hashed at rest, revocable one at a time or per person), admins manage keys from the CLI, the control plane or the listener, and each person is held to an in-flight cap and an optional requests-per-minute cap. Spec: docs/specs/server-mode.md, F1 and the limits half of F3."
@@ -48,6 +49,33 @@ goal = "The team server keeps a session's turns on the upstream that has its pro
 
 [feature."server-telemetry"]
 goal = "A team's server relays each person's Claude Code telemetry to the operator's collector with the person stamped on it, every laptop launch sends it there and says which splice it runs, so the operator sees who used what and which laptops to upgrade."
+
+[feature."door-default"]
+goal = "One command, claude, reaches every model a person is signed in to: it runs on the door Claude Desktop already uses, /model lists the models of signed-in accounts, /login opens splice's accounts page where any account is signed in, a fresh install works this way from the first run, and whoever still starts a session through a head's own command is told that those commands are going away. Spec: docs/specs/door-default.md."
+
+[feature."capabilities"]
+goal = "A capability is a piece of work splice runs around a session's turn, declared in splice.toml and run by a worker that can live outside splice: splice calls it by rule, holds the turn while it works, and puts its text into the session's first user message, where it stays on every later request; a failure lets the turn go on or refuses it, as declared (docs/specs/harness.md, decisions 1 to 6 and 10)."
+
+[feature."held-status"]
+goal = "A person sees on the session's status line what a held turn is doing, how long ago it last said so and how many turns are held, whether a capability or a usage limit holds it."
+
+[feature."harness-module"]
+goal = "The harness lives in a module of its own (docs/specs/harness.md, decision 11): the capabilities, their rule and workers, the Context Getter and the agent's call grow there without touching the turn, which knows them only through a port it owns, and every capability works for a person exactly as it did."
+
+[feature."context-getter"]
+goal = "On a session's first turn, the head's fast model explores the session's folder at its own effort and the session's model starts with what it found, as if the person had pasted it: on the drain task this cut the time to the first code from 16 and 23 minutes to 4 and 6. The person sees each step it takes, splice owns its process, and it works on the door (docs/specs/harness.md, decision 9)."
+
+[feature."capability-mcp"]
+goal = "A capability's work can be a tool of an MCP server the hub runs, declared in splice.toml like an HTTP worker, with its progress shown while the turn waits (docs/specs/harness.md, decision 13)."
+
+[feature."agent-call"]
+goal = "The model calls a capability itself, as a tool the client never sees: splice answers the call while the turn waits, streams the rest as one response, and keeps the call in the provider's history byte for byte so every cache prefix holds (docs/specs/harness.md, decision 12)."
+
+[feature."harness-says"]
+goal = "While a capability of round two holds a turn, the session's status line says what it is doing: the Context Getter's exploring and its tool-use summaries, an MCP worker's progress, and the agent's call. These wait on held-status's status-line piece (held-says), so they are a feature of their own and the round's other features don't wait on it."
+
+[feature."claude-adds"]
+goal = "Someone who runs Claude on their own Claude plan keeps it and gains every other account: claude stays on its head, starts on their own default as it did, and /model lists Claude's models with the models of their other signed-in accounts beside them. A request that names another account's model runs on that account, with its own login and its own window, and the person's Claude login never reaches another provider. A session that runs out on one provider moves to another with /model and keeps its conversation. Spec: docs/specs/door-default.md, decision 9."
 
 [[row]]
 id = 'server-listener'
@@ -910,7 +938,7 @@ notes = [
 id = 'server-telemetry-relay'
 title = "The server relays each person's Claude Code telemetry to the operator's collector, with the person on it"
 feature = 'server-telemetry'
-status = 'todo'
+status = 'blocked'
 owner = ''
 blocked_by = []
 guard = false
@@ -924,13 +952,15 @@ reviews = [
 ]
 notes = [
   '2026-11-16 22:44 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 00:14 CT: status blocked',
+  "2026-11-17 00:14 CT: Paused by the lead on Nov 16: relaying each person's Claude Code telemetry to the operator is tracking of people, and the founder wants that planned with him before any of it is built. A design where a person sees their own usage is fine. Not to be built until that plan exists.",
 ]
 
 [[row]]
 id = 'server-telemetry-recipe'
 title = 'A command linked from a server with a relay sends its telemetry there, with the key kept out of the environment'
 feature = 'server-telemetry'
-status = 'todo'
+status = 'blocked'
 owner = ''
 blocked_by = [
   'server-telemetry-relay',
@@ -946,6 +976,8 @@ reviews = [
 ]
 notes = [
   '2026-11-16 22:44 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 00:14 CT: status blocked',
+  "2026-11-17 00:14 CT: Paused by the lead on Nov 16: relaying each person's Claude Code telemetry to the operator is tracking of people, and the founder wants that planned with him before any of it is built. A design where a person sees their own usage is fine. Not to be built until that plan exists.",
 ]
 
 [[row]]
@@ -966,4 +998,664 @@ reviews = [
 ]
 notes = [
   '2026-11-16 22:45 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'door-claude-lane'
+title = 'claude runs on the door'
+feature = 'door-default'
+status = 'done'
+owner = ''
+blocked_by = []
+guard = false
+spec = "splice claude door [--model <selector>] puts the terminal's claude on the door, and splice claude (--json: lane, door, default_model, models, left_out) says which lane it is on. A launch of claude on the door hands Claude Code the Mantle variables at the door with a key of the terminal's own, ANTHROPIC_MODEL naming the model the session starts on, and unsets whatever would send it elsewhere. The session runs over the person's own Claude folder, with no CLAUDE_CONFIG_DIR; splice changes nothing of theirs there, and the one file it lays is its /login (door-login). The door's grammar is unchanged: a selector runs its model on its head, an Anthropic ID is a tier of the session's head, anything else is refused by name with nothing sent upstream. The starting model is --model, or the one chosen last, or the pinned model of the first head in the picker, or with no account signed in the pinned model of the first head in the door; --model refuses a selector the door does not serve. The terminal's key is not Desktop's: splice desktop off and rotate-key leave claude running, a request without the terminal's key is refused, and the lane, its address and its key are the same after a restart. A turn through it is recorded as a door turn of the head that ran it. See docs/specs/door-default.md, decisions 1 to 4."
+checks = [
+  'bun test ./.campaign/checks/door/lane.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 00:02 CT: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-17 02:55 CT: Code review of pass 2 (Nov 17), still owed now that the plan is cut again: duplicated logic, twice. (1) cli/claude/ClaudeCommand.kt:32-66 copies cli/desktop/DesktopCommand.kt:30-66: door() is on() line for line, and asked() and acted() are the same read-parse-say and post-parse-say flows with only the Said class and the door/on key swapped. Put the shared read-and-say, act-and-say and the --model body in one place both commands use. (2) desktop/ClaudeLane.kt:43-57, 73-75 and 101 re-write DesktopSwitch.kt:75-77 and 138-150: the kept-default-still-in-the-lineup check, the first head's pinnedOf with its reason, the '--model X is not in the door' refusal, and refused(status, why). The terminal's rule adds one step (the first signed-in head) to the same chain: share the chain and the refusal instead of two copies that will drift.",
+  '2026-11-17 06:26 CT campaign: done in round 4 of door-default: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'door-picker'
+title = '/model lists the models of signed-in accounts'
+feature = 'door-default'
+status = 'done'
+owner = ''
+blocked_by = [
+  'door-claude-lane',
+]
+guard = false
+spec = "A claude session on the door lists, in /model, every model of every head whose provider is called with a login splice holds, while that login is good, in place of Claude Code's own models: one row a model in splice.toml's order of heads, model the selector, label the model's own label, description splice · <command>. The rows ride the launch's --settings overlay as modelPicker with replaceBuiltInOptions true; nothing is written into the person's settings file. splice claude --json lists the same rows as models. A head called with an API key or a local server has no row, and its selector still runs when named. A head whose login is missing or has expired is left out and named in splice claude and in left_out with the reason. An account signed in or out while splice runs is in or out of the next session's picker with no restart. See docs/specs/door-default.md, decision 4."
+checks = [
+  'bun test ./.campaign/checks/door/picker.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 00:02 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 06:26 CT campaign: done in round 1 of door-default: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'door-login'
+title = "/login opens splice's accounts"
+feature = 'door-default'
+status = 'done'
+owner = ''
+blocked_by = [
+  'door-claude-lane',
+]
+guard = false
+spec = "In a claude session on the door, Claude Code's own /login and /logout are off (DISABLE_LOGIN_COMMAND, DISABLE_LOGOUT_COMMAND) and /login is splice's: it is in the session's menu, described as opening splice's accounts, and typing it opens the console's accounts page in the person's browser, signed in, by the single-use page splice console opens. It is caught before the model: no turn is sent. It is the bare /login. Claude Code 2.1.326 offers a plugin's command only under its prefix and opens a trust dialog on a folder added per launch, so splice lays one file in the person's own Claude folder, commands/login.md, and nothing else: splice claude door and each launch of claude on the door lay it when it is missing (the daemon starting does not), a /login the person wrote is never replaced and splice claude says theirs is in the way, splice claude head and uninstalling take splice's file out, its text reads sensibly in a session with no hook. A Claude Code that splice did not start and that shares the folder runs the file too (2.1.326 lists its own /login beside it and runs the file for either row): that is accepted while claude is on the door, and said: the file's text names splice console for splice's accounts and claude auth login for Claude Code's own sign-in, splice claude says so in one line on the door lane, and the README says it where it describes the door. The hook catches /login as Claude Code 2.1.326 hands it over (the bare command) and as the file's text. On a head splice holds the credential for, /login does the same in place of starting that head's own sign-in. A head that forwards the caller's Claude login keeps Claude Code's own /login. With no head in the door, claude still starts, and a turn is refused in Anthropic's error shape with a 4xx Claude Code does not retry and a message that names /login, nothing sent upstream. What was seen in a real Claude Code session is written into the spec's table. See docs/specs/door-default.md, decisions 5 and 6."
+checks = [
+  'bun test ./.campaign/checks/door/login.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 00:03 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 06:26 CT campaign: done in round 2 of door-default: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'door-install-default'
+title = 'A fresh install puts claude on the door'
+feature = 'door-default'
+status = 'done'
+owner = ''
+blocked_by = [
+  'door-claude-lane',
+]
+guard = false
+spec = "With no choice made, claude is on the door when splice.toml has no head whose command is claude, and on its head when it has one, so an upgrade changes no lane. A choice made with splice claude door or splice claude head is kept in splice's state across restarts and upgrades. splice claude head puts claude back on its head, says head commands are going away, and retires the terminal's key, so a session started on the door before it is refused afterwards with nothing sent upstream; it refuses, changing nothing, when there is no head to go back to. On the head lane splice claude names splice claude door. splice setup on a machine with no splice.toml links claude to splice on the door and adds no head keyed claude: the Claude plan leaves its tick list, and splice add claude still adds that head. See docs/specs/door-default.md, decisions 1, 3 and 8."
+checks = [
+  'bun test ./.campaign/checks/door/install.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 00:03 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 06:26 CT campaign: done in round 1 of door-default: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'heads-deprecated'
+title = 'Head commands say they are going away'
+feature = 'door-default'
+status = 'done'
+owner = ''
+blocked_by = [
+  'door-claude-lane',
+]
+guard = false
+spec = "Starting a session through a head's own command is deprecated, and every such command keeps working. The launch of a head's command carries a one-line notice the shim prints before Claude Code starts: head commands are deprecated, claude on the door replaces them, and splice claude door is how to move. splice status and splice doctor say which lane claude is on, and while it is on its head, that the lane is deprecated and splice claude door moves it. A claude on the door carries no such notice. README.md, AGENTS.md and the CHANGELOG describe the door as how splice is used and head commands as deprecated. No head is removed, renamed or refused, and no removal date is set. See docs/specs/door-default.md, decision 7."
+checks = [
+  'bun test ./.campaign/checks/door/deprecated.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 00:03 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 06:26 CT campaign: done in round 1 of door-default: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'capability-http'
+title = "A capability with an HTTP worker is called on a session's first turn, and its text reaches the provider"
+feature = 'capabilities'
+status = 'done'
+owner = ''
+blocked_by = []
+guard = false
+spec = "A capability declared in splice.toml ([capabilities.<name>], docs/specs/harness.md decisions 1 to 5) with an HTTP worker is called by the default rule: a thread's first request that streams and carries tools, on the main thread, from an interactive Claude Code, with no assistant message in its history. splice posts the worker one JSON object (capability, session, turn, and the fields the declaration names and no others) with the worker's own key from auth_env as a bearer, and none of the session's or the provider's credentials. While the worker answers in JSON lines (progress lines, then one result), the turn is held the way a usage-limit hold holds one: the response is open and pinged at once, and the request goes to the provider only when the worker is done. The result's text reaches the provider as a text block of its own at the end of the first user message, after the client's blocks, which are not changed, and it names neither splice nor a model. A subagent's request, a print-mode run, a session first seen mid-conversation, a side request without tools, and any request on a head the capability is not switched on for go to the provider as they do today, and the worker is not asked. Fill in the rows of the spec's table (Seen with Claude Code) that this item can answer, from a real session."
+checks = [
+  'bun test ./.campaign/checks/harness/http.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 04:30 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 08:39 CT campaign: done in round 1 of capabilities: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'capability-config'
+title = 'Boot fails closed on a wrong capability declaration, and splice status lists what is declared'
+feature = 'capabilities'
+status = 'done'
+owner = ''
+blocked_by = [
+  'capability-http',
+]
+guard = false
+spec = "docs/specs/harness.md decision 1. A wrong declaration is a config finding and the daemon does not start: an unknown key, a head splice.toml does not have, a value outside the lists (call, when's keys and values, place, may, color, timeout_s outside 1 to 3600, on_failure, send), a place and may that do not fit, turn any with a place, a worker kind or a built-in worker splice does not have, an HTTP worker with no url, a name that is not lowercase letters, digits and -. Every finding is listed at once, each naming its capability and the key or value at fault and never a value that could be a secret; the well-formed tables beside them are not named. A well-formed file boots. splice status lists each declared capability on a line of its own: its name, the heads it is on for (off when none) and its worker. A capability on for no head is asked for nothing. With none declared, splice status says nothing of capabilities and every request is the bytes it is today. The manager skill's reference and the README say how a capability is declared."
+checks = [
+  'bun test ./.campaign/checks/harness/config.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 04:31 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 08:39 CT campaign: done in round 1 of capabilities: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'capability-rule'
+title = 'The rule chooses the requests a capability is called for'
+feature = 'capabilities'
+status = 'done'
+owner = ''
+blocked_by = [
+  'capability-http',
+]
+guard = false
+spec = "docs/specs/harness.md decision 2. when chooses the requests a capability is called for, and a request has to meet all of it: mode (interactive, print, any) from the user agent's client name compared whole; thread (main, subagent, any) from Claude Code's agent header, each subagent a thread of its own by its agent id, with a first turn of its own; models, the request's model after splice resolved it; turn first or any, where any is for a capability that places nothing and is called on every turn, a session first seen mid-conversation included, and each of those turns can be refused. A thread's first turn is decided once. Where two capabilities' rules name one request they run in the order splice.toml declares them, one at a time, and both blocks are placed in that order and stay on later turns. splice's own conditions hold for every rule: never for Claude Code's auto-mode review, and never for a turn that holds a model-server slot of its own."
+checks = [
+  'bun test ./.campaign/checks/harness/rule.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 04:31 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 08:39 CT campaign: done in round 3 of capabilities: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'capability-later-turns'
+title = "A capability's text stays in the first user message on every later request"
+feature = 'capabilities'
+status = 'done'
+owner = ''
+blocked_by = [
+  'capability-http',
+]
+guard = false
+spec = "docs/specs/harness.md decisions 5 and 10. The client never saw the block a capability added, so its history does not hold it. splice stores the text with a hash of the first user message's content as the client sent it (cache_control marks left out, since Claude Code moves them) and adds the same block, through one function, to every request of the thread whose first user message has that hash: later turns and the request that compacts the conversation; the worker is not asked again. After a compaction the first message is the summary, and nothing is added. A subagent's request goes as it came. A thread first seen mid-conversation is never called, not even for the one message a compaction leaves. Every state a thread can be in for a capability (called and waiting, placed, failed, never called) is on disk under splice's state folder before the first turn goes upstream, so restarting the daemon changes no live session's request; switching a capability off stops new calls and a session that carries a block keeps it. A turn's record on the perf route gains capability_text_chars (the size of the capabilities' text the request carried, 0 with none), held_on (the capabilities it was held on, in order, joined by commas, null when not held) and held_ms."
+checks = [
+  'bun test ./.campaign/checks/harness/later.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 04:31 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 08:39 CT campaign: done in round 2 of capabilities: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'capability-failure'
+title = 'A capability that fails lets the turn go on or refuses it, as declared'
+feature = 'capabilities'
+status = 'done'
+owner = ''
+blocked_by = [
+  'capability-http',
+]
+guard = false
+spec = "docs/specs/harness.md decisions 3 and 6. The worker fails (cannot be reached, answers anything but 200, sends a line that is not one of the three, ends with no result, refuses where it may only add) or passes timeout_s: with on_failure open the turn goes to the provider with today's bytes and the thread is not asked for again; with closed the turn is refused, naming the capability, and nothing goes to the provider. A refusal from a capability that may refuse refuses the turn with the worker's reason; a refused turn was not the thread's first turn, so the next request that meets the rule is called. A capability with place none adds nothing and lets a turn pass as it came or refuses it. The response is already open when a turn is refused, so the refusal reaches Claude Code as the stream's error in Anthropic's error shape. The work is stopped and nothing is placed when the client leaves (nothing goes to the provider), when a second request of the same thread arrives while the first waits (both go on as today), and when the head stops (the held turn goes to the provider as today and ends inside the drain). The log says which capability failed and why, and never holds the worker's key. A turn over its budget is refused before the capability is called."
+checks = [
+  'bun test ./.campaign/checks/harness/failure.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 04:31 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 08:39 CT campaign: done in round 2 of capabilities: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'capability-dialects'
+title = "A capability's text is placed in each dialect's own shape"
+feature = 'capabilities'
+status = 'done'
+owner = ''
+blocked_by = [
+  'capability-later-turns',
+]
+guard = false
+spec = "docs/specs/harness.md decision 5. The text goes into the first user message in the dialect's own shape for its provider, behind one seam each dialect implements, so no shared file learns a vendor's format. On a head that speaks OpenAI's Chat Completions and on one that speaks the Responses API, the provider gets the text after what the person typed, in the conversation's opening user turn (a dialect that sends each text block as an item of its own sends one more user item after them, before the first answer), and gets the same opening on every later turn, with the worker asked once. A head the capability is not on for sends what it sends today. A dialect that cannot place the text leaves the body alone, and the turn's record says so."
+checks = [
+  'bun test ./.campaign/checks/harness/dialects.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 04:31 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 08:39 CT campaign: done in round 3 of capabilities: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'held-says'
+title = "A turn a capability holds says what it is doing on the session's status line"
+feature = 'held-status'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "While a capability holds a turn, the session's status line leads with what the held turn says, in the colour its capability declares, then how long ago that message came (Reading the request · 4s ago), and the model's name follows. Each progress line the worker sends becomes the message and its age starts again. With two turns of the session held the line also says 2 turns, and when one goes on the other's message stays. When no turn is held the line is what it is today, and no other session's line ever changes. docs/specs/harness.md, decision 7."
+checks = [
+  'bun test ./.campaign/checks/harness/status.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 08:43 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'limit-says'
+title = 'A turn waiting on a usage limit says how long ago the wait began and how many turns wait'
+feature = 'held-status'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'held-says',
+]
+guard = false
+spec = "A turn that waits on a usage limit, an overload or credit reaches the status line through the same piece a capability's hold does. The line leads with the wait as it does today (plan limit reached: waiting until ... or a reset), and now says how long ago the wait began and, with two turns of the session waiting, 2 turns. The wait keeps what it does today: the line it writes into the conversation, what ends it, and what a held turn is told when the head stops. No other session's line changes. docs/specs/harness.md, decision 8."
+checks = [
+  'bun test ./.campaign/checks/harness/limit.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 08:43 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'harness-own-module'
+title = 'The harness is a module of its own, and every capability works as it did'
+feature = 'harness-module'
+status = 'done'
+owner = ''
+blocked_by = []
+guard = false
+spec = "docs/specs/harness.md decision 11. :features-harness (package splice.harness) holds the capabilities, their rule and their workers. :features-turns holds the turn and the held turn, knows the harness only through a port it owns (called when a thread is first seen, before each request goes upstream, and for each round the agent's call will answer) and never depends on it; :app wires the two. The module law lists the harness's edges (:core, :features-turns, :features-sessions, :features-launch, :integrations-claude-code, :integrations-http, :integrations-upstream, :integrations-mcp) and the layer map classifies it as a feature. What the harness needs of a turn (its session's folder, its thread, a way to hold it and say what it is doing) reaches it through the port, never by reaching into the turn's packages. Nothing a person sees changes: every capability check passes as it does today. Move the files rather than rewrite them, so their history follows: the held-status feature has edits in flight in Harness.kt, CapabilityCall.kt and HarnessStep.kt and merges onto the move."
+checks = [
+  'bun test ./.campaign/checks/harness/module.test.ts',
+  'bun test ./.campaign/checks/harness/http.test.ts',
+  'bun test ./.campaign/checks/harness/config.test.ts',
+  'bun test ./.campaign/checks/harness/rule.test.ts',
+  'bun test ./.campaign/checks/harness/later.test.ts',
+  'bun test ./.campaign/checks/harness/failure.test.ts',
+  'bun test ./.campaign/checks/harness/dialects.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:19 CT: added; 1 of 7 checks fail, as they should before the work',
+  "2026-11-17 16:02 CT: lead, 16:02 CT: the dispute stands. The cause was the gate's hook judging a worktree's staged paths against the main checkout's settings.gradle.kts; 13142162f makes a hook judge the tree git started it in. The checks are unchanged. Commit the work as it is.",
+  '2026-11-17 16:29 CT campaign: done in round 2 of harness-module: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'agent-call-offered'
+title = 'A capability the agent may call is offered to the model as a tool'
+feature = 'agent-call'
+status = 'done'
+owner = ''
+blocked_by = [
+  'harness-own-module',
+]
+guard = false
+spec = "docs/specs/harness.md decision 12, Offered and Dialects, and decision 1. call = \"agent\" and \"both\" boot with a tool = { name, description, input }. On every request that carries tools, of a thread the rule allows (when.thread, when.mode, when.models), the tool is added after the client's tools as the same bytes every time; the client's tools and system text are not changed. A request without tools, one decision 2's own conditions rule out, a head it is not on for, and call = \"rule\" offer nothing. Config findings: agent or both with no tool, a tool with call = \"rule\", place or when.turn named with call = \"agent\", agent or both on a head whose dialect is not Anthropic's Messages."
+checks = [
+  'bun test ./.campaign/checks/harness/agent-offered.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:20 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 18:26 CT campaign: done in round 1 of agent-call: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'agent-call-answered'
+title = "The model's call of a capability is answered inside splice, and the client gets one response"
+feature = 'agent-call'
+status = 'done'
+owner = ''
+blocked_by = [
+  'agent-call-offered',
+]
+guard = false
+spec = "docs/specs/harness.md decision 12, Answered and Failure. When the model's message calls the capability's tool and nothing else, the client never sees the call: splice holds the turn, sends the worker the tool's input as the field input beside the fields send names, sends the provider the same request with the model's message and a tool_result carrying the worker's text, and streams that answer as the rest of the same response. The client receives one assistant message: the model's blocks before the call, then the answer's. An answer that calls the tool again is answered the same way. on_failure open: the tool result says the capability failed and why and the model goes on; closed: the turn is refused as decision 6 says; a refusal from a worker that may refuse refuses the turn; Esc, the client leaving and a drain as decision 6 says. Fill in the spec's row on a hidden call and its answer reaching Claude Code as one response, from a real session."
+checks = [
+  'bun test ./.campaign/checks/harness/agent-answered.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:20 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 18:26 CT campaign: done in round 1 of agent-call: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'agent-call-history'
+title = "A call the model made stays in the provider's history byte for byte"
+feature = 'agent-call'
+status = 'done'
+owner = ''
+blocked_by = [
+  'agent-call-answered',
+]
+guard = false
+spec = "docs/specs/harness.md decision 12, Kept. splice stores the call and its result keyed by the content of the client's copy of that assistant message, and on every later request of the session, the compaction request included, puts them back where the model made them, byte for byte, thinking blocks and their signatures included, so the provider sees the conversation it produced and every cached prefix holds. The record is on disk before the answer reaches the client, so a restarted daemon puts it back the same way. A later request whose record is gone still goes upstream in a shape the provider accepts. Fill in the spec's row on a later turn keeping its cache, from a real session."
+checks = [
+  'bun test ./.campaign/checks/harness/agent-history.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:20 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 18:26 CT campaign: done in round 1 of agent-call: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'agent-call-parallel'
+title = "A call of a capability beside the client's own calls is answered beside them"
+feature = 'agent-call'
+status = 'done'
+owner = ''
+blocked_by = [
+  'agent-call-answered',
+]
+guard = false
+spec = "docs/specs/harness.md decision 12, Beside the client's calls. When one message calls the capability's tool and tools of the client's, the client gets its own calls and never the capability's. The worker runs while the client runs its tools, and when the client sends its results splice adds the capability's result beside them, in the order the calls were made, with the model's message whole."
+checks = [
+  'bun test ./.campaign/checks/harness/agent-parallel.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:20 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 18:26 CT campaign: done in round 2 of agent-call: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'agent-call-says'
+title = "While the model's call of a capability runs, the status line says so"
+feature = 'harness-says'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'agent-call-answered',
+  'held-says',
+]
+guard = false
+spec = "docs/specs/harness.md decisions 7 and 12. While the agent's call holds the turn, the session's status line says the capability's message in its colour, then each progress line its worker sends, its age starting again; when the answer streams, the line is what it was."
+checks = [
+  'bun test ./.campaign/checks/harness/agent-says.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:20 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'mcp-worker'
+title = "A capability's worker can be a tool of an MCP server the hub runs"
+feature = 'capability-mcp'
+status = 'done'
+owner = ''
+blocked_by = [
+  'harness-own-module',
+]
+guard = false
+spec = "docs/specs/harness.md decision 13. worker = { kind = \"mcp\", server, tool } boots, and on the rule's turn splice calls that tool through the MCP hub with the declared fields as its arguments (and input, for the agent's call). The server is the one the hub would give a session in that session's folder, so a server of the folder's own is found there. The tool's text content is the result and is placed as an HTTP worker's is. An error result, a result with no text, a server or tool the hub cannot find for the session's folder, or the time limit is a failure handled by on_failure. An MCP worker with no server or tool is a config finding. splice status shows mcp <server>/<tool>."
+checks = [
+  'bun test ./.campaign/checks/harness/mcp.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:20 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 17:12 CT campaign: done in round 3 of capability-mcp: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'mcp-says'
+title = "An MCP worker's progress notifications reach the status line"
+feature = 'harness-says'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'mcp-worker',
+  'held-says',
+]
+guard = false
+spec = "docs/specs/harness.md decisions 7 and 13. Each MCP progress notification the worker's tool sends becomes what the held turn says on the session's status line, its age starting again. Fill in the spec's row on an MCP worker's progress, from a real session."
+checks = [
+  'bun test ./.campaign/checks/harness/mcp-says.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:20 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'getter-runs'
+title = "The Context Getter gathers for a session's first turn at its own model's effort, and what it found reaches the provider"
+feature = 'context-getter'
+status = 'done'
+owner = ''
+blocked_by = [
+  'harness-own-module',
+]
+guard = false
+spec = "docs/specs/harness.md decision 9 as amended. With [capabilities.context-getter] switched on for a head, a session's first main turn of an interactive session starts a normal claude -p in the session's folder on the head's fast model (its small tier, or worker.model), thinking at that model's own level: the person's modelSettings.<model>.effortLevel when their settings name one, else Claude Code's own default, never the head's effort or a launcher's. It runs with CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES=1, the head's login, the MCP hub's tools and the person's settings, and its input holds the first user message inside the gathering prompt. Its stream's final result is placed in the first user message on that request and, byte for byte, on every later one. Its requests carry the splice header naming the session they work for; such a request never calls a capability, casts no vote on the head's usual model, and its record names that session. It fails open. A session whose folder cannot be found, or a head with no login that can serve the fast model, is recorded as not called, with the reason. Fill in the spec's Seen with Claude Code row on a gatherer started the planned way, from a real session."
+checks = [
+  'bun test ./.campaign/checks/harness/getter.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:32 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 18:11 CT campaign: done in round 1 of context-getter: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'getter-says'
+title = 'While the Context Getter works, the status line says what it is exploring'
+feature = 'harness-says'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'getter-runs',
+  'held-says',
+]
+guard = false
+spec = "docs/specs/harness.md decisions 7 and 9. While the gatherer holds the turn, the session's status line says Exploring files with <the fast model's label>, then each of the gatherer's tool-use summaries as it comes (each tool_use_summary event of its stream, its age starting again), and Exploring stopped, continuing without it when it stops before a result. Fill in the spec's row on the tool-use summaries (what they look like, and whether each costs a request of its own), from a real session."
+checks = [
+  'bun test ./.campaign/checks/harness/getter-says.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:33 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'getter-limits'
+title = "splice owns the gatherer's process, and its time limit comes from measured gathers"
+feature = 'context-getter'
+status = 'done'
+owner = ''
+blocked_by = [
+  'getter-runs',
+]
+guard = false
+spec = "docs/specs/harness.md decision 9, Limits. The gatherer is ended at the time limit, when the client leaves, when the head stops and when the daemon shuts down, and it runs under a deadline of its own, so a daemon killed outright leaves none behind. Each ending is recorded as the capability's failure with its reason, and the turn goes on as decision 6 says. The default time limit is set from gathers measured on real work (72 to 101 s on this repo on Haiku at its own level, November 17), and the spec's table says which numbers it came from."
+checks = [
+  'bun test ./.campaign/checks/harness/getter-limits.test.ts',
+  'bun test ./.campaign/checks/harness/getter-default.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:33 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 18:11 CT campaign: done in round 1 of context-getter: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'getter-door'
+title = 'On the door, the gatherer reaches the head that holds the waiting turn'
+feature = 'context-getter'
+status = 'done'
+owner = ''
+blocked_by = [
+  'getter-runs',
+]
+guard = false
+spec = "docs/specs/harness.md decision 9, On the door, and docs/specs/door-default.md. A session on the door is gathered for on the head that holds its waiting turn: the gatherer names a selector of that head, so the door sends its requests there, with that head's login and fast model. Fill in the spec's row on the door from a real session."
+checks = [
+  'bun test ./.campaign/checks/harness/getter-door.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 14:33 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 18:11 CT campaign: done in round 1 of context-getter: its checks, its feature review, its code review passed',
+]
+
+[[row]]
+id = 'adds-turn'
+title = 'claude on its head runs the model each request names'
+feature = 'claude-adds'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = "A claude session on its head runs the model each request names. A selector of another signed-in account's head is relayed to that head as the door relays it, with that head's own login, cooldowns and failures, and the caller's Claude login is taken off the request first: no provider but Anthropic ever sees it. A name that starts as another head's selectors do and names no model of that head is refused by name with nothing sent upstream. Every other name goes to Anthropic with the caller's own login exactly as before, so a model Anthropic ships tomorrow runs the day it ships; count_tokens follows the same rule. A request that names a Claude model goes to Anthropic whatever the session's own model is. A session moves between a Claude model and a selector and keeps its conversation. A relayed turn is its head's row on /api/perf/turns, with the model that ran and door set to claude. See docs/specs/door-default.md, decision 9 (A turn, Records, Small requests)."
+checks = [
+  'bun test ./.campaign/checks/door/adds-turn.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 15:41 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'adds-window'
+title = "A relayed turn's counts fit the window the claude session holds"
+feature = 'claude-adds'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'adds-turn',
+]
+guard = false
+spec = "A claude session on its head holds Claude Code's own window for a model it does not know: 200,000 tokens, or 1,000,000 for a selector that ends in [1m]. A relayed turn's input counts are reported to the session as the same share of that window that they are of the model's own, on a stream and on a JSON answer and on count_tokens, so the session compacts before its model's limit. A Claude model's counts are Anthropic's own, untouched. See docs/specs/door-default.md, decision 9 (Counts)."
+checks = [
+  'bun test ./.campaign/checks/door/adds-window.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 15:47 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'adds-picker'
+title = "/model in claude keeps Claude's models and gains every signed-in account's"
+feature = 'claude-adds'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'adds-turn',
+]
+guard = false
+spec = "On a machine that has a head keyed claude, claude stays on it. A session starts as it did before the door: the head's address, the person's own Claude folder, their own default model, and nothing of the door's set (no Mantle switch, no key, no window). The launch's --settings overlay carries modelPicker with replaceBuiltInOptions false and the rows of decision 4: signed-in accounts only, with the same labels in the same order, so /model lists Claude Code's own models and after them the models of the signed-in accounts. With no account signed in the overlay carries no picker. An account signed in while splice runs is in the next session's picker. claude --model <selector> starts a session on a selector. splice claude --json gives lane head with models and left_out as on the door lane. See docs/specs/door-default.md, decision 9 (Launch, Picker, What splice says)."
+checks = [
+  'bun test ./.campaign/checks/door/adds-picker.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 15:50 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'adds-says'
+title = "splice says claude reaches every model, and only other providers' commands are deprecated"
+feature = 'claude-adds'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'adds-picker',
+]
+guard = false
+spec = "claude on its head is not deprecated. The launch of another provider's own command carries a one-line notice the shim prints before Claude Code starts: the command is deprecated, and claude runs this head's models, with what to type there: /model and the selector of the head's pinned model. On a machine with no head keyed claude and claude not on the door, it adds that splice claude door comes first. A launch of claude carries no notice, on either lane. splice status and splice doctor say which lane claude is on, and neither calls a lane deprecated. splice claude says claude is on its head with the other accounts' models. splice claude door still moves claude to the door, and on a machine that has a head keyed claude it says in the same answer that Claude's models no longer run in claude until splice claude head, which puts it back. README.md, AGENTS.md and the CHANGELOG describe claude as how splice is used and the other head commands as deprecated. See docs/specs/door-default.md, decisions 7 and 9."
+checks = [
+  'bun test ./.campaign/checks/door/adds-says.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-17 15:51 CT: added; 1 of 1 checks fail, as they should before the work',
 ]

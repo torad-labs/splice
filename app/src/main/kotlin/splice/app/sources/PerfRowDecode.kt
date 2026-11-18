@@ -9,6 +9,7 @@ import com.fasterxml.jackson.core.util.JsonRecyclerPools
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfTurnIds
 import splice.core.util.Cancellables
+import splice.usage.perf.PerfHeldLink
 import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfTranscriptLink
 import splice.usage.perf.PerfTurnFacts
@@ -87,6 +88,9 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
         private var captured: Boolean? = null
         private var providerMessage: String? = null
         private var heldOn: String? = null
+        private var skipped: String? = null
+        private var failed: String? = null
+        private var workedFor: String? = null
         var drops: Long? = null
             private set
 
@@ -117,13 +121,16 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
             }
         }
 
-        /** The keys that tie a row to its transcript, and the door it came through, and the capabilities it was held
-         *  on. */
+        /** The keys that tie a row to its transcript, the door it came through, what its capabilities did, and the
+         *  session a Context Getter's request worked for. */
         private fun link(key: String, parser: JsonParser) {
             when (key) {
                 "messages_hash" -> messagesHash = text(parser)
                 "door" -> door = text(parser)
                 "held_on" -> heldOn = text(parser)
+                "capability_skipped" -> skipped = text(parser)
+                "capability_failed" -> failed = text(parser)
+                "worked_for" -> workedFor = text(parser)
             }
         }
 
@@ -144,7 +151,14 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
                     captured = captured,
                     providerMessage = providerMessage,
                 ),
-                transcript = PerfTranscriptLink(sessionId, response, messagesHash, door, heldOn),
+                transcript = PerfTranscriptLink(
+                    sessionId,
+                    response,
+                    messagesHash,
+                    door,
+                    PerfHeldLink(heldOn, skipped, failed),
+                    workedFor,
+                ),
                 turns = PerfTurnIds(trace = turn, request = turnId),
             )
         }

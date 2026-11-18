@@ -10,9 +10,11 @@ public fun interface WorkerKeys {
     public fun key(env: String): String?
 }
 
-/** [recordsDir] null keeps the threads' records in memory alone (a test's head). */
+/** [recordsDir] null keeps the threads' records in memory alone (a test's head). [gatherers] are the heads the Context
+ *  Getter can start its gatherer on (decision 9); a harness with none never gathers. */
 public data class HarnessInputs(
     val capabilities: List<Capability>,
     val recordsDir: Path?,
     val keys: WorkerKeys,
+    val gatherers: GathererHeads = GathererHeads { null },
 )

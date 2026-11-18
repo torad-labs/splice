@@ -52,6 +52,13 @@ public data class HarnessShape(
     /** The turn holds a model-server slot of its own (a llama-server slot lease), which would sit idle while it
      *  waits. */
     val slotHeld: Boolean = false,
+    /** The session a Context Getter's request works for, as its `x-splice-gathers-for` header names it (decision 9):
+     *  such a request never calls a capability. Null for every request no gatherer sent. */
+    val workedFor: String? = null,
+    /** The door the turn came through (docs/specs/door-default.md), as the listener that relayed it named it: a
+     *  Context Getter for its session is started on the door too (decision 9). Null for a turn that came straight to
+     *  its head. */
+    val door: String? = null,
 )
 
 /** Reads a [HarnessRequest] off a prepared request. */

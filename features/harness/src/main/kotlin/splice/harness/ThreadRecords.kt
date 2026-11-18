@@ -51,6 +51,10 @@ internal data class ThreadRecord(
     fun placedFor(hash: String?): List<String> =
         if (hash == null || hash != firstHash) emptyList() else capabilities.filter { it.placed }.mapNotNull { it.text }
 
+    /** The thread after a refused first turn: its first turn not yet come, and the capabilities called for it as if
+     *  they never were. */
+    fun undone(): ThreadRecord = copy(first = FirstTurn.UNDECIDED, firstHash = null, capabilities = emptyList())
+
     /** This record with [state]'s capability in that state, in its place, or after the others when it is new. */
     fun with(state: CapabilityState): ThreadRecord {
         val at = capabilities.indexOfFirst { it.name == state.name }

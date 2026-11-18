@@ -42,13 +42,15 @@ public interface TurnHolding {
     public suspend fun release(held: Held)
 }
 
-/** A hold as the turn's record keeps it: the capabilities it was held on, in order, and for how long. */
-public data class Held(val on: List<String>, val ms: Long)
+/** A hold as the turn's record keeps it: the capabilities it was held on, in order, for how long, and each one whose
+ *  work failed or was stopped, as `<capability>: <reason>` (decision 6). */
+public data class Held(val on: List<String>, val ms: Long, val failed: List<String> = emptyList())
 
 /** What the harness makes of one request. */
 public sealed class HarnessEnd {
-    /** The request goes on carrying [texts], in order, at the end of its first user message. */
-    public data class Go(val texts: List<String>) : HarnessEnd()
+    /** The request goes on carrying [texts], in order, at the end of its first user message. [skipped] names each
+     *  capability its rule named that was not called, as `<capability>: <reason>` (decision 9). */
+    public data class Go(val texts: List<String>, val skipped: List<String> = emptyList()) : HarnessEnd()
 
     /** The turn is refused, and nothing goes upstream. */
     public data class Refused(val why: Decline) : HarnessEnd()

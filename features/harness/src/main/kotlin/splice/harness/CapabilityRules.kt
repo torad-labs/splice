@@ -22,9 +22,14 @@ internal class CapabilityRules {
     }
 
     /** splice's own conditions: a turn of a session (one that streams and carries tools, never a side request), and
-     *  never Claude Code's auto-mode review, and never a turn holding a model-server slot of its own. */
+     *  never Claude Code's auto-mode review, never a turn holding a model-server slot of its own, and never a request
+     *  of a Context Getter's own session (decision 9). */
     private fun spliceAllows(request: HarnessRequest): Boolean =
-        request.sessionId != null && request.turn && !request.shape.review && !request.shape.slotHeld
+        request.sessionId != null &&
+            request.turn &&
+            !request.shape.review &&
+            !request.shape.slotHeld &&
+            request.shape.workedFor == null
 
     /** The client name compared whole: `cli` is a session in a terminal, `sdk-cli` a print-mode run. */
     private fun moded(mode: CapabilityMode, client: String?): Boolean = when (mode) {

@@ -172,13 +172,15 @@ public class CapabilityRig(private val tmp: Path) : AutoCloseable {
         return Files.readAllLines(file).filter(String::isNotBlank).map { Json.parseToJsonElement(it).jsonObject }
     }
 
-    /** Sends [turn] to [head] and answers what the client's stream carried. */
-    public suspend fun send(head: HeadServer, turn: Turn): String =
+    /** Sends [turn] to [head], with [headers] of the caller's own beside Claude Code's, and answers what the client's
+     *  stream carried. */
+    public suspend fun send(head: HeadServer, turn: Turn, headers: Map<String, String> = emptyMap()): String =
         client.post("http://127.0.0.1:${head.port}/v1/messages") {
             header("Content-Type", "application/json")
             header("User-Agent", turn.userAgent)
             header("x-claude-code-session-id", turn.session)
             turn.agent?.let { header("x-claude-code-agent-id", it) }
+            headers.forEach { (name, value) -> header(name, value) }
             setBody(body(turn))
         }.bodyAsText()
 

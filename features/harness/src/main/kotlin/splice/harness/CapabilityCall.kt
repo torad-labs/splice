@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.capability.Capability
+import splice.core.capability.CapabilityBuiltins
 import splice.core.capability.CapabilityField
 import splice.core.capability.CapabilityWorker
 import splice.head.port.HarnessRequest
@@ -32,15 +33,31 @@ internal sealed class CallEnd {
 /** The facts a call sends: the turn it is for and the request's own. */
 internal data class CallFor(val head: String, val turn: HarnessTurn, val request: HarnessRequest)
 
-internal class CapabilityCall(private val worker: HttpWorker) {
+internal class CapabilityCall(private val worker: HttpWorker, private val getter: ContextGetter) {
+    /** Why [capability] is not called for [on] though its rule names it, or null when it is: only the Context Getter
+     *  has reasons of its own (decision 9). */
+    suspend fun notCalled(capability: Capability, on: CallFor): String? =
+        if (gathers(capability.work.worker)) getter.notCalled(on) else null
+
     suspend fun call(capability: Capability, on: CallFor): CallEnd {
-        val http = capability.work.worker as? CapabilityWorker.Http
-            ?: return CallEnd.Failed("its worker does not run in this version")
         val limitMs = capability.limits.timeoutS * MS_PER_S
-        val end = withTimeoutOrNull(limitMs) { worker.call(http, body(capability, on), WorkerProgress { }) }
+        val end = withTimeoutOrNull(limitMs) { work(capability, on, WorkerProgress { }) }
             ?: return CallEnd.Failed("it passed its time limit of ${capability.limits.timeoutS} s")
         return meaning(capability, end)
     }
+
+    private suspend fun work(capability: Capability, on: CallFor, progress: WorkerProgress): WorkerEnd =
+        when (val worker = capability.work.worker) {
+            is CapabilityWorker.Http -> this.worker.call(worker, body(capability, on), progress)
+            is CapabilityWorker.Builtin -> if (gathers(worker)) {
+                getter.call(worker, on, capability.limits.timeoutS, progress)
+            } else {
+                WorkerEnd.Failed("its worker does not run in this version")
+            }
+        }
+
+    private fun gathers(worker: CapabilityWorker): Boolean =
+        (worker as? CapabilityWorker.Builtin)?.name == CapabilityBuiltins.CONTEXT_GETTER
 
     /** A result is placed where the capability places text, and lets the turn pass where it places none; a refusal
      *  refuses only from a capability that may refuse, and is a failure from one that may not. */

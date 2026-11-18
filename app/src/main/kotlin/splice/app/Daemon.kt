@@ -215,7 +215,7 @@ public class Daemon(
             it.credentialAccountNames = controlPlane.credentialAccountNames
             it.sentCredentials = controlPlane.sentCredentials
             it.performance = performance
-            it.capabilities = HeadCapabilities(topology.capabilities, statePaths.headsDir)
+            it.capabilities = HeadCapabilities(topology.capabilities, statePaths.headsDir, controlPlane.gatherers)
         }
     private val managedHeadFactory = ManagedHeadFactory(
         statePaths = statePaths,

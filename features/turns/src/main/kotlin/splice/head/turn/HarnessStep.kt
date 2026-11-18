@@ -39,7 +39,11 @@ internal class HarnessStep(
             is HarnessEnd.Go -> {
                 val placing = placed(drive.inputs.built, end.texts)
                 if (placing.chars > 0) drive.place(placing.turn.requestBody)
-                drive.held = drive.held.copy(textChars = placing.chars, unplaced = placing.unplaced)
+                drive.held = drive.held.copy(
+                    textChars = placing.chars,
+                    unplaced = placing.unplaced,
+                    skipped = end.skipped.joinToString("; ").ifEmpty { null },
+                )
                 null
             }
         }
@@ -97,7 +101,11 @@ internal class HarnessStep(
         }
 
         override suspend fun release(held: Held) {
-            drive.held = drive.held.copy(on = held.on.joinToString(","), ms = held.ms)
+            drive.held = drive.held.copy(
+                on = held.on.joinToString(","),
+                ms = held.ms,
+                failed = held.failed.joinToString("; ").ifEmpty { null },
+            )
             try {
                 drive.emitter.holding(false)
                 drive.slot.retakePermit()

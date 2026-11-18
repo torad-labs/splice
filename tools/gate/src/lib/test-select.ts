@@ -16,7 +16,9 @@ function tsFiles(root: string, dir: string): string[] {
     for (const name of readdirSync(join(root, rel))) {
       if (name === "node_modules" || name === "build" || name.startsWith(".")) continue;
       const next = join(rel, name);
-      const stat = statSync(join(root, next));
+      // A link whose target is gone (a run's `latest` in an ignored receipts folder) names no file to select.
+      const stat = statSync(join(root, next), { throwIfNoEntry: false });
+      if (stat === undefined) continue;
       if (stat.isDirectory()) walk(next);
       else if (name.endsWith(".ts")) out.push(next);
     }

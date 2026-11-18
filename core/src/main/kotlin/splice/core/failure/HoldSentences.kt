@@ -85,6 +85,16 @@ internal class HoldSentences(private val spoken: Spoken) {
         Outlast.TOO_FAR -> tooFar(cause, facts)
         Outlast.MISSED_RESETS -> missed(cause, facts)
         Outlast.MAX_HOLD -> week(cause, facts)
+        Outlast.MOVES -> moves(cause, facts)
+    }
+
+    /** No login can serve the turn's model while another model has room (Nov 17, 2026): the turn's re-send goes on
+     *  under that model, so nothing waits. */
+    private fun moves(cause: FailureCause.Splice.HoldOutlasted, facts: LineFacts): Said {
+        val window = (cause.held as? FailureCause.Provider.Limited)?.window?.let(spoken::window)
+        val what = window?.let { "Every ${facts.head} login reached $it" }
+            ?: "No ${facts.head} login can serve this model"
+        return Said("$what, so this turn goes on under a model that has room", next = Next.Resend(SEND_LATER))
     }
 
     /** A limit the session cannot wait out, told to Claude Code with its reset (family L): one login names the reset

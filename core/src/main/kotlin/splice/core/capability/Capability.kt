@@ -54,12 +54,17 @@ public sealed class CapabilityWorker {
     /** Posts one JSON object to [url]; [authEnv] names the key sent as a bearer, read the way a provider's key is. */
     public data class Http(val url: String, val authEnv: String?) : CapabilityWorker()
 
-    /** A worker that ships with splice, by [name]. */
-    public data class Builtin(val name: String) : CapabilityWorker()
+    /** A tool of an MCP server the hub runs for the session: [server] is the name the session loads it under. */
+    public data class Mcp(val server: String, val tool: String) : CapabilityWorker()
+
+    /** A worker that ships with splice, by [name]. [model] is `worker.model`: the model it runs on where it runs one
+     *  (the Context Getter's fast model), null for its own default. */
+    public data class Builtin(val name: String, val model: String? = null) : CapabilityWorker()
 
     /** How `splice status` names it: its kind and where it is. */
     public fun describe(): String = when (this) {
         is Http -> "http $url"
+        is Mcp -> "mcp $server/$tool"
         is Builtin -> "builtin $name"
     }
 }

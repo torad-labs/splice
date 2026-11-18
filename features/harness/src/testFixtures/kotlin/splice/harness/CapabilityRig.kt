@@ -143,16 +143,22 @@ public class CapabilityRig(private val tmp: Path) : AutoCloseable {
     )
 
     /** A started head declaring [capabilities] in this order, its threads recorded under [records], whose sessions all
-     *  work in [folder] (none when null), serving the provider [dialect] builds from the head's tuning: Anthropic's
-     *  Messages passed through, unless a test names another. */
+     *  work in [folder] (none when null) and load the MCP servers [mcpServers] gives them, serving the provider
+     *  [dialect] builds from the head's tuning: Anthropic's Messages passed through, unless a test names another. */
     public fun head(
         capabilities: List<Capability>,
         records: Path = tmp.resolve("records"),
         folder: Path? = null,
+        mcpServers: WorkerMcpServers = WorkerMcpServers { _, _ -> emptyMap() },
         dialect: (ProviderTuning) -> Provider = { PassthroughProvider(it, PassthroughQuirks(providerTag = HEAD)) },
     ): HeadServer = runBlocking {
         val dir = Files.createDirectories(tmp.resolve("head-${heads.size}"))
-        val harness = HarnessInputs(capabilities, records, WorkerKeys { null }).takeIf { capabilities.isNotEmpty() }
+        val harness = HarnessInputs(
+            capabilities,
+            records,
+            WorkerKeys { null },
+            mcpServers = mcpServers,
+        ).takeIf { capabilities.isNotEmpty() }
             ?.let { HeadHarness().of(HEAD, it, LogSink { }, ElapsedClock(MonoClock::nowMs)) }
         val server = HeadServer(
             provider = dialect(tuning()),
@@ -174,13 +180,15 @@ public class CapabilityRig(private val tmp: Path) : AutoCloseable {
         return Files.readAllLines(file).filter(String::isNotBlank).map { Json.parseToJsonElement(it).jsonObject }
     }
 
-    /** Sends [turn] to [head] and answers what the client's stream carried. */
-    public suspend fun send(head: HeadServer, turn: Turn): String =
+    /** Sends [turn] to [head], with [headers] of the caller's own beside Claude Code's, and answers what the client's
+     *  stream carried. */
+    public suspend fun send(head: HeadServer, turn: Turn, headers: Map<String, String> = emptyMap()): String =
         client.post("http://127.0.0.1:${head.port}/v1/messages") {
             header("Content-Type", "application/json")
             header("User-Agent", turn.userAgent)
             header("x-claude-code-session-id", turn.session)
             turn.agent?.let { header("x-claude-code-agent-id", it) }
+            headers.forEach { (name, value) -> header(name, value) }
             setBody(body(turn))
         }.bodyAsText()
 

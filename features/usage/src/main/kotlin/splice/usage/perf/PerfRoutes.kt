@@ -340,7 +340,11 @@ public class PerfRoutes(
         put("capture", row.facts.captured)
         put("provider_message", row.facts.providerMessage)
         // The capabilities the turn was held on, comma-joined, null where it was not held (docs/specs/harness.md).
-        put("held_on", row.transcript.heldOn)
+        put("held_on", row.transcript.held.on)
+        // A capability its rule named that was not called, and one whose work failed or was stopped, each with its
+        // reason; null where none was (decisions 6 and 9).
+        put("capability_skipped", row.transcript.held.skipped)
+        put("capability_failed", row.transcript.held.failed)
         // V4-345: the trace turn the console opens this row's request by; null where none was kept.
         put("turn", row.turn)
         put("turn_id", row.turnId)
@@ -349,6 +353,8 @@ public class PerfRoutes(
         put("messages_hash", row.transcript.messagesHash)
         // desktop-door (decision 7): `desktop` on a turn that came through Claude Desktop's door, null on every other
         put("door", row.transcript.door)
+        // A Context Getter's request: the session it worked for, so the two join (docs/specs/harness.md, decision 10)
+        put("worked_for", row.transcript.workedFor)
         // The daemon uses the head's card, as the exact trace read does (TraceRoute.turnJson), and the
         // same classification the window's counters are folded by says why a row has no figure: null
         // cost_reason exactly where cost_usd is a number, so the console never has to guess which it is.

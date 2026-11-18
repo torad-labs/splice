@@ -10,6 +10,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.capability.Capability
+import splice.core.capability.CapabilityBuiltins
 import splice.core.capability.CapabilityField
 import splice.core.capability.CapabilityWorker
 import splice.head.port.HarnessRequest
@@ -39,17 +40,56 @@ internal data class CallFor(
     val input: JsonElement? = null,
 )
 
-internal class CapabilityCall(private val worker: HttpWorker) {
+internal class CapabilityCall(
+    private val http: HttpWorker,
+    private val mcp: McpWorker,
+    private val getter: ContextGetter,
+) {
+    /** Why [capability] is not called for [on] though its rule names it, or null when it is: only the Context Getter
+     *  has reasons of its own (decision 9). */
+    suspend fun notCalled(capability: Capability, on: CallFor): String? =
+        if (gathers(capability.work.worker)) getter.notCalled(on) else null
+
     suspend fun call(capability: Capability, on: CallFor): CallEnd = meaning(capability, work(capability, on))
 
     /** How [capability]'s worker ended for [on], within its time limit; [posted] hears when it has been asked. */
     suspend fun work(capability: Capability, on: CallFor, posted: WorkerPosted = WorkerPosted { }): WorkerEnd {
-        val http = capability.work.worker as? CapabilityWorker.Http
-            ?: return WorkerEnd.Failed("its worker does not run in this version")
         val limitMs = capability.limits.timeoutS * MS_PER_S
-        return withTimeoutOrNull(limitMs) { worker.call(http, body(capability, on), WorkerProgress { }, posted) }
+        return withTimeoutOrNull(limitMs) { worked(capability, on, WorkerProgress { }, posted) }
             ?: WorkerEnd.Failed("it passed its time limit of ${capability.limits.timeoutS} s")
     }
+
+    /** The capability's worker, run for the turn [on]. An HTTP worker tells [posted] once its body is sent; any other
+     *  is asked as soon as its work starts. */
+    private suspend fun worked(
+        capability: Capability,
+        on: CallFor,
+        progress: WorkerProgress,
+        posted: WorkerPosted,
+    ): WorkerEnd = when (val worker = capability.work.worker) {
+        is CapabilityWorker.Http -> http.call(worker, body(capability, on), progress, posted)
+        is CapabilityWorker.Mcp -> {
+            posted.posted()
+            mcp.call(
+                worker,
+                on.head,
+                on.turn.folder(on.request.sessionId),
+                McpToolCall(fields(capability, on), identity(capability, on)),
+                progress,
+            )
+        }
+        is CapabilityWorker.Builtin -> {
+            posted.posted()
+            if (gathers(worker)) {
+                getter.call(worker, on, capability.limits.timeoutS, progress)
+            } else {
+                WorkerEnd.Failed("its worker does not run in this version")
+            }
+        }
+    }
+
+    private fun gathers(worker: CapabilityWorker): Boolean =
+        (worker as? CapabilityWorker.Builtin)?.name == CapabilityBuiltins.CONTEXT_GETTER
 
     /** A result is placed where the capability places text, and lets the turn pass where it places none; a refusal
      *  refuses only from a capability that may refuse, and is a failure from one that may not. */
@@ -69,17 +109,21 @@ internal class CapabilityCall(private val worker: HttpWorker) {
 
     /** The one object a worker is posted: the capability, the session and the turn, and the fields its declaration
      *  names, no others. */
-    private fun body(capability: Capability, on: CallFor): JsonObject = buildJsonObject {
+    private fun body(capability: Capability, on: CallFor): JsonObject =
+        JsonObject(identity(capability, on) + ("fields" to fields(capability, on)))
+
+    /** The fields the declaration names, each as the request has it, after the input of the model's call when there
+     *  is one (decisions 12 and 13). */
+    private fun fields(capability: Capability, on: CallFor): JsonObject = buildJsonObject {
+        on.input?.let { put(INPUT, it) }
+        capability.work.send.forEach { field -> put(field.wire, value(field, on)) }
+    }
+
+    /** Which capability and which turn the call is for: an HTTP worker's body carries it, and an MCP call's `_meta`. */
+    private fun identity(capability: Capability, on: CallFor): JsonObject = buildJsonObject {
         put("capability", capability.name)
         put("session", on.request.sessionId)
         put("turn", on.turn.id)
-        put(
-            "fields",
-            buildJsonObject {
-                on.input?.let { put(INPUT, it) }
-                capability.work.send.forEach { field -> put(field.wire, value(field, on)) }
-            },
-        )
     }
 
     private fun value(field: CapabilityField, on: CallFor) = when (field) {

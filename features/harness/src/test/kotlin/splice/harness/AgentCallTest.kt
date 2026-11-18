@@ -23,6 +23,7 @@ import splice.core.capability.Capability
 import splice.core.capability.CapabilityCaller
 import splice.core.capability.CapabilityCalling
 import splice.core.capability.CapabilityTool
+import splice.core.turn.GATHERS_FOR_HEADER
 import java.nio.file.Path
 
 class AgentCallTest(@param:TempDir private val tmp: Path) {
@@ -59,6 +60,16 @@ class AgentCallTest(@param:TempDir private val tmp: Path) {
             assertEquals(one, two)
             assertEquals(null, three, "a request without tools is sent as the client built it")
         }
+
+    @Test
+    fun `a Context Getter's own request carries the client's tools and never the capability's`() = runBlocking {
+        val head = rig.head(listOf(advisor()))
+
+        rig.send(head, Turn("gatherer", opening("Explore")), headers = mapOf(GATHERS_FOR_HEADER to "s1"))
+
+        val tools = Json.parseToJsonElement(rig.provider.single()).jsonObject.getValue("tools").jsonArray
+        assertEquals(listOf("Read"), tools.map { it.jsonObject.getValue("name").jsonPrimitive.content })
+    }
 
     @Test
     fun `the call is answered while the turn is held, and the client gets one message without it`() = runBlocking {

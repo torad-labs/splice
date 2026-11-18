@@ -8,10 +8,22 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import splice.core.topology.TopologyFinding
 
-/** The built-in workers splice ships, by name. None yet: the Context Getter's is the first (decision 9). */
+/** The built-in workers splice ships, by name: the Context Getter's is the first (decision 9). */
 public object CapabilityBuiltins {
-    public val names: Set<String> = emptySet()
+    /** The Context Getter: the head's fast model explores the session's folder before its first turn. */
+    public const val CONTEXT_GETTER: String = "context-getter"
+
+    public val names: Set<String> = setOf(CONTEXT_GETTER)
+
+    /** How long a built-in worker may take when its declaration names no `timeout_s`, or null for every
+     *  capability's own default. The Context Getter's is set from gathers measured on real work: 72 to 101 s on
+     *  splice's own repo, on Haiku at its own level (November 17, 2026), so 180 s lets the slowest of those finish
+     *  with room and ends one that is stuck within three minutes (docs/specs/harness.md, Seen with Claude Code). */
+    public fun timeoutS(name: String): Int? = if (name == CONTEXT_GETTER) GATHER_TIMEOUT_S else null
 }
+
+/** why: see [CapabilityBuiltins.timeoutS]. */
+private const val GATHER_TIMEOUT_S = 180
 
 /** What the capability tables declare: those that are well-formed, in file order, and a finding for each fault. */
 public data class CapabilityRead(val capabilities: List<Capability>, val findings: List<TopologyFinding>)
@@ -58,7 +70,7 @@ private class CapabilityCheck(
             heads = heads,
             result = result ?: CapabilityResult(),
             notice = notice(),
-            limits = limits(),
+            limits = limits(worker),
             work = CapabilityWork(worker ?: CapabilityWorker.Builtin(""), send()),
             call = call,
         )
@@ -70,8 +82,8 @@ private class CapabilityCheck(
         values.choice("color", keys["color"], COLORS, DEFAULT_COLOR) ?: DEFAULT_COLOR,
     )
 
-    private fun limits() =
-        CapabilityLimits(timeout(), values.choice("on_failure", keys["on_failure"], FAILURES, OPEN) ?: OPEN)
+    private fun limits(worker: CapabilityWorker?) =
+        CapabilityLimits(timeout(worker), values.choice("on_failure", keys["on_failure"], FAILURES, OPEN) ?: OPEN)
 
     private fun shape() {
         if (!NAME.matches(name)) values.fault("", "a capability's name is lowercase letters, digits and -")
@@ -115,8 +127,11 @@ private class CapabilityCheck(
         }
     }
 
-    private fun timeout(): Int {
-        val value = keys["timeout_s"] ?: return DEFAULT_TIMEOUT_S
+    /** `timeout_s`, or where it is absent the built-in worker's own default, else every capability's. */
+    private fun timeout(worker: CapabilityWorker?): Int {
+        val builtin = (worker as? CapabilityWorker.Builtin)?.name
+        val default = builtin?.let(CapabilityBuiltins::timeoutS) ?: DEFAULT_TIMEOUT_S
+        val value = keys["timeout_s"] ?: return default
         val seconds = (value as? JsonPrimitive)?.takeUnless { it.isString }?.longOrNull
         if (seconds != null && seconds in TIMEOUT_RANGE) return seconds.toInt()
         values.fault(
@@ -160,21 +175,23 @@ private class CapabilityRuleCheck(private val values: CapabilityValues) {
     private fun wrongModels() = values.fault("when.models", "must be a non-empty list of model ids")
 }
 
-/** The `worker` table: an http worker with its url, or a built-in worker splice ships. */
+/** The `worker` table: an http worker with its url, a tool of an MCP server, or a built-in worker splice ships. */
 private class CapabilityWorkerCheck(private val values: CapabilityValues, private val builtins: Set<String>) {
     fun read(): CapabilityWorker? {
         val keys = values.table.keys["worker"] as? JsonObject
         if (keys == null) {
             values.fault(
                 "worker",
-                "is required: { kind = \"http\", url = \"...\" } or { kind = \"builtin\", name = \"...\" }",
+                "is required: { kind = \"http\", url = \"...\" }, " +
+                    "{ kind = \"mcp\", server = \"...\", tool = \"...\" } or { kind = \"builtin\", name = \"...\" }",
             )
             return null
         }
         return when (values.string(keys["kind"])) {
             HTTP -> http(keys)
+            MCP -> mcp(keys)
             BUILTIN -> builtin(keys)
-            else -> null.also { values.fault("worker.kind", "must be http or builtin") }
+            else -> null.also { values.fault("worker.kind", "must be http, mcp or builtin") }
         }
     }
 
@@ -185,6 +202,15 @@ private class CapabilityWorkerCheck(private val values: CapabilityValues, privat
         if (authEnv == "") values.fault("worker.auth_env", "must name an environment variable")
         if (url == null) values.fault("worker.url", "is required for an http worker")
         return url?.let { CapabilityWorker.Http(it, authEnv) }
+    }
+
+    private fun mcp(keys: JsonObject): CapabilityWorker? {
+        keys.keys.filter { it !in MCP_KEYS }.forEach { values.fault("worker.$it", "is not a key an MCP worker has") }
+        val server = values.string(keys["server"])?.takeIf { it.isNotBlank() }
+        val tool = values.string(keys["tool"])?.takeIf { it.isNotBlank() }
+        if (server == null) values.fault("worker.server", "is required for an MCP worker")
+        if (tool == null) values.fault("worker.tool", "is required for an MCP worker")
+        return if (server != null && tool != null) CapabilityWorker.Mcp(server, tool) else null
     }
 
     private fun builtin(keys: JsonObject): CapabilityWorker? {
@@ -202,7 +228,10 @@ private class CapabilityWorkerCheck(private val values: CapabilityValues, privat
                 "names built-in worker \"${values.safe(name)}\", which splice does not ship",
             )
         }
-        return name?.takeIf { it in builtins }?.let(CapabilityWorker::Builtin)
+        // `model`: the model a built-in worker runs on, where it runs one; absent is its own default.
+        val model = keys["model"]?.let { values.string(it)?.takeIf(String::isNotBlank) ?: "" }
+        if (model == "") values.fault("worker.model", "must name a model id")
+        return name?.takeIf { it in builtins && model != "" }?.let { CapabilityWorker.Builtin(it, model) }
     }
 }
 
@@ -214,7 +243,8 @@ private val KEYS =
     )
 private val RULE_KEYS = setOf("turn", "thread", "mode", "models")
 private val HTTP_KEYS = setOf("kind", "url", "auth_env")
-private val BUILTIN_KEYS = setOf("kind", "name")
+private val BUILTIN_KEYS = setOf("kind", "name", "model")
+private val MCP_KEYS = setOf("kind", "server", "tool")
 private val TURNS = CapabilityTurn.entries.associateBy { it.wire }
 private val THREADS = CapabilityThread.entries.associateBy { it.wire }
 private val MODES = CapabilityMode.entries.associateBy { it.wire }
@@ -237,4 +267,5 @@ private const val EVERY_TURN_PLACES =
 private const val PLACE = "place"
 private val ADDING = setOf(CapabilityMay.ADD, CapabilityMay.ADD_OR_REFUSE)
 private const val HTTP = "http"
+private const val MCP = "mcp"
 private const val BUILTIN = "builtin"

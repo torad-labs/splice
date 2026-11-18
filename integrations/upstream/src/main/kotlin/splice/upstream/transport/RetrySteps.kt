@@ -10,9 +10,9 @@ import splice.core.auth.LoginAnswer
 import splice.core.auth.RefreshOutcome
 import splice.core.failure.FailureCause
 import splice.core.failure.FailureEvidence
+import splice.core.failure.Lift
 import splice.core.failure.LoginOwner
 import splice.core.failure.Moment
-import splice.core.failure.Outlast
 import splice.core.failure.Position
 import splice.core.failure.Tear
 import splice.core.perf.PerfKeys
@@ -23,6 +23,7 @@ import splice.core.util.WallClock
 import splice.upstream.retry.Exchange
 import splice.upstream.retry.HoldAsk
 import splice.upstream.retry.HoldEnd
+import splice.upstream.retry.HoldMoves
 import splice.upstream.retry.How
 import splice.upstream.retry.MAX_AMENDS
 import splice.upstream.retry.MAX_ATTEMPTS_OUTSIDE_HOLDS
@@ -42,13 +43,18 @@ internal class RetrySteps(
 ) {
     private val endings = RetryEndings()
 
-    /** A stored exhausted-window refusal still permits a safe pool handoff. Reading it never renews its horizon. */
+    /** A stored exhausted-window refusal still permits a safe pool handoff. Reading it never renews its horizon. Where
+     *  no login can take the turn and its re-send goes on under a model with room, it ends as that re-send (Nov 17,
+     *  2026): a turn moved onto a login held for its model, after the one it was on was refused, never ends there. */
     fun retainedLimit(cause: FailureCause.Provider.Limited, ctx: PostContext, state: RetryState): LoopStep<Nothing> {
         val evidence =
             FailureEvidence("the credential's bounded cooldown retains a terminal limit", said = cause.said?.text)
-        val failure = UpstreamFailed(cause, evidence, state.ledger.attempts)
         val moment = if (ctx.recovery.clientFrameEmitted()) Moment.MID_CONTENT else Moment.BEFORE_COMMIT
-        val step = next(cause, Position(moment, streamBegan = false), ctx, state)
+        val at = Position(moment, streamBegan = false)
+        val step = next(cause, at, ctx, state)
+        val moves = ctx.limits.movesFrom(cause, (cause.lift as? Lift.At)?.at, at)
+            .takeIf { step != RetryStep.SwitchLogin }
+        val failure = UpstreamFailed(cause, evidence, state.ledger.attempts, outlasted = moves)
         return LoopStep.Done(
             if (step == RetryStep.SwitchLogin) UpstreamPost.Refused(failure) else UpstreamPost.Ended(failure),
         )
@@ -165,7 +171,7 @@ internal class RetrySteps(
                     endings.done(asked.failed, null, state, ctx)
             }
             RetryStep.SwitchLogin -> LoopStep.Done(UpstreamPost.Refused(endings.moved(asked.failed, state, ctx)))
-            is RetryStep.End -> endings.done(asked.failed, step.cause, state, ctx)
+            is RetryStep.End -> endings.done(asked.failed, ctx.limits.ending(step.cause, asked.at), state, ctx)
             is RetryStep.Hold -> hold(step, asked, ctx, state)
             RetryStep.Keep -> endings.done(asked.failed, null, state, ctx)
         }
@@ -180,30 +186,25 @@ internal class RetrySteps(
         ctx: PostContext,
         state: RetryState,
     ): LoopStep<Nothing> {
+        // No hold begins for a model another one stands in for: the turn's re-send goes on under it (Nov 17, 2026).
+        val moves = ctx.limits.movesFrom(asked.cause, step.until, asked.at)
+        if (moves != null) return endings.done(asked.failed, moves, state, ctx)
         val ledger = state.ledger
         val now = wall()
         ledger.held(step.until, now, asked.cause)
         val since = ledger.heldSinceMs ?: now
-        val moves = ctx.limits.otherLoginFree
-        val ask = HoldAsk(asked.cause, asked.at, step.until, step.probes, ledger.login, since, moves)
-        return when (state.retry.waits.hold(ask)) {
+        val exits = HoldMoves(ctx.limits.otherLoginFree, ctx.limits.otherModelRoom)
+        val ask = HoldAsk(asked.cause, asked.at, step.until, step.probes, ledger.login, since, exits)
+        return when (val end = state.retry.waits.hold(ask)) {
             HoldEnd.RESUME -> {
                 state.pendingRetry = RetryKind.ORDINARY
                 LoopStep.Continue
             }
             HoldEnd.LOGIN_JOINED -> LoopStep.Done(UpstreamPost.Refused(endings.ended(asked.failed, null, state, ctx)))
-            HoldEnd.WALL -> endings.done(
-                asked.failed,
-                FailureCause.Splice.HoldOutlasted(Outlast.WALL, asked.cause, step.until),
-                state,
-                ctx,
-            )
-            HoldEnd.MAX_HOLD -> endings.done(
-                asked.failed,
-                FailureCause.Splice.HoldOutlasted(Outlast.MAX_HOLD, asked.cause, step.until),
-                state,
-                ctx,
-            )
+            HoldEnd.WALL, HoldEnd.MODEL_ROOM, HoldEnd.MAX_HOLD -> {
+                val outlasted = FailureCause.Splice.HoldOutlasted(checkNotNull(end.outlast), asked.cause, step.until)
+                endings.done(asked.failed, ctx.limits.ending(outlasted, asked.at), state, ctx)
+            }
             HoldEnd.UNSUPPORTED, HoldEnd.CLIENT_GONE -> endings.done(asked.failed, null, state, ctx)
         }
     }

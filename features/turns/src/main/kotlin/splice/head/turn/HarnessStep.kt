@@ -42,7 +42,11 @@ internal class HarnessStep(
                 val placing = placed(built, end.texts)
                 if (placing.chars > 0 || end.sending != null) drive.place(placing.turn.requestBody)
                 end.rounds?.let(drive::answering)
-                drive.held = drive.held.copy(textChars = placing.chars, unplaced = placing.unplaced)
+                drive.held = drive.held.copy(
+                    textChars = placing.chars,
+                    unplaced = placing.unplaced,
+                    skipped = end.skipped.joinToString("; ").ifEmpty { null },
+                )
                 null
             }
         }
@@ -107,7 +111,8 @@ internal class HarnessStep(
             this.held -= drive.slot
             val before = drive.held
             val on = (listOfNotNull(before.on) + held.on).joinToString(",").ifEmpty { null }
-            drive.held = before.copy(on = on, ms = before.ms + held.ms)
+            val failed = (listOfNotNull(before.failed) + held.failed).joinToString("; ").ifEmpty { null }
+            drive.held = before.copy(on = on, ms = before.ms + held.ms, failed = failed)
             try {
                 drive.emitter.holding(false)
                 drive.slot.retakePermit()

@@ -45,13 +45,8 @@ import splice.core.failure.StoppedBy
 import splice.core.parse.AnthropicTurnBody
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
-import splice.core.pool.PREFERRED_UPSTREAM_HEADER
 import splice.core.session.ActivityAction
 import splice.core.turn.SERVED_NOTICE_HEADER
-import splice.core.turn.SERVED_TURN_HEADER
-import splice.core.turn.TURN_DOOR_HEADER
-import splice.core.turn.TurnRelay
-import splice.core.turn.turnDoors
 import splice.core.util.Cancellables
 import splice.core.wire.AnthropicRequest
 import splice.head.ActivityLabel
@@ -352,15 +347,7 @@ internal class TurnPreparation(
         val scope = fromProvider.meta.scope.let {
             it.copy(sessionId = it.sessionId ?: sessionId, messagesHash = messagesHash)
         }
-        // The server its person prefers among the provider's upstreams, as the listener that relayed the turn named it.
-        // And the id it named the turn by, so the turn tells it how it went (server mode's ledger, F5), and the
-        // door it came through (desktop-door, decision 7), as the relay in front of the head named it.
-        val headers = call.request.headers
-        val relay = TurnRelay(
-            preferredUpstream = headers[PREFERRED_UPSTREAM_HEADER],
-            servedTurn = headers[SERVED_TURN_HEADER],
-            door = headers[TURN_DOOR_HEADER]?.takeIf { it in turnDoors },
-        )
+        val relay = RelayHeaders.of(call.request.headers)
         val route = fromProvider.meta.route.copy(relay = relay)
         val prepared = fromProvider.copy(meta = fromProvider.meta.copy(scope = scope, route = route))
         toolLoop.join(prepared.meta, parsed, parsed.agentId)
@@ -392,7 +379,8 @@ internal class TurnPreparation(
             // V4-319: what a stop of this turn marks. A collect is never listed, so only a stream carries it there.
             messagesHash.takeIf { parsed.typed.stream },
             hasPriorExchange = answered,
-            own = parsed.agentId == null,
+            // A gatherer's request has no say in the command's usual model either (decision 9).
+            own = parsed.agentId == null && relay.workedFor == null,
             harness = harnessRequests.of(
                 parsed,
                 sessionId,
@@ -404,6 +392,8 @@ internal class TurnPreparation(
                     answered = answered,
                     review = perf.count(AUTO_MODE_REVIEW) > 0L,
                     slotHeld = built.onEnd != null,
+                    workedFor = relay.workedFor,
+                    door = relay.door,
                 ),
             ),
         )

@@ -48,16 +48,19 @@ public interface TurnHolding {
     public suspend fun release(held: Held)
 }
 
-/** A hold as the turn's record keeps it: the capabilities it was held on, in order, and for how long. */
-public data class Held(val on: List<String>, val ms: Long)
+/** A hold as the turn's record keeps it: the capabilities it was held on, in order, for how long, and each one whose
+ *  work failed or was stopped, as `<capability>: <reason>` (decision 6). */
+public data class Held(val on: List<String>, val ms: Long, val failed: List<String> = emptyList())
 
 /** What the harness makes of one request. */
 public sealed class HarnessEnd {
-    /** The request goes on carrying [texts], in order, at the end of its first user message. [sending], when set, is
-     *  the request it sends in place of the one it built (the model's tools offered and its calls put back, decision
-     *  12), and [rounds] answers the calls the model makes of a capability in each of its rounds. */
+    /** The request goes on carrying [texts], in order, at the end of its first user message. [skipped] names each
+     *  capability its rule named that was not called, as `<capability>: <reason>` (decision 9). [sending], when set,
+     *  is the request it sends in place of the one it built (the model's tools offered and its calls put back,
+     *  decision 12), and [rounds] answers the calls the model makes of a capability in each of its rounds. */
     public data class Go(
         val texts: List<String>,
+        val skipped: List<String> = emptyList(),
         val sending: JsonObject? = null,
         val rounds: RoundInterceptor? = null,
     ) : HarnessEnd()

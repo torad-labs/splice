@@ -162,6 +162,8 @@ describe("getter-runs", () => {
     // effort word in its environment, whatever the head's effort is
     expect(run.effort).toBeNull();
     expect(run.argv.join(" ")).not.toMatch(/--effort/);
+    // "unset" would make Claude Code send no effort, and the head's own (xhigh here) would ride in its place
+    expect(run.effectiveEnv.CLAUDE_CODE_EFFORT_LEVEL).toBeUndefined();
   });
 
   test("the gatherer's requests name the session they work for, and are never gathered for", async () => {

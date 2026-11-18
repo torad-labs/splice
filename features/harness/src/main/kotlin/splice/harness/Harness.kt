@@ -75,15 +75,29 @@ internal class Harness(
         waits.remove(thread)?.complete(SUPERSEDED)
         val hash = records.hashOf(request.firstUser)
         val first = firstTurn(thread, request)
-        val due = if (turn.holdable && !stopping.get()) due(request, first) else emptyList()
+        val on = CallFor(head, turn, request)
+        // The capabilities whose rules name the request, in the order splice.toml declares them.
+        val named = if (turn.holdable && !stopping.get()) {
+            capabilities.filter { rules.names(it, head, request, first) }
+        } else {
+            emptyList()
+        }
+        val skipped = notCalled(named, on)
+        val due = named.filter { it.name !in skipped }
         if (first) records.update(thread) { taken(it, due, hash) }
-        if (due.isEmpty()) return HarnessEnd.Go(records.of(thread).placedFor(hash))
-        return held(thread, due, CallFor(head, turn, request), hash)
+        val end = if (due.isEmpty()) HarnessEnd.Go(records.of(thread).placedFor(hash)) else held(thread, due, on, hash)
+        val notes = skipped.map { (name, why) -> "$name: $why" }
+        return if (end is HarnessEnd.Go && notes.isNotEmpty()) end.copy(skipped = notes) else end
     }
 
-    /** The capabilities whose rules name [request], in the order splice.toml declares them. */
-    private fun due(request: HarnessRequest, first: Boolean): List<Capability> =
-        capabilities.filter { rules.names(it, head, request, first) }
+    /** The capabilities among [named] that are not called for [on] though their rules name it, each with the reason,
+     *  which the log keeps with the whole session id, so the turn's own record can be found from it (decision 9). */
+    private suspend fun notCalled(named: List<Capability>, on: CallFor): Map<String, String> =
+        named.mapNotNull { capability -> calls.notCalled(capability, on)?.let { capability.name to it } }.toMap().also {
+            it.forEach { (name, why) ->
+                log("[$head] capability $name was not called (session ${on.request.sessionId}): $why\n")
+            }
+        }
 
     /** Whether [request] is its thread's first turn, decided once: at the thread's first request that streams and
      *  carries tools. One that already holds an answer marks the thread as first seen mid-conversation, which never
@@ -112,41 +126,63 @@ internal class Harness(
     ): HarnessEnd {
         val startedMs = clock()
         val ended = CompletableDeferred<String>()
+        val failures = mutableListOf<String>()
         on.turn.hold()
         waits[thread] = ended
         if (stopping.get()) ended.complete(HEAD_STOPPED)
         val outcome = try {
-            runAll(thread, due, on, ended)
+            runAll(thread, due, on, ended, failures)
         } finally {
             waits.remove(thread, ended)
-            on.turn.release(Held(due.map { it.name }, clock() - startedMs))
+            on.turn.release(Held(due.map { it.name }, clock() - startedMs, failures.toList()))
         }
         if (outcome == null) return HarnessEnd.Go(records.of(thread).placedFor(hash))
         // A refused turn was not the thread's first turn: the next request the rule names is called.
-        records.update(thread) { record -> undone(record, due) }
+        if (due.any { it.call.rule.turn == CapabilityTurn.FIRST }) records.update(thread) { record -> record.undone() }
         return HarnessEnd.Refused(outcome)
     }
 
     /** Calls each capability in turn, until one refuses the turn; null when the turn goes on. A wait ended by a
-     *  second request of the thread, or by the head stopping, leaves the rest uncalled and places nothing. */
+     *  second request of the thread, by the head stopping or by the client leaving leaves the rest uncalled and places
+     *  nothing. Each capability whose work failed or was stopped goes into [failures] with its reason. */
     private suspend fun runAll(
         thread: String,
         due: List<Capability>,
         on: CallFor,
         ended: CompletableDeferred<String>,
+        failures: MutableList<String>,
     ): Decline? {
         for (capability in due) {
-            val end = raced(capability, on, ended)
+            val end = try {
+                raced(capability, on, ended)
+            } catch (cancelled: CancellationException) {
+                // The turn itself was cancelled: a held turn is kept through a head's stop, so its client left.
+                failures += stopped(thread, due, capability, on, if (stopping.get()) HEAD_STOPPED else CLIENT_LEFT)
+                throw cancelled
+            }
             if (end == null) {
-                due.forEach { mark(thread, it, CapabilityState(it.name, FAILED)) }
-                val why = if (ended.isCompleted) ended.await() else CUT
-                log("[$head] capability ${capability.name} stopped waiting: $why\n")
+                failures += stopped(thread, due, capability, on, if (ended.isCompleted) ended.await() else CUT)
                 return null
             }
+            if (end is CallEnd.Failed) failures += "${capability.name}: ${end.why}"
             val refusal = settle(thread, capability, end, on)
             if (refusal != null) return refusal
         }
         return null
+    }
+
+    /** The wait on [capability] ended for [why] before its work did: every capability of [due] is marked as failed,
+     *  and the log names the whole session, so the turn's own record can be found from it. Answers the failure. */
+    private fun stopped(
+        thread: String,
+        due: List<Capability>,
+        capability: Capability,
+        on: CallFor,
+        why: String,
+    ): String {
+        due.forEach { mark(thread, it, CapabilityState(it.name, FAILED)) }
+        log("[$head] capability ${capability.name} stopped waiting (session ${on.request.sessionId}): $why\n")
+        return "${capability.name}: $why"
     }
 
     /** The capability's end, or null when the wait was ended first. */
@@ -170,7 +206,7 @@ internal class Harness(
     /** Records [end] for [capability] and answers the refusal it makes of the turn, if any. */
     private fun settle(thread: String, capability: Capability, end: CallEnd, on: CallFor): Decline? {
         val name = capability.name
-        val session = on.request.sessionId?.take(SESSION_CHARS)
+        val session = on.request.sessionId
         return when (end) {
             is CallEnd.Placed -> null.also { mark(thread, capability, CapabilityState(name, PLACED, end.text)) }
             CallEnd.Passed -> null.also { mark(thread, capability, CapabilityState(name, NEVER)) }
@@ -197,19 +233,10 @@ internal class Harness(
     private fun mark(thread: String, capability: Capability, state: CapabilityState) {
         if (capability.call.rule.turn == CapabilityTurn.FIRST) records.update(thread) { it.with(state) }
     }
-
-    /** The thread after a refused turn: its first turn not yet come, and the capabilities called for it as if they
-     *  never were. */
-    private fun undone(record: ThreadRecord, due: List<Capability>): ThreadRecord {
-        if (due.none { it.call.rule.turn == CapabilityTurn.FIRST }) return record
-        return record.copy(first = FirstTurn.UNDECIDED, firstHash = null, capabilities = emptyList())
-    }
 }
-
-/** why: a session is named in the log by its first eight characters, as every head line names it. */
-private const val SESSION_CHARS = 8
 
 /** why: what the log says ended a wait. */
 private const val SUPERSEDED = "a later request of the thread came"
 private const val HEAD_STOPPED = "the head is stopping"
 private const val CUT = "its work was cut short"
+private const val CLIENT_LEFT = "the client left"

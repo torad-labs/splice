@@ -18,6 +18,7 @@ import splice.upstream.RoundResult
 import splice.upstream.TurnSignals
 import splice.upstream.credentials.AccountSelection
 import splice.upstream.retry.OtherLoginFree
+import splice.upstream.retry.OtherModelRoom
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.transport.AuthRefreshObserver
 import splice.upstream.transport.PostContext
@@ -127,6 +128,9 @@ internal class SseRoundPost(
             retry = drive.retry,
             otherLoginFree = drive.accountHandoff?.let { handoff ->
                 OtherLoginFree { cause -> handoff.otherFree(drive, cause) }
+            },
+            otherModelRoom = drive.accountHandoff?.let { handoff ->
+                OtherModelRoom { cause -> handoff.otherModel(drive, cause) }
             },
             model = drive.meta.route.upstreamModel,
         )

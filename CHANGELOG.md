@@ -109,6 +109,11 @@
   printed one while Claude Code opened the other on the desktop when it could, so a Claude sign-in asked for a code
   only sometimes. splice now gives Claude Code's sign-in a browser of its own that hands splice the first link, and
   the console shows that one with no code field. A Claude Code that opens no link still gets the code field.
+- **A Kimi or Muse sign-in from the console asks for no code.** Kimi and Meta send a sign-in link that already
+  carries the code, and their own CLIs only ask you to approve on that page. The console opened that same link but
+  drew the code beside it with "Enter this code on the sign-in page". It now shows those sign-ins the way it shows
+  ChatGPT, Grok and Claude: Open sign-in, approve, and the console finishes by itself. A provider whose link does not
+  carry the code still shows the code to enter.
 - **A login whose token can't be renewed hands the turn to another login.** When every other login was held for
   the turn's model, the turn ended "login expired and could not be renewed" though other logins were signed in. It
   now moves to the one whose hold ends soonest, or to a model with room.

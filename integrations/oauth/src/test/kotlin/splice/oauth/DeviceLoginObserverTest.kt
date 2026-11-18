@@ -37,12 +37,13 @@ class DeviceLoginObserverTest {
         }
     }
 
-    private fun serving(tokenBody: String): HttpServer {
+    /** [complete] is the link carrying the code, as Kimi and Meta send it, or "" for a provider that sends none. */
+    private fun serving(tokenBody: String, complete: String = ""): HttpServer {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/device") { ex ->
             val body = """
                 {"user_code":"WXYZ-1234","device_code":"dev-code",
-                 "verification_uri":"http://127.0.0.1:${server.address.port}/verify","verification_uri_complete":"",
+                 "verification_uri":"http://127.0.0.1:${server.address.port}/verify","verification_uri_complete":"$complete",
                  "expires_in":30,"interval":0}
             """.trimIndent().toByteArray()
             ex.sendResponseHeaders(200, body.size.toLong())
@@ -120,5 +121,27 @@ class DeviceLoginObserverTest {
             "an observed login must not print to a terminal nobody is watching: $out",
         )
         assertTrue(Files.exists(authPath), "the credential is still persisted exactly as an unobserved login")
+    }
+
+    /** Nov 17, 2026: Kimi and Meta send a link that carries the code, and their own CLIs only ask the person to approve
+     *  on that page. The console is handed that link as a page that finishes by itself, with no code to enter. */
+    @Test
+    fun `an observed device login whose link carries the code is announced as a page to approve, with no code`(
+        @TempDir tmp: Path,
+    ) {
+        val complete = "https://auth.example.invalid/device?user_code=WXYZ-1234"
+        val server = serving("""{"access_token":"tok_observed"}""", complete)
+        val observer = RecordingObserver()
+        val ok = try {
+            runBlocking {
+                DeviceLoginFlow(TerminalOutput { }, RecordingBrowserOpener())
+                    .run(specFor(server, tmp.resolve("auth.json")), Waiter {}, observer)
+            }
+        } finally {
+            server.stop(0)
+        }
+
+        assertTrue(ok)
+        assertEquals(LoginAnnouncement(browserUrl = complete), observer.detail.get())
     }
 }

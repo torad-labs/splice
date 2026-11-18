@@ -43,9 +43,9 @@ public fun interface DoorNow {
  *  head's models already where [door] says it has a head here, or that it is on the door while `claude` is [linked]
  *  to splice; anywhere else the notice says that `splice claude door` comes first. Heads still work, and no removal
  *  date is set. */
-public class HeadsDeprecated(private val door: ClaudeDoor?, private val linked: Boolean) {
+internal class HeadsDeprecated(private val door: ClaudeDoor?, private val linked: Boolean) {
     /** The notice of a launch of [spec]'s head. */
-    public fun said(spec: LaunchSpec): String {
+    fun said(spec: LaunchSpec): String {
         val models = spec.models
         val selector = models.discoveryPrefix + models.pinnedModel
         val pick = if (models.pinnedModel.isEmpty()) "/model" else "/model $selector"

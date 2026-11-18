@@ -4,7 +4,7 @@
 // a working commands dir is never observable missing or torn (DR-39, DR-180).
 package splice.client.wrap
 
-import splice.client.login.LoginHookScripts
+import splice.client.Keys
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
@@ -16,7 +16,6 @@ import kotlin.io.path.isSymbolicLink
 
 internal object HeadCommandsDir {
     private const val COMMANDS_DIR = "commands"
-    private const val LOGIN_MD = "login.md"
 
     /** DR-39 redo (codex): commands reconciliation is not login plumbing. A client-auth head
      *  (blank loginCommand) still shares the operator's commands, and the materializer EXEMPTS
@@ -39,15 +38,16 @@ internal object HeadCommandsDir {
         }
     }
 
-    fun write(configDir: Path, signInLabel: String, globalCommands: Path?, sentinel: String) {
+    /** [login], the head's commands/login.md, written into its own real commands dir beside the operator's shared ones. */
+    fun write(configDir: Path, login: String, globalCommands: Path?) {
         // A whole-dir commands symlink must become the real dir login.md lives in (HeadRealDir, DR-39).
         HeadRealDir.write(configDir, COMMANDS_DIR) { target ->
             if (globalCommands != null) linkGlobalCommandsInto(target, globalCommands)
-            writeLoginMd(target, signInLabel, sentinel)
+            writeLoginMd(target, login)
         }
     }
 
-    private fun writeLoginMd(target: Path, signInLabel: String, sentinel: String) {
+    private fun writeLoginMd(target: Path, login: String) {
         // DR-180: stage-and-swap, not truncate-in-place. When the dir was a link the whole staged
         // DIRECTORY is moved into place by HeadRealDir, so login.md was already published atomically; the
         // other branch writes straight into the LIVE commands dir, where Files.writeString truncates
@@ -59,12 +59,12 @@ internal object HeadCommandsDir {
         // primitive (temp + ATOMIC_MOVE, perms before content) — 0600 is right for a file only this
         // operator's own head reads.
         SecureFile.writeAtomic0600(
-            target.resolve(LOGIN_MD),
-            LoginHookScripts.loginCommandMd(signInLabel, sentinel),
+            target.resolve(Keys.LOGIN_MD),
+            login,
         )
     }
 
     private fun linkGlobalCommandsInto(dst: Path, globalCommands: Path) {
-        GlobalEntryLinks(setOf(LOGIN_MD)).linkInto(dst, globalCommands)
+        GlobalEntryLinks(setOf(Keys.LOGIN_MD)).linkInto(dst, globalCommands)
     }
 }

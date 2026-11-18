@@ -14,13 +14,19 @@ import splice.core.failure.FailureCause
 import splice.core.failure.Lift
 import splice.core.failure.LimitWindow
 import splice.core.util.ElapsedClock
+import splice.core.util.WallClock
 import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
 import splice.upstream.StreamRead
+import splice.upstream.TurnRetry
 import splice.upstream.Waiter
+import splice.upstream.credentials.AccountPool
+import splice.upstream.credentials.AccountQuotaSource
+import splice.upstream.credentials.PoolAccount
 import splice.upstream.failure.Replies
 import splice.upstream.retry.LimitLeft
 import splice.upstream.retry.RateLimitCooldown
+import splice.upstream.retry.RetryLedger
 import splice.upstream.testing.OpenAiTestReplies
 
 class PooledLimitRecoveryTest {
@@ -122,6 +128,77 @@ class PooledLimitRecoveryTest {
             assertNull(failure.planLimit)
         }
     }
+
+    /** Nov 17, 2026: one small request Anthropic refused with a bare 429 on every login was asked of every login of a
+     *  pool, marked each limited and let go of the Use now pin. The same answer on a second login is no login's. */
+    @Test
+    fun `a bare 429 two logins answer alike is not asked of a third, marks neither and keeps the pin`() = runTest {
+        var now = 0L
+        val first = account("first", ElapsedClock { now })
+        val second = account("second", ElapsedClock { now })
+        val pool = AccountPool(listOf(first, second, account("third", ElapsedClock { now })), WallClock { 1_000_000L })
+        pool.pin("first")
+        HttpClient(MockEngine { respond("Rate limit exceeded", HttpStatusCode.TooManyRequests) }).use { http ->
+            val client = UpstreamClient(client = http, totalTimeoutMs = 180_000L, clock = ElapsedClock { now })
+            val turn = TurnRetry(RetryLedger()) { afterMs, _, _ -> now += afterMs }
+
+            val left = client.post(context(first.cooldown, free = true, turn), RoundBody.Text("{}")) {
+                StreamRead.Read("answer")
+            }
+            val stayed = client.post(context(second.cooldown, free = true, turn), RoundBody.Text("{}")) {
+                StreamRead.Read("answer")
+            }
+
+            assertInstanceOf(UpstreamPost.Refused::class.java, left, "one other login is asked")
+            val ending = assertInstanceOf(UpstreamPost.Ended::class.java, stayed, "the pool is not walked")
+            assertInstanceOf(FailureCause.Provider.Limited::class.java, (ending.ending as UpstreamFailed).cause)
+            assertEquals(0L, first.cooldown.remainingMs(), "the first login is not shown limited")
+            assertEquals(0L, second.cooldown.remainingMs(), "nor the second")
+            assertEquals("first", pool.pinned(), "a refusal that is no login's lets no pin go")
+        }
+    }
+
+    @Test
+    fun `a bare 429 the next login does not repeat marks the login it came from`() = runTest {
+        var now = 0L
+        val first = account("first", ElapsedClock { now })
+        val second = account("second", ElapsedClock { now })
+        val pool = AccountPool(listOf(first, second), WallClock { 1_000_000L })
+        pool.pin("first")
+        var sends = 0
+        val engine = MockEngine {
+            sends += 1
+            if (sends == 1) respond("Rate limit exceeded", HttpStatusCode.TooManyRequests) else respond("answer")
+        }
+        HttpClient(engine).use { http ->
+            val client = UpstreamClient(client = http, totalTimeoutMs = 180_000L, clock = ElapsedClock { now })
+            val turn = TurnRetry(RetryLedger()) { afterMs, _, _ -> now += afterMs }
+
+            val left = client.post(context(first.cooldown, free = true, turn), RoundBody.Text("{}")) {
+                StreamRead.Read("answer")
+            }
+            assertEquals("first", pool.pinned(), "whose the limit is stays open until another login answers")
+            val served = client.post(context(second.cooldown, free = true, turn), RoundBody.Text("{}")) {
+                StreamRead.Read("answer")
+            }
+
+            assertInstanceOf(UpstreamPost.Refused::class.java, left)
+            assertEquals(UpstreamPost.Delivered("answer"), served)
+            assertTrue(first.cooldown.remainingMs() > 0L, "the login that alone refused is shown limited")
+            assertNull(pool.pinned(), "and its Use now pin lets go")
+        }
+    }
+
+    private fun account(label: String, clock: ElapsedClock) = PoolAccount(
+        label = label,
+        primary = label == "first",
+        auth = fakeAuth,
+        quota = AccountQuotaSource { null },
+        cooldown = RateLimitCooldown(clock),
+    )
+
+    private fun context(cooldown: RateLimitCooldown, free: Boolean, turn: TurnRetry) =
+        context(cooldown, free).let { it.copy(limits = it.limits.copy(retry = turn)) }
 
     private fun context(cooldown: RateLimitCooldown, free: Boolean) = PostContext(
         url = "https://api.example.test/v1",

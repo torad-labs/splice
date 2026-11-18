@@ -25,6 +25,10 @@ import java.time.Instant
  *  declares its own in `extra_headers` overrides this default. */
 private const val ANTHROPIC_VERSION_DEFAULT = "2023-06-01"
 
+// Why a provider that forwards the caller's own Claude login is not asked, before the URL it would have asked.
+private const val NONE_HELD = "this provider forwards your own Claude login, and no Claude account is added to " +
+    "splice to ask with: "
+
 /** One provider's answer, with the URL that produced it so the operator can re-run it by hand. */
 internal data class ProbedProvider(
     val key: String,
@@ -43,8 +47,10 @@ internal class ModelsProbe(
     fun probe(key: String, provider: ProviderConfig, env: EnvReader): ProbedProvider {
         val url = provider.rosterUrl
         if (provider.auth.kind == AuthKind.Client.wire) {
-            val why = "this provider forwards your own Claude login, so splice holds no credential to ask $url with"
-            return unpublished(key, provider, url, why)
+            // a Claude account added to the head is asked in the caller's place; the caller's own login never is
+            val held = credentials.heldLogin(key) ?: return unpublished(key, provider, url, NONE_HELD + url)
+            val answer = http(url, headers(provider, null) + held)
+            return ProbedProvider(key, provider, url, read(answer, url, provider, key, held = true))
         }
         val bearer = credentials.bearer(provider, key, env)
         val answer = http(url, headers(provider, bearer))

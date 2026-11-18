@@ -1,6 +1,8 @@
 // NEW: failure-handling slice 4. How a post's retries end once RetryEngine says they do: the failure the post leaves
 // with, and the login marked as that failure warrants. Was RetryPolicy's give-up half (RetryRules.giveUp,
 // rateLimitFailure and protectFollowers); RetryPolicy's plans are the engine's now, and that file is gone.
+// Nov 17, 2026: a bare limit marks its login only where the turn stays on it, or once another login took the turn
+// (RetryLedger.leftBare).
 package splice.upstream.transport
 
 import splice.core.failure.FailureCause
@@ -19,39 +21,53 @@ internal class RetryEndings {
      *  marks its login limited (RateLimitCooldown.limitLeft); a long pushback on a failure waiting can heal marks it
      *  too, so the turns after this one steer away. With no answer at all, the post was never sent. */
     fun ended(last: RetryOutcome.Failed?, cause: FailureCause?, state: RetryState, ctx: PostContext): UpstreamFailed {
-        val failed = answered(last, cause, state, ctx)
+        val failed = answered(last, cause, state, ctx, Leaving.ENDS)
         val outlasted = cause as? FailureCause.Splice.HoldOutlasted ?: return failed
         return UpstreamFailed(failed.cause, failed.evidence, failed.layers, failed.planLimit, failed.native, outlasted)
     }
+
+    /** The failure a post leaves with as the turn moves to another login. As [ended], but a bare limit leaves its
+     *  login unmarked until another login's answer shows whose it was (RetryLedger.leftBare). */
+    fun moved(last: RetryOutcome.Failed?, state: RetryState, ctx: PostContext): UpstreamFailed =
+        answered(last, null, state, ctx, Leaving.MOVES)
 
     private fun answered(
         last: RetryOutcome.Failed?,
         cause: FailureCause?,
         state: RetryState,
         ctx: PostContext,
+        leaving: Leaving,
     ): UpstreamFailed {
         val layers = state.ledger.attempts
         if (last == null) return UpstreamFailed(NO_ANSWER, FailureEvidence(NO_ANSWER_MESSAGE), layers)
-        if (last.limited) return limitFailure(last, state, ctx)
+        if (last.limited) return limitFailure(last, state, ctx, leaving)
         protectFollowers(last, state)
         return UpstreamFailed(cause as? FailureCause.Provider ?: last.cause, last.evidence, layers)
     }
 
     /** Native passthrough replies keep their wire; translated providers keep the plan's presentation. */
-    private fun limitFailure(last: RetryOutcome.Failed, state: RetryState, ctx: PostContext): UpstreamFailed {
-        val lift = (last.cause as? FailureCause.Provider.Limited)?.lift
-            ?: (last.cause as? FailureCause.Provider.NeedsPayment)?.lift
-            ?: Lift.Unstated
+    private fun limitFailure(
+        last: RetryOutcome.Failed,
+        state: RetryState,
+        ctx: PostContext,
+        leaving: Leaving,
+    ): UpstreamFailed {
+        val limited = last.cause as? FailureCause.Provider.Limited
+        val lift = limited?.lift ?: (last.cause as? FailureCause.Provider.NeedsPayment)?.lift ?: Lift.Unstated
         val met = last.planLimit?.metBy(ctx.limits.model)
-        val left = LimitLeft(
-            lift,
-            last.evidence.retryAfterMs,
-            met,
-            last.native,
-            ctx.pooled,
-            last.cause as? FailureCause.Provider.Limited,
-        )
-        val held = state.cooldown.limitLeft(left, ctx.onRetry)
+        val left = LimitLeft(lift, last.evidence.retryAfterMs, met, last.native, ctx.pooled, limited)
+        val held = when {
+            limited?.isBare != true -> state.cooldown.limitLeft(left, ctx.onRetry)
+            // The same bare limit on the login the turn moved to: it is neither login's, and neither is marked.
+            state.ledger.bareMoves > 0 -> null
+            leaving == Leaving.MOVES -> null.also {
+                state.ledger.leftBare {
+                    state.cooldown.observeLimit()
+                    state.cooldown.limitLeft(left, ctx.onRetry)
+                }
+            }
+            else -> state.cooldown.limitLeft(left, ctx.onRetry)
+        }
         val limit = last.planLimit.takeIf { last.native != null || held != null }
         return UpstreamFailed(last.cause, last.evidence, state.ledger.attempts, planLimit = limit, native = last.native)
     }
@@ -62,6 +78,9 @@ internal class RetryEndings {
         val pushback = last.evidence.retryAfterMs ?: return
         if (pushback > HOLD_FLOOR_MS && !last.cause.permanent) state.cooldown.arm(pushback)
     }
+
+    /** How the turn leaves the login a post failed on: it ends there, or another login takes it. */
+    private enum class Leaving { ENDS, MOVES }
 }
 
 // The loop gave up with nothing to read: its whole-turn wait was already spent before any attempt went out, so no

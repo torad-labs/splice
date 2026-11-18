@@ -19,6 +19,7 @@ import splice.head.hold.resources.HoldSurfaces
 import splice.head.hold.resources.SessionWall
 import splice.head.hold.resources.TurnHold
 import splice.head.transport.TurnAccountHandoff
+import splice.head.turn.fallback.HeldModelFallback
 import splice.head.wire.ClientChannel
 import splice.head.wire.TurnTerminal
 import splice.upstream.Provider
@@ -35,6 +36,7 @@ internal class TurnDriveFactory(
 ) {
     private val driveSignals = DriveSignals(provider, deps.log, health)
     private val drivePipeline = DrivePipeline(provider, deps)
+    private val heldFallback = HeldModelFallback(deps.quotaBundle, provider.catalog, deps.log)
 
     /** What a row records as its account when no login is proved for the turn. A key head names the key that
      *  sent the request, and a key head with no key names nothing: "primary" is left for a head holding a login
@@ -112,7 +114,9 @@ internal class TurnDriveFactory(
         ).also { drive ->
             drive.accountLabel.fallback = accountLabel(inputs.accountQuota.keyNaming)
             drive.accountLabel.names = deps.quotaBundle.credentialAccountNames
-            drive.accountHandoff = deps.quotaBundle.activePool?.let { TurnAccountHandoff(it, deps.turnQuota) }
+            drive.accountHandoff = deps.quotaBundle.activePool?.let { pool ->
+                TurnAccountHandoff(pool, deps.turnQuota, heldFallback, deps.traffic.held)
+            }
             drive.route = provider.route(meta)
             // One ledger for the turn's every post, its waits where the head's client sleeps a retry, told on the turn's
             // own wire.

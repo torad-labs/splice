@@ -5,7 +5,6 @@
 package splice.client
 
 import kotlinx.serialization.json.JsonElement
-import splice.client.login.SignInWay
 import splice.client.login.TokenCaptureSpec
 import java.nio.file.Path
 
@@ -56,12 +55,9 @@ public data class MaterializeSignIn(
     // Anthropic /login is disabled in the launch env; a materialized custom /login command + a
     // UserPromptSubmit hook route the user to this instead. Empty disables the interception.
     val loginCommand: String = "",
-    // Human label for the head's provider in the /login UX (e.g. "Codex (ChatGPT)", "Grok (xAI)").
-    val signInLabel: String = "",
-    // Browser for OAuth heads; Terminal switches the block reason to the masked-terminal-prompt wording
-    // (api-key heads sign in at a console readPassword, not a browser); Elsewhere names the machine that
-    // holds the logins of a command another machine serves (LAN share), and starts nothing here.
-    val signInWay: SignInWay = SignInWay.Browser,
+    // The machine that holds the logins of a command another machine serves (LAN share): its /login names that
+    // machine and starts nothing here. Empty for a head on this machine.
+    val signsInOn: String = "",
     // api-key heads: capture a BARE provider token pasted as the whole message into the KeyStore,
     // blocked before it reaches the model context. Null disables capture.
     val tokenCapture: TokenCaptureSpec? = null,

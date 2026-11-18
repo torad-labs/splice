@@ -56,6 +56,8 @@ internal object FailureFamilies {
      *  a held spent account P. A hold the session's wall cannot hold is handed to the client, L. */
     private fun outlasted(cause: FailureCause.Splice.HoldOutlasted): ClientWire.Family = when {
         cause.why == Outlast.WALL -> ClientWire.Family.L
+        // Its re-send goes on under a model with room, so the client sends it again at once (R's 529).
+        cause.why == Outlast.MOVES -> ClientWire.Family.R
         cause.held is FailureCause.Provider.Limited -> ClientWire.Family.H
         cause.held is FailureCause.Provider.NeedsPayment -> ClientWire.Family.P
         else -> ClientWire.Family.R
@@ -73,6 +75,7 @@ internal object FailureFamilies {
         is Decline.Preflight -> ClientWire.Family.T
         is Decline.TooLarge, is Decline.Unfit, is Decline.Budget, is Decline.BadBody, is Decline.UnknownModel,
         Decline.ForeignHost, Decline.LivenessProbe, Decline.NoSharedLogin, is Decline.Untranslatable,
+        is Decline.CapabilityRefused, is Decline.CapabilityFailed,
         -> ClientWire.Family.P
     }
 }

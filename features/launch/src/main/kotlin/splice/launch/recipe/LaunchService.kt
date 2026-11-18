@@ -13,6 +13,7 @@
 package splice.launch.recipe
 
 import splice.client.ClaudeConfigMaterializer
+import splice.client.ClaudeTiers
 import splice.client.ManagedSettings
 import splice.client.MaterializeSignIn
 import splice.client.MaterializeSpec
@@ -88,6 +89,13 @@ public class LaunchService(
      *  requests; null offers none, and every head keeps Claude Code's own /fast. */
     public var speeds: LaunchSpeeds? = null
 
+    /** door-default: the `claude` command's launch while it is on the door. Assigned by the daemon before routes serve
+     *  requests; null launches `claude` on its head, as before. */
+    public var door: ClaudeDoor? = null
+
+    /** What a launch of `claude` on the [door] runs. */
+    internal val onDoor = DoorRecipe(wrap, wrapState, claudeBinary)
+
     /** How the head's effort reaches the Claude Code this launch starts. */
     private val effort = LaunchEffort()
 
@@ -142,8 +150,7 @@ public class LaunchService(
             statuslineCommand = effective.gateway.statuslineCommand,
             signIn = MaterializeSignIn(
                 loginCommand = effective.signIn.loginCommand,
-                signInLabel = effective.signIn.signInLabel,
-                signInWay = effective.signIn.signInWay,
+                signsInOn = effective.signIn.signsInOn,
                 tokenCapture = effective.signIn.tokenCapture,
                 advertiseKeySetup = effective.signIn.advertiseKeySetup,
                 loginOutcomeFile = effective.signIn.loginOutcomeFile,
@@ -172,8 +179,9 @@ public class LaunchService(
         // adoptResume judges. Read from the head's own index, a wrapped launch's too (round 6 of #247): the hook
         // route records every session of the head there, and nothing records one under ~/.claude.
         val bounded = resume.bounded(keyed.trees.own, extraArgs, caller.cwd)
-        resume.refusedName(held, bounded.args, caller.cwd)?.let { return LaunchOutcome.Refused(it) }
-        val adoption = resume.adopt(held, bounded.args, caller.cwd)
+        // a -r NAME of a session another command wrote is the id it stands for, so it is adopted as that id is
+        val asked = resume.named(held, bounded.args, caller.cwd)
+        val adoption = resume.adopt(held, asked, caller.cwd)
         // V4-445: Claude Code reads ~/.claude.json only while CLAUDE_CONFIG_DIR is unset. Set to the vanilla dir it
         // reads ~/.claude/.claude.json, a file that holds none of the operator's mcpServers, projects or account.
         val environment = speed.environment(launchEnvironment(spec, held, slots, wrapped, caller.inheritedConfigDir))
@@ -186,31 +194,38 @@ public class LaunchService(
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
             // a launch on macOS carries splice's mark in its --settings, the one sign of it a hardened claude's
             // arguments keep there (LaunchMarker); elsewhere the arguments are as they were
-            addAll(LaunchMarker.settingsArgs(overlayOf(wrapped, roster, held, keyed)))
+            addAll(LaunchMarker.settingsArgs(overlayOf(caller, roster, held, keyed)))
             addAll(hub.args + effort.args(held)) // the effort after the hub's: a relaunch reads it as its own
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.
             // V4-169: a session another head wrote goes on as the copy the client resumes.
-            addAll(resume.resumingAs(bounded.args, adoption))
+            addAll(resume.resumingAs(asked, adoption))
         }
         val warnings = listOf(resume.warning(adoption), bounded.warning, hub.warning)
-        val warning = launchWarning(spec, dangerouslySkipPermissions, warnings)
+        // door-default (docs/specs/door-default.md, decision 7): the launch of another provider's own command says it is
+        // deprecated and what to type in `claude` for its model. A launch of `claude` says nothing of it, on its head as
+        // on the door (DoorRecipe): it is the command the notice sends a person to, and on its head it carries the
+        // door's models (decision 9). `claude` runs them already where it has a head here, or is linked on the door.
+        val notice = HeadsDeprecated(door, linked = chosen is ClaudeToRun.Wrapped).said(spec).takeIf { wrapped == null }
+        val warning = launchWarning(spec, dangerouslySkipPermissions, warnings + notice)
         return LaunchOutcome.Ready(environment.recipe(argv, warning))
     }
 
     /** A wrapped launch's --settings overlay: the roster, the status line, splice's launch mark on macOS, the key
      *  helper of a head that checks the turn key (Oct 26), and [head]'s startup hook, so the session is recorded as
-     *  the head's (round 6 of #247). Null for a launch that materialized its own settings. */
+     *  the head's (round 6 of #247); and for `claude` on its head, the picker rows the [caller] adds after Claude
+     *  Code's own models (door-default, decision 9). Null for a launch that materialized its own settings. */
     private fun overlayOf(
-        wrapped: WrappedLaunch?,
+        caller: LaunchCaller,
         roster: List<String>?,
         held: LaunchSpec,
         head: LaunchSpec,
     ): String? {
-        if (wrapped == null) return null
+        val wrapped = caller.wrapped ?: return null
         val hooks = materializer.startupHook(head.trees.own, head.signIn.headKey)
         val marked = LaunchMarker.here
-        return wrapped.settingsOverlay(roster, held.gateway.statuslineCommand, marked, held.helpers, hooks)
+        val overlay = wrapped.settingsOverlay(roster, held.gateway.statuslineCommand, marked, held.helpers, hooks)
+        return caller.picker?.addedTo(overlay) ?: overlay
     }
 
     /** MCP hub step 6: what the hub adds to this launch. A wrapped launch reads the user's own config home and falls
@@ -263,15 +278,9 @@ public class LaunchService(
         dangerouslySkipPermissions: Boolean,
         others: List<String?>,
     ): String? {
-        val danger = if (dangerouslySkipPermissions) {
-            "dangerouslySkipPermissions engaged for ${spec.trees.own}: Claude Code runs with " +
-                "--dangerously-skip-permissions (no permission prompts)."
-        } else {
-            null
-        }
-        return (listOf(danger) + others).filterNotNull()
-            .takeIf { it.isNotEmpty() }
-            ?.joinToString("; ")
+        val danger = "dangerouslySkipPermissions engaged for ${spec.trees.own}: $DANGER"
+            .takeIf { dangerouslySkipPermissions }
+        return (listOf(danger) + others).filterNotNull().takeIf { it.isNotEmpty() }?.joinToString("; ")
     }
 
     /** Vars a launched head must SCRUB from the inherited environment: app/src/main/dist/bin/splice-launch execs
@@ -300,15 +309,7 @@ public class LaunchService(
             ) + helperShadows(spec)
         }
         val emitted = slots.map { it.first }.toSet()
-        val absentTiers = listOf("OPUS", "SONNET", "HAIKU", "FABLE")
-            .filterNot { it in emitted }
-            .flatMap { tier ->
-                listOf(
-                    "ANTHROPIC_DEFAULT_${tier}_MODEL",
-                    "ANTHROPIC_DEFAULT_${tier}_MODEL_NAME",
-                    "ANTHROPIC_DEFAULT_${tier}_MODEL_DESCRIPTION",
-                )
-            }
+        val absentTiers = ClaudeTiers.names.filterNot { it in emitted }.flatMap(ClaudeTiers::variables)
         val dirs = listOf(spec.trees.own) + spec.trees.siblings
         val config = wrapped?.configRootUnsets(inheritedConfigDir, dirs).orEmpty()
         // V4-449: what this head no longer plants must not leak in from an outer head's session either.
@@ -323,8 +324,11 @@ public class LaunchService(
             env,
             // Claude Code's provider switches, cleared from every launch: a shell inside a Code tab session carries
             // the desktop door's, and a session that inherits any of them goes past its head.
+            // (4) the word that the address is Anthropic's own, which only a head that reaches Anthropic plants: a
+            // translated head launched from inside a Claude session must not inherit it.
             auth + "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY" + absentTiers + clientModels + config +
-                providerSwitches + LaunchTelemetry.cleared(held),
+                providerSwitches + listOfNotNull(FIRST_PARTY_ENV.takeUnless { spec.gateway.reachesAnthropic }) +
+                LaunchTelemetry.cleared(held),
         )
     }
 
@@ -382,6 +386,12 @@ public class LaunchService(
             // gateway is incompatible. Say up front that the checks are the client's own. A Claude head, here or on
             // another machine (LAN share), reaches Anthropic and keeps the server's checks.
             if (!spec.gateway.reachesAnthropic) put("CLAUDE_CODE_AUTO_MODE_SERVER", "0")
+            // The same head is Anthropic's API at splice's address, and the base URL's own companion variable says so.
+            // Without it Claude Code takes the address for a gateway's and sends its small requests (the usage check
+            // at startup, titles, summaries) on the session's main model instead of its small one. Anthropic answers
+            // that bare usage check on most models with a 429, which Claude Code shows as a limit reached (Nov 17,
+            // 2026: sessions started without the user settings that happened to carry the variable on that machine).
+            if (spec.gateway.reachesAnthropic) put(FIRST_PARTY_ENV, "1")
             put("SPLICE", "1")
         }
     }
@@ -421,3 +431,7 @@ public class LaunchService(
 
 /** The variable that moves Claude Code's whole config root, and its global .claude.json with it. */
 private const val CONFIG_DIR_ENV = "CLAUDE_CONFIG_DIR"
+
+/** Claude Code's word that ANTHROPIC_BASE_URL is Anthropic's own API behind another address (read in the 2.1.326
+ *  client, where it is that variable's declared companion). */
+private const val FIRST_PARTY_ENV = "_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL"

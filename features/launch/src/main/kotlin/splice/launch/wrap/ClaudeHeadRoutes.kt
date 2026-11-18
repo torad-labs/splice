@@ -20,6 +20,7 @@ import splice.client.wrap.WrappedHead
 import splice.core.config.UserHome
 import splice.launch.LaunchHeads
 import splice.launch.LaunchReplies
+import splice.launch.recipe.DoorNow
 import java.nio.file.Path
 
 /** The one head wrap targets (app/src/main/resources/splice.example.toml): the splice-owned Claude head, which a
@@ -35,13 +36,17 @@ public class ClaudeHeadRoutes(
     private val heads: LaunchHeads,
     home: Path = UserHome.dir(),
     private val wrappedHead: WrappedHead = WrappedHead(home),
+    /** The door, read at each wrap since the daemon assigns it after the routes are built; null where there is none. */
+    private val door: DoorNow = DoorNow { null },
 ) {
     public suspend fun status(call: ApplicationCall) {
         call.respondText(statusJson(wrappedHead.status()), ContentType.Application.Json)
     }
 
     public suspend fun wrap(call: ApplicationCall) {
-        if (heads.byKey(CLAUDE_HEAD_KEY) == null) {
+        // door-default (docs/specs/door-default.md, decision 8): a wrapped `claude` on the door launches no head, so
+        // linking it needs only the door.
+        if (heads.byKey(CLAUDE_HEAD_KEY) == null && door()?.onDoor() != true) {
             respondUnconfigured(call)
             return
         }
@@ -62,7 +67,8 @@ public class ClaudeHeadRoutes(
     private suspend fun respondUnconfigured(call: ApplicationCall) {
         call.respondText(
             LaunchReplies.errorJson(
-                "the '$CLAUDE_HEAD_KEY' head is not configured, and a wrapped claude launches it",
+                "the '$CLAUDE_HEAD_KEY' head is not configured and claude is not on the door, so a wrapped claude " +
+                    "would launch nothing",
             ),
             ContentType.Application.Json,
             HttpStatusCode.ServiceUnavailable,

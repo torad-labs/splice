@@ -1,9 +1,13 @@
-// NEW: the client-side retry limits, timeout and stream watchdog settings a launch plants. Beside LaunchServiceTest's "is planted" tests, which sit at the
+// NEW: the client-side retry limits, timeout and stream watchdog settings a launch plants, and the word that its
+// address is Anthropic's own. Beside LaunchServiceTest's "is planted" tests, which sit at the
 // size wall (detekt LargeClass 400), so this one is its own class, as ClientPickedLaunchTest is.
 package splice.launch.recipe
 
 import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
@@ -94,5 +98,22 @@ class LaunchRetryEnvTest(@param:TempDir private val tmp: Path) {
             val env = service.launch(spec(native), emptyList(), dangerouslySkipPermissions = false).env
             assertEquals("300000", env["CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS"], "forwardClientAuth=$native")
         }
+    }
+
+    // Nov 17, 2026: Claude Code takes any address but Anthropic's for a gateway's unless it is told otherwise, and then
+    // sends its small requests on the session's main model. The usage check at startup came back a 429, shown as a
+    // limit reached, in sessions started without the user settings that happened to carry the word. A head that
+    // forwards the client's own login reaches Anthropic; a translated head does not, and clears the word a Claude
+    // session passes down to it.
+    @Test
+    fun `a head that reaches Anthropic says its address is Anthropic's own, and no other head does`() {
+        val word = "_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL"
+        val native = service.launch(spec(forwardClientAuth = true), emptyList(), dangerouslySkipPermissions = false)
+        assertEquals("1", native.env[word])
+        assertFalse(word in native.unset, "the launch must not clear what it plants: ${native.unset}")
+
+        val foreign = service.launch(spec(forwardClientAuth = false), emptyList(), dangerouslySkipPermissions = false)
+        assertNull(foreign.env[word], "a translated head is not Anthropic")
+        assertTrue(word in foreign.unset, "one a Claude session passes down is cleared: ${foreign.unset}")
     }
 }

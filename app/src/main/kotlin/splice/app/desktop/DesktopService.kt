@@ -1,22 +1,25 @@
 // NEW: desktop-door (docs/specs/desktop-door.md, decision 4). What the control plane's routes reach of Claude
-// Desktop's door once the daemon has opened it: the door, its switch, and what `splice desktop` says.
+// Desktop's door once the daemon has opened it: the door, its switch, and what `splice desktop` says; and
+// (docs/specs/door-default.md) the terminal's lane on the same door and what `splice claude` says.
 package splice.app.desktop
 
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import splice.core.topology.CLAUDE_COMMAND
 
-/** The door, its switch, and what `splice desktop` says, for the control plane's routes. */
+/** The door, its switch, the terminal's lane, and what `splice desktop` and `splice claude` say, for the routes. */
 internal class DesktopService(
     val door: DesktopDoor,
     val switch: DesktopSwitch,
+    val claude: ClaudeLane,
     private val heads: DesktopHeads,
     private val records: DesktopRecords,
 ) {
+    private val lineupJson = LineupJson()
+
     /** What `splice desktop --json` says: whether Desktop is on, the door, the default model, the lineup, each head
      *  left out with the reason, and the last turn through the door. */
     suspend fun state(): JsonObject {
@@ -25,26 +28,9 @@ internal class DesktopService(
         return buildJsonObject {
             put("on", record.on)
             put("door", switch.door)
-            put("default_model", switch.defaultOf(lineup).first.ifEmpty { null })
-            putJsonArray("models") {
-                lineup.models.forEach { m ->
-                    addJsonObject {
-                        put("model", m.model)
-                        put("label", m.label)
-                        put("head", m.head)
-                        put("command", m.command)
-                    }
-                }
-            }
-            putJsonArray("left_out") {
-                lineup.leftOut.forEach { h ->
-                    addJsonObject {
-                        put("head", h.head)
-                        put("command", h.command)
-                        put("reason", h.reason)
-                    }
-                }
-            }
+            put("default_model", switch.defaultOf(lineup))
+            put("models", lineupJson.models(lineup.models))
+            put("left_out", lineupJson.leftOut(lineup.leftOut))
             val last = record.lastTurn
             if (last == null) {
                 put("last_turn", JsonNull)
@@ -57,6 +43,32 @@ internal class DesktopService(
                     put("model", last.model)
                 }
             }
+        }
+    }
+
+    /** What `splice claude --json` says: the lane, and on the door the door, the model a session starts on and why,
+     *  the picker's rows and the heads left out with the reason. On its head (decision 9): the rows it adds after
+     *  Claude Code's own models and the heads left out, less the one `claude` runs on, whose models are Claude's. */
+    suspend fun claudeState(): JsonObject {
+        val lane = claude.lane()
+        if (lane != DOOR_LANE) {
+            val lineup = heads.lineup()
+            return buildJsonObject {
+                put("lane", lane)
+                put("models", lineupJson.models(lineup.signedIn))
+                put("left_out", lineupJson.leftOut(lineup.leftOut.filterNot { it.command == CLAUDE_COMMAND }))
+            }
+        }
+        val lineup = heads.lineup()
+        val (starting, why) = claude.starting(lineup)
+        return buildJsonObject {
+            put("lane", lane)
+            put("door", claude.door)
+            put("default_model", starting)
+            put("default_from", why)
+            put("models", lineupJson.models(lineup.signedIn))
+            put("left_out", lineupJson.leftOut(lineup.leftOut))
+            claude.login.theirs()?.let { put("own_login", it.toString()) }
         }
     }
 }

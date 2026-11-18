@@ -78,9 +78,8 @@ internal object LoginInterception {
     const val USER_PROMPT_SUBMIT: String = "UserPromptSubmit"
 
     /**
-     * Materialize the /login command + hooks. [signInLabel] names the provider for the UX text;
-     * [viaBrowser] false switches the block reason to the masked-terminal-prompt wording (api-key
-     * heads). [tokenCapture] adds the bare-token capture hook. [globalCommands] is the operator's
+     * Materialize the /login command + hooks: [login] says what /login opens (LoginScript).
+     * [tokenCapture] adds the bare-token capture hook. [globalCommands] is the operator's
      * ~/.claude/commands to re-link into the head's real commands dir when the policy shares them,
      * or null to skip.
      *

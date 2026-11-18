@@ -7,16 +7,14 @@ package splice.provider.openai
 
 import splice.core.parse.AnthropicTurnBody
 import splice.core.pool.UpstreamPool
-import splice.core.prompt.SystemPromptMode
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.ReasoningDisplayNow
 import splice.core.turn.TurnMeta
-import splice.dialect.chat.ChatCompactionTail
+import splice.dialect.chat.ChatPlacements
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.ChatRequestBuilder
 import splice.dialect.chat.ChatResendOnce
 import splice.dialect.chat.ChatStreamTranslator
-import splice.dialect.chat.ChatSystemPrompt
 import splice.dialect.chat.ChatTurnContext
 import splice.dialect.chat.ID_SLOT_FIELD
 import splice.dialect.chat.SlotAffinity
@@ -26,6 +24,7 @@ import splice.upstream.Provider
 import splice.upstream.ProviderIdentity
 import splice.upstream.ProviderTuning
 import splice.upstream.ReanchorPolicy
+import splice.upstream.RequestPlacements
 import splice.upstream.StreamTranslator
 import splice.upstream.TurnEnd
 import splice.upstream.TurnSignals
@@ -44,7 +43,7 @@ public class OpenAiChatProvider(
     override val replies: Replies = Replies(ChatReplies),
     /** Server mode (F4): set for a provider that lists upstreams, whose turns each go to one of [pool]'s servers. */
     private val pool: UpstreamPool? = null,
-) : Provider, ProviderIdentity by tuning {
+) : Provider, ProviderIdentity by tuning, RequestPlacements by ChatPlacements() {
 
     /** A provider that is several servers names its first here, for what asks the provider where it is; each turn
      *  is sent where its [route] says. */
@@ -58,8 +57,6 @@ public class OpenAiChatProvider(
      *  Not where it pins conversations to a local runtime's slots ([SlotAffinity]): the next daemon starts with every
      *  slot free, and would give this turn's slot to another conversation while the turn still streams from it. */
     override val finishesTurnsWhenRetired: Boolean = affinity == null
-    private val compactionTail = ChatCompactionTail()
-    private val systemPrompt = ChatSystemPrompt()
 
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
         val upstreamModel = catalog.stripSuffixes(body.typed.model)
@@ -73,12 +70,6 @@ public class OpenAiChatProvider(
             routingFields = setOf(ID_SLOT_FIELD),
         )
     }
-
-    override fun withCompactionTail(turn: BuiltTurn, instructions: String): BuiltTurn =
-        turn.copy(requestBody = compactionTail.append(turn.requestBody, instructions))
-
-    override fun withSystemPrompt(turn: BuiltTurn, prompt: String, mode: SystemPromptMode): BuiltTurn =
-        turn.copy(requestBody = systemPrompt.apply(turn.requestBody, prompt, mode))
 
     /** The turn's place among this provider's servers: the one that served its session's last turn while
      *  that is healthy (F11), else its person's preferred one while that is healthy, else the healthy one with the least

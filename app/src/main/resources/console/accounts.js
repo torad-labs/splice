@@ -871,7 +871,7 @@ function previewCap(field) {
 
 // ---------- sign-in: one element wherever an account signs in, with the step its provider really asks for ----------
 // The step comes from splice's own answer: a device code to type on the provider's page (Kimi, Muse), a code pasted back
-// (Claude Code's own sign-in), or a page that finishes the sign-in by itself (LoginRoutes.kt:56).
+// (a Claude Code that opened no link of its own), or a page that finishes the sign-in by itself (ChatGPT, Grok, Claude).
 const CODE_HINT = `<span class="code-hint">Enter this code on the sign-in page</span>`; // the act on the code, where Open sign-in goes
 function signingHtml(target) {
   const s = ui.signin[target];
@@ -888,7 +888,7 @@ function signingHtml(target) {
   if (s.by === "paste") return `${waiting()}${open}<input class="field code-in" data-t="${target}" placeholder="Paste code" aria-label="Paste code" autocomplete="off" spellcheck="false">${cancel}`;
   return `${waiting()}${open}${cancel}`;
 }
-// how: { start: the POST that begins it, poll: the head its status is read under, native: a Claude Code sign-in }
+// how: { start: the POST that begins it, poll: the head its status is read under }
 // The steps of a sign-in (start, read, land, fail, cancel, a pasted code) are every page's one runner, SIGNIN in api.js.
 // Here is what this page does around them: where a sign-in shows, and what follows when it lands or fails.
 function startSignin(target, how, spot = null) { // spot: the one card it shows on
@@ -967,7 +967,7 @@ function submitCode(field) {
 // under its own name (ClaudeLoginRoutes.kt:20, LoginRoutes.kt:24).
 function howFor(p, a, c) {
   const head = c ? c.head : a.row.heads[0];
-  if (a.row?.login_place) return { start: `/api/claude-logins/${encodeURIComponent(a.row.login_place.id)}/login`, body: { label: null }, poll: head, native: true };
+  if (a.row?.login_place) return { start: `/api/claude-logins/${encodeURIComponent(a.row.login_place.id)}/login`, body: { label: null }, poll: head };
   // its name on that command; the first account of a ChatGPT, Grok, Kimi or Muse command is "primary" there
   const label = a.row?.account_labels?.[head] || a.row?.label;
   // A removed primary has no file to sign in to under its reserved name, so the login refuses before the browser

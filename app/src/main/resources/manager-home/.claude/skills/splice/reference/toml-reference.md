@@ -90,6 +90,7 @@ core/src/main/kotlin/splice/core/config/ConfigService.kt (coerceRejects, lines 2
 | `[providers.<key>]` | map of provider tables | one upstream each |
 | `[heads.<key>]` | map of head tables | one loopback port each |
 | `[projects."<root>"]` | map of project tables | standing prompts by working directory |
+| `[capabilities.<name>]` | map of capability tables | work splice runs before a session's first turn goes upstream (section 10) |
 | `[share]` | table | LAN share, the server's side: offers this machine's heads on its LAN (below) |
 | `[remote.<command>]` | map of tables | LAN share, a node's side: a command that runs on another machine's head (below) |
 
@@ -122,7 +123,7 @@ Source: core/src/main/kotlin/splice/core/topology/LanShareConfig.kt; splice.exam
 | `update_channel` | string | absent reads as `"stable"` | `"stable"` or `"beta"` (prereleases too) | live |
 | `auto_update` | bool | absent reads as false | install newer releases on the channel by itself | live |
 | `refresh_prices` | bool | absent reads as true | fetch splice's price table from the project's main branch on `raw.githubusercontent.com` once an hour (one anonymous request); false keeps the table in the build, or the last one fetched | live |
-| `alert_command` | array of strings | empty | a program of the person's own, run with no shell, the message on its standard input and its output discarded. It runs when a command with two or more logins is on the last one that can serve the model its sessions ask for and that login passes 80% and then 95% of a limit, when no login can serve it, and when one can again after that; each is said once, and again only when it returns after half an hour of not applying; a command set for the first time is sent one line saying so. Set only in this file: no route or console page writes it | restart |
+| `alert_command` | array of strings | empty | a program of the person's own, run with no shell, the message on its standard input and its output discarded. It runs when a command with two or more logins is on the last one that can serve the model its sessions ask for and that login passes 80% of a limit, and when no login can serve it; each is said once, and again only when it returns after half an hour of not applying; a command set for the first time is sent one line saying so. Set only in this file: no route or console page writes it | restart |
 | `reserved_peer_names` | array of strings | empty | peer names no peer may register, on top of the built-in `system`, `user`, `operator`, `human`, `assistant`, `claude`, `anthropic`, `splice` and `splice-console` (docs/peers.md); for an inbox or role of your own that a peer must not pose as. An entry that is not a peer name (a lowercase letter, then 1 to 31 of a-z, 0-9 or -) refuses boot | restart |
 
 `fold_reasoning_models`, `fold_max_continue`, `fold_marker_text` and `fold_max_tier` were retired in 0.4.0: splice
@@ -362,7 +363,7 @@ Source: TokenCost.kt (TomlRates, lines 168-212); SpeedRates.kt; HeadConfig.kt (l
 | `model_slots` | map of tier to id | empty | tiers without restricting the picker. Never with slots inside `models` |
 | `context_window` | int, positive | absent | forces one window onto every selected row (live) |
 | `overrides` | map of knob to string | empty | knobs for this head only, section 4 |
-| `system_prompt` / `system_prompt_file` | string | absent | standing text on every turn; never both. A relative file is beside splice.toml |
+| `system_prompt` / `system_prompt_file` | string | absent | standing text on every turn of a session (not on Claude Code's side requests, which carry no tools, or its auto-mode review); never both. A relative file is beside splice.toml |
 | `system_prompt_mode` | string | `"append"` | `"append"`, `"replace"` or `"strip"` (a list of regex, one paragraph each) |
 | `rates` | map of id to rates | absent | this head's own cards, section 5.6 |
 
@@ -418,7 +419,70 @@ wins and replaces the others; `instructions = ""` opts a scope out. An unreadabl
 Source: core/src/main/kotlin/splice/core/compaction/CompactionScope.kt (lines 8-28); TopologyWriter.kt (lines 314-329);
 splice.example.toml (lines 43-55).
 
-## 10. Where the other topics live
+## 10. [capabilities.<name>]
+
+A capability is work an HTTP worker does for a session before its turn goes upstream; its text goes into the
+session's first user message. The table's name is the capability's: lowercase letters, digits and `-`. Restart.
+
+| field | type | default | effect |
+|---|---|---|---|
+| `heads` | array of head keys | empty | the heads it is on for; empty, it is declared and off. Off stops new calls; sessions keep a text already placed |
+| `call` | string | `"rule"` | `"rule"`: splice calls it by `when`. `"agent"`: the model calls it through `tool`. `"both"`: either. `"agent"` and `"both"` only on a head whose provider is `anthropic-passthrough` |
+| `tool` | inline table | none | with `call = "agent"` or `"both"`, required: `{ name = "...", description = "...", input = { type = "object", ... } }`, the tool the model is offered (`input` is its JSON schema). A finding with `call = "rule"` |
+| `when` | inline table | all defaults | `turn` (`"first"` or `"any"`, default `"first"`), `thread` (`"main"`, `"subagent"`, `"any"`, default `"main"`), `mode` (`"interactive"`, `"print"`, `"any"`, default `"interactive"`), `models` (model ids, default every model). A request must meet all of them. With `call = "agent"`, `turn` is a finding: the model calls its tool on any turn it is offered |
+| `place` | string | required | `"first-user-message"`, or `"none"` for one that only passes or refuses a turn. Not named with `call = "agent"`: the result goes into the tool's result |
+| `may` | string | required | `"add"`, `"refuse"` or `"add-or-refuse"`. `place = "none"` takes only `"refuse"` |
+| `message`, `color` | strings | none | what the held turn says while it starts; `color` is a status-line colour name |
+| `timeout_s` | int | required | 1 to 3600 |
+| `on_failure` | string | required | `"open"`: a failed or late worker lets the turn go on as today; `"closed"`: the turn is refused, naming the capability |
+| `send` | array | empty | the fields the worker gets: `first_user_message`, `folder`, `model`, `head`. Name, session and turn always go |
+| `worker` | inline table | required | `{ kind = "http", url = "...", auth_env = "ENV_NAME" }`; `auth_env` names the variable that holds the worker's key, sent as a bearer. No built-in worker ships yet |
+
+```toml
+[capabilities.policy]
+heads = ["claude"]
+call = "rule"
+when = { turn = "first", thread = "main", mode = "interactive" }
+place = "first-user-message"
+may = "add"
+timeout_s = 60
+on_failure = "open"
+send = ["first_user_message", "folder", "model"]
+worker = { kind = "http", url = "http://127.0.0.1:9000/check", auth_env = "POLICY_WORKER_KEY" }
+```
+
+The worker is posted `{"capability", "session", "turn", "fields"}` and answers 200 with JSON lines: any number of
+`{"type": "progress", "message": "..."}`, then one `{"type": "result", "text": "..."}` or one
+`{"type": "refusal", "reason": "..."}`. Two capabilities that match one request run one at a time, in file order.
+splice never calls one for a side request without tools, for the auto-mode review, or for a session first seen
+mid-conversation. Any fault in a declaration refuses boot with every finding listed and no value quoted;
+`splice check-config` shows them. `splice status` lists each capability, its heads (`off` when none) and its worker.
+The thread records live in `<state>/heads/<head>/capabilities/`.
+
+A capability the model calls is offered as its `tool`, after the client's tools, on every request with tools that its
+`when` allows (`turn` aside). The client never sees a call of it: splice holds the turn, posts the worker with the
+call's input as the field `input`, and sends the provider the same request with the model's message and the worker's
+text as the call's result; the answer streams on as the rest of the same response. A failure the capability fails
+open on becomes a result saying so; `on_failure = "closed"`, or a refusal from a worker that may refuse, refuses the
+turn. Each call and its result are kept in `<state>/heads/<head>/capabilities/agent-calls/` and put back on the
+session's later requests, so the provider sees the conversation it produced. A call made beside the client's own
+tool calls runs while the client runs them, and its result goes beside theirs on the next request.
+
+```toml
+[capabilities.advisor]
+heads = ["claude"]
+call = "agent"
+tool = { name = "ask_advisor", description = "Ask the advisor whether a plan is sound.", input = { type = "object", properties = { question = { type = "string" } }, required = ["question"] } }
+may = "add"
+timeout_s = 60
+on_failure = "open"
+worker = { kind = "http", url = "http://127.0.0.1:9000/advise" }
+```
+
+Source: core/src/main/kotlin/splice/core/capability/ (Capability.kt, CapabilityDeclarations.kt);
+features/turns/src/main/kotlin/splice/head/harness/; docs/specs/harness.md.
+
+## 11. Where the other topics live
 
 | topic | in splice.toml | the rest |
 |---|---|---|

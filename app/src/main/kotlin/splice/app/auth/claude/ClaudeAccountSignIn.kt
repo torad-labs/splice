@@ -223,14 +223,13 @@ internal class ClaudeAccountSignIn(
         }
         attempt.child = child
         try {
-            // The link Claude Code prints is the one whose page ends in a code to paste back ("Paste code here if
-            // prompted"), so the status says so and every card that shows the link has the field for the code. Until
-            // Nov 11, 2026 only a command's own login card drew that field: Sign in again on an added login, and
-            // + Add account, opened the same page and left its code with nowhere to go, so the sign-in stayed open
-            // (the console showed the sign-in still in progress).
-            val completed = child.await { url ->
+            // The link shown is the one Claude Code hands its browser, which finishes by itself, so no card asks for a
+            // code (NativeBrowserCatch). Only a Claude Code that opens no link leaves the printed one, whose page ends
+            // in a code to paste back, and then the status says so and every card has the field for it.
+            val completed = child.await { link ->
                 cell.updateAndGet {
-                    it.copy(state = LoginState.WAITING, prompt = it.prompt.copy(browserUrl = url, pasteBack = true))
+                    val prompt = it.prompt.copy(browserUrl = link.url, pasteBack = link.pasteBack)
+                    it.copy(state = LoginState.WAITING, prompt = prompt)
                 }
             }
             if (completed) {

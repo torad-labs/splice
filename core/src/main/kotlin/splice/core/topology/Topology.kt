@@ -22,6 +22,8 @@ package splice.core.topology
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
+import splice.core.capability.Capability
 import splice.core.compaction.CompactionConfig
 import splice.core.config.Knob
 import splice.core.model.CatalogWindows
@@ -54,6 +56,9 @@ public data class Topology(
     val remote: Map<String, RemoteConfig> = emptyMap(),
     /** Server mode (docs/specs/server-mode.md): this machine as a team's front door, answering only keys. */
     val server: ServerConfig = ServerConfig(),
+    /** The harness (docs/specs/harness.md): capabilities splice.toml declares, read apart from the schema decode
+     *  (CapabilityToml) and attached once found well-formed. Not part of the canonical tree the console edits. */
+    @Transient val capabilities: List<Capability> = emptyList(),
 ) {
     /** Resolve a user-supplied head name — the topology key or the installed wrapper command
      *  (starter: head `openrouter`, command `claude-openrouter`) — to matching topology keys. A topology-KEY
@@ -67,6 +72,10 @@ public data class Topology(
     /** The single topology key for [name], or null when unknown OR ambiguous (several heads share
      *  the wrapper command). Callers that must tell those apart use [resolveHeadKeys]. */
     public fun resolveHeadKey(name: String): String? = resolveHeadKeys(name).singleOrNull()
+
+    /** The heads whose provider speaks [dialect]. */
+    public fun headsSpeaking(dialect: Dialect): Set<String> =
+        heads.filterValues { providers[it.provider]?.dialect == dialect }.keys
 
     /** LAN share: the remote commands splice links to its launch shim, every one but `claude`. That name is Claude
      *  Code's own link, which its updater re-points and splice's wrap points at the shim: a `[remote.claude]` is

@@ -80,7 +80,7 @@ private const val VERBS_USAGE =
         "  sessions [relaunch]|perf|usage --json|wire <head> [--last N] [--json]|\n" +
         "  peer <verb>|server <key|person> <verb>|\n" +
         "  share [on|off|status]|remote [add|remove]|desktop [on|off|rotate-key]|\n" +
-        "  restart [--now]|console [<action>]|\n" +
+        "  claude [door|head]|restart [--now]|console [<action>]|\n" +
         "  trace <head> [--last N] [--session S] [--turn ID] [--json] [--purge]|\n" +
         "  login <head> [--label <name> [--discard]]|\n" +
         "  key <set|list|unset>|rotate-key|logs [--head <key>] [--tail N] [--follow]|\n" +

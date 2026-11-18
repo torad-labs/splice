@@ -23,11 +23,6 @@ class CommandParserTest {
             arrayOf("record-launch", "42", "fixture", "", "wrong", "hook"),
             arrayOf("record-launch", "42", "fixture", "", "login", "wrong"),
         )) assertEquals(null, parser.parse(args))
-        org.junit.jupiter.api.Assertions.assertTrue(
-            parser.parse(arrayOf("pending-login", "/fixture.jar", "fixture")) is PendingLoginCommand,
-        )
-        assertEquals(null, parser.parse(arrayOf("pending-login", "/fixture.jar")))
-        assertEquals(null, parser.parse(arrayOf("pending-login", "", "fixture")))
     }
 
     @Test

@@ -52,6 +52,11 @@ internal class ControlAudit(private val log: LogSink) {
         log("[control] ${LogSafe.str(message)}\n")
     }
 
+    /** A launch that was refused, with the words its caller was given. */
+    fun launchRefused(key: String, reason: String) {
+        log("[control] launch ${LogSafe.str(key)} refused: ${LogSafe.str(reason)}\n")
+    }
+
     /** A management route that threw (RouteFailure): the request line is caller bytes like the rest. */
     fun routeFailed(method: String, path: String, why: String) {
         log("[control] ${LogSafe.str(method)} ${LogSafe.str(path)} failed: ${LogSafe.str(why)}\n")

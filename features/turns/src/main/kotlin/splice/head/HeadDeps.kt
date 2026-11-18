@@ -32,6 +32,7 @@ import splice.head.compaction.CompactionRecordings
 import splice.head.compaction.CompactionTail
 import splice.head.compaction.SessionProjectLookup
 import splice.head.perf.PerfStats
+import splice.head.port.TurnHarness
 import splice.head.turn.LiveTurns
 import splice.head.turn.fallback.SessionFallbacks
 import splice.head.usage.EconomicsStore
@@ -159,6 +160,12 @@ public data class HeadDeps(
         /** Fix 3 (Oct 27): what a turn waits on before [gate] admits it. The default waits for nothing, a head with no
          *  model list (tests, tools); HeadServerFactory gives every production head the daemon's roster. */
         val models: CurrentModels = CurrentModels {},
+        /** door-default, decision 9: the requests another head answers in this one's place. The default claims none;
+         *  HeadServerFactory gives the head keyed `claude` the door's models. */
+        val others: OtherHeads = OtherHeads { null },
+        /** The logins a turn through a door may run on (HeldLogins). The default takes every one; the daemon leaves
+         *  out the person's own Claude login. */
+        val held: HeldLogins = HeldLogins { true },
     )
 
     /** A head's model list, as a turn waits on it: the list its provider gives the credential the turn will be sent
@@ -290,6 +297,10 @@ public data class HeadDeps(
          *  daemon's one resolver, pinned by that row's tests. */
         val slotInstructions: SlotInstructions? = null,
         val compactionTail: CompactionTail = CompactionTail(),
+        /** The harness (docs/specs/harness.md, decision 11), which the turn knows only through its port: the
+         *  capabilities splice.toml declares, over this head's threads. Null (tests, tools, a daemon that declares
+         *  none) calls nothing and places nothing. */
+        val harness: TurnHarness? = null,
     )
 
     /** What an operator sets, never what a turn produces — which is what makes it policy rather than state. Most of

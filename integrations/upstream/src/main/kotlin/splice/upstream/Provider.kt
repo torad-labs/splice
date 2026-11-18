@@ -93,8 +93,30 @@ public data class ProviderLocations(
     }
 }
 
+/** Where a dialect places splice's own text in a built request: the compaction tail, the standing system prompt, and a
+ *  capability's text. Its own interface so a dialect can hand all three to one collaborator (`by`). */
+public interface RequestPlacements {
+    /** Append resolved custom text at this dialect's tail seam. The unchanged default preserves
+     *  current behavior for a provider whose dialect has not opted into the 0.4.0 capability. */
+    public fun withCompactionTail(turn: BuiltTurn, instructions: String): BuiltTurn = turn
+
+    /** Place the head's standing system prompt at this dialect's system seam, on EVERY turn.
+     *  [mode] is APPEND (the default: the client's own system field survives byte-identically and
+     *  the prompt rides beside it), REPLACE (that field is substituted) or STRIP (the prompt is a
+     *  pattern list and the matching paragraphs are deleted from that field). The unchanged default
+     *  preserves current behavior for a provider whose dialect has not opted into the capability —
+     *  and TurnPreparation then reports the prompt as NOT APPLIED rather than claiming text the
+     *  wire never carried. */
+    public fun withSystemPrompt(turn: BuiltTurn, prompt: String, mode: SystemPromptMode): BuiltTurn = turn
+
+    /** Place a capability's [text] (docs/specs/harness.md, decision 5) in the conversation's first user message, after
+     *  the client's own blocks, in this dialect's own shape. The unchanged default cannot place it: the turn goes as it
+     *  came, and its record says the text was not placed. */
+    public fun withFirstUserText(turn: BuiltTurn, text: String): BuiltTurn = turn
+}
+
 /** Everything the generic head needs to serve one provider. */
-public interface Provider : ProviderIdentity {
+public interface Provider : ProviderIdentity, RequestPlacements {
     public val upstreamUrl: String
     public val showReasoning: ReasoningDisplay
     public val replayReasoning: Boolean
@@ -114,19 +136,6 @@ public interface Provider : ProviderIdentity {
     public fun requestRefusal(body: AnthropicTurnBody): RequestRefusal? = null
 
     public fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn
-
-    /** Append resolved custom text at this dialect's tail seam. The unchanged default preserves
-     *  current behavior for a provider whose dialect has not opted into the 0.4.0 capability. */
-    public fun withCompactionTail(turn: BuiltTurn, instructions: String): BuiltTurn = turn
-
-    /** Place the head's standing system prompt at this dialect's system seam, on EVERY turn.
-     *  [mode] is APPEND (the default: the client's own system field survives byte-identically and
-     *  the prompt rides beside it), REPLACE (that field is substituted) or STRIP (the prompt is a
-     *  pattern list and the matching paragraphs are deleted from that field). The unchanged default
-     *  preserves current behavior for a provider whose dialect has not opted into the capability —
-     *  and TurnPreparation then reports the prompt as NOT APPLIED rather than claiming text the
-     *  wire never carried. */
-    public fun withSystemPrompt(turn: BuiltTurn, prompt: String, mode: SystemPromptMode): BuiltTurn = turn
 
     public fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator
 

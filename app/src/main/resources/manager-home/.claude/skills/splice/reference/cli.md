@@ -53,6 +53,7 @@ You: `free` (run it), `ask` (person's yes first), `person` (the person runs it i
 | `restart` | Stops the daemon and starts it again | `--now` | starts it | yes | ask |
 | `upgrade` | Fetches, verifies and activates a release, restarts, runs doctor | `--to vX.Y.Z`, `--now`, `--rollback`, `--check` | no (restarts it) | yes | ask (`--check` is read-only) |
 | `console` | Bare: starts the daemon if needed and opens the console in the person's browser, unlocked. With an action: drives the console the person has open | `<action> [words]`, `--note TEXT`, `--clear`, `--json` | yes (with an action) | yes | bare: person. Actions: free to look and point, ask before an act |
+| `claude` | The lane the terminal's `claude` runs on: splice's door, or its head, which is deprecated. On the door: the door, the model a session starts on and why, the picker's models and each head left out of it. `door` puts `claude` on the door and links it to splice; `head` puts it back on its head and replaces the terminal's key | `[--json]`, `door [--model <selector>]`, `head` | yes | yes | bare: free. `door`, `head`: ask |
 | `login` | Signs in to a head (browser or device flow, or a masked key prompt) | `<head>`, `--label <name>`, `--discard` | no | no | person |
 | `key` | The API-key store (`keys.toml`) | `set <ENV_NAME> [--value V \| --stdin]`, `list`, `unset <ENV_NAME>` | no | no | person |
 | `rotate-key` | Replaces the management key while the daemon runs (starts the daemon if none answers) | none | yes (starts it) | yes (the CLI reads it, never you) | ask; the person runs it |
@@ -67,7 +68,7 @@ You: `free` (run it), `ask` (person's yes first), `person` (the person runs it i
 | `uninstall` | Removes head wrapper links (never the jar, never config); with no head or `--all` on Linux it also stops, disables and removes the systemd user units splice laid | `[<head>\|--all]` | no | no | ask |
 | `daemon` | Runs the daemon in the foreground (default with no verb) | none | is the daemon | no | never |
 | `start` | Starts the daemon through its systemd unit, else in the foreground | none | is the daemon | no | never |
-| `record-launch`, `pending-login` | Internal: the launch shim and sign-in hooks call them | internal | no | no | never |
+| `record-launch` | Internal: the launch shim calls it | internal | no | no | never |
 
 Source: the verb table in `CommandParser.kt`; flags are each verb's own parser:
 `features/diagnostics/.../doctor/report/DoctorReportOptions.kt` (doctor), `features/diagnostics/.../logs/LogsCommand.kt`
@@ -176,6 +177,7 @@ nothing and watches nothing. The shape:
 
 ```
 {"version":1,"commands":[{"head":"<head key>","command":"<what the person types>","next":"<label>"|null,
+  "next_model":"<model>"|null,
   "accounts":[{"label":"<label>"|null,"name":"<display name>","kind":"<kind>","plan":"<plan>"|null,
     "five_hour":{"used_percent":N,"resets_at_epoch_seconds":N,"current":true|false}|null,
     "seven_day":{"used_percent":N,"resets_at_epoch_seconds":N,"current":true|false}|null,
@@ -185,7 +187,10 @@ nothing and watches nothing. The shape:
 ```
 
 `next` is the login the command's next request goes to, where the command has several; which login a running
-session is on is that session's own fact and is not here. `label` is the name the command's pool knows a login by,
+session is on is that session's own fact and is not here. `next_model` is the model that answer is for: the one most
+of the command's recent turns asked for, null until a turn has named one. A login can be out of one model's week and
+still serve the others, so a turn of another model may go to another login, and `held` says which models each login
+cannot serve. `label` is the name the command's pool knows a login by,
 which is what `next` holds, and null for a command with one login. A window is null where the provider gave no reading of it, and its
 `current` is false once its reset has passed with no newer reading. `models` holds a plan's per-model weeks,
 `held` the models a login cannot serve yet and until when, `observed_at_epoch_seconds` when the login was last

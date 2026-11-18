@@ -19,7 +19,6 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import splice.client.ClaudePolicy
-import splice.client.login.SignInWay
 import splice.core.topology.RemoteAddress
 import splice.core.topology.RemoteAddressRead
 import splice.core.topology.RemoteAddresses
@@ -128,7 +127,7 @@ public class RemoteLaunches(
         val signIn = LaunchSignIn(
             loginCommand = shared.signIn.command,
             signInLabel = "${shared.signIn.label} on ${shared.machine}",
-            signInWay = SignInWay.Elsewhere(shared.machine),
+            signsInOn = shared.machine,
             headKey = command,
         )
         val statusline = "${address.turns}/statusline"

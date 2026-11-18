@@ -1299,7 +1299,12 @@ export function installShims(hooksDir: string, bun: string, gate: string): strin
 
 export async function hook(argv: readonly string[]): Promise<number> {
   const [verb, ...rest] = argv;
-  const lay = layout();
+  // Every worktree runs the main checkout's copy of this script (the shims live in the shared .git/hooks), and git
+  // starts a hook at the top of the tree being committed or pushed. So that tree is the one judged, from where git
+  // started us: read from the script's own place, a worktree that adds a Gradle module had its files judged against
+  // the main checkout's settings.gradle.kts and refused as covered by no check. install writes the shims, so it
+  // stays with the script.
+  const lay = verb === "install" ? layout() : layout(process.cwd());
   try {
     // git passes the hook its own arguments (pre-push gets the remote's name and URL); neither is read.
     if (verb === "pre-commit") return await commitGate(lay);

@@ -297,9 +297,9 @@ const API = (() => {
 // for five minutes over a sign-in a restarted splice no longer held; and only Accounts said in what way one had
 // failed (the whole login state machine was reported broken). The steps are here once. A page brings what
 // is its own: where its sign-in starts (how), the object it draws from (s), and what it does as the sign-in changes (on).
-//   how: { start: the POST that begins it, body, poll: the head its status is read under, native: Claude Code's own
-//          sign-in, which takes a pasted code; an add's sign-in is carried by its add instead: watch, the GET that
-//          answers it as sign_in, and end, the DELETE that ends it }
+//   how: { start: the POST that begins it, body, poll: the head its status is read under; whether
+//          the sign-in takes a pasted code is splice's to say. An add's sign-in is carried by its add instead:
+//          watch, the GET that answers it as sign_in, and end, the DELETE that ends it }
 //   s:   { how, state: "wait" | "ending" | "fail", id, url, code, by: "code" | "paste" | "browser", swapped, fail, why }
 //   on:  { held(): the page still shows this sign-in, draw(), done(status), failed(status) }
 const SIGNIN = (() => {
@@ -338,7 +338,7 @@ const SIGNIN = (() => {
   /** Starts the sign-in, or starts it again in place after one that failed. */
   async function start(s, on) {
     quiet(s);
-    Object.assign(s, { state: "wait", by: s.how.native ? "paste" : "browser", code: null, url: null, id: null, fail: null, why: "", gen: (s.gen || 0) + 1 });
+    Object.assign(s, { state: "wait", by: "browser", code: null, url: null, id: null, fail: null, why: "", gen: (s.gen || 0) + 1 });
     on.draw();
     const gen = s.gen, res = await API.post(s.how.start, s.how.body || {});
     if (!on.held() || s.gen !== gen) {
@@ -355,7 +355,7 @@ const SIGNIN = (() => {
   }
   /** Takes up a sign-in splice already holds (GET /api/auth/logins), as a page opened after it began. */
   function adopt(s, on, status) {
-    Object.assign(s, { state: "wait", by: s.how.native ? "paste" : "browser", code: null, url: null, id: status.id, gen: (s.gen || 0) + 1 });
+    Object.assign(s, { state: "wait", by: "browser", code: null, url: null, id: status.id, gen: (s.gen || 0) + 1 });
     seen(s, on, status);
   }
   // one status answer: show its step, land, fail, or ask again in a second
@@ -369,10 +369,10 @@ const SIGNIN = (() => {
     // Nov 11, 2026 the page decided the paste step from which card was pressed, and only a command's own Claude Code
     // login had the field: an added Claude login signed in again, and + Add account, opened the same page and left
     // its code with nowhere to go. An add's sign-in takes no code (code, below).
-    const paste = !s.how.watch && (st?.paste_code || s.how.native);
+    const paste = !s.how.watch && !!st?.paste_code;
     const by = code ? "code" : paste ? "paste" : "browser";
     const changed = url !== s.url || by !== s.by || code !== s.code;
-    s.swapped = !!(s.code && code && code !== s.code); // a device code that expired is replaced (DeviceLoginFlow.kt:88-93)
+    s.swapped = !!(s.code && code && code !== s.code); // a device code that expired is replaced (Kimi, Muse: DeviceLoginFlow)
     Object.assign(s, { url, by, code });
     if (changed) { on.draw(); s.swapped = false; }
     ask(s, on);

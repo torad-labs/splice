@@ -30,8 +30,6 @@ class LoginCommandsReconcileTest {
         configDir = configDir,
         login = HeadLogin(
             loginCommand = loginCommand,
-            signInLabel = "OpenRouter",
-            viaBrowser = false,
         ),
         globalCommands = globalCommands,
         tokenCapture = null,
@@ -213,7 +211,7 @@ class LoginCommandsReconcileTest {
         assertEquals("operator content that must survive", Files.readString(victim), "the link target must survive")
         val landed = commands.resolve("login.md")
         assertFalse(Files.isSymbolicLink(landed), "the entry itself is replaced")
-        assertTrue(Files.readString(landed).contains("Sign in to OpenRouter"), "the /login command still lands")
+        assertTrue(Files.readString(landed).contains("splice's accounts page"), "the /login command still lands")
     }
 
     // The other half of truncate-in-place: Claude Code re-reads these command files on every
@@ -231,7 +229,7 @@ class LoginCommandsReconcileTest {
         wire(tmp, "openrouter login", null)
 
         assertNotEquals(before, fileKey(landed), "a stage-and-swap publishes a new inode; a truncate reuses it")
-        assertTrue(Files.readString(landed).contains("Sign in to OpenRouter"))
+        assertTrue(Files.readString(landed).contains("splice's accounts page"))
     }
 
     // The half-fix this row must NOT settle for: delete-then-write also stops the symlink follow

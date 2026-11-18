@@ -36,7 +36,6 @@ import splice.client.login.HookExecProbe
 import splice.client.login.HookInstaller
 import splice.client.login.HookScriptFiles
 import splice.client.login.LoginInterception
-import splice.client.login.SignInWay
 import splice.client.mcp.McpRewrite
 import splice.client.models.ClaudeModelSettings
 import splice.client.resume.ResumeHook
@@ -95,8 +94,12 @@ public class ClaudeConfigMaterializer(
     private val hookExecProbe: HookExecProbe? = hookExec?.let { exec ->
         HookExecProbe { dir, chmod -> HookScriptFiles.probeExecutability(dir, chmod, exec) }
     }
-    private val speed =
-        SpeedMaterial(log, HookInstaller(log = log, execProbe = hookExecProbe), resumeHook, globalDir().resolve(SKILLS))
+    private val speed = SpeedMaterial(
+        log,
+        HookInstaller(log = log, execProbe = hookExecProbe),
+        resumeHook,
+        globalDir().resolve(Keys.SKILLS),
+    )
 
     /** Materialize a head's isolated CLAUDE_CONFIG_DIR from [spec]. [trust] carries the folder-trust
      *  records the operator already granted for the launch's cwd into the head (V4-283, FolderTrust);
@@ -135,7 +138,7 @@ public class ClaudeConfigMaterializer(
         val hookOrigins = jsonReads.tolerant(spec.configDir.resolve(HookSettings.ORIGINS))
         Files.createDirectories(spec.configDir)
         linkShared(spec.configDir, spec.policy, spec.signIn.headKey)
-        speed.skills(spec.configDir, speedTiers, spec.policy.shares(SKILLS))
+        speed.skills(spec.configDir, speedTiers, spec.policy.shares(Keys.SKILLS))
         val hookAdditions = LoginInterception.concat(
             LoginInterception.wire(
                 configDir = spec.configDir,
@@ -188,12 +191,9 @@ public class ClaudeConfigMaterializer(
     /** The /login interception [signIn] asks for. */
     private fun headLogin(signIn: MaterializeSignIn): HeadLogin = HeadLogin(
         loginCommand = signIn.loginCommand,
-        signInLabel = signIn.signInLabel,
-        viaBrowser = signIn.signInWay == SignInWay.Browser,
         outcomeFile = signIn.loginOutcomeFile,
-        canCapturePaste = signIn.tokenCapture != null,
         headKey = signIn.headKey,
-        signsInOn = (signIn.signInWay as? SignInWay.Elsewhere)?.machine.orEmpty(),
+        signsInOn = signIn.signsInOn,
     )
 
     // Guard the operator's REAL global config: the dir must look like an isolated .claude* dir AND
@@ -285,7 +285,7 @@ public class ClaudeConfigMaterializer(
         // item-by-item — see this file's header).
         val dst = configDir.resolve(item)
         if (Files.isDirectory(dst, NOFOLLOW_LINKS) && !dst.isSymbolicLink()) {
-            if (item != Keys.COMMANDS && item != SKILLS) {
+            if (item != Keys.COMMANDS && item != Keys.SKILLS) {
                 log(
                     "[materialize] shared '$item' kept as this head's own real directory at $dst; " +
                         "the operator's global copy is not linked\n",
@@ -475,4 +475,3 @@ private val EMPTY_JSON = JsonObject(emptyMap())
 private val MERGED_ITEMS = setOf(Keys.SETTINGS_FILE_NAME, Keys.MCPS)
 
 // The shared skills item: a head signed in with ChatGPT holds it as a real dir with /fast and /ultrafast (SpeedSkills).
-private const val SKILLS = "skills"

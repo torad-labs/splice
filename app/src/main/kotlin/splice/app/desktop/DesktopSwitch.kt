@@ -33,8 +33,10 @@ internal sealed class DesktopAct {
         val env: List<Pair<String, String>>? = null,
     ) : DesktopAct()
 
-    /** Refused with nothing changed: [status] and [why]. */
-    data class Refused(val status: Int, val why: String) : DesktopAct()
+    /** Refused with nothing changed: [status], and [reason], which [why] says with that. */
+    data class Refused(val status: Int, val reason: String) : DesktopAct() {
+        val why: String get() = "$reason; nothing was changed"
+    }
 }
 
 internal class DesktopSwitch(
@@ -50,12 +52,14 @@ internal class DesktopSwitch(
     private val settings = DesktopSettings()
     private val environment = DesktopEnvironment()
     private val lock = Mutex()
+    private val starting = StartingModel({ records.get().defaultModel }, picker = false)
 
     suspend fun on(model: String?): DesktopAct = lock.withLock {
         val lineup = heads.lineup()
         refusal(lineup, model)?.let { return@withLock it }
-        val (chosen, why) = defaultOf(lineup, model)
-        val (head, picked) = lineup.find(chosen) ?: return@withLock refused(HttpStatus.CONFLICT, NO_MODEL)
+        val (chosen, why) = starting.of(lineup, model)
+        val found = chosen?.let(lineup::find) ?: return@withLock DesktopAct.Refused(HttpStatus.CONFLICT, NO_MODEL)
+        val (head, picked) = found
         // The window Desktop is told is set once and kept, so what the person set stays right: the head scales each
         // session's counts to it, whichever model the door runs.
         val window = records.get().window ?: head.catalog.contextWindowFor(picked.upstream)
@@ -70,16 +74,15 @@ internal class DesktopSwitch(
      *  that would send the Code tab past the door. Null when it may go on. */
     private fun refusal(lineup: DesktopLineup, model: String?): DesktopAct? {
         val read = file.read()
+        val notServed = starting.refusal(lineup, model)
         val found = when {
             lineup.models.isEmpty() -> HttpStatus.CONFLICT to "no head is in the door (${leftOut(lineup)})"
-            model != null && lineup.find(model) == null ->
-                HttpStatus.BAD_REQUEST to
-                    "--model $model is not in the door, which serves ${lineup.models.joinToString { it.model }}"
+            notServed != null -> HttpStatus.BAD_REQUEST to notServed
             read is SettingsRead.Unreadable -> HttpStatus.CONFLICT to read.why
             read is SettingsRead.Held -> settings.refusal(read.file)?.let { HttpStatus.CONFLICT to "${file.path}: $it" }
             else -> null
         }
-        return found?.let { (status, why) -> refused(status, why) }
+        return found?.let { (status, why) -> DesktopAct.Refused(status, why) }
     }
 
     private fun leftOut(lineup: DesktopLineup): String =
@@ -117,43 +120,45 @@ internal class DesktopSwitch(
     }
 
     /** What an older splice's `on` wrote into the settings file taken out, and a sentence saying so, empty when there
-     *  was none. A file splice can't read is said in the sentence and left as it is. */
-    private fun tidied(): String = when (val read = file.read()) {
+     *  was none. A file splice can't read is said in the sentence and left as it is, and so is one Claude Code wrote
+     *  each time splice looked. */
+    private fun tidied(): String = (1..LOOKS).firstNotNullOfOrNull { looked() }
+        ?: ". ${file.path} changed each time splice looked, so what an older splice wrote there may still be in it"
+
+    /** One look at the settings file: the sentence, or null when Claude Code wrote the file while the old door was
+     *  being taken out of it, so it is looked at again. */
+    private fun looked(): String? = when (val read = file.read()) {
         is SettingsRead.Unreadable -> ". The old door's values could not be looked for: ${read.why}"
-        SettingsRead.Absent -> ""
+        SettingsRead.Absent -> "".also { spent() }
         is SettingsRead.Held -> tidied(read.file)
     }
 
-    /** [held], the settings file, with what an older splice's `on` wrote taken out, and a sentence saying so. */
-    private fun tidied(held: JsonObject): String {
+    /** [held], the settings file, with what an older splice's `on` wrote taken out, and a sentence saying so; null
+     *  when the file changed before it could be written. */
+    private fun tidied(held: JsonObject): String? {
         val restored = settings.withoutDoor(held, records.get().replaced, selectors)
-        if (restored == held) return ""
-        if (restored == null) file.remove() else file.restore(restored)
+        if (restored != held && !file.replace(held, restored)) return null
+        spent()
+        return if (restored == held) "" else ". What an older splice wrote into ${file.path} for Desktop was taken out"
+    }
+
+    /** The record of what an older `on` replaced is spent once the file was looked at: it is put back, or the file
+     *  holds none of that door. Kept past that, it would take a selector the person picks later for the old door's. */
+    private fun spent() {
         if (records.get().replaced != null) records.update { it.copy(replaced = null) }
-        return ". What an older splice wrote into ${file.path} for Desktop was taken out"
     }
 
-    /** The model a session starts on, and which rule chose it: [named], or the one chosen the last time, or the
-     *  pinned model of the first head in the door. Empty when no head is in the door. */
-    fun defaultOf(lineup: DesktopLineup, named: String? = null): Pair<String, String> {
-        if (named != null) return named to "the --model you named"
-        val last = records.get().defaultModel?.takeIf { lineup.find(it) != null }
-        return if (last != null) last to "the one chosen the last time" else firstPinned(lineup)
-    }
-
-    /** The pinned model of the first head in the door, or its first model when its pin is not in the door. */
-    private fun firstPinned(lineup: DesktopLineup): Pair<String, String> {
-        val first = lineup.heads.firstOrNull() ?: return "" to "no head is in the door"
-        val pinned = first.catalog.wrap(first.pinned).takeIf { lineup.find(it) != null }
-            ?: lineup.models.firstOrNull { it.head == first.key }?.model.orEmpty()
-        return pinned to "the pinned model of ${first.relay.command}, the first head in the door"
-    }
-
-    private fun refused(status: Int, why: String): DesktopAct = DesktopAct.Refused(status, "$why; nothing was changed")
+    /** The model a Code tab session starts on in [lineup]: the one chosen the last time, or the pinned model of the
+     *  first head in the door; null when no head is in the door. */
+    fun defaultOf(lineup: DesktopLineup): String? = starting.of(lineup).first
 }
 
 // What `on` answers when the default it chose has left the door between two reads.
 private const val NO_MODEL = "no model is in the door"
+
+// why: Claude Code writes its settings file at a pick or a setting, seconds apart at the quickest, so a second look
+// finds it still; the third is for a write that lands between the first two.
+private const val LOOKS = 3
 
 // How `off` tells the person to leave the door, before the variables' names.
 private const val LEAVE = "To put the Code tab back on your own Claude login, remove"

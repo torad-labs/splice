@@ -27,14 +27,14 @@ public class NamedSessions(
     // digits a dash, the same name ResumeAcrossHeads prefers a copy under
     private val notAlphanumeric = Regex("[^A-Za-z0-9]")
 
-    /** The one session named [name] among the transcripts [configDir]'s tree holds for the folder [cwd]. Null when
-     *  no session there carries the name, and when more than one does: which of them is meant is the client's
-     *  picker's to ask. A name is the last title the session was given, compared without regard to case. */
-    public fun find(configDir: Path, cwd: String, name: String): NamedSession? {
-        val wanted = TranscriptMetadata.title(name) ?: return null
+    /** Every session named [name] among the transcripts [configDir]'s tree holds for the folder [cwd]: none when no
+     *  session there carries the name, and more than one when several do, a session and the copy another command
+     *  goes on with among them. A name is the last title the session was given, compared without regard to case. */
+    public fun all(configDir: Path, cwd: String, name: String): List<NamedSession> {
+        val wanted = TranscriptMetadata.title(name) ?: return emptyList()
         val folder = configDir.resolve(Keys.PROJECTS).resolve(cwd.replace(notAlphanumeric, "-"))
-        val named = transcripts(folder).filter { titleOf(it).equals(wanted, ignoreCase = true) }
-        return named.singleOrNull()?.let { NamedSession(it.fileName.toString().removeSuffix(TRANSCRIPT_SUFFIX), it) }
+        return transcripts(folder).filter { titleOf(it).equals(wanted, ignoreCase = true) }
+            .map { NamedSession(it.fileName.toString().removeSuffix(TRANSCRIPT_SUFFIX), it) }
     }
 
     /** A folder that is not there holds no named session, and neither does one that cannot be listed, which is

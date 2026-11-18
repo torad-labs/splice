@@ -78,14 +78,18 @@ internal class UsageJson(private val output: TerminalOutput, private val errors:
     private fun headsOf(row: JsonObject): List<String> = (row["heads"] as? JsonArray).orEmpty()
         .mapNotNull { (it as? JsonPrimitive)?.takeIf { head -> head.isString }?.content }
 
-    /** One command: `next` is the login its next request goes to, where the command has several. Which login a
-     *  running session is on is that session's own fact, and is not here. */
+    /** One command: `next` is the login its next request goes to, where the command has several, and `next_model` the
+     *  model that answer is for: the one most of the command's recent turns asked for, null until a turn has named
+     *  one. A login can be out of one model's week and still serve the others, so a turn of another model may go to
+     *  another login: on Nov 17, 2026 `next` named a login held out of Fable while most turns asked for Opus, and
+     *  read as Fable's next login. Which login a running session is on is that session's own fact, and is not here. */
     private fun command(head: String, typed: String, logins: List<JsonObject>, pools: JsonObject?): JsonObject {
         val pool = (pools?.get(head) as? JsonObject)?.get("account_pool") as? JsonObject
         return buildJsonObject {
             put("head", head)
             put("command", typed)
             put("next", field(pool, "next_target_label"))
+            put("next_model", field(pool, "usual_model"))
             put("accounts", buildJsonArray { logins.forEach { add(account(it, head)) } })
         }
     }

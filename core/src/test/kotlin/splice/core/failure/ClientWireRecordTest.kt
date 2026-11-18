@@ -152,15 +152,17 @@ private object Section11 {
         Decline.BadLocalKey, Decline.NotLaunched, is Decline.SpliceKeyAsLogin -> Fam.LOGIN
         is Decline.TooLarge, is Decline.Unfit, is Decline.Budget, is Decline.BadBody, is Decline.UnknownModel,
         Decline.ForeignHost, Decline.LivenessProbe, Decline.NoSharedLogin,
-        is Decline.Untranslatable,
+        is Decline.Untranslatable, is Decline.CapabilityRefused, is Decline.CapabilityFailed,
         -> Fam.P
     }
 
     private fun permanent(stops: Boolean): Fam = if (stops) Fam.P else Fam.R
 
-    /** A hold that ended takes its held cause's family, and one the session's wall cut short is handed to the client. */
+    /** A hold that ended takes its held cause's family, and one the session's wall cut short is handed to the client.
+     *  One that never began because another model has room is sent again at once, and its re-send goes on there. */
     private fun outlasted(cause: FailureCause.Splice.HoldOutlasted): Fam = when {
         cause.why == Outlast.WALL -> Fam.L
+        cause.why == Outlast.MOVES -> Fam.R
         cause.held is FailureCause.Provider.Limited -> Fam.H
         cause.held is FailureCause.Provider.NeedsPayment -> Fam.P
         else -> Fam.R

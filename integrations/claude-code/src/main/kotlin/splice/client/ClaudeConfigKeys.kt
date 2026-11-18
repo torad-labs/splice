@@ -58,6 +58,10 @@ internal object Keys {
     const val ONBOARDING = "hasCompletedOnboarding"
     const val COMMANDS = "commands"
     const val HOOKS = "hooks"
+    const val SKILLS = "skills"
+
+    // The file a `/login` command is, under `commands/`: splice's in a head's folder and on the door.
+    const val LOGIN_MD = "login.md"
     const val SESSIONS = "sessions"
     const val PROJECTS = CLAUDE_PROJECTS_DIRECTORY
 }

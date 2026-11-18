@@ -183,7 +183,9 @@ jobs:
         run: |
           ./gradlew :core:test --tests splice.core.process.LaunchOwnersTest
           ./gradlew :features-sessions:test --tests splice.sessions.registry.ProcessEnvironmentTest
-          ./gradlew :integrations-claude-code:test --tests splice.client.login.PortablePendingLoginTest --tests splice.client.login.PortablePendingScriptTest
+          # The /login hook's tests run the generated scripts with the `bash` on PATH: /bin first makes that the stock
+          # 3.2 the step above checked, which is what `#!/usr/bin/env bash` finds on a Mac with nothing added.
+          PATH="/bin:$PATH" ./gradlew :integrations-claude-code:test --tests splice.client.login.LoginHookScriptSafetyTest
           ./gradlew :app:test --tests splice.app.cli.CommandParserTest
       - name: build packaged daemon
         run: ./gradlew :app:shadowJar

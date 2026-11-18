@@ -57,6 +57,12 @@ public sealed class Decline {
 
     /** A request feature the head cannot carry or guarantee. */
     public data class Untranslatable(val what: RequestFeature) : Decline()
+
+    /** Capability [name] (docs/specs/harness.md, decision 6) refused the turn with its worker's own [reason]. */
+    public data class CapabilityRefused(val name: String, val reason: String) : Decline()
+
+    /** Capability [name], which fails closed, could not finish its work: [why] says what went wrong, never a key. */
+    public data class CapabilityFailed(val name: String, val why: String) : Decline()
 }
 
 public enum class PreflightKind { COMPACT_OVERFLOW, COMPACTABLE, FIRST_EXCHANGE }

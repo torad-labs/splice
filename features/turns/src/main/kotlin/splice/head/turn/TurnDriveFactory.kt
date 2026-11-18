@@ -36,7 +36,7 @@ internal class TurnDriveFactory(
 ) {
     private val driveSignals = DriveSignals(provider, deps.log, health)
     private val drivePipeline = DrivePipeline(provider, deps)
-    private val heldFallback = HeldModelFallback(deps.quotaBundle, provider.catalog, deps.log)
+    private val heldFallback = HeldModelFallback(deps.quotaBundle, provider.catalog, deps.log, deps.traffic.held)
 
     /** What a row records as its account when no login is proved for the turn. A key head names the key that
      *  sent the request, and a key head with no key names nothing: "primary" is left for a head holding a login

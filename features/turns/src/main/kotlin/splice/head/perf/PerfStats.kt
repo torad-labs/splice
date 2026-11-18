@@ -146,6 +146,7 @@ public class PerfStats(
                 meta.session?.let { put("session", it) }
                 meta.putTranscriptFacts(this)
                 meta.putFailureFacts(this)
+                meta.putHeldFacts(this)
                 meta.account.label?.let { account ->
                     put("account", account)
                     put("cache_cold", meta.account.cacheCold)

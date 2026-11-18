@@ -210,6 +210,7 @@ private object Kept {
         Decline.NoSharedLogin, Decline.HeapBusy, is Decline.Budget, is Decline.Preflight, is Decline.BadBody,
         is Decline.UnknownModel, Decline.ForeignHost, Decline.BadLocalKey, Decline.NotLaunched,
         is Decline.SpliceKeyAsLogin, Decline.LivenessProbe, is Decline.Untranslatable,
+        is Decline.CapabilityRefused, is Decline.CapabilityFailed,
         -> null
     }
 
@@ -220,6 +221,7 @@ private object Kept {
         Decline.NoSharedLogin, is Decline.TooLarge, is Decline.Unfit, Decline.HeapBusy, is Decline.Budget,
         is Decline.BadBody, Decline.ReadTimeout, is Decline.UnknownModel, Decline.ForeignHost, Decline.BadLocalKey,
         Decline.NotLaunched, is Decline.SpliceKeyAsLogin, Decline.LivenessProbe, is Decline.Untranslatable,
+        is Decline.CapabilityRefused, is Decline.CapabilityFailed,
         -> null
     }
 
@@ -299,7 +301,7 @@ private object OwnTypes {
         Decline.BadLocalKey, Decline.NotLaunched, is Decline.SpliceKeyAsLogin -> ErrorType.AUTHENTICATION
         is Decline.TooLarge, is Decline.Unfit, is Decline.Preflight, is Decline.BadBody, Decline.ReadTimeout,
         is Decline.UnknownModel, Decline.LivenessProbe, is Decline.Untranslatable, is Decline.Budget,
-        Decline.ForeignHost, Decline.NoSharedLogin,
+        Decline.ForeignHost, Decline.NoSharedLogin, is Decline.CapabilityRefused, is Decline.CapabilityFailed,
         -> ErrorType.INVALID_REQUEST
     }
 }

@@ -8,8 +8,11 @@
 package splice.topology
 
 import kotlinx.serialization.SerializationException
+import splice.core.capability.CapabilityDeclarations
+import splice.core.capability.CapabilityToml
 import splice.core.config.retiredKnobsByKey
 import splice.core.model.HeadDiscoveredModels
+import splice.core.topology.Dialect
 import splice.core.topology.Topology
 import splice.core.topology.TopologyFinding
 import splice.core.topology.TopologyFindings
@@ -49,16 +52,24 @@ public object ConfigFindings {
     /** [configDir] is the topology's directory, so a head's relative `system_prompt_file` is read where the daemon
      *  reads it; null leaves the prompt check out. [runtimes] adds what each local runtime that is up refuses. */
     public fun read(
-        text: String,
+        source: String,
         stateBase: Path,
         configDir: Path? = null,
         runtimes: LocalRowFindings = LocalRowFindings { emptyList() },
         retired: RetiredSettings? = null,
     ): ConfigRead {
+        // The capability tables are read apart, so each wrong one is its own finding beside the schema's
+        // (docs/specs/harness.md, decision 1); every other layer reads the file with them blanked out.
+        val split = CapabilityToml.split(source)
+        val text = split.rest
+        val declared = { topology: Topology? ->
+            val messages = topology?.headsSpeaking(Dialect.ANTHROPIC_PASSTHROUGH)
+            CapabilityDeclarations(topology?.heads?.keys, messages = messages).read(split.tables)
+        }
         // A structural finding is answered BEFORE any decode: a head roster written as an array of strings sends the
         // decoder into the loop the preflight exists to prevent, so the decoder never sees such a file.
         val structural = TomlStructurePreflight.failures(text).map { finding(it) }
-        val elsewhere = { topology: Topology? -> retired?.findings(topology).orEmpty() }
+        val elsewhere = { topology: Topology? -> declared(topology).findings + retired?.findings(topology).orEmpty() }
         if (structural.isNotEmpty()) return refused(structural + TopologyTypeMismatch.all(text) + elsewhere(null))
         val decoded = decode(text)
         val topology = decoded.getOrNull()
@@ -73,7 +84,8 @@ public object ConfigFindings {
             .map { it.copy(message = withFix(it), line = lineOf(text, it.path)) }
         val local = runtimes.of(topology).distinct()
             .map { it.copy(line = rows.of(text, it.path) ?: lineOf(text, it.path)) }
-        return refused(checks + OperatorTelemetryFindings.of(topology) + local + elsewhere(topology), topology)
+        val ready = topology.copy(capabilities = declared(topology).capabilities)
+        return refused(checks + OperatorTelemetryFindings.of(topology) + local + elsewhere(topology), ready)
     }
 
     /** A knob finding keeps boot's own reason as written (the console writer pins its exact text); the boot

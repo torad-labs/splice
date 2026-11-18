@@ -47,6 +47,10 @@
 :integrations-providers-muse -> :core :integrations-upstream
 :integrations-providers-openai -> :core :integrations-upstream :integrations-dialects-openai-responses :integrations-dialects-openai-chat
 :features-turns -> :core :integrations-upstream :integrations-http :features-sessions
+# the capabilities splice.toml declares, their rule and their workers, the Context Getter and the agent's call
+# (docs/specs/harness.md, decision 11). It implements the port :features-turns owns, so it depends on the turn and the
+# turn never on it; :app wires the two. :integrations-mcp is the daemon's side of the MCP hub, never the hub's own program.
+:features-harness -> :core :features-turns :features-sessions :features-launch :integrations-claude-code :integrations-http :integrations-upstream :integrations-mcp
 # the session registry and its routes, and `splice sessions`, which names each session's head from
 # splice.toml.
 :features-sessions -> :core :integrations-http :integrations-topology

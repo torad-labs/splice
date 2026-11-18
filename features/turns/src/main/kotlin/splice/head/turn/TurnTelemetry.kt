@@ -39,6 +39,7 @@ import splice.head.perf.UsageObservation
 import splice.head.usage.RetiredTurns
 import splice.head.usage.ServedTurnReport
 import splice.head.usage.ServedWay
+import splice.head.usage.TurnCacheLine
 import splice.head.usage.TurnSpend
 import splice.head.wire.TurnTrace
 
@@ -187,7 +188,8 @@ internal class TurnTelemetry(
                     responseMessageId = drive.emitter.responseMessageId,
                     messagesHash = drive.meta.scope.messagesHash,
                     conversationKey = drive.meta.scope.conversationKey,
-                    door = drive.meta.route.relay.door,
+                    relay = drive.meta.route.relay,
+                    held = drive.held,
                 ),
             ),
             snap,
@@ -275,7 +277,7 @@ internal class TurnTelemetry(
                 turns = PerfTurnIds(trace = trace?.turnId),
                 sessionId = meta.scope.sessionId,
                 messagesHash = meta.scope.messagesHash,
-                door = meta.route.relay.door,
+                relay = meta.route.relay,
             ),
         )
         val rowTs = perfStats.record(rowMeta, snap)

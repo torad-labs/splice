@@ -7,6 +7,7 @@ package splice.head
 
 import io.ktor.server.application.ApplicationCall
 import kotlinx.serialization.json.JsonObject
+import splice.upstream.credentials.AccountPool
 
 /** A request as the head read it: the model it names, its body, its session, and whether it is a `count_tokens`. */
 public data class OtherAsk(
@@ -27,6 +28,10 @@ public fun interface OtherAnswer {
  *  folder is never one; every other login is. Another machine's turn (LAN share) is no door's, and keeps its rules. */
 public fun interface HeldLogins {
     public fun held(label: String): Boolean
+
+    /** The logins of [pool] a turn through [door] never runs on: every one not [held]. None for a turn through no door. */
+    public fun never(pool: AccountPool, door: String?): Set<String> =
+        if (door == null) emptySet() else pool.members.map { it.label }.filterNot(::held).toSet()
 }
 
 /** Which requests another head answers in this head's place. */

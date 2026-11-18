@@ -31,6 +31,7 @@ export const JVM_COVERAGE_MODULES = [
   "integrations-providers-muse",
   "integrations-providers-openai",
   "features-turns",
+  "features-harness",
   "features-sessions",
   "features-models",
   "features-heads",
@@ -53,6 +54,7 @@ const SHARD_MODULES = [
   ["app"],
   [
     "features-turns",
+    "features-harness",
     "core",
     "integrations-oauth",
     "integrations-dialects-openai-responses",

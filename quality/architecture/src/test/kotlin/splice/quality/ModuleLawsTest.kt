@@ -97,6 +97,18 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ),
     // the transport serves any dialect; it must not know a CONCRETE provider (that is :app's job).
     ":features-turns" to ADAPTER_BASE + DIALECTS + setOf(":integrations-http", ":features-sessions"),
+    // the capabilities, their rule and their workers (docs/specs/harness.md, decision 11): the implementation of the
+    // port :features-turns owns, so it depends on the turn and never the other way. Its tests also stand on a dialect's
+    // own head, and on the Chat provider that is the one dialect no fixture of the turn serves.
+    ":features-harness" to ADAPTER_BASE + DIALECTS + setOf(
+        ":features-turns",
+        ":features-sessions",
+        ":features-launch",
+        ":integrations-claude-code",
+        ":integrations-http",
+        ":integrations-mcp",
+        ":integrations-providers-openai",
+    ),
     // the session registry and its routes, and `splice sessions`, which names each session's head from
     // splice.toml.
     ":features-sessions" to setOf(":core", ":integrations-http", ":integrations-topology"),

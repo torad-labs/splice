@@ -65,6 +65,7 @@ public class PassthroughProvider(
     private val builder = PassthroughRequestBuilder(quirks, configEffort, names = toolNames)
     private val compactionTail = PassthroughCompactionTail()
     private val systemPrompt = PassthroughSystemPrompt()
+    private val firstUserText = PassthroughFirstUserText()
 
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
         val upstreamModel = catalog.stripSuffixes(body.typed.model)
@@ -82,6 +83,9 @@ public class PassthroughProvider(
 
     override fun withSystemPrompt(turn: BuiltTurn, prompt: String, mode: SystemPromptMode): BuiltTurn =
         turn.copy(requestBody = systemPrompt.apply(turn.requestBody, prompt, mode))
+
+    override fun withFirstUserText(turn: BuiltTurn, text: String): BuiltTurn =
+        turn.sending(firstUserText.append(turn.requestBody, text))
 
     override fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator =
         PassthroughStreamTranslator(

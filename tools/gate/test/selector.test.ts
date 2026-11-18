@@ -65,9 +65,10 @@ describe("a changed file selects the checks it affects", () => {
   });
 
   test("a module the law does not list is not a dependent of every module", () => {
-    const leaf = pick("features/turns/src/main/kotlin/splice/head/HeadDeps.kt");
+    // :features-harness depends on :features-turns, and no module in the law depends on it
+    const leaf = pick("features/harness/src/main/kotlin/splice/harness/AgentRounds.kt");
     expect(leaf.modules).not.toContain(":app");
-    expect(leaf.modules).toEqual([":features-turns"]);
+    expect(leaf.modules).toEqual([":features-harness"]);
   });
 
   test("prose no law reads selects no module and counts as docs-only; prose a law reads does not", () => {

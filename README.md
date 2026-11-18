@@ -813,6 +813,8 @@ trace = "false"
 
 | File | What it holds | Who can read it | How long it stays | Written by |
 | --- | --- | --- | --- | --- |
+| `~/.splice/state/heads/<head>/capabilities/<sha256-thread>.json` | With a capability on for the head: one file per session thread (the main thread, or a subagent by its agent id), named by the SHA-256 of its id. Whether its first turn has come, the SHA-256 of its first user message, and each capability's state there (waiting, placed, failed, never called) with the text it placed, which is what the worker returned and can quote the session | Only you (0600) | Kept across restarts, so a restarted daemon sends every live session what it sent before, and rewritten when a state changes. Nothing removes it yet: delete the folder to forget every session's capability text | `ThreadRecords.kt` |
+| `~/.splice/state/heads/<head>/capabilities/agent-calls/<sha256-session>.json` | With a capability the model calls: one file per session, named by the SHA-256 of its id. Each call the model made of a capability's tool, the messages the provider produced around it (with the worker's result, which can quote the session), and the tools it was offered, keyed by the SHA-256 of Claude Code's copy of the answer | Only you (0600) | Kept across restarts, so a restarted daemon puts every call back where the model made it. Written before the response that made the call ends. Nothing removes it yet: delete the folder to forget them | `AgentRecords.kt` |
 | `~/.splice/state/perf-profiles/<uuid>.profile`, `<uuid>.json`, `<uuid>.tmp`, and `.profile-owner.lock` | A profile capture artifact and its metadata. Capture starts only after an explicit profile request; supported captures are bounded and published from a temporary file after size validation. | The local account; the profile directory and files are owner-only. | Artifacts expire after one hour, within a 256 MiB store budget and 32 records. Temporary files are removed after capture; the owner lock remains with the managed directory. | `ProfileArtifacts.kt`, `ProfileCopy.kt` |
 | A copy of another head's session beside it, `~/.claude/projects/<folder>/<new id>.jsonl` and its `<new id>/` subagent folder | With `projects` shared: `-r <id>`, or `-r <name>` where one session carries the name, of a session whose replies name a model this head does not serve. Launched by that name again, the head goes on with the copy. The copy's rows name the new id and its replies this head's model, and its thinking is removed as above. The original is never written. The copy's subagent files are written first. Its transcript is written to a dotted `.<name>.tmp`, which no picker lists, and takes its name last, once it and its subagent files are whole | Your umask | Until you delete it, or Claude Code's own cleanup removes it. A dotted file a halted daemon left stays until you delete it | `ResumeAcrossHeads.kt`, `SessionIdRetag.kt` |
 | A copy of another head's transcript in `~/.claude-<head>/projects/` | With `isolate = ["projects"]` on a head: resuming a session another head started copies its whole transcript, and its subagent files, into this head's tree. The transcript is written first to a dotted `.<id>.jsonl.tmp` beside it, which no picker lists, and takes its name only once whole | Your umask | Until you delete it. A dotted file a halted daemon left is replaced by the next resume of that session | `ResumeAcrossHeads.kt` |
@@ -1133,6 +1135,84 @@ the deepest one containing the session's directory wins. The layers apply in ord
 project, then project-head. Appends stack as separate blocks in that order; a `replace` at any
 layer drops the client's field and every layer before it, and later appends still land after
 it. A session whose directory splice cannot resolve gets the head layer only.
+
+### Capabilities
+
+A capability is work splice runs for a session before its first turn goes upstream: a policy check, a reviewer,
+a helper that gathers context. Its worker is an HTTP service you write, a tool of an MCP server, or the Context
+Getter that ships with splice, and what it returns goes into the session's first user message. Each one is a table
+of its own in `splice.toml`:
+
+```toml
+[capabilities.policy]
+heads = ["claude"]                 # the heads it is on for; absent or empty, it is declared and off
+call = "rule"                      # splice calls it, by the rule in `when`
+when = { turn = "first", thread = "main", mode = "interactive" }
+place = "first-user-message"       # or "none" for one that only lets a turn pass or refuses it
+may = "add"                        # "add", "refuse" or "add-or-refuse"
+message = "Checking the request"   # what the held turn says while it starts
+color = "cyan"
+timeout_s = 60                     # 1 to 3600
+on_failure = "open"                # "open": the turn goes on as today; "closed": the turn is refused
+send = ["first_user_message", "folder", "model"]   # also "head"; the worker gets nothing else
+worker = { kind = "http", url = "http://127.0.0.1:9000/check", auth_env = "POLICY_WORKER_KEY" }
+```
+
+The rule's keys and their defaults: `turn` is `"first"` or `"any"` (default `"first"`), `thread` is `"main"`,
+`"subagent"` or `"any"` (default `"main"`), `mode` is `"interactive"`, `"print"` or `"any"` (default
+`"interactive"`), and `models` lists the model ids it runs for (default every model). splice never calls a
+capability for a side request without tools, for Claude Code's auto-mode review, or for a session first seen
+mid-conversation. Where two capabilities match a request, they run one at a time, in the order splice.toml
+declares them.
+
+While a capability works, the turn is held: Claude Code shows a live turn, and nothing goes to the provider until
+the work is done. splice posts the worker one JSON object, with `Authorization: Bearer <key>` when `auth_env`
+names an environment variable that holds its key, and never a session's or a provider's credentials:
+
+```json
+{"capability": "policy", "session": "<session id>", "turn": "<turn id>",
+ "fields": {"first_user_message": "…", "folder": "/home/me/project", "model": "astra-large"}}
+```
+
+The worker answers 200 with JSON lines: any number of `{"type": "progress", "message": "…"}`, then one
+`{"type": "result", "text": "…"}` or one `{"type": "refusal", "reason": "…"}`. A result's text is added as a
+block of its own at the end of the session's first user message, after your own words, and the same bytes ride
+on every later request of that session, so its prompt cache keeps hitting; the worker is not asked again. A
+refusal ends the turn with the worker's reason, from a capability whose `may` allows it. A worker that fails or
+passes `timeout_s` lets the turn go on as today with `on_failure = "open"`, and refuses it, naming the
+capability, with `"closed"`. A turn over its budget is refused before the worker is called.
+
+A declaration splice cannot read stops the daemon from starting, with every finding listed at once and none
+quoting a value that could be a secret. `splice check-config` runs the same check. `splice status` lists each
+declared capability with the heads it is on for (`off` when none) and its worker. With none declared, splice says
+nothing of capabilities and sends every request as it does today. Switching a capability off stops new calls; a
+session that already carries its text keeps it. The full design is `docs/specs/harness.md`.
+
+A capability can also be called by the model itself: `call = "agent"` (or `"both"`) with a `tool = { name,
+description, input }` offers it as a tool after Claude Code's own, on a head that passes Anthropic's Messages through.
+Claude Code never sees that call: splice holds the turn, asks the worker with the call's input, gives the model the
+worker's text as the call's result, and streams the answer on as the rest of the same message. splice keeps each call and
+puts it back on the session's later requests, so the provider sees the conversation it produced.
+
+A worker can also be a tool of an MCP server the hub runs: `worker = { kind = "mcp", server = "<server>", tool =
+"<tool>" }`. splice calls the tool with the fields `send` names (and `input`, for a call the model made) as its
+arguments, finds the server the way the hub would for the session's folder, and starts it there for the call when
+nothing hosts it yet. The server's progress notifications are the held turn's messages, and its text content is the
+result.
+
+One capability ships with splice, off until you switch it on for a head: the Context Getter, which gathers what
+another agent needs to start on the session's first message (the files that matter, with paths and line ranges, how
+the project builds and tests, and what its instructions say) and places it in that message:
+
+```toml
+[capabilities.context-getter]
+heads = ["claude"]
+worker = { kind = "builtin", name = "context-getter" }   # model = "<id>" picks its model
+```
+
+It runs a Claude Code session in print mode, in the session's folder, on the head's fast model at that model's own
+effort, and the held turn says `Exploring files with <model>` and then each step it takes. It stops at 180 s unless
+`timeout_s` says otherwise, and the turn goes on without it when it stops early or cannot run.
 
 ### Code mode for ChatGPT
 

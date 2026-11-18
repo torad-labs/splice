@@ -3,6 +3,7 @@ package splice.head.perf
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.put
 import splice.core.perf.PerfTurnIds
+import splice.core.turn.TurnRelay
 import splice.upstream.transport.HeaderRedaction
 
 /** The string facts a perf row carries beside the numeric snapshot. */
@@ -20,6 +21,20 @@ public data class PerfRowMeta(
     val failure: PerfFailure = PerfFailure(),
     val transcript: PerfTranscriptIds = PerfTranscriptIds(),
 ) {
+    /** What the turn's capabilities did (docs/specs/harness.md, decision 10), on every row: 0 and null for a turn they
+     *  did not touch. */
+    internal fun putHeldFacts(into: JsonObjectBuilder) {
+        into.put("capability_text_chars", transcript.held.textChars)
+        into.put("held_on", transcript.held.on)
+        into.put("held_ms", transcript.held.ms)
+        // Only where it happened: a dialect that could not place a text left the body as the client sent it.
+        if (transcript.held.unplaced) into.put("capability_unplaced", true)
+        // Only where it happened: a capability its rule named that was not called, and one whose work failed or was
+        // stopped, each with its reason (decisions 6 and 9).
+        transcript.held.skipped?.let { into.put("capability_skipped", it) }
+        transcript.held.failed?.let { into.put("capability_failed", it) }
+    }
+
     /** Why the turn failed, beside its outcome tag: the cause, the retry loop's own attempt count (only when non-zero,
      *  so a row without retries is unchanged) and, V4-444, the upstream's own words where the upstream is what failed.
      *  Those words lose the value of any header they quote (fix 4, Oct 27): the console reads this row, and a refusal
@@ -35,7 +50,9 @@ public data class PerfRowMeta(
         transcript.sessionId?.let { into.put("session_id", it) }
         transcript.responseMessageId?.let { into.put("response_message_id", it) }
         transcript.messagesHash?.let { into.put("messages_hash", it) }
-        transcript.door?.let { into.put("door", it) }
+        transcript.relay.door?.let { into.put("door", it) }
+        // A Context Getter's request names the session it worked for, so the two can be joined (decision 10).
+        transcript.relay.workedFor?.let { into.put("worked_for", it) }
         transcript.turns.trace?.let { into.put("turn", it) }
         transcript.turns.request?.let { into.put("turn_id", it) }
         // V4-444: whether a capture was kept for this turn, said OUTRIGHT on every row. A null `turn` already
@@ -87,7 +104,25 @@ public data class PerfTranscriptIds(
     /** The hash of the request's messages, on a request that named a session: Requests links a cut turn's row to
      *  the re-send of the same messages in the same session. */
     val messagesHash: String? = null,
-    /** The door the turn came through (desktop-door, decision 7), or null for a turn that came straight to its head;
-     *  the row then carries no `door`. */
-    val door: String? = null,
+    /** What the listener in front of the head said of the turn: the door it came through (desktop-door, decision 7),
+     *  and the session a Context Getter's request worked for (docs/specs/harness.md, decision 10). A turn that came
+     *  straight to its head has neither, and its row carries no `door` and no `worked_for`. */
+    val relay: TurnRelay = TurnRelay(),
+    /** Which capabilities held the turn and what they placed (docs/specs/harness.md, decision 10): like the door, how
+     *  the turn reached its provider, joined to the capabilities splice.toml names. */
+    val held: PerfHeld = PerfHeld(),
+)
+
+/** What a turn's capabilities did: the size of the text its request carried, the capabilities it was held on, in
+ *  order and joined by commas (null when it was not held), and how long it was held. */
+public data class PerfHeld(
+    val textChars: Long = 0L,
+    val on: String? = null,
+    val ms: Long = 0L,
+    /** A text a capability returned that the head's dialect could not place, so the request went without it. */
+    val unplaced: Boolean = false,
+    /** The capabilities the rule named that were not called, each `<capability>: <reason>`, joined by `; `. */
+    val skipped: String? = null,
+    /** The capabilities whose work failed or was stopped, each `<capability>: <reason>`, joined by `; `. */
+    val failed: String? = null,
 )

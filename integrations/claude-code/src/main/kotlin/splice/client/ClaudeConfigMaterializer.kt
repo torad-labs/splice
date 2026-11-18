@@ -104,16 +104,17 @@ public class ClaudeConfigMaterializer(
      *  baseline. [modelOverrides] (V4-232, ModelCatalog.presented) is written as settings.json
      *  `modelOverrides`, a Claude model the client knows -> the row id it stands for; empty writes
      *  nothing and leaves a shared value as it was. A wrapped `claude` never comes through here:
-     *  it writes nothing into the operator's own ~/.claude, which this entry point refuses (V4-445). [keyHelper] is
+     *  it writes nothing into the operator's own ~/.claude, which this entry point refuses (V4-445). [helpers] are
      *  written as settings.json `apiKeyHelper`, the command a session of a head that checks the turn key reads it
-     *  through (key rotation, Oct 26); null writes none. [speedTiers] (gpt-speed) is non-null for a head signed in with
+     *  through (key rotation, Oct 26), and `otelHeadersHelper`, the one its telemetry export reads its headers from
+     *  (server mode, F8); one that is null is not written. [speedTiers] (gpt-speed) is non-null for a head signed in with
      *  ChatGPT: the tiers its pinned model's catalog entry offers, laid down as /fast and /ultrafast skills with the hook
      *  that catches them; null lays down neither and removes splice's earlier ones. */
     public fun materialize(
         spec: MaterializeSpec,
         trust: TrustedLaunch? = null,
         modelOverrides: Map<String, String> = emptyMap(),
-        keyHelper: String? = null,
+        helpers: SessionHelpers = SessionHelpers(),
         speedTiers: List<ServiceTier>? = null,
     ): MaterializeResult {
         requireIsolatedDir(spec.configDir)
@@ -163,7 +164,7 @@ public class ClaudeConfigMaterializer(
                 ),
             ),
         )
-        writeSettings(spec, hookAdditions, existingSettings, LaunchSettings(modelOverrides, keyHelper), hookOrigins)
+        writeSettings(spec, hookAdditions, existingSettings, LaunchSettings(modelOverrides, helpers), hookOrigins)
         val mcpCount = writeClaudeJson(
             spec.configDir,
             spec.modelOptionsCache.takeIf { spec.availableModelIds != null },
@@ -326,8 +327,8 @@ public class ClaudeConfigMaterializer(
     }
 
     /** What one launch adds to the head's settings beside its [MaterializeSpec]: the presented rows' model overrides
-     *  and the key helper. One value, so writeSettings stays within its parameter budget. */
-    private data class LaunchSettings(val modelOverrides: Map<String, String>, val keyHelper: String?)
+     *  and the session's helpers. One value, so writeSettings stays within its parameter budget. */
+    private data class LaunchSettings(val modelOverrides: Map<String, String>, val helpers: SessionHelpers)
 
     // [existing] is the DR-105 preflight read from materialize() — the one aborting read this
     // function used to perform itself, after the mutations it must now precede.
@@ -362,7 +363,7 @@ public class ClaudeConfigMaterializer(
         )
         val merged = buildJsonObject {
             base.forEach { (key, value) -> put(key, value) }
-            launch.keyHelper?.let { put(Keys.API_KEY_HELPER, it) }
+            launch.helpers.writeInto(this)
             put(
                 Keys.STATUS_LINE,
                 buildJsonObject {

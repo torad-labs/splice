@@ -13,8 +13,10 @@
 package splice.launch.recipe
 
 import splice.client.ClaudeConfigMaterializer
+import splice.client.ManagedSettings
 import splice.client.MaterializeSignIn
 import splice.client.MaterializeSpec
+import splice.client.SessionHelpers
 import splice.client.TrustedLaunch
 import splice.client.desktop.providerSwitches
 import splice.client.mcp.HubLaunchArgs
@@ -27,11 +29,12 @@ import splice.client.wrap.ClaudeToRun
 import splice.client.wrap.WrapStateRead
 import splice.client.wrap.WrappedHead
 import splice.client.wrap.WrappedLaunch
+import splice.core.GATEWAY_VERSION
 import splice.core.client.CLIENT_WALL_HEADER
+import splice.core.client.SPLICE_CLIENT_HEADER
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
 import splice.core.util.EnvReader
-import splice.launch.LaunchGateway
 import splice.launch.LaunchOutcome
 import splice.launch.LaunchSpec
 import splice.launch.RemoteCommands
@@ -88,6 +91,9 @@ public class LaunchService(
     /** How the head's effort reaches the Claude Code this launch starts. */
     private val effort = LaunchEffort()
 
+    /** What an organisation manages for a command's config tree, which can set telemetry of its own. */
+    private val managed = ManagedSettings()
+
     /** V4-183 and V4-115: what a launch resumes, and what the operator is told about it. */
     private val resume = LaunchResume(resumeAcrossHeads, moving)
 
@@ -119,7 +125,9 @@ public class LaunchService(
         val claude = (chosen as? ClaudeToRun.Wrapped)?.path ?: claudeBinary
         val wrapped = caller.wrapped
         val keyed = if (keyPresentNow) withoutTokenCapture(spec) else spec
-        val effective = wrapped?.let { keyed.copy(trees = keyed.trees.copy(own = it.configDir)) } ?: keyed
+        val tree = wrapped?.let { keyed.copy(trees = keyed.trees.copy(own = it.configDir)) } ?: keyed
+        // Telemetry the command's managed settings set is theirs, and splice then sends none (server mode, F8).
+        val effective = withManagedTelemetry(tree)
         val slots = LaunchAliasSlots.of(effective)
         // V4-358: every choice above is made on the rows' own ids; what the client is HANDED is spelled here.
         val held = effort.given(effective.heldByClient(), extraArgs)
@@ -151,7 +159,7 @@ public class LaunchService(
         // carries the head's settings as a --settings overlay below.
         val modelOverrides = effective.models.tiers.modelOverrides
             .takeUnless { effective.gateway.clientModels }.orEmpty()
-        val speed = materializeLaunch(materialize, trust, modelOverrides, effective.gateway.keyHelper, wrapped)
+        val speed = materializeLaunch(materialize, trust, modelOverrides, effective.helpers, wrapped)
         // V4-276: a launch never writes a head's .credentials.json. V4-129 copied the selected stored
         // login over it here, and Claude Code's refresh tokens rotate, so every launch put back a
         // superseded token and upstream revoked the login (V4-237, V4-250). The live login is
@@ -178,7 +186,7 @@ public class LaunchService(
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
             // a launch on macOS carries splice's mark in its --settings, the one sign of it a hardened claude's
             // arguments keep there (LaunchMarker); elsewhere the arguments are as they were
-            addAll(LaunchMarker.settingsArgs(overlayOf(wrapped, roster, held.gateway, keyed)))
+            addAll(LaunchMarker.settingsArgs(overlayOf(wrapped, roster, held, keyed)))
             addAll(hub.args + effort.args(held)) // the effort after the hub's: a relaunch reads it as its own
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.
@@ -196,13 +204,13 @@ public class LaunchService(
     private fun overlayOf(
         wrapped: WrappedLaunch?,
         roster: List<String>?,
-        gateway: LaunchGateway,
+        held: LaunchSpec,
         head: LaunchSpec,
     ): String? {
         if (wrapped == null) return null
         val hooks = materializer.startupHook(head.trees.own, head.signIn.headKey)
         val marked = LaunchMarker.here
-        return wrapped.settingsOverlay(roster, gateway.statuslineCommand, marked, gateway.keyHelper, hooks)
+        return wrapped.settingsOverlay(roster, held.gateway.statuslineCommand, marked, held.helpers, hooks)
     }
 
     /** MCP hub step 6: what the hub adds to this launch. A wrapped launch reads the user's own config home and falls
@@ -230,12 +238,19 @@ public class LaunchService(
         spec: MaterializeSpec,
         trust: TrustedLaunch?,
         modelOverrides: Map<String, String>,
-        keyHelper: String?,
+        helpers: SessionHelpers,
         wrapped: WrappedLaunch?,
     ): SpeedOffer {
         val tiers = speeds?.takeIf { wrapped == null }?.offered(spec.signIn.headKey)
-        if (wrapped == null) materializer.materialize(spec, trust, modelOverrides, keyHelper, tiers)
+        if (wrapped == null) materializer.materialize(spec, trust, modelOverrides, helpers, tiers)
         return SpeedOffer(tiers)
+    }
+
+    /** [spec] with no telemetry of splice's where its config tree's managed settings set telemetry of their own. */
+    private fun withManagedTelemetry(spec: LaunchSpec): LaunchSpec {
+        val server = spec.teamServer?.takeIf { it.telemetry != null } ?: return spec
+        val own = managed.setsTelemetry(spec.trees.own)
+        return if (own) spec.copy(teamServer = server.copy(telemetry = null)) else spec
     }
 
     /** Everything the operator must be told about this launch, in one sentence. A cross-head adoption
@@ -309,7 +324,7 @@ public class LaunchService(
             // Claude Code's provider switches, cleared from every launch: a shell inside a Code tab session carries
             // the desktop door's, and a session that inherits any of them goes past its head.
             auth + "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY" + absentTiers + clientModels + config +
-                providerSwitches,
+                providerSwitches + LaunchTelemetry.cleared(held),
         )
     }
 
@@ -342,6 +357,8 @@ public class LaunchService(
             put("MAX_THINKING_TOKENS", "128000")
             // The client's own timers and retry limits, so the head's wall decides every turn (LaunchClientTimers).
             putAll(LaunchClientTimers.of(spec))
+            // Server mode (F8): Claude Code's own telemetry goes to its server's relay, when the server has one.
+            putAll(LaunchTelemetry.env(spec))
             // Failure-handling slice 5: the same timeout, told to the head on every request, so a turn held for a reset
             // fits the session that sent it (a session launched before this reads as the 960 s every session had).
             // Merged with any custom headers the shell already names, which Claude Code reads one per line.
@@ -376,7 +393,9 @@ public class LaunchService(
         // Every header splice plants for a session starts "x-splice-" (the client wall, the launch proof).
         val ambient = envReader("ANTHROPIC_CUSTOM_HEADERS").orEmpty().lines()
             .filter { it.isNotBlank() && !it.trim().startsWith("x-splice-", ignoreCase = true) }
-        return (ambient + "$CLIENT_WALL_HEADER: ${spec.gateway.apiTimeoutMs}" + spec.gateway.proofLines)
+        // Server mode (F9): a team server's command names this laptop's splice, so an older one is told to upgrade.
+        val client = listOfNotNull(spec.teamServer?.let { "$SPLICE_CLIENT_HEADER: $GATEWAY_VERSION" })
+        return (ambient + "$CLIENT_WALL_HEADER: ${spec.gateway.apiTimeoutMs}" + spec.gateway.proofLines + client)
             .joinToString("\n")
     }
 

@@ -5,6 +5,9 @@
 // launches with an apiKeyHelper that prints the key file, so a new sign-in reaches a running session the next time
 // Claude Code asks, which it does after a 401. `splice logout <server>` removes the key file and keeps the rest, so
 // signing in again names the same device and the server keeps that device's keys apart from the laptop's others.
+// The record also keeps what the server's profile offered at the last `splice remote add` or `refresh`: its commands
+// (F7) and its telemetry relay (F8), which a command's telemetry export reaches with an otelHeadersHelper that prints
+// the same key file.
 package splice.share
 
 import kotlinx.serialization.SerialName
@@ -34,6 +37,9 @@ internal data class ServerLoginRecord(
     /** The commands the server's profile listed when this laptop last linked them (F7), so a refresh links only the
      *  ones it starts offering after that, and unlinks only the ones it drops; null before the first. */
     val offered: List<String>? = null,
+    /** Where the server relays Claude Code's own telemetry, as its profile named it at the last add or refresh (F8);
+     *  null while it relays none. */
+    val telemetry: String? = null,
 )
 
 /** A sign-in the server answered: the [person] it names and the [key] it minted, shown by [prefix] everywhere. */
@@ -111,6 +117,7 @@ public class ServerLogins(
                 expiresAt = signedIn.expiresAt,
                 launches = kept?.launches.orEmpty(),
                 offered = kept?.offered,
+                telemetry = kept?.telemetry,
             ),
         )
     }
@@ -127,13 +134,11 @@ public class ServerLogins(
         return held || kept?.person != null
     }
 
-    /** The apiKeyHelper of a command on [server], or null when this laptop never signed in there (a LAN share). It
-     *  prints the key file and nothing else; with no key it says how to sign in, on stderr, and fails. */
-    public fun helper(server: String): String? {
+    /** The helpers a session of a command on [server] reads this laptop's key there through, or null when this laptop
+     *  never signed in there (a LAN share). */
+    public fun helpers(server: String): KeyHelpers? {
         val files = files(server)?.takeIf { Files.exists(it.record.path) } ?: return null
-        val origin = requireNotNull(origin(server))
-        val signIn = quoted("splice: not signed in to $origin; run: splice login $origin")
-        return "cat ${quoted(files.key.toString())} 2>/dev/null || { echo $signIn >&2; exit 1; }"
+        return KeyHelpers(requireNotNull(origin(server)), files.key)
     }
 
     /** The launch [command] on [server] last answered, or null. */
@@ -152,12 +157,18 @@ public class ServerLogins(
      *  one there (F7). */
     public fun offered(server: String): List<String>? = record(server)?.offered
 
-    /** Keeps [commands] as what [server]'s profile lists now, on a server this laptop holds a login for. */
-    public fun keepOffered(server: String, commands: List<String>) {
+    /** Keeps what [server]'s profile offers now, on a server this laptop holds a login for: the [commands] it lists,
+     *  and the [telemetry] relay it names, or null when it names none (F8). */
+    public fun keepOffered(server: String, commands: List<String>, telemetry: String?) {
         val files = files(server) ?: return
         val kept = files.record.read() ?: return
-        if (kept.offered != commands) files.record.write(kept.copy(offered = commands))
+        val now = kept.copy(offered = commands, telemetry = telemetry)
+        if (now != kept) files.record.write(now)
     }
+
+    /** Where [server] relays Claude Code's own telemetry, as its profile named it when this laptop last linked from it;
+     *  null when it relays none (F8). */
+    public fun telemetry(server: String): String? = record(server)?.telemetry
 
     private fun record(server: String): ServerLoginRecord? = files(server)?.record?.read()
 
@@ -167,8 +178,6 @@ public class ServerLogins(
         val record = StateFile(dir.resolve("$name.json"), ServerLoginRecord.serializer())
         return LoginFiles(record, dir.resolve("$name.key"))
     }
-
-    private fun quoted(value: String): String = "'" + value.replace("'", "'\\''") + "'"
 
     private data class LoginFiles(val record: StateFile<ServerLoginRecord>, val key: Path)
 }

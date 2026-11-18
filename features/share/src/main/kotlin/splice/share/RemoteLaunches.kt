@@ -10,7 +10,8 @@
 // key in place of the fixed word, so no key sits in the session's environment and a new sign-in reaches a session
 // that is running. A server that refuses the ask for its key (signed out, or the key expired or was revoked) is
 // launched from the last launch it answered, when there is one: Claude Code starts, and its helper or the server says
-// to sign in.
+// to sign in. Every launch of a command on such a server names this laptop's splice to it (F9), and on a server whose
+// profile named a telemetry relay when the command was last linked, Claude Code's own telemetry goes there (F8).
 package splice.share
 
 import kotlinx.coroutines.CoroutineDispatcher
@@ -32,8 +33,10 @@ import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
 import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
+import splice.launch.LaunchTelemetry
 import splice.launch.RemoteCommands
 import splice.launch.RemoteLaunch
+import splice.launch.TeamServerLaunch
 import java.net.URI
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -105,7 +108,7 @@ public class RemoteLaunches(
 
     /** What a refusal for want of a key ([status] 401) adds on a server this laptop signs in to: how to sign in. */
     private fun signIn(address: RemoteAddress, status: Int): String =
-        logins?.helper(address.server)?.takeIf { status == HttpStatus.UNAUTHORIZED }
+        logins?.helpers(address.server)?.takeIf { status == HttpStatus.UNAUTHORIZED }
             ?.let { "; sign in with: splice login ${address.server}" }.orEmpty()
 
     private fun decoded(kept: JsonElement): SharedLaunch? = try {
@@ -129,10 +132,10 @@ public class RemoteLaunches(
             headKey = command,
         )
         val statusline = "${address.turns}/statusline"
-        val helper = logins?.helper(address.server)
+        val helpers = logins?.helpers(address.server)
         val gateway = LaunchGateway(
             port = 0,
-            bearer = helper?.let { GatewayBearer.Helper(it) } ?: GatewayBearer.Planted(SHARE_NODE_TOKEN),
+            bearer = helpers?.let { GatewayBearer.Helper(it.apiKey()) } ?: GatewayBearer.Planted(SHARE_NODE_TOKEN),
             apiTimeoutMs = shared.timeoutMs,
             statuslineCommand = "curl -sS --connect-timeout $STATUSLINE_CONNECT_S --data-binary @- '$statusline'",
             remote = address.turns,
@@ -140,8 +143,14 @@ public class RemoteLaunches(
         )
         val served = shared.models.launchModels()
         val models = window?.let { served.copy(contextWindow = it) } ?: served
-        return LaunchSpec(trees.of(command), models, signIn, gateway, policy)
+        val teamServer = helpers?.let { teamServer(address.server, it) }
+        return LaunchSpec(trees.of(command), models, signIn, gateway, policy, teamServer = teamServer)
     }
+
+    /** What a launch of a command on [server], a team's server this laptop signed in to, carries for it: the relay
+     *  its profile named when this laptop last linked from it, with the one of [helpers] that sends the key there (F8). */
+    private fun teamServer(server: String, helpers: KeyHelpers): TeamServerLaunch =
+        TeamServerLaunch(logins?.telemetry(server)?.let { LaunchTelemetry(it, helpers.otelHeaders()) })
 
     private fun launchUri(address: RemoteAddress): URI {
         val params = listOfNotNull(

@@ -9,7 +9,8 @@
 //
 // A team's server (docs/specs/server-mode.md, F7) this laptop holds a key for is asked for its profile instead: every
 // command the profile lists is linked, each at `<server>/<command>`, and the laptop keeps the list, so
-// `splice remote refresh` later tells the commands the server starts offering from the ones the person took out.
+// `splice remote refresh` later tells the commands the server starts offering from the ones the person took out. It
+// keeps the telemetry relay the profile names as well (F8), which those commands' launches send their telemetry to.
 package splice.app.cli.share
 
 import splice.core.terminal.TerminalOutput
@@ -36,11 +37,12 @@ internal data class RemoteAdded(
 )
 
 /** The entries an address asks for, by command, and the [machine] that serves them; and the team [server] whose
- *  profile listed them, when one did. */
+ *  profile listed them, when one did, with the [telemetry] relay that profile names (F8). */
 private data class Offered(
     val machine: String,
     val entries: Map<String, RemoteConfig>,
     val server: String? = null,
+    val telemetry: String? = null,
 )
 
 /** Whether a command's link here runs splice's launch shim, so the command asks splice where to run: `claude` does
@@ -87,7 +89,7 @@ internal class RemoteAdd(
         if (fresh.isEmpty() || !file.saved(wanted, topology)) return null
         out.line("added to ${file.path}: ${fresh.keys.joinToString(", ")}")
         relays.replaced(topology, replacing)
-        offered.server?.let { asks.logins.keepOffered(it, offered.entries.keys.toList()) }
+        offered.server?.let { asks.logins.keepOffered(it, offered.entries.keys.toList(), offered.telemetry) }
         return RemoteAdded(wanted, fresh.keys.toList(), offered.machine, free.complete)
     }
 
@@ -113,7 +115,7 @@ internal class RemoteAdd(
     private fun profiled(server: String, read: Asked<ServerProfile>): Offered? {
         val offer = names.profiled(server, read) ?: return null
         if (offer.entries.isEmpty()) return names.refused("$server serves no command to ${offer.person}")
-        return Offered(server, offer.entries, server)
+        return Offered(server, offer.entries, server, offer.telemetry)
     }
 
     /** The one command [text] names, once its server has it, with the login and models the address asks for. */

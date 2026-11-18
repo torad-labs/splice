@@ -2,7 +2,8 @@
 // reverse proxy every connection comes from the proxy, and the client is in `X-Forwarded-For`, a header anyone can
 // send. So it is believed only on a connection from an address in `[server] trusted_proxies`, and read from the right:
 // the last address a trusted proxy did not add itself. From anyone else the header is ignored, and the connection's
-// own address stands. Refused keys are said in the daemon log by that address, once each, then by count.
+// own address stands. A trusted proxy's word on the scheme and host a laptop reached the server at is taken the same
+// way. Refused keys are said in the daemon log by that address, once each, then by count.
 package splice.server.caller
 
 import splice.core.listen.IpLiterals
@@ -22,6 +23,12 @@ internal class ClientAddresses(trustedProxies: List<String>) {
         // A hop that is no address at all is nobody's: the proxy's own address is the last one known.
         return hops.lastOrNull { !trusted(it) }?.takeIf { IpLiterals.parse(it) != null } ?: peer
     }
+
+    /** What a trusted proxy at [peer] says of the request in a header of its own, such as `X-Forwarded-Proto` ([value],
+     *  every value of it joined by commas): the word of the proxy nearest this server. Null from anyone else, whose
+     *  word on it is not taken, and for a header that is not there. */
+    fun proxied(peer: String, value: String?): String? =
+        value?.takeIf { trusted(peer) }?.split(',')?.map(String::trim)?.lastOrNull(String::isNotEmpty)
 
     private fun trusted(address: String): Boolean {
         val ip = IpLiterals.parse(address) ?: return false

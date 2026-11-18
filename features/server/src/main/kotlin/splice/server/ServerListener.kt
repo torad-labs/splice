@@ -18,6 +18,9 @@
 //                                  to that provider's own server, refusals in OpenAI's error shape (OpenAiRoute)
 //   ANY  /server/api/...           the server's own API, for a key whose person is an admin (ServerAdmin)
 //   GET  /server/metrics           each person's traffic, live, as Prometheus text, for an admin's key (F6)
+//   POST /server/otlp/v1/{logs,metrics,traces}
+//                                  a laptop's Claude Code telemetry, stamped with the key's person and team and relayed
+//                                  to the collector `[server.telemetry] forward_to` names; no such path without one (F8)
 //
 // A key arrives as `x-api-key` or as `Authorization: Bearer`. A missing, unknown, revoked or expired one is a 401
 // `authentication_error` that says which and never repeats the key, and nothing reaches a head (KeyAdmission). Only
@@ -74,6 +77,9 @@ import splice.http.listen.HttpListenerThreads
 import splice.server.caller.ClientAddresses
 import splice.server.caller.KeyAdmission
 import splice.server.ledger.ROUTE_MESSAGES
+import splice.server.telemetry.OTLP_ROUTE
+import splice.server.telemetry.ResourceStamp
+import splice.server.telemetry.TelemetryRelay
 import splice.share.HEAD_API_ROOT
 import splice.share.HEAD_LAUNCH_ROUTE
 import splice.share.HeadTurn
@@ -111,7 +117,11 @@ internal class ServerListener(
     /** How often a streamed turn's client is sent a keepalive while its answer is silent; null sends none. */
     private val keepalive = server.keepaliveSeconds.takeIf { it > 0 }?.seconds
     private val openAi = OpenAiRoute(parts, io, log, keepalive)
-    private val profile = ProfileRoute(server, parts.heads, io)
+    private val profile = ProfileRoute(server, parts.heads, io, addresses, secure = tls != null)
+    private val telemetry = server.telemetry?.let { TelemetryRelay(it, voice, log) }
+
+    /** The path the telemetry relay answers under (F8). */
+    private val otlpRoute = listOf(SERVER_ROOT, OTLP_ROUTE)
 
     /** The path, after the command, of the one request that runs a turn on the Messages route. */
     private val turnPath = listOf(HEAD_API_ROOT, "messages")
@@ -170,9 +180,17 @@ internal class ServerListener(
             path.isEmpty() && call.request.httpMethod == HttpMethod.Get -> catalog.directory(call)
             path.isEmpty() -> noSuchPath(call)
             profile.asks(call, path) -> profile.answer(call, key)
+            path.take(2) == otlpRoute -> otlp(call, key, path.drop(2))
             path.first() == SERVER_ROOT -> admin.answer(call, key, path.drop(1))
             else -> if (!openAi.answered(call, key, path)) command(call, key, path)
         }
+    }
+
+    /** [rest], after `/server/otlp`, relayed to the operator's collector with [key]'s person and team on it; a server
+     *  with no relay has no such path (F8). */
+    private suspend fun otlp(call: ApplicationCall, key: ServerKey, rest: List<String>) {
+        val relay = telemetry ?: return noSuchPath(call)
+        relay.answer(call, rest, ResourceStamp(key.person, parts.people.team(key.person, server.teams)))
     }
 
     /** [path] names a served command first: its turns, or its launch. */

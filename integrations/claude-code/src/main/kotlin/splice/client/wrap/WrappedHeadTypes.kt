@@ -12,6 +12,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.client.Keys
+import splice.client.SessionHelpers
 import splice.sessions.registry.LaunchMarker
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -92,19 +93,20 @@ public class WrappedLaunch internal constructor(public val configDir: Path) {
      *  line. The client merges it over the operator's own settings for this run only, so nothing is written to
      *  ~/.claude/settings.json and a plain `claude` afterwards reads the file it always read. A null roster is a
      *  head whose client picks its own models (V4-449): the overlay then carries the status line alone. [marked] adds
-     *  splice's launch mark (LaunchMarker), which a launch on macOS carries. [keyHelper] is the `apiKeyHelper` of a
-     *  head that checks the turn key (key rotation, Oct 26): with no settings.json written, the overlay is the one
-     *  place the session can read it from. [hooks] are the head's hooks by event, its startup hook (round 6 of #247),
+     *  splice's launch mark (LaunchMarker), which a launch on macOS carries. [helpers] are the `apiKeyHelper` of a
+     *  head that checks the turn key (key rotation, Oct 26) and the `otelHeadersHelper` of a command whose server relays
+     *  its telemetry (server mode, F8): with no settings.json written, the overlay is the one place the session can
+     *  read them from. [hooks] are the head's hooks by event, its startup hook (round 6 of #247),
      *  which Claude Code runs beside the operator's own. */
     public fun settingsOverlay(
         availableModelIds: List<String>?,
         statuslineCommand: String,
         marked: Boolean = false,
-        keyHelper: String? = null,
+        helpers: SessionHelpers = SessionHelpers(),
         hooks: Map<String, List<JsonObject>> = emptyMap(),
     ): String =
         buildJsonObject {
-            if (keyHelper != null) put(Keys.API_KEY_HELPER, keyHelper)
+            helpers.writeInto(this)
             if (availableModelIds != null) {
                 putJsonArray(Keys.AVAILABLE_MODELS) { availableModelIds.forEach { add(it) } }
                 put("enforceAvailableModels", true)

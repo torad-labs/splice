@@ -1518,7 +1518,7 @@ notes = [
 id = 'getter-says'
 title = 'While the Context Getter works, the status line says what it is exploring'
 feature = 'harness-says'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'getter-runs',
@@ -1537,6 +1537,7 @@ notes = [
   '2026-11-17 14:33 CT: added; 1 of 1 checks fail, as they should before the work',
   "2026-11-18 03:00 CT campaign: parked by harness-says: disputed: getter-says.test.ts line 68, expect(line(astra, session)).toContain(\"astra\"), is case-sensitive and cannot pass. The check's head is labelledHead (models labelled \"Astra Large\" and \"Astra Small\"), and the status line draws the model by its label, as held-status already does: the line during the hold reads \"Exploring files with Astra Small · 0s ago ● Astra Large splice-server-check-…\", which holds no lowercase \"astra\". The item says the model's name follows the held turn's part, and it does (\"Astra Large\" after the segment). A copy of the test with only that line changed to \"Astra\" passes both tests on this build, every later assertion included (each tool-use summary in turn, the stopped line before the turn goes on, the line after). The fix is the check's: match the label (\"Astra\" or \"Astra Large\"), or compare case-insensitively. (after 1 rounds)",
   "2026-11-18 03:00 CT: lead: the dispute holds. The status line draws models by label, so the check now reads 'Astra Large' after the held part instead of a lowercase 'astra' (the check's commit is the one before this plan).",
+  '2026-11-18 03:13 CT: done: 1 checks on feat/provider-gateway-headers pass',
 ]
 
 [[row]]

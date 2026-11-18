@@ -15,8 +15,6 @@ dependencies {
     implementation(libs.ktor.server.netty)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
-    // a telemetry relay (F8) stamps OTLP requests in protobuf field by field, with protobuf-java's own reader.
-    implementation(libs.protobuf.java)
     // A test stands in for a head, whose contract (SharedHead) names features-launch's LaunchSpec.
     testImplementation(project(":features-launch"))
     testImplementation(testFixtures(project(":core")))

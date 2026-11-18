@@ -37,7 +37,7 @@ class ServerLoginsTest {
     fun `the helper prints the key the last sign-in kept, and a sign-in again hands out the new one`() {
         val device = logins.device(server, "Dana-Laptop.local")
         signIn(key('a'), device)
-        val helper = requireNotNull(logins.helpers(server)?.apiKey()) { "a server signed in to has no helper" }
+        val helper = requireNotNull(logins.helper(server)) { "a server signed in to has no helper" }
         assertEquals(Triple(0, key('a'), ""), run(helper))
         assertFalse(key('a') in helper, "the helper holds the key itself, so a new sign-in could not reach it")
 
@@ -61,7 +61,7 @@ class ServerLoginsTest {
         val device = logins.device(server, "dana-laptop")
         assertTrue(device.startsWith("dana-laptop-"), device)
         signIn(key('a'), device)
-        val helper = requireNotNull(logins.helpers(server)?.apiKey()) { "a server signed in to has no helper" }
+        val helper = requireNotNull(logins.helper(server)) { "a server signed in to has no helper" }
 
         assertTrue(logins.forget(server))
         val (code, out, err) = run(helper)
@@ -75,7 +75,7 @@ class ServerLoginsTest {
 
     @Test
     fun `a server this laptop never signed in to gets no helper, and a word that is no server is no origin`() {
-        assertNull(logins.helpers("http://devbox.lan:3097"))
+        assertNull(logins.helper("http://devbox.lan:3097"))
         assertNull(logins.origin("devbox.lan"))
         assertNull(logins.origin("ftp://devbox.lan"))
     }

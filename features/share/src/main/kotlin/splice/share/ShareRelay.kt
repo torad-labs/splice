@@ -34,10 +34,15 @@ package splice.share
 import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.httpMethod
+import io.ktor.server.request.receiveChannel
+import io.ktor.utils.io.readBuffer
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.io.readByteArray
 import splice.core.config.LAUNCH_PROOF_HEADER
 import splice.core.config.TurnKey
 import splice.core.pool.PREFERRED_UPSTREAM_HEADER
@@ -239,9 +244,26 @@ public class ShareRelay(
             log("[${speaker.tag}] ${silent(who)} on :${request.uri().port}: ${SafeFailureText.render(failure)}\n")
         }
 
-    /** [call]'s body, or null once it is refused the way a head's own admission refuses one (CappedBodies). */
-    private suspend fun body(call: ApplicationCall, cap: Int, readTimeoutMs: Long): ByteArray? =
-        CappedBodies(errors).read(call, cap, readTimeoutMs)
+    /** [call]'s body, or null once it is refused the way a head's own admission refuses one: 413 for a body declared
+     *  or read past [cap], 408 for one still arriving after [readTimeoutMs]. */
+    private suspend fun body(call: ApplicationCall, cap: Int, readTimeoutMs: Long): ByteArray? {
+        val declared = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()?.takeIf { it >= 0L }
+        val read = if (declared != null && declared > cap) {
+            null
+        } else {
+            try {
+                // One byte past the cap is enough to know the body is too large; no more is ever held.
+                withTimeout(readTimeoutMs) { call.receiveChannel().readBuffer(cap + 1L).readByteArray() }
+            } catch (_: TimeoutCancellationException) {
+                val why = "the request body was still arriving after ${readTimeoutMs}ms"
+                errors.refuse(call, HttpStatus.REQUEST_TIMEOUT, why)
+                return null
+            }
+        }
+        if (read != null && read.size <= cap) return read
+        errors.refuse(call, HttpStatus.CONTENT_TOO_LARGE, "request body exceeds $cap bytes")
+        return null
+    }
 
     // Hop-by-hop, framing, the other machine's own token, and the names java.net.http refuses to set. Host becomes
     // 127.0.0.1, which the head's own DNS-rebinding guard requires. Which upstream a turn prefers is the relaying

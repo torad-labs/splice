@@ -52,7 +52,6 @@ internal object Keys {
     const val STATUS_LINE_REFRESH_S = 30
 
     const val API_KEY_HELPER = "apiKeyHelper"
-    const val OTEL_HEADERS_HELPER = "otelHeadersHelper"
     const val MCP_SERVERS = "mcpServers"
     const val CUSTOM_API_KEY_RESPONSES = "customApiKeyResponses"
     const val ONBOARDING = "hasCompletedOnboarding"

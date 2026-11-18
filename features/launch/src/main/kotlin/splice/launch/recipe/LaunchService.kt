@@ -14,10 +14,8 @@ package splice.launch.recipe
 
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudeTiers
-import splice.client.ManagedSettings
 import splice.client.MaterializeSignIn
 import splice.client.MaterializeSpec
-import splice.client.SessionHelpers
 import splice.client.TrustedLaunch
 import splice.client.desktop.providerSwitches
 import splice.client.mcp.HubLaunchArgs
@@ -99,9 +97,6 @@ public class LaunchService(
     /** How the head's effort reaches the Claude Code this launch starts. */
     private val effort = LaunchEffort()
 
-    /** What an organisation manages for a command's config tree, which can set telemetry of its own. */
-    private val managed = ManagedSettings()
-
     /** V4-183 and V4-115: what a launch resumes, and what the operator is told about it. */
     private val resume = LaunchResume(resumeAcrossHeads, moving)
 
@@ -133,9 +128,7 @@ public class LaunchService(
         val claude = (chosen as? ClaudeToRun.Wrapped)?.path ?: claudeBinary
         val wrapped = caller.wrapped
         val keyed = if (keyPresentNow) withoutTokenCapture(spec) else spec
-        val tree = wrapped?.let { keyed.copy(trees = keyed.trees.copy(own = it.configDir)) } ?: keyed
-        // Telemetry the command's managed settings set is theirs, and splice then sends none (server mode, F8).
-        val effective = withManagedTelemetry(tree)
+        val effective = wrapped?.let { keyed.copy(trees = keyed.trees.copy(own = it.configDir)) } ?: keyed
         val slots = LaunchAliasSlots.of(effective)
         // V4-358: every choice above is made on the rows' own ids; what the client is HANDED is spelled here.
         val held = effort.given(effective.heldByClient(), extraArgs)
@@ -166,7 +159,7 @@ public class LaunchService(
         // carries the head's settings as a --settings overlay below.
         val modelOverrides = effective.models.tiers.modelOverrides
             .takeUnless { effective.gateway.clientModels }.orEmpty()
-        val speed = materializeLaunch(materialize, trust, modelOverrides, effective.helpers, wrapped)
+        val speed = materializeLaunch(materialize, trust, modelOverrides, effective.gateway.keyHelper, wrapped)
         // V4-276: a launch never writes a head's .credentials.json. V4-129 copied the selected stored
         // login over it here, and Claude Code's refresh tokens rotate, so every launch put back a
         // superseded token and upstream revoked the login (V4-237, V4-250). The live login is
@@ -224,7 +217,8 @@ public class LaunchService(
         val wrapped = caller.wrapped ?: return null
         val hooks = materializer.startupHook(head.trees.own, head.signIn.headKey)
         val marked = LaunchMarker.here
-        val overlay = wrapped.settingsOverlay(roster, held.gateway.statuslineCommand, marked, held.helpers, hooks)
+        val gateway = held.gateway
+        val overlay = wrapped.settingsOverlay(roster, gateway.statuslineCommand, marked, gateway.keyHelper, hooks)
         return caller.picker?.addedTo(overlay) ?: overlay
     }
 
@@ -253,19 +247,12 @@ public class LaunchService(
         spec: MaterializeSpec,
         trust: TrustedLaunch?,
         modelOverrides: Map<String, String>,
-        helpers: SessionHelpers,
+        keyHelper: String?,
         wrapped: WrappedLaunch?,
     ): SpeedOffer {
         val tiers = speeds?.takeIf { wrapped == null }?.offered(spec.signIn.headKey)
-        if (wrapped == null) materializer.materialize(spec, trust, modelOverrides, helpers, tiers)
+        if (wrapped == null) materializer.materialize(spec, trust, modelOverrides, keyHelper, tiers)
         return SpeedOffer(tiers)
-    }
-
-    /** [spec] with no telemetry of splice's where its config tree's managed settings set telemetry of their own. */
-    private fun withManagedTelemetry(spec: LaunchSpec): LaunchSpec {
-        val server = spec.teamServer?.takeIf { it.telemetry != null } ?: return spec
-        val own = managed.setsTelemetry(spec.trees.own)
-        return if (own) spec.copy(teamServer = server.copy(telemetry = null)) else spec
     }
 
     /** Everything the operator must be told about this launch, in one sentence. A cross-head adoption
@@ -327,8 +314,7 @@ public class LaunchService(
             // (4) the word that the address is Anthropic's own, which only a head that reaches Anthropic plants: a
             // translated head launched from inside a Claude session must not inherit it.
             auth + "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY" + absentTiers + clientModels + config +
-                providerSwitches + listOfNotNull(FIRST_PARTY_ENV.takeUnless { spec.gateway.reachesAnthropic }) +
-                LaunchTelemetry.cleared(held),
+                providerSwitches + listOfNotNull(FIRST_PARTY_ENV.takeUnless { spec.gateway.reachesAnthropic }),
         )
     }
 
@@ -361,8 +347,6 @@ public class LaunchService(
             put("MAX_THINKING_TOKENS", "128000")
             // The client's own timers and retry limits, so the head's wall decides every turn (LaunchClientTimers).
             putAll(LaunchClientTimers.of(spec))
-            // Server mode (F8): Claude Code's own telemetry goes to its server's relay, when the server has one.
-            putAll(LaunchTelemetry.env(spec))
             // Failure-handling slice 5: the same timeout, told to the head on every request, so a turn held for a reset
             // fits the session that sent it (a session launched before this reads as the 960 s every session had).
             // Merged with any custom headers the shell already names, which Claude Code reads one per line.
@@ -404,7 +388,7 @@ public class LaunchService(
         val ambient = envReader("ANTHROPIC_CUSTOM_HEADERS").orEmpty().lines()
             .filter { it.isNotBlank() && !it.trim().startsWith("x-splice-", ignoreCase = true) }
         // Server mode (F9): a team server's command names this laptop's splice, so an older one is told to upgrade.
-        val client = listOfNotNull(spec.teamServer?.let { "$SPLICE_CLIENT_HEADER: $GATEWAY_VERSION" })
+        val client = listOfNotNull("$SPLICE_CLIENT_HEADER: $GATEWAY_VERSION".takeIf { spec.teamServer })
         return (ambient + "$CLIENT_WALL_HEADER: ${spec.gateway.apiTimeoutMs}" + spec.gateway.proofLines + client)
             .joinToString("\n")
     }

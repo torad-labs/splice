@@ -1,17 +1,10 @@
-// Server mode (docs/specs/server-mode.md, F8 and F9, the laptop's half): what a launch of a command a team's server
-// serves hands Claude Code. Every one names this laptop's splice in x-splice-client beside the shell's own headers; on a
-// server that relays telemetry, the session exports its metrics and logs to the relay over OTLP/HTTP, reads the key
-// through an otelHeadersHelper, and logs no prompt; and a command whose managed settings set telemetry of their own gets
-// none of splice's.
+// Server mode (docs/specs/server-mode.md, F9, the laptop's half): what a launch of a command a team's server serves
+// hands Claude Code. Every one names this laptop's splice in x-splice-client beside the shell's own headers, and a
+// command on no team server names none.
 package splice.launch.recipe
 
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -30,24 +23,13 @@ import splice.launch.LaunchModels
 import splice.launch.LaunchRecipe
 import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
-import splice.launch.LaunchTelemetry
-import splice.launch.TeamServerLaunch
 import splice.launch.launch
-import java.nio.file.Files
 import java.nio.file.Path
 
 private const val CLIENT = "x-splice-client"
-private const val RELAY = "https://gateway.team.example/server/otlp"
-
-// why: the launch only writes the command; Claude Code is what runs it, so any command will do here
-private const val OTEL_HELPER = "printf '{\"Authorization\":\"Bearer k\"}'"
 
 class LaunchTeamServerTest(@param:TempDir private val tmp: Path) {
-    private val shell = mapOf(
-        "ANTHROPIC_CUSTOM_HEADERS" to "x-team-tag: blue",
-        "OTEL_LOG_USER_PROMPTS" to "1",
-        "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT" to "https://elsewhere.example",
-    )
+    private val shell = mapOf("ANTHROPIC_CUSTOM_HEADERS" to "x-team-tag: blue")
 
     private val service = LaunchService(
         ClaudeConfigMaterializer(tmp),
@@ -58,63 +40,16 @@ class LaunchTeamServerTest(@param:TempDir private val tmp: Path) {
     )
 
     @Test
-    fun `a command on a server with a relay exports its metrics and logs there, and never a prompt`() {
-        val recipe = launch(spec(TeamServerLaunch(LaunchTelemetry(RELAY, OTEL_HELPER))))
-        assertEquals("1", recipe.env["CLAUDE_CODE_ENABLE_TELEMETRY"])
-        assertEquals("otlp", recipe.env["OTEL_METRICS_EXPORTER"])
-        assertEquals("otlp", recipe.env["OTEL_LOGS_EXPORTER"])
-        assertEquals("http/protobuf", recipe.env["OTEL_EXPORTER_OTLP_PROTOCOL"])
-        assertEquals(RELAY, recipe.env["OTEL_EXPORTER_OTLP_ENDPOINT"])
-        assertEquals(OTEL_HELPER, settings()["otelHeadersHelper"]?.jsonPrimitive?.content)
-        assertNull(recipe.env["OTEL_LOG_USER_PROMPTS"])
-        assertTrue("OTEL_LOG_USER_PROMPTS" in recipe.unset, "the shell's own switch must not log prompts either")
-        assertTrue(
-            "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT" in recipe.unset,
-            "an endpoint of the shell's own would get the key the helper prints",
-        )
-    }
-
-    @Test
     fun `every launch of a server's command names this laptop's splice beside the shell's own headers`() {
-        val lines = headerLines(launch(spec(TeamServerLaunch())))
+        val lines = headerLines(launch(spec(teamServer = true)))
         assertTrue("x-team-tag: blue" in lines)
         assertEquals(listOf("x-splice-client: $GATEWAY_VERSION"), lines.filter { it.substringBefore(':') == CLIENT })
     }
 
     @Test
-    fun `a server with no relay gets the version and no telemetry`() {
-        val recipe = launch(spec(TeamServerLaunch(telemetry = null)))
-        assertEquals(1, clientLines(recipe).size)
-        assertFalse(recipe.env.keys.any { it.startsWith("OTEL_") || it == "CLAUDE_CODE_ENABLE_TELEMETRY" })
-        assertNull(settings()["otelHeadersHelper"])
-        assertFalse("OTEL_LOG_USER_PROMPTS" in recipe.unset, "with no relay the shell's telemetry is its own")
-    }
-
-    @Test
-    fun `a command on no team server sends no version and no telemetry`() {
-        val recipe = launch(spec(teamServer = null))
-        assertEquals(emptyList<String>(), clientLines(recipe))
-        assertNull(recipe.env["OTEL_EXPORTER_OTLP_ENDPOINT"])
-        assertNull(settings()["otelHeadersHelper"])
-    }
-
-    @Test
-    fun `managed settings that set telemetry turn the relay off, and managed settings that set none leave it on`() {
-        val relayed = spec(TeamServerLaunch(LaunchTelemetry(RELAY, OTEL_HELPER)))
-        val managed = tree().resolve("remote-settings.json")
-        Files.createDirectories(tree())
-        Files.writeString(managed, """{"env":{"OTEL_EXPORTER_OTLP_ENDPOINT":"https://otel.corp.example"}}""")
-        val off = launch(relayed)
-        assertNull(off.env["OTEL_EXPORTER_OTLP_ENDPOINT"])
-        assertNull(off.env["CLAUDE_CODE_ENABLE_TELEMETRY"])
-        assertNull(settings()["otelHeadersHelper"])
-        assertEquals(1, clientLines(off).size, "the version is no telemetry")
-        Files.writeString(managed, """{"otelHeadersHelper":"corp-helper"}""")
-        val ownHelper = launch(relayed)
-        assertNull(ownHelper.env["OTEL_EXPORTER_OTLP_ENDPOINT"], "a helper of the organisation's own is its telemetry")
-        Files.writeString(managed, """{"env":{"SOME_OTHER_SETTING":"1"}}""")
-        assertEquals(RELAY, launch(relayed).env["OTEL_EXPORTER_OTLP_ENDPOINT"])
-        assertEquals(OTEL_HELPER, settings()["otelHeadersHelper"]?.jsonPrimitive?.content)
+    fun `a command on no team server sends no version`() {
+        val lines = headerLines(launch(spec(teamServer = false)))
+        assertEquals(emptyList<String>(), lines.filter { it.substringBefore(':') == CLIENT })
     }
 
     private fun launch(spec: LaunchSpec): LaunchRecipe =
@@ -123,15 +58,8 @@ class LaunchTeamServerTest(@param:TempDir private val tmp: Path) {
     private fun headerLines(recipe: LaunchRecipe): List<String> =
         recipe.env["ANTHROPIC_CUSTOM_HEADERS"].orEmpty().lines().map(String::trim).filter(String::isNotEmpty)
 
-    private fun clientLines(recipe: LaunchRecipe): List<String> =
-        headerLines(recipe).filter { it.substringBefore(':') == CLIENT }
-
-    private fun tree(): Path = tmp.resolve(".claude-team")
-
-    private fun settings() = Json.parseToJsonElement(Files.readString(tree().resolve("settings.json"))).jsonObject
-
-    private fun spec(teamServer: TeamServerLaunch?) = LaunchSpec(
-        trees = HeadTrees(tree()),
+    private fun spec(teamServer: Boolean) = LaunchSpec(
+        trees = HeadTrees(tmp.resolve(".claude-team")),
         models = LaunchModels(
             pinnedModel = "team-model",
             availableModelIds = listOf("team-model"),

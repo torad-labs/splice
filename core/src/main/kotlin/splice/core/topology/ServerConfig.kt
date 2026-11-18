@@ -1,9 +1,8 @@
 // NEW: server mode (docs/specs/server-mode.md, F1, the limits half of F3, F9 and F12). The `[server]` table splice.toml
 // carries on a machine that is a team's front door: where it listens, which commands it serves, the PEM files it speaks
 // TLS from, the proxies whose word on a client's address it takes, who administers it, what each person may hold at
-// once, how often a silent stream is kept alive (F4), the oldest splice a laptop may run (F9), the identity provider a
-// person signs in with (F2), and the collector Claude Code's own telemetry is relayed to (F8). A file with no
-// `[server]` decodes to the defaults, which serve nothing.
+// once, how often a silent stream is kept alive (F4), the oldest splice a laptop may run (F9), and the identity
+// provider a person signs in with (F2). A file with no `[server]` decodes to the defaults, which serve nothing.
 package splice.core.topology
 
 import kotlinx.serialization.SerialName
@@ -42,9 +41,6 @@ public data class ServerConfig(
     val client: ServerClient = ServerClient(),
     /** `[server.signin]`: the identity provider a person signs in with to get a key; null when nobody signs in. */
     val signin: ServerSignin? = null,
-    /** `[server.telemetry]`: the operator's collector, which each person's Claude Code telemetry is relayed to (F8);
-     *  null relays none. */
-    val telemetry: ServerTelemetry? = null,
 ) {
     /** Whether the file carries a `[server]` table at all, whatever it holds. */
     val declared: Boolean get() = this != ServerConfig()
@@ -82,14 +78,6 @@ public data class ServerLimits(
 public data class ServerClient(val minimum: String? = null) {
     /** [minimum] as a version compared number by number, or null when none is set or it is no version. */
     public val floor: ClientVersion? get() = ClientVersionParser().parse(minimum)
-}
-
-/** `[server.telemetry]` (F8): [forwardTo] is the operator's OTLP/HTTP collector, as in "http://otel.lan:4318", which
- *  each signal is posted under (`/v1/logs`, `/v1/metrics`, `/v1/traces`) with the person who sent it on every resource. */
-@Serializable
-public data class ServerTelemetry(@SerialName("forward_to") val forwardTo: String = "") {
-    /** [forwardTo] as the base each signal's path is put after, with no trailing slash. */
-    public val collector: String get() = forwardTo.trim().trimEnd('/')
 }
 
 /** `[server.signin]` (F2): the OpenID Connect provider a team member signs in with, the client this server is

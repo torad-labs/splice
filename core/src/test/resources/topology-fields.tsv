@@ -226,8 +226,6 @@ server.signin.rate_per_minute
 server.teams	
 server.teams.by_domain	
 server.teams.by_domain.*	
-server.telemetry	
-server.telemetry.forward_to	
 server.tls_cert	
 server.tls_key	
 server.trusted_proxies	

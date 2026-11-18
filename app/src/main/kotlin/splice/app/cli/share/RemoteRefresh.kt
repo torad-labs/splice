@@ -3,9 +3,7 @@
 // it lists that it did not list at the last add or refresh is linked, at `<server>/<command>`, under the same rules as
 // `add`; a command linked from that server that the profile no longer lists is unlinked. The laptop's own commands, and
 // those it runs on other machines, are left alone, and a command the person took out of a server's list stays out
-// while the server keeps offering it. The telemetry relay the profile names is kept too (F8), and the next launch of
-// each of the server's commands sends its telemetry there, or none once the server names none. A profile that lists
-// what it listed before, and the same relay, changes nothing.
+// while the server keeps offering it. A profile that lists what it listed before changes nothing.
 package splice.app.cli.share
 
 import splice.app.cli.server.EXAMPLE_SERVER
@@ -62,21 +60,13 @@ internal class RemoteRefresh(
         val adding = names.free(topology, offer.entries.filterKeys { it !in before && it !in linked.values })
         val wanted = topology.copy(remote = topology.remote - unlinked + adding.entries)
         val unchanged = wanted == topology
-        val relayed = asks.logins.telemetry(server) != offer.telemetry
-        if (unchanged && !relayed) {
+        if (unchanged) {
             out.line("nothing changed: $server offers ${offered.joinToString(", ").ifEmpty { "nothing" }}, as before")
         }
         unlinked.forEach { unlink(it) }
         if (!unchanged && !file.saved(wanted, topology)) return null
-        asks.logins.keepOffered(server, offered, offer.telemetry)
-        if (relayed) relayMoved(server, offer.telemetry)
+        asks.logins.keepOffered(server, offered)
         return RemoteRefreshed(wanted, adding.entries.keys.toList(), unlinked.toList(), adding.complete)
-    }
-
-    /** Says that [server]'s commands now send Claude Code's telemetry to [relay], or to no relay when it is null. */
-    private fun relayMoved(server: String, relay: String?) {
-        val now = relay?.let { "goes to $it" } ?: "is no longer relayed"
-        out.line("Claude Code's telemetry from $server's commands $now, from their next launch")
     }
 
     /** The commands [topology] runs on [server], each with the command it is there. */

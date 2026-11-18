@@ -1590,7 +1590,7 @@ notes = [
 id = 'adds-turn'
 title = 'claude on its head runs the model each request names'
 feature = 'claude-adds'
-status = 'todo'
+status = 'dropped'
 owner = ''
 blocked_by = []
 guard = false
@@ -1604,13 +1604,14 @@ reviews = [
 ]
 notes = [
   '2026-11-17 15:41 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-18 03:12 CT: status dropped',
 ]
 
 [[row]]
 id = 'adds-window'
 title = "A relayed turn's counts fit the window the claude session holds"
 feature = 'claude-adds'
-status = 'todo'
+status = 'dropped'
 owner = ''
 blocked_by = [
   'adds-turn',
@@ -1626,13 +1627,14 @@ reviews = [
 ]
 notes = [
   '2026-11-17 15:47 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-18 03:12 CT: status dropped',
 ]
 
 [[row]]
 id = 'adds-picker'
 title = "/model in claude keeps Claude's models and gains every signed-in account's"
 feature = 'claude-adds'
-status = 'todo'
+status = 'dropped'
 owner = ''
 blocked_by = [
   'adds-turn',
@@ -1648,13 +1650,14 @@ reviews = [
 ]
 notes = [
   '2026-11-17 15:50 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-18 03:12 CT: status dropped',
 ]
 
 [[row]]
 id = 'adds-says'
 title = "splice says claude reaches every model, and only other providers' commands are deprecated"
 feature = 'claude-adds'
-status = 'todo'
+status = 'dropped'
 owner = ''
 blocked_by = [
   'adds-picker',
@@ -1670,4 +1673,5 @@ reviews = [
 ]
 notes = [
   '2026-11-17 15:51 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-18 03:12 CT: status dropped',
 ]

@@ -1273,6 +1273,7 @@ reviews = [
 ]
 notes = [
   '2026-11-17 08:43 CT: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-18 00:35 CT: Nov 18: started again on the new base, where the harness capabilities moved into features/harness. The last round's work (status-line piece, hold words, capability colours, StatuslineHeld and its tests) is kept as commit fd0c43199 on branch parked/held-status-round5; git diff 0a35d6063 fd0c43199 shows it whole. Carry what fits onto the moved files rather than writing it again.",
 ]
 
 [[row]]

@@ -61,6 +61,8 @@ import splice.head.BodyRead
 import splice.head.ClientAuth
 import splice.head.HeadDeps
 import splice.head.MessageEdges
+import splice.head.OtherAnswer
+import splice.head.OtherAsk
 import splice.head.ReceivedBody
 import splice.head.RefusedRequest
 import splice.head.RequestBodyReader
@@ -141,6 +143,10 @@ internal sealed class Preparation {
         val sessionId: String?,
         val model: String,
     ) : Preparation()
+
+    /** door-default, decision 9: a request that names another head's model, answered by that head ([answer]) and not
+     *  built here. This head sends nothing upstream for it and writes no row of it: the row is the other head's. */
+    data class Relayed(val answer: OtherAnswer) : Preparation()
 }
 
 internal class TurnPreparation(
@@ -199,6 +205,10 @@ internal class TurnPreparation(
         // The request names its session in metadata.user_id; the header carries the same id and stands in when the body
         // does not (verified on Claude Code 2.1.257, spec 7 identification).
         val asked = RefusedRequest(parsed.typed.model, parsed.sessionId ?: headerSession, parsed.typed.stream, inbound)
+        // door-default, decision 9: a model of another head is that head's to answer, before this head reads anything
+        // else of the request.
+        val other = OtherAsk(parsed.typed.model, parsed.raw, asked.sessionId, counting = false)
+        deps.traffic.others.claim(other)?.let { return Preparation.Relayed(it) }
         // The pre-drive boundary (2026-11-09 audit): everything from here to a Ready turn runs provider and prompt code
         // (refusal tables, buildTurn, the prompt layers, the tool loop), and a defect thrown there used to answer an
         // empty 500 with no log line, no perf row and no trace. It is now a refusal like any other, recorded as

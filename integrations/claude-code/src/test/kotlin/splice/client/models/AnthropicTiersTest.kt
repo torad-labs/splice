@@ -20,6 +20,16 @@ class AnthropicTiersTest {
     }
 
     @Test
+    fun `every spelling of one Anthropic model names that model, and a tier's alias names none`() {
+        assertEquals("claude-opus-5-5", tiers.modelOf("claude-opus-5-5"))
+        assertEquals("claude-opus-5-5", tiers.modelOf("anthropic.claude-opus-5-5"))
+        assertEquals("claude-haiku-4-5", tiers.modelOf("global.anthropic.claude-haiku-4-5-20251001-v1:0"))
+        assertNull(tiers.modelOf("opus"))
+        assertNull(tiers.modelOf("grok-4.7"))
+        assertNull(tiers.modelOf("claude--claude-opus-5-5"))
+    }
+
+    @Test
     fun `a model that is not Anthropic's is no tier`() {
         assertNull(tiers.tierOf("gpt-5.5"))
         assertNull(tiers.tierOf("claude-astra--astra-large"))

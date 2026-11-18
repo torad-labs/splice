@@ -161,13 +161,7 @@ public class AccountPool(
     ): Selection {
         require(sessionId == null || sessionId.isNotBlank()) { "session id must not be blank" }
         asked.asked(model, own)
-        while (true) {
-            val current = liveMembership
-            current.accounts.forEach { it.refreshCredentialEvidence() }
-            val caller = CallerLogin(callerCredentialKey, sessionId, current.accounts, model)
-            val selected = selectionCommit.select(sessionId, excluded, current, caller)
-            if (selected != null) return selected
-        }
+        return awaitingEvidence.pick(excluded) { CallerLogin(callerCredentialKey, sessionId, it, model) }
     }
 
     private val selectionCommit = SelectionCommit()
@@ -179,7 +173,11 @@ public class AccountPool(
     public val awaitingEvidence: AwaitingEvidence = AwaitingEvidence()
 
     /** No suspension follows lease acquisition, so prompt cancellation cannot strand a probe lease. */
-    public inner class AwaitingEvidence internal constructor() {
+    public inner class AwaitingEvidence internal constructor(private val never: Set<String> = emptySet()) {
+        /** The same selection, never choosing a login in [labels] ([CallerLogin.never]): a turn through a door never
+         *  runs on the person's own login, and still waits for or moves among the others as any turn does. */
+        public fun without(labels: Set<String>): AwaitingEvidence = AwaitingEvidence(never + labels)
+
         public suspend fun select(
             sessionId: String?,
             excluded: Set<String> = emptySet(),
@@ -189,20 +187,30 @@ public class AccountPool(
         ): Selection {
             require(sessionId == null || sessionId.isNotBlank()) { "session id must not be blank" }
             currentCoroutineContext().ensureActive()
-            val loads = evidenceLoads
-                ?: return this@AccountPool.select(sessionId, excluded, callerCredentialKey, model, own)
             asked.asked(model, own)
+            val loads = evidenceLoads
+                ?: return pick(excluded) { CallerLogin(callerCredentialKey, sessionId, it, model, never) }
             while (true) {
                 loads.ensureActive()
                 val current = runInterruptible(loads.ioDispatcher) { liveMembership }
                 current.accounts.forEach { it.refreshCredentialEvidence(loads) }
                 val caller = runInterruptible(loads.ioDispatcher) {
-                    CallerLogin(callerCredentialKey, sessionId, current.accounts, model)
+                    CallerLogin(callerCredentialKey, sessionId, current.accounts, model, never)
                 }
                 currentCoroutineContext().ensureActive()
                 loads.ensureActive()
                 val selected = selectionCommit.select(sessionId, excluded, current, caller)
                 if (selected != null) return selected
+            }
+        }
+
+        /** [select] without suspending, for a pool with no evidence loads and for the synchronous control callers:
+         *  [caller] is the turn's caller login among the pool's accounts as they are at each try. */
+        internal fun pick(excluded: Set<String>, caller: CallerLogin.Among): Selection {
+            while (true) {
+                val current = liveMembership.also { live -> live.accounts.forEach { it.refreshCredentialEvidence() } }
+                val login = caller(current.accounts)
+                selectionCommit.select(login.session, excluded, current, login)?.let { return it }
             }
         }
     }
@@ -479,7 +487,7 @@ public class AccountPool(
         )
         val order = (preference + candidates(caller.continuesFrom(previous), current, pinLabel, caller.model))
             .distinctBy(PoolAccount::label)
-            .filter { it.label !in excluded }
+            .filter { it.label !in excluded && it.label !in caller.never }
         // A warm session keeps its login through a short rate limit, which admission waits out: a move rebuilds its
         // whole cache on the next login. A pin or a changed caller login elsewhere still wins.
         val stay = caller.stays(previous, current.byLabel, preference, at)?.takeIf { it.label !in excluded }

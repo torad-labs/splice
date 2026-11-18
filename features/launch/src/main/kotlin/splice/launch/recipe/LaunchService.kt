@@ -186,7 +186,7 @@ public class LaunchService(
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
             // a launch on macOS carries splice's mark in its --settings, the one sign of it a hardened claude's
             // arguments keep there (LaunchMarker); elsewhere the arguments are as they were
-            addAll(LaunchMarker.settingsArgs(overlayOf(wrapped, roster, held.gateway, keyed)))
+            addAll(LaunchMarker.settingsArgs(overlayOf(caller, roster, held.gateway, keyed)))
             addAll(hub.args + effort.args(held)) // the effort after the hub's: a relaunch reads it as its own
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.
@@ -194,27 +194,30 @@ public class LaunchService(
             addAll(resume.resumingAs(asked, adoption))
         }
         val warnings = listOf(resume.warning(adoption), bounded.warning, hub.warning)
-        // door-default (docs/specs/door-default.md, decision 7): the launch of a head's command says heads are going
-        // away and what replaces them. A launch of `claude` says nothing of it, on its head as on the door (DoorRecipe):
-        // it is the command the notice sends a person to, and a person on a Claude plan keeps it on its head.
-        val notice = HEADS_DEPRECATED.takeIf { wrapped == null }
+        // door-default (docs/specs/door-default.md, decision 7): the launch of another provider's own command says it is
+        // deprecated and what to type in `claude` for its model. A launch of `claude` says nothing of it, on its head as
+        // on the door (DoorRecipe): it is the command the notice sends a person to, and on its head it carries the
+        // door's models (decision 9). `claude` runs them already where it has a head here, or is linked on the door.
+        val notice = HeadsDeprecated(door, linked = chosen is ClaudeToRun.Wrapped).said(spec).takeIf { wrapped == null }
         val warning = launchWarning(spec, dangerouslySkipPermissions, warnings + notice)
         return LaunchOutcome.Ready(environment.recipe(argv, warning))
     }
 
     /** A wrapped launch's --settings overlay: the roster, the status line, splice's launch mark on macOS, the key
      *  helper of a head that checks the turn key (Oct 26), and [head]'s startup hook, so the session is recorded as
-     *  the head's (round 6 of #247). Null for a launch that materialized its own settings. */
+     *  the head's (round 6 of #247); and for `claude` on its head, the picker rows the [caller] adds after Claude
+     *  Code's own models (door-default, decision 9). Null for a launch that materialized its own settings. */
     private fun overlayOf(
-        wrapped: WrappedLaunch?,
+        caller: LaunchCaller,
         roster: List<String>?,
         gateway: LaunchGateway,
         head: LaunchSpec,
     ): String? {
-        if (wrapped == null) return null
+        val wrapped = caller.wrapped ?: return null
         val hooks = materializer.startupHook(head.trees.own, head.signIn.headKey)
         val marked = LaunchMarker.here
-        return wrapped.settingsOverlay(roster, gateway.statuslineCommand, marked, gateway.keyHelper, hooks)
+        val overlay = wrapped.settingsOverlay(roster, gateway.statuslineCommand, marked, gateway.keyHelper, hooks)
+        return caller.picker?.addedTo(overlay) ?: overlay
     }
 
     /** MCP hub step 6: what the hub adds to this launch. A wrapped launch reads the user's own config home and falls

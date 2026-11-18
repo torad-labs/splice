@@ -15,6 +15,7 @@ import splice.core.failure.FailureCause
 import splice.core.failure.Lift
 import splice.core.failure.LimitWindow
 import splice.core.failure.LoginOwner
+import splice.head.HeldLogins
 import splice.head.admission.TurnQuota
 import splice.head.turn.TurnDrive
 import splice.head.turn.fallback.HeldModelFallback
@@ -30,6 +31,8 @@ internal class TurnAccountHandoff(
     private val pool: AccountPool,
     private val quotas: TurnQuota,
     private val fallback: HeldModelFallback? = null,
+    /** The logins a turn holding the node's word may move to: a door turn never moves onto the person's own login. */
+    private val held: HeldLogins = HeldLogins { true },
 ) {
     /** Each login that refused this turn, with the pool's join count when it did ([AccountPool.joins], PoolJoins.count). */
     private val refused = linkedMapOf<String, Long>()
@@ -48,9 +51,10 @@ internal class TurnAccountHandoff(
         val session = drive.meta.scope.sessionId
         // own = false: the turn was counted toward the command's usual model at its admission. Counted again here, a
         // login running out would hand that say to the helpers' turns it refused, at the moment the screens are read.
-        val available = pool.awaitingEvidence.select(session, pending.excluded, model = model, own = false)
+        val choosing = pool.awaitingEvidence.without(never(drive))
+        val available = choosing.select(session, pending.excluded, model = model, own = false)
         val selected = if (available is Selection.Exhausted && earlierHeld(drive)) {
-            pool.awaitingEvidence.select(session, model = model, own = false)
+            choosing.select(session, model = model, own = false)
         } else {
             available
         }
@@ -61,9 +65,7 @@ internal class TurnAccountHandoff(
         var adopted = false
         try {
             currentCoroutineContext().ensureActive()
-            // LAN share: a node's word cannot move onto a login that forwards it; the vendor would see the word.
-            adopted = !CallerCredential.unheldNodeWord(drive.turnHeaders, next.account.auth) &&
-                adopt(drive, pending.previous, next)
+            adopted = takes(drive, next) && adopt(drive, pending.previous, next)
             return adopted
         } finally {
             if (!adopted) next.releaseCredentialProbe()
@@ -76,7 +78,7 @@ internal class TurnAccountHandoff(
         if (synchronized(this) { committed }) return false
         // A login that left the pool since, or whose label is another account's now, is not this turn's login any more.
         val current = drive.account?.account?.takeIf { held -> pool.members.any { it === held } }?.label
-        val tried = synchronized(this) { tried() }
+        val tried = synchronized(this) { tried() } + never(drive)
         val reset = when (cause) {
             is FailureCause.Provider.Limited -> (cause.lift as? Lift.At)?.at
             is FailureCause.Provider.NeedsPayment -> (cause.lift as? Lift.At)?.at
@@ -118,10 +120,21 @@ internal class TurnAccountHandoff(
         val view = pool.view(drive.meta.scope.sessionId, drive.meta.route.upstreamModel)
         val resets = view.blockedUntilEpochSecondsByLabel
         val currentReset = currentReset(view, current, reset, refused) ?: return false
+        val never = never(drive)
         return view.accounts.any { account ->
-            account.label != current && signedIn(account) && (resets[account.label] ?: Long.MAX_VALUE) < currentReset
+            account.label != current && account.label !in never && signedIn(account) &&
+                (resets[account.label] ?: Long.MAX_VALUE) < currentReset
         }
     }
+
+    /** The logins [drive]'s turn never moves to: for a turn through a door, every login not added to splice ([held]),
+     *  the person's own among them. None for any other turn. */
+    private fun never(drive: TurnDrive): Set<String> =
+        if (drive.meta.route.relay.door == null) {
+            emptySet()
+        } else {
+            pool.members.map { it.label }.filterNot(held::held).toSet()
+        }
 
     /** When [current] serves again, in epoch seconds: never where it was [refused] or is signed out, else at the
      *  [reset] just read or the one the pool holds; null where nothing holds it. */
@@ -148,6 +161,13 @@ internal class TurnAccountHandoff(
      *  login again, since what refused before may be another account now or signed in again, and a login still spent
      *  is kept out by the hold its own refusal left on it. Called under this monitor. */
     private fun tried(): Set<String> = pool.joins.count.let { now -> refused.filterValues { it == now }.keys.toSet() }
+
+    /** Whether [next] may take [drive]'s turn. A turn holding the node's word cannot move onto a login that forwards
+     *  the caller's (LAN share: the vendor would see the word), and a turn through a door not onto a login of the
+     *  person's own ([held]): it runs on a Claude account added to splice or not at all (Nov 17, 2026). */
+    private suspend fun takes(drive: TurnDrive, next: AccountSelection): Boolean =
+        !CallerCredential.unheldNodeWord(drive.turnHeaders, next.account.auth) &&
+            (drive.meta.route.relay.door == null || held.held(next.account.label))
 
     @Synchronized
     private fun adopt(drive: TurnDrive, previous: AccountSelection, next: AccountSelection): Boolean {

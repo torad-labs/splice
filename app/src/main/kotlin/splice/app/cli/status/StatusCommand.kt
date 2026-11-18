@@ -75,13 +75,12 @@ internal class StatusCommand(
         val readings = StatusReadings(failedHeads, quota.refusedUntil, notAnswering, quota.full, held, refusing)
         val rows = table.lines(topology, envReader, readings)
         for (line in rows) println(line)
-        // door-default (docs/specs/door-default.md, decision 7): the lane `claude` is on, and on its head, that heads are
-        // deprecated and how to move.
+        // door-default (docs/specs/door-default.md, decisions 7 and 9): the lane `claude` is on. Neither lane is
+        // deprecated, so both read as live; this painted the head lane as a strain while it was.
         val lane =
             ClaudeLaneLook(topology, TopologyStatePaths(envReader).of(topology), LogSink { System.err.print(it) })
-        val tone = if (lane.reading().onDoor) palette.live else palette.strain
         println()
-        println("  " + palette.paint(tone, lane.line()))
+        println("  " + palette.paint(palette.live, lane.line()))
         if (up) extras.printAccounts(port, envReader)
         println()
         // Paths sink below the table: they are reference, not the answer, and an operator who wants

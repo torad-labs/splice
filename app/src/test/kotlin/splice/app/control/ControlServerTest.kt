@@ -47,7 +47,6 @@ import splice.launch.LaunchGateway
 import splice.launch.LaunchModels
 import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
-import splice.launch.recipe.HEADS_DEPRECATED
 import splice.launch.recipe.LaunchService
 import splice.usage.perf.HeadPerfSource
 import splice.usage.perf.PerfRow
@@ -545,8 +544,9 @@ class ControlServerTest {
         assertTrue(argv.contains("--verbose"))
         assertFalse(argv.contains("null"), "a JSON null is absence, not an argument: $argv")
         // door-default (decision 7): a head's launch carries the heads notice, and nothing else on the safe path; this
-        // pinned no warning at all before.
-        assertEquals(HEADS_DEPRECATED, obj["warning"]?.jsonPrimitive?.content)
+        // pinned no warning at all before, and decision 9 rewrote the notice to name what to type in `claude`.
+        val warning = obj["warning"]?.jsonPrimitive?.content.orEmpty()
+        assertTrue(warning.startsWith("this command is deprecated, and `claude` runs this head's models"), warning)
     }
 
     @Test

@@ -6,14 +6,16 @@
 // does not serve and `head` refuses with no head to go back to, each changing nothing. `head` retires the terminal's
 // key, so a session started on the door is refused from then on. The model a session starts on is Desktop's chain with
 // the picker's step (StartingModel): the `--model` named now, or the one chosen the last time, or the pinned model of
-// the first head in the picker (a signed-in account's), or the pinned model of the first head in the door.
+// the first head in the picker (a signed-in account's), or the pinned model of the first head in the door. Decision 9:
+// on its head `claude` carries the door's models, so neither move says heads are going away, and `door` on a machine
+// with a head says that Claude's models stop running in `claude` until `head`.
 package splice.app.desktop
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import splice.core.config.FileHeldKey
+import splice.core.topology.CLAUDE_COMMAND
 import splice.core.wire.HttpStatus
-import splice.launch.recipe.HEADS_DEPRECATED
 
 /** Whether splice.toml has a head whose command is `claude`, read at each use. */
 internal fun interface ClaudeHeadHere {
@@ -66,8 +68,11 @@ internal class ClaudeLane(
         window(lineup)
         val (chosen, why) = chain.of(lineup, model)
         val said = if (was == DOOR_LANE) "claude is on the door" else "claude is on the door now"
-        val moved = listOfNotNull("$said at $door: a new `claude` session runs there", login.laid()).joinToString("; ")
-        DesktopAct.Done(moved, chosen?.let { "$it ($why)" } ?: why)
+        // decision 9: the door sends no Claude login, so a person whose `claude` ran Claude on its head is told the cost
+        // while no Claude account is added to splice, the one way Claude's models run on the door (Nov 17, 2026)
+        val cost = CLAUDE_LEFT_BEHIND.takeIf { headHere() && lineup.leftOut.any { it.command == CLAUDE_COMMAND } }
+        val moved = listOfNotNull("$said at $door: a new `claude` session runs there", cost, login.laid())
+        DesktopAct.Done(moved.joinToString("; "), chosen?.let { "$it ($why)" } ?: why)
     }
 
     /** `splice claude head`: the terminal's key retired, so a session started on the door is refused from now on. */
@@ -81,10 +86,16 @@ internal class ClaudeLane(
         }
         key.replace()
         records.update { it.copy(lane = HEAD_LANE) }
-        val moved = "claude is on its head: $HEADS_DEPRECATED. Sessions started on the door are refused from now on"
+        val moved = "claude is on its head, with the models of your signed-in accounts beside Claude's. " +
+            "Sessions started on the door are refused from now on"
         DesktopAct.Done(listOfNotNull(moved, login.removed()).joinToString("; "))
     }
 }
+
+/** What `splice claude door` adds on a machine whose `claude` has a head to run Claude's models on (decision 9). */
+private const val CLAUDE_LEFT_BEHIND = "Claude's models no longer run in claude, since the door sends no Claude " +
+    "login and no Claude account is added to splice; add one with `splice console`, or `splice claude head` " +
+    "brings them back on your own login"
 
 /** The window a session declares with no head in the door: Claude Code's own, until a head is there to name one. */
 private const val NO_HEAD_WINDOW = 200_000L

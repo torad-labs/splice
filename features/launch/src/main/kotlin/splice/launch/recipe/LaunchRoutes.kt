@@ -87,7 +87,10 @@ public class LaunchRoutes(
         if (refusal != null) return refuse(call, key, refusal, HttpStatusCode.Conflict)
         // Read both live windows and the native destination hold after body reception has finished.
         val launched = target.catalog?.let(spec::withWindows) ?: spec
-        val outcome = when (val launch = launchFor(target, launched, request, resolved.wrapped, service)) {
+        // door-default, decision 9: `claude` on its head lists the signed-in accounts' models after Claude Code's own.
+        val picker = service.door?.takeIf { key == CLAUDE_COMMAND && resolved.wrapped != null }?.headPicker()
+        val caller = LaunchCaller(request.cwd, resolved.wrapped, request.inheritedConfigDir, request.launch, picker)
+        val outcome = when (val launch = launchFor(target, launched, request, caller, service)) {
             is LaunchOutcome.Ready ->
                 LaunchOutcome.Ready(launchResponse.withAuthWarning(target, launched, launch.recipe))
             is LaunchOutcome.Refused -> launch
@@ -156,7 +159,7 @@ public class LaunchRoutes(
         target: LaunchHead,
         spec: LaunchSpec,
         request: LaunchRequest,
-        wrapped: WrappedLaunch?,
+        caller: LaunchCaller,
         service: LaunchService,
     ): LaunchOutcome = service.launchOutcome(
         spec,
@@ -164,7 +167,7 @@ public class LaunchRoutes(
         request.dangerouslySkipPermissions,
         // DR-81: key presence is read per launch, not from the boot-frozen spec.
         keyPresentNow = target.keyPresence.keyPresentNow(),
-        caller = LaunchCaller(request.cwd, wrapped, request.inheritedConfigDir, request.launch),
+        caller = caller,
     )
 
     /** The Claude head by its own name runs over the person's own Claude home, exactly as a wrapped `claude` does

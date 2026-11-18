@@ -115,7 +115,7 @@ internal class TurnDriveFactory(
             drive.accountLabel.fallback = accountLabel(inputs.accountQuota.keyNaming)
             drive.accountLabel.names = deps.quotaBundle.credentialAccountNames
             drive.accountHandoff = deps.quotaBundle.activePool?.let { pool ->
-                TurnAccountHandoff(pool, deps.turnQuota, heldFallback)
+                TurnAccountHandoff(pool, deps.turnQuota, heldFallback, deps.traffic.held)
             }
             drive.route = provider.route(meta)
             // One ledger for the turn's every post, its waits where the head's client sleeps a retry, told on the turn's

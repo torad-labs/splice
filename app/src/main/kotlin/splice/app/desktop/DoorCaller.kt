@@ -32,6 +32,11 @@ internal abstract class DoorCaller(
     /** What a model the door does not serve is refused with, after the model's name. */
     abstract val notInDoor: String
 
+    /** Whether a model of Anthropic's that a request names, in a session on no head yet, runs on the head that serves
+     *  that model and is refused by name where none does (DoorRouting). False by default: Desktop's picker lists
+     *  Anthropic's models alone, and each runs its tier of the default model (desktop-door.md, decision 2). */
+    open val runsNamedModels: Boolean = false
+
     /** A turn on its way to its head, as the door sends it. Nothing by default. */
     open fun sending(turn: DesktopLastTurn) = Unit
 }

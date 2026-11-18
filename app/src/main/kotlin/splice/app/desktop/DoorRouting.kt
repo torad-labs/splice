@@ -5,6 +5,15 @@
 // that named a selector they run the model its head names for that tier, or its pinned model; in any other they run the
 // default model of the caller (`splice desktop on`'s for Desktop, `splice claude door`'s for the terminal), and Claude Code's small tier, its side calls, runs the model that model's
 // head names for it, when it names one. Any other model has no route, and the door refuses it.
+//
+// The terminal's `claude` runs the model a request names (DoorCaller.runsNamedModels). On Nov 17, 2026 seats launched
+// with `claude --model claude-opus-5-5` on the door ran on the lane's default model, a Grok, for an hour with nothing
+// said; the rule since: a named model runs on the head that serves it, or is refused by name,
+// and the default never stands in for it. So in a session on no head yet, an Anthropic ID runs on the head that serves
+// that very model (the claude head, on the Claude accounts added to splice), and the session is on that head from
+// then. Where none serves it, it is refused by name, save Claude Code's own calls: its start-up check and its small
+// tier, which run as they do for Desktop. A session already on a head runs the very model an Anthropic ID names where
+// that head serves it, and that head's model for the tier where it does not (a GPT head's side calls), as above.
 package splice.app.desktop
 
 import splice.client.models.AnthropicTiers
@@ -19,21 +28,56 @@ internal class DoorRouting {
     // Session -> the head of the last selector it named. Bounded: sessions come and go for the daemon's whole life.
     private val sessions = SessionHeads()
 
-    /** Where [asked] runs for [session], or null when the door does not serve it. A selector runs on its head, and
-     *  the session is on that head from then. [default] is the selector a session that named none runs, its caller's. */
-    fun of(lineup: DesktopLineup, asked: String, session: String?, default: String?): DoorRoute? {
-        val (head, model) = lineup.find(asked) ?: return tiered(lineup, asked, session, default)
-        if (session != null) sessions.put(session, head.key)
-        return DoorRoute(head, model.upstream)
+    /** Where [ask] runs for its session, or null when the door does not serve it. A selector runs on its head, and
+     *  the session is on that head from then. [default] is the selector a session that named none runs, its caller's.
+     *  With [named], an Anthropic ID in a session on no head runs the very model it names, or has no route. */
+    fun of(lineup: DesktopLineup, ask: DoorAsk, default: String?, named: Boolean): DoorRoute? {
+        val (head, model) = lineup.find(ask.model) ?: return tiered(lineup, ask, default, named)
+        return onHead(ask, head, model.upstream)
     }
 
-    /** An Anthropic ID's tier: run on [session]'s head as that head runs the tier, or else as the default model, its
+    /** [head] running [ask] as [upstream], with [ask]'s session on [head] from now. */
+    private fun onHead(ask: DoorAsk, head: DoorHead, upstream: String): DoorRoute {
+        ask.session?.let { sessions.put(it, head.key) }
+        return DoorRoute(head, upstream)
+    }
+
+    /** An Anthropic ID's tier: run on the session's head as that head runs the tier, or else as the default model, its
      *  head's model for the small tier when it names one. With the default model no longer in the door, the first
-     *  head runs the tier. */
-    private fun tiered(lineup: DesktopLineup, asked: String, session: String?, default: String?): DoorRoute? {
-        val tier = tiers.tierOf(asked) ?: return null
-        val held = session?.let(sessions::get)?.let { key -> lineup.heads.firstOrNull { it.key == key } }
-        return if (held != null) DoorRoute(held, held.tiers[tier] ?: held.pinned) else defaulted(lineup, tier, default)
+     *  head runs the tier. With [named], only Claude Code's own calls run as the default model; any other runs the
+     *  very model it names, where a head serves it. */
+    private fun tiered(lineup: DesktopLineup, ask: DoorAsk, default: String?, named: Boolean): DoorRoute? {
+        val tier = tiers.tierOf(ask.model) ?: return null
+        val held = heldHead(lineup, ask)
+        return when {
+            held != null -> onHeld(lineup, held, ask, tier)
+            !named || ask.probe -> defaulted(lineup, tier, default)
+            else -> served(lineup, ask) ?: defaulted(lineup, tier, default).takeIf { tier == SMALL_TIER }
+        }
+    }
+
+    /** The head [ask]'s session is on, or null for a session on none. */
+    private fun heldHead(lineup: DesktopLineup, ask: DoorAsk): DoorHead? =
+        ask.session?.let(sessions::get)?.let { key -> lineup.heads.firstOrNull { it.key == key } }
+
+    /** [ask]'s [tier] on [head] the session is on: the very model it names where [head] serves it, else the head's
+     *  model for the tier, else its pinned model. A head with no tier for it ran its pinned model, which on a head that
+     *  declares none is the first model it lists: on Nov 17, 2026 every Opus turn of the door's sessions on the
+     *  claude head ran as Fable 5, spent on every account, and was held for two days. */
+    private fun onHeld(lineup: DesktopLineup, head: DoorHead, ask: DoorAsk, tier: String): DoorRoute {
+        val named = tiers.modelOf(ask.model)
+        val exact = lineup.models.firstOrNull {
+            it.head == head.key && named != null && tiers.modelOf(it.upstream) == named
+        }
+        return DoorRoute(head, exact?.upstream ?: head.tiers[tier] ?: head.pinned)
+    }
+
+    /** The head that serves the very model [ask] names, run as its selector would be; null when no head does. */
+    private fun served(lineup: DesktopLineup, ask: DoorAsk): DoorRoute? {
+        val named = tiers.modelOf(ask.model) ?: return null
+        return lineup.models.firstOrNull { tiers.modelOf(it.upstream) == named }
+            ?.let { lineup.find(it.model) }
+            ?.let { (head, model) -> onHead(ask, head, model.upstream) }
     }
 
     /** [tier] in a session that named no selector: the default model, or its head's model for the small tier; the

@@ -1,16 +1,20 @@
 // NEW: desktop-door (docs/specs/desktop-door.md, decision 3). Which heads are in the door, read from the running heads
 // at each use: a head is in it when splice holds the credential its provider is called with. A head that forwards the
-// caller's own Claude login is not, since the Code tab sends no claude.ai token on this route and splice never calls
-// Anthropic with a subscription login; nor is a head whose login is missing or has expired, until it is signed in again.
-// Its models are each a selector, the ID the head's own /v1/models lists, in splice.toml's order of heads.
+// caller's own Claude login is in it on the Claude accounts added to it (Nov 17, 2026): a turn through the door
+// carries no Claude login, and the head runs it on one of those accounts, never on the person's own login
+// (AddedClaudeLogins); with none added it is left out. A head whose login is missing or has expired is left out until it
+// is signed in again. Its models are each a selector, the ID the head's own /v1/models lists, in splice.toml's order of
+// heads.
 package splice.app.desktop
 
 import splice.app.auth.API_KEY
+import splice.app.auth.claude.AddedClaudeLogins
 import splice.app.control.ManagedHead
 import splice.core.auth.AuthDescription
 import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
 import splice.core.topology.AuthKindRegistry
+import splice.core.usage.QuotaFull
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.share.SharedHead
@@ -23,6 +27,9 @@ internal data class DoorModel(
     val head: String,
     val command: String,
     val upstream: String,
+    /** The plan window its head's provider reads fully used now, if one is (V4-452): a reading, never a refusal, so
+     *  the model stays in the door and a picker says it beside the name. */
+    val full: QuotaFull? = null,
 )
 
 /** A head that is not in the door, and why, in words that say what to do about it. */
@@ -66,6 +73,8 @@ internal fun interface RunningHeads {
 }
 
 internal class DesktopHeads(private val running: RunningHeads) {
+    private val addedLogins = AddedClaudeLogins()
+
     suspend fun lineup(): DesktopLineup {
         val heads = mutableListOf<DoorHead>()
         val models = mutableListOf<DoorModel>()
@@ -73,30 +82,40 @@ internal class DesktopHeads(private val running: RunningHeads) {
         running().forEach { (managed, relay) ->
             val spec = managed.launchSpec ?: return@forEach
             val catalog = managed.statusline.catalog ?: return@forEach
-            val signIn = spec.signIn.loginCommand
-            val auth = Cancellables.runCatchingCancellable { managed.auth.describe() }.getOrElse { failure ->
-                val unread = "its login could not be read (${SafeFailureText.render(failure)}); sign in with `$signIn`"
-                leftOut += LeftOut(relay.key, relay.command, forwarded(relay) ?: unread)
-                return@forEach
-            }
-            val why = forwarded(relay) ?: absence(auth, signIn)
-            if (why != null) {
-                leftOut += LeftOut(relay.key, relay.command, why)
+            // Nov 17, 2026: a head that forwards the caller's Claude login is in the door on the accounts
+            // added to it, which a turn through the door runs on, and never on the person's own login
+            val read = if (relay.forwardsClientAuth) added(managed) else loginOf(managed, spec.signIn.loginCommand)
+            if (read.why != null) {
+                leftOut += LeftOut(relay.key, relay.command, read.why)
                 return@forEach
             }
             val pinned = spec.models.pinnedModel.ifEmpty { catalog.availableModelIds().firstOrNull().orEmpty() }
             val windows = managed.statusline.clientWindows
-            val login = AuthKindRegistry.isOAuth(auth.kind)
-            heads += DoorHead(relay.key, relay, catalog, spec.models.tiers.byTier, pinned, windows, login)
+            heads += DoorHead(relay.key, relay, catalog, spec.models.tiers.byTier, pinned, windows, read.login)
+            val full = managed.head.quotaFull()
             catalog.discoveryRows().forEach { row ->
-                models += DoorModel(row.id, row.displayName, relay.key, relay.command, catalog.unwrap(row.id))
+                models += DoorModel(row.id, row.displayName, relay.key, relay.command, catalog.unwrap(row.id), full)
             }
         }
         return DesktopLineup(heads, models, leftOut)
     }
 
-    /** Why [relay]'s head is never in the door: it forwards the caller's own Claude login. Null for any other. */
-    private fun forwarded(relay: SharedHead): String? = FORWARDED.takeIf { relay.forwardsClientAuth }
+    /** A head's login as the door reads it: a login splice holds (a sign-in it keeps, not a key), and why the head is
+     *  left out, or null when it is in. */
+    private suspend fun loginOf(managed: ManagedHead, signIn: String): LoginRead {
+        val auth = Cancellables.runCatchingCancellable { managed.auth.describe() }.getOrElse { failure ->
+            val unread = "its login could not be read (${SafeFailureText.render(failure)}); sign in with `$signIn`"
+            return LoginRead(login = false, why = unread)
+        }
+        return LoginRead(AuthKindRegistry.isOAuth(auth.kind), absence(auth, signIn))
+    }
+
+    /** A head that forwards the caller's own Claude login, as the door reads it: in, on the accounts added to it,
+     *  while it holds one; left out with none, since the person's own login never serves a turn through the door. */
+    private fun added(managed: ManagedHead): LoginRead {
+        val labels = managed.authSurface.accountPool?.view(null)?.accounts?.map { it.label }.orEmpty()
+        return LoginRead(login = true, why = NONE_ADDED.takeIf { labels.none(addedLogins::held) })
+    }
 
     /** Why a head is not in the door, by its login as [auth] describes it, or null when it is. */
     private fun absence(auth: AuthDescription, signIn: String): String? = when {
@@ -116,9 +135,12 @@ internal class DesktopHeads(private val running: RunningHeads) {
     private fun signedIn(auth: AuthDescription): Boolean = auth.present && EXPIRED_FIELD !in auth.fields
 }
 
-// Why a head that forwards the caller's own Claude login is never in the door.
-private const val FORWARDED = "it forwards your own Claude login, which nothing at the door sends through splice; " +
-    "Claude's models reach the door through a head on an Anthropic API key"
+/** A head's login as the door reads it: whether splice holds it, and why the head is left out (null: it is in). */
+private data class LoginRead(val login: Boolean, val why: String?)
+
+// Why a head that forwards the caller's own Claude login is not in the door while no account is added to it.
+private const val NONE_ADDED = "no Claude account is added to it, and the door never sends your own Claude login; " +
+    "add one on splice's accounts page (`splice console`)"
 
 // The field a login's description carries once its refresh has been refused for good (an invalid grant).
 private const val EXPIRED_FIELD = "refresh_latched"

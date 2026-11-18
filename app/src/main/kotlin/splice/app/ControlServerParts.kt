@@ -9,6 +9,7 @@ import splice.app.control.api.ControlAudit
 import splice.app.control.mount.ControlGuard
 import splice.app.daemon.BootedTopology
 import splice.app.peer.PeersWiring
+import splice.control.mcp.APP_MCP_SLICE
 import splice.core.config.UserHome
 import splice.core.failure.HeadVoice
 import splice.head.admission.AdmissionErrorBody
@@ -52,7 +53,9 @@ internal class ControlServerParts(
     /** The peer helpers and their journals for [srv], over the same store [guard] admits peer keys from, running in
      *  [scope]. */
     fun wirePeers(srv: ControlServer, guard: ControlGuard, scope: LifecycleScope) {
-        srv.peerServices = PeersWiring().services(guard.peers, daemon.statePaths.stateDir, scope, log)
+        // A blank knob would hand systemd `--slice=`, which it rejects, so it falls back to the declared default.
+        val slice = config.getConfig().mcpSlice.ifBlank { APP_MCP_SLICE }
+        srv.peerServices = PeersWiring().services(guard.peers, daemon.statePaths.stateDir, slice, scope, log)
     }
 
     /** The cold successor reuses this daemon's jar, home, config, state, and bound control port. */

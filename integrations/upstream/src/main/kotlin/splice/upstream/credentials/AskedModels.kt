@@ -46,6 +46,16 @@ public class AskedModels(private val now: WallClock = WallClock { System.current
         return recent.last { counts[it] == most }
     }
 
+    /** The models the sessions' own recent turns asked for, the most asked first, a tie to the later: the ones a turn
+     *  may go on under when its own model is spent on every login (Nov 17, 2026). A helper's small model is not
+     *  among them unless a session itself asked for it. */
+    @Synchronized
+    public fun own(): List<String> {
+        val counts = recent.groupingBy { it }.eachCount()
+        val order = compareByDescending<String> { counts[it] }.thenByDescending(recent::lastIndexOf)
+        return recent.distinct().sortedWith(order)
+    }
+
     /** Every model a turn asked for in the last [ASKED_FOR_MS], the latest first: the models someone is waiting on
      *  now, however few of the turns were theirs. */
     @Synchronized

@@ -51,13 +51,21 @@ internal class CapabilityCall(
     suspend fun notCalled(capability: Capability, on: CallFor): String? =
         if (gathers(capability.work.worker)) getter.notCalled(on) else null
 
-    suspend fun call(capability: Capability, on: CallFor): CallEnd = meaning(capability, work(capability, on))
+    /** One call of [capability]'s worker for [on]; [progress] hears each progress line the worker sends. */
+    suspend fun call(capability: Capability, on: CallFor, progress: WorkerProgress): CallEnd =
+        meaning(capability, work(capability, on, progress = progress))
 
-    /** How [capability]'s worker ended for [on], within its time limit; [posted] hears when it has been asked. */
-    suspend fun work(capability: Capability, on: CallFor, posted: WorkerPosted = WorkerPosted { }): WorkerEnd {
+    /** How [capability]'s worker ended for [on], within its time limit; [posted] hears when it has been asked, and
+     *  [progress] each progress line it sends. */
+    suspend fun work(
+        capability: Capability,
+        on: CallFor,
+        posted: WorkerPosted = WorkerPosted { },
+        progress: WorkerProgress = WorkerProgress { },
+    ): WorkerEnd {
         // `timeout_s` is in seconds, the wait in milliseconds
         val limitMs = TimeUnit.SECONDS.toMillis(capability.limits.timeoutS.toLong())
-        return withTimeoutOrNull(limitMs) { worked(capability, on, WorkerProgress { }, posted) }
+        return withTimeoutOrNull(limitMs) { worked(capability, on, progress, posted) }
             ?: WorkerEnd.Failed("it passed its time limit of ${capability.limits.timeoutS} s")
     }
 

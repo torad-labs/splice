@@ -22,6 +22,8 @@ internal class TurnHold(
     /** The size of the request the turn keeps in memory while it waits. */
     private val heapBytes: KeptBytes,
 ) {
+    private val words = HoldWords()
+
     fun wallLeftMs(): Long = wall.holdLeftMs()
 
     suspend fun hold(ask: HoldAsk): HoldEnd {
@@ -37,10 +39,11 @@ internal class TurnHold(
         val end = try {
             // The console lists the turn as held once a try-now can reach it, from among its login's holds; listed
             // before that, a try-now sent on the console's word found nothing held (PR 450's review, round 2).
-            held.hold(ask, wallEndMs, surfaces.lost) { surfaces.liveTurns.state(surfaces.slot, heldState(ask)) }
+            held.hold(ask, wallEndMs, surfaces.lost) { listed(ask) }
         } finally {
             surfaces.lease?.state(HeapOwnerState.ACTIVE)
             surfaces.terminal.holding(false)
+            surfaces.liveTurns.quiet(surfaces.slot)
             surfaces.liveTurns.state(surfaces.slot, TurnState.Running)
         }
         // The cap stays paused until the turn holds a permit again. Retaking it waits in the queue like any request,
@@ -52,6 +55,14 @@ internal class TurnHold(
             surfaces.watchdog.holdEnded()
         }
         return end
+    }
+
+    /** The turn is listed as held, and says on its session's status line what it waits for, dated from when the wait
+     *  began, through the same piece a capability's hold says it (docs/specs/harness.md, decision 8). */
+    private fun listed(ask: HoldAsk) {
+        val state = heldState(ask)
+        surfaces.liveTurns.state(surfaces.slot, state)
+        surfaces.liveTurns.says(surfaces.slot, words.of(state), HOLD_COLOR, ask.heldSinceMs)
     }
 
     private fun heldState(ask: HoldAsk): TurnState.Held = TurnState.Held(

@@ -191,9 +191,8 @@ private val FAILURES = CapabilityFailure.entries.associateBy { it.wire }
 private val FIELDS = CapabilityField.entries.associateBy { it.wire }
 private val OPEN = CapabilityFailure.OPEN
 
-/** The status line's own colour names: the terminal's eight and gray. */
-private val COLORS = listOf("black", "red", "green", "yellow", "blue", "magenta", "cyan", "white", "gray")
-    .associateWith { it }
+/** The colour names a capability may declare: the ones the status line can draw. */
+private val COLORS = CapabilityColors.escapes.keys.associateWith { it }
 
 // why: an hour, the longest hold seen to draw no retry and no second request from Claude Code (2.1.326, a worker
 // that answered after 59 min 50 s; docs/specs/harness.md, Seen with Claude Code).

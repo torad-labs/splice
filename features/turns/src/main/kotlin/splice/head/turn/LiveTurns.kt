@@ -24,6 +24,7 @@ package splice.head.turn
 
 import kotlinx.coroutines.Job
 import kotlinx.serialization.json.JsonObject
+import splice.core.head.HeldSaying
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.TurnMeta
@@ -173,6 +174,10 @@ public class LiveTurns(
         /** What the turn is doing: running, or held until its cause lifts (slice 5). */
         @Volatile var state: TurnState = TurnState.Running
 
+        /** What the turn says while it is held, whatever holds it (docs/specs/harness.md, decision 7); null while it
+         *  runs. */
+        @Volatile var saying: HeldSaying? = null
+
         /** Set once, on the provider's first byte. Not derived from [lastByte] against [since]: a byte
          *  that lands in the same millisecond as admission would read as no byte at all, and on a fast
          *  provider that is the common case rather than the rare one. */
@@ -266,6 +271,21 @@ public class LiveTurns(
     internal fun state(slot: InflightGate.Slot, state: TurnState) {
         bySlot[slot.countedSlot]?.state = state
     }
+
+    /** The turn on [slot] now says [message] in [color], said at [atEpochMs] on the wall clock: its age starts again.
+     *  Whoever holds the turn says it, and the turn says nothing once it is released or [quiet]. */
+    internal fun says(slot: InflightGate.Slot, message: String, color: String, atEpochMs: Long) {
+        val turn = bySlot[slot.countedSlot] ?: return
+        turn.saying = HeldSaying(turn.session, message, color, atEpochMs)
+    }
+
+    /** The turn on [slot] is no longer held, and says nothing. */
+    internal fun quiet(slot: InflightGate.Slot) {
+        bySlot[slot.countedSlot]?.saying = null
+    }
+
+    /** What each held turn says now, in the order the turns were admitted in. */
+    public fun sayings(): List<HeldSaying> = live.values.sortedBy { it.since }.mapNotNull { it.saying }
 
     /** Oldest first, the order the turns were admitted in. */
     public fun list(): List<LiveTurn> {

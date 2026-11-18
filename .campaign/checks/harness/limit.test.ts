@@ -35,6 +35,21 @@ beforeEach(() => {
 
 const typed = (text: string) => [{ role: "user", content: opening(text) }];
 
+/** The text a streamed answer says, its text deltas joined: the provider streams its reply a word per chunk, so the raw
+ *  body never holds the reply whole. */
+function said(body: string): string {
+  let text = "";
+  for (const block of body.split(/\r?\n\r?\n/)) {
+    const data = block.split(/\r?\n/).find((l) => l.startsWith("data:"));
+    if (!data) continue;
+    try {
+      const d = JSON.parse(data.slice(5).trim()) as { type?: string; delta?: { type?: string; text?: string } };
+      if (d.type === "content_block_delta" && d.delta?.type === "text_delta") text += d.delta.text ?? "";
+    } catch {}
+  }
+  return text;
+}
+
 /** What the status line says of a wait on a usage limit, and how long ago in seconds it says the wait began. */
 function waiting(text: string): { at: number; age: number | null } {
   const m = /plan limit reached: waiting until [^·]+? or a reset( · (\d+)s ago)?/.exec(text);
@@ -72,7 +87,7 @@ describe("limit-says", () => {
     lift();
     const sent = await sending;
     expect(sent.status).toBe(200);
-    expect(sent.body).toContain(up.reply());
+    expect(said(sent.body)).toContain(up.reply());
     // the line the wait writes into the conversation is the one it writes today
     expect(sent.body).toContain("[splice] claude-astra is at its usage limit. This turn continues in 25 seconds.");
     expect(waiting(line(astra, session)).at).toBe(-1);
@@ -111,6 +126,6 @@ describe("limit-says", () => {
     await stopping;
     expect(Date.now() - from).toBeLessThan(15_000);
     expect(sent.error).toEqual({ type: "overloaded_error", message: "[splice] splice restarted during this turn. Claude Code sends this turn again." });
-    expect(sent.body).not.toContain(up.reply());
+    expect(said(sent.body)).not.toContain(up.reply());
   }, 300_000);
 });

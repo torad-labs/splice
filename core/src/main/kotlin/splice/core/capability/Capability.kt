@@ -30,8 +30,9 @@ public data class CapabilityResult(
     public val places: Boolean get() = place == CapabilityPlace.FIRST_USER_MESSAGE && may != CapabilityMay.REFUSE
 }
 
-/** `message` and `color`: what the held turn says while the capability starts (decision 7). */
-public data class CapabilityNotice(val message: String, val color: String)
+/** `message` and `color`: what the held turn says while the capability starts (decision 7). [message] is null where the
+ *  declaration names none: the harness then says a built-in worker's own message, else the capability's name. */
+public data class CapabilityNotice(val message: String?, val color: String)
 
 /** `timeout_s` and `on_failure`: how long the work may take, and what a failure does to the turn. */
 public data class CapabilityLimits(val timeoutS: Int, val onFailure: CapabilityFailure)

@@ -18,7 +18,10 @@ import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 
 /** What a server does with its tool's call. */
 enum class Does { ANSWERS, ERROR_RESULT, NO_TEXT, RPC_ERROR, HANGS }
@@ -80,8 +83,16 @@ done
 """
 
 /** A server at a URL, as the hub hosts one for every session: the tool answers over the post's own stream of events,
- *  after one progress message, and each post's headers are kept. */
-class HttpMcp(private val text: String = FOUND) : AutoCloseable {
+ *  after one progress message, and each post's headers are kept. With [onSession], it answers as the daemon's MCP host
+ *  does instead: the call's answer is one JSON object, and its progress (a message, then a line with none) goes on the
+ *  session's own stream, the GET the client opens. */
+class HttpMcp(private val text: String = FOUND, private val onSession: Boolean = false) : AutoCloseable {
+    private val pushes = LinkedBlockingQueue<String>()
+
+    /** Counted down by the client as it hears each line the call pushes: the call answers once both are heard, as the
+     *  host answers once the tool is done, whatever its stream carried. */
+    val heard: CountDownLatch = CountDownLatch(PUSHED_LINES)
+
     /** The headers and body of each post the server got, oldest first. */
     val posts: MutableList<Pair<Map<String, String>, JsonObject>> = CopyOnWriteArrayList()
 
@@ -103,6 +114,7 @@ class HttpMcp(private val text: String = FOUND) : AutoCloseable {
     }
 
     private fun handle(ex: HttpExchange) {
+        if (ex.requestMethod == "GET") return session(ex)
         if (ex.requestMethod == "DELETE") {
             ended = true
             ex.sendResponseHeaders(NO_CONTENT, -1)
@@ -117,8 +129,32 @@ class HttpMcp(private val text: String = FOUND) : AutoCloseable {
                 ex.responseHeaders.add("Mcp-Session-Id", "session-1")
                 json(ex, """{"jsonrpc":"2.0","id":$id,"result":{"protocolVersion":"2025-06-18","capabilities":{}}}""")
             }
-            "tools/call" -> events(ex, id, body["params"]?.jsonObject?.get("_meta")?.jsonObject?.get("progressToken"))
+            "tools/call" -> called(ex, id, body["params"]?.jsonObject?.get("_meta")?.jsonObject?.get("progressToken"))
             else -> ex.sendResponseHeaders(ACCEPTED, -1)
+        }
+    }
+
+    private fun called(ex: HttpExchange, id: JsonElement?, token: JsonElement?) {
+        if (!onSession) return events(ex, id, token)
+        val progress = """{"jsonrpc":"2.0","method":"notifications/progress","params":{"progressToken":$token"""
+        pushes.put("""$progress,"progress":1,"message":"Reading the notes"}}""")
+        pushes.put("""$progress,"progress":2}}""")
+        heard.await(PUSH_WAIT_S, TimeUnit.SECONDS)
+        json(ex, """{"jsonrpc":"2.0","id":$id,"result":{"content":[{"type":"text","text":"$text"}]}}""")
+    }
+
+    /** The session's stream: each line the call pushes, as an event, until the server closes. */
+    private fun session(ex: HttpExchange) {
+        if (!onSession) return ex.sendResponseHeaders(METHOD_NOT_ALLOWED, -1)
+        ex.responseHeaders.add("Content-Type", "text/event-stream")
+        ex.sendResponseHeaders(OK, 0)
+        val out = ex.responseBody
+        out.write(": open\n\n".toByteArray())
+        out.flush()
+        while (true) {
+            val line = pushes.take().takeUnless { it == CLOSED } ?: return
+            out.write("event: message\ndata: $line\n\n".toByteArray())
+            out.flush()
         }
     }
 
@@ -139,9 +175,16 @@ class HttpMcp(private val text: String = FOUND) : AutoCloseable {
         ex.responseBody.use { it.write(bytes) }
     }
 
-    override fun close() = server.stop(0)
+    override fun close() {
+        pushes.put(CLOSED)
+        server.stop(0)
+    }
 }
 
 private const val OK = 200
+private const val METHOD_NOT_ALLOWED = 405
+private const val CLOSED = ""
+private const val PUSH_WAIT_S = 5L
+private const val PUSHED_LINES = 2
 private const val ACCEPTED = 202
 private const val NO_CONTENT = 204

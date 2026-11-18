@@ -1,14 +1,15 @@
 // NEW: the harness (docs/specs/harness.md, decision 13). A server reached at a URL, which is how the hub gives a session
 // a server it runs for every session: MCP's streamable HTTP, each message posted, each answer read as the JSON it is or
-// as the stream of events it comes in.
+// as the stream of events it comes in, and the session's own stream (McpSessionStream) heard beside them.
 package splice.harness.wire
 
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import splice.core.parse.lenientJson
-import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.core.wire.HttpStatus
 import java.io.IOException
@@ -17,8 +18,7 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
-import java.nio.charset.StandardCharsets
-import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicReference
 
 internal class McpHttpWire(
     private val client: HttpClient,
@@ -28,10 +28,14 @@ internal class McpHttpWire(
 ) : McpWire {
     private val answers = McpAnswers()
     private val sends = SentRequests()
+    private val replies = McpReplies()
+    private val stream = McpSessionStream(replies)
 
     @Volatile private var session: String? = null
 
     @Volatile private var version: String? = null
+
+    @Volatile private var listened = false
 
     override fun negotiated(version: String) {
         this.version = version
@@ -43,28 +47,65 @@ internal class McpHttpWire(
     }
 
     override suspend fun ask(request: JsonObject, heard: McpHeard): JsonObject? {
-        val response = sent(request)
-        val body = response.body()
-        try {
-            val id = request["id"]
-            val messages = Channel<JsonObject>(Channel.UNLIMITED)
-            if (response.headers().firstValue(CONTENT_TYPE).orElse("").startsWith(EVENT_STREAM)) {
-                Executors.defaultThreadFactory().newThread { events(body, messages) }.apply {
-                    isDaemon = true
-                    name = "harness-mcp-events"
-                }.start()
-            } else {
-                withContext(io) { whole(body, messages) }
+        listen()
+        val messages = Channel<JsonObject>(Channel.UNLIMITED)
+        val body = AtomicReference<InputStream?>()
+        return try {
+            coroutineScope {
+                // A server may hold the answer's headers until the call is done (the daemon's MCP host does): what the
+                // session's stream carries meanwhile is heard while the request is still being sent.
+                launch { answered(request, messages, body) }
+                heardUntil(request["id"], messages, heard)
             }
-            for (message in messages) {
-                if (answers.to(id, message)) return message
-                heard.heard(message)
-            }
-            return null
         } finally {
-            body.close()
+            body.get()?.close()
         }
     }
+
+    /** Sends [request] and reads its answer into [into] on a thread of its own, keeping its [body] to close. */
+    private suspend fun answered(request: JsonObject, into: Channel<JsonObject>, body: AtomicReference<InputStream?>) {
+        val response = sent(request)
+        val answer = response.body().also(body::set)
+        if (streams(response)) replies.events(answer, into) else replies.whole(answer, into)
+    }
+
+    /** Hands [heard] what the server sends until its answer to request [id], and answers that; null when the answer
+     *  ended without it. */
+    private suspend fun heardUntil(id: JsonElement?, messages: Channel<JsonObject>, heard: McpHeard): JsonObject? {
+        while (true) {
+            val message = stream.next(messages) ?: return null
+            if (answers.to(id, message)) return message
+            heard.heard(message)
+        }
+    }
+
+    /** Opens the session's stream once the server has given a session, and waits until it is open, so what the server
+     *  sends there from then on is heard. */
+    private suspend fun listen() {
+        val id = session ?: return
+        if (listened) return
+        listened = true
+        stream.opened(opened(id))
+    }
+
+    /** The body of session [id]'s stream once it is open, or null where the server keeps none: it cannot be reached
+     *  for it, or answers anything but an event stream. */
+    private suspend fun opened(id: String): InputStream? {
+        val builder = HttpRequest.newBuilder(url).GET().header("Accept", EVENT_STREAM).header(MCP_SESSION_HEADER, id)
+        headers.forEach { (name, value) -> builder.header(name, value) }
+        version?.let { builder.header(PROTOCOL_HEADER, it) }
+        val response = try {
+            sends.response(client.sendAsync(builder.build(), HttpResponse.BodyHandlers.ofInputStream()))
+        } catch (_: IOException) {
+            return null
+        }
+        if (response.statusCode() in HTTP_OK_RANGE && streams(response)) return response.body()
+        response.body().close()
+        return null
+    }
+
+    private fun streams(response: HttpResponse<InputStream>): Boolean =
+        response.headers().firstValue(CONTENT_TYPE).orElse("").startsWith(EVENT_STREAM)
 
     /** The server's one reply to [message]: its status checked, its session kept. */
     private suspend fun sent(message: JsonObject): HttpResponse<InputStream> {
@@ -88,39 +129,9 @@ internal class McpHttpWire(
         return response
     }
 
-    /** An answer that is one JSON object; an empty one (a 202) has no message. */
-    private fun whole(body: InputStream, into: Channel<JsonObject>) {
-        try {
-            val text = body.readAllBytes().toString(StandardCharsets.UTF_8).trim()
-            JsonScalars.objectOrNull(lenientJson, text)?.let { into.trySend(it) }
-        } catch (_: IOException) {
-            // an answer that broke off has no message
-        } finally {
-            into.close()
-        }
-    }
-
-    /** An answer that is a stream of events: each event's data lines, joined, are one message. */
-    private fun events(body: InputStream, into: Channel<JsonObject>) {
-        try {
-            val data = StringBuilder()
-            body.bufferedReader(StandardCharsets.UTF_8).forEachLine { line ->
-                if (line.startsWith(SSE_DATA_PREFIX)) {
-                    data.append(line.removePrefix(SSE_DATA_PREFIX).trimStart()).append('\n')
-                } else if (line.isEmpty()) {
-                    JsonScalars.objectOrNull(lenientJson, data.toString().trim())?.let { into.trySend(it) }
-                    data.setLength(0)
-                }
-            }
-        } catch (_: IOException) {
-            // a stream that broke off ends with what it carried
-        } finally {
-            into.close()
-        }
-    }
-
     /** Ends the session the server gave, without waiting to hear that it did. */
     override fun close() {
+        stream.close()
         val id = session ?: return
         val request = HttpRequest.newBuilder(url).DELETE().header(MCP_SESSION_HEADER, id)
         headers.forEach { (name, value) -> request.header(name, value) }
@@ -132,5 +143,4 @@ private const val CONTENT_TYPE = "Content-Type"
 private const val EVENT_STREAM = "text/event-stream"
 private const val MCP_SESSION_HEADER = "Mcp-Session-Id"
 private const val PROTOCOL_HEADER = "MCP-Protocol-Version"
-private const val SSE_DATA_PREFIX = "data:"
 private val HTTP_OK_RANGE = HttpStatus.OK..HttpStatus.MAX_SUCCESS

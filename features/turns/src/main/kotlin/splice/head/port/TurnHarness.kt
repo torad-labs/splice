@@ -50,6 +50,11 @@ public interface TurnHolding {
      *  its worker sends (docs/specs/harness.md, decision 7). A turn that is not held says nothing. */
     public fun says(message: String, color: String)
 
+    /** The held turn says [message] as [says] does, and goes on saying it past [release], until its answer begins:
+     *  what a hold whose work stopped early says while the turn goes on without it (decision 9). A turn that is not
+     *  held says nothing. */
+    public fun saysUntilAnswered(message: String, color: String)
+
     public suspend fun release(held: Held)
 }
 

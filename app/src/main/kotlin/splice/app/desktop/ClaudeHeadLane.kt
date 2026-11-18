@@ -101,7 +101,9 @@ internal class ClaudeHeadLane(private val topology: Topology) {
     }
 }
 
-/** What Claude Code holds for a model it does not know, and for one whose name ends in `[1m]` (Claude Code 2.1.326). */
+/** What Claude Code holds for a model it does not know (Claude Code 2.1.326). */
 private const val HELD = 200_000L
+
+// why: a model whose name ends in `[1m]` gets a million tokens from Claude Code (2.1.326), whatever the model.
 private const val HELD_1M = 1_000_000L
 private const val ONE_MILLION_SUFFIX = "[1m]"

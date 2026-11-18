@@ -28,11 +28,12 @@ import splice.client.wrap.ClaudeToRun
 import splice.client.wrap.WrapStateRead
 import splice.client.wrap.WrappedHead
 import splice.client.wrap.WrappedLaunch
+import splice.core.GATEWAY_VERSION
 import splice.core.client.CLIENT_WALL_HEADER
+import splice.core.client.SPLICE_CLIENT_HEADER
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
 import splice.core.util.EnvReader
-import splice.launch.LaunchGateway
 import splice.launch.LaunchOutcome
 import splice.launch.LaunchSpec
 import splice.launch.RemoteCommands
@@ -186,7 +187,7 @@ public class LaunchService(
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
             // a launch on macOS carries splice's mark in its --settings, the one sign of it a hardened claude's
             // arguments keep there (LaunchMarker); elsewhere the arguments are as they were
-            addAll(LaunchMarker.settingsArgs(overlayOf(caller, roster, held.gateway, keyed)))
+            addAll(LaunchMarker.settingsArgs(overlayOf(caller, roster, held, keyed)))
             addAll(hub.args + effort.args(held)) // the effort after the hub's: a relaunch reads it as its own
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.
@@ -210,12 +211,13 @@ public class LaunchService(
     private fun overlayOf(
         caller: LaunchCaller,
         roster: List<String>?,
-        gateway: LaunchGateway,
+        held: LaunchSpec,
         head: LaunchSpec,
     ): String? {
         val wrapped = caller.wrapped ?: return null
         val hooks = materializer.startupHook(head.trees.own, head.signIn.headKey)
         val marked = LaunchMarker.here
+        val gateway = held.gateway
         val overlay = wrapped.settingsOverlay(roster, gateway.statuslineCommand, marked, gateway.keyHelper, hooks)
         return caller.picker?.addedTo(overlay) ?: overlay
     }
@@ -385,7 +387,9 @@ public class LaunchService(
         // Every header splice plants for a session starts "x-splice-" (the client wall, the launch proof).
         val ambient = envReader("ANTHROPIC_CUSTOM_HEADERS").orEmpty().lines()
             .filter { it.isNotBlank() && !it.trim().startsWith("x-splice-", ignoreCase = true) }
-        return (ambient + "$CLIENT_WALL_HEADER: ${spec.gateway.apiTimeoutMs}" + spec.gateway.proofLines)
+        // Server mode (F9): a team server's command names this laptop's splice, so an older one is told to upgrade.
+        val client = listOfNotNull("$SPLICE_CLIENT_HEADER: $GATEWAY_VERSION".takeIf { spec.teamServer })
+        return (ambient + "$CLIENT_WALL_HEADER: ${spec.gateway.apiTimeoutMs}" + spec.gateway.proofLines + client)
             .joinToString("\n")
     }
 

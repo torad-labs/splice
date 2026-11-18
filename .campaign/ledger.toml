@@ -1324,7 +1324,7 @@ notes = [
 id = 'agent-call-offered'
 title = 'A capability the agent may call is offered to the model as a tool'
 feature = 'agent-call'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'harness-own-module',
@@ -1340,13 +1340,14 @@ reviews = [
 ]
 notes = [
   '2026-11-17 14:20 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 18:26 CT campaign: done in round 1 of agent-call: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'agent-call-answered'
 title = "The model's call of a capability is answered inside splice, and the client gets one response"
 feature = 'agent-call'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'agent-call-offered',
@@ -1362,13 +1363,14 @@ reviews = [
 ]
 notes = [
   '2026-11-17 14:20 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 18:26 CT campaign: done in round 1 of agent-call: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'agent-call-history'
 title = "A call the model made stays in the provider's history byte for byte"
 feature = 'agent-call'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'agent-call-answered',
@@ -1384,13 +1386,14 @@ reviews = [
 ]
 notes = [
   '2026-11-17 14:20 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 18:26 CT campaign: done in round 1 of agent-call: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'agent-call-parallel'
 title = "A call of a capability beside the client's own calls is answered beside them"
 feature = 'agent-call'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'agent-call-answered',
@@ -1406,6 +1409,7 @@ reviews = [
 ]
 notes = [
   '2026-11-17 14:20 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 18:26 CT campaign: done in round 2 of agent-call: its checks, its feature review, its code review passed',
 ]
 
 [[row]]

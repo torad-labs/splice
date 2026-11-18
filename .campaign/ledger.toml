@@ -1481,7 +1481,7 @@ notes = [
 id = 'getter-runs'
 title = "The Context Getter gathers for a session's first turn at its own model's effort, and what it found reaches the provider"
 feature = 'context-getter'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'harness-own-module',
@@ -1497,6 +1497,7 @@ reviews = [
 ]
 notes = [
   '2026-11-17 14:32 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 18:11 CT campaign: done in round 1 of context-getter: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
@@ -1526,7 +1527,7 @@ notes = [
 id = 'getter-limits'
 title = "splice owns the gatherer's process, and its time limit comes from measured gathers"
 feature = 'context-getter'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'getter-runs',
@@ -1543,13 +1544,14 @@ reviews = [
 ]
 notes = [
   '2026-11-17 14:33 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 18:11 CT campaign: done in round 1 of context-getter: its checks, its feature review, its code review passed',
 ]
 
 [[row]]
 id = 'getter-door'
 title = 'On the door, the gatherer reaches the head that holds the waiting turn'
 feature = 'context-getter'
-status = 'todo'
+status = 'done'
 owner = ''
 blocked_by = [
   'getter-runs',
@@ -1565,6 +1567,7 @@ reviews = [
 ]
 notes = [
   '2026-11-17 14:33 CT: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-17 18:11 CT campaign: done in round 1 of context-getter: its checks, its feature review, its code review passed',
 ]
 
 [[row]]

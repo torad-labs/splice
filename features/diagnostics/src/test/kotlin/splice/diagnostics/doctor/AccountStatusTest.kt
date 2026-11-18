@@ -16,9 +16,9 @@ import splice.accounts.pool.HeadAccountWindow
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.terminal.AgeText
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
-import splice.core.util.AgeText
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 import splice.upstream.credentials.AccountPool

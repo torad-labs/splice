@@ -5,7 +5,9 @@ package splice.usage.statusline
 
 import splice.core.capability.CapabilityColors
 import splice.core.head.HeldSaying
-import splice.core.util.AgeText
+import splice.core.terminal.AgeText
+import splice.core.terminal.DIM
+import splice.core.terminal.RESET
 
 internal class StatuslineHeld {
     /** `Reading the request · 4s ago`, or `… · 4s ago · 2 turns` with more than one turn held, for [held], the
@@ -18,6 +20,3 @@ internal class StatuslineHeld {
         return "$colour${latest.message}$RESET$DIM · ${AgeText.ago(nowMs - latest.saidAtEpochMs)}$count$RESET"
     }
 }
-
-private const val RESET = "\u001B[0m"
-private const val DIM = "\u001B[2m"

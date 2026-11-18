@@ -9,7 +9,7 @@ import splice.core.config.UserHome
 import splice.core.perf.LivenessProbe
 import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
-import splice.core.util.AgeText
+import splice.core.terminal.AgeText
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText

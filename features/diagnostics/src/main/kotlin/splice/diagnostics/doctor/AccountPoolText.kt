@@ -7,7 +7,7 @@ package splice.diagnostics.doctor
 import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.pool.HeadAccountView
-import splice.core.util.AgeText
+import splice.core.terminal.AgeText
 import splice.core.util.WallClock
 import splice.upstream.credentials.AccountLabelPolicy
 import splice.upstream.credentials.AccountResetText

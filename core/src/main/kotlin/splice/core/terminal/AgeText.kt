@@ -1,8 +1,9 @@
 // NEW: console review 2026-09-24 — one spelling for "how long ago" in doctor's sentences. The turns
 // check printed raw minutes ("last failure: 28710m ago") while `splice status` said "3m ago" / "2d ago"
 // for an account switch; both now read the largest whole unit from this one place. In core since the held-status
-// review (2026-11-17), so a held turn on the status line says its age the same way: 5h ago, never 300m ago.
-package splice.core.util
+// review (2026-11-17), so a held turn on the status line says its age the same way: 5h ago, never 300m ago. It sits
+// with the terminal's other shared wording and styles.
+package splice.core.terminal
 
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours

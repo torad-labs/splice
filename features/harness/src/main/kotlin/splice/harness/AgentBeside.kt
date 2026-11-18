@@ -32,7 +32,7 @@ internal class AgentBeside(
     private val wire = AgentWire()
 
     /** The work of each kept call made beside the client's, by the call's key, while it runs. */
-    private val working = ConcurrentHashMap<String, Deferred<List<Settled>>>()
+    private val working = ConcurrentHashMap<String, Working>()
 
     /** Keeps [call] for [session] and starts the work of [asked], the calls it made beside the client's. It returns
      *  once every worker has been asked, or its work has ended without asking it: the client gets its own calls only
@@ -40,9 +40,13 @@ internal class AgentBeside(
     suspend fun start(session: String, call: KeptCall, asked: List<ModelCall>, on: CallFor) {
         val sent = CompletableDeferred<Unit>()
         val left = AtomicInteger(asked.size)
-        val work = scope.async { answers.settle(asked, on) { if (left.decrementAndGet() == 0) sent.complete(Unit) } }
+        // no turn holds the work yet: what it says is said once the client's next request waits for it
+        val voices = answers.voices(asked, on)
+        val work = scope.async {
+            answers.settle(asked, on, voices) { if (left.decrementAndGet() == 0) sent.complete(Unit) }
+        }
         work.invokeOnCompletion { sent.complete(Unit) }
-        working[call.key] = work
+        working[call.key] = Working(work, voices)
         records.put(session, call)
         sent.await()
     }
@@ -59,7 +63,7 @@ internal class AgentBeside(
             val settled = if (work == null) {
                 asked.map { Settled.Failed(LOST) }
             } else {
-                answers.held(asked, on) { work.await() }.also { working.remove(call.key, work) }
+                answers.held(asked, on, work.voices) { work.settled.await() }.also { working.remove(call.key, work) }
             }
             when (val answered = answers.answered(asked, settled)) {
                 is Answered.Refused -> {
@@ -89,6 +93,9 @@ internal class AgentBeside(
         }
     }
 }
+
+/** The work of the calls one message made beside the client's, and what each says through. */
+private data class Working(val settled: Deferred<List<Settled>>, val voices: List<HeldVoice>)
 
 /** why: what the model is told of a call whose worker's run did not outlive a restart of the daemon. */
 private const val LOST = "its work was lost when splice restarted"

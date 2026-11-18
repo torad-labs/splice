@@ -50,14 +50,22 @@ internal class AgentAnswers(
     private val wire = AgentWire()
 
     /** Works [asked] for the turn [on] names while it is held, and answers what they come to. */
-    suspend fun answer(asked: List<ModelCall>, on: CallFor): Answered =
-        answered(asked, held(asked, on) { settle(asked, on) })
+    suspend fun answer(asked: List<ModelCall>, on: CallFor): Answered {
+        val voices = voices(asked, on)
+        return answered(asked, held(asked, on, voices) { settle(asked, on, voices) })
+    }
 
-    /** Runs [work] with [on]'s turn held, where it can be, saying the capabilities of [asked] held it. */
-    suspend fun held(asked: List<ModelCall>, on: CallFor, work: CallsWork): List<Settled> {
+    /** What each call of [asked] says through, on the turn that holds it: its capability's message, then its worker's
+     *  progress (decision 7). */
+    fun voices(asked: List<ModelCall>, on: CallFor): List<HeldVoice> = asked.map { calls.voice(it.capability, on) }
+
+    /** Runs [work] with [on]'s turn held, where it can be, saying the capabilities of [asked] held it; while it holds,
+     *  the turn says what [voices] say. */
+    suspend fun held(asked: List<ModelCall>, on: CallFor, voices: List<HeldVoice>, work: CallsWork): List<Settled> {
         if (!on.turn.holdable) return work()
         val startedMs = clock()
         on.turn.hold()
+        voices.forEach { it.heldBy(on.turn) }
         try {
             return work()
         } finally {
@@ -65,19 +73,22 @@ internal class AgentAnswers(
         }
     }
 
-    /** Each call's work, all at once, each within its own time limit; every one stopped when the head stops. [posted]
-     *  hears each worker's request sent. */
+    /** Each call's work, all at once, each within its own time limit, each speaking through its own of [voices]; every
+     *  one stopped when the head stops. [posted] hears each worker's request sent. */
     suspend fun settle(
         asked: List<ModelCall>,
         on: CallFor,
+        voices: List<HeldVoice>,
         posted: WorkerPosted = WorkerPosted { },
     ): List<Settled> = stops.raced {
-        coroutineScope { asked.map { async { settled(it, on, posted) } }.awaitAll() }
+        coroutineScope {
+            asked.zip(voices).map { (call, voice) -> async { settled(call, on, voice, posted) } }.awaitAll()
+        }
     } ?: asked.map { Settled.Stopped }
 
-    private suspend fun settled(asked: ModelCall, on: CallFor, posted: WorkerPosted): Settled {
+    private suspend fun settled(asked: ModelCall, on: CallFor, voice: HeldVoice, posted: WorkerPosted): Settled {
         val capability = asked.capability
-        return when (val end = calls.work(capability, on.copy(input = asked.input), posted)) {
+        return when (val end = calls.work(capability, on.copy(input = asked.input), posted, voice)) {
             is WorkerEnd.Result -> Settled.Text(end.text)
             is WorkerEnd.Refusal -> if (capability.result.mayRefuse) {
                 Settled.Refused(end.reason)

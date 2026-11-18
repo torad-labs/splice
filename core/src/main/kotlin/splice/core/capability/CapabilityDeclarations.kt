@@ -78,7 +78,7 @@ private class CapabilityCheck(
     }
 
     private fun notice() = CapabilityNotice(
-        values.text("message") ?: name,
+        values.text("message"),
         values.choice("color", keys["color"], COLORS, DEFAULT_COLOR) ?: DEFAULT_COLOR,
     )
 

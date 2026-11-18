@@ -154,9 +154,9 @@ internal class Harness(
     ): Decline? {
         for (capability in due) {
             // The held turn says the capability's own message as its work starts, then each progress line it sends.
-            on.turn.says(capability.notice.message, capability.notice.color)
+            val voice = calls.voice(capability, on).also { it.heldBy(on.turn) }
             val end = try {
-                raced(capability, on, ended)
+                raced(capability, on, ended, voice)
             } catch (cancelled: CancellationException) {
                 // The turn itself was cancelled: a held turn is kept through a head's stop, so its client left.
                 failures += stopped(thread, due, capability, on, if (stopping.get()) HEAD_STOPPING else CLIENT_LEFT)
@@ -188,24 +188,26 @@ internal class Harness(
     }
 
     /** The capability's end, or null when the wait was ended first. */
-    private suspend fun raced(capability: Capability, on: CallFor, ended: CompletableDeferred<String>): CallEnd? =
-        coroutineScope {
-            val work = async {
-                calls.call(capability, on) { message -> on.turn.says(message, capability.notice.color) }
+    private suspend fun raced(
+        capability: Capability,
+        on: CallFor,
+        ended: CompletableDeferred<String>,
+        voice: HeldVoice,
+    ): CallEnd? = coroutineScope {
+        val work = async { calls.call(capability, on, voice) }
+        val stop = async { ended.await() }
+        try {
+            kotlinx.coroutines.selects.select {
+                work.onAwait { it }
+                stop.onAwait { null }
             }
-            val stop = async { ended.await() }
-            try {
-                kotlinx.coroutines.selects.select {
-                    work.onAwait { it }
-                    stop.onAwait { null }
-                }
-            } catch (cancelled: CancellationException) {
-                if (currentCoroutineContext().isActive) null else throw cancelled
-            } finally {
-                work.cancel()
-                stop.cancel()
-            }
+        } catch (cancelled: CancellationException) {
+            if (currentCoroutineContext().isActive) null else throw cancelled
+        } finally {
+            work.cancel()
+            stop.cancel()
         }
+    }
 
     /** Records [end] for [capability] and answers the refusal it makes of the turn, if any. */
     private fun settle(thread: String, capability: Capability, end: CallEnd, on: CallFor): Decline? {
@@ -217,18 +219,21 @@ internal class Harness(
             is CallEnd.Refused -> Decline.CapabilityRefused(name, end.reason).also {
                 log("[$head] capability $name refused a turn (session $session): ${end.reason}\n")
             }
-            is CallEnd.Failed -> failed(thread, capability, end, session)
+            is CallEnd.Failed -> failed(thread, capability, end, on)
         }
     }
 
-    /** A capability's work failed: closed, the turn is refused; open, it goes on without it. */
-    private fun failed(thread: String, capability: Capability, end: CallEnd.Failed, session: String?): Decline? {
+    /** A capability's work failed: closed, the turn is refused; open, it goes on without it, saying so where the work
+     *  has words for that. */
+    private fun failed(thread: String, capability: Capability, end: CallEnd.Failed, on: CallFor): Decline? {
         val name = capability.name
+        val session = on.request.sessionId
         if (capability.limits.onFailure == CapabilityFailure.CLOSED) {
             log("[$head] capability $name failed: ${end.why}; the turn is refused (session $session)\n")
             return Decline.CapabilityFailed(name, end.why)
         }
         log("[$head] capability $name failed: ${end.why}; the turn goes on without it (session $session)\n")
+        end.stopped?.let { on.turn.saysUntilAnswered(it, capability.notice.color) }
         mark(thread, capability, CapabilityState(name, FAILED))
         return null
     }

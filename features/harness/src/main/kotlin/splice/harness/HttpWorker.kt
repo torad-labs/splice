@@ -23,6 +23,9 @@ import java.nio.charset.StandardCharsets
 /** Hears each progress message a worker sends, for what the held turn says. */
 internal fun interface WorkerProgress {
     fun said(message: String)
+
+    /** A progress line with no message: what the turn says stays, and its age starts again (decision 13). */
+    fun again() {}
 }
 
 internal class HttpWorker(

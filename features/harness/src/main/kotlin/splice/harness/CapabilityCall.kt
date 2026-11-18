@@ -28,8 +28,9 @@ internal sealed class CallEnd {
     /** The turn is refused with [reason], said as the worker said it. */
     data class Refused(val reason: String) : CallEnd()
 
-    /** The work could not finish ([why] never holds a key); the declaration's `on_failure` decides the turn. */
-    data class Failed(val why: String) : CallEnd()
+    /** The work could not finish ([why] never holds a key); the declaration's `on_failure` decides the turn. [stopped],
+     *  when set, is what the turn says while it goes on without the work, until its answer begins (decision 9). */
+    data class Failed(val why: String, val stopped: String? = null) : CallEnd()
 }
 
 /** The facts a call sends: the turn it is for and the request's own, and the input of the model's call of its tool
@@ -50,6 +51,17 @@ internal class CapabilityCall(
      *  has reasons of its own (decision 9). */
     suspend fun notCalled(capability: Capability, on: CallFor): String? =
         if (gathers(capability.work.worker)) getter.notCalled(on) else null
+
+    /** What the held turn says as [capability]'s work for [on] starts: the message its declaration names, else the
+     *  Context Getter's own (decision 9), else the capability's name. */
+    fun message(capability: Capability, on: CallFor): String {
+        val builtin = (capability.work.worker as? CapabilityWorker.Builtin)?.takeIf(::gathers)
+        return capability.notice.message ?: builtin?.let { getter.message(it, on) } ?: capability.name
+    }
+
+    /** What [capability]'s work for [on] says through, on the turn that holds it. */
+    fun voice(capability: Capability, on: CallFor): HeldVoice =
+        HeldVoice(message(capability, on), capability.notice.color)
 
     /** One call of [capability]'s worker for [on]; [progress] hears each progress line the worker sends. */
     suspend fun call(capability: Capability, on: CallFor, progress: WorkerProgress): CallEnd =
@@ -114,7 +126,7 @@ internal class CapabilityCall(
         } else {
             CallEnd.Failed("it refused the turn, which it may not")
         }
-        is WorkerEnd.Failed -> CallEnd.Failed(end.why)
+        is WorkerEnd.Failed -> CallEnd.Failed(end.why, GATHER_STOPPED.takeIf { gathers(capability.work.worker) })
     }
 
     /** The one object a worker is posted: the capability, the session and the turn, and the fields its declaration

@@ -1,15 +1,13 @@
-// heads-deprecated: another provider's own command keeps working, and whoever starts a session through one is told on
-// the launch itself that the command is deprecated. A launch of `claude` carries no such notice. What the notice
-// tells the person to type, and what `splice status` and `splice doctor` say of the lane `claude` is on, are
-// adds-says' since decision 9 (Nov 17, 2026): `claude` on its head is no longer deprecated.
-// (docs/specs/door-default.md, decision 7.)
+// heads-deprecated: a head's command keeps working, and whoever starts a session through one is told it is going
+// away and what replaces it: on the launch itself, and in `splice status` and `splice doctor` while `claude` is on its
+// head. A `claude` on the door carries no such notice. (docs/specs/door-default.md, decision 7.)
 
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { clientHead, recipe, slottedHead } from "../desktop/lib/desktop.ts";
 import { Splice, freePort } from "../server/lib/harness.ts";
 import { Upstream } from "../server/lib/upstream.ts";
 import { ask, launch } from "../speed/lib/session.ts";
-import { toDoor } from "./lib/claude.ts";
+import { lane, toDoor } from "./lib/claude.ts";
 
 // No test here is a claim about speed: a busy machine must not fail one on bun's default five seconds.
 setDefaultTimeout(120_000);
@@ -41,8 +39,11 @@ async function notice(command: string): Promise<string> {
 }
 
 describe("heads-deprecated", () => {
-  test("the launch of another provider's command says the command is deprecated", async () => {
-    expect(await notice("claude-astra")).toMatch(/deprecated/i);
+  test("the launch of a head's command says head commands are deprecated and how to move to the door", async () => {
+    const said = await notice("claude-astra");
+    expect(said).toMatch(/deprecated/i);
+    expect(said).toMatch(/door/i);
+    expect(said).toContain(MOVE);
   });
 
   test("the head still launches and answers", async () => {
@@ -51,6 +52,16 @@ describe("heads-deprecated", () => {
     expect((await ask(l, crypto.randomUUID(), "heads-deprecated")).status).toBe(200);
     expect(astra.completions().length).toBe(before + 1);
   });
+
+  test("while claude is on its head, splice status and splice doctor say the lane is deprecated and how to move", () => {
+    expect(lane(s).lane).toBe("head");
+    for (const verb of ["status", "doctor"]) {
+      const r = s.cli([verb]);
+      const text = r.out + r.err;
+      expect([verb, /deprecated/i.test(text)]).toEqual([verb, true]);
+      expect([verb, text.includes(MOVE)]).toEqual([verb, true]);
+    }
+  }, 240_000);
 
   test("on the door, splice status says claude is on the door, and its launch carries no such notice", async () => {
     toDoor(s);

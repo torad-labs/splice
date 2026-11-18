@@ -18,10 +18,7 @@ Code's Mantle dialect, where the model a request names decides which provider ru
   provider is signed in. Claude Code's own `/login`, which only ever signs in to Anthropic, is off.
 - A fresh install works this way from the first run. A machine that already ran `claude` through a head keeps doing
   so until its owner switches, and is told how.
-- Someone who runs Claude on their own Claude plan keeps it. Their `claude` starts on Claude as it did, and `/model`
-  lists Claude's models with the models of their other signed-in accounts beside them (decision 9).
-- Every other command that is a head says, where its user will read it, that heads are going away and what replaces
-  them.
+- Every command that is a head says, where its user will read it, that heads are going away and what replaces them.
 
 ## Decisions
 
@@ -35,8 +32,8 @@ Code's Mantle dialect, where the model a request names decides which provider ru
   `left_out` (each with `head`, `command`, `reason`).
 - `splice claude door [--model <selector>]` puts `claude` on the door. `--model` names the model a session starts
   on; it is kept until another is named. It refuses a selector the picker does not list, changing nothing.
-- `splice claude head` puts `claude` back on its head, where it carries the door's models (decision 9). It refuses,
-  changing nothing, when splice.toml has no head whose command is `claude`.
+- `splice claude head` puts `claude` back on its head, and says heads are going away. It refuses, changing nothing,
+  when splice.toml has no head whose command is `claude`.
 - With no choice made, the lane is the door when splice.toml has no head whose command is `claude`, and the head
   when it has one. A choice made with either verb is kept in splice's state, across restarts and upgrades.
 
@@ -123,19 +120,15 @@ restart.
 
 ### 7. Heads are going away
 
-What is deprecated is starting a session through another provider's own command (`claudex`, `claude-grok` and the
-rest). `claude` on its head is not deprecated: it is how someone on a Claude plan reaches every model (decision 9).
-splice.toml still describes each provider and its models as it does now, and every command keeps working. What
-changes is that a person who depends on one is told:
+What is deprecated is starting a session through a head's own command (`claudex`, `claude-grok`, a `claude` on its
+head). splice.toml still describes each provider and its models as it does now, and every command keeps working.
+What changes is that a person who depends on one is told:
 
-- The launch of such a command carries a one-line notice, printed by the shim before Claude Code starts: the
-  command is deprecated, and `claude` runs this head's models, with what to type there: `/model` and the selector of
-  the head's pinned model. That holds for every head, in the picker or not (decision 4). On a machine with no head
-  keyed `claude` and `claude` not on the door, it adds that `splice claude door` comes first. A launch of `claude`
-  carries no notice, on either lane.
-- `splice status` and `splice doctor` say which lane `claude` is on. Neither calls a lane deprecated.
-- `README.md`, `AGENTS.md` and the CHANGELOG describe `claude` as how splice is used, and the other head commands as
-  deprecated.
+- The launch of a head's command carries a one-line notice, printed by the shim before Claude Code starts: head
+  commands are deprecated, `claude` on the door replaces them, and `splice claude door` is how to move.
+- `splice status` and `splice doctor` say which lane `claude` is on, and on a machine whose `claude` is on its
+  head, that the lane is deprecated and `splice claude door` moves it.
+- `README.md`, `AGENTS.md` and the CHANGELOG describe the door as how splice is used, and heads as deprecated.
 
 No head is removed, renamed or refused by this change, and no date is set for removal.
 
@@ -145,43 +138,11 @@ No head is removed, renamed or refused by this change, and no date is set for re
 `claude`. The Claude plan leaves its tick list; `splice add claude` still adds that head for someone who runs Claude
 models on their plan. An upgrade changes no lane.
 
-### 9. `claude` on its head carries the door's models
-
-Claude's models run on the caller's own Claude login, and only the head keyed `claude` can forward it: a session on
-the door sends none. So on a machine that has that head, `claude` stays on it, and the head gains the door's models
-instead of giving way to the door.
-
-- **Launch.** As it was before this spec: the head's address, the person's own Claude folder, their own default
-  model. Nothing of the door's is set (no Mantle switch, no key, no window), so Claude's models keep their windows.
-  `claude --model <selector>` starts a session on a selector.
-- **Picker.** The `--settings` overlay carries `modelPicker` with `replaceBuiltInOptions` false and the rows of
-  decision 4: signed-in accounts only, with the same labels in the same order. `/model` then lists Claude Code's own
-  models and, after them, the models of the signed-in accounts. With no account signed in the overlay carries no
-  picker. Picking a row is Claude Code's own: `s` runs this session on it, and Enter also makes it the model new
-  sessions start on, which the head then serves like any other session that names it.
-- **A turn.** The head reads the model a request names. A selector is relayed to its head as the door relays it,
-  with that head's own login, cooldowns and failures, and the caller's Claude login is taken off the request first:
-  it never reaches another provider. A name that starts as another head's selectors do and names no model of that
-  head is refused by name with nothing sent upstream. Every other name goes to Anthropic with the caller's login,
-  exactly as before: the head never refuses a name Anthropic might serve, so a model Anthropic ships tomorrow runs
-  the day it ships. `count_tokens` follows the same rule.
-- **Counts.** The session holds Claude Code's own window for a model it does not know: 200,000 tokens, or 1,000,000
-  for a selector that ends in `[1m]`. A relayed turn's counts are reported as the same share of that window that
-  they are of the model's own, so the session compacts before its model's limit.
-- **Records.** A relayed turn is its head's row on `/api/perf/turns`, with the model that ran and `door` set to
-  `"claude"`.
-- **Small requests.** A request that names a Claude model goes to Anthropic, whatever the session's own model is:
-  the small model Claude Code uses for titles and labels, or a subagent pinned to one. A subagent that inherits a
-  selector runs on that selector's head.
-- **What splice says.** `splice claude` says `claude` is on its head with the door's models. `--json` gives `lane`
-  `"head"` with `models` and `left_out` as on the door lane.
-- **Moving to the door alone.** `splice claude door` still does it. On a machine that has a head keyed `claude` it
-  says, in the same answer, that Claude's models no longer run in `claude` until `splice claude head`.
-
 ## Not in this change
 
-- Calling Anthropic with a Claude login splice holds. splice never does: on its head `claude` forwards the caller's
-  own (decision 9), and a session on the door lane has none to forward, so no Claude model runs there.
+- Claude subscription logins. splice never calls Anthropic with a person's Claude login; a head forwards the
+  caller's own, and the door has no caller login to forward. Someone who runs Claude models on their plan keeps
+  `claude` on its head for now.
 - Removing heads.
 - The console: its pages keep saying what they say.
 
@@ -191,7 +152,6 @@ Filled in by whoever builds each part, from a real session, with the Claude Code
 
 | Question | What was seen |
 |---|---|
-| A `claude` on its head, signed in to a Claude plan, with a `modelPicker` in `--settings` and `replaceBuiltInOptions` unset, lists those rows after Claude Code's own models | **Yes**, 2.1.326, Nov 17, 2026, a real session on a Claude plan through the head, with the overlay handed as a second `--settings` beside the shim's own: the session started on the person's own default; `/model` lists Claude Code's lineup and then the overlay's rows, each `<label>  <description>`, a row whose selector starts with `claude-` included, with `More models` after them. `s` on a row answered `Set model to <label> for this session only` and the header and status line read the label. Enter on a row sets it as the default for new sessions, as for any model. No turn was sent |
 | A launch with the Mantle variables in its environment and a `modelPicker` in `--settings` lists exactly those rows | Claude Code 2.1.326, Nov 17, 2026, a throwaway daemon with two ChatGPT heads: no sign-in screen; `/model` lists the overlay's rows, each `<label>  splice · <command>`, with Claude Code's own `Default` above them and nothing else |
 | `ANTHROPIC_MODEL` naming a door selector starts the session on it, over a `model` in the person's settings | 2.1.326: with `model` = `claude-opus-4-1` in `~/.claude/settings.json`, the header read `gpt-6-astra · Amazon Bedrock (Mantle)` and the first turn ran on that head. With no `ANTHROPIC_MODEL` (nothing signed in), the session took the settings' `Opus 4.1` |
 | The bare `/login`, with `DISABLE_LOGIN_COMMAND=1`, runs splice's command, laid outside the person's folder | **No**, on 2.1.326. The slash menu offers the plugin's command only as `/splice:login` ("(splice) Open splice's accounts page…"), and a bare `/login` typed and sent answers `Unknown command: /login. Did you mean /plugin?` without submitting the prompt, so no hook sees it. `/splice:login` runs splice's command: the hook ran `splice console` and blocked the turn, nothing reached the model. Two other ways, Nov 17, 2026, on 2.1.326 with a throwaway config folder: a folder handed by `--add-dir` holding `.claude/commands/login.md` puts a bare `/login` in the menu ("Open splice's accounts page, where any account is signed in (project)"), but every session then opens on Claude Code's "Adding a new directory… Is this a directory you created or one you trust?" dialog, with `No, exit` selected, whose answer "holds for this session" (it is skipped only when the folder is under a directory the person already trusted). The same folder named in the `--settings` overlay's `permissions.additionalDirectories` asks nothing and loads no `/login` |

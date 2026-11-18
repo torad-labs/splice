@@ -436,7 +436,7 @@ session's first user message. The table's name is the capability's: lowercase le
 | `timeout_s` | int | required | 1 to 3600 |
 | `on_failure` | string | required | `"open"`: a failed or late worker lets the turn go on as today; `"closed"`: the turn is refused, naming the capability |
 | `send` | array | empty | the fields the worker gets: `first_user_message`, `folder`, `model`, `head`. Name, session and turn always go |
-| `worker` | inline table | required | `{ kind = "http", url = "...", auth_env = "ENV_NAME" }`; `auth_env` names the variable that holds the worker's key, sent as a bearer. No built-in worker ships yet |
+| `worker` | inline table | required | `{ kind = "http", url = "...", auth_env = "ENV_NAME" }`, where `auth_env` names the variable that holds the worker's key, sent as a bearer; `{ kind = "mcp", server = "...", tool = "..." }`, a tool of a server the MCP hub runs for the session's folder; or `{ kind = "builtin", name = "context-getter", model = "..." }`, the Context Getter (`model` optional) |
 
 ```toml
 [capabilities.policy]
@@ -479,8 +479,29 @@ on_failure = "open"
 worker = { kind = "http", url = "http://127.0.0.1:9000/advise" }
 ```
 
+An MCP worker's tool gets the declared fields (and `input`, for the model's call) as its arguments, and the
+capability's name and the session and turn ids in `_meta`. A server nothing hosts yet for the session's folder is
+started there for the call and stopped when the session ends. Its progress notifications are the held turn's
+messages, its text content is the result, and an error result, no text or a server the hub cannot find is a failure
+`on_failure` handles. `splice status` shows `mcp <server>/<tool>`.
+
+The Context Getter is the one capability that ships, off until a head is named in `heads`:
+
+```toml
+[capabilities.context-getter]
+heads = ["claude"]
+worker = { kind = "builtin", name = "context-getter" }
+```
+
+Its defaults, each of which the table may override: the first main turn of an interactive session, the first user
+message, `may = "add"`, `on_failure = "open"`, `timeout_s = 180`, and the message `Exploring files with <model>`. It
+runs `claude -p` in the session's folder on the head's small tier (or `worker.model`) at that model's own effort, with
+a prompt asking for the files, entry points, build and test commands and instructions that matter for the first
+message, and its final result is the text placed. It is not called when the session's folder cannot be found or no
+login can serve its model (`capability_skipped` on the turn's row).
+
 Source: core/src/main/kotlin/splice/core/capability/ (Capability.kt, CapabilityDeclarations.kt);
-features/turns/src/main/kotlin/splice/head/harness/; docs/specs/harness.md.
+features/harness/src/main/kotlin/splice/harness/; docs/specs/harness.md.
 
 ## 11. Where the other topics live
 

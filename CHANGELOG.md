@@ -33,6 +33,12 @@
   capability with the heads it is on for and its worker. A turn's row on `/api/perf/turns` carries
   `capability_text_chars`, `held_on` and `held_ms`. With none declared, every request is the bytes it is today.
   The design is `docs/specs/harness.md`.
+- **The model can call a capability, a worker can be an MCP tool, and the Context Getter ships.** `call = "agent"`
+  (or `"both"`) with a `tool` offers a capability to the model as a tool on a head that passes Anthropic's Messages
+  through; Claude Code never sees the call, and the answer after it streams as the same message. `worker = { kind =
+  "mcp", server, tool }` calls a tool of a server the MCP hub runs for the session's folder. `[capabilities.context-getter]`
+  with `worker = { kind = "builtin", name = "context-getter" }` runs a print-mode Claude Code on the head's fast model
+  that gathers the files and commands the first message needs, and places them in it. It is off until a head is named.
 - `splice claude [--json]`: the lane, the door, the model a session starts on and why, the picker's models, and
   each head left out of it and why. `splice status` and `splice doctor` name the lane.
 - `splice setup` links `claude` on the door on a machine with no head for it, and no longer offers the Claude plan

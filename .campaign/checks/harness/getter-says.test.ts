@@ -64,8 +64,9 @@ describe("getter-says", () => {
     const { session, sending } = started(typed);
     await until("the gatherer starts", () => fake.of(typed).length === 1, 30_000);
     await until("the line says it is exploring", () => line(astra, session).includes(STARTED), 4000);
-    // the model's name still follows the held turn's part
-    expect(line(astra, session)).toContain("astra");
+    // the session's model, drawn by its label, still follows the held turn's part
+    const exploring = line(astra, session);
+    expect(exploring.indexOf("Astra Large")).toBeGreaterThan(exploring.indexOf(STARTED));
 
     await until("the gatherer reports its first step", () => fake.of(typed)[0]!.emitted.length >= 1, 15_000);
     await until("the line says the first step", () => line(astra, session).includes("Read src/main.ts"), 4000);

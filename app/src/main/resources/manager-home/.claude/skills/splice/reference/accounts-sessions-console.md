@@ -154,7 +154,7 @@ Source: `models.js:13-14,139-187,270-330,429-466,654-707,768-916,1096`, `setting
 | Provider | Command | Auth kind | Sign-in | Credential file |
 |---|---|---|---|---|
 | Claude | `claude` | `client` | `/login` inside the command | Claude Code's own config directory for that command |
-| ChatGPT | `claudex` | `chatgpt-oauth` | `claudex login` (browser) or Accounts (device code) | `~/.config/splice/auth/codex.json` |
+| ChatGPT | `claudex` | `chatgpt-oauth` | `claudex login` or Accounts (browser, both) | `~/.config/splice/auth/codex.json` |
 | Grok | `claude-grok` | `grok-oauth` | `claude-grok login` (browser) or Accounts | `auth/grok.json` |
 | Kimi | `claude-kimi` | `kimi-oauth` | `claude-kimi login` (device code) or Accounts | `auth/kimi.json` and a `device_id` |
 | Muse | `claude-muse` | `muse-oauth` | `claude-muse login` (device code) or Accounts | `auth/muse.json` (account token and a minted inference key) |

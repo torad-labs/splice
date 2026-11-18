@@ -372,7 +372,7 @@ const SIGNIN = (() => {
     const paste = !s.how.watch && (st?.paste_code || s.how.native);
     const by = code ? "code" : paste ? "paste" : "browser";
     const changed = url !== s.url || by !== s.by || code !== s.code;
-    s.swapped = !!(s.code && code && code !== s.code); // a device code that expired is replaced (DeviceLoginFlow.kt:88-93)
+    s.swapped = !!(s.code && code && code !== s.code); // a device code that expired is replaced (Kimi, Muse: DeviceLoginFlow)
     Object.assign(s, { url, by, code });
     if (changed) { on.draw(); s.swapped = false; }
     ask(s, on);

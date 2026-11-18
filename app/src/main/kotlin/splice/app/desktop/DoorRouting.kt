@@ -48,22 +48,28 @@ internal class DoorRouting {
      *  very model it names, where a head serves it. */
     private fun tiered(lineup: DesktopLineup, ask: DoorAsk, default: String?, named: Boolean): DoorRoute? {
         val tier = tiers.tierOf(ask.model) ?: return null
-        val held = ask.session?.let(sessions::get)?.let { key -> lineup.heads.firstOrNull { it.key == key } }
+        val held = heldHead(lineup, ask)
         return when {
-            held != null -> exactOn(lineup, held, ask) ?: DoorRoute(held, held.tiers[tier] ?: held.pinned)
+            held != null -> onHeld(lineup, held, ask, tier)
             !named || ask.probe -> defaulted(lineup, tier, default)
             else -> served(lineup, ask) ?: defaulted(lineup, tier, default).takeIf { tier == SMALL_TIER }
         }
     }
 
-    /** The very model [ask] names, on [head] the session is on, where [head] serves it; null where it does not, and
-     *  the head's model for the tier runs. A head with no tier for it ran its pinned model, which on a head that
+    /** The head [ask]'s session is on, or null for a session on none. */
+    private fun heldHead(lineup: DesktopLineup, ask: DoorAsk): DoorHead? =
+        ask.session?.let(sessions::get)?.let { key -> lineup.heads.firstOrNull { it.key == key } }
+
+    /** [ask]'s [tier] on [head] the session is on: the very model it names where [head] serves it, else the head's
+     *  model for the tier, else its pinned model. A head with no tier for it ran its pinned model, which on a head that
      *  declares none is the first model it lists: on Nov 17, 2026 every Opus turn of the door's sessions on the
      *  claude head ran as Fable 5, spent on every account, and was held for two days. */
-    private fun exactOn(lineup: DesktopLineup, head: DoorHead, ask: DoorAsk): DoorRoute? {
-        val named = tiers.modelOf(ask.model) ?: return null
-        return lineup.models.firstOrNull { it.head == head.key && tiers.modelOf(it.upstream) == named }
-            ?.let { DoorRoute(head, it.upstream) }
+    private fun onHeld(lineup: DesktopLineup, head: DoorHead, ask: DoorAsk, tier: String): DoorRoute {
+        val named = tiers.modelOf(ask.model)
+        val exact = lineup.models.firstOrNull {
+            it.head == head.key && named != null && tiers.modelOf(it.upstream) == named
+        }
+        return DoorRoute(head, exact?.upstream ?: head.tiers[tier] ?: head.pinned)
     }
 
     /** The head that serves the very model [ask] names, run as its selector would be; null when no head does. */

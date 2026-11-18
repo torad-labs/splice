@@ -12,7 +12,7 @@ import splice.core.util.JsonScalars
 internal class ClaudeSaid(private val out: TerminalOutput) : DoorSaid {
     override fun state(state: JsonObject) {
         if (JsonScalars.str(state, "lane") != "door") {
-            out.line(ON_HEAD)
+            out.line(ON_ITS_HEAD)
             picker(state, NO_ADDED)
             return
         }
@@ -42,7 +42,7 @@ internal class ClaudeSaid(private val out: TerminalOutput) : DoorSaid {
 }
 
 // What `splice claude` says first on the head lane (door-default, decision 9).
-private const val ON_HEAD = "claude: on its head, on your own Claude login; /model lists Claude's models and, " +
+private const val ON_ITS_HEAD = "claude: on its head, on your own Claude login; /model lists Claude's models and, " +
     "after them, the models below"
 
 // What the picker line says on the head lane with no account signed in.
@@ -56,7 +56,7 @@ private const val THEIRS_IN_THE_WAY = "yours, not splice's accounts page: your o
 private const val NO_PICKER =
     "Picker: Claude Code's own models, as no account is signed in; /login in a session opens splice's accounts"
 
-// What the /login line says while splice's is laid: it is in the person's own Claude folder, so a Claude Code splice did
-// not start runs it too, for its own /login row as well (Claude Code 2.1.326).
+// What the /login line says while splice's is laid: it is in the person's own Claude folder, so a Claude Code splice
+// did not start runs it too, for its own /login row as well (Claude Code 2.1.326).
 private const val SHARED_LOGIN = "/login: splice's, in every claude on this machine, even one splice did not start; " +
     "`splice console` opens splice's accounts, `claude auth login` is Claude Code's own sign-in"

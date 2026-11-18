@@ -26,7 +26,8 @@ internal data class DoorAsk(val request: JsonObject, val model: String, val sess
     /** Whether this is Claude Code's start-up check: one token, not streamed (desktop-door.md's table), whose answer
      *  no one reads. */
     val probe: Boolean
-        get() = JsonScalars.long(request, MAX_TOKENS) == 1L && JsonScalars.str(request, STREAM) != "true"
+        get() = JsonScalars.long(request, REQUEST_MAX_TOKENS) == 1L &&
+            JsonScalars.str(request, REQUEST_STREAM) != "true"
 
     /** The body as a head takes it: the same request, asking for [upstream], the ID that head runs the model as. */
     fun asking(upstream: String): ByteArray =
@@ -97,5 +98,5 @@ private const val NO_DOOR_KEY =
 private const val NOT_JSON = "the request body is not a JSON object"
 
 private const val REQUEST_MODEL = "model"
-private const val MAX_TOKENS = "max_tokens"
-private const val STREAM = "stream"
+private const val REQUEST_MAX_TOKENS = "max_tokens"
+private const val REQUEST_STREAM = "stream"

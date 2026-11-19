@@ -3728,52 +3728,6 @@ notes = [
 ]
 
 [[row]]
-id = 'nd-look'
-title = 'tools/console-look: the console on a private display, screenshots and input, writes refused on the live Splice'
-feature = 'console-night-deck'
-status = 'dropped'
-owner = ''
-blocked_by = []
-guard = false
-spec = '''
-Every item of this feature is judged by using the running console on a private display of the campaign's own, at 1440 and 3840 px, and reading its screenshots (the approach docs/specs/desktop-full.md sets out for Desktop). This item makes that one tool, so every review does it the same way and none can touch the person's screen or write to the live Splice.
-
-`tools/console-look` (Bun/TypeScript, run as `bun tools/console-look <verb> …`; no Python):
-- `start [--width W] [--height H] [--theme night|day] [--live] <url>`: starts a private X display of its own (Xvfb on a free display number, never `$DISPLAY`), and on it Chrome (`google-chrome`, or `$CONSOLE_LOOK_BROWSER`) with a throwaway profile under /tmp, a window of exactly W×H (default 1440×900; 3840×2160 for the wide check), and a DevTools port of its own; opens <url>; prints one JSON line `{"id": "...", "display": ":N"}` last and exits 0, leaving the display and browser running. The theme is set the way the console saves it (localStorage `splice-console-theme`) before the page loads.
-- `shot <id> <file.png>`: a screenshot of the whole display, taken from the display itself (ffmpeg x11grab), W×H pixels.
-- `click <id> <x> <y>`, `move <id> <x> <y>`, `scroll <id> <dy>`, `key <id> <keys>`, `type <id> <text>`: pointer and key input to that display (xdotool with its DISPLAY), as a person would.
-- `goto <id> <url>`, `text <id> [css]`: navigate; print the innerText of the selector (default body), read over DevTools, a complement to looking, never instead of it.
-- `--live` (for the live Splice): every request the page makes that is not GET or HEAD is refused before it leaves the browser (DevTools Fetch interception), except POST /api/console/key (the sign-in trade); GET /api/console/pilot/next is answered 204 without being sent, so the live Splice never hands the review tab an agent's order. `blocked <id>` prints each refused request as `<METHOD> <path>`, one a line.
-- `sign-in <id>`: signs that tab in to the live console without the tool ever holding the management key: it runs `splice console --no-browser`, reads the single-use code from the launch page it prints, and opens the tab's own origin at `/#c=<code>`.
-- `serve --console <dir> [--daemon http://127.0.0.1:3096]`: serves a checkout's console folder on a port of its own and forwards only GET/HEAD /api/* to the daemon (any other method answers 405 there and is never forwarded), so this build's pages can be read on live data without touching the running Splice; prints its URL. Use with `start --live`.
-- `stop <id>`: closes the browser and the display and removes the profile; a crashed or forgotten session is reaped by the next `start`.
-- Screenshots meant for judging go to captures/console-night-deck/<item>/ by convention (git-ignored); the tool never writes into the repo otherwise.
-- A README.md in the folder says how a review uses it: serve the build, start --live at 1440×900 and 3840×2160, sign in, shot, use, read the images; writes only on tools/console-own's Splice.
-
-Proven by: `bun test ./.campaign/checks/console-night-deck/look.test.ts` (it runs the tool with Bun.spawn and awaits it, since its stub daemon answers on the test's own thread, and gives each test its own stub; decided Nov 19, 2026 after the round-2 dispute): a stub page opened at 3840×2160 is shot as a 3840×2160 PNG and its text read; with --live, the page's GET reaches the stub and its POST and PATCH do not, and `blocked` lists both.
-
-Judged: the feature review runs the tool against the stub probe page and against the live console (read-only) and reads the screenshots it took.'''
-checks = [
-  'bun test ./.campaign/checks/console-night-deck/look.test.ts',
-]
-sources = [
-  '.campaign/checks/console-night-deck/lib/deck.ts',
-]
-results = [
-  "Saved tool result (client.txt):\nRead Nov 18, 2026:\n- api.js (431 lines): API client (trade #c= code at POST /api/console/key, store \"splice-console-access-key\", 401 -> lock()), SIGNIN shared sign-in steps. lock() looks for `main.page`, uses DRAW.result (kit.js), and unlock() calls CONSOLE.navigate (console.js router) else location.reload().\n- pilot.js (653 lines): uses PAGES (kit.js), CONSOLE.navigate, DRAW.ms/result, API.pending/post/scoped/parting; orders from GET /api/console/pilot/next?tab=&focused= (200 {id, action, words} or 204), answers POST /api/console/pilot/answer {ok, text|error, page, id}; ACTIONS snapshot, read, tap, fill, select, press, hover, scroll, highlight, goto.\n- splice console --no-browser writes the launch page (a redirect to http://127.0.0.1:<port>/#c=<code>) and prints its file address (ConsoleCommand.kt).\n",
-]
-reviews = [
-  'feature',
-  'code',
-]
-notes = [
-  '2026-11-18 22:39 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
-  '2026-11-19 CT console-night-deck/coordinator: round-2 dispute upheld; the plan was wrong. look.test.ts used spawnSync, which blocks the thread the in-process stub (lib/deck.ts Bun.serve) answers on, so writes.html could never load. Revised: async Bun.spawn, text polled until it says Writes, one stub per test. Run on this build with the revised check: 2 pass, 0 fail.',
-  '2026-11-19 11:17 CT console-night-deck/coordinator: status dropped',
-  "2026-11-19 11:17 CT console-night-deck/coordinator: Dropped on the Nov 19, 2026 re-plan: the goal now judges every item from headless Chromium on a Mac (capture.ts on the stub's made-up world) and never touches the person's Splice, so a private X display on the seats' machine with a --live mode is no longer how anything is judged; look.test.ts needs Xvfb, which no Mac has. nd-whole removes tools/console-look and whole.test.ts checks it is gone.",
-]
-
-[[row]]
 id = 'df-uninstall'
 title = "splice uninstall puts Claude Desktop back: app mode's configuration out, standard mode's variables named"
 feature = 'desktop-full'

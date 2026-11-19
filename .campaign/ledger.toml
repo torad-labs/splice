@@ -5188,6 +5188,7 @@ reviews = [
 ]
 notes = [
   '2026-11-19 04:23 CT share-door-only/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 16:04 CT share-door-only/coordinator: Ruled: the plan stands and nothing is rebuilt. campaign said 'The plan changed after validation' because the last validation (23347dfe, at 47ecd1a1e) came before the coordinator committed its round-5 ruling (21fc882da) through its own index, so that ruling was never validated; then 2fd501e97 changed .campaign/checks/catalog/retire.test.ts, which no committed row named, so it counted toward every feature's plan id. Rows unchanged from 21fc882da; re-validated with campaign plan.",
 ]
 
 [[row]]

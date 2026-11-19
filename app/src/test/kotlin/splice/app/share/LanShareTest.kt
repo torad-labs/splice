@@ -275,7 +275,7 @@ class LanShareTest {
         val (status, body) = turn(recipe, "mac-session-1", mapOf("x-api-key" to MAC_TOKEN))
         assertEquals(200, status, body)
         assertTrue(body.contains("event: message_stop"), body)
-        val sent = upstream.upstreamAuths.drop(before).map { it.second }
+        val sent = upstream.upstreamAuths.drop(before).map { it.second.orEmpty() }
         assertEquals(1, sent.size, sent.toString())
         assertTrue(sent.single() in listOf("Bearer $PRIMARY_TOKEN", "Bearer $WORK_TOKEN"), sent.toString())
         assertTrue(sent.none { NODE_TOKEN in it || MAC_TOKEN in it }, "the node's auth went upstream: $sent")

@@ -3,7 +3,8 @@
 // <server>/server/otlp, and an otelHeadersHelper that sends the person's key, which is never in the environment.
 // Prompts are never logged (no OTEL_LOG_USER_PROMPTS). Where the command's organisation-managed settings
 // (remote-settings.json) set telemetry of their own, splice adds none; managed settings that set none leave the relay
-// on. A server with no relay gets no telemetry from splice.
+// on. A server with no relay gets no telemetry from splice. `remote add` and a `refresh` that changes the relay say, in
+// one line, where the commands' telemetry goes, or that it is no longer relayed.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
@@ -15,6 +16,7 @@ let srv: Server;
 let laptop: Splice;
 let key = "";
 let collectorPort = 0;
+let added = "";
 
 const withRelay = () => ({ toml: `\n[server.telemetry]\nforward_to = "http://127.0.0.1:${collectorPort}"\n` });
 
@@ -24,7 +26,9 @@ beforeAll(async () => {
   laptop = await Splice.boot(mockHead({ key: "local", command: "claude-local", port: await freePort(), url: srv.up.url, model: MODEL }));
   key = srv.mint("ann@example.com").key;
   expect(laptop.cli(["login", srv.base, "--key-stdin"], `${key}\n`).code).toBe(0);
-  expect(laptop.cli(["remote", "add", srv.base]).code).toBe(0);
+  const add = laptop.cli(["remote", "add", srv.base]);
+  expect(add.code).toBe(0);
+  added = add.out;
 }, 900_000);
 afterAll(async () => {
   await laptop?.dispose();
@@ -107,11 +111,22 @@ test("managed settings that set telemetry of their own turn splice's off, and ma
   }
 }, 120_000);
 
-test("once the server stops relaying, a refresh takes the telemetry away", async () => {
+test("remote add tells the person where their commands' telemetry goes", () => {
+  const line = added.split("\n").find((l) => l.includes("telemetry"));
+  expect(line ?? "").toContain(`${srv.base}/server/otlp`);
+});
+
+test("once the server stops relaying, a refresh takes the telemetry away and says so", async () => {
   await srv.reconfigure({});
-  expect(laptop.cli(["remote", "refresh", srv.base]).code).toBe(0);
+  const off = laptop.cli(["remote", "refresh", srv.base]);
+  expect(off.code).toBe(0);
+  const said = off.out.split("\n").find((l) => l.includes("telemetry"));
+  expect(said).toBeDefined();
+  expect(said!).not.toContain("/server/otlp");
   expect(relayed(await recipe(COMMAND))).toBe(false);
   await srv.reconfigure(withRelay());
-  expect(laptop.cli(["remote", "refresh", srv.base]).code).toBe(0);
+  const on = laptop.cli(["remote", "refresh", srv.base]);
+  expect(on.code).toBe(0);
+  expect(on.out.split("\n").find((l) => l.includes("telemetry")) ?? "").toContain(`${srv.base}/server/otlp`);
   expect(relayed(await recipe(COMMAND))).toBe(true);
 }, 300_000);

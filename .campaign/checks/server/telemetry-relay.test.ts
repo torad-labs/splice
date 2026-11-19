@@ -2,8 +2,10 @@
 // its own telemetry to POST /server/otlp/v1/{metrics,logs,traces} with the person's key, as JSON or protobuf. The
 // server sets `splice.person`, `splice.team` and `user.email` on every resource, whatever the client claimed, keeps
 // everything else, and forwards the request to the collector in the same encoding, without the person's key. The
-// profile names the relay. No key is a 401; a server with no relay has no such route.
+// profile names the relay. No key is a 401; a server with no relay has no such route. A forward_to that is no http(s)
+// URL is a boot finding.
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { freePort } from "./lib/harness.ts";
 import { jsonBody, protoBody, readJson, readProto, type Res, type Signal } from "./lib/otlp.ts";
 import { Server } from "./lib/server.ts";
@@ -203,5 +205,16 @@ test("the profile names the relay, and a server with no relay has neither the ro
     expect(q.telemetry).toBeNull();
   } finally {
     await plain.dispose();
+  }
+}, 900_000);
+
+test("a forward_to that is no http(s) URL refuses boot, with a finding that names server.telemetry.forward_to", async () => {
+  const bad = await Server.boot({ toml: `\n[server.telemetry]\nforward_to = "otel.lan:4318"\n`, noStart: true });
+  try {
+    await expect(bad.s.start()).rejects.toThrow();
+    const log = readFileSync(bad.s.log, "utf8");
+    expect(log).toContain("server.telemetry.forward_to");
+  } finally {
+    await bad.dispose();
   }
 }, 900_000);

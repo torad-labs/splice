@@ -51,7 +51,38 @@ goal = "The team server keeps a session's turns on the upstream that has its pro
 goal = "A team's server relays each person's Claude Code telemetry to the operator's collector with the person stamped on it, every laptop launch sends it there and says which splice it runs, so the operator sees who used what and which laptops to upgrade."
 
 [feature."telemetry-relay"]
-goal = "The last piece of server mode (#604): the server relays each person's Claude Code telemetry to the operator's collector with the verified person and team stamped on it, and a linked command sends its telemetry there. Built as #604 asks, by Marcos's decision of Nov 18, 2026."
+goal = '''
+# server-telemetry: the last piece of server mode (issue #604, items 7 and the client side of 9)
+
+## Who it is for
+An operator running a splice server as a team's front door to a shared self-hosted model, and the people
+whose laptops are linked to it with `splice remote add`.
+
+## What Marcos decided (Nov 18, 2026)
+The relay is built as #604 asks. The pause the door lead put on it on Nov 16 (tracking of people, to be
+planned with him first) is lifted by his decision: the operator's collector receives each person's Claude
+Code telemetry with the verified person and team stamped on it.
+
+## Outcomes
+- The two existing items, server-telemetry-relay and server-telemetry-recipe, are the plan. Their specs
+  and checks in the ledger hold; keep them unless reading the code shows a check is wrong.
+- Server: `[server.telemetry] forward_to` names the collector. POST /server/otlp/v1/{metrics,logs,traces}
+  with a person's key, JSON or protobuf. The server sets splice.person, splice.team and user.email on every
+  resource whatever the client claimed, forwards in the same encoding without the person's key. No key is
+  401; a server with no relay has no such route. The server profile names the relay.
+- Laptop: a command linked from a server with a relay launches Claude Code with telemetry on, OTLP/HTTP
+  metrics and logs to the server, and an otelHeadersHelper that sends the key, which is never in the
+  environment. Prompts are never logged. Organisation-managed settings (remote-settings.json) that set
+  telemetry of their own win; managed settings that set none leave the relay on.
+
+## Evidence to start from
+- Code written for both items on Nov 17 (f8d9b46) was taken back out on Nov 18 and kept on the local
+  branch `parked/server-telemetry-relay`. Reuse it where it fits.
+- docs/specs/server-mode.md is the feature's spec.
+
+## Constraints
+Follow repo CLAUDE.md and AGENTS.md: tests check what a user sees or a route returns; boot fails closed on
+config findings; no Python; no new top-level functions or companion objects.'''
 
 [feature."door-default"]
 goal = "One command, claude, reaches every model a person is signed in to: it runs on the door Claude Desktop already uses, /model lists the models of signed-in accounts, /login opens splice's accounts page where any account is signed in, a fresh install works this way from the first run, and whoever still starts a session through a head's own command is told that those commands are going away. Spec: docs/specs/door-default.md."
@@ -1015,9 +1046,15 @@ status = 'todo'
 owner = ''
 blocked_by = []
 guard = false
-spec = "[server.telemetry] forward_to names the operator's OTLP collector. Claude Code on a laptop sends its own telemetry to POST /server/otlp/v1/{metrics,logs,traces} with the person's key, as JSON or protobuf. The server sets splice.person, splice.team and user.email on every resource, whatever the client claimed, keeps everything else, and forwards the request to the collector in the same encoding, without the person's key. The profile names the relay. No key is a 401; a server with no relay has no such route."
+spec = "[server.telemetry] forward_to names the operator's OTLP/HTTP collector by its base URL, http or https with a host; anything else refuses boot with a finding naming server.telemetry.forward_to, listed with every other finding (boot fails closed). Claude Code on a laptop sends its own telemetry to POST /server/otlp/v1/{metrics,logs,traces} with the person's key as a bearer, as JSON (application/json) or protobuf (application/x-protobuf), gzipped or not. The server sets splice.person and user.email to the key's person, and splice.team to their team, on every resource of the request, a resource with no attributes included, over whatever the client claimed: the verified key is the only word on who sent it. A person on no team gets no splice.team, and a team the client claimed is dropped, never kept. Every other attribute and record is kept as sent. The request goes to <forward_to>/v1/<signal> in the same encoding, with none of the client's headers but its content type, so never the person's key, and the client gets the collector's answer. A collector that answers an error or can't be reached is a 502, 503 or 504 to the client (503 for the collector's 429 or 503), the codes an OTLP exporter retries, said once in the daemon log when it starts failing and once when it answers again. No key, an unknown key and a revoked key are each a 401 in the server's usual refusal, and nothing is forwarded; a path under /server/otlp that is no OTLP signal is a 404. GET /server/profile names the relay as telemetry: {otlp: <the address laptops reach this server at>/server/otlp} (behind a proxy in trusted_proxies, from its X-Forwarded-Proto and -Host); the laptop's half (server-telemetry-recipe) reads exactly that field. A server with no [server.telemetry] has no /server/otlp route (404) and says telemetry: null. Start from the parked code: git diff 0970e5f5d 0970e5f5d^ restores both telemetry items and applies cleanly on this base. This item takes its server half: core ServerConfig.kt, ServerChecks.kt and topology-fields.tsv; features/server (build.gradle.kts, ProfileRoute, ServerListener, caller/ClientAddresses, telemetry/, ServerTelemetryRelayTest); share CappedBodies.kt and ShareRelay.kt; README's [server.telemetry] example. Proven by bun test ./.campaign/checks/server/telemetry-relay.test.ts, which boots a server against a stand-in collector and shows each of these."
 checks = [
   'bun test ./.campaign/checks/server/telemetry-relay.test.ts',
+]
+sources = [
+  'docs/specs/server-mode.md',
+  'features/server/src/main/kotlin/splice/server/ProfileRoute.kt',
+  'features/server/src/main/kotlin/splice/server/ServerListener.kt',
+  'core/src/main/kotlin/splice/core/topology/ServerChecks.kt',
 ]
 reviews = [
   'feature',
@@ -1042,9 +1079,15 @@ blocked_by = [
   'server-telemetry-relay',
 ]
 guard = false
-spec = "A command linked from a server whose profile names a telemetry relay launches Claude Code with CLAUDE_CODE_ENABLE_TELEMETRY=1, metrics and logs exported over OTLP/HTTP to <server>/server/otlp, and an otelHeadersHelper that sends the person's key, which is never in the environment. Prompts are never logged (no OTEL_LOG_USER_PROMPTS). Where the command's organisation-managed settings (remote-settings.json) set telemetry of their own, splice adds none; managed settings that set none leave the relay on. A server with no relay gets no telemetry from splice."
+spec = "A command linked from a server whose profile names a telemetry relay (telemetry.otlp, as server-telemetry-relay serves it) launches Claude Code with CLAUDE_CODE_ENABLE_TELEMETRY=1, OTEL_METRICS_EXPORTER=otlp, OTEL_LOGS_EXPORTER=otlp, OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf (Claude Code's own OTLP/HTTP encoding, and the smaller one) and OTEL_EXPORTER_OTLP_ENDPOINT set to exactly the profile's telemetry.otlp, <server>/server/otlp. The person's key is in none of the environment: the command's settings carry an otelHeadersHelper that prints {Authorization: Bearer <key>} as JSON from the same owner-only key file the apiKeyHelper reads, so a new sign-in reaches a running session; with no key it says on stderr how to sign in (splice login <server>) and exits non-zero. Prompts are never logged: splice sets no OTEL_LOG_USER_PROMPTS and clears one the shell sets, and it clears OTEL_EXPORTER_OTLP_HEADERS and every per-signal OTLP endpoint, protocol and headers variable the shell sets, because Claude Code sends the helper's headers to every exporter and those would carry the key somewhere else. Where the command's organisation-managed settings (remote-settings.json in its config folder) set telemetry of their own (CLAUDE_CODE_ENABLE_TELEMETRY or any OTEL_ variable in their env, or an otelHeadersHelper), splice adds no telemetry and clears nothing: the organisation's policy wins, as Claude Code lets no other settings override it. Managed settings that set none, or an absent or unreadable file, leave the relay on. The laptop's own commands, and a command from a server with no relay, get no telemetry from splice. The relay is kept with the login at splice remote add and remote refresh, and followed from the next launch. remote add prints one line when the profile names a relay: Claude Code's telemetry from <server>'s commands goes to <relay>, from their next launch. A refresh that changes the relay prints that line for the new relay, or Claude Code's telemetry from <server>'s commands is no longer relayed, from their next launch, when the server stops relaying; a refresh that changes nothing says nothing about telemetry. Why: the person is told where their usage goes when it starts and when it changes, in one wording. The parked code (git diff 0970e5f5d 0970e5f5d^) holds this item's half and only lacks the remote add line: app cli/share RemoteAdd, RemoteNames, RemoteRefresh; features/launch (LaunchTypes, TeamServerLaunch, recipe/LaunchService, recipe/LaunchTelemetry, LaunchTeamServerTest); share KeyHelpers, RemoteLaunches, ServerLogins and ServerLoginsTest; integrations/claude-code ClaudeConfigKeys, ClaudeConfigMaterializer, ManagedSettings, SessionHelpers, wrap/WrappedHeadTypes; README's laptop paragraph and its server-logins row. Proven by bun test ./.campaign/checks/server/telemetry-recipe.test.ts, which links a laptop to a server with a relay, reads each launch's recipe and runs its headers helper."
 checks = [
   'bun test ./.campaign/checks/server/telemetry-recipe.test.ts',
+]
+sources = [
+  'features/launch/src/main/kotlin/splice/launch/recipe/LaunchService.kt',
+  'features/share/src/main/kotlin/splice/share/ServerLogins.kt',
+  'app/src/main/kotlin/splice/app/cli/share/RemoteAdd.kt',
+  'app/src/main/kotlin/splice/app/cli/share/RemoteRefresh.kt',
 ]
 reviews = [
   'feature',

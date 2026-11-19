@@ -17,8 +17,17 @@ import kotlinx.serialization.json.JsonObject
 import java.security.MessageDigest
 import java.util.HexFormat
 
-/** One session's row of a listing, whether that session is gone, and when its registration was last written. */
-internal data class ListedRow(val gone: Boolean, val json: JsonObject, val updatedAt: Long)
+/** Builds the row of one session the listing sends. A row reads the session's transcript and repository, so building
+ *  every gone session's row to send a hundred of them made the first read after a restart take 25 s (Nov 19, 2026). */
+internal fun interface ListedRowBuild {
+    operator fun invoke(): JsonObject
+}
+
+/** One session of a listing: whether it is gone, when its registration was last written, and its row, built only
+ *  when the listing sends it. */
+internal class ListedRow(val gone: Boolean, val updatedAt: Long, build: ListedRowBuild) {
+    val json: JsonObject by lazy(LazyThreadSafetyMode.NONE) { build() }
+}
 
 /** One listing's rows in the registry's order: the sessions still here, and the newest [GONE_ROWS_SENT] of the gone,
  *  named by a mark of their bytes. */

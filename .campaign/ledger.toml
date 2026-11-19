@@ -5585,6 +5585,7 @@ notes = [
   '2026-11-19 11:20 CT door-sessions/coordinator: Ruled on round 2 (blocked: the feature reviewer recorded no verdict, twice): the plan was wrong, not the build. The review sandbox cannot build or run splice (no rig, no network, broken JDK security file, no jar), so this row now asks for the code review only. The checks judge what a person sees and passed in round 2. Evidence and the reason are in the spec.',
   "2026-11-19 14:40 CT door-sessions/coordinator: The check now starts the run again when rig exits 75 (nothing ran), instead of counting it as a fail, as on door-launch-record's round-3 dispute. Nothing to rebuild; evidence in the spec.",
   "2026-11-19 15:26 CT door-sessions/coordinator: Ruled 15:35 CT: the plan stands and nothing is rebuilt; every item is done with its reviews passed (run record, worktree 33eccab13). The restart refused 'door-sessions has uncommitted plan changes' because campaign counts a judged file no row names as judging every feature (v1.0.15 slices/work/ledger.ts judgesOf): head-catalog's untracked .campaign/checks/catalog/{docs,relay}.test.ts and lib/catalog.ts, then desktop-full's edited .campaign/checks/desktop-full/lib/full.ts, none of which door-sessions' checks import. The plan id at HEAD moved (4f146cea -> 93af8611) only by .campaign/checks/catalog/tsconfig.json, which custom-provider's d96c6788b swept in. campaign plan door-sessions is run once that drift is gone, so it commits no other seat's files.",
+  "2026-11-19 16:01 CT door-sessions/coordinator: Ruled 16:05 CT: the plan stands and nothing is rebuilt. The plan id moved after validation (701716a03) only by 83abe1be9 (upkeep), which lets route.test.ts:77 take the door's key as AWS_BEARER_TOKEN_BEDROCK ?? ANTHROPIC_AUTH_TOKEN, so it judges the door in Mantle and in head-catalog's gateway mode; the worktree's splice-launch turns_base_url (Mantle URL when CLAUDE_CODE_USE_MANTLE=1, else ANTHROPIC_BASE_URL) and lib/launch.ts:99 already hold either way. The rest of the move is other features' committed check files. Re-validated with campaign plan.",
 ]
 
 [[row]]
@@ -5649,7 +5650,6 @@ status = 'todo'
 owner = ''
 blocked_by = []
 guard = false
-  "2026-11-19 16:01 CT door-sessions/coordinator: Ruled 16:05 CT: the plan stands and nothing is rebuilt. The plan id moved after validation (701716a03) only by 83abe1be9 (upkeep), which lets route.test.ts:77 take the door's key as AWS_BEARER_TOKEN_BEDROCK ?? ANTHROPIC_AUTH_TOKEN, so it judges the door in Mantle and in head-catalog's gateway mode; the worktree's splice-launch turns_base_url (Mantle URL when CLAUDE_CODE_USE_MANTLE=1, else ANTHROPIC_BASE_URL) and lib/launch.ts:99 already hold either way. The rest of the move is other features' committed check files. Re-validated with campaign plan.",
 spec = '''
 The feature's branch takes in main, where the network door lives, so the door-sessions checks can open a box's door and every item is built against the door people really run.
 

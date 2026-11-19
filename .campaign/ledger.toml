@@ -630,6 +630,206 @@ whether its hosted MCP servers hold a replaced key, and how to resume it.
   `/api/sessions` returns for a session started on the door. Use the harness
   (`.campaign/checks/server/lib/harness.ts`) and the door helpers in `.campaign/checks/desktop/lib/desktop.ts`.'''
 
+[feature."ccd-session"]
+goal = '''
+# ccd-session: a session on the door can suggest a task for later, and the person starts it, does it here, or lets it go
+
+## Who this is for, and why
+
+Claude Desktop gives the model of each Code-tab session three tools of an in-process MCP server named `ccd_session`:
+`spawn_task` (flag an out-of-scope issue as a suggested task, shown to the person as a chip, without stopping the
+current work), `dismiss_task` (withdraw one it flagged) and `mark_chapter` (mark where the session's work turns to
+something new). Marcos wants that in every session splice serves, on every head, for everyone who uses splice, not
+only in Desktop (November 19, 2026). Sessions Claude Desktop starts already have it from Desktop, so splice leaves
+them alone.
+
+A seat of the Eli bridge (`suggested-tasks`) is building the card in Marcos's phone app at the same time, against
+the management API below, so that API is a contract: build it as written.
+
+## What Desktop does (read from its app bundle, build of November 13, 2026)
+
+The model sees `mcp__ccd_session__spawn_task`, `mcp__ccd_session__dismiss_task` and `mcp__ccd_session__mark_chapter`.
+`spawn_task` (title, tldr, prompt, optional absolute cwd) does not wait: it queues the suggestion and answers at once
+that it is noted, with its position and its id, and that the model should go on with its current work. Ids are
+`task_` and 8 hex digits. A session holds at most 20 pending suggestions; a new one past that pushes out the oldest
+one that is not being started, and the answer says so. Titles are kept to 200 characters, tldrs to 2000, prompts to
+32000. The person starts it (a new session with that prompt), sends it to this session ("do it here"), or dismisses
+it. The model learns what became of one only by calling `dismiss_task`, whose answer says whether it was pending (now
+withdrawn), already started, already dismissed or pushed out, expired, or being started right now. Starting one that
+is already being started, or is no longer pending, is refused. Desktop adds nothing to the system prompt for these
+tools: their guidance is in their descriptions. Every rule and string, as taken from the bundle, is in
+`~/.local/state/eli/ccd-session/desktop-ccd-session.json` on this machine; read it for the behavior.
+
+The tool names and input schemas stay exactly Desktop's, so the model's habits and a session moved from Desktop carry
+over. The descriptions and the answers' wording are splice's own, written to the same rules: the repository is
+public, and those strings are Anthropic's. No test or client reads the answers' wording.
+
+## What a person can do once it is built
+
+- In any session on splice's door (plain `claude` on this machine or on another machine's door, on any head,
+  whatever provider it speaks), the model has the three tools, and calling them never shows up as a tool call in
+  the person's client. A session Claude Desktop started (its requests carry Desktop's key, from `splice desktop on`
+  and its launcher) is not given them.
+- It is on for everyone with no configuration; one line in `splice.toml` turns it off.
+- A suggested task shows on splice's Sessions page with the session that made it: its title and tldr, and Start, Do
+  it here and Dismiss. Start opens a new session on the door with the task's prompt in its folder (the proposing
+  session's folder when it named none); Do it here gives the prompt to the proposing session as the person's next
+  message. The page uses the parts and styling it has now: Marcos is redesigning the console's look elsewhere.
+- A person working in a plain terminal sees a suggestion in that terminal and can start it, do it here or dismiss it
+  there, without opening the console, the way Claude Code asks a question. The model's work does not wait on that
+  answer.
+- Whatever surface acts first wins: the console, the terminal and the phone app never start one task twice.
+- `mark_chapter` marks the session: the chapter's title and where it began show with the session on the Sessions page.
+- A restarted daemon keeps every session's suggestions and what became of them.
+
+## The management API (the contract with the bridge)
+
+Behind the management key, as `/api/sessions` is:
+
+- `GET /api/suggested-tasks[?session=<id>]` returns `{tasks:[{task_id, session_id, title, tldr, prompt, cwd|null,
+  state, created_at, started_session_id|null}]}`. `session_id` is the id `/api/sessions` gives the session. `state`
+  is one of `pending`, `in_flight`, `started`, `here`, `dismissed`, `expired`.
+- `POST /api/suggested-tasks/<task_id>/claim` with `{surface}` returns 200 and sets `in_flight`, or 409 with
+  `{error:"in_flight"}` or `{error:"not_pending"}`.
+- `POST /api/suggested-tasks/<task_id>/resolve` with `{outcome:"started", session_id}`, `{outcome:"here"}`,
+  `{outcome:"dismissed"}` or `{outcome:"released"}` (the start failed: back to `pending`).
+- A session's last 100 resolved records are kept.
+
+## Where the line is
+
+- Today a capability the model calls (`call = "agent"`, `docs/specs/harness.md` decision 12) offers one tool and
+  works only on heads that speak the Anthropic Messages dialect. This feature needs three tools from one capability
+  and every head; whatever that takes in the harness is part of it.
+- No change to how heads, the door or Desktop's own sessions work otherwise.
+- Checks look at what a person and the bridge see: what the model is offered on a door request (and that Desktop's
+  requests are not), the answers to the tools' calls, the API above, the Sessions page's rows and actions, and the
+  terminal. Use the harness (`.campaign/checks/server/lib/harness.ts`) and the door helpers in
+  `.campaign/checks/desktop/lib/desktop.ts`.'''
+
+[feature."modes"]
+goal = '''
+# modes: code modes have a home of their own, and adding one is dropping a folder in
+
+## Who this is for, and why
+
+A code mode is a set of tools splice gives the model of every session on its door, with the guidance for using them
+and the code that answers them: Claude Desktop's `ccd_session` (suggested tasks, chapters) is the first, and Marcos
+has many more coming (November 19, 2026). He wants each one to be one self-contained folder: its manifest, its
+tools' schemas and descriptions, its prompt guidance, its handlers, which heads and callers it is on or off for, and
+its tests. splice finds the folder; nobody wires it in by hand, and adding a mode changes no file outside its folder.
+The folder's README says how, and a template mode is there to copy.
+
+This feature builds the home and what every mode gets from it. The ccd_session mode itself is the next feature
+(`ccd-session`), which is handed once this one has landed, and is built in this layout.
+
+## The layout (decided by splice's lead; build it as written)
+
+```
+modes/
+  README.md            what a mode is, the folder, every manifest key, how splice finds a mode, adding one in steps
+  api/                 :modes-api, the contract every mode implements and the catalog that finds and checks modes
+  template/            a working mode to copy, shipped off
+  <name>/              one mode: the Gradle module :modes-<name>, found because the folder holds a mode.toml
+    mode.toml          the manifest
+    prompt.md          optional: guidance for the model, placed once per session, the same bytes on every request
+    tools/<tool>.json  each tool's input schema (a JSON Schema object)
+    tools/<tool>.md    each tool's description, as the model reads it
+    tools/<tool>.meta.json  optional: the tool's _meta, passed to the client untouched
+    resources/         optional: the content of the resources the manifest declares (an mcp mode's ui:// apps)
+    build.gradle.kts   one line: plugins { id("splice.mode") }
+    src/main/kotlin/   the handlers, in a package of the mode's own
+    src/test/kotlin/   the mode's tests
+```
+
+The manifest:
+
+```toml
+name = "template"        # the folder's name; unique
+summary = "One line on what the mode gives the model."
+server = "template"      # the model sees each tool as mcp__<server>__<tool>
+handler = "splice.modes.template.TemplateMode"   # the class that answers the mode's calls
+tools = ["say_back"]     # each has tools/<tool>.json and tools/<tool>.md
+kind = "door"            # "door": splice holds and answers each call, and the client never sees it.
+                         # "mcp": the mode is a real MCP server splice's MCP hub serves (below)
+on = true                # its default for every session; splice.toml's [modes.<name>] overrides it (below)
+
+[heads]
+only = []                # empty: every head
+off = []                 # heads it is never offered on
+
+[callers]
+off = ["desktop"]        # callers it is never offered to: "desktop" is Claude Desktop's own sessions
+```
+
+- **Found, not wired.** `settings.gradle.kts` includes every `modes/<name>/` that holds a `mode.toml` as
+  `:modes-<name>`, and `:app` depends on every one of them. The `splice.mode` convention plugin (build-logic) makes
+  a mode's module: it carries the manifest, `prompt.md` and `tools/` as the mode's resources and writes the mode's
+  `java.util.ServiceLoader` entry from `handler`, so the shadow jar (which merges service files) carries every mode.
+  At boot the catalog loads every mode through the ServiceLoader and reads each one's manifest, tools and prompt
+  from its own resources.
+- **Checked, and boot fails closed.** A malformed manifest, a listed tool without its two files, a schema that is
+  not an object, a name, server or tool name two modes share, a `handler` that is not the class found, or a
+  `[modes.<name>]` in splice.toml naming no mode: each is a finding, every one is listed at once, and the daemon
+  does not start, as for every other config finding.
+- **Kept apart.** The module law gets one pattern line, `:modes-* -> :core :modes-api`: a mode reaches no other mode
+  and no feature. `:modes-api` depends on `:core` only. The module-law plugin, `ModuleLawTable`, the architecture
+  tests (`quality/architecture`, which read Gradle's own project map) and the gate (`tools/gate`, which reads the
+  modules from `settings.gradle.kts`) all know a mode module by that same rule, so a new mode is governed the moment
+  its folder exists, with no line added for it anywhere.
+- **The contract** (`:modes-api`, framework-free): a mode's handler answers a call of one of its tools with text (or
+  an error the model reads), given the tool's name, its input and the session it is for: the id `/api/sessions`
+  gives it, its folder, its head, its model and its caller. A mode keeps what it needs per session in a store splice
+  gives it, which survives a restart. A mode may answer management routes, framework-free (method, path, JSON in and
+  out), which splice serves under `/api/` behind the management key; two modes, or a mode and splice, claiming one
+  path is a finding.
+- **On and off, in splice.toml.** `[modes.<name>]` takes `on` (every head) and `heads` (per head, e.g.
+  `heads = { kimi = false }`), over the manifest's defaults. People must be able to see and turn off what the door
+  adds to their sessions.
+- **Two kinds.** A `door` mode is answered inside splice, as below. An `mcp` mode is a real MCP server that splice's
+  MCP hub gives every session it is on for, under the mode's `server` name, so Claude Code (and Claude Desktop) sees
+  its tools and their calls as any MCP tool's, and a tool may return an MCP App (a `ui://` resource,
+  `text/html;profile=mcp-app`). So a mode declares resources as well as tools (`resources` in the manifest, each a
+  `ui://…` uri with its mimeType and `_meta` such as `_meta.ui.csp`, its content a file in `resources/` or what the
+  handler returns), served through `resources/list` and `resources/read`, and a tool may carry `_meta`
+  (`tools/<tool>.meta.json`, e.g. `_meta.ui.resourceUri`), which reaches the client untouched. The visual-replies seat
+  brings the first `mcp` mode (`show_visual` and `read_me`, as Claude Desktop's own "visualize" server has). This
+  feature makes `kind`, resources and tool `_meta` part of the manifest and the contract, and the catalog accepts,
+  checks and lists an `mcp` mode. How the hub serves one may land with that first mode, but nothing here may assume
+  a mode is always door-held or only has tools.
+- **The template** is a real mode: one tool, `say_back`, that answers with the text it is given; it ships with
+  `on = false`; its tests show how a mode is tested (its manifest loads and checks, its handler answers) and travel
+  with a copy.
+
+## What a person can do once it is built
+
+- Copy `modes/template` to `modes/<name>`, rename it in its manifest and package, and build: the new mode is a
+  module, its tests run in the gate, and it ships in the jar, with no other file touched.
+- In any session on splice's door, on any head whatever provider it speaks, the model is offered every mode that is
+  on for that session's head and caller, each tool named `mcp__<server>__<tool>` with the mode's schema and
+  description, and the mode's `prompt.md` placed once. When the model calls one, the mode's handler answers it inside
+  splice and the person's client never sees the call, as `docs/specs/harness.md` decision 12 does for a capability
+  the agent calls, now for many tools per mode and on every dialect. Turning a mode off in splice.toml, a head on its
+  `off` list, and Claude Desktop's own sessions (their requests carry Desktop's key) are not offered it.
+- `splice status` and `GET /api/modes` list the modes splice found, whether each is on, and its tools.
+- Splice's console shows every mode: its name, what it does (its summary), its kind and tools, and an on/off switch
+  per head that writes `[modes.<name>]` in splice.toml, so a person sees what the door adds and can turn any of it
+  off. It uses the parts and styling the console has now (Marcos is redesigning its look elsewhere), and it is judged
+  by captures as the repo's UI rules say.
+- The README tells a newcomer, in a few steps, how to add a mode and what each manifest key does.
+
+## Where the line is
+
+- The built-in Context Getter stays a capability: it runs by rule around a turn and gives the model no tool, so it is
+  not a mode. A built-in that offers the model tools moves in here; today there is none.
+- The ccd_session mode, its suggested-task routes and its Sessions-page and terminal surfaces are the next feature.
+- No change to the console's look beyond the modes list above: Marcos is redesigning it elsewhere.
+- Changing the module law is changing the architecture: the commit says why (a mode is one folder, governed by one
+  rule).
+- Checks look at what a person sees: a copied template building as a mode, what a door request offers and what a
+  call returns (on an Anthropic head and on one that speaks another dialect), `GET /api/modes`, `splice status`, a
+  boot refused for a broken mode. Use the harness (`.campaign/checks/server/lib/harness.ts`) and the door helpers in
+  `.campaign/checks/desktop/lib/desktop.ts`.'''
+
 [[row]]
 id = 'server-listener'
 title = 'A [server] listener that answers only keys'

@@ -11,11 +11,12 @@ A peak here is the memory high-water mark of the run's own processes (cgroup `me
 
 ## Where gradle runs
 
-With `rig` on PATH, the gradle slot sends a run to another of your machines that has room
-(`tools/gate/src/lib/elsewhere.ts`): the pre-push Gradle tier, and any test or check a `./gradlew` asks for, since the
-root wrapper runs every one through the slot. The memory and time of such a run are that machine's. A run stays here
-on CI, when no machine took it, when a task makes a file this machine reads (the jar an install copies, a native
-binary), and when `SPLICE_GRADLE_HERE=1` is set.
+With `rig` on PATH, the gradle slot sends a run to another of your machines (`tools/gate/src/lib/elsewhere.ts`): the
+pre-push Gradle tier, `gate run`, and any build, test or check a `./gradlew` asks for, since the root wrapper runs every
+one through the slot. The fat jar is built there too, and rig brings `app/build/libs/app-all.jar` back once the build
+passes. When no machine has room, the slot asks again every 30 s for as long as it would wait for its lock
+(`GRADLE_SLOT_WAIT_S`), then fails with 75; it never builds here in its place. A run stays here on CI, when a task makes
+another file this machine reads, and when `SPLICE_GRADLE_HERE=1` is set for a run that needs this machine.
 
 ## The pre-push gate
 

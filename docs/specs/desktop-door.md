@@ -134,8 +134,8 @@ splice writes nothing into `~/.claude/settings.json` for Desktop.
   past the door: a provider switch of the person's own, which Claude Code applies over Desktop's environment. It
   names what it found.
 - `splice desktop off` closes the door, and says which variables to remove in Desktop's store. While the door is
-  closed it refuses every turn with a 403 `permission_error` whose message says how to open it or leave it, and
-  nothing is sent upstream.
+  closed it refuses every turn with a 400 whose message says how to open it or leave it, and nothing is sent
+  upstream.
 - What an older splice's `on` wrote into `~/.claude/settings.json` (its `env`, its picker and a selector the Code
   tab picked into `model`) is taken out at each start of the daemon, and by `on` and `off`, with what it replaced
   put back. A file it left readable by its owner alone gets the mode Claude Code gives a file it creates.
@@ -167,8 +167,9 @@ The door has a key of its own, the desktop key, kept in splice's state folder fo
 - It is a proof, never a credential: it is not forwarded to any provider.
 - `splice rotate-key` leaves it as it is. `splice desktop rotate-key` replaces it and, while Desktop is on, says
   the new one to set in Desktop's store. The replaced key is refused from then.
-- A request with no key, a wrong one or a replaced one is answered 401 with an `authentication_error` in
-  Anthropic's error shape, whose message names `splice desktop`.
+- A request with no key, a wrong one or a replaced one is answered 400 in Anthropic's error shape, whose message
+  says where each caller's key comes from. Until Nov 18, 2026 a missing key was a 401 and a closed door a 403, which
+  Claude Code reads from a Mantle endpoint as AWS's and words as an AWS credentials failure.
 
 ### 7. Recorded
 

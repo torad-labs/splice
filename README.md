@@ -388,7 +388,7 @@ A session on the door:
 
 `splice claude` says what is so, `--json` as data: the lane, the door, the model a session starts on and why, the picker's models, and each head left out of it and why. Each turn is its head's row on `/api/perf/turns`, with `door` set to `"terminal"`. `splice status` and `splice doctor` say which lane `claude` is on.
 
-`splice claude head` puts `claude` back on its head, when `splice.toml` has one, and replaces the terminal's key, so a session started on the door is refused from then on. Heads are deprecated, and it says so.
+`splice claude head` puts `claude` back on its head, when `splice.toml` has one: a new `claude` session starts there, and a session already on the door keeps running on it. Heads are deprecated, and it says so.
 
 ## Claude Desktop's Code tab on splice
 

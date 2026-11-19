@@ -89,6 +89,15 @@
   The first turn a login can serve the session's own model goes back to it.
 
 ### Fixed
+- **`splice claude head` leaves sessions on the door running.** It retired the terminal's key, so every `claude`
+  session already on the door was refused from its next turn. It now decides only where a new session starts.
+- **A key the door refuses is said in splice's words.** The door answered 401 and 403, which Claude Code reads from
+  a Mantle endpoint as AWS's and words as "AWS credentials expired or invalid". It answers 400 now, and the words
+  shown are splice's, with where each caller's key comes from.
+- **The console's first read no longer grows with every session ever opened.** `GET /api/sessions` sent a row for
+  every session the machine had registered: 3.3 MB and 25 seconds after a restart on a machine with 4,400 of them,
+  past the console's read limit. It sends the sessions still here and the newest 100 ended ones, `gone_older` counts
+  the rest, and `GET /api/sessions/history` pages and searches those.
 - **A login whose token can't be renewed hands the turn to another login.** When every other login was held for
   the turn's model, the turn ended "login expired and could not be renewed" though other logins were signed in. It
   now moves to the one whose hold ends soonest, or to a model with room.

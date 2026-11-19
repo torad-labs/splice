@@ -40,14 +40,10 @@ internal class ShareDoorTest {
 
     private val door = object : ShareDoor {
         var ready = true
-        var turns = 0
-        var counts = 0
-
         override suspend fun launch(): SharedDoorLaunch? = launch.takeIf { ready }
 
         override suspend fun answer(call: ApplicationCall, counting: Boolean) {
-            if (counting) counts++ else turns++
-            call.respondText("{}")
+            call.respondText(if (counting) "counted" else "answered")
         }
     }
 
@@ -93,17 +89,16 @@ internal class ShareDoorTest {
     @Test
     fun `a turn and a count posted to the door reach it`(@TempDir state: Path) {
         listening(state, withDoor = true)
-        assertEquals(200, send("/door/v1/messages?beta=true", post = true).first)
-        assertEquals(200, send("/door/v1/messages/count_tokens", post = true).first)
-        assertEquals(1, door.turns)
-        assertEquals(1, door.counts)
+        assertEquals(200 to "answered", send("/door/v1/messages?beta=true", post = true))
+        assertEquals(200 to "counted", send("/door/v1/messages/count_tokens", post = true))
     }
 
     @Test
     fun `a turn that is not JSON is refused before the door sees it`(@TempDir state: Path) {
         listening(state, withDoor = true)
-        assertEquals(400, send("/door/v1/messages", post = true, type = "text/plain").first)
-        assertEquals(0, door.turns)
+        val (status, body) = send("/door/v1/messages", post = true, type = "text/plain")
+        assertEquals(400, status)
+        assertTrue(body.contains("must be application/json"), body)
     }
 
     @Test
@@ -112,7 +107,7 @@ internal class ShareDoorTest {
         listening(state, withDoor = true)
         val (status, body) = send("/door/launch")
         assertEquals(503, status)
-        assertTrue(body.contains("opens once its heads are up"), body)
+        assertTrue(body.contains(DOOR_STARTING), body)
     }
 
     @Test

@@ -43,5 +43,9 @@ public data class SharedDoorRow(
     val command: String,
 )
 
+/** What a door whose heads are still starting says it is waiting for, after the machine's name: `splice remote add`
+ *  tells it from a machine that has no door. */
+public const val DOOR_STARTING: String = "opens once its heads are up"
+
 /** The path segment the door is answered under on the share listener: no head is offered under this name. */
 public const val DOOR_SEGMENT: String = "door"

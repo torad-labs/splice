@@ -95,7 +95,10 @@ internal class ShareCommand(
         out.line("sharing is on: $BOLD$server$RESET, on ${info.machine}'s LAN and tailnet")
         if (door != null) doorLines(server, door)
         if (info.commands.isEmpty()) out.line("  no command here holds a login of its own to offer")
-        if (info.commands.isNotEmpty()) out.line("${DIM}each command on its own (deprecated; the door has all):$RESET")
+        if (door == null) out.line("on another machine: ${CYAN}splice remote add $server$RESET")
+        if (door != null && info.commands.isNotEmpty()) {
+            out.line("${DIM}each command on its own (deprecated; the door has all):$RESET")
+        }
         info.commands.forEach { offer ->
             val state = if (offer.running) "" else "  ${DIM}not running$RESET"
             out.line("  ${offer.command.padEnd(COMMAND_PAD)} $server/${offer.command}$state")

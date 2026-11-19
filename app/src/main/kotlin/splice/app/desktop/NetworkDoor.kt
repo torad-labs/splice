@@ -60,7 +60,7 @@ internal class NetworkDoor : ShareDoor {
         open.door.answerAs(call, open.caller, counting)
     }
 
-    private class Opened(
+    private data class Opened(
         val door: DesktopDoor,
         val caller: NetworkCaller,
         val lane: ClaudeLane,

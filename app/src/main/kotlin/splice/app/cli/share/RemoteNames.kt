@@ -80,11 +80,8 @@ internal class RemoteNames(
      *  commands and its door listens there (door-network); as it is otherwise. */
     fun onSharePort(server: String): String = try {
         val uri = URI.create(server)
-        if (uri.scheme != "http" || uri.port != -1 || uri.rawAuthority == null) {
-            server
-        } else {
-            "http://${uri.rawAuthority}:${ShareConfig().port}"
-        }
+        val bare = uri.scheme == "http" && uri.port == -1
+        uri.rawAuthority?.takeIf { bare }?.let { "http://$it:${ShareConfig().port}" } ?: server
     } catch (_: IllegalArgumentException) {
         server
     }

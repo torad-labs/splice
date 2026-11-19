@@ -89,7 +89,7 @@ public class ShareListener(
         }
         server.start(wait = false)
         engine = server
-        log("[share] offering this machine's heads on :${share.port} to its LAN\n")
+        log("[share] offering this machine's heads and door on :${share.port} to its LAN and tailnet\n")
     }
 
     public fun stop() {
@@ -139,7 +139,7 @@ public class ShareListener(
     private suspend fun doorLaunch(call: ApplicationCall, door: ShareDoor) {
         val launch = door.launch()
         if (launch == null) {
-            val why = "${heads.machine}'s door opens once its heads are up"
+            val why = "${heads.machine}'s door $DOOR_STARTING"
             return ShareErrors.refuse(call, HttpStatus.SERVICE_UNAVAILABLE, why)
         }
         call.respondText(json.encodeToString(SharedDoorLaunch.serializer(), launch), ContentType.Application.Json)

@@ -1,7 +1,8 @@
 // NEW: LAN share (docs/specs/lan-share.md). The address another machine reaches this one's share port by, as
 // `splice share status` prints it. A name is printed only once this machine has checked that it resolves to one of its
 // own addresses on the LAN, the ones the listener admits a request from: on a Mac on Tailscale, the bare host name
-// resolves to its Tailscale address, which the listener turns away, while the name under `.lan` resolves to the LAN.
+// resolves to its Tailscale address, which the listener admits only from a peer of the same tailnet (door-network), so
+// the name under `.lan` is preferred: it resolves to the LAN, which every machine of the house reaches.
 // With no such name, the LAN address itself is printed, which works until the router hands out another.
 package splice.share
 

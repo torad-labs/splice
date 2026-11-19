@@ -122,6 +122,39 @@ internal class LanAdmissionTest {
         assertTrue(said!!.contains("not from this machine's LAN"), said)
     }
 
+    // door-network review: a hotspot, Starlink or a hotel hands a laptop an address in 100.64/10 with the range's whole
+    // prefix on the interface. That is a shared carrier network, not a tailnet, so its neighbours are strangers. A
+    // machine on a tailnet and such a network at once cannot tell its peers from those neighbours by address, and
+    // turns both away.
+    private val onCarrier = LanAdmission(
+        "laptop",
+        emptyList(),
+        AttachedPrefixes { listOf(prefix("100.72.1.5", 10, "wlan0"), prefix("192.168.1.50", 24, "eno1")) },
+    )
+
+    private val tailnetOnCarrier = LanAdmission(
+        "laptop",
+        emptyList(),
+        AttachedPrefixes {
+            listOf(prefix("100.72.1.5", 10, "wlan0"), prefix("100.101.102.103", 32, "tailscale0"))
+        },
+    )
+
+    @Test
+    fun `a machine on a carrier's 100_64 network is not on a tailnet, so its neighbours are turned away`() =
+        repeat(CASES) {
+            val neighbour = "100.${random.nextInt(64, 128)}.${octet()}.${octet()}"
+            val said = onCarrier.refusal(neighbour)
+            assertNotNull(said, neighbour)
+            assertTrue(said!!.contains("not from this machine's LAN"), said)
+        }
+
+    @Test
+    fun `a tailnet machine that also sits on a carrier's network turns that range away`() = repeat(CASES) {
+        val source = "100.${random.nextInt(64, 128)}.${octet()}.${octet()}"
+        assertNotNull(tailnetOnCarrier.refusal(source), source)
+    }
+
     @Test
     fun `its MagicDNS name is one of this machine's names, and another machine's is not`() {
         assertTrue(house.admitsHost("devbox.tail1a2b3c.ts.net:3097"))

@@ -27,6 +27,7 @@ import splice.core.topology.RemoteConfig
 import splice.core.topology.Topology
 import splice.share.Asked
 import splice.share.DOOR_SEGMENT
+import splice.share.DOOR_STARTING
 import splice.share.ServerLogins
 import splice.share.ServerProfile
 import splice.share.ServerProfiles
@@ -103,17 +104,26 @@ internal class RemoteAdd(
      *  laptop holds a key for; or, on a machine whose door is on its network, that door, as `claude` or [name]. */
     private suspend fun every(server: String, name: String?): Offered? {
         val held = asks.profiles.held(server)
-        if (held == null) door(names.onSharePort(server), name)?.let { return it }
+        if (held == null) {
+            when (val read = door(names.onSharePort(server), name)) {
+                is Asked.Had -> return read.value
+                // A door that is only starting is said, not mistaken for a machine with none: its commands linked one
+                // by one would take the name `claude` from the door.
+                is Asked.Refused -> if (DOOR_STARTING in read.why) return names.refused(read.why)
+            }
+        }
         if (name != null) {
             return names.refused("--as names one command; add the server's commands one at a time to name each")
         }
-        return if (held != null) profiled(server, held) else shared(names.onSharePort(server))
+        return if (held != null) profiled(server, held) else shared(server)
     }
 
-    /** [server]'s door as [name], or `claude`; null when [server] answers no door, so its commands are asked for. */
-    private suspend fun door(server: String, name: String?): Offered? {
-        val door = (asks.directory.door(server) as? Asked.Had)?.value ?: return null
-        return Offered(door.machine, mapOf((name ?: CLAUDE_COMMAND) to names.at(server, DOOR_SEGMENT)))
+    /** [server]'s door as [name], or `claude`; refused when [server] answers no door. */
+    private suspend fun door(server: String, name: String?): Asked<Offered> {
+        val read = asks.directory.door(server)
+        if (read !is Asked.Had) return Asked.Refused((read as Asked.Refused).why)
+        val entry = mapOf((name ?: CLAUDE_COMMAND) to names.at(server, DOOR_SEGMENT))
+        return Asked.Had(Offered(read.value.machine, entry))
     }
 
     /** Every command a LAN share at [server] offers. */
@@ -138,10 +148,21 @@ internal class RemoteAdd(
                 return names.refused("$text is not an address a command can run on: ${read.why}")
             is RemoteAddressRead.Read -> read.address
         }
-        if (address.head == DOOR_SEGMENT) {
-            return door(address.server, name) ?: names.refused("${address.server} answers no door")
-        }
+        if (address.head == DOOR_SEGMENT) return doorAt(address, name)
         return info(address.server)?.let { offered(it, address, RemoteConfig(text), name) }
+    }
+
+    /** The door [address] names, as [name], or refused: a door serves every model of every account, so no login or
+     *  model can be asked of it. */
+    private suspend fun doorAt(address: RemoteAddress, name: String?): Offered? {
+        if (address.auth != null || address.models.isNotEmpty()) {
+            val why = "a door address takes no ?auth= or ?models=; it serves every model of every account"
+            return names.refused(why)
+        }
+        return when (val read = door(address.server, name)) {
+            is Asked.Had -> read.value
+            is Asked.Refused -> names.refused(read.why)
+        }
     }
 
     /** [remote] under [name], or the command's name on the server, once [info] shows it offers what [address] asks

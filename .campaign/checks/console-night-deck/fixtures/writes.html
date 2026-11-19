@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Writes</title></head>
+<body>
+<h1>Writes</h1>
+<script>
+fetch("/api/heads").catch(() => {});
+fetch("/api/sessions/probe-session/say", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hello" }) }).catch(() => {});
+fetch("/api/config", { method: "PATCH", headers: { "content-type": "application/json" }, body: "{}" }).catch(() => {});
+</script>
+</body>
+</html>

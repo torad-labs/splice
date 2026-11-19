@@ -986,74 +986,151 @@ Everything the checks and screenshots show is made up: the repository is public.
 
 [feature."head-catalog"]
 goal = '''
-# head-catalog: every session's /model lists everything the door serves, and runs what it lists
+# head-catalog: one Claude Code through the door, one model list, and custom heads retired
 
 ## Who this is for, and why
 
-Marcos runs sessions on several heads (`claude`, `claudex`, `claude-grok`, `claude-kimi`, `claude-muse` and the
-rest) and reads each one's own `/model` picker, in the terminal and in his Eli app, which shows a session's picker as
-Claude Code has it. Today each head lists a different set, though everything runs behind splice's door: a session on
-the `claude` head showed Claude Code's own Fable 5, Opus 5 and Opus 5.5 and one Kimi model, and a session on
-`claudex` lists only ChatGPT's models. He wants every head's picker to list the door's whole catalog, every provider
-and model the door can serve, the way a gateway lists what it serves, so any session can switch to any model, and a
-subagent can name any of them (November 19, 2026). It is what `claude` on the door already does, for every head.
+Marcos runs Claude Code sessions on many heads (`claude`, `claudex`, `claude-grok`, `claude-kimi`, `claude-muse`,
+`claudeor`, `claude-deepseek`, the local `claude-bonsai` ones, `claude-glml53`) and reads each one's `/model` picker,
+in the terminal and in his Eli app, which shows a session's picker as Claude Code has it. Today the lists differ:
+some sessions show the Claude models twice, some show Kimi, some show GPT and some don't. He wants one list
+(November 19, 2026):
+
+1. Every Claude Code session runs through splice's door. No session talks to a provider any other way.
+2. No custom model lists anywhere: no per-head model entries, no `availableModels` allowlist, no picker rows splice
+   writes, and no Claude Code built-in models layered in beside them. Every session gets its models only from the
+   door's model list, read the way Claude Code reads a gateway's (its gateway mode: the models endpoint of the address
+   it is pointed at), so every session sees the same list.
+3. Logins differ only in which models they serve, never in which models a session can see.
+
+The same day, splice's maintainers deprecated custom heads (a head's own command and its own Claude Code folder):
+one Claude Code, `claude` through the door, with every model from the door's list. A machine whose owner chooses it
+retires its heads now, with a way back; everyone else is told, when a head starts, that custom heads are deprecated
+and will be removed in a coming release, and what to do instead.
+
+## How every session is pointed at the gateway (Marcos's design, November 19, 2026)
+
+This is not a new mechanism: Claude Code already reads a model list from a custom LLM gateway
+(code.claude.com/docs/en/llm-gateway-protocol.md, "Model discovery"). Every Claude Code splice starts is configured
+as a client of that kind, pointed at the Splice gateway (the server splice's code calls the door today):
+
+- `ANTHROPIC_BASE_URL` is the gateway's address, which speaks the Anthropic Messages format, and the gateway's
+  credential goes in `ANTHROPIC_AUTH_TOKEN` (or `ANTHROPIC_API_KEY`).
+- `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`, so Claude Code asks `GET /v1/models?limit=1000` at startup and fills
+  `/model` from the answer's `id`, `display_name` and `description`. The gateway answers it itself at the base URL,
+  with every model it can route, from what it already holds (well inside the 3 s Claude Code waits; no redirect, which
+  Claude Code treats as a failure). Claude Code keeps only ids containing `claude` or `anthropic`; today's selectors
+  (`claude-codex--gpt-6.2-sol`, `claude-grok--grok-4.7`) pass, and every id the gateway lists must.
+- No `CLAUDE_CODE_USE_*` variable: discovery does not run when one is set, so the Mantle (Bedrock) switch the door
+  launch uses today goes. Read why door-default chose it (its "Seen with Claude Code" table: no sign-in screen, a
+  selector in `ANTHROPIC_MODEL` winning over the person's `model`) and keep each of those in gateway mode.
+- No `availableModels`: Claude Code adds only discovered models it allows.
+- No `modelPicker`. Marcos asked for a lineup with `replaceBuiltInOptions` so the built-ins don't double the Claude
+  rows, but Claude Code's documentation says `replaceBuiltInOptions` hides discovered models from the picker, which
+  would hide the gateway's list. Doubling is handled by Claude Code itself: a discovered id naming the model a
+  built-in alias resolves to folds into that alias's row, and an identical id gets no second row. Confirm both on the
+  installed version and record them; if a Claude model still shows twice there, the gateway's ids are what change.
+- `allowedProviders` (pinning a machine to the gateway) is a managed-only setting. splice documents it for an
+  organization that wants it and never writes managed settings.
+
+Anything this feature adds that a person reads (command output, docs) calls the server the Splice gateway; the
+words door, remote and share are being replaced by that one name across splice in a feature of their own.
 
 ## What it is today (read before building)
 
-- On the door, `claude`'s picker is the door's catalog: `DesktopLineup.picker`, as `modelPicker` with
-  `replaceBuiltInOptions` in the launch's `--settings` overlay (`integrations/claude-code/.../desktop/DoorSession.kt`,
-  `docs/specs/door-default.md` decision 4). `splice claude --json` lists those models.
-- `claude` on its head adds the same rows after Claude Code's own (`DoorPicker.addedTo`, called from
-  `LaunchService.overlayOf`; `LaunchRoutes` asks for it only when the key is `claude` and the launch is wrapped), and
-  relays a model of another head's to that head (`app/.../desktop/ClaudeHeadLane.kt`, `forHead`, which hands nothing
-  for any head but `claude`). The spec's text for this was withdrawn (commit 906d1797e); the code stayed.
-- Every other head lists its own models alone, as an enforced allowlist (`availableModels` with
+- On the door, `claude` lists the door's catalog (`DesktopLineup.picker`) as `modelPicker` rows with
+  `replaceBuiltInOptions` in its `--settings` overlay (`integrations/claude-code/.../desktop/DoorSession.kt`,
+  `docs/specs/door-default.md` decision 4); `splice claude --json` lists those models.
+- `claude` on its head adds the door's rows after Claude Code's own (`DoorPicker.addedTo`, from
+  `LaunchService.overlayOf`; `LaunchRoutes` asks for it only for `claude`, wrapped), which is where Claude's models show
+  twice, and it alone relays another head's model to that head (`app/.../desktop/ClaudeHeadLane.kt`, `forHead`).
+- Every other head lists its own models alone as an enforced allowlist (`availableModels` and
   `enforceAvailableModels`: `ClaudeModelSettings.base` for a head with a folder of its own, `settingsOverlay` in
-  `WrappedHeadTypes.kt` for a wrapped one), so Claude Code there neither lists nor sends another head's model.
-- splice turned Claude Code's gateway model discovery (`CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY`) off when it
-  listed every model twice (the header of `LaunchService.kt`).
+  `WrappedHeadTypes.kt` for a wrapped one), plus its tier mapping and roster (`modelOverrides`, the materialized
+  roster `LaunchService` describes).
+- splice turned Claude Code's gateway model discovery (`CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY`) off when it listed
+  every model twice beside the roster (the header of `LaunchService.kt`); the door launch takes it out of the
+  environment.
+- The door's lineup is built from splice.toml's heads: each head's provider and login is how the door serves that
+  head's models. A head's command and its Claude Code folder are what is deprecated; its provider and login are not.
+- A head command's launch already prints a deprecation line (`HeadsDeprecated` in
+  `features/launch/.../recipe/ClaudeDoor.kt`, door-default decision 7), which says heads keep working and sets no
+  removal.
 
 ## What a person sees when it is built
 
-- A session on any head lists, in `/model`, its own head's models first, then every other model the door serves,
-  each once, labelled as the door labels it (`splice · <command>`), in the door's order. It is the list `splice
-  claude --json` gives, less nothing.
-- Picking one runs the session's next turn on that model's head, with that head's login, cooldowns, retries and
-  failures, as the door runs it. The session's own Claude login, or its head's key, never goes to another head. A name
-  shaped like a door selector that the door does not serve is refused by name, with nothing sent anywhere.
-- `/model <selector>`, `--model <selector>` and a subagent whose model is a door selector do the same, from a session
-  on any head.
-- The list is read at each launch, so a sign-in, a sign-out or an expired login reaches the next session with no
-  restart and no reinstall, as the door's does. An install that is upgraded gets it for every head it has, with nothing
-  for the person to do.
-- A relayed turn's token counts are reported as the same share of the session's window that they are of the model's
-  own, as `ClaudeHeadLane` reports them now, so compaction comes when it should.
+- `claude`, pointed at the Splice gateway, is how a session starts. Its `/model` list is every model the gateway
+  serves, each once: the gateway's models as Claude Code discovers them, a Claude model folded into the built-in
+  alias row that names it, and no list splice wrote into any settings file.
+- Picking a model runs it under the login the door uses for that model, with that login's cooldowns, retries and
+  failures. One login's key never goes with a turn to another provider. A name the door does not serve is refused by
+  name, with nothing sent anywhere.
+- `/model <name>`, `--model <name>` and a subagent's model do the same, and so do Claude Code's own side calls (its
+  small model), which run as the door runs them today.
+- The model names sessions, subagent definitions and scripts use today (the selectors `splice claude --json` lists,
+  such as `claude-codex--gpt-6.2-sol`) keep working after heads are retired, so no caller's model name breaks.
+- The list is read at each session's start from the door, so a sign-in, a sign-out or an expired login reaches the
+  next session with no restart and no reinstall.
+- A turn's token counts are reported as the same share of the session's window that they are of the model's own, as
+  the door reports them, so compaction comes when it should whatever model runs.
+- A person who still starts a head's command, or a session in a head's own Claude Code folder, sees before Claude Code
+  starts one line: custom heads are deprecated and will be removed in a coming release, and what to type instead
+  (`claude`, then `/model <selector>` for that head's model, with `splice claude door` first where `claude` is not on
+  the door). `splice status` and `splice doctor` say the same for every head the install still has. The head still
+  works in this release.
+- A person can retire heads with one splice command, per head or all at once. It moves the head's command and every
+  setting splice wrote in the head's Claude Code folder (its model list, tier mapping, environment) into a dated
+  backup and removes them; the folder's sessions and anything the person wrote there stay. The head's provider and
+  login keep serving the door, and their models stay in `claude`'s list under the same names. It refuses a head that a
+  live session still runs on, naming the sessions, and kills nothing. Another command restores a retired head from its
+  backup exactly as it was. Neither touches a file splice did not write; such files are named instead.
+
+## One check for the whole machine
+
+splice gains a command that says how Claude Code starts on this machine and what list each start gets, with
+`--json`: `claude`, every head command splice wrote that is still there, and every launcher on PATH that starts Claude
+Code. For each it says whether it goes through the door and whether its session's list is the door's. It names every
+model list it finds that would change a session's list: in a head's folder (splice's, which retiring removes), and in
+the person's own Claude settings (`~/.claude/settings.json` and any `CLAUDE_CONFIG_DIR` folder a launcher on PATH
+names), which it reports and never edits. It names every launcher on PATH that starts Claude Code past the door (a
+script that sets its own `ANTHROPIC_BASE_URL` or runs another router), reporting and never touching it: those files
+are the person's. The feature is done when this command, run on the installed build on a machine whose heads were
+retired, says `claude` on the door is the one way splice starts Claude Code, every session gets the door's list, and
+no head command or head setting of splice's is left.
 
 ## How it holds
 
-- One catalog: the door's lineup is the one source of what every head lists and relays. No head keeps a list of its
-  own of other heads' models.
-- Use whichever of Claude Code's own mechanisms lists the catalog cleanly on the Claude Code installed here
-  (`claude --version`): the `modelPicker` overlay the door uses, or gateway model discovery with every head's
-  `/v1/models` answering the catalog. Whichever it is, every model is listed once, and the allowlist no longer
-  refuses a door model. Read the client's behaviour from a real launch of that version, as `docs/specs/door-default.md`
-  records its facts, not from memory.
-- Heads stay isolated (CLAUDE.md "Heads are isolated"): nothing of one head's state leaks into `~/.claude` or another
-  head. Reasoning effort stays part of the prompt-cache key and is never varied by turn type. `mirror_reasoning`
-  stays false.
-- Documented: the door-default spec gets this as a decision, the README's lines on what a head's picker lists say it,
-  and the splice skill's reference (`app/src/main/resources/manager-home/.claude/skills/splice/reference/`) agrees.
-  The repository is public: no person's accounts, logins or machine in any of it.
+- One source: the door's lineup is the one list every session reads. No head keeps a list of its own.
+- Read Claude Code's behaviour from a real launch of the version installed here (`claude --version`), as
+  `docs/specs/door-default.md` records its facts, not from memory: that discovery fills `/model` from the gateway,
+  how its rows sit beside the built-in aliases, that no sign-in screen shows, and that a selector in `--model` or
+  `ANTHROPIC_MODEL` starts the session on it. Record what was seen, with the version, in the spec.
+- Heads stay isolated (CLAUDE.md "Heads are isolated") while they exist: nothing of one head's state leaks into
+  `~/.claude` or another head. Reasoning effort stays part of the prompt-cache key and is never varied by turn type.
+  `mirror_reasoning` stays false.
+- An upgrade changes no lane and retires no head by itself (door-default decision 8): retiring is the person's act.
+- Tests that pinned a head's own list, the roster, the `claude`-head picker rows or decision 7's wording are rewritten
+  or deleted in the same change, and the commit says so (CLAUDE.md, "Tests").
+- Documented: door-default's spec gets this as decisions, replacing decision 4's picker rows and decision 7's "no
+  removal" with the coming removal and the retire and restore commands; the README, AGENTS.md and the CHANGELOG say
+  custom heads are deprecated and will be removed in a coming release, and what replaces them; the splice skill's
+  reference (`app/src/main/resources/manager-home/.claude/skills/splice/reference/`) agrees. The repository is public:
+  no person's accounts, logins, launchers or machine in any of it.
 
 ## How it is checked
 
-Checks look at what a launch answers and what a turn does: the launch route's recipe for a head other than `claude`
-lists the other heads' models and allows them; a request on one head naming another head's selector is answered by
-that other head (a mock provider), with none of the first head's credentials on it; a selector-shaped name the door
-does not serve is refused by name; a subagent's request naming a door selector runs on its head. Splice's check
-harness (`.campaign/checks/server/lib/harness.ts`) reads Linux's `/proc`, so a check that boots Splice through it runs
-on the Linux build box and names it itself: `CAMPAIGN_HERE=1 rig remote run --needs system=Linux/x86_64 -- bun test
-<file>`. Builds and tests never run on the machine the seats run on.'''
+Checks look at what a launch answers, what a turn does and what the commands say: `claude`'s launch points the
+session at the gateway in gateway mode (base URL, credential, discovery on, no `CLAUDE_CODE_USE_*`) and carries no
+model list; `GET /v1/models?limit=1000` with the session's credential answers at once with the gateway's catalog,
+each model once, every id containing `claude`; a request naming a model is answered by that model's provider (a mock) under its own login, with no other
+login's credentials on it; a name the door does not serve is refused by name; a subagent's request naming a door model
+runs on it; a selector of today's form keeps working; a head command's launch prints the deprecation line with its
+removal and what to type; retiring a head removes its command and splice's settings in its folder, keeps a backup,
+leaves the person's files, refuses while a session runs on it, and restoring brings it back byte for byte; the
+machine check says one list on a daemon whose heads were retired, and names a planted model list and a planted
+launcher that goes past the door. Splice's check harness (`.campaign/checks/server/lib/harness.ts`) reads Linux's
+`/proc`, so a check that boots Splice through it runs on the Linux build box and names it itself: `CAMPAIGN_HERE=1 rig
+remote run --needs system=Linux/x86_64 -- bun test <file>`. Builds and tests never run on the machine the seats run on.'''
 
 [[row]]
 id = 'server-listener'
@@ -3057,14 +3134,14 @@ guard = false
 spec = '''
 The door answers Desktop's model discovery (outcome 2). Decision: Desktop's picker is filled by discovery, not by an inferenceModels list. Discovery follows the lineup at every launch with nothing rewritten, and inferenceModels, once set, replaces discovery wholesale (Desktop 5.11492.5, see the evidence). The fields discovery can't carry (maxEffort, behavesAs) are covered by the tier and by splice's own effort mapping.
 `GET /desktop/v1/models` (query `limit`, default and maximum 1000, and `after_id`), behind the desktop key as Bearer or x-api-key (df-wire-door's admission, the same 401 words), never a redirect, answers `{"data":[...],"has_more":bool,"first_id":id|null,"last_id":id|null}`, the shape of Anthropic's own /v1/models. The rows are DesktopLineup.picker, read at each request, so a head signed in or added reaches the next discovery. The door's saved default model (`splice desktop on --model`) is the first row, and the rest follow in the picker's own order. When the saved default isn't in the picker, the picker's order stands as it is. Decision: Desktop makes the first model of its list the default a new session starts on (`defaultModel: {model: wT(e)[0]?.id}` in 5.11492.5, see the evidence), so the model the person chose for the door is the one Desktop opens on. This only moves one row. It doesn't fork the picker. Each row:
-- `type` "model", `id` the selector, `display_name` the row's label, `created_at` (any RFC 3339 time).
+- `type` "model", `id` an id of splice's own that Desktop reads as Claude (it says claude and names no other vendor's model: the live run on Desktop 5.11492.5, Nov 19, saw Desktop drop every row whose id names GPT, Grok, Kimi, DeepSeek, Gemini or Qwen, whatever its tier), unique to the row and the same at every launch; the door maps it back to the row's selector when a turn names it, and a turn naming the selector itself still runs, `display_name` the row's label, `created_at` (any RFC 3339 time).
 - `description` "splice · <command>", the same words the terminal picker shows, at most 100 characters, which is all Desktop keeps.
-- `anthropic_family_tier`: every row carries one, because Desktop drops any GPT, Grok, Kimi or GLM id without one. A Claude model gets its own tier (AnthropicTiers). Any other model gets the first of opus, sonnet, haiku, fable its head's model_slots names it for, else "opus". Opus gives Desktop the full effort ladder and the largest limits, and the door scales windows itself.
+- `anthropic_family_tier`: every row carries one (the tier sets Desktop's effort ladder and limits; it does not keep a row whose id names another vendor). A Claude model gets its own tier (AnthropicTiers). Any other model gets the first of opus, sonnet, haiku, fable its head's model_slots names it for, else "opus". Opus gives Desktop the full effort ladder and the largest limits, and the door scales windows itself.
 - `is_family_default`: always false. A family default makes Desktop resolve a tier alias to one fixed row, while the door resolves a tier by the session's head (DoorRouting).
 - `supports_1m` true only when the model's own context window is at least 1,000,000. `max_input_tokens` is that window.
 - Display names are unique. Desktop folds Claude-looking rows that share a name and tier into one row, so a repeated label gets " (<command>)" added.
 - Desktop's own effort ladder is low, medium, high, xhigh, max. A head whose vocabulary tops out lower (Grok keeps xhigh for max) still runs the nearest rung it has, as today.
-The row shape and the tier rule are Desktop facts in integrations/claude-code/.../client/desktop/ (a new DesktopModelRows.kt). The route is in app/src/main/kotlin/splice/app/control/DesktopRoutes.kt, and its answer in a new app/src/main/kotlin/splice/app/desktop/DesktopModels.kt. Proof: `bun test ./.campaign/checks/desktop-full/models.test.ts`.
+Desktop starts a new session on the first row it keeps, so the door's saved default is first and kept. The row shape, the id rule and the tier rule are Desktop facts in integrations/claude-code/.../client/desktop/ (a new DesktopModelRows.kt). The route is in app/src/main/kotlin/splice/app/control/DesktopRoutes.kt, and its answer in a new app/src/main/kotlin/splice/app/desktop/DesktopModels.kt. Proof: `bun test ./.campaign/checks/desktop-full/models.test.ts`.
 
 Shared across desktop-full (decided once, the same in every item): one door at /desktop on the control port and one desktop key serve both of Desktop's modes. "Standard mode" is today's Code-tab door through Desktop's environment store (`splice desktop on`). "App mode" is Desktop's third-party gateway mode, the whole app on splice (`splice desktop on --app`). In JSON the mode is one of "off", "standard", "app", "other" (a third-party configuration that is not splice's). Every request Desktop sends in app mode carries the header `x-splice-desktop: app`, which splice writes into the configuration's inferenceCustomHeaders. That header is how the door tells an app-mode request from a standard one. Refusals keep the door's Anthropic error shape and the "splice desktop: " prefix. Picker rows are DesktopLineup.picker, the terminal's rows (don't fork them; the custom-provider campaign, #680, is changing labels and tiers there at the same time). Vendor facts about Desktop (paths, key names, row fields, ID filter) live in integrations/claude-code/src/main/kotlin/splice/client/desktop/, beside the other Desktop facts. Goal: docs/specs/desktop-full.md.'''
 checks = [
@@ -3971,6 +4048,7 @@ reviews = [
 notes = [
   '2026-11-18 22:38 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
   '2026-11-19 CT console-night-deck/coordinator: round-1 dispute upheld; the plan was wrong, not the build. lib/deck.ts open() now seeds splice-console-theme only when unset. Run on this build with the revised check: the reload test passes; deck-raw prints clean. Rebuild from round 1 keeps the existing kit.',
+  "2026-11-19 15:09 CT console-night-deck/coordinator: 2026-11-19 15:30 CT console-night-deck/coordinator: ruling on 'no verdict, twice'. Neither plan nor build at fault: the feature review cannot run. campaign's Linux review sandbox (slices/seats/review-shell.ts: bwrap --unshare-all; seat.ts:325 gives only mcp__campaign__shell) has no network or rig to the Macs, no ~/scratch/splice-redesign/night-deck, and no way to view an image, so 6 reviewers in a row recorded none (review turns P9ZUkU, s2vVty, 2ua85R, hs1Jy6, FlfZnh, iAoMd5). Row kept as it is so it is not rebuilt into the same wall; the review seat's reach is taken to campaign's owner. Unconfirmed code reading by those reviewers, for the next review: deck-raw.ts given a file that does not exist crashes with a raw ENOENT instead of a finding line; the switch's selector is .switch [data-theme-set].",
 ]
 
 [[row]]
@@ -4051,6 +4129,7 @@ reviews = [
 notes = [
   '2026-11-18 22:40 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
   "2026-11-19 CT console-night-deck/coordinator: round-2 dispute upheld; the plan was wrong. own.test.ts read /api/perf/turns with no head, which the real route answers 400 unknown head. Revised: read each /api/heads key and sum rows, and require one error row (the 429). The builder's run on this build: up exits 0, console not :3096, launch page exists, /api/sessions lists the probe session live; head=acme 14 rows (13 ok, 1 error:rate-limited), head=globex 12 rows (11 ok, 1 error:rate-limited); /api/teams has harbor-crew; down removes the home.",
+  "2026-11-19 15:09 CT console-night-deck/coordinator: 2026-11-19 15:30 CT console-night-deck/coordinator: ruling on 'no verdict, twice'. Neither plan nor build at fault: the feature review cannot run. campaign's Linux review sandbox (slices/seats/review-shell.ts: bwrap --unshare-all; seat.ts:325 gives only mcp__campaign__shell) has no network or rig to the Macs, no ~/scratch/splice-redesign/night-deck, and no way to view an image, so 6 reviewers in a row recorded none (review turns P9ZUkU, s2vVty, 2ua85R, hs1Jy6, FlfZnh, iAoMd5). Row kept as it is so it is not rebuilt into the same wall; the review seat's reach is taken to campaign's owner. Unconfirmed code reading by those reviewers, for the next review: the home is made under os.tmpdir(), which on macOS is /var/folders/..., not /tmp as the spec and README say; with TMPDIR inside ~/.splice or ~/.claude, up refuses but first leaves an empty splice-console-own-* folder there.",
 ]
 
 [[row]]
@@ -4094,6 +4173,7 @@ reviews = [
 ]
 notes = [
   '2026-11-18 22:40 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 15:09 CT console-night-deck/coordinator: 2026-11-19 15:30 CT console-night-deck/coordinator: ruling on 'no verdict, twice'. Neither plan nor build at fault: the feature review cannot run. campaign's Linux review sandbox (slices/seats/review-shell.ts: bwrap --unshare-all; seat.ts:325 gives only mcp__campaign__shell) has no network or rig to the Macs, no ~/scratch/splice-redesign/night-deck, and no way to view an image, so 6 reviewers in a row recorded none (review turns P9ZUkU, s2vVty, 2ua85R, hs1Jy6, FlfZnh, iAoMd5). Row kept as it is so it is not rebuilt into the same wall; the review seat's reach is taken to campaign's owner.",
 ]
 
 [[row]]
@@ -4195,6 +4275,7 @@ reviews = [
 ]
 notes = [
   '2026-11-18 22:51 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 15:09 CT console-night-deck/coordinator: 2026-11-19 15:30 CT console-night-deck/coordinator: ruling on 'no verdict, twice'. Neither plan nor build at fault: the feature review cannot run. campaign's Linux review sandbox (slices/seats/review-shell.ts: bwrap --unshare-all; seat.ts:325 gives only mcp__campaign__shell) has no network or rig to the Macs, no ~/scratch/splice-redesign/night-deck, and no way to view an image, so 6 reviewers in a row recorded none (review turns P9ZUkU, s2vVty, 2ua85R, hs1Jy6, FlfZnh, iAoMd5). Row kept as it is so it is not rebuilt into the same wall; the review seat's reach is taken to campaign's owner. Unconfirmed code reading by those reviewers, for the next review: (builder, from an earlier review) pressing the need float may not filter the board to the sessions waiting on the person.",
 ]
 
 [[row]]
@@ -4255,6 +4336,7 @@ reviews = [
 ]
 notes = [
   '2026-11-18 22:52 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 15:09 CT console-night-deck/coordinator: 2026-11-19 15:30 CT console-night-deck/coordinator: ruling on 'no verdict, twice'. Neither plan nor build at fault: the feature review cannot run. campaign's Linux review sandbox (slices/seats/review-shell.ts: bwrap --unshare-all; seat.ts:325 gives only mcp__campaign__shell) has no network or rig to the Macs, no ~/scratch/splice-redesign/night-deck, and no way to view an image, so 6 reviewers in a row recorded none (review turns P9ZUkU, s2vVty, 2ua85R, hs1Jy6, FlfZnh, iAoMd5). Row kept as it is so it is not rebuilt into the same wall; the review seat's reach is taken to campaign's owner. Unconfirmed code reading by those reviewers, for the next review: the builder's own capture runs show a click:.lane step timing out at every width and theme on Sessions.",
 ]
 
 [[row]]
@@ -4314,6 +4396,7 @@ reviews = [
 ]
 notes = [
   '2026-11-18 22:52 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 15:09 CT console-night-deck/coordinator: 2026-11-19 15:30 CT console-night-deck/coordinator: ruling on 'no verdict, twice'. Neither plan nor build at fault: the feature review cannot run. campaign's Linux review sandbox (slices/seats/review-shell.ts: bwrap --unshare-all; seat.ts:325 gives only mcp__campaign__shell) has no network or rig to the Macs, no ~/scratch/splice-redesign/night-deck, and no way to view an image, so 6 reviewers in a row recorded none (review turns P9ZUkU, s2vVty, 2ua85R, hs1Jy6, FlfZnh, iAoMd5). Row kept as it is so it is not rebuilt into the same wall; the review seat's reach is taken to campaign's owner.",
 ]
 
 [[row]]
@@ -4371,6 +4454,7 @@ reviews = [
 ]
 notes = [
   '2026-11-18 22:53 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 15:09 CT console-night-deck/coordinator: 2026-11-19 15:30 CT console-night-deck/coordinator: ruling on 'no verdict, twice'. Neither plan nor build at fault: the feature review cannot run. campaign's Linux review sandbox (slices/seats/review-shell.ts: bwrap --unshare-all; seat.ts:325 gives only mcp__campaign__shell) has no network or rig to the Macs, no ~/scratch/splice-redesign/night-deck, and no way to view an image, so 6 reviewers in a row recorded none (review turns P9ZUkU, s2vVty, 2ua85R, hs1Jy6, FlfZnh, iAoMd5). Row kept as it is so it is not rebuilt into the same wall; the review seat's reach is taken to campaign's owner.",
 ]
 
 [[row]]
@@ -4429,6 +4513,8 @@ reviews = [
 ]
 notes = [
   '2026-11-18 22:53 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 15:09 CT console-night-deck/coordinator: 2026-11-19 15:30 CT console-night-deck/coordinator: ruling on 'no verdict, twice'. Neither plan nor build at fault: the feature review cannot run. campaign's Linux review sandbox (slices/seats/review-shell.ts: bwrap --unshare-all; seat.ts:325 gives only mcp__campaign__shell) has no network or rig to the Macs, no ~/scratch/splice-redesign/night-deck, and no way to view an image, so 6 reviewers in a row recorded none (review turns P9ZUkU, s2vVty, 2ua85R, hs1Jy6, FlfZnh, iAoMd5). Row kept as it is so it is not rebuilt into the same wall; the review seat's reach is taken to campaign's owner.",
+  '2026-11-19 15:09 CT console-night-deck/coordinator: Addendum to the 15:30 ruling. Unconfirmed code reading by those reviewers, for the next review: (builder, from an earlier review) the ask-first confirmations for Stop and End team may vanish after about 5 s before anyone answers.',
 ]
 
 [[row]]
@@ -4490,6 +4576,7 @@ reviews = [
 notes = [
   '2026-11-18 22:53 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
   '2026-11-19 CT console-night-deck/coordinator: round-1 dispute upheld, the plan was wrong. lib/deck.ts world() answered no GET /api/add/profiles (any unlisted /api/* path answers {}), so the built page (repo-campaign-console-night-deck deck-providers.js:387) truthfully drew "No provider types read" and the last step of providers.test.ts (Add provider contains /API key|Sign in/) could not pass. world() now answers /api/add/profiles with made-up ADD_PROFILES in the route shape (AddViews.kt profile()); the spec names the read and how a profile maps to Sign in / API key / URL and model. The build itself (deck-providers.js:41 reads /api/add/profiles, :96 maps asks/requires_key, :390 labels Sign in / API key) already meets it.',
+  "2026-11-19 15:09 CT console-night-deck/coordinator: 2026-11-19 15:30 CT console-night-deck/coordinator: ruling on 'no verdict, twice'. Neither plan nor build at fault: the feature review cannot run. campaign's Linux review sandbox (slices/seats/review-shell.ts: bwrap --unshare-all; seat.ts:325 gives only mcp__campaign__shell) has no network or rig to the Macs, no ~/scratch/splice-redesign/night-deck, and no way to view an image, so 6 reviewers in a row recorded none (review turns P9ZUkU, s2vVty, 2ua85R, hs1Jy6, FlfZnh, iAoMd5). Row kept as it is so it is not rebuilt into the same wall; the review seat's reach is taken to campaign's owner.",
 ]
 
 [[row]]
@@ -4546,6 +4633,7 @@ reviews = [
 ]
 notes = [
   '2026-11-18 22:54 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 15:09 CT console-night-deck/coordinator: 2026-11-19 15:30 CT console-night-deck/coordinator: ruling on 'no verdict, twice'. Neither plan nor build at fault: the feature review cannot run. campaign's Linux review sandbox (slices/seats/review-shell.ts: bwrap --unshare-all; seat.ts:325 gives only mcp__campaign__shell) has no network or rig to the Macs, no ~/scratch/splice-redesign/night-deck, and no way to view an image, so 6 reviewers in a row recorded none (review turns P9ZUkU, s2vVty, 2ua85R, hs1Jy6, FlfZnh, iAoMd5). Row kept as it is so it is not rebuilt into the same wall; the review seat's reach is taken to campaign's owner.",
 ]
 
 [[row]]
@@ -4603,6 +4691,7 @@ reviews = [
 ]
 notes = [
   '2026-11-18 22:54 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 15:09 CT console-night-deck/coordinator: 2026-11-19 15:30 CT console-night-deck/coordinator: ruling on 'no verdict, twice'. Neither plan nor build at fault: the feature review cannot run. campaign's Linux review sandbox (slices/seats/review-shell.ts: bwrap --unshare-all; seat.ts:325 gives only mcp__campaign__shell) has no network or rig to the Macs, no ~/scratch/splice-redesign/night-deck, and no way to view an image, so 6 reviewers in a row recorded none (review turns P9ZUkU, s2vVty, 2ua85R, hs1Jy6, FlfZnh, iAoMd5). Row kept as it is so it is not rebuilt into the same wall; the review seat's reach is taken to campaign's owner. Unconfirmed code reading by those reviewers, for the next review: the compare glass never reads /api/budgets (the spec keeps the budget as today); it only handles the daemon's 429 blocked: budget.",
 ]
 
 [[row]]
@@ -4663,6 +4752,7 @@ reviews = [
 ]
 notes = [
   '2026-11-18 22:55 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 15:09 CT console-night-deck/coordinator: 2026-11-19 15:30 CT console-night-deck/coordinator: ruling on 'no verdict, twice'. Neither plan nor build at fault: the feature review cannot run. campaign's Linux review sandbox (slices/seats/review-shell.ts: bwrap --unshare-all; seat.ts:325 gives only mcp__campaign__shell) has no network or rig to the Macs, no ~/scratch/splice-redesign/night-deck, and no way to view an image, so 6 reviewers in a row recorded none (review turns P9ZUkU, s2vVty, 2ua85R, hs1Jy6, FlfZnh, iAoMd5). Row kept as it is so it is not rebuilt into the same wall; the review seat's reach is taken to campaign's owner.",
 ]
 
 [[row]]
@@ -4719,6 +4809,7 @@ reviews = [
 ]
 notes = [
   '2026-11-18 22:55 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 15:09 CT console-night-deck/coordinator: 2026-11-19 15:30 CT console-night-deck/coordinator: ruling on 'no verdict, twice'. Neither plan nor build at fault: the feature review cannot run. campaign's Linux review sandbox (slices/seats/review-shell.ts: bwrap --unshare-all; seat.ts:325 gives only mcp__campaign__shell) has no network or rig to the Macs, no ~/scratch/splice-redesign/night-deck, and no way to view an image, so 6 reviewers in a row recorded none (review turns P9ZUkU, s2vVty, 2ua85R, hs1Jy6, FlfZnh, iAoMd5). Row kept as it is so it is not rebuilt into the same wall; the review seat's reach is taken to campaign's owner.",
 ]
 
 [[row]]
@@ -4775,6 +4866,7 @@ reviews = [
 ]
 notes = [
   '2026-11-18 22:55 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 15:09 CT console-night-deck/coordinator: 2026-11-19 15:30 CT console-night-deck/coordinator: ruling on 'no verdict, twice'. Neither plan nor build at fault: the feature review cannot run. campaign's Linux review sandbox (slices/seats/review-shell.ts: bwrap --unshare-all; seat.ts:325 gives only mcp__campaign__shell) has no network or rig to the Macs, no ~/scratch/splice-redesign/night-deck, and no way to view an image, so 6 reviewers in a row recorded none (review turns P9ZUkU, s2vVty, 2ua85R, hs1Jy6, FlfZnh, iAoMd5). Row kept as it is so it is not rebuilt into the same wall; the review seat's reach is taken to campaign's owner.",
 ]
 
 [[row]]
@@ -4832,6 +4924,7 @@ reviews = [
 ]
 notes = [
   '2026-11-18 22:56 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 15:09 CT console-night-deck/coordinator: 2026-11-19 15:30 CT console-night-deck/coordinator: ruling on 'no verdict, twice'. Neither plan nor build at fault: the feature review cannot run. campaign's Linux review sandbox (slices/seats/review-shell.ts: bwrap --unshare-all; seat.ts:325 gives only mcp__campaign__shell) has no network or rig to the Macs, no ~/scratch/splice-redesign/night-deck, and no way to view an image, so 6 reviewers in a row recorded none (review turns P9ZUkU, s2vVty, 2ua85R, hs1Jy6, FlfZnh, iAoMd5). Row kept as it is so it is not rebuilt into the same wall; the review seat's reach is taken to campaign's owner.",
 ]
 
 [[row]]
@@ -4890,6 +4983,7 @@ reviews = [
 ]
 notes = [
   '2026-11-18 22:56 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 15:09 CT console-night-deck/coordinator: 2026-11-19 15:30 CT console-night-deck/coordinator: ruling on 'no verdict, twice'. Neither plan nor build at fault: the feature review cannot run. campaign's Linux review sandbox (slices/seats/review-shell.ts: bwrap --unshare-all; seat.ts:325 gives only mcp__campaign__shell) has no network or rig to the Macs, no ~/scratch/splice-redesign/night-deck, and no way to view an image, so 6 reviewers in a row recorded none (review turns P9ZUkU, s2vVty, 2ua85R, hs1Jy6, FlfZnh, iAoMd5). Row kept as it is so it is not rebuilt into the same wall; the review seat's reach is taken to campaign's owner.",
 ]
 
 [[row]]
@@ -4943,6 +5037,7 @@ reviews = [
 ]
 notes = [
   '2026-11-18 22:57 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 15:09 CT console-night-deck/coordinator: 2026-11-19 15:30 CT console-night-deck/coordinator: not built in its own right yet (waits on the items blocked by the review sandbox, see their 15:30 notes). Unconfirmed code reading by a reviewer: the console folder holds request-words.js, which the spec's 'exactly' list does not name (a shared helper outside the deck-<page> pattern).",
 ]
 
 [[row]]
@@ -6859,4 +6954,57 @@ reviews = [
 ]
 notes = [
   '2026-11-19 13:39 CT reply-stream/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'catalog-launch'
+title = "Every head's launch lists the door's catalog in /model and allows it"
+feature = 'head-catalog'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = '''
+Every head's launch lists the door's whole catalog in `/model`, and lets the session name each of it (docs/specs/door-default.md, decision 9, which the catalog-docs item writes; the code comments already cite it).
+
+What a person sees once this is built: a session on any head (`claudex`, `claude-grok`, `claude-kimi`, a key head, `claude` on its head) lists in `/model` its own head's models exactly as today, then every other model the door serves, each once, labelled as the door labels it (`label` the model's own label with the full-window mark the door adds, `description` `splice · <command>`), in the door's order (splice.toml's order of heads). It is the list `splice claude --json` gives in `models`, less the session's own head's rows (those are its own models, already listed under their own ids). Picking one, `/model <selector>`, `--model <selector>` and a subagent whose `model` is a selector are not refused by Claude Code. The list is read at each launch, so a sign-in, a sign-out or an expired login reaches the next session with no restart and no reinstall; an upgraded install gets it on every head it has with nothing to do.
+
+Decisions (made here, so no builder makes them another way):
+1. Mechanism: the `modelPicker` overlay the door already uses, not gateway model discovery. Why: it is what `claude` on the door and on its head already do (DoorSession, DoorPicker.addedTo), it lists each model once, and discovery stays off because it listed every model twice and puts a wrapped active id under the session (LaunchService.kt header). `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY` stays unset on every launch.
+2. Rows ride the launch's `--settings` overlay on EVERY local head launch, wrapped or with a folder of its own, as `modelPicker` with `replaceBuiltInOptions` false, so the head's own lineup (tier rows, its cached roster, Claude Code's own models on `claude`'s head) stays first and the door's rows follow. Why `--settings`: Claude Code reads `modelPicker` from `--settings` over user settings (see the saved Claude Code docs), and nothing is written to the person's files; the head's own folder is not used for it. Today LaunchService.overlayOf returns null for a launch with a folder of its own; it now returns an overlay carrying the picker (and splice's launch mark where LaunchMarker.here) for such a launch, and the wrapped overlay as today plus the picker. A launch with no other head in the door carries no picker, as today.
+3. The rows are DesktopLineup.picker (the same filter the door uses: every model of a login head, a key head's declared models or all it lists when it declares none, left-out heads absent), less every row whose head is the launching head. Built in one place: ClaudeDoorLaunch.headPicker takes the launching head's key and drops its `onDoor()` gate (the gate only kept `claude` from double-listing on the door, where `claude` never reaches this path: LaunchRoutes sends it to doorReply). ClaudeDoor.headPicker(head) and TerminalDoor follow. LaunchRoutes.reply asks for it for every key, not only `claude` wrapped. Remote launches (LAN share, remoteReply) get no picker: turns go to the other machine, which relays its own door.
+4. Allowlist: a head that has one today (`availableModels` + `enforceAvailableModels`, written by ClaudeModelSettings.base into a head's own folder or by WrappedLaunch.settingsOverlay) keeps it, and it lists the head's own ids followed by every selector in the picker, each spelled exactly as its row. Why keep it: Claude Code applies the allowlist to `modelPicker` rows, `--model` and subagents, and `enforceAvailableModels` keeps Default on the head's own models; listing selectors exactly opens nothing outside the door's catalog. Do it where the roster is computed (LaunchService: `roster` plus the picker's selectors), so both writers get it unchanged. A head with no allowlist today (client-picked models, `claude`'s head) gets none.
+5. The model a session starts on is unchanged (its head's pin via ANTHROPIC_MODEL / settings `model`). ClaudeModelSettings keeps a saved choice that is still allowed, so a saved door selector stays while the door serves it and falls back to the pin when it does not.
+6. Real-launch fact: run the installed Claude Code (`claude --version`; 2.1.326 at planning) once on a throwaway daemon with a head that has a folder of its own and one other signed-in head, and add a row to door-default.md's "Seen with Claude Code" table naming "a head with a folder of its own", the version and date, and what `/model` listed (its own rows first, then the added rows, each once) and that picking an added row was not refused. If that launch shows the head's own rows NOT first, or any row twice, switch that launch's picker to `replaceBuiltInOptions` true with the head's own roster rows first (its own ids, its own labels, `description` `splice · <its command>`) and then the door's rows, keep the allowlist as in 4, and record that in the row. Only this table row goes in door-default.md here; the decision text is catalog-docs'.
+
+Out of scope here: relaying a turn that names another head's selector (catalog-relay), the docs (catalog-docs).
+
+Heads stay isolated: nothing is written to ~/.claude or another head's folder; reasoning effort and `mirror_reasoning` are untouched. Existing checks .campaign/checks/door/adds-picker.test.ts and picker.test.ts must keep passing (claude on its head and on the door behave as today, less own-head rows, of which a `claude` head with no added Claude accounts has none).
+
+Proven by: `CAMPAIGN_HERE=1 rig remote run --to build@buildbox -- bun test ./.campaign/checks/catalog/picker.test.ts` (boots splice with two ChatGPT heads and a key head, launches `claude-astra` and `claude-borealis`, reads the overlay and the head's settings.json: the other heads' selectors listed with `splice · <command>`, own head's not repeated, every row allowed, equal to `splice claude --json` less its own head, discovery off, a sign-in and a sign-out reaching the next launch).'''
+checks = [
+  'CAMPAIGN_HERE=1 rig remote run --to build@buildbox -- bun test ./.campaign/checks/catalog/picker.test.ts',
+]
+sources = [
+  'features/launch/src/main/kotlin/splice/launch/recipe/LaunchService.kt',
+  'features/launch/src/main/kotlin/splice/launch/recipe/LaunchRoutes.kt',
+  'features/launch/src/main/kotlin/splice/launch/recipe/ClaudeDoor.kt',
+  'features/launch/src/main/kotlin/splice/launch/recipe/LaunchCaller.kt',
+  'app/src/main/kotlin/splice/app/desktop/ClaudeDoorLaunch.kt',
+  'app/src/main/kotlin/splice/app/desktop/TerminalDoor.kt',
+  'app/src/main/kotlin/splice/app/desktop/DesktopLineup.kt',
+  'integrations/claude-code/src/main/kotlin/splice/client/desktop/DoorSession.kt',
+  'integrations/claude-code/src/main/kotlin/splice/client/models/ClaudeModelSettings.kt',
+  'integrations/claude-code/src/main/kotlin/splice/client/wrap/WrappedHeadTypes.kt',
+  'docs/specs/door-default.md',
+]
+results = [
+  "Saved tool result (head-catalog-cc-docs.txt):\nClaude Code settings reference (code.claude.com/docs/en/settings-reference and /model-config), read Nov 19, 2026 by the head-catalog coordinator:\n\nmodelPicker — Scope: User or managed. Read from managed settings, `--settings`, and user settings; ignored in project and local settings. \"The highest of those three that sets the key supplies the whole lineup, and Claude Code never combines lineups from two sources.\" Requires v2.1.242+.\n  options: rows with required `model`, optional `label`, `description`, `behavesAs`. Shown in this order (a grayed-out row moves to the bottom).\n  replaceBuiltInOptions (default false): true shows only these rows, Default, and a row for the model the session is already using; it hides \"the built-in lineup, the rows it adds for `availableModels` entries, the models gateway discovery found, and ANTHROPIC_CUSTOM_MODEL_OPTION\". Unset: \"add these rows after the built-in lineup\". \"With it off, Claude Code skips a listed model that the built-in lineup already covers.\"\n  \"An `availableModels` allowlist still applies to these rows.\"\n\navailableModels — \"Restrict which models people can select for the main session, subagents, skills, and the advisor ... constrains /model, --model, and the model key\". A model ID entry also permits later IDs that extend it with another segment (prefix matching, default). A listed ID gets a picker row of its own only for Anthropic model IDs (Opus/Sonnet/Haiku versions) on the Anthropic API or an LLM gateway via ANTHROPIC_BASE_URL.\n\nenforceAvailableModels — when Default would resolve to a model outside availableModels, Claude Code resolves it to the first available model in the list. No effect when availableModels is unset or empty.\n\nFrom this repo (core/.../model/ModelCatalog.kt, CLIENT_OWN_ID_PREFIX): Claude Code honours CLAUDE_CODE_MAX_CONTEXT_TOKENS only for an active id NOT starting with `claude-`; every door selector (`claude-<head>--<id>`) starts with it, so a session holds Claude Code's own window for it: 200,000, or 1,000,000 for an id containing `[1m]`.\nFrom this repo (features/launch/.../LaunchModelEnvironment.kt): \"Claude Code takes min() with its client window\" for CLAUDE_CODE_AUTO_COMPACT_WINDOW, which a head's launch sets (not the `claude` head with the caller's own login, whose clientModels sets none).\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-19 14:57 CT head-catalog/coordinator: added; 1 of 1 checks fail, as they should before the work',
 ]

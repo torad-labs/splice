@@ -36,6 +36,9 @@ isolation while iterating. The Gradle build is rooted at the repository root wit
 JDK 21 toolchain; its modules live under `core/`, `integrations/`, `features/`, `app/`,
 and `quality/`, as mapped in `settings.gradle.kts`.
 
+`docs/local-runs.md` says what each heavy local run (the pre-push gate's legs, the Gradle and Kotlin daemons, the
+test suites and an install build) works on, the memory it reached on a real run, and why.
+
 A green *diff* is not the bar — a green *merge* is.
 
 ## Walls doctrine

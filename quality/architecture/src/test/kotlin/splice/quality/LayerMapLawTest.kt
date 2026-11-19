@@ -5,7 +5,6 @@
 // allowed.
 package splice.quality
 
-import com.lemonappdev.konsist.api.Konsist
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -140,7 +139,7 @@ class LayerMapLawTest {
 
     private fun scanModule(module: String, layer: Layer): List<ScannedFile> {
         if (!map.mainSources(module).isDirectory) return emptyList()
-        return Konsist.scopeFromDirectory("${map.relativeDir(module)}/src/main/kotlin").files.map { file ->
+        return LawScopes.main(map, module).files.map { file ->
             ScannedFile(module, layer, file.name, file.packagee?.name, file.imports.map { it.name })
         }
     }

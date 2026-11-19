@@ -65,7 +65,6 @@
 // simply not counted; no splice package is star-imported in production today.
 package splice.quality
 
-import com.lemonappdev.konsist.api.Konsist
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -410,7 +409,7 @@ class ConstructorWidthLawTest {
         val ast = map.modules
             .filter { module -> map.mainSources(module).isDirectory }
             .sumOf { module ->
-                Konsist.scopeFromDirectory("${map.relativeDir(module)}/src/main/kotlin")
+                LawScopes.main(map, module)
                     .classes(includeNested = true)
                     .count { it.primaryConstructor?.parameters?.isNotEmpty() == true }
             }

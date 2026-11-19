@@ -181,6 +181,173 @@ itself; the window is the model's own; a loading model or an outdated client get
 - Credentials from credential_command are never logged or written to the environment of child processes.
 - Console (accounts page) changes need dark/light captures at 1440px and ~3600px.'''
 
+[feature."desktop-full"]
+goal = '''
+# Claude Desktop, fully on splice (`desktop-full`)
+
+Goal handed to the campaign on Nov 18, 2026. It follows `desktop-door.md`, whose door is built but has never run in
+the real app.
+
+## Who it is for and why
+
+Someone who uses Claude Desktop (Chat, Cowork and the Code tab) and runs splice. Asked for on Nov 18, 2026: Desktop
+fully supported, with nothing left uncovered. splice should be to Desktop what Amazon Bedrock or an LLM gateway is to
+it: the provider Desktop is configured for, so that every model splice serves can be picked inside Desktop, and
+Desktop's features work as they do on any provider Anthropic supports.
+
+## Where it stands (read Nov 18, 2026)
+
+- The door (`/desktop/v1/messages`, `/count_tokens`) is built and its campaign checks pass (#637, #653, #656, #667).
+  It has never served the real app. On this machine Desktop 5.11492.5 is installed and the door is on, but Desktop's
+  Code-tab environment store (`~/.config/Claude/ccd-environment-config.json`) does not exist, so the Code tab runs
+  on the person's own Claude login.
+- The person has to paste five variables into Desktop by hand. splice can't write that store: Desktop encrypts it
+  with the keyring.
+- Desktop's picker lists only Claude's models, and splice can't add rows to it in standard mode. Every Claude model
+  picked in Desktop runs the door's saved default (`claude-codex--gpt-6.1-sol`), because `DoorRouting` sends a tier
+  from a session that named no selector to the caller's default. The terminal's `claude` was fixed on Nov 17–18 to
+  run a Claude model on the Claude accounts added to splice (the `claude` head is in the door, 15 models). Desktop
+  wasn't.
+- The door answers no `GET /v1/models`.
+
+## What Anthropic documents (read Nov 18, 2026)
+
+Desktop has a supported way to put a provider under the whole app: **Claude Desktop on 3P**
+(https://claude.com/docs/third-party/claude-desktop/overview, `/gateway`, `/code`, `/models`, `/configuration`,
+`/configuration-format`).
+
+- `inferenceProvider: "gateway"` with `inferenceGatewayBaseUrl` and a credential routes Chat, Cowork and Code through
+  a gateway that implements the Anthropic Messages API. `POST /v1/messages` (streaming, tools) is required.
+  `GET /v1/models` is optional and fills the picker; auto-discovery keeps only IDs that read as Claude.
+- `inferenceModels` builds the picker in Chat, Cowork and Code. Each entry has `name` (the ID sent), `labelOverride`,
+  `supports1m`, `prefer1m`, `anthropicFamilyTier` (the tier alias it stands for), `isFamilyDefault`, `behavesAs`
+  (the Claude model whose effort levels and limits it gets) and `maxEffort`. The first entry is the default. Also
+  `defaultModelEffort`, `alwaysStartWithDefaultModel`, `modelDiscoveryEnabled` and `modelPrefer1mContext`.
+- Credentials: `inferenceGatewayApiKey` and `inferenceGatewayAuthScheme` (bearer or x-api-key),
+  `inferenceCredentialHelper` (an executable that prints the credential), or `inferenceGatewayOidc` /
+  `inferenceIdpOidc` sign-in. `inferenceCustomHeaders`.
+- The Code tab's Claude Code gets these as launch environment and options ("always applied": provider, credentials,
+  `inferenceModels`, `autoModeEnabled`, `autoModeClassifierModel`, OTLP keys, `inferenceMaxTokensPerWindow`,
+  `organizationInstructions`, `managedMcpServers` and more) or as managed policy.
+- Where the configuration lives on Linux: the per-user local configuration is `~/.config/Claude-3p/configLibrary/`
+  (`_meta.json` names the applied config, one `.json` per config; the in-app window writes it, and other vendors'
+  CLIs write it too). The managed configuration is `/etc/claude-desktop/managed-settings.json`, root-owned.
+  The app opens in 3P mode at launch when a provider is configured; its data then lives under `~/.config/Claude-3p`.
+- What 3P mode costs the person: Chat and Cowork move to the provider as well, conversations are stored on the
+  device, identity is local, Anthropic-hosted cloud environments and Remote Control aren't offered, and SSH sessions
+  need a gateway address that isn't localhost.
+- A gateway should keep `cache_control` intact and return `usage.cache_creation` with `ephemeral_5m_input_tokens`
+  and `ephemeral_1h_input_tokens` (Chat and Cowork ask for 1h). It should forward `anthropic-beta`/`anthropic-version`
+  and body fields as open lists, return integer `retry-after` and `x-should-retry`, forward
+  `anthropic-ratelimit-unified-*` for the usage display, and pass error bodies through unmodified
+  (https://code.claude.com/docs/en/llm-gateway-protocol). Claude Code sends `x-claude-code-session-id`,
+  `x-claude-code-agent-id` and `x-claude-code-parent-agent-id`.
+- Standard mode (signed in to claude.ai) keeps Desktop's own `ANTHROPIC_BASE_URL` for the Code tab. That's why the
+  existing door uses the Mantle switch from the environment store.
+
+## What the installed app does (Desktop 5.11492.5, read from its bundle on Nov 18, 2026)
+
+Read from `/usr/lib/claude-desktop/resources/app.asar` (main process). Confirm each point in the live test before
+building on it.
+
+- **Standard mode's picker can't be changed by splice.** Desktop's UI never reads the models that its Claude Code
+  reports. So `modelPicker`, `availableModels` and `ANTHROPIC_CUSTOM_MODEL_OPTION` in `~/.claude/settings.json` shape
+  Claude Code's own `/model` only, never Desktop's picker. Only 3P mode gives a picker splice controls.
+- **3P picker source:** the `inferenceModels` list first, else discovery, else a built-in catalog. For the `gateway`
+  provider, discovery is `GET {base}/v1/models?limit=1000&after_id=…` with `anthropic-version: 2023-06-01`, up to 3
+  pages. It reads `data[].{id, display_name, supports_1m, max_input_tokens, anthropic_family_tier,
+  is_family_default}`, `has_more` and `last_id`. IDs are filtered: for gateway and mantle, a row with
+  `anthropic_family_tier` passes. For `mantle` with a static token or helper, discovery is off and the picker is only
+  `inferenceModels`. Desktop also gives Claude Code `availableModels` (exact match) and a `modelPicker` built from the
+  list.
+- **3P base URLs accept loopback http** (`allowLoopbackHttp`), so `http://127.0.0.1:<port>/desktop` is valid for
+  `inferenceGatewayBaseUrl` and `inferenceBedrockBaseUrl`.
+- **3P scope is the whole app.** There is no Code-tab-only scope. `deploymentMode` is any, 3p or 1p; `any` shows a
+  chooser at sign-in.
+- **3P sets Claude Code managed settings:** `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1`, `DISABLE_GROWTHBOOK=1`,
+  `CLAUDE_CODE_MODEL_CATALOG=0`, `CLAUDE_CODE_DISABLE_FAST_MODE=1`, `DISABLE_FEEDBACK_COMMAND=1`,
+  `CLAUDE_CODE_ENABLE_AUTO_MODE`, `CLAUDE_CODE_AUTO_MODE_SERVER`, `CLAUDE_CODE_MAX_CONTEXT_TOKENS=200000` (1M through
+  `[1m]` on the ID), and `disableClaudeAiConnectors: true`. Under the 200000 window, splice scales the counts it
+  reports so each model compacts at its own window (repo CLAUDE.md §22, door decision 5).
+- **The credential:** a static token or `inferenceCredentialHelper`, which Desktop runs and puts in the session's
+  environment (as `AWS_BEARER_TOKEN_BEDROCK` under mantle). Desktop sets no `apiKeyHelper`.
+- **Desktop's main process calls the base itself, not only its Claude Code:**
+  - `POST {base}/v1/messages`, not streamed, for the connection test (`max_tokens` 1), Claude in Chrome one-shots,
+    and title and side calls. Under mantle it sends **`x-api-key`**, not Bearer (Bearer only with the bearer
+    scheme). The door accepts only Bearer today.
+  - A reachability probe, `GET {origin}/`, which hits `127.0.0.1:<port>/`, not `/desktop`.
+- **Standard mode with a provider switch is a case Desktop expects.** Any truthy `CLAUDE_CODE_USE_*` in the session
+  environment makes it skip its model check against the account and not treat a model 401 as an expired Desktop
+  token. The env store drops `CLAUDE_CODE_PROCESS_WRAPPER`, `CLAUDE_CODE_AUTOUPDATER_DISABLED_BY_HOST`,
+  `CLAUDE_CODE_SIMPLE` and `CLAUDE_AGENT_SDK_MCP_NO_PREFIX`. `CLAUDE_CODE_HOST_OFFERS_DEVICE_MCP` is deleted unless
+  Desktop sets it, which corrects `desktop-door.md`'s "Dropped" row. Desktop sets `API_TIMEOUT_MS=900000` itself.
+- **Feature by feature:**
+  - In 3P: cloud sessions, Remote Control and the bridge are off, and the Cowork VM gives way to a CLI on the host.
+    Fast mode is off. Auto mode needs the gateway's server-side classifier check, or it shows as unavailable.
+    Usage shows a cost estimate from `inferenceModelPricing*`.
+  - Standard mode under the switch: titles, Remote Control and claude.ai connectors are unknown. Claude Code has a
+    cross-org guard that likely keeps connectors off.
+  - Hooks, permission modes, worktrees, preview, files and images are local to the host or inline in the body, in
+    both modes.
+- **Unknown:** the standard-mode picker's server source, standard mode's title path, connectors and Remote Control
+  under the switch, and the Developer-menu path on screen.
+
+## Outcomes
+
+1. **Desktop on splice as its provider (3P gateway mode).** One command (e.g. `splice desktop on --app`, name it as
+   you see fit) writes a Desktop 3P local configuration in `configLibrary` that points Desktop at splice's door as a
+   gateway. The person pastes nothing. The credential comes from `inferenceCredentialHelper`, a splice command that
+   prints the desktop key, so no key is written in the file. `off` restores what was there, and Desktop returns to
+   the person's claude.ai login. splice never touches the managed file in `/etc`. The command says, before it
+   switches, what the person gives up (Chat and Cowork on splice too, local history, no Remote Control or cloud
+   environments) and that Desktop must be relaunched.
+2. **Every splice model in Desktop's picker,** in Chat, Cowork and Code, with the same rows as the terminal picker
+   (`DesktopLineup.picker`). Each row has its label; `behavesAs` or `anthropicFamilyTier` so effort and limits are
+   right; `supports1m` only where the model really takes 1M; and `maxEffort` from the head's effort vocabulary.
+   Prefer the `gateway` provider with discovery: the door answers `GET /desktop/v1/models` in the shape Desktop
+   reads (`id`, `display_name`, `supports_1m`, `max_input_tokens`, `anthropic_family_tier`, `is_family_default`,
+   paging with `has_more`/`last_id`), so the picker follows the lineup at each launch. Rows must pass Desktop's ID
+   filter. Use `inferenceModels` where discovery can't carry a field. Whichever is chosen, a sign-in or an added head
+   reaches the picker at Desktop's next launch, and `splice desktop` says when a relaunch is needed.
+3. **Claude picks run on Claude.** In both modes, a Claude model picked in Desktop runs on the Claude accounts added
+   to splice (the `claude` head) when it serves that model, as the terminal does since Nov 18. The saved default
+   stands in only when no head serves it. Tier aliases (`opus`, `sonnet`, `haiku`, `fable`) and side calls follow
+   the session's head.
+4. **Standard mode stays and gets its gaps closed.** The existing Code-tab-only door (the Mantle env store) remains
+   for people who keep Chat and Cowork on claude.ai. Its window, tiers and recorded turns keep working.
+5. **Wire parity with what Desktop expects of a gateway:**
+   - The desktop key is accepted as `x-api-key` as well as Bearer.
+   - `GET /` (Desktop's reachability probe) answers.
+   - Desktop's own non-streamed one-shots (connection test, titles, Claude in Chrome) run like any door turn.
+
+   Also: `cache_control` untouched, `usage.cache_creation`
+   ephemeral 5m/1h fields, integer `retry-after`, `x-should-retry`, `anthropic-ratelimit-unified-*` from the head's
+   own limits so Desktop's usage display means something, error bodies whole, and agent/session headers recorded
+   on `/api/perf/turns`. `count_tokens` is answered on every head.
+6. **Desktop features that depend on the backend** each work, or are named as unavailable with the reason in
+   `splice desktop` (see the app study below): Auto mode and its classifier model, effort selector, 1M/context meter
+   and compaction, title generation, subagents, web search/fetch on non-Claude heads, images and files, MCP, scheduled
+   tasks.
+7. **Diagnostics:** `splice desktop` and `splice doctor` say which mode Desktop is in (standard with the env store,
+   3P with splice's configuration, 3P with someone else's or a managed file, or off), whether Desktop has been
+   relaunched since the config changed, the picker rows, and the last turn per mode.
+8. **The live test is run on the real app**, both modes, and its findings are written into the spec: picker rows,
+   a turn on a GPT head, on a Grok head and on Claude, a subagent naming a tier, a long session that compacts, Chat
+   and Cowork turns in 3P mode, and `off` restoring the person's login. Captures attached to the PR.
+
+## Constraints
+
+- Repo CLAUDE.md and AGENTS.md hold. Tests check what a user sees or what a route returns. Vendor facts (Desktop's
+  config format and paths) stay in one module. Boot fails closed. No Python. No new top-level functions or companion
+  objects. Reasoning effort never varies by turn type.
+- Never read or write Desktop's keyring-encrypted stores, the keyring itself, or `/etc/claude-desktop`. Never print
+  the desktop key.
+- splice CLAUDE.md §22: splice writes the values on both sides of the wire (the picker rows, windows, counts), so
+  fix behaviour by what splice writes before anything else. Reverse-engineering Desktop is a last resort.
+- The `custom-provider` campaign (issue #680) is changing the door at the same time: the terminal picker and tier
+  mapping for key heads. Build on `DesktopLineup.picker` and its tier mapping, and don't fork them.
+- A change to the console's Desktop card needs captures in dark and light themes at 1440 px and ~3600 px.'''
+
 [[row]]
 id = 'server-listener'
 title = 'A [server] listener that answers only keys'
@@ -1793,4 +1960,1279 @@ reviews = [
 notes = [
   '2026-11-17 15:51 CT: added; 1 of 1 checks fail, as they should before the work',
   '2026-11-18 03:12 CT: status dropped',
+]
+
+[[row]]
+id = 'cp-schema'
+title = "splice.toml speaks a team's provider definition"
+feature = 'custom-provider'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = '''
+splice.toml gains the keys a team's provider definition is written with (issue #680), parsed, checked at boot and documented, so every later item of custom-provider reads one grammar. This item decides the grammar; the behaviour behind each key is its own item's.
+
+The keys (decided here once; .campaign/checks/custom/lib/team.ts repeats them):
+- [providers.<key>].auth = { kind = "command", credential_command = "<shell command>", login_command = "<shell command>" }. A new auth kind, generic (no vendor in it): credential_command prints the current credential (cp-credential), login_command is an interactive sign-in (cp-login). credential_command is required with kind = "command" and refused on any other kind; login_command is optional and only with kind = "command". Allowed on every dialect; the key rides where an api-key's rides on that dialect.
+- [providers.<key>].picker and [heads.<key>].picker = true | false (absent = today's rule; a head's wins over its provider's). Behaviour: cp-picker.
+- [providers.<key>].ca_file = "<path>": a PEM bundle of one or more certificates; ~ expands, a relative path resolves against splice.toml's folder. A file that is missing, unreadable or holds no certificate is a finding. Behaviour: cp-tls.
+- [providers.<key>].error_messages = "whole" | "filtered" (absent = "filtered"). Any other string is a finding. Behaviour: cp-errors.
+- [providers.<key>].served_window = { url = "<http(s) URL>", field = "<dotted JSON path>" }. A url that is not absolute http(s) or an empty field is a finding. Behaviour: cp-window.
+- [[providers.<key>.models]].max_output_tokens = <positive integer>; 0 or negative is a finding. Behaviour: cp-output.
+- [door.commands.<name>] = { head = "<head key>", models = "head" | "door" } (models absent = "head"). A command a wrapper starts Claude Code on the door through (cp-command). Findings: head missing or not a head in splice.toml, a head whose provider forwards the caller's own Claude login (auth kind client, never in the door), models not one of the two words, a name that is `claude` or the command of any head ([heads.*.claude].command, or the head key when it sets none) or of another door command.
+- The existing send_version keeps its key (its new header is cp-identity's); description and label on a model already exist.
+Every finding is a TopologyFinding with its dotted path (e.g. providers.acme.ca_file, door.commands.claude-acme.head) and refuses boot with every other finding at once, like every key today (repo CLAUDE.md, "Boot fails closed"); a string-valued key is read as a string and checked, so one bad value never hides the rest behind a decode error. Keys follow the existing @Serializable classes in core/.../topology (ProviderConfig in Topology.kt, AuthConfig in TopologySchema.kt, HeadConfig.kt, ModelEntry in core/.../model/ModelCatalog.kt, a new DoorConfig file for [door]); findings live beside TopologyChecks (TopologyWriter.kt) and AuthCompatibility (AuthKind.kt). No new top-level functions or companion objects.
+A kind = "command" provider must not make boot fail for want of a key: until cp-credential lands, its turns may refuse as a head with no key does today.
+Document every key in docs/specs/custom-provider.md (create it: a section "splice.toml" with each key, its values and its finding), which cp-team turns into the team's guide.
+
+Proven by: bun test ./.campaign/checks/custom/schema.test.ts — a splice.toml using every key boots and `splice claude --json` answers; a file with a mistake in each new key (and kind=command without credential_command, credential_command on api-key, three bad door commands) does not boot and its log names every path.'''
+checks = [
+  'bun test ./.campaign/checks/custom/schema.test.ts',
+]
+sources = [
+  'core/src/main/kotlin/splice/core/topology/Topology.kt',
+  'core/src/main/kotlin/splice/core/topology/TopologySchema.kt',
+  'core/src/main/kotlin/splice/core/topology/HeadConfig.kt',
+  'core/src/main/kotlin/splice/core/model/ModelCatalog.kt',
+  'core/src/main/kotlin/splice/core/topology/AuthKind.kt',
+  'core/src/main/kotlin/splice/core/topology/TopologyWriter.kt',
+  '.campaign/checks/custom/lib/team.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 20:15 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'cp-overlay'
+title = "A wrapper's --settings merges into splice's one overlay on the door"
+feature = 'custom-provider'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = '''
+Claude Code takes one --settings per launch, so today a --settings that a person or a team's wrapper passes to `claude` on the door either replaces splice's overlay (losing the picker and the /login hook) or is lost (issue #680, outcome 12). After this item, a launch of `claude` on the door (POST /launch/claude while the lane is the door) reads every --settings among the person's arguments, inline JSON or a file path, `--settings X` and `--settings=X` alike, and hands Claude Code exactly one --settings: splice's overlay with theirs merged in.
+
+Merge rule (decided here; cp-command reuses it for door commands): objects merge key by key, the person's values win, except what keeps the session on the door and splice's picker, which splice's own values always win: env keys splice sets for the door (CLAUDE_CODE_USE_MANTLE, ANTHROPIC_BEDROCK_MANTLE_BASE_URL, AWS_BEARER_TOKEN_BEDROCK, ANTHROPIC_MODEL, CLAUDE_CODE_MAX_CONTEXT_TOKENS, DISABLE_LOGIN_COMMAND, DISABLE_LOGOUT_COMMAND) and modelPicker. hooks are concatenated per event, splice's entries first, so a wrapper's UserPromptSubmit hook runs beside splice's /login hook. Several --settings merge in the order given. The person's other arguments pass through unchanged, in order. A --settings that is neither a JSON object nor a readable file holding one refuses the launch with a non-200 answer whose text names the value (as boot refuses a bad value: say what and where, never drop it silently).
+
+Where: the door launch overlay (app/.../desktop/ClaudeDoorLaunch.kt, features/launch/.../recipe/LaunchRoutes.kt). The merge is a class of its own beside them; no new top-level functions or companion objects. Heads' own launches are not changed by this item.
+
+Proven by: bun test ./.campaign/checks/custom/overlay.test.ts — a launch with an inline --settings and a file --settings yields one overlay holding the wrapper's env, otelHeadersHelper and SessionStart hook beside splice's picker and UserPromptSubmit hook, with the other arguments in order; a wrapper's UserPromptSubmit runs beside splice's; a wrapper cannot set CLAUDE_CODE_USE_MANTLE=0, move the base URL or replace the picker; an unreadable --settings refuses the launch naming it.'''
+checks = [
+  'bun test ./.campaign/checks/custom/overlay.test.ts',
+]
+sources = [
+  'app/src/main/kotlin/splice/app/desktop/ClaudeDoorLaunch.kt',
+  'features/launch/src/main/kotlin/splice/launch/recipe/LaunchRoutes.kt',
+  '.campaign/checks/custom/lib/team.ts',
+]
+results = [
+  "Saved tool result (cli.txt):\nRead Nov 18, 2026 (custom-provider coordinator's code map):\n- app/.../cli/claude/ClaudeCommand.kt: splice claude [--json] | door [--model] | head, through DoorClient; the JSON is built in the daemon (LineupJson).\n- POST /launch/{head}: app/.../control/mount/LaunchMount.kt; features/launch/.../recipe/LaunchRoutes.kt launch(): door only when key == CLAUDE_COMMAND (launchService.door.launch()); receiveLaunchRequest parses extraArgs (`arg` fields).\n- Door overlay: app/.../desktop/ClaudeDoorLaunch.kt (picker rows, hooks); head overlays: integrations/claude-code/.../wrap/WrappedHeadTypes.kt WrappedLaunch.settingsOverlay().\n- TOML writing: core/.../topology/TopologyWriter.kt (keeps comments/order, verifies by re-decoding, atomic); TopologyFindings.of() -> TopologyChecks.\n- splice add: features/configuration/.../add/AddProfiles.kt toml(), AddPrepare.kt, AddPortChoice.kt choose() (first free port above max(existing, 3098)); prefix \"claude-<key>--\".\n- CLI verbs: app/.../cli/CommandParser.kt verbs map (\"add\" -> Command.Add); app/.../cli/Command.kt.\n- Boot findings: integrations/topology/.../ConfigFindings.kt (TomlStructurePreflight, TopologyTypeMismatch, decode, TopologyFindings); app/.../cli/ConfigPreflight.kt (`splice check-config`, exit 3).\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 20:57 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'df-wire-door'
+title = 'The door takes Desktop as a gateway: x-api-key, the root probe, one-shots'
+feature = 'desktop-full'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = '''
+The door takes Claude Desktop as a gateway client (outcome 5).
+- The desktop key opens the door sent as `x-api-key` as well as `Authorization: Bearer`, on /desktop/v1/messages and /count_tokens, with or without ?beta=true. Desktop sends a gateway credential as x-api-key unless told bearer, and its main process uses x-api-key under Mantle. The terminal's key is taken the same two ways. A wrong, replaced or missing key is refused 401 `authentication_error` naming `splice desktop`, as today, and the management and turn keys open nothing here. When both headers are present, Authorization decides.
+- Desktop probes the address's root before it uses the gateway. `GET /` and `HEAD /` on the control port answer 200 with a short text/plain body ("splice"), no key needed, and nothing in the body. A request whose Accept names text/html still gets today's redirect to the console, so a browser lands where it did.
+- Desktop's own non-streamed one-shots (connection test, titles, Claude in Chrome; `stream` false or absent, any max_tokens) are answered as one Anthropic `message` JSON, on a selector or a tier, through the same routing as any door turn. A request with max_tokens 1 that is not streamed keeps today's probe routing (the door's default model), since Claude Code's start-up check and Desktop's connection test send the same shape and the door can't tell them apart. It is answered 200 as one Anthropic `message` JSON too, so Desktop's connection test passes.
+Files: app/src/main/kotlin/splice/app/desktop/DesktopDoor.kt (admission), app/src/main/kotlin/splice/app/control/mount/ConsoleMount.kt (root). Proof: `bun test ./.campaign/checks/desktop-full/wire-door.test.ts`.
+
+Shared across desktop-full (decided once, the same in every item): one door at /desktop on the control port and one desktop key serve both of Desktop's modes. "Standard mode" is today's Code-tab door through Desktop's environment store (`splice desktop on`). "App mode" is Desktop's third-party gateway mode, the whole app on splice (`splice desktop on --app`). In JSON the mode is one of "off", "standard", "app", "other" (a third-party configuration that is not splice's). Every request Desktop sends in app mode carries the header `x-splice-desktop: app`, which splice writes into the configuration's inferenceCustomHeaders. That header is how the door tells an app-mode request from a standard one. Refusals keep the door's Anthropic error shape and the "splice desktop: " prefix. Picker rows are DesktopLineup.picker, the terminal's rows (don't fork them; the custom-provider campaign, #680, is changing labels and tiers there at the same time). Vendor facts about Desktop (paths, key names, row fields, ID filter) live in integrations/claude-code/src/main/kotlin/splice/client/desktop/, beside the other Desktop facts. Goal: docs/specs/desktop-full.md.'''
+checks = [
+  'bun test ./.campaign/checks/desktop-full/wire-door.test.ts',
+]
+sources = [
+  'docs/specs/desktop-full.md',
+  'app/src/main/kotlin/splice/app/desktop/DesktopDoor.kt',
+  'app/src/main/kotlin/splice/app/desktop/DesktopKey.kt',
+  'app/src/main/kotlin/splice/app/desktop/DesktopCaller.kt',
+  'app/src/main/kotlin/splice/app/control/mount/ConsoleMount.kt',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 20:58 CT desktop-full/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'cp-tiers'
+title = "Side calls and subagents naming a tier run on the session's provider"
+feature = 'custom-provider'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'cp-ready',
+]
+guard = false
+spec = '''
+Claude Code names a tier, not a model, for its side calls (titles and summaries on haiku, which is also its small-fast model) and for a subagent that names one (opus, sonnet, haiku, fable) (issue #680, outcome 7). After this item, in a door session that holds a provider's model (it named a selector earlier in the same x-claude-code-session-id), each tier ID (anthropic.claude-opus-*, -sonnet-*, -haiku-*, -fable-*, and Claude Code's small-fast model ID) runs on that session's head as the head's model_slots map it (opus, sonnet, haiku, fable), and a tier the head does not map runs the head's pinned model. None of them goes to the door's default model on another provider. This is the rule desktop-door.md decisions 1 to 3 already state for the session's head; build it on DesktopLineup and its tier mapping (DoorRouting.tiered / onHeld / defaulted) and do not fork them: the desktop-full campaign builds on the same mapping.
+
+Decided here: a head with no model_slots and one with model_slots that leave a tier out behave alike for that tier (pinned model); `fable` is a slot like the other three (model_slots = { fable = "..." } is already read; cp-schema documents it). A session that has named no selector keeps today's rule (its tier runs on the door's default) except in a door command's session, which is cp-command's.
+
+Where: app/src/main/kotlin/splice/app/desktop/DoorRouting.kt and the head spec's tier map it reads. HeadConfig.tierModels() already turns model_slots (opus, sonnet, haiku, fable) into that map: read it, do not change HeadConfig.kt, which cp-schema changes at the same time. Tests assert what runs upstream, not how routing is called.
+
+Proven by: bun test ./.campaign/checks/custom/tiers.test.ts — with the door's default on another provider, a session on claude-acme--glm-big sends each of opus/sonnet/haiku/fable to glm-big/glm-mid/glm-small/glm-fable on acme, and a session on a head with no slots sends every tier to its pinned model; the other provider sees none of them.'''
+checks = [
+  'bun test ./.campaign/checks/custom/tiers.test.ts',
+]
+sources = [
+  'app/src/main/kotlin/splice/app/desktop/DoorRouting.kt',
+  'app/src/main/kotlin/splice/app/desktop/DesktopLineup.kt',
+  'core/src/main/kotlin/splice/core/topology/HeadConfig.kt',
+]
+results = [
+  "Saved tool result (door-path.txt):\nRead Nov 18, 2026 (custom-provider coordinator's code map, not re-verified line by line):\n- Door entry: app/.../desktop/DesktopDoor.kt answer(); DoorRouting.of() -> DoorRelay.send(), which relays to the head's own port through features/share ShareRelay (HeadTurn with x-splice-door). So a door turn is a turn on the head's port after the relay: the head's arm (quirks, local, slot affinity, effort vocabulary) applies on both; what can differ is what the door/relay forwards or drops.\n- ShareRelay.notForwarded drops hop-by-hop, authorization, x-api-key, via, x-splice-door and a few splice headers; other headers pass.\n- Window: DoorRelay records the caller's window per session in the head's ClientWindows; the head scales counts with ModelCatalog.usageScale(model, sessionWindow) = client window / model's declared window; DoorRelay scales count_tokens itself.\n- Tiers: DoorRouting.tiered() (AnthropicTiers().tierOf), onHeld() (SessionHeads, per x-claude-code-session-id), served(), defaulted() (door's default when no session head).\n- Picker: DesktopLineup.picker; rows by ClaudeDoorLaunch.rowsOf()/labelOf(); left_out by LineupJson.leftOut().\n- max tokens: ChatRequestBuilder.build() reads body.maxTokens; ChatRequestAssembler.chatRequestObject() writes fields[quirks.maxTokensField].\n- Local /props probe: integrations/upstream/.../local/LocalRuntimeProbe.kt genericModels() reads default_generation_settings.n_ctx.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 20:58 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'df-credential'
+title = "splice desktop credential prints the desktop key for Desktop's credential helper"
+feature = 'desktop-full'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = '''
+`splice desktop credential` is the program Claude Desktop runs as its inferenceCredentialHelper (outcome 1).
+- With stdout not a terminal, it prints the desktop key alone on one line and exits 0. Desktop reads a bare token from stdout.
+- With stdout a terminal, it prints no key and exits 1, saying on stderr: "splice desktop credential: this is Claude Desktop's credential helper; it prints the desktop key only to the program that runs it". This keeps the rule that splice never shows the key on screen.
+- It reads the key from splice's state folder itself (DesktopKey's file) and needs no running daemon: Desktop runs it at launch and whenever its cached credential runs out, maybe before splice's daemon is up. When there is no key yet it mints one, as DesktopKey.get does.
+- After `splice desktop rotate-key` it prints the new key.
+- `splice desktop`'s usage line names `credential`. It is not one of the daemon verbs in DoorVerbs.
+Files: a new app/src/main/kotlin/splice/app/cli/desktop/DesktopCredential.kt, and DesktopCommand.kt (dispatch and usage). Proof: `bun test ./.campaign/checks/desktop-full/credential.test.ts`.
+
+Shared across desktop-full (decided once, the same in every item): one door at /desktop on the control port and one desktop key serve both of Desktop's modes. "Standard mode" is today's Code-tab door through Desktop's environment store (`splice desktop on`). "App mode" is Desktop's third-party gateway mode, the whole app on splice (`splice desktop on --app`). In JSON the mode is one of "off", "standard", "app", "other" (a third-party configuration that is not splice's). Every request Desktop sends in app mode carries the header `x-splice-desktop: app`, which splice writes into the configuration's inferenceCustomHeaders. That header is how the door tells an app-mode request from a standard one. Refusals keep the door's Anthropic error shape and the "splice desktop: " prefix. Picker rows are DesktopLineup.picker, the terminal's rows (don't fork them; the custom-provider campaign, #680, is changing labels and tiers there at the same time). Vendor facts about Desktop (paths, key names, row fields, ID filter) live in integrations/claude-code/src/main/kotlin/splice/client/desktop/, beside the other Desktop facts. Goal: docs/specs/desktop-full.md.'''
+checks = [
+  'bun test ./.campaign/checks/desktop-full/credential.test.ts',
+]
+sources = [
+  'docs/specs/desktop-full.md',
+  'app/src/main/kotlin/splice/app/cli/desktop/DesktopCommand.kt',
+  'app/src/main/kotlin/splice/app/desktop/DesktopKey.kt',
+]
+results = [
+  "Saved tool result (desktop-3p-bundle.md):\n# Claude Desktop 5.11492.5 (Linux), 3P mode: read from its main process code, Nov 18, 2026\n\nRead from `/usr/lib/claude-desktop/resources/app.asar`, extracted, `.vite/build/index.chunk-DOKiptke.js`\n(minified). Each line is what the code does; excerpts are abridged.\n\n## The local configuration library\n\n- Folder: `<appData>/Claude-3p/configLibrary/` (`appData` is Electron's: `$XDG_CONFIG_HOME` or `~/.config` on Linux).\n- `_meta.json`: `{\"appliedId\": \"<id>\", \"entries\": [{\"id\": \"<id>\", \"name\": \"<name>\", \"provider\"?: \"<s>\", \"note\"?: \"<s>\"}]}`.\n  Desktop's own writer starts from `{appliedId: \"\", entries: []}` when the file is absent, and refuses an id not in\n  `entries` (\"unknown config id\").\n- An id matches `/^[a-f0-9-]{36}$/` (a UUID). The config is `configLibrary/<id>.json`, one flat JSON object of config\n  keys (`inferenceProvider`, `inferenceGatewayBaseUrl`, ...).\n- Read at launch: `_meta.json`'s `appliedId`, then `<id>.json`. An unreadable entry opens as empty (logged\n  `[configLibrary] entry unreadable; opening as empty`).\n- Secret-type string keys may be stored sealed (`__sealed__:v1:` + safeStorage). Desktop's save and a later \"sweep\"\n  seal plaintext secrets in place (it rewrites `<id>.json` when the file is unchanged under it). A config with no\n  plaintext secret (no `inferenceGatewayApiKey`) has nothing to seal.\n\n## Credential helper\n\n- `inferenceCredentialHelper`: an absolute path to an executable file (`pathKind: \"file\"`; a bad path is\n  \"Path must be absolute and on the local filesystem.\"). `inferenceCredentialHelperArgs`: an array of argument\n  strings. Also `inferenceCredentialHelperTtlSec` (positive int), `inferenceCredentialHelperTimeoutSec` (≤600),\n  `inferenceCredentialHelperSilentRefreshEnabled` (bool).\n- Output formats: `bare-token` or `json`. A clean exit with nothing on stdout is a failure (\"produced no output\");\n  a non-zero exit is a failure. Its environment carries `CLAUDE_HELPER_CONTEXT` (e.g. `setup-test`) and\n  `CLAUDE_HELPER_MANUAL_RUN=1` for the setup test.\n\n## Gateway provider and the Code tab\n\n- For `inferenceProvider: \"gateway\"` the scheme is bearer unless `inferenceGatewayAuthScheme` is `\"x-api-key\"`:\n  `i = e.provider===\"gateway\" ? e.authScheme!==\"x-api-key\" : as(t)`; then\n  `ANTHROPIC_API_KEY: i ? \"\" : t, ANTHROPIC_AUTH_TOKEN: i ? t : \"\"`. A helper's credential is put in the same\n  variable (`credentialEnvVar`: bearer → `ANTHROPIC_AUTH_TOKEN`, else `ANTHROPIC_API_KEY`).\n- `inferenceCustomHeaders`: a `{name: value}` object (`record<string,string>`), readers desktop and code; it becomes\n  `ANTHROPIC_CUSTOM_HEADERS` (`\"name: value\"` lines) for the Code tab's Claude Code.\n- A gateway whose host is not Anthropic's gets `CLAUDE_CODE_DISABLE_LEGACY_MODEL_REMAP=1`.\n- Auto mode: `CLAUDE_CODE_ENABLE_AUTO_MODE` comes from `autoModeEnabled` (unset: Code on, Cowork off; `true`: both on;\n  `false`: off). `CLAUDE_CODE_AUTO_MODE_SERVER` is `\"1\"`/`\"0\"` from `inferenceGatewayAutoModeServerChecks` when set.\n  `autoModeClassifierModel` is marked `availableInVersion: \"@next\"` (not read by this release).\n- Desktop always sets `CLAUDE_CODE_DISABLE_FAST_MODE=1` under 3P.\n\n## Discovery (`GET /v1/models`)\n\n- URL: `${base.replace(/\\/+$/,\"\")}/v1/models?limit=1000[&after_id=<cursor>]`, headers: the credential header,\n  `anthropic-version: 2023-06-01`, the custom headers. Timeout 10 s per page, up to 3 pages. A non-OK first page is\n  a failure; a later page's failure keeps the rows read. `data` must be an array.\n- Per row it reads: `id` (≤255 chars), `display_name` (≤255; the label, else the id), `description` (≤100 chars),\n  `anthropic_family_tier`, `is_family_default`, and 1M from `supports_1m` when it is a boolean, else\n  `max_input_tokens >= 1000000`. Paging: `has_more === true` with a string `last_id` gives the next cursor.\n- `anthropic_family_tier` is kept only when it is one of `sonnet`, `opus`, `haiku`, `fable`, `mythos` (lowercased).\n  `is_family_default: true` is kept only on a row with a kept tier.\n- Filter for the gateway provider: a row passes when its id \"reads as Claude\" or it has a kept tier. An id reads as\n  Claude when it contains `claude`, a tier name or `anthropic`, and does not match\n  `/ark-code|...|gemini|...|glm|gpt|grok|...|kimi|...|codex|.../` (a long list of other vendors' names). So every\n  splice selector of a GPT, Grok, Kimi or GLM model needs a tier to be listed.\n- Rows whose id reads as Claude and that share both display name and tier are grouped as variants of one picker row\n  (the family default, or the plainest id, leads). An id ending `[1m]` is a 1M variant of the id without it.\n- Discovery does not carry `maxEffort`, `behavesAs` or `labelOverride`; those exist only on `inferenceModels`\n  entries, and `inferenceModels`, when set, replaces discovery. `modelDiscoveryEnabled` is a config key.\n\n## Picker and effort\n\n- Effort ladder: `low`, `medium`, `high`, `xhigh`, `max` (an unknown `maxEffort` reads as `low`).\n- `inferenceModels` entry keys: `name`, `labelOverride`, `supports1m`, `prefer1m`, `anthropicFamilyTier` (the tiers\n  above), `isFamilyDefault` (shown only with a tier), `behavesAs` (a Claude model id), `maxEffort`, plus\n  `minDesktopVersion`.\n- Claude Code reads `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE,MYTHOS}_MODEL` and Desktop seeds them from the list\n  (`CLAUDE_CODE_3P_SEEDED_OPUS_DEFAULT`, `..._PROBE_WROTE_HAIKU_DEFAULT`); a family default is what a tier alias\n  resolves to.\n\n## Not read here\n\n- What Desktop's main process uses for title and side calls, the exact reachability probe, the usage display's\n  headers, and whether discovery re-runs while Desktop is open. The live test reads them.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 20:59 CT desktop-full/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'cp-parity'
+title = "A door turn sends a provider exactly what its head's port sends"
+feature = 'custom-provider'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'cp-ready',
+]
+guard = false
+spec = '''
+Everything a head of a provider does today behaves the same on a door turn on that provider (issue #680, outcome 2), so a team can leave the deprecated head command for `claude` on the door and lose nothing: `local` (per-turn token counts, earlier reasoning replayed as reasoning_content), the quirks `stream_usage`, `slot_affinity` and `chat_effort_vocabulary` (the /effort pick and a thinking budget mapped to the provider's own effort words), and the provider's `extra_headers` and `forward_headers`. After this item, for the same turn the provider is sent the same request whether Claude Code sent it to the head's own port or through the door (/desktop/v1/messages on the terminal's key): the same JSON body, and the same headers, the fixed extra_headers and every header named in forward_headers that the session sent. The session sees the same answer text. The one designed difference stays: the door reports counts scaled to the session's window (DoorRelay, ClientWindows; cp-window), which is not a difference in what the provider is sent.
+
+A door turn reaches its head through the relay LAN share uses (DoorRelay -> ShareRelay -> the head's port), so whatever the door or the relay drops or adds on the way (a forwarded header, the slot lease keyed by session, a body field) is the place to fix; never re-apply a head feature a second time on the door side. Reasoning effort is part of the prompt-cache key and never varies by turn type (repo CLAUDE.md).
+
+Where: app/src/main/kotlin/splice/app/desktop/DoorRelay.kt, DesktopDoor.kt, features/share/.../ShareRelay.kt (which headers it forwards to a head). Vendor facts stay in their provider module.
+
+Proven by: bun test ./.campaign/checks/custom/parity.test.ts — one turn with prior reasoning, a thinking budget and a forwarded x-acme-trace header, sent once to the head's port and once through the door with the same session id, reaches the gateway as two byte-identical bodies with identical headers (x-acme-team = core and x-acme-trace = trace-4242 among them), and both answers carry the same text.'''
+checks = [
+  'bun test ./.campaign/checks/custom/parity.test.ts',
+]
+sources = [
+  'app/src/main/kotlin/splice/app/desktop/DoorRelay.kt',
+  'app/src/main/kotlin/splice/app/desktop/DesktopDoor.kt',
+  'features/share/src/main/kotlin/splice/share/ShareRelay.kt',
+]
+results = [
+  "Saved tool result (door-path.txt):\nRead Nov 18, 2026 (custom-provider coordinator's code map, not re-verified line by line):\n- Door entry: app/.../desktop/DesktopDoor.kt answer(); DoorRouting.of() -> DoorRelay.send(), which relays to the head's own port through features/share ShareRelay (HeadTurn with x-splice-door). So a door turn is a turn on the head's port after the relay: the head's arm (quirks, local, slot affinity, effort vocabulary) applies on both; what can differ is what the door/relay forwards or drops.\n- ShareRelay.notForwarded drops hop-by-hop, authorization, x-api-key, via, x-splice-door and a few splice headers; other headers pass.\n- Window: DoorRelay records the caller's window per session in the head's ClientWindows; the head scales counts with ModelCatalog.usageScale(model, sessionWindow) = client window / model's declared window; DoorRelay scales count_tokens itself.\n- Tiers: DoorRouting.tiered() (AnthropicTiers().tierOf), onHeld() (SessionHeads, per x-claude-code-session-id), served(), defaulted() (door's default when no session head).\n- Picker: DesktopLineup.picker; rows by ClaudeDoorLaunch.rowsOf()/labelOf(); left_out by LineupJson.leftOut().\n- max tokens: ChatRequestBuilder.build() reads body.maxTokens; ChatRequestAssembler.chatRequestObject() writes fields[quirks.maxTokensField].\n- Local /props probe: integrations/upstream/.../local/LocalRuntimeProbe.kt genericModels() reads default_generation_settings.n_ctx.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 20:59 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'df-wire-answers'
+title = "Door answers carry Desktop's gateway usage, retry and error fields on every head"
+feature = 'desktop-full'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = '''
+A door turn's answer is what Desktop expects of a gateway, on every head (outcome 5; https://code.claude.com/docs/en/llm-gateway-protocol).
+- Usage: every answer, streamed (message_start, and message_delta where it carries usage) or not, has `usage.cache_creation` {"ephemeral_5m_input_tokens", "ephemeral_1h_input_tokens"} as integers that add up to `cache_creation_input_tokens`, after any window scaling. On a head whose provider doesn't split cache writes, the write counts as 5-minute, matching what splice charges. Chat and Cowork ask for 1h, and an Anthropic head passes Anthropic's own split through.
+- To an Anthropic head (anthropic-passthrough), the body's cache_control blocks and fields splice doesn't know (context_management, any future field) are sent as Desktop sent them. `anthropic-beta` is sent as an open list holding every value Desktop sent, and `anthropic-version` as sent.
+- Refusals: an Anthropic head's error body reaches Desktop whole, every field as Anthropic wrote it. On other heads, how much of a provider's own message is shown stays the provider's `error_messages` setting (custom-provider, #680, outcome 10), whose Retry-After pass-through this item builds on, not around.
+- Every refusal the door answers carries `x-should-retry`: "true" on a 408, 409, 429 or 5xx, "false" on any other 4xx.
+- A Retry-After is in whole seconds, rounded up: a provider's "6.2" or an HTTP date becomes an integer. That holds for both `retry-after` and splice's own.
+- count_tokens is answered on every head: forwarded where the provider counts (Anthropic), counted by splice where it can't (OpenAI chat, Responses), and scaled as today.
+Files: the head's answer writing in features/turns and the dialects (integrations/dialects/*), and the relay's refusal path in the share module. Proof: `bun test ./.campaign/checks/desktop-full/wire-answers.test.ts`.
+
+Shared across desktop-full (decided once, the same in every item): one door at /desktop on the control port and one desktop key serve both of Desktop's modes. "Standard mode" is today's Code-tab door through Desktop's environment store (`splice desktop on`). "App mode" is Desktop's third-party gateway mode, the whole app on splice (`splice desktop on --app`). In JSON the mode is one of "off", "standard", "app", "other" (a third-party configuration that is not splice's). Every request Desktop sends in app mode carries the header `x-splice-desktop: app`, which splice writes into the configuration's inferenceCustomHeaders. That header is how the door tells an app-mode request from a standard one. Refusals keep the door's Anthropic error shape and the "splice desktop: " prefix. Picker rows are DesktopLineup.picker, the terminal's rows (don't fork them; the custom-provider campaign, #680, is changing labels and tiers there at the same time). Vendor facts about Desktop (paths, key names, row fields, ID filter) live in integrations/claude-code/src/main/kotlin/splice/client/desktop/, beside the other Desktop facts. Goal: docs/specs/desktop-full.md.'''
+checks = [
+  'bun test ./.campaign/checks/desktop-full/wire-answers.test.ts',
+]
+sources = [
+  'docs/specs/desktop-full.md',
+  'app/src/main/kotlin/splice/app/desktop/DoorRelay.kt',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:00 CT desktop-full/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'cp-picker'
+title = "A provider's models carry their own label and description, and picker = true|false"
+feature = 'custom-provider'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'cp-schema',
+  'cp-overlay',
+]
+guard = false
+spec = '''
+In the /model of a `claude` on the door, a team's model reads as the team wrote it, and a provider or a head says for itself whether it is in the picker (issue #680, outcome 1). Build on DesktopLineup.picker (door-default.md decision 4, as commit 29cf85c1f left it); do not fork it, the desktop-full campaign reads the same rows.
+
+After this item:
+- A row's label is the model's `label` in splice.toml, else its id. Its description is the model's `description` followed by ` · splice · <command>`, or `splice · <command>` when it has none (today's form). `splice claude --json` models[].label is the same label.
+- `picker = false` on [providers.<key>] or [heads.<key>] keeps that head out of /model. Its selectors still run when named. It is in `left_out` with the reason `picker = false on providers.<key>` or `picker = false on heads.<key>` (whichever decided).
+- `picker = true` lists every model the head's endpoint lists beside the ones splice.toml declares (declared first, in splice.toml's order, then the listed ones not declared, in the endpoint's order). On a head whose login is missing or expired, the login rule still wins: left out with that reason.
+- A head's own `picker` wins over its provider's. Absent on both, decision 4 holds unchanged (a key or local head lists what it declares, or all it lists when it declares none).
+- `splice claude --json` models lists exactly the rows /model lists, in the same order.
+Update door-default.md decision 4 with the label, description and picker rules, in its own words.
+
+The door's older check .campaign/checks/door/picker.test.ts was rewritten in this plan for the rule 29cf85c1f landed (a key head's declared models are rows); it must keep passing.
+
+Where: app/src/main/kotlin/splice/app/desktop/DesktopLineup.kt, ClaudeDoorLaunch.kt (rowsOf / labelOf), LineupJson.kt, docs/specs/door-default.md. The `picker` key is cp-schema's.
+
+Proven by: bun test ./.campaign/checks/custom/picker.test.ts and bun test ./.campaign/checks/door/picker.test.ts — acme's model is listed as "GLM-5.3 Flash" described "Acme's own GLM, served in-house · splice · claude-acme"; a bare model is listed by id described "splice · claude-acme"; picker = false hides a provider and names it in left_out, and its selector still answers; picker = true adds the endpoint's own model; a head's picker = false beats its provider's true; the JSON rows equal the /model rows.'''
+checks = [
+  'bun test ./.campaign/checks/custom/picker.test.ts',
+  'bun test ./.campaign/checks/door/picker.test.ts',
+]
+sources = [
+  'app/src/main/kotlin/splice/app/desktop/DesktopLineup.kt',
+  'app/src/main/kotlin/splice/app/desktop/ClaudeDoorLaunch.kt',
+  'app/src/main/kotlin/splice/app/desktop/LineupJson.kt',
+  'docs/specs/door-default.md',
+]
+results = [
+  "Saved tool result (door-path.txt):\nRead Nov 18, 2026 (custom-provider coordinator's code map, not re-verified line by line):\n- Door entry: app/.../desktop/DesktopDoor.kt answer(); DoorRouting.of() -> DoorRelay.send(), which relays to the head's own port through features/share ShareRelay (HeadTurn with x-splice-door). So a door turn is a turn on the head's port after the relay: the head's arm (quirks, local, slot affinity, effort vocabulary) applies on both; what can differ is what the door/relay forwards or drops.\n- ShareRelay.notForwarded drops hop-by-hop, authorization, x-api-key, via, x-splice-door and a few splice headers; other headers pass.\n- Window: DoorRelay records the caller's window per session in the head's ClientWindows; the head scales counts with ModelCatalog.usageScale(model, sessionWindow) = client window / model's declared window; DoorRelay scales count_tokens itself.\n- Tiers: DoorRouting.tiered() (AnthropicTiers().tierOf), onHeld() (SessionHeads, per x-claude-code-session-id), served(), defaulted() (door's default when no session head).\n- Picker: DesktopLineup.picker; rows by ClaudeDoorLaunch.rowsOf()/labelOf(); left_out by LineupJson.leftOut().\n- max tokens: ChatRequestBuilder.build() reads body.maxTokens; ChatRequestAssembler.chatRequestObject() writes fields[quirks.maxTokensField].\n- Local /props probe: integrations/upstream/.../local/LocalRuntimeProbe.kt genericModels() reads default_generation_settings.n_ctx.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:00 CT custom-provider/coordinator: added; 1 of 2 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'df-turn-headers'
+title = "A door turn's perf row names its session, agent and parent agent"
+feature = 'desktop-full'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = '''
+The row of a door turn on /api/perf/turns says which Claude Code session, agent and parent agent sent it (outcome 5).
+- A turn's row carries `session_id` (as today), `agent_id` from `x-claude-code-agent-id` and `parent_agent_id` from `x-claude-code-parent-agent-id`. Each is null when the request has no such header.
+- This holds for door turns of both callers and for turns at a head's own port, and the dense codec (PerfDenseCodec) keeps them.
+- A subagent's turns are told apart from the session's own. The console needs no change for this item.
+Files: core perf row fields (core/src/main/kotlin/splice/core/perf), the head's request reading (core/client/ClaudeCodeHeaders.kt), app/src/main/kotlin/splice/app/sources/PerfRowShape.kt and dense/PerfDenseCodec.kt. Proof: `bun test ./.campaign/checks/desktop-full/turn-headers.test.ts`.
+
+Shared across desktop-full (decided once, the same in every item): one door at /desktop on the control port and one desktop key serve both of Desktop's modes. "Standard mode" is today's Code-tab door through Desktop's environment store (`splice desktop on`). "App mode" is Desktop's third-party gateway mode, the whole app on splice (`splice desktop on --app`). In JSON the mode is one of "off", "standard", "app", "other" (a third-party configuration that is not splice's). Every request Desktop sends in app mode carries the header `x-splice-desktop: app`, which splice writes into the configuration's inferenceCustomHeaders. That header is how the door tells an app-mode request from a standard one. Refusals keep the door's Anthropic error shape and the "splice desktop: " prefix. Picker rows are DesktopLineup.picker, the terminal's rows (don't fork them; the custom-provider campaign, #680, is changing labels and tiers there at the same time). Vendor facts about Desktop (paths, key names, row fields, ID filter) live in integrations/claude-code/src/main/kotlin/splice/client/desktop/, beside the other Desktop facts. Goal: docs/specs/desktop-full.md.'''
+checks = [
+  'bun test ./.campaign/checks/desktop-full/turn-headers.test.ts',
+]
+sources = [
+  'docs/specs/desktop-full.md',
+  'app/src/main/kotlin/splice/app/sources/PerfRowShape.kt',
+  'core/src/main/kotlin/splice/core/client/ClaudeCodeHeaders.kt',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:00 CT desktop-full/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'cp-errors'
+title = "A gateway's 503 with Retry-After and its own error words reach Claude Code"
+feature = 'custom-provider'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'cp-schema',
+]
+guard = false
+spec = '''
+What a team's gateway says reaches the person (issue #680, outcome 10): a model that is loading answers 503 with Retry-After, and an outdated client is told to update in a 4xx whose words the gateway wrote.
+
+After this item:
+- A 503 (or 529) from a provider that carries Retry-After (or retry-after-ms) is answered to Claude Code at once as Anthropic's overload: status 529, error type `overloaded_error`, a `retry-after` header in whole seconds (rounded up), and `x-should-retry: true`, so Claude Code waits and retries as it does with Anthropic. splice sends that turn upstream once and does not hold or retry it itself. Without Retry-After, today's handling stands (retries are total: known errors get their plan, others the bounded generic retry).
+- `error_messages = "whole"` on a provider (cp-schema) shows that provider's own error messages as it wrote them, whole (up to 2000 characters, the read window ProviderWords already has), on every status, instead of cut to their first readable sentence and 160 characters with URLs dropped. A 4xx is still not retried. `"filtered"` or absent keeps ProviderWords' filter exactly as today, for every other provider.
+- The words reach the session in Anthropic's error envelope (`{"type":"error","error":{"type":...,"message":...}}`), streamed or not, after the prefix splice already puts on a provider's message.
+Vendor facts stay in their provider module: the switch is a provider setting read where ProviderWords is applied, not a vendor check.
+
+Where: integrations/upstream/src/main/kotlin/splice/upstream/failure/OpenAiReplies.kt (pushback and status mapping), core/src/main/kotlin/splice/core/failure/ProviderWords.kt, and where an overloaded failure becomes the answer's status and headers.
+
+Proven by: bun test ./.campaign/checks/custom/errors.test.ts — a 503 with retry-after 7 reaches the session as 529/503 overloaded_error with retry-after 7, sent upstream once, on a whole and a filtered provider alike; on the whole provider the loading message and a 426 "update your CLI" message with its URL are shown whole and the 426 is not retried; the filtered provider's 426 loses the URL as today.'''
+checks = [
+  'bun test ./.campaign/checks/custom/errors.test.ts',
+]
+sources = [
+  'integrations/upstream/src/main/kotlin/splice/upstream/failure/OpenAiReplies.kt',
+  'core/src/main/kotlin/splice/core/failure/ProviderWords.kt',
+]
+results = [
+  "Saved tool result (failure.txt):\nRead Nov 18, 2026 (custom-provider coordinator's code map):\n- integrations/upstream/.../failure/OpenAiErrorEnvelope.kt reads OpenAI error objects; OpenAiReplies.kt statusOf(), pushback() reads Retry-After and retry-after-ms, 503 -> Overloaded, 429 -> Limited/NeedsPayment.\n- core/.../failure/ProviderWords.kt filters a provider's message: MAX_CHARS 160, MAX_READ 2000, CUT_WHOLE drops sentences with URLs, hosts, timestamps.\n- integrations/upstream/.../transport/UpstreamTransport.kt: the only OkHttp client; SSLContext.getInstance(\"TLS\") in UpstreamSockets; sslSocketFactory applied; KeepaliveSocketFactory.\n- core/.../topology/Topology.kt: send_version (sendVersion, default false) gates only `via` in staticHeaders; core/.../client/ClientWall.kt SPLICE_CLIENT_HEADER = \"x-splice-client\".\n- features/usage/.../perf/PerfRoutes.kt rowJson(): no `provider` field today (provider_message only).\n- features/diagnostics/.../doctor/DoctorCommand.kt collect(): sections prerequisites, installation, configuration, daemon, auth, accounts, runtime; checks guarded(); DoctorConfigChecks.kt.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:00 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'cp-output'
+title = "A model's max_output_tokens caps what a turn asks for"
+feature = 'custom-provider'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'cp-schema',
+]
+guard = false
+spec = '''
+A model's `max_output_tokens` (cp-schema) is the most it is asked to write (issue #680, outcome 9). Claude Code asks a model it does not know for 32,000 output tokens or more, which a self-hosted model serving less refuses outright.
+
+After this item, a turn on a model that declares max_output_tokens asks its provider for min(what the turn asked, max_output_tokens), in whichever field the dialect uses (quirks.maxTokensField: max_tokens or max_completion_tokens), on the head's own port and on the door alike. A turn that asks for less asks for what it asked. A turn that names no max_tokens asks for max_output_tokens. A model that declares none is asked for what the turn asked, as today. The effort and thinking mapping is unchanged (cp-parity holds it).
+
+Where: the request assembler of each dialect that writes max tokens (ChatRequestAssembler / ChatRequestBuilder for openai-chat, and the Responses and passthrough assemblers where they write one), reading ModelEntry.maxOutputTokens. Tests check what the provider is sent.
+
+Proven by: bun test ./.campaign/checks/custom/output.test.ts — a door turn asking 32000 on a model with max_output_tokens = 8192 asks the gateway for 8192; one asking 4000 asks 4000; a model with none is asked 32000.'''
+checks = [
+  'bun test ./.campaign/checks/custom/output.test.ts',
+]
+sources = [
+  'integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatRequestAssembler.kt',
+  'integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatRequestBuilder.kt',
+]
+results = [
+  "Saved tool result (door-path.txt):\nRead Nov 18, 2026 (custom-provider coordinator's code map, not re-verified line by line):\n- Door entry: app/.../desktop/DesktopDoor.kt answer(); DoorRouting.of() -> DoorRelay.send(), which relays to the head's own port through features/share ShareRelay (HeadTurn with x-splice-door). So a door turn is a turn on the head's port after the relay: the head's arm (quirks, local, slot affinity, effort vocabulary) applies on both; what can differ is what the door/relay forwards or drops.\n- ShareRelay.notForwarded drops hop-by-hop, authorization, x-api-key, via, x-splice-door and a few splice headers; other headers pass.\n- Window: DoorRelay records the caller's window per session in the head's ClientWindows; the head scales counts with ModelCatalog.usageScale(model, sessionWindow) = client window / model's declared window; DoorRelay scales count_tokens itself.\n- Tiers: DoorRouting.tiered() (AnthropicTiers().tierOf), onHeld() (SessionHeads, per x-claude-code-session-id), served(), defaulted() (door's default when no session head).\n- Picker: DesktopLineup.picker; rows by ClaudeDoorLaunch.rowsOf()/labelOf(); left_out by LineupJson.leftOut().\n- max tokens: ChatRequestBuilder.build() reads body.maxTokens; ChatRequestAssembler.chatRequestObject() writes fields[quirks.maxTokensField].\n- Local /props probe: integrations/upstream/.../local/LocalRuntimeProbe.kt genericModels() reads default_generation_settings.n_ctx.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:01 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'df-models'
+title = "GET /desktop/v1/models fills Desktop's picker with every splice model"
+feature = 'desktop-full'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'df-wire-door',
+]
+guard = false
+spec = '''
+The door answers Desktop's model discovery (outcome 2). Decision: Desktop's picker is filled by discovery, not by an inferenceModels list. Discovery follows the lineup at every launch with nothing rewritten, and inferenceModels, once set, replaces discovery wholesale (Desktop 5.11492.5, see the evidence). The fields discovery can't carry (maxEffort, behavesAs) are covered by the tier and by splice's own effort mapping.
+`GET /desktop/v1/models` (query `limit`, default and maximum 1000, and `after_id`), behind the desktop key as Bearer or x-api-key (df-wire-door's admission, the same 401 words), never a redirect, answers `{"data":[...],"has_more":bool,"first_id":id|null,"last_id":id|null}`, the shape of Anthropic's own /v1/models. The rows are DesktopLineup.picker, read at each request, so a head signed in or added reaches the next discovery. The door's saved default model (`splice desktop on --model`) is the first row, and the rest follow in the picker's own order. When the saved default isn't in the picker, the picker's order stands as it is. Decision: Desktop makes the first model of its list the default a new session starts on (`defaultModel: {model: wT(e)[0]?.id}` in 5.11492.5, see the evidence), so the model the person chose for the door is the one Desktop opens on. This only moves one row. It doesn't fork the picker. Each row:
+- `type` "model", `id` the selector, `display_name` the row's label, `created_at` (any RFC 3339 time).
+- `description` "splice · <command>", the same words the terminal picker shows, at most 100 characters, which is all Desktop keeps.
+- `anthropic_family_tier`: every row carries one, because Desktop drops any GPT, Grok, Kimi or GLM id without one. A Claude model gets its own tier (AnthropicTiers). Any other model gets the first of opus, sonnet, haiku, fable its head's model_slots names it for, else "opus". Opus gives Desktop the full effort ladder and the largest limits, and the door scales windows itself.
+- `is_family_default`: always false. A family default makes Desktop resolve a tier alias to one fixed row, while the door resolves a tier by the session's head (DoorRouting).
+- `supports_1m` true only when the model's own context window is at least 1,000,000. `max_input_tokens` is that window.
+- Display names are unique. Desktop folds Claude-looking rows that share a name and tier into one row, so a repeated label gets " (<command>)" added.
+- Desktop's own effort ladder is low, medium, high, xhigh, max. A head whose vocabulary tops out lower (Grok keeps xhigh for max) still runs the nearest rung it has, as today.
+The row shape and the tier rule are Desktop facts in integrations/claude-code/.../client/desktop/ (a new DesktopModelRows.kt). The route is in app/src/main/kotlin/splice/app/control/DesktopRoutes.kt, and its answer in a new app/src/main/kotlin/splice/app/desktop/DesktopModels.kt. Proof: `bun test ./.campaign/checks/desktop-full/models.test.ts`.
+
+Shared across desktop-full (decided once, the same in every item): one door at /desktop on the control port and one desktop key serve both of Desktop's modes. "Standard mode" is today's Code-tab door through Desktop's environment store (`splice desktop on`). "App mode" is Desktop's third-party gateway mode, the whole app on splice (`splice desktop on --app`). In JSON the mode is one of "off", "standard", "app", "other" (a third-party configuration that is not splice's). Every request Desktop sends in app mode carries the header `x-splice-desktop: app`, which splice writes into the configuration's inferenceCustomHeaders. That header is how the door tells an app-mode request from a standard one. Refusals keep the door's Anthropic error shape and the "splice desktop: " prefix. Picker rows are DesktopLineup.picker, the terminal's rows (don't fork them; the custom-provider campaign, #680, is changing labels and tiers there at the same time). Vendor facts about Desktop (paths, key names, row fields, ID filter) live in integrations/claude-code/src/main/kotlin/splice/client/desktop/, beside the other Desktop facts. Goal: docs/specs/desktop-full.md.'''
+checks = [
+  'bun test ./.campaign/checks/desktop-full/models.test.ts',
+]
+sources = [
+  'docs/specs/desktop-full.md',
+  'app/src/main/kotlin/splice/app/desktop/DesktopLineup.kt',
+  'app/src/main/kotlin/splice/app/desktop/LineupJson.kt',
+  'app/src/main/kotlin/splice/app/control/DesktopRoutes.kt',
+  'integrations/claude-code/src/main/kotlin/splice/client/models/AnthropicTiers.kt',
+]
+results = [
+  "Saved tool result (desktop-3p-bundle.md):\n# Claude Desktop 5.11492.5 (Linux), 3P mode: read from its main process code, Nov 18, 2026\n\nRead from `/usr/lib/claude-desktop/resources/app.asar`, extracted, `.vite/build/index.chunk-DOKiptke.js`\n(minified). Each line is what the code does; excerpts are abridged.\n\n## The local configuration library\n\n- Folder: `<appData>/Claude-3p/configLibrary/` (`appData` is Electron's: `$XDG_CONFIG_HOME` or `~/.config` on Linux).\n- `_meta.json`: `{\"appliedId\": \"<id>\", \"entries\": [{\"id\": \"<id>\", \"name\": \"<name>\", \"provider\"?: \"<s>\", \"note\"?: \"<s>\"}]}`.\n  Desktop's own writer starts from `{appliedId: \"\", entries: []}` when the file is absent, and refuses an id not in\n  `entries` (\"unknown config id\").\n- An id matches `/^[a-f0-9-]{36}$/` (a UUID). The config is `configLibrary/<id>.json`, one flat JSON object of config\n  keys (`inferenceProvider`, `inferenceGatewayBaseUrl`, ...).\n- Read at launch: `_meta.json`'s `appliedId`, then `<id>.json`. An unreadable entry opens as empty (logged\n  `[configLibrary] entry unreadable; opening as empty`).\n- Secret-type string keys may be stored sealed (`__sealed__:v1:` + safeStorage). Desktop's save and a later \"sweep\"\n  seal plaintext secrets in place (it rewrites `<id>.json` when the file is unchanged under it). A config with no\n  plaintext secret (no `inferenceGatewayApiKey`) has nothing to seal.\n\n## Credential helper\n\n- `inferenceCredentialHelper`: an absolute path to an executable file (`pathKind: \"file\"`; a bad path is\n  \"Path must be absolute and on the local filesystem.\"). `inferenceCredentialHelperArgs`: an array of argument\n  strings. Also `inferenceCredentialHelperTtlSec` (positive int), `inferenceCredentialHelperTimeoutSec` (≤600),\n  `inferenceCredentialHelperSilentRefreshEnabled` (bool).\n- Output formats: `bare-token` or `json`. A clean exit with nothing on stdout is a failure (\"produced no output\");\n  a non-zero exit is a failure. Its environment carries `CLAUDE_HELPER_CONTEXT` (e.g. `setup-test`) and\n  `CLAUDE_HELPER_MANUAL_RUN=1` for the setup test.\n\n## Gateway provider and the Code tab\n\n- For `inferenceProvider: \"gateway\"` the scheme is bearer unless `inferenceGatewayAuthScheme` is `\"x-api-key\"`:\n  `i = e.provider===\"gateway\" ? e.authScheme!==\"x-api-key\" : as(t)`; then\n  `ANTHROPIC_API_KEY: i ? \"\" : t, ANTHROPIC_AUTH_TOKEN: i ? t : \"\"`. A helper's credential is put in the same\n  variable (`credentialEnvVar`: bearer → `ANTHROPIC_AUTH_TOKEN`, else `ANTHROPIC_API_KEY`).\n- `inferenceCustomHeaders`: a `{name: value}` object (`record<string,string>`), readers desktop and code; it becomes\n  `ANTHROPIC_CUSTOM_HEADERS` (`\"name: value\"` lines) for the Code tab's Claude Code.\n- A gateway whose host is not Anthropic's gets `CLAUDE_CODE_DISABLE_LEGACY_MODEL_REMAP=1`.\n- Auto mode: `CLAUDE_CODE_ENABLE_AUTO_MODE` comes from `autoModeEnabled` (unset: Code on, Cowork off; `true`: both on;\n  `false`: off). `CLAUDE_CODE_AUTO_MODE_SERVER` is `\"1\"`/`\"0\"` from `inferenceGatewayAutoModeServerChecks` when set.\n  `autoModeClassifierModel` is marked `availableInVersion: \"@next\"` (not read by this release).\n- Desktop always sets `CLAUDE_CODE_DISABLE_FAST_MODE=1` under 3P.\n\n## Discovery (`GET /v1/models`)\n\n- URL: `${base.replace(/\\/+$/,\"\")}/v1/models?limit=1000[&after_id=<cursor>]`, headers: the credential header,\n  `anthropic-version: 2023-06-01`, the custom headers. Timeout 10 s per page, up to 3 pages. A non-OK first page is\n  a failure; a later page's failure keeps the rows read. `data` must be an array.\n- Per row it reads: `id` (≤255 chars), `display_name` (≤255; the label, else the id), `description` (≤100 chars),\n  `anthropic_family_tier`, `is_family_default`, and 1M from `supports_1m` when it is a boolean, else\n  `max_input_tokens >= 1000000`. Paging: `has_more === true` with a string `last_id` gives the next cursor.\n- `anthropic_family_tier` is kept only when it is one of `sonnet`, `opus`, `haiku`, `fable`, `mythos` (lowercased).\n  `is_family_default: true` is kept only on a row with a kept tier.\n- Filter for the gateway provider: a row passes when its id \"reads as Claude\" or it has a kept tier. An id reads as\n  Claude when it contains `claude`, a tier name or `anthropic`, and does not match\n  `/ark-code|...|gemini|...|glm|gpt|grok|...|kimi|...|codex|.../` (a long list of other vendors' names). So every\n  splice selector of a GPT, Grok, Kimi or GLM model needs a tier to be listed.\n- Rows whose id reads as Claude and that share both display name and tier are grouped as variants of one picker row\n  (the family default, or the plainest id, leads). An id ending `[1m]` is a 1M variant of the id without it.\n- Discovery does not carry `maxEffort`, `behavesAs` or `labelOverride`; those exist only on `inferenceModels`\n  entries, and `inferenceModels`, when set, replaces discovery. `modelDiscoveryEnabled` is a config key.\n\n## Picker and effort\n\n- Effort ladder: `low`, `medium`, `high`, `xhigh`, `max` (an unknown `maxEffort` reads as `low`).\n- `inferenceModels` entry keys: `name`, `labelOverride`, `supports1m`, `prefer1m`, `anthropicFamilyTier` (the tiers\n  above), `isFamilyDefault` (shown only with a tier), `behavesAs` (a Claude model id), `maxEffort`, plus\n  `minDesktopVersion`.\n- Claude Code reads `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE,MYTHOS}_MODEL` and Desktop seeds them from the list\n  (`CLAUDE_CODE_3P_SEEDED_OPUS_DEFAULT`, `..._PROBE_WROTE_HAIKU_DEFAULT`); a family default is what a tier alias\n  resolves to.\n\n## Not read here\n\n- What Desktop's main process uses for title and side calls, the exact reachability probe, the usage display's\n  headers, and whether discovery re-runs while Desktop is open. The live test reads them.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:01 CT desktop-full/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'cp-install'
+title = "splice add provider installs a team's published definition"
+feature = 'custom-provider'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'cp-schema',
+]
+guard = false
+spec = '''
+`splice add provider <file|url>` installs a team's published provider definition with no hand-edited TOML (issue #680, outcome 3), as `splice add api-key` installs a key provider today.
+
+A definition (decided here) is a TOML file in splice.toml's own grammar holding one [providers.<key>] table with its [[providers.<key>.models]], the [heads.*] whose provider is that key, and any [door.commands.*] whose head is one of those heads; nothing else. A head may leave out `port` and `discovery_prefix`: splice fills the port as `splice add` does (AddPortChoice) and the prefix as `claude-<head>--`.
+
+After this item:
+- `splice add provider <file>` and `splice add provider <url>` read the definition, check it, merge it into splice.toml with TopologyWriter (comments and order of the rest kept), reload the daemon the way `splice add` does today, and print what was added: the provider, its heads and their commands, its models, its door commands, and what to do next (`splice login <head>` when its auth is a command). The installed model is in the next session's /model with no restart.
+- Over the network: https from any host; http only from this machine (127.0.0.1, ::1, localhost); anything else is refused naming https. 15 seconds and 1 MiB at most.
+- Findings: the definition is checked as boot checks splice.toml, by running the same ConfigFindings (structure, decode, TopologyFindings) over splice.toml with the definition merged in, plus the definition's own: a table other than the provider, its models, its heads and its door commands (e.g. [daemon]) is a finding naming it (`daemon: a provider definition holds only ...`). Every finding is listed at once, each with its dotted path, like boot; the command exits non-zero and splice.toml is left byte for byte as it was.
+- An empty base_url is a finding at boot as well (providers.<key>.base_url), if it is not one already.
+- `--check` runs the same reading and checking, prints the findings or that the definition is good, writes nothing, and exits non-zero on findings.
+- Installing a definition whose provider key is already installed replaces it: the provider table, its models, its heads (a head of the same key keeps its port and prefix) and its door commands are replaced; its heads and door commands the new definition no longer names are removed. Another provider's tables are never touched.
+
+Where: features/configuration/.../add/ (beside AddProfiles / AddPrepare / AddPortChoice), app/.../cli/CommandParser.kt (the `add` verb's `provider` word), core/.../topology/TopologyWriter.kt only through its public use. No new top-level functions or companion objects.
+
+Proven by: bun test ./.campaign/checks/custom/install.test.ts — on a machine with only splice, --check on a good file writes nothing; installing it fills the head's port, puts claude-acme--glm-5.3-flash in /model and runs a turn; a definition from a loopback URL is installed; a newer acme replaces the old, keeping the port, and its new label shows; a definition with four mistakes (a [daemon] table, an empty base_url, a head on an undeclared provider, a door command on no head) is refused with all four named and splice.toml unchanged, with and without --check; plain http from another host is refused naming https.'''
+checks = [
+  'bun test ./.campaign/checks/custom/install.test.ts',
+]
+sources = [
+  'features/configuration/src/main/kotlin/splice/configuration/add/AddPrepare.kt',
+  'features/configuration/src/main/kotlin/splice/configuration/add/AddPortChoice.kt',
+  'features/configuration/src/main/kotlin/splice/configuration/add/AddProfiles.kt',
+  'integrations/topology/src/main/kotlin/splice/topology/ConfigFindings.kt',
+  'app/src/main/kotlin/splice/app/cli/CommandParser.kt',
+]
+results = [
+  "Saved tool result (cli.txt):\nRead Nov 18, 2026 (custom-provider coordinator's code map):\n- app/.../cli/claude/ClaudeCommand.kt: splice claude [--json] | door [--model] | head, through DoorClient; the JSON is built in the daemon (LineupJson).\n- POST /launch/{head}: app/.../control/mount/LaunchMount.kt; features/launch/.../recipe/LaunchRoutes.kt launch(): door only when key == CLAUDE_COMMAND (launchService.door.launch()); receiveLaunchRequest parses extraArgs (`arg` fields).\n- Door overlay: app/.../desktop/ClaudeDoorLaunch.kt (picker rows, hooks); head overlays: integrations/claude-code/.../wrap/WrappedHeadTypes.kt WrappedLaunch.settingsOverlay().\n- TOML writing: core/.../topology/TopologyWriter.kt (keeps comments/order, verifies by re-decoding, atomic); TopologyFindings.of() -> TopologyChecks.\n- splice add: features/configuration/.../add/AddProfiles.kt toml(), AddPrepare.kt, AddPortChoice.kt choose() (first free port above max(existing, 3098)); prefix \"claude-<key>--\".\n- CLI verbs: app/.../cli/CommandParser.kt verbs map (\"add\" -> Command.Add); app/.../cli/Command.kt.\n- Boot findings: integrations/topology/.../ConfigFindings.kt (TomlStructurePreflight, TopologyTypeMismatch, decode, TopologyFindings); app/.../cli/ConfigPreflight.kt (`splice check-config`, exit 3).\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:01 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'df-claude-picks'
+title = 'A Claude model picked in Desktop runs on the Claude accounts added to splice'
+feature = 'desktop-full'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'df-wire-door',
+]
+guard = false
+spec = '''
+Claude picks run on Claude, in both modes (outcome 3). Today a Desktop request naming a Claude model in a session on no head runs the saved default's tier (DesktopCaller keeps runsNamedModels false). From now on, for Desktop's caller:
+- An Anthropic id in any spelling the Code tab sends (Mantle's anthropic.claude-opus-5-5, region and version forms, bare claude-opus-5-5) runs that very model on the head that serves it. That is the claude head on the Claude accounts added to splice, or an Anthropic-key head that lists it. The session is on that head from then.
+- Where no head serves it, the saved default stands in as today (its tier, and the small tier on the default model's head). Desktop is never refused for a Claude model, unlike the terminal, which refuses by name.
+- Tier aliases (opus, sonnet, haiku, fable) and side calls follow the session's head (DoorRouting.onHeld). In a session on no head, an alias runs the default's tier.
+- Claude Code's start-up check (max_tokens 1, not streamed) keeps routing to the default model.
+- The terminal's behaviour is unchanged.
+The desktop-door rule ("each runs its tier of the default model") is replaced. desktop/door.test.ts still holds, since no head there serves the Claude models it names. Files: app/src/main/kotlin/splice/app/desktop/DoorRouting.kt, DoorCaller.kt, DesktopCaller.kt, and the one routing call in DesktopDoor.kt. Proof: `bun test ./.campaign/checks/desktop-full/claude-picks.test.ts`.
+
+Shared across desktop-full (decided once, the same in every item): one door at /desktop on the control port and one desktop key serve both of Desktop's modes. "Standard mode" is today's Code-tab door through Desktop's environment store (`splice desktop on`). "App mode" is Desktop's third-party gateway mode, the whole app on splice (`splice desktop on --app`). In JSON the mode is one of "off", "standard", "app", "other" (a third-party configuration that is not splice's). Every request Desktop sends in app mode carries the header `x-splice-desktop: app`, which splice writes into the configuration's inferenceCustomHeaders. That header is how the door tells an app-mode request from a standard one. Refusals keep the door's Anthropic error shape and the "splice desktop: " prefix. Picker rows are DesktopLineup.picker, the terminal's rows (don't fork them; the custom-provider campaign, #680, is changing labels and tiers there at the same time). Vendor facts about Desktop (paths, key names, row fields, ID filter) live in integrations/claude-code/src/main/kotlin/splice/client/desktop/, beside the other Desktop facts. Goal: docs/specs/desktop-full.md.'''
+checks = [
+  'bun test ./.campaign/checks/desktop-full/claude-picks.test.ts',
+]
+sources = [
+  'docs/specs/desktop-full.md',
+  'app/src/main/kotlin/splice/app/desktop/DoorRouting.kt',
+  'app/src/main/kotlin/splice/app/desktop/DoorCaller.kt',
+  'app/src/main/kotlin/splice/app/desktop/DesktopCaller.kt',
+  'app/src/main/kotlin/splice/app/desktop/TerminalCaller.kt',
+  'app/src/main/kotlin/splice/app/desktop/DesktopDoor.kt',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:01 CT desktop-full/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'cp-window'
+title = "A picked model's own window drives compaction, read from served_window when named"
+feature = 'custom-provider'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'cp-schema',
+]
+guard = false
+spec = '''
+A model's own window governs a door session on it (issue #680, outcome 8). Claude Code on the door holds one window for the whole session (CLAUDE_CODE_MAX_CONTEXT_TOKENS, the lane's declared window) and compacts on reported counts / that window; splice writes the counts, so it scales them (splice CLAUDE.md section 22; desktop-door.md decision 5): a door turn reports its counts as the same share of the session's window that they are of the picked model's own window, so auto-compaction follows the pick.
+
+After this item:
+- A picked model's window is its declared `context_window`, unless its provider names `served_window = { url, field }` (cp-schema) and that read succeeded: then the window the provider reports is the window of every model of that provider, since it is the real ceiling. Never report a window past the real one, and never spell a model id past its ceiling to move the client's window (section 22: scale instead).
+- served_window is read once when the daemon starts (and again when splice.toml is reloaded): GET url, at most 5 seconds, with the provider's auth headers when it has a key at hand and none otherwise; `field` is a dotted path to a positive integer in the JSON answer (llama-server's /props: default_generation_settings.n_ctx). Its failure never refuses boot or a turn: the declared window stays in force, one log line says why, and `splice doctor` names it: `providers.<key>.served_window: <url> <what happened> (HTTP 404 / not JSON / no positive integer at <field> / timed out); the declared context_window (<n>) is in force`.
+- The local-server /props probe that exists for `local = true` providers keeps working as it does; served_window is the same idea for any provider, written explicitly.
+
+Where: the window a head's catalog reports for a model (core/.../model/ModelCatalog.kt contextWindowFor / usageScale, app/.../daemon/TopologyWindows.kt), the probe beside LocalRuntimeProbe (integrations/upstream/.../local), and a doctor check (features/diagnostics/.../doctor, DoctorConfigChecks).
+
+Proven by: bun test ./.campaign/checks/custom/window.test.ts — a turn whose prompt fills half the model's declared window reports half the session's window; on a provider whose served window (32768) is half the declared one, a prompt filling half the served window reports half; a served_window that answers 404 leaves the declared window and `splice doctor` names the provider and served_window.'''
+checks = [
+  'bun test ./.campaign/checks/custom/window.test.ts',
+]
+sources = [
+  'core/src/main/kotlin/splice/core/model/ModelCatalog.kt',
+  'app/src/main/kotlin/splice/app/daemon/TopologyWindows.kt',
+  'integrations/upstream/src/main/kotlin/splice/upstream/local/LocalRuntimeProbe.kt',
+  'features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/DoctorConfigChecks.kt',
+]
+results = [
+  "Saved tool result (door-path.txt):\nRead Nov 18, 2026 (custom-provider coordinator's code map, not re-verified line by line):\n- Door entry: app/.../desktop/DesktopDoor.kt answer(); DoorRouting.of() -> DoorRelay.send(), which relays to the head's own port through features/share ShareRelay (HeadTurn with x-splice-door). So a door turn is a turn on the head's port after the relay: the head's arm (quirks, local, slot affinity, effort vocabulary) applies on both; what can differ is what the door/relay forwards or drops.\n- ShareRelay.notForwarded drops hop-by-hop, authorization, x-api-key, via, x-splice-door and a few splice headers; other headers pass.\n- Window: DoorRelay records the caller's window per session in the head's ClientWindows; the head scales counts with ModelCatalog.usageScale(model, sessionWindow) = client window / model's declared window; DoorRelay scales count_tokens itself.\n- Tiers: DoorRouting.tiered() (AnthropicTiers().tierOf), onHeld() (SessionHeads, per x-claude-code-session-id), served(), defaulted() (door's default when no session head).\n- Picker: DesktopLineup.picker; rows by ClaudeDoorLaunch.rowsOf()/labelOf(); left_out by LineupJson.leftOut().\n- max tokens: ChatRequestBuilder.build() reads body.maxTokens; ChatRequestAssembler.chatRequestObject() writes fields[quirks.maxTokensField].\n- Local /props probe: integrations/upstream/.../local/LocalRuntimeProbe.kt genericModels() reads default_generation_settings.n_ctx.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:01 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'df-wire-limits'
+title = "Door answers carry the head's own limits as Anthropic's unified rate-limit headers"
+feature = 'desktop-full'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'df-wire-answers',
+]
+guard = false
+spec = '''
+Desktop's usage display reads Anthropic's unified rate-limit headers, so a door turn's answer carries them from the head's own limits (outcome 5).
+- An Anthropic head's `anthropic-ratelimit-unified-*` headers reach Desktop as Anthropic sent them.
+- A head whose provider reports plan windows of its own (ChatGPT's x-codex-* 5-hour and weekly windows, and any QuotaHeaderFamily) answers door turns with the same unified family, as QuotaHeaders already writes for a head's own port: `-status`, `-5h-utilization` and `-7d-utilization` (0..1), and `-5h-reset` and `-7d-reset` (epoch seconds). The headers come from the head's latest reading, which a turn's own answer updates.
+- A head that reports no windows sends none of the family. splice never makes one up.
+Files: the relay that carries a head's answer to the door's caller (share/ShareRelay and the head's HandOverHeaders/QuotaHeaders path). Proof: `bun test ./.campaign/checks/desktop-full/wire-limits.test.ts`.
+
+Shared across desktop-full (decided once, the same in every item): one door at /desktop on the control port and one desktop key serve both of Desktop's modes. "Standard mode" is today's Code-tab door through Desktop's environment store (`splice desktop on`). "App mode" is Desktop's third-party gateway mode, the whole app on splice (`splice desktop on --app`). In JSON the mode is one of "off", "standard", "app", "other" (a third-party configuration that is not splice's). Every request Desktop sends in app mode carries the header `x-splice-desktop: app`, which splice writes into the configuration's inferenceCustomHeaders. That header is how the door tells an app-mode request from a standard one. Refusals keep the door's Anthropic error shape and the "splice desktop: " prefix. Picker rows are DesktopLineup.picker, the terminal's rows (don't fork them; the custom-provider campaign, #680, is changing labels and tiers there at the same time). Vendor facts about Desktop (paths, key names, row fields, ID filter) live in integrations/claude-code/src/main/kotlin/splice/client/desktop/, beside the other Desktop facts. Goal: docs/specs/desktop-full.md.'''
+checks = [
+  'bun test ./.campaign/checks/desktop-full/wire-limits.test.ts',
+]
+sources = [
+  'docs/specs/desktop-full.md',
+  'core/src/main/kotlin/splice/core/usage/QuotaHeaders.kt',
+  'features/turns/src/main/kotlin/splice/head/hold/HandOverHeaders.kt',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:02 CT desktop-full/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'cp-identity'
+title = "send_version tells a gateway splice's version and the wrapper's"
+feature = 'custom-provider'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'cp-schema',
+  'cp-parity',
+  'cp-picker',
+]
+guard = false
+spec = '''
+A team's gateway can tell which client calls it, so it can turn an outdated one away with a message of its own (issue #680, outcome 14; cp-errors shows that message whole). Reuse what server-client-header built: the header name and value splice already sends a splice server.
+
+After this item, a provider with `send_version = true` (the existing key; today it adds only the Via line) is sent on every request, beside its Via line: `x-splice-client: <splice's version>` (the version GET /health reports, the value server-client-header sends; the header name is SPLICE_CLIENT_HEADER in core/.../client/ClientWall.kt), and `x-splice-wrapper: <name>/<version>` when the session's request carries an x-splice-wrapper header, passed through as the session sent it, on the head's port and through the door alike. A wrapper sends it by setting it in Claude Code's ANTHROPIC_CUSTOM_HEADERS (`x-splice-wrapper: acme-ai/1.4.2`), which a launch on the door leaves as the wrapper set it: not in `unset`, not overwritten. A provider without send_version is sent neither header (an x-splice-wrapper the session sent is dropped for it), so nothing about the client reaches a provider that did not ask. Document both headers in docs/specs/custom-provider.md's splice.toml section under send_version (one sentence each).
+
+Where: core/.../topology/Topology.kt (staticHeaders / via, where send_version is read), the header pass-through of a head turn and of the door relay (after cp-parity, which changes the same relay files), the door launch's unset list (only if it unsets ANTHROPIC_CUSTOM_HEADERS today). Vendor facts stay in their provider module.
+
+Proven by: bun test ./.campaign/checks/custom/identity.test.ts — a send_version provider is sent x-splice-client equal to /health's version and the wrapper's x-splice-wrapper; with no wrapper only the version; a provider without send_version is sent neither; a door launch neither unsets nor sets ANTHROPIC_CUSTOM_HEADERS.'''
+checks = [
+  'bun test ./.campaign/checks/custom/identity.test.ts',
+]
+sources = [
+  'core/src/main/kotlin/splice/core/topology/Topology.kt',
+  'core/src/main/kotlin/splice/core/client/ClientWall.kt',
+  'features/share/src/main/kotlin/splice/share/ShareRelay.kt',
+]
+results = [
+  "Saved tool result (failure.txt):\nRead Nov 18, 2026 (custom-provider coordinator's code map):\n- integrations/upstream/.../failure/OpenAiErrorEnvelope.kt reads OpenAI error objects; OpenAiReplies.kt statusOf(), pushback() reads Retry-After and retry-after-ms, 503 -> Overloaded, 429 -> Limited/NeedsPayment.\n- core/.../failure/ProviderWords.kt filters a provider's message: MAX_CHARS 160, MAX_READ 2000, CUT_WHOLE drops sentences with URLs, hosts, timestamps.\n- integrations/upstream/.../transport/UpstreamTransport.kt: the only OkHttp client; SSLContext.getInstance(\"TLS\") in UpstreamSockets; sslSocketFactory applied; KeepaliveSocketFactory.\n- core/.../topology/Topology.kt: send_version (sendVersion, default false) gates only `via` in staticHeaders; core/.../client/ClientWall.kt SPLICE_CLIENT_HEADER = \"x-splice-client\".\n- features/usage/.../perf/PerfRoutes.kt rowJson(): no `provider` field today (provider_message only).\n- features/diagnostics/.../doctor/DoctorCommand.kt collect(): sections prerequisites, installation, configuration, daemon, auth, accounts, runtime; checks guarded(); DoctorConfigChecks.kt.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:02 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'df-app-on'
+title = 'splice desktop on --app puts all of Desktop on splice; off puts it back'
+feature = 'desktop-full'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'df-models',
+  'df-credential',
+]
+guard = false
+spec = '''
+`splice desktop on --app [--yes]` puts all of Claude Desktop on splice as its gateway provider (outcome 1). `splice desktop off` puts Desktop back.
+Before it changes anything, `on --app` says what app mode costs, in these words: "In app mode all of Claude Desktop runs on splice: Chat and Cowork too, not only the Code tab. Your conversations are kept on this computer, not in your claude.ai account. Remote Control and Anthropic's cloud environments are not offered, and SSH sessions can't reach splice, which listens on this computer only. Quit and reopen Claude Desktop for it to take effect." On a terminal it then asks "Put Claude Desktop on splice? [y/N]". With --yes it goes on without asking. With no terminal and no --yes it exits 1 having changed nothing, and says to run it again with --yes. It refuses with nothing changed, naming what it found, in four cases: no head is in the door (as `on` does); `/etc/claude-desktop/managed-settings.json` exists (checked for existence only, never opened, since a managed configuration decides Desktop's provider over any local one); Desktop's library holds a file splice can't read; or the library can't be written.
+What it writes, in Desktop's configuration library `$XDG_CONFIG_HOME/Claude-3p/configLibrary/` (`~/.config` when unset), the daemon writing as the person:
+- One configuration `<uuid>.json` (a fresh lowercase UUID, kept in splice's desktop record and reused by every later `on --app`), with exactly these keys: inferenceProvider "gateway"; inferenceGatewayBaseUrl, the door's address (`http://127.0.0.1:<control port>/desktop`, loopback http, which Desktop accepts); inferenceGatewayAuthScheme "bearer"; inferenceCredentialHelper (below); inferenceCredentialHelperTtlSec 300, so a rotated key reaches Desktop within five minutes; inferenceCustomHeaders {"x-splice-desktop": "app"}; modelDiscoveryEnabled true; autoModeEnabled true; inferenceGatewayAutoModeServerChecks false, the app-mode twin of the store's CLAUDE_CODE_AUTO_MODE_SERVER=0, so Claude Code's auto-mode check runs as a model call that splice reviews on every head. There is no inferenceModels (df-models: discovery fills the picker) and no inferenceGatewayApiKey. No key is written anywhere in the library.
+- `_meta.json`: an entry {"id": <uuid>, "name": "splice"}, added once and never duplicated, and appliedId set to it. Every other entry and file is left byte for byte. What appliedId was before (or that there was no _meta.json) is kept in splice's desktop record.
+- The credential helper: an executable file splice lays at `<state dir>/desktop-credential` (mode 0700), named by its absolute path, since Desktop takes an absolute path to an executable file. It runs `splice desktop credential` (df-credential) on the same Java, jar and state folder as the splice that wrote it, all baked in as absolute paths. Desktop runs it with Desktop's own environment, which has no SPLICE_* variable. It holds no key. It is rewritten at each `on --app` and each daemon start while app mode is on, so it follows an upgrade.
+Then `on --app` opens the door, as `on` does. The record's mode is "app", and `splice desktop --json` says on true and mode "app". When it replaced someone else's applied configuration, it names it: "replaces Work Bedrock while splice is on; `splice desktop off` puts it back".
+`off` in app mode removes splice's file and entry, and puts appliedId back as it was. If there was no _meta.json before, it removes _meta.json, and the configLibrary folder if splice made it and it is now empty. If the person applied another configuration in Desktop meanwhile, `off` keeps their choice. It closes the door (403 as today) and says: "Quit and reopen Claude Desktop: it opens on your claude.ai login again." Plain `on` after `on --app` does what off does to the library, then is standard mode as today. `on --app` leaves Desktop's environment store alone, since app mode doesn't read it. splice never reads or writes the managed file, the keyring or Desktop's encrypted stores.
+Files: DesktopSwitch.kt, DesktopRecord.kt, DesktopService.kt (mode in state) in app/src/main/kotlin/splice/app/desktop/; DesktopRoutes.kt (`/api/desktop/on` body {"model"?, "app"?}); app/cli/desktop DoorVerbs.kt, DesktopCommand.kt, DesktopSaid.kt (flags, the question, the words); a new integrations/claude-code/.../client/desktop/DesktopAppConfig.kt (library paths, key names, _meta shape). Proof: `bun test ./.campaign/checks/desktop-full/app-on.test.ts`.
+
+Shared across desktop-full (decided once, the same in every item): one door at /desktop on the control port and one desktop key serve both of Desktop's modes. "Standard mode" is today's Code-tab door through Desktop's environment store (`splice desktop on`). "App mode" is Desktop's third-party gateway mode, the whole app on splice (`splice desktop on --app`). In JSON the mode is one of "off", "standard", "app", "other" (a third-party configuration that is not splice's). Every request Desktop sends in app mode carries the header `x-splice-desktop: app`, which splice writes into the configuration's inferenceCustomHeaders. That header is how the door tells an app-mode request from a standard one. Refusals keep the door's Anthropic error shape and the "splice desktop: " prefix. Picker rows are DesktopLineup.picker, the terminal's rows (don't fork them; the custom-provider campaign, #680, is changing labels and tiers there at the same time). Vendor facts about Desktop (paths, key names, row fields, ID filter) live in integrations/claude-code/src/main/kotlin/splice/client/desktop/, beside the other Desktop facts. Goal: docs/specs/desktop-full.md.'''
+checks = [
+  'bun test ./.campaign/checks/desktop-full/app-on.test.ts',
+]
+sources = [
+  'docs/specs/desktop-full.md',
+  'app/src/main/kotlin/splice/app/desktop/DesktopSwitch.kt',
+  'app/src/main/kotlin/splice/app/desktop/DesktopRecord.kt',
+  'app/src/main/kotlin/splice/app/desktop/DesktopService.kt',
+  'app/src/main/kotlin/splice/app/control/DesktopRoutes.kt',
+  'app/src/main/kotlin/splice/app/cli/desktop/DoorVerbs.kt',
+  'app/src/main/kotlin/splice/app/cli/desktop/DesktopCommand.kt',
+  'app/src/main/kotlin/splice/app/cli/desktop/DesktopSaid.kt',
+  'integrations/claude-code/src/main/kotlin/splice/client/desktop/DesktopEnvironment.kt',
+  'docs/specs/desktop-door.md',
+]
+results = [
+  "Saved tool result (desktop-3p-bundle.md):\n# Claude Desktop 5.11492.5 (Linux), 3P mode: read from its main process code, Nov 18, 2026\n\nRead from `/usr/lib/claude-desktop/resources/app.asar`, extracted, `.vite/build/index.chunk-DOKiptke.js`\n(minified). Each line is what the code does; excerpts are abridged.\n\n## The local configuration library\n\n- Folder: `<appData>/Claude-3p/configLibrary/` (`appData` is Electron's: `$XDG_CONFIG_HOME` or `~/.config` on Linux).\n- `_meta.json`: `{\"appliedId\": \"<id>\", \"entries\": [{\"id\": \"<id>\", \"name\": \"<name>\", \"provider\"?: \"<s>\", \"note\"?: \"<s>\"}]}`.\n  Desktop's own writer starts from `{appliedId: \"\", entries: []}` when the file is absent, and refuses an id not in\n  `entries` (\"unknown config id\").\n- An id matches `/^[a-f0-9-]{36}$/` (a UUID). The config is `configLibrary/<id>.json`, one flat JSON object of config\n  keys (`inferenceProvider`, `inferenceGatewayBaseUrl`, ...).\n- Read at launch: `_meta.json`'s `appliedId`, then `<id>.json`. An unreadable entry opens as empty (logged\n  `[configLibrary] entry unreadable; opening as empty`).\n- Secret-type string keys may be stored sealed (`__sealed__:v1:` + safeStorage). Desktop's save and a later \"sweep\"\n  seal plaintext secrets in place (it rewrites `<id>.json` when the file is unchanged under it). A config with no\n  plaintext secret (no `inferenceGatewayApiKey`) has nothing to seal.\n\n## Credential helper\n\n- `inferenceCredentialHelper`: an absolute path to an executable file (`pathKind: \"file\"`; a bad path is\n  \"Path must be absolute and on the local filesystem.\"). `inferenceCredentialHelperArgs`: an array of argument\n  strings. Also `inferenceCredentialHelperTtlSec` (positive int), `inferenceCredentialHelperTimeoutSec` (≤600),\n  `inferenceCredentialHelperSilentRefreshEnabled` (bool).\n- Output formats: `bare-token` or `json`. A clean exit with nothing on stdout is a failure (\"produced no output\");\n  a non-zero exit is a failure. Its environment carries `CLAUDE_HELPER_CONTEXT` (e.g. `setup-test`) and\n  `CLAUDE_HELPER_MANUAL_RUN=1` for the setup test.\n\n## Gateway provider and the Code tab\n\n- For `inferenceProvider: \"gateway\"` the scheme is bearer unless `inferenceGatewayAuthScheme` is `\"x-api-key\"`:\n  `i = e.provider===\"gateway\" ? e.authScheme!==\"x-api-key\" : as(t)`; then\n  `ANTHROPIC_API_KEY: i ? \"\" : t, ANTHROPIC_AUTH_TOKEN: i ? t : \"\"`. A helper's credential is put in the same\n  variable (`credentialEnvVar`: bearer → `ANTHROPIC_AUTH_TOKEN`, else `ANTHROPIC_API_KEY`).\n- `inferenceCustomHeaders`: a `{name: value}` object (`record<string,string>`), readers desktop and code; it becomes\n  `ANTHROPIC_CUSTOM_HEADERS` (`\"name: value\"` lines) for the Code tab's Claude Code.\n- A gateway whose host is not Anthropic's gets `CLAUDE_CODE_DISABLE_LEGACY_MODEL_REMAP=1`.\n- Auto mode: `CLAUDE_CODE_ENABLE_AUTO_MODE` comes from `autoModeEnabled` (unset: Code on, Cowork off; `true`: both on;\n  `false`: off). `CLAUDE_CODE_AUTO_MODE_SERVER` is `\"1\"`/`\"0\"` from `inferenceGatewayAutoModeServerChecks` when set.\n  `autoModeClassifierModel` is marked `availableInVersion: \"@next\"` (not read by this release).\n- Desktop always sets `CLAUDE_CODE_DISABLE_FAST_MODE=1` under 3P.\n\n## Discovery (`GET /v1/models`)\n\n- URL: `${base.replace(/\\/+$/,\"\")}/v1/models?limit=1000[&after_id=<cursor>]`, headers: the credential header,\n  `anthropic-version: 2023-06-01`, the custom headers. Timeout 10 s per page, up to 3 pages. A non-OK first page is\n  a failure; a later page's failure keeps the rows read. `data` must be an array.\n- Per row it reads: `id` (≤255 chars), `display_name` (≤255; the label, else the id), `description` (≤100 chars),\n  `anthropic_family_tier`, `is_family_default`, and 1M from `supports_1m` when it is a boolean, else\n  `max_input_tokens >= 1000000`. Paging: `has_more === true` with a string `last_id` gives the next cursor.\n- `anthropic_family_tier` is kept only when it is one of `sonnet`, `opus`, `haiku`, `fable`, `mythos` (lowercased).\n  `is_family_default: true` is kept only on a row with a kept tier.\n- Filter for the gateway provider: a row passes when its id \"reads as Claude\" or it has a kept tier. An id reads as\n  Claude when it contains `claude`, a tier name or `anthropic`, and does not match\n  `/ark-code|...|gemini|...|glm|gpt|grok|...|kimi|...|codex|.../` (a long list of other vendors' names). So every\n  splice selector of a GPT, Grok, Kimi or GLM model needs a tier to be listed.\n- Rows whose id reads as Claude and that share both display name and tier are grouped as variants of one picker row\n  (the family default, or the plainest id, leads). An id ending `[1m]` is a 1M variant of the id without it.\n- Discovery does not carry `maxEffort`, `behavesAs` or `labelOverride`; those exist only on `inferenceModels`\n  entries, and `inferenceModels`, when set, replaces discovery. `modelDiscoveryEnabled` is a config key.\n\n## Picker and effort\n\n- Effort ladder: `low`, `medium`, `high`, `xhigh`, `max` (an unknown `maxEffort` reads as `low`).\n- `inferenceModels` entry keys: `name`, `labelOverride`, `supports1m`, `prefer1m`, `anthropicFamilyTier` (the tiers\n  above), `isFamilyDefault` (shown only with a tier), `behavesAs` (a Claude model id), `maxEffort`, plus\n  `minDesktopVersion`.\n- Claude Code reads `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE,MYTHOS}_MODEL` and Desktop seeds them from the list\n  (`CLAUDE_CODE_3P_SEEDED_OPUS_DEFAULT`, `..._PROBE_WROTE_HAIKU_DEFAULT`); a family default is what a tier alias\n  resolves to.\n\n## Not read here\n\n- What Desktop's main process uses for title and side calls, the exact reachability probe, the usage display's\n  headers, and whether discovery re-runs while Desktop is open. The live test reads them.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:02 CT desktop-full/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'df-app-window'
+title = "App-mode sessions compact at their model's own window (200k / 1M declared)"
+feature = 'desktop-full'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'df-claude-picks',
+  'df-app-on',
+]
+guard = false
+spec = '''
+The window in app mode (outcome 6, the context meter and compaction; repo CLAUDE.md §22). In app mode Desktop launches its Code tab's Claude Code with CLAUDE_CODE_MAX_CONTEXT_TOKENS=200000, and 1M for a model picked as its 1M variant (an id ending `[1m]`). splice writes the counts, so it scales them, the same way the standard-mode door scales to the window it told the store.
+- A request with `x-splice-desktop: app` (df-app-on writes it into every app-mode request) has a declared window of 1,000,000 when its model ends in `[1m]` or its anthropic-beta names a `context-1m-` beta, and 200,000 otherwise.
+- `[1m]` is taken off the model before routing, so the head is asked for the model itself.
+- Each turn's usage and each count_tokens answer are reported as the same share of that declared window that they are of the model's own, so every model compacts at its own limit.
+- A request without the header is standard mode and keeps the recorded window, as today.
+- Chat and Cowork turns follow the same rule, and the live test confirms what Desktop's meter shows for them.
+Files: app/src/main/kotlin/splice/app/desktop/DoorCaller.kt (the window depends on the request), DesktopCaller.kt, TerminalCaller.kt, DoorRelay.kt, DesktopDoor.kt (DoorAsk carries what the window is read from). Proof: `bun test ./.campaign/checks/desktop-full/app-window.test.ts`.
+
+Shared across desktop-full (decided once, the same in every item): one door at /desktop on the control port and one desktop key serve both of Desktop's modes. "Standard mode" is today's Code-tab door through Desktop's environment store (`splice desktop on`). "App mode" is Desktop's third-party gateway mode, the whole app on splice (`splice desktop on --app`). In JSON the mode is one of "off", "standard", "app", "other" (a third-party configuration that is not splice's). Every request Desktop sends in app mode carries the header `x-splice-desktop: app`, which splice writes into the configuration's inferenceCustomHeaders. That header is how the door tells an app-mode request from a standard one. Refusals keep the door's Anthropic error shape and the "splice desktop: " prefix. Picker rows are DesktopLineup.picker, the terminal's rows (don't fork them; the custom-provider campaign, #680, is changing labels and tiers there at the same time). Vendor facts about Desktop (paths, key names, row fields, ID filter) live in integrations/claude-code/src/main/kotlin/splice/client/desktop/, beside the other Desktop facts. Goal: docs/specs/desktop-full.md.'''
+checks = [
+  'bun test ./.campaign/checks/desktop-full/app-window.test.ts',
+]
+sources = [
+  'docs/specs/desktop-full.md',
+  'app/src/main/kotlin/splice/app/desktop/DoorCaller.kt',
+  'app/src/main/kotlin/splice/app/desktop/DesktopCaller.kt',
+  'app/src/main/kotlin/splice/app/desktop/TerminalCaller.kt',
+  'app/src/main/kotlin/splice/app/desktop/DoorRelay.kt',
+  'app/src/main/kotlin/splice/app/desktop/DesktopDoor.kt',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:02 CT desktop-full/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'df-diagnostics'
+title = "splice desktop and splice doctor say Desktop's mode, relaunch, picker and last turn per mode"
+feature = 'desktop-full'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'df-app-window',
+]
+guard = false
+spec = '''
+`splice desktop` and `splice doctor` say which mode Claude Desktop is in, whether it has been reopened since splice changed its configuration, the picker rows Desktop is given, and the last turn per mode (outcome 7).
+- The mode is read from splice's desktop record and Desktop's library, checked in this order:
+  - "other": the library applies a configuration that is not splice's, or /etc/claude-desktop/managed-settings.json exists (existence only). The words are "third-party mode with another configuration (<its _meta.json name>)", or "(a managed configuration)" for the managed file. This wins over splice's own state: in that case Desktop reads neither splice's config nor its environment store.
+  - "app": splice's configuration is applied. The words are "on, app mode: all of Desktop (Chat, Cowork and the Code tab) runs on splice".
+  - "standard": the door is on in standard mode. The words are "on, standard mode: the Code tab runs on splice through Desktop's environment variables; Chat and Cowork stay on claude.ai".
+  - "off": the words are "off".
+- `splice desktop`'s first line is "Desktop: <words>". `splice doctor` has a check named "desktop" whose line is "Claude Desktop: <words>". It passes in every mode, and warns only in app mode while Desktop has not been reopened.
+- Reopened: splice records when it last wrote or removed its configuration, and the last time a request carrying `x-splice-desktop: app` reached the door (a turn, a count or a discovery). `relaunched` in --json is true once such a request came after the write, false before, and null outside app mode. While it is false, both commands add "; quit and reopen Claude Desktop to apply it". Desktop reads its configuration only at launch.
+- `--json` gains `mode`, `relaunched`, `other` (the other configuration's name, or null), `picker` (the rows GET /desktop/v1/models answers, df-models, the same objects) and `last_turns` {"standard": <turn>|null, "app": <turn>|null}. Each turn has the fields last_turn has today. `last_turn` stays, as the latest of the two.
+- The words list the picker rows (id, label, tier) under "Picker:", and each mode's last turn under "Last turn (standard mode):" and "Last turn (app mode):", with its session id.
+- Which mode a turn belongs to is the x-splice-desktop header, never a guess.
+- Picker changed (outcome 2: a sign-in or an added head reaches the picker at Desktop's next launch, and `splice desktop` says when a relaunch is needed). Desktop discovers models only at launch. At each app-mode discovery, splice keeps the rows it answered (id and label, in order) in its desktop record, so they survive a daemon restart. `picker_current` in --json is null outside app mode or before Desktop's first discovery since the write. It is true while the rows the door would answer now are those same rows, and false when a row was added, removed, relabelled or moved. While it is false, both commands say "the picker changed since Claude Desktop last read it; quit and reopen Claude Desktop to see it", and `splice doctor`'s desktop check warns. The next discovery makes it true again.
+Files: app/src/main/kotlin/splice/app/desktop/DesktopService.kt, DesktopRecord.kt, DesktopCaller.kt (recording by mode), DesktopModels.kt (a discovery counts as Desktop seen, and keeps the rows it answered); app/cli/desktop/DesktopSaid.kt; features/diagnostics doctor (a DesktopRead beside ClaudeLaneRead, wired in app/src/main/kotlin/splice/app/DoctorWiring.kt). Proof: `bun test ./.campaign/checks/desktop-full/diagnostics.test.ts`.
+
+Shared across desktop-full (decided once, the same in every item): one door at /desktop on the control port and one desktop key serve both of Desktop's modes. "Standard mode" is today's Code-tab door through Desktop's environment store (`splice desktop on`). "App mode" is Desktop's third-party gateway mode, the whole app on splice (`splice desktop on --app`). In JSON the mode is one of "off", "standard", "app", "other" (a third-party configuration that is not splice's). Every request Desktop sends in app mode carries the header `x-splice-desktop: app`, which splice writes into the configuration's inferenceCustomHeaders. That header is how the door tells an app-mode request from a standard one. Refusals keep the door's Anthropic error shape and the "splice desktop: " prefix. Picker rows are DesktopLineup.picker, the terminal's rows (don't fork them; the custom-provider campaign, #680, is changing labels and tiers there at the same time). Vendor facts about Desktop (paths, key names, row fields, ID filter) live in integrations/claude-code/src/main/kotlin/splice/client/desktop/, beside the other Desktop facts. Goal: docs/specs/desktop-full.md.'''
+checks = [
+  'bun test ./.campaign/checks/desktop-full/diagnostics.test.ts',
+]
+sources = [
+  'docs/specs/desktop-full.md',
+  'app/src/main/kotlin/splice/app/desktop/DesktopService.kt',
+  'app/src/main/kotlin/splice/app/desktop/DesktopRecord.kt',
+  'app/src/main/kotlin/splice/app/cli/desktop/DesktopSaid.kt',
+  'features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/ClaudeLaneRead.kt',
+  'app/src/main/kotlin/splice/app/DoctorWiring.kt',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:03 CT desktop-full/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'df-features'
+title = 'splice desktop names each backend-dependent Desktop feature per mode, working or why not'
+feature = 'desktop-full'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'df-diagnostics',
+]
+guard = false
+spec = '''
+`splice desktop` names, for each mode, every Claude Desktop feature that depends on the backend, and whether it works on splice (outcome 6).
+`--json` gains `features`, a list of {"name", "mode": "standard"|"app", "state": "works"|"partly"|"unavailable"|"unknown", "reason"}, with a reason (one sentence) on every state but "works". The names, in this order, are: "auto mode", "effort", "context window and compaction", "titles", "subagents", "web search and fetch", "images and files", "MCP", "scheduled tasks", "fast mode", "Remote Control and cloud environments", "claude.ai connectors", "SSH sessions", "usage display". The words print "Features (<mode> mode):" for the mode Desktop is in (standard while off), one line each: "  <name>: <state>[ — <reason>]".
+The states known now:
+- Auto mode works in both modes: splice reviews Claude Code's auto-mode check on every head, and app mode turns it on (df-app-on).
+- Context window and compaction, and subagents, work in both modes (df-app-window; tiers follow the session's head, df-claude-picks).
+- Titles work in app mode.
+- In app mode, fast mode, Remote Control and cloud environments, and claude.ai connectors are unavailable, because Desktop itself turns them off in third-party mode. The reason names Desktop.
+- Effort: "partly" when any head in the door tops out below Desktop's "max" (its vocabulary maps max to a lower rung), with the reason naming those heads and their top rung; "works" otherwise.
+- Web search and fetch, and images and files: computed from the heads in the door (which models take images, which heads answer Anthropic's server web tools). They are "partly" with the heads named when only some do.
+- MCP and scheduled tasks run on the person's computer and work.
+- SSH sessions are unavailable on splice in both modes. The reason: "the door listens on 127.0.0.1 only, which a session on another machine can't reach". Desktop needs a gateway address that isn't localhost for SSH.
+- Usage display (Desktop's plan-usage meter, which reads Anthropic's unified rate-limit headers, df-wire-limits), in both modes: "works" when every head in the door reports plan windows (Anthropic's own headers, ChatGPT's 5-hour and weekly windows, any QuotaHeaderFamily). It is "partly" when some do, and "unavailable" when none do. Wherever it isn't "works", the reason names the heads that report none. The live test settles whether app mode's meter reads these headers or Desktop's own cost estimate, and corrects the app-mode row.
+- What the app study left open (standard mode's titles, connectors and Remote Control under the switch) is "unknown" until the live test (df-live-run) settles it.
+This is a reading of what splice knows. It changes no behaviour. Files: a new app/src/main/kotlin/splice/app/desktop/DesktopFeatures.kt, DesktopService.kt, app/cli/desktop/DesktopSaid.kt. Proof: `bun test ./.campaign/checks/desktop-full/features.test.ts`.
+
+Shared across desktop-full (decided once, the same in every item): one door at /desktop on the control port and one desktop key serve both of Desktop's modes. "Standard mode" is today's Code-tab door through Desktop's environment store (`splice desktop on`). "App mode" is Desktop's third-party gateway mode, the whole app on splice (`splice desktop on --app`). In JSON the mode is one of "off", "standard", "app", "other" (a third-party configuration that is not splice's). Every request Desktop sends in app mode carries the header `x-splice-desktop: app`, which splice writes into the configuration's inferenceCustomHeaders. That header is how the door tells an app-mode request from a standard one. Refusals keep the door's Anthropic error shape and the "splice desktop: " prefix. Picker rows are DesktopLineup.picker, the terminal's rows (don't fork them; the custom-provider campaign, #680, is changing labels and tiers there at the same time). Vendor facts about Desktop (paths, key names, row fields, ID filter) live in integrations/claude-code/src/main/kotlin/splice/client/desktop/, beside the other Desktop facts. Goal: docs/specs/desktop-full.md.'''
+checks = [
+  'bun test ./.campaign/checks/desktop-full/features.test.ts',
+]
+sources = [
+  'docs/specs/desktop-full.md',
+  'app/src/main/kotlin/splice/app/desktop/DesktopService.kt',
+  'app/src/main/kotlin/splice/app/cli/desktop/DesktopSaid.kt',
+]
+results = [
+  "Saved tool result (desktop-3p-bundle.md):\n# Claude Desktop 5.11492.5 (Linux), 3P mode: read from its main process code, Nov 18, 2026\n\nRead from `/usr/lib/claude-desktop/resources/app.asar`, extracted, `.vite/build/index.chunk-DOKiptke.js`\n(minified). Each line is what the code does; excerpts are abridged.\n\n## The local configuration library\n\n- Folder: `<appData>/Claude-3p/configLibrary/` (`appData` is Electron's: `$XDG_CONFIG_HOME` or `~/.config` on Linux).\n- `_meta.json`: `{\"appliedId\": \"<id>\", \"entries\": [{\"id\": \"<id>\", \"name\": \"<name>\", \"provider\"?: \"<s>\", \"note\"?: \"<s>\"}]}`.\n  Desktop's own writer starts from `{appliedId: \"\", entries: []}` when the file is absent, and refuses an id not in\n  `entries` (\"unknown config id\").\n- An id matches `/^[a-f0-9-]{36}$/` (a UUID). The config is `configLibrary/<id>.json`, one flat JSON object of config\n  keys (`inferenceProvider`, `inferenceGatewayBaseUrl`, ...).\n- Read at launch: `_meta.json`'s `appliedId`, then `<id>.json`. An unreadable entry opens as empty (logged\n  `[configLibrary] entry unreadable; opening as empty`).\n- Secret-type string keys may be stored sealed (`__sealed__:v1:` + safeStorage). Desktop's save and a later \"sweep\"\n  seal plaintext secrets in place (it rewrites `<id>.json` when the file is unchanged under it). A config with no\n  plaintext secret (no `inferenceGatewayApiKey`) has nothing to seal.\n\n## Credential helper\n\n- `inferenceCredentialHelper`: an absolute path to an executable file (`pathKind: \"file\"`; a bad path is\n  \"Path must be absolute and on the local filesystem.\"). `inferenceCredentialHelperArgs`: an array of argument\n  strings. Also `inferenceCredentialHelperTtlSec` (positive int), `inferenceCredentialHelperTimeoutSec` (≤600),\n  `inferenceCredentialHelperSilentRefreshEnabled` (bool).\n- Output formats: `bare-token` or `json`. A clean exit with nothing on stdout is a failure (\"produced no output\");\n  a non-zero exit is a failure. Its environment carries `CLAUDE_HELPER_CONTEXT` (e.g. `setup-test`) and\n  `CLAUDE_HELPER_MANUAL_RUN=1` for the setup test.\n\n## Gateway provider and the Code tab\n\n- For `inferenceProvider: \"gateway\"` the scheme is bearer unless `inferenceGatewayAuthScheme` is `\"x-api-key\"`:\n  `i = e.provider===\"gateway\" ? e.authScheme!==\"x-api-key\" : as(t)`; then\n  `ANTHROPIC_API_KEY: i ? \"\" : t, ANTHROPIC_AUTH_TOKEN: i ? t : \"\"`. A helper's credential is put in the same\n  variable (`credentialEnvVar`: bearer → `ANTHROPIC_AUTH_TOKEN`, else `ANTHROPIC_API_KEY`).\n- `inferenceCustomHeaders`: a `{name: value}` object (`record<string,string>`), readers desktop and code; it becomes\n  `ANTHROPIC_CUSTOM_HEADERS` (`\"name: value\"` lines) for the Code tab's Claude Code.\n- A gateway whose host is not Anthropic's gets `CLAUDE_CODE_DISABLE_LEGACY_MODEL_REMAP=1`.\n- Auto mode: `CLAUDE_CODE_ENABLE_AUTO_MODE` comes from `autoModeEnabled` (unset: Code on, Cowork off; `true`: both on;\n  `false`: off). `CLAUDE_CODE_AUTO_MODE_SERVER` is `\"1\"`/`\"0\"` from `inferenceGatewayAutoModeServerChecks` when set.\n  `autoModeClassifierModel` is marked `availableInVersion: \"@next\"` (not read by this release).\n- Desktop always sets `CLAUDE_CODE_DISABLE_FAST_MODE=1` under 3P.\n\n## Discovery (`GET /v1/models`)\n\n- URL: `${base.replace(/\\/+$/,\"\")}/v1/models?limit=1000[&after_id=<cursor>]`, headers: the credential header,\n  `anthropic-version: 2023-06-01`, the custom headers. Timeout 10 s per page, up to 3 pages. A non-OK first page is\n  a failure; a later page's failure keeps the rows read. `data` must be an array.\n- Per row it reads: `id` (≤255 chars), `display_name` (≤255; the label, else the id), `description` (≤100 chars),\n  `anthropic_family_tier`, `is_family_default`, and 1M from `supports_1m` when it is a boolean, else\n  `max_input_tokens >= 1000000`. Paging: `has_more === true` with a string `last_id` gives the next cursor.\n- `anthropic_family_tier` is kept only when it is one of `sonnet`, `opus`, `haiku`, `fable`, `mythos` (lowercased).\n  `is_family_default: true` is kept only on a row with a kept tier.\n- Filter for the gateway provider: a row passes when its id \"reads as Claude\" or it has a kept tier. An id reads as\n  Claude when it contains `claude`, a tier name or `anthropic`, and does not match\n  `/ark-code|...|gemini|...|glm|gpt|grok|...|kimi|...|codex|.../` (a long list of other vendors' names). So every\n  splice selector of a GPT, Grok, Kimi or GLM model needs a tier to be listed.\n- Rows whose id reads as Claude and that share both display name and tier are grouped as variants of one picker row\n  (the family default, or the plainest id, leads). An id ending `[1m]` is a 1M variant of the id without it.\n- Discovery does not carry `maxEffort`, `behavesAs` or `labelOverride`; those exist only on `inferenceModels`\n  entries, and `inferenceModels`, when set, replaces discovery. `modelDiscoveryEnabled` is a config key.\n\n## Picker and effort\n\n- Effort ladder: `low`, `medium`, `high`, `xhigh`, `max` (an unknown `maxEffort` reads as `low`).\n- `inferenceModels` entry keys: `name`, `labelOverride`, `supports1m`, `prefer1m`, `anthropicFamilyTier` (the tiers\n  above), `isFamilyDefault` (shown only with a tier), `behavesAs` (a Claude model id), `maxEffort`, plus\n  `minDesktopVersion`.\n- Claude Code reads `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE,MYTHOS}_MODEL` and Desktop seeds them from the list\n  (`CLAUDE_CODE_3P_SEEDED_OPUS_DEFAULT`, `..._PROBE_WROTE_HAIKU_DEFAULT`); a family default is what a tier alias\n  resolves to.\n\n## Not read here\n\n- What Desktop's main process uses for title and side calls, the exact reachability probe, the usage display's\n  headers, and whether discovery re-runs while Desktop is open. The live test reads them.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:03 CT desktop-full/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'df-sandbox'
+title = 'tools/desktop-sandbox runs the real Desktop in a private sandbox a seat can drive'
+feature = 'desktop-full'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'df-diagnostics',
+]
+guard = false
+spec = '''
+`tools/desktop-sandbox` is repo tooling (Bun/TypeScript, `bun tools/desktop-sandbox/main.ts <verb>`) that runs the installed Claude Desktop (`/usr/lib/claude-desktop/claude-desktop`) in a private sandbox and lets a seat drive it as a person would (outcome 8). It is this machine's computer-use tool for agent sessions.
+- `start [--root DIR] [--watch] [--heads standin|person] [--app]`. The root defaults to a fresh /tmp/splice-desktop-sandbox-XXXX. It gives Desktop:
+  - its own HOME and XDG_CONFIG_HOME under the root, so the Code tab's ~/.claude and CLAUDE_CONFIG_DIR are fresh too;
+  - its own D-Bus session (`dbus-run-session`) and `--password-store=basic`;
+  - a private display, `Xvfb :N` (the first free N ≥ 90, 1920x1080x24), or `Xephyr` with --watch for a person who wants to see it;
+  - Chromium's `--remote-debugging-port` on a free port.
+  It also starts a splice daemon from the build under test (SPLICE_JAR, else app/build/libs/app-all.jar) on its own free control port and its own state and config under the root.
+  - `--heads standin` (the default) gives that daemon stand-in providers in the root (an OpenAI-compatible one and an Anthropic one, like the campaign checks' stubs), so the round runs anywhere.
+  - `--heads person` gives it one Anthropic-dialect key head per head of the person's running daemon, at that head's own port, with the person's turn key read from their state (read, never written). Live turns then run on the person's real accounts through their daemon, and no login file is ever copied or refreshed by the sandbox.
+  - `--app` runs the sandbox's `splice desktop on --app --yes` before Desktop opens.
+  It prints one JSON line {root, display, cdp_port, control_port, desktop_pid} and keeps a state file in the root, so later verbs find the sandbox.
+- `shot [--out FILE]`: a PNG of the display (`ffmpeg -f x11grab`). It prints the path for the seat to read as an image.
+- `click X Y`, `move X Y`, `type TEXT`, `key COMBO`: xdotool on the sandbox's display only.
+- `dom`: the page text through the debugging port, as a complement to looking, never instead of it.
+- `splice ARGS...`: the sandbox daemon's CLI.
+- `relaunch`: quit Desktop and open it again.
+- `stop [--keep]`: ends Desktop, the display, D-Bus and the daemon, and removes the root unless --keep.
+- Refusal: before writing anything, the wrapper resolves every path it would write (the root and each folder under it, through symlinks). It refuses, exit 1, "desktop-sandbox: refused: <path> resolves into <the person's folder>", when one lands in the person's $HOME/.config/Claude, $HOME/.config/Claude-3p, $HOME/.claude, $HOME/.config/splice, $HOME/.splice or $HOME/.local/share/keyrings. "The person's" means the invoking HOME and XDG_CONFIG_HOME.
+- `check`: one whole round with no person: start (stand-ins), `splice desktop on --app --yes`, open Desktop, wait up to 120 s for the sandbox daemon to see Desktop ask its door (`splice desktop --json` relaunched true, df-diagnostics), take a screenshot and check it isn't one flat colour, `splice desktop off`, relaunch, stop. It prints one line per step, "PASS configuration applied", "PASS Desktop asked the door", "PASS screenshot <path>", "PASS off", or "FAIL <step>: <why>", and exits 0 only when all pass.
+- `--help` lists every verb.
+The person's own Desktop, Claude and splice folders and keyring are never written, and their running Desktop and daemon keep running. No Python. Files: tools/desktop-sandbox/ only. Proof: `bun test ./.campaign/checks/desktop-full/sandbox.test.ts` (it needs this machine's installed Desktop, Xvfb, xdotool, ffmpeg and dbus-run-session, which are all present).
+
+Shared across desktop-full (decided once, the same in every item): one door at /desktop on the control port and one desktop key serve both of Desktop's modes. "Standard mode" is today's Code-tab door through Desktop's environment store (`splice desktop on`). "App mode" is Desktop's third-party gateway mode, the whole app on splice (`splice desktop on --app`). In JSON the mode is one of "off", "standard", "app", "other" (a third-party configuration that is not splice's). Every request Desktop sends in app mode carries the header `x-splice-desktop: app`, which splice writes into the configuration's inferenceCustomHeaders. That header is how the door tells an app-mode request from a standard one. Refusals keep the door's Anthropic error shape and the "splice desktop: " prefix. Picker rows are DesktopLineup.picker, the terminal's rows (don't fork them; the custom-provider campaign, #680, is changing labels and tiers there at the same time). Vendor facts about Desktop (paths, key names, row fields, ID filter) live in integrations/claude-code/src/main/kotlin/splice/client/desktop/, beside the other Desktop facts. Goal: docs/specs/desktop-full.md.'''
+checks = [
+  'bun test ./.campaign/checks/desktop-full/sandbox.test.ts',
+]
+sources = [
+  'docs/specs/desktop-full.md',
+  'app/src/main/dist/bin/splice-launch',
+]
+results = [
+  "Saved tool result (desktop-3p-bundle.md):\n# Claude Desktop 5.11492.5 (Linux), 3P mode: read from its main process code, Nov 18, 2026\n\nRead from `/usr/lib/claude-desktop/resources/app.asar`, extracted, `.vite/build/index.chunk-DOKiptke.js`\n(minified). Each line is what the code does; excerpts are abridged.\n\n## The local configuration library\n\n- Folder: `<appData>/Claude-3p/configLibrary/` (`appData` is Electron's: `$XDG_CONFIG_HOME` or `~/.config` on Linux).\n- `_meta.json`: `{\"appliedId\": \"<id>\", \"entries\": [{\"id\": \"<id>\", \"name\": \"<name>\", \"provider\"?: \"<s>\", \"note\"?: \"<s>\"}]}`.\n  Desktop's own writer starts from `{appliedId: \"\", entries: []}` when the file is absent, and refuses an id not in\n  `entries` (\"unknown config id\").\n- An id matches `/^[a-f0-9-]{36}$/` (a UUID). The config is `configLibrary/<id>.json`, one flat JSON object of config\n  keys (`inferenceProvider`, `inferenceGatewayBaseUrl`, ...).\n- Read at launch: `_meta.json`'s `appliedId`, then `<id>.json`. An unreadable entry opens as empty (logged\n  `[configLibrary] entry unreadable; opening as empty`).\n- Secret-type string keys may be stored sealed (`__sealed__:v1:` + safeStorage). Desktop's save and a later \"sweep\"\n  seal plaintext secrets in place (it rewrites `<id>.json` when the file is unchanged under it). A config with no\n  plaintext secret (no `inferenceGatewayApiKey`) has nothing to seal.\n\n## Credential helper\n\n- `inferenceCredentialHelper`: an absolute path to an executable file (`pathKind: \"file\"`; a bad path is\n  \"Path must be absolute and on the local filesystem.\"). `inferenceCredentialHelperArgs`: an array of argument\n  strings. Also `inferenceCredentialHelperTtlSec` (positive int), `inferenceCredentialHelperTimeoutSec` (≤600),\n  `inferenceCredentialHelperSilentRefreshEnabled` (bool).\n- Output formats: `bare-token` or `json`. A clean exit with nothing on stdout is a failure (\"produced no output\");\n  a non-zero exit is a failure. Its environment carries `CLAUDE_HELPER_CONTEXT` (e.g. `setup-test`) and\n  `CLAUDE_HELPER_MANUAL_RUN=1` for the setup test.\n\n## Gateway provider and the Code tab\n\n- For `inferenceProvider: \"gateway\"` the scheme is bearer unless `inferenceGatewayAuthScheme` is `\"x-api-key\"`:\n  `i = e.provider===\"gateway\" ? e.authScheme!==\"x-api-key\" : as(t)`; then\n  `ANTHROPIC_API_KEY: i ? \"\" : t, ANTHROPIC_AUTH_TOKEN: i ? t : \"\"`. A helper's credential is put in the same\n  variable (`credentialEnvVar`: bearer → `ANTHROPIC_AUTH_TOKEN`, else `ANTHROPIC_API_KEY`).\n- `inferenceCustomHeaders`: a `{name: value}` object (`record<string,string>`), readers desktop and code; it becomes\n  `ANTHROPIC_CUSTOM_HEADERS` (`\"name: value\"` lines) for the Code tab's Claude Code.\n- A gateway whose host is not Anthropic's gets `CLAUDE_CODE_DISABLE_LEGACY_MODEL_REMAP=1`.\n- Auto mode: `CLAUDE_CODE_ENABLE_AUTO_MODE` comes from `autoModeEnabled` (unset: Code on, Cowork off; `true`: both on;\n  `false`: off). `CLAUDE_CODE_AUTO_MODE_SERVER` is `\"1\"`/`\"0\"` from `inferenceGatewayAutoModeServerChecks` when set.\n  `autoModeClassifierModel` is marked `availableInVersion: \"@next\"` (not read by this release).\n- Desktop always sets `CLAUDE_CODE_DISABLE_FAST_MODE=1` under 3P.\n\n## Discovery (`GET /v1/models`)\n\n- URL: `${base.replace(/\\/+$/,\"\")}/v1/models?limit=1000[&after_id=<cursor>]`, headers: the credential header,\n  `anthropic-version: 2023-06-01`, the custom headers. Timeout 10 s per page, up to 3 pages. A non-OK first page is\n  a failure; a later page's failure keeps the rows read. `data` must be an array.\n- Per row it reads: `id` (≤255 chars), `display_name` (≤255; the label, else the id), `description` (≤100 chars),\n  `anthropic_family_tier`, `is_family_default`, and 1M from `supports_1m` when it is a boolean, else\n  `max_input_tokens >= 1000000`. Paging: `has_more === true` with a string `last_id` gives the next cursor.\n- `anthropic_family_tier` is kept only when it is one of `sonnet`, `opus`, `haiku`, `fable`, `mythos` (lowercased).\n  `is_family_default: true` is kept only on a row with a kept tier.\n- Filter for the gateway provider: a row passes when its id \"reads as Claude\" or it has a kept tier. An id reads as\n  Claude when it contains `claude`, a tier name or `anthropic`, and does not match\n  `/ark-code|...|gemini|...|glm|gpt|grok|...|kimi|...|codex|.../` (a long list of other vendors' names). So every\n  splice selector of a GPT, Grok, Kimi or GLM model needs a tier to be listed.\n- Rows whose id reads as Claude and that share both display name and tier are grouped as variants of one picker row\n  (the family default, or the plainest id, leads). An id ending `[1m]` is a 1M variant of the id without it.\n- Discovery does not carry `maxEffort`, `behavesAs` or `labelOverride`; those exist only on `inferenceModels`\n  entries, and `inferenceModels`, when set, replaces discovery. `modelDiscoveryEnabled` is a config key.\n\n## Picker and effort\n\n- Effort ladder: `low`, `medium`, `high`, `xhigh`, `max` (an unknown `maxEffort` reads as `low`).\n- `inferenceModels` entry keys: `name`, `labelOverride`, `supports1m`, `prefer1m`, `anthropicFamilyTier` (the tiers\n  above), `isFamilyDefault` (shown only with a tier), `behavesAs` (a Claude model id), `maxEffort`, plus\n  `minDesktopVersion`.\n- Claude Code reads `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE,MYTHOS}_MODEL` and Desktop seeds them from the list\n  (`CLAUDE_CODE_3P_SEEDED_OPUS_DEFAULT`, `..._PROBE_WROTE_HAIKU_DEFAULT`); a family default is what a tier alias\n  resolves to.\n\n## Not read here\n\n- What Desktop's main process uses for title and side calls, the exact reachability probe, the usage display's\n  headers, and whether discovery re-runs while Desktop is open. The live test reads them.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:03 CT desktop-full/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'df-live-run'
+title = 'The live test runs on the real Desktop in the sandbox, and its record is in the spec'
+feature = 'desktop-full'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'df-features',
+  'df-sandbox',
+  'df-wire-limits',
+  'df-turn-headers',
+]
+guard = false
+spec = '''
+The campaign runs the live test itself, on the real Claude Desktop in the sandbox (df-sandbox), driven by screenshots and xdotool as a person would. The feature isn't done until it passes (outcome 8, added Nov 18, 2026 at the founder's direction).
+Run `bun tools/desktop-sandbox/main.ts start --heads person --app`. Take a `shot` after each step and read it as an image before going on. Cover every case below in app mode with no human step, and check `/api/perf/turns` on the person's daemon for each turn.
+Record the run in docs/specs/desktop-full.md, in a new section "## The live test, run". It holds a table `| case | result | what was seen |` with one row per case, named exactly: on and relaunch; picker in Chat; picker in Cowork; picker in Code; turn on a GPT head; turn on a Grok head; turn on Claude; model switch mid-session; effort levels; context meter; compaction; subagent naming a tier; titles; image attachment; MCP tool; auto mode; web search and fetch on a non-Claude head; usage display; Chat turn; Cowork turn; perf rows; picker after a head is added; off; standard mode.
+- "picker in Code" also records which row a new session starts on, which df-models makes the door's saved default. "picker after a head is added" adds a head to the sandbox daemon and checks three things: `splice desktop` says the picker changed, Desktop shows the new row only after a relaunch, and the notice clears after that.
+- The result is one of pass, fail, unavailable (a feature named unavailable, with Desktop's or the head's reason) or needs sign-in.
+- Standard mode needs a claude.ai sign-in in the sandbox. Cover what runs without one. Where only a sign-in unblocks the rest, open it on --watch (Xephyr) and ask once, through the lead. If no answer comes, record "needs sign-in".
+- A case that fails is fixed in splice in this item and run again. The check holds no "fail".
+- The section also answers each Unknown of the app study, by these names: standard-mode picker, standard-mode titles, connectors under the switch, Remote Control under the switch, Developer menu.
+- It corrects any statement in the spec that the run disproves, and desktop-door.md's "Dropped" row (CLAUDE_CODE_HOST_OFFERS_DEVICE_MCP is deleted unless Desktop sets it).
+- What the run settles goes into `splice desktop`'s features (df-features), so none is left "unknown".
+- The screenshots judged are attached to the PR, after checking that none shows a key, an account name or a private path. They are not committed.
+Proof: `bun test ./.campaign/checks/desktop-full/live-record.test.ts`.
+
+Shared across desktop-full (decided once, the same in every item): one door at /desktop on the control port and one desktop key serve both of Desktop's modes. "Standard mode" is today's Code-tab door through Desktop's environment store (`splice desktop on`). "App mode" is Desktop's third-party gateway mode, the whole app on splice (`splice desktop on --app`). In JSON the mode is one of "off", "standard", "app", "other" (a third-party configuration that is not splice's). Every request Desktop sends in app mode carries the header `x-splice-desktop: app`, which splice writes into the configuration's inferenceCustomHeaders. That header is how the door tells an app-mode request from a standard one. Refusals keep the door's Anthropic error shape and the "splice desktop: " prefix. Picker rows are DesktopLineup.picker, the terminal's rows (don't fork them; the custom-provider campaign, #680, is changing labels and tiers there at the same time). Vendor facts about Desktop (paths, key names, row fields, ID filter) live in integrations/claude-code/src/main/kotlin/splice/client/desktop/, beside the other Desktop facts. Goal: docs/specs/desktop-full.md.'''
+checks = [
+  'bun test ./.campaign/checks/desktop-full/live-record.test.ts',
+]
+sources = [
+  'docs/specs/desktop-full.md',
+  'docs/specs/desktop-door.md',
+]
+results = [
+  "Saved tool result (desktop-3p-bundle.md):\n# Claude Desktop 5.11492.5 (Linux), 3P mode: read from its main process code, Nov 18, 2026\n\nRead from `/usr/lib/claude-desktop/resources/app.asar`, extracted, `.vite/build/index.chunk-DOKiptke.js`\n(minified). Each line is what the code does; excerpts are abridged.\n\n## The local configuration library\n\n- Folder: `<appData>/Claude-3p/configLibrary/` (`appData` is Electron's: `$XDG_CONFIG_HOME` or `~/.config` on Linux).\n- `_meta.json`: `{\"appliedId\": \"<id>\", \"entries\": [{\"id\": \"<id>\", \"name\": \"<name>\", \"provider\"?: \"<s>\", \"note\"?: \"<s>\"}]}`.\n  Desktop's own writer starts from `{appliedId: \"\", entries: []}` when the file is absent, and refuses an id not in\n  `entries` (\"unknown config id\").\n- An id matches `/^[a-f0-9-]{36}$/` (a UUID). The config is `configLibrary/<id>.json`, one flat JSON object of config\n  keys (`inferenceProvider`, `inferenceGatewayBaseUrl`, ...).\n- Read at launch: `_meta.json`'s `appliedId`, then `<id>.json`. An unreadable entry opens as empty (logged\n  `[configLibrary] entry unreadable; opening as empty`).\n- Secret-type string keys may be stored sealed (`__sealed__:v1:` + safeStorage). Desktop's save and a later \"sweep\"\n  seal plaintext secrets in place (it rewrites `<id>.json` when the file is unchanged under it). A config with no\n  plaintext secret (no `inferenceGatewayApiKey`) has nothing to seal.\n\n## Credential helper\n\n- `inferenceCredentialHelper`: an absolute path to an executable file (`pathKind: \"file\"`; a bad path is\n  \"Path must be absolute and on the local filesystem.\"). `inferenceCredentialHelperArgs`: an array of argument\n  strings. Also `inferenceCredentialHelperTtlSec` (positive int), `inferenceCredentialHelperTimeoutSec` (≤600),\n  `inferenceCredentialHelperSilentRefreshEnabled` (bool).\n- Output formats: `bare-token` or `json`. A clean exit with nothing on stdout is a failure (\"produced no output\");\n  a non-zero exit is a failure. Its environment carries `CLAUDE_HELPER_CONTEXT` (e.g. `setup-test`) and\n  `CLAUDE_HELPER_MANUAL_RUN=1` for the setup test.\n\n## Gateway provider and the Code tab\n\n- For `inferenceProvider: \"gateway\"` the scheme is bearer unless `inferenceGatewayAuthScheme` is `\"x-api-key\"`:\n  `i = e.provider===\"gateway\" ? e.authScheme!==\"x-api-key\" : as(t)`; then\n  `ANTHROPIC_API_KEY: i ? \"\" : t, ANTHROPIC_AUTH_TOKEN: i ? t : \"\"`. A helper's credential is put in the same\n  variable (`credentialEnvVar`: bearer → `ANTHROPIC_AUTH_TOKEN`, else `ANTHROPIC_API_KEY`).\n- `inferenceCustomHeaders`: a `{name: value}` object (`record<string,string>`), readers desktop and code; it becomes\n  `ANTHROPIC_CUSTOM_HEADERS` (`\"name: value\"` lines) for the Code tab's Claude Code.\n- A gateway whose host is not Anthropic's gets `CLAUDE_CODE_DISABLE_LEGACY_MODEL_REMAP=1`.\n- Auto mode: `CLAUDE_CODE_ENABLE_AUTO_MODE` comes from `autoModeEnabled` (unset: Code on, Cowork off; `true`: both on;\n  `false`: off). `CLAUDE_CODE_AUTO_MODE_SERVER` is `\"1\"`/`\"0\"` from `inferenceGatewayAutoModeServerChecks` when set.\n  `autoModeClassifierModel` is marked `availableInVersion: \"@next\"` (not read by this release).\n- Desktop always sets `CLAUDE_CODE_DISABLE_FAST_MODE=1` under 3P.\n\n## Discovery (`GET /v1/models`)\n\n- URL: `${base.replace(/\\/+$/,\"\")}/v1/models?limit=1000[&after_id=<cursor>]`, headers: the credential header,\n  `anthropic-version: 2023-06-01`, the custom headers. Timeout 10 s per page, up to 3 pages. A non-OK first page is\n  a failure; a later page's failure keeps the rows read. `data` must be an array.\n- Per row it reads: `id` (≤255 chars), `display_name` (≤255; the label, else the id), `description` (≤100 chars),\n  `anthropic_family_tier`, `is_family_default`, and 1M from `supports_1m` when it is a boolean, else\n  `max_input_tokens >= 1000000`. Paging: `has_more === true` with a string `last_id` gives the next cursor.\n- `anthropic_family_tier` is kept only when it is one of `sonnet`, `opus`, `haiku`, `fable`, `mythos` (lowercased).\n  `is_family_default: true` is kept only on a row with a kept tier.\n- Filter for the gateway provider: a row passes when its id \"reads as Claude\" or it has a kept tier. An id reads as\n  Claude when it contains `claude`, a tier name or `anthropic`, and does not match\n  `/ark-code|...|gemini|...|glm|gpt|grok|...|kimi|...|codex|.../` (a long list of other vendors' names). So every\n  splice selector of a GPT, Grok, Kimi or GLM model needs a tier to be listed.\n- Rows whose id reads as Claude and that share both display name and tier are grouped as variants of one picker row\n  (the family default, or the plainest id, leads). An id ending `[1m]` is a 1M variant of the id without it.\n- Discovery does not carry `maxEffort`, `behavesAs` or `labelOverride`; those exist only on `inferenceModels`\n  entries, and `inferenceModels`, when set, replaces discovery. `modelDiscoveryEnabled` is a config key.\n\n## Picker and effort\n\n- Effort ladder: `low`, `medium`, `high`, `xhigh`, `max` (an unknown `maxEffort` reads as `low`).\n- `inferenceModels` entry keys: `name`, `labelOverride`, `supports1m`, `prefer1m`, `anthropicFamilyTier` (the tiers\n  above), `isFamilyDefault` (shown only with a tier), `behavesAs` (a Claude model id), `maxEffort`, plus\n  `minDesktopVersion`.\n- Claude Code reads `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE,MYTHOS}_MODEL` and Desktop seeds them from the list\n  (`CLAUDE_CODE_3P_SEEDED_OPUS_DEFAULT`, `..._PROBE_WROTE_HAIKU_DEFAULT`); a family default is what a tier alias\n  resolves to.\n\n## Not read here\n\n- What Desktop's main process uses for title and side calls, the exact reachability probe, the usage display's\n  headers, and whether discovery re-runs while Desktop is open. The live test reads them.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:03 CT desktop-full/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'cp-tls'
+title = "The OS trust store and a provider's ca_file are trusted, and an untrusted certificate says how to fix it"
+feature = 'custom-provider'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'cp-schema',
+  'cp-errors',
+]
+guard = false
+spec = '''
+A provider reached through a company's TLS-inspecting proxy works (issue #680, outcome 11): today every turn fails with a bare PKIX error because splice trusts only the roots Java ships with.
+
+After this item, splice's upstream client trusts, for every provider: the roots Java ships with, plus the operating system's trust store, read at start (on Linux the bundle SSL_CERT_FILE names when it is set, else the first of /etc/ssl/certs/ca-certificates.crt, /etc/pki/tls/certs/ca-bundle.crt, /etc/ssl/cert.pem that exists; on macOS /etc/ssl/cert.pem and the system keychain); and for one provider, its `ca_file` (cp-schema: a PEM bundle of one or more certificates), trusted for that provider only. A certificate none of them trusts fails the turn with an error in Anthropic's shape whose message names the provider and the fix: `splice: <provider>'s server at <host> presented a certificate splice does not trust (<the TLS reason, short>). Name the certificate authority that signed it in providers.<provider>.ca_file, or add it to this machine's trust store.` Nothing is retried for it. Hostname verification stays on everywhere; no option turns verification off.
+
+Decided here: an unreadable OS bundle is skipped with one log line, never a boot finding (the person did not write it); an unreadable ca_file is a boot finding (cp-schema).
+
+Where: integrations/upstream/src/main/kotlin/splice/upstream/transport/UpstreamTransport.kt (the one OkHttp client and its SSLContext in UpstreamSockets; a provider with ca_file gets a client of its own sharing the rest), and where a transport failure becomes the user's message (after cp-errors, which changes the same failure files).
+
+Proven by: bun test ./.campaign/checks/custom/tls.test.ts — behind a certificate signed by a check's own root, a turn fails naming acme and ca_file; with ca_file naming the root it answers; with no ca_file and SSL_CERT_FILE naming the root it answers.'''
+checks = [
+  'bun test ./.campaign/checks/custom/tls.test.ts',
+]
+sources = [
+  'integrations/upstream/src/main/kotlin/splice/upstream/transport/UpstreamTransport.kt',
+  '.campaign/checks/custom/lib/tls.ts',
+]
+results = [
+  "Saved tool result (failure.txt):\nRead Nov 18, 2026 (custom-provider coordinator's code map):\n- integrations/upstream/.../failure/OpenAiErrorEnvelope.kt reads OpenAI error objects; OpenAiReplies.kt statusOf(), pushback() reads Retry-After and retry-after-ms, 503 -> Overloaded, 429 -> Limited/NeedsPayment.\n- core/.../failure/ProviderWords.kt filters a provider's message: MAX_CHARS 160, MAX_READ 2000, CUT_WHOLE drops sentences with URLs, hosts, timestamps.\n- integrations/upstream/.../transport/UpstreamTransport.kt: the only OkHttp client; SSLContext.getInstance(\"TLS\") in UpstreamSockets; sslSocketFactory applied; KeepaliveSocketFactory.\n- core/.../topology/Topology.kt: send_version (sendVersion, default false) gates only `via` in staticHeaders; core/.../client/ClientWall.kt SPLICE_CLIENT_HEADER = \"x-splice-client\".\n- features/usage/.../perf/PerfRoutes.kt rowJson(): no `provider` field today (provider_message only).\n- features/diagnostics/.../doctor/DoctorCommand.kt collect(): sections prerequisites, installation, configuration, daemon, auth, accounts, runtime; checks guarded(); DoctorConfigChecks.kt.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:07 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'cp-credential'
+title = "A provider's credential_command supplies and renews its key"
+feature = 'custom-provider'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'cp-schema',
+  'cp-picker',
+]
+guard = false
+spec = '''
+A provider on `auth = { kind = "command", credential_command = "..." }` (grammar: cp-schema) gets its key from the team's own command, as Claude Code's apiKeyHelper does for Anthropic and awsAuthRefresh for Bedrock (issue #680, outcomes 4 and 6), so a short-lived personal key renews by itself and nobody pastes keys.
+
+After this item:
+- What the command prints (decided here): one JSON object `{"token": "<key>", "expires_at": "<RFC 3339>"}` on stdout, `expires_at` optional; a stdout that is not JSON and is one non-empty line is taken as the key with no expiry (apiKeyHelper's form), so a helper that already exists works. Anything else, a non-zero exit, or no answer within 30 seconds is a failed run whose words are its stderr (trimmed, at most 500 characters), else `exited <code>`.
+- When it runs: when splice holds no key for the provider, when the key it holds expires within five minutes (the window the ChatGPT sign-in renews in), and once after the provider answers 401 to a turn; that turn is then sent once more with the new key. A second 401 is not retried. One run at a time per provider: concurrent turns wait for the same run. A key with no expiry is used until a 401.
+- No credential, no request (decided once for the feature): a turn on a provider that has no usable credential is refused before anything goes upstream, with the status and error type the door already uses when no account is signed in (door-default.md decision 6: a 4xx Claude Code shows once and does not retry), and the message `splice: <provider> has no key: <why>. Type /login to sign in on splice's accounts page, or run splice login <head> in a terminal.` <why> is `you are not signed in` when the command failed and said nothing, else the command's own words, or `<provider> refused a renewed key (401): <the provider's message>` after the second 401.
+- The credential is per provider, held in the daemon's memory alone: never in a file, a log line, splice's state, the environment of any process splice starts (the session's, the credential command's own, the login command's), or an answer of the control plane. The command runs with /bin/sh -c and the daemon's environment, to which splice adds nothing it holds.
+- Such a provider's heads are in the door and in /model whether or not a key is held now (a person signs in from inside the session, so the row must be there before).
+Build it on the existing RefreshableAuthProvider (core/src/main/kotlin/splice/core/auth/Credentials.kt: refresh, allowRefreshAfterFailure, upstreamAnswered), which already carries the 401-and-retry-once path the ChatGPT sign-in uses (CodexAuthProvider), rather than adding a second retry path; the auth kind is generic, no vendor in it. Retries are total: a run that fails is reported honestly, never looped. GET /api/auth, splice login and the accounts page are cp-login's and cp-accounts'; the state shown there is `held` (with expires_at) / `none` / `failed` (with error), which this item keeps on the provider for them to read.
+
+Where: core/.../auth (a command credential beside Credentials.kt), the place a head's openai-chat arm takes its credential (app/.../provider), DesktopLineup.kt only for keeping the head in the door without a key. No new top-level functions or companion objects.
+
+Proven by: bun test ./.campaign/checks/custom/credential.test.ts — the first turn carries the key acme-ai printed; a fresh key is reused; a revoked key is renewed once and the turn answered; a key within five minutes of expiry is renewed before sending; two 401s refuse in Anthropic's shape naming acme, /login and `splice login acme` after two tries; signed out, and with a failing command, the refusal comes with nothing sent upstream; the head is in /model with no key; no key printed is in a file, a log, the session's env or the command's env.'''
+checks = [
+  'bun test ./.campaign/checks/custom/credential.test.ts',
+]
+sources = [
+  'core/src/main/kotlin/splice/core/auth/Credentials.kt',
+  'integrations/providers/codex/src/main/kotlin/splice/provider/codex/auth/CodexAuthProvider.kt',
+  'core/src/main/kotlin/splice/core/topology/AuthKind.kt',
+  '.campaign/checks/custom/lib/team.ts',
+]
+results = [
+  "Saved tool result (auth.txt):\nRead Nov 18, 2026 (custom-provider coordinator's code map):\n- core/.../topology/AuthKind.kt: AuthKind sealed hierarchy (ChatgptOAuth, GrokOAuth, KimiOAuth, MuseOAuth, Client) plus API_KEY_WIRE; AuthKindRegistry; AuthCompatibility checks kind x provider x dialect.\n- core/.../topology/TopologySchema.kt AuthConfig(kind, file, env): loginFile, effectiveApiKeyEnv.\n- core/.../auth/Credentials.kt: Credentials (Bearer, ApiKey, ClientForwarded); RefreshableAuthProvider with refresh(), exchange(), allowRefreshAfterFailure(), upstreamAnswered() (the 401 path).\n- integrations/providers/codex/.../auth/CodexAuthProvider.kt: proactive refresh 300 s before expiry (PROACTIVE_WINDOW_MS), STALE_FLOOR_MS 30 s; wired by app/.../provider/CodexResponsesArm.kt codexAuth().\n- features/accounts/.../signin/LoginRoutes.kt: POST /api/auth/{head}/login, GET /api/auth/{head}/login/{id}, DELETE ...; LoginStatusJson (id, state, user_code, verification_uri, browser_url, failure_reason).\n- app/.../cli/auth/LoginCommand.kt: splice login <head>, dispatching per AuthKind.\n- Console: app/src/main/resources/console/accounts.html, accounts.js, accounts.css; accounts.js reads /api/status, /api/accounts, /api/keys, /api/models, /api/heads, /api/auth.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:07 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'cp-login'
+title = 'login_command signs a person in, from splice login and the control plane'
+feature = 'custom-provider'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'cp-credential',
+]
+guard = false
+spec = '''
+A provider's `login_command` (cp-schema) is how a person signs in to it, as awsAuthRefresh is for Bedrock in Claude Code (issue #680, outcomes 4 and 5): an interactive sign-in such as the team CLI's browser or device OAuth. The credential itself is cp-credential's.
+
+After this item:
+- `splice login <head>`, for a head whose provider is on command auth, runs login_command attached to the person's terminal (stdin, stdout and stderr inherited, so its prompts and the address it prints are seen), then has the daemon run credential_command, and prints `Signed in to <provider> until <local time>` (or `Signed in to <provider>` for a key with no expiry) and exits 0. A login command that exits non-zero, or a credential command that still fails after it, prints `splice login <head>: <provider> is not signed in: <why>` and exits non-zero. On a provider with no login_command it says the provider has none and to sign in with the team's own tool, exit non-zero.
+- The control plane's sign-in, the one the accounts page's Sign in calls: POST /api/auth/<head>/login starts login_command in the daemon (no terminal; stdin closed) and answers the sign-in in the shape every sign-in has (LoginStatusJson: id, state, browser_url, failure_reason). browser_url is the first http(s) address the command prints on stdout or stderr, set as soon as it is printed. state is pending while it runs, signed_in once it exits 0 and credential_command then succeeds, failed otherwise, with failure_reason `login_command exited <code>: <its last stderr line>` (or the credential command's words). GET /api/auth/<head>/login/<id> polls it; DELETE cancels it, killing the command. A sign-in still running after 10 minutes fails as timed out.
+- GET /api/auth names the head with `present` (whether splice holds a key now) and `expires_at` (RFC 3339, UTC) when the key has one, as it names a ChatGPT sign-in.
+- Once signed in, the next door turn on the provider runs with no restart: the next turn's credential run finds the person signed in.
+- A key splice holds is never in the environment login_command runs in (nor anything else splice holds); the command runs with /bin/sh -c and the daemon's environment.
+The credential is per provider, so `<head>` may be any head of the provider. Reuse LoginRoutes / LoginStatusJson and the sign-in kind dispatch the ChatGPT and Grok sign-ins use; the command sign-in is one more kind, generic.
+
+Where: features/accounts/.../signin/LoginRoutes.kt and its sign-in kind dispatch, app/.../cli/auth/LoginCommand.kt, the /api/auth status route.
+
+Proven by: bun test ./.campaign/checks/custom/login.test.ts — signed out, /api/auth says present false; `splice login acme` shows the address acme-ai printed, says signed in, exits 0; a door turn then runs and /api/auth names an expiry about an hour away; the control plane's sign-in reports browser_url then signed_in; the login command's environment holds no key; a failing login command is a failed sign-in with its exit in failure_reason, and `splice login acme` exits non-zero naming acme.'''
+checks = [
+  'bun test ./.campaign/checks/custom/login.test.ts',
+]
+sources = [
+  'features/accounts/src/main/kotlin/splice/accounts/signin/LoginRoutes.kt',
+  'app/src/main/kotlin/splice/app/cli/auth/LoginCommand.kt',
+]
+results = [
+  "Saved tool result (auth.txt):\nRead Nov 18, 2026 (custom-provider coordinator's code map):\n- core/.../topology/AuthKind.kt: AuthKind sealed hierarchy (ChatgptOAuth, GrokOAuth, KimiOAuth, MuseOAuth, Client) plus API_KEY_WIRE; AuthKindRegistry; AuthCompatibility checks kind x provider x dialect.\n- core/.../topology/TopologySchema.kt AuthConfig(kind, file, env): loginFile, effectiveApiKeyEnv.\n- core/.../auth/Credentials.kt: Credentials (Bearer, ApiKey, ClientForwarded); RefreshableAuthProvider with refresh(), exchange(), allowRefreshAfterFailure(), upstreamAnswered() (the 401 path).\n- integrations/providers/codex/.../auth/CodexAuthProvider.kt: proactive refresh 300 s before expiry (PROACTIVE_WINDOW_MS), STALE_FLOOR_MS 30 s; wired by app/.../provider/CodexResponsesArm.kt codexAuth().\n- features/accounts/.../signin/LoginRoutes.kt: POST /api/auth/{head}/login, GET /api/auth/{head}/login/{id}, DELETE ...; LoginStatusJson (id, state, user_code, verification_uri, browser_url, failure_reason).\n- app/.../cli/auth/LoginCommand.kt: splice login <head>, dispatching per AuthKind.\n- Console: app/src/main/resources/console/accounts.html, accounts.js, accounts.css; accounts.js reads /api/status, /api/accounts, /api/keys, /api/models, /api/heads, /api/auth.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:07 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'cp-accounts'
+title = 'The accounts page shows a command-auth provider and signs in through it'
+feature = 'custom-provider'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'cp-login',
+]
+guard = false
+spec = '''
+The console's accounts page shows a provider on command auth as an account, the way it shows a ChatGPT or Grok sign-in (issue #680, outcome 5); `/login` on the door already opens this page (door-default.md decision 5), so this is where a person in a session signs in to the team's provider.
+
+After this item, on accounts.html, the provider's account (named by its provider key, with its heads' models under it like other accounts) shows whether the person is signed in (`Signed in`, `Signed out`) and, when signed in with a key that has an expiry, when it expires (`expires <local time>`), and a `Sign in` button while signed out (a `Sign in again` when signed in). Sign in calls POST /api/auth/<head>/login (cp-login), shows the address the command printed as a link the moment it appears (as the device sign-ins show theirs), and when the sign-in finishes the account reads signed in with its expiry, with no reload. A failed sign-in shows its failure_reason on the account in words (e.g. `Sign-in did not finish: login_command exited 3: acme-ai: the sign-in was not completed`) and the account stays signed out. The state words are the feature's: held -> Signed in, none -> Signed out, failed -> the command's own words.
+
+Constraints: the page reads only the control plane's routes (GET /api/auth and the sign-in routes); no key is ever sent to the page. Repo CLAUDE.md "UI changes": open the page on the build, dark and light, at 1440 px and about 3600 px, judge every capture (text over text, clipping, crowding, a control whose effect is unclear), fix what is wrong, and attach the captures to the PR. Match the neighbouring account cards' layout and wording.
+
+Where: app/src/main/resources/console/accounts.html, accounts.js, accounts.css.
+
+Proven by: bun test ./.campaign/checks/custom/accounts.test.ts — in a real browser on a real daemon, the acme account reads signed out with a Sign in; clicking it shows the sso.acme.example link, then the account reads signed in with an expiry; a failing login command shows the failure on the account.'''
+checks = [
+  'bun test ./.campaign/checks/custom/accounts.test.ts',
+]
+sources = [
+  'app/src/main/resources/console/accounts.html',
+  'app/src/main/resources/console/accounts.js',
+  'app/src/main/resources/console/accounts.css',
+]
+results = [
+  "Saved tool result (auth.txt):\nRead Nov 18, 2026 (custom-provider coordinator's code map):\n- core/.../topology/AuthKind.kt: AuthKind sealed hierarchy (ChatgptOAuth, GrokOAuth, KimiOAuth, MuseOAuth, Client) plus API_KEY_WIRE; AuthKindRegistry; AuthCompatibility checks kind x provider x dialect.\n- core/.../topology/TopologySchema.kt AuthConfig(kind, file, env): loginFile, effectiveApiKeyEnv.\n- core/.../auth/Credentials.kt: Credentials (Bearer, ApiKey, ClientForwarded); RefreshableAuthProvider with refresh(), exchange(), allowRefreshAfterFailure(), upstreamAnswered() (the 401 path).\n- integrations/providers/codex/.../auth/CodexAuthProvider.kt: proactive refresh 300 s before expiry (PROACTIVE_WINDOW_MS), STALE_FLOOR_MS 30 s; wired by app/.../provider/CodexResponsesArm.kt codexAuth().\n- features/accounts/.../signin/LoginRoutes.kt: POST /api/auth/{head}/login, GET /api/auth/{head}/login/{id}, DELETE ...; LoginStatusJson (id, state, user_code, verification_uri, browser_url, failure_reason).\n- app/.../cli/auth/LoginCommand.kt: splice login <head>, dispatching per AuthKind.\n- Console: app/src/main/resources/console/accounts.html, accounts.js, accounts.css; accounts.js reads /api/status, /api/accounts, /api/keys, /api/models, /api/heads, /api/auth.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:08 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'cp-command'
+title = "A team's door command starts claude on its own model and picker"
+feature = 'custom-provider'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'cp-schema',
+  'cp-picker',
+  'cp-tiers',
+  'cp-overlay',
+]
+guard = false
+spec = '''
+A team's wrapper can start a session on the door with the team's starting model and picker, without moving the person's plain `claude` (issue #680, outcome 12). The grammar `[door.commands.<name>] = { head, models = "head" | "door" }` and its findings are cp-schema's.
+
+After this item:
+- Each door command is linked like every command splice launches (the same splice-launch shim link a head's [heads.*.claude].command gets, laid and removed on boot and reload as those are), and `POST /launch/<name>` answers a launch on the door exactly as `claude` on the door does (door-default.md decision 2: the Mantle variables at the same door address, the unset list, DISABLE_LOGIN_COMMAND, splice's /login hook and file, the person's own Claude folder), with: ANTHROPIC_MODEL the selector of its head's pinned model; the overlay's modelPicker the rows of its head alone (`models = "head"`, the default; the same rows and order DesktopLineup.picker gives that head) or the door's whole picker (`models = "door"`); and a door key of its own (AWS_BEARER_TOKEN_BEDROCK), kept in splice's state like the terminal's key (door-default.md decision 3), admitted by the door, retired when the command leaves splice.toml.
+- The person's plain `claude` lane does not move: its default model, its chosen model and its picker are what they were; a session of the command never records a chosen model for the lane.
+- Side calls follow the command: a tier ID (haiku for titles, a subagent's opus/sonnet/fable) in a session of the command that has not named a selector runs on the command's head as its model_slots say (else its pinned model), not on the door's default. Once the session has named a selector, cp-tiers' rule holds. A plain `claude` session keeps today's rule.
+- A `--settings` the wrapper passes merges into the one overlay exactly as cp-overlay decided for `claude`, with the command's own picker in place of the lane's.
+- `splice claude` (and --json, a `commands` list: name, head, models, default_model) names each door command.
+- A turn through a command's key is recorded as a door turn of the head that ran it, like the terminal's.
+
+Where: features/launch/.../recipe/LaunchRoutes.kt (door launch only for `claude` today), app/.../desktop/ClaudeDoorLaunch.kt, TerminalDoor / TerminalCaller / DoorCaller (keys), DoorRouting.kt (the default head of a caller), the command linking of heads, LineupJson for splice claude. No new top-level functions or companion objects.
+
+Proven by: bun test ./.campaign/checks/custom/command.test.ts — a claude-acme session is on the door at the same address, starts on claude-acme--glm-5.3-flash and lists only acme's two models, and runs there; models = door lists the whole picker; the plain lane's default and picker do not move; the command's key differs from the terminal's and both work; a haiku side call before any selector runs as glm-mini on acme while the plain lane's runs on its own model; an opus subagent after the selector runs on acme; a wrapper's --settings is merged with the command's picker; a wrapper cannot take the session off the door.'''
+checks = [
+  'bun test ./.campaign/checks/custom/command.test.ts',
+]
+sources = [
+  'features/launch/src/main/kotlin/splice/launch/recipe/LaunchRoutes.kt',
+  'app/src/main/kotlin/splice/app/desktop/ClaudeDoorLaunch.kt',
+  'app/src/main/kotlin/splice/app/desktop/TerminalDoor.kt',
+  'app/src/main/kotlin/splice/app/desktop/TerminalCaller.kt',
+  'app/src/main/kotlin/splice/app/desktop/DoorRouting.kt',
+]
+results = [
+  "Saved tool result (cli.txt):\nRead Nov 18, 2026 (custom-provider coordinator's code map):\n- app/.../cli/claude/ClaudeCommand.kt: splice claude [--json] | door [--model] | head, through DoorClient; the JSON is built in the daemon (LineupJson).\n- POST /launch/{head}: app/.../control/mount/LaunchMount.kt; features/launch/.../recipe/LaunchRoutes.kt launch(): door only when key == CLAUDE_COMMAND (launchService.door.launch()); receiveLaunchRequest parses extraArgs (`arg` fields).\n- Door overlay: app/.../desktop/ClaudeDoorLaunch.kt (picker rows, hooks); head overlays: integrations/claude-code/.../wrap/WrappedHeadTypes.kt WrappedLaunch.settingsOverlay().\n- TOML writing: core/.../topology/TopologyWriter.kt (keeps comments/order, verifies by re-decoding, atomic); TopologyFindings.of() -> TopologyChecks.\n- splice add: features/configuration/.../add/AddProfiles.kt toml(), AddPrepare.kt, AddPortChoice.kt choose() (first free port above max(existing, 3098)); prefix \"claude-<key>--\".\n- CLI verbs: app/.../cli/CommandParser.kt verbs map (\"add\" -> Command.Add); app/.../cli/Command.kt.\n- Boot findings: integrations/topology/.../ConfigFindings.kt (TomlStructurePreflight, TopologyTypeMismatch, decode, TopologyFindings); app/.../cli/ConfigPreflight.kt (`splice check-config`, exit 3).\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:08 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'cp-diagnostics'
+title = 'splice claude, splice doctor and perf rows say what a provider is doing'
+feature = 'custom-provider'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'cp-credential',
+  'cp-window',
+  'cp-errors',
+  'cp-picker',
+  'cp-command',
+]
+guard = false
+spec = '''
+A person whose team provider does not work can see why without reading logs (issue #680, outcome 13).
+
+After this item:
+- `splice claude --json` gains `heads`: one entry per head the door knows (listed or left out), each `{head, command, provider, listed, reason?, credential?, last_error?}`. `listed` says whether its models are in /model and `reason` why not (the same reason as left_out). `credential` is present for a provider on command auth: `{state: "held" | "none" | "failed", expires_at?, error?}` (the feature's credential states: held with expires_at RFC 3339 UTC when the key has one; failed with error, the credential command's own words). `last_error` is the last error the provider answered a turn with, `{at (RFC 3339), status, message}` (the provider's message as shown to the session), kept until a newer error replaces it, so it survives the retry that worked.
+- `splice claude` (text) says the same in one line per head: e.g. `acme  claude-acme  provider acme  listed  signed in until 21:40  last error 503 at 20:12: GLM-5.3-Flash is loading.`, times in local time, and for a failed credential the command's own words.
+- `splice doctor` has one check per provider on command auth, in its accounts section: signed in (until when), not signed in (`run splice login <head>, or /login in a claude session`), or failed (the command's own words and `splice login <head>`).
+- Every row of /api/perf/turns carries `provider`: the provider key of the head that ran the turn, on a head's port and through the door alike.
+
+Where: app/.../desktop/LineupJson.kt and DesktopLineup.kt (heads), the CLI's text for splice claude, features/diagnostics/.../doctor (DoctorCommand collect / a provider check beside DoctorConfigChecks; after cp-window's served_window check there), features/usage/.../perf/PerfRoutes.kt rowJson and the row's record. The credential state and the last error are read from what cp-credential and the head's failure path keep.
+
+Proven by: bun test ./.campaign/checks/custom/diagnostics.test.ts — after a turn, splice claude --json names head acme, provider acme, listed, credential held with an expiry, and the text names acme; after a 503 "loading", last_error has status 503 and the message; a perf row of a door turn carries provider acme; with a failing credential command, state failed with its words in --json and in the text, and splice doctor names acme and `splice login acme`.'''
+checks = [
+  'bun test ./.campaign/checks/custom/diagnostics.test.ts',
+]
+sources = [
+  'app/src/main/kotlin/splice/app/desktop/LineupJson.kt',
+  'features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/DoctorCommand.kt',
+  'features/usage/src/main/kotlin/splice/usage/perf/PerfRoutes.kt',
+]
+results = [
+  "Saved tool result (failure.txt):\nRead Nov 18, 2026 (custom-provider coordinator's code map):\n- integrations/upstream/.../failure/OpenAiErrorEnvelope.kt reads OpenAI error objects; OpenAiReplies.kt statusOf(), pushback() reads Retry-After and retry-after-ms, 503 -> Overloaded, 429 -> Limited/NeedsPayment.\n- core/.../failure/ProviderWords.kt filters a provider's message: MAX_CHARS 160, MAX_READ 2000, CUT_WHOLE drops sentences with URLs, hosts, timestamps.\n- integrations/upstream/.../transport/UpstreamTransport.kt: the only OkHttp client; SSLContext.getInstance(\"TLS\") in UpstreamSockets; sslSocketFactory applied; KeepaliveSocketFactory.\n- core/.../topology/Topology.kt: send_version (sendVersion, default false) gates only `via` in staticHeaders; core/.../client/ClientWall.kt SPLICE_CLIENT_HEADER = \"x-splice-client\".\n- features/usage/.../perf/PerfRoutes.kt rowJson(): no `provider` field today (provider_message only).\n- features/diagnostics/.../doctor/DoctorCommand.kt collect(): sections prerequisites, installation, configuration, daemon, auth, accounts, runtime; checks guarded(); DoctorConfigChecks.kt.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:08 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'cp-team'
+title = "A team's provider on the door, end to end, and the guide to publish one"
+feature = 'custom-provider'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'cp-schema',
+  'cp-overlay',
+  'cp-tiers',
+  'cp-parity',
+  'cp-picker',
+  'cp-errors',
+  'cp-output',
+  'cp-install',
+  'cp-window',
+  'cp-identity',
+  'cp-tls',
+  'cp-credential',
+  'cp-login',
+  'cp-accounts',
+  'cp-command',
+  'cp-diagnostics',
+]
+guard = false
+spec = '''
+What issue #680 is for, end to end, and the guide a team writes its definition from. On a machine with only splice and a team's provider definition installed from its URL (`splice add provider`): `claude` on the door, and the team's own door command, list only the team's model in /model and start on it; signing in runs the team's own flow; the key renews by itself; the session's counts are scaled to the model's own window; a model that is loading and a client that is out of date are told in the gateway's own words. This item builds nothing new: it makes the other items add up to that, fixing whatever seam between them breaks it, and writes the guide.
+
+The guide: docs/specs/custom-provider.md (cp-schema wrote its "splice.toml" section) gains, before that section, one for the team that runs a gateway, in plain words: what splice gives their people on the door; how to publish a definition; one complete example definition in a ```toml block (the first toml block in the file; it must pass `splice add provider --check`) using command auth with login_command and credential_command, a model with label, description, context_window and max_output_tokens, model_slots, error_messages = "whole", send_version and a door command; what credential_command must print ({"token", "expires_at"}, or one bare line); what the gateway should answer (503 with Retry-After while loading, a 4xx in its own words for an outdated client, and x-splice-client / x-splice-wrapper to read versions from); how a person installs it, signs in (/login or splice login <head>) and moves off the head command; and what `splice claude` and `splice doctor` show when it does not work. README's door section links the guide in one line.
+
+Proven by: bun test ./.campaign/checks/custom/team.test.ts — installed from a loopback URL, claude and claude-acme list only claude-acme--glm-5.3-flash labelled GLM-5.3 Flash and start on it; signed out, a turn names /login and sends nothing, and /login is splice's; the control plane's sign-in runs acme-ai login and the next turn answers; a revoked key renews by itself; counts are half the session window for a prompt filling half the model's window; a 503 with retry-after 10 and a 426 reach the session in the gateway's words; the guide's first toml block passes `splice add provider --check`.'''
+checks = [
+  'bun test ./.campaign/checks/custom/team.test.ts',
+]
+sources = [
+  '.campaign/checks/custom/lib/team.ts',
+  'docs/specs/door-default.md',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:09 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'cp-ready'
+title = 'A splice command run just after the daemon is up runs on it'
+feature = 'custom-provider'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = '''
+A splice command run in the first seconds after the daemon is up runs on that daemon (found while cutting custom-provider, Nov 18, 2026). Today the CLI's cold-start check (DaemonLaunch.ensureDaemon -> DaemonHealth.daemonUp -> DaemonProbe.healthView) can miss a daemon that is up but slow to answer its first /health; the CLI then goes the spawn path, finds the control port bound, waits, and refuses with `splice: control port N is still bound (a daemon is still shutting down); retry in a moment` and `splice claude: the daemon isn't running and couldn't be started`. The person's command does nothing, and the reason given is false. Every campaign check that calls the CLI right after boot (`splice claude door` in tiers and parity, every time) fails on it at random.
+
+After this item: when the control port is bound and the listener there is splice's (it answers /health, or accepts connections while starting), the CLI waits for /health to answer, bounded (up to the cold-start budget it already uses for a daemon it started itself), and runs the command on that daemon once it answers with the expected version. "Still shutting down" is said only of a port that stays bound by a listener that does not answer /health for that whole budget; a daemon of another version keeps today's handling. A second daemon is never spawned beside one that is starting. The probe's own timeout for a single /health stays short; the fix is in what the CLI concludes from one miss, not in waiting longer on every call.
+
+Where: features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt and DaemonSpawn.kt (startableJar), integrations/daemon-client/.../DaemonHealth.kt / DaemonProbe.kt. No other item changes these files.
+
+Proven by: bun test ./.campaign/checks/custom/ready.test.ts — three boots in a row, each followed at once by `splice claude door` and `splice claude --json`, all exit 0 and none says "still shutting down".'''
+checks = [
+  'bun test ./.campaign/checks/custom/ready.test.ts',
+]
+sources = [
+  'features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonSpawn.kt',
+  'integrations/daemon-client/src/main/kotlin/splice/daemonclient/DaemonHealth.kt',
+]
+results = [
+  "Saved tool result (ready.txt):\nObserved Nov 18, 2026 on this machine (jar app/build/libs/app-all.jar of 19:34 CT), a daemon booted by the check harness with one mockHead and `splice claude door` run at once:\ndoor exit 1 3426 ms\n splice: control port 34973 is still bound (a daemon is still shutting down); retry in a moment\n splice claude: the daemon isn't running and couldn't be started\nThe daemon's log ended with \"[daemon] control plane bound :34973\" and \"[daemon] up: control :34973, heads [other]\" before the call. The same call 8 seconds after boot: exit 0 in 1027 ms.\nThe custom-provider tiers.test.ts and parity.test.ts failed this way in their beforeAll on every run (campaign add twice, a rerun with 64 GiB free).\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 21:14 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
 ]

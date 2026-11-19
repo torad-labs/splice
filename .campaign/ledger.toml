@@ -2249,9 +2249,11 @@ Every finding is a TopologyFinding with its dotted path (e.g. providers.acme.ca_
 A kind = "command" provider must not make boot fail for want of a key: until cp-credential lands, its turns may refuse as a head with no key does today.
 Document every key in docs/specs/custom-provider.md (create it: a section "splice.toml" with each key, its values and its finding), which cp-team turns into the team's guide.
 
+Where the checks run (ruled Nov 19, 2026, after round 2 of cp-schema, cp-overlay and cp-ready): every check of custom-provider boots the harness in .campaign/checks/server/lib/harness.ts, whose pids() reads /proc (line 189; ready.test.ts daemonPids() does too), so the checks need Linux. Sent through plain `rig remote run --`, which takes the first host with room, a check went to the Mac mini whenever the Linux box was loaded (load ~50 on 64 cores) and every boot died with `ENOENT scandir /proc` (`campaign check cp-ready` on marcoss-mac-mini). Each check now names the Linux build box, `rig remote run --to build@ssh1.vast.ai:34658 -- bun test ...`, the form this machine's laws give a run that must have Linux; campaign runs a command that names rig as it is written. `--needs system=Linux/x86_64` was not chosen: it answers 75 while the only Linux box is short of CPU room, the very case that sent the run to the Mac. Round 2's tree passed schema, overlay and ready there. Run a check the same way while building; a failure that says scandir /proc ran on the wrong machine and says nothing about the build.
+
 Proven by: bun test ./.campaign/checks/custom/schema.test.ts — a splice.toml using every key boots and `splice claude --json` answers; a file with a mistake in each new key (and kind=command without credential_command, credential_command on api-key, three bad door commands) does not boot and its log names every path.'''
 checks = [
-  'bun test ./.campaign/checks/custom/schema.test.ts',
+  'rig remote run --to build@ssh1.vast.ai:34658 -- bun test ./.campaign/checks/custom/schema.test.ts',
 ]
 sources = [
   'core/src/main/kotlin/splice/core/topology/Topology.kt',
@@ -2268,6 +2270,7 @@ reviews = [
 ]
 notes = [
   '2026-11-18 20:15 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 08:41 CT custom-provider/coordinator: plan was wrong: its check names no Linux while the harness reads /proc, so plain rig sent it to the Mac mini (ENOENT scandir /proc). Every custom-provider check now runs as rig remote run --to build@ssh1.vast.ai:34658 -- bun test ...; ruling in the spec under 'Where the checks run'.",
 ]
 
 [[row]]
@@ -2285,9 +2288,11 @@ Merge rule (decided here; cp-command reuses it for door commands): objects merge
 
 Where: the door launch overlay (app/.../desktop/ClaudeDoorLaunch.kt, features/launch/.../recipe/LaunchRoutes.kt and LaunchService.kt, and integrations/claude-code/.../client/desktop/DoorSession.kt, which writes the overlay's env, modelPicker and hooks since #691; Claude Code's own setting names stay there, beside the other Claude Code facts). The merge is a class of its own beside them; no new top-level functions or companion objects. Heads' own launches are not changed by this item.
 
+Where the checks run (ruled Nov 19, 2026, after round 2 of cp-schema, cp-overlay and cp-ready): every check of custom-provider boots the harness in .campaign/checks/server/lib/harness.ts, whose pids() reads /proc (line 189; ready.test.ts daemonPids() does too), so the checks need Linux. Sent through plain `rig remote run --`, which takes the first host with room, a check went to the Mac mini whenever the Linux box was loaded (load ~50 on 64 cores) and every boot died with `ENOENT scandir /proc` (`campaign check cp-ready` on marcoss-mac-mini). Each check now names the Linux build box, `rig remote run --to build@ssh1.vast.ai:34658 -- bun test ...`, the form this machine's laws give a run that must have Linux; campaign runs a command that names rig as it is written. `--needs system=Linux/x86_64` was not chosen: it answers 75 while the only Linux box is short of CPU room, the very case that sent the run to the Mac. Round 2's tree passed schema, overlay and ready there. Run a check the same way while building; a failure that says scandir /proc ran on the wrong machine and says nothing about the build.
+
 Proven by: bun test ./.campaign/checks/custom/overlay.test.ts — a launch with an inline --settings and a file --settings yields one overlay holding the wrapper's env, otelHeadersHelper and SessionStart hook beside splice's picker and UserPromptSubmit hook, with the other arguments in order; a wrapper's UserPromptSubmit runs beside splice's; a wrapper cannot set CLAUDE_CODE_USE_MANTLE=0, move the base URL or replace the picker; an unreadable --settings refuses the launch naming it.'''
 checks = [
-  'bun test ./.campaign/checks/custom/overlay.test.ts',
+  'rig remote run --to build@ssh1.vast.ai:34658 -- bun test ./.campaign/checks/custom/overlay.test.ts',
 ]
 sources = [
   'app/src/main/kotlin/splice/app/desktop/ClaudeDoorLaunch.kt',
@@ -2305,6 +2310,7 @@ reviews = [
 ]
 notes = [
   '2026-11-18 20:57 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 08:41 CT custom-provider/coordinator: plan was wrong: its check names no Linux while the harness reads /proc, so plain rig sent it to the Mac mini (ENOENT scandir /proc). Every custom-provider check now runs as rig remote run --to build@ssh1.vast.ai:34658 -- bun test ...; ruling in the spec under 'Where the checks run'.",
 ]
 
 [[row]]
@@ -2440,10 +2446,12 @@ The door's older check .campaign/checks/door/picker.test.ts was rewritten in thi
 
 Where: app/src/main/kotlin/splice/app/desktop/DesktopLineup.kt, ClaudeDoorLaunch.kt (rowsOf / labelOf), integrations/claude-code/.../client/desktop/DoorSession.kt (DoorPickerRow and the modelPicker rows it writes), LineupJson.kt, docs/specs/door-default.md. The `picker` key is cp-schema's.
 
+Where the checks run (ruled Nov 19, 2026, after round 2 of cp-schema, cp-overlay and cp-ready): every check of custom-provider boots the harness in .campaign/checks/server/lib/harness.ts, whose pids() reads /proc (line 189; ready.test.ts daemonPids() does too), so the checks need Linux. Sent through plain `rig remote run --`, which takes the first host with room, a check went to the Mac mini whenever the Linux box was loaded (load ~50 on 64 cores) and every boot died with `ENOENT scandir /proc` (`campaign check cp-ready` on marcoss-mac-mini). Each check now names the Linux build box, `rig remote run --to build@ssh1.vast.ai:34658 -- bun test ...`, the form this machine's laws give a run that must have Linux; campaign runs a command that names rig as it is written. `--needs system=Linux/x86_64` was not chosen: it answers 75 while the only Linux box is short of CPU room, the very case that sent the run to the Mac. Round 2's tree passed schema, overlay and ready there. Run a check the same way while building; a failure that says scandir /proc ran on the wrong machine and says nothing about the build.
+
 Proven by: bun test ./.campaign/checks/custom/picker.test.ts and bun test ./.campaign/checks/door/picker.test.ts — acme's model is listed as "GLM-5.3 Flash" described "Acme's own GLM, served in-house · splice · claude-acme"; a bare model is listed by id described "splice · claude-acme"; picker = false hides a provider and names it in left_out, and its selector still answers; picker = true adds the endpoint's own model; a head's picker = false beats its provider's true; the JSON rows equal the /model rows.'''
 checks = [
-  'bun test ./.campaign/checks/custom/picker.test.ts',
-  'bun test ./.campaign/checks/door/picker.test.ts',
+  'rig remote run --to build@ssh1.vast.ai:34658 -- bun test ./.campaign/checks/custom/picker.test.ts',
+  'rig remote run --to build@ssh1.vast.ai:34658 -- bun test ./.campaign/checks/door/picker.test.ts',
 ]
 sources = [
   'app/src/main/kotlin/splice/app/desktop/DesktopLineup.kt',
@@ -2516,9 +2524,11 @@ Vendor facts stay in their provider module: the switch is a provider setting rea
 
 Where: integrations/upstream/src/main/kotlin/splice/upstream/failure/OpenAiReplies.kt (pushback and status mapping), core/src/main/kotlin/splice/core/failure/ProviderWords.kt, and where an overloaded failure becomes the answer's status and headers.
 
+Where the checks run (ruled Nov 19, 2026, after round 2 of cp-schema, cp-overlay and cp-ready): every check of custom-provider boots the harness in .campaign/checks/server/lib/harness.ts, whose pids() reads /proc (line 189; ready.test.ts daemonPids() does too), so the checks need Linux. Sent through plain `rig remote run --`, which takes the first host with room, a check went to the Mac mini whenever the Linux box was loaded (load ~50 on 64 cores) and every boot died with `ENOENT scandir /proc` (`campaign check cp-ready` on marcoss-mac-mini). Each check now names the Linux build box, `rig remote run --to build@ssh1.vast.ai:34658 -- bun test ...`, the form this machine's laws give a run that must have Linux; campaign runs a command that names rig as it is written. `--needs system=Linux/x86_64` was not chosen: it answers 75 while the only Linux box is short of CPU room, the very case that sent the run to the Mac. Round 2's tree passed schema, overlay and ready there. Run a check the same way while building; a failure that says scandir /proc ran on the wrong machine and says nothing about the build.
+
 Proven by: bun test ./.campaign/checks/custom/errors.test.ts — a 503 with retry-after 7 reaches the session as 529/503 overloaded_error with retry-after 7, sent upstream once, on a whole and a filtered provider alike; on the whole provider the loading message and a 426 "update your CLI" message with its URL are shown whole and the 426 is not retried; the filtered provider's 426 loses the URL as today.'''
 checks = [
-  'bun test ./.campaign/checks/custom/errors.test.ts',
+  'rig remote run --to build@ssh1.vast.ai:34658 -- bun test ./.campaign/checks/custom/errors.test.ts',
 ]
 sources = [
   'integrations/upstream/src/main/kotlin/splice/upstream/failure/OpenAiReplies.kt',
@@ -2552,9 +2562,11 @@ After this item, a turn on a model that declares max_output_tokens asks its prov
 
 Where: the request assembler of each dialect that writes max tokens (ChatRequestAssembler / ChatRequestBuilder for openai-chat, and the Responses and passthrough assemblers where they write one), reading ModelEntry.maxOutputTokens. Tests check what the provider is sent.
 
+Where the checks run (ruled Nov 19, 2026, after round 2 of cp-schema, cp-overlay and cp-ready): every check of custom-provider boots the harness in .campaign/checks/server/lib/harness.ts, whose pids() reads /proc (line 189; ready.test.ts daemonPids() does too), so the checks need Linux. Sent through plain `rig remote run --`, which takes the first host with room, a check went to the Mac mini whenever the Linux box was loaded (load ~50 on 64 cores) and every boot died with `ENOENT scandir /proc` (`campaign check cp-ready` on marcoss-mac-mini). Each check now names the Linux build box, `rig remote run --to build@ssh1.vast.ai:34658 -- bun test ...`, the form this machine's laws give a run that must have Linux; campaign runs a command that names rig as it is written. `--needs system=Linux/x86_64` was not chosen: it answers 75 while the only Linux box is short of CPU room, the very case that sent the run to the Mac. Round 2's tree passed schema, overlay and ready there. Run a check the same way while building; a failure that says scandir /proc ran on the wrong machine and says nothing about the build.
+
 Proven by: bun test ./.campaign/checks/custom/output.test.ts — a door turn asking 32000 on a model with max_output_tokens = 8192 asks the gateway for 8192; one asking 4000 asks 4000; a model with none is asked 32000.'''
 checks = [
-  'bun test ./.campaign/checks/custom/output.test.ts',
+  'rig remote run --to build@ssh1.vast.ai:34658 -- bun test ./.campaign/checks/custom/output.test.ts',
 ]
 sources = [
   'integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatRequestAssembler.kt',
@@ -2640,11 +2652,15 @@ After this item:
 
 Where: features/configuration/.../add/ (beside AddProfiles / AddPrepare / AddPortChoice), app/.../cli/CommandParser.kt (the `add` verb's `provider` word), core/.../topology/TopologyWriter.kt only through its public use. No new top-level functions or companion objects.
 
+Where the checks run (ruled Nov 19, 2026, after round 2 of cp-schema, cp-overlay and cp-ready): every check of custom-provider boots the harness in .campaign/checks/server/lib/harness.ts, whose pids() reads /proc (line 189; ready.test.ts daemonPids() does too), so the checks need Linux. Sent through plain `rig remote run --`, which takes the first host with room, a check went to the Mac mini whenever the Linux box was loaded (load ~50 on 64 cores) and every boot died with `ENOENT scandir /proc` (`campaign check cp-ready` on marcoss-mac-mini). Each check now names the Linux build box, `rig remote run --to build@ssh1.vast.ai:34658 -- bun test ...`, the form this machine's laws give a run that must have Linux; campaign runs a command that names rig as it is written. `--needs system=Linux/x86_64` was not chosen: it answers 75 while the only Linux box is short of CPU room, the very case that sent the run to the Mac. Round 2's tree passed schema, overlay and ready there. Run a check the same way while building; a failure that says scandir /proc ran on the wrong machine and says nothing about the build.
+
 Proven by: bun test ./.campaign/checks/custom/install.test.ts — on a machine with only splice, --check on a good file writes nothing; installing it fills the head's port, puts claude-acme--glm-5.3-flash in /model and runs a turn; a definition from a loopback URL is installed; a newer acme replaces the old, keeping the port, and its new label shows; a definition with four mistakes (a [daemon] table, an empty base_url, a head on an undeclared provider, a door command on no head) is refused with all four named and splice.toml unchanged, with and without --check; plain http from another host is refused naming https.
 
-How the check serves a URL (ruled after round 1): the check runs splice through Splice.cli, which is spawnSync (.campaign/checks/server/lib/harness.ts:234) and blocks the test process's event loop until splice exits, so a Bun.serve in the test process can never answer splice's fetch; round 1's build was refused with "could not be fetched: it did not answer within 15 seconds" by its own check while the same URL served from another process installed and passed --check (exit 0). The check now publishes definitions from a child process (.campaign/checks/custom/lib/site.ts, Site.publish). Nothing in the product changes for this: the 15-second limit stays, since a published definition is a small file and a person at a terminal should not wait longer than that to learn the URL is wrong.'''
+How the check serves a URL (ruled after round 1): the check runs splice through Splice.cli, which is spawnSync (.campaign/checks/server/lib/harness.ts:234) and blocks the test process's event loop until splice exits, so a Bun.serve in the test process can never answer splice's fetch; round 1's build was refused with "could not be fetched: it did not answer within 15 seconds" by its own check while the same URL served from another process installed and passed --check (exit 0). The check now publishes definitions from a child process (.campaign/checks/custom/lib/site.ts, Site.publish). Nothing in the product changes for this: the 15-second limit stays, since a published definition is a small file and a person at a terminal should not wait longer than that to learn the URL is wrong.
+
+The check's own gateway (ruled Nov 19, 2026, after round 1's second dispute): the team upstream is a Bun server in the test process (new Upstream(...).start(), loopback URL), and Splice.cli is spawnSync, so it cannot answer while `splice add provider` runs. The check's definition() said no `local = false`, so its loopback base_url made the provider a local runtime that splice add and the restarted daemon probed, each probe waiting its full 15 s on the blocked server, one head after another: with one head the restart fit the 62 s cold-start budget (test 2 passed), with two (tests 3 and 4) add exited 1 with 'daemon restart failed' after about 95 s. The check now writes `local = false` in definition(), as lib/team.ts acme() already does, because a team's published gateway is on another machine and a real definition never makes it a local server; on the Linux build box the same two installs exited 0 in 15 s and 16 s with it. Nothing in the product changes for this: probing a loopback base_url as a local runtime is today's rule and stays; a definition that names a loopback gateway without `local = false` is the author's choice to be treated as local.'''
 checks = [
-  'bun test ./.campaign/checks/custom/install.test.ts',
+  'rig remote run --to build@ssh1.vast.ai:34658 -- bun test ./.campaign/checks/custom/install.test.ts',
 ]
 sources = [
   '.campaign/checks/custom/lib/site.ts',
@@ -2665,6 +2681,7 @@ notes = [
   '2026-11-18 21:01 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
   "2026-11-19 06:22 CT custom-provider/coordinator: plan was wrong: the URL test deadlocked on its own in-process server under spawnSync. The check now serves definitions from a child process (checks/custom/lib/site.ts); round 1's build passed the other 5 tests and installs from a separately served loopback URL.",
   "2026-11-19 07:06 CT custom-provider/coordinator: 2026-11-19 07:06 CT custom-provider/coordinator: round-1 dispute upheld again, same ruling as 06:22 (af123cbbc): the check was wrong and is fixed on HEAD; the run stayed frozen on 64d217ac8 only because other features' uncommitted check drafts in the shared checkout made the plan read as uncommitted.",
+  '2026-11-19 08:41 CT custom-provider/coordinator: plan was wrong: install.test.ts definition() lacked local = false, so the loopback team upstream, blocked by spawnSync, was probed as a local runtime and two heads overran the restart budget. definition() now says local = false, as lib/team.ts acme() does; ruling in the spec.',
 ]
 
 [[row]]
@@ -2729,11 +2746,13 @@ After this item:
 
 Where: the window a head's catalog reports for a model (core/.../model/ModelCatalog.kt contextWindowFor / usageScale, app/.../daemon/TopologyWindows.kt), the probe beside LocalRuntimeProbe (integrations/upstream/.../local), and a doctor check (features/diagnostics/.../doctor, DoctorConfigChecks).
 
+Where the checks run (ruled Nov 19, 2026, after round 2 of cp-schema, cp-overlay and cp-ready): every check of custom-provider boots the harness in .campaign/checks/server/lib/harness.ts, whose pids() reads /proc (line 189; ready.test.ts daemonPids() does too), so the checks need Linux. Sent through plain `rig remote run --`, which takes the first host with room, a check went to the Mac mini whenever the Linux box was loaded (load ~50 on 64 cores) and every boot died with `ENOENT scandir /proc` (`campaign check cp-ready` on marcoss-mac-mini). Each check now names the Linux build box, `rig remote run --to build@ssh1.vast.ai:34658 -- bun test ...`, the form this machine's laws give a run that must have Linux; campaign runs a command that names rig as it is written. `--needs system=Linux/x86_64` was not chosen: it answers 75 while the only Linux box is short of CPU room, the very case that sent the run to the Mac. Round 2's tree passed schema, overlay and ready there. Run a check the same way while building; a failure that says scandir /proc ran on the wrong machine and says nothing about the build.
+
 Proven by: bun test ./.campaign/checks/custom/window.test.ts — a turn whose prompt fills half the model's declared window reports half the session's window; on a provider whose served window (32768) is half the declared one, a prompt filling half the served window reports half; a served_window that answers 404 leaves the declared window and `splice doctor` names the provider and served_window.
 
 Usage counts (ruled after round 1): splice can only scale the counts the provider reports, and an OpenAI-compatible stream reports usage only when the request sets stream_options.include_usage. splice asks for it from a local runtime, a provider on command auth (a team's own gateway, cp-team), or one with quirks.stream_usage = true (app/.../provider/QuirksOverlay.kt:104); a hosted provider on an API key is not asked by default, because strict hosted vendors answer 400 to stream_options (V4-163). This item does not change that default. The check's three providers are api-key gateways, so each declares quirks = { stream_usage = true }, as a team running such a gateway would; round 1's build failed only because every turn reported 0 tokens, and passed all 3 tests with that quirk.'''
 checks = [
-  'bun test ./.campaign/checks/custom/window.test.ts',
+  'rig remote run --to build@ssh1.vast.ai:34658 -- bun test ./.campaign/checks/custom/window.test.ts',
 ]
 sources = [
   'app/src/main/kotlin/splice/app/provider/QuirksOverlay.kt',
@@ -2774,10 +2793,12 @@ After this item, a provider with `send_version = true` (the existing key; today 
 
 Where: core/.../topology/Topology.kt (staticHeaders / via, where send_version is read), the header pass-through of a head turn and of the door relay (a door turn already sends a provider exactly what the head's port sends, local, stream_usage, slot_affinity, the effort vocabulary, extra_headers and forward_headers alike: .campaign/checks/custom/parity.test.ts passes on main and is this item's second check, so the new headers must not break that sameness), the door launch's unset list (only if it unsets ANTHROPIC_CUSTOM_HEADERS today). Vendor facts stay in their provider module.
 
+Where the checks run (ruled Nov 19, 2026, after round 2 of cp-schema, cp-overlay and cp-ready): every check of custom-provider boots the harness in .campaign/checks/server/lib/harness.ts, whose pids() reads /proc (line 189; ready.test.ts daemonPids() does too), so the checks need Linux. Sent through plain `rig remote run --`, which takes the first host with room, a check went to the Mac mini whenever the Linux box was loaded (load ~50 on 64 cores) and every boot died with `ENOENT scandir /proc` (`campaign check cp-ready` on marcoss-mac-mini). Each check now names the Linux build box, `rig remote run --to build@ssh1.vast.ai:34658 -- bun test ...`, the form this machine's laws give a run that must have Linux; campaign runs a command that names rig as it is written. `--needs system=Linux/x86_64` was not chosen: it answers 75 while the only Linux box is short of CPU room, the very case that sent the run to the Mac. Round 2's tree passed schema, overlay and ready there. Run a check the same way while building; a failure that says scandir /proc ran on the wrong machine and says nothing about the build.
+
 Proven by: bun test ./.campaign/checks/custom/identity.test.ts — a send_version provider is sent x-splice-client equal to /health's version and the wrapper's x-splice-wrapper; with no wrapper only the version; a provider without send_version is sent neither; a door launch neither unsets nor sets ANTHROPIC_CUSTOM_HEADERS.'''
 checks = [
-  'bun test ./.campaign/checks/custom/identity.test.ts',
-  'bun test ./.campaign/checks/custom/parity.test.ts',
+  'rig remote run --to build@ssh1.vast.ai:34658 -- bun test ./.campaign/checks/custom/identity.test.ts',
+  'rig remote run --to build@ssh1.vast.ai:34658 -- bun test ./.campaign/checks/custom/parity.test.ts',
 ]
 sources = [
   'core/src/main/kotlin/splice/core/topology/Topology.kt',
@@ -3096,9 +3117,11 @@ Decided here: an unreadable OS bundle is skipped with one log line, never a boot
 
 Where: integrations/upstream/src/main/kotlin/splice/upstream/transport/UpstreamTransport.kt (the one OkHttp client and its SSLContext in UpstreamSockets; a provider with ca_file gets a client of its own sharing the rest), and where a transport failure becomes the user's message (after cp-errors, which changes the same failure files).
 
+Where the checks run (ruled Nov 19, 2026, after round 2 of cp-schema, cp-overlay and cp-ready): every check of custom-provider boots the harness in .campaign/checks/server/lib/harness.ts, whose pids() reads /proc (line 189; ready.test.ts daemonPids() does too), so the checks need Linux. Sent through plain `rig remote run --`, which takes the first host with room, a check went to the Mac mini whenever the Linux box was loaded (load ~50 on 64 cores) and every boot died with `ENOENT scandir /proc` (`campaign check cp-ready` on marcoss-mac-mini). Each check now names the Linux build box, `rig remote run --to build@ssh1.vast.ai:34658 -- bun test ...`, the form this machine's laws give a run that must have Linux; campaign runs a command that names rig as it is written. `--needs system=Linux/x86_64` was not chosen: it answers 75 while the only Linux box is short of CPU room, the very case that sent the run to the Mac. Round 2's tree passed schema, overlay and ready there. Run a check the same way while building; a failure that says scandir /proc ran on the wrong machine and says nothing about the build.
+
 Proven by: bun test ./.campaign/checks/custom/tls.test.ts — behind a certificate signed by a check's own root, a turn fails naming acme and ca_file; with ca_file naming the root it answers; with no ca_file and SSL_CERT_FILE naming the root it answers.'''
 checks = [
-  'bun test ./.campaign/checks/custom/tls.test.ts',
+  'rig remote run --to build@ssh1.vast.ai:34658 -- bun test ./.campaign/checks/custom/tls.test.ts',
 ]
 sources = [
   'integrations/upstream/src/main/kotlin/splice/upstream/transport/UpstreamTransport.kt',
@@ -3139,9 +3162,11 @@ Build it on the existing RefreshableAuthProvider (core/src/main/kotlin/splice/co
 
 Where: core/.../auth (a command credential beside Credentials.kt), the place a head's openai-chat arm takes its credential (app/.../provider), DesktopLineup.kt only for keeping the head in the door without a key. No new top-level functions or companion objects.
 
+Where the checks run (ruled Nov 19, 2026, after round 2 of cp-schema, cp-overlay and cp-ready): every check of custom-provider boots the harness in .campaign/checks/server/lib/harness.ts, whose pids() reads /proc (line 189; ready.test.ts daemonPids() does too), so the checks need Linux. Sent through plain `rig remote run --`, which takes the first host with room, a check went to the Mac mini whenever the Linux box was loaded (load ~50 on 64 cores) and every boot died with `ENOENT scandir /proc` (`campaign check cp-ready` on marcoss-mac-mini). Each check now names the Linux build box, `rig remote run --to build@ssh1.vast.ai:34658 -- bun test ...`, the form this machine's laws give a run that must have Linux; campaign runs a command that names rig as it is written. `--needs system=Linux/x86_64` was not chosen: it answers 75 while the only Linux box is short of CPU room, the very case that sent the run to the Mac. Round 2's tree passed schema, overlay and ready there. Run a check the same way while building; a failure that says scandir /proc ran on the wrong machine and says nothing about the build.
+
 Proven by: bun test ./.campaign/checks/custom/credential.test.ts — the first turn carries the key acme-ai printed; a fresh key is reused; a revoked key is renewed once and the turn answered; a key within five minutes of expiry is renewed before sending; two 401s refuse in Anthropic's shape naming acme, /login and `splice login acme` after two tries; signed out, and with a failing command, the refusal comes with nothing sent upstream; the head is in /model with no key; no key printed is in a file, a log, the session's env or the command's env.'''
 checks = [
-  'bun test ./.campaign/checks/custom/credential.test.ts',
+  'rig remote run --to build@ssh1.vast.ai:34658 -- bun test ./.campaign/checks/custom/credential.test.ts',
 ]
 sources = [
   'core/src/main/kotlin/splice/core/auth/Credentials.kt',
@@ -3183,9 +3208,11 @@ The credential is per provider, so `<head>` may be any head of the provider. Reu
 
 Where: features/accounts/.../signin/LoginRoutes.kt and its sign-in kind dispatch, app/.../cli/auth/LoginCommand.kt, the /api/auth status route.
 
+Where the checks run (ruled Nov 19, 2026, after round 2 of cp-schema, cp-overlay and cp-ready): every check of custom-provider boots the harness in .campaign/checks/server/lib/harness.ts, whose pids() reads /proc (line 189; ready.test.ts daemonPids() does too), so the checks need Linux. Sent through plain `rig remote run --`, which takes the first host with room, a check went to the Mac mini whenever the Linux box was loaded (load ~50 on 64 cores) and every boot died with `ENOENT scandir /proc` (`campaign check cp-ready` on marcoss-mac-mini). Each check now names the Linux build box, `rig remote run --to build@ssh1.vast.ai:34658 -- bun test ...`, the form this machine's laws give a run that must have Linux; campaign runs a command that names rig as it is written. `--needs system=Linux/x86_64` was not chosen: it answers 75 while the only Linux box is short of CPU room, the very case that sent the run to the Mac. Round 2's tree passed schema, overlay and ready there. Run a check the same way while building; a failure that says scandir /proc ran on the wrong machine and says nothing about the build.
+
 Proven by: bun test ./.campaign/checks/custom/login.test.ts — signed out, /api/auth says present false; `splice login acme` shows the address acme-ai printed, says signed in, exits 0; a door turn then runs and /api/auth names an expiry about an hour away; the control plane's sign-in reports browser_url then signed_in; the login command's environment holds no key; a failing login command is a failed sign-in with its exit in failure_reason, and `splice login acme` exits non-zero naming acme.'''
 checks = [
-  'bun test ./.campaign/checks/custom/login.test.ts',
+  'rig remote run --to build@ssh1.vast.ai:34658 -- bun test ./.campaign/checks/custom/login.test.ts',
 ]
 sources = [
   'features/accounts/src/main/kotlin/splice/accounts/signin/LoginRoutes.kt',
@@ -3221,9 +3248,11 @@ Constraints: the page reads only the control plane's routes (GET /api/auth and t
 
 Where: app/src/main/resources/console/accounts.html, accounts.js, accounts.css.
 
+Where the checks run (ruled Nov 19, 2026, after round 2 of cp-schema, cp-overlay and cp-ready): every check of custom-provider boots the harness in .campaign/checks/server/lib/harness.ts, whose pids() reads /proc (line 189; ready.test.ts daemonPids() does too), so the checks need Linux. Sent through plain `rig remote run --`, which takes the first host with room, a check went to the Mac mini whenever the Linux box was loaded (load ~50 on 64 cores) and every boot died with `ENOENT scandir /proc` (`campaign check cp-ready` on marcoss-mac-mini). Each check now names the Linux build box, `rig remote run --to build@ssh1.vast.ai:34658 -- bun test ...`, the form this machine's laws give a run that must have Linux; campaign runs a command that names rig as it is written. `--needs system=Linux/x86_64` was not chosen: it answers 75 while the only Linux box is short of CPU room, the very case that sent the run to the Mac. Round 2's tree passed schema, overlay and ready there. Run a check the same way while building; a failure that says scandir /proc ran on the wrong machine and says nothing about the build.
+
 Proven by: bun test ./.campaign/checks/custom/accounts.test.ts — in a real browser on a real daemon, the acme account reads signed out with a Sign in; clicking it shows the sso.acme.example link, then the account reads signed in with an expiry; a failing login command shows the failure on the account.'''
 checks = [
-  'bun test ./.campaign/checks/custom/accounts.test.ts',
+  'rig remote run --to build@ssh1.vast.ai:34658 -- bun test ./.campaign/checks/custom/accounts.test.ts',
 ]
 sources = [
   'app/src/main/resources/console/accounts.html',
@@ -3267,10 +3296,12 @@ After this item:
 
 Where: features/launch/.../recipe/LaunchRoutes.kt (door launch only for `claude` today), app/.../desktop/ClaudeDoorLaunch.kt, TerminalDoor / TerminalCaller / DoorCaller (keys), DoorRouting.kt (the default head of a caller), the command linking of heads, LineupJson for splice claude. No new top-level functions or companion objects.
 
+Where the checks run (ruled Nov 19, 2026, after round 2 of cp-schema, cp-overlay and cp-ready): every check of custom-provider boots the harness in .campaign/checks/server/lib/harness.ts, whose pids() reads /proc (line 189; ready.test.ts daemonPids() does too), so the checks need Linux. Sent through plain `rig remote run --`, which takes the first host with room, a check went to the Mac mini whenever the Linux box was loaded (load ~50 on 64 cores) and every boot died with `ENOENT scandir /proc` (`campaign check cp-ready` on marcoss-mac-mini). Each check now names the Linux build box, `rig remote run --to build@ssh1.vast.ai:34658 -- bun test ...`, the form this machine's laws give a run that must have Linux; campaign runs a command that names rig as it is written. `--needs system=Linux/x86_64` was not chosen: it answers 75 while the only Linux box is short of CPU room, the very case that sent the run to the Mac. Round 2's tree passed schema, overlay and ready there. Run a check the same way while building; a failure that says scandir /proc ran on the wrong machine and says nothing about the build.
+
 Proven by: bun test ./.campaign/checks/custom/command.test.ts — a claude-acme session is on the door at the same address, starts on claude-acme--glm-5.3-flash and lists only acme's two models, and runs there; models = door lists the whole picker; the plain lane's default and picker do not move; the command's key differs from the terminal's and both work; a haiku side call before any selector runs as glm-mini on acme while the plain lane's runs on its own model; an opus subagent after the selector runs on acme; a wrapper's --settings is merged with the command's picker; a wrapper cannot take the session off the door.'''
 checks = [
-  'bun test ./.campaign/checks/custom/command.test.ts',
-  'bun test ./.campaign/checks/custom/tiers.test.ts',
+  'rig remote run --to build@ssh1.vast.ai:34658 -- bun test ./.campaign/checks/custom/command.test.ts',
+  'rig remote run --to build@ssh1.vast.ai:34658 -- bun test ./.campaign/checks/custom/tiers.test.ts',
 ]
 sources = [
   'features/launch/src/main/kotlin/splice/launch/recipe/LaunchRoutes.kt',
@@ -3317,9 +3348,11 @@ After this item:
 
 Where: app/.../desktop/LineupJson.kt and DesktopLineup.kt (heads), the CLI's text for splice claude, features/diagnostics/.../doctor (DoctorCommand collect / a provider check beside DoctorConfigChecks; after cp-window's served_window check there), features/usage/.../perf/PerfRoutes.kt rowJson and the row's record. The credential state and the last error are read from what cp-credential and the head's failure path keep.
 
+Where the checks run (ruled Nov 19, 2026, after round 2 of cp-schema, cp-overlay and cp-ready): every check of custom-provider boots the harness in .campaign/checks/server/lib/harness.ts, whose pids() reads /proc (line 189; ready.test.ts daemonPids() does too), so the checks need Linux. Sent through plain `rig remote run --`, which takes the first host with room, a check went to the Mac mini whenever the Linux box was loaded (load ~50 on 64 cores) and every boot died with `ENOENT scandir /proc` (`campaign check cp-ready` on marcoss-mac-mini). Each check now names the Linux build box, `rig remote run --to build@ssh1.vast.ai:34658 -- bun test ...`, the form this machine's laws give a run that must have Linux; campaign runs a command that names rig as it is written. `--needs system=Linux/x86_64` was not chosen: it answers 75 while the only Linux box is short of CPU room, the very case that sent the run to the Mac. Round 2's tree passed schema, overlay and ready there. Run a check the same way while building; a failure that says scandir /proc ran on the wrong machine and says nothing about the build.
+
 Proven by: bun test ./.campaign/checks/custom/diagnostics.test.ts — after a turn, splice claude --json names head acme, provider acme, listed, credential held with an expiry, and the text names acme; after a 503 "loading", last_error has status 503 and the message; a perf row of a door turn carries provider acme; with a failing credential command, state failed with its words in --json and in the text, and splice doctor names acme and `splice login acme`.'''
 checks = [
-  'bun test ./.campaign/checks/custom/diagnostics.test.ts',
+  'rig remote run --to build@ssh1.vast.ai:34658 -- bun test ./.campaign/checks/custom/diagnostics.test.ts',
 ]
 sources = [
   'app/src/main/kotlin/splice/app/desktop/LineupJson.kt',
@@ -3365,11 +3398,13 @@ What issue #680 is for, end to end, and the guide a team writes its definition f
 
 The guide: docs/specs/custom-provider.md (cp-schema wrote its "splice.toml" section) gains, before that section, one for the team that runs a gateway, in plain words: what splice gives their people on the door; how to publish a definition; one complete example definition in a ```toml block (the first toml block in the file; it must pass `splice add provider --check`) using command auth with login_command and credential_command, a model with label, description, context_window and max_output_tokens, model_slots, error_messages = "whole", send_version and a door command; what credential_command must print ({"token", "expires_at"}, or one bare line); what the gateway should answer (503 with Retry-After while loading, a 4xx in its own words for an outdated client, and x-splice-client / x-splice-wrapper to read versions from); how a person installs it, signs in (/login or splice login <head>) and moves off the head command; and what `splice claude` and `splice doctor` show when it does not work. README's door section links the guide in one line.
 
+Where the checks run (ruled Nov 19, 2026, after round 2 of cp-schema, cp-overlay and cp-ready): every check of custom-provider boots the harness in .campaign/checks/server/lib/harness.ts, whose pids() reads /proc (line 189; ready.test.ts daemonPids() does too), so the checks need Linux. Sent through plain `rig remote run --`, which takes the first host with room, a check went to the Mac mini whenever the Linux box was loaded (load ~50 on 64 cores) and every boot died with `ENOENT scandir /proc` (`campaign check cp-ready` on marcoss-mac-mini). Each check now names the Linux build box, `rig remote run --to build@ssh1.vast.ai:34658 -- bun test ...`, the form this machine's laws give a run that must have Linux; campaign runs a command that names rig as it is written. `--needs system=Linux/x86_64` was not chosen: it answers 75 while the only Linux box is short of CPU room, the very case that sent the run to the Mac. Round 2's tree passed schema, overlay and ready there. Run a check the same way while building; a failure that says scandir /proc ran on the wrong machine and says nothing about the build.
+
 Proven by: bun test ./.campaign/checks/custom/team.test.ts — installed from a loopback URL, claude and claude-acme list only claude-acme--glm-5.3-flash labelled GLM-5.3 Flash and start on it; signed out, a turn names /login and sends nothing, and /login is splice's; the control plane's sign-in runs acme-ai login and the next turn answers; a revoked key renews by itself; counts are half the session window for a prompt filling half the model's window; a 503 with retry-after 10 and a 426 reach the session in the gateway's words; the guide's first toml block passes `splice add provider --check`.
 
 Decided after round 1: a provider on command auth asks for stream usage by default (stream_options.include_usage; app/.../provider/QuirksOverlay.kt:104), as a local runtime does, because it is a team's own gateway rather than a strict hosted vendor, and the session's counts (outcome 8) need it; a gateway that refuses the field sets quirks.stream_usage = false, and the guide says so. How the check serves the definition: Splice.cli is spawnSync (.campaign/checks/server/lib/harness.ts:234) and blocks the test process, so the definition is published from a child process (.campaign/checks/custom/lib/site.ts); round 1's build failed beforeAll only on that deadlock, and a copy serving from a child process passed all 7 tests.'''
 checks = [
-  'bun test ./.campaign/checks/custom/team.test.ts',
+  'rig remote run --to build@ssh1.vast.ai:34658 -- bun test ./.campaign/checks/custom/team.test.ts',
 ]
 sources = [
   '.campaign/checks/custom/lib/site.ts',
@@ -3401,9 +3436,11 @@ After this item: when the control port is bound and the listener there is splice
 
 Where: features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt and DaemonSpawn.kt (startableJar), integrations/daemon-client/.../DaemonHealth.kt / DaemonProbe.kt. No other item changes these files.
 
+Where the checks run (ruled Nov 19, 2026, after round 2 of cp-schema, cp-overlay and cp-ready): every check of custom-provider boots the harness in .campaign/checks/server/lib/harness.ts, whose pids() reads /proc (line 189; ready.test.ts daemonPids() does too), so the checks need Linux. Sent through plain `rig remote run --`, which takes the first host with room, a check went to the Mac mini whenever the Linux box was loaded (load ~50 on 64 cores) and every boot died with `ENOENT scandir /proc` (`campaign check cp-ready` on marcoss-mac-mini). Each check now names the Linux build box, `rig remote run --to build@ssh1.vast.ai:34658 -- bun test ...`, the form this machine's laws give a run that must have Linux; campaign runs a command that names rig as it is written. `--needs system=Linux/x86_64` was not chosen: it answers 75 while the only Linux box is short of CPU room, the very case that sent the run to the Mac. Round 2's tree passed schema, overlay and ready there. Run a check the same way while building; a failure that says scandir /proc ran on the wrong machine and says nothing about the build.
+
 Proven by: bun test ./.campaign/checks/custom/ready.test.ts — a daemon held still (SIGSTOP) for 10 s while `splice claude --json` starts, then let go, is waited for: the command exits 0 with its JSON, says neither "still shutting down" nor "couldn't be started", and no second daemon is started (today it refuses within a few seconds with both lines; reproduced Nov 19, 2026); and three boots in a row, each followed at once by `splice claude door` and `splice claude --json`, all exit 0 and none says "still shutting down".'''
 checks = [
-  'bun test ./.campaign/checks/custom/ready.test.ts',
+  'rig remote run --to build@ssh1.vast.ai:34658 -- bun test ./.campaign/checks/custom/ready.test.ts',
 ]
 sources = [
   'features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonSpawn.kt',
@@ -3418,6 +3455,7 @@ reviews = [
 ]
 notes = [
   '2026-11-18 21:14 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 08:41 CT custom-provider/coordinator: plan was wrong: its check names no Linux while the harness reads /proc, so plain rig sent it to the Mac mini (ENOENT scandir /proc). Every custom-provider check now runs as rig remote run --to build@ssh1.vast.ai:34658 -- bun test ...; ruling in the spec under 'Where the checks run'.",
 ]
 
 [[row]]

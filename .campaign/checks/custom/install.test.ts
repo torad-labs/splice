@@ -22,13 +22,17 @@ let s: Splice;
 let dir: string;
 let served: Site;
 
-/** A team's definition of provider `key`: no port, no discovery prefix, on an API key so it runs with no sign-in. */
+/** A team's definition of provider `key`: no port, no discovery prefix, on an API key so it runs with no sign-in, and
+ *  `local = false` as lib/team.ts acme() says, since a team's gateway is never on the person's machine. */
 function definition(key: string, label: string, url: string): string {
   return `
 [providers.${key}]
 dialect = "openai-chat"
 base_url = "${url}"
 auth = { kind = "api-key", env = "MOCK_UPSTREAM_KEY" }
+# the team's gateway is on another machine; the check runs it on loopback, which alone would make it a local server
+# that splice add and the restarted daemon probe while s.cli (spawnSync) blocks this process and the upstream in it
+local = false
 
 [[providers.${key}.models]]
 id = "${MODEL}"

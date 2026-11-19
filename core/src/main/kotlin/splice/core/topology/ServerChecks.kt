@@ -1,8 +1,9 @@
 // NEW: server mode (docs/specs/server-mode.md, decisions 1 to 3). What the decode accepts in `[server]` but the daemon
 // may not serve: a server beside an enabled share, a command no head here runs, a command whose head signs with one
 // person's plan, an address it cannot listen on, half a TLS pair, a proxy that is no address, an admin that is no
-// email, a minimum client (F9) that is no version, a sign-in (F2) no laptop could complete. Each is a boot finding
-// beside every other, naming its key and never a value an operator wrote in confidence.
+// email, a minimum client (F9) that is no version, a sign-in (F2) no laptop could complete, a telemetry relay (F8) with
+// no collector to forward to. Each is a boot finding beside every other, naming its key and never a value an operator
+// wrote in confidence.
 package splice.core.topology
 
 import splice.core.listen.IpLiterals
@@ -20,7 +21,7 @@ internal class ServerChecks(
     private val server = topology.server
 
     fun findings(): List<TopologyFinding> = if (server.declared) {
-        listen() + exclusive() + commands() + tls() + people() + limits() + client() + signin() +
+        listen() + exclusive() + commands() + tls() + people() + limits() + client() + signin() + telemetry() +
             ServerLedgerChecks(server).findings()
     } else {
         emptyList()
@@ -125,6 +126,15 @@ internal class ServerChecks(
             .takeIf { server.client.minimum != null && server.client.floor == null },
     )
 
+    /** F8: a relay forwards to a collector, named by its http(s) URL. */
+    private fun telemetry(): List<TopologyFinding> {
+        val telemetry = server.telemetry ?: return emptyList()
+        val why = "must be the operator's OTLP/HTTP collector, as in \"http://otel.lan:4318\""
+        return listOfNotNull(
+            TopologyFinding("$SERVER_TABLE.telemetry.forward_to", why).takeIf { webUrl(telemetry.collector) == null },
+        )
+    }
+
     /** F2: a sign-in a laptop can complete, against an issuer reached safely, admitting someone. */
     private fun signin(): List<TopologyFinding> {
         val signin = server.signin ?: return emptyList()
@@ -150,18 +160,24 @@ internal class ServerChecks(
 
     /** What is wrong with [named] as the issuer: no http(s) URL, or one that is not https off this machine. */
     private fun issuer(named: String): String? {
-        val issuer = try {
-            URI(named.trim())
-        } catch (_: URISyntaxException) {
-            null
-        }
+        val issuer = webUrl(named.trim())
         return when {
-            issuer?.host == null || issuer.scheme !in setOf("http", "https") ->
+            issuer == null ->
                 "must be the identity provider's issuer URL, as in \"https://accounts.google.com\""
             issuer.scheme == "http" && !LoopbackOverride.isLoopback(named) ->
                 "must be https: the codes a laptop trades and the keys they mint would cross the network in the clear"
             else -> null
         }
+    }
+
+    /** [text] as a URI when it is an http(s) URL with a host, or null. */
+    private fun webUrl(text: String): URI? {
+        val uri = try {
+            URI(text)
+        } catch (_: URISyntaxException) {
+            null
+        }
+        return uri?.takeIf { it.host != null && it.scheme in setOf("http", "https") }
     }
 }
 

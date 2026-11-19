@@ -37,13 +37,14 @@ internal class RemoteNames(
         return Free(entries - refusals.keys, complete = refusals.isEmpty())
     }
 
-    /** The commands the profile [read] at [server] lists, each at `<server>/<command>`, with whose key asked; null,
-     *  said, when the server refused the key. */
+    /** The commands the profile [read] at [server] lists, each at `<server>/<command>`, with whose key asked and the
+     *  telemetry relay it names; null, said, when the server refused the key. */
     fun profiled(server: String, read: Asked<ServerProfile>): ServerOffer? = when (read) {
         is Asked.Refused -> refused(read.why)
         is Asked.Had -> ServerOffer(
             read.value.key.person,
             read.value.commands.associate { it.command to at(server, it.command) },
+            read.value.telemetry?.otlp,
         )
     }
 
@@ -95,7 +96,19 @@ internal class RemoteNames(
 /** What a filter of names left: the [entries] it kept, and whether it kept every one ([complete]). */
 internal data class Free(val entries: Map<String, RemoteConfig>, val complete: Boolean)
 
-/** What a team server's profile offers the [person] whose key asked: its commands as [entries], by command. */
-internal data class ServerOffer(val person: String, val entries: Map<String, RemoteConfig>) {
+/** What a team server's profile offers the [person] whose key asked: its commands as [entries], by command, and the
+ *  [telemetry] relay it names, or null when it relays none (F8). */
+internal data class ServerOffer(
+    val person: String,
+    val entries: Map<String, RemoteConfig>,
+    val telemetry: String? = null,
+) {
     val commands: List<String> get() = entries.keys.toList()
+
+    /** The one line that tells the person where Claude Code's telemetry from [server]'s commands goes now: to the
+     *  [telemetry] relay, or nowhere once the server names none. `remote add` and `remote refresh` both say it. */
+    fun relayLine(server: String): String {
+        val now = telemetry?.let { "goes to $it" } ?: "is no longer relayed"
+        return "Claude Code's telemetry from $server's commands $now, from their next launch"
+    }
 }

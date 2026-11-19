@@ -9,7 +9,9 @@
 //
 // A team's server (docs/specs/server-mode.md, F7) this laptop holds a key for is asked for its profile instead: every
 // command the profile lists is linked, each at `<server>/<command>`, and the laptop keeps the list, so
-// `splice remote refresh` later tells the commands the server starts offering from the ones the person took out.
+// `splice remote refresh` later tells the commands the server starts offering from the ones the person took out. It
+// keeps the telemetry relay the profile names as well (F8), which those commands' launches send their telemetry to,
+// and says in one line where that telemetry goes from their next launch.
 package splice.app.cli.share
 
 import splice.core.terminal.TerminalOutput
@@ -36,11 +38,12 @@ internal data class RemoteAdded(
 )
 
 /** The entries an address asks for, by command, and the [machine] that serves them; and the team [server] whose
- *  profile listed them, when one did. */
+ *  profile listed them, when one did, as its [profile] offered them (F7, F8). */
 private data class Offered(
     val machine: String,
     val entries: Map<String, RemoteConfig>,
     val server: String? = null,
+    val profile: ServerOffer? = null,
 )
 
 /** Whether a command's link here runs splice's launch shim, so the command asks splice where to run: `claude` does
@@ -87,7 +90,11 @@ internal class RemoteAdd(
         if (fresh.isEmpty() || !file.saved(wanted, topology)) return null
         out.line("added to ${file.path}: ${fresh.keys.joinToString(", ")}")
         relays.replaced(topology, replacing)
-        offered.server?.let { asks.logins.keepOffered(it, offered.entries.keys.toList()) }
+        val server = offered.server ?: return RemoteAdded(wanted, fresh.keys.toList(), offered.machine, free.complete)
+        val profile = offered.profile
+        asks.logins.keepOffered(server, offered.entries.keys.toList(), profile?.telemetry)
+        // The person is told where their commands' telemetry goes when it starts (F8).
+        if (profile?.telemetry != null) out.line(profile.relayLine(server))
         return RemoteAdded(wanted, fresh.keys.toList(), offered.machine, free.complete)
     }
 
@@ -113,7 +120,7 @@ internal class RemoteAdd(
     private fun profiled(server: String, read: Asked<ServerProfile>): Offered? {
         val offer = names.profiled(server, read) ?: return null
         if (offer.entries.isEmpty()) return names.refused("$server serves no command to ${offer.person}")
-        return Offered(server, offer.entries, server)
+        return Offered(server, offer.entries, server, offer)
     }
 
     /** The one command [text] names, once its server has it, with the login and models the address asks for. */

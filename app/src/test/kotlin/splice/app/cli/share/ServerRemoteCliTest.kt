@@ -36,13 +36,17 @@ class ServerRemoteCliTest {
     /** The commands the server offers now; a test changes them as an operator changes `[server] commands`. */
     @Volatile private var offered = listOf("claude-team", "claude-two")
 
+    /** The telemetry relay the profile names now, or null while the server relays none (F8). */
+    @Volatile private var relay: String? = null
+
     private val box = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
         createContext("/server/profile") { exchange ->
             val accepted = exchange.requestHeaders.getFirst("authorization") == "Bearer $KEY"
             val commands = offered.joinToString(",") { """{"command":"$it","models":[]}""" }
+            val telemetry = relay?.let { """{"otlp":"$it"}""" } ?: "null"
             val body = if (accepted) {
                 """{"key":{"person":"ann@team.example","prefix":"spk_team0001","expires_at":null},""" +
-                    """"commands":[$commands],"signin":null,"telemetry":null,"client":{"minimum":null}}"""
+                    """"commands":[$commands],"signin":null,"telemetry":$telemetry,"client":{"minimum":null}}"""
             } else {
                 """{"type":"error","error":{"type":"authentication_error","message":"splice server: not a key here"}}"""
             }
@@ -165,6 +169,41 @@ class ServerRemoteCliTest {
         assertEquals(0, again.code, again.toString())
         assertTrue("nothing changed" in again.out, again.toString())
         assertEquals(before, config.readText())
+    }
+
+    @Test
+    fun `add and a refresh that moves the relay say where telemetry goes, and one that does not says nothing`() {
+        laptop()
+        login(KEY)
+        relay = "$server/server/otlp"
+        val added = remote("add", server)
+        assertEquals(0, added.code, added.toString())
+        val goes = "Claude Code's telemetry from $server's commands goes to $server/server/otlp, from their next launch"
+        assertTrue(goes in added.out.lines(), added.toString())
+
+        val same = remote("refresh", server)
+        assertFalse("telemetry" in same.out + same.err, same.toString())
+
+        relay = null
+        val off = remote("refresh", server)
+        assertEquals(0, off.code, off.toString())
+        val stops = "Claude Code's telemetry from $server's commands is no longer relayed, from their next launch"
+        assertTrue(stops in off.out.lines(), off.toString())
+        assertFalse("nothing changed" in off.out, off.toString())
+
+        relay = "https://otel.team.example/server/otlp"
+        val moved = remote("refresh", server)
+        val elsewhere = "goes to https://otel.team.example/server/otlp, from their next launch"
+        assertTrue(elsewhere in moved.out, moved.toString())
+    }
+
+    @Test
+    fun `remote add with no relay says nothing of telemetry`() {
+        laptop()
+        login(KEY)
+        val added = remote("add", server)
+        assertEquals(0, added.code, added.toString())
+        assertFalse("telemetry" in added.out + added.err, added.toString())
     }
 
     @Test

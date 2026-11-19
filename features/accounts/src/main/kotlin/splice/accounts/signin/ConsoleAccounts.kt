@@ -21,6 +21,10 @@ public interface ConsoleAccounts {
     /** Every sign-in still starting or waiting, so a page opened after one began shows it and can end it. */
     public fun openLogins(): List<LoginStatus>
 
+    /** The page has read that the sign-in [id] landed and splice is restarting for it ([LoginState.RESTARTING]), so
+     *  the restart need not wait any longer to be read: it begins. */
+    public fun restartRead(id: String) {}
+
     /** Removes the login [label] from [headKey], or gives it the label [newLabel]. [restart] is the head's own, for a
      *  head that only finds its logins when it starts: once the login is gone or renamed on disk, the head starts
      *  again so the running command lets go of it too. */
@@ -33,20 +37,51 @@ public interface ConsoleAccounts {
     ): AccountMutation
 }
 
-/** Calls back into the head lifecycle once a login's credential has landed, so the account joins
- *  its pool (the row's "on landing the head restarts" contract), and once a login was removed or
- *  renamed, so the pool lets go of it. Bound to the resolved
+/** Calls back into the head lifecycle once a login's credential has landed, so the running command serves with it,
+ *  and once a login was removed or renamed, so the pool lets go of it. Bound to the resolved
  *  [splice.accounts.AccountHead] at the ROUTE, so the :app-side port implementation never needs its
  *  own copy of the daemon's head map — the same reason the heads feature restarts the head it
- *  resolved directly rather than through a lookup. */
+ *  resolved directly rather than through a lookup.
+ *
+ *  A ChatGPT, Grok, Kimi or Muse head reads which logins it has once, when the daemon builds it. [restart] starts
+ *  the same head again over the same logins: enough for a login it [holds], whose file it reads again, and nothing
+ *  to one it does not. Until Nov 19, 2026 a login added from the console took only [restart]: it was on disk, the
+ *  page read it as live and closed, and the command neither listed it nor served a turn with it until someone
+ *  restarted splice. A login the head does not hold takes the daemon's own restart ([daemonRestart]). */
 public fun interface HeadRestart {
+    /** The head's own restart: it reads each login it holds again and lets go of the limits it kept. */
     public suspend fun restart()
+
+    /** Whether the running head holds the login labelled [label]. */
+    public fun holds(label: String): Boolean = true
+
+    /** Takes on the daemon's restart, which builds the head again with the logins on disk. */
+    public fun daemonRestart(): LoginRestart = LoginRestart.Refused("this splice has no restart of its own wired here")
+
+    /** Begins the restart [daemonRestart] answered [LoginRestart.Ready] for. */
+    public fun beginDaemonRestart() {}
+}
+
+/** Whether the daemon took on the restart a login the running head does not hold needs. */
+public sealed class LoginRestart {
+    /** Taken on, and the caller's to begin ([HeadRestart.beginDaemonRestart]) once the person has been told. */
+    public data object Ready : LoginRestart()
+
+    /** Taken on, and the daemon begins it by itself, after the compactions in flight. */
+    public data object Waiting : LoginRestart()
+
+    /** Not taken, for [reason]: the login stays on disk, and the command has it when splice next starts. */
+    public data class Refused(val reason: String) : LoginRestart()
 }
 
 public enum class LoginState(public val wire: String) {
     STARTING("starting"),
     WAITING("waiting"),
     SIGNED_IN("signed_in"),
+
+    /** Signed in, and splice is restarting so the command comes back with the login. This daemon answers no further
+     *  than this: the next one lists the login. */
+    RESTARTING("restarting"),
     LIVE_AFTER_RESTART("live_after_restart"),
     FAILED("failed"),
 }
@@ -54,8 +89,8 @@ public enum class LoginState(public val wire: String) {
 /** One login's off-request progress — what GET /api/auth/{head}/login/{id} polls. [prompt] is the device
  *  flow's announcement or the OAuth flow's browser URL, for the console to open (FEATURES.md §6). The row's
  *  "the state reads signed in, live after restart until then": [LoginState.SIGNED_IN] once the credential
- *  is persisted, [LoginState.LIVE_AFTER_RESTART] once the head has restarted and the account is confirmed in
- *  its pool. */
+ *  is persisted, [LoginState.LIVE_AFTER_RESTART] once the head that holds the login has restarted, and
+ *  [LoginState.RESTARTING] when the head does not hold it and splice restarts to read it. */
 public data class LoginStatus(
     val id: String,
     val head: String,
@@ -111,6 +146,10 @@ public enum class LoginFailure(public val wire: String) {
 
     /** Signed in again on a login, with another account than the one that login holds. Nothing was replaced. */
     OTHER_ACCOUNT("other_account"),
+
+    /** Signed in, and the login is on disk, yet the running command does not have it: splice could not restart
+     *  itself. The command has it once splice is restarted. */
+    NEEDS_RESTART("needs_restart"),
 }
 
 /** What a sign-in asks the person to do. [userCode] and [verificationUri] are the device flow's announcement;

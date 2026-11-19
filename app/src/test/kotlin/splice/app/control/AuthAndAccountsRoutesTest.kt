@@ -184,6 +184,32 @@ class AuthAndAccountsRoutesTest {
         assertEquals("https://x/verify", body["verification_uri"]!!.jsonPrimitive.content)
     }
 
+    // Nov 19, 2026: a login added to a command that did not hold it read signed in while the command went on without
+    // it. The read says what splice is doing about it, or that it could not, with the label the login was written as.
+    @Test
+    fun `a sign-in splice restarts for reads restarting, and one it could not restart for says to restart`() =
+        runBlocking {
+            awaitPort()
+            accounts.onPoll = { id -> LoginStatus(id, WIRED, LoginState.RESTARTING, label = "pro-1") }
+
+            val restarting = json.parseToJsonElement(get("/api/auth/$WIRED/login/login-9").bodyAsText()).jsonObject
+
+            assertEquals("restarting", restarting["state"]!!.jsonPrimitive.content)
+            assertEquals("pro-1", restarting["label"]!!.jsonPrimitive.content)
+
+            val why = "signed in as 'pro-1', and splice could not restart itself to use the login"
+            accounts.onPoll = { id ->
+                LoginStatus(id, WIRED, LoginState.SIGNED_IN, label = "pro-1").failed(LoginFailure.NEEDS_RESTART, why)
+            }
+
+            val refused = json.parseToJsonElement(get("/api/auth/$WIRED/login/login-9").bodyAsText()).jsonObject
+
+            assertEquals("failed", refused["state"]!!.jsonPrimitive.content)
+            assertEquals("needs_restart", refused["failure_kind"]!!.jsonPrimitive.content)
+            assertEquals(why, refused["failure_reason"]!!.jsonPrimitive.content)
+            assertEquals("pro-1", refused["label"]!!.jsonPrimitive.content)
+        }
+
     @Test
     fun `pollLogin on an unknown id is a 404`() = runBlocking {
         awaitPort()

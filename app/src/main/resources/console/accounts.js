@@ -872,6 +872,9 @@ function previewCap(field) {
 // ---------- sign-in: one element wherever an account signs in, with the step its provider really asks for ----------
 // The step comes from splice's own answer: a device code to type on the provider's page (Kimi, Muse), a code pasted back
 // (a Claude Code that opened no link of its own), or a page that finishes the sign-in by itself (ChatGPT, Grok, Claude).
+// One more step is splice's own: a login the running command did not have is read when splice starts, so splice
+// restarts for it, and the tile says so until the next splice has answered (SIGNIN, api.js).
+const RESTART_HINT = `<span class="code-hint">Signed in. Restarting splice to use this login</span>`;
 const CODE_HINT = `<span class="code-hint">Enter this code on the sign-in page</span>`; // the act on the code, where Open sign-in goes
 function signingHtml(target) {
   const s = ui.signin[target];
@@ -883,6 +886,7 @@ function signingHtml(target) {
     const retry = f.retry ? `<button class="act primary" data-act="retry-signin" data-t="${target}">Try again</button>` : "";
     return `${refusalHtml(err, key)}${retry}${cancel}${reasonHtml(err, key)}`;
   }
+  if (s.by === "restart") return `${waiting()}${RESTART_HINT}`;
   const open = s.url ? `<button class="act" data-act="open-signin" data-t="${target}">Open sign-in</button>` : "";
   if (s.by === "code") return `${waiting()}${s.code ? `<button class="usercode${s.swapped ? " swap" : ""}" data-act="copy-code" data-t="${target}">${esc(s.code)}</button>${CODE_HINT}` : ""}${open}${cancel}`;
   if (s.by === "paste") return `${waiting()}${open}<input class="field code-in" data-t="${target}" placeholder="Paste code" aria-label="Paste code" autocomplete="off" spellcheck="false">${cancel}`;

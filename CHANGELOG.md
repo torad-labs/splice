@@ -114,6 +114,15 @@
   drew the code beside it with "Enter this code on the sign-in page". It now shows those sign-ins the way it shows
   ChatGPT, Grok and Claude: Open sign-in, approve, and the console finishes by itself. A provider whose link does not
   carry the code still shows the code to enter.
+- **An account added from the console is on its command when the tile closes.** A ChatGPT, Grok, Kimi or Muse
+  command reads which logins it has when splice starts. Adding a second account from the Accounts page wrote the
+  login and closed its tile as done, while the command went on with the logins it had: the new account was neither
+  listed nor used until someone ran `splice restart`. splice now restarts itself for such a login, as it does after
+  a provider is added: the tile reads "Signed in. Restarting splice to use this login" and closes on the new
+  account's card once splice is back. A splice that cannot restart itself says "Restart splice" with its reason.
+  `GET /api/auth/{head}/login/{id}` answers `restarting` for such a sign-in, and a failure of kind
+  `needs_restart` when splice could not restart. Signing in again on a login the command already has still restarts
+  only that command.
 - **A login whose token can't be renewed hands the turn to another login.** When every other login was held for
   the turn's model, the turn ended "login expired and could not be renewed" though other logins were signed in. It
   now moves to the one whose hold ends soonest, or to a model with room.

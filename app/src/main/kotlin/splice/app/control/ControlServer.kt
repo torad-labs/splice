@@ -144,7 +144,7 @@ internal class ControlServer(
     private val removal = HeadRemovalAssembly(config, ports, runtime, heads, log).build()
     private val configuration = ConfigurationMount(config, readings.health.staleness(), ports, guard, removal)
     private val usage = UsageMount(heads, resolver, config, clientVersions, ports, guard, log)
-    private val accounts = AccountsMount(heads, resolver, ports, guard, log, config.statePaths.stateDir)
+    private val accounts = AccountsMount(heads, resolver, ports, guard, log, config.statePaths.stateDir, add.restart)
     private val turns = TurnsMount(heads, resolver, config, ports, guard)
     private val trace = TraceMount(resolver, config, ports, guard)
     private val sessionWiring = SessionsWiring(sessions, heads, config, ports, log)

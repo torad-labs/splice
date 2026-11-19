@@ -51,6 +51,8 @@ public class LoginRoutes(
             return
         }
         AccountReplies.respond(call, LoginStatusJson.json(status))
+        // The answer is written, so the page knows why splice goes away next: the restart need not wait any longer.
+        if (status.state == LoginState.RESTARTING) accounts.restartRead(status.id)
     }
 
     /** DELETE /api/auth/{head}/login/{id}: ends a sign-in [startLogin] or a Claude Code login place began, and

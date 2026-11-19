@@ -3220,7 +3220,7 @@ The door answers Desktop's model discovery (outcome 2). Decision: Desktop's pick
 - `supports_1m` true only when the model's own context window is at least 1,000,000. `max_input_tokens` is that window.
 - Display names are unique. Desktop folds Claude-looking rows that share a name and tier into one row, so a repeated label gets " (<command>)" added.
 - Desktop's own effort ladder is low, medium, high, xhigh, max. A head whose vocabulary tops out lower (Grok keeps xhigh for max) still runs the nearest rung it has, as today.
-The id, decided Nov 19 (coordinator): `claude-splice-` and 12 decimal digits taken from the SHA-256 of the row's selector (its first 8 bytes as an unsigned number, modulo 10^12, zero-padded), for every row, Claude rows included. Why one rule for all: Desktop drops ids that name a vendor on a list (lib/full.ts OTHER_VENDORS mirrors some 60 names from its bundle) that grows with Desktop; an id splice derives that names no model can't fall foul of it. Digits, not hex, because hex can spell a listed name ("abab"). From the selector, not the row's place, so a row keeps its id when a head is added or signed in, and a conversation Desktop stored resumes on its model. The door takes an id with Desktop's `[1m]` suffix as it takes a selector with one. Should two selectors ever give one id, neither row is listed and the daemon log names both; nothing is picked silently. diagnostics.test.ts finds a new head's row by its description, since its id is no longer its selector.
+The id, decided Nov 19 (coordinator): `claude-splice-` and 12 decimal digits taken from the SHA-256 of the row's selector (its first 8 bytes read as one big-endian unsigned number, modulo 10^12, zero-padded to 12; models.test.ts computes the same id from each selector), for every row, Claude rows included. Why one rule for all: Desktop drops ids that name a vendor on a list (lib/full.ts OTHER_VENDORS mirrors some 60 names from its bundle) that grows with Desktop; an id splice derives that names no model can't fall foul of it. Digits, not hex, because hex can spell a listed name ("abab"). From the selector, not the row's place, so a row keeps its id when a head is added or signed in, and a conversation Desktop stored resumes on its model. The door takes an id with Desktop's `[1m]` suffix as it takes a selector with one. Should two selectors ever give one id, neither row is listed and the daemon log names both; nothing is picked silently. diagnostics.test.ts finds a new head's row by its description, since its id is no longer its selector.
 Desktop starts a new session on the first row it keeps, so the door's saved default is first and kept. The row shape, the id rule and the tier rule are Desktop facts in integrations/claude-code/.../client/desktop/ (a new DesktopModelRows.kt). The route is in app/src/main/kotlin/splice/app/control/DesktopRoutes.kt, and its answer in a new app/src/main/kotlin/splice/app/desktop/DesktopModels.kt. Proof: `bun test ./.campaign/checks/desktop-full/models.test.ts`.
 
 Shared across desktop-full (decided once, the same in every item): one door at /desktop on the control port and one desktop key serve both of Desktop's modes. "Standard mode" is today's Code-tab door through Desktop's environment store (`splice desktop on`). "App mode" is Desktop's third-party gateway mode, the whole app on splice (`splice desktop on --app`). In JSON the mode is one of "off", "standard", "app", "other" (a third-party configuration that is not splice's). Every request Desktop sends in app mode carries the header `x-splice-desktop: app`, which splice writes into the configuration's inferenceCustomHeaders. That header is how the door tells an app-mode request from a standard one. Refusals keep the door's Anthropic error shape and the "splice desktop: " prefix. Picker rows are DesktopLineup.picker, the terminal's rows (don't fork them; the custom-provider campaign, #680, is changing labels and tiers there at the same time). Vendor facts about Desktop (paths, key names, row fields, ID filter) live in integrations/claude-code/src/main/kotlin/splice/client/desktop/, beside the other Desktop facts. Goal: docs/specs/desktop-full.md.'''
@@ -5784,6 +5784,7 @@ What the running product does once this is built:
 - build-logic gets the convention plugin `splice.mode`. It applies splice.kotlin-common (and whatever the module law needs) and adds `:modes-api` as an `api` dependency. It carries `mode.toml`, `prompt.md`, `tools/` and `resources/` as the mode's resources, under a path of the mode's own (`splice-modes/<name>/…`), so the shadow jar never merges two modes' files. It writes `META-INF/services/splice.modes.api.Mode` from the manifest's `handler`. app's shadowJar already calls mergeServiceFiles(), so the jar carries every mode's entry. When `handler` can't be read, the plugin writes no entry rather than failing the build: the catalog reports it (next item).
 - The module law gets one pattern line in gradle/module-law.txt, `:modes-* -> :core :modes-api`. `:modes-api -> :core` is its own line, and `:modes-api` is not matched by the pattern (an exact line wins over a pattern). ModuleLawTable (build-logic/src/main/kotlin/splice/modulelaw/ModuleLawTable.kt), splice.module-law.gradle.kts, tools/gate's `module-law` command and readGradleModules (tools/gate/src/lib/sources.ts), the gate hook's gradleModules (tools/gate/src/commands/hook.ts) and quality/architecture (layer-map.toml and any law test that classifies module ids by prefix, e.g. LayerMapLawTest, RoleRegistryLawTest, PublicSurfaceLawTest and app's ReadSet roots) all know a `modes-*` module by that one rule. The gate reads modules from settings.gradle.kts, so it must read the folder listing too: it lists `modes/*/mode.toml` the same way. A mode is a leaf layer of its own. A mode that depends on a feature fails the build with "MODULE LAW" naming `:modes-<name>` and the dependency, and `bun tools/gate module-law` exits 1 naming both.
 - The commit that changes the module law says why: a mode is one folder, governed by one rule (changing the module law is changing the architecture).
+- The repo's git hooks judge a tree with that tree's own gate, so a mode found by the folder listing is covered from the commit that adds it. Today the shared shim `.git/hooks/pre-commit` (and `pre-push`) is `exec '<bun>' '/home/marcos/Documents/dev/projects/splice/repo/tools/gate/index.ts' hook <verb> "$@"`: the main checkout's gate code, on whatever branch that checkout holds (feat/provider-gateway-headers on Nov 19, 2026), judging the worktree git started it in (13142162f moved the root there but left the code at the main checkout's). That code's `gradleModules` (tools/gate/src/commands/hook.ts) reads only literal `project("…").projectDir = file("…")` lines, so it maps `:modes-api` and not the folder-listed `:modes-template`, and the hook refused this feature's commit in rounds 4 and 5 with `✗ modes/template/build.gradle.kts: no gradle check covers this file` (and TemplateMode.kt, TemplateSaid.kt, TemplateCatalogTest.kt, TemplateModeTest.kt; `pre-commit: ✗ 5 Kotlin file(s) with no check`). pre-push reads the same `gradleModules` (hook.ts, the `modules = gradleModules(root)` in the push judgement), so it would leave the mode's module unchecked, not refused. The fix, in this item: `shimText` in tools/gate/src/commands/hook.ts writes a shim that runs `"$(git rev-parse --show-toplevel)/tools/gate/index.ts"` when that file exists and the installed gate otherwise (a tree older than tools/gate, or `rev-parse` failing); `hook install` writes the main checkout's gate as that fallback wherever it is run from (the folder above `git rev-parse --path-format=absolute --git-common-dir`), so removing a worktree never breaks the shim. Then run `bun tools/gate hook install` once from this worktree, which rewrites the two splice shims in the shared .git/hooks and leaves fence's post-commit as it is (installShims already refuses to touch a hook that is not a splice shim), and commit the feature through that hook. Why this and not another way: a settings line per mode is what the goal forbids; the hook already runs the judged tree's own gate for every gradle run it starts (`slotRunner` spawns `join(lay.repoRoot, "tools", "gate", "index.ts") slot`), and CI judges a PR head with that head's gate, so the shim doing the same is one rule instead of two. Every leg and check the hook ran still runs and nothing is skipped: the hook is changed openly in this item's commit, whose message says why (a tree is judged by the gate it carries, so a module the tree adds is known to the hook that judges it). A tree whose gate cannot load because it has no node_modules gets `bun install --frozen-lockfile` in that tree, as the reply-stream ruling of Nov 19, 2026 in this ledger says. Round 6 ruling (modes coordinator, Nov 19, 2026): the plan and its check were right; the build stopped short of this one change, which only this feature needs and so belongs here.
 
 Not here: the catalog and its findings (modes-catalog), boot, the door, routes, README.
 
@@ -6142,7 +6143,9 @@ title = 'Settings has a Modes topic: every mode, what it adds, and an On/Off swi
 feature = 'modes'
 status = 'todo'
 owner = ''
-blocked_by = []
+blocked_by = [
+  'modes-module',
+]
 guard = false
 spec = '''
 Splice's Settings page has a Modes topic. It shows every mode GET /api/modes lists (name, summary, kind, the tools it adds as the model sees them, the callers it leaves out) and an On/Off switch per head, so a person sees what the door adds to their sessions and can turn any of it off.
@@ -6155,6 +6158,8 @@ What the running product does once this is built (app/src/main/resources/console
 - Every string sits on one line at both widths: no text over text, clipped text or overflow. The repo's UI rules apply (CLAUDE.md, "UI changes"): open the page on the build in night and day themes at 1440 px and at about 3840 px, look at every capture, fix what is wrong, and attach the captures to the pull request.
 
 Not here: the API itself (modes-list and modes-switch build it to the shared row shape, which is what this page reads), and any change to the console's look beyond this topic.
+
+Round 6 ruling (modes coordinator, Nov 19, 2026): this item's spec and check were right, and its builder reported `bun test ./.campaign/checks/modes/console.test.ts` passing on the work in the worktree. Its round 5 refusal was the repo's pre-commit hook refusing the whole feature's commit (`✗ modes/template/...: no gradle check covers this file`, 5 files, `pre-commit: ✗ 5 Kotlin file(s) with no check`), because the shared shim runs the main checkout's gate, which can't see a folder-listed mode. modes-module now carries that fix (the shim runs the gate of the tree git started it in), so this row waits for modes-module. Keep the work standing in the worktree (settings.js, settings.css), run the check once, and commit through the hook; change none of this item's code for the hook.
 
 Beside console-night-deck: that feature is rebuilding settings.html and settings.js (nd-settings, nd-settings-system). Build on the Settings page main has when this item starts. If nd-settings has landed by then, the Modes topic becomes one of that page's parts, opened the way its parts open, and keeps this spec's words and data attributes (`data-open="modes"`, `data-mode`, `data-mode-head`, `button[data-v]` with aria-pressed). Whichever of the two lands second merges the other's change in rather than dropping it.
 
@@ -6301,7 +6306,7 @@ Decided once for every reply-stream item (the same words in each item's spec):
 
 Round 3 ruling (reply-stream coordinator, Nov 19, 2026): the round 2 send-back was not this item's, and neither its spec nor its checks were wrong. The repo's pre-commit leg typescriptTypecheck refused every commit on the branch that touched a .ts, for two causes outside the item: (1) `tools/gate/tsconfig.json: error TS2688: Cannot find type definition file for 'bun'`, because the worktree had no node_modules: run `bun install --frozen-lockfile` in the worktree before the first commit; (2) the typecheck coverage wall refused the 12 tracked files under .campaign/checks/reply-view/ (capture.ts, the connect/core/live/markdown/page/readme/serve/settle/tools/transcript tests, lib/rv.ts) as in no typechecked program, because tools/gate/config/typecheck.json named no .campaign/checks/reply-view/tsconfig.json. Upkeep commit 2a353b728 on the base branch adds that line (the tsconfig itself came with 159b4bf7b), and its own pre-commit run passed: `✓ typescriptTypecheck — 25.0 s`. Round 1's ktlint findings (features/turns/src/main/kotlin/splice/head/live/LiveReply.kt:44, features/turns/src/test/kotlin/splice/head/live/LiveRepliesTest.kt:59-81) were fixed in round 2. The build seat reported the work standing in the worktree as passing: all 6 items pass campaign check, ktlint and detekt clean, every typecheck program at 0 diagnostics. So: bring the base branch in, keep the work, and commit it through the repo's hook as it is. A hook refusal in a file outside this feature is upkeep for the branch (a commit of its own titled `upkeep: ...`, as 539ca6ec6 and 2a353b728 are), never a reason to change this item's code or to skip the hook.
 
-Proven end to end by `.campaign/checks/reply-stream/live.test.ts` on the Linux build box (the harness reads /proc): a Splice booted with the harness, a head on Anthropic's Messages API (`SlowAnthropic` in `.campaign/checks/reply-stream/lib/live.ts`, which streams thinking with a signature, text, and a Read tool call slowly) and an OpenAI-chat head, turns sent through the door as Claude Code sends them. It shows: 401 without or with a wrong key; hello for an unseen session and the stream staying open; the turn's fields; per block, the follower's deltas put together equal what the client received, in the same block order, with the tool start and `end` matching the client's stop_reason; no key, header, signature or tool input in the follower's bytes; the next turn on the same stream with a new id; another session's turn absent; a subagent's agent id; the OpenAI-chat head's reply streaming the same way; `: ping` within 20 s. The check runs as `rig remote run --to build@buildbox -- bun test ...` rather than the `--needs system=Linux/x86_64` form in the goal: `--needs` answers 75 whenever the one Linux box is short of room (the custom-provider ruling of Nov 19, 2026 in this ledger), which would fail a check for no reason of the build's. `buildbox` is rig's name for the Linux build box it keeps (~/.config/rig/ssh_config, first in hostshield's `remote` setting); the name stays when rig swaps the box. Until this recut (Nov 19, 2026) every Linux check of this feature named `build@buildbox`, a box rig no longer keeps (`buildbox` is now another machine), so the checks name `build@buildbox`, as the machine's law for a run that must have Linux says.'''
+Proven end to end by `.campaign/checks/reply-stream/live.test.ts` on the Linux build box (the harness reads /proc): a Splice booted with the harness, a head on Anthropic's Messages API (`SlowAnthropic` in `.campaign/checks/reply-stream/lib/live.ts`, which streams thinking with a signature, text, and a Read tool call slowly) and an OpenAI-chat head, turns sent through the door as Claude Code sends them. It shows: 401 without or with a wrong key; hello for an unseen session and the stream staying open; the turn's fields; per block, the follower's deltas put together equal what the client received, in the same block order, with the tool start and `end` matching the client's stop_reason; no key, header, signature or tool input in the follower's bytes; the next turn on the same stream with a new id; another session's turn absent; a subagent's agent id; the OpenAI-chat head's reply streaming the same way; `: ping` within 20 s. The check runs as `rig remote run --to build@buildbox -- bun test ...` rather than the `--needs system=Linux/x86_64` form in the goal: `--needs` answers 75 whenever the one Linux box is short of room (the custom-provider ruling of Nov 19, 2026 in this ledger), which would fail a check for no reason of the build's. `buildbox` is rig's name for the Linux build box it keeps (~/.config/rig/ssh_config, first in hostshield's `remote` setting); the name stays when rig swaps the box. Until the recut of Nov 19, 2026 every Linux check of this feature named `build@ssh1.vast.ai:34658`, the rented box's proxy address, which refused SSH once rig swapped the box; the checks name `build@buildbox` instead, so a swap changes nothing here, as the machine's law for a run that must have Linux says.'''
 checks = [
   'rig remote run --to build@buildbox -- bun test ./.campaign/checks/reply-stream/live.test.ts',
 ]
@@ -7629,4 +7634,73 @@ reviews = [
 ]
 notes = [
   '2026-11-19 16:03 CT head-catalog/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'signin-console-says'
+title = 'The console says what a sign-in came to: Signed in as <label>, and a closed sign-in page'
+feature = 'signin-e2e'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = '''
+The console says plainly what a sign-in came to, on every page that signs in through api.js's SIGNIN (Models, Accounts, Usage, Compare). Why: on Nov 19, 2026 Marcos removed a stale Grok login, signed in again, and nothing told him the new login had landed.
+
+1. A sign-in that lands says `Signed in as <label>` where Sign in was pressed, without a reload: on Models in the command pane's header; on Accounts on the login's own card (for + Add account, the card of the login it added). <label> is the label splice's sign-in status carries (LoginStatus.label, the name the Accounts page shows for that login); when splice names none, `Signed in`. It stays until that card is acted on again or a newer read of it says otherwise.
+2. When the tab the press opened is closed after it was sent to the provider's page, while splice still holds the sign-in as waiting, the place where Sign in was pressed shows exactly `The sign-in page was closed before the sign-in finished.` and keeps the sign-in's own controls (Open sign-in to open the page again, the device code, the paste field, Cancel). The sign-in is NOT ended: if splice then says it landed (a device code typed before the page closed, a Claude code pasted on the card) it lands and (1) shows. Why not cancel it: a device-code or paste sign-in finishes after its page is closed, and a loopback one can be finishing as the tab closes, so cancelling would end sign-ins that are landing. Opening the page again clears the line.
+3. What exists stays: the press opens the tab and a sign-in that ends before naming a page closes it (627a10907); failures keep their word and splice's reason (FAILS in api.js).
+
+These exact words are what the sign-in check (later items) reads on the cards: `Signed in as <label>` and `The sign-in page was closed before the sign-in finished.`
+
+Proof: `.campaign/checks/signin-e2e/console-says.test.ts` drives the real Models page in Chromium against a stub daemon in LoginRoutes.kt's shapes (as tools/console/models-sign-in-opens.test.ts does): a landing shows `Signed in as made-up-alpha` in the pane header with no page load, and closing the provider's tab shows the sentence with an Open button. Accounts is proven end to end by the sign-in check's step 2. Run browser work on a Mac (`rig remote run --needs system=Darwin/arm64 -- bun test <file>`), never on the seats' machine; look at Models and Accounts in both themes at 1440 px and ~3600 px (CLAUDE.md, UI changes).'''
+checks = [
+  'rig remote run --needs system=Darwin/arm64 -- bun test ./.campaign/checks/signin-e2e/console-says.test.ts',
+]
+sources = [
+  'app/src/main/resources/console/api.js',
+  'tools/console/models-sign-in-opens.test.ts',
+  'features/accounts/src/main/kotlin/splice/accounts/signin/LoginRoutes.kt',
+  'features/accounts/src/main/kotlin/splice/accounts/signin/ConsoleAccounts.kt',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-19 16:22 CT signin-e2e/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'signin-claude-cli'
+title = 'splice login <head> signs a Claude account in on a Claude Code head'
+feature = 'signin-e2e'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = '''
+`splice login <head>` signs a Claude account in for a head whose provider's auth kind is `client` (Claude Code's own sign-in), where today it answers "there is no browser login for that kind". Why: the sign-in check requires the CLI path to open the same page as the console for every kind, and a person typing `splice login claude` expects a sign-in.
+
+What it does: it starts the same sign-in the console's Sign in runs on the running daemon (POST /api/auth/<head>/login, LoginRoutes.kt -> ClaudeAccountSignIn, which runs `claude auth login --claudeai` in a pending folder and adds the account to the head's pool; no second sign-in machinery in the CLI). It prints the page the sign-in names the way `splice login` prints a browser page for the other kinds, and opens it through SystemBrowserOpener as they do (so a person's browser opens it, and a stand-in `open`/`xdg-open` first on PATH records it). When the sign-in says its page ends in a code to paste back (paste_code), it asks for the code in the terminal and posts it (POST /api/auth/<head>/login/<id>/code). It polls the sign-in until it ends and prints `splice: signed in to <head> as <label>`, exit 0, when it lands, or `splice: login for '<head>' did not complete.` with splice's own failure reason (failure_reason) and a non-zero exit otherwise. `--label` names the login as the console does. Ctrl-C ends the sign-in on the daemon (DELETE) before exiting. With no daemon running it says so and how to start it, non-zero, in the words other daemon-backed commands use.
+
+Decisions: through the daemon, not a local Claude Code run, because the daemon owns the pool's folders, the pending-folder landing and the head restart (ClaudeAccountSignIn header). Vendor facts stay where they are (NativeClaudeAuth.kt); the CLI adds none.
+
+Proof: `.campaign/checks/signin-e2e/claude-cli.test.ts` boots Splice through the server harness on the Linux build box with a Claude head and a stand-in `claude` on the daemon's PATH that prints its page, reads the code and refuses it: `splice login claude` prints that page, the browser is asked to open it, the pasted code reaches Claude Code, and the refused sign-in exits non-zero without saying it signed in. Run it as the check does: `rig remote run --to build@buildbox -- bun test ./.campaign/checks/signin-e2e/claude-cli.test.ts` (the harness reads /proc, so Linux).'''
+checks = [
+  'rig remote run --to build@buildbox -- bun test ./.campaign/checks/signin-e2e/claude-cli.test.ts',
+]
+sources = [
+  'app/src/main/kotlin/splice/app/cli/auth/LoginCommand.kt',
+  'app/src/main/kotlin/splice/app/auth/claude/ClaudeAccountSignIn.kt',
+  'app/src/main/kotlin/splice/app/auth/claude/NativeClaudeAuth.kt',
+  'features/accounts/src/main/kotlin/splice/accounts/signin/LoginRoutes.kt',
+  'integrations/oauth/src/main/kotlin/splice/oauth/LoginIo.kt',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-19 16:27 CT signin-e2e/coordinator: added; 1 of 1 checks fail, as they should before the work',
 ]

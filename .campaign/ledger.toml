@@ -984,6 +984,77 @@ of what it changed, taken in Chromium on a Mac, at a phone width and at 1440 px,
 
 Everything the checks and screenshots show is made up: the repository is public.'''
 
+[feature."head-catalog"]
+goal = '''
+# head-catalog: every session's /model lists everything the door serves, and runs what it lists
+
+## Who this is for, and why
+
+Marcos runs sessions on several heads (`claude`, `claudex`, `claude-grok`, `claude-kimi`, `claude-muse` and the
+rest) and reads each one's own `/model` picker, in the terminal and in his Eli app, which shows a session's picker as
+Claude Code has it. Today each head lists a different set, though everything runs behind splice's door: a session on
+the `claude` head showed Claude Code's own Fable 5, Opus 5 and Opus 5.5 and one Kimi model, and a session on
+`claudex` lists only ChatGPT's models. He wants every head's picker to list the door's whole catalog, every provider
+and model the door can serve, the way a gateway lists what it serves, so any session can switch to any model, and a
+subagent can name any of them (November 19, 2026). It is what `claude` on the door already does, for every head.
+
+## What it is today (read before building)
+
+- On the door, `claude`'s picker is the door's catalog: `DesktopLineup.picker`, as `modelPicker` with
+  `replaceBuiltInOptions` in the launch's `--settings` overlay (`integrations/claude-code/.../desktop/DoorSession.kt`,
+  `docs/specs/door-default.md` decision 4). `splice claude --json` lists those models.
+- `claude` on its head adds the same rows after Claude Code's own (`DoorPicker.addedTo`, called from
+  `LaunchService.overlayOf`; `LaunchRoutes` asks for it only when the key is `claude` and the launch is wrapped), and
+  relays a model of another head's to that head (`app/.../desktop/ClaudeHeadLane.kt`, `forHead`, which hands nothing
+  for any head but `claude`). The spec's text for this was withdrawn (commit 906d1797e); the code stayed.
+- Every other head lists its own models alone, as an enforced allowlist (`availableModels` with
+  `enforceAvailableModels`: `ClaudeModelSettings.base` for a head with a folder of its own, `settingsOverlay` in
+  `WrappedHeadTypes.kt` for a wrapped one), so Claude Code there neither lists nor sends another head's model.
+- splice turned Claude Code's gateway model discovery (`CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY`) off when it
+  listed every model twice (the header of `LaunchService.kt`).
+
+## What a person sees when it is built
+
+- A session on any head lists, in `/model`, its own head's models first, then every other model the door serves,
+  each once, labelled as the door labels it (`splice · <command>`), in the door's order. It is the list `splice
+  claude --json` gives, less nothing.
+- Picking one runs the session's next turn on that model's head, with that head's login, cooldowns, retries and
+  failures, as the door runs it. The session's own Claude login, or its head's key, never goes to another head. A name
+  shaped like a door selector that the door does not serve is refused by name, with nothing sent anywhere.
+- `/model <selector>`, `--model <selector>` and a subagent whose model is a door selector do the same, from a session
+  on any head.
+- The list is read at each launch, so a sign-in, a sign-out or an expired login reaches the next session with no
+  restart and no reinstall, as the door's does. An install that is upgraded gets it for every head it has, with nothing
+  for the person to do.
+- A relayed turn's token counts are reported as the same share of the session's window that they are of the model's
+  own, as `ClaudeHeadLane` reports them now, so compaction comes when it should.
+
+## How it holds
+
+- One catalog: the door's lineup is the one source of what every head lists and relays. No head keeps a list of its
+  own of other heads' models.
+- Use whichever of Claude Code's own mechanisms lists the catalog cleanly on the Claude Code installed here
+  (`claude --version`): the `modelPicker` overlay the door uses, or gateway model discovery with every head's
+  `/v1/models` answering the catalog. Whichever it is, every model is listed once, and the allowlist no longer
+  refuses a door model. Read the client's behaviour from a real launch of that version, as `docs/specs/door-default.md`
+  records its facts, not from memory.
+- Heads stay isolated (CLAUDE.md "Heads are isolated"): nothing of one head's state leaks into `~/.claude` or another
+  head. Reasoning effort stays part of the prompt-cache key and is never varied by turn type. `mirror_reasoning`
+  stays false.
+- Documented: the door-default spec gets this as a decision, the README's lines on what a head's picker lists say it,
+  and the splice skill's reference (`app/src/main/resources/manager-home/.claude/skills/splice/reference/`) agrees.
+  The repository is public: no person's accounts, logins or machine in any of it.
+
+## How it is checked
+
+Checks look at what a launch answers and what a turn does: the launch route's recipe for a head other than `claude`
+lists the other heads' models and allows them; a request on one head naming another head's selector is answered by
+that other head (a mock provider), with none of the first head's credentials on it; a selector-shaped name the door
+does not serve is refused by name; a subagent's request naming a door selector runs on its head. Splice's check
+harness (`.campaign/checks/server/lib/harness.ts`) reads Linux's `/proc`, so a check that boots Splice through it runs
+on the Linux build box and names it itself: `CAMPAIGN_HERE=1 rig remote run --needs system=Linux/x86_64 -- bun test
+<file>`. Builds and tests never run on the machine the seats run on.'''
+
 [[row]]
 id = 'server-listener'
 title = 'A [server] listener that answers only keys'

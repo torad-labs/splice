@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { doorTurn, readSettings, rotateKey, rows, slottedHead, turnOn, writeSettings } from "../desktop/lib/desktop.ts";
 import { Splice, freePort, until } from "../server/lib/harness.ts";
 import { Upstream } from "../server/lib/upstream.ts";
-import { DOOR_VARS, ELSEWHERE, SPLICE_LOGIN, ask, lane, session, toDoor, under } from "./lib/claude.ts";
+import { DOOR_VARS, ELSEWHERE, SPLICE_LOGIN, ask, gatewayMode, lane, onDoor, session, toDoor, under } from "./lib/claude.ts";
 
 // No test here is a claim about speed: a busy machine must not fail one on bun's default five seconds.
 setDefaultTimeout(120_000);
@@ -58,15 +58,18 @@ describe("door-claude-lane", () => {
 
   test("a launch of claude points Claude Code at the door and at nothing else", async () => {
     const x = await session(s);
-    expect(x.sets.CLAUDE_CODE_USE_MANTLE).toBe("1");
+    // Mantle's switch at the door until Nov 19, 2026; Claude Code's gateway mode at it since (head-catalog)
+    expect(onDoor(x, lane(s).door!)).toBe(true);
     expect(x.url).toBe(lane(s).door!);
-    expect(x.key.length).toBeGreaterThan(20);
-    expect(Number(x.sets.CLAUDE_CODE_MAX_CONTEXT_TOKENS)).toBeGreaterThan(0);
+    const gateway = gatewayMode(x.sets);
+    if (!gateway) expect(Number(x.sets.CLAUDE_CODE_MAX_CONTEXT_TOKENS)).toBeGreaterThan(0);
     expect(x.sets.CLAUDE_CODE_AUTO_MODE_SERVER).toBe("0");
     // the session shows the model it runs
     expect(x.sets.ANTHROPIC_MODEL).toBe(ASTRA_BIG);
-    for (const name of ELSEWHERE) expect([name, name in x.sets, x.recipe.unset.includes(name)]).toEqual([name, false, true]);
-    for (const name of DOOR_VARS) expect([name, x.recipe.unset.includes(name)]).toEqual([name, false]);
+    // in gateway mode the base URL and the bearer are the door's own
+    const own = gateway ? ["ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN"] : [];
+    for (const name of ELSEWHERE.filter((n) => !own.includes(n))) expect([name, name in x.sets, x.recipe.unset.includes(name)]).toEqual([name, false, true]);
+    if (!gateway) for (const name of DOOR_VARS) expect([name, x.recipe.unset.includes(name)]).toEqual([name, false]);
   });
 
   test("the session runs over the person's own Claude folder, and splice changes nothing of theirs in it", async () => {

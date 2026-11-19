@@ -169,7 +169,8 @@ describe("door-login", () => {
     toDoor(s);
     rmSync(join(logins, "astra-auth.json"));
     const x = await session(s);
-    expect(x.sets.CLAUDE_CODE_USE_MANTLE).toBe("1");
+    // on the door: Mantle's switch until Nov 19, 2026, Claude Code's gateway mode since (head-catalog)
+    expect([x.url !== "", x.key.length > 20]).toEqual([true, true]);
     expect(slash(x, "login")).not.toBeNull();
     let t = await ask(x);
     await until("the door has no head", async () => (t = await ask(x)).status !== 200, 30_000);

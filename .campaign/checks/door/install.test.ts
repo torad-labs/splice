@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "
 import { clientHead, slottedHead } from "../desktop/lib/desktop.ts";
 import { Splice, freePort } from "../server/lib/harness.ts";
 import { Upstream } from "../server/lib/upstream.ts";
-import { ask, lane, session, toDoor } from "./lib/claude.ts";
+import { ask, lane, onDoor, session, toDoor } from "./lib/claude.ts";
 
 // No test here is a claim about speed: a busy machine must not fail one on bun's default five seconds.
 setDefaultTimeout(120_000);
@@ -38,7 +38,7 @@ describe("door-install-default", () => {
   test("on a machine with no head for claude, claude is on the door with no command run", async () => {
     expect(lane(s).lane).toBe("door");
     const x = await session(s);
-    expect(x.sets.CLAUDE_CODE_USE_MANTLE).toBe("1");
+    expect(onDoor(x, lane(s).door!)).toBe(true);
     const t = await ask(x, { model: ASTRA_BIG });
     expect(t.status).toBe(200);
     expect(t.reply).toBe(astra.reply());

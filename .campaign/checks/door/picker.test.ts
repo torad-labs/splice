@@ -12,7 +12,7 @@ import { readSettings, slottedHead } from "../desktop/lib/desktop.ts";
 import { Splice, freePort, mockHead, until } from "../server/lib/harness.ts";
 import { Upstream } from "../server/lib/upstream.ts";
 import { CodexBackend, gptEnv, gptHead } from "../speed/lib/codex.ts";
-import { ask, lane, picker, session, toDoor } from "./lib/claude.ts";
+import { ask, lane, listedRows, session, toDoor } from "./lib/claude.ts";
 
 // No test here is a claim about speed: a busy machine must not fail one on bun's default five seconds.
 setDefaultTimeout(120_000);
@@ -38,7 +38,7 @@ const terra = () => gptHead({ key: "terra", command: "claude-terra", port: terra
 
 /** The selectors the next session's picker lists. */
 async function listed(): Promise<string[]> {
-  return (picker(await session(s)) ?? []).map((r) => r.model);
+  return (await listedRows(await session(s))).map((r) => r.model);
 }
 
 beforeAll(async () => {
@@ -76,8 +76,9 @@ describe("door-picker", () => {
   test("the picker lists signed-in accounts and the models of key heads, in place of Claude Code's own", async () => {
     await until("the signed-out head leaves the picker", async () => !(await listed()).includes(TERRA));
     await until("the local server's listed model is in the picker", async () => (await listed()).includes(LOCAL), 60_000);
-    const rows = picker(await session(s));
-    expect(rows).not.toBeNull();
+    // the launch's picker rows until Nov 19, 2026; what the door answers Claude Code's discovery with since (head-catalog)
+    const rows = await listedRows(await session(s));
+    expect(rows.length).toBeGreaterThan(0);
     expect(rows!.map((r) => r.model)).toEqual([ASTRA, BOREALIS_BIG, BOREALIS_SMALL, LOCAL]);
     expect(rows![0]!.label ?? "").not.toBe("");
     expect(rows![0]!.description ?? "").toContain("claude-astra");

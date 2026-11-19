@@ -1,7 +1,9 @@
 // adds-picker: on a machine that has a `claude` head, `claude` stays on it. A session starts as it did, with nothing of
 // the door's in its launch, and `/model` keeps Claude Code's own models and gains the models of every signed-in
 // account, each labelled with its command. `splice claude --json` lists them on the head lane too, and an account
-// signed in while splice runs is in the next session's picker. (docs/specs/door-default.md, decision 9.)
+// signed in while splice runs is in the next session's picker. (docs/specs/door-default.md, decision 9.) Rewritten
+// Nov 19, 2026 for head-catalog, which retires those added rows: this check holds either way, and
+// ../catalog/heads.test.ts holds the lane to no rows of splice's.
 
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, rmSync } from "node:fs";
@@ -73,9 +75,12 @@ describe("adds-picker", () => {
     expect(x.sets.ANTHROPIC_MODEL).toBeUndefined();
   });
 
-  test("the picker keeps Claude Code's own models and adds the models of signed-in accounts, each with its command", async () => {
-    await until("the signed-in account's model is added", async () => (await listed()).includes(ASTRA));
-    const rows = added(await session(s))!;
+  // head-catalog (Nov 19, 2026) retired the rows decision 9 added on this lane: a launch adds none, and /model is
+  // Claude Code's own. Until it lands the rows are the signed-in accounts' models, each with its command.
+  test("the picker keeps Claude Code's own models, and any row the launch adds is a signed-in account's model with its command", async () => {
+    await until("splice claude lists the signed-in account's model", () => (lane(s).models ?? []).some((m) => m.model === ASTRA));
+    const rows = added(await session(s));
+    if (rows === null) return;
     expect(rows.map((r) => r.model)).toEqual([ASTRA]);
     expect(rows[0]!.label ?? "").not.toBe("");
     expect(rows[0]!.description ?? "").toContain("claude-astra");
@@ -83,7 +88,7 @@ describe("adds-picker", () => {
   });
 
   test("a head called with an API key and a head whose login is missing are not added", async () => {
-    await until("the signed-in account's model is added", async () => (await listed()).includes(ASTRA));
+    await until("splice claude lists the signed-in account's model", () => (lane(s).models ?? []).some((m) => m.model === ASTRA));
     const models = await listed();
     expect(models.some((m) => m.startsWith("claude-borealis--"))).toBe(false);
     expect(models).not.toContain(TERRA);
@@ -102,11 +107,12 @@ describe("adds-picker", () => {
     expect(text.out).toContain("claude-astra");
   });
 
-  test("an account signed in while splice runs is in the next session's picker, with no restart", async () => {
+  test("an account signed in while splice runs is in splice claude's list, and in no row the launch adds but its own, with no restart", async () => {
     terra();
     expect(existsSync(join(logins, "terra-auth.json"))).toBe(true);
-    await until("the picker adds the account signed in", async () => (await listed()).includes(TERRA), 30_000);
-    expect(await listed()).toEqual([ASTRA, TERRA]);
+    await until("splice claude lists the account signed in", () => (lane(s).models ?? []).some((m) => m.model === TERRA), 30_000);
+    const rows = await listed();
+    if (rows.length) expect(rows).toEqual([ASTRA, TERRA]);
   }, 60_000);
 
   test("nothing of the picker is written into the person's settings file", () => {

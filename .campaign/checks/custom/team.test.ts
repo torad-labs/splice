@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { reported } from "../desktop/lib/desktop.ts";
 import { ROOT, Splice, until } from "../server/lib/harness.ts";
 import { ask, lane, picker, session, slash, toDoor } from "../door/lib/claude.ts";
+import { Site } from "./lib/site.ts";
 import { Gateway, LABEL, MODEL, SELECTOR, TeamCli, errorOf, withCli } from "./lib/team.ts";
 
 setDefaultTimeout(180_000);
@@ -20,7 +21,7 @@ const WINDOW = 65_536;
 let cli: TeamCli;
 let gw: Gateway;
 let s: Splice;
-let site: ReturnType<typeof Bun.serve>;
+let site: Site;
 let dir: string;
 
 /** The definition the team publishes: no port, no prefix, the team's CLI named bare, as on a laptop it is on PATH. */
@@ -61,9 +62,11 @@ beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "cp-team-"));
   cli = new TeamCli();
   gw = new Gateway(cli, { usage: { prompt: WINDOW / 2, cached: 0, completion: 40 } }).start();
-  site = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response(published(gw.url)) });
+  // served from a child process: s.cli is spawnSync and blocks this one (lib/site.ts)
+  site = await new Site().start();
+  const url = site.publish("acme.toml", published(gw.url));
   s = await Splice.boot("", withCli(cli));
-  const r = s.cli(["add", "provider", `http://127.0.0.1:${site.port}/acme.toml`]);
+  const r = s.cli(["add", "provider", url]);
   if (r.code !== 0) throw new Error(`splice add provider exited ${r.code}:\n${r.out}\n${r.err}`);
   toDoor(s);
 }, 300_000);
@@ -71,7 +74,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await s?.dispose();
   gw?.stop();
-  site?.stop(true);
+  site?.stop();
   cli?.dispose();
   rmSync(dir, { recursive: true, force: true });
 });

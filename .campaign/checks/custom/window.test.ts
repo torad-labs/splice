@@ -30,6 +30,8 @@ base_url = "${gw.url}"
 auth = { kind = "api-key", env = "MOCK_UPSTREAM_KEY" }
 # a team gateway on another machine: no local server probe
 local = false
+# a hosted api-key provider reports usage only when asked (QuirksOverlay, V4-163); the counts are what is scaled
+quirks = { stream_usage = true }
 ${extra}
 
 [[providers.${key}.models]]

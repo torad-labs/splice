@@ -2589,11 +2589,14 @@ After this item:
 
 Where: features/configuration/.../add/ (beside AddProfiles / AddPrepare / AddPortChoice), app/.../cli/CommandParser.kt (the `add` verb's `provider` word), core/.../topology/TopologyWriter.kt only through its public use. No new top-level functions or companion objects.
 
-Proven by: bun test ./.campaign/checks/custom/install.test.ts — on a machine with only splice, --check on a good file writes nothing; installing it fills the head's port, puts claude-acme--glm-5.3-flash in /model and runs a turn; a definition from a loopback URL is installed; a newer acme replaces the old, keeping the port, and its new label shows; a definition with four mistakes (a [daemon] table, an empty base_url, a head on an undeclared provider, a door command on no head) is refused with all four named and splice.toml unchanged, with and without --check; plain http from another host is refused naming https.'''
+Proven by: bun test ./.campaign/checks/custom/install.test.ts — on a machine with only splice, --check on a good file writes nothing; installing it fills the head's port, puts claude-acme--glm-5.3-flash in /model and runs a turn; a definition from a loopback URL is installed; a newer acme replaces the old, keeping the port, and its new label shows; a definition with four mistakes (a [daemon] table, an empty base_url, a head on an undeclared provider, a door command on no head) is refused with all four named and splice.toml unchanged, with and without --check; plain http from another host is refused naming https.
+
+How the check serves a URL (ruled after round 1): the check runs splice through Splice.cli, which is spawnSync (.campaign/checks/server/lib/harness.ts:234) and blocks the test process's event loop until splice exits, so a Bun.serve in the test process can never answer splice's fetch; round 1's build was refused with "could not be fetched: it did not answer within 15 seconds" by its own check while the same URL served from another process installed and passed --check (exit 0). The check now publishes definitions from a child process (.campaign/checks/custom/lib/site.ts, Site.publish). Nothing in the product changes for this: the 15-second limit stays, since a published definition is a small file and a person at a terminal should not wait longer than that to learn the URL is wrong.'''
 checks = [
   'bun test ./.campaign/checks/custom/install.test.ts',
 ]
 sources = [
+  '.campaign/checks/custom/lib/site.ts',
   'features/configuration/src/main/kotlin/splice/configuration/add/AddPrepare.kt',
   'features/configuration/src/main/kotlin/splice/configuration/add/AddPortChoice.kt',
   'features/configuration/src/main/kotlin/splice/configuration/add/AddProfiles.kt',
@@ -2609,6 +2612,7 @@ reviews = [
 ]
 notes = [
   '2026-11-18 21:01 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 06:22 CT custom-provider/coordinator: plan was wrong: the URL test deadlocked on its own in-process server under spawnSync. The check now serves definitions from a child process (checks/custom/lib/site.ts); round 1's build passed the other 5 tests and installs from a separately served loopback URL.",
 ]
 
 [[row]]
@@ -2673,11 +2677,14 @@ After this item:
 
 Where: the window a head's catalog reports for a model (core/.../model/ModelCatalog.kt contextWindowFor / usageScale, app/.../daemon/TopologyWindows.kt), the probe beside LocalRuntimeProbe (integrations/upstream/.../local), and a doctor check (features/diagnostics/.../doctor, DoctorConfigChecks).
 
-Proven by: bun test ./.campaign/checks/custom/window.test.ts — a turn whose prompt fills half the model's declared window reports half the session's window; on a provider whose served window (32768) is half the declared one, a prompt filling half the served window reports half; a served_window that answers 404 leaves the declared window and `splice doctor` names the provider and served_window.'''
+Proven by: bun test ./.campaign/checks/custom/window.test.ts — a turn whose prompt fills half the model's declared window reports half the session's window; on a provider whose served window (32768) is half the declared one, a prompt filling half the served window reports half; a served_window that answers 404 leaves the declared window and `splice doctor` names the provider and served_window.
+
+Usage counts (ruled after round 1): splice can only scale the counts the provider reports, and an OpenAI-compatible stream reports usage only when the request sets stream_options.include_usage. splice asks for it from a local runtime, a provider on command auth (a team's own gateway, cp-team), or one with quirks.stream_usage = true (app/.../provider/QuirksOverlay.kt:104); a hosted provider on an API key is not asked by default, because strict hosted vendors answer 400 to stream_options (V4-163). This item does not change that default. The check's three providers are api-key gateways, so each declares quirks = { stream_usage = true }, as a team running such a gateway would; round 1's build failed only because every turn reported 0 tokens, and passed all 3 tests with that quirk.'''
 checks = [
   'bun test ./.campaign/checks/custom/window.test.ts',
 ]
 sources = [
+  'app/src/main/kotlin/splice/app/provider/QuirksOverlay.kt',
   'core/src/main/kotlin/splice/core/model/ModelCatalog.kt',
   'app/src/main/kotlin/splice/app/daemon/TopologyWindows.kt',
   'integrations/upstream/src/main/kotlin/splice/upstream/local/LocalRuntimeProbe.kt',
@@ -2692,6 +2699,7 @@ reviews = [
 ]
 notes = [
   '2026-11-18 21:01 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 06:22 CT custom-provider/coordinator: plan was wrong: the check's api-key providers never asked for usage (stream_usage off by default for hosted vendors, V4-163), so every share was 0. The check's providers now declare quirks = { stream_usage = true }; round 1's build passed all 3 tests with it.",
 ]
 
 [[row]]
@@ -3304,11 +3312,14 @@ What issue #680 is for, end to end, and the guide a team writes its definition f
 
 The guide: docs/specs/custom-provider.md (cp-schema wrote its "splice.toml" section) gains, before that section, one for the team that runs a gateway, in plain words: what splice gives their people on the door; how to publish a definition; one complete example definition in a ```toml block (the first toml block in the file; it must pass `splice add provider --check`) using command auth with login_command and credential_command, a model with label, description, context_window and max_output_tokens, model_slots, error_messages = "whole", send_version and a door command; what credential_command must print ({"token", "expires_at"}, or one bare line); what the gateway should answer (503 with Retry-After while loading, a 4xx in its own words for an outdated client, and x-splice-client / x-splice-wrapper to read versions from); how a person installs it, signs in (/login or splice login <head>) and moves off the head command; and what `splice claude` and `splice doctor` show when it does not work. README's door section links the guide in one line.
 
-Proven by: bun test ./.campaign/checks/custom/team.test.ts — installed from a loopback URL, claude and claude-acme list only claude-acme--glm-5.3-flash labelled GLM-5.3 Flash and start on it; signed out, a turn names /login and sends nothing, and /login is splice's; the control plane's sign-in runs acme-ai login and the next turn answers; a revoked key renews by itself; counts are half the session window for a prompt filling half the model's window; a 503 with retry-after 10 and a 426 reach the session in the gateway's words; the guide's first toml block passes `splice add provider --check`.'''
+Proven by: bun test ./.campaign/checks/custom/team.test.ts — installed from a loopback URL, claude and claude-acme list only claude-acme--glm-5.3-flash labelled GLM-5.3 Flash and start on it; signed out, a turn names /login and sends nothing, and /login is splice's; the control plane's sign-in runs acme-ai login and the next turn answers; a revoked key renews by itself; counts are half the session window for a prompt filling half the model's window; a 503 with retry-after 10 and a 426 reach the session in the gateway's words; the guide's first toml block passes `splice add provider --check`.
+
+Decided after round 1: a provider on command auth asks for stream usage by default (stream_options.include_usage; app/.../provider/QuirksOverlay.kt:104), as a local runtime does, because it is a team's own gateway rather than a strict hosted vendor, and the session's counts (outcome 8) need it; a gateway that refuses the field sets quirks.stream_usage = false, and the guide says so. How the check serves the definition: Splice.cli is spawnSync (.campaign/checks/server/lib/harness.ts:234) and blocks the test process, so the definition is published from a child process (.campaign/checks/custom/lib/site.ts); round 1's build failed beforeAll only on that deadlock, and a copy serving from a child process passed all 7 tests.'''
 checks = [
   'bun test ./.campaign/checks/custom/team.test.ts',
 ]
 sources = [
+  '.campaign/checks/custom/lib/site.ts',
   '.campaign/checks/custom/lib/team.ts',
   'docs/specs/door-default.md',
 ]
@@ -3318,6 +3329,7 @@ reviews = [
 ]
 notes = [
   '2026-11-18 21:09 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 06:22 CT custom-provider/coordinator: plan was wrong: beforeAll deadlocked on its own in-process server under spawnSync. The check now serves acme.toml from a child process (checks/custom/lib/site.ts); round 1's build passed all 7 tests that way. Wrote the command-auth stream_usage default into the spec.",
 ]
 
 [[row]]

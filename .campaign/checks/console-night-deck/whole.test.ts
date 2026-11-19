@@ -6,13 +6,17 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { type Browser } from "@playwright/test";
 import { spawnSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { freePort, mockHead, Splice } from "../server/lib/harness.ts";
 import { browser, CONSOLE, daemon, expectFrame, ROOT, SIX, world, type Daemon } from "./lib/deck.ts";
 
 const files = readdirSync(CONSOLE).filter((f) => /\.(html|css|js)$/.test(f)).sort();
 const pages = files.filter((f) => f.endsWith(".html"));
+
+test("tools/console-look, the private-display tool nothing judges with now, is gone", () => {
+  expect(existsSync(join(ROOT, "tools/console-look"))).toBe(false);
+});
 
 test("the console's pages are the six approved pages", () => {
   expect(pages).toEqual(SIX.map((s) => `${s.toLowerCase()}.html`).sort());

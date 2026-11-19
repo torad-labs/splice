@@ -13,8 +13,9 @@ A peak here is the memory high-water mark of the run's own processes (cgroup `me
 
 With `rig` on PATH, the gradle slot sends a run to another of your machines (`tools/gate/src/lib/elsewhere.ts`): the
 pre-push Gradle tier, `gate run`, and any build, test or check a `./gradlew` asks for, since the root wrapper runs every
-one through the slot. The fat jar is built there too, and rig brings `app/build/libs/app-all.jar` back once the build
-passes. When no machine has room, the slot asks again every 30 s for as long as it would wait for its lock
+one through the slot. A run goes to a machine of this one's system (a Linux machine's runs go to Linux machines), so
+its verdict is the one it would have here. The fat jar is built there too, on any of your machines, and rig brings
+`app/build/libs/app-all.jar` back once the build passes. When no machine has room, the slot asks again every 30 s for as long as it would wait for its lock
 (`GRADLE_SLOT_WAIT_S`), then fails with 75; it never builds here in its place. A run stays here on CI, when a task makes
 another file this machine reads, and when `SPLICE_GRADLE_HERE=1` is set for a run that needs this machine.
 

@@ -3,8 +3,8 @@
 // A selector, the ID a head's own /v1/models lists, runs that model on that head, and the session is on that head
 // from then. Anthropic's own IDs are a tier (AnthropicTiers), which is all Desktop's own picker sends: in a session
 // that named a selector they run the model its head names for that tier, or its pinned model; in any other they run the
-// default model of the caller (`splice desktop on`'s for Desktop, `splice claude door`'s for the terminal), and Claude Code's small tier, its side calls, runs the model that model's
-// head names for it, when it names one. Any other model has no route, and the door refuses it.
+// door's starting model, one for every caller (ClaudeLane), and Claude Code's small tier, its side calls, runs the
+// model that model's head names for it, when it names one. Any other model has no route, and the door refuses it.
 //
 // The terminal's `claude` runs the model a request names (DoorCaller.runsNamedModels). On Nov 17, 2026 seats launched
 // with `claude --model claude-opus-5-5` on the door ran on the lane's default model, a Grok, for an hour with nothing

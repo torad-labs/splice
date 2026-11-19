@@ -326,7 +326,8 @@ public class Daemon(
         )
         // The share listener opens before the control plane too: `splice share on` restarts, waits for /health, and
         // reads the share port at once.
-        share.open(heads, controlPort)
+        // door-network: it answers the door too, which opens below, so a turn that comes first is told to wait.
+        share.open(heads, controlPort, desktop.network)
         // And the server listener, with its keys: `splice server key create` asks the control plane for them.
         server.open(heads, controlPort, headServerFactory.served)
         controlPlane.serverMode = server

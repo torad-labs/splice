@@ -1,6 +1,7 @@
 // NEW: desktop-door (docs/specs/desktop-door.md, decision 4). What the control plane's routes reach of Claude
 // Desktop's door once the daemon has opened it: the door, its switch, and what `splice desktop` says; and
-// (docs/specs/door-default.md) the terminal's lane on the same door and what `splice claude` says.
+// (docs/specs/door-default.md) the terminal's lane on the same door and what `splice claude` says. The door's address
+// and the model a session starts on are the lane's for both.
 package splice.app.desktop
 
 import kotlinx.serialization.json.JsonNull
@@ -20,15 +21,15 @@ internal class DesktopService(
 ) {
     private val lineupJson = LineupJson()
 
-    /** What `splice desktop --json` says: whether Desktop is on, the door, the default model, the lineup, each head
-     *  left out with the reason, and the last turn through the door. */
+    /** What `splice desktop --json` says: whether Desktop is on, the door, the model a session starts on (the one
+     *  `claude` starts on), the lineup, each head left out with the reason, and the last turn through the door. */
     suspend fun state(): JsonObject {
         val lineup = heads.lineup()
         val record = records.get()
         return buildJsonObject {
             put("on", record.on)
-            put("door", switch.door)
-            put("default_model", switch.defaultOf(lineup))
+            put("door", claude.door)
+            put("default_model", claude.starting(lineup).first)
             put("models", lineupJson.models(lineup.models))
             put("left_out", lineupJson.leftOut(lineup.leftOut))
             val last = record.lastTurn

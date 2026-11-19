@@ -15,7 +15,8 @@ internal class DesktopSaid(private val out: TerminalOutput) : DoorSaid {
         val on = JsonScalars.str(state, "on") == "true"
         out.line("Desktop: ${if (on) "on" else "off"}")
         out.line("Door: ${JsonScalars.str(state, "door").orEmpty()}")
-        out.line("Default model: ${JsonScalars.str(state, "default_model") ?: "none: no head is in the door"}")
+        val starts = JsonScalars.str(state, "default_model")?.let { "$it, the model `claude` starts on" }
+        out.line("Default model: ${starts ?: "none: no head is in the door"}")
         val models = (state["models"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
         out.line(if (models.isEmpty()) "Models: none" else "Models:")
         models.forEach { m ->
@@ -26,15 +27,16 @@ internal class DesktopSaid(private val out: TerminalOutput) : DoorSaid {
         left.forEach { h ->
             out.line("  ${text(h, "command")} (${text(h, "head")}): ${text(h, "reason")}")
         }
-        val last = state["last_turn"] as? JsonObject
-        if (last == null) {
-            out.line("Last turn sent: none yet")
-        } else {
-            val asked = JsonScalars.str(last, "model_asked")
-            val ran = JsonScalars.str(last, "model")
-            val session = JsonScalars.str(last, "session_id")?.let { " in session $it" }.orEmpty()
-            out.line("Last turn sent: ${text(last, "at")} on ${text(last, "head")}$session, asked $asked, sent as $ran")
-        }
+        lastTurn(state["last_turn"] as? JsonObject)
+    }
+
+    /** The last turn sent through the door, or that none was yet. */
+    private fun lastTurn(last: JsonObject?) {
+        if (last == null) return out.line("Last turn sent: none yet")
+        val asked = JsonScalars.str(last, "model_asked")
+        val ran = JsonScalars.str(last, "model")
+        val session = JsonScalars.str(last, "session_id")?.let { " in session $it" }.orEmpty()
+        out.line("Last turn sent: ${text(last, "at")} on ${text(last, "head")}$session, asked $asked, sent as $ran")
     }
 
     /** What to set in Desktop's environment store, when the act's answer carries it: one `NAME=value` line each. */

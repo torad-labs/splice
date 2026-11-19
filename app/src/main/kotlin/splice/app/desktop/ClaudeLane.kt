@@ -4,11 +4,12 @@
 // With no choice made the lane is the door when splice.toml has no head whose command is `claude`, and the head when
 // it has one, so an upgrade changes no lane. A choice is kept in the lane's record. `door` refuses a `--model` the door
 // does not serve and `head` refuses with no head to go back to, each changing nothing. `head` retires the terminal's
-// key, so a session started on the door is refused from then on. The model a session starts on is Desktop's chain with
-// the picker's step (StartingModel): the `--model` named now, or the one chosen the last time, or the pinned model of
-// the first head in the picker (a signed-in account's), or the pinned model of the first head in the door. Decision 9:
-// on its head `claude` carries the door's models, so neither move says heads are going away, and `door` on a machine
-// with a head says that Claude's models stop running in `claude` until `head`.
+// key, so a session started on the door is refused from then on. The model a session starts on is the door's one
+// chain (StartingModel), which Desktop's Code tab and another machine start on too: the `--model` named now, or the
+// one chosen the last time, or the pinned model of the first head in the picker (a signed-in account's), or the pinned
+// model of the first head in the door. Decision 9: on its head `claude` carries the door's models, so neither move
+// says heads are going away, and `door` on a machine with a head says that Claude's models stop running in `claude`
+// until `head`.
 package splice.app.desktop
 
 import kotlinx.coroutines.sync.Mutex
@@ -34,7 +35,7 @@ internal class ClaudeLane(
     val login: ClaudeLogin,
 ) {
     private val lock = Mutex()
-    private val chain = StartingModel({ records.get().defaultModel }, picker = true)
+    private val chain = StartingModel { records.get().defaultModel }
 
     /** [DOOR_LANE] or [HEAD_LANE]: the person's choice, or with none the head when there is one to run on. */
     fun lane(): String = records.lane(headHere)
@@ -44,8 +45,8 @@ internal class ClaudeLane(
     /** The lineup the door serves now. */
     suspend fun lineup(): DesktopLineup = heads.lineup()
 
-    /** The model a session starts on in [lineup], and which rule chose it (StartingModel, with the picker's step);
-     *  null with no head in the door. */
+    /** The model a session starts on in [lineup], and which rule chose it (StartingModel); null with no head in the
+     *  door. Desktop's Code tab and another machine's `claude` start on it too. */
     fun starting(lineup: DesktopLineup): Pair<String?, String> = chain.of(lineup)
 
     /** The window the terminal's sessions declare, fixed the first time it is asked for: the starting model's in
@@ -75,7 +76,9 @@ internal class ClaudeLane(
         DesktopAct.Done(moved.joinToString("; "), chosen?.let { "$it ($why)" } ?: why)
     }
 
-    /** `splice claude head`: the terminal's key retired, so a session started on the door is refused from now on. */
+    /** `splice claude head`: a new `claude` session starts on its head, and one already on the door keeps running
+     *  there. Until Nov 18, 2026 the move retired the terminal's key, so every session already on the door was refused
+     *  from its next turn, mid-work. */
     suspend fun toHead(): DesktopAct = lock.withLock {
         if (!headHere()) {
             return@withLock DesktopAct.Refused(
@@ -84,13 +87,12 @@ internal class ClaudeLane(
                     "(`splice add claude` adds one)",
             )
         }
-        key.replace()
         // The move back takes the door's starting model with it: kept, a model named with `door --model` came back
         // with the next `splice claude door`. On Nov 17, 2026 a Grok named at 9:33 AM, moved back from a minute later,
         // came back that evening, and every `claude` session started or restarted with no model named ran on Grok.
         records.update { it.copy(lane = HEAD_LANE, defaultModel = null) }
-        val moved = "claude is on its head, with the models of your signed-in accounts beside Claude's. " +
-            "Sessions started on the door are refused from now on"
+        val moved = "claude is on its head, with the models of your signed-in accounts beside Claude's: a new " +
+            "`claude` session starts there, and sessions already on the door keep running on it"
         DesktopAct.Done(listOfNotNull(moved, login.removed()).joinToString("; "))
     }
 }

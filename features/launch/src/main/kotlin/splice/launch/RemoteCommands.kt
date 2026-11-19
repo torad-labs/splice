@@ -4,6 +4,7 @@
 // credential. The share module answers it; the launch routes ask it for a name no head here carries.
 package splice.launch
 
+import splice.launch.recipe.DoorLaunchSpec
 import java.nio.file.Path
 
 /** The commands another machine serves, read at launch time. */
@@ -20,6 +21,10 @@ public interface RemoteCommands {
 public sealed class RemoteLaunch {
     /** The spec to launch from, built from what the other machine answered. */
     public data class Ready(val spec: LaunchSpec) : RemoteLaunch()
+
+    /** `claude` on another machine's door (door-network): launched as `claude` on the door here is, from [spec],
+     *  over the person's own Claude folder, with that machine's door in place of this one's. */
+    public data class Door(val spec: DoorLaunchSpec) : RemoteLaunch()
 
     /** The other machine could not be reached or refused: [reason] says which, in words the person can act on. */
     public data class Refused(val reason: String) : RemoteLaunch()

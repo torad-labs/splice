@@ -54,6 +54,19 @@ internal class DesktopDoor(
      *  upstream, when it presents none, a wrong one or one that was replaced. */
     private suspend fun answer(call: ApplicationCall, counting: Boolean) {
         val caller = admitted(call) ?: return
+        routed(call, caller, counting)
+    }
+
+    /** [call] answered for [caller], which something other than a key admitted: another machine, which the share
+     *  listener admits by where it is (door-network). Refused as [caller]'s door refuses while it is shut. */
+    suspend fun answerAs(call: ApplicationCall, caller: DoorCaller, counting: Boolean) {
+        val shut = caller.closed()
+        if (shut != null) return caller.voice.refuse(call, HttpStatus.FORBIDDEN, shut)
+        routed(call, caller, counting)
+    }
+
+    /** [call], from [caller], read and sent to the head the model it names picks. */
+    private suspend fun routed(call: ApplicationCall, caller: DoorCaller, counting: Boolean) {
         val lineup = heads.lineup()
         val request = read(call, caller, lineup) ?: return
         val model = JsonScalars.str(request, REQUEST_MODEL).orEmpty()

@@ -1,8 +1,14 @@
 # Changelog
 
-## Unreleased: `claude` runs on splice's door, and head commands are deprecated
+## splice v0.6.4: `claude` runs on splice's door, and the door answers on your network - 2026-11-18
 
 ### Highlights
+- **The door answers on your network.** Turn on `splice share on` on one machine and any machine on its LAN or
+  tailnet runs plain `claude` on every model that box serves, ChatGPT, Grok, Kimi, Muse, Claude accounts and local
+  servers alike, after one `splice remote add http://<box>`. `/model` lists the box's models, the session runs over
+  the machine's own `~/.claude`, and no credential lands there. A Claude Code without splice, or Claude Desktop's
+  Code tab, runs on it from three Bedrock-style variables that `splice share status` prints. Spec:
+  `docs/specs/door-network.md`.
 - **`claude` on the door is how splice is used.** The terminal's plain `claude` runs on splice's door, the one
   Claude Desktop's Code tab uses, with a key of its own. Its `/model` picker lists the models of every account you
   signed in to with a ChatGPT, Grok, Kimi or Muse login, each labelled `splice · <command>`, and a sign-in shows in
@@ -19,6 +25,12 @@
   on every later request. A capability that fails lets the turn go on or refuses it, as its table says.
 
 ### Upgrading
+- A tailnet peer is now answered by a machine that is itself on a tailnet (100.64/10 and Tailscale's IPv6 range), and
+  by its MagicDNS name. Before, the share listener turned tailnet peers away. A machine on no tailnet still turns
+  those ranges away.
+- `splice remote add http://<box>` on a box that serves a door links `claude` to it and no longer links each
+  command. An address naming one command (`http://<box>:3097/claudex`) still works, and `splice share status` lists
+  those as deprecated.
 - With no choice made, `claude` is on the door unless `splice.toml` has a head whose command is `claude`, so a
   machine set up with the `claude` head keeps it. `splice claude door [--model <selector>]` moves it to the door,
   and `splice claude head` moves it back. The choice is kept across restarts and upgrades.

@@ -11,6 +11,8 @@
 //                                           login's from the first draw
 //   ANY  /<command>[/@<login>]/v1/...       relayed to the head on loopback with the turn key in place of what was
 //                                           sent; `@<login>` first pins the session to that login, as Accounts' Pin
+//   GET  /door/launch, POST /door/v1/...    the door (door-network, ShareDoor): every model this machine serves,
+//                                           picked by the model a request names
 //
 // Claude Code sends no Origin and posts its turns as application/json. A web page in a browser on the LAN sends an
 // Origin with every POST, and without a preflight (which nothing here approves) can post only a "simple" body, never
@@ -38,6 +40,7 @@ import io.ktor.server.plugins.origin
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
 import io.ktor.server.request.queryString
+import io.ktor.server.response.respondText
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -58,12 +61,16 @@ public class ShareListener(
     /** Blocking work runs here: reading this machine's networks, a head's logins, and the relay's JDK I/O. */
     private val io: CoroutineDispatcher,
     private val log: LogSink,
+    /** The door, answered under `/door`; null where this daemon runs none. */
+    private val door: ShareDoor? = null,
 ) {
     private val admission = LanAdmission(heads.machine, share.hostnames, HostPrefixes(log))
     private val relay = ShareRelay(turnKey, controlPort, heads.machine, io, log)
     private val catalog = ShareCatalog(heads, io, ShareErrors.voice)
     private val launches = SharedLaunches(heads.machine)
     private val json = Json { encodeDefaults = true }
+    private val doorMessages = listOf(HEAD_API_ROOT, DOOR_MESSAGES_SEGMENT)
+    private val doorCount = doorMessages + DOOR_COUNT_SEGMENT
 
     @Volatile
     private var engine: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -95,6 +102,7 @@ public class ShareListener(
         if (refusal != null) return ShareErrors.refuse(call, HttpStatus.FORBIDDEN, refusal)
         val parts = call.request.path().split('/').filter(String::isNotEmpty)
         val named = parts.firstOrNull() ?: return catalog.directory(call)
+        if (named == DOOR_SEGMENT) return atDoor(call, parts.drop(1))
         val head = catalog.named(call, named) ?: return
         route(call, head, parts.drop(1))
     }
@@ -110,6 +118,31 @@ public class ShareListener(
             path == listOf(STATUSLINE) -> relay.statusline(call, head) { body -> login?.let { lined(head, it, body) } }
             else -> ShareErrors.refuse(call, HttpStatus.NOT_FOUND, "no such path on ${heads.machine}")
         }
+    }
+
+    /** [rest], the path after `/door`: the launch another machine's `claude` reads, or a turn or a count, whose body
+     *  must be JSON as every turn's here must. */
+    private suspend fun atDoor(call: ApplicationCall, rest: List<String>) {
+        val door = door ?: return ShareErrors.refuse(call, HttpStatus.NOT_FOUND, "${heads.machine} runs no door")
+        val posted = call.request.httpMethod == HttpMethod.Post
+        val turn = rest == doorMessages || rest == doorCount
+        when {
+            !posted && rest == listOf(HEAD_LAUNCH_ROUTE) -> doorLaunch(call, door)
+            posted && turn && !sentAsJson(call) ->
+                ShareErrors.refuse(call, HttpStatus.BAD_REQUEST, "a turn's body must be application/json")
+            posted && turn -> door.answer(call, counting = rest == doorCount)
+            else -> ShareErrors.refuse(call, HttpStatus.NOT_FOUND, "no such path on ${heads.machine}'s door")
+        }
+    }
+
+    /** `GET /door/launch`: what another machine's `claude` launches with; 503 while the heads are still starting. */
+    private suspend fun doorLaunch(call: ApplicationCall, door: ShareDoor) {
+        val launch = door.launch()
+        if (launch == null) {
+            val why = "${heads.machine}'s door opens once its heads are up"
+            return ShareErrors.refuse(call, HttpStatus.SERVICE_UNAVAILABLE, why)
+        }
+        call.respondText(json.encodeToString(SharedDoorLaunch.serializer(), launch), ContentType.Application.Json)
     }
 
     /** Why this request may not be answered at all, or null when it may: LanAdmission's two checks, and no Origin,
@@ -175,6 +208,10 @@ private const val SHARE_BIND_HOST = "0.0.0.0"
 // The path segment that marks the login a turn runs on (`/claudex/@work/v1/messages`).
 private const val LOGIN_MARK = "@"
 private const val STATUSLINE = "statusline"
+
+// The paths after `/door` that a turn and a count are posted to, as Claude Code's Mantle dialect posts them.
+private const val DOOR_MESSAGES_SEGMENT = "messages"
+private const val DOOR_COUNT_SEGMENT = "count_tokens"
 
 // The key Claude Code names a statusline's session under in the JSON it feeds the statusline.
 private const val STATUSLINE_SESSION = "session_id"

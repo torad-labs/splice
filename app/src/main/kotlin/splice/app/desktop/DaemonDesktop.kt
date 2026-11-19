@@ -36,6 +36,9 @@ internal class DaemonDesktop(
     /** The terminal's `claude` on this door. */
     val claude = TerminalDoor(topology, statePaths, log)
 
+    /** The door as another machine reaches it through the share listener (door-network). */
+    val network = NetworkDoor()
+
     /** `claude` on its head, which hands the door's models to their heads (door-default, decision 9). */
     val headLane = ClaudeHeadLane(topology)
 
@@ -71,7 +74,11 @@ internal class DaemonDesktop(
         val headLaneVoice = RelaySpeaker(terminalVoice.errors, HEAD_LANE_TAG)
         headLane.open(ShareRelay(turnKey, controlPort, machine, io, log, headLaneVoice), lineups)
         val callers = listOf(DesktopCaller(relay, key, records, log), terminal)
-        opened = DesktopService(DesktopDoor(callers, lineups), switch, lane, lineups, records)
+        val doorway = DesktopDoor(callers, lineups)
+        val networkVoice = RelaySpeaker(RefusalVoice(NETWORK_ERROR_PREFIX), NETWORK_TAG)
+        val networkRelay = ShareRelay(turnKey, controlPort, machine, io, log, networkVoice)
+        network.open(doorway, NetworkCaller(networkRelay, lane, machine), lane, PickerRows(claude::rows), machine)
+        opened = DesktopService(doorway, switch, lane, lineups, records)
     }
 }
 
@@ -83,6 +90,9 @@ private const val DESKTOP_TAG = "desktop"
 
 // The tag the relay's log lines carry for a turn of the terminal's `claude`.
 private const val TERMINAL_TAG = "terminal"
+
+// The tag the relay's log lines carry for a turn from another machine (door-network).
+private const val NETWORK_TAG = "network"
 
 // The tag the relay's log lines carry for a turn `claude` on its head hands to another head.
 private const val HEAD_LANE_TAG = "claude"

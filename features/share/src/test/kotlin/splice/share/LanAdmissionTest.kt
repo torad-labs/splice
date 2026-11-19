@@ -107,12 +107,27 @@ internal class LanAdmissionTest {
             assertNull(house.refusal(source), source)
         }
 
+    // door-network (Nov 18, 2026): a peer on the tailnet this machine is on reaches it over either of its addresses.
     @Test
-    fun `a tailnet peer is turned away over both of its addresses`() = repeat(CASES) {
+    fun `a tailnet peer is answered over both of its addresses on a machine on that tailnet`() = repeat(CASES) {
         val source = listOf(carrierGrade(), tailnet()).random(random)
-        val said = house.refusal(source)
+        assertNull(house.refusal(source), source)
+    }
+
+    @Test
+    fun `a machine on no tailnet turns those ranges away, as a carrier's NAT`() = repeat(CASES) {
+        val source = listOf(carrierGrade(), tailnet()).random(random)
+        val said = datacenter.refusal(source)
         assertNotNull(said, source)
         assertTrue(said!!.contains("not from this machine's LAN"), said)
+    }
+
+    @Test
+    fun `its MagicDNS name is one of this machine's names, and another machine's is not`() {
+        assertTrue(house.admitsHost("devbox.tail1a2b3c.ts.net:3097"))
+        assertTrue(house.admitsHost("DevBox.tail1a2b3c.ts.net."))
+        assertFalse(house.admitsHost("laptop.tail1a2b3c.ts.net"))
+        assertFalse(house.admitsHost("devbox.evil.tail1a2b3c.ts.net"))
     }
 
     @Test

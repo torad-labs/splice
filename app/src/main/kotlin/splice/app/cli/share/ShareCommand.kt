@@ -12,14 +12,17 @@ import splice.core.terminal.DIM
 import splice.core.terminal.GREEN
 import splice.core.terminal.RESET
 import splice.core.terminal.TerminalOutput
+import splice.core.topology.SHARE_NODE_TOKEN
 import splice.core.topology.ShareConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.share.Asked
+import splice.share.DOOR_SEGMENT
 import splice.share.ShareAddresses
 import splice.share.ShareDirectory
 import splice.share.ShareInfo
+import splice.share.SharedDoorLaunch
 import splice.upstream.codemode.ProcessDispatchers
 import java.net.BindException
 import java.net.InetSocketAddress
@@ -70,8 +73,9 @@ internal class ShareCommand(
             out.line("sharing is off. ${CYAN}splice share on$RESET lets your other machines run this one's commands.")
             return PeerExit.DONE
         }
-        return when (val read = directory.read("http://127.0.0.1:${share.port}")) {
-            is Asked.Had -> offered(share, read.value)
+        val here = "http://127.0.0.1:${share.port}"
+        return when (val read = directory.read(here)) {
+            is Asked.Had -> offered(share, read.value, (directory.door(here) as? Asked.Had)?.value)
             is Asked.Refused -> {
                 err.line("$SHARE_VERB: sharing is on in ${file.path}, but nothing here answers on it: ${read.why}")
                 err.line("  is splice running? ${CYAN}splice restart$RESET")
@@ -80,15 +84,18 @@ internal class ShareCommand(
         }
     }
 
-    /** What [info] offers, each command at the address another machine on this LAN adds it by. */
-    private fun offered(share: ShareConfig, info: ShareInfo): Int {
+    /** The [door] another machine on this LAN or tailnet runs `claude` on (door-network), and what [info] offers, each
+     *  command at the address another machine adds it by. */
+    private fun offered(share: ShareConfig, info: ShareInfo, door: SharedDoorLaunch?): Int {
         val reach = ShareAddresses(share, info.machine, LogSink { err.line(it.trimEnd()) }).reach()
         val server = reach.server ?: run {
             err.line("$SHARE_VERB: ${info.machine} has no address on a LAN, so no other machine can reach it")
             return PeerExit.REFUSED
         }
-        out.line("sharing is on: $BOLD$server$RESET, on ${info.machine}'s LAN")
+        out.line("sharing is on: $BOLD$server$RESET, on ${info.machine}'s LAN and tailnet")
+        if (door != null) doorLines(server, door)
         if (info.commands.isEmpty()) out.line("  no command here holds a login of its own to offer")
+        if (info.commands.isNotEmpty()) out.line("${DIM}each command on its own (deprecated; the door has all):$RESET")
         info.commands.forEach { offer ->
             val state = if (offer.running) "" else "  ${DIM}not running$RESET"
             out.line("  ${offer.command.padEnd(COMMAND_PAD)} $server/${offer.command}$state")
@@ -96,13 +103,27 @@ internal class ShareCommand(
             val models = offer.models.joinToString(", ")
             out.line("  ${"".padEnd(COMMAND_PAD)} ${DIM}logins: $logins · models: $models$RESET")
         }
-        out.line("on another machine: ${CYAN}splice remote add <address>$RESET, or every one at once:")
-        out.line("  ${CYAN}splice remote add $server$RESET")
+        out.line("${DIM}one on another machine: splice remote add <address>$RESET")
         out.line("${DIM}an address may end in ?auth=<login> to run on that login,$RESET")
         out.line("${DIM}and in ?models=<id>,<id> to show only those models$RESET")
         val others = reach.addresses - server
         if (others.isNotEmpty()) out.line("${DIM}by address: ${others.joinToString(", ")}$RESET")
         return PeerExit.DONE
+    }
+
+    /** The door at [server]: how many models it serves, the one add that puts another machine's `claude` on it, and the
+     *  variables a Claude Code without splice, or Claude Desktop's Code tab, runs on it with. */
+    private fun doorLines(server: String, door: SharedDoorLaunch) {
+        val address = "$server/$DOOR_SEGMENT"
+        val models = if (door.rows.isEmpty()) "no account signed in yet" else "${door.rows.size} models"
+        out.line("  ${"door".padEnd(COMMAND_PAD)} $address  $DIM$models$RESET")
+        out.line("on another machine, its ${BOLD}claude$RESET runs on this door after:")
+        out.line("  ${CYAN}splice remote add $server$RESET")
+        out.line("a Claude Code without splice, or Claude Desktop's Code tab, runs on it with:")
+        out.line("  CLAUDE_CODE_USE_MANTLE=1")
+        out.line("  ANTHROPIC_BEDROCK_MANTLE_BASE_URL=$address")
+        out.line("  AWS_BEARER_TOKEN_BEDROCK=$SHARE_NODE_TOKEN")
+        out.line("  CLAUDE_CODE_MAX_CONTEXT_TOKENS=${door.window}")
     }
 
     /** [wanted] written to splice.toml, unless it shares on a port this machine can't open, said in the OS's words

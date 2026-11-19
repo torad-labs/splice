@@ -10,15 +10,23 @@
 // A team's server (docs/specs/server-mode.md, F7) this laptop holds a key for is asked for its profile instead: every
 // command the profile lists is linked, each at `<server>/<command>`, and the laptop keeps the list, so
 // `splice remote refresh` later tells the commands the server starts offering from the ones the person took out.
+//
+// door-network (docs/specs/door-network.md): a machine whose door is on its network is added by its name alone. The
+// address naming the machine and nothing more (`http://devbox`, the share port taken when it names none) links
+// `claude`, or the name `--as` gives, to that machine's door: `[remote.claude] url = "http://devbox:3097/door"`. Its
+// commands one by one are left out: the door serves every one of their models. A machine on an older splice, which
+// answers no door, is added as before, every command it offers.
 package splice.app.cli.share
 
 import splice.core.terminal.TerminalOutput
+import splice.core.topology.CLAUDE_COMMAND
 import splice.core.topology.RemoteAddress
 import splice.core.topology.RemoteAddressRead
 import splice.core.topology.RemoteAddresses
 import splice.core.topology.RemoteConfig
 import splice.core.topology.Topology
 import splice.share.Asked
+import splice.share.DOOR_SEGMENT
 import splice.share.ServerLogins
 import splice.share.ServerProfile
 import splice.share.ServerProfiles
@@ -92,13 +100,20 @@ internal class RemoteAdd(
     }
 
     /** Every command [server] offers, each at its own address: the ones its profile lists, on a team server this
-     *  laptop holds a key for. */
+     *  laptop holds a key for; or, on a machine whose door is on its network, that door, as `claude` or [name]. */
     private suspend fun every(server: String, name: String?): Offered? {
+        val held = asks.profiles.held(server)
+        if (held == null) door(names.onSharePort(server), name)?.let { return it }
         if (name != null) {
             return names.refused("--as names one command; add the server's commands one at a time to name each")
         }
-        val held = asks.profiles.held(server)
-        return if (held != null) profiled(server, held) else shared(server)
+        return if (held != null) profiled(server, held) else shared(names.onSharePort(server))
+    }
+
+    /** [server]'s door as [name], or `claude`; null when [server] answers no door, so its commands are asked for. */
+    private suspend fun door(server: String, name: String?): Offered? {
+        val door = (asks.directory.door(server) as? Asked.Had)?.value ?: return null
+        return Offered(door.machine, mapOf((name ?: CLAUDE_COMMAND) to names.at(server, DOOR_SEGMENT)))
     }
 
     /** Every command a LAN share at [server] offers. */
@@ -122,6 +137,9 @@ internal class RemoteAdd(
             is RemoteAddressRead.Refused ->
                 return names.refused("$text is not an address a command can run on: ${read.why}")
             is RemoteAddressRead.Read -> read.address
+        }
+        if (address.head == DOOR_SEGMENT) {
+            return door(address.server, name) ?: names.refused("${address.server} answers no door")
         }
         return info(address.server)?.let { offered(it, address, RemoteConfig(text), name) }
     }

@@ -4225,3 +4225,167 @@ reviews = [
 notes = [
   '2026-11-18 22:55 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
 ]
+
+[[row]]
+id = 'nd-settings'
+title = "Settings is the approved machine with live figures, its flow parts' glass saving each change at once"
+feature = 'console-night-deck'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'nd-kit',
+  'nd-look',
+  'nd-own',
+]
+guard = false
+spec = '''
+settings.html becomes the approved Settings machine (prototype settings/m-machine, console/settings.html, words in settings/USER-LANGUAGE.md and the Settings names table), on live data: splice drawn as what it is, each part with its live figure, each part's glass holding only its controls.
+
+What a person sees and can do once this is built:
+- The flow (`#flow`, wires between parts): Sessions (`[data-part="cc"]`, sessions running, default effort) → one gate per command (`#gates`, each command by its name, with its concurrent requests and queue, and the gates' part `[data-part="gates"]`) → Stalled responses (`[data-part="watch"]`) → Reasoning display back (`[data-part="reasoning"]`). The system row (`#sys`): Usage alerts (`limits`), MCP servers (`mcp`), Storage (`storage`), Projects (`projects`), Splice (`splice`, its version), Advanced (`internals`).
+- This item builds the field with every part's live figure, and the glass of the flow's parts and Usage alerts, with their rows in USER-LANGUAGE.md's names: Reasoning (Default effort, Reasoning display Detail and Show in, Thinking status line, Reuse previous reasoning, ChatGPT response size), Stalled responses (First response timeout, Stalled stream timeout, Retry after, Request timeout), the gates (Concurrent requests with a default and a custom limit per command, Queue size, Max request size, Upload timeout, Idle connection timeout, Request memory), Usage alerts (Alert threshold, Send alerts to, When a budget runs out, Plan usage refresh, 5-hour token alert). The glass of MCP servers, Storage, Projects, Splice and Advanced is nd-settings-system.
+- A value is picked, never typed (Deck.choice, Deck.notch with this week's evidence marks), unless it truly is free. Every change saves the moment it is made through PATCH /api/config (PATCH /api/config?head=<key> for a per-command value; /api/alerts for alerts), and the row's state says what the daemon answered: Applied, At restart (the knob's `disposition` is restart, or the answer's restart_required names it; it stays until a restart, and the need float and Splice's part count them), Not saved with why (the old value comes back). At rest the state names the value's source from the knob's `scope`: nothing for splice's default, Changed, splice.toml, Your shell (an env value, naming its variable).
+
+Where the data comes from: GET /api/config (effective, layers, knobs with value, scope, disposition, editable, read_only_reason), /api/heads (gates: inflight, queued, max, watchdog), /api/alerts, /api/upgrade (version), /api/sessions (running), /api/perf/turns or /api/economics for the week's evidence marks (longest silence, peak). A field with no read is added as a GET where its data lives.
+
+Old files removed here: settings.js, settings.css. Old tests rewritten or deleted (named in the commit): settings-data, settings-peak, settings-week-exact, settings-zero, settings-plan-logins, settings-version, figure-count-bounds.
+
+Proven by: `bun test ./.campaign/checks/console-night-deck/settings.test.ts`: no rails, no composer; at 1440 and 3840 the parts are there, Splice shows 9.8.7, the gates show claude-acme and their glass has Queue size at 777; turning Reuse previous reasoning Off PATCHes replayReasoning false and the row says Applied; settings.js/css are gone.
+
+## Decided once for every page of console-night-deck (the same text is in every page item)
+
+- Files. A page is `<page>.html` plus its own `deck-<page>.css` and `deck-<page>.js` in app/src/main/resources/console. The kit is `deck.css`, `deck.js`, `deck-lens.js`, `deck-composer.js`, `deck-common.js` (item nd-kit); a page item never forks or restyles it, and a change the kit truly needs is made in the kit, kept general. Flat plain names, because ConsoleMount serves only plain names (and fonts/, brand/). The `deck-` prefix keeps the new files apart from the old console's until nd-whole removes the old ones.
+- Frame. The page's HTML holds only its own field (`<main class="field" id="field"><section class="centre">…`) and its rails (`<aside class="glass rail rail-l|rail-r" data-lens aria-label="…">`), with `body` classes `no-rail-l`, `no-rail-r`, `no-comp` for what it does not have. deck.js draws the room, the nav (Sessions, Accounts, Teams, Providers, Activity, Settings, from its one list), the Night/Day switch, the need float and, unless `no-comp`, the composer. Scripts, in order: api.js, deck-lens.js, deck.js, deck-composer.js (composer pages only), deck-common.js, pilot.js, deck-<page>.js. Rails and composer: Sessions has the right rail and the composer; Accounts both rails and the composer; Teams, Providers, Activity and Settings none.
+- Composer. deck-composer.js is the kit's one composer. A page tells it, from its own deck-<page>.js, what its context strip names and where Enter sends the text. Where deck-composer.js has no hook for that yet, nd-sessions-open adds one to the kit, kept general, and nd-accounts-signin uses the same hook for the manager (it waits on nd-sessions-open for that reason).
+- The target is the approved prototype: `~/scratch/splice-redesign/night-deck/console/<page>.html` (open it first) and its source folder (accounts/final, sessions/i-teams-reader, teams/final, providers/final, activity/final, settings/m-machine): field.html, rail-*.html, page.css, page.js, page.json, test.ts, NAMES.md, and settings/USER-LANGUAGE.md. Keep its markup, classes, ids and data-* hooks (the checks and the prototype's test.ts select by them), its words exactly, its layout, glass and interactions. Only data.js is replaced, by live reads. Never copy a data.js, or any name, email, path or figure from one, into the repo, a test, a commit or a PR: tests use made-up data.
+- Live data. Every figure, name and state comes from /api/* through api.js's API, polled no faster than today's page polls the same read. A figure nobody reported is a dash, never a zero (the rule today's usage.js states). A field the prototype shows that no read gives is added as a GET in the module that owns the data, with a Kotlin test of what the route answers; never derived from a snapshot or invented. The console shows what the data holds, names, emails, accounts and per-person usage included; nothing is masked or left out: the console is the person's own view of their own Splice, and the privacy rule binds the repo, checks, cases, commits and pull requests, never what the running page shows.
+- Writes go to the route today's console uses for the same act, and the control says what the daemon answered, in the kit's words (Deck.saveState: saving, Applied, At restart, Not saved with why; the old value comes back on a refusal).
+- Words: plain developer words from NAMES.md / USER-LANGUAGE.md and the prototype; no agent jargon, no internal Splice names, no question headings, no sentence captions. Choices are never pill buttons.
+- No raw values: the page's CSS and JS pass `bun tools/console/deck-raw.ts` (nd-kit), which the gate runs.
+- Old tests: the tools/console tests this item names pin the old page. Each is rewritten for the new page where what it pins is in the approved design (same behaviour, new markup), or deleted where the approved design dropped it; the commit message names each one and which. New tools/console tests check only what a user sees or what a route returns, through the real page against a stub daemon with made-up data. Shared old files (kit.js, console.js, console.css, tokens.css, composer.*, knobs.*, reqview.*, perf-heads.*) stay until nd-whole; the old page's own files go in this item. A tools/console test this item breaks is this item's to rewrite or delete, even when another item names it (the gate runs them all on every push); a test another item names and this one does not break is left to that item.
+- Links between pages use the addresses decided in nd-activity and nd-providers: `activity.html?session=|project=|account=|model=|provider=<value>`, `activity.html?win=5h|7d|30d`, `activity.html#request=<turn id>`, `providers.html?cmd=<command>`, `providers.html?open=compare|add`.
+- Commits and the pull request carry no Claude author, co-author trailer, session link or "Generated with" line, and go through the active gh account, which is never switched.
+- How it is judged (beyond its check): the feature review opens this build's page on a private display with tools/console-look (nd-look): against the live Splice read-only (`--live`: GET only, every write refused before it leaves the browser), at 1440×900 and 3840×2160, night and day, beside the prototype page opened at the same size, and uses every interaction this item touches, a write only up to the step before it writes. Each write's effect is tried on a Splice of the campaign's own (tools/console-own, nd-own). It judges from its own screenshots, read as images, kept in captures/console-night-deck/<item>/ (git-ignored). A picture for the PR comes only from the own Splice with made-up data. CLAUDE.md "UI changes" holds: no text over text, nothing clipped or past the edge, at 3840 the page reads as a larger 1440 page, never stretched.'''
+checks = [
+  'bun test ./.campaign/checks/console-night-deck/settings.test.ts',
+]
+sources = [
+  '.campaign/checks/console-night-deck/lib/deck.ts',
+  '.campaign/checks/console-night-deck/settings.test.ts',
+]
+results = [
+  "Saved tool result (settings.txt):\nRead Nov 18, 2026:\n- GET /api/config (ConfigRoutes.kt): {effective, layers {defaults, toml, perHead, file, env, runtime}, knobs {<key>: {value, scope (default|toml|head|file|env|runtime), env_names?, disposition (restart|live), editable, read_only_reason?, read_only?}}, paths}. PATCH /api/config {key: value} -> {applied, rejected, restart_required [keys], persisted | not_persisted}; ?head=<key> writes [heads.<key>.overrides].\n- Knob keys (core/.../config/Knob.kt), e.g. maxQueued, maxInflight, replayReasoning, streamIdleMs, firstByteTimeoutMs, stallReanchorMs, upstreamTimeoutMs, maxRequestBytes; the prototype's settings/make-data.ts maps every Settings row to its key.\n- GET /api/heads gate {inflight, queued, max, ..., watchdog}; /api/alerts (+ POST /api/alerts/test); /api/mcp, /api/mcp/memory; /api/kept/stores, /api/history (PUT), /api/kept/labels, /api/kept/edges; /api/projects, /api/topology; /api/upgrade (installed, latest, rollback_target), POST /api/upgrade, /api/upgrade/check, GET /api/upgrade/run; GET|POST /api/daemon/restart.\n- Prototype hooks: #mc, #flow, #wires, [data-part=\"cc\"|\"gates\"|\"watch\"|\"reasoning\"|\"limits\"|\"mcp\"|\"storage\"|\"projects\"|\"splice\"|\"internals\"], #gates, #sys, lens .lr[data-item], .seg-o, .sv.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 22:56 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'nd-settings-system'
+title = "Settings' system parts (MCP servers, Storage, Projects, Splice, Advanced) open their own controls"
+feature = 'console-night-deck'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'nd-settings',
+]
+guard = false
+spec = '''
+The system parts of the Settings machine open their glass (prototype settings/m-machine, names in settings/USER-LANGUAGE.md and the Settings names table), on live data.
+
+What a person sees and can do once this is built:
+- MCP servers (`[data-part="mcp"]`): Server instances (Shared or Per session), Stop idle servers after, Max running servers, Request timeout, Startup timeout, and Not shareable (the servers that need one instance per session, each with its reason); the part's figure is the memory MCP uses now and with one shared copy (/api/mcp, /api/mcp/memory).
+- Storage (`storage`): Show conversations in Sessions, and Retention for Usage history, Conversation backups, Full prompts, Activity history, Agent messages, Code mode journal, Compaction summaries, Request timings, and Max saved prompt size; the part's figure is what is on disk (/api/kept/stores, /api/history). Shortening a retention asks first and shows what it deletes (from the stores' oldest item and size, or a read added for it), and only then saves (PUT /api/history or PATCH /api/config, as today's settings.js writes it).
+- Projects (`projects`): Project folders, Show git branch in status line (/api/projects, /api/topology, PATCH /api/config).
+- Splice (`splice`): Version with Check, Upgrade and Rollback (Upgrading restarts splice; /api/upgrade, /api/upgrade/check, /api/upgrade/run), Restart now and Restart when idle (/api/daemon/restart), Debug logs, Files (the paths /api/config gives), Service; the part's figure is the installed version and, when settings wait for a restart, how many.
+- Advanced (`internals`): the rare settings (queue, uploads, memory, logs), Monitoring (Prometheus metrics, OpenTelemetry export).
+- Every change saves at once and says Applied, At restart or Not saved in the row, as in nd-settings. Restart, Upgrade and Rollback are tried only on tools/console-own's Splice; on the live one the review stops before pressing them.
+
+Old tests rewritten or deleted (named in the commit): settings-mcp-restore, settings-projects, mcp-servers, settings-per-command.
+
+Proven by: `bun test ./.campaign/checks/console-night-deck/settings-system.test.ts`: at 1440 and 3840, MCP servers' glass has Server instances and Stop idle servers after, Storage's has Usage history, Full prompts and Conversation backups, Splice's has 9.8.7, Restart now and Restart when idle, and Escape closes each.
+
+## Decided once for every page of console-night-deck (the same text is in every page item)
+
+- Files. A page is `<page>.html` plus its own `deck-<page>.css` and `deck-<page>.js` in app/src/main/resources/console. The kit is `deck.css`, `deck.js`, `deck-lens.js`, `deck-composer.js`, `deck-common.js` (item nd-kit); a page item never forks or restyles it, and a change the kit truly needs is made in the kit, kept general. Flat plain names, because ConsoleMount serves only plain names (and fonts/, brand/). The `deck-` prefix keeps the new files apart from the old console's until nd-whole removes the old ones.
+- Frame. The page's HTML holds only its own field (`<main class="field" id="field"><section class="centre">…`) and its rails (`<aside class="glass rail rail-l|rail-r" data-lens aria-label="…">`), with `body` classes `no-rail-l`, `no-rail-r`, `no-comp` for what it does not have. deck.js draws the room, the nav (Sessions, Accounts, Teams, Providers, Activity, Settings, from its one list), the Night/Day switch, the need float and, unless `no-comp`, the composer. Scripts, in order: api.js, deck-lens.js, deck.js, deck-composer.js (composer pages only), deck-common.js, pilot.js, deck-<page>.js. Rails and composer: Sessions has the right rail and the composer; Accounts both rails and the composer; Teams, Providers, Activity and Settings none.
+- Composer. deck-composer.js is the kit's one composer. A page tells it, from its own deck-<page>.js, what its context strip names and where Enter sends the text. Where deck-composer.js has no hook for that yet, nd-sessions-open adds one to the kit, kept general, and nd-accounts-signin uses the same hook for the manager (it waits on nd-sessions-open for that reason).
+- The target is the approved prototype: `~/scratch/splice-redesign/night-deck/console/<page>.html` (open it first) and its source folder (accounts/final, sessions/i-teams-reader, teams/final, providers/final, activity/final, settings/m-machine): field.html, rail-*.html, page.css, page.js, page.json, test.ts, NAMES.md, and settings/USER-LANGUAGE.md. Keep its markup, classes, ids and data-* hooks (the checks and the prototype's test.ts select by them), its words exactly, its layout, glass and interactions. Only data.js is replaced, by live reads. Never copy a data.js, or any name, email, path or figure from one, into the repo, a test, a commit or a PR: tests use made-up data.
+- Live data. Every figure, name and state comes from /api/* through api.js's API, polled no faster than today's page polls the same read. A figure nobody reported is a dash, never a zero (the rule today's usage.js states). A field the prototype shows that no read gives is added as a GET in the module that owns the data, with a Kotlin test of what the route answers; never derived from a snapshot or invented. The console shows what the data holds, names, emails, accounts and per-person usage included; nothing is masked or left out: the console is the person's own view of their own Splice, and the privacy rule binds the repo, checks, cases, commits and pull requests, never what the running page shows.
+- Writes go to the route today's console uses for the same act, and the control says what the daemon answered, in the kit's words (Deck.saveState: saving, Applied, At restart, Not saved with why; the old value comes back on a refusal).
+- Words: plain developer words from NAMES.md / USER-LANGUAGE.md and the prototype; no agent jargon, no internal Splice names, no question headings, no sentence captions. Choices are never pill buttons.
+- No raw values: the page's CSS and JS pass `bun tools/console/deck-raw.ts` (nd-kit), which the gate runs.
+- Old tests: the tools/console tests this item names pin the old page. Each is rewritten for the new page where what it pins is in the approved design (same behaviour, new markup), or deleted where the approved design dropped it; the commit message names each one and which. New tools/console tests check only what a user sees or what a route returns, through the real page against a stub daemon with made-up data. Shared old files (kit.js, console.js, console.css, tokens.css, composer.*, knobs.*, reqview.*, perf-heads.*) stay until nd-whole; the old page's own files go in this item. A tools/console test this item breaks is this item's to rewrite or delete, even when another item names it (the gate runs them all on every push); a test another item names and this one does not break is left to that item.
+- Links between pages use the addresses decided in nd-activity and nd-providers: `activity.html?session=|project=|account=|model=|provider=<value>`, `activity.html?win=5h|7d|30d`, `activity.html#request=<turn id>`, `providers.html?cmd=<command>`, `providers.html?open=compare|add`.
+- Commits and the pull request carry no Claude author, co-author trailer, session link or "Generated with" line, and go through the active gh account, which is never switched.
+- How it is judged (beyond its check): the feature review opens this build's page on a private display with tools/console-look (nd-look): against the live Splice read-only (`--live`: GET only, every write refused before it leaves the browser), at 1440×900 and 3840×2160, night and day, beside the prototype page opened at the same size, and uses every interaction this item touches, a write only up to the step before it writes. Each write's effect is tried on a Splice of the campaign's own (tools/console-own, nd-own). It judges from its own screenshots, read as images, kept in captures/console-night-deck/<item>/ (git-ignored). A picture for the PR comes only from the own Splice with made-up data. CLAUDE.md "UI changes" holds: no text over text, nothing clipped or past the edge, at 3840 the page reads as a larger 1440 page, never stretched.'''
+checks = [
+  'bun test ./.campaign/checks/console-night-deck/settings-system.test.ts',
+]
+sources = [
+  '.campaign/checks/console-night-deck/lib/deck.ts',
+  '.campaign/checks/console-night-deck/settings-system.test.ts',
+]
+results = [
+  "Saved tool result (settings.txt):\nRead Nov 18, 2026:\n- GET /api/config (ConfigRoutes.kt): {effective, layers {defaults, toml, perHead, file, env, runtime}, knobs {<key>: {value, scope (default|toml|head|file|env|runtime), env_names?, disposition (restart|live), editable, read_only_reason?, read_only?}}, paths}. PATCH /api/config {key: value} -> {applied, rejected, restart_required [keys], persisted | not_persisted}; ?head=<key> writes [heads.<key>.overrides].\n- Knob keys (core/.../config/Knob.kt), e.g. maxQueued, maxInflight, replayReasoning, streamIdleMs, firstByteTimeoutMs, stallReanchorMs, upstreamTimeoutMs, maxRequestBytes; the prototype's settings/make-data.ts maps every Settings row to its key.\n- GET /api/heads gate {inflight, queued, max, ..., watchdog}; /api/alerts (+ POST /api/alerts/test); /api/mcp, /api/mcp/memory; /api/kept/stores, /api/history (PUT), /api/kept/labels, /api/kept/edges; /api/projects, /api/topology; /api/upgrade (installed, latest, rollback_target), POST /api/upgrade, /api/upgrade/check, GET /api/upgrade/run; GET|POST /api/daemon/restart.\n- Prototype hooks: #mc, #flow, #wires, [data-part=\"cc\"|\"gates\"|\"watch\"|\"reasoning\"|\"limits\"|\"mcp\"|\"storage\"|\"projects\"|\"splice\"|\"internals\"], #gates, #sys, lens .lr[data-item], .seg-o, .sv.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 22:56 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'nd-whole'
+title = 'The whole console is the Night Deck: the six pages only, old files gone, old addresses redirect'
+feature = 'console-night-deck'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'nd-client',
+  'nd-sessions-open',
+  'nd-accounts-signin',
+  'nd-teams',
+  'nd-compare',
+  'nd-usage',
+  'nd-settings-system',
+]
+guard = false
+spec = '''
+The whole console is the Night Deck when this lands, every page of it, with nothing of the old console left that nothing uses, and the old addresses still lead somewhere.
+
+What a person sees and can do once this is built:
+- The console folder holds exactly the six pages (sessions, accounts, teams, providers, activity, settings .html), the kit, each page's own deck-<page>.css/js, api.js, pilot.js, the fonts and the brand images. Every old stylesheet and script that no page loads any more is removed (kit.js, console.js, console.css, tokens.css, composer.js and composer.css, knobs.*, reqview.*, perf-heads.*, and anything else unreferenced), and the fonts no page uses (the old Fraunces, IBM Plex Mono and Source Serif faces and their licences) unless a page still uses them. Where api.js or pilot.js still carry a branch for the old kit (DRAW, CONSOLE, main.page), it goes.
+- ConsoleMount (app/.../control/mount/ConsoleMount.kt) answers the old pages' addresses with a redirect to the page that took their content, the query kept: `/requests.html?<q>` → `/activity.html?<q>`, `/usage.html?<q>` → `/activity.html?<q>`, `/models.html?<q>` → `/providers.html?<q>`, `/compare.html` → `/providers.html?open=compare`, so a bookmark or an old link lands on the same thing. `/` still opens accounts.html (FIRST_PAGE: where a person signs in and where a limit sends them). Activity reads the query names today's requests.html and usage.html addresses use (session, project, account, model, win; check requests.js and usage.js for any other) and Providers reads `cmd`.
+- Every page and every interaction of the console is checked on the finished build on a private display (tools/console-look), at 1440×900 and 3840×2160, night and day, against the live Splice read-only, with writes tried on tools/console-own's Splice: this item's review is the whole feature's.
+- tools/console's tests that still open an old page are gone or rewritten; pages-load.test.ts loads the six; nav-current's place is taken by a test that each page marks its own tab. Any doc that names an old page (README, docs/) points to the new one.
+- The pull request (the feature's) names each old page that went and the page that took it over: Requests and Usage → Activity, Models and Compare → Providers, and Sessions, Accounts, Teams, Settings rebuilt in place.
+
+- The feature's commits and pull request carry no Claude author, co-author trailer, session link or "Generated with" line, go through the active gh account (never switched), and attach only pictures from tools/console-own's Splice with made-up data.
+
+Proven by: `bun test ./.campaign/checks/console-night-deck/whole.test.ts`: the console's pages are the six; every css and js is loaded by a page; nothing names a home folder; deck-raw passes; each page draws its shell (its rails and composer only) at 1440 and 3840, night and day, without an error; a Splice built from this checkout redirects the four old addresses with their query.
+
+Judged: the feature review walks all six pages and every interaction, at both widths and both themes, on the finished build, from its own screenshots in captures/console-night-deck/nd-whole/.'''
+checks = [
+  'bun test ./.campaign/checks/console-night-deck/whole.test.ts',
+]
+sources = [
+  'app/src/main/kotlin/splice/app/control/mount/ConsoleMount.kt',
+  '.campaign/checks/console-night-deck/lib/deck.ts',
+]
+results = [
+  "Saved tool result (old-pages.txt):\nCoverage of the four old pages against the approved pages (Nov 18, 2026, from their JS, the tests pinning them, and the prototypes):\n- Requests: every request with filters and search; the full request document (attempt timeline, sent and returned bodies, headers, tokens, timing) via reqview.js and /api/heads/{head}/trace, /trace/document, /capture; requests of removed commands (/api/heads/retired); in-flight; grouping by session, doors, compare group; plan value, login names, waited in line. Activity's prototype covers the list, filters, search and the per-request timing/tokens, not the document, retired commands or the window choice.\n- Usage: totals per account, model, session, project and day; windows 5 hours, 7 days, 30 days; plans vs keys money (API value vs Paid); model filter; results by door; sign-in from a plan; per-login names. Activity covers the 7-day view and Where it went; Accounts covers a plan's windows.\n- Models: commands on each key with window and price; create a command from a template or custom endpoint; change a command's model, window and system prompt; splice's fix for a broken command (doctor); whether `claude` goes through splice; model tiers; projects; command status; logs per command. Providers covers status, default model, mapping, restart/stop/remove, add provider, the claude toggle; not window, system prompt, logs, fix, projects.\n- Compare: one prompt to up to four models (POST /api/playground {head, prompt, model} -> {raw}), answers side by side with time, cost, tokens, best starred, the round's figure, the board of models that can send, budgets, recent prompts kept. Providers' Compare models covers the static comparison (prices, window, response time, failure rate) of up to three.\n- Links into them today: sessions.js (requests.html?project=, ?session=), accounts.js (usage.html?win=&account=, requests.html?…, models.html?cmd=), settings.js (requests.html, usage.html, requests.html?win=7d#<row>), teams.js (requests.html?…), perf-heads.js (requests.html?…), composer.js (models.html). No Kotlin names them.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-18 22:57 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]

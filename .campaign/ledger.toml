@@ -5072,7 +5072,11 @@ Decisions (made once; door-session-route relies on them):
 
 Not here: what a session row says (door-session-route), relaunch (door-session-relaunch), the console.
 
-Proof: `bun test ./.campaign/checks/door-sessions/record.test.ts`, run on a Linux machine through rig (the server harness reads /proc), starts `claude` through the installed launcher on a stand-in Claude Code (local door, a box's door from a node, and a head's command) and reads the printed lines and the launch record. RemoteLaunchOwnerTest keeps passing.'''
+Proof: `bun test ./.campaign/checks/door-sessions/record.test.ts`, run on a Linux machine through rig (the server harness reads /proc), starts `claude` through the installed launcher on a stand-in Claude Code (local door, a box's door from a node, and a head's command) and reads the printed lines and the launch record. RemoteLaunchOwnerTest keeps passing.
+
+Round 2 ruling (Nov 19, 2026, the door-sessions coordinator): this item asks for the code review only. Why: both feature-review seats of round 2 (sessions 1557d6f5 and bdbb535e) ran in campaign's review sandbox (campaign's slices/seats/review-shell.ts: bwrap --unshare-all, PATH /opt/campaign/bin:/opt/tools:/review-home/.hutch/bin:/usr/bin:/bin) and recorded no verdict, both for the same reasons, which they gave themselves: `campaign check <item> --local` fails with `rig: command not found` (exit 127); there is no app/build/libs/app-all.jar; `./gradlew :app:shadowJar` stops with `java.lang.InternalError: Error loading java.security file` (both JDKs link conf/security/java.security to /etc/java-{21,25}-openjdk, which the sandbox lacks); and there is no network, DNS or Gradle cache to fetch from. A feature reviewer there cannot build or start splice's daemon, so a feature review of this item could never record a verdict, however right the build. What a person sees is judged by the item's check, which starts `claude` through the installed launcher on a real daemon on the Linux build box and reads the launcher's lines, the launch record and the routes. campaign runs it before any review and starts reviewers only for an item whose checks pass, and this item's passed in round 2. door-takes-main is code-review-only for the same reason. door-session-console keeps its feature review, because its Bun stub runs in the sandbox and recorded a pass. The build did not fall short: go on from the worktree's work, run the check, and leave nothing uncommitted.
+
+What the worktree holds for this item: round 1's work is committed (34eefd8cb, then the merge of main, 13631212d). Decision 2's revision was left uncommitted at the end of round 2: core/src/main/kotlin/splice/core/topology/LanShareConfig.kt (LOCAL_DOOR_PATHS = /door and /desktop, mirroring DaemonDesktop's DOOR_PATH and DESKTOP_PATH; LaunchDoors.local is now a set of both), with its tests in app/src/test/kotlin/splice/app/cli/share/DoorLaunchOwnerTest.kt and features/sessions/src/test/kotlin/splice/sessions/registry/ProcessEnvironmentTest.kt. That is this item's work, and the round-2 check passed with it on disk (rig ships the tree as it is). Commit those three files by name. Never stash, reset or discard them, and keep .campaign/ out of the commit. campaign finish lands only what is committed.'''
 checks = [
   'rig remote run --needs system=Linux/x86_64 -- bun test ./.campaign/checks/door-sessions/record.test.ts',
 ]
@@ -5089,13 +5093,13 @@ results = [
   "Saved tool result (a-launch.txt):\nObserved Nov 19, 2026 (CT) through the real launcher (.campaign/checks/door-sessions/record.test.ts, jar built from this tree):\n\n1. `claude` on this machine's door: the launch sets CLAUDE_CODE_USE_MANTLE=1 and\n   ANTHROPIC_BEDROCK_MANTLE_BASE_URL=http://127.0.0.1:<control port>/desktop  (NOT /door: the local door is\n   DaemonDesktop's `\"http://127.0.0.1:$controlPort$DESKTOP_PATH\"`, DESKTOP_PATH = \"/desktop\", the same address\n   `splice claude --json` reports as `door`). ANTHROPIC_BASE_URL is unset by the recipe.\n   stderr: \"splice: launch ownership could not be recorded; this session may have an unknown head on macOS\"\n   <state>/launch-owners/ has no file.\n\n2. `claude` on another machine's door (`[remote.claude] url = \"http://127.0.0.1:<share port>/door\"`): the same\n   warning, no record. The Mantle base URL is \"<box>/door\" (RemoteDoor: door = \"${address.server}/door\").\n\n3. `claude-astra` (a head's command): no warning; record {head:\"astra\", baseUrl:\"http://127.0.0.1:<head port>\", kind:\"session\"}.\n\nCause: splice-launch line ~963 `record_launch \"$HEAD\" \"${ANTHROPIC_BASE_URL-}\" session` passes \"\" on a door launch;\nLaunchOwnerCommand.localHead() then would look for a head on the control port and find none.\n",
 ]
 reviews = [
-  'feature',
   'code',
 ]
 notes = [
   '2026-11-19 06:59 CT door-sessions/coordinator: added; 1 of 1 checks fail, as they should before the work',
   "2026-11-19 09:42 CT door-sessions/coordinator: Ruling on the round-1 dispute: this branch takes main (new item door-takes-main, which this row now waits on), as share-door-only did; it does not wait for share-door-only to land. The checks are right as written: they need main's network door (#691: /door/launch on the share listener, [remote.claude] url=<box>/door), which the base 21ab32187 lacks. Once main is in, your code from round 1 is committed in the worktree; go on from it.",
   "2026-11-19 09:42 CT door-sessions/coordinator: Decision 2 revised: on main the local door is http://127.0.0.1:<control port>/door (DaemonDesktop.kt:67, DOOR_PATH = \"/$DOOR_SEGMENT\"), and /desktop (DESKTOP_PATH) is still answered (DesktopRoutes.kt:56). The worktree's LaunchDoors.local (core/.../topology/LanShareConfig.kt) holds only /desktop, so record.test.ts's local-door case fails after the merge until the reader knows both paths. Main is still shim-27, so shim-28 stands.",
+  '2026-11-19 11:20 CT door-sessions/coordinator: Ruled on round 2 (blocked: the feature reviewer recorded no verdict, twice): the plan was wrong, not the build. The review sandbox cannot build or run splice (no rig, no network, broken JDK security file, no jar), so this row now asks for the code review only. The checks judge what a person sees and passed in round 2. Evidence and the reason are in the spec.',
 ]
 
 [[row]]
@@ -5164,7 +5168,11 @@ Decisions:
 
 Not here: the console's drawing of these rows (door-session-console), relaunch (door-session-relaunch).
 
-Proof: `bun test ./.campaign/checks/door-sessions/route.test.ts` (on Linux) starts `claude` through the installed launcher on a stand-in Claude Code that registers itself as Claude Code does, on this machine's door and on a box's door from a node, and reads `/api/sessions` before and after a door turn, `splice sessions` and `splice sessions --json`, the box's own list, and a session started around splice.'''
+Proof: `bun test ./.campaign/checks/door-sessions/route.test.ts` (on Linux) starts `claude` through the installed launcher on a stand-in Claude Code that registers itself as Claude Code does, on this machine's door and on a box's door from a node, and reads `/api/sessions` before and after a door turn, `splice sessions` and `splice sessions --json`, the box's own list, and a session started around splice.
+
+Round 2 ruling (Nov 19, 2026, the door-sessions coordinator): this item asks for the code review only. Why: both feature-review seats of round 2 (sessions 1557d6f5 and bdbb535e) ran in campaign's review sandbox (campaign's slices/seats/review-shell.ts: bwrap --unshare-all, PATH /opt/campaign/bin:/opt/tools:/review-home/.hutch/bin:/usr/bin:/bin) and recorded no verdict, both for the same reasons, which they gave themselves: `campaign check <item> --local` fails with `rig: command not found` (exit 127); there is no app/build/libs/app-all.jar; `./gradlew :app:shadowJar` stops with `java.lang.InternalError: Error loading java.security file` (both JDKs link conf/security/java.security to /etc/java-{21,25}-openjdk, which the sandbox lacks); and there is no network, DNS or Gradle cache to fetch from. A feature reviewer there cannot build or start splice's daemon, so a feature review of this item could never record a verdict, however right the build. What a person sees is judged by the item's check, which starts `claude` through the installed launcher on a real daemon on the Linux build box and reads the launcher's lines, the launch record and the routes. campaign runs it before any review and starts reviewers only for an item whose checks pass, and this item's passed in round 2. door-takes-main is code-review-only for the same reason. door-session-console keeps its feature review, because its Bun stub runs in the sandbox and recorded a pass. The build did not fall short: go on from the worktree's work, run the check, and leave nothing uncommitted.
+
+What the worktree holds for this item: its work is committed (34eefd8cb, then the merge of main, 13631212d). The one uncommitted test edit in features/sessions/src/test/kotlin/splice/sessions/registry/ProcessEnvironmentTest.kt (a record at /door reads as the same door as /desktop) belongs to door-launch-record's decision 2 and is committed with it.'''
 checks = [
   'rig remote run --needs system=Linux/x86_64 -- bun test ./.campaign/checks/door-sessions/route.test.ts',
 ]
@@ -5183,12 +5191,12 @@ results = [
   "Saved tool result (b-route.txt):\nObserved Nov 19, 2026 (CT), today's build, a stand-in Claude Code started through the launcher as `claude` on the\nlocal door, registered in ~/.claude/sessions/<pid>.json:\n\nBefore any turn:   \"head\":\"unknown head\",\"route\":\"unknown\"\nAfter one door turn with its session id (model claude-astra--astra-large):\n  {\"head\":\"astra\",\"route\":\"head\", ..., \"turns\":1, \"served_model\":\"astra-large\", ...}\n  -> ArrivalJoinedSessions/RecordedSessions join a session with no head route (SessionRecord.wantsHead) to the head\n     its last turn ran on. A door session's turns run on whichever head the model names, so once it has a Door route\n     that join must leave it alone, as it leaves a launch-joined head session alone.\n`splice sessions`: \"  ● pid 293158  unknown head  idle  live  started just now, updated just now · ~\"\n\nOn another machine's door (node with [remote.claude] url = \"<box>/door\"): \"head\":\"unknown head\",\"route\":\"unknown\",\nno launch record (the launcher's empty base URL, see door-launch-record).\n\nA stand-in started around splice (no SPLICE=1 in its environment) reads \"route\":\"direct\",\"head\":\"unknown head\".\nNote for checks: a terminal that is itself a splice session carries SPLICE=1; the check's helper removes it.\n",
 ]
 reviews = [
-  'feature',
   'code',
 ]
 notes = [
   '2026-11-19 07:08 CT door-sessions/coordinator: added; 1 of 1 checks fail, as they should before the work',
   "2026-11-19 09:42 CT door-sessions/coordinator: Ruling on the round-1 dispute: this branch takes main (new item door-takes-main, which this row now waits on), as share-door-only did; it does not wait for share-door-only to land. The checks are right as written: they need main's network door (#691: /door/launch on the share listener, [remote.claude] url=<box>/door), which the base 21ab32187 lacks. Once main is in, your code from round 1 is committed in the worktree; go on from it.",
+  '2026-11-19 11:20 CT door-sessions/coordinator: Ruled on round 2 (blocked: the feature reviewer recorded no verdict, twice): the plan was wrong, not the build. The review sandbox cannot build or run splice (no rig, no network, broken JDK security file, no jar), so this row now asks for the code review only. The checks judge what a person sees and passed in round 2. Evidence and the reason are in the spec.',
 ]
 
 [[row]]
@@ -5214,7 +5222,11 @@ What the running product does once this is built:
 
 Not here: what a row says (door-session-route), the console.
 
-Proof: `bun test ./.campaign/checks/door-sessions/relaunch.test.ts` (on Linux) starts `claude` through the installed launcher on a stand-in Claude Code, on this machine's door and on a box's door from a node, and asks each to relaunch: neither is refused for running on no splice command, and each refusal (no terminal holds them in the check) names `claude`.'''
+Proof: `bun test ./.campaign/checks/door-sessions/relaunch.test.ts` (on Linux) starts `claude` through the installed launcher on a stand-in Claude Code, on this machine's door and on a box's door from a node, and asks each to relaunch: neither is refused for running on no splice command, and each refusal (no terminal holds them in the check) names `claude`.
+
+Round 2 ruling (Nov 19, 2026, the door-sessions coordinator): this item asks for the code review only. Why: both feature-review seats of round 2 (sessions 1557d6f5 and bdbb535e) ran in campaign's review sandbox (campaign's slices/seats/review-shell.ts: bwrap --unshare-all, PATH /opt/campaign/bin:/opt/tools:/review-home/.hutch/bin:/usr/bin:/bin) and recorded no verdict, both for the same reasons, which they gave themselves: `campaign check <item> --local` fails with `rig: command not found` (exit 127); there is no app/build/libs/app-all.jar; `./gradlew :app:shadowJar` stops with `java.lang.InternalError: Error loading java.security file` (both JDKs link conf/security/java.security to /etc/java-{21,25}-openjdk, which the sandbox lacks); and there is no network, DNS or Gradle cache to fetch from. A feature reviewer there cannot build or start splice's daemon, so a feature review of this item could never record a verdict, however right the build. What a person sees is judged by the item's check, which starts `claude` through the installed launcher on a real daemon on the Linux build box and reads the launcher's lines, the launch record and the routes. campaign runs it before any review and starts reviewers only for an item whose checks pass, and this item's passed in round 2. door-takes-main is code-review-only for the same reason. door-session-console keeps its feature review, because its Bun stub runs in the sandbox and recorded a pass. The build did not fall short: go on from the worktree's work, run the check, and leave nothing uncommitted.
+
+What the worktree holds for this item: its work is committed (34eefd8cb, then the merge of main, 13631212d).'''
 checks = [
   'rig remote run --needs system=Linux/x86_64 -- bun test ./.campaign/checks/door-sessions/relaunch.test.ts',
 ]
@@ -5229,12 +5241,12 @@ results = [
   "Saved tool result (d-relaunch.txt):\nObserved Nov 19, 2026 (CT), today's build, both sessions started through the launcher, idle, no tmux pane:\n\nHEAD (claude-astra)  POST /api/sessions/<id>/relaunch -> 409 {\"error\":\"The claude-astra command is not linked; run splice install astra.\"}\nDOOR (claude)        POST /api/sessions/<id>/relaunch -> 409 {\"error\":\"it runs on no splice command, so there is none to relaunch it on\",\"reason\":\"head_unknown\"}\n\nSessionContinue.Plans.relaunch refuses on record.head == null (RELAUNCH_NO_HEAD); RelaunchCommands.command needs a\nhead key; SessionsRelaunchCommand.runsOnAHead keeps only sessions with a head.\n",
 ]
 reviews = [
-  'feature',
   'code',
 ]
 notes = [
   '2026-11-19 07:19 CT door-sessions/coordinator: added; 1 of 1 checks fail, as they should before the work',
   "2026-11-19 09:42 CT door-sessions/coordinator: Ruling on the round-1 dispute: this branch takes main (new item door-takes-main, which this row now waits on), as share-door-only did; it does not wait for share-door-only to land. The checks are right as written: they need main's network door (#691: /door/launch on the share listener, [remote.claude] url=<box>/door), which the base 21ab32187 lacks. Once main is in, your code from round 1 is committed in the worktree; go on from it.",
+  '2026-11-19 11:20 CT door-sessions/coordinator: Ruled on round 2 (blocked: the feature reviewer recorded no verdict, twice): the plan was wrong, not the build. The review sandbox cannot build or run splice (no rig, no network, broken JDK security file, no jar), so this row now asks for the code review only. The checks judge what a person sees and passed in round 2. Evidence and the reason are in the spec.',
 ]
 
 [[row]]

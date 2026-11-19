@@ -45,6 +45,20 @@ internal class DoorPickerRowsTest {
         assertEquals(listOf("gateway--team-large", "gateway--team-small"), lineup.picker.map { it.model })
     }
 
+    @Test
+    fun `a model the picker spells with the 1M hint runs when a turn names it without the hint`() {
+        // Claude Code sends `muse--muse-spark-1.3` for the row it lists as `muse--muse-spark-1.3[1m]`.
+        val lineup = lineupOf(
+            head("muse", login = true) to listOf(model("muse", "muse-spark-1.3[1m]"), model("muse", "muse-ember-1.0")),
+            head("grok", login = true) to listOf(model("grok", "grok-4.3"), model("grok", "grok-4.3[1m]")),
+        )
+        assertEquals("muse-spark-1.3[1m]", lineup.find("muse--muse-spark-1.3")?.second?.upstream)
+        assertEquals("muse-spark-1.3[1m]", lineup.find("muse--muse-spark-1.3[1m]")?.second?.upstream)
+        // A row spelled exactly as asked is the one that runs.
+        assertEquals("grok-4.3", lineup.find("grok--grok-4.3")?.second?.upstream)
+        assertEquals(null, lineup.find("muse--muse-spark-9"))
+    }
+
     private fun lineupOf(vararg heads: Pair<DoorHead, List<DoorModel>>): DesktopLineup =
         DesktopLineup(heads.map { it.first }, heads.flatMap { it.second }, emptyList())
 

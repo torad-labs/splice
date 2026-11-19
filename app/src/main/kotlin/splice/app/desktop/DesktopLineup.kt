@@ -13,6 +13,7 @@ import splice.app.control.ManagedHead
 import splice.core.auth.AuthDescription
 import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
+import splice.core.model.ModelTierSuffix
 import splice.core.topology.AuthKindRegistry
 import splice.core.usage.QuotaFull
 import splice.core.util.Cancellables
@@ -70,9 +71,14 @@ internal data class DesktopLineup(val heads: List<DoorHead>, val models: List<Do
         head.catalog.wrap(head.pinned).takeIf { find(it) != null }
             ?: models.firstOrNull { it.head == head.key }?.model.orEmpty()
 
-    /** The head and model of [selector], or null when no head in the door lists it. */
+    /** The head and model of [selector], or null when no head in the door lists it. A row the picker spells with a
+     *  window hint (`[1m]`) is found by its name without the hint too, since Claude Code strips the hint from the name
+     *  a request carries (ClientWindowWitness): until Nov 19, 2026 every turn on such a row, each Muse model among
+     *  them, was refused as not in the door. A row spelled exactly as asked wins. */
     fun find(selector: String): Pair<DoorHead, DoorModel>? {
-        val model = models.firstOrNull { it.model == selector } ?: return null
+        val model = models.firstOrNull { it.model == selector }
+            ?: models.firstOrNull { ModelTierSuffix.strip(it.model) == selector }
+            ?: return null
         return heads.firstOrNull { it.key == model.head }?.let { it to model }
     }
 }

@@ -74,7 +74,8 @@ internal class ShareDoorTest {
 
     private fun send(path: String, post: Boolean = false, type: String = "application/json"): Pair<Int, String> {
         val builder = HttpRequest.newBuilder(URI.create("http://127.0.0.1:$sharePort$path")).header("Content-Type", type)
-        val request = (if (post) builder.POST(HttpRequest.BodyPublishers.ofString("{}")) else builder.GET()).build()
+        val body = HttpRequest.BodyPublishers.ofString("{}")
+        val request = (if (post) builder.POST(body) else builder.GET()).build()
         val response = http.send(request, HttpResponse.BodyHandlers.ofString())
         return response.statusCode() to response.body()
     }

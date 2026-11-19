@@ -4806,7 +4806,9 @@ title = 'claude on the door, here or on another machine, starts with its launch 
 feature = 'door-sessions'
 status = 'todo'
 owner = ''
-blocked_by = []
+blocked_by = [
+  'door-takes-main',
+]
 guard = false
 spec = '''
 Starting `claude` on the door records its launch, on this machine and on another machine's door, so the person sees no warning and splice knows the session.
@@ -4818,7 +4820,7 @@ What the running product does once this is built:
 
 Decisions (made once; door-session-route relies on them):
 1. The launcher (`app/src/main/dist/bin/splice-launch`, `record_launch` after `apply_recipe`) gives record-launch the address Claude Code will really use: ANTHROPIC_BEDROCK_MANTLE_BASE_URL when the environment it execs into has CLAUDE_CODE_USE_MANTLE=1, else ANTHROPIC_BASE_URL. Why: that is Claude Code's own precedence (the Mantle switch decides), and head recipes already clear the Mantle switch (LaunchService, providerSwitches), so no head launch changes. The shim's behaviour changes, so bump `SPLICE_SHIM_VERSION` shim-27 -> shim-28 and `SHIM_VERSION` in core/src/main/kotlin/splice/core/Versions.kt together, as the shim's header requires, with a one-line shim-28 note.
-2. This machine's door is the address `http://127.0.0.1:<control port>/desktop`, the one DaemonDesktop opens (`DESKTOP_PATH`). The hand-over said `/door`; the evidence says `/desktop`, and nothing is renamed. The control port is resolved as the CLI resolves it (AdminSupport.controlPort(topology, env)), so an env override counts. A session launch at exactly that address is recorded under the command it was started as, whatever that command is: the door does not depend on the command (a `splice desktop launch` that goes through this launcher gets its record too).
+2. This machine's door is the control port at either path it answers the door on: `http://127.0.0.1:<control port>/door` (main's DOOR_PATH, the address DaemonDesktop gives every launch, `splice claude --json`'s `door`) and `http://127.0.0.1:<control port>/desktop` (DESKTOP_PATH, which main still answers for a Claude Desktop or `claude` session set up before 0.6.4). Revised Nov 19, 2026 by the coordinator when this branch took main (door-takes-main): round 1 read the base, where the door was only `/desktop`, and the worktree's LaunchDoors.local holds only `/desktop`, so after the merge the local-door case's record-launch refuses `/door` and must be changed to know both. Why both: they are one door, and a record or a row must not depend on which of its two paths a session happens to hold. Core cannot import app's DOOR_PATH/DESKTOP_PATH: keep the two paths core's reader knows beside the reader, with a comment naming DaemonDesktop's constants as the ones they mirror. The baseUrl kept in the record is the address as the launch gave it, unchanged. The control port is resolved as the CLI resolves it (AdminSupport.controlPort(topology, env)), so an env override counts. A session launch at this machine's door is recorded under the command it was started as, whatever that command is: the door does not depend on the command (a `splice desktop launch` that goes through this launcher gets its record too).
 3. Another machine's door already records (LaunchOwnerCommand.remoteCommand: the `[remote.<command>]` entry's turns address equals the base URL). Keep that rule.
 4. One reader, in core (`splice.core.topology`), answers which door a launch's base URL names: this machine's door, another machine's door (a `[remote.<command>]` whose address reads head `door` and whose turns address is the base URL; its machine is that address's host, as RemoteDoor/ShareHttp.hostOf names the box), or none. record-launch uses it now; door-session-route places sessions with the same reader, so a record and a row can never disagree. It gives at least the command, the address and the machine (null for this machine). Names and shape are the builder's.
 
@@ -4846,6 +4848,8 @@ reviews = [
 ]
 notes = [
   '2026-11-19 06:59 CT door-sessions/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 09:42 CT door-sessions/coordinator: Ruling on the round-1 dispute: this branch takes main (new item door-takes-main, which this row now waits on), as share-door-only did; it does not wait for share-door-only to land. The checks are right as written: they need main's network door (#691: /door/launch on the share listener, [remote.claude] url=<box>/door), which the base 21ab32187 lacks. Once main is in, your code from round 1 is committed in the worktree; go on from it.",
+  "2026-11-19 09:42 CT door-sessions/coordinator: Decision 2 revised: on main the local door is http://127.0.0.1:<control port>/door (DaemonDesktop.kt:67, DOOR_PATH = \"/$DOOR_SEGMENT\"), and /desktop (DESKTOP_PATH) is still answered (DesktopRoutes.kt:56). The worktree's LaunchDoors.local (core/.../topology/LanShareConfig.kt) holds only /desktop, so record.test.ts's local-door case fails after the merge until the reader knows both paths. Main is still shim-27, so shim-28 stands.",
 ]
 
 [[row]]
@@ -4893,6 +4897,7 @@ status = 'todo'
 owner = ''
 blocked_by = [
   'door-launch-record',
+  'door-takes-main',
 ]
 guard = false
 spec = '''
@@ -4937,6 +4942,7 @@ reviews = [
 ]
 notes = [
   '2026-11-19 07:08 CT door-sessions/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 09:42 CT door-sessions/coordinator: Ruling on the round-1 dispute: this branch takes main (new item door-takes-main, which this row now waits on), as share-door-only did; it does not wait for share-door-only to land. The checks are right as written: they need main's network door (#691: /door/launch on the share listener, [remote.claude] url=<box>/door), which the base 21ab32187 lacks. Once main is in, your code from round 1 is committed in the worktree; go on from it.",
 ]
 
 [[row]]
@@ -4947,6 +4953,7 @@ status = 'todo'
 owner = ''
 blocked_by = [
   'door-session-route',
+  'door-takes-main',
 ]
 guard = false
 spec = '''
@@ -4981,4 +4988,41 @@ reviews = [
 ]
 notes = [
   '2026-11-19 07:19 CT door-sessions/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 09:42 CT door-sessions/coordinator: Ruling on the round-1 dispute: this branch takes main (new item door-takes-main, which this row now waits on), as share-door-only did; it does not wait for share-door-only to land. The checks are right as written: they need main's network door (#691: /door/launch on the share listener, [remote.claude] url=<box>/door), which the base 21ab32187 lacks. Once main is in, your code from round 1 is committed in the worktree; go on from it.",
+]
+
+[[row]]
+id = 'door-takes-main'
+title = "The feature's branch takes in main, where the network door lives"
+feature = 'door-sessions'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = '''
+The feature's branch takes in main, where the network door lives, so the door-sessions checks can open a box's door and every item is built against the door people really run.
+
+What the running product does once this is built: everything main has at 7e9f7bbb1 or later (origin/main as fetched when this is built; 94337822a on Nov 19, 2026), including the network door of #691 (ShareDoor, NetworkDoor, NetworkCaller, RemoteDoor, DoorSession, the /door routes on the share listener, `splice remote add http://<box>` linking `claude` to a box's door, this machine's door answered at `http://127.0.0.1:<control port>/door` as well as the older `/desktop`), together with everything feat/provider-gateway-headers has that main lacks, and the door-sessions work already in this worktree.
+
+Why this item exists (ruling of the door-sessions coordinator, Nov 19, 2026): record.test.ts, route.test.ts and relaunch.test.ts each open a box's door (`doorOpen`, which waits for GET <box>/door/launch) and start a node on `[remote.claude] url = "<box>/door"`. The base, feat/provider-gateway-headers @ 21ab32187, forked from main at 78dcfda21 and lacks the network door: its ShareListener answers /<command>/launch only for a shared head, so /door/launch is 404 and every beforeAll times out. The door is on main, not in share-door-only's own work, so this branch takes main the way share-door-only did (its base-takes-main, merge 483aa6294 of 7e9f7bbb1) instead of waiting for share-door-only to land: that feature's landing has no date and carries its removal of the per-command share, which door-sessions neither needs nor should wait on. Both branches then hold the same main commits, which git merges once when they meet on the base. Taking all of main, not cherry-picking #691, for share-door-only's reason: #691 is one squash commit that leans on earlier main commits.
+
+How to build it, in the feature's worktree:
+1. The worktree holds the four items' work uncommitted (32 paths; `git status --short`). Seven of them main also changed since 78dcfda21, so `git merge` refuses while they are dirty: app/src/main/dist/bin/splice-launch, app/src/main/kotlin/splice/app/ControlPlane.kt, app/src/main/kotlin/splice/app/Daemon.kt, app/src/main/kotlin/splice/app/desktop/DaemonDesktop.kt, core/src/main/kotlin/splice/core/Versions.kt, core/src/main/kotlin/splice/core/topology/LanShareConfig.kt, features/sessions/src/main/kotlin/splice/sessions/http/SessionsRoutes.kt. First commit that work as it stands, naming the files (every path outside .campaign/, the two untracked files included), in one commit titled `door-sessions: door-takes-main, the items' work as built on the base, before main comes in`. Never stash, reset, checkout or discard any of it, and leave .campaign/ (staged by campaign itself) out of every commit.
+2. `git fetch origin` and `git merge origin/main`: a merge commit, never a rebase, titled `door-sessions: door-takes-main, the feature's branch takes in main at <sha>`.
+3. Resolve every conflict so both sides' intent holds: main's door and share code (features/share, app/.../desktop, app/.../share, app/.../cli/share), the base's work main lacks, and the door-sessions edits on top of both. In particular: splice-launch keeps main's text plus this feature's `turns_base_url` and shim-28 (main is still shim-27, so shim-28 stands, paired with core Versions.kt SHIM_VERSION); DaemonDesktop keeps main's DOOR_PATH and DESKTOP_PATH. Fix only what the merge breaks; the door reader's paths are door-launch-record's to change, not this item's.
+
+The credential scan: rig accepts this worktree today (the checks above ran through it). If `rig remote run -- true` refuses after the merge, stop and dispute this item with rig's words; only the project's lead adds fingerprints to .gitleaksignore, and no builder ships the tree another way.
+
+Proven by: `git merge-base --is-ancestor 7e9f7bbb1 HEAD` (main is in), then `rig remote run -- ./gradlew :app:compileTestKotlin :features-sessions:compileTestKotlin :features-share:compileTestKotlin --quiet` (the tree ships and the merged code compiles, tests included).'''
+checks = [
+  'git merge-base --is-ancestor 7e9f7bbb1 HEAD && rig remote run -- ./gradlew :app:compileTestKotlin :features-sessions:compileTestKotlin :features-share:compileTestKotlin --quiet',
+]
+results = [
+  "Saved tool result (facts.txt):\n# Read Nov 19, 2026 (CT) by the door-sessions coordinator.\n# base: feat/provider-gateway-headers 21ab32187; merge-base with origin/main = 78dcfda21; origin/main = 94337822a\n# (#700, #699, #698 ... #691 3503f8811 the network door, #695 7e9f7bbb1).\n# share-door-only took main in: 483aa6294 \"share-door-only: base-takes-main, the feature's branch takes in main at 7e9f7bbb1\".\n\n# origin/main app/src/main/kotlin/splice/app/desktop/DaemonDesktop.kt\n67:        val door = \"http://127.0.0.1:$controlPort$DOOR_PATH\"\n91:internal const val DOOR_PATH = \"/$DOOR_SEGMENT\"          // DOOR_SEGMENT = \"door\", features/share/.../ShareDoor.kt:51\n95:internal const val DESKTOP_PATH = \"/desktop\"             // \"Where the control port answered the door before 0.6.4, which it still answers\"\n# origin/main app/src/main/kotlin/splice/app/control/DesktopRoutes.kt:56   listOf(DOOR_PATH, DESKTOP_PATH).forEach { at -> ... }\n# base 21ab32187: only DESKTOP_PATH = \"/desktop\" (DaemonDesktop.kt:79); no /door route on the share listener.\n\n# SPLICE_SHIM_VERSION / SHIM_VERSION: shim-27 on the base, on 7e9f7bbb1 and on origin/main 94337822a.\n\n# Worktree files main also changed since 78dcfda21 (git merge refuses while they are dirty):\napp/src/main/dist/bin/splice-launch\napp/src/main/kotlin/splice/app/ControlPlane.kt\napp/src/main/kotlin/splice/app/Daemon.kt\napp/src/main/kotlin/splice/app/desktop/DaemonDesktop.kt\ncore/src/main/kotlin/splice/core/Versions.kt\ncore/src/main/kotlin/splice/core/topology/LanShareConfig.kt\nfeatures/sessions/src/main/kotlin/splice/sessions/http/SessionsRoutes.kt\n# Unchanged between base and main: LaunchOwnerCommand.kt, features/sessions/.../registry/*, RelaunchCommands.kt, features/launch/.../wrap/*.\n",
+]
+reviews = [
+  'code',
+]
+notes = [
+  '2026-11-19 09:42 CT door-sessions/coordinator: added; 1 of 1 checks fail, as they should before the work',
 ]

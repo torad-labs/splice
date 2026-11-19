@@ -30,7 +30,9 @@ private const val OWNER_CHECK_MS = 10_000L
 // why: these are the installed desktop IPC protocol versions, not app-server JSON-RPC versions.
 private const val COORDINATION_VERSION = 1
 
-// why: the installed desktop publishes lifecycle snapshots and patches using stream schema version 11.
+// why: the oldest stream schema whose changes carry what this reads (revision, conversationState.threadRuntimeStatus,
+// baseRevision and patches). Versions 11 to 13 all carry them; ChatGPT Desktop 26.1111 publishes 13. Until Nov 18, 2026
+// only 11 was read, and every attach to a thread that Desktop owned was refused once Desktop moved to 13.
 private const val STREAM_VERSION = 11
 private const val STREAM_CHANGED = "thread-stream-state-changed"
 private const val FOLLOWING_CHANGED = "thread-stream-following-changed"
@@ -47,6 +49,10 @@ internal class CodexDesktopThread(
 
     @Volatile
     private var owner: String? = null
+
+    /** Why the connection was ended over a stream it could not read, when it was. */
+    @Volatile
+    private var lost: String? = null
 
     private var lastStatus: String? = null
     override val notifications: ReceiveChannel<CodexEvent> get() = events
@@ -87,7 +93,7 @@ internal class CodexDesktopThread(
         }
         val status = withTimeoutOrNull(DESKTOP_SNAPSHOT_MS) { firstStatus.await() }
         return status?.let { CodexGreeting.Loaded(it) }
-            ?: CodexGreeting.Refused("the desktop owner did not provide the thread's current status")
+            ?: CodexGreeting.Refused(lost ?: "the desktop owner did not provide the thread's current status")
     }
 
     override suspend fun startTurn(clientId: String, text: String): TurnStart {
@@ -143,17 +149,23 @@ internal class CodexDesktopThread(
     }
 
     private fun readStatus(event: JsonObject, params: JsonObject): String? {
-        if (JsonScalars.int(event, "version") != STREAM_VERSION) {
-            close()
-            return null
+        val version = JsonScalars.int(event, "version")
+        if (version == null || version < STREAM_VERSION) {
+            return lose("the desktop's thread stream is version $version, older than the $STREAM_VERSION splice reads")
         }
         val change = params["change"] as? JsonObject ?: return null
         return try {
             state.accept(change)
-        } catch (_: IllegalStateException) {
-            close()
-            null
+        } catch (failure: IllegalStateException) {
+            lose("the desktop's thread stream (version $version) could not be read: ${failure.message}")
         }
+    }
+
+    /** Ends the connection over a stream it cannot read, keeping why, so the attach that waits on it says so. */
+    private fun lose(why: String): String? {
+        lost = why
+        close()
+        return null
     }
 
     private fun identity(): JsonObject = buildJsonObject {

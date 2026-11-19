@@ -29,6 +29,8 @@ internal class CodexDesktopStandIn(
     private val conversationId: String,
     private val ownerFound: Boolean = true,
     private val dropStartTurnReply: Boolean = false,
+    /** The thread stream's schema version, 13 as ChatGPT Desktop 26.1111 publishes it. */
+    private val streamVersion: Int = 13,
 ) : AutoCloseable {
     val requests = LinkedBlockingQueue<JsonObject>()
 
@@ -152,7 +154,7 @@ internal class CodexDesktopStandIn(
                 put("type", "broadcast")
                 put("sourceClientId", OWNER_ID)
                 put("method", "thread-stream-state-changed")
-                put("version", 11)
+                put("version", streamVersion)
                 putJsonObject("params") {
                     put("hostId", "local")
                     put("conversationId", conversationId)
@@ -179,7 +181,7 @@ internal class CodexDesktopStandIn(
                 put("type", "broadcast")
                 put("sourceClientId", OWNER_ID)
                 put("method", "thread-stream-state-changed")
-                put("version", 11)
+                put("version", streamVersion)
                 putJsonObject("params") {
                     put("hostId", "local")
                     put("conversationId", conversationId)

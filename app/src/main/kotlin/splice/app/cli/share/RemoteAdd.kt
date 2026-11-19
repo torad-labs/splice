@@ -104,18 +104,17 @@ internal class RemoteAdd(
      *  laptop holds a key for; or, on a machine whose door is on its network, that door, as `claude` or [name]. */
     private suspend fun every(server: String, name: String?): Offered? {
         val held = asks.profiles.held(server)
-        if (held == null) {
-            when (val read = door(names.onSharePort(server), name)) {
-                is Asked.Had -> return read.value
-                // A door that is only starting is said, not mistaken for a machine with none: its commands linked one
-                // by one would take the name `claude` from the door.
-                is Asked.Refused -> if (DOOR_STARTING in read.why) return names.refused(read.why)
-            }
+        val read = if (held == null) door(names.onSharePort(server), name) else null
+        return when {
+            read is Asked.Had -> read.value
+            // A door that is only starting is said, not mistaken for a machine with none: its commands linked one by
+            // one would take the name `claude` from the door.
+            read is Asked.Refused && DOOR_STARTING in read.why -> names.refused(read.why)
+            name != null ->
+                names.refused("--as names one command; add the server's commands one at a time to name each")
+            held != null -> profiled(server, held)
+            else -> shared(server)
         }
-        if (name != null) {
-            return names.refused("--as names one command; add the server's commands one at a time to name each")
-        }
-        return if (held != null) profiled(server, held) else shared(server)
     }
 
     /** [server]'s door as [name], or `claude`; refused when [server] answers no door. */

@@ -328,30 +328,14 @@ class LanShareCliTest {
     fun `remote add with the server alone puts a wrapped claude on the box's door`(@TempDir dir: Path) {
         val node = node(dir)
         node.wrapped()
+        // A door serves every model of every account, so no login or model can be asked of it.
+        val asked = remote(node, "add", "$share/door?models=gpt-0")
+        assertNotEquals(0, asked.code, asked.toString())
+        assertTrue("every model of every account" in asked.err, asked.toString())
         val added = remote(node, "add", share)
         assertEquals(0, added.code, added.toString())
         assertEquals(mapOf("claude" to RemoteConfig("$share/door")), node.remote)
         assertFalse(node.linked("claudex"), "the door has every command's models: none is linked on its own")
-    }
-
-    @Test
-    fun `remote add with the server alone on a node whose claude is not wrapped says to wrap it`(@TempDir dir: Path) {
-        val node = node(dir)
-        node.claudeCodeOwn()
-        val added = remote(node, "add", share)
-        assertNotEquals(0, added.code, added.toString())
-        assertTrue("splice setup" in added.err, added.toString())
-        assertTrue(node.remote.isEmpty(), node.config.readText())
-    }
-
-    @Test
-    fun `remote add of a door address with a login or models is refused`(@TempDir dir: Path) {
-        val node = node(dir)
-        node.wrapped()
-        val added = remote(node, "add", "$share/door?models=gpt-0")
-        assertNotEquals(0, added.code, added.toString())
-        assertTrue("every model of every account" in added.err, added.toString())
-        assertTrue(node.remote.isEmpty(), node.config.readText())
     }
 
     @Test

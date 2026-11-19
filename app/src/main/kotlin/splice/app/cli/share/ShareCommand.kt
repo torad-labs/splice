@@ -94,9 +94,21 @@ internal class ShareCommand(
         }
         out.line("sharing is on: $BOLD$server$RESET, on ${info.machine}'s LAN and tailnet")
         if (door != null) doorLines(server, door)
+        commandLines(server, info, deprecated = door != null)
+        out.line("${DIM}one on another machine: splice remote add <address>$RESET")
+        out.line("${DIM}an address may end in ?auth=<login> to run on that login,$RESET")
+        out.line("${DIM}and in ?models=<id>,<id> to show only those models$RESET")
+        val others = reach.addresses - server
+        if (others.isNotEmpty()) out.line("${DIM}by address: ${others.joinToString(", ")}$RESET")
+        return PeerExit.DONE
+    }
+
+    /** Each command [info] offers at its address on [server], said as [deprecated] once a door serves them all; with
+     *  no door, the add that links the machine's commands. */
+    private fun commandLines(server: String, info: ShareInfo, deprecated: Boolean) {
         if (info.commands.isEmpty()) out.line("  no command here holds a login of its own to offer")
-        if (door == null) out.line("on another machine: ${CYAN}splice remote add $server$RESET")
-        if (door != null && info.commands.isNotEmpty()) {
+        if (!deprecated) out.line("on another machine: ${CYAN}splice remote add $server$RESET")
+        if (deprecated && info.commands.isNotEmpty()) {
             out.line("${DIM}each command on its own (deprecated; the door has all):$RESET")
         }
         info.commands.forEach { offer ->
@@ -106,12 +118,6 @@ internal class ShareCommand(
             val models = offer.models.joinToString(", ")
             out.line("  ${"".padEnd(COMMAND_PAD)} ${DIM}logins: $logins · models: $models$RESET")
         }
-        out.line("${DIM}one on another machine: splice remote add <address>$RESET")
-        out.line("${DIM}an address may end in ?auth=<login> to run on that login,$RESET")
-        out.line("${DIM}and in ?models=<id>,<id> to show only those models$RESET")
-        val others = reach.addresses - server
-        if (others.isNotEmpty()) out.line("${DIM}by address: ${others.joinToString(", ")}$RESET")
-        return PeerExit.DONE
     }
 
     /** The door at [server]: how many models it serves, the one add that puts another machine's `claude` on it, and the

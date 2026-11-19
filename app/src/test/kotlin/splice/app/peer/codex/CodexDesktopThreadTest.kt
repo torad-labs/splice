@@ -133,6 +133,27 @@ class CodexDesktopThreadTest {
     }
 
     @Test
+    fun `an attach to a desktop whose thread stream splice cannot read is refused with the stream's version`(
+        @TempDir directory: Path,
+    ) = runBlocking {
+        val conversationId = "conversation-desktop-old-stream"
+        val fixture = CodexDesktopStandIn(directory.resolve("ipc/ipc.sock"), conversationId, streamVersion = 10)
+        val thread = CodexDesktopThread(CodexIpcRpc(CodexIpcSocket(fixture.connect()), Dispatchers.IO), conversationId)
+        val reading = async(Dispatchers.IO) { thread.read() }
+
+        try {
+            assertEquals(
+                CodexGreeting.Refused("the desktop's thread stream is version 10, older than the 11 splice reads"),
+                withTimeout(TEST_TIMEOUT_MS) { thread.greet() },
+            )
+        } finally {
+            thread.close()
+            fixture.close()
+            reading.cancelAndJoin()
+        }
+    }
+
+    @Test
     fun `a desktop handover without acknowledgement remains uncertain`(@TempDir directory: Path) = runBlocking {
         val conversationId = "conversation-desktop-no-ack"
         val fixture = CodexDesktopStandIn(

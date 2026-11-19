@@ -49,7 +49,7 @@ internal class LanAdmission(
 
     /** Why [address] may not reach the listener, in words for the machine turned away, or null when it may. */
     fun refusal(address: String): String? {
-        val ip = literal(address)
+        val ip = IpLiterals.parse(address)
         if (ip?.isLoopbackAddress == true) return null
         // Interfaces that could not be read cannot tell a house from a datacenter: loopback alone is admitted then.
         val links = attached.now()?.groupBy { it.link }?.values ?: return UNREAD_NETWORKS
@@ -113,7 +113,7 @@ internal class LanAdmission(
     /** An absent Host is admitted: an HTTP/1.0 client sends none, and no browser request lacks one. */
     fun admitsHost(host: String?): Boolean {
         val name = host?.let(::hostOnly)?.lowercase()?.trimEnd('.') ?: return true
-        return literal(name) != null || name in names || magicDns(name)
+        return IpLiterals.parse(name) != null || name in names || magicDns(name)
     }
 
     /** Whether [name] is this machine's name on a tailnet, as MagicDNS gives it: its short name under
@@ -127,8 +127,6 @@ internal class LanAdmission(
         host.count { it == ':' } == 1 -> host.substringBefore(':')
         else -> host
     }
-
-    private fun literal(text: String): InetAddress? = IpLiterals.parse(text)
 
     private fun carrierGrade(ip: InetAddress): Boolean {
         val bytes = (ip as? Inet4Address)?.address ?: return false

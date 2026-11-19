@@ -37,6 +37,7 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
+import splice.app.ReadOnlyFolder
 import splice.core.auth.AuthProvider
 import splice.core.config.ConfigService
 import splice.core.config.KeyStore
@@ -193,6 +194,7 @@ class KeysRouteTest {
             val readOnly = setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_EXECUTE)
             Files.setPosixFilePermissions(folder, readOnly)
             try {
+                ReadOnlyFolder.assumeRefuses(folder)
                 val list = send("GET", "/api/keys")
                 assertEquals(HttpStatusCode.OK, list.status, list.bodyAsText())
                 val shadowed = obj(list).getValue("keys").jsonArray.map { it.jsonObject }
@@ -224,15 +226,17 @@ class KeysRouteTest {
         awaitPort()
         Files.createDirectories(store.path.parent)
         Files.writeString(store.path, "$STORED = \"kept\"\n")
-        Files.setPosixFilePermissions(store.path, emptySet())
+        // The store's name is a link to itself while the write is asked for, which no one can read, root included;
+        // the store is put back after.
+        val aside = store.path.resolveSibling("${store.path.fileName}.aside")
+        Files.move(store.path, aside)
+        Files.createSymbolicLink(store.path, store.path.fileName)
         try {
             val put = send("PUT", "/api/keys/$STORED", """{"value":"replacement-value"}""")
             assertRefused(put, HttpStatusCode.Conflict, "refusing to write")
         } finally {
-            Files.setPosixFilePermissions(
-                store.path,
-                setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
-            )
+            Files.delete(store.path)
+            Files.move(aside, store.path)
         }
         assertEquals("kept", store.read(STORED))
         send("DELETE", "/api/keys/$STORED")

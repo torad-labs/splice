@@ -47,6 +47,7 @@ import splice.accounts.pool.HeadAccountPinSource
 import splice.accounts.pool.HeadAccountPoolSource
 import splice.accounts.pool.SwitchRoute
 import splice.accounts.signin.HeadRestart
+import splice.app.ReadOnlyFolder
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.auth.CredentialFileIdentity
@@ -328,6 +329,7 @@ class UseNowPinRestartTest {
         val pins = daemon.source as HeadAccountPinSource
         Files.setPosixFilePermissions(state, PosixFilePermissions.fromString("r-x------"))
         try {
+            ReadOnlyFolder.assumeRefuses(state)
             assertThrows(IOException::class.java) { pins.pin("three", null) }
         } finally {
             Files.setPosixFilePermissions(state, PosixFilePermissions.fromString("rwx------"))

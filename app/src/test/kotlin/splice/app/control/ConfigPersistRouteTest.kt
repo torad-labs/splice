@@ -25,6 +25,7 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
+import splice.app.ReadOnlyFolder
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
@@ -66,6 +67,7 @@ class ConfigPersistRouteTest {
         val stateDir = statePaths.configFile.parent
         Files.setPosixFilePermissions(stateDir, PosixFilePermissions.fromString("r-x------"))
         val body = try {
+            ReadOnlyFolder.assumeRefuses(stateDir)
             client.patch("http://127.0.0.1:${control.listeningPort}/api/config") {
                 header("Authorization", "Bearer $key")
                 header("Content-Type", "application/json")

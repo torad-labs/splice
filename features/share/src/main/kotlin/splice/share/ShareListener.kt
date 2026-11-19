@@ -101,10 +101,12 @@ public class ShareListener(
         val refusal = withContext(io) { admissionRefusal(call) }
         if (refusal != null) return ShareErrors.refuse(call, HttpStatus.FORBIDDEN, refusal)
         val parts = call.request.path().split('/').filter(String::isNotEmpty)
-        val named = parts.firstOrNull() ?: return catalog.directory(call)
-        if (named == DOOR_SEGMENT) return atDoor(call, parts.drop(1))
-        val head = catalog.named(call, named) ?: return
-        route(call, head, parts.drop(1))
+        val rest = parts.drop(1)
+        when (val named = parts.firstOrNull()) {
+            null -> catalog.directory(call)
+            DOOR_SEGMENT -> atDoor(call, rest)
+            else -> catalog.named(call, named)?.let { route(call, it, rest) }
+        }
     }
 
     /** [rest], the path after [head]'s name: a turn, with the login it names first if any, its launch, or its
@@ -120,19 +122,24 @@ public class ShareListener(
         }
     }
 
-    /** [rest], the path after `/door`: the launch another machine's `claude` reads, or a turn or a count, whose body
-     *  must be JSON as every turn's here must. */
+    /** [rest], the path after `/door`: the launch another machine's `claude` reads, or a turn or a count. */
     private suspend fun atDoor(call: ApplicationCall, rest: List<String>) {
         val door = door ?: return ShareErrors.refuse(call, HttpStatus.NOT_FOUND, "${heads.machine} runs no door")
         val posted = call.request.httpMethod == HttpMethod.Post
         val turn = rest == doorMessages || rest == doorCount
         when {
             !posted && rest == listOf(HEAD_LAUNCH_ROUTE) -> doorLaunch(call, door)
-            posted && turn && !sentAsJson(call) ->
-                ShareErrors.refuse(call, HttpStatus.BAD_REQUEST, "a turn's body must be application/json")
-            posted && turn -> door.answer(call, counting = rest == doorCount)
+            posted && turn -> doorTurn(call, door, counting = rest == doorCount)
             else -> ShareErrors.refuse(call, HttpStatus.NOT_FOUND, "no such path on ${heads.machine}'s door")
         }
+    }
+
+    /** A turn, or a count when [counting], posted to the door: its body must be JSON, as every turn's here must. */
+    private suspend fun doorTurn(call: ApplicationCall, door: ShareDoor, counting: Boolean) {
+        if (!sentAsJson(call)) {
+            return ShareErrors.refuse(call, HttpStatus.BAD_REQUEST, "a turn's body must be application/json")
+        }
+        door.answer(call, counting)
     }
 
     /** `GET /door/launch`: what another machine's `claude` launches with; 503 while the heads are still starting. */

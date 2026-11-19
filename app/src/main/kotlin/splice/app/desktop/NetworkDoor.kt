@@ -11,6 +11,7 @@ import io.ktor.server.application.ApplicationCall
 import splice.client.desktop.DoorPickerRow
 import splice.core.turn.TERMINAL_DOOR
 import splice.core.wire.HttpStatus
+import splice.share.DOOR_STARTING
 import splice.share.RefusalVoice
 import splice.share.ShareDoor
 import splice.share.ShareRelay
@@ -56,7 +57,8 @@ internal class NetworkDoor : ShareDoor {
     }
 
     override suspend fun answer(call: ApplicationCall, counting: Boolean) {
-        val open = opened ?: return voice.refuse(call, HttpStatus.SERVICE_UNAVAILABLE, NOT_OPEN)
+        val starting = "this machine's door $DOOR_STARTING"
+        val open = opened ?: return voice.refuse(call, HttpStatus.SERVICE_UNAVAILABLE, starting)
         open.door.answerAs(call, open.caller, counting)
     }
 
@@ -76,6 +78,3 @@ internal fun interface PickerRows {
 
 /** What every refusal the door answers another machine with starts with. */
 internal const val NETWORK_ERROR_PREFIX = "splice door: "
-
-// What a turn from another machine is told before the daemon here has opened its door.
-private const val NOT_OPEN = "the door opens once this machine's heads are up"

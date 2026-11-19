@@ -53,20 +53,28 @@ internal class LanAdmission(
         if (ip?.isLoopbackAddress == true) return null
         // Interfaces that could not be read cannot tell a house from a datacenter: loopback alone is admitted then.
         val links = attached.now()?.groupBy { it.link }?.values ?: return UNREAD_NETWORKS
-        if (ip != null && tailnet(ip) && onThisTailnet(ip, links)) return null
-        val lan = ip != null && !datacenter(ip, links) && (privateRange(ip) || onThisLan(ip, links))
-        return if (lan) null else "requests from $address are not from this machine's LAN or its tailnet"
+        val near = ip != null && near(ip, links)
+        return if (near) null else "requests from $address are not from this machine's LAN or its tailnet"
+    }
+
+    /** Whether [ip] is a peer on this machine's tailnet or a machine on its LAN. A tailnet peer is asked first, since
+     *  Tailscale has already admitted it; a source on a datacenter interface's network is neither. */
+    private fun near(ip: InetAddress, links: Collection<List<SharePrefix>>): Boolean = when {
+        onThisTailnet(ip, links) -> true
+        datacenter(ip, links) -> false
+        else -> privateRange(ip) || onThisLan(ip, links)
     }
 
     private fun privateRange(ip: InetAddress): Boolean = ip.isSiteLocalAddress || ip.isLinkLocalAddress
 
-    /** Whether [ip], a source in a tailnet range, is a peer of a tailnet this machine is on: it holds a Tailscale
-     *  host address itself (one address of its own on the range, which a carrier's or a hotspot's shared 100.64/10
-     *  network never gives), and no other network of this machine holds [ip], which would make it a neighbour on a
-     *  carrier's NAT and not a peer. */
+    /** Whether [ip] is a peer of a tailnet this machine is on: it is in a tailnet range, this machine holds a
+     *  Tailscale host address itself (one address of its own on the range, which a carrier's or a hotspot's shared
+     *  100.64/10 network never gives), and no other network of this machine holds [ip], which would make it a
+     *  neighbour on a carrier's NAT and not a peer. */
     private fun onThisTailnet(ip: InetAddress, links: Collection<List<SharePrefix>>): Boolean {
         val prefixes = links.flatten()
-        return prefixes.any(::tailnetHost) && prefixes.none { !tailnetHost(it) && it.holds(ip) }
+        val peer = tailnet(ip) && prefixes.any(::tailnetHost)
+        return peer && prefixes.none { !tailnetHost(it) && it.holds(ip) }
     }
 
     /** Whether [prefix] is a Tailscale host address: one address, on one of the ranges Tailscale hands its peers. */
@@ -185,6 +193,8 @@ private const val MAGIC_DNS_DOTS = 3
 // why: Tailscale gives a host exactly one address of each family on its range, a /32 and a /128; a carrier's or a
 // hotspot's network holds its whole range on the interface, so only a whole address says "this is a tailnet host".
 private const val IPV4_BITS = 32
+
+// why: the whole of an IPv6 address, as 32 bits are the whole of an IPv4 one: a Tailscale host's /128.
 private const val IPV6_BITS = 128
 
 // why: 100.64.0.0/10, carrier-grade NAT and the range Tailscale hands out, starts with the octet 100.

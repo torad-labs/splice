@@ -27,14 +27,22 @@ internal class RemoteDoor(private val http: ShareHttp, private val mark: DoorMar
             is ShareAnswer.Unreachable -> return RemoteLaunch.Refused("$where, which can't be reached: ${asked.why}")
             is ShareAnswer.Answered -> asked
         }
-        if (answer.status != HttpStatus.OK) {
-            return RemoteLaunch.Refused("$where, which refused it: ${http.said(answer.body)}")
+        val shared = answer.takeIf { it.status == HttpStatus.OK }
+            ?.let { http.decoded(it.body, SharedDoorLaunch.serializer()) }
+        return when {
+            shared != null -> RemoteLaunch.Door(spec(address, shared, window))
+            answer.status != HttpStatus.OK ->
+                RemoteLaunch.Refused("$where, which refused it: ${http.said(answer.body)}")
+            else -> RemoteLaunch.Refused("$where, which answered with something that is not a door's launch")
         }
-        val shared = http.decoded(answer.body, SharedDoorLaunch.serializer())
-            ?: return RemoteLaunch.Refused("$where, which answered with something that is not a door's launch")
+    }
+
+    /** What `claude` here launches with on the door [shared] describes: that machine's models as the picker's rows,
+     *  its window unless this machine pinned one, and its door as the base URL. */
+    private fun spec(address: RemoteAddress, shared: SharedDoorLaunch, window: Long?): DoorLaunchSpec {
         val rows = shared.rows.map { DoorPickerRow(it.model, it.label, "${it.command} on ${shared.machine}") }
         val door = "${address.server}/$DOOR_SEGMENT"
         val session = DoorSession(door, SHARE_NODE_TOKEN, window ?: shared.window, shared.model, rows)
-        return RemoteLaunch.Door(DoorLaunchSpec(session.env(), session.unset(), session.overlay(mark.here, mark.key)))
+        return DoorLaunchSpec(session.env(), session.unset(), session.overlay(mark.here, mark.key))
     }
 }

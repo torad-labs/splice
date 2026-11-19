@@ -270,7 +270,7 @@ public class StatePaths(
     public val daemonLockFile: Path = stateDir.resolve("daemon.lock")
 
     /** desktop-door: the key Claude Desktop's door opens to, owner-only, and the door's own record (whether it is on,
-     *  its default model and window, what `splice desktop on` replaced in the settings file, and its last turn). */
+     *  the window Desktop was told, what `splice desktop on` replaced in the settings file, and its last turn). */
     public val desktopKeyFile: Path = stateDir.resolve("desktop-key")
 
     public val desktopFile: Path = stateDir.resolve("desktop.json")

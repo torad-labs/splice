@@ -18,9 +18,12 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.launch.LaunchSpec
 import splice.launch.RemoteCommands
+import splice.sessions.registry.LaunchMarker
+import splice.share.DoorMark
 import splice.share.RemoteLaunches
 import splice.share.RemoteTrees
 import splice.share.ServerLogins
+import splice.share.ShareDoor
 import splice.share.ShareListener
 import splice.share.ShareMachine
 import splice.share.SharedHead
@@ -44,15 +47,18 @@ internal class DaemonShare(
     private var listener: ShareListener? = null
 
     /** The commands this machine runs on another's heads, launched from [trees] under [policy]. */
-    fun remotes(trees: RemoteTrees, policy: ClaudePolicy): RemoteCommands =
-        RemoteLaunches(topology.remote, trees, policy, ProcessDispatchers().io(), logins)
+    fun remotes(trees: RemoteTrees, policy: ClaudePolicy): RemoteCommands {
+        val mark = DoorMark(LaunchMarker.here, LaunchMarker.SPLICE_LAUNCH_KEY)
+        return RemoteLaunches(topology.remote, trees, policy, ProcessDispatchers().io(), logins, mark)
+    }
 
-    /** Opens the listener when `[share]` turns it on, offering [heads] and [controlPort]'s statusline. */
-    fun open(heads: Map<String, ManagedHead>, controlPort: Int) {
+    /** Opens the listener when `[share]` turns it on, offering [heads], [controlPort]'s statusline and the [door]
+     *  (door-network). */
+    fun open(heads: Map<String, ManagedHead>, controlPort: Int, door: ShareDoor? = null) {
         forgetJoins()
         if (!topology.share.enabled) return
         val offered = ManagedSharedHeads(heads, topology, config, ShareMachine(log).name())
-        val opened = ShareListener(topology.share, offered, turnKey, controlPort, ProcessDispatchers().io(), log)
+        val opened = ShareListener(topology.share, offered, turnKey, controlPort, ProcessDispatchers().io(), log, door)
         Cancellables.runCatchingBestEffort { opened.start() }
             .onSuccess { listener = opened }
             .onFailure { failure ->

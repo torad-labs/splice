@@ -5,6 +5,7 @@
 package splice.app.desktop
 
 import splice.client.desktop.DoorPicker
+import splice.client.desktop.DoorPickerRow
 import splice.client.login.DoorLogin
 import splice.core.config.FileHeldKey
 import splice.core.config.StatePaths
@@ -49,6 +50,9 @@ internal class TerminalDoor(topology: Topology, statePaths: StatePaths, private 
     override suspend fun headPicker(): DoorPicker? = launched?.headPicker()
 
     override fun headHere(): Boolean = claudeHead()
+
+    /** The picker's rows of [lineup] as a launch of `claude` on the door lists them; none before [open]. */
+    fun rows(lineup: DesktopLineup): List<DoorPickerRow> = launched?.rowsOf(lineup).orEmpty()
 }
 
 // What the terminal's key starts with, so it is told from Desktop's at a glance.

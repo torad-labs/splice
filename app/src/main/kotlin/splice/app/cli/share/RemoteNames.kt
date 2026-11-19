@@ -10,6 +10,7 @@ import splice.core.terminal.RESET
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.CLAUDE_COMMAND
 import splice.core.topology.RemoteConfig
+import splice.core.topology.ShareConfig
 import splice.core.topology.Topology
 import splice.share.Asked
 import splice.share.ServerProfile
@@ -73,6 +74,16 @@ internal class RemoteNames(
                 "${quoted(command)} is already a command here; $elsewhere"
             else -> null
         }
+    }
+
+    /** [server] (`http://devbox`) on the share port when it is over http and names no port, as a machine sharing its
+     *  commands and its door listens there (door-network); as it is otherwise. */
+    fun onSharePort(server: String): String = try {
+        val uri = URI.create(server)
+        val bare = uri.scheme == "http" && uri.port == -1
+        uri.rawAuthority?.takeIf { bare }?.let { "http://$it:${ShareConfig().port}" } ?: server
+    } catch (_: IllegalArgumentException) {
+        server
     }
 
     /** [text] as an address: trimmed, and over http when it names no scheme, as `splice share status` prints one. */

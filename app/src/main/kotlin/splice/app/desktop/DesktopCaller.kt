@@ -1,6 +1,7 @@
 // NEW: door-default (docs/specs/door-default.md, decision 3). Claude Desktop's Code tab as a caller of the door
-// (docs/specs/desktop-door.md): its desktop key, its switch (`splice desktop on` and `off`), its default model and
-// window from the door's record, and the last turn it sent, kept for `splice desktop`.
+// (docs/specs/desktop-door.md): its desktop key, its switch (`splice desktop on` and `off`), the window Desktop was
+// told, from the door's record, and the last turn it sent, kept for `splice desktop`. It has no model of its own: a
+// Code tab session starts on the door's one starting model, the terminal's (DesktopDoor).
 package splice.app.desktop
 
 import splice.client.desktop.DESKTOP_ENV_PLACE
@@ -24,8 +25,6 @@ internal class DesktopCaller(
     override fun presents(header: String?): Boolean = key.matchesBearer(header)
 
     override fun closed(): String? = off.takeUnless { records.get().on }
-
-    override fun default(lineup: DesktopLineup): String? = records.get().defaultModel
 
     override fun window(): Long? = records.get().window
 

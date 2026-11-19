@@ -1,5 +1,8 @@
 // NEW: desktop-door (docs/specs/desktop-door.md, decisions 1, 2, 5 and 7). A turn of Claude Code in Mantle mode,
-// answered under /desktop on the control port, which a restart does not move.
+// answered under /door on the control port, which a restart does not move, and under /door on the share listener for
+// another machine (door-network). It is one door: Desktop's Code tab, the terminal's `claude` and another machine are
+// its callers, told apart by the key a request presents. /desktop, the control port's path before 0.6.4, still answers,
+// so a Desktop set up then and a `claude` session started then go on.
 //
 // door-default (docs/specs/door-default.md, decision 3): the door admits two callers, Claude Desktop's Code tab and the
 // terminal's `claude`, each by its own key (DoorCaller), and no other key opens it. While a caller's switch is off the
@@ -37,6 +40,9 @@ internal data class DoorAsk(val request: JsonObject, val model: String, val sess
 internal class DesktopDoor(
     private val callers: List<DoorCaller>,
     private val heads: DesktopHeads,
+    /** The terminal's lane, whose starting model is the door's: a session that named no selector runs it, whoever
+     *  the caller is. */
+    private val lane: ClaudeLane,
     clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
     /** The door's own voice, for a key it holds for no caller: it can't tell whose session that is, so its words name
@@ -46,21 +52,43 @@ internal class DesktopDoor(
     private val routing = DoorRouting()
     private val toHead = DoorRelay(clock)
 
-    /** `POST /desktop/v1/messages`, with or without `?beta=true`. */
+    /** `POST /door/v1/messages`, with or without `?beta=true`. */
     suspend fun messages(call: ApplicationCall) = answer(call, counting = false)
 
-    /** `POST /desktop/v1/messages/count_tokens`, with or without `?beta=true`. */
+    /** `POST /door/v1/messages/count_tokens`, with or without `?beta=true`. */
     suspend fun countTokens(call: ApplicationCall) = answer(call, counting = true)
 
     /** [call] answered for the caller whose key it presents; refused in Anthropic's shape, with nothing sent upstream,
      *  when it presents none, a wrong one or one that was replaced. */
     private suspend fun answer(call: ApplicationCall, counting: Boolean) {
         val caller = admitted(call) ?: return
+        routed(call, caller, counting)
+    }
+
+    /** [call], which something other than a key admitted (the share listener, by where the machine is: door-network),
+     *  answered for the caller whose key it presents all the same, so Desktop's Code tab is Desktop at either
+     *  listener, and for [caller] when it presents none the door knows. Refused as that caller's door refuses while it
+     *  is shut. */
+    suspend fun answerAs(call: ApplicationCall, caller: DoorCaller, counting: Boolean) {
+        val from = keyed(call) ?: caller
+        val shut = from.closed()
+        if (shut != null) return from.voice.refuse(call, DOOR_REFUSAL_STATUS, shut)
+        routed(call, from, counting)
+    }
+
+    /** The caller whose key [call] presents; null when it presents none the door knows. */
+    private fun keyed(call: ApplicationCall): DoorCaller? {
+        val presented = call.request.headers[HttpHeaders.Authorization]
+        return callers.firstOrNull { it.presents(presented) }
+    }
+
+    /** [call], from [caller], read and sent to the head the model it names picks. */
+    private suspend fun routed(call: ApplicationCall, caller: DoorCaller, counting: Boolean) {
         val lineup = heads.lineup()
         val request = read(call, caller, lineup) ?: return
         val model = JsonScalars.str(request, REQUEST_MODEL).orEmpty()
         val ask = DoorAsk(request, model, call.request.headers[SESSION_HEADER])
-        val route = routing.of(lineup, ask, caller.default(lineup), caller.runsNamedModels)
+        val route = routing.of(lineup, ask, lane.starting(lineup).first, caller.runsNamedModels)
             ?: return caller.voice.refuse(call, HttpStatus.BAD_REQUEST, "model \"${ask.model}\" ${caller.notInDoor}")
         toHead.send(call, caller, route, ask, counting)
     }
@@ -68,8 +96,7 @@ internal class DesktopDoor(
     /** The caller whose key [call] presents, while its switch is on; null once [call] has been refused
      *  ([DOOR_REFUSAL_STATUS]): with no key it knows, or saying how to open a caller's door that is shut. */
     private suspend fun admitted(call: ApplicationCall): DoorCaller? {
-        val presented = call.request.headers[HttpHeaders.Authorization]
-        val caller = callers.firstOrNull { it.presents(presented) }
+        val caller = keyed(call)
         if (caller == null) {
             voice.refuse(call, DOOR_REFUSAL_STATUS, NO_DOOR_KEY)
             return null

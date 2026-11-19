@@ -91,8 +91,6 @@ internal class ClaudeHeadLane(private val topology: Topology) {
 
         override fun closed(): String? = null
 
-        override fun default(lineup: DesktopLineup): String? = null
-
         override fun window(): Long = window
 
         override val noHead: String = "no account is signed in, so claude runs Claude's models alone"

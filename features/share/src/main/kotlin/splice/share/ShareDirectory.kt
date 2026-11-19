@@ -23,4 +23,12 @@ public class ShareDirectory(
         not = "not as a machine sharing splice commands",
         unauthorized = "; sign in there first: splice login $server",
     ) { http.decoded(it, ShareInfo.serializer()) }
+
+    /** What [server]'s door (door-network) launches `claude` with, or why it could not be had: a machine on an older
+     *  splice, or a team server, answers no door. */
+    public suspend fun door(server: String): Asked<SharedDoorLaunch> = http.read(
+        server,
+        http.get(URI.create("$server/$DOOR_SEGMENT/$HEAD_LAUNCH_ROUTE")),
+        not = "not as a machine whose door is on its network",
+    ) { http.decoded(it, SharedDoorLaunch.serializer()) }
 }

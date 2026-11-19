@@ -1,10 +1,13 @@
-// NEW: desktop-door (docs/specs/desktop-door.md). The control port's routes for Claude Desktop's Code tab:
+// NEW: desktop-door (docs/specs/desktop-door.md). The control port's routes for the door and for the two commands
+// that drive it:
 //
-//   POST /desktop/v1/messages[?beta=true]               a turn, behind the desktop key and no other
-//   POST /desktop/v1/messages/count_tokens[?beta=true]  a count, behind the desktop key and no other
+//   POST /door/v1/messages[?beta=true]                  a turn, behind Desktop's key or the terminal's and no other
+//   POST /door/v1/messages/count_tokens[?beta=true]     a count, behind the same two keys
+//   POST /desktop/v1/messages[...]                      the same two routes at the door's path before 0.6.4, for a
+//                                                       Desktop set up then and a `claude` session started then
 //   GET  /api/desktop                                   what `splice desktop` says, behind the management key
-//   POST /api/desktop/on                                {"model"?}: `splice desktop on [--model]`, answered with
-//                                                       what to set in Desktop's environment store (desktop_env)
+//   POST /api/desktop/on                                `splice desktop on`, answered with what to set in Desktop's
+//                                                       environment store (desktop_env); a "model" is refused
 //   POST /api/desktop/off                               `splice desktop off`
 //   POST /api/desktop/rotate-key                        `splice desktop rotate-key`, with desktop_env while on
 //   GET  /api/claude                                    what `splice claude` says (docs/specs/door-default.md)
@@ -13,8 +16,8 @@
 //   POST /api/claude/head                               `splice claude head`
 //
 // The door is on the control port, whose number splice.toml fixes, so its address is the same at every start. The
-// desktop key and the terminal's key each open only the two door routes, and the management and turn keys do not
-// open them.
+// desktop key and the terminal's key each open only the door's routes, and the management and turn keys do not open
+// them.
 package splice.app.control
 
 import io.ktor.http.HttpStatusCode
@@ -32,6 +35,7 @@ import splice.app.control.api.ControlBodies
 import splice.app.control.mount.ControlGuard
 import splice.app.desktop.DESKTOP_ERROR_PREFIX
 import splice.app.desktop.DESKTOP_PATH
+import splice.app.desktop.DOOR_PATH
 import splice.app.desktop.DesktopAct
 import splice.app.desktop.DesktopService
 import splice.core.util.JsonScalars
@@ -49,13 +53,15 @@ internal class DesktopRoutes(
     private val voice = RefusalVoice(DESKTOP_ERROR_PREFIX)
 
     fun register(route: Route) {
-        route.post("$DESKTOP_PATH/v1/messages") {
-            val desktop = atDoor(call) ?: return@post
-            desktop.door.messages(call)
-        }
-        route.post("$DESKTOP_PATH/v1/messages/count_tokens") {
-            val desktop = atDoor(call) ?: return@post
-            desktop.door.countTokens(call)
+        listOf(DOOR_PATH, DESKTOP_PATH).forEach { at ->
+            route.post("$at/v1/messages") {
+                val desktop = atDoor(call) ?: return@post
+                desktop.door.messages(call)
+            }
+            route.post("$at/v1/messages/count_tokens") {
+                val desktop = atDoor(call) ?: return@post
+                desktop.door.countTokens(call)
+            }
         }
         route.get("/api/desktop") { guard.guarded(call) { state(call) } }
         route.post("/api/desktop/on") { guard.guarded(call) { on(call) } }

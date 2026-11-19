@@ -1,9 +1,11 @@
 // NEW: LAN share (docs/specs/lan-share.md, "Who is on the LAN"). Who may reach the share listener at all, before any
 // route runs. The source must be on this machine's own networks: loopback, RFC 1918, link-local, or an IPv6 address on
 // a prefix a house interface of this machine holds, one beside an RFC 1918 address and no public IPv4 one, which is how
-// a house whose router hands out a globally routable or unique local /64 reaches itself. Neither 100.64/10 nor unique
-// local IPv6 as a whole (fc00::/7) is: Tailscale hands out 100.64/10 and fd7a:115c:a1e0::/48, inside fc00::/7, and
-// Tailscale is not part of this, so a tailnet peer is turned away over either address. A source on any
+// a house whose router hands out a globally routable or unique local /64 reaches itself. Unique local IPv6 as a whole
+// (fc00::/7) is not. A tailnet peer is (door-network, Nov 18, 2026, which reverses the Oct 24 "Tailscale is not part of
+// this"): a source on Tailscale's 100.64/10 or fd7a:115c:a1e0::/48 is admitted while this machine holds an address
+// there itself, so it is a peer on the same tailnet, which Tailscale has already admitted; on a machine with no tailnet
+// address those ranges are a carrier's NAT, and turned away. A source on any
 // prefix a datacenter interface holds (one with a public IPv4 address) is refused, whatever its range: a provider's
 // private network, link and /64 are shared with its other customers. A machine whose interfaces cannot be read admits
 // loopback alone, since nothing then tells a house from a datacenter, and says that, not that the source is off the
@@ -33,9 +35,13 @@ internal class LanAdmission(
     // The domains a house router, mDNS or a home DNS puts this machine's short name under.
     private val lanSuffixes = listOf("local", "lan", "home", "internal")
 
+    private val tailnetIpv6 = IpPrefix(InetAddress.getByName(TAILNET_IPV6_PREFIX), TAILNET_IPV6_BITS)
+
+    // This machine's short name: its host name up to the first dot.
+    private val short = localName.lowercase().trimEnd('.').substringBefore('.')
+
     private val names: Set<String> = buildSet {
         val full = localName.lowercase().trimEnd('.')
-        val short = full.substringBefore('.')
         addAll(listOf("localhost", full, short))
         lanSuffixes.forEach { add("$short.$it") }
         hostnames.forEach { add(it.lowercase().trimEnd('.')) }
@@ -43,15 +49,42 @@ internal class LanAdmission(
 
     /** Why [address] may not reach the listener, in words for the machine turned away, or null when it may. */
     fun refusal(address: String): String? {
-        val ip = literal(address)
+        val ip = IpLiterals.parse(address)
         if (ip?.isLoopbackAddress == true) return null
         // Interfaces that could not be read cannot tell a house from a datacenter: loopback alone is admitted then.
         val links = attached.now()?.groupBy { it.link }?.values ?: return UNREAD_NETWORKS
-        val lan = ip != null && !datacenter(ip, links) && (privateRange(ip) || onThisLan(ip, links))
-        return if (lan) null else "requests from $address are not from this machine's LAN"
+        val near = ip != null && near(ip, links)
+        return if (near) null else "requests from $address are not from this machine's LAN or its tailnet"
+    }
+
+    /** Whether [ip] is a peer on this machine's tailnet or a machine on its LAN. A tailnet peer is asked first, since
+     *  Tailscale has already admitted it; a source on a datacenter interface's network is neither. */
+    private fun near(ip: InetAddress, links: Collection<List<SharePrefix>>): Boolean = when {
+        onThisTailnet(ip, links) -> true
+        datacenter(ip, links) -> false
+        else -> privateRange(ip) || onThisLan(ip, links)
     }
 
     private fun privateRange(ip: InetAddress): Boolean = ip.isSiteLocalAddress || ip.isLinkLocalAddress
+
+    /** Whether [ip] is a peer of a tailnet this machine is on: it is in a tailnet range, this machine holds a
+     *  Tailscale host address itself (one address of its own on the range, which a carrier's or a hotspot's shared
+     *  100.64/10 network never gives), and no other network of this machine holds [ip], which would make it a
+     *  neighbour on a carrier's NAT and not a peer. */
+    private fun onThisTailnet(ip: InetAddress, links: Collection<List<SharePrefix>>): Boolean {
+        val prefixes = links.flatten()
+        val peer = tailnet(ip) && prefixes.any(::tailnetHost)
+        return peer && prefixes.none { !tailnetHost(it) && it.holds(ip) }
+    }
+
+    /** Whether [prefix] is a Tailscale host address: one address, on one of the ranges Tailscale hands its peers. */
+    private fun tailnetHost(prefix: SharePrefix): Boolean {
+        val whole = if (prefix.address is Inet4Address) IPV4_BITS else IPV6_BITS
+        return tailnet(prefix.address) && prefix.bits == whole
+    }
+
+    /** Whether [ip] is on one of the ranges Tailscale hands its peers: 100.64/10 or fd7a:115c:a1e0::/48. */
+    private fun tailnet(ip: InetAddress): Boolean = carrierGrade(ip) || tailnetIpv6.holds(ip)
 
     /** Whether a datacenter interface of this machine, one holding a public IPv4 address, holds [ip]'s prefix. Its
      *  private network is the provider's, and some share it with every customer in the region (Linode's
@@ -80,8 +113,13 @@ internal class LanAdmission(
     /** An absent Host is admitted: an HTTP/1.0 client sends none, and no browser request lacks one. */
     fun admitsHost(host: String?): Boolean {
         val name = host?.let(::hostOnly)?.lowercase()?.trimEnd('.') ?: return true
-        return literal(name) != null || name in names
+        return IpLiterals.parse(name) != null || name in names || magicDns(name)
     }
+
+    /** Whether [name] is this machine's name on a tailnet, as MagicDNS gives it: its short name under
+     *  `<tailnet>.ts.net`. */
+    private fun magicDns(name: String): Boolean = name.endsWith(MAGIC_DNS_SUFFIX) &&
+        name.substringBefore('.') == short && name.count { it == '.' } == MAGIC_DNS_DOTS
 
     /** `[fe80::1]:3097` -> `fe80::1`, `host:3097` -> `host`; a bare IPv6 literal is kept whole. */
     private fun hostOnly(host: String): String = when {
@@ -89,8 +127,6 @@ internal class LanAdmission(
         host.count { it == ':' } == 1 -> host.substringBefore(':')
         else -> host
     }
-
-    private fun literal(text: String): InetAddress? = IpLiterals.parse(text)
 
     private fun carrierGrade(ip: InetAddress): Boolean {
         val bytes = (ip as? Inet4Address)?.address ?: return false
@@ -138,6 +174,26 @@ internal class HostPrefixes(private val log: LogSink) : AttachedPrefixes {
 // may outlast; "not from this machine's LAN" would be false for it.
 private const val UNREAD_NETWORKS =
     "this machine could not read its own networks; only loopback is answered until it can"
+
+// why: Tailscale hands every peer an address from fd7a:115c:a1e0::/48, inside unique local IPv6 (fc00::/7), so a
+// tailnet peer is told from another site's unique local source by this prefix alone.
+private const val TAILNET_IPV6_PREFIX = "fd7a:115c:a1e0::"
+
+// why: the 48 leading bits of that prefix are the tailnet's; the rest is the peer.
+private const val TAILNET_IPV6_BITS = 48
+
+// The domain MagicDNS names a tailnet's machines under: `<machine>.<tailnet>.ts.net`.
+private const val MAGIC_DNS_SUFFIX = ".ts.net"
+
+// why: `machine.tailnet.ts.net` has three dots; a name with more is some other machine's under it.
+private const val MAGIC_DNS_DOTS = 3
+
+// why: Tailscale gives a host exactly one address of each family on its range, a /32 and a /128; a carrier's or a
+// hotspot's network holds its whole range on the interface, so only a whole address says "this is a tailnet host".
+private const val IPV4_BITS = 32
+
+// why: the whole of an IPv6 address, as 32 bits are the whole of an IPv4 one: a Tailscale host's /128.
+private const val IPV6_BITS = 128
 
 // why: 100.64.0.0/10, carrier-grade NAT and the range Tailscale hands out, starts with the octet 100.
 private const val CGNAT_FIRST_OCTET = 100

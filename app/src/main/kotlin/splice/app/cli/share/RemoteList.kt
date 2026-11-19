@@ -12,6 +12,7 @@ import splice.core.topology.RemoteAddress
 import splice.core.topology.RemoteAddressRead
 import splice.core.topology.RemoteAddresses
 import splice.share.Asked
+import splice.share.DOOR_SEGMENT
 import splice.share.ShareDirectory
 import splice.share.ShareInfo
 
@@ -49,6 +50,8 @@ internal class RemoteList(
             is Asked.Refused -> return read.why
             is Asked.Had -> read.value
         }
+        // door-network: a machine that answers at all answers its door, which serves every model of every command.
+        if (address.head == DOOR_SEGMENT) return "ready on ${info.machine}'s door"
         val offer = info.commands.firstOrNull { it.command == address.head }
             ?: info.commands.firstOrNull { it.head == address.head }
         return when {

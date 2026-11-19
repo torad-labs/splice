@@ -323,16 +323,19 @@ class LanShareCliTest {
         assertFalse(Files.exists(toradState.resolve("share/clients.json.lock")), "its lock is still there")
     }
 
+    // door-network: a box that serves a door is added as that door, as the node's plain `claude`.
     @Test
-    fun `remote add with the server alone adds every command it offers`(@TempDir dir: Path) {
+    fun `remote add with the server alone puts a wrapped claude on the box's door`(@TempDir dir: Path) {
         val node = node(dir)
+        node.wrapped()
+        // A door serves every model of every account, so no login or model can be asked of it.
+        val asked = remote(node, "add", "$share/door?models=gpt-0")
+        assertNotEquals(0, asked.code, asked.toString())
+        assertTrue("every model of every account" in asked.err, asked.toString())
         val added = remote(node, "add", share)
         assertEquals(0, added.code, added.toString())
-        assertEquals(
-            mapOf("claudex" to RemoteConfig("$share/claudex"), "claude-mini" to RemoteConfig("$share/claude-mini")),
-            node.remote,
-        )
-        assertTrue(node.linked("claudex") && node.linked("claude-mini"), added.toString())
+        assertEquals(mapOf("claude" to RemoteConfig("$share/door")), node.remote)
+        assertFalse(node.linked("claudex"), "the door has every command's models: none is linked on its own")
     }
 
     @Test

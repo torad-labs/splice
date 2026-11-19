@@ -1,6 +1,7 @@
 // NEW: door-default (docs/specs/door-default.md, decision 3). The door admits two callers, Claude Desktop's Code tab
-// and the terminal's `claude`, each by a key of its own, and each with its own switch, its own default model, its own
-// window and its own words. The door tells them apart by the key a request presents, and from then on asks the caller.
+// and the terminal's `claude`, each by a key of its own, and each with its own switch, its own window and its own
+// words. The door tells them apart by the key a request presents, and from then on asks the caller. The model a
+// session starts on is not a caller's: the door has one (DesktopDoor, from ClaudeLane).
 package splice.app.desktop
 
 import splice.share.RefusalVoice
@@ -19,9 +20,6 @@ internal abstract class DoorCaller(
 
     /** Why the door refuses this caller now, with nothing sent upstream, or null while the door is open to it. */
     abstract fun closed(): String?
-
-    /** The selector a session of this caller's runs when it has named none, in [lineup]; null when there is none. */
-    abstract fun default(lineup: DesktopLineup): String?
 
     /** The window this caller's sessions hold, which every count the door reports is a share of; null for none. */
     abstract fun window(): Long?

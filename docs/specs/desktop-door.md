@@ -127,6 +127,10 @@ splice writes nothing into `~/.claude/settings.json` for Desktop.
 - A Code tab session starts on the model the terminal's `claude` starts on (`docs/specs/door-default.md`, decision
   1): the door has one starting model, for Desktop, the terminal and another machine alike. `on` says which it is
   and why. `splice claude door --model <selector>` names another, for all of them.
+- A terminal session carries the model it started on, so it stays there when another is named. A Code tab session
+  sends only Desktop's own model names, so the door picks its model at each turn (decision 2): a Code tab session
+  already open runs the newly named model from its next turn. Seen on November 19, 2026 with the Code tab's own
+  Claude Code (2.1.325) against a stand-in.
 - `on` takes no `--model` (since 0.6.4): a model named for Desktop would also be the one `claude` starts on. It is
   refused with a 400 that names `splice claude door --model`, and nothing is changed. A default model an older
   splice saved for Desktop is no longer read.
@@ -211,8 +215,9 @@ Run on the real Desktop once the checks pass, since no check can open it:
    `~/.claude/settings.json` is unchanged.
 2. The five variables set in Desktop's settings as `on` printed them, then a new session in the Code tab: it runs on
    the model `claude` starts on, whichever of Desktop's models the picker shows. Note where on screen the setting is.
-3. `splice claude door --model <selector>` of another head, then a new Code tab session: it runs there. Each turn
-   shows on `/api/perf/turns` with `door` `"desktop"` on its head.
+3. `splice claude door --model <selector>` of another head, then a new Code tab session: it runs there, and so
+   does the next turn of a Code tab session already open. Each turn shows on `/api/perf/turns` with `door`
+   `"desktop"` on its head.
 4. A subagent that names a tier, and a long session that compacts.
 5. A message in Chat and one in Cowork, both on claude.ai.
 6. `splice desktop off`: the Code tab's next turn is refused with the message naming the variables. With them

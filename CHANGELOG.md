@@ -33,7 +33,9 @@
   `splice desktop on --model` is no longer read: after the update a new Code tab session starts where the
   terminal's `claude` does, which `splice desktop` and `splice claude` both say. To choose it, run
   `splice claude door --model <selector>`. `splice desktop on --model` is refused with that command's name and
-  changes nothing. The window you set in Desktop is kept.
+  changes nothing. The window you set in Desktop is kept. A Code tab session already open follows too, from its
+  next turn: Desktop names only its own models, so the door picks at each turn. A terminal session stays on the
+  model it started on.
 - The door's address is now `http://127.0.0.1:<control_port>/door`, and `splice desktop on` prints it. Nothing has
   to be set again: the earlier address (`/desktop`) still answers, for a Desktop set up before and for a `claude`
   session already running.

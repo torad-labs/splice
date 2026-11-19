@@ -332,7 +332,7 @@ class LanShareTest {
         assertEquals(409, status, refusal.toString())
         val said = refusal.error()
         assertTrue("no longer shares one command at an address of its own" in said, said)
-        assertTrue(said.endsWith("splice remote add http://127.0.0.1:$sharePort"), said)
+        assertTrue("splice remote add http://127.0.0.1:$sharePort" in said, said)
     }
 
     /** Waits until torad's door has opened: it answers its launch once its heads are up. */

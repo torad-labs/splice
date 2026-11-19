@@ -65,7 +65,7 @@ internal class ClaudeHeadLane(private val topology: Topology) {
             val lineup = heads.lineup()
             val (head, model) = lineup.find(ask.model)
                 ?: return voice.refuse(call, HttpStatus.BAD_REQUEST, notServed(lineup, ask.model))
-            val caller = HeadLaneCaller(relay, held(ask.model))
+            val caller = HeadLaneCaller(relay, held(model.model))
             val asked = DoorAsk(ask.request, ask.model, ask.session)
             toHead.send(call, caller, DoorRoute(head, model.upstream), asked, ask.counting)
         }

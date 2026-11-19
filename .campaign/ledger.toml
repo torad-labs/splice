@@ -2305,12 +2305,14 @@ A door turn's answer is what Desktop expects of a gateway, on every head (outcom
 - Refusals: an Anthropic head's error body reaches Desktop whole, every field as Anthropic wrote it. On other heads, how much of a provider's own message is shown stays as splice has it: today ProviderWords' filter, and once custom-provider's cp-errors (#680, outcome 10) has landed on main, the provider's `error_messages` setting. The two campaigns run side by side and either may land first: if cp-errors is on main when you build, build on its Retry-After pass-through, not around it; if not, put the whole-seconds rule (below) where every door refusal is written, so cp-errors can build on it. Do not add an error_messages setting here.
 - Every refusal the door answers carries `x-should-retry`: "true" on a 408, 409, 429 or 5xx, "false" on any other 4xx.
 - A Retry-After is in whole seconds, rounded up: a provider's "6.2" or an HTTP date becomes an integer. That holds for both `retry-after` and splice's own.
+- Door answers already carry the head's own limits as Anthropic's unified rate-limit headers (an Anthropic head's as sent, a ChatGPT head's 5-hour and weekly windows as the same family, none from a head that reports none). That was true on main when this was planned, so it is not built here: wire-limits.test.ts is this item's second check and keeps passing through the relay and refusal changes.
 - count_tokens is answered on every head: forwarded where the provider counts (Anthropic), counted by splice where it can't (OpenAI chat, Responses), and scaled as today.
 Files: the head's answer writing in features/turns and the dialects (integrations/dialects/*), and the relay's refusal path in the share module. Proof: `bun test ./.campaign/checks/desktop-full/wire-answers.test.ts`.
 
 Shared across desktop-full (decided once, the same in every item): one door at /desktop on the control port and one desktop key serve both of Desktop's modes. "Standard mode" is today's Code-tab door through Desktop's environment store (`splice desktop on`). "App mode" is Desktop's third-party gateway mode, the whole app on splice (`splice desktop on --app`). In JSON the mode is one of "off", "standard", "app", "other" (a third-party configuration that is not splice's). Every request Desktop sends in app mode carries the header `x-splice-desktop: app`, which splice writes into the configuration's inferenceCustomHeaders. That header is how the door tells an app-mode request from a standard one. Refusals keep the door's Anthropic error shape and the "splice desktop: " prefix. Picker rows are DesktopLineup.picker, the terminal's rows (don't fork them; the custom-provider campaign, #680, is changing labels and tiers there at the same time). Vendor facts about Desktop (paths, key names, row fields, ID filter) live in integrations/claude-code/src/main/kotlin/splice/client/desktop/, beside the other Desktop facts. Goal: docs/specs/desktop-full.md.'''
 checks = [
   'bun test ./.campaign/checks/desktop-full/wire-answers.test.ts',
+  'bun test ./.campaign/checks/desktop-full/wire-limits.test.ts',
 ]
 sources = [
   'docs/specs/desktop-full.md',
@@ -2655,40 +2657,6 @@ notes = [
 ]
 
 [[row]]
-id = 'df-wire-limits'
-title = "Door answers carry the head's own limits as Anthropic's unified rate-limit headers"
-feature = 'desktop-full'
-status = 'todo'
-owner = ''
-blocked_by = [
-  'df-wire-answers',
-]
-guard = false
-spec = '''
-Desktop's usage display reads Anthropic's unified rate-limit headers, so a door turn's answer carries them from the head's own limits (outcome 5).
-- An Anthropic head's `anthropic-ratelimit-unified-*` headers reach Desktop as Anthropic sent them.
-- A head whose provider reports plan windows of its own (ChatGPT's x-codex-* 5-hour and weekly windows, and any QuotaHeaderFamily) answers door turns with the same unified family, as QuotaHeaders already writes for a head's own port: `-status`, `-5h-utilization` and `-7d-utilization` (0..1), and `-5h-reset` and `-7d-reset` (epoch seconds). The headers come from the head's latest reading, which a turn's own answer updates.
-- A head that reports no windows sends none of the family. splice never makes one up.
-Files: the relay that carries a head's answer to the door's caller (share/ShareRelay and the head's HandOverHeaders/QuotaHeaders path). Proof: `bun test ./.campaign/checks/desktop-full/wire-limits.test.ts`.
-
-Shared across desktop-full (decided once, the same in every item): one door at /desktop on the control port and one desktop key serve both of Desktop's modes. "Standard mode" is today's Code-tab door through Desktop's environment store (`splice desktop on`). "App mode" is Desktop's third-party gateway mode, the whole app on splice (`splice desktop on --app`). In JSON the mode is one of "off", "standard", "app", "other" (a third-party configuration that is not splice's). Every request Desktop sends in app mode carries the header `x-splice-desktop: app`, which splice writes into the configuration's inferenceCustomHeaders. That header is how the door tells an app-mode request from a standard one. Refusals keep the door's Anthropic error shape and the "splice desktop: " prefix. Picker rows are DesktopLineup.picker, the terminal's rows (don't fork them; the custom-provider campaign, #680, is changing labels and tiers there at the same time). Vendor facts about Desktop (paths, key names, row fields, ID filter) live in integrations/claude-code/src/main/kotlin/splice/client/desktop/, beside the other Desktop facts. Goal: docs/specs/desktop-full.md.'''
-checks = [
-  'bun test ./.campaign/checks/desktop-full/wire-limits.test.ts',
-]
-sources = [
-  'docs/specs/desktop-full.md',
-  'core/src/main/kotlin/splice/core/usage/QuotaHeaders.kt',
-  'features/turns/src/main/kotlin/splice/head/hold/HandOverHeaders.kt',
-]
-reviews = [
-  'feature',
-  'code',
-]
-notes = [
-  '2026-11-18 21:02 CT desktop-full/coordinator: added; 1 of 1 checks fail, as they should before the work',
-]
-
-[[row]]
 id = 'cp-identity'
 title = "send_version tells a gateway splice's version and the wrapper's"
 feature = 'custom-provider'
@@ -2884,7 +2852,7 @@ The states known now:
 - Web search and fetch, and images and files: computed from the heads in the door (which models take images, which heads answer Anthropic's server web tools). They are "partly" with the heads named when only some do.
 - MCP and scheduled tasks run on the person's computer and work.
 - SSH sessions are unavailable on splice in both modes. The reason: "the door listens on 127.0.0.1 only, which a session on another machine can't reach". Desktop needs a gateway address that isn't localhost for SSH.
-- Usage display (Desktop's plan-usage meter, which reads Anthropic's unified rate-limit headers, df-wire-limits), in both modes: "works" when every head in the door reports plan windows (Anthropic's own headers, ChatGPT's 5-hour and weekly windows, any QuotaHeaderFamily). It is "partly" when some do, and "unavailable" when none do. Wherever it isn't "works", the reason names the heads that report none. The live test settles whether app mode's meter reads these headers or Desktop's own cost estimate, and corrects the app-mode row.
+- Usage display (Desktop's plan-usage meter, which reads Anthropic's unified rate-limit headers, which door turns already carry from the head's own limits, guarded by df-wire-answers' second check), in both modes: "works" when every head in the door reports plan windows (Anthropic's own headers, ChatGPT's 5-hour and weekly windows, any QuotaHeaderFamily). It is "partly" when some do, and "unavailable" when none do. Wherever it isn't "works", the reason names the heads that report none. The live test settles whether app mode's meter reads these headers or Desktop's own cost estimate, and corrects the app-mode row.
 - What the app study left open (standard mode's titles, connectors and Remote Control under the switch) is "unknown" until the live test (df-live-run) settles it.
 This is a reading of what splice knows. It changes no behaviour. Files: a new app/src/main/kotlin/splice/app/desktop/DesktopFeatures.kt, DesktopService.kt, app/cli/desktop/DesktopSaid.kt. Proof: `bun test ./.campaign/checks/desktop-full/features.test.ts`.
 
@@ -2969,7 +2937,6 @@ owner = ''
 blocked_by = [
   'df-features',
   'df-sandbox',
-  'df-wire-limits',
   'df-turn-headers',
 ]
 guard = false

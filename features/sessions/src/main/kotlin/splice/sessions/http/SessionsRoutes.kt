@@ -187,7 +187,8 @@ public class SessionsRoutes(
         val rows = GoneSessionRows(
             listing.sessions.map { record ->
                 val gone = record.availability == SessionAvailability.GONE
-                ListedRow(gone, row(record, rowFacts, bound), record.process.updatedAt ?: record.status.updatedAt ?: 0L)
+                val updatedAt = record.process.updatedAt ?: record.status.updatedAt ?: 0L
+                ListedRow(gone, updatedAt) { row(record, rowFacts, bound) }
             },
         )
         // A reader that holds the gone sessions' rows under this mark is sent the sessions still here alone.

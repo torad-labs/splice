@@ -2086,6 +2086,7 @@ The keys (decided here once; .campaign/checks/custom/lib/team.ts repeats them):
 - [providers.<key>].served_window = { url = "<http(s) URL>", field = "<dotted JSON path>" }. A url that is not absolute http(s) or an empty field is a finding. Behaviour: cp-window.
 - [[providers.<key>.models]].max_output_tokens = <positive integer>; 0 or negative is a finding. Behaviour: cp-output.
 - [door.commands.<name>] = { head = "<head key>", models = "head" | "door" } (models absent = "head"). A command a wrapper starts Claude Code on the door through (cp-command). Findings: head missing or not a head in splice.toml, a head whose provider forwards the caller's own Claude login (auth kind client, never in the door), models not one of the two words, a name that is `claude` or the command of any head ([heads.*.claude].command, or the head key when it sets none) or of another door command.
+- model_slots on a head already exists (opus, sonnet, haiku, fable; HeadConfig.tierModels()): no change, but document it in the splice.toml section, fable included, since a team's definition maps Claude Code's tiers with it.
 - The existing send_version keeps its key (its new header is cp-identity's); description and label on a model already exist.
 Every finding is a TopologyFinding with its dotted path (e.g. providers.acme.ca_file, door.commands.claude-acme.head) and refuses boot with every other finding at once, like every key today (repo CLAUDE.md, "Boot fails closed"); a string-valued key is read as a string and checked, so one bad value never hides the rest behind a decode error. Keys follow the existing @Serializable classes in core/.../topology (ProviderConfig in Topology.kt, AuthConfig in TopologySchema.kt, HeadConfig.kt, ModelEntry in core/.../model/ModelCatalog.kt, a new DoorConfig file for [door]); findings live beside TopologyChecks (TopologyWriter.kt) and AuthCompatibility (AuthKind.kt). No new top-level functions or companion objects.
 A kind = "command" provider must not make boot fail for want of a key: until cp-credential lands, its turns may refuse as a head with no key does today.
@@ -2125,7 +2126,7 @@ Claude Code takes one --settings per launch, so today a --settings that a person
 
 Merge rule (decided here; cp-command reuses it for door commands): objects merge key by key, the person's values win, except what keeps the session on the door and splice's picker, which splice's own values always win: env keys splice sets for the door (CLAUDE_CODE_USE_MANTLE, ANTHROPIC_BEDROCK_MANTLE_BASE_URL, AWS_BEARER_TOKEN_BEDROCK, ANTHROPIC_MODEL, CLAUDE_CODE_MAX_CONTEXT_TOKENS, DISABLE_LOGIN_COMMAND, DISABLE_LOGOUT_COMMAND) and modelPicker. hooks are concatenated per event, splice's entries first, so a wrapper's UserPromptSubmit hook runs beside splice's /login hook. Several --settings merge in the order given. The person's other arguments pass through unchanged, in order. A --settings that is neither a JSON object nor a readable file holding one refuses the launch with a non-200 answer whose text names the value (as boot refuses a bad value: say what and where, never drop it silently).
 
-Where: the door launch overlay (app/.../desktop/ClaudeDoorLaunch.kt, features/launch/.../recipe/LaunchRoutes.kt). The merge is a class of its own beside them; no new top-level functions or companion objects. Heads' own launches are not changed by this item.
+Where: the door launch overlay (app/.../desktop/ClaudeDoorLaunch.kt, features/launch/.../recipe/LaunchRoutes.kt and LaunchService.kt, and integrations/claude-code/.../client/desktop/DoorSession.kt, which writes the overlay's env, modelPicker and hooks since #691; Claude Code's own setting names stay there, beside the other Claude Code facts). The merge is a class of its own beside them; no new top-level functions or companion objects. Heads' own launches are not changed by this item.
 
 Proven by: bun test ./.campaign/checks/custom/overlay.test.ts — a launch with an inline --settings and a file --settings yields one overlay holding the wrapper's env, otelHeadersHelper and SessionStart hook beside splice's picker and UserPromptSubmit hook, with the other arguments in order; a wrapper's UserPromptSubmit runs beside splice's; a wrapper cannot set CLAUDE_CODE_USE_MANTLE=0, move the base URL or replace the picker; an unreadable --settings refuses the launch naming it.'''
 checks = [
@@ -2135,6 +2136,8 @@ sources = [
   'app/src/main/kotlin/splice/app/desktop/ClaudeDoorLaunch.kt',
   'features/launch/src/main/kotlin/splice/launch/recipe/LaunchRoutes.kt',
   '.campaign/checks/custom/lib/team.ts',
+  'integrations/claude-code/src/main/kotlin/splice/client/desktop/DoorSession.kt',
+  'features/launch/src/main/kotlin/splice/launch/recipe/LaunchService.kt',
 ]
 results = [
   "Saved tool result (cli.txt):\nRead Nov 18, 2026 (custom-provider coordinator's code map):\n- app/.../cli/claude/ClaudeCommand.kt: splice claude [--json] | door [--model] | head, through DoorClient; the JSON is built in the daemon (LineupJson).\n- POST /launch/{head}: app/.../control/mount/LaunchMount.kt; features/launch/.../recipe/LaunchRoutes.kt launch(): door only when key == CLAUDE_COMMAND (launchService.door.launch()); receiveLaunchRequest parses extraArgs (`arg` fields).\n- Door overlay: app/.../desktop/ClaudeDoorLaunch.kt (picker rows, hooks); head overlays: integrations/claude-code/.../wrap/WrappedHeadTypes.kt WrappedLaunch.settingsOverlay().\n- TOML writing: core/.../topology/TopologyWriter.kt (keeps comments/order, verifies by re-decoding, atomic); TopologyFindings.of() -> TopologyChecks.\n- splice add: features/configuration/.../add/AddProfiles.kt toml(), AddPrepare.kt, AddPortChoice.kt choose() (first free port above max(existing, 3098)); prefix \"claude-<key>--\".\n- CLI verbs: app/.../cli/CommandParser.kt verbs map (\"add\" -> Command.Add); app/.../cli/Command.kt.\n- Boot findings: integrations/topology/.../ConfigFindings.kt (TomlStructurePreflight, TopologyTypeMismatch, decode, TopologyFindings); app/.../cli/ConfigPreflight.kt (`splice check-config`, exit 3).\n",
@@ -2182,43 +2185,6 @@ notes = [
 ]
 
 [[row]]
-id = 'cp-tiers'
-title = "Side calls and subagents naming a tier run on the session's provider"
-feature = 'custom-provider'
-status = 'todo'
-owner = ''
-blocked_by = [
-  'cp-ready',
-]
-guard = false
-spec = '''
-Claude Code names a tier, not a model, for its side calls (titles and summaries on haiku, which is also its small-fast model) and for a subagent that names one (opus, sonnet, haiku, fable) (issue #680, outcome 7). After this item, in a door session that holds a provider's model (it named a selector earlier in the same x-claude-code-session-id), each tier ID (anthropic.claude-opus-*, -sonnet-*, -haiku-*, -fable-*, and Claude Code's small-fast model ID) runs on that session's head as the head's model_slots map it (opus, sonnet, haiku, fable), and a tier the head does not map runs the head's pinned model. None of them goes to the door's default model on another provider. This is the rule desktop-door.md decisions 1 to 3 already state for the session's head; build it on DesktopLineup and its tier mapping (DoorRouting.tiered / onHeld / defaulted) and do not fork them: the desktop-full campaign builds on the same mapping.
-
-Decided here: a head with no model_slots and one with model_slots that leave a tier out behave alike for that tier (pinned model); `fable` is a slot like the other three (model_slots = { fable = "..." } is already read; cp-schema documents it). A session that has named no selector keeps today's rule (its tier runs on the door's default) except in a door command's session, which is cp-command's.
-
-Where: app/src/main/kotlin/splice/app/desktop/DoorRouting.kt and the head spec's tier map it reads. HeadConfig.tierModels() already turns model_slots (opus, sonnet, haiku, fable) into that map: read it, do not change HeadConfig.kt, which cp-schema changes at the same time. Tests assert what runs upstream, not how routing is called.
-
-Proven by: bun test ./.campaign/checks/custom/tiers.test.ts — with the door's default on another provider, a session on claude-acme--glm-big sends each of opus/sonnet/haiku/fable to glm-big/glm-mid/glm-small/glm-fable on acme, and a session on a head with no slots sends every tier to its pinned model; the other provider sees none of them.'''
-checks = [
-  'bun test ./.campaign/checks/custom/tiers.test.ts',
-]
-sources = [
-  'app/src/main/kotlin/splice/app/desktop/DoorRouting.kt',
-  'app/src/main/kotlin/splice/app/desktop/DesktopLineup.kt',
-  'core/src/main/kotlin/splice/core/topology/HeadConfig.kt',
-]
-results = [
-  "Saved tool result (door-path.txt):\nRead Nov 18, 2026 (custom-provider coordinator's code map, not re-verified line by line):\n- Door entry: app/.../desktop/DesktopDoor.kt answer(); DoorRouting.of() -> DoorRelay.send(), which relays to the head's own port through features/share ShareRelay (HeadTurn with x-splice-door). So a door turn is a turn on the head's port after the relay: the head's arm (quirks, local, slot affinity, effort vocabulary) applies on both; what can differ is what the door/relay forwards or drops.\n- ShareRelay.notForwarded drops hop-by-hop, authorization, x-api-key, via, x-splice-door and a few splice headers; other headers pass.\n- Window: DoorRelay records the caller's window per session in the head's ClientWindows; the head scales counts with ModelCatalog.usageScale(model, sessionWindow) = client window / model's declared window; DoorRelay scales count_tokens itself.\n- Tiers: DoorRouting.tiered() (AnthropicTiers().tierOf), onHeld() (SessionHeads, per x-claude-code-session-id), served(), defaulted() (door's default when no session head).\n- Picker: DesktopLineup.picker; rows by ClaudeDoorLaunch.rowsOf()/labelOf(); left_out by LineupJson.leftOut().\n- max tokens: ChatRequestBuilder.build() reads body.maxTokens; ChatRequestAssembler.chatRequestObject() writes fields[quirks.maxTokensField].\n- Local /props probe: integrations/upstream/.../local/LocalRuntimeProbe.kt genericModels() reads default_generation_settings.n_ctx.\n",
-]
-reviews = [
-  'feature',
-  'code',
-]
-notes = [
-  '2026-11-18 20:58 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
-]
-
-[[row]]
 id = 'df-credential'
 title = "splice desktop credential prints the desktop key for Desktop's credential helper"
 feature = 'desktop-full'
@@ -2253,43 +2219,6 @@ reviews = [
 ]
 notes = [
   '2026-11-18 20:59 CT desktop-full/coordinator: added; 1 of 1 checks fail, as they should before the work',
-]
-
-[[row]]
-id = 'cp-parity'
-title = "A door turn sends a provider exactly what its head's port sends"
-feature = 'custom-provider'
-status = 'todo'
-owner = ''
-blocked_by = [
-  'cp-ready',
-]
-guard = false
-spec = '''
-Everything a head of a provider does today behaves the same on a door turn on that provider (issue #680, outcome 2), so a team can leave the deprecated head command for `claude` on the door and lose nothing: `local` (per-turn token counts, earlier reasoning replayed as reasoning_content), the quirks `stream_usage`, `slot_affinity` and `chat_effort_vocabulary` (the /effort pick and a thinking budget mapped to the provider's own effort words), and the provider's `extra_headers` and `forward_headers`. After this item, for the same turn the provider is sent the same request whether Claude Code sent it to the head's own port or through the door (/desktop/v1/messages on the terminal's key): the same JSON body, and the same headers, the fixed extra_headers and every header named in forward_headers that the session sent. The session sees the same answer text. The one designed difference stays: the door reports counts scaled to the session's window (DoorRelay, ClientWindows; cp-window), which is not a difference in what the provider is sent.
-
-A door turn reaches its head through the relay LAN share uses (DoorRelay -> ShareRelay -> the head's port), so whatever the door or the relay drops or adds on the way (a forwarded header, the slot lease keyed by session, a body field) is the place to fix; never re-apply a head feature a second time on the door side. Reasoning effort is part of the prompt-cache key and never varies by turn type (repo CLAUDE.md).
-
-Where: app/src/main/kotlin/splice/app/desktop/DoorRelay.kt, DesktopDoor.kt, features/share/.../ShareRelay.kt (which headers it forwards to a head). Vendor facts stay in their provider module.
-
-Proven by: bun test ./.campaign/checks/custom/parity.test.ts — one turn with prior reasoning, a thinking budget and a forwarded x-acme-trace header, sent once to the head's port and once through the door with the same session id, reaches the gateway as two byte-identical bodies with identical headers (x-acme-team = core and x-acme-trace = trace-4242 among them), and both answers carry the same text.'''
-checks = [
-  'bun test ./.campaign/checks/custom/parity.test.ts',
-]
-sources = [
-  'app/src/main/kotlin/splice/app/desktop/DoorRelay.kt',
-  'app/src/main/kotlin/splice/app/desktop/DesktopDoor.kt',
-  'features/share/src/main/kotlin/splice/share/ShareRelay.kt',
-]
-results = [
-  "Saved tool result (door-path.txt):\nRead Nov 18, 2026 (custom-provider coordinator's code map, not re-verified line by line):\n- Door entry: app/.../desktop/DesktopDoor.kt answer(); DoorRouting.of() -> DoorRelay.send(), which relays to the head's own port through features/share ShareRelay (HeadTurn with x-splice-door). So a door turn is a turn on the head's port after the relay: the head's arm (quirks, local, slot affinity, effort vocabulary) applies on both; what can differ is what the door/relay forwards or drops.\n- ShareRelay.notForwarded drops hop-by-hop, authorization, x-api-key, via, x-splice-door and a few splice headers; other headers pass.\n- Window: DoorRelay records the caller's window per session in the head's ClientWindows; the head scales counts with ModelCatalog.usageScale(model, sessionWindow) = client window / model's declared window; DoorRelay scales count_tokens itself.\n- Tiers: DoorRouting.tiered() (AnthropicTiers().tierOf), onHeld() (SessionHeads, per x-claude-code-session-id), served(), defaulted() (door's default when no session head).\n- Picker: DesktopLineup.picker; rows by ClaudeDoorLaunch.rowsOf()/labelOf(); left_out by LineupJson.leftOut().\n- max tokens: ChatRequestBuilder.build() reads body.maxTokens; ChatRequestAssembler.chatRequestObject() writes fields[quirks.maxTokensField].\n- Local /props probe: integrations/upstream/.../local/LocalRuntimeProbe.kt genericModels() reads default_generation_settings.n_ctx.\n",
-]
-reviews = [
-  'feature',
-  'code',
-]
-notes = [
-  '2026-11-18 20:59 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
 ]
 
 [[row]]
@@ -2352,7 +2281,7 @@ Update door-default.md decision 4 with the label, description and picker rules, 
 
 The door's older check .campaign/checks/door/picker.test.ts was rewritten in this plan for the rule 29cf85c1f landed (a key head's declared models are rows); it must keep passing.
 
-Where: app/src/main/kotlin/splice/app/desktop/DesktopLineup.kt, ClaudeDoorLaunch.kt (rowsOf / labelOf), LineupJson.kt, docs/specs/door-default.md. The `picker` key is cp-schema's.
+Where: app/src/main/kotlin/splice/app/desktop/DesktopLineup.kt, ClaudeDoorLaunch.kt (rowsOf / labelOf), integrations/claude-code/.../client/desktop/DoorSession.kt (DoorPickerRow and the modelPicker rows it writes), LineupJson.kt, docs/specs/door-default.md. The `picker` key is cp-schema's.
 
 Proven by: bun test ./.campaign/checks/custom/picker.test.ts and bun test ./.campaign/checks/door/picker.test.ts — acme's model is listed as "GLM-5.3 Flash" described "Acme's own GLM, served in-house · splice · claude-acme"; a bare model is listed by id described "splice · claude-acme"; picker = false hides a provider and names it in left_out, and its selector still answers; picker = true adds the endpoint's own model; a head's picker = false beats its provider's true; the JSON rows equal the /model rows.'''
 checks = [
@@ -2364,6 +2293,7 @@ sources = [
   'app/src/main/kotlin/splice/app/desktop/ClaudeDoorLaunch.kt',
   'app/src/main/kotlin/splice/app/desktop/LineupJson.kt',
   'docs/specs/door-default.md',
+  'integrations/claude-code/src/main/kotlin/splice/client/desktop/DoorSession.kt',
 ]
 results = [
   "Saved tool result (door-path.txt):\nRead Nov 18, 2026 (custom-provider coordinator's code map, not re-verified line by line):\n- Door entry: app/.../desktop/DesktopDoor.kt answer(); DoorRouting.of() -> DoorRelay.send(), which relays to the head's own port through features/share ShareRelay (HeadTurn with x-splice-door). So a door turn is a turn on the head's port after the relay: the head's arm (quirks, local, slot affinity, effort vocabulary) applies on both; what can differ is what the door/relay forwards or drops.\n- ShareRelay.notForwarded drops hop-by-hop, authorization, x-api-key, via, x-splice-door and a few splice headers; other headers pass.\n- Window: DoorRelay records the caller's window per session in the head's ClientWindows; the head scales counts with ModelCatalog.usageScale(model, sessionWindow) = client window / model's declared window; DoorRelay scales count_tokens itself.\n- Tiers: DoorRouting.tiered() (AnthropicTiers().tierOf), onHeld() (SessionHeads, per x-claude-code-session-id), served(), defaulted() (door's default when no session head).\n- Picker: DesktopLineup.picker; rows by ClaudeDoorLaunch.rowsOf()/labelOf(); left_out by LineupJson.leftOut().\n- max tokens: ChatRequestBuilder.build() reads body.maxTokens; ChatRequestAssembler.chatRequestObject() writes fields[quirks.maxTokensField].\n- Local /props probe: integrations/upstream/.../local/LocalRuntimeProbe.kt genericModels() reads default_generation_settings.n_ctx.\n",
@@ -2461,7 +2391,7 @@ guard = false
 spec = '''
 A model's `max_output_tokens` (cp-schema) is the most it is asked to write (issue #680, outcome 9). Claude Code asks a model it does not know for 32,000 output tokens or more, which a self-hosted model serving less refuses outright.
 
-After this item, a turn on a model that declares max_output_tokens asks its provider for min(what the turn asked, max_output_tokens), in whichever field the dialect uses (quirks.maxTokensField: max_tokens or max_completion_tokens), on the head's own port and on the door alike. A turn that asks for less asks for what it asked. A turn that names no max_tokens asks for max_output_tokens. A model that declares none is asked for what the turn asked, as today. The effort and thinking mapping is unchanged (cp-parity holds it).
+After this item, a turn on a model that declares max_output_tokens asks its provider for min(what the turn asked, max_output_tokens), in whichever field the dialect uses (quirks.maxTokensField: max_tokens or max_completion_tokens), on the head's own port and on the door alike. A turn that asks for less asks for what it asked. A turn that names no max_tokens asks for max_output_tokens. A model that declares none is asked for what the turn asked, as today. The effort and thinking mapping is unchanged: a door turn already maps them as the head's port does (parity.test.ts, cp-identity's second check).
 
 Where: the request assembler of each dialect that writes max tokens (ChatRequestAssembler / ChatRequestBuilder for openai-chat, and the Responses and passthrough assemblers where they write one), reading ModelEntry.maxOutputTokens. Tests check what the provider is sent.
 
@@ -2666,8 +2596,8 @@ status = 'todo'
 owner = ''
 blocked_by = [
   'cp-schema',
-  'cp-parity',
   'cp-picker',
+  'cp-ready',
 ]
 guard = false
 spec = '''
@@ -2675,16 +2605,18 @@ A team's gateway can tell which client calls it, so it can turn an outdated one 
 
 After this item, a provider with `send_version = true` (the existing key; today it adds only the Via line) is sent on every request, beside its Via line: `x-splice-client: <splice's version>` (the version GET /health reports, the value server-client-header sends; the header name is SPLICE_CLIENT_HEADER in core/.../client/ClientWall.kt), and `x-splice-wrapper: <name>/<version>` when the session's request carries an x-splice-wrapper header, passed through as the session sent it, on the head's port and through the door alike. A wrapper sends it by setting it in Claude Code's ANTHROPIC_CUSTOM_HEADERS (`x-splice-wrapper: acme-ai/1.4.2`), which a launch on the door leaves as the wrapper set it: not in `unset`, not overwritten. A provider without send_version is sent neither header (an x-splice-wrapper the session sent is dropped for it), so nothing about the client reaches a provider that did not ask. Document both headers in docs/specs/custom-provider.md's splice.toml section under send_version (one sentence each).
 
-Where: core/.../topology/Topology.kt (staticHeaders / via, where send_version is read), the header pass-through of a head turn and of the door relay (after cp-parity, which changes the same relay files), the door launch's unset list (only if it unsets ANTHROPIC_CUSTOM_HEADERS today). Vendor facts stay in their provider module.
+Where: core/.../topology/Topology.kt (staticHeaders / via, where send_version is read), the header pass-through of a head turn and of the door relay (a door turn already sends a provider exactly what the head's port sends, local, stream_usage, slot_affinity, the effort vocabulary, extra_headers and forward_headers alike: .campaign/checks/custom/parity.test.ts passes on main and is this item's second check, so the new headers must not break that sameness), the door launch's unset list (only if it unsets ANTHROPIC_CUSTOM_HEADERS today). Vendor facts stay in their provider module.
 
 Proven by: bun test ./.campaign/checks/custom/identity.test.ts — a send_version provider is sent x-splice-client equal to /health's version and the wrapper's x-splice-wrapper; with no wrapper only the version; a provider without send_version is sent neither; a door launch neither unsets nor sets ANTHROPIC_CUSTOM_HEADERS.'''
 checks = [
   'bun test ./.campaign/checks/custom/identity.test.ts',
+  'bun test ./.campaign/checks/custom/parity.test.ts',
 ]
 sources = [
   'core/src/main/kotlin/splice/core/topology/Topology.kt',
   'core/src/main/kotlin/splice/core/client/ClientWall.kt',
   'features/share/src/main/kotlin/splice/share/ShareRelay.kt',
+  'app/src/main/kotlin/splice/app/desktop/DoorRelay.kt',
 ]
 results = [
   "Saved tool result (failure.txt):\nRead Nov 18, 2026 (custom-provider coordinator's code map):\n- integrations/upstream/.../failure/OpenAiErrorEnvelope.kt reads OpenAI error objects; OpenAiReplies.kt statusOf(), pushback() reads Retry-After and retry-after-ms, 503 -> Overloaded, 429 -> Limited/NeedsPayment.\n- core/.../failure/ProviderWords.kt filters a provider's message: MAX_CHARS 160, MAX_READ 2000, CUT_WHOLE drops sentences with URLs, hosts, timestamps.\n- integrations/upstream/.../transport/UpstreamTransport.kt: the only OkHttp client; SSLContext.getInstance(\"TLS\") in UpstreamSockets; sslSocketFactory applied; KeepaliveSocketFactory.\n- core/.../topology/Topology.kt: send_version (sendVersion, default false) gates only `via` in staticHeaders; core/.../client/ClientWall.kt SPLICE_CLIENT_HEADER = \"x-splice-client\".\n- features/usage/.../perf/PerfRoutes.kt rowJson(): no `provider` field today (provider_message only).\n- features/diagnostics/.../doctor/DoctorCommand.kt collect(): sections prerequisites, installation, configuration, daemon, auth, accounts, runtime; checks guarded(); DoctorConfigChecks.kt.\n",
@@ -3150,8 +3082,8 @@ owner = ''
 blocked_by = [
   'cp-schema',
   'cp-picker',
-  'cp-tiers',
   'cp-overlay',
+  'cp-ready',
 ]
 guard = false
 spec = '''
@@ -3160,7 +3092,7 @@ A team's wrapper can start a session on the door with the team's starting model 
 After this item:
 - Each door command is linked like every command splice launches (the same splice-launch shim link a head's [heads.*.claude].command gets, laid and removed on boot and reload as those are), and `POST /launch/<name>` answers a launch on the door exactly as `claude` on the door does (door-default.md decision 2: the Mantle variables at the same door address, the unset list, DISABLE_LOGIN_COMMAND, splice's /login hook and file, the person's own Claude folder), with: ANTHROPIC_MODEL the selector of its head's pinned model; the overlay's modelPicker the rows of its head alone (`models = "head"`, the default; the same rows and order DesktopLineup.picker gives that head) or the door's whole picker (`models = "door"`); and a door key of its own (AWS_BEARER_TOKEN_BEDROCK), kept in splice's state like the terminal's key (door-default.md decision 3), admitted by the door, retired when the command leaves splice.toml.
 - The person's plain `claude` lane does not move: its default model, its chosen model and its picker are what they were; a session of the command never records a chosen model for the lane.
-- Side calls follow the command: a tier ID (haiku for titles, a subagent's opus/sonnet/fable) in a session of the command that has not named a selector runs on the command's head as its model_slots say (else its pinned model), not on the door's default. Once the session has named a selector, cp-tiers' rule holds. A plain `claude` session keeps today's rule.
+- Side calls follow the command: a tier ID (haiku for titles, a subagent's opus/sonnet/fable) in a session of the command that has not named a selector runs on the command's head as its model_slots say (else its pinned model), not on the door's default. Once the session has named a selector, the rule main already has holds (desktop-door.md decisions 1 to 3: each tier runs on the session's head as its model_slots map it, opus, sonnet, haiku and fable alike, else its pinned model; never on the door's default on another provider). .campaign/checks/custom/tiers.test.ts proves that rule today and is this item's second check: build on DoorRouting's tier mapping, do not fork it. A plain `claude` session keeps today's rule.
 - A `--settings` the wrapper passes merges into the one overlay exactly as cp-overlay decided for `claude`, with the command's own picker in place of the lane's.
 - `splice claude` (and --json, a `commands` list: name, head, models, default_model) names each door command.
 - A turn through a command's key is recorded as a door turn of the head that ran it, like the terminal's.
@@ -3170,6 +3102,7 @@ Where: features/launch/.../recipe/LaunchRoutes.kt (door launch only for `claude`
 Proven by: bun test ./.campaign/checks/custom/command.test.ts — a claude-acme session is on the door at the same address, starts on claude-acme--glm-5.3-flash and lists only acme's two models, and runs there; models = door lists the whole picker; the plain lane's default and picker do not move; the command's key differs from the terminal's and both work; a haiku side call before any selector runs as glm-mini on acme while the plain lane's runs on its own model; an opus subagent after the selector runs on acme; a wrapper's --settings is merged with the command's picker; a wrapper cannot take the session off the door.'''
 checks = [
   'bun test ./.campaign/checks/custom/command.test.ts',
+  'bun test ./.campaign/checks/custom/tiers.test.ts',
 ]
 sources = [
   'features/launch/src/main/kotlin/splice/launch/recipe/LaunchRoutes.kt',
@@ -3177,6 +3110,8 @@ sources = [
   'app/src/main/kotlin/splice/app/desktop/TerminalDoor.kt',
   'app/src/main/kotlin/splice/app/desktop/TerminalCaller.kt',
   'app/src/main/kotlin/splice/app/desktop/DoorRouting.kt',
+  'app/src/main/kotlin/splice/app/desktop/DesktopLineup.kt',
+  'integrations/claude-code/src/main/kotlin/splice/client/desktop/DoorSession.kt',
 ]
 results = [
   "Saved tool result (cli.txt):\nRead Nov 18, 2026 (custom-provider coordinator's code map):\n- app/.../cli/claude/ClaudeCommand.kt: splice claude [--json] | door [--model] | head, through DoorClient; the JSON is built in the daemon (LineupJson).\n- POST /launch/{head}: app/.../control/mount/LaunchMount.kt; features/launch/.../recipe/LaunchRoutes.kt launch(): door only when key == CLAUDE_COMMAND (launchService.door.launch()); receiveLaunchRequest parses extraArgs (`arg` fields).\n- Door overlay: app/.../desktop/ClaudeDoorLaunch.kt (picker rows, hooks); head overlays: integrations/claude-code/.../wrap/WrappedHeadTypes.kt WrappedLaunch.settingsOverlay().\n- TOML writing: core/.../topology/TopologyWriter.kt (keeps comments/order, verifies by re-decoding, atomic); TopologyFindings.of() -> TopologyChecks.\n- splice add: features/configuration/.../add/AddProfiles.kt toml(), AddPrepare.kt, AddPortChoice.kt choose() (first free port above max(existing, 3098)); prefix \"claude-<key>--\".\n- CLI verbs: app/.../cli/CommandParser.kt verbs map (\"add\" -> Command.Add); app/.../cli/Command.kt.\n- Boot findings: integrations/topology/.../ConfigFindings.kt (TomlStructurePreflight, TopologyTypeMismatch, decode, TopologyFindings); app/.../cli/ConfigPreflight.kt (`splice check-config`, exit 3).\n",
@@ -3243,8 +3178,6 @@ owner = ''
 blocked_by = [
   'cp-schema',
   'cp-overlay',
-  'cp-tiers',
-  'cp-parity',
   'cp-picker',
   'cp-errors',
   'cp-output',
@@ -3295,7 +3228,7 @@ After this item: when the control port is bound and the listener there is splice
 
 Where: features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt and DaemonSpawn.kt (startableJar), integrations/daemon-client/.../DaemonHealth.kt / DaemonProbe.kt. No other item changes these files.
 
-Proven by: bun test ./.campaign/checks/custom/ready.test.ts — three boots in a row, each followed at once by `splice claude door` and `splice claude --json`, all exit 0 and none says "still shutting down".'''
+Proven by: bun test ./.campaign/checks/custom/ready.test.ts — a daemon held still (SIGSTOP) for 10 s while `splice claude --json` starts, then let go, is waited for: the command exits 0 with its JSON, says neither "still shutting down" nor "couldn't be started", and no second daemon is started (today it refuses within a few seconds with both lines; reproduced Nov 19, 2026); and three boots in a row, each followed at once by `splice claude door` and `splice claude --json`, all exit 0 and none says "still shutting down".'''
 checks = [
   'bun test ./.campaign/checks/custom/ready.test.ts',
 ]

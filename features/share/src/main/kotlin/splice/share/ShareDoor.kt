@@ -33,7 +33,15 @@ public data class SharedDoorLaunch(
     val window: Long,
     val model: String? = null,
     val rows: List<SharedDoorRow> = emptyList(),
-)
+) {
+    /** How many models it serves, as `splice share status` on the box and `splice remote` on a node say it. */
+    val served: String
+        get() = when (rows.size) {
+            0 -> "no account signed in yet"
+            1 -> "1 model"
+            else -> "${rows.size} models"
+        }
+}
 
 /** One row of the picker: the selector a pick sends, the model's label, and the command its head runs as there. */
 @Serializable

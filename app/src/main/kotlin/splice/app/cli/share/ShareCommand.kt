@@ -1,8 +1,11 @@
-// LAN share (docs/specs/lan-share.md). `splice share`, the server's side: turn
-// `[share]` on or off in splice.toml and restart so the listener follows, and print, for each command this machine
-// offers, the address another machine adds it by. What is offered is the listener's own answer, asked on loopback, so
-// the list is the daemon's, never a guess from the file. A port another program here holds is refused before the file
-// changes: the listener could not open it, and a restart would not free it.
+// The door on the network (docs/specs/door-network.md). `splice share`, the box's side: turn `[share]` on or off in
+// splice.toml and restart so the listener follows, and print the door another machine's `claude` runs on: its address,
+// how many models it serves, the one `splice remote add http://<box>` to run there, and the variables a Claude Code
+// without splice runs on it with. Since share-door-only (Nov 19, 2026) a machine shares its door alone, never one
+// command at an address of its own, so nothing per command is printed. What is printed is the listener's own answer,
+// asked on loopback: `GET /` for the machine's name, which also tells this machine's listener from another program on
+// the port, then the door's launch. A door still starting is said as that. A port another program here holds is
+// refused before the file changes: the listener could not open it, and a restart would not free it.
 package splice.app.cli.share
 
 import splice.app.cli.peer.PeerExit
@@ -19,9 +22,9 @@ import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.share.Asked
 import splice.share.DOOR_SEGMENT
+import splice.share.DOOR_STARTING
 import splice.share.ShareAddresses
 import splice.share.ShareDirectory
-import splice.share.ShareInfo
 import splice.share.SharedDoorLaunch
 import splice.upstream.codemode.ProcessDispatchers
 import java.net.BindException
@@ -70,12 +73,15 @@ internal class ShareCommand(
     private suspend fun status(): Int {
         val share = (file.loaded() ?: return PeerExit.REFUSED).share
         if (!share.enabled) {
-            out.line("sharing is off. ${CYAN}splice share on$RESET lets your other machines run this one's commands.")
+            out.line(
+                "sharing is off. ${CYAN}splice share on$RESET puts this machine's door on its LAN and tailnet, " +
+                    "so your other machines' claude runs on its models.",
+            )
             return PeerExit.DONE
         }
         val here = "http://127.0.0.1:${share.port}"
         return when (val read = directory.read(here)) {
-            is Asked.Had -> offered(share, read.value, (directory.door(here) as? Asked.Had)?.value)
+            is Asked.Had -> door(share, read.value.machine, here)
             is Asked.Refused -> {
                 err.line("$SHARE_VERB: sharing is on in ${file.path}, but nothing here answers on it: ${read.why}")
                 err.line("  is splice running? ${CYAN}splice restart$RESET")
@@ -84,48 +90,45 @@ internal class ShareCommand(
         }
     }
 
-    /** The [door] another machine on this LAN or tailnet runs `claude` on (door-network), and what [info] offers, each
-     *  command at the address another machine adds it by. */
-    private fun offered(share: ShareConfig, info: ShareInfo, door: SharedDoorLaunch?): Int {
-        val reach = ShareAddresses(share, info.machine, LogSink { err.line(it.trimEnd()) }).reach()
+    /** The door of [machine], this machine's own listener at [here], said: open, still starting, or none. */
+    private suspend fun door(share: ShareConfig, machine: String, here: String): Int =
+        when (val door = directory.door(here)) {
+            is Asked.Had -> offered(share, machine, door.value)
+            is Asked.Refused ->
+                if (DOOR_STARTING in door.why) offered(share, machine, null) else noDoor(machine, door.why)
+        }
+
+    /** A listener here that answers no door, said with [why] in the door read's own words. */
+    private fun noDoor(machine: String, why: String): Int {
+        err.line("$SHARE_VERB: $machine answers no door here: $why")
+        return PeerExit.REFUSED
+    }
+
+    /** The [door] of [machine], which another machine on this LAN or tailnet runs `claude` on; null while it is still
+     *  starting, which is said with nothing to run yet, since neither the add nor the variables would work. */
+    private fun offered(share: ShareConfig, machine: String, door: SharedDoorLaunch?): Int {
+        val reach = ShareAddresses(share, machine, LogSink { err.line(it.trimEnd()) }).reach()
         val server = reach.server ?: run {
-            err.line("$SHARE_VERB: ${info.machine} has no address on a LAN, so no other machine can reach it")
+            err.line("$SHARE_VERB: $machine has no address on a LAN, so no other machine can reach it")
             return PeerExit.REFUSED
         }
-        out.line("sharing is on: $BOLD$server$RESET, on ${info.machine}'s LAN and tailnet")
-        if (door != null) doorLines(server, door)
-        commandLines(server, info, deprecated = door != null)
-        out.line("${DIM}one on another machine: splice remote add <address>$RESET")
-        out.line("${DIM}an address may end in ?auth=<login> to run on that login,$RESET")
-        out.line("${DIM}and in ?models=<id>,<id> to show only those models$RESET")
+        out.line("sharing is on: $BOLD$server$RESET, on $machine's LAN and tailnet")
+        if (door == null) {
+            val again = "run ${CYAN}splice share status$RESET again in a moment"
+            out.line("  ${"door".padEnd(COMMAND_PAD)} $server/$DOOR_SEGMENT  $DIM$DOOR_STARTING;$RESET $again")
+            return PeerExit.DONE
+        }
+        doorLines(server, door)
         val others = reach.addresses - server
         if (others.isNotEmpty()) out.line("${DIM}by address: ${others.joinToString(", ")}$RESET")
         return PeerExit.DONE
-    }
-
-    /** Each command [info] offers at its address on [server], said as [deprecated] once a door serves them all; with
-     *  no door, the add that links the machine's commands. */
-    private fun commandLines(server: String, info: ShareInfo, deprecated: Boolean) {
-        if (info.commands.isEmpty()) out.line("  no command here holds a login of its own to offer")
-        if (!deprecated) out.line("on another machine: ${CYAN}splice remote add $server$RESET")
-        if (deprecated && info.commands.isNotEmpty()) {
-            out.line("${DIM}each command on its own (deprecated; the door has all):$RESET")
-        }
-        info.commands.forEach { offer ->
-            val state = if (offer.running) "" else "  ${DIM}not running$RESET"
-            out.line("  ${offer.command.padEnd(COMMAND_PAD)} $server/${offer.command}$state")
-            val logins = offer.logins.joinToString(", ").ifEmpty { "its one login" }
-            val models = offer.models.joinToString(", ")
-            out.line("  ${"".padEnd(COMMAND_PAD)} ${DIM}logins: $logins · models: $models$RESET")
-        }
     }
 
     /** The door at [server]: how many models it serves, the one add that puts another machine's `claude` on it, and the
      *  variables a Claude Code without splice, or Claude Desktop's Code tab, runs on it with. */
     private fun doorLines(server: String, door: SharedDoorLaunch) {
         val address = "$server/$DOOR_SEGMENT"
-        val models = if (door.rows.isEmpty()) "no account signed in yet" else "${door.rows.size} models"
-        out.line("  ${"door".padEnd(COMMAND_PAD)} $address  $DIM$models$RESET")
+        out.line("  ${"door".padEnd(COMMAND_PAD)} $address  $DIM${door.served}$RESET")
         out.line("on another machine, its ${BOLD}claude$RESET runs on this door after:")
         out.line("  ${CYAN}splice remote add $server$RESET")
         out.line("a Claude Code without splice, or Claude Desktop's Code tab, runs on it with:")

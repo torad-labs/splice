@@ -25,10 +25,11 @@ public class ShareDirectory(
     ) { http.decoded(it, ShareInfo.serializer()) }
 
     /** What [server]'s door (door-network) launches `claude` with, or why it could not be had: a machine on an older
-     *  splice, or a team server, answers no door. */
+     *  splice answers no door, and a team server reached without a key answers 401, said with how to sign in. */
     public suspend fun door(server: String): Asked<SharedDoorLaunch> = http.read(
         server,
         http.get(URI.create("$server/$DOOR_SEGMENT/$HEAD_LAUNCH_ROUTE")),
         not = "not as a machine whose door is on its network",
+        unauthorized = "; sign in there first: splice login $server",
     ) { http.decoded(it, SharedDoorLaunch.serializer()) }
 }

@@ -1,11 +1,13 @@
-// LAN share (docs/specs/lan-share.md), its two verbs. The goal: on the server,
-// `splice share on` turns sharing on and `splice share status` prints, for each command it offers, the address another
-// machine uses; on a node, `splice remote add <address>` checks that address against the server, keeps it as one line
-// in splice.toml and links the command, `add <server>` adds every command it offers, `splice remote remove` takes one
-// out, and `splice remote` lists each with whether its server answers. Nothing the node keeps is a credential. Driven
-// as it is used: a real sharing daemon (torad, its ChatGPT upstream mocked) and each verb run with a node's own
-// splice.toml, bin folder and launch shim in a temp folder, whose daemon is down, so a verb that would restart it says
-// it follows the file at its next start instead.
+// The door on the network (docs/specs/door-network.md), its two verbs. The goal: on the box, `splice share on` turns
+// sharing on and `splice share status` prints the door another machine's `claude` runs on, the one
+// `splice remote add http://<box>` to run there and the variables a Claude Code without splice uses, and nothing per
+// command (share-door-only, Nov 19, 2026: a machine shares its door alone). On a node, `splice remote add <box>` checks
+// the box's door, keeps it as one line in splice.toml and links the command, an address naming one command of a box
+// this node holds no key for is refused with the add for its door, `splice remote remove` takes one out, and
+// `splice remote` lists each with whether its door answers. Nothing the node keeps is a credential. Driven as it is
+// used: a real sharing daemon (torad, its ChatGPT upstream mocked) and each verb run with a node's own splice.toml, bin
+// folder and launch shim in a temp folder, whose daemon is down, so a verb that would restart it says it follows the
+// file at its next start instead. No test here drives a per-command route of the box.
 package splice.app.cli.share
 
 import kotlinx.coroutines.runBlocking
@@ -38,6 +40,7 @@ import splice.head.MockChatGptUpstream
 import splice.launch.install.InstallCommand
 import splice.oauth.OAuthAccountFiles
 import splice.topology.TopologyLoader
+import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.NetworkInterface
 import java.net.ServerSocket
@@ -51,6 +54,9 @@ import kotlin.io.path.readText
 
 private const val SOL = "gpt-5.6-sol"
 private const val MINI = "gpt-5.6-mini"
+
+// why: the door opens once the box's heads are up; a loaded machine takes a while to start them.
+private const val DOOR_OPEN_MS = 60_000L
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class LanShareCliTest {
@@ -92,11 +98,14 @@ class LanShareCliTest {
         torad = Daemon(
             topology = TopologyLoader.parse(config.readText()),
             statePaths = StatePaths(baseOverride = toradState),
-            log = { line -> if (line.startsWith("[daemon] control plane bound")) shareAtBound = accepts(sharePort) },
+            log = { line ->
+                if (line.startsWith("[daemon] control plane bound")) shareAtBound = Probe.accepts(sharePort)
+            },
             refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
         )
         runBlocking { torad.start() }
-        awaitListening(toradControl, toradClaudex, toradMini, sharePort)
+        Probe.awaitListening(toradControl, toradClaudex, toradMini, sharePort)
+        Probe.awaitDoor(share)
     }
 
     @AfterAll
@@ -208,19 +217,25 @@ class LanShareCliTest {
     }
 
     @Test
-    fun `share status prints each offered command at an address another machine adds it by`(@TempDir dir: Path) {
+    fun `share status prints the door, the add for it and the variables, and no command's own address`(
+        @TempDir dir: Path,
+    ) {
         val status = share(toradEnv, "status")
         assertEquals(0, status.code, status.toString())
-        val claudex = address(status.out, "claudex")
-        val mini = address(status.out, "claude-mini")
-        val host = URI.create(claudex).host
-        assertTrue(ownLanAddress(host), "$host is not one of this machine's LAN addresses\n$status")
-        assertEquals(host, URI.create(mini).host, status.toString())
+        val box = server(status.out)
+        val host = URI.create(box).host
+        assertTrue(Probe.ownLanAddress(host), "$host is not one of this machine's LAN addresses\n$status")
+        assertTrue("ANTHROPIC_BEDROCK_MANTLE_BASE_URL=$box/door" in status.out, status.toString())
+        assertTrue("AWS_BEARER_TOKEN_BEDROCK=splice-lan" in status.out, status.toString())
+        assertTrue(Regex("""\d+ models?|no account signed in yet""").containsMatchIn(status.out), status.toString())
+        for (gone in listOf("$box/claudex", "$box/claude-mini", "?auth=", "?models=", "deprecated")) {
+            assertFalse(gone in status.toString(), "status still prints $gone\n$status")
+        }
 
         val node = node(dir)
-        val added = remote(node, "add", claudex)
+        val added = remote(node, "add", box, "--as", "torad")
         assertEquals(0, added.code, added.toString())
-        assertEquals(mapOf("claudex" to RemoteConfig(claudex)), node.remote)
+        assertEquals(mapOf("torad" to RemoteConfig("$box/door")), node.remote)
     }
 
     @Test
@@ -269,20 +284,21 @@ class LanShareCliTest {
         val off = share(node.env, "off")
         assertEquals(0, off.code, off.toString())
         assertFalse(TopologyLoader.parse(node.config.readText()).share.enabled, node.config.readText())
+        assertTrue("door" in share(node.env, "status").out, "sharing off says what turning it on shares")
     }
 
     @Test
-    fun `remote add keeps the address as one line and links the command, holding nothing else`(@TempDir dir: Path) {
+    fun `remote add keeps the door as one line and links the command, holding nothing else`(@TempDir dir: Path) {
         val node = node(dir)
         val before = TopologyLoader.parse(node.config.readText())
-        val added = remote(node, "add", "$share/claudex?auth=work")
+        val added = remote(node, "add", share, "--as", "torad")
         assertEquals(0, added.code, added.toString())
         val after = TopologyLoader.parse(node.config.readText())
-        assertEquals(mapOf("claudex" to RemoteConfig("$share/claudex?auth=work")), after.remote)
+        assertEquals(mapOf("torad" to RemoteConfig("$share/door")), after.remote)
         assertEquals(before.copy(remote = after.remote), after, "nothing but the address is written")
-        assertTrue(node.linked("claudex"), added.toString())
+        assertTrue(node.linked("torad"), added.toString())
         assertFalse(Files.exists(dir.resolve("keys.toml")), "a node keeps no key")
-        assertTrue(added.out.contains("claudex"), added.toString())
+        assertTrue(added.out.contains("torad"), added.toString())
     }
 
     @Test
@@ -290,28 +306,26 @@ class LanShareCliTest {
         @TempDir dir: Path,
     ) {
         val node = node(dir)
-        Files.createDirectories(node.link("claudex").parent)
-        Files.writeString(node.link("claudex"), "#!/bin/sh\necho the person's own claudex\n")
-        val added = remote(node, "add", "$share/claudex")
+        Files.createDirectories(node.link("torad").parent)
+        Files.writeString(node.link("torad"), "#!/bin/sh\necho the person's own torad\n")
+        val added = remote(node, "add", share, "--as", "torad")
         assertNotEquals(0, added.code, added.toString())
-        assertTrue(added.err.contains(node.link("claudex").toString()), added.toString())
-        assertFalse(node.linked("claudex"), added.toString())
+        assertTrue(added.err.contains(node.link("torad").toString()), added.toString())
+        assertFalse(node.linked("torad"), added.toString())
     }
 
     @Test
-    fun `a node the first build left is told at boot what replaces its relay, and remote add replaces it`(
+    fun `a node the first build left is told at boot what replaces its relay, and remote add --as replaces it`(
         @TempDir dir: Path,
     ) {
         val node = firstBuildNode(dir)
         val booted = TopologyFindings.of(TopologyLoader.parse(node.config.readText()), stateBase = dir.resolve("state"))
-        assertTrue(
-            booted.any { it.path == "heads.claudex" && it.message.contains("splice remote add") },
-            booted.joinToString("\n") { it.text() },
-        )
-        val added = remote(node, "add", "$share/claudex")
+        val said = booted.singleOrNull { it.path == "heads.claudex" }?.message.orEmpty()
+        assertTrue("splice remote add" in said && "--as claudex" in said, booted.joinToString("\n") { it.text() })
+        val added = remote(node, "add", share, "--as", "claudex")
         assertEquals(0, added.code, added.toString())
         val after = TopologyLoader.parse(node.config.readText())
-        assertEquals(mapOf("claudex" to RemoteConfig("$share/claudex")), after.remote)
+        assertEquals(mapOf("claudex" to RemoteConfig("$share/door")), after.remote)
         assertFalse("claudex" in after.heads || "claudex" in after.providers, node.config.readText())
         assertFalse(dir.resolve("keys.toml").readText().contains("CLAUDEX_API_KEY"), "the share token is still kept")
         assertTrue(node.linked("claudex"), added.toString())
@@ -323,9 +337,8 @@ class LanShareCliTest {
         assertFalse(Files.exists(toradState.resolve("share/clients.json.lock")), "its lock is still there")
     }
 
-    // door-network: a box that serves a door is added as that door, as the node's plain `claude`.
     @Test
-    fun `remote add with the server alone puts a wrapped claude on the box's door`(@TempDir dir: Path) {
+    fun `remote add with the box alone puts a wrapped claude on the box's door`(@TempDir dir: Path) {
         val node = node(dir)
         node.wrapped()
         // A door serves every model of every account, so no login or model can be asked of it.
@@ -338,54 +351,54 @@ class LanShareCliTest {
         assertFalse(node.linked("claudex"), "the door has every command's models: none is linked on its own")
     }
 
+    // share-door-only: these replace the adds of one command that checked a login, a model or the command against
+    // what the box offered. A box this node holds no key for shares its door alone, whatever the address asks for.
     @Test
-    fun `remote add naming a login or a model the server lacks is refused with what it has`(@TempDir dir: Path) {
+    fun `remote add of one command's address on a keyless box is refused with the add for its door`(
+        @TempDir dir: Path,
+    ) {
         val node = node(dir)
         val before = node.config.readText()
-        val login = remote(node, "add", "$share/claudex?auth=nobody")
-        assertNotEquals(0, login.code, login.toString())
-        assertTrue(login.err.contains("nobody") && login.err.contains("work"), login.toString())
-        val model = remote(node, "add", "$share/claudex?models=gpt-0")
-        assertNotEquals(0, model.code, model.toString())
-        assertTrue(model.err.contains("gpt-0") && model.err.contains(MINI), model.toString())
+        val addresses = listOf(
+            "$share/claudex",
+            "$share/claudex?auth=work",
+            "$share/claude-mini?models=$MINI",
+            "$share/mini",
+            "$share/grok",
+        )
+        for (address in addresses) {
+            val refused = remote(node, "add", address)
+            assertNotEquals(0, refused.code, "$address\n$refused")
+            assertTrue("shares its door" in refused.err, "$address\n$refused")
+            assertTrue(refused.err.trimEnd().endsWith("splice remote add $share"), "$address\n$refused")
+        }
+        val named = remote(node, "add", "$share/claudex", "--as", "work")
+        assertTrue(named.err.trimEnd().endsWith("splice remote add $share --as work"), named.toString())
         assertEquals(before, node.config.readText(), "a refused address writes nothing")
-        assertFalse(Files.exists(node.link("claudex"), java.nio.file.LinkOption.NOFOLLOW_LINKS))
+        for (command in listOf("claudex", "claude-mini", "mini", "work")) {
+            assertFalse(Files.exists(node.link(command), java.nio.file.LinkOption.NOFOLLOW_LINKS), command)
+        }
     }
 
     @Test
-    fun `remote add of a command the server does not offer names the ones it does`(@TempDir dir: Path) {
-        val node = node(dir)
-        val refused = remote(node, "add", "$share/grok")
-        assertNotEquals(0, refused.code, refused.toString())
-        assertTrue(refused.err.contains("grok") && refused.err.contains("claudex"), refused.toString())
-        assertTrue(node.remote.isEmpty())
-    }
-
-    @Test
-    fun `remote add to a server that can't be reached says so and writes nothing`(@TempDir dir: Path) {
+    fun `remote add of a box that can't be reached says so and writes nothing`(@TempDir dir: Path) {
         val node = node(dir)
         val before = node.config.readText()
-        val refused = remote(node, "add", "http://127.0.0.1:$closedPort/claudex")
-        assertNotEquals(0, refused.code, refused.toString())
-        assertTrue(refused.err.contains("can't be reached"), refused.toString())
+        for (address in listOf("http://127.0.0.1:$closedPort", "http://127.0.0.1:$closedPort/claudex")) {
+            val refused = remote(node, "add", address, "--as", "gone")
+            assertNotEquals(0, refused.code, "$address\n$refused")
+            assertTrue(refused.err.contains("can't be reached"), "$address\n$refused")
+        }
         assertEquals(before, node.config.readText())
     }
 
     @Test
-    fun `a second address for a command added already takes another name with --as`(@TempDir dir: Path) {
+    fun `a name a command here already has takes another with --as`(@TempDir dir: Path) {
         val node = node(dir)
-        assertEquals(0, remote(node, "add", "$share/claudex").code)
-        val again = remote(node, "add", "$share/claudex?auth=work")
-        assertNotEquals(0, again.code, again.toString())
-        assertTrue(again.err.contains("--as"), again.toString())
-        val named = remote(node, "add", "$share/claudex?auth=work", "--as", "claudex-work")
-        assertEquals(0, named.code, named.toString())
-        val both = mapOf(
-            "claudex" to RemoteConfig("$share/claudex"),
-            "claudex-work" to RemoteConfig("$share/claudex?auth=work"),
-        )
-        assertEquals(both, node.remote)
-        assertTrue(node.linked("claudex-work"), named.toString())
+        val taken = remote(node, "add", share, "--as", "plain")
+        assertNotEquals(0, taken.code, taken.toString())
+        assertTrue(taken.err.contains("--as"), taken.toString())
+        assertTrue(node.remote.isEmpty(), node.config.readText())
     }
 
     @Test
@@ -394,10 +407,10 @@ class LanShareCliTest {
     ) {
         val node = node(dir)
         val shim = node.wrapped()
-        val added = remote(node, "add", "$share/claudex", "--as", "claude")
+        val added = remote(node, "add", share, "--as", "claude")
         assertEquals(0, added.code, added.toString())
         assertTrue("claude$RESET runs on " in added.out, added.toString())
-        assertEquals(mapOf("claude" to RemoteConfig("$share/claudex")), node.remote)
+        assertEquals(mapOf("claude" to RemoteConfig("$share/door")), node.remote)
         // `claude` is Claude Code's own link, which the wrap points at the launch shim: never a remote's to make.
         assertEquals(shim, Files.readSymbolicLink(node.link("claude")), "adding it left the wrap's link alone")
         val lines = TerminalOutput {}
@@ -417,7 +430,7 @@ class LanShareCliTest {
     ) {
         val node = node(dir)
         val own = node.claudeCodeOwn()
-        val added = remote(node, "add", "$share/claudex", "--as", "claude")
+        val added = remote(node, "add", share, "--as", "claude")
         assertNotEquals(0, added.code, added.toString())
         assertFalse("runs on" in added.out, "nothing runs on torad: $added")
         assertTrue("splice setup" in added.err, "the refusal names how to wrap claude: $added")
@@ -425,7 +438,7 @@ class LanShareCliTest {
         assertEquals(own, Files.readSymbolicLink(node.link("claude")), "the refused add left the claude link alone")
         // A `[remote.claude]` written by hand boots (LanShareConfigTest); install and uninstall still leave Claude
         // Code's own link alone.
-        Files.writeString(node.config, node.config.readText() + "\n[remote.claude]\nurl = \"$share/claudex\"\n")
+        Files.writeString(node.config, node.config.readText() + "\n[remote.claude]\nurl = \"$share/door\"\n")
         val lines = TerminalOutput {}
         InstallCommand(lines, lines).install(null, node.env)
         assertEquals(own, Files.readSymbolicLink(node.link("claude")), "splice install left the claude link alone")
@@ -436,54 +449,80 @@ class LanShareCliTest {
     @Test
     fun `remote remove takes the command and its link out`(@TempDir dir: Path) {
         val node = node(dir)
-        assertEquals(0, remote(node, "add", "$share/claudex").code)
-        val removed = remote(node, "remove", "claudex")
+        assertEquals(0, remote(node, "add", share, "--as", "torad").code)
+        val removed = remote(node, "remove", "torad")
         assertEquals(0, removed.code, removed.toString())
         assertTrue(node.remote.isEmpty(), node.config.readText())
-        assertFalse(Files.exists(node.link("claudex"), java.nio.file.LinkOption.NOFOLLOW_LINKS))
+        assertFalse(Files.exists(node.link("torad"), java.nio.file.LinkOption.NOFOLLOW_LINKS))
     }
 
     @Test
-    fun `remote lists each command with whether its server answers`(@TempDir dir: Path) {
+    fun `remote lists each door with whether it answers and how many models it serves`(@TempDir dir: Path) {
         val node = node(dir)
+        val empty = remote(node)
+        assertTrue("splice remote add http://" in empty.out, empty.toString())
         Files.writeString(
             node.config,
-            node.config.readText() + "\n[remote.claudex]\nurl = \"$share/claudex\"\n\n" +
-                "[remote.offline]\nurl = \"http://127.0.0.1:$closedPort/claudex\"\n",
+            node.config.readText() + "\n[remote.torad]\nurl = \"$share/door\"\n\n" +
+                "[remote.offline]\nurl = \"http://127.0.0.1:$closedPort/door\"\n",
         )
         val listed = remote(node)
         assertEquals(0, listed.code, listed.toString())
         val lines = listed.out.lines()
-        val claudex = lines.single { it.trimStart().startsWith("claudex ") }
+        val torad = lines.single { it.trimStart().startsWith("torad ") }
         val offline = lines.single { it.trimStart().startsWith("offline ") }
-        assertTrue(claudex.contains("$share/claudex") && !claudex.contains("can't be reached"), listed.toString())
+        val ready = Regex("""ready on \S+'s door, (\d+ models?|no account signed in yet)""")
+        assertTrue(ready.containsMatchIn(torad), listed.toString())
         assertTrue(offline.contains("can't be reached"), listed.toString())
     }
 
     @Test
     fun `splice install links the remote commands too`(@TempDir dir: Path) {
         val node = node(dir)
-        Files.writeString(node.config, node.config.readText() + "\n[remote.claudex]\nurl = \"$share/claudex\"\n")
+        Files.writeString(node.config, node.config.readText() + "\n[remote.torad]\nurl = \"$share/door\"\n")
         val lines = TerminalOutput {}
         InstallCommand(lines, lines).install(null, node.env)
-        assertTrue(node.linked("claudex"))
+        assertTrue(node.linked("torad"))
     }
 
-    /** The address [status] printed for [command]: `http://<host>:<share port>/<command>`. */
-    private fun address(status: String, command: String): String {
-        val printed = Regex("""http://\S+:$sharePort/${Regex.escape(command)}(?=\s|$)""")
-        return checkNotNull(printed.findAll(status).firstOrNull()?.value) { "no address for $command in\n$status" }
+    /** The box [status] prints the add for: `http://<host>:<share port>`. */
+    private fun server(status: String): String {
+        val printed = Regex("""splice remote add (http://\S+:$sharePort)(?=\s|$)""")
+        return checkNotNull(printed.find(status)?.groupValues?.get(1)) { "no add line in\n$status" }
     }
+}
+
+/** Waits on and reads the listeners a test drives, over loopback. */
+private object Probe {
+    /** Waits until torad's door has opened: it answers its launch once its heads are up. */
+    fun awaitDoor(share: String) {
+        val deadline = System.currentTimeMillis() + DOOR_OPEN_MS
+        val launch = URI.create("$share/door/launch").toURL()
+        while (status(launch) != HttpURLConnection.HTTP_OK) {
+            check(System.currentTimeMillis() < deadline) { "torad's door did not open" }
+            LockSupport.parkNanos(50_000_000L)
+        }
+    }
+
+    /** What [url] answers a GET with, or null when nothing answers. */
+    fun status(url: java.net.URL): Int? = runCatching {
+        val connection = url.openConnection() as HttpURLConnection
+        try {
+            connection.responseCode
+        } finally {
+            connection.disconnect()
+        }
+    }.getOrNull()
 
     /** Whether [host] names one of this machine's own addresses, other than loopback. */
-    private fun ownLanAddress(host: String): Boolean {
+    fun ownLanAddress(host: String): Boolean {
         val own = NetworkInterface.getNetworkInterfaces().toList().flatMap { it.inetAddresses.toList() }.toSet()
         return InetAddress.getAllByName(host).any { it in own && !it.isLoopbackAddress }
     }
 
-    private fun accepts(port: Int): Boolean = runCatching { Socket("127.0.0.1", port).use { } }.isSuccess
+    fun accepts(port: Int): Boolean = runCatching { Socket("127.0.0.1", port).use { } }.isSuccess
 
-    private fun awaitListening(vararg ports: Int) {
+    fun awaitListening(vararg ports: Int) {
         val deadline = System.currentTimeMillis() + 15_000
         for (port in ports) {
             while (runCatching { Socket("127.0.0.1", port).use { } }.isFailure) {

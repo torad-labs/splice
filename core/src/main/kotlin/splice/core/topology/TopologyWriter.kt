@@ -512,7 +512,7 @@ private class TopologyChecks(
         TopologyFinding(
             "heads.$key",
             "'$command' is the first LAN-share build's relay to another machine, which this build no longer runs; " +
-                "`splice remote add` with the address `splice share status` prints there replaces it",
+                "splice remote add <the address splice share status prints there> --as $command replaces it",
         )
     }
 

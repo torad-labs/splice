@@ -1,10 +1,10 @@
-// LAN share (docs/specs/lan-share.md). `splice remote`, a node's side: the commands
-// this machine runs as Claude Code pointed at another machine's heads. Each is one `[remote.<command>]` line in
-// splice.toml holding the address `splice share status` printed there, and a command link like every other; nothing
-// else is kept, no credential and no copy of the server's models. `add` checks the address against the server first
-// (RemoteAdd), `remove` takes a command and its link out, and the bare verb lists them, each with whether its server
-// answers now. On a team's server (docs/specs/server-mode.md, F7) `refresh` follows the commands it adds and drops
-// (RemoteRefresh), and `set <command> --window` pins a context window on this laptop or gives the server's back
+// The door on the network (docs/specs/door-network.md). `splice remote`, a node's side: the commands this machine runs
+// as Claude Code pointed at another machine's door, or at a team server's commands. Each is one `[remote.<command>]`
+// line in splice.toml holding the address `splice remote add` checked, and a command link like every other; nothing
+// else is kept, no credential and no copy of the other machine's models. `add` checks the address against the server
+// first (RemoteAdd), `remove` takes a command and its link out, and the bare verb lists them, each with whether its
+// server answers now. On a team's server (docs/specs/server-mode.md, F7) `refresh` follows the commands it adds and
+// drops (RemoteRefresh), and `set <command> --window` pins a context window on this laptop or gives the server's back
 // (RemoteWindow); the list (RemoteList) shows a pinned window.
 package splice.app.cli.share
 
@@ -43,7 +43,7 @@ internal class RemoteCommand(
     suspend fun run(args: List<String>): Int {
         val rest = args.drop(1)
         return when (args.firstOrNull()) {
-            null, "list" -> if (rest.isEmpty()) RemoteList(out, file, asks.directory).list() else usage()
+            null, "list" -> if (rest.isEmpty()) RemoteList(out, file, asks).list() else usage()
             "add" -> add(rest)
             "refresh" -> refresh(rest)
             "set" -> set(rest)

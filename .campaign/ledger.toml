@@ -1196,6 +1196,127 @@ with each of these broken on purpose, in a test of the check (never left in the 
 the press; a sign-in writes its credential where the gateway does not read it; the gateway sends a turn with another
 login's credential. Each must make the check fail, naming the provider and the step.'''
 
+[feature."gateway-providers"]
+goal = '''
+# gateway-providers: the Splice gateway serves every provider itself, and never needs a head
+
+## Who this is for, and why
+
+Custom heads are deprecated (head-catalog): one Claude Code, `claude` through the Splice gateway (the server splice's
+code calls the door), with every model from the gateway's list. Today the gateway's list and its routing are built
+only from running heads (`DesktopHeads.lineup` in `app/src/main/kotlin/splice/app/desktop/DesktopLineup.kt`): a
+provider in splice.toml with no `[heads.<key>]` block is served by nobody, and the selector prefix
+(`discovery_prefix`) lives in the head block. So a new provider cannot be used without adding a head, which is the
+thing being retired. On November 19, 2026 the President added a provider (`[providers.inkling]`, an OpenAI-compatible
+llama-server behind a local port) with no head, on Marcos's direction that no new head be added on this machine, and
+it must run as a Claude Code session through the gateway. Marcos, the same evening: the gateway should never need a
+head, because heads are going away. So this is not a path for new providers beside the heads: it is the gateway
+serving every provider in splice.toml on its own, so that no turn through the gateway depends on a head existing,
+running or being configured, and removing every head from splice.toml leaves the gateway serving exactly the same
+models.
+
+## What a person sees when it is built
+
+- Every provider declared in splice.toml is in the gateway's model list, whether or not any head names it, read from
+  the provider alone (its models, its login, its quirks), never from a head block (`GET /v1/models` at the gateway,
+  the list Claude Code's gateway mode and `splice claude --json` read), each of its models once, under a selector
+  that names the provider: `claude-<provider>--<model id>` (for `[providers.inkling]`,
+  `claude-inkling--Inkling-2-Small-abliterated-e4853745-Q3_K_M-imatrix`). The selectors callers use today
+  (`claude-codex--gpt-6.2-sol`, `claude-grok--grok-4.7`, `claude-muse--muse-spark-1.3[1m]`) keep working, by an
+  alias table the gateway owns (old head prefix to provider), so no caller's model name changes and nothing of it
+  is read from a head.
+- `claude --model <that selector>`, `/model`, and a subagent's model run the turn on that provider, with everything a
+  head gives a turn today: its dialect, its quirks (for example `chat_effort_vocabulary`, so a session's reasoning
+  effort reaches the model as the provider says), its declared `context_window` with usage scaled the way the door
+  scales it so compaction comes when it should, its login or key, retries and honest failures, and the long upstream
+  timeout (`upstreamTimeoutMs`) for slow local models. Reasoning effort stays part of the prompt-cache key and is
+  never varied by turn type. `mirror_reasoning` stays false.
+- A provider whose endpoint does not answer (a tunnel that is down) stays in the list as the door shows such models
+  today and answers a turn with an honest error naming the provider; it never stops splice from booting.
+- splice.toml with such a provider boots without a finding; a provider that no head and no model list can serve is
+  named by `splice doctor`.
+- `splice status` lists headless providers the gateway serves.
+
+## How it holds
+
+- The gateway's serving path holds no head: no head block is read, no head server is started or relayed through
+  for a gateway turn, and a splice.toml with no `[heads.*]` at all serves every provider. What a head's block carries
+  today that a turn needs (window, effort, system prompt mode, overrides such as upstreamTimeoutMs) moves to the
+  provider or to the gateway, with boot's interactive fix session offering to move a value that only a head block
+  holds; nothing is moved silently (CLAUDE.md, "Boot fails closed").
+- Heads that exist keep working for their own commands this release (head-catalog retires them); they are no longer
+  how the gateway serves anything.
+- Vendor facts stay in their provider module; a shared file carries at most one dispatch line per head.
+- Tests that pinned the lineup being read from running heads are rewritten in the same change, and the commit says so.
+- Documented in `docs/specs/door-default.md` as a decision, in the README's provider section and in the splice skill's
+  reference (`app/src/main/resources/manager-home/.claude/skills/splice/reference/`). The repository is public: made-up
+  providers and models only.
+
+## How it is checked
+
+A daemon booted from the tree with a made-up OpenAI-compatible provider served by a mock and no head: the gateway's
+`/v1/models` lists its model under `claude-<provider>--<id>`; a turn naming that selector reaches the mock with the
+model id, the effort the vocabulary maps, and no other provider's credential; usage comes back scaled to the declared
+window; the mock down gives an honest error and the daemon stays up; today's head-prefixed selectors still answer; and the same
+daemon with every `[heads.*]` block removed lists and serves the same models. Splice's check harness (`.campaign/checks/server/lib/harness.ts`) reads Linux's `/proc`, so a check that
+boots Splice through it runs on the Linux build box and names it itself:
+`CAMPAIGN_HERE=1 rig remote run --to build@buildbox -- bun test <file>`. Builds and tests never run on the machine the
+seats run on.'''
+
+[feature."restart-at-once"]
+goal = '''
+# restart-at-once: `splice restart` and `splice upgrade` hand over at once, and `--wait` keeps the old wait
+
+## Who this is for, and why
+
+A person (or an agent) restarts splice to load a change: a new build, a config edit, a sign-in. Today `splice
+restart` first waits for running compactions, up to 30 minutes, and `splice upgrade` waits up to 30 minutes for
+turns in flight; `--now` skips either wait (README, the splice skill's `reference/cli.md` and
+`reference/reliability-mcp-install.md`). Splice recovers its sessions across a restart, so the wait only delays the
+change. Marcos has ruled more than once (latest November 19, 2026, through the President) that a restart never
+waits for sessions to end their turns. So both commands hand over at once by default, and the wait becomes the
+opt-in.
+
+## What a person sees when it is built
+
+- `splice restart` and `splice upgrade` start the next daemon at once, with no wait for turns or compactions.
+  `--wait` brings back today's wait, with its bound and its messages, for anyone who wants it. `--now` keeps working
+  as a no-op that says once that it is now the default, so no script breaks.
+- What is already in flight is not lost: a compaction or an answer already arriving finishes on the old daemon, as a
+  restart under splice's systemd unit does today (README, "A restart under splice's systemd unit does not cut an
+  answer that is already arriving"), and a request that arrives during the handover is answered by the next daemon.
+  A session sees no error for either.
+- Read first, from the code, which in-flight kinds that already holds for, and on which ways of running the daemon
+  (under the systemd unit, and without it, where today a running turn is ended at once and its session sees "splice
+  restarted during ..."). Where one kind cannot be carried across a handover that way, keep the wait for that kind
+  alone, by default, and say in the command's output and the docs which kind and why. Do not keep a wait for any
+  kind that recovery covers.
+- The upgrade's other steps are unchanged: it checks the release against its sums, refuses a release that refuses
+  the config, repoints the jar, and runs doctor.
+- The console's and the CLI's words for a restart, and the splice skill's guidance to its manager agent, say what
+  happens now: the change applies at once, and what is in flight finishes.
+
+## How it holds
+
+- Boot still fails closed: a next daemon that would refuse the config is never handed over to, and the old one keeps
+  serving, as today.
+- Idle is a probe, never an error: nothing here reaps a turn that is thinking in silence.
+- Tests that pinned the default wait are rewritten in the same change, and the commit says so (CLAUDE.md, "Tests").
+- Documented: the README's restart and upgrade lines and its long-session section, `docs/` where they describe the
+  wait, the CHANGELOG, and the splice skill's reference (`cli.md`, `operations.md`, `reliability-mcp-install.md`,
+  `heads-and-backends.md`) and `manager-home/CLAUDE.md`. The repository is public: no person's machine in any of it.
+
+## How it is checked
+
+On a daemon booted from the tree: a restart while a streamed answer is arriving and while a compaction runs returns
+at once, the answer and the compaction finish whole for their sessions, and the next daemon serves the next request;
+`--wait` waits as today; `--now` still works; a restart into a config the next daemon refuses leaves the old one
+serving; an upgrade with a staged release hands over at once. Any kind kept waiting is checked to wait, by itself.
+Splice's check harness (`.campaign/checks/server/lib/harness.ts`) reads Linux's `/proc`, so a check that boots Splice
+through it runs on the Linux build box and names it itself:
+`CAMPAIGN_HERE=1 rig remote run --to build@buildbox -- bun test <file>`. Builds and tests never run on the machine the
+seats run on.'''
+
 [[row]]
 id = 'server-listener'
 title = 'A [server] listener that answers only keys'
@@ -6767,6 +6888,7 @@ reviews = [
 ]
 notes = [
   '2026-11-19 13:22 CT reply-view/coordinator: added; 2 of 2 checks fail, as they should before the work',
+  "2026-11-19 17:02 CT splice-console-lead: UI lead (splice-console-lead), Nov 19 CT: console-night-deck removes /tokens.css and kit.js from the console (its build is committed on campaign/console-night-deck, c9bc61224); the kit's tokens live in console/deck.css. rv-page dresses the reader from tokens.css's --splice-* now, so whichever lands second breaks it. Ruling: build rv-page as specified against what main has, but its --rv-* mapping lives in page.css only, in one block, so it can be re-pointed at deck.css's tokens when night-deck lands; the theme key splice-console-theme stays the same in both. Also: the capture fixture shows the reader undressed (the browser's serif font and default blue links); a feature review judges the reader dressed as a host dresses it (page, or a fixture that sets the --rv-* properties and a font), never undressed.",
 ]
 
 [[row]]
@@ -7651,7 +7773,7 @@ The console says plainly what a sign-in came to, on every page that signs in thr
 2. When the tab the press opened is closed after it was sent to the provider's page, while splice still holds the sign-in as waiting, the place where Sign in was pressed shows exactly `The sign-in page was closed before the sign-in finished.` and keeps the sign-in's own controls (Open sign-in to open the page again, the device code, the paste field, Cancel). The sign-in is NOT ended: if splice then says it landed (a device code typed before the page closed, a Claude code pasted on the card) it lands and (1) shows. Why not cancel it: a device-code or paste sign-in finishes after its page is closed, and a loopback one can be finishing as the tab closes, so cancelling would end sign-ins that are landing. Opening the page again clears the line.
 3. What exists stays: the press opens the tab and a sign-in that ends before naming a page closes it (627a10907); failures keep their word and splice's reason (FAILS in api.js).
 
-These exact words are what the sign-in check (later items) reads on the cards: `Signed in as <label>` and `The sign-in page was closed before the sign-in finished.`
+These exact words are what the sign-in check (later items) reads on the cards: `Signed in as <label>` and `The sign-in page was closed before the sign-in finished.` They are the contract, not the page: a redesign of Models or Accounts (the console-night-deck feature) keeps them where Sign in was pressed.
 
 Proof: `.campaign/checks/signin-e2e/console-says.test.ts` drives the real Models page in Chromium against a stub daemon in LoginRoutes.kt's shapes (as tools/console/models-sign-in-opens.test.ts does): a landing shows `Signed in as made-up-alpha` in the pane header with no page load, and closing the provider's tab shows the sentence with an Open button. Accounts is proven end to end by the sign-in check's step 2. Run browser work on a Mac (`rig remote run --needs system=Darwin/arm64 -- bun test <file>`), never on the seats' machine; look at Models and Accounts in both themes at 1440 px and ~3600 px (CLAUDE.md, UI changes).'''
 checks = [
@@ -7680,9 +7802,9 @@ owner = ''
 blocked_by = []
 guard = false
 spec = '''
-`splice login <head>` signs a Claude account in for a head whose provider's auth kind is `client` (Claude Code's own sign-in), where today it answers "there is no browser login for that kind". Why: the sign-in check requires the CLI path to open the same page as the console for every kind, and a person typing `splice login claude` expects a sign-in.
+`splice login <head>` signs a Claude account in for a head whose provider's auth kind is `client` (Claude Code's own sign-in), where today it prints a line sending the person elsewhere and exits 1 (ClaudeLoginLabel.kt: "splice: claude runs on Claude Code's own login: sign in with /login inside claude. More accounts are added on the Accounts page (splice console)." for the claude head, and "... signs in with Claude Code's own /login inside it; ..." for another Claude head). Why: the sign-in check requires the CLI path to open the same page as the console for every kind, and a person typing `splice login claude` expects a sign-in.
 
-What it does: it starts the same sign-in the console's Sign in runs on the running daemon (POST /api/auth/<head>/login, LoginRoutes.kt -> ClaudeAccountSignIn, which runs `claude auth login --claudeai` in a pending folder and adds the account to the head's pool; no second sign-in machinery in the CLI). It prints the page the sign-in names the way `splice login` prints a browser page for the other kinds, and opens it through SystemBrowserOpener as they do (so a person's browser opens it, and a stand-in `open`/`xdg-open` first on PATH records it). When the sign-in says its page ends in a code to paste back (paste_code), it asks for the code in the terminal and posts it (POST /api/auth/<head>/login/<id>/code). It polls the sign-in until it ends and prints `splice: signed in to <head> as <label>`, exit 0, when it lands, or `splice: login for '<head>' did not complete.` with splice's own failure reason (failure_reason) and a non-zero exit otherwise. `--label` names the login as the console does. Ctrl-C ends the sign-in on the daemon (DELETE) before exiting. With no daemon running it says so and how to start it, non-zero, in the words other daemon-backed commands use.
+What it does: it starts the same sign-in the console's Sign in runs on the running daemon (POST /api/auth/<head>/login, LoginRoutes.kt -> ClaudeAccountSignIn, which runs `claude auth login --claudeai` in a pending folder and adds the account to the head's pool; no second sign-in machinery in the CLI). It prints the page the sign-in names the way `splice login` prints a browser page for the other kinds, and opens it through SystemBrowserOpener as they do (so a person's browser opens it, and a stand-in `open`/`xdg-open` first on PATH records it). When the sign-in says its page ends in a code to paste back (paste_code), it asks for the code in the terminal and posts it (POST /api/auth/<head>/login/<id>/code). It polls the sign-in until it ends and prints `splice: signed in to <head> as <label>`, exit 0, when it lands, or `splice: login for '<head>' did not complete.` with splice's own failure reason (failure_reason) and a non-zero exit otherwise. `splice login <head> --label <name> [--discard]` keeps the meaning it has today (V4-276, ClaudeLoginLabel.kt: save or switch a labelled Claude login) and is untouched; only the plain `splice login <head>` changes, and LoginCommandTest's test that pins the old line is rewritten in the same change (the commit says so). Ctrl-C ends the sign-in on the daemon (DELETE) before exiting. With no daemon running it says so and how to start it, non-zero, in the words other daemon-backed commands use.
 
 Decisions: through the daemon, not a local Claude Code run, because the daemon owns the pool's folders, the pending-folder landing and the head restart (ClaudeAccountSignIn header). Vendor facts stay where they are (NativeClaudeAuth.kt); the CLI adds none.
 
@@ -7696,6 +7818,7 @@ sources = [
   'app/src/main/kotlin/splice/app/auth/claude/NativeClaudeAuth.kt',
   'features/accounts/src/main/kotlin/splice/accounts/signin/LoginRoutes.kt',
   'integrations/oauth/src/main/kotlin/splice/oauth/LoginIo.kt',
+  'app/src/main/kotlin/splice/app/cli/auth/ClaudeLoginLabel.kt',
 ]
 reviews = [
   'feature',
@@ -7703,4 +7826,381 @@ reviews = [
 ]
 notes = [
   '2026-11-19 16:27 CT signin-e2e/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'signin-harness'
+title = "bun tools/e2e signin: the sign-in check, with chatgpt-oauth's case"
+feature = 'signin-e2e'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'signin-console-says',
+]
+guard = false
+spec = '''
+Builds the sign-in check, `bun tools/e2e signin`, and its first case, chatgpt-oauth (Codex: loopback redirect with PKCE). Who uses it: a maintainer before a release, release.yml through `bun tools/release accept` (item signin-release), and campaign. What it proves, per kind, is the four steps below; what a person sees and a route returns is what it reads (the tab's address, the card's words, the turn's answer, the credential the stand-in saw), never call counts.
+
+The framework, tools/e2e/src/signin/ (layout inside it is the builder's): the daemon launcher (throwaway HOME, free ports, splice.toml assembled from the selected cases' heads, `claude` on the door lane, the management key and the terminal's door key); the `splice login <head>` runner with recording openers; one stand-in server per run with per-case routes, which records every request and the credentials on it; the Chromium driver (a context that routes provider hosts to the stand-in and aborts every other non-loopback request; Models: open the command's card, press Sign in, read the pane header; Accounts: Remove a login, press its Sign in, read its card); the door turn; the report, its stdout lines and exit code; the kinds reader. Every console selector the check uses (Models: the command card, Sign in, the pane header; Accounts: a login card, Remove, Sign in, + Add account; the paste field, Cancel, Open sign-in) lives in one file, tools/e2e/src/signin/console.ts, and the check reads the words `Signed in as <label>` and the closed-page sentence, never a layout: the console-night-deck feature replaces Models and Accounts, and whichever of the two lands later moves that one file and keeps the other's checks passing. A --kind with no case, or a registry kind with no case in a full run, fails by name (`signin: no case for auth kind '<kind>'`, listed under `missing`); the other kinds still run.
+
+The loopback flow (tools/e2e/src/signin/flows/loopback.ts, shared with grok-oauth): the stand-in's sign-in page shows the made-up account with Continue and Deny. Continue redirects the tab to splice's redirect_uri with the code and state; Deny redirects with error=access_denied and the fixture's error_description. The token endpoint checks the code and the PKCE verifier against the challenge the authorize URL carried and answers the fixture's token reply. Step 4 for a loopback kind: refused = Deny, and the card carries the provider's error_description; page closed = the check closes the tab on the stand-in's page before Continue, reads the card, then presses Cancel; expired = Continue, and the token endpoint answers the fixture's expired-code reply (invalid_grant), and the card says expired; unnamed = the check holds the redirect port when Sign in is pressed, so splice cannot listen and names no page (if splice names a page it cannot finish, fix that in the product). Generic loopback fixes the case needs (integrations/oauth OAuthLoginFlow.kt and friends: carrying the provider's error words to failure_reason, naming an expired code) belong to this item. The device and paste flows are built by signin-case-kimi and signin-case-client in tools/e2e/src/signin/flows/; a case declares its flow, so leave room for them.
+
+chatgpt-oauth's case (tools/e2e/src/signin/cases/chatgpt-oauth.ts): the tab opens on the authorize page splice builds from CodexOAuthEndpoints (https://auth.openai.com/oauth/authorize); the daemon's token exchange reaches the stand-in through CODEX_OAUTH_TOKEN_URL; the head's provider base_url points at the stand-in's Responses endpoint (the codex head shape of .campaign/checks/speed/lib/codex.ts); the id_token carries made-up claims the codex module reads (account id, email). Fixtures and SigninStandinShapesTest live in integrations/providers/codex.
+
+tools/e2e/test/signin-kinds.test.ts proves the missing-case rule with a made-up registry (a kind `made-up-oauth` with no case): the run names it and exits non-zero, and nothing else is reported missing.
+
+Shared decisions of signin-e2e (the same in every item; do not decide them again):
+- The check is `bun tools/e2e signin [--kind K]... [--jar PATH] [--json FILE]` (a verb of tools/e2e, src/commands/signin.ts; package.json script `e2e:signin`). With no --kind it runs every kind; without --jar it builds `:app:shadowJar` with the repo's ./gradlew and boots app/build/libs/app-all.jar. Exit 0 only when every kind run passes and no kind is missing a case. One line per kind on stdout: `signin: PASS <kind>`, `signin: FAIL <kind>, step <n> (<step name>): <what happened>` (the first failing step), and `signin: no case for auth kind '<kind>'`.
+- Kinds come from the code: AuthKindRegistry's KNOWN list in core/src/main/kotlin/splice/core/topology/AuthKind.kt, by wire spelling (today chatgpt-oauth, grok-oauth, kimi-oauth, muse-oauth, client). Each kind's case is one file, tools/e2e/src/signin/cases/<kind>.ts, found by listing that folder, so adding a case touches no shared file.
+- The JSON report (--json) is the contract .campaign/checks/signin-e2e/lib/report.ts judges: {ok, jar, missing: [kind], kinds: [{kind, flow: "loopback"|"device"|"paste", head, ok, steps: [{step, name, ok, said, seen}]}]}. Step names: 1 "the page opens", 2 "the login completes", 3 "the gateway serves a request on it", 4 "a failure says so". `seen`: step 1 {console_tab, provider_page, cli_page, card_code, page_code}; step 2 {label, card, reloaded, again_label, again_card}; step 3 {model, reply, expected_reply, credential, minted, removed, others}; step 4 {refused: {provider_said, card}, page_closed: {card}, expired: {card}, unnamed: {tab_closed, card}}. `card` is the text of the place where Sign in was pressed, read when the step's outcome showed there. `others` lists every credential the check knows (every token any stand-in minted, the removed login's, the door key, the management key) found anywhere in the turn's request at the stand-in, other than `minted`.
+- One run of a kind, in order: (1) on the console's Models page, open the command's card and press Sign in, with nothing else pressed; the tab the press opened must land on the provider's sign-in page (device kinds: the page where the code is typed, with the card's code); then `splice login <head>` is run and the page it hands the browser recorded (a stand-in `open`/`xdg-open` first on its PATH records it), and that CLI login is ended before the next step. (2) the sign-in completes as made-up account 1 and the Models card says `Signed in as <label>` without a reload; the login is removed on the Accounts page (its Remove), then signed in again on the Accounts page as made-up account 2 (Marcos's case), and that card says `Signed in as <label>`. (3) a turn is sent through the door (docs/specs/door-default.md; the terminal key, as .campaign/checks/door/lib/claude.ts does) naming the provider's model; the stand-in model endpoint answers in the provider's own shape with a reply text unique to the login, and records the request. (4) on Models: the provider refuses (its words in the card); the provider's page is closed half way (card shows "The sign-in page was closed before the sign-in finished."); an expired code (card says expired); and a sign-in that fails before naming any page (the tab the press opened is closed, the card says why).
+- The provider's side is the check's stand-in. Browser pages keep the provider's real addresses as splice computes them (so the tab's address is the one a person's browser gets); the check's Chromium context routes those hosts to the stand-in and aborts every other request that is not to this machine, so nothing real is contacted. The daemon's own calls (token, device authorization, key mint, profile, model endpoint) reach the stand-in through each provider's loopback overrides (core/src/main/kotlin/splice/core/util/LoopbackOverride.kt; a new one follows that rule) and the TOML base_url. Why: step 1 then proves the real page address, and no product switch exists that a person could leave pointed at a stand-in.
+- Shapes are the provider module's, never a second copy: each kind's stand-in reads JSON/SSE fixtures from <provider module>/src/test/resources/signin-standin/<kind>/ (token reply, device reply, error replies, model reply, and page.json naming `sign_in_page`, the scheme+host+path the tab must open on), with {{placeholders}} it fills; a Kotlin test in that module (SigninStandinShapesTest) reads every fixture through the module's own parsers and builders (page.json against the URL the module builds), so a change in what the module reads fails that module's test until the fixture moves with it. Claude Code's shapes live under app/src/test/resources/signin-standin/client/ with the test in app.
+- Everything is made up and the repository is public: accounts `made-up-<n>@example.invalid`, tokens `made-up-<kind>-<n>-<random>`; no person's login, email or machine. The daemon runs in a throwaway HOME with only the check's own variables (none of the caller's CLAUDE_, ANTHROPIC_, CODEX_, SPLICE_ and the like).
+- The tool boots the daemon itself, portably: `java -jar <jar> daemon` from PATH in its own process group, stopped through the group; it never reads /proc. So one Mac with Java runs daemon and browser together, and Linux (release.yml's ubuntu runner, which installs Playwright's Chromium before the gate) runs the same. Item checks run on a Mac with Java: `rig remote run --needs system=Darwin/arm64 --needs java -- ...`; no build, test or Chromium run made while building this feature runs on the machine the seats run on, and a 75 from rig means wait and send again (the release commands themselves run the check where they run: signin-release).
+- No fixed sleeps; a timeout only where waiting for something that will never come is the failure. A kind takes about a minute; the whole run a few minutes once the jar is built.
+
+Proof: `bun test ./.campaign/checks/signin-e2e/kinds.test.ts -t 'chatgpt-oauth signs in'` on a Mac with Java passes (it judges the report through .campaign/checks/signin-e2e/lib/report.ts); ./tools/e2e/test/signin-kinds.test.ts passes; the codex module's SigninStandinShapesTest passes.'''
+checks = [
+  "rig remote run --needs system=Darwin/arm64 --needs java -- bun test ./.campaign/checks/signin-e2e/kinds.test.ts -t 'chatgpt-oauth signs in'",
+  'rig remote run --needs system=Darwin/arm64 -- bun test ./tools/e2e/test/signin-kinds.test.ts',
+  "rig remote run --needs system=Darwin/arm64 --needs java -- ./gradlew :integrations-providers-codex:test --tests '*SigninStandinShapesTest'",
+]
+sources = [
+  'tools/e2e/index.ts',
+  'tools/e2e/src/daemon-env.ts',
+  'tools/e2e/src/daemon-startup.ts',
+  'tools/console/models-sign-in-opens.test.ts',
+  '.campaign/checks/door/lib/claude.ts',
+  '.campaign/checks/speed/lib/codex.ts',
+  '.campaign/checks/signin-e2e/lib/report.ts',
+  'core/src/main/kotlin/splice/core/topology/AuthKind.kt',
+  'core/src/main/kotlin/splice/core/util/LoopbackOverride.kt',
+  'integrations/providers/codex/src/main/kotlin/splice/provider/codex/auth/CodexOAuthEndpoints.kt',
+  'integrations/oauth/src/main/kotlin/splice/oauth/codex/LoginCodex.kt',
+  'integrations/oauth/src/main/kotlin/splice/oauth/OAuthLoginFlow.kt',
+  'docs/specs/door-default.md',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-19 16:59 CT signin-e2e/coordinator: added; 3 of 3 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'signin-case-grok'
+title = "grok-oauth's case: Marcos's remove-and-sign-in-again, checked end to end"
+feature = 'signin-e2e'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'signin-harness',
+]
+guard = false
+spec = '''
+Adds grok-oauth's case to the sign-in check (tools/e2e/src/signin/cases/grok-oauth.ts), on the loopback flow signin-harness built. Grok is Marcos's case of Nov 19, 2026: a stale login removed and signed in again must land, say so by its label, and serve the next turn on the new login's credential, never the removed one's.
+
+The tab opens on the authorize page splice builds from GrokOAuthEndpoints (its real address, routed to the stand-in in Chromium); the daemon's token exchange reaches the stand-in through GROK_OAUTH_TOKEN_URL; the head's provider base_url points at the stand-in's model endpoint in grok's dialect (openai-responses, as AddProfileCatalog's grok row), answering in xAI's reply shape. Step 4 is the loopback flow's (refused, page closed, expired code, unnamed by a held redirect port). Fixtures under integrations/providers/grok/src/test/resources/signin-standin/grok-oauth/ (token reply with the made-up account's claims, error replies, the model reply, page.json), read by SigninStandinShapesTest in the grok module through GrokOAuth's own parsers and URL builder. A product fix the case shows to be needed is made where it belongs (the grok module, or integrations/oauth for a loopback flow bug); keep changes to files other items share (console, the framework) to the lines the case needs.
+
+Shared decisions of signin-e2e (the same in every item; do not decide them again):
+- The check is `bun tools/e2e signin [--kind K]... [--jar PATH] [--json FILE]` (a verb of tools/e2e, src/commands/signin.ts; package.json script `e2e:signin`). With no --kind it runs every kind; without --jar it builds `:app:shadowJar` with the repo's ./gradlew and boots app/build/libs/app-all.jar. Exit 0 only when every kind run passes and no kind is missing a case. One line per kind on stdout: `signin: PASS <kind>`, `signin: FAIL <kind>, step <n> (<step name>): <what happened>` (the first failing step), and `signin: no case for auth kind '<kind>'`.
+- Kinds come from the code: AuthKindRegistry's KNOWN list in core/src/main/kotlin/splice/core/topology/AuthKind.kt, by wire spelling (today chatgpt-oauth, grok-oauth, kimi-oauth, muse-oauth, client). Each kind's case is one file, tools/e2e/src/signin/cases/<kind>.ts, found by listing that folder, so adding a case touches no shared file.
+- The JSON report (--json) is the contract .campaign/checks/signin-e2e/lib/report.ts judges: {ok, jar, missing: [kind], kinds: [{kind, flow: "loopback"|"device"|"paste", head, ok, steps: [{step, name, ok, said, seen}]}]}. Step names: 1 "the page opens", 2 "the login completes", 3 "the gateway serves a request on it", 4 "a failure says so". `seen`: step 1 {console_tab, provider_page, cli_page, card_code, page_code}; step 2 {label, card, reloaded, again_label, again_card}; step 3 {model, reply, expected_reply, credential, minted, removed, others}; step 4 {refused: {provider_said, card}, page_closed: {card}, expired: {card}, unnamed: {tab_closed, card}}. `card` is the text of the place where Sign in was pressed, read when the step's outcome showed there. `others` lists every credential the check knows (every token any stand-in minted, the removed login's, the door key, the management key) found anywhere in the turn's request at the stand-in, other than `minted`.
+- One run of a kind, in order: (1) on the console's Models page, open the command's card and press Sign in, with nothing else pressed; the tab the press opened must land on the provider's sign-in page (device kinds: the page where the code is typed, with the card's code); then `splice login <head>` is run and the page it hands the browser recorded (a stand-in `open`/`xdg-open` first on its PATH records it), and that CLI login is ended before the next step. (2) the sign-in completes as made-up account 1 and the Models card says `Signed in as <label>` without a reload; the login is removed on the Accounts page (its Remove), then signed in again on the Accounts page as made-up account 2 (Marcos's case), and that card says `Signed in as <label>`. (3) a turn is sent through the door (docs/specs/door-default.md; the terminal key, as .campaign/checks/door/lib/claude.ts does) naming the provider's model; the stand-in model endpoint answers in the provider's own shape with a reply text unique to the login, and records the request. (4) on Models: the provider refuses (its words in the card); the provider's page is closed half way (card shows "The sign-in page was closed before the sign-in finished."); an expired code (card says expired); and a sign-in that fails before naming any page (the tab the press opened is closed, the card says why).
+- The provider's side is the check's stand-in. Browser pages keep the provider's real addresses as splice computes them (so the tab's address is the one a person's browser gets); the check's Chromium context routes those hosts to the stand-in and aborts every other request that is not to this machine, so nothing real is contacted. The daemon's own calls (token, device authorization, key mint, profile, model endpoint) reach the stand-in through each provider's loopback overrides (core/src/main/kotlin/splice/core/util/LoopbackOverride.kt; a new one follows that rule) and the TOML base_url. Why: step 1 then proves the real page address, and no product switch exists that a person could leave pointed at a stand-in.
+- Shapes are the provider module's, never a second copy: each kind's stand-in reads JSON/SSE fixtures from <provider module>/src/test/resources/signin-standin/<kind>/ (token reply, device reply, error replies, model reply, and page.json naming `sign_in_page`, the scheme+host+path the tab must open on), with {{placeholders}} it fills; a Kotlin test in that module (SigninStandinShapesTest) reads every fixture through the module's own parsers and builders (page.json against the URL the module builds), so a change in what the module reads fails that module's test until the fixture moves with it. Claude Code's shapes live under app/src/test/resources/signin-standin/client/ with the test in app.
+- Everything is made up and the repository is public: accounts `made-up-<n>@example.invalid`, tokens `made-up-<kind>-<n>-<random>`; no person's login, email or machine. The daemon runs in a throwaway HOME with only the check's own variables (none of the caller's CLAUDE_, ANTHROPIC_, CODEX_, SPLICE_ and the like).
+- The tool boots the daemon itself, portably: `java -jar <jar> daemon` from PATH in its own process group, stopped through the group; it never reads /proc. So one Mac with Java runs daemon and browser together, and Linux (release.yml's ubuntu runner, which installs Playwright's Chromium before the gate) runs the same. Item checks run on a Mac with Java: `rig remote run --needs system=Darwin/arm64 --needs java -- ...`; no build, test or Chromium run made while building this feature runs on the machine the seats run on, and a 75 from rig means wait and send again (the release commands themselves run the check where they run: signin-release).
+- No fixed sleeps; a timeout only where waiting for something that will never come is the failure. A kind takes about a minute; the whole run a few minutes once the jar is built.
+
+Proof: `bun test ./.campaign/checks/signin-e2e/kinds.test.ts -t 'grok-oauth signs in'` on a Mac with Java passes; the grok module's SigninStandinShapesTest passes.'''
+checks = [
+  "rig remote run --needs system=Darwin/arm64 --needs java -- bun test ./.campaign/checks/signin-e2e/kinds.test.ts -t 'grok-oauth signs in'",
+  "rig remote run --needs system=Darwin/arm64 --needs java -- ./gradlew :integrations-providers-grok:test --tests '*SigninStandinShapesTest'",
+]
+sources = [
+  'integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt',
+  'integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokOAuth.kt',
+  'integrations/oauth/src/main/kotlin/splice/oauth/grok/LoginGrok.kt',
+  '.campaign/checks/signin-e2e/lib/report.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-19 17:00 CT signin-e2e/coordinator: added; 2 of 2 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'signin-case-kimi'
+title = "kimi-oauth's case and the device-code flow"
+feature = 'signin-e2e'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'signin-harness',
+]
+guard = false
+spec = '''
+Adds kimi-oauth's case (tools/e2e/src/signin/cases/kimi-oauth.ts) and the device-code flow (tools/e2e/src/signin/flows/device.ts) that muse-oauth reuses.
+
+Kimi signs in by RFC 8628 device code (LoginKimi, DeviceLoginFlow). The daemon's device-authorization and token calls reach the stand-in through KIMI_OAUTH_HOST. The device reply's verification_uri / verification_uri_complete are the provider's real page addresses from the fixture, routed to the stand-in in Chromium; the tab opens there, the page shows the code it is asked for, and step 1 records page_code against the card's card_code (they must be equal). Approve on the page lets the stand-in answer the next poll with the fixture's token reply; the stand-in answers authorization_pending until then, with interval 1 s so the run stays quick. Step 4 for a device kind: refused = Deny on the page, and the next poll answers access_denied with the fixture's description, which the card carries; page closed = the tab is closed before Approve, the card shows the closed-page sentence, then Cancel; expired = every poll answers expired_token, splice replaces the code as DeviceLoginFlow does (two restarts) and then ends Expired, and the card says expired (the stand-in's expires_in is short so this takes seconds); unnamed = the device-authorization endpoint refuses, so no page is ever named, the tab the press opened is closed and the card says why. The head's provider is kimi's anthropic-passthrough (base_url to the stand-in's Messages endpoint), and the turn must carry the access token minted for the new login, with Kimi's device identity as the kimi module sends it. Fixtures under integrations/providers/kimi/src/test/resources/signin-standin/kimi-oauth/ with SigninStandinShapesTest in the kimi module. Generic device-flow fixes (integrations/oauth DeviceLoginFlow.kt and friends) belong to this item, so signin-case-muse waits on it.
+
+Shared decisions of signin-e2e (the same in every item; do not decide them again):
+- The check is `bun tools/e2e signin [--kind K]... [--jar PATH] [--json FILE]` (a verb of tools/e2e, src/commands/signin.ts; package.json script `e2e:signin`). With no --kind it runs every kind; without --jar it builds `:app:shadowJar` with the repo's ./gradlew and boots app/build/libs/app-all.jar. Exit 0 only when every kind run passes and no kind is missing a case. One line per kind on stdout: `signin: PASS <kind>`, `signin: FAIL <kind>, step <n> (<step name>): <what happened>` (the first failing step), and `signin: no case for auth kind '<kind>'`.
+- Kinds come from the code: AuthKindRegistry's KNOWN list in core/src/main/kotlin/splice/core/topology/AuthKind.kt, by wire spelling (today chatgpt-oauth, grok-oauth, kimi-oauth, muse-oauth, client). Each kind's case is one file, tools/e2e/src/signin/cases/<kind>.ts, found by listing that folder, so adding a case touches no shared file.
+- The JSON report (--json) is the contract .campaign/checks/signin-e2e/lib/report.ts judges: {ok, jar, missing: [kind], kinds: [{kind, flow: "loopback"|"device"|"paste", head, ok, steps: [{step, name, ok, said, seen}]}]}. Step names: 1 "the page opens", 2 "the login completes", 3 "the gateway serves a request on it", 4 "a failure says so". `seen`: step 1 {console_tab, provider_page, cli_page, card_code, page_code}; step 2 {label, card, reloaded, again_label, again_card}; step 3 {model, reply, expected_reply, credential, minted, removed, others}; step 4 {refused: {provider_said, card}, page_closed: {card}, expired: {card}, unnamed: {tab_closed, card}}. `card` is the text of the place where Sign in was pressed, read when the step's outcome showed there. `others` lists every credential the check knows (every token any stand-in minted, the removed login's, the door key, the management key) found anywhere in the turn's request at the stand-in, other than `minted`.
+- One run of a kind, in order: (1) on the console's Models page, open the command's card and press Sign in, with nothing else pressed; the tab the press opened must land on the provider's sign-in page (device kinds: the page where the code is typed, with the card's code); then `splice login <head>` is run and the page it hands the browser recorded (a stand-in `open`/`xdg-open` first on its PATH records it), and that CLI login is ended before the next step. (2) the sign-in completes as made-up account 1 and the Models card says `Signed in as <label>` without a reload; the login is removed on the Accounts page (its Remove), then signed in again on the Accounts page as made-up account 2 (Marcos's case), and that card says `Signed in as <label>`. (3) a turn is sent through the door (docs/specs/door-default.md; the terminal key, as .campaign/checks/door/lib/claude.ts does) naming the provider's model; the stand-in model endpoint answers in the provider's own shape with a reply text unique to the login, and records the request. (4) on Models: the provider refuses (its words in the card); the provider's page is closed half way (card shows "The sign-in page was closed before the sign-in finished."); an expired code (card says expired); and a sign-in that fails before naming any page (the tab the press opened is closed, the card says why).
+- The provider's side is the check's stand-in. Browser pages keep the provider's real addresses as splice computes them (so the tab's address is the one a person's browser gets); the check's Chromium context routes those hosts to the stand-in and aborts every other request that is not to this machine, so nothing real is contacted. The daemon's own calls (token, device authorization, key mint, profile, model endpoint) reach the stand-in through each provider's loopback overrides (core/src/main/kotlin/splice/core/util/LoopbackOverride.kt; a new one follows that rule) and the TOML base_url. Why: step 1 then proves the real page address, and no product switch exists that a person could leave pointed at a stand-in.
+- Shapes are the provider module's, never a second copy: each kind's stand-in reads JSON/SSE fixtures from <provider module>/src/test/resources/signin-standin/<kind>/ (token reply, device reply, error replies, model reply, and page.json naming `sign_in_page`, the scheme+host+path the tab must open on), with {{placeholders}} it fills; a Kotlin test in that module (SigninStandinShapesTest) reads every fixture through the module's own parsers and builders (page.json against the URL the module builds), so a change in what the module reads fails that module's test until the fixture moves with it. Claude Code's shapes live under app/src/test/resources/signin-standin/client/ with the test in app.
+- Everything is made up and the repository is public: accounts `made-up-<n>@example.invalid`, tokens `made-up-<kind>-<n>-<random>`; no person's login, email or machine. The daemon runs in a throwaway HOME with only the check's own variables (none of the caller's CLAUDE_, ANTHROPIC_, CODEX_, SPLICE_ and the like).
+- The tool boots the daemon itself, portably: `java -jar <jar> daemon` from PATH in its own process group, stopped through the group; it never reads /proc. So one Mac with Java runs daemon and browser together, and Linux (release.yml's ubuntu runner, which installs Playwright's Chromium before the gate) runs the same. Item checks run on a Mac with Java: `rig remote run --needs system=Darwin/arm64 --needs java -- ...`; no build, test or Chromium run made while building this feature runs on the machine the seats run on, and a 75 from rig means wait and send again (the release commands themselves run the check where they run: signin-release).
+- No fixed sleeps; a timeout only where waiting for something that will never come is the failure. A kind takes about a minute; the whole run a few minutes once the jar is built.
+
+Proof: `bun test ./.campaign/checks/signin-e2e/kinds.test.ts -t 'kimi-oauth signs in'` on a Mac with Java passes; the kimi module's SigninStandinShapesTest passes.'''
+checks = [
+  "rig remote run --needs system=Darwin/arm64 --needs java -- bun test ./.campaign/checks/signin-e2e/kinds.test.ts -t 'kimi-oauth signs in'",
+  "rig remote run --needs system=Darwin/arm64 --needs java -- ./gradlew :integrations-providers-kimi:test --tests '*SigninStandinShapesTest'",
+]
+sources = [
+  'integrations/providers/kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt',
+  'integrations/oauth/src/main/kotlin/splice/oauth/kimi/LoginKimi.kt',
+  'integrations/oauth/src/main/kotlin/splice/oauth/DeviceLoginFlow.kt',
+  '.campaign/checks/signin-e2e/lib/report.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-19 17:00 CT signin-e2e/coordinator: added; 2 of 2 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'signin-case-muse'
+title = "muse-oauth's case, on the device-code flow, with its loopback endpoints"
+feature = 'signin-e2e'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'signin-case-kimi',
+]
+guard = false
+spec = '''
+Adds muse-oauth's case (tools/e2e/src/signin/cases/muse-oauth.ts) on the device-code flow signin-case-kimi built (tools/e2e/src/signin/flows/device.ts). Why: Muse is a kind splice signs in, and the feature covers every kind; its sign-in ends in a key minted for the login, so the turn proves that key, not the sign-in token, is what the gateway sends.
+
+Muse signs in by RFC 8628 device code (LoginMuse, DeviceLoginFlow) and mints its API key at the end of the login (MuseRefresh, POST /muse-code/key). Its endpoints are fixed constants today (MuseOAuthEndpoints: https://auth.meta.com/oidc/device/authorization/, .../token/, https://api.meta.ai/muse-code/key), so this item gives them loopback overrides under LoopbackOverride's rule, in the muse module, the way KimiOAuth.host does: MUSE_OAUTH_HOST for the auth.meta.com endpoints and MUSE_API_HOST for the api.meta.ai one (a value whose host is not loopback is ignored and logged, so no switch can send a person's token elsewhere). The device reply's verification_uri / verification_uri_complete are the provider's real page addresses from the fixture, routed to the stand-in in Chromium; step 1 records page_code against card_code. The head's provider base_url points at the stand-in's model endpoint in muse's dialect, answering in Muse's reply shape (MuseReplies). Step 3's `minted` is the credential Muse's turns carry, the key the stand-in minted for the new login (MuseAuthProvider); the sign-in's own OAuth tokens are among the credentials the check knows, so a turn that carried one of them as well fails as `others`. Step 4 is the device flow's (refused by Deny, page closed, expired code, unnamed by a refused device authorization). A refused key mint is not worked around by the case or the product (MuseMintVerdict stands): splice never evades a provider's decision.
+
+Fixtures under integrations/providers/muse/src/test/resources/signin-standin/muse-oauth/ (device reply, token reply, key-mint reply, error replies, model reply, page.json), read by SigninStandinShapesTest in the muse module through the module's own parsers (MuseOAuth, the key-mint reply reader, MuseReplies). A product fix the case shows to be needed is made where it belongs (the muse module, or integrations/oauth for a device-flow bug); keep changes to files other items share (the framework, the device flow) to the lines the case needs.
+
+Shared decisions of signin-e2e (the same in every item; do not decide them again):
+- The check is `bun tools/e2e signin [--kind K]... [--jar PATH] [--json FILE]` (a verb of tools/e2e, src/commands/signin.ts; package.json script `e2e:signin`). With no --kind it runs every kind; without --jar it builds `:app:shadowJar` with the repo's ./gradlew and boots app/build/libs/app-all.jar. Exit 0 only when every kind run passes and no kind is missing a case. One line per kind on stdout: `signin: PASS <kind>`, `signin: FAIL <kind>, step <n> (<step name>): <what happened>` (the first failing step), and `signin: no case for auth kind '<kind>'`.
+- Kinds come from the code: AuthKindRegistry's KNOWN list in core/src/main/kotlin/splice/core/topology/AuthKind.kt, by wire spelling (today chatgpt-oauth, grok-oauth, kimi-oauth, muse-oauth, client). Each kind's case is one file, tools/e2e/src/signin/cases/<kind>.ts, found by listing that folder, so adding a case touches no shared file.
+- The JSON report (--json) is the contract .campaign/checks/signin-e2e/lib/report.ts judges: {ok, jar, missing: [kind], kinds: [{kind, flow: "loopback"|"device"|"paste", head, ok, steps: [{step, name, ok, said, seen}]}]}. Step names: 1 "the page opens", 2 "the login completes", 3 "the gateway serves a request on it", 4 "a failure says so". `seen`: step 1 {console_tab, provider_page, cli_page, card_code, page_code}; step 2 {label, card, reloaded, again_label, again_card}; step 3 {model, reply, expected_reply, credential, minted, removed, others}; step 4 {refused: {provider_said, card}, page_closed: {card}, expired: {card}, unnamed: {tab_closed, card}}. `card` is the text of the place where Sign in was pressed, read when the step's outcome showed there. `others` lists every credential the check knows (every token any stand-in minted, the removed login's, the door key, the management key) found anywhere in the turn's request at the stand-in, other than `minted`.
+- One run of a kind, in order: (1) on the console's Models page, open the command's card and press Sign in, with nothing else pressed; the tab the press opened must land on the provider's sign-in page (device kinds: the page where the code is typed, with the card's code); then `splice login <head>` is run and the page it hands the browser recorded (a stand-in `open`/`xdg-open` first on its PATH records it), and that CLI login is ended before the next step. (2) the sign-in completes as made-up account 1 and the Models card says `Signed in as <label>` without a reload; the login is removed on the Accounts page (its Remove), then signed in again on the Accounts page as made-up account 2 (Marcos's case), and that card says `Signed in as <label>`. (3) a turn is sent through the door (docs/specs/door-default.md; the terminal key, as .campaign/checks/door/lib/claude.ts does) naming the provider's model; the stand-in model endpoint answers in the provider's own shape with a reply text unique to the login, and records the request. (4) on Models: the provider refuses (its words in the card); the provider's page is closed half way (card shows "The sign-in page was closed before the sign-in finished."); an expired code (card says expired); and a sign-in that fails before naming any page (the tab the press opened is closed, the card says why).
+- The provider's side is the check's stand-in. Browser pages keep the provider's real addresses as splice computes them (so the tab's address is the one a person's browser gets); the check's Chromium context routes those hosts to the stand-in and aborts every other request that is not to this machine, so nothing real is contacted. The daemon's own calls (token, device authorization, key mint, profile, model endpoint) reach the stand-in through each provider's loopback overrides (core/src/main/kotlin/splice/core/util/LoopbackOverride.kt; a new one follows that rule) and the TOML base_url. Why: step 1 then proves the real page address, and no product switch exists that a person could leave pointed at a stand-in.
+- Shapes are the provider module's, never a second copy: each kind's stand-in reads JSON/SSE fixtures from <provider module>/src/test/resources/signin-standin/<kind>/ (token reply, device reply, error replies, model reply, and page.json naming `sign_in_page`, the scheme+host+path the tab must open on), with {{placeholders}} it fills; a Kotlin test in that module (SigninStandinShapesTest) reads every fixture through the module's own parsers and builders (page.json against the URL the module builds), so a change in what the module reads fails that module's test until the fixture moves with it. Claude Code's shapes live under app/src/test/resources/signin-standin/client/ with the test in app.
+- Everything is made up and the repository is public: accounts `made-up-<n>@example.invalid`, tokens `made-up-<kind>-<n>-<random>`; no person's login, email or machine. The daemon runs in a throwaway HOME with only the check's own variables (none of the caller's CLAUDE_, ANTHROPIC_, CODEX_, SPLICE_ and the like).
+- The tool boots the daemon itself, portably: `java -jar <jar> daemon` from PATH in its own process group, stopped through the group; it never reads /proc. So one Mac with Java runs daemon and browser together, and Linux (release.yml's ubuntu runner, which installs Playwright's Chromium before the gate) runs the same. Item checks run on a Mac with Java: `rig remote run --needs system=Darwin/arm64 --needs java -- ...`; no build, test or Chromium run made while building this feature runs on the machine the seats run on, and a 75 from rig means wait and send again (the release commands themselves run the check where they run: signin-release).
+- No fixed sleeps; a timeout only where waiting for something that will never come is the failure. A kind takes about a minute; the whole run a few minutes once the jar is built.
+
+
+Proof: `bun test ./.campaign/checks/signin-e2e/kinds.test.ts -t 'muse-oauth signs in'` on a Mac with Java passes; the muse module's SigninStandinShapesTest passes.'''
+checks = [
+  "rig remote run --needs system=Darwin/arm64 --needs java -- bun test ./.campaign/checks/signin-e2e/kinds.test.ts -t 'muse-oauth signs in'",
+  "rig remote run --needs system=Darwin/arm64 --needs java -- ./gradlew :integrations-providers-muse:test --tests '*SigninStandinShapesTest'",
+]
+sources = [
+  'integrations/oauth/src/main/kotlin/splice/oauth/muse/LoginMuse.kt',
+  'integrations/oauth/src/main/kotlin/splice/oauth/muse/MuseRefresh.kt',
+  'integrations/providers/muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt',
+  'integrations/providers/muse/src/main/kotlin/splice/provider/muse/MuseAuthProvider.kt',
+  'integrations/providers/muse/src/main/kotlin/splice/provider/muse/MuseKeyMint.kt',
+  'integrations/providers/kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt',
+  'core/src/main/kotlin/splice/core/util/LoopbackOverride.kt',
+  '.campaign/checks/signin-e2e/lib/report.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-19 17:10 CT signin-e2e/coordinator: added; 2 of 2 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'signin-case-client'
+title = "Claude Code's case (client): the paste flow, with a stand-in Claude Code"
+feature = 'signin-e2e'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'signin-harness',
+  'signin-claude-cli',
+]
+guard = false
+spec = '''
+Adds the case for `client`, Claude Code's own sign-in (tools/e2e/src/signin/cases/client.ts), and the paste flow (tools/e2e/src/signin/flows/paste.ts). Why: a Claude account is the login most people add, and it is the one kind whose page ends in a code the person pastes back, so neither the loopback nor the device flow covers it.
+
+How a Claude sign-in runs today: Sign in on a Claude head's card posts /api/auth/<head>/login, and ClaudeAccountSignIn runs Claude Code's own `claude auth login --claudeai` (NativeClaudeAuth) in a pending folder, reads the page Claude Code names (the link it hands the BROWSER splice gives it, and the printed link whose page ends in a code to paste back), takes the code pasted on the card (POST /api/auth/<head>/login/<id>/code) to Claude Code's stdin, and lands the account once its folder is read and proven new to the pool.
+
+Decisions:
+- Claude Code itself is the provider's side here, so the check puts a stand-in `claude` first on the daemon's PATH (and on the PATH of `splice login`), the only Claude Code the daemon finds. It is the check's own program (tools/e2e/src/signin/standins/, a Bun script), told the stand-in server's address by the check when it is written, never through a product switch. It does what Claude Code's `auth login --claudeai` does as NativeClaudeAuth reads it: names its page the way Claude Code does (the BROWSER call and the printed line, with code=true, a PKCE challenge and a state, on https://claude.com/cai/oauth/authorize), reads the pasted `code#state`, exchanges it at the stand-in's token endpoint with the verifier, writes the credential file in Claude Code's own shape in the config folder it was started in, prints Claude Code's success words and exits 0; on a refused or expired code it prints Claude Code's error words and exits non-zero; when the stand-in server says the run is the "unnamed" one, it prints Claude Code's start-up failure and exits before naming any page. The lines it prints, the file it writes and the token replies are fixtures under app/src/test/resources/signin-standin/client/, and app's SigninStandinShapesTest reads them through NativeClaudeAuth's own link reader (page.json against the link it accepts), ClaudeLoginFactsReader (the credential file: token, account) and the Anthropic reply readers app already has, so a change in what splice reads from Claude Code fails that test until the fixtures move with it. Why a stand-in Claude Code: the real one talks only to Anthropic, and the check needs no real account and contacts nothing real.
+- The daemon's own calls to Anthropic during a run (the profile read, ClaudeCredentialProfiles' CLAUDE_PROFILE_URL; the usage and limit reads, ClaudeLimitResets; the token refresh, ClaudeOAuthRefresh; the models list the door asks with an added login, AddedLoginHeaders) reach the stand-in through loopback overrides added under LoopbackOverride's rule, in app/auth/claude where those constants live, named for what they point at (CLAUDE_PROFILE_URL, CLAUDE_USAGE_URL and so on). The head's provider is the anthropic-passthrough Claude head .campaign/checks/desktop/lib/desktop.ts clientHead writes, base_url at the stand-in's Messages endpoint.
+- Step 1: the tab the press opened lands on the claude.com page (routed to the stand-in in Chromium) and the card shows its paste field; `splice login <head>` (built by signin-claude-cli) prints and opens the same page, and the check ends that CLI login (Ctrl-C, which signin-claude-cli makes end the sign-in on the daemon) before step 2. Step 2: the stand-in page's Authorize shows `code#state` as Anthropic's callback page does; the check types it into the card's paste field and submits; the card says `Signed in as <label>`; then Marcos's case on Accounts (remove the added login, + Add account, paste, `Signed in as <label>`). Step 3: a turn through the door naming the head's model carries the new login's access token as its bearer and no other credential. Step 4 for the paste flow: refused = the token endpoint refuses the pasted code with the fixture's refusal, and the card carries Claude Code's words; page closed = the tab is closed before Authorize, the card shows the closed-page sentence and keeps its paste field, then Cancel; expired = the token endpoint answers the fixture's expired-code reply and the card says expired (if Claude Code's own words for it do not say so, splice names it, in app/auth/claude); unnamed = the stand-in Claude Code fails at start before naming a page, the tab the press opened is closed and the card says why.
+- A product fix the case shows to be needed is made where it belongs (app/auth/claude, features/accounts' sign-in routes); keep changes to files other items share (console, the framework) to the lines the case needs.
+
+Shared decisions of signin-e2e (the same in every item; do not decide them again):
+- The check is `bun tools/e2e signin [--kind K]... [--jar PATH] [--json FILE]` (a verb of tools/e2e, src/commands/signin.ts; package.json script `e2e:signin`). With no --kind it runs every kind; without --jar it builds `:app:shadowJar` with the repo's ./gradlew and boots app/build/libs/app-all.jar. Exit 0 only when every kind run passes and no kind is missing a case. One line per kind on stdout: `signin: PASS <kind>`, `signin: FAIL <kind>, step <n> (<step name>): <what happened>` (the first failing step), and `signin: no case for auth kind '<kind>'`.
+- Kinds come from the code: AuthKindRegistry's KNOWN list in core/src/main/kotlin/splice/core/topology/AuthKind.kt, by wire spelling (today chatgpt-oauth, grok-oauth, kimi-oauth, muse-oauth, client). Each kind's case is one file, tools/e2e/src/signin/cases/<kind>.ts, found by listing that folder, so adding a case touches no shared file.
+- The JSON report (--json) is the contract .campaign/checks/signin-e2e/lib/report.ts judges: {ok, jar, missing: [kind], kinds: [{kind, flow: "loopback"|"device"|"paste", head, ok, steps: [{step, name, ok, said, seen}]}]}. Step names: 1 "the page opens", 2 "the login completes", 3 "the gateway serves a request on it", 4 "a failure says so". `seen`: step 1 {console_tab, provider_page, cli_page, card_code, page_code}; step 2 {label, card, reloaded, again_label, again_card}; step 3 {model, reply, expected_reply, credential, minted, removed, others}; step 4 {refused: {provider_said, card}, page_closed: {card}, expired: {card}, unnamed: {tab_closed, card}}. `card` is the text of the place where Sign in was pressed, read when the step's outcome showed there. `others` lists every credential the check knows (every token any stand-in minted, the removed login's, the door key, the management key) found anywhere in the turn's request at the stand-in, other than `minted`.
+- One run of a kind, in order: (1) on the console's Models page, open the command's card and press Sign in, with nothing else pressed; the tab the press opened must land on the provider's sign-in page (device kinds: the page where the code is typed, with the card's code); then `splice login <head>` is run and the page it hands the browser recorded (a stand-in `open`/`xdg-open` first on its PATH records it), and that CLI login is ended before the next step. (2) the sign-in completes as made-up account 1 and the Models card says `Signed in as <label>` without a reload; the login is removed on the Accounts page (its Remove), then signed in again on the Accounts page as made-up account 2 (Marcos's case), and that card says `Signed in as <label>`. (3) a turn is sent through the door (docs/specs/door-default.md; the terminal key, as .campaign/checks/door/lib/claude.ts does) naming the provider's model; the stand-in model endpoint answers in the provider's own shape with a reply text unique to the login, and records the request. (4) on Models: the provider refuses (its words in the card); the provider's page is closed half way (card shows "The sign-in page was closed before the sign-in finished."); an expired code (card says expired); and a sign-in that fails before naming any page (the tab the press opened is closed, the card says why).
+- The provider's side is the check's stand-in. Browser pages keep the provider's real addresses as splice computes them (so the tab's address is the one a person's browser gets); the check's Chromium context routes those hosts to the stand-in and aborts every other request that is not to this machine, so nothing real is contacted. The daemon's own calls (token, device authorization, key mint, profile, model endpoint) reach the stand-in through each provider's loopback overrides (core/src/main/kotlin/splice/core/util/LoopbackOverride.kt; a new one follows that rule) and the TOML base_url. Why: step 1 then proves the real page address, and no product switch exists that a person could leave pointed at a stand-in.
+- Shapes are the provider module's, never a second copy: each kind's stand-in reads JSON/SSE fixtures from <provider module>/src/test/resources/signin-standin/<kind>/ (token reply, device reply, error replies, model reply, and page.json naming `sign_in_page`, the scheme+host+path the tab must open on), with {{placeholders}} it fills; a Kotlin test in that module (SigninStandinShapesTest) reads every fixture through the module's own parsers and builders (page.json against the URL the module builds), so a change in what the module reads fails that module's test until the fixture moves with it. Claude Code's shapes live under app/src/test/resources/signin-standin/client/ with the test in app.
+- Everything is made up and the repository is public: accounts `made-up-<n>@example.invalid`, tokens `made-up-<kind>-<n>-<random>`; no person's login, email or machine. The daemon runs in a throwaway HOME with only the check's own variables (none of the caller's CLAUDE_, ANTHROPIC_, CODEX_, SPLICE_ and the like).
+- The tool boots the daemon itself, portably: `java -jar <jar> daemon` from PATH in its own process group, stopped through the group; it never reads /proc. So one Mac with Java runs daemon and browser together, and Linux (release.yml's ubuntu runner, which installs Playwright's Chromium before the gate) runs the same. Item checks run on a Mac with Java: `rig remote run --needs system=Darwin/arm64 --needs java -- ...`; no build, test or Chromium run made while building this feature runs on the machine the seats run on, and a 75 from rig means wait and send again (the release commands themselves run the check where they run: signin-release).
+- No fixed sleeps; a timeout only where waiting for something that will never come is the failure. A kind takes about a minute; the whole run a few minutes once the jar is built.
+
+
+Proof: `bun test ./.campaign/checks/signin-e2e/kinds.test.ts -t 'client signs in'` on a Mac with Java passes; app's SigninStandinShapesTest passes.'''
+checks = [
+  "rig remote run --needs system=Darwin/arm64 --needs java -- bun test ./.campaign/checks/signin-e2e/kinds.test.ts -t 'client signs in'",
+  "rig remote run --needs system=Darwin/arm64 --needs java -- ./gradlew :app:test --tests '*SigninStandinShapesTest'",
+]
+sources = [
+  'app/src/main/kotlin/splice/app/auth/claude/ClaudeAccountSignIn.kt',
+  'app/src/main/kotlin/splice/app/auth/claude/NativeClaudeAuth.kt',
+  'app/src/main/kotlin/splice/app/auth/claude/ClaudeCredentialProfiles.kt',
+  'app/src/main/kotlin/splice/app/auth/claude/ClaudeLimitResets.kt',
+  'app/src/main/kotlin/splice/app/auth/claude/ClaudeOAuthRefresh.kt',
+  'app/src/main/kotlin/splice/app/auth/claude/AddedLoginHeaders.kt',
+  'app/src/main/kotlin/splice/app/auth/claude/ClaudeLoginFacts.kt',
+  '.campaign/checks/desktop/lib/desktop.ts',
+  '.campaign/checks/signin-e2e/claude-cli.test.ts',
+  'core/src/main/kotlin/splice/core/util/LoopbackOverride.kt',
+  '.campaign/checks/signin-e2e/lib/report.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-19 17:11 CT signin-e2e/coordinator: added; 2 of 2 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'signin-breaks'
+title = 'The check fails, naming the provider and the step, on a tree broken on purpose three ways'
+feature = 'signin-e2e'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'signin-case-grok',
+  'signin-case-kimi',
+]
+guard = false
+spec = '''
+Proves the sign-in check catches what it exists to catch: on a tree broken on purpose in each of the three ways the feature names, the check fails, naming the provider and the step. Why: a check that passes on a good tree has shown nothing until it is seen failing on a bad one.
+
+The breaks are three patches kept with the check's tests, tools/e2e/test/signin-breaks/<name>.patch (made with `git diff`, applied with `git apply` at the repository's root), never in the product. `.campaign/checks/signin-e2e/breaks.test.ts` applies each to a throwaway copy of the tree (HEAD plus its uncommitted edits and untracked files), builds that copy's jar with its ./gradlew, and runs this tree's own check on it (`bun tools/e2e signin --kind <kind> --jar <that jar>`). A patch may touch product code only: never tools/, .campaign/, .github/, a src/test/ folder or a *.test.ts. Each is the smallest change that makes the product do the named wrong thing for a person, as a real bug would:
+- console-no-tab: the console opens no tab on the press (app/src/main/resources/console/api.js, SIGNIN's window.open on the press, 627a10907). Run on chatgpt-oauth; caught at step 1, the page opens.
+- credential-elsewhere: a sign-in writes its credential where the gateway does not read it (grok's login lands in a file or folder other than the one GrokAuthProvider / the head's auth file reads, while the sign-in still reports it landed). Run on grok-oauth; caught at step 2 or 3, whichever first sees it (step 3 when the card still says signed in).
+- other-credential: the gateway sends a turn with another login's credential (kimi's turn carries a credential other than the login just made: the removed login's, kept from before the removal, is the natural one). Run on kimi-oauth; caught at step 3, the gateway serves a request on it.
+
+If the check does not catch a break at its step, the check is what is fixed (tools/e2e/src/signin and the case), never the break weakened: the break is the bug a person would meet. The patches are written against the tree as signin-case-grok and signin-case-kimi leave it; when product code they touch moves later, breaks.test.ts fails until the patch is re-pointed, which is whoever moved the code's to do. The test is not part of the gate (it builds three jars and drives Chromium); it is run alone, on a Mac with Java.
+
+Shared decisions of signin-e2e (the same in every item; do not decide them again):
+- The check is `bun tools/e2e signin [--kind K]... [--jar PATH] [--json FILE]` (a verb of tools/e2e, src/commands/signin.ts; package.json script `e2e:signin`). With no --kind it runs every kind; without --jar it builds `:app:shadowJar` with the repo's ./gradlew and boots app/build/libs/app-all.jar. Exit 0 only when every kind run passes and no kind is missing a case. One line per kind on stdout: `signin: PASS <kind>`, `signin: FAIL <kind>, step <n> (<step name>): <what happened>` (the first failing step), and `signin: no case for auth kind '<kind>'`.
+- Kinds come from the code: AuthKindRegistry's KNOWN list in core/src/main/kotlin/splice/core/topology/AuthKind.kt, by wire spelling (today chatgpt-oauth, grok-oauth, kimi-oauth, muse-oauth, client). Each kind's case is one file, tools/e2e/src/signin/cases/<kind>.ts, found by listing that folder, so adding a case touches no shared file.
+- The JSON report (--json) is the contract .campaign/checks/signin-e2e/lib/report.ts judges: {ok, jar, missing: [kind], kinds: [{kind, flow: "loopback"|"device"|"paste", head, ok, steps: [{step, name, ok, said, seen}]}]}. Step names: 1 "the page opens", 2 "the login completes", 3 "the gateway serves a request on it", 4 "a failure says so". `seen`: step 1 {console_tab, provider_page, cli_page, card_code, page_code}; step 2 {label, card, reloaded, again_label, again_card}; step 3 {model, reply, expected_reply, credential, minted, removed, others}; step 4 {refused: {provider_said, card}, page_closed: {card}, expired: {card}, unnamed: {tab_closed, card}}. `card` is the text of the place where Sign in was pressed, read when the step's outcome showed there. `others` lists every credential the check knows (every token any stand-in minted, the removed login's, the door key, the management key) found anywhere in the turn's request at the stand-in, other than `minted`.
+- One run of a kind, in order: (1) on the console's Models page, open the command's card and press Sign in, with nothing else pressed; the tab the press opened must land on the provider's sign-in page (device kinds: the page where the code is typed, with the card's code); then `splice login <head>` is run and the page it hands the browser recorded (a stand-in `open`/`xdg-open` first on its PATH records it), and that CLI login is ended before the next step. (2) the sign-in completes as made-up account 1 and the Models card says `Signed in as <label>` without a reload; the login is removed on the Accounts page (its Remove), then signed in again on the Accounts page as made-up account 2 (Marcos's case), and that card says `Signed in as <label>`. (3) a turn is sent through the door (docs/specs/door-default.md; the terminal key, as .campaign/checks/door/lib/claude.ts does) naming the provider's model; the stand-in model endpoint answers in the provider's own shape with a reply text unique to the login, and records the request. (4) on Models: the provider refuses (its words in the card); the provider's page is closed half way (card shows "The sign-in page was closed before the sign-in finished."); an expired code (card says expired); and a sign-in that fails before naming any page (the tab the press opened is closed, the card says why).
+- The provider's side is the check's stand-in. Browser pages keep the provider's real addresses as splice computes them (so the tab's address is the one a person's browser gets); the check's Chromium context routes those hosts to the stand-in and aborts every other request that is not to this machine, so nothing real is contacted. The daemon's own calls (token, device authorization, key mint, profile, model endpoint) reach the stand-in through each provider's loopback overrides (core/src/main/kotlin/splice/core/util/LoopbackOverride.kt; a new one follows that rule) and the TOML base_url. Why: step 1 then proves the real page address, and no product switch exists that a person could leave pointed at a stand-in.
+- Shapes are the provider module's, never a second copy: each kind's stand-in reads JSON/SSE fixtures from <provider module>/src/test/resources/signin-standin/<kind>/ (token reply, device reply, error replies, model reply, and page.json naming `sign_in_page`, the scheme+host+path the tab must open on), with {{placeholders}} it fills; a Kotlin test in that module (SigninStandinShapesTest) reads every fixture through the module's own parsers and builders (page.json against the URL the module builds), so a change in what the module reads fails that module's test until the fixture moves with it. Claude Code's shapes live under app/src/test/resources/signin-standin/client/ with the test in app.
+- Everything is made up and the repository is public: accounts `made-up-<n>@example.invalid`, tokens `made-up-<kind>-<n>-<random>`; no person's login, email or machine. The daemon runs in a throwaway HOME with only the check's own variables (none of the caller's CLAUDE_, ANTHROPIC_, CODEX_, SPLICE_ and the like).
+- The tool boots the daemon itself, portably: `java -jar <jar> daemon` from PATH in its own process group, stopped through the group; it never reads /proc. So one Mac with Java runs daemon and browser together, and Linux (release.yml's ubuntu runner, which installs Playwright's Chromium before the gate) runs the same. Item checks run on a Mac with Java: `rig remote run --needs system=Darwin/arm64 --needs java -- ...`; no build, test or Chromium run made while building this feature runs on the machine the seats run on, and a 75 from rig means wait and send again (the release commands themselves run the check where they run: signin-release).
+- No fixed sleeps; a timeout only where waiting for something that will never come is the failure. A kind takes about a minute; the whole run a few minutes once the jar is built.
+
+
+Proof: `bun test ./.campaign/checks/signin-e2e/breaks.test.ts` on a Mac with Java passes: each of the three runs exits non-zero with `signin: FAIL <kind>, step <n> (<step name>): ...` at the step above, and the report's first failing step is that one.'''
+checks = [
+  'rig remote run --needs system=Darwin/arm64 --needs java -- bun test ./.campaign/checks/signin-e2e/breaks.test.ts',
+]
+sources = [
+  '.campaign/checks/signin-e2e/breaks.test.ts',
+  '.campaign/checks/signin-e2e/lib/report.ts',
+  'app/src/main/resources/console/api.js',
+  'integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt',
+  'integrations/oauth/src/main/kotlin/splice/oauth/OAuthAccountWrites.kt',
+  'integrations/providers/kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-19 17:12 CT signin-e2e/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'signin-release'
+title = 'Every release runs the sign-in check: release accept, a local install, and one run of every kind'
+feature = 'signin-e2e'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'signin-harness',
+  'signin-case-grok',
+  'signin-case-kimi',
+  'signin-case-muse',
+  'signin-case-client',
+]
+guard = false
+spec = '''
+Makes the sign-in check part of every release, and proves one run of it covers every kind. Why: Marcos wants a broken sign-in to fail the release before anyone installs it, on every path a release takes.
+
+1. `bun tools/release accept` runs the sign-in check on the jar it accepts: `bun tools/e2e signin --jar <dist>/splice.jar`, every kind, once the bundle's own legs pass (assets, sums, sidecars, version) and before the install rehearsal. When the check fails, accept prints `release accept: the sign-in check failed`, then the check's own `signin:` lines (which kind, which step, what happened), and exits 1 without running the rehearsal. release.yml (which installs Playwright's Chromium before the gate) and `bun tools/release beta` both run accept, so both fail on a broken sign-in; neither needs its own step. Why the jar accept holds: the check then judges the bytes that ship, not a second build.
+2. The maintainer's local install (a release built and installed on one machine without a version bump) becomes one tracked command, `bun tools/release local [--jar PATH]`, a new verb of tools/release (src/commands/local.ts, listed in its usage). Without --jar it builds `:app:shadowJar` from the tree it is run in, through `bun tools/gate slot` as beta builds; with --jar it takes that jar. It runs the sign-in check on that jar (`bun tools/e2e signin --jar <jar>`), and only when it passes installs that jar with the tree's own install.sh (`SPLICE_JAR=<jar> SPLICE_SHIM=app/src/main/dist/bin/splice-launch ./install.sh`, which honours SPLICE_SHARE_DIR and SPLICE_BIN_DIR), printing install.sh's own lines. A failing check prints the check's own `signin:` lines, then `release local: the sign-in check failed; nothing was installed`, and exits 1 before install.sh runs. Why a new tracked verb: the install script one maintainer used, tools/release/lead-install.sh, is git-ignored and untracked since 788260dcd (it is that machine's own), so the public tree had no local install path to put the check in; that maintainer's script can call `bun tools/release local --jar <jar>` in place of its own copy step, an edit to their file that is theirs to make and no part of this item. No variable or flag skips the check, in accept or in local: a safeguard with an off switch is not one.
+3. `.github/CONTRIBUTING.md`, under Releasing: one short paragraph saying that `release accept` runs the sign-in check (so release.yml, a beta and a local install, `bun tools/release local`, all stop on a broken sign-in), what it proves in a line (each provider's sign-in, from the press to a turn on the new login, against made-up stand-ins), and how to run it alone: `bun tools/e2e signin` for every kind, `--kind <kind>` for one, `--jar PATH` to judge a built jar; on a seat's machine through `rig remote run --needs system=Darwin/arm64 --needs java -- bun tools/e2e signin`. A new auth kind fails the check until its case is added (tools/e2e/src/signin/cases/<kind>.ts).
+
+Where it runs, and the law set aside: the release commands run the check where they run. release.yml runs it on GitHub's runner. `bun tools/release beta` and `bun tools/release local` run on the maintainer's machine, where beta already builds the jar and rehearses the install, so their sign-in run is there too. That sets aside, for those two commands, the laws' rule that runs go off the machine the seats use: the feature text requires accept to run the check and the local install to run the same check first, and judging the exact jar that ships is the point. Every check of this item runs off that machine (below).
+
+This item closes the feature: its full-run check needs every kind's case (signin-harness, signin-case-grok, signin-case-kimi, signin-case-muse, signin-case-client). If that run shows a seam between cases (two cases that cannot run in one daemon, a port or a HOME they share), fixing it in the framework is this item's.
+
+Shared decisions of signin-e2e (the same in every item; do not decide them again):
+- The check is `bun tools/e2e signin [--kind K]... [--jar PATH] [--json FILE]` (a verb of tools/e2e, src/commands/signin.ts; package.json script `e2e:signin`). With no --kind it runs every kind; without --jar it builds `:app:shadowJar` with the repo's ./gradlew and boots app/build/libs/app-all.jar. Exit 0 only when every kind run passes and no kind is missing a case. One line per kind on stdout: `signin: PASS <kind>`, `signin: FAIL <kind>, step <n> (<step name>): <what happened>` (the first failing step), and `signin: no case for auth kind '<kind>'`.
+- Kinds come from the code: AuthKindRegistry's KNOWN list in core/src/main/kotlin/splice/core/topology/AuthKind.kt, by wire spelling (today chatgpt-oauth, grok-oauth, kimi-oauth, muse-oauth, client). Each kind's case is one file, tools/e2e/src/signin/cases/<kind>.ts, found by listing that folder, so adding a case touches no shared file.
+- The JSON report (--json) is the contract .campaign/checks/signin-e2e/lib/report.ts judges: {ok, jar, missing: [kind], kinds: [{kind, flow: "loopback"|"device"|"paste", head, ok, steps: [{step, name, ok, said, seen}]}]}. Step names: 1 "the page opens", 2 "the login completes", 3 "the gateway serves a request on it", 4 "a failure says so". `seen`: step 1 {console_tab, provider_page, cli_page, card_code, page_code}; step 2 {label, card, reloaded, again_label, again_card}; step 3 {model, reply, expected_reply, credential, minted, removed, others}; step 4 {refused: {provider_said, card}, page_closed: {card}, expired: {card}, unnamed: {tab_closed, card}}. `card` is the text of the place where Sign in was pressed, read when the step's outcome showed there. `others` lists every credential the check knows (every token any stand-in minted, the removed login's, the door key, the management key) found anywhere in the turn's request at the stand-in, other than `minted`.
+- One run of a kind, in order: (1) on the console's Models page, open the command's card and press Sign in, with nothing else pressed; the tab the press opened must land on the provider's sign-in page (device kinds: the page where the code is typed, with the card's code); then `splice login <head>` is run and the page it hands the browser recorded (a stand-in `open`/`xdg-open` first on its PATH records it), and that CLI login is ended before the next step. (2) the sign-in completes as made-up account 1 and the Models card says `Signed in as <label>` without a reload; the login is removed on the Accounts page (its Remove), then signed in again on the Accounts page as made-up account 2 (Marcos's case), and that card says `Signed in as <label>`. (3) a turn is sent through the door (docs/specs/door-default.md; the terminal key, as .campaign/checks/door/lib/claude.ts does) naming the provider's model; the stand-in model endpoint answers in the provider's own shape with a reply text unique to the login, and records the request. (4) on Models: the provider refuses (its words in the card); the provider's page is closed half way (card shows "The sign-in page was closed before the sign-in finished."); an expired code (card says expired); and a sign-in that fails before naming any page (the tab the press opened is closed, the card says why).
+- The provider's side is the check's stand-in. Browser pages keep the provider's real addresses as splice computes them (so the tab's address is the one a person's browser gets); the check's Chromium context routes those hosts to the stand-in and aborts every other request that is not to this machine, so nothing real is contacted. The daemon's own calls (token, device authorization, key mint, profile, model endpoint) reach the stand-in through each provider's loopback overrides (core/src/main/kotlin/splice/core/util/LoopbackOverride.kt; a new one follows that rule) and the TOML base_url. Why: step 1 then proves the real page address, and no product switch exists that a person could leave pointed at a stand-in.
+- Shapes are the provider module's, never a second copy: each kind's stand-in reads JSON/SSE fixtures from <provider module>/src/test/resources/signin-standin/<kind>/ (token reply, device reply, error replies, model reply, and page.json naming `sign_in_page`, the scheme+host+path the tab must open on), with {{placeholders}} it fills; a Kotlin test in that module (SigninStandinShapesTest) reads every fixture through the module's own parsers and builders (page.json against the URL the module builds), so a change in what the module reads fails that module's test until the fixture moves with it. Claude Code's shapes live under app/src/test/resources/signin-standin/client/ with the test in app.
+- Everything is made up and the repository is public: accounts `made-up-<n>@example.invalid`, tokens `made-up-<kind>-<n>-<random>`; no person's login, email or machine. The daemon runs in a throwaway HOME with only the check's own variables (none of the caller's CLAUDE_, ANTHROPIC_, CODEX_, SPLICE_ and the like).
+- The tool boots the daemon itself, portably: `java -jar <jar> daemon` from PATH in its own process group, stopped through the group; it never reads /proc. So one Mac with Java runs daemon and browser together, and Linux (release.yml's ubuntu runner, which installs Playwright's Chromium before the gate) runs the same. Item checks run on a Mac with Java: `rig remote run --needs system=Darwin/arm64 --needs java -- ...`; no build, test or Chromium run made while building this feature runs on the machine the seats run on, and a 75 from rig means wait and send again (the release commands themselves run the check where they run: signin-release).
+- No fixed sleeps; a timeout only where waiting for something that will never come is the failure. A kind takes about a minute; the whole run a few minutes once the jar is built.
+
+
+Proof: `bun test ./.campaign/checks/signin-e2e/accept.test.ts` on a Mac (a synthetic bundle whose `java` runs no daemon: accept fails, naming the sign-in check, and the rehearsal does not run; CONTRIBUTING says how to run the check alone); `bun test ./.campaign/checks/signin-e2e/local-install.test.ts` on a Mac (a made-up jar whose `java` runs no daemon: release local refuses, naming the check, and installs nothing); `bun test ./.campaign/checks/signin-e2e/full.test.ts` on a Mac with Java (one run, no --kind, covers the registry's kinds, each passes, exit 0). Existing tools/release tests that pin accept's old order or output are updated in the same change, and the commit says so.'''
+checks = [
+  'rig remote run --needs system=Darwin/arm64 -- bun test ./.campaign/checks/signin-e2e/accept.test.ts',
+  'rig remote run --needs system=Darwin/arm64 -- bun test ./.campaign/checks/signin-e2e/local-install.test.ts',
+  'rig remote run --needs system=Darwin/arm64 --needs java -- bun test ./.campaign/checks/signin-e2e/full.test.ts',
+]
+sources = [
+  'tools/release/src/commands/accept.ts',
+  'tools/release/src/commands/beta.ts',
+  'install.sh',
+  '.github/CONTRIBUTING.md',
+  '.github/workflows/release.yml',
+  'tools/release/test/accept.test.ts',
+  '.campaign/checks/signin-e2e/accept.test.ts',
+  '.campaign/checks/signin-e2e/local-install.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-19 17:13 CT signin-e2e/coordinator: added; 3 of 3 checks fail, as they should before the work',
 ]

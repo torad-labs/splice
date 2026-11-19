@@ -57,6 +57,25 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 
+// The reviewer picks these arguments and the script runs on this machine with the operator's keys, then on a Mac, so
+// it acts only on what it was made for: a console page (with a query), steps from the list above with no shell
+// characters in them, and a picture folder under build/night-deck-captures/. Anything else is refused, naming it.
+const PAGE = /^[a-z0-9][a-z0-9-]*(\/[a-z0-9][a-z0-9-]*)?(\?[A-Za-z0-9=&%._,-]*)?$/;
+const VERBS = ["click", "dblclick", "hover", "fill", "type", "select", "check", "uncheck", "scroll", "press", "wait", "goto", "shot"];
+const OUT = /^build\/night-deck-captures\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const refuse = (why: string) => {
+  console.error(`capture: refused: ${why}. Nothing was captured.`);
+  process.exit(64);
+};
+for (const p of pages) if (!PAGE.test(p)) refuse(`${JSON.stringify(p)} is no console page (a name such as sessions, probe/probe or activity?win=30d)`);
+for (const s of steps) {
+  const verb = s.includes(":") ? s.slice(0, s.indexOf(":")) : s;
+  if (!VERBS.includes(verb)) refuse(`${JSON.stringify(s)} is no step: ${VERBS.join(", ")}`);
+  if (/[`$\\;\x00-\x1f\x7f]/.test(s)) refuse(`${JSON.stringify(s)} holds a character a step never needs (\`, $, \\, ; or a control character)`);
+  if (verb === "goto" && !PAGE.test(s.slice(5))) refuse(`${JSON.stringify(s)} goes to no console page`);
+}
+if (out && (!OUT.test(out) || out.split("/").includes(".."))) refuse(`--out ${JSON.stringify(out)} is not a folder under build/night-deck-captures/`);
+
 if (process.platform !== "darwin" && process.env.CAPTURE_HERE !== "1") {
   // This machine keeps browser runs off itself: the same command runs on a Mac, and the pictures come back.
   const run = out || join("build", "night-deck-captures", new Date().toISOString().replace(/[:.]/g, "-"));

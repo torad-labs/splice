@@ -45,7 +45,9 @@ internal class DesktopDoor(
     private val lane: ClaudeLane,
     clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
-    private val voice = RefusalVoice(DESKTOP_ERROR_PREFIX)
+    /** The door's own voice, for a key it holds for no caller: it can't tell whose session that is, so its words name
+     *  splice alone and say where each caller's key comes from. */
+    private val voice = RefusalVoice("")
     private val json = Json { ignoreUnknownKeys = true }
     private val routing = DoorRouting()
     private val toHead = DoorRelay(clock)
@@ -56,8 +58,8 @@ internal class DesktopDoor(
     /** `POST /door/v1/messages/count_tokens`, with or without `?beta=true`. */
     suspend fun countTokens(call: ApplicationCall) = answer(call, counting = true)
 
-    /** [call] answered for the caller whose key it presents; refused 401 in Anthropic's shape, with nothing sent
-     *  upstream, when it presents none, a wrong one or one that was replaced. */
+    /** [call] answered for the caller whose key it presents; refused in Anthropic's shape, with nothing sent upstream,
+     *  when it presents none, a wrong one or one that was replaced. */
     private suspend fun answer(call: ApplicationCall, counting: Boolean) {
         val caller = admitted(call) ?: return
         routed(call, caller, counting)
@@ -70,7 +72,7 @@ internal class DesktopDoor(
     suspend fun answerAs(call: ApplicationCall, caller: DoorCaller, counting: Boolean) {
         val from = keyed(call) ?: caller
         val shut = from.closed()
-        if (shut != null) return from.voice.refuse(call, HttpStatus.FORBIDDEN, shut)
+        if (shut != null) return from.voice.refuse(call, DOOR_REFUSAL_STATUS, shut)
         routed(call, from, counting)
     }
 
@@ -91,16 +93,16 @@ internal class DesktopDoor(
         toHead.send(call, caller, route, ask, counting)
     }
 
-    /** The caller whose key [call] presents, while its switch is on; null once [call] has been refused: 401 with no
-     *  key it knows, 403 saying how to open a caller's door that is shut. */
+    /** The caller whose key [call] presents, while its switch is on; null once [call] has been refused
+     *  ([DOOR_REFUSAL_STATUS]): with no key it knows, or saying how to open a caller's door that is shut. */
     private suspend fun admitted(call: ApplicationCall): DoorCaller? {
         val caller = keyed(call)
         if (caller == null) {
-            voice.refuse(call, HttpStatus.UNAUTHORIZED, NO_DOOR_KEY)
+            voice.refuse(call, DOOR_REFUSAL_STATUS, NO_DOOR_KEY)
             return null
         }
         val shut = caller.closed() ?: return caller
-        caller.voice.refuse(call, HttpStatus.FORBIDDEN, shut)
+        caller.voice.refuse(call, DOOR_REFUSAL_STATUS, shut)
         return null
     }
 
@@ -119,9 +121,15 @@ internal class DesktopDoor(
  *  look. */
 internal const val DESKTOP_ERROR_PREFIX = "splice desktop: "
 
+/** The status the door refuses a key it doesn't hold, or a shut door, with. Claude Code reads a 401 or a 403 from a
+ *  Mantle endpoint as AWS's and puts "AWS credentials expired or invalid" or "AWS authentication failed" before
+ *  splice's words (seen on 2.1.328), which sent people to AWS for a key splice holds. That branch reads only those two
+ *  statuses, so a 400 shows splice's words without it. Until Nov 18, 2026 the door answered 401 and 403. */
+private const val DOOR_REFUSAL_STATUS = HttpStatus.BAD_REQUEST
+
 private const val NO_DOOR_KEY =
-    "no door key, or one that was replaced; `splice desktop on` says Desktop's, and a new `claude` session carries " +
-        "the terminal's"
+    "Splice credentials expired or invalid · this session's key is not one the door holds: a new `claude` session " +
+        "carries the terminal's, and `splice desktop on` gives Claude Desktop its own"
 private const val NOT_JSON = "the request body is not a JSON object"
 
 private const val REQUEST_MODEL = "model"

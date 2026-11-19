@@ -2,7 +2,6 @@
 // no head by name. The build's module map is the denominator, including newly added dialects and providers.
 package splice.quality
 
-import com.lemonappdev.konsist.api.Konsist
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -55,7 +54,7 @@ class FailureReadersLawTest {
     @Test
     fun `reply readers and provider deviations live in their owning modules`() {
         val implementations = map.modules.sorted().filter { map.mainSources(it).isDirectory }.flatMap { module ->
-            Konsist.scopeFromDirectory("${map.relativeDir(module)}/src/main/kotlin")
+            LawScopes.main(map, module)
                 .classesAndObjects(true, true)
                 .flatMap { declaration ->
                     declaration.parents(true).map { it.name.substringAfterLast('.') }

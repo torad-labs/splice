@@ -185,11 +185,17 @@ public class SessionsRoutes(
         // An unreadable directory is not an empty one: the error rides beside the (empty) list.
         listing.error?.let { put("error", it) }
         val rows = GoneSessionRows(
-            listing.sessions.map { ListedRow(it.availability == SessionAvailability.GONE, row(it, rowFacts, bound)) },
+            listing.sessions.map { record ->
+                val gone = record.availability == SessionAvailability.GONE
+                val updatedAt = record.process.updatedAt ?: record.status.updatedAt ?: 0L
+                ListedRow(gone, updatedAt) { row(record, rowFacts, bound) }
+            },
         )
         // A reader that holds the gone sessions' rows under this mark is sent the sessions still here alone.
         put("gone_mark", rows.mark)
         if (rows.heldBy(held)) put("gone_held", true)
+        // The gone sessions older than the newest sent: GET /api/sessions/history pages and searches them.
+        if (rows.older > 0) put("gone_older", rows.older)
         put("sessions", buildJsonArray { rows.owed(held).forEach { add(it) } })
     }.toString()
 

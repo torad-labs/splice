@@ -76,7 +76,9 @@ internal class ClaudeLane(
         DesktopAct.Done(moved.joinToString("; "), chosen?.let { "$it ($why)" } ?: why)
     }
 
-    /** `splice claude head`: the terminal's key retired, so a session started on the door is refused from now on. */
+    /** `splice claude head`: a new `claude` session starts on its head, and one already on the door keeps running
+     *  there. Until Nov 18, 2026 the move retired the terminal's key, so every session already on the door was refused
+     *  from its next turn, mid-work. */
     suspend fun toHead(): DesktopAct = lock.withLock {
         if (!headHere()) {
             return@withLock DesktopAct.Refused(
@@ -85,13 +87,12 @@ internal class ClaudeLane(
                     "(`splice add claude` adds one)",
             )
         }
-        key.replace()
         // The move back takes the door's starting model with it: kept, a model named with `door --model` came back
         // with the next `splice claude door`. On Nov 17, 2026 a Grok named at 9:33 AM, moved back from a minute later,
         // came back that evening, and every `claude` session started or restarted with no model named ran on Grok.
         records.update { it.copy(lane = HEAD_LANE, defaultModel = null) }
-        val moved = "claude is on its head, with the models of your signed-in accounts beside Claude's. " +
-            "Sessions started on the door are refused from now on"
+        val moved = "claude is on its head, with the models of your signed-in accounts beside Claude's: a new " +
+            "`claude` session starts there, and sessions already on the door keep running on it"
         DesktopAct.Done(listOfNotNull(moved, login.removed()).joinToString("; "))
     }
 }

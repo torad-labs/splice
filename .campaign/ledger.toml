@@ -5649,6 +5649,7 @@ status = 'todo'
 owner = ''
 blocked_by = []
 guard = false
+  "2026-11-19 16:01 CT door-sessions/coordinator: Ruled 16:05 CT: the plan stands and nothing is rebuilt. The plan id moved after validation (701716a03) only by 83abe1be9 (upkeep), which lets route.test.ts:77 take the door's key as AWS_BEARER_TOKEN_BEDROCK ?? ANTHROPIC_AUTH_TOKEN, so it judges the door in Mantle and in head-catalog's gateway mode; the worktree's splice-launch turns_base_url (Mantle URL when CLAUDE_CODE_USE_MANTLE=1, else ANTHROPIC_BASE_URL) and lib/launch.ts:99 already hold either way. The rest of the move is other features' committed check files. Re-validated with campaign plan.",
 spec = '''
 The feature's branch takes in main, where the network door lives, so the door-sessions checks can open a box's door and every item is built against the door people really run.
 

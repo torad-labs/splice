@@ -1,10 +1,11 @@
 // NEW: door-network (docs/specs/door-network.md). The door as another machine reaches it through the share listener:
 // `claude` there runs on every model this machine serves, on the accounts signed in here, as the terminal's `claude`
 // does here. That machine holds no key: the share listener admits it by where it is (LanAdmission), so this caller is
-// never told by a key, and the control port's door routes, which admit by key alone, never admit it. Its sessions
-// start on the model and declare the window the terminal's lane says, and a model of Anthropic's that a request names
-// runs where a head here serves it, as for the terminal. A turn's row reads as the terminal's: it is a `claude`
-// session of this machine's door, wherever it was typed.
+// never told by a key, and the control port's door routes, which admit by key alone, never admit it. A call at the
+// share listener that does present Desktop's key or the terminal's is answered as that caller (DesktopDoor.answerAs):
+// the door is one, at either listener. Its sessions start on the model and declare the window the terminal's lane
+// says, and a model of Anthropic's that a request names runs where a head here serves it, as for the terminal. A
+// turn's row reads as the terminal's: it is a `claude` session of this machine's door, wherever it was typed.
 package splice.app.desktop
 
 import io.ktor.server.application.ApplicationCall
@@ -23,8 +24,6 @@ internal class NetworkCaller(relay: ShareRelay, private val lane: ClaudeLane, ma
     override fun presents(header: String?): Boolean = false
 
     override fun closed(): String? = null
-
-    override fun default(lineup: DesktopLineup): String? = lane.starting(lineup).first
 
     override fun window(): Long? = lane.declared()
 

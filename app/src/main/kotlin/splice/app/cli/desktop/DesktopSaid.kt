@@ -15,7 +15,8 @@ internal class DesktopSaid(private val out: TerminalOutput) : DoorSaid {
         val on = JsonScalars.str(state, "on") == "true"
         out.line("Desktop: ${if (on) "on" else "off"}")
         out.line("Door: ${JsonScalars.str(state, "door").orEmpty()}")
-        out.line("Default model: ${JsonScalars.str(state, "default_model") ?: "none: no head is in the door"}")
+        val starts = JsonScalars.str(state, "default_model")?.let { "$it, the model `claude` starts on" }
+        out.line("Default model: ${starts ?: "none: no head is in the door"}")
         val models = (state["models"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
         out.line(if (models.isEmpty()) "Models: none" else "Models:")
         models.forEach { m ->

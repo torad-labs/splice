@@ -137,8 +137,10 @@ field and every earlier layer. No projects table = V4-36's bytes. Resolver:
 ## How splice is used: `claude` on the door (door-default, Nov 17, 2026)
 
 splice is used through its **door** (docs/specs/door-default.md): the terminal's plain `claude`, launched through
-splice, talks to `/desktop` on the control port with a terminal key of its own (`TerminalCaller`), and Claude Desktop's
-Code tab talks to the same door with Desktop's key (`DesktopCaller`). The model a turn names picks the head
+splice, talks to `/door` on the control port with a terminal key of its own (`TerminalCaller`), and Claude Desktop's
+Code tab talks to the same door with Desktop's key (`DesktopCaller`); `/desktop`, the path before 0.6.4, still answers.
+The door has one starting model, the terminal lane's (`ClaudeLane.starting`), for every caller: Desktop has none of
+its own. The model a turn names picks the head
 (`DoorRouting`); the picker lists the models of the heads signed in with an OAuth login. A launch on the door sets
 Claude Code's Mantle variables, `ANTHROPIC_MODEL` and `DISABLE_LOGIN_COMMAND`/`DISABLE_LOGOUT_COMMAND`, lays a
 `--settings` overlay carrying the picker and the hook that answers `/login`, and sets no `CLAUDE_CONFIG_DIR`. The one

@@ -22,6 +22,9 @@ per head; and the tailnet is part of "the network", which reverses the Oct 24 "T
 - A Claude Code without splice, or Claude Desktop's Code tab, runs on it from the three Bedrock-style variables
   `splice share status` prints: `CLAUDE_CODE_USE_MANTLE=1`, `ANTHROPIC_BEDROCK_MANTLE_BASE_URL=http://<box>:3097/door`
   and `AWS_BEARER_TOKEN_BEDROCK=splice-lan`.
+- On the box itself the same door answers at `http://127.0.0.1:<control_port>/door`, for its own `claude` and its
+  own Claude Desktop, each with its key. A call at the share listener that presents one of those keys is answered
+  as that caller.
 - A machine that answers no door (an older splice) is added as before, one command per head.
 
 ## Decisions

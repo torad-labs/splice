@@ -1,6 +1,6 @@
 # Changelog
 
-## splice v0.6.4: `claude` runs on splice's door, and the door answers on your network - 2026-11-18
+## splice v0.6.4: `claude` runs on splice's door, and the door answers on your network - 2026-11-19
 
 ### Highlights
 - **The door answers on your network.** Turn on `splice share on` on one machine and any machine on its LAN or
@@ -13,6 +13,10 @@
   Claude Desktop's Code tab uses, with a key of its own. Its `/model` picker lists the models of every account you
   signed in to with a ChatGPT, Grok, Kimi or Muse login, each labelled `splice · <command>`, and a sign-in shows in
   the next session with no restart. The session runs over your own `~/.claude`; splice writes nothing there.
+- **Claude Desktop's Code tab is a caller of that same door.** There is one door, at one path (`/door`), for the
+  terminal's `claude`, Desktop's Code tab and another machine's `claude`. Desktop keeps a key and an on/off of its
+  own and nothing else: a Code tab session starts on the model `claude` starts on, and
+  `splice claude door --model <selector>` moves both.
 - **`/login` opens splice's accounts page.** In a session on the door, and on every head here, `/login` runs
   `splice console` and the turn goes no further. Claude Code's own `/login` and `/logout` are off on the door. With
   no account signed in, a turn is refused with a message that says to type `/login`.
@@ -25,6 +29,14 @@
   on every later request. A capability that fails lets the turn go on or refuses it, as its table says.
 
 ### Upgrading
+- **Claude Desktop starts on the model `claude` starts on.** A default model saved for Desktop by an earlier
+  `splice desktop on --model` is no longer read: after the update a new Code tab session starts where the
+  terminal's `claude` does, which `splice desktop` and `splice claude` both say. To choose it, run
+  `splice claude door --model <selector>`. `splice desktop on --model` is refused with that command's name and
+  changes nothing. The window you set in Desktop is kept.
+- The door's address is now `http://127.0.0.1:<control_port>/door`, and `splice desktop on` prints it. Nothing has
+  to be set again: the earlier address (`/desktop`) still answers, for a Desktop set up before and for a `claude`
+  session already running.
 - A tailnet peer is now answered by a machine that is itself on a tailnet (100.64/10 and Tailscale's IPv6 range), and
   by its MagicDNS name. Before, the share listener turned tailnet peers away. A machine on no tailnet still turns
   those ranges away.
@@ -61,6 +73,8 @@
   in its list; `splice add claude` still adds that head.
 
 ### Changed
+- A turn that reaches the share listener's door with Desktop's key or the terminal's is answered as that caller,
+  with its own on/off and window, so a Desktop or a `claude` of the machine itself can use either address.
 - A head's `/login` opens splice's accounts page instead of signing in inside the session. `<command> login` in a
   terminal still signs in.
 - **Login alerts are two, each said once.** The daemon's `alert_command` and webhook are told when a command's last

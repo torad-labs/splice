@@ -54,7 +54,9 @@ What `POST /launch/claude` answers the launch shim while `claude` is on the door
 
 ### 3. The terminal has a key of its own
 
-The door admits two callers, Claude Desktop's Code tab and the terminal's `claude`, each with its own key.
+The door admits two callers, Claude Desktop's Code tab and the terminal's `claude`, each with its own key. Both
+start on the one model decision 1 names: since 0.6.4 Desktop has no default model of its own, and
+`splice desktop on` takes no `--model`.
 `splice desktop off` closes the door to Desktop and leaves `claude` running. `splice desktop rotate-key` changes
 Desktop's key only. `splice claude head` retires the terminal's key, so a session started on the door before it is
 refused afterwards, in Anthropic's error shape, with nothing sent upstream. A turn through the terminal's key is

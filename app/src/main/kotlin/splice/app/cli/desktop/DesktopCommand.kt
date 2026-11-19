@@ -3,18 +3,21 @@
 // daemon (DoorClient) and prints its answer: what changed, which model a session starts on and why, what to set in
 // Desktop's own environment store, or what made it refuse.
 //
-//   splice desktop [--json]                 whether Desktop is on, the door, the default model, the lineup, the heads
-//                                           left out and why, and the last turn through the door
-//   splice desktop on [--model <selector>]  open the door, and say what to set once in Desktop's environment store
-//   splice desktop off                      close the door, and say what to remove there
-//   splice desktop rotate-key               replace the desktop key, and say the new one while Desktop is on
+//   splice desktop [--json]    whether Desktop is on, the door, the model a session starts on, the lineup, the heads
+//                              left out and why, and the last turn through the door
+//   splice desktop on          open the door, and say what to set once in Desktop's environment store
+//   splice desktop off         close the door, and say what to remove there
+//   splice desktop rotate-key  replace the desktop key, and say the new one while Desktop is on
+//
+// A Code tab session starts on the model `claude` starts on, so `on` takes no `--model`: the daemon refuses one, and
+// says where `claude`'s is named.
 package splice.app.cli.desktop
 
 import splice.app.LifecycleWiring
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 
-internal const val DESKTOP_USAGE = "[--json] | on [--model <selector>] | off | rotate-key"
+internal const val DESKTOP_USAGE = "[--json] | on | off | rotate-key"
 
 internal class DesktopCommand(
     env: EnvReader = EnvReader(System::getenv),

@@ -1,39 +1,27 @@
-// LAN share (docs/specs/lan-share.md), for the head plain `claude` runs on. The goal: on a node,
-// `claude` runs Claude Code on the server's Claude logins, as `claudex` runs on its ChatGPT login. A Claude head forwards
-// its caller's own login, and devbox's serves every turn from logins it holds itself (its native sign-ins), so it
-// has logins to offer; one whose logins include the caller's own has none it could serve a node with. A node's turn
-// reaches Anthropic signed by the server's login, with the OAuth beta that login needs, and never carries a key of the
-// server's or the node's placeholder. Driven as it is used: two real daemons, torad (sharing) and mac (the node), in one
-// home of their own, so neither reads this machine's ~/.claude; Anthropic is a stand-in that records what it was sent;
-// each turn is sent with the headers Claude Code 2.1.310 sent from a node's launch (captured Oct 25, 2026).
+// LAN share (docs/specs/lan-share.md), for the head plain `claude` runs on, and what still holds since share-door-only
+// (docs/specs/door-network.md, decision 5): a session on the sharing machine itself, signed in to Claude, names the
+// OAuth beta once. The tests that drove that head at an address of its own (a node's launch and turn on it, the head
+// offered at GET /) are gone with that share; their goals are shown through the door. Driven as it is used: two real
+// daemons, torad (sharing) and mac (the node), in one home of their own, so neither reads this machine's ~/.claude;
+// Anthropic is a stand-in that records what it was sent.
 package splice.app.share
 
 import com.sun.net.httpserver.HttpServer
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
-import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
 import splice.app.Daemon
 import splice.core.auth.RefreshAttempt
-import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
-import splice.core.config.TurnKey
 import splice.core.config.UserHome
 import splice.core.testing.TestPorts
 import splice.topology.TopologyLoader
@@ -47,17 +35,8 @@ import java.util.concurrent.locks.LockSupport
 /** The token torad's own Claude sign-in (~/.claude) signs Anthropic requests with. */
 private const val TORAD_LOGIN = "synthetic-torad-login"
 
-/** The word a node's launch plants as Claude Code's auth token: it opens nothing anywhere. */
-private const val NODE_WORD = "splice-lan"
-
 /** The beta Anthropic requires beside a Claude subscription's OAuth token. */
 private const val OAUTH_BETA = "oauth-2025-04-20"
-
-/** The beta flags Claude Code 2.1.310 sent from a node's launch, holding a token rather than a Claude sign-in. */
-private const val NODE_BETAS = "claude-code-20250219,interleaved-thinking-2025-05-14,effort-2025-11-24"
-
-/** The pool label of a caller's own Claude Code sign-in, forwarded rather than held. */
-private const val CALLERS_OWN = "claude-code"
 
 private const val OPUS = "claude-opus-5-5"
 private const val HEAD = "claude"
@@ -74,31 +53,6 @@ class LanShareClaudeTest {
     }
 
     @Test
-    fun `the server offers its Claude head, with the logins it holds itself`(@TempDir tmp: Path) = machines(tmp) { m ->
-        val offer = m.offered().single { it.str("command") == HEAD }
-        val logins = offer.getValue("logins").jsonArray.map { it.jsonPrimitive.content }
-        assertTrue("native:claude" in logins, "torad's own Claude sign-in is a login a node can run on: $logins")
-        assertTrue(CALLERS_OWN !in logins, "no login is the caller's own, which a node has none of: $logins")
-    }
-
-    @Test
-    fun `a node's turn reaches Anthropic on the server's login, with the OAuth beta, carrying no key`(
-        @TempDir tmp: Path,
-    ) = machines(tmp) { m ->
-        val (status, body) = m.nodeTurn("node-session-1")
-        assertEquals(200, status, body)
-        assertTrue(body.contains("event: message_stop"), body)
-        val sent = anthropic.requests.last()
-        assertEquals("Bearer $TORAD_LOGIN", sent["authorization"], "the server's own login signs the turn")
-        val betas = sent["anthropic-beta"].orEmpty().split(',').map(String::trim)
-        assertTrue(OAUTH_BETA in betas, "a Claude login's token rides with the OAuth beta: $betas")
-        assertTrue(NODE_BETAS.split(',').all { it in betas }, "the node's own betas still ride: $betas")
-        val keys = listOf(m.toradTurnKey, m.toradMgmtKey, NODE_WORD)
-        val leaked = sent.filterValues { value -> keys.any { it in value } }.keys
-        assertTrue(leaked.isEmpty(), "no key of the server's, nor the node's placeholder, reaches Anthropic: $leaked")
-    }
-
-    @Test
     fun `a session on the server itself, signed in to Claude, names the OAuth beta once`(
         @TempDir tmp: Path,
     ) = machines(tmp) { m ->
@@ -108,55 +62,6 @@ class LanShareClaudeTest {
         assertEquals("Bearer $TORAD_LOGIN", sent["authorization"])
         val betas = sent["anthropic-beta"].orEmpty().split(',').map(String::trim)
         assertEquals(listOf(OAUTH_BETA, "claude-code-20250219"), betas, "the session's own flags, each once")
-    }
-
-    @Test
-    fun `a node's claude launches on the server's Claude head, not on the node's own`(
-        @TempDir tmp: Path,
-    ) = machines(tmp) { m ->
-        val (status, recipe) = m.launch("claude")
-        assertEquals(200, status, recipe.toString())
-        val env = recipe.getValue("env").jsonObject.mapValues { it.value.jsonPrimitive.content }
-        assertEquals("${m.share}/$HEAD", env["ANTHROPIC_BASE_URL"], env.toString())
-        assertEquals(NODE_WORD, env["ANTHROPIC_AUTH_TOKEN"])
-        // Plain `claude` stays the person's own Claude Code: its settings, instructions and sessions in ~/.claude.
-        assertFalse("CLAUDE_CONFIG_DIR" in env, "a wrapped claude reads the node's own ~/.claude: $env")
-        // PR 423 review: and its models stay the person's to pick, as the server's own wrapped `claude` leaves them
-        // (V4-449): no enforced allowlist over ~/.claude's, no tier slots, no window pinned to one model's.
-        val argv = recipe.getValue("argv").jsonArray.map { it.jsonPrimitive.content }
-        val overlay = argv.getOrNull(argv.indexOf("--settings") + 1).orEmpty()
-        assertTrue("statusLine" in overlay, "the launch carries its settings overlay: $argv")
-        assertFalse("availableModels" in overlay, "the person's own ~/.claude picks the models: $overlay")
-        val planted = env.keys.filter { it.startsWith("ANTHROPIC_DEFAULT_") || it.startsWith("CLAUDE_CODE_MAX_") } +
-            env.keys.filter { it == "CLAUDE_CODE_AUTO_COMPACT_WINDOW" }
-        assertEquals(emptyList<String>(), planted, "no model or window is planted over the person's own: $env")
-        // PR 423 review round 2: its turns reach Anthropic through the server's Claude head, as a wrapped claude's do
-        // through a head here, so auto mode keeps Anthropic's own checks. /login and /logout stay hidden, as on every
-        // remote command: the node holds no login, and signing in here would change nothing about where turns go.
-        assertFalse("CLAUDE_CODE_AUTO_MODE_SERVER" in env, "auto mode keeps Anthropic's checks: $env")
-        assertEquals("1", env["DISABLE_LOGIN_COMMAND"], env.toString())
-    }
-
-    @Test
-    fun `a Claude head whose logins include the caller's own is not offered`(@TempDir tmp: Path) {
-        val home = Files.createDirectories(tmp.resolve("home"))
-        val state = StatePaths(baseOverride = home.resolve(".splice/state"))
-        // An added login and no native sign-in: the head's own login is then the caller's, which a node has none of.
-        val added = Files.createDirectories(state.stateDir.resolve("claude-accounts/$HEAD/work"))
-        Files.writeString(added.resolve(".credentials.json"), credentials("synthetic-work"))
-        UserHome.within(home) {
-            val ports = Ports()
-            val config = Files.writeString(tmp.resolve("splice.toml"), toradToml(ports))
-            val torad = daemon(toradToml(ports), state, config)
-            runBlocking { torad.start() }
-            try {
-                awaitListening(ports.toradControl, ports.toradClaude, ports.share)
-                val offered = offered("http://127.0.0.1:${ports.share}").map { it.str("command") }
-                assertTrue(HEAD !in offered, "only a head that holds every login it serves on is offered: $offered")
-            } finally {
-                runBlocking { torad.stop() }
-            }
-        }
     }
 
     /** Both machines, started in [tmp]'s own home: torad signed in to Claude there, and mac's `claude` wrapped, its
@@ -190,7 +95,7 @@ class LanShareClaudeTest {
             }
             try {
                 awaitListening(ports.toradControl, ports.toradClaude, ports.share, ports.macControl, ports.macClaude)
-                body(Machines(ports, toradState, macState))
+                body(Machines(ports))
             } finally {
                 runBlocking {
                     mac.stop()
@@ -208,33 +113,7 @@ class LanShareClaudeTest {
         topologyPath = config,
     )
 
-    private inner class Machines(val ports: Ports, toradState: StatePaths, macState: StatePaths) {
-        val share = "http://127.0.0.1:${ports.share}"
-        val toradMgmtKey = MgmtKey(toradState).get()
-        val toradTurnKey = TurnKey(MgmtKey(toradState)).get()
-        private val macKey = MgmtKey(macState).get()
-
-        fun offered(): List<JsonObject> = offered(share)
-
-        /** A turn as Claude Code sends one from a node's launch: to the server's address, holding the node's word. */
-        fun nodeTurn(session: String): Pair<Int, String> = runBlocking {
-            val response = client.post("$share/$HEAD/v1/messages?beta=true") {
-                header("Authorization", "Bearer $NODE_WORD")
-                header("anthropic-beta", NODE_BETAS)
-                header("anthropic-version", "2023-06-01")
-                header("anthropic-dangerous-direct-browser-access", "true")
-                header("user-agent", "claude-cli/2.1.310 (external, cli)")
-                header("x-app", "cli")
-                header("X-Claude-Code-Session-Id", session)
-                header("Content-Type", "application/json")
-                setBody(
-                    """{"model":"$OPUS","stream":true,"max_tokens":64,""" +
-                        """"messages":[{"role":"user","content":"hi from the mac"}]}""",
-                )
-            }
-            response.status.value to response.bodyAsText()
-        }
-
+    private inner class Machines(val ports: Ports) {
         /** A turn from a session on torad itself, whose Claude Code is signed in to torad's own login. */
         fun serverTurn(betas: String): Pair<Int, String> = runBlocking {
             val response = client.post("http://127.0.0.1:${ports.toradClaude}/v1/messages?beta=true") {
@@ -249,24 +128,7 @@ class LanShareClaudeTest {
             }
             response.status.value to response.bodyAsText()
         }
-
-        /** Mac's launch of [command], as the launch shim asks for it: its status and its recipe or refusal. */
-        fun launch(command: String): Pair<Int, JsonObject> = runBlocking {
-            val response = client.post("http://127.0.0.1:${ports.macControl}/launch/$command") {
-                header("Authorization", "Bearer $macKey")
-                header("Content-Type", "application/json")
-                setBody("""{"args":[]}""")
-            }
-            response.status.value to Json.parseToJsonElement(response.bodyAsText()).jsonObject
-        }
     }
-
-    private fun offered(share: String): List<JsonObject> = runBlocking {
-        val info = Json.parseToJsonElement(client.get("$share/").bodyAsText()).jsonObject
-        info.getValue("commands").jsonArray.map { it.jsonObject }
-    }
-
-    private fun JsonObject.str(name: String): String = getValue(name).jsonPrimitive.content
 
     private inner class Ports {
         val toradControl = TestPorts.reserve()

@@ -1,8 +1,9 @@
-// LAN share (docs/specs/lan-share.md). The daemon's two parts of it: the launch of a
-// command another machine serves (`[remote.*]`), which the launch service asks when no head here has the name, and the
-// listener that offers this machine's heads to its other machines (`[share]`), opened once the heads and the control
-// plane are up and closed first at stop. A listener that can't open (a port another program holds) is said in the log
-// and leaves the rest of the daemon serving.
+// The door on the network (docs/specs/door-network.md). The daemon's two parts of it: the launch of a command another
+// machine serves (`[remote.*]`), which the launch service asks when no head here has the name, and the listener that
+// puts this machine's door on its other machines' network (`[share]`), opened once the heads and the control plane are
+// up and closed first at stop. A listener that can't open (a port another program holds) is said in the log and leaves
+// the rest of the daemon serving. The heads this machine offers (ManagedSharedHeads) are read by Claude Desktop's door
+// and by server mode; since share-door-only (Nov 19, 2026) the share listener offers none of them on its own.
 package splice.app.share
 
 import splice.accounts.pool.HeadAccountPinSource
@@ -11,7 +12,6 @@ import splice.app.control.ManagedHead
 import splice.client.ClaudePolicy
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
-import splice.core.config.TurnKey
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
@@ -34,8 +34,6 @@ import java.nio.file.Path
 
 internal class DaemonShare(
     private val topology: Topology,
-    private val config: ConfigService,
-    private val turnKey: TurnKey,
     private val log: LogSink,
     /** splice's state folder, where the first LAN-share build kept the machines that joined this one. */
     private val stateDir: Path,
@@ -52,13 +50,11 @@ internal class DaemonShare(
         return RemoteLaunches(topology.remote, trees, policy, ProcessDispatchers().io(), logins, mark)
     }
 
-    /** Opens the listener when `[share]` turns it on, offering [heads], [controlPort]'s statusline and the [door]
-     *  (door-network). */
-    fun open(heads: Map<String, ManagedHead>, controlPort: Int, door: ShareDoor? = null) {
+    /** Opens the listener when `[share]` turns it on, answering this machine's name and its [door]. */
+    fun open(door: ShareDoor) {
         forgetJoins()
         if (!topology.share.enabled) return
-        val offered = ManagedSharedHeads(heads, topology, config, ShareMachine(log).name())
-        val opened = ShareListener(topology.share, offered, turnKey, controlPort, ProcessDispatchers().io(), log, door)
+        val opened = ShareListener(topology.share, ShareMachine(log).name(), door, ProcessDispatchers().io(), log)
         Cancellables.runCatchingBestEffort { opened.start() }
             .onSuccess { listener = opened }
             .onFailure { failure ->

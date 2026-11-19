@@ -1,26 +1,21 @@
-// NEW: LAN share (docs/specs/lan-share.md). The one listener splice opens beyond
-// loopback, and only when `[share] enabled`: the wall kt-embedded-server-loopback exempts this file alone, by that
-// decision. Another machine's Claude Code is pointed here the way Claude Code is pointed at Vertex or Bedrock, and holds
-// no credential: this machine signs every turn with its own logins. Every request passes LanAdmission first (a source
-// on this machine's own networks, naming this machine in its Host), and then:
+// The door on the network (docs/specs/door-network.md). The one listener splice opens beyond loopback, and only when
+// `[share] enabled`: the wall kt-embedded-server-loopback exempts this file alone, by that decision. Another machine's
+// Claude Code is pointed at its door the way Claude Code is pointed at Vertex or Bedrock, and holds no credential: this
+// machine signs every turn with its own logins. Every request passes LanAdmission first (a source on this machine's own
+// networks, naming this machine in its Host, and no Origin), and then:
 //
-//   GET  /                                  what this machine offers: each command, its head, models and logins
-//   GET  /<command>/launch?auth=&models=     what the other machine's launch needs (SharedLaunch), filtered by both
-//   POST /<command>[/@<login>]/statusline   the control plane's statusline for that head, with the turn key;
-//                                           `@<login>` first pins the session the body names, so the line is that
-//                                           login's from the first draw
-//   ANY  /<command>[/@<login>]/v1/...       relayed to the head on loopback with the turn key in place of what was
-//                                           sent; `@<login>` first pins the session to that login, as Accounts' Pin
-//   GET  /door/launch, POST /door/v1/...    the door (door-network, ShareDoor): every model this machine serves,
-//                                           picked by the model a request names
+//   GET  /                                  this machine's name, with an empty list of commands (ShareInfo), which a
+//                                           0.6.4 node's `splice remote` reads to say its door remote is ready
+//   GET  /door/launch, POST /door/v1/...    the door (ShareDoor): every model this machine serves, picked by the
+//                                           model a request names
+//   ANY  /<anything else>/...               404 saying what replaced it: since share-door-only (Nov 19, 2026) this
+//                                           machine shares its door alone, never one command at an address of its
+//                                           own, and the add for the door names the Host the request used
 //
 // Claude Code sends no Origin and posts its turns as application/json. A web page in a browser on the LAN sends an
 // Origin with every POST, and without a preflight (which nothing here approves) can post only a "simple" body, never
 // JSON. So a request with an Origin is refused, and so is a turn whose body is not JSON: a page can't run a turn on
-// this machine's logins by addressing it by IP or as localhost, which the Host check admits.
-//
-// A command may be named by the command it runs as here or by its head's key. One not offered is 404 naming the ones
-// that are; one offered but not running, or not answering, is 503 in this machine's name. Every error is in the
+// this machine's logins by addressing it by IP or as localhost, which the Host check admits. Every error is in the
 // Anthropic shape, so Claude Code prints its message, and none of them says "overloaded".
 package splice.share
 
@@ -39,35 +34,26 @@ import io.ktor.server.netty.NettyApplicationEngine
 import io.ktor.server.plugins.origin
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
-import io.ktor.server.request.queryString
 import io.ktor.server.response.respondText
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import splice.core.client.SESSION_HEADER
-import splice.core.config.TurnKey
 import splice.core.topology.ShareConfig
-import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.wire.HttpStatus
 import splice.http.listen.HttpListenerThreads
 
 public class ShareListener(
     private val share: ShareConfig,
-    private val heads: SharedHeads,
-    turnKey: TurnKey,
-    /** The control plane's port on loopback, whose statusline a shared command's statusline is. */
-    controlPort: Int,
-    /** Blocking work runs here: reading this machine's networks, a head's logins, and the relay's JDK I/O. */
+    /** This machine's name, as its other machines are told it. */
+    private val machine: String,
+    /** The door, answered under `/door`. */
+    private val door: ShareDoor,
+    /** Blocking work runs here: reading this machine's networks. */
     private val io: CoroutineDispatcher,
     private val log: LogSink,
-    /** The door, answered under `/door`; null where this daemon runs none. */
-    private val door: ShareDoor? = null,
 ) {
-    private val admission = LanAdmission(heads.machine, share.hostnames, HostPrefixes(log))
-    private val relay = ShareRelay(turnKey, controlPort, heads.machine, io, log)
-    private val catalog = ShareCatalog(heads, io, ShareErrors.voice)
-    private val launches = SharedLaunches(heads.machine)
+    private val admission = LanAdmission(machine, share.hostnames, HostPrefixes(log))
     private val json = Json { encodeDefaults = true }
     private val doorMessages = listOf(HEAD_API_ROOT, DOOR_MESSAGES_SEGMENT)
     private val doorCount = doorMessages + DOOR_COUNT_SEGMENT
@@ -89,7 +75,7 @@ public class ShareListener(
         }
         server.start(wait = false)
         engine = server
-        log("[share] offering this machine's heads and door on :${share.port} to its LAN and tailnet\n")
+        log("[share] offering this machine's door on :${share.port} to its LAN and tailnet\n")
     }
 
     public fun stop() {
@@ -101,41 +87,40 @@ public class ShareListener(
         val refusal = withContext(io) { admissionRefusal(call) }
         if (refusal != null) return ShareErrors.refuse(call, HttpStatus.FORBIDDEN, refusal)
         val parts = call.request.path().split('/').filter(String::isNotEmpty)
-        val rest = parts.drop(1)
-        when (val named = parts.firstOrNull()) {
-            null -> catalog.directory(call)
-            DOOR_SEGMENT -> atDoor(call, rest)
-            else -> catalog.named(call, named)?.let { route(call, it, rest) }
+        when (parts.firstOrNull()) {
+            null -> named(call)
+            DOOR_SEGMENT -> atDoor(call, parts.drop(1))
+            else -> ShareErrors.refuse(call, HttpStatus.NOT_FOUND, replaced(call))
         }
     }
 
-    /** [rest], the path after [head]'s name: a turn, with the login it names first if any, its launch, or its
-     *  statusline. */
-    private suspend fun route(call: ApplicationCall, head: SharedHead, rest: List<String>) {
-        val login = rest.firstOrNull()?.takeIf { it.startsWith(LOGIN_MARK) }?.drop(1)
-        val path = if (login != null) rest.drop(1) else rest
-        when {
-            path.firstOrNull() == HEAD_API_ROOT -> turn(call, head, login, path)
-            login == null && path == listOf(HEAD_LAUNCH_ROUTE) -> catalog.launch(call, head)
-            path == listOf(STATUSLINE) -> relay.statusline(call, head) { body -> login?.let { lined(head, it, body) } }
-            else -> ShareErrors.refuse(call, HttpStatus.NOT_FOUND, "no such path on ${heads.machine}")
-        }
+    /** `GET /`: this machine's name, with no command of its own. */
+    private suspend fun named(call: ApplicationCall) {
+        val body = json.encodeToString(ShareInfo.serializer(), ShareInfo(machine, emptyList()))
+        call.respondText(body, ContentType.Application.Json)
+    }
+
+    /** What an address naming one command is told: the door replaced it, and the add to run for it on the other
+     *  machine, at the Host [call] used, as sent: admission has already vouched for it. */
+    private fun replaced(call: ApplicationCall): String {
+        val host = call.request.headers[HttpHeaders.Host].orEmpty()
+        return "$machine no longer shares one command at an address of its own: its door serves every model it has. " +
+            "On the other machine, run: splice remote add http://$host"
     }
 
     /** [rest], the path after `/door`: the launch another machine's `claude` reads, or a turn or a count. */
     private suspend fun atDoor(call: ApplicationCall, rest: List<String>) {
-        val door = door ?: return ShareErrors.refuse(call, HttpStatus.NOT_FOUND, "${heads.machine} runs no door")
         val posted = call.request.httpMethod == HttpMethod.Post
         val turn = rest == doorMessages || rest == doorCount
         when {
-            !posted && rest == listOf(HEAD_LAUNCH_ROUTE) -> doorLaunch(call, door)
-            posted && turn -> doorTurn(call, door, counting = rest == doorCount)
-            else -> ShareErrors.refuse(call, HttpStatus.NOT_FOUND, "no such path on ${heads.machine}'s door")
+            !posted && rest == listOf(HEAD_LAUNCH_ROUTE) -> doorLaunch(call)
+            posted && turn -> doorTurn(call, counting = rest == doorCount)
+            else -> ShareErrors.refuse(call, HttpStatus.NOT_FOUND, "no such path on $machine's door")
         }
     }
 
     /** A turn, or a count when [counting], posted to the door: its body must be JSON, as every turn's here must. */
-    private suspend fun doorTurn(call: ApplicationCall, door: ShareDoor, counting: Boolean) {
+    private suspend fun doorTurn(call: ApplicationCall, counting: Boolean) {
         if (!sentAsJson(call)) {
             return ShareErrors.refuse(call, HttpStatus.BAD_REQUEST, "a turn's body must be application/json")
         }
@@ -143,12 +128,9 @@ public class ShareListener(
     }
 
     /** `GET /door/launch`: what another machine's `claude` launches with; 503 while the heads are still starting. */
-    private suspend fun doorLaunch(call: ApplicationCall, door: ShareDoor) {
+    private suspend fun doorLaunch(call: ApplicationCall) {
         val launch = door.launch()
-        if (launch == null) {
-            val why = "${heads.machine}'s door $DOOR_STARTING"
-            return ShareErrors.refuse(call, HttpStatus.SERVICE_UNAVAILABLE, why)
-        }
+            ?: return ShareErrors.refuse(call, HttpStatus.SERVICE_UNAVAILABLE, "$machine's door $DOOR_STARTING")
         call.respondText(json.encodeToString(SharedDoorLaunch.serializer(), launch), ContentType.Application.Json)
     }
 
@@ -158,24 +140,7 @@ public class ShareListener(
         val host = call.request.headers[HttpHeaders.Host]
         return admission.refusal(call.request.origin.remoteAddress)
             ?: "this Host is not one of this machine's names".takeUnless { admission.admitsHost(host) }
-            ?: "a web page may not reach this machine's heads".takeIf { HttpHeaders.Origin in call.request.headers }
-    }
-
-    /** A turn for [head], on [login] when the address named one. A login it lacks is refused rather than run on
-     *  another; a turn that names no session cannot be pinned, so with a login named it is refused too. */
-    private suspend fun turn(call: ApplicationCall, head: SharedHead, login: String?, path: List<String>) {
-        if (!head.running()) return catalog.notRunning(call, head)
-        val posted = call.request.httpMethod == HttpMethod.Post
-        if (posted && !sentAsJson(call)) {
-            return ShareErrors.refuse(call, HttpStatus.BAD_REQUEST, "a turn's body must be application/json")
-        }
-        if (login != null) {
-            val session = call.request.headers[SESSION_HEADER]?.takeIf(String::isNotBlank)
-            val refusal = withContext(io) { pinned(head, login, session, call.request.httpMethod != HttpMethod.Get) }
-            if (refusal != null) return ShareErrors.refuse(call, HttpStatus.BAD_REQUEST, refusal)
-        }
-        val query = call.request.queryString().takeIf(String::isNotEmpty)?.let { "?$it" }.orEmpty()
-        relay.turn(call, HeadTurn(head, path.joinToString("/", prefix = "/") + query))
+            ?: "a web page may not reach this machine's door".takeIf { HttpHeaders.Origin in call.request.headers }
     }
 
     /** Whether [call] says its body is application/json, in any case and with any parameters. Read from the header as
@@ -184,48 +149,19 @@ public class ShareListener(
     private fun sentAsJson(call: ApplicationCall): Boolean =
         call.request.headers[HttpHeaders.ContentType]?.substringBefore(';')?.trim()
             .equals(ContentType.Application.Json.toString(), ignoreCase = true)
-
-    /** Pins [session] to [login] on [head], or says why it can't: null once pinned, or when there is nothing to pin
-     *  and the request [runs] no turn. */
-    private fun pinned(head: SharedHead, login: String, session: String?, runs: Boolean): String? {
-        val logins = head.logins()
-        return when {
-            login !in logins -> launches.noLogin(head, login, logins)
-            session != null && head.pin(login, session) -> null
-            session != null -> launches.noLogin(head, login, head.logins())
-            // Nothing to pin: a read that runs no turn goes through; a turn would run on another login, so it doesn't.
-            !runs -> null
-            else ->
-                "this request names no Claude Code session, so it can't be run on ${heads.machine}'s login '$login'"
-        }
-    }
-
-    /** Pins the session a statusline [body] names (Claude Code's `session_id`) to [login] on [head] before the line
-     *  is drawn, so it shows that login's usage before the session's first turn; a body naming none is drawn as is. */
-    private fun lined(head: SharedHead, login: String, body: ByteArray): String? {
-        val session = JsonScalars.str(JsonScalars.objectOrNull(json, body.decodeToString()), STATUSLINE_SESSION)
-        return pinned(head, login, session?.takeIf(String::isNotBlank), runs = false)
-    }
 }
 
 // All interfaces: LanAdmission decides who is answered, by source address and Host, before anything else runs. On a
 // host with IPv6 the JDK binds this wildcard as `::`, so IPv6 sources on the LAN reach it too.
 private const val SHARE_BIND_HOST = "0.0.0.0"
 
-// The path segment that marks the login a turn runs on (`/claudex/@work/v1/messages`).
-private const val LOGIN_MARK = "@"
-private const val STATUSLINE = "statusline"
-
 // The paths after `/door` that a turn and a count are posted to, as Claude Code's Mantle dialect posts them.
 private const val DOOR_MESSAGES_SEGMENT = "messages"
 private const val DOOR_COUNT_SEGMENT = "count_tokens"
 
-// The key Claude Code names a statusline's session under in the JSON it feeds the statusline.
-private const val STATUSLINE_SESSION = "session_id"
-
-// why: a stop lets requests already in the listener finish for a second before it closes; a relayed turn still
-// streaming is cut, and the other machine's Claude Code retries it as it retries any cut turn.
+// why: a stop lets requests already in the listener finish for a second before it closes; a door turn still streaming
+// is cut, and the other machine's Claude Code retries it as it retries any cut turn.
 private const val SHARE_STOP_GRACE_MS = 1_000L
 
-// why: the most a daemon stop waits on this listener in all, so a relay stuck on a head cannot hold up a restart.
+// why: the most a daemon stop waits on this listener in all, so a turn stuck on a head cannot hold up a restart.
 private const val SHARE_STOP_TIMEOUT_MS = 5_000L

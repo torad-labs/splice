@@ -62,7 +62,6 @@
 // modules, so the hole is empty today and this paragraph is the marker.
 package splice.quality
 
-import com.lemonappdev.konsist.api.Konsist
 import com.lemonappdev.konsist.api.declaration.KoBaseDeclaration
 import com.lemonappdev.konsist.api.declaration.KoFunctionDeclaration
 import com.lemonappdev.konsist.api.declaration.KoParentDeclaration
@@ -329,15 +328,10 @@ internal object PublicSurface {
         return root.walkTopDown().filter { it.isFile && it.extension == "kt" }.sortedBy { it.path }.toList()
     }
 
-    private val KONSIST_ROOT: File = ProjectMap.fromSystemProperties().root.absoluteFile
-
     private fun declarations(map: ProjectMap, module: String): List<Declaration> {
         val root = File(map.dir(module), MAIN)
         if (!root.isDirectory) return emptyList()
-        // Konsist resolves a path against the REPOSITORY root, so a tree anywhere else (a temp one) is
-        // handed over relative to it.
-        val relative = KONSIST_ROOT.toPath().relativize(root.absoluteFile.toPath()).toString()
-        val trees = Konsist.scopeFromDirectory(relative).files.associateBy { File(it.path).canonicalPath }
+        val trees = LawScopes.of(map, root).files.associateBy { File(it.path).canonicalPath }
         return sources(map, module, MAIN).flatMap { file ->
             val tree = checkNotNull(trees[file.canonicalPath]) { "${file.path}: Konsist has no such file" }
             declarationsIn(module, KotlinText.rel(map, file), file.readText(), tree.declarations(false, false))

@@ -3,7 +3,6 @@
 // Grow this file as modules land; every new law lands with its red/green proof in the commit message.
 package splice.quality
 
-import com.lemonappdev.konsist.api.Konsist
 import com.lemonappdev.konsist.api.verify.assertTrue
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -133,9 +132,8 @@ class ArchitectureLawsTest {
     // Konsist resolves scopeFromDirectory RELATIVE to the Gradle root it detects;
     // absolute paths get prefixed and blow up (caught in this law's first red/green).
     // P0: the directory is the map's, so the relative path stays correct for a module that is not
-    // a direct child of the root.
-    private fun mainScope(module: String) =
-        Konsist.scopeFromDirectory("${map.relativeDir(module)}/src/main/kotlin")
+    // a direct child of the root. The parse is the suite's one parse of the module (LawScopes).
+    private fun mainScope(module: String) = LawScopes.main(map, module)
 
     // DR-165: the live tree cannot red the consumer half (every builder module ships both halves),
     // so the verdict is fed the missing halves directly.

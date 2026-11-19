@@ -10,9 +10,10 @@
 //
 // WHAT THE REFERENCES CANNOT SEE runs the whole unit suite of the module that owns it, plus the tests in other modules that reach
 // that module: a resource, a golden or any other file that is not a source, a source the scan cannot
-// read, code that loads classes by a computed name, and a changed class that a build script or a resource names. When the thing is
+// read, and a changed class that a build script or a resource names. When the thing is
 // test-only, no other module can see it, so only its own module runs whole. Markdown a module ships is prose for a person, from
-// which nothing resolves a class, so it is neither (PROSE).
+// which nothing resolves a class, so it is neither (PROSE). Code that loads classes by a computed name may load whatever changed,
+// so on any source change it counts as changed itself, and the tests that reach it run.
 //
 // A FILTER MUST MATCH A TEST. Gradle fails a test task whose `--tests` filter found nothing, and the scan cannot always tell that a
 // selected class runs one (a test inherited from a parent, an expression body whose type it cannot resolve). So when no selected
@@ -293,9 +294,13 @@ function select(input: ImpactInput, scope: ScopeRules): TestImpact {
   }
   const touched = changedInModules.length > 0 || whole.size > 0;
   const sourceChanged = changedInModules.some((path) => nodes.has(path));
+  // A file that loads classes by a computed name may load any class that changed, so on any source change it counts as changed
+  // itself: it and the tests that reach it run, as they would had it named the changed class. Until Nov 18, 2026 its whole module
+  // ran instead, and two :app test files that load classes from a list of names ran :app's whole suite on every push that checked
+  // :app from Nov 9 (:app:test ran on 204 of the 276 pushes judged from Nov 10 to Nov 18, 403 s each on average).
+  const loaders = sourceChanged ? all.filter((node) => node.tip && node.scan.loadsByName) : [];
   for (const node of all) {
     if (!node.scan.parsed && touched) unsure(node.module, `${node.path} is a source the scan cannot read`, node.test);
-    if (node.tip && node.scan.loadsByName && sourceChanged) unsure(node.module, `${node.path} loads classes by a name the references cannot see`, node.test);
   }
   // A changed class a build script or a resource names: the build or the runtime uses it in a way no reference shows, so the module
   // that OWNS that text runs whole. The changed class's own
@@ -402,6 +407,7 @@ function select(input: ImpactInput, scope: ScopeRules): TestImpact {
     const node = nodes.get(path);
     if (node) reach(node);
   }
+  for (const node of loaders) reach(node);
   for (const seed of extraSeeds) for (const node of all) if (node.tip && node.scan.strings.some((s) => s.includes(seed))) reach(node);
   const seeded = new Set<string>();
   const seedModules = (): void => {

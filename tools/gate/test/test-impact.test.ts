@@ -359,7 +359,7 @@ describe("what the reference analysis cannot see runs its module whole, and the 
     expect(shape(impact)).toEqual({ ":core": "none", ":app": ["splice.app.OperationsDocTest"], ":features-turns": "none" });
   });
 
-  test("code that loads classes by a computed name runs its module whole on any source change; a literal name is a plain reference", () => {
+  test("code that loads classes by a computed name counts as changed on any source change, so the tests that reach it run; a literal name is a plain reference", () => {
     const plugins = main("app", "splice.app", "Plugins.kt");
     const loader = main("app", "splice.app", "Loader.kt");
     const base = {
@@ -367,13 +367,15 @@ describe("what the reference analysis cannot see runs its module whole, and the 
       [plugins]: kt("splice.app", "object Plugins {", "    fun all(): List<Runnable> = java.util.ServiceLoader.load(Runnable::class.java).toList()", "}"),
       [loader]: kt("splice.app", "object Loader {", '    fun clock(): Any = Class.forName("splice.core.Clock")', "}"),
       [unit("app", "splice.app", "LoaderTest.kt")]: junit("splice.app", "LoaderTest", "check(Loader.clock() != null)"),
+      [unit("app", "splice.app", "PluginsTest.kt")]: junit("splice.app", "PluginsTest", "check(Plugins.all().size >= 0)"),
+      [unit("app", "splice.app", "NamedTest.kt")]: junit("splice.app", "NamedTest", 'listOf("splice.core.Clock").forEach { check(Class.forName(it) != null) }'),
     };
+    // Turn is in no module :app's tests reach, yet either loader may load it: the tests that reach the loaders run, and no other.
     const turn = testImpact(pushOf({ [TURN]: kt("splice.turns", "class Turn(val n: Int = 0)") }, base));
-    expect(shape(turn)).toEqual({ ":core": "none", ":app": "all", ":features-turns": ["splice.turns.TurnTest"] });
-    expect(whyWhole(turn, ":app")).toContain(plugins);
+    expect(shape(turn)).toEqual({ ":core": "none", ":app": ["splice.app.NamedTest", "splice.app.PluginsTest"], ":features-turns": ["splice.turns.TurnTest"] });
 
     const withoutDiscovery = { ...base };
-    delete withoutDiscovery[plugins];
+    for (const path of [plugins, unit("app", "splice.app", "PluginsTest.kt"), unit("app", "splice.app", "NamedTest.kt")]) delete withoutDiscovery[path];
     const clock = testImpact(pushOf({ [CLOCK]: kt("splice.core", "class Clock {", "    fun now(): Long = 5", "}") }, withoutDiscovery));
     expect(shape(clock)).toEqual({ ":core": ["splice.core.ClockTest"], ":app": ["splice.app.LoaderTest"], ":features-turns": ["splice.turns.TurnClockTest"] });
   });
@@ -1341,7 +1343,6 @@ function oracle(repo: GenRepo, push: GenPush): Set<string> {
   }
   for (const s of tip) {
     if (s.broken && changed.some((path) => inModule(path) !== undefined)) unsure(s.module.path, s.test);
-    if (s.discovers && sourceChanged) unsure(s.module.path, s.test);
   }
   for (const s of repo.sources) {
     if (!changed.includes(s.path)) continue;
@@ -1356,6 +1357,8 @@ function oracle(repo: GenRepo, push: GenPush): Set<string> {
 
   const reached = new Set<string>(changed.filter((path) => all.some((s) => s.path === path)));
   for (const s of all) if (!s.test && reachModules.has(s.module.path)) reached.add(s.path);
+  // A source that loads classes by a computed name may load whatever changed, so it counts as changed itself.
+  for (const s of tip) if (s.discovers && sourceChanged) reached.add(s.path);
   const queue = [...reached];
   while (queue.length > 0) {
     const path = queue.pop() ?? "";

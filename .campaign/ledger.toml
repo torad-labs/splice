@@ -830,6 +830,151 @@ off = ["desktop"]        # callers it is never offered to: "desktop" is Claude D
   boot refused for a broken mode. Use the harness (`.campaign/checks/server/lib/harness.ts`) and the door helpers in
   `.campaign/checks/desktop/lib/desktop.ts`.'''
 
+[feature."reply-stream"]
+goal = '''
+# reply-stream: the owner can follow a session's reply as it is written
+
+## Who this is for, and why
+
+Marcos wants his Eli app (the Telegram bridge's panel) to show a session's reply while it is being written, the way
+the Claude app does (November 19, 2026). The app reads session transcripts, and a transcript only gets whole
+messages. splice's door sees every response as it streams to Claude Code, on every head, so splice is where a live
+reply can be read. This feature gives the machine's owner a local, read-only way to follow one session's reply as it
+streams.
+
+He wants the same for every splice user in splice's own session views. A shared reply view (the `reply-view`
+feature, built beside this one) reads this feed for both splice's console and the Eli app. The panel's builder
+(`panel-rebuild`, in the eli repository) builds the app's side against the contract below at the same time, so the
+contract is built as written.
+
+## The contract
+
+`GET /api/sessions/{id}/live` on splice's control plane, which listens on loopback only, behind the management key
+as `/api/sessions/{id}/transcript` is. `{id}` is the Claude Code session id: the `x-claude-code-session-id` a request
+carries, which is the `session_id` `/api/sessions` lists. It answers `text/event-stream` and stays open until the
+client leaves. It never ends because a turn ended, and an id with no turn in flight, or one splice has not seen yet,
+is not an error: the stream stays open and the next turn's events come when it starts.
+
+Each event is `event: <name>` with one JSON `data:` line:
+
+- `hello` `{session, live: [turn, ...]}`: sent first, naming the turns of this session in flight right now.
+- `turn` `{turn, message, agent, model, head, compact, at}`: a response for this session started. `turn` is an id of
+  splice's own, unique within the daemon's life. `message` is the id of the message the client was sent (its
+  `message_start`'s id), which Claude Code writes into its transcript, so a live reply and the transcript's message
+  can be matched. `agent` is the request's `x-claude-code-agent-id`, `null` on the session's main thread (Claude
+  Code's subagents share their session's id). `model` is the model the client asked for, `head` the head serving it,
+  `compact` whether it is a compaction, `at` its start in epoch milliseconds.
+- `text` `{turn, index, delta}`: text the client was sent, in order, `index` being the content block's index.
+- `thinking` `{turn, index, delta}`: thinking the client was sent, when the client is sent thinking. Signatures never.
+- `tool` `{turn, index, id, name}`: a tool call started (its `tool_use` id and the tool's name). Its input is not sent.
+- `end` `{turn, stop_reason, error}`: the turn's response ended. `stop_reason` as the client got it (`end_turn`,
+  `tool_use`, `max_tokens`, ...) or `null`; `error` a short reason when it failed or was cut, else `null`, with no
+  upstream body in it.
+
+A follower that connects while a turn is in flight gets, right after `hello`, that turn's `turn` event and one `text`
+or `thinking` event per block holding everything written so far, then the live deltas: joining mid-reply shows the
+whole reply. While nothing else is sent, a `: ping` comment comes every 15 s.
+
+## What holds
+
+- Only what the door writes to the client goes out: never a request body, a header, a key, a token, an account or
+  login name, the upstream's raw frames, an error's body, a thinking signature or a tool's input.
+- Read-only: nothing can be sent to a session or a turn through it.
+- No new listener: the control plane on loopback and the management key, as every `/api` route. Nothing on the
+  door's port or the LAN share.
+- Many followers of one session each get every event. A follower that reads slowly never slows a turn: when its
+  buffer is full it is closed, and it can connect again and get the snapshot. With nobody following, a turn costs
+  nothing more than it does today.
+- Every head and every dialect: the events are what the client received (the Anthropic Messages frames splice writes
+  to Claude Code), so a reply from a non-Anthropic head streams the same way. A compaction the client left, which
+  splice drives on, streams to its followers until it ends.
+- The route is documented with the other control routes in `docs/`. The repository is public: the page describes the
+  route for anyone who runs splice and names no person, app or machine.
+
+## How it is checked
+
+Checks look at what a follower and the client see: a Splice booted with the harness
+(`.campaign/checks/server/lib/harness.ts`) and a mock head that streams a reply slowly, with text, thinking and a tool
+call. A follower sees `hello`, `turn`, the deltas in order (their concatenation equals what the client received),
+the `tool` start and `end`. A follower that joins mid-reply gets the snapshot. Another session's turns never show, a
+subagent's turn carries its agent id, and no key, header or signature appears. A request without the management key
+is refused. The harness reads Linux's `/proc`, so these checks run on the Linux build box: a check names it itself,
+`CAMPAIGN_HERE=1 rig remote run --needs system=Linux/x86_64 -- bun test <file>`.'''
+
+[feature."reply-view"]
+goal = '''
+# reply-view: one reader for a session's conversation, live and good to read, shared by splice and the Eli app
+
+## Who this is for, and why
+
+Marcos finds reading a session poor in splice's console and in his Eli app (the Telegram bridge's panel), and wants
+it as good as the Claude app and T3 Code for every splice user, splice's own team included (November 19, 2026). He
+wants it built once: one feed and one reader that splice's session views and the Eli app both use, instead of each
+writing its own.
+
+The feed is the `reply-stream` feature, built beside this one: `GET /api/sessions/{id}/live`, a session's reply as it
+streams (its contract is in that feature's goal in the ledger; build against it as written, with a stub until it has
+landed). History comes from what splice serves now, `GET /api/sessions/{id}/transcript` (roles, text, tool calls and
+results, the kind of each line). This feature is the reader: the code that turns those two into a conversation a
+person reads. The Eli app's builder (`panel-rebuild`, in the eli repository) uses it as splice ships it.
+
+## What a person sees
+
+- The conversation reads like a chat app's: the person's messages and the model's replies, each reply's text as real
+  Markdown (headings, lists, tables, links, quotes, inline code), and code blocks highlighted by language, each with
+  a copy button that copies exactly the code.
+- A tool call is one line saying what ran (the tool and its main argument: the command, the file, the pattern),
+  which opens to its input and its result. A long result is folded the same way. Thinking sits behind a toggle,
+  closed by default.
+- No raw JSON, and none of what the harness wraps around a message for the model: system reminders, command and
+  hook tags, tool-result envelopes and the like are not shown as text. A message that is only such wrapping is not
+  shown.
+- A reply being written streams in place, as the Claude app shows it: text appears as it comes, a tool call shows as
+  it starts, and when the turn ends the reply settles into the same form history draws it in. A subagent's turn and
+  a compaction are told apart from the main thread, not mixed into it.
+- It is comfortable on a phone (from 360 px wide) and on a desktop screen, in night and day: text wraps, code scrolls
+  sideways within its block instead of widening the page, and nothing spills past the edge.
+
+## How it is built and shared
+
+- A self-contained browser module (one ES module file) with its stylesheet, and no build step. The Eli app's builder
+  asked for these, and they hold for every host:
+  - An imperative mount: the host gives it a container (`mount(element, { history, live })` or alike) and it draws
+    there. It never owns scrolling: the host keeps its own scroll, its pinning to the newest line and its composer.
+  - Appending: transcript messages and feed events are added to a mount that exists, drawing only what is new, so
+    the line a person is reading does not move.
+  - Fed by the host: its core takes the transcript messages and feed events it is handed, because the Eli app relays
+    them through its own channel and never gives the phone splice's key. A small connector that reads splice's API
+    itself (transcript and `/live`) serves splice's console.
+  - A live reply settles into the transcript's message when that message arrives, matched by the feed's `message` id.
+  - Its look comes only from CSS custom properties with sensible defaults, its rules scoped to its own container: no
+    global selectors and nothing on `html` or `body`. The console and the Eli app each dress it in their own styling,
+    night and day included, without changing it.
+  - Nothing a strict Content-Security-Policy refuses: no `eval` or `new Function`, no code or styles fetched at run
+    time, no inline event handlers or style attributes in the markup it writes.
+  A highlighter or Markdown parser it needs is vendored into that one file or beside it, with its license added to
+  `THIRD_PARTY_NOTICES.md`.
+- splice serves it, versioned with splice, at stable paths on the control plane, so a client of splice's API loads the
+  same file splice's console loads, always the version that matches the feed it reads. The Eli app's bridge fetches
+  it from there and serves it from its own origin under its own policy, hashing what it fetched. Its README (in its folder) says how to embed
+  it, what the custom properties are, and what it reads.
+- It changes no console page. Splice's console is being rebuilt to a new design (the `console-night-deck` feature),
+  and the reader joins its Sessions view once both have landed, as a feature of its own. Until then a page of the
+  reader's own, served beside it, shows a session through it.
+
+## How it is checked
+
+Checks look at what a person sees and copies, in Chromium on a Mac: a stub serving made-up transcripts and a
+made-up live feed (the stub daemon in `.campaign/checks/console-night-deck/lib/deck.ts` shows the pattern), the
+reader's own page at 375 px and at 1440 px, night and day. Markdown and code draw as such, the copy button copies the
+code exactly, a tool call and a long result are one line until opened, thinking is closed until toggled, no
+system-reminder or raw JSON text shows, a live reply grows as deltas arrive and settles at its end, and nothing
+spills sideways. The checks run on a Mac: a check names it itself, `CAMPAIGN_HERE=1 rig remote run --needs
+system=Darwin/arm64 -- bun test <file>`. No item is accepted without its feature review having looked at screenshots
+of what it changed, taken in Chromium on a Mac, at a phone width and at 1440 px, night and day.
+
+Everything the checks and screenshots show is made up: the repository is public.'''
+
 [[row]]
 id = 'server-listener'
 title = 'A [server] listener that answers only keys'
@@ -4718,7 +4863,11 @@ The credential scan: rig refuses the shared checkout's tree today (the result at
 
 Proven by: `git merge-base --is-ancestor 7e9f7bbb1 HEAD` (main is in), then `rig remote run -- ./gradlew :app:compileTestKotlin :features-share:compileTestKotlin :features-server:compileTestKotlin --quiet`, which shows the tree ships and the merged code compiles, tests included. Before the item is called done, the builder also runs the whole gate on a remote machine (`rig remote run -- bun tools/gate run`) and fixes whatever the merge broke.
 
-The pre-commit refusal of round 1 and 2 (ruled Nov 19, 2026 by the share-door-only coordinator): it was the frozen plan, not the merge. tools/gate/config/typecheck.json on the base (828c721bb "chore(gate): typecheck the door-sessions checks", which came in with 46c298f24) lists .campaign/checks/door-sessions/tsconfig.json, and the plan this feature was frozen on (007aacd75) predates door-sessions' checks, so campaign laid .campaign/ back to a tree without them and the typecheck leg said `error TS5058: The specified path does not exist: '.../repo-campaign-share-door-only/.campaign/checks/door-sessions/tsconfig.json'`. The plan is now committed on top of the base's own plan commits (053d69256 door-sessions, 21ab32187 custom-provider), so the .campaign/ campaign lays in the worktree holds door-sessions' tsconfig and tests, custom/lib/site.ts and desktop-full/managed-launcher.test.ts as the base has them, and typecheck.json finds every program it names. Keep typecheck.json as the base has it (dropping its door-sessions line would take that typecheck away from the base when this feature lands), and still touch nothing under .campaign/. The merge itself is done and committed (294bcd184 takes in the base at 46c298f24, 4c9a722bf takes in 21ab32187; 7e9f7bbb1 is an ancestor of HEAD); round 2 found the item's own check passing (campaign check, 95 s). What is left: take in what campaign brings, run the check and the remote gate, and commit through the pre-commit hook. If the hook still refuses over a file under .campaign/, dispute with its words again rather than work around it.'''
+The pre-commit refusal of round 1 and 2 (ruled Nov 19, 2026 by the share-door-only coordinator): it was the frozen plan, not the merge. tools/gate/config/typecheck.json on the base (828c721bb "chore(gate): typecheck the door-sessions checks", which came in with 46c298f24) lists .campaign/checks/door-sessions/tsconfig.json, and the plan this feature was frozen on (007aacd75) predates door-sessions' checks, so campaign laid .campaign/ back to a tree without them and the typecheck leg said `error TS5058: The specified path does not exist: '.../repo-campaign-share-door-only/.campaign/checks/door-sessions/tsconfig.json'`. The plan is now committed on top of the base's own plan commits (053d69256 door-sessions, 21ab32187 custom-provider), so the .campaign/ campaign lays in the worktree holds door-sessions' tsconfig and tests, custom/lib/site.ts and desktop-full/managed-launcher.test.ts as the base has them, and typecheck.json finds every program it names. Keep typecheck.json as the base has it (dropping its door-sessions line would take that typecheck away from the base when this feature lands), and still touch nothing under .campaign/. The merge itself is done and committed (294bcd184 takes in the base at 46c298f24, 4c9a722bf takes in 21ab32187; 7e9f7bbb1 is an ancestor of HEAD); round 2 found the item's own check passing (campaign check, 95 s). What is left: take in what campaign brings, run the check and the remote gate, and commit through the pre-commit hook. If the hook still refuses over a file under .campaign/, dispute with its words again rather than work around it.
+
+The pre-commit refusal of round 3 (ruled Nov 19, 2026 by the share-door-only coordinator): the plan's again, the same cause as rounds 1-2, for a newer feature. The base gained af99c85c9 ("upkeep: typecheck the modes checks' folder", which adds .campaign/checks/modes/tsconfig.json to tools/gate/config/typecheck.json) and a9534b342 (modes' plan, which lays .campaign/checks/modes/*). The worktree took them in (6e899e42b), and campaign then laid .campaign/ back as this feature's frozen plan (be6fa8840) had it. That commit predates both, so the worktree's index deleted .campaign/checks/modes/* (the boot, catalog, console, dialects, door, list, module, readme, routes and switch tests, lib/modes.ts, tsconfig.json) and changed console-night-deck's capture.ts and whole.test.ts, and the hook said `typecheck: .campaign/checks/modes/tsconfig.json: error TS5058: The specified path does not exist: '.../repo-campaign-share-door-only/.campaign/checks/modes/tsconfig.json'` (pre-commit: ✗ typescriptTypecheck, 22.8 s). The plan is now committed on top of a9534b342, so the .campaign/ campaign lays holds modes' and console-night-deck's checks as the base has them, and typecheck.json finds every program it names. As before: keep typecheck.json as the base has it, and touch nothing under .campaign/. If the hook refuses again over another feature's folder under .campaign/checks/ that the base gained after this plan's commit, it is this cause once more and says nothing about the build. Dispute it with the hook's words and the base commit that added that folder. Never drop that folder's line from typecheck.json, stage .campaign/ by hand or commit around the hook.
+
+What is left is as before: the merge is committed (294bcd184, 4c9a722bf, and 8fb90a526, which keeps the architecture laws on the merged tree). Take in what campaign brings, run the item's check and the remote gate, fix what the merge broke, and commit through the pre-commit hook.'''
 checks = [
   'git merge-base --is-ancestor 7e9f7bbb1 HEAD && rig remote run -- ./gradlew :app:compileTestKotlin :features-share:compileTestKotlin :features-server:compileTestKotlin --quiet',
 ]
@@ -4776,7 +4925,11 @@ Where the checks run (ruled Nov 19, 2026 by the share-door-only coordinator, aft
 
 The port of a one-command address (decided here, Nov 19, 2026, from round 1's feature review): the refusal asks the door the way the box-alone add does. An http address that names no port (`http://devbox/claudex`) is on the share port, as `splice remote add http://devbox` already reads it through RemoteNames.onSharePort; round 1's oneOnDoor asked `address.server` as written, so that address was told the box "can't be reached" on port 80 while the box's door was up on 3097. The suggested line keeps the server as the person typed it (`Add it with: splice remote add http://devbox`), which the box-alone add reads the same way. An address with a port is asked at that port, as now. No new test is needed for it: the check's box listens on a free port, not 3097.
 
-What round 1 built passed both reviews and every test of the check on Linux; it is in the worktree. Go on from it: make the port change above, and run both checks as they are written.'''
+The round-2 dispute (ruled Nov 19, 2026 by the share-door-only coordinator). The port change is made in the worktree but not committed yet: in RemoteAdd.kt, oneOnDoor asks `asks.directory.door(names.onSharePort(server))` and keeps `$server` as typed in the suggested add (the coordinator read it there). Round 1's feature reviewer handed back a case that campaign could not run. The case reads RemoteAdd.kt from `fun one(` to `fun doorAt(` and looks for a share-port lookup. Its command, `sh '<repo>/.git/campaign/share-door-only.cases/check.sh' '<case>'`, names no rig, so campaign sent it through `rig remote run --`. The machine it ran on has no copy of the main checkout's .git, so it said `sh: 0: cannot open .../share-door-only.cases/check.sh: No such file` (exit 2, twice, about 12:30 CT). That says nothing about the build. The case asked for nothing beyond the port paragraph above. So this row is cut again, the case goes with it, and the new round's feature review reads the port change again. Run on this machine, the case passes. If a case handed back in a later round fails with `cannot open .../check.sh`, it is the same campaign limit: dispute it with those words, and don't change the code to satisfy it.
+
+The pre-commit hook's refusal over .campaign/checks/modes/tsconfig.json holds this same worktree too. It is ruled on base-takes-main: the plan is committed on top of a9534b342. Keep tools/gate/config/typecheck.json as the base has it, and touch nothing under .campaign/.
+
+What is built: round 1's work (8c7cfe85f, 87c7308c8) passed the code review, and both checks passed on Linux (share-only-cli 5/5, the gradle cli.share + LoginCommandTest run). The port change is in the worktree. Go on from it: run both checks as they are written, and commit the port change through the pre-commit hook.'''
 checks = [
   'rig remote run --to build@ssh1.vast.ai:34658 -- bun test ./.campaign/checks/door/share-only-cli.test.ts',
   "rig remote run -- ./gradlew :app:test --tests 'splice.app.cli.share.*' --tests splice.app.cli.auth.LoginCommandTest --quiet",
@@ -4923,7 +5076,11 @@ The test that a session on the box itself names the OAuth beta once is not about
 
 Tests whose feature is gone are not rewritten: ?auth= picking a login, ?models= filtering, a login or model the box lacks, a command the box doesn't offer, the box listing its commands, the statusline relayed and pinned, and a bare -c continuing a node command's newest session (the door's sessions are door-default's). The commit says so. A test checks what the node's launch, a route or the stand-in upstream shows, never call counts or internals (repo CLAUDE.md, Tests).
 
-Proven by: both files reach the door, LanShareTest no longer drives a statusline or ?models= route, and `rig remote run -- ./gradlew :app:test --tests splice.app.share.LanShareTest --tests splice.app.share.LanShareClaudeTest` passes.'''
+Proven by: both files reach the door, LanShareTest no longer drives a statusline or ?models= route, and `rig remote run -- ./gradlew :app:test --tests splice.app.share.LanShareTest --tests splice.app.share.LanShareClaudeTest` passes.
+
+The pre-commit refusal of rounds 2-3 (ruled Nov 19, 2026 by the share-door-only coordinator): it was the plan, not this item's work, and the full ruling is on base-takes-main. The hook said `typecheck: .campaign/checks/modes/tsconfig.json: error TS5058: The specified path does not exist: '.../repo-campaign-share-door-only/.campaign/checks/modes/tsconfig.json'`. The base gained af99c85c9 (typecheck.json names that tsconfig) and a9534b342 (modes' plan), and campaign laid .campaign/ back as the older frozen plan (be6fa8840) had it. The plan is now committed on top of a9534b342, so the folder is laid as the base has it. Keep tools/gate/config/typecheck.json as the base has it, and touch nothing under .campaign/. If the hook refuses again over another feature's folder under .campaign/checks/, dispute with its words. Don't work around it.
+
+What is built: round 1's work passed both reviews and is committed in the worktree (66f068f67, ea624d400, baa64a775). Go on from it: run the check as written, and commit whatever is left through the pre-commit hook.'''
 checks = [
   "grep -qE '/door|DOOR_SEGMENT' app/src/test/kotlin/splice/app/share/LanShareTest.kt && grep -qE '/door|DOOR_SEGMENT' app/src/test/kotlin/splice/app/share/LanShareClaudeTest.kt && ! grep -qE '/statusline|models=' app/src/test/kotlin/splice/app/share/LanShareTest.kt && rig remote run -- ./gradlew :app:test --tests splice.app.share.LanShareTest --tests splice.app.share.LanShareClaudeTest --quiet",
 ]
@@ -4957,7 +5114,11 @@ What changes: nothing a person sees. The code that only the per-command share li
 - Anything else these removals leave unused goes the same way. Anything still used stays. This includes ShareCatalog, SharedLaunch(es), the auth=/models= params of the address grammar (core LanShareConfig.kt keeps reading them so old files load), and HEAD_API_ROOT / HEAD_LAUNCH_ROUTE.
 No new top-level functions or companion objects, no suppressions (repo CLAUDE.md).
 
-Proven by: ShareRelay.kt has no statusline, StatuslineAdmission or controlPort; SharedHeads.kt declares no pin; and `rig remote run -- ./gradlew :features-share:test :features-server:test :app:test --tests splice.app.desktop.DoorPickerRowsTest` passes, so server mode's relay and the door's rows still work.'''
+Proven by: ShareRelay.kt has no statusline, StatuslineAdmission or controlPort; SharedHeads.kt declares no pin; and `rig remote run -- ./gradlew :features-share:test :features-server:test :app:test --tests splice.app.desktop.DoorPickerRowsTest` passes, so server mode's relay and the door's rows still work.
+
+The pre-commit refusal of rounds 2-3 (ruled Nov 19, 2026 by the share-door-only coordinator): it was the plan, not this item's work, and the full ruling is on base-takes-main. The hook said `typecheck: .campaign/checks/modes/tsconfig.json: error TS5058: The specified path does not exist: '.../repo-campaign-share-door-only/.campaign/checks/modes/tsconfig.json'`. The base gained af99c85c9 (typecheck.json names that tsconfig) and a9534b342 (modes' plan), and campaign laid .campaign/ back as the older frozen plan (be6fa8840) had it. The plan is now committed on top of a9534b342, so the folder is laid as the base has it. Keep tools/gate/config/typecheck.json as the base has it, and touch nothing under .campaign/. If the hook refuses again over another feature's folder under .campaign/checks/, dispute with its words. Don't work around it.
+
+What is built: round 1's work passed both reviews and is committed in the worktree (210c9ac67). Go on from it: run the check as written, and commit whatever is left through the pre-commit hook.'''
 checks = [
   "! grep -qE 'fun statusline|StatuslineAdmission|controlPort' features/share/src/main/kotlin/splice/share/ShareRelay.kt && ! grep -qE 'fun pin\\(' features/share/src/main/kotlin/splice/share/SharedHeads.kt && rig remote run -- ./gradlew :features-share:test :features-server:test :app:test --tests splice.app.desktop.DoorPickerRowsTest --quiet",
 ]

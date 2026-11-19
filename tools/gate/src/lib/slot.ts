@@ -17,6 +17,7 @@
 import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { availableParallelism, loadavg } from "node:os";
 import { join } from "node:path";
+import { gradleElsewhere } from "./elsewhere.ts";
 import { takeExclusive } from "./flock.ts";
 import type { Layout } from "./repo.ts";
 import { exitForSignal, exitStatusOf } from "./status.ts";
@@ -46,6 +47,11 @@ function readMachine(): Machine {
  *  each daemon started at its whole cap and a host build wrapper measured it as anon memory however little it held. The periodic GC hands
  *  an idle daemon's heap back: the Kotlin daemon sits idle through every test leg of a push. */
 const HEAP_CAPS = "-Xmx1536m -XX:MaxMetaspaceSize=512m -Xms256m -XX:G1PeriodicGCInterval=30000";
+/** The Kotlin daemon names its collector. With none named, the Kotlin Gradle plugin starts it on the Parallel collector
+ *  (-XX:+UseParallelGC), which has no periodic GC, so the interval above did nothing there: on Nov 18, 2026 an idle Kotlin daemon
+ *  held 1.38 GB of its 1.5 GB heap committed and 3.0 GB resident, beside a Gradle daemon on G1 that had handed half of its heap
+ *  back. */
+const KOTLIN_DAEMON_ARGS = `${HEAP_CAPS} -XX:+UseG1GC`;
 /** The warm daemon's own caps, on the command line because ~/.gradle/gradle.properties (a host wrapper's 2 GB heap and 5 minute idle
  *  timeout) outranks the project's gradle.properties and only the command line outranks both. The worker cap stays the host wrapper's. */
 function localDaemon(label: string): string[] {
@@ -53,7 +59,7 @@ function localDaemon(label: string): string[] {
   return [
     `-Dorg.gradle.jvmargs=${HEAP_CAPS}${marker}`,
     "-Dorg.gradle.daemon.idletimeout=1800000",
-    `-Pkotlin.daemon.jvmargs=${HEAP_CAPS}`,
+    `-Pkotlin.daemon.jvmargs=${KOTLIN_DAEMON_ARGS}`,
   ];
 }
 export const NO_TASKS_EXIT = 2;
@@ -220,6 +226,10 @@ export async function runUnderSlot(options: SlotOptions): Promise<number> {
     console.error(`gradle-slot: name the tasks, e.g. bun tools/gate slot ${label} -- :app:test :app:detekt`);
     return NO_TASKS_EXIT;
   }
+
+  // Another of the developer's machines builds it when one has room (elsewhere.ts); otherwise it builds here.
+  const elsewhere = await gradleElsewhere({ buildRoot: options.layout.buildRoot, label, args, env });
+  if (elsewhere !== undefined) return elsewhere;
 
   const lock = lockPath(options.layout, env);
   const holderPath = `${lock}.holder`;

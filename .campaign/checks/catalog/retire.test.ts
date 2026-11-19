@@ -7,12 +7,12 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { lane, toDoor } from "../door/lib/claude.ts";
+import { lane, session, toDoor } from "../door/lib/claude.ts";
 import { Provider } from "../harness/lib/capability.ts";
 import { Splice, freePort, json, mockHead, until } from "../server/lib/harness.ts";
 import { Upstream } from "../server/lib/upstream.ts";
 import { CodexBackend, gptEnv, gptHead } from "../speed/lib/codex.ts";
-import { gatewayTurn, jsonFile, launchOf, mustGateway, register, stand } from "./lib/gateway.ts";
+import { gatewayTurn, jsonFile, launchOf, register, stand } from "./lib/gateway.ts";
 import { claudeHeadToml } from "./lib/heads.ts";
 
 setDefaultTimeout(240_000);
@@ -131,7 +131,9 @@ describe("gw-retire", () => {
     toDoor(s);
     expect((lane(s).models ?? []).map((m) => m.model)).toContain(ASTRA);
     const marker = `gw-retire-${crypto.randomUUID()}`;
-    expect((await gatewayTurn(mustGateway(await launchOf(s, "claude")), ASTRA, { content: marker })).status).toBe(200);
+    // through the gateway as `claude` reaches it, Mantle's way or gateway mode's (gw-claude, built beside this)
+    const x = await session(s);
+    expect((await gatewayTurn({ base: x.url, key: x.key }, ASTRA, { content: marker })).status).toBe(200);
     expect(backend.turnsWith(marker).length).toBe(1);
   });
 

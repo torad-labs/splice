@@ -23,7 +23,8 @@
     ".campaign/checks/desktop-full/tsconfig.json",
     ".campaign/checks/console-night-deck/tsconfig.json",
     ".campaign/checks/door-sessions/tsconfig.json",
-    ".campaign/checks/harness/tsconfig.json"
+    ".campaign/checks/harness/tsconfig.json",
+    ".campaign/checks/modes/tsconfig.json"
   ],
   "excused": {},
   "baseline": {}

@@ -120,10 +120,11 @@ internal class RemoteAdd(
 
     /** [server]'s door as [name], or `claude`; refused when [server] answers no door. */
     private suspend fun door(server: String, name: String?): Asked<Offered> {
-        val read = asks.directory.door(server)
-        if (read !is Asked.Had) return Asked.Refused((read as Asked.Refused).why)
         val entry = mapOf((name ?: CLAUDE_COMMAND) to names.at(server, DOOR_SEGMENT))
-        return Asked.Had(Offered(read.value.machine, entry))
+        return when (val read = asks.directory.door(server)) {
+            is Asked.Refused -> read
+            is Asked.Had -> Asked.Had(Offered(read.value.machine, entry))
+        }
     }
 
     /** Every command a LAN share at [server] offers. */

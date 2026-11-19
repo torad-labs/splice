@@ -1132,6 +1132,70 @@ launcher that goes past the door. Splice's check harness (`.campaign/checks/serv
 `/proc`, so a check that boots Splice through it runs on the Linux build box and names it itself: `CAMPAIGN_HERE=1 rig
 remote run --needs system=Linux/x86_64 -- bun test <file>`. Builds and tests never run on the machine the seats run on.'''
 
+[feature."signin-e2e"]
+goal = '''
+# signin-e2e: every provider's sign-in is checked end to end before any release
+
+## Who this is for, and why
+
+A person signs a provider in from splice's console (Accounts, Models) or with `splice login <head>`. On November 19,
+2026 Marcos removed a stale Grok login, signed in again, and read it as a failure: the console opened no page by
+itself (fixed in 627a10907, which opens the provider's page on the press), and nothing told him plainly that the new
+login had landed. No check had ever driven a sign-in the way a person does, from the press to a turn served on the
+new login, so it could break without anyone seeing. He wants a check, for every provider splice can sign in, that
+runs before any release and fails the release when a sign-in is broken.
+
+## What the check proves, for each provider
+
+For every sign-in kind splice has (read them from the code: the `auth.kind` values the provider modules declare,
+today `chatgpt-oauth`, `grok-oauth`, `kimi-oauth`, `muse-oauth` and Claude Code's own sign-in, plus any added later;
+a new kind with no case fails the check by name):
+
+1. **The page opens.** In Chromium, on the console, a person presses Sign in on the provider's card, with nothing else
+   pressed, and a tab opens on the provider's sign-in page (for a device-code kind, the page where the code is typed,
+   with the code shown on the card). The CLI path (`splice login <head>`) opens the same page.
+2. **The login completes.** The provider's side answers as that provider does (loopback redirect with PKCE, device
+   code, a code pasted back for Claude Code's), and the card says the account is signed in, by its label, without a
+   reload. A sign-in that replaces a removed login (remove, then sign in again: Marcos's case) lands the same way.
+3. **The gateway serves a request on it.** A turn sent through splice's gateway (the door) for that provider's model
+   is answered by the provider under the login just made, carrying that login's credential and no other.
+4. **A failure says so.** A provider that refuses, a page closed half way and an expired code each end with the
+   console naming what happened, and the tab the press opened is closed when no page was ever named.
+
+The provider's side is a stand-in served by the check (an authorization server and a model endpoint in each
+provider's own shapes, made up, with made-up accounts), so the check needs no real account and no person, and runs
+unattended. It boots splice from the tree being released, through its real routes, and drives the real console.
+
+## Where it runs, and when
+
+- Before any release: `bun tools/release accept` runs it, so `release.yml` and `bun tools/release beta` both fail on
+  a broken sign-in, and the maintainer's local install path (a release built and installed on one machine without a
+  version bump) has a single command that runs the same check first. Say in `.github/CONTRIBUTING.md`, under
+  Releasing, that it runs and how to run it alone.
+- Browser runs go to a Mac (`--needs system=Darwin/arm64`). Splice's check harness
+  (`.campaign/checks/server/lib/harness.ts`) reads Linux's `/proc`; if the check boots splice through it, find a way
+  that works on the Mac, or split the run so the browser half is on a Mac and the daemon half on the Linux build box
+  (`rig remote run --to build@buildbox`), and say which. Builds and tests never run on the machine the seats run on.
+- It must be quick enough to run on every release (minutes, not an hour) and must not flake: no fixed sleeps, and a
+  timeout only where waiting for something that will never come is the failure.
+
+## How it holds
+
+- Tests check what a person sees and what a route returns (CLAUDE.md, "Tests"): the tab's address, the card's words,
+  the turn's answer and the credential the stand-in saw. No call counts.
+- Vendor facts stay in their provider module; the check's stand-ins read each provider's shapes from there or from
+  its tests, never a second copy that can drift.
+- splice never evades a provider's safety decision, and the check does not either.
+- The repository is public: every account, token and page in the check is made up. No person's login, email or
+  machine in any of it.
+
+## How it is checked
+
+The item checks are the new check itself, run against this tree (every provider passes), plus a run against a tree
+with each of these broken on purpose, in a test of the check (never left in the product): the console opens no tab on
+the press; a sign-in writes its credential where the gateway does not read it; the gateway sends a turn with another
+login's credential. Each must make the check fail, naming the provider and the step.'''
+
 [[row]]
 id = 'server-listener'
 title = 'A [server] listener that answers only keys'
@@ -7337,4 +7401,213 @@ reviews = [
 ]
 notes = [
   '2026-11-19 15:55 CT head-catalog/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'gw-retire'
+title = 'splice claude retire and restore: custom heads retired with a dated backup, and back exactly as they were'
+feature = 'head-catalog'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = '''
+A person retires custom heads with one splice command, per head or all at once, and brings any back exactly as it was with another. The head's provider and login keep serving the Splice gateway, so its models stay in every session's list under the same names.
+
+What a person sees once this is built:
+- `splice claude retire <command|key>...` (a head's command as typed, `claudex`, or its splice.toml key) and `splice claude retire --all` (every head the install still has). For each head it moves into a dated backup, and removes: the head's command link in the install's bin folder (only splice's own link, as WrapperLinks recognises it), and every setting splice wrote in the head's own Claude folder: the whole settings.json splice writes there (its model list, tier mapping, `env`, statusline and hooks: ClaudeConfigMaterializer writes all of it at each launch), splice's keys in the head's .claude.json (`additionalModelOptionsCache` and the other keys the materializer sets; the rest of that file, which Claude Code writes, stays), and the other files and links the materializer lays there (the links to shared items in `~/.claude`, splice's /login command and hook scripts). It leaves the folder's sessions and transcripts (projects/, sessions/, todos/, history) and every file splice did not write, and names each such file it left, other than session data, in its output ("left as it is, not splice's: <path>"). It never deletes a file it did not write, and edits no file of the person's.
+- The backup is `<state dir>/head-backups/<key>/<local time, YYYY-MM-DDTHH-MM-SS>/`, holding each moved file as it was, the original of each file it edited (.claude.json), the command link's target, and a manifest.json naming every entry with its original path, kind and sha256. Retiring prints where the backup is and, per head, that its models stay in `claude`'s list as their selectors (from `splice claude --json`).
+- Retiring the head `claude` runs on (a wrapped head: its command is Claude Code's own `claude`, which is never removed) puts `claude` on the Splice gateway the way `splice claude door` does, and records the lane it was on in the backup; it has no folder of its own to empty.
+- Refusal: a head a live session still runs on (what `splice sessions --json` shows as live with that head, or on the gateway with that head's command as its door command; HeadRemovalFacts.liveOn reads the same records) is refused, naming each session by id and name, and nothing of that head changes; nothing is killed. With `--all`, every head that can retire does, each refused head is named, and the exit status is 1. Exit 0 when every head named retired.
+- Nothing brings a retired command back by itself: `splice install`, `splice setup`, an upgrade and a daemon start do not lay a retired head's link again (the retired record lives in splice's state). A launch of a retired head's command (a stale link, a shell's hash) is refused before Claude Code starts: "`<command>` is retired: run `claude` and type `/model <selector>`, or bring it back with `splice claude restore <command>`". `splice claude --json` and the gateway's list keep the head's models; a turn naming its selector runs.
+- `splice claude restore <command|key>...` and `--all` put back, from the newest backup, every link, file and edited file exactly as it was (byte for byte: a file's bytes, a link's target), and the lane for `claude`'s head, and drop the retired record. A file that exists now where restore would write and differs from the backup is named and that head is left retired (exit 1): restore never overwrites what the person changed since. The backup stays where it is, and restore says so.
+- Both commands touch nothing splice did not write; such files are named instead.
+
+Files: new app/src/main/kotlin/splice/app/cli/claude/ClaudeRetire.kt (and what it needs) with the verbs added to ClaudeCommand.kt and CLAUDE_USAGE (not ClaudeSaid.kt, which gw-claude changes), the daemon's side beside HeadRemoval in app/src/main/kotlin/splice/app/head/ (a new HeadRetirement.kt; the existing RetiredHeads record is for heads removed from splice.toml, a different thing: name this one so the two never mix), the refusal of a retired head's launch in app/src/main/kotlin/splice/app/control/LaunchHeadAdapter.kt (not LaunchRoutes.kt, which gw-claude and gw-heads change), and the install's skip in features/launch/src/main/kotlin/splice/launch/install/InstallLinker.kt. The list of what the materializer writes is read from ClaudeConfigMaterializer, never copied into a second list that can drift: one place names what splice lays in a head's folder, and both the materializer and retire read it.
+
+Out of scope: the machine check (gw-check), status and doctor (gw-status).
+
+Proven by `CAMPAIGN_HERE=1 rig remote run --to build@buildbox -- bun test ./.campaign/checks/catalog/retire.test.ts`: install lays the links; a live session on a head refuses its retirement by the session's id with nothing changed; retiring removes the link and splice's settings, keeps the person's file and session, and leaves a backup; the models still run; install does not bring it back and its launch is refused naming restore; restore brings link and folder back byte for byte; `--all` retires every head (claude's head putting `claude` on the gateway) and `--all` restores them.
+
+Shared across head-catalog (decided once, the same in every item):
+- Words. Anything a person reads that this feature adds (command output, refusals, docs) calls the server the Splice gateway; code names may keep "door". The commands are `splice claude retire <command|key>... | --all`, `splice claude restore <command|key>... | --all` and `splice claude check [--json]`, beside today's `splice claude [--json] | door | head`.
+- Gateway mode, what every gateway launch sets: `ANTHROPIC_BASE_URL` the gateway's address (the `door` `splice claude --json` gives, `http://127.0.0.1:<control port>/desktop`), `ANTHROPIC_AUTH_TOKEN` the terminal's key (a bearer: no API-key approval prompt), `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`, `ANTHROPIC_MODEL` the selector the session starts on. It unsets every `CLAUDE_CODE_USE_*` switch (discovery does not run while one is set), the Mantle variables (`ANTHROPIC_BEDROCK_MANTLE_BASE_URL`, `AWS_BEARER_TOKEN_BEDROCK`), `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, and the tier variables (`ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL` and their name and description companions, `ANTHROPIC_SMALL_FAST_MODEL`, `ANTHROPIC_CUSTOM_MODEL_OPTION`). No model list of splice's anywhere: no `modelPicker`, no `availableModels` or `enforceAvailableModels`, no `modelOverrides`, no `additionalModelOptionsCache`, no tier variables, in the `--settings` overlay, the environment, or any Claude folder splice writes. Claude Desktop's Code tab keeps its Mantle door (desktop-full's), untouched.
+- The list is the one source: `DesktopLineup.picker`, read at each request, in its order. Its id for each row: a Claude model (AnthropicTiers.modelOf names it) on the row that the gateway's own routing of that bare Anthropic id lands on (DoorRouting's `served`) is listed by its bare Anthropic id (`claude-opus-5-5`), so Claude Code folds it into the built-in alias row that resolves to it; a selector containing neither `claude` nor `anthropic` (a hand-written `discovery_prefix` such as `zeta--`) is listed as `claude-<selector>`, which the gateway routes as that selector; every other row by its selector. Every listed id runs when a turn names it, and every selector of today's form keeps running.
+- A head that forwards the person's own Claude login (`auth = { kind = "client" }`, `claude` on its head) cannot go through the gateway, which never carries that login (door-default "Not in this change"). It keeps its own way to Anthropic in this release, deprecated like every head, with no model list of splice's in its launch. Every other head's command goes through the gateway (gw-heads).
+- Deprecation words, exactly. A head's launch: "`<command>` is a custom head, and custom heads are deprecated and will be removed in a coming release: run `claude` and type `/model <selector>`" (the head's pinned selector; bare `/model` when it pins none); where `claude` is not on the gateway, ": run `splice claude door`, then `claude`, and type `/model <selector>`". `splice status` and `splice doctor`, one line per head the install still has: "`<command>`: custom head, deprecated and will be removed in a coming release; run `claude` and type `/model <selector>`, or retire it with `splice claude retire <command>`", with "run `splice claude door`, then `claude`," in place of "run `claude`" where `claude` is not on the gateway.
+- Heads stay isolated while they exist (CLAUDE.md "Heads are isolated"): nothing of a head's state goes into `~/.claude` or another head's folder. Reasoning effort stays in the prompt-cache key and never varies by turn type; `mirror_reasoning` stays false. An upgrade changes no lane and retires no head (door-default decision 8).
+- The feature's goal is docs/specs/door-default.md plus the text handed to this feature (`campaign get` of any item shows it); the gateway protocol facts are in the result attached to gw-models. Checks that boot splice run on the Linux build box, which they name themselves (`rig remote run --to build@buildbox`).'''
+checks = [
+  'CAMPAIGN_HERE=1 rig remote run --to build@buildbox -- bun test ./.campaign/checks/catalog/retire.test.ts',
+]
+sources = [
+  'app/src/main/kotlin/splice/app/head/HeadRemoval.kt',
+  'app/src/main/kotlin/splice/app/head/HeadRemovalFacts.kt',
+  'app/src/main/kotlin/splice/app/head/WrapperLinks.kt',
+  'app/src/main/kotlin/splice/app/cli/claude/ClaudeCommand.kt',
+  'app/src/main/kotlin/splice/app/control/LaunchHeadAdapter.kt',
+  'features/launch/src/main/kotlin/splice/launch/install/InstallLinker.kt',
+  'integrations/claude-code/src/main/kotlin/splice/client/ClaudeConfigMaterializer.kt',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-19 16:00 CT head-catalog/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'gw-check'
+title = "splice claude check says how Claude Code starts here and that every start gets the gateway's list"
+feature = 'head-catalog'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'gw-retire',
+  'gw-heads',
+]
+guard = false
+spec = '''
+One command says how Claude Code starts on this machine and what list each start gets, so a person (or a script) can see that `claude` on the Splice gateway is the one way and the gateway's list the one list.
+
+What a person sees once this is built:
+- `splice claude check` prints, in plain lines that call the server the Splice gateway, every way Claude Code starts here and for each whether it goes through the Splice gateway and whether its session's list is the gateway's, then every model list found, then a last line: "one way, one list: `claude` on the Splice gateway" when that holds, else what stands in the way. Exit 0 when one way and one list hold, 1 otherwise. It reads only; it edits, moves or runs nothing it reports (no launcher is executed: it is read as text).
+- `splice claude check --json` gives `{"one_way": bool, "one_list": bool, "starts": [...], "lists": [...]}`:
+  - `starts`, each `{"command", "kind": "claude"|"head"|"launcher", "path": string|null, "gateway": bool, "gateway_list": bool, "why": string|null}`: `claude` (kind claude; `gateway` true on the gateway lane; on the head lane false with why "on its head, on your own Claude login"); every head command splice wrote that is still there (kind head: a head of splice.toml whose command link of splice's is in the install's bin folder; `path` the link; `gateway` and `gateway_list` as its launch is now, read from the daemon without launching anything or writing any folder: a head that forwards the person's own Claude login is `gateway` false); and every launcher on PATH that starts Claude Code (kind launcher: a regular file of at most 64 KiB starting `#!`, in a PATH folder other than the install's bin folder, whose text runs `claude`, by that word as a command or a path ending `/claude`, and is not splice's own shim or link). A launcher goes past the gateway (`gateway` false, `why` naming what it sets) when its text sets `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY`, a `CLAUDE_CODE_USE_*` switch, `ANTHROPIC_BEDROCK_*`/`ANTHROPIC_VERTEX_*` base URLs, or runs Claude Code's binary by a path other than the `claude` on PATH; a launcher that only runs `claude` goes through it. A launcher's `gateway_list` is false when the folder it names in `CLAUDE_CONFIG_DIR` holds a model list.
+  - `lists`, each `{"path", "keys": [...], "splice": bool}`: every model list that would change a session's list: in a head's own folder (settings.json `availableModels`, `enforceAvailableModels`, `modelPicker`, `modelOverrides`, its `env` tier variables (shared block), and .claude.json `additionalModelOptionsCache`; `splice` true: retiring removes them), in the person's own `~/.claude/settings.json` (and settings.local.json there), in every `CLAUDE_CONFIG_DIR` folder a launcher on PATH names, and in Claude Code's managed settings where readable (`/etc/claude-code/managed-settings.json` on Linux, `/Library/Application Support/ClaudeCode/managed-settings.json` on macOS): those are `splice` false, reported and never edited. Managed `allowedProviders` is not a list and is not reported as one.
+  - `one_way`: every start that is not `claude` is gone or goes through the gateway, `claude` is on the gateway, and no head command of splice's is left. `one_list`: every start's `gateway_list` is true and `lists` is empty.
+- On a machine whose heads were retired (gw-retire) and with nothing of the person's in the way, it says one way and one list, `starts` holding `claude` alone besides launchers, `lists` empty, and nothing of splice's left: the feature's own end check, which gw-seen runs on the installed build.
+
+Files: new app/src/main/kotlin/splice/app/cli/claude/ClaudeCheck.kt (and what it needs), its verb in ClaudeCommand.kt and CLAUDE_USAGE (after gw-retire's), and a read-only daemon route for how each command launches now, if the CLI can't tell from what the daemon already answers. Vendor facts (Claude Code's settings keys, its managed settings paths) go in integrations/claude-code/.
+
+Proven by `CAMPAIGN_HERE=1 rig remote run --to build@buildbox -- bun test ./.campaign/checks/catalog/check.test.ts`: with two heads installed it names both and says not one way; after `splice claude retire --all` one way, one list, `claude` alone, no lists, exit 0, "Splice gateway" in its words; a planted `availableModels` in `~/.claude/settings.json` named as the person's and left byte for byte; a planted launcher setting its own `ANTHROPIC_BASE_URL` named as past the gateway and left as it is; a launcher naming its own `CLAUDE_CONFIG_DIR` whose settings hold a `modelPicker`, named.
+
+Shared across head-catalog (decided once, the same in every item):
+- Words. Anything a person reads that this feature adds (command output, refusals, docs) calls the server the Splice gateway; code names may keep "door". The commands are `splice claude retire <command|key>... | --all`, `splice claude restore <command|key>... | --all` and `splice claude check [--json]`, beside today's `splice claude [--json] | door | head`.
+- Gateway mode, what every gateway launch sets: `ANTHROPIC_BASE_URL` the gateway's address (the `door` `splice claude --json` gives, `http://127.0.0.1:<control port>/desktop`), `ANTHROPIC_AUTH_TOKEN` the terminal's key (a bearer: no API-key approval prompt), `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`, `ANTHROPIC_MODEL` the selector the session starts on. It unsets every `CLAUDE_CODE_USE_*` switch (discovery does not run while one is set), the Mantle variables (`ANTHROPIC_BEDROCK_MANTLE_BASE_URL`, `AWS_BEARER_TOKEN_BEDROCK`), `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, and the tier variables (`ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL` and their name and description companions, `ANTHROPIC_SMALL_FAST_MODEL`, `ANTHROPIC_CUSTOM_MODEL_OPTION`). No model list of splice's anywhere: no `modelPicker`, no `availableModels` or `enforceAvailableModels`, no `modelOverrides`, no `additionalModelOptionsCache`, no tier variables, in the `--settings` overlay, the environment, or any Claude folder splice writes. Claude Desktop's Code tab keeps its Mantle door (desktop-full's), untouched.
+- The list is the one source: `DesktopLineup.picker`, read at each request, in its order. Its id for each row: a Claude model (AnthropicTiers.modelOf names it) on the row that the gateway's own routing of that bare Anthropic id lands on (DoorRouting's `served`) is listed by its bare Anthropic id (`claude-opus-5-5`), so Claude Code folds it into the built-in alias row that resolves to it; a selector containing neither `claude` nor `anthropic` (a hand-written `discovery_prefix` such as `zeta--`) is listed as `claude-<selector>`, which the gateway routes as that selector; every other row by its selector. Every listed id runs when a turn names it, and every selector of today's form keeps running.
+- A head that forwards the person's own Claude login (`auth = { kind = "client" }`, `claude` on its head) cannot go through the gateway, which never carries that login (door-default "Not in this change"). It keeps its own way to Anthropic in this release, deprecated like every head, with no model list of splice's in its launch. Every other head's command goes through the gateway (gw-heads).
+- Deprecation words, exactly. A head's launch: "`<command>` is a custom head, and custom heads are deprecated and will be removed in a coming release: run `claude` and type `/model <selector>`" (the head's pinned selector; bare `/model` when it pins none); where `claude` is not on the gateway, ": run `splice claude door`, then `claude`, and type `/model <selector>`". `splice status` and `splice doctor`, one line per head the install still has: "`<command>`: custom head, deprecated and will be removed in a coming release; run `claude` and type `/model <selector>`, or retire it with `splice claude retire <command>`", with "run `splice claude door`, then `claude`," in place of "run `claude`" where `claude` is not on the gateway.
+- Heads stay isolated while they exist (CLAUDE.md "Heads are isolated"): nothing of a head's state goes into `~/.claude` or another head's folder. Reasoning effort stays in the prompt-cache key and never varies by turn type; `mirror_reasoning` stays false. An upgrade changes no lane and retires no head (door-default decision 8).
+- The feature's goal is docs/specs/door-default.md plus the text handed to this feature (`campaign get` of any item shows it); the gateway protocol facts are in the result attached to gw-models. Checks that boot splice run on the Linux build box, which they name themselves (`rig remote run --to build@buildbox`).'''
+checks = [
+  'CAMPAIGN_HERE=1 rig remote run --to build@buildbox -- bun test ./.campaign/checks/catalog/check.test.ts',
+]
+sources = [
+  'app/src/main/kotlin/splice/app/cli/claude/ClaudeCommand.kt',
+  'app/src/main/kotlin/splice/app/cli/claude/ClaudeSaid.kt',
+  'app/src/main/kotlin/splice/app/head/WrapperLinks.kt',
+  'core/src/main/kotlin/splice/core/config/InstallPaths.kt',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-19 16:02 CT head-catalog/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'gw-seen'
+title = 'What Claude Code does in gateway mode is seen on the installed version and recorded in door-default'
+feature = 'head-catalog'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'gw-deprecated',
+  'gw-check',
+]
+guard = false
+spec = '''
+What Claude Code does in gateway mode is read from a real launch of the version installed on this machine, not from memory, and recorded in docs/specs/door-default.md's "Seen with Claude Code" table the way its other rows are, each with the version (`claude --version`; 2.1.326 at planning) and the day; and the feature's end check is run on the build.
+
+What is done and recorded once this is built:
+- On a throwaway daemon of this branch's build, in a HOME of its own (never this machine's own daemon, splice.toml, heads, `~/.claude` or sessions), with stand-in providers (the check harness's mocks, as door-default's rows were seen) and two heads whose models are in the gateway, one of them a `claude` head on an added Claude account: start the installed Claude Code interactively through seatd (the seatd skill; never `claude -p` or another headless run) from `claude`'s launch recipe, then from a head's command's, and look at the screen.
+- Add one row per question, each question naming gateway mode (so it reads "In gateway mode (`ANTHROPIC_BASE_URL` at the Splice gateway, discovery on), ..."), each answer with the version and the date:
+  1. whether discovery fills `/model` from the gateway's /v1/models, and what `/model` lists (the built-in rows, then the discovered ones, with their `display_name` and `description`);
+  2. how a discovered Claude model sits beside the built-in alias rows: the bare `claude-opus-5-5` folded into the alias row that resolves to it, and each model shown once. If a Claude model still shows twice, change the gateway's ids (gw-models' GatewayModels and its shared id rule) until it does not, and record both what was seen first and what is seen after;
+  3. that no sign-in screen shows (and no API-key approval prompt), in a HOME whose Claude folder is fresh;
+  4. that a selector in `ANTHROPIC_MODEL` starts the session on it over a `model` in the person's settings, and that `--model <selector>` does too;
+  5. the window the session holds for a selector (what `/context` shows as the whole), and whether `CLAUDE_CODE_MAX_CONTEXT_TOKENS` moves it: what gw-claude chose the window from;
+  6. that a head's command's session shows the same `/model` list as `claude`'s;
+  and, if seen, what Claude Code wrote to `<its Claude folder>/cache/gateway-models.json` and that a sign-out on splice's side leaves the next session's list without that head's models.
+- Then run the feature's end check on the same throwaway daemon: `splice claude retire --all`, then `splice claude check`: it says one way and one list, `claude` on the Splice gateway alone, no head command or head setting of splice's left. Put its output, with the throwaway paths in place of real ones, in the handoff.
+- The repository is public: no person's accounts, logins, launchers, paths or machine name in what is recorded. Paths read `~/...` of the throwaway HOME.
+
+Files: docs/specs/door-default.md (the table only; the decisions are gw-docs'), and GatewayModels' id rule only if item 2 needs it.
+
+Proven by `rig remote run -- bun test ./.campaign/checks/catalog/seen.test.ts`: at least six gateway-mode rows, each with a version and a date, covering `/model`, the alias rows, the sign-in screen, the starting model, the window and a head's command.
+
+Shared across head-catalog (decided once, the same in every item):
+- Words. Anything a person reads that this feature adds (command output, refusals, docs) calls the server the Splice gateway; code names may keep "door". The commands are `splice claude retire <command|key>... | --all`, `splice claude restore <command|key>... | --all` and `splice claude check [--json]`, beside today's `splice claude [--json] | door | head`.
+- Gateway mode, what every gateway launch sets: `ANTHROPIC_BASE_URL` the gateway's address (the `door` `splice claude --json` gives, `http://127.0.0.1:<control port>/desktop`), `ANTHROPIC_AUTH_TOKEN` the terminal's key (a bearer: no API-key approval prompt), `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`, `ANTHROPIC_MODEL` the selector the session starts on. It unsets every `CLAUDE_CODE_USE_*` switch (discovery does not run while one is set), the Mantle variables (`ANTHROPIC_BEDROCK_MANTLE_BASE_URL`, `AWS_BEARER_TOKEN_BEDROCK`), `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, and the tier variables (`ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL` and their name and description companions, `ANTHROPIC_SMALL_FAST_MODEL`, `ANTHROPIC_CUSTOM_MODEL_OPTION`). No model list of splice's anywhere: no `modelPicker`, no `availableModels` or `enforceAvailableModels`, no `modelOverrides`, no `additionalModelOptionsCache`, no tier variables, in the `--settings` overlay, the environment, or any Claude folder splice writes. Claude Desktop's Code tab keeps its Mantle door (desktop-full's), untouched.
+- The list is the one source: `DesktopLineup.picker`, read at each request, in its order. Its id for each row: a Claude model (AnthropicTiers.modelOf names it) on the row that the gateway's own routing of that bare Anthropic id lands on (DoorRouting's `served`) is listed by its bare Anthropic id (`claude-opus-5-5`), so Claude Code folds it into the built-in alias row that resolves to it; a selector containing neither `claude` nor `anthropic` (a hand-written `discovery_prefix` such as `zeta--`) is listed as `claude-<selector>`, which the gateway routes as that selector; every other row by its selector. Every listed id runs when a turn names it, and every selector of today's form keeps running.
+- A head that forwards the person's own Claude login (`auth = { kind = "client" }`, `claude` on its head) cannot go through the gateway, which never carries that login (door-default "Not in this change"). It keeps its own way to Anthropic in this release, deprecated like every head, with no model list of splice's in its launch. Every other head's command goes through the gateway (gw-heads).
+- Deprecation words, exactly. A head's launch: "`<command>` is a custom head, and custom heads are deprecated and will be removed in a coming release: run `claude` and type `/model <selector>`" (the head's pinned selector; bare `/model` when it pins none); where `claude` is not on the gateway, ": run `splice claude door`, then `claude`, and type `/model <selector>`". `splice status` and `splice doctor`, one line per head the install still has: "`<command>`: custom head, deprecated and will be removed in a coming release; run `claude` and type `/model <selector>`, or retire it with `splice claude retire <command>`", with "run `splice claude door`, then `claude`," in place of "run `claude`" where `claude` is not on the gateway.
+- Heads stay isolated while they exist (CLAUDE.md "Heads are isolated"): nothing of a head's state goes into `~/.claude` or another head's folder. Reasoning effort stays in the prompt-cache key and never varies by turn type; `mirror_reasoning` stays false. An upgrade changes no lane and retires no head (door-default decision 8).
+- The feature's goal is docs/specs/door-default.md plus the text handed to this feature (`campaign get` of any item shows it); the gateway protocol facts are in the result attached to gw-models. Checks that boot splice run on the Linux build box, which they name themselves (`rig remote run --to build@buildbox`).'''
+checks = [
+  'rig remote run -- bun test ./.campaign/checks/catalog/seen.test.ts',
+]
+sources = [
+  'docs/specs/door-default.md',
+]
+results = [
+  "Saved tool result (gateway-discovery.txt):\nClaude Code's gateway compatibility guide, 'Model discovery' and 'API formats' (code.claude.com/docs/en/llm-gateway-protocol.md, fetched Nov 19, 2026 by the head-catalog coordinator):\n\n## API formats\n\nA gateway must expose at least one of the following API formats to Claude Code clients. A client picks a format and points Claude Code at your gateway with the variables in the Selected by column of the table below.\n\nGoogle Cloud's Agent Platform is Google Cloud's Claude endpoint, formerly Vertex AI; its variable names keep the `VERTEX` spelling.\n\n| Format | Selected by | Endpoints | Forward unchanged |\n| :- | :- | :- | :- |\n| Anthropic Messages | `ANTHROPIC_BASE_URL` | `/v1/messages`, `/v1/messages/count_tokens` (optional) | `anthropic-beta` and `anthropic-version` request headers, plus `Authorization` when a [claude.ai login](#request-headers) authenticates the request to Anthropic |\n| Amazon Bedrock InvokeModel | `ANTHROPIC_BEDROCK_BASE_URL` with `CLAUDE_CODE_USE_BEDROCK=1` | `/model/{model}/invoke`, `/model/{model}/invoke-with-response-stream`, `/model/{model}/count-tokens` (optional) | `anthropic_beta` and `anthropic_version` request body fields |\n| Google Cloud's Agent Platform rawPredict | `ANTHROPIC_VERTEX_BASE_URL` with `CLAUDE_CODE_USE_VERTEX=1` | `:rawPredict`, `:streamRawPredict`, `count-tokens:rawPredict` (optional) | `anthropic-beta` and `anthropic-version` request headers, and the `anthropic_version` request body field |\n\n### Optional endpoints and startup traffic\n\nToken-counting endpoints are the only optional ones: when they're absent, Claude Code falls back to a character-based estimate of context usage.\n\nMatch on the path, not the full URL:\n\n* Inference requests post to `/v1/messages?beta=true`\n* The Google Cloud's Agent Platform method suffixes attach to the publisher model path, as in `/projects/{project}/locations/{location}/publishers/anthropic/models/{model}:streamRawPredict`\n\nA gateway also sees best-effort startup traffic it can reject without breaking anything. An Anthropic Messages-format gateway receives a `HEAD /api/hello` connection-warming probe, which Claude Code skips when an HTTP proxy or client certificate is configured. An Amazon Bedrock-format gateway receives a `GET /inference-profiles?type=SYSTEM_DEFINED` request and, when the configured model is an inference profile, `GET /inference-profiles/{profile}` lookups.\n\nSessions that go through a gateway aren't eligible for the HIPAA configuration. [Check how developers sign in and connect](https://code.claude.com/docs/en/hipaa-setup.md#check-how-developers-sign-in-and-connect) lists which sign-in and connection methods are. See [The HIPAA configuration behind a gateway](https://code.claude.com/docs/en/llm-gateway-rollout.md#the-hipaa-configuration-behind-a-gateway).\n\nThe [fast mode](https://code.claude.com/docs/en/fast-mode.md) availability check never appears in gateway logs: it calls `api.anthropic.com` directly rather than following `ANTHROPIC_BASE_URL`, so on a network that blocks direct egress to `api.anthropic.com`, fast mode can report a connectivity error while inference through the gateway keeps working. The [WebFetch domain safety check](https://code.claude.com/docs/en/data-usage.md#webfetch-domain-safety-check) also calls `api.anthropic.com` directly. [Use fast mode behind proxies and LLM gateways](https://code.claude.com/docs/en/fast-mode.md#use-fast-mode-behind-proxies-and-llm-gateways) covers the variables that restore it.\n\n### Settings for unrecognized model IDs\n\nTwo client-side settings change what Claude Code assumes for a model ID it doesn't recognize, whichever connection method the developer uses:\n\n* **Context window**: Claude Code assumes a 1M token context window by default since v2.1.323. To declare the real window, see [Correct the window for a gateway or custom model ID](https://code.claude.com/docs/en/model-config.md#correct-the-window-for-a-gateway-or-custom-model-id)\n* **Capabilities**: to give a gateway alias the capabilities of the model behind it, map that model's Anthropic ID to your alias with a [`modelOverrides`](https://code.claude.com/docs/en/errors#unrecognized-model-id-on-a-request) entry in the settings you distribute. For where the `ANTHROPIC_DEFAULT_*_MODEL_SUPPORTED_CAPABILITIES` variables apply, see [feature pass-through](#feature-pass-through)\n\n## Model discovery\n\nWhen `ANTHROPIC_BASE_URL` points at a gateway that exposes the Anthropic Messages format, Claude Code can query the gateway's `/v1/models` endpoint at startup and add the returned models to the `/model` picker. If you or your administrator set `replaceBuiltInOptions` in a [`modelPicker`](https://code.claude.com/docs/en/settings-reference#modelpicker) lineup, Claude Code hides the discovered models from the picker.\n\nDevelopers enable it by setting [`CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`](https://code.claude.com/docs/en/env-vars), in their own environment or through managed settings. Discovery is off by default so that gateways backed by a shared API key don't surface every model the key can access to every user.\n\n### When discovery runs\n\nDiscovery applies only to the Anthropic Messages format. It doesn't run when:\n\n* Any `CLAUDE_CODE_USE_*` provider variable is set, even if `ANTHROPIC_BASE_URL` is also set\n* `ANTHROPIC_BASE_URL` is unset or points at `api.anthropic.com`\n\nDiscovery still runs when [nonessential traffic is turned off](https://code.claude.com/docs/en/llm-gateway-connect.md#turn-off-traffic-outside-the-gateway-path), because the request goes only to your gateway. Before v2.1.257, discovery didn't run while nonessential traffic was turned off.\n\n### Request and response\n\nThe request is `GET /v1/models?limit=1000` with a timeout of 3 seconds by default, and any redirect is treated as failure so the credential can't leak to a redirect target. A gateway that responds slower than the timeout, or one that redirects `/v1/models`, even `http` to `https`, fails discovery silently; serve the endpoint directly at the configured base URL.\n\nTo give a slow gateway longer, set [`CLAUDE_CODE_GATEWAY_MODEL_DISCOVERY_TIMEOUT_MS`](https://code.claude.com/docs/en/env-vars#variables). The variable requires Claude Code v2.1.269 or later.\n\nClaude Code sends the discovery request with both credential headers below and omits a header whose value doesn't resolve. Sending both headers requires Claude Code v2.1.248 or later. Earlier versions send only `Authorization` when `ANTHROPIC_AUTH_TOKEN` is set and only `x-api-key` otherwise.\n\n* `Authorization`: `ANTHROPIC_AUTH_TOKEN` as a bearer token, otherwise the [`apiKeyHelper`](https://code.claude.com/docs/en/llm-gateway-connect#rotate-credentials-with-apikeyhelper) value as a bearer token.\n* `x-api-key`: the API key Claude Code resolved, such as `ANTHROPIC_API_KEY`. When a helper value is the only credential, this header carries it too, so the value arrives in both headers.\n\nClaude Code also sends any headers from `ANTHROPIC_CUSTOM_HEADERS`. When a custom header has a non-empty value, Claude Code sends it in place of a built-in header of the same name, matching names case-insensitively.\n\nWhen neither credential header's value resolves, Claude Code skips discovery and writes a `[gatewayDiscovery] skipped` line to the debug log of a `claude --debug` session. If you supply a credential only through `ANTHROPIC_CUSTOM_HEADERS`, Claude Code still skips discovery.\n\nClaude Code reads `id`, the optional `display_name`, and the optional `description` from each entry in the response's `data` array:\n\n```json theme={null}\n{\n  \"data\": [\n    {\n      \"id\": \"claude-sonnet-4-6\",\n      \"display_name\": \"Claude Sonnet 4.6\",\n      \"description\": \"Default model for everyday coding tasks\"\n    },\n    { \"id\": \"claude-opus-4-8\" }\n  ]\n}\n```\n\nClaude Code keeps an entry when its `id` contains `claude` or `anthropic` anywhere in the string, matched case-insensitively, and ignores the rest. Provider-prefixed IDs such as `vertex_ai/claude-sonnet-4-6` or `bedrock/anthropic.claude-sonnet-4-5` pass the filter; an ID that contains neither substring doesn't. Before v2.1.223, Claude Code kept an entry only when its `id` began with `claude` or `anthropic`, which hid provider-prefixed IDs.\n\n### Picker entries and caching\n\nThe picker is the interactive model list that opens when a developer runs `/model` in Claude Code. Each discovered entry uses `display_name` as its name when the gateway sends one that differs from the `id`. Otherwise the entry shows the model's name when Claude Code [recognizes the `id`](https://code.claude.com/docs/en/model-config#customize-pinned-model-display-and-capabilities), and the `id` when it doesn't. For example, an entry with the `id` `my-gateway-claude-sonnet-4-6` and no `display_name` appears as `Sonnet 4.6`.\n\nDiscovery adds only models that the [`availableModels` managed setting](https://code.claude.com/docs/en/settings-reference#availablemodels) allows.\n\nEach entry also shows the model's `description`, collapsed to one line. An entry without a `description` reads \"From gateway\" instead. Before v2.1.257, every discovered entry read \"From gateway\".\n\nA discovered ID doesn't get its own row when it matches a row already in the picker:\n\n* Same ID: the discovered ID exactly matches an existing row's ID, or the two IDs are spellings of the same [Fable](https://code.claude.com/docs/en/model-config.md#work-with-fable) version.\n* Same model as a built-in alias: when a discovered explicit ID names the model that a built-in alias currently resolves to, the picker shows only the alias row. For example, while `sonnet` resolves to `claude-sonnet-5-5`, a discovered `claude-sonnet-5-5` collapses into the `sonnet` row, and a discovered `claude-sonnet-5` still gets its own row.\n\nResults are cached to `~/.claude/cache/gateway-models.json`, or `%USERPROFILE%\\.claude\\cache\\gateway-models.json` on Windows, and refreshed on each startup. If you set [`CLAUDE_CONFIG_DIR`](https://code.claude.com/docs/en/env-vars), the cache lives under that directory instead. If the request fails or the gateway doesn't implement `/v1/models`, the picker falls back to the cached list from the previous startup or to the built-in model list. If your gateway serves Claude models under aliases that don't match the discovery filter, developers can add those aliases manually with the [model configuration](https://code.claude.com/docs/en/model-config.md) variables.\n\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-19 16:03 CT head-catalog/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'gw-docs'
+title = 'door-default, the README, AGENTS.md, the CHANGELOG and the skill say one gateway, one list, heads going'
+feature = 'head-catalog'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'gw-seen',
+  'gw-status',
+]
+guard = false
+spec = '''
+What a person or an agent reads says how splice now runs Claude Code: one `claude` through the Splice gateway in Claude Code's gateway mode, one model list from the gateway, and custom heads deprecated and going in a coming release, with the commands that retire, restore and check them.
+
+What is written once this is built:
+- docs/specs/door-default.md's Decisions: decision 2 (a launch on the door) becomes gateway mode as the shared block says, with why the Mantle switch went (discovery does not run while any `CLAUDE_CODE_USE_*` is set) and how each reason door-default chose Mantle for is kept (no sign-in screen; a selector in `ANTHROPIC_MODEL` winning: point at the Seen rows gw-seen wrote). Decision 4's picker rows (`modelPicker` with `replaceBuiltInOptions`) are replaced by the gateway's `/v1/models` answer: the one list, its ids (bare Anthropic ids for Claude models, folded into Claude Code's alias rows; `claude-<selector>` for a selector that names no Claude; every other by its selector), its labels, read at each session's start; and why no `modelPicker` (Claude Code's `replaceBuiltInOptions` hides discovered models) and no `availableModels`. Decision 7's "No head is removed ... no date is set for removal" is replaced: custom heads (a head's own command and its own Claude folder) are deprecated and will be removed in a coming release; every head's command goes through the gateway meanwhile with no list of its own; the launch line, `splice status` and `splice doctor` say so in the shared words; `splice claude retire`, `splice claude restore` and `splice claude check` are described (what moves, the backup, refusals, what they never touch). Decision 9's rows on `claude`'s head are said to be retired. Add that `allowedProviders`, which pins a machine to the gateway, is a managed-only Claude Code setting an organization may set in its own managed settings, and that splice never writes managed settings. The new text calls the server the Splice gateway.
+- README.md, AGENTS.md and CHANGELOG.md (its Unreleased section) say custom heads are deprecated and will be removed in a coming release, that `claude` through the Splice gateway with `/model <selector>` replaces them, that every name of today keeps working, and how to retire them (`splice claude retire --all`, `splice claude restore`, `splice claude check`). AGENTS.md's invariants say one list (the gateway's) and no model list of splice's in any launch.
+- The splice skill's reference (app/src/main/resources/manager-home/.claude/skills/splice/reference/: cli.md for the commands, heads-and-backends.md for heads and the gateway mode variables including `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY`, toml-reference.md where it describes per-head model lists) agrees with all of that.
+- The repository is public: no person's accounts, logins, launchers, home folder or machine in any of it.
+
+Files: those docs only. No code.
+
+Proven by `rig remote run -- bun test ./.campaign/checks/catalog/documented.test.ts`: door-default's decisions name discovery, /v1/models, the Splice gateway, allowedProviders, the coming removal and the three commands, and no longer the no-removal line, decision 4's `replaceBuiltInOptions` true picker or decision 2's Mantle variables; README, AGENTS.md, the CHANGELOG and the reference each say the coming removal and `splice claude retire`; no home folder named.
+
+Shared across head-catalog (decided once, the same in every item):
+- Words. Anything a person reads that this feature adds (command output, refusals, docs) calls the server the Splice gateway; code names may keep "door". The commands are `splice claude retire <command|key>... | --all`, `splice claude restore <command|key>... | --all` and `splice claude check [--json]`, beside today's `splice claude [--json] | door | head`.
+- Gateway mode, what every gateway launch sets: `ANTHROPIC_BASE_URL` the gateway's address (the `door` `splice claude --json` gives, `http://127.0.0.1:<control port>/desktop`), `ANTHROPIC_AUTH_TOKEN` the terminal's key (a bearer: no API-key approval prompt), `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`, `ANTHROPIC_MODEL` the selector the session starts on. It unsets every `CLAUDE_CODE_USE_*` switch (discovery does not run while one is set), the Mantle variables (`ANTHROPIC_BEDROCK_MANTLE_BASE_URL`, `AWS_BEARER_TOKEN_BEDROCK`), `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, and the tier variables (`ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL` and their name and description companions, `ANTHROPIC_SMALL_FAST_MODEL`, `ANTHROPIC_CUSTOM_MODEL_OPTION`). No model list of splice's anywhere: no `modelPicker`, no `availableModels` or `enforceAvailableModels`, no `modelOverrides`, no `additionalModelOptionsCache`, no tier variables, in the `--settings` overlay, the environment, or any Claude folder splice writes. Claude Desktop's Code tab keeps its Mantle door (desktop-full's), untouched.
+- The list is the one source: `DesktopLineup.picker`, read at each request, in its order. Its id for each row: a Claude model (AnthropicTiers.modelOf names it) on the row that the gateway's own routing of that bare Anthropic id lands on (DoorRouting's `served`) is listed by its bare Anthropic id (`claude-opus-5-5`), so Claude Code folds it into the built-in alias row that resolves to it; a selector containing neither `claude` nor `anthropic` (a hand-written `discovery_prefix` such as `zeta--`) is listed as `claude-<selector>`, which the gateway routes as that selector; every other row by its selector. Every listed id runs when a turn names it, and every selector of today's form keeps running.
+- A head that forwards the person's own Claude login (`auth = { kind = "client" }`, `claude` on its head) cannot go through the gateway, which never carries that login (door-default "Not in this change"). It keeps its own way to Anthropic in this release, deprecated like every head, with no model list of splice's in its launch. Every other head's command goes through the gateway (gw-heads).
+- Deprecation words, exactly. A head's launch: "`<command>` is a custom head, and custom heads are deprecated and will be removed in a coming release: run `claude` and type `/model <selector>`" (the head's pinned selector; bare `/model` when it pins none); where `claude` is not on the gateway, ": run `splice claude door`, then `claude`, and type `/model <selector>`". `splice status` and `splice doctor`, one line per head the install still has: "`<command>`: custom head, deprecated and will be removed in a coming release; run `claude` and type `/model <selector>`, or retire it with `splice claude retire <command>`", with "run `splice claude door`, then `claude`," in place of "run `claude`" where `claude` is not on the gateway.
+- Heads stay isolated while they exist (CLAUDE.md "Heads are isolated"): nothing of a head's state goes into `~/.claude` or another head's folder. Reasoning effort stays in the prompt-cache key and never varies by turn type; `mirror_reasoning` stays false. An upgrade changes no lane and retires no head (door-default decision 8).
+- The feature's goal is docs/specs/door-default.md plus the text handed to this feature (`campaign get` of any item shows it); the gateway protocol facts are in the result attached to gw-models. Checks that boot splice run on the Linux build box, which they name themselves (`rig remote run --to build@buildbox`).'''
+checks = [
+  'rig remote run -- bun test ./.campaign/checks/catalog/documented.test.ts',
+]
+sources = [
+  'docs/specs/door-default.md',
+  'AGENTS.md',
+  'app/src/main/resources/manager-home/.claude/skills/splice/reference/cli.md',
+  'app/src/main/resources/manager-home/.claude/skills/splice/reference/heads-and-backends.md',
+]
+reviews = [
+  'feature',
+]
+notes = [
+  '2026-11-19 16:03 CT head-catalog/coordinator: added; 1 of 1 checks fail, as they should before the work',
 ]

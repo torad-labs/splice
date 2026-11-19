@@ -19,6 +19,8 @@
     ".campaign/cases/tsconfig.json",
     ".campaign/checks/muse/tsconfig.json",
     ".campaign/checks/door/tsconfig.json",
+    ".campaign/checks/custom/tsconfig.json",
+    ".campaign/checks/desktop-full/tsconfig.json",
     ".campaign/checks/harness/tsconfig.json"
   ],
   "excused": {},

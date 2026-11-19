@@ -108,8 +108,9 @@ export async function session(s: Splice, command = "claude"): Promise<Session> {
   for (const u of r.unset) delete env[u];
   return {
     recipe: r,
-    url: r.env.ANTHROPIC_BEDROCK_MANTLE_BASE_URL ?? "",
-    key: r.env.AWS_BEARER_TOKEN_BEDROCK ?? "",
+    // the door as Claude Code reaches it: by Mantle's names until Nov 19, 2026, by gateway mode's after (head-catalog)
+    url: r.env.ANTHROPIC_BEDROCK_MANTLE_BASE_URL ?? (gatewayMode(r.env) ? (r.env.ANTHROPIC_BASE_URL ?? "") : ""),
+    key: r.env.AWS_BEARER_TOKEN_BEDROCK ?? (gatewayMode(r.env) ? (r.env.ANTHROPIC_AUTH_TOKEN ?? "") : ""),
     overlay,
     plugins,
     env,
@@ -118,6 +119,35 @@ export async function session(s: Splice, command = "claude"): Promise<Session> {
     settings: { ...overlay, hooks },
     cwd: s.home,
   };
+}
+
+/** Whether a launch's environment is Claude Code's gateway mode: a base URL, a bearer and discovery on, with no
+ *  provider switch (head-catalog, Nov 19, 2026). */
+export function gatewayMode(env: Record<string, string>): boolean {
+  const switches = ["CLAUDE_CODE_USE_MANTLE", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY"];
+  return (
+    env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY === "1" &&
+    !!env.ANTHROPIC_BASE_URL &&
+    !!env.ANTHROPIC_AUTH_TOKEN &&
+    !switches.some((v) => env[v] !== undefined && env[v] !== "" && env[v] !== "0")
+  );
+}
+
+/** Whether a launch puts Claude Code on the door at `door`: Mantle's switch at it, or gateway mode at it. */
+export function onDoor(x: Session, door: string): boolean {
+  const mantle = x.sets.CLAUDE_CODE_USE_MANTLE === "1" && x.sets.ANTHROPIC_BEDROCK_MANTLE_BASE_URL === door;
+  const gateway = gatewayMode(x.sets) && x.sets.ANTHROPIC_BASE_URL === door;
+  return (mantle || gateway) && x.key.length > 20;
+}
+
+/** The rows the session's `/model` lists of the door's models: the launch's picker rows, or in gateway mode what the
+ *  door answers Claude Code's discovery with the session's key (`id` as `model`, `display_name` as `label`). */
+export async function listedRows(x: Session): Promise<{ model: string; label?: string; description?: string }[]> {
+  if (!gatewayMode(x.sets)) return picker(x) ?? [];
+  const r = await fetch(`${x.url}/v1/models?limit=1000`, { headers: { authorization: `Bearer ${x.key}`, "anthropic-version": "2023-06-01" }, redirect: "manual" });
+  if (r.status !== 200) return [];
+  const rows = ((await r.json()) as { data?: { id: string; display_name?: string; description?: string }[] }).data ?? [];
+  return rows.map((row) => ({ model: row.id, label: row.display_name, description: row.description }));
 }
 
 /** The rows the session's `/model` lists in place of Claude Code's own, or null when the launch leaves the picker

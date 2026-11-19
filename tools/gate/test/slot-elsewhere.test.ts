@@ -1,7 +1,7 @@
 // Where a gradle run builds once `rig` is on PATH: on another machine, or nowhere when none takes it.
 import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { machine as arch, tmpdir, type } from "node:os";
 import { join } from "node:path";
 import { runUnderSlot } from "../src/lib/slot.ts";
 
@@ -77,6 +77,13 @@ describe("a gradle run with rig on PATH", () => {
     ]);
   });
 
+  test("a run that tests goes to a machine of this one's system, so its verdict is the one it would have here", async () => {
+    const m = machine();
+    await m.run(["-q", ":app:test"], { RIG_STATUS: '{"exit":0}', RIG_EXIT: "0" });
+    const asked = m.rigAsked()!;
+    expect(asked[asked.indexOf("--needs") + 1]).toBe(`system=${type()}/${arch()}`);
+  });
+
   test("no machine with room once the slot's wait is over: the run fails 75, and nothing builds here", async () => {
     const m = machine();
     const status = await m.run([":app:test"], {
@@ -105,6 +112,8 @@ describe("a gradle run with rig on PATH", () => {
     expect(m.builtHere()).toBe(false);
     const asked = m.rigAsked()!;
     expect(asked[asked.indexOf("--fetch") + 1]).toBe("app/build/libs/app-all.jar");
+    // the jar is the same whichever system builds it, so any machine may take it
+    expect(asked).not.toContain("--needs");
     expect(asked.slice(asked.indexOf("--") + 1)).toEqual([
       "bun", "tools/gate", "slot", "elsewhere-test", "--", ":app:shadowJar", "--quiet",
     ]);

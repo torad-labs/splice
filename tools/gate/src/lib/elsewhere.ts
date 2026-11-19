@@ -9,6 +9,11 @@
 // that builds the jar all take this path. A task whose file is read here (the fat jar) names it with --fetch, and rig
 // brings it back once the run there passes.
 //
+// A run goes to a machine of this one's system (`Linux/x86_64`, `Darwin/arm64`), so moving it never changes its
+// verdict: the suite is written for, and judged on, the system it runs on. A whole-suite run that rig placed on a Mac
+// failed ten Linux tests (ones that read /proc, or open a socket under a path longer than macOS allows). A run that
+// only builds the fat jar goes to any machine, since the jar is the same whichever system builds it.
+//
 // Once rig is there, a run does not fall back to this machine. When rig started nothing because no machine had room,
 // the copy there was busy or a machine did not answer, the slot asks again every RETRY_MS for as long as the slot
 // waits for its lock (GRADLE_SLOT_WAIT_S); a connection lost mid-run is asked again the same way. Then, or at once
@@ -23,7 +28,7 @@
 //   - an argument names a path on this machine (`-p /tmp/…`, an init script): the other machine has no such path.
 // A signal while it runs ends the run there through rig, and nothing then runs here.
 import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { machine, tmpdir, type } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { exitForSignal, exitStatusOf } from "./status.ts";
 
@@ -129,12 +134,16 @@ async function rigRun(
   for (const [key, value] of Object.entries(run.env)) if (typeof value === "string") env[key] = value;
   // rig gives the run there only the variables --env names: this one tells the slot there to build where it stands.
   env[BUILD_HERE] = "1";
+  // uname's names, which are rig's: Linux/x86_64, Darwin/arm64
+  const system = `${type()}/${machine()}`;
+  const jarOnly = run.args.every((arg) => arg.startsWith("-") || FETCHED.some((it) => it.task.test(arg)));
   const argv = [
     rig, "remote", "run", "--dir", run.buildRoot, "--env", BUILD_HERE, "--status-fd", String(STATUS_FD),
+    ...(jarOnly ? [] : ["--needs", `system=${system}`]),
     ...fetched.flatMap((path) => ["--fetch", path]),
     "--", "bun", "tools/gate", "slot", run.label, "--", ...run.args,
   ];
-  console.error(`gradle-slot: ${run.label} goes to another machine through rig`);
+  console.error(`gradle-slot: ${run.label} goes to another ${jarOnly ? "" : `${system} `}machine through rig`);
   const child = Bun.spawn(argv, { cwd: run.buildRoot, env, stdio: ["inherit", "inherit", "inherit", statusFd] });
   let received: NodeJS.Signals | undefined;
   const signals: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];

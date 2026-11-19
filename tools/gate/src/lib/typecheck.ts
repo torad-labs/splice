@@ -20,8 +20,8 @@
  * loads nothing — is exit 2, never a pass.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { isAbsolute, join, relative } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { isAbsolute, join } from "node:path";
 
 export const CONFIG = "tools/gate/config/typecheck.json";
 
@@ -71,7 +71,19 @@ export function trackedSources(root: string): string[] {
   return r.stdout.split("\0").filter((p) => p !== "").sort();
 }
 
-function runProgram(root: string, compiler: string, program: string): ProgramResult {
+/** The tracked file a line tsc listed names, read from the end, or undefined for any other file. tsc lists each file by
+ *  its absolute path where it ran: `/private/var/…` for `/var/…` on macOS, and the other machine's copy of the tree
+ *  when the host's bunx sent the compiler to one (Nov 19, 2026: every program then loaded "zero" files here). */
+function trackedPathOf(line: string, tracked: ReadonlySet<string>): string | undefined {
+  if (line.includes("/node_modules/")) return undefined;
+  for (let at = line.indexOf("/"); at !== -1; at = line.indexOf("/", at + 1)) {
+    const rest = line.slice(at + 1);
+    if (tracked.has(rest)) return rest;
+  }
+  return undefined;
+}
+
+function runProgram(root: string, compiler: string, program: string, tracked: ReadonlySet<string>): ProgramResult {
   const started = performance.now();
   // The compiler runs by its plain command through bunx, never by its path, so a host build wrapper can take each run
   // into its check queue like every other heavy tool. With
@@ -82,15 +94,13 @@ function runProgram(root: string, compiler: string, program: string): ProgramRes
   if (r.error) throw new WallError(`typecheck: ${program}: could not start ${compiler} (${r.error.message})`);
   const files = new Set<string>();
   const diagnostics: string[] = [];
-  // tsc lists each file by its real path: on macOS a root under `/var/…` is listed as `/private/var/…`.
-  const realRoot = realpathSync(root);
   for (const line of (r.stdout + r.stderr).split("\n")) {
     if (line === "") continue;
     if (PROGRAM_ERROR.test(line)) throw new WallError(`typecheck: ${program}: ${line}`);
     if (DIAGNOSTIC.test(line)) diagnostics.push(line);
     else if (isAbsolute(line)) {
-      const rel = relative(realRoot, line);
-      if (!rel.startsWith("..") && !rel.split("/").includes("node_modules")) files.add(rel);
+      const rel = trackedPathOf(line, tracked);
+      if (rel !== undefined) files.add(rel);
     }
   }
   if (r.status !== 0 && diagnostics.length === 0) {
@@ -105,7 +115,7 @@ export function wall(root: string, config: TypecheckConfig = loadConfig(root)): 
   if (tracked.length === 0) throw new WallError("typecheck: enumerated ZERO tracked TypeScript files — the source is gone");
   const trackedSet = new Set(tracked);
 
-  const results = config.programs.map((p) => runProgram(root, config.compiler, p));
+  const results = config.programs.map((p) => runProgram(root, config.compiler, p, trackedSet));
   const covered = new Set<string>();
   const byFile = new Map<string, Set<string>>();
   for (const res of results) {

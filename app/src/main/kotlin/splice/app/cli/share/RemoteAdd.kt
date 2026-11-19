@@ -156,9 +156,10 @@ internal class RemoteAdd(
 
     /** Why one command's address on [server], a machine this laptop holds no key for, is not added: the add of its
      *  door when it answers one, even one still starting; the door read's own words when it doesn't (it can't be
-     *  reached, or a team server wants a key). */
+     *  reached, or a team server wants a key). The door is asked as the box-alone add asks it, on the share port when
+     *  [server] names none; the add suggested keeps [server] as it was typed. */
     private suspend fun oneOnDoor(server: String, name: String?): String {
-        val why = when (val read = asks.directory.door(server)) {
+        val why = when (val read = asks.directory.door(names.onSharePort(server))) {
             is Asked.Had -> null
             is Asked.Refused -> read.why.takeUnless { DOOR_STARTING in it }
         }

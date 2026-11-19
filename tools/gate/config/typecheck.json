@@ -27,7 +27,8 @@
     ".campaign/checks/harness/tsconfig.json",
     ".campaign/checks/modes/tsconfig.json",
     ".campaign/checks/reply-stream/tsconfig.json",
-    ".campaign/checks/reply-view/tsconfig.json"
+    ".campaign/checks/reply-view/tsconfig.json",
+    ".campaign/checks/signin-e2e/tsconfig.json"
   ],
   "excused": {},
   "baseline": {}

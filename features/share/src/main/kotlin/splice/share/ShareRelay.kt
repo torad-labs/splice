@@ -1,6 +1,6 @@
-// NEW: LAN share (docs/specs/lan-share.md). A request from another machine's Claude Code, handed to this machine's head
-// on loopback (a turn) or to its control plane (a statusline), with this machine's turn key in place of whatever the
-// other machine sent, and the answer streamed back as it arrives. A head that takes the caller's own login gets the
+// NEW: LAN share (docs/specs/lan-share.md). A turn from another machine's Claude Code, or from a caller of the door,
+// handed to this machine's head on loopback with this machine's turn key in place of whatever the caller sent, and
+// the answer streamed back as it arrives. A head that takes the caller's own login gets the
 // node's word instead of the turn key, and its pool sends a login it holds. The head runs the turn as for a session here:
 // its admission, account selection, cooldowns and honest failures all apply unchanged, and no credential of any
 // provider leaves this process. The answer goes back as HeadAnswers gives it: an event stream as it arrives, any other
@@ -34,10 +34,8 @@ package splice.share
 import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.httpMethod
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.withContext
 import splice.core.config.LAUNCH_PROOF_HEADER
 import splice.core.config.TurnKey
 import splice.core.pool.PREFERRED_UPSTREAM_HEADER
@@ -48,7 +46,6 @@ import splice.core.turn.TURN_DOOR_HEADER
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
-import splice.core.wire.HttpStatus
 import splice.upstream.transport.TransportFailures
 import java.net.URI
 import java.net.http.HttpRequest
@@ -72,10 +69,7 @@ public data class HeadTurn(
 
 public class ShareRelay(
     private val turnKey: TurnKey,
-    private val controlPort: Int,
     private val machine: String,
-    /** Blocking work runs here: what a statusline's admission reads. No wait on a head does (RelayClient). */
-    private val io: CoroutineDispatcher,
     private val log: LogSink,
     private val speaker: RelaySpeaker = RelaySpeaker(ShareErrors.voice, "share"),
     /** What a kept-alive client's silences are timed on. */
@@ -87,17 +81,10 @@ public class ShareRelay(
     private val streamed = StreamedBodies()
     private val failures = TransportFailures()
 
-    /** What a statusline's body passes before it is relayed: the listener pins the session it names to the login the
-     *  address chose, so the line shows that login from its first draw, before the session's first turn. */
-    internal fun interface StatuslineAdmission {
-        /** Why [body]'s statusline may not be drawn, or null once it may. */
-        fun refusal(body: ByteArray): String?
-    }
-
     /** This relay with [voice] for its refusals: the same machine and the same heads, for a client that reads errors
      *  in another shape. */
     public fun speaking(voice: RefusalVoice): ShareRelay =
-        ShareRelay(turnKey, controlPort, machine, io, log, speaker.copy(errors = voice), clock)
+        ShareRelay(turnKey, machine, log, speaker.copy(errors = voice), clock)
 
     /** [call]'s body, read under [head]'s own limits: null once it is refused, the way the head would refuse it. */
     public suspend fun sent(call: ApplicationCall, head: SharedHead): ByteArray? =
@@ -153,18 +140,6 @@ public class ShareRelay(
         val target = URI.create("http://127.0.0.1:${head.port}${turn.path}")
         val request = request(call, target, body, signed) { it !in turn.held }
         forward(call, request, who, ClientWait(turn.keepalive?.takeIf { streamed.asks(body) }, whole = whole))
-    }
-
-    /** The control plane's statusline for [head], fed the session's JSON as Claude Code feeds its statusline, once
-     *  [admission] has read the body: a refusal it returns is answered instead. */
-    internal suspend fun statusline(call: ApplicationCall, head: SharedHead, admission: StatuslineAdmission) {
-        val body = body(call, STATUSLINE_BODY_MAX_BYTES, STATUSLINE_READ_MS) ?: return
-        val refusal = withContext(io) { admission.refusal(body) }
-        if (refusal != null) return errors.refuse(call, HttpStatus.BAD_REQUEST, refusal)
-        val who = "$machine's statusline for ${head.command}"
-        val signed = mapOf(HttpHeaders.Authorization to "Bearer ${turnKey.get()}")
-        val target = URI.create("http://127.0.0.1:$controlPort/statusline/${head.key}")
-        forward(call, request(call, target, body, signed), who)
     }
 
     /** [body] for [target], with the [signed] headers in place of whatever the other machine sent under those names:
@@ -263,10 +238,3 @@ public class ShareRelay(
 // an OpenAI-style client is given the same second, for the same reasons. The second is for the first byte of an
 // answer, not for its response headers, which some model servers send before they prefill.
 private const val HEAD_SOON_MS = 1_000L
-
-// why: Claude Code's statusline input is one session's JSON, a few KiB; 256 KiB holds it with room, and nothing larger
-// is read before it is refused.
-private const val STATUSLINE_BODY_MAX_BYTES = 256 * 1024
-
-// why: that JSON arrives in one or two packets on a LAN; a statusline still unfinished after five seconds is refused.
-private const val STATUSLINE_READ_MS = 5_000L

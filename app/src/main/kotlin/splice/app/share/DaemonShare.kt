@@ -6,7 +6,6 @@
 // and by server mode; since share-door-only (Nov 19, 2026) the share listener offers none of them on its own.
 package splice.app.share
 
-import splice.accounts.pool.HeadAccountPinSource
 import splice.app.auth.claude.OWN_SIGN_IN_LABEL
 import splice.app.control.ManagedHead
 import splice.client.ClaudePolicy
@@ -139,9 +138,6 @@ internal class ManagedSharedHeads(
 
         override fun logins(): List<String> =
             head.authSurface.accountPool?.view(null)?.accounts?.map { it.label }.orEmpty()
-
-        override fun pin(login: String, session: String): Boolean =
-            (head.authSurface.accountPool as? HeadAccountPinSource)?.pin(login, session) ?: false
 
         override fun maxRequestBytes(): Int = config.getConfig(key).maxRequestBytes
 

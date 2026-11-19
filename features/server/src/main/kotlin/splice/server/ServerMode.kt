@@ -31,12 +31,10 @@ internal class ServedHeads(private val all: SharedHeads, private val commands: L
     override fun offered(): List<SharedHead> = all.offered().filter { it.command in commands || it.key in commands }
 }
 
-/** How the listener reaches this machine's heads: the turn key they admit, the control port beside them, and the board
- *  they say on how each turn the listener handed them went (F5); and the environment a bucket export's key is read
- *  from (F5). */
+/** How the listener reaches this machine's heads: the turn key they admit, and the board they say on how each turn the
+ *  listener handed them went (F5); and the environment a bucket export's key is read from (F5). */
 public data class ServerReach(
     val turnKey: TurnKey,
-    val controlPort: Int,
     val served: ServedTurnBoard = ServedTurnBoard(),
     val env: EnvReader = EnvReader { null },
 )
@@ -100,7 +98,7 @@ public class ServerMode(
             keys = keys,
             limits = limits,
             heads = served,
-            relay = ShareRelay(reach.turnKey, reach.controlPort, heads.machine, io, log, speaker, RelayClock(waiter)),
+            relay = ShareRelay(reach.turnKey, heads.machine, log, speaker, RelayClock(waiter)),
             people = people,
             upstreams = upstreamApi,
             books = books.open(reach, metrics),

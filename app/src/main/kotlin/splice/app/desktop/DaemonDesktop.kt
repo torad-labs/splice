@@ -25,7 +25,6 @@ import splice.share.RefusalVoice
 import splice.share.RelaySpeaker
 import splice.share.ShareMachine
 import splice.share.ShareRelay
-import splice.upstream.codemode.ProcessDispatchers
 
 internal class DaemonDesktop(
     private val topology: Topology,
@@ -59,10 +58,9 @@ internal class DaemonDesktop(
             relays.mapNotNull { (headKey, relay) -> heads[headKey]?.let { it to relay } }
         }
         val voice = RefusalVoice(DESKTOP_ERROR_PREFIX)
-        val io = ProcessDispatchers().io()
-        val relay = ShareRelay(turnKey, controlPort, machine, io, log, RelaySpeaker(voice, DESKTOP_TAG))
+        val relay = ShareRelay(turnKey, machine, log, RelaySpeaker(voice, DESKTOP_TAG))
         val terminalVoice = RelaySpeaker(RefusalVoice(CLAUDE_ERROR_PREFIX), TERMINAL_TAG)
-        val terminalRelay = ShareRelay(turnKey, controlPort, machine, io, log, terminalVoice)
+        val terminalRelay = ShareRelay(turnKey, machine, log, terminalVoice)
         val lineups = DesktopHeads(running)
         val door = "http://127.0.0.1:$controlPort$DOOR_PATH"
         // A selector, by the discovery prefixes of the heads in splice.toml; an Anthropic ID never is one, whatever a
@@ -76,11 +74,11 @@ internal class DaemonDesktop(
         val switch = DesktopSwitch(records, key, DesktopSettingsFile(), lane, selectors, log)
         switch.tidy()
         val headLaneVoice = RelaySpeaker(terminalVoice.errors, HEAD_LANE_TAG)
-        headLane.open(ShareRelay(turnKey, controlPort, machine, io, log, headLaneVoice), lineups)
+        headLane.open(ShareRelay(turnKey, machine, log, headLaneVoice), lineups)
         val callers = listOf(DesktopCaller(relay, key, records, log), terminal)
         val doorway = DesktopDoor(callers, lineups, lane)
         val networkVoice = RelaySpeaker(RefusalVoice(NETWORK_ERROR_PREFIX), NETWORK_TAG)
-        val networkRelay = ShareRelay(turnKey, controlPort, machine, io, log, networkVoice)
+        val networkRelay = ShareRelay(turnKey, machine, log, networkVoice)
         network.open(doorway, NetworkCaller(networkRelay, lane, machine), lane, PickerRows(claude::rows), machine)
         opened = DesktopService(doorway, switch, lane, lineups, records)
     }

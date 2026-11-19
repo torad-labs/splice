@@ -72,8 +72,6 @@ internal class DoorPickerRowsTest {
 
         override fun logins(): List<String> = emptyList()
 
-        override fun pin(login: String, session: String): Boolean = false
-
         override fun maxRequestBytes(): Int = 0
 
         override fun requestReadTimeoutMs(): Long = 0

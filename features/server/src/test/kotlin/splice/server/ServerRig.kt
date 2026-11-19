@@ -46,8 +46,6 @@ internal class StandInHead(
 
     override fun logins(): List<String> = emptyList()
 
-    override fun pin(login: String, session: String): Boolean = false
-
     override fun maxRequestBytes(): Int = 1_000_000
 
     override fun requestReadTimeoutMs(): Long = 5_000
@@ -88,7 +86,7 @@ internal class ServerRig(
 
             override fun offered(): List<SharedHead> = heads
         }
-        val reach = ServerReach(TurnKey(MgmtKey(StatePaths(baseOverride = state))), TestPorts.reserve(), board)
+        val reach = ServerReach(TurnKey(MgmtKey(StatePaths(baseOverride = state))), board)
         val opened = ServerMode(server, state.resolve("server"), Dispatchers.IO, log, clock, upstreams, waiter)
         mode = opened
         opened.open(ServerAddress("127.0.0.1", port), machine, reach, state, signinSecret)

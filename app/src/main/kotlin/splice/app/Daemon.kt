@@ -330,7 +330,7 @@ public class Daemon(
         // door-network: it answers the door too, which opens below, so a turn that comes first is told to wait.
         share.open(desktop.network)
         // And the server listener, with its keys: `splice server key create` asks the control plane for them.
-        server.open(heads, controlPort, headServerFactory.served)
+        server.open(heads, headServerFactory.served)
         controlPlane.serverMode = server
         // The desktop door, on the control port, choosing among these heads.
         desktop.open(heads, controlPort)

@@ -488,7 +488,8 @@ class LanShareCliTest {
     /** The box [status] prints the add for: `http://<host>:<share port>`. */
     private fun server(status: String): String {
         val printed = Regex("""splice remote add (http://\S+:$sharePort)(?=\s|$)""")
-        return checkNotNull(printed.find(status)?.groupValues?.get(1)) { "no add line in\n$status" }
+        val plain = status.replace(Regex("\u001b\\[[0-9;]*m"), "")
+        return checkNotNull(printed.find(plain)?.groupValues?.get(1)) { "no add line in\n$status" }
     }
 }
 

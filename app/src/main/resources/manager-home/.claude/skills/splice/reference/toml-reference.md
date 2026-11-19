@@ -92,7 +92,7 @@ core/src/main/kotlin/splice/core/config/ConfigService.kt (coerceRejects, lines 2
 | `[projects."<root>"]` | map of project tables | standing prompts by working directory |
 | `[capabilities.<name>]` | map of capability tables | work splice runs before a session's first turn goes upstream (section 10) |
 | `[share]` | table | LAN share, the server's side: offers this machine's heads on its LAN (below) |
-| `[remote.<command>]` | map of tables | LAN share, a node's side: a command that runs on another machine's head (below) |
+| `[remote.<command>]` | map of tables | a node's side: a command that runs on another machine's door, or a team server's command (below) |
 
 `[share]` and `[remote.<command>]` are written by `splice share` and `splice remote` (cli.md, "share and remote"), which also
 restart a running daemon; the daemon reads them only at its start.
@@ -102,7 +102,7 @@ restart a running daemon; the daemon reads them only at its start.
 | `[share]` `enabled` | bool | false | the share listener opens on this machine's LAN, with no login, token or encryption: any device there can run these heads |
 | `[share]` `port` | int | 3097 | the LAN port; `splice share on` refuses one another program holds |
 | `[share]` `hostnames` | array of strings | empty | names for this machine beyond its host name and `.lan`, `.local`, `.home` and `.internal`, such as one a router hands out under another domain |
-| `[remote.<command>]` `url` | string | none | the address `splice share status` prints on the server, `http://<server>/<head>`, optionally ending `?auth=<login>` (run on that login) and `?models=<id>,<id>` (show only those); nothing else is kept, no credential or model copy |
+| `[remote.<command>]` `url` | string | none | `http://<box>:3097/door`, written by `splice remote add http://<box>`, or a team server's `https://<server>/<command>` (server mode, written by `splice remote add <server>` after `splice login`); nothing else is kept, no credential or model copy. An address from before that names one command of a LAN machine still loads, and its launch says what replaces it |
 
 Source: core/src/main/kotlin/splice/core/topology/LanShareConfig.kt; splice.example.toml ("LAN share"); docs/specs/lan-share.md.
 

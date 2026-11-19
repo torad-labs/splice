@@ -62,8 +62,8 @@ You: `free` (run it), `ask` (person's yes first), `person` (the person runs it i
 | `setup` | Guided first-run flow; writes TOML, installs commands, may restart | none | no | yes | person, never you |
 | `init` | Writes the starter `splice.toml` if absent, and the MCP hub env file on Linux | none | no | no | ask |
 | `peer` | Named peers every Claude Code session can message: register, list, revoke, rotate, webhooks, per-peer send limits, send and read as one, and a Codex thread's hooks | `register <name>`, `list`, `revoke <name>`, `rotate <name>`, `webhook set\|clear\|test`, `limit <name> <per-minute> <burst>\|--default`, `send --as`, `inbox --as`, `status --as`, `codex attach\|detach` | yes | yes (`--as` verbs use the peer's own key file) | `list`: free. Every other verb: ask |
-| `share` | LAN share, the server's side: offers this machine's heads to the person's other machines. `on` and `off` write `[share]` in `splice.toml` and restart a running daemon; `status` prints each command's address | `on [--port N]`, `off`, `status` (no word is `status`) | no (`status` asks the running daemon; a running daemon is restarted) | no | `on`, `off`: ask (they restart); `status`: ask (read-only) |
-| `remote` | LAN share, a node's side: commands this machine runs on another machine's heads. `add` writes one `[remote.<command>]` line and links the command, `remove` takes both out, each restarting a running daemon; the bare verb lists them and whether each server answers | `[list]`, `add <address> [--as <command>]`, `remove <command>` | no (a running daemon is restarted) | no | `add`, `remove`: ask (they restart); `list`: ask (read-only) |
+| `share` | The door on the network, the box's side: puts this machine's door on the person's other machines' LAN and tailnet. `on` and `off` write `[share]` in `splice.toml` and restart a running daemon; `status` prints the door and the one `splice remote add http://<box>` for it | `on [--port N]`, `off`, `status` (no word is `status`) | no (`status` asks the running daemon; a running daemon is restarted) | no | `on`, `off`: ask (they restart); `status`: ask (read-only) |
+| `remote` | A node's side: commands this machine runs on another machine's door (or a team server's commands). `add` writes one `[remote.<command>]` line and links the command, `remove` takes both out, each restarting a running daemon; the bare verb lists them and whether each door answers | `[list]`, `add <address> [--as <command>]`, `remove <command>` | no (a running daemon is restarted) | no | `add`, `remove`: ask (they restart); `list`: ask (read-only) |
 | `install` | Links head wrapper commands into `~/.local/bin`; with no head or `--all` on Linux it also lays splice's systemd user units | `[<head>\|--all]` | no | no | ask |
 | `uninstall` | Removes head wrapper links (never the jar, never config); with no head or `--all` on Linux it also stops, disables and removes the systemd user units splice laid | `[<head>\|--all]` | no | no | ask |
 | `daemon` | Runs the daemon in the foreground (default with no verb) | none | is the daemon | no | never |
@@ -531,31 +531,36 @@ never exits, so do not run it in your pane.
 Source: `app/.../cli/peer/PeerCommand.kt`, `PeerArgs.kt` (`PEER_USAGE`), `app/.../control/mount/PeersMount.kt`,
 `docs/specs/peer-messaging.md`, `docs/peers.md`.
 
-### share and remote (LAN share)
+### share and remote (the door on the network)
 
 ```
-splice share on [--port N]       # on the machine that holds the logins
+splice share on [--port N]                          # on the machine that holds the accounts
 splice share status
 splice share off
-splice remote add http://devbox.lan:3097/claudex [--as <command>]   # on the machine that runs them
+splice remote add http://devbox.lan:3097 [--as <command>]   # on the machine that runs on it
 splice remote
-splice remote remove claudex
+splice remote remove claude
 ```
 
 `splice share on` writes `[share] enabled = true` (and `port`, default 3097) into `splice.toml`, restarts a running daemon so
-its LAN listener opens, and prints, for each command this machine offers, the address another machine adds it by.
-Anyone on that LAN can then run those heads with no login, token or encryption, so it is the person's decision, and it
-refuses a port another program holds before it changes the file. `splice share off` turns it off the same way;
-`splice share status` asks the running daemon what it offers. On the other machine, `splice remote add <address>` checks
-the address against the server, writes one `[remote.<command>] url = "..."` line (the address may end in
-`?auth=<login>` to run on that login and `?models=<id>,<id>` to show only those models), links the command like any
-head's and restarts a running daemon. A remote command holds the address and nothing else: no credential, no token,
-no copy of the server's models. `splice remote` lists them, each with whether its server answers now;
-`remove <command>` takes the line and the link out. All of these edit `splice.toml` and restart the daemon, which cuts
-turns in flight, so ask first and say so.
+its listener opens, and prints the door: its address, how many models it serves, the one
+`splice remote add http://<box>` to run on another machine, and the three variables a Claude Code without splice
+runs on it with. While the door is still starting it says so. Anyone on that LAN or tailnet can then run on its
+accounts with no login, token or encryption, so it is the person's decision, and it refuses a port another program holds
+before it changes the file. `splice share off` turns it off the same way; `splice share status` asks the running daemon
+again. On the other machine, `splice remote add http://<box>` (the share port is the default) checks the box's door,
+writes one `[remote.claude] url = "http://<box>:3097/door"` line (`--as <command>` names another command than
+`claude`), links it and restarts a running daemon; its `/model` then lists every model the box serves. A remote
+command holds the address and nothing else: no credential, no token, no copy of the box's models. An address naming
+one command of a box this machine holds no key for is refused with the add for its door: a box shares its door alone.
+`splice remote` lists each with whether its door answers and how many models it serves; `remove <command>` takes the
+line and the link out. All of these edit `splice.toml` and restart the daemon, which cuts turns in flight, so ask first
+and say so. A team's server (server mode) is added with a key instead: `splice login <server>`, then
+`splice remote add <server>`.
 
-Source: `app/.../cli/share/ShareCommand.kt`, `RemoteCommand.kt`, `ShareRestart.kt`, `core/.../topology/LanShareConfig.kt`,
-`docs/specs/lan-share.md`, `app/src/main/resources/splice.example.toml` ("LAN share").
+Source: `app/.../cli/share/ShareCommand.kt`, `RemoteCommand.kt`, `RemoteAdd.kt`, `ShareRestart.kt`,
+`core/.../topology/LanShareConfig.kt`, `docs/specs/door-network.md`, `app/src/main/resources/splice.example.toml`
+("share").
 
 ### init
 

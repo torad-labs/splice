@@ -1,6 +1,12 @@
 # LAN share: Claude Code on one machine, running on another machine's heads
 
-- Status: rebuilt on the 2026-10-24 decision (below). The first build (phases 1 and 2, 2026-10-22 to
+- Status: superseded by `docs/specs/door-network.md` since 2026-11-19 (share-door-only: a machine shares its door, and
+  no command at an address of its own). A machine's other machines now run plain `claude` on its door after one
+  `splice remote add http://<box>`. What follows is the record of the per-command share. What server mode still relies
+  on from it stays as written here: LanAdmission (who is on the LAN), the address grammar in
+  `core/.../topology/LanShareConfig.kt` (which keeps reading `auth=` and `models=`, so files written before still
+  load), the refusal voice, and the relay and SharedLaunch, which server mode serves to key holders.
+- Rebuilt on the 2026-10-24 decision (below). The first build (phases 1 and 2, 2026-10-22 to
   10-24) relayed through a head on the using machine and copied tokens, models and sessions to it; commit
   c830a4250 removed it, and this spec starts again from the goal.
 - Overturns: the `docs/specs/v0.4.0.md` boundary "Preserve the single-user, loopback product boundary.

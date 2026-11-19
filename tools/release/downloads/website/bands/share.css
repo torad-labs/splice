@@ -207,6 +207,7 @@
   background: var(--obj-sunk); border: 2px solid var(--ink); border-radius: var(--r-in); box-shadow: 3px 3px 0 var(--c);
   font: 500 var(--pg-t-2)/1.2 var(--font-data); color: var(--text);
 }
+.sh-ready li:only-child { grid-column: 1 / -1; }
 .sh-ready b { font-weight: 500; color: var(--text); min-width: 0; white-space: nowrap; }
 .sh-rdot { flex: none; width: 1.5em; height: 1.5em; display: grid; place-items: center; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 2px var(--ink), 0 0 8px var(--c); font: 700 var(--pg-t-1)/1 var(--font-name); font-style: normal; color: var(--wall); }
 .sh-rc { --c: var(--text-mute); margin-left: auto; font-size: var(--pg-t-1); }

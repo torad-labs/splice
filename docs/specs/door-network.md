@@ -13,9 +13,9 @@ per head; and the tailnet is part of "the network", which reverses the Oct 24 "T
 
 ## What a person sees
 
-- On the box: `splice share on` (the share listener, port 3097) now also answers the door. `splice share status` prints
-  the door's address, how many models it serves, the one command another machine runs, and the three variables a Claude
-  Code without splice runs on it.
+- On the box: `splice share on` (the share listener, port 3097) answers the door, and since share-door-only nothing
+  else. `splice share status` prints the door's address, how many models it serves, the one command another machine
+  runs, and the three variables a Claude Code without splice runs on it.
 - On another machine: `splice remote add http://<box>` and its plain `claude` runs on the box's door. `/model` lists
   every model the box serves, labelled `splice · <command> on <box>`. The session runs over that machine's own
   `~/.claude`, and no credential lands there.
@@ -25,7 +25,8 @@ per head; and the tailnet is part of "the network", which reverses the Oct 24 "T
 - On the box itself the same door answers at `http://127.0.0.1:<control_port>/door`, for its own `claude` and its
   own Claude Desktop, each with its key. A call at the share listener that presents one of those keys is answered
   as that caller.
-- A machine that answers no door (an older splice) is added as before, one command per head.
+- A machine that answers no door (an older splice) is not added: `splice remote add` says why, in the door read's own
+  words (it can't be reached, its door is still starting, or it answers none), and writes nothing.
 
 ## Decisions
 
@@ -33,8 +34,8 @@ per head; and the tailnet is part of "the network", which reverses the Oct 24 "T
 
 `/door/launch` (GET) and `/door/v1/messages`, `/door/v1/messages/count_tokens` (POST) on the share listener. No head
 may be offered under the name `door`. Every request passes the share listener's admission first, then, for a turn, the
-JSON-only rule every turn there has. A daemon with no door answers 404 naming the machine; a door whose heads are still
-starting answers 503 saying when it opens.
+JSON-only rule every turn there has. A door whose heads are still starting answers 503 saying when it opens. Every
+daemon that shares runs a door, and since share-door-only it answers nothing else but its name at `/` (decision 5).
 
 ### 2. Who may reach it: where a request comes from
 
@@ -63,11 +64,26 @@ builds the launch `claude` on the door has here (`DoorSession`), with the box's 
 is asked before this machine's own door and head. A box that can't be reached, or refuses, is said before Claude Code
 starts, naming it and the reason.
 
-### 5. Retired
+### 5. Retired: one command at an address of its own
 
-`splice share status` lists each command's own address as deprecated, and `splice remote add <box>` no longer links every
-command of a box that serves a door. Nothing is removed: an address naming one command (`http://<box>:3097/claudex`)
-still works.
+Decided by Marcos on Nov 18 and 19, 2026: with the door there is one way for a person's machines to share, and the
+per-command way of `lan-share.md` goes (share-door-only). Two ways to do the same thing is what he wanted gone, and head
+commands are deprecated in favour of `claude` on the door.
+
+- `splice share status` prints the door alone: its address, how many models it serves, `splice remote add
+  http://<box>`, and the variables for a Claude Code without splice. While the door is still starting it says so.
+- Any path on the share listener other than `/` and `/door` answers 404 in Claude Code's error shape, saying the machine
+  no longer shares one command at an address of its own, that its door serves every model it has, and
+  `splice remote add http://<the Host the request used>`. Admission still runs first.
+- `GET /` still answers the machine's name, with an empty list of commands, because a 0.6.4 node's `splice remote`
+  reads it to say whether its door remote is ready.
+- `splice remote add` of one command's address on a box this machine holds no key for is refused with that add line,
+  and nothing is written. `splice remote add http://<box>` no longer falls back to linking each command of a box that
+  answers no door: it says why there is no door to link.
+- A `[remote.<command>]` written before still loads, and its launch prints the box's 404 before Claude Code starts;
+  `splice remote` lists it with the add that replaces it.
+- Server mode (`server-mode.md`) is untouched: a team's server still serves each command to key holders at an address
+  of its own.
 
 ## Not in this change
 

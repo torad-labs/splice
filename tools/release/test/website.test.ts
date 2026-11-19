@@ -285,8 +285,9 @@ describe("splice.torad.ai's website", () => {
 
   // Nov 1, 2026: one feature gets its own section, the ability to connect another computer to a running splice on
   // another computer, the way the Mac uses the subscriptions and heads of this computer after one setup command. Its band shows the machine with the logins
-  // sharing them, the one command the other machine runs (its Copy button copies that line alone), and what the address
-  // can add (docs/specs/lan-share.md), and the header links to it. Every `splice share` and `splice remote` the page draws
+  // sharing them, the one command the other machine runs (its Copy button copies that line alone), and what that
+  // machine's `claude` then has: every model in /model, another name with --as, the variables for a Claude Code without
+  // splice (docs/specs/door-network.md), and the header links to it. Every `splice share` and `splice remote` the page draws
   // is a verb those commands take today, and every address it draws is on the port splice shares on.
   test("a band shows another computer running on this one's plans after one command", () => {
     const band = bands(page).get("share") ?? "";
@@ -296,7 +297,7 @@ describe("splice.torad.ai's website", () => {
     expect(port).toBeDefined();
     const one = `splice remote add http://tower.lan:${port}`;
     const text = words(band);
-    expect(["splice share on", one, "?auth=", "?models=", "splice remote", "splice share off"].filter((s) => !text.includes(s))).toEqual([]);
+    expect(["splice share on", one, "/model", "--as", "splice remote", "splice share off"].filter((s) => !text.includes(s))).toEqual([]);
     const copies = [...band.matchAll(/\bdata-copy="([^"]*)"/g)].map((m) => m[1]!.replace(/&amp;/g, "&"));
     expect(copies).toContain(one);
     expect(page).toContain('href="#share"');
@@ -315,20 +316,6 @@ describe("splice.torad.ai's website", () => {
       ...[...all.matchAll(/\btower\.lan:(\d+)/g)].map((m) => m[1]!).filter((p) => p !== port).map((p) => `port ${p}`),
     ];
     expect(unknown).toEqual([]);
-  });
-
-  // The Options tab shows addresses a reader can paste: every login an address names with ?auth= is one splice accepts
-  // as a login label, and a login the tower lacks is refused in splice's own words.
-  test("every ?auth= login the share band draws is one splice accepts, and a missing one is refused as splice says", () => {
-    const band = words(bands(page).get("share") ?? "");
-    const source = (path: string) => readFileSync(join(REPO, path), "utf8");
-    const label = new RegExp(/loginLabel = Regex\("([^"]+)"\)/.exec(source("core/src/main/kotlin/splice/core/topology/LanShareConfig.kt"))![1]!.replace(/\\\\/g, "\\"));
-    const named = [...band.matchAll(/\?auth=([^\s&<"]+)/g)].map((m) => m[1]!).filter((l) => l !== "<login>");
-    expect(named.length).toBeGreaterThan(0);
-    expect(named.filter((l) => !label.test(l))).toEqual([]);
-    const refusal = /login != null -> "\$\{offer\.command\} on \$machine (has no login named) '\$login'; (it has) \$logins"/.exec(source("app/src/main/kotlin/splice/app/cli/share/RemoteAdd.kt"));
-    expect(refusal).not.toBeNull();
-    expect(band).toMatch(new RegExp(`claudex on tower ${refusal![1]} '([a-z0-9._-]+)'; ${refusal![2]} [a-z0-9._-]+(, [a-z0-9._-]+)*`));
   });
 
   // Nov 1, 2026: a line like "runs on your computer" is filler, since of course it runs on the person's computer.

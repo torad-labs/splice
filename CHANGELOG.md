@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Highlights
+- **Sharing is the door alone.** A machine with `splice share on` shares its door and nothing else: the per-command
+  addresses (`http://<box>:3097/claudex`, with `?auth=` and `?models=`) are gone. `splice share status` prints the
+  door and the one line to run on your other machines, `splice remote add http://<box>`, whose plain `claude` then
+  runs on every model the box serves. An old one-command entry still loads, and its launch says what to run instead;
+  `splice remote add` of one command's address is refused with that same line. A team's server (server mode) is
+  unchanged.
+
 ### Fixed
 - **A ChatGPT account signs in from the console without a device code.** The Accounts page used OpenAI's device-code
   sign-in, which works only after the account turns on device-code authorization in its ChatGPT security settings,

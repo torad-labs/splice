@@ -1,6 +1,6 @@
 // NEW: door-default (docs/specs/door-default.md, decisions 2, 4 and 5). What a launch of `claude` carries while it is
 // on the door: the door, the terminal's key, the window, the model a session starts on and the picker's rows (the
-// models of signed-in accounts), read from the lane and the door's lineup at each launch, so a sign-in reaches the
+// models of signed-in accounts, and the models splice.toml declares for a head on a key), read from the lane and the door's lineup at each launch, so a sign-in reaches the
 // next session with no restart; and splice's /login (DoorLogin), its file laid in the person's Claude folder where it
 // is missing and its hook in the overlay. Null on the head lane, which launches `claude` on its head as before, with
 // the same rows added after Claude Code's own models (decision 9, headPicker).
@@ -43,11 +43,11 @@ internal class ClaudeDoorLaunch(
         return rowsOf(lane.lineup()).takeIf { it.isNotEmpty() }?.let(::DoorPicker)
     }
 
-    /** The picker's rows: the models of the signed-in accounts, in splice.toml's order of heads. A model whose account
+    /** The picker's rows ([DesktopLineup.picker]), in splice.toml's order of heads. A model whose account
      *  reads a plan window fully used stays listed, with the window marked beside its name (Nov 17, 2026): the
      *  head still serves it, and the person sees before picking it that the account is spent. */
     private fun rowsOf(lineup: DesktopLineup): List<DoorPickerRow> =
-        lineup.signedIn.map { DoorPickerRow(it.model, labelOf(it), it.command) }
+        lineup.picker.map { DoorPickerRow(it.model, labelOf(it), it.command) }
 
     /** [model]'s label, with its account's full window beside it as `splice status` writes it (`7d 100%`). */
     private fun labelOf(model: DoorModel): String {

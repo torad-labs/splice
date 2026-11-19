@@ -30,6 +30,8 @@ internal data class DoorModel(
     /** The plan window its head's provider reads fully used now, if one is (V4-452): a reading, never a refusal, so
      *  the model stays in the door and a picker says it beside the name. */
     val full: QuotaFull? = null,
+    /** Whether the head found it on its endpoint's own list rather than splice.toml declaring it. */
+    val discovered: Boolean = false,
 )
 
 /** A head that is not in the door, and why, in words that say what to do about it. */
@@ -49,10 +51,18 @@ internal data class DoorHead(
 )
 
 internal data class DesktopLineup(val heads: List<DoorHead>, val models: List<DoorModel>, val leftOut: List<LeftOut>) {
-    /** The models of the heads called with a login splice holds: the rows of a terminal session's picker
-     *  (docs/specs/door-default.md, decision 4). */
-    val signedIn: List<DoorModel>
-        get() = models.filter { m -> heads.any { it.key == m.head && it.login } }
+    /** The rows of a terminal session's picker (docs/specs/door-default.md, decision 4): every model of a head called
+     *  with a login splice holds, and of a head on an API key or a local server the models splice.toml declares for
+     *  it, or every model it lists when it declares none. Until Nov 18, 2026 the picker left every key head out, to
+     *  keep OpenRouter's ~310 listed models out of it, and a custom API added with its key and model could not be
+     *  picked at all; a key head's own list still stays out where splice.toml names the models to show. */
+    val picker: List<DoorModel>
+        get() = models.filter(::inPicker)
+
+    private fun inPicker(model: DoorModel): Boolean {
+        val head = heads.firstOrNull { it.key == model.head } ?: return false
+        return head.login || !model.discovered || models.none { it.head == head.key && !it.discovered }
+    }
 
     /** The selector a session on [head] starts on: its pinned model, or its first model when its pin is not in the
      *  door. */
@@ -93,8 +103,11 @@ internal class DesktopHeads(private val running: RunningHeads) {
             val windows = managed.statusline.clientWindows
             heads += DoorHead(relay.key, relay, catalog, spec.models.tiers.byTier, pinned, windows, read.login)
             val full = managed.head.quotaFull()
+            val declared = catalog.tierModelIds().toSet()
             catalog.discoveryRows().forEach { row ->
-                models += DoorModel(row.id, row.displayName, relay.key, relay.command, catalog.unwrap(row.id), full)
+                val upstream = catalog.unwrap(row.id)
+                val discovered = upstream !in declared
+                models += DoorModel(row.id, row.displayName, relay.key, relay.command, upstream, full, discovered)
             }
         }
         return DesktopLineup(heads, models, leftOut)

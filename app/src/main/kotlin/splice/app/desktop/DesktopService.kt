@@ -55,7 +55,7 @@ internal class DesktopService(
             val lineup = heads.lineup()
             return buildJsonObject {
                 put("lane", lane)
-                put("models", lineupJson.models(lineup.signedIn))
+                put("models", lineupJson.models(lineup.picker))
                 put("left_out", lineupJson.leftOut(lineup.leftOut.filterNot { it.command == CLAUDE_COMMAND }))
             }
         }
@@ -66,7 +66,7 @@ internal class DesktopService(
             put("door", claude.door)
             put("default_model", starting)
             put("default_from", why)
-            put("models", lineupJson.models(lineup.signedIn))
+            put("models", lineupJson.models(lineup.picker))
             put("left_out", lineupJson.leftOut(lineup.leftOut))
             claude.login.theirs()?.let { put("own_login", it.toString()) }
         }

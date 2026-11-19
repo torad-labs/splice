@@ -12,8 +12,8 @@ Code's Mantle dialect, where the model a request names decides which provider ru
 
 - `claude` starts as it always did, in their own Claude folder, with their own sessions, settings, skills, hooks and
   MCP servers.
-- `/model` lists the models of the accounts they are signed in to, and nothing else. Picking one runs the session
-  on it, whichever provider serves it.
+- `/model` lists the models of the accounts they are signed in to, and the models they added on an API key of their
+  own. Picking one runs the session on it, whichever provider serves it.
 - `/login` opens splice's accounts page in the browser, already signed in to the console, where any account of any
   provider is signed in. Claude Code's own `/login`, which only ever signs in to Anthropic, is off.
 - A fresh install works this way from the first run. A machine that already ran `claude` through a head keeps doing
@@ -65,16 +65,19 @@ recorded as a door turn of the head that ran it.
 The door's grammar is unchanged (`docs/specs/desktop-door.md`, decisions 1 to 3): a selector runs its model on its
 head, an Anthropic ID is a tier of the session's head, anything else is refused by name with nothing sent upstream.
 
-The picker of a terminal session lists the models of signed-in accounts only: every model of every head whose
-provider is called with a login splice holds (a ChatGPT, Grok, Kimi or Muse sign-in), while that login is good. A head
-called with an API key, or a local model server, is not in the picker; its selectors still run when named
-(`/model <selector>`). A head whose login is missing or has expired is left out until it is signed in again, and
+The picker of a terminal session lists every model of every head whose provider is called with a login splice holds
+(a ChatGPT, Grok, Kimi or Muse sign-in), while that login is good. A head called with an API key, or a local model
+server, is in the picker with the models splice.toml declares for it (`splice add api-key --model`), or with every
+model it lists when it declares none; the rest of what its endpoint lists still runs when named
+(`/model <selector>`). Until Nov 18, 2026 a head on a key was not in the picker at all, which kept OpenRouter's
+hundreds of listed models out of it and also a custom API added with its own key and model, the case of a person
+using splice at work. A head whose login is missing or has expired is left out until it is signed in again, and
 `splice claude` names it with the reason. A head that forwards the caller's own Claude login is never in the door.
 
 The picker rides the launch's `--settings` overlay as `modelPicker` with `replaceBuiltInOptions` true and one row
 per model (`model` the selector, `label` the model's own label, `description` `splice · <command>`), in
 splice.toml's order of heads. The model a session starts on is `--model`, or the one chosen the last time, or the
-pinned model of the first head in the picker, or, for someone with keys and no sign-in, the pinned model of the first
+pinned model of the first signed-in head in the picker, or, for someone with keys and no sign-in, the pinned model of the first
 head in the door. In the picker step the head whose command is `claude` goes first while its accounts are signed in
 (Nov 18, 2026), so a `claude` session leaves Claude's accounts for another provider only when none is in the door; and
 `splice claude head` takes the chosen model back, so a model named with `--model` does not return with the next

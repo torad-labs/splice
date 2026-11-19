@@ -50,6 +50,9 @@ goal = "The team server keeps a session's turns on the upstream that has its pro
 [feature."server-telemetry"]
 goal = "A team's server relays each person's Claude Code telemetry to the operator's collector with the person stamped on it, every laptop launch sends it there and says which splice it runs, so the operator sees who used what and which laptops to upgrade."
 
+[feature."telemetry-relay"]
+goal = "The last piece of server mode (#604): the server relays each person's Claude Code telemetry to the operator's collector with the verified person and team stamped on it, and a linked command sends its telemetry there. Built as #604 asks, by Marcos's decision of Nov 18, 2026."
+
 [feature."door-default"]
 goal = "One command, claude, reaches every model a person is signed in to: it runs on the door Claude Desktop already uses, /model lists the models of signed-in accounts, /login opens splice's accounts page where any account is signed in, a fresh install works this way from the first run, and whoever still starts a session through a head's own command is told that those commands are going away. Spec: docs/specs/door-default.md."
 
@@ -76,6 +79,76 @@ goal = "While a capability of round two holds a turn, the session's status line 
 
 [feature."claude-adds"]
 goal = "Someone who runs Claude on their own Claude plan keeps it and gains every other account: claude stays on its head, starts on their own default as it did, and /model lists Claude's models with the models of their other signed-in accounts beside them. A request that names another account's model runs on that account, with its own login and its own window, and the person's Claude login never reaches another provider. A session that runs out on one provider moves to another with /model and keeps its conversation. Spec: docs/specs/door-default.md, decision 9."
+
+[feature."custom-provider"]
+goal = '''
+# custom-provider: a team's own inference endpoint on the door (issue #680)
+
+## Who it is for and why
+A team at work runs a self-hosted model (GLM-5.3-Flash) behind an OpenAI-compatible gateway, with a small CLI
+of its own that signs each person in through the company's identity provider and mints a short-lived personal
+key. Today the CLI writes a provider and a head into splice.toml, and people run the head's command. Heads are
+deprecated and the door is where `claude` runs, but on the door such a provider is a second-class citizen: its key
+is a static env var or keys.toml entry, nothing in splice can sign the person in or renew the key, and until
+today it was never in /model. On Nov 18, 2026 Marcos said this is why his team can't use the door at work.
+The goal: such a provider gets on the door what Claude Code gives Amazon Bedrock — a base URL, a credential a
+command obtains and refreshes, model mapping, windows and a picker — so the team moves off the head command.
+
+## Already done, not part of this feature
+The `splice` seat is landing the picker fix in its own PR (commit 29cf85c1f, on 5c701d9c7): a head on an API key
+or a local server is listed in /model with the models splice.toml declares for it, or every model it lists when
+it declares none (DesktopLineup.picker, door-default.md decision 4, DoorPickerRowsTest). Build on
+DesktopLineup.picker. The campaign check .campaign/checks/door/picker.test.ts still pins the old rule (a key head
+has no row) and must be rewritten in this plan.
+
+## Outcomes (each is observable by a person or on a route)
+1. Picker: a provider's models carry their own label and description in /model; a provider or head can opt in or
+   out of the picker explicitly (e.g. `picker = true|false`).
+2. Head features on door turns: everything a head of the provider has today behaves the same on a door turn —
+   `local` (per-turn token counts, reasoning replayed as reasoning_content), `stream_usage`, `slot_affinity`, the
+   effort vocabulary, `extra_headers` and `forward_headers`.
+3. Install a published provider: `splice add provider <file|url>` installs a team's provider definition (provider,
+   head, models) with no hand-edited TOML; it refuses a definition with findings, all listed, like boot does.
+4. Login by command (like Claude Code's apiKeyHelper / awsAuthRefresh): a provider names `login_command` (an
+   interactive sign-in, e.g. the team CLI's browser OAuth) and `credential_command` (prints the current credential
+   with its expiry as JSON). splice calls credential_command when it has no key, when the key is near expiry, and
+   once after the provider answers 401, then retries the turn once.
+5. Accounts: the accounts page shows the provider as an account (signed in or not, expiry); its "Sign in" runs
+   login_command; /login on the door reaches it like a ChatGPT or Grok sign-in.
+6. No credential, no request: a missing or failed credential is refused in Anthropic's error shape, naming the
+   provider and how to sign in; nothing goes upstream.
+7. Tier mapping: opus, sonnet, haiku, fable and the small-fast model map to the provider's models (as model_slots
+   does); a door session on the provider's model sends Claude Code's side calls (titles, subagents naming a tier)
+   to that provider, not the door's default.
+8. Windows: a model's declared context_window applies when it is picked, and the door session's window and
+   auto-compaction follow the pick (see splice CLAUDE.md section 22: splice writes the reported counts, so scale
+   them; never spell a row past its real ceiling). Optionally the provider names a URL reporting its served
+   window, read at start.
+9. Max output tokens per model, and the effort/thinking mapping, as heads have.
+10. The provider's answers pass through: a 503 with Retry-After reaches Claude Code so it retries; a 4xx whose
+    message the provider wrote ("update your CLI") is shown as written, whole, not cut to its first sentence.
+11. TLS trust: a provider-level `ca_file`, and the OS trust store, so a corporate TLS-inspecting proxy does not make
+    every turn fail with PKIX.
+12. A named command on the door: a wrapper can start a session on the door with a given starting model and picker
+    without moving the person's plain `claude` lane; a `--settings` overlay the wrapper passes (env, otelHeadersHelper)
+    merges with splice's overlay (picker, /login hook) instead of replacing it.
+13. Diagnostics: `splice claude` and `splice doctor` name the provider (listed or left out and why, credential state,
+    last error); /api/perf/turns rows carry the provider like any head's.
+14. Client identity: an optional header with the splice version and the wrapper's version, so a gateway can gate
+    outdated clients and say so in-session (server-client-header already sends splice's version to a splice
+    server; reuse it).
+
+## Done looks like
+On a machine with only splice and the team's provider definition installed: `claude` (or the team's wrapper) on
+the door lists only the team's model in /model; /login signs in through the team's own flow; the key renews by
+itself; the window is the model's own; a loading model or an outdated client gets the gateway's own message.
+
+## Constraints
+- Repo CLAUDE.md and AGENTS.md hold: vendor facts stay in their provider module; heads are isolated; boot fails
+  closed; reasoning effort never varies by turn type; retries are total; tests check user-visible behavior only;
+  no Python; no new top-level functions or companion objects; console changes are judged from captures.
+- Credentials from credential_command are never logged or written to the environment of child processes.
+- Console (accounts page) changes need dark/light captures at 1440px and ~3600px.'''
 
 [[row]]
 id = 'server-listener'
@@ -937,7 +1010,7 @@ notes = [
 [[row]]
 id = 'server-telemetry-relay'
 title = "The server relays each person's Claude Code telemetry to the operator's collector, with the person on it"
-feature = 'server-telemetry'
+feature = 'telemetry-relay'
 status = 'todo'
 owner = ''
 blocked_by = []
@@ -962,7 +1035,7 @@ notes = [
 [[row]]
 id = 'server-telemetry-recipe'
 title = 'A command linked from a server with a relay sends its telemetry there, with the key kept out of the environment'
-feature = 'server-telemetry'
+feature = 'telemetry-relay'
 status = 'todo'
 owner = ''
 blocked_by = [

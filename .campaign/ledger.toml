@@ -557,6 +557,57 @@ On a node:
 - Out of scope: the door half of `splice remote add` (it stays), server mode on the door, the three session
   reliability fixes proposed separately, and the release itself (maintainers cut 0.6.5).'''
 
+[feature."door-sessions"]
+goal = '''
+# door-sessions: a claude started on the door is a session splice knows, on this machine and on another
+
+## Who this is for, and why
+
+Since 0.6.4 plain `claude` runs on splice's **door** (`docs/specs/door-default.md`, `docs/specs/door-network.md`):
+on the machine that holds the accounts, and on any machine that ran `splice remote add http://<box>` once.
+Heads as commands are deprecated in favour of it, so the door is how people use splice now.
+
+Every one of those launches is a session splice can't place. At launch it prints
+"launch ownership could not be recorded; this session may have an unknown head on macOS", no launch record is
+written, and the Sessions page reads the session as "unknown head". This happens on every OS, on the local door and on
+a remote one. Everything that needs to know a session's launch goes wrong with it: which head and model it runs on,
+whether its hosted MCP servers hold a replaced key, and how to resume it.
+
+## What is wrong today (found November 19, 2026, reproduced on two machines)
+
+- The launcher (`app/src/main/dist/bin/splice-launch`, the `record-launch` call) gives the launch's base address from
+  `ANTHROPIC_BASE_URL`. A door launch unsets that variable and carries its address in
+  `ANTHROPIC_BEDROCK_MANTLE_BASE_URL`, so `record-launch` gets an empty address and refuses (exit 1).
+- Given a remote door's address, `record-launch` already succeeds: the remote entry's turns address matches it.
+- Given the local door's address (`http://127.0.0.1:<control port>/door`), it still refuses: the local lookup looks
+  for a head on that port, and the door listens on the control port, where no head is.
+- The sessions model (`ProcessEnvironment.route`, `SessionRoute`) has a head, direct and unknown, and no place for a
+  door session. A door session that had a record would still have nowhere to go.
+
+## What a person can do once it is built
+
+- They start `claude` on the door, on this machine or another one, and no warning about launch ownership prints. The
+  session has its launch record.
+- On the Sessions page and in `GET /api/sessions`, a door session reads as a door
+  session, with the model it is running on when splice knows it, never as "unknown head". A session that really has
+  no record (one splice never launched, or one whose record is gone) reads as it does today.
+- Everything already keyed on a session's launch works for a door session as it does for a head session: its start
+  time, its config home, the MCP key check, and resuming it.
+- A session on a remote door is listed on the machine that launched it. The box that serves the door is not asked to
+  list it.
+
+## Where the line is
+
+- Marcos is redesigning the console's look elsewhere. This changes what a session row says (its route), using the
+  rows and labels the page has now, and nothing about how the page looks.
+- Launching Claude Desktop's Code tab through the door (`splice desktop launch`) belongs to the desktop-full
+  feature. A launch it makes that goes through the same launcher gets its record from this feature's fix, and needs
+  nothing more here.
+- No new way to start a session, no change to what the door serves, and no change to heads launched as commands.
+- Checks look at what a person sees: the launcher's output and exit code, the launch record's existence, what
+  `/api/sessions` returns for a session started on the door. Use the harness
+  (`.campaign/checks/server/lib/harness.ts`) and the door helpers in `.campaign/checks/desktop/lib/desktop.ts`.'''
+
 [[row]]
 id = 'server-listener'
 title = 'A [server] listener that answers only keys'
@@ -2613,6 +2664,7 @@ reviews = [
 notes = [
   '2026-11-18 21:01 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
   "2026-11-19 06:22 CT custom-provider/coordinator: plan was wrong: the URL test deadlocked on its own in-process server under spawnSync. The check now serves definitions from a child process (checks/custom/lib/site.ts); round 1's build passed the other 5 tests and installs from a separately served loopback URL.",
+  "2026-11-19 07:06 CT custom-provider/coordinator: 2026-11-19 07:06 CT custom-provider/coordinator: round-1 dispute upheld again, same ruling as 06:22 (af123cbbc): the check was wrong and is fixed on HEAD; the run stayed frozen on 64d217ac8 only because other features' uncommitted check drafts in the shared checkout made the plan read as uncommitted.",
 ]
 
 [[row]]
@@ -2700,6 +2752,7 @@ reviews = [
 notes = [
   '2026-11-18 21:01 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
   "2026-11-19 06:22 CT custom-provider/coordinator: plan was wrong: the check's api-key providers never asked for usage (stream_usage off by default for hosted vendors, V4-163), so every share was 0. The check's providers now declare quirks = { stream_usage = true }; round 1's build passed all 3 tests with it.",
+  "2026-11-19 07:06 CT custom-provider/coordinator: 2026-11-19 07:06 CT custom-provider/coordinator: round-1 dispute upheld again, same ruling as 06:22 (af123cbbc): the check was wrong and is fixed on HEAD; the run stayed frozen on 64d217ac8 only because other features' uncommitted check drafts in the shared checkout made the plan read as uncommitted.",
 ]
 
 [[row]]
@@ -3330,6 +3383,7 @@ reviews = [
 notes = [
   '2026-11-18 21:09 CT custom-provider/coordinator: added; 1 of 1 checks fail, as they should before the work',
   "2026-11-19 06:22 CT custom-provider/coordinator: plan was wrong: beforeAll deadlocked on its own in-process server under spawnSync. The check now serves acme.toml from a child process (checks/custom/lib/site.ts); round 1's build passed all 7 tests that way. Wrote the command-auth stream_usage default into the spec.",
+  "2026-11-19 07:06 CT custom-provider/coordinator: 2026-11-19 07:06 CT custom-provider/coordinator: round-1 dispute upheld again, same ruling as 06:22 (af123cbbc): the check was wrong and is fixed on HEAD; the run stayed frozen on 64d217ac8 only because other features' uncommitted check drafts in the shared checkout made the plan read as uncommitted.",
 ]
 
 [[row]]
@@ -3932,7 +3986,7 @@ What a person sees and can do once this is built:
 - Its address (decided here, used by every other page and by nd-whole's redirects): `providers.html?cmd=<command>` opens that command's glass; `providers.html?open=compare` opens Compare models; `providers.html?open=add` opens Add provider.
 - Writes through today's routes: PATCH /api/config?head=<key> (default model, mapping), the claude-through-splice route today's models.js uses (/api/claude-head/wrap|unwrap), POST /api/heads/{head}/restart|stop, DELETE /api/heads/{key}. Tried only on tools/console-own's Splice.
 
-Where the data comes from: GET /api/heads, /api/status (registry, state), /api/perf/summary (per head and model: percentiles, time to first token, failures by cause, 429s, cache), /api/economics (hourly requests and value per command), /api/models (labels, prices, context windows), /api/models/local (local servers, reachable), /api/accounts, /api/topology, /api/claude-head. A field with no read is added as a GET where its data lives.
+Where the data comes from: GET /api/heads, /api/status (registry, state), /api/perf/summary (per head and model: percentiles, time to first token, failures by cause, 429s, cache), /api/economics (hourly requests and value per command), /api/models (labels, prices, context windows), /api/models/local (local servers, reachable), /api/accounts, /api/topology, /api/claude-head. /api/add/profiles gives Add provider its provider types: `{profiles:[{name, auth_kind, requires_key, base_url, head_key, command, asks}]}` (features/configuration/src/main/kotlin/splice/configuration/add/AddViews.kt, profile()). A profile whose `asks` names base_url or models is a local server (URL and model); otherwise `requires_key: true` is API key and `false` is Sign in. With no profiles read the glass says so and draws no choice (decided Nov 19, 2026 on the round-1 dispute: a choice drawn without a read would be invented data). The check's stub answers this read with made-up profiles (`ADD_PROFILES` in .campaign/checks/console-night-deck/lib/deck.ts world(): acme-key needs a key, acme-cloud signs in, local needs URL and model), so Add provider's glass shows API key and Sign in there as the live read gives them. A field with no read is added as a GET where its data lives.
 
 Not here: what only the old Models page has (nd-models) and prompt comparison from the old Compare page (nd-compare); models.html and compare.html stay until those items.
 
@@ -3968,6 +4022,7 @@ reviews = [
 ]
 notes = [
   '2026-11-18 22:53 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  '2026-11-19 CT console-night-deck/coordinator: round-1 dispute upheld, the plan was wrong. lib/deck.ts world() answered no GET /api/add/profiles (any unlisted /api/* path answers {}), so the built page (repo-campaign-console-night-deck deck-providers.js:387) truthfully drew "No provider types read" and the last step of providers.test.ts (Add provider contains /API key|Sign in/) could not pass. world() now answers /api/add/profiles with made-up ADD_PROFILES in the route shape (AddViews.kt profile()); the spec names the read and how a profile maps to Sign in / API key / URL and model. The build itself (deck-providers.js:41 reads /api/add/profiles, :96 maps asks/requires_key, :390 labels Sign in / API key) already meets it.',
 ]
 
 [[row]]
@@ -4705,4 +4760,187 @@ reviews = [
 ]
 notes = [
   '2026-11-19 06:22 CT: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'door-launch-record'
+title = 'claude on the door, here or on another machine, starts with its launch recorded'
+feature = 'door-sessions'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = '''
+Starting `claude` on the door records its launch, on this machine and on another machine's door, so the person sees no warning and splice knows the session.
+
+What the running product does once this is built:
+- `claude` on this machine's door (the lane is `door`, `splice claude --json`): the launcher prints no "launch ownership could not be recorded" line, and splice keeps the launch record `<state>/launch-owners/<pid>.json` with `head` = the command as it was started (`claude`), `baseUrl` = the door's address the session's Claude Code sends its turns to (the launch's ANTHROPIC_BEDROCK_MANTLE_BASE_URL, which is `splice claude --json`'s `door`), `kind` = `session`.
+- `claude` on another machine's door (`[remote.claude] url = "http://<box>:3097/door"`, written by `splice remote add`): the same, with `baseUrl` = `http://<box>:3097/door`, kept on the machine that launched it. The box keeps nothing for it.
+- A head's own command (`claude-astra`) is recorded exactly as before; any address that is no head, no door and no `[remote.*]` turns address is still refused (exit 1, the warning stays).
+
+Decisions (made once; door-session-route relies on them):
+1. The launcher (`app/src/main/dist/bin/splice-launch`, `record_launch` after `apply_recipe`) gives record-launch the address Claude Code will really use: ANTHROPIC_BEDROCK_MANTLE_BASE_URL when the environment it execs into has CLAUDE_CODE_USE_MANTLE=1, else ANTHROPIC_BASE_URL. Why: that is Claude Code's own precedence (the Mantle switch decides), and head recipes already clear the Mantle switch (LaunchService, providerSwitches), so no head launch changes. The shim's behaviour changes, so bump `SPLICE_SHIM_VERSION` shim-27 -> shim-28 and `SHIM_VERSION` in core/src/main/kotlin/splice/core/Versions.kt together, as the shim's header requires, with a one-line shim-28 note.
+2. This machine's door is the address `http://127.0.0.1:<control port>/desktop`, the one DaemonDesktop opens (`DESKTOP_PATH`). The hand-over said `/door`; the evidence says `/desktop`, and nothing is renamed. The control port is resolved as the CLI resolves it (AdminSupport.controlPort(topology, env)), so an env override counts. A session launch at exactly that address is recorded under the command it was started as, whatever that command is: the door does not depend on the command (a `splice desktop launch` that goes through this launcher gets its record too).
+3. Another machine's door already records (LaunchOwnerCommand.remoteCommand: the `[remote.<command>]` entry's turns address equals the base URL). Keep that rule.
+4. One reader, in core (`splice.core.topology`), answers which door a launch's base URL names: this machine's door, another machine's door (a `[remote.<command>]` whose address reads head `door` and whose turns address is the base URL; its machine is that address's host, as RemoteDoor/ShareHttp.hostOf names the box), or none. record-launch uses it now; door-session-route places sessions with the same reader, so a record and a row can never disagree. It gives at least the command, the address and the machine (null for this machine). Names and shape are the builder's.
+
+Not here: what a session row says (door-session-route), relaunch (door-session-relaunch), the console.
+
+Proof: `bun test ./.campaign/checks/door-sessions/record.test.ts`, run on a Linux machine through rig (the server harness reads /proc), starts `claude` through the installed launcher on a stand-in Claude Code (local door, a box's door from a node, and a head's command) and reads the printed lines and the launch record. RemoteLaunchOwnerTest keeps passing.'''
+checks = [
+  'rig remote run --needs system=Linux/x86_64 -- bun test ./.campaign/checks/door-sessions/record.test.ts',
+]
+sources = [
+  'app/src/main/dist/bin/splice-launch',
+  'app/src/main/kotlin/splice/app/cli/LaunchOwnerCommand.kt',
+  'core/src/main/kotlin/splice/core/Versions.kt',
+  'core/src/main/kotlin/splice/core/topology/LanShareConfig.kt',
+  'app/src/test/kotlin/splice/app/cli/share/RemoteLaunchOwnerTest.kt',
+  'core/src/main/kotlin/splice/core/process/LaunchOwners.kt',
+  '.campaign/checks/door-sessions/lib/launch.ts',
+]
+results = [
+  "Saved tool result (a-launch.txt):\nObserved Nov 19, 2026 (CT) through the real launcher (.campaign/checks/door-sessions/record.test.ts, jar built from this tree):\n\n1. `claude` on this machine's door: the launch sets CLAUDE_CODE_USE_MANTLE=1 and\n   ANTHROPIC_BEDROCK_MANTLE_BASE_URL=http://127.0.0.1:<control port>/desktop  (NOT /door: the local door is\n   DaemonDesktop's `\"http://127.0.0.1:$controlPort$DESKTOP_PATH\"`, DESKTOP_PATH = \"/desktop\", the same address\n   `splice claude --json` reports as `door`). ANTHROPIC_BASE_URL is unset by the recipe.\n   stderr: \"splice: launch ownership could not be recorded; this session may have an unknown head on macOS\"\n   <state>/launch-owners/ has no file.\n\n2. `claude` on another machine's door (`[remote.claude] url = \"http://127.0.0.1:<share port>/door\"`): the same\n   warning, no record. The Mantle base URL is \"<box>/door\" (RemoteDoor: door = \"${address.server}/door\").\n\n3. `claude-astra` (a head's command): no warning; record {head:\"astra\", baseUrl:\"http://127.0.0.1:<head port>\", kind:\"session\"}.\n\nCause: splice-launch line ~963 `record_launch \"$HEAD\" \"${ANTHROPIC_BASE_URL-}\" session` passes \"\" on a door launch;\nLaunchOwnerCommand.localHead() then would look for a head on the control port and find none.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-19 06:59 CT door-sessions/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'door-session-console'
+title = "The Sessions page names a door session's door and resumes it by its command"
+feature = 'door-sessions'
+status = 'todo'
+owner = ''
+blocked_by = []
+guard = false
+spec = '''
+On the Sessions page as it is today, a door session's row says it runs on the door, in the words `splice sessions` uses, and its Resume line is the command it was started with.
+
+What the running product does once this is built (app/src/main/resources/console/sessions.js only):
+- A row whose `route` is `door` draws its command cell as a command chip whose text is `door` when `door.machine` is null (this machine's door) and `door on <machine>` otherwise, never the dash ("Not reported") nor the "Command unknown" mark. These are the same words `splice sessions` prints for it (door-session-route), so the page and the terminal say one thing.
+- The open session's Copy > "Resume it" line is `<door.command> -r <session id>` (`claude -r <id>`): on the machine that launched it that command goes to the same door again, so it is the line a person types to resume it.
+- Grouped by command, door rows group under that same chip text. A row that is `unknown` or `direct` is drawn exactly as today.
+- Nothing about how the page looks changes: no new style, legend, mark or layout. Marcos is redesigning the console elsewhere (the Night Deck); this only changes what a row says. Other pages are left as they are.
+
+The wire this reads (decided once, door-session-route builds it): `route: "door"`, `head: "door"`, and `door: {"command": "claude", "address": "<door address>", "machine": null | "<host>"}`, the `door` key present only on door rows.
+
+The repo's UI rule holds: open Sessions with door rows (the check's stub world is enough) in dark and light at 1440 px and about 3600 px, look at every capture, and attach them to the PR.
+If the Night Deck's Sessions page has already replaced this one on the base branch when this is built, the check's selectors no longer apply: dispute the check rather than rebuild the old page.
+
+Proof: `bun test ./.campaign/checks/door-sessions/console.test.ts` opens sessions.html on the console stub (console-night-deck/lib/deck.ts) with a local door row, a remote door row and an unplaced row, reads each row's command cell at both widths and the open door sessions' Resume lines.'''
+checks = [
+  'bun test ./.campaign/checks/door-sessions/console.test.ts',
+]
+sources = [
+  '.campaign/checks/console-night-deck/lib/deck.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-19 07:03 CT door-sessions/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'door-session-route'
+title = "A door session reads as a door session in /api/sessions and splice sessions, here and on another machine's door"
+feature = 'door-sessions'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'door-launch-record',
+]
+guard = false
+spec = '''
+A session started on the door reads as a door session wherever splice lists sessions, on this machine and on another machine's door, with the model splice knows it runs on, and never as "unknown head".
+
+What the running product does once this is built:
+- `GET /api/sessions` (and `/api/sessions/history` for a live row), a live session whose launch record names a door: `route: "door"`, `head: "door"`, and a key `door: {"command": "<the command its launch recorded, e.g. claude>", "address": "<the door address it runs on>", "machine": null}` on this machine's door, `"machine": "<host>"` on another machine's door (the host of its `[remote.<command>]` address, as RemoteDoor names the box). The `door` key is left off every other row, as `repo` is. `head: "door"` because the field is never null on this route, and `door` is the name door-network reserves, so no head key can collide with it.
+- The model: the row's existing `model` (from its transcript, which a door session keeps in the person's own Claude folder, where treesFor(null) already looks first) and `served_model` (what splice served it, across heads) say what it runs on. Nothing new is added for it.
+- A turn through the door that names the session leaves it a door session. Today the arrival join (ArrivalJoinedSessions and RecordedSessions, through SessionRecord.wantsHead) puts such a row on the head its last turn ran on (evidence); it must skip a door route as it skips a launch-joined head route, since a door session's turns run on whichever head the model names.
+- `splice sessions`: the column that names the head reads `door` for this machine's door and `door on <machine>` for another's, never `unknown head`. `splice sessions --json`: `route: "door"` and the same `door` object; `head` stays null there, as for every row that is not a head's in that document.
+- A session on another machine's door is listed by the machine that launched it (its own ~/.claude registry and launch record). The box that serves the door is not asked and lists nothing for it; no peer call is added.
+- A session with no launch record reads as today: one splice never launched is `direct`, one it cannot place is `unknown`/`unknown head`, and one whose record is gone (its process ended) reads as it does today.
+
+Decisions:
+1. SessionRoute gains a door case carrying the command, the address and the machine (null for this machine), decided once, in ProcessEnvironment.route, from the launch record, with the door reader door-launch-record adds in core (`splice.core.topology`), so a record and a row cannot disagree. The callers that build routes (ControlSessions, LocalSessions, ClaudeLoginLabel) hand it the topology's doors as they hand it the heads' ports. Every exhaustive use of SessionRoute handles the new case; SessionHistoryProjection keeps a door route as it keeps Head and Direct.
+2. The words: `door` / `door on <machine>`, exactly these, in `splice sessions`; the console says the same (door-session-console builds it from this wire).
+3. Update the wire comments that list the route values (SessionsRoutes.kt header, SessionsJson.kt) and SessionRoute's own doc. Tests that pinned a door-launched session as unknown are rewritten in this change, and the commit says so.
+
+Not here: the console's drawing of these rows (door-session-console), relaunch (door-session-relaunch).
+
+Proof: `bun test ./.campaign/checks/door-sessions/route.test.ts` (on Linux) starts `claude` through the installed launcher on a stand-in Claude Code that registers itself as Claude Code does, on this machine's door and on a box's door from a node, and reads `/api/sessions` before and after a door turn, `splice sessions` and `splice sessions --json`, the box's own list, and a session started around splice.'''
+checks = [
+  'rig remote run --needs system=Linux/x86_64 -- bun test ./.campaign/checks/door-sessions/route.test.ts',
+]
+sources = [
+  'features/sessions/src/main/kotlin/splice/sessions/registry/SessionRoute.kt',
+  'features/sessions/src/main/kotlin/splice/sessions/registry/ProcessEnvironment.kt',
+  'features/sessions/src/main/kotlin/splice/sessions/registry/RecordedSessions.kt',
+  'features/sessions/src/main/kotlin/splice/sessions/list/SessionsJson.kt',
+  'features/sessions/src/main/kotlin/splice/sessions/list/SessionsCommand.kt',
+  'features/sessions/src/main/kotlin/splice/sessions/list/LocalSessions.kt',
+  'features/sessions/src/main/kotlin/splice/sessions/http/SessionHistoryProjection.kt',
+  'app/src/main/kotlin/splice/app/ControlSessions.kt',
+  '.campaign/checks/door-sessions/lib/launch.ts',
+]
+results = [
+  "Saved tool result (b-route.txt):\nObserved Nov 19, 2026 (CT), today's build, a stand-in Claude Code started through the launcher as `claude` on the\nlocal door, registered in ~/.claude/sessions/<pid>.json:\n\nBefore any turn:   \"head\":\"unknown head\",\"route\":\"unknown\"\nAfter one door turn with its session id (model claude-astra--astra-large):\n  {\"head\":\"astra\",\"route\":\"head\", ..., \"turns\":1, \"served_model\":\"astra-large\", ...}\n  -> ArrivalJoinedSessions/RecordedSessions join a session with no head route (SessionRecord.wantsHead) to the head\n     its last turn ran on. A door session's turns run on whichever head the model names, so once it has a Door route\n     that join must leave it alone, as it leaves a launch-joined head session alone.\n`splice sessions`: \"  ● pid 293158  unknown head  idle  live  started just now, updated just now · ~\"\n\nOn another machine's door (node with [remote.claude] url = \"<box>/door\"): \"head\":\"unknown head\",\"route\":\"unknown\",\nno launch record (the launcher's empty base URL, see door-launch-record).\n\nA stand-in started around splice (no SPLICE=1 in its environment) reads \"route\":\"direct\",\"head\":\"unknown head\".\nNote for checks: a terminal that is itself a splice session carries SPLICE=1; the check's helper removes it.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-19 07:08 CT door-sessions/coordinator: added; 1 of 1 checks fail, as they should before the work',
+]
+
+[[row]]
+id = 'door-session-relaunch'
+title = 'A running door session is relaunched on the command it was started with'
+feature = 'door-sessions'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'door-session-route',
+]
+guard = false
+spec = '''
+A running door session is relaunched the way a head's session is: started again by the command it was started with, resumed by its id, so key rotation and every other relaunch reach door sessions too.
+
+What the running product does once this is built:
+- `POST /api/sessions/{id}/relaunch` for a live door session (route door, door-session-route) is never refused as "it runs on no splice command" (`head_unknown`). It is planned as a head session's relaunch is (SessionContinue.Plans.relaunch / asItWas, RelaunchCommands): the same refusals in the same order (a draft, a working session, background shells, a terminal that cannot be ended or kept), then the session is ended in its pane and started again in that pane by the command its launch recorded, in the person's own Claude folder, with the words its process was given read back as for a session of the wrapped `claude` (LaunchRecipeArgs.callerArgs with wrapped = true, ClaudeArgv.resumed), on the model its row reports.
+- Which program: for this machine's door, the person's `claude` as `splice install` links it (WrappedClaudeLaunch), which puts it on the door again; for another machine's door, the command `splice remote add` linked for that `[remote.<command>]` (the launcher under that name), which goes to the same box's door again. When that program is not on this machine the relaunch is refused before anything is ended, naming the command and how to put it back, in the shape a head's missing command is refused today ("The claude-astra command is not linked; run splice install astra."): the refusal names `claude` (or the `--as` name).
+- It has come back when the session registers again under its id as a door session, or a new client runs in its pane, as a head session's relaunch comes back (MoveArrival). A session on another machine's door never sends its turns through this daemon, so its return is never waited for as a turn arrival.
+- `splice sessions relaunch` (after `splice rotate-key`) takes running door sessions with the sessions on heads: each is asked of SessionKeys like any other and relaunched by the daemon when it holds a key the rotation strands (its hosted MCP key, read against its launch's start time). Its lines name it by the same words as `splice sessions` (`door`, `door on <machine>`), and the one this command runs in is left with "exit it and resume it with `claude -r <id>`" (its recorded command). The command's "nothing to do" line no longer says only "on a splice head": it says "no running session splice launched holds one of splice's keys".
+- Head sessions relaunch exactly as before.
+
+Not here: what a row says (door-session-route), the console.
+
+Proof: `bun test ./.campaign/checks/door-sessions/relaunch.test.ts` (on Linux) starts `claude` through the installed launcher on a stand-in Claude Code, on this machine's door and on a box's door from a node, and asks each to relaunch: neither is refused for running on no splice command, and each refusal (no terminal holds them in the check) names `claude`.'''
+checks = [
+  'rig remote run --needs system=Linux/x86_64 -- bun test ./.campaign/checks/door-sessions/relaunch.test.ts',
+]
+sources = [
+  'app/src/main/kotlin/splice/app/control/RelaunchCommands.kt',
+  'app/src/main/kotlin/splice/app/cli/sessions/SessionsRelaunchCommand.kt',
+  'app/src/main/kotlin/splice/app/cli/sessions/SessionKeys.kt',
+  'features/launch/src/main/kotlin/splice/launch/wrap/WrappedClaudeLaunch.kt',
+  '.campaign/checks/door-sessions/lib/launch.ts',
+]
+results = [
+  "Saved tool result (d-relaunch.txt):\nObserved Nov 19, 2026 (CT), today's build, both sessions started through the launcher, idle, no tmux pane:\n\nHEAD (claude-astra)  POST /api/sessions/<id>/relaunch -> 409 {\"error\":\"The claude-astra command is not linked; run splice install astra.\"}\nDOOR (claude)        POST /api/sessions/<id>/relaunch -> 409 {\"error\":\"it runs on no splice command, so there is none to relaunch it on\",\"reason\":\"head_unknown\"}\n\nSessionContinue.Plans.relaunch refuses on record.head == null (RELAUNCH_NO_HEAD); RelaunchCommands.command needs a\nhead key; SessionsRelaunchCommand.runsOnAHead keeps only sessions with a head.\n",
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-19 07:19 CT door-sessions/coordinator: added; 1 of 1 checks fail, as they should before the work',
 ]

@@ -107,17 +107,29 @@ describe("df-wire-answers", () => {
     expect(seen.headers["anthropic-version"]).toBe("2023-06-01");
   });
 
-  test("an Anthropic head's refusal reaches Desktop with its body whole", async () => {
-    const body = JSON.stringify({
-      type: "error",
-      error: { type: "invalid_request_error", message: "prompt is too long: 210000 tokens > 200000 maximum. Remove some content and try again." },
-      request_id: "req_df_wire",
-    });
-    ant.next.push({ status: 400, body });
-    const t = await doorTurn(d.url, { key: d.key, model: ANT, stream: false, session: crypto.randomUUID() });
-    expect(t.status).toBe(400);
-    expect(JSON.parse(t.body)).toEqual(JSON.parse(body));
-    expect(t.headers.get("x-should-retry")).toBe("false");
+  test("an Anthropic head's refusal reaches Desktop with its status and body whole, streamed or not", async () => {
+    // Claude Code streams its turns, so a streamed turn's refusal is the one Desktop meets most (round 4's feature
+    // review: streamed 400, 403 and 413 came back rewritten as 400 "[splice] ..." with request_id gone).
+    for (const status of [400, 403, 413]) {
+      for (const stream of [false, true]) {
+        const body = JSON.stringify({
+          type: "error",
+          error: { type: "invalid_request_error", message: `anthropic's own words for ${status}: prompt is too long: 210000 tokens > 200000 maximum` },
+          request_id: `req_df_wire_${status}_${stream}`,
+        });
+        ant.next.length = 0;
+        // refused every time it is asked, so whatever splice retries itself, the answer is the refusal
+        for (let i = 0; i < 20; i++) ant.next.push({ status, body });
+        const t = await doorTurn(d.url, { key: d.key, model: ANT, stream, session: crypto.randomUUID() });
+        ant.next.length = 0;
+        let got: unknown = t.body.slice(0, 300);
+        try {
+          got = JSON.parse(t.body);
+        } catch {}
+        expect([status, stream, t.status, got]).toEqual([status, stream, status, JSON.parse(body)]);
+        expect([status, stream, t.headers.get("x-should-retry")]).toEqual([status, stream, "false"]);
+      }
+    }
   });
 
   test("an overload says when to retry in whole seconds, and that a retry is worth it", async () => {

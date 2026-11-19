@@ -100,6 +100,7 @@ describe("df-models", () => {
   test("every row passes Desktop's filter: its id reads as Claude, and it carries a tier Desktop knows", async () => {
     for (const r of await allModels(d.url, d.key)) {
       expect([r.id, desktopKeeps(r)]).toEqual([r.id, true]);
+      expect(r.id).toMatch(/^claude-splice-\d{12}$/);
       expect([r.id, ["opus", "sonnet", "haiku", "fable"].includes(String(r.anthropic_family_tier))]).toEqual([r.id, true]);
     }
   });
@@ -155,11 +156,14 @@ describe("df-models", () => {
     }
   });
 
-  test("a head added to splice is listed at the next discovery", async () => {
+  test("a head added to splice is listed at the next discovery, and every row it had keeps its id", async () => {
+    const before = bySelector(await allModels(d.url, d.key));
     s.writeConfig(heads + mockHead({ key: "vega", command: "claude-vega", port: await freePort(), url: vega.url, model: "grok-vega" }));
     await s.restart();
     const rows = bySelector(await allModels(d.url, d.key));
     expect(rows["claude-vega--grok-vega"]?.anthropic_family_tier).toBe("opus");
     expect(rows["claude-vega--grok-vega"] && desktopKeeps(rows["claude-vega--grok-vega"])).toBe(true);
+    // Desktop keeps the model id in each conversation it stores, so a row's id is the same at every launch.
+    for (const [selector, row] of Object.entries(before)) expect([selector, rows[selector]?.id]).toEqual([selector, row.id]);
   }, 240_000);
 });

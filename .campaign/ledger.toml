@@ -3336,7 +3336,7 @@ What the running console does once this is built:
 
 Not in this item: api.js's lock and pilot.js on deck pages (nd-client); any page.
 
-Proven by: `bun test ./.campaign/checks/console-night-deck/kit.test.ts`: a probe page that is only a field (fixtures/probe.html) gets the six tabs, no rails or composer, the 2× nav at 3840 with no sideways overflow, 15/30 px root, Barlow and DM Mono loaded from fonts/, Day held across a reload, SPLICE read live from a stub's /api/heads and /api/models; deck-raw refuses fixtures/raw-bad.* (12px, #ff0000, --ground, the JS inline width) and passes raw-good.* and the console's pages.
+Proven by: `bun test ./.campaign/checks/console-night-deck/kit.test.ts`: a probe page that is only a field (fixtures/probe.html) gets the six tabs, no rails or composer, the 2× nav at 3840 with no sideways overflow, 15/30 px root, Barlow and DM Mono loaded from fonts/, Day held across a reload (the check seeds the theme only while `splice-console-theme` is unset, so a reload keeps what the switch saved; decided Nov 19, 2026 after the round-1 dispute showed the old seed re-imposed night on every navigation), SPLICE read live from a stub's /api/heads and /api/models; deck-raw refuses fixtures/raw-bad.* (12px, #ff0000, --ground, the JS inline width) and passes raw-good.* and the console's pages.
 
 How it is judged beyond the check: the feature review opens the probe page (served the way the check serves it) on a private display at 1440×900 and 3840×2160, night and day, beside the approved console/settings.html, and compares the room, the nav glass, the switch and the type from its own screenshots (tools/console-look once nd-look is in; until then the same: Xvfb, Chrome, ffmpeg x11grab, xdotool). Screenshots stay in captures/console-night-deck/nd-kit/.'''
 checks = [
@@ -3356,6 +3356,7 @@ reviews = [
 ]
 notes = [
   '2026-11-18 22:38 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 CT console-night-deck/coordinator: round-1 dispute upheld; the plan was wrong, not the build. lib/deck.ts open() now seeds splice-console-theme only when unset. Run on this build with the revised check: the reload test passes; deck-raw prints clean. Rebuild from round 1 keeps the existing kit.",
 ]
 
 [[row]]
@@ -3381,7 +3382,7 @@ Every item of this feature is judged by using the running console on a private d
 - Screenshots meant for judging go to captures/console-night-deck/<item>/ by convention (git-ignored); the tool never writes into the repo otherwise.
 - A README.md in the folder says how a review uses it: serve the build, start --live at 1440×900 and 3840×2160, sign in, shot, use, read the images; writes only on tools/console-own's Splice.
 
-Proven by: `bun test ./.campaign/checks/console-night-deck/look.test.ts`: a stub page opened at 3840×2160 is shot as a 3840×2160 PNG and its text read; with --live, the page's GET reaches the stub and its POST and PATCH do not, and `blocked` lists both.
+Proven by: `bun test ./.campaign/checks/console-night-deck/look.test.ts` (it runs the tool with Bun.spawn and awaits it, since its stub daemon answers on the test's own thread, and gives each test its own stub; decided Nov 19, 2026 after the round-2 dispute): a stub page opened at 3840×2160 is shot as a 3840×2160 PNG and its text read; with --live, the page's GET reaches the stub and its POST and PATCH do not, and `blocked` lists both.
 
 Judged: the feature review runs the tool against the stub probe page and against the live console (read-only) and reads the screenshots it took.'''
 checks = [
@@ -3399,6 +3400,7 @@ reviews = [
 ]
 notes = [
   '2026-11-18 22:39 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 CT console-night-deck/coordinator: round-2 dispute upheld; the plan was wrong. look.test.ts used spawnSync, which blocks the thread the in-process stub (lib/deck.ts Bun.serve) answers on, so writes.html could never load. Revised: async Bun.spawn, text polled until it says Writes, one stub per test. Run on this build with the revised check: 2 pass, 0 fail.",
 ]
 
 [[row]]
@@ -3458,7 +3460,9 @@ An interaction that writes (sending in the composer, signing in, changing a sett
 - Names, accounts, paths and prompts in it are made up; nothing is copied from the machine's own Splice.
 - README.md says how a review uses it with tools/console-look: up, open the console and the launch page, try the write, read the effect, down.
 
-Proven by: `bun test ./.campaign/checks/console-night-deck/own.test.ts`: up answers with a console that is not :3096 and a launch page; its /api/sessions lists a live session, /api/perf/turns has rows, /api/teams a team; down removes the home and the console stops answering.
+Proven by: `bun test ./.campaign/checks/console-night-deck/own.test.ts`: up answers with a console that is not :3096 and a launch page; its /api/sessions lists a live session; /api/perf/turns, read once per head /api/heads lists (`?head=<key>&since=0&n=50`), has rows, at least one of them an error (the stand-in's 429); /api/teams a team; down removes the home and the console stops answering.
+
+Why per head: the daemon's /api/perf/turns answers one head at a time and refuses a read that names none with 400 {"error":"unknown head: "} (features/usage/src/main/kotlin/splice/usage/perf/PerfRoutes.kt, legacyTurns), and every page of today's console names its head (usage.js turnsUrl, teams.js, settings.js). The route stays as it is; the check reads it the way the console does, and the shared stub (lib/deck.ts perfTurns) now refuses a head-less read the same way. Decided Nov 19, 2026 after the round-2 dispute.
 
 Judged: the feature review runs up, opens its console on a private display, and checks one write (a setting change) lands there and not on the live Splice.'''
 checks = [
@@ -3473,6 +3477,7 @@ reviews = [
 ]
 notes = [
   '2026-11-18 22:40 CT console-night-deck/coordinator: added; 1 of 1 checks fail, as they should before the work',
+  "2026-11-19 CT console-night-deck/coordinator: round-2 dispute upheld; the plan was wrong. own.test.ts read /api/perf/turns with no head, which the real route answers 400 unknown head. Revised: read each /api/heads key and sum rows, and require one error row (the 429). The builder's run on this build: up exits 0, console not :3096, launch page exists, /api/sessions lists the probe session live; head=acme 14 rows (13 ok, 1 error:rate-limited), head=globex 12 rows (11 ok, 1 error:rate-limited); /api/teams has harbor-crew; down removes the home.",
 ]
 
 [[row]]

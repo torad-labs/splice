@@ -28,8 +28,17 @@ test("up starts a Splice of its own with requests, a team and a live probe sessi
 
   const sessions = (await read("/api/sessions")).sessions as { availability?: string }[];
   expect(sessions.some((s) => s.availability === "live")).toBe(true);
-  const turns = (await read("/api/perf/turns?since=0&n=50")).heads as { rows?: unknown[] }[];
-  expect(turns.reduce((n, h) => n + (h.rows?.length ?? 0), 0)).toBeGreaterThan(0);
+  // /api/perf/turns answers one head at a time (PerfRoutes.kt refuses a read that names none), so read each head
+  // /api/heads lists and add them up. Among the rows, at least one is the stand-in's 429.
+  const keys = ((await read("/api/heads")).heads as { key: string }[]).map((h) => h.key);
+  expect(keys.length).toBeGreaterThan(0);
+  const rows: { outcome?: string }[] = [];
+  for (const key of keys) {
+    const heads = (await read(`/api/perf/turns?head=${encodeURIComponent(key)}&since=0&n=50`)).heads as { rows?: { outcome?: string }[] }[];
+    for (const h of heads) rows.push(...(h.rows ?? []));
+  }
+  expect(rows.length).toBeGreaterThan(0);
+  expect(rows.some((r) => String(r.outcome ?? "").startsWith("error")), "no request failed with the stand-in's 429").toBe(true);
   const teams = (await read("/api/teams")).teams as unknown[];
   expect(teams.length).toBeGreaterThan(0);
 

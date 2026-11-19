@@ -87,10 +87,14 @@ export interface Opened {
   close(): Promise<void>;
 }
 
-/** [file] on the stub at [size], in [theme] (saved the way the console saves it), with its page errors collected. */
+/** [file] on the stub at [size], in [theme] (saved the way the console saves it), with its page errors collected.
+ *  The theme is saved only while the key is unset: an init script runs on every navigation, page.reload() included, so
+ *  it seeds the first load and a reload keeps whatever the page saved since. */
 export async function open(b: Browser, d: Daemon, file: string, size = NARROW, theme: "night" | "day" = "night"): Promise<Opened> {
   const ctx = await b.newContext({ viewport: size });
-  await ctx.addInitScript((t) => { try { localStorage.setItem("splice-console-theme", t); } catch { /* storage off */ } }, theme);
+  await ctx.addInitScript((t) => {
+    try { if (localStorage.getItem("splice-console-theme") === null) localStorage.setItem("splice-console-theme", t); } catch { /* storage off */ }
+  }, theme);
   const page = await ctx.newPage();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -244,10 +248,13 @@ export const ROWS = [
     total: 900, first_byte: null, arrival_to_upstream_write_ms: 35, attempts: 1, retries: 0, in_tokens: 0, cached_tokens: 0,
     cache_write_tokens: 0, out_tokens: 0, cost_usd: 0, plan_value_usd: null, account_label: null, req_bytes: 47_000 },
 ];
-/** /api/perf/turns, per head: acme's rows, and none for any other head. */
+/** /api/perf/turns, per head: acme's rows, and none for any other head. A read names its head, as the daemon's route
+ *  demands (features/usage/.../PerfRoutes.kt, legacyTurns and the selected-query path): no head, or one it does not know,
+ *  answers 400 {"error":"unknown head: <name>"}, so a page built on this stub reads one head at a time, as it must live. */
 export const perfTurns = (_req: Request, url: URL) => {
-  const head = url.searchParams.get("head");
-  const heads = HEADS.heads.filter((h) => !head || h.key === head).map((h) => {
+  const head = url.searchParams.get("head") ?? "";
+  if (!HEADS.heads.some((h) => h.key === head)) return Response.json({ error: `unknown head: ${head}` }, { status: 400 });
+  const heads = HEADS.heads.filter((h) => h.key === head).map((h) => {
     const rows = h.key === "acme" ? ROWS : [];
     return { key: h.key, label: h.key, count: rows.length, returned: rows.length, truncated: false, rows, usage: { models: [], accounts: [], sessions: [], days: [] } };
   });

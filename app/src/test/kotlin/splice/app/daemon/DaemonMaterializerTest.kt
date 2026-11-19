@@ -32,7 +32,6 @@ class DaemonMaterializerTest {
         statuslineCommand = "",
         signIn = MaterializeSignIn(
             loginCommand = "openrouter login",
-            signInLabel = "OpenRouter",
             tokenCapture = capture,
         ),
     )

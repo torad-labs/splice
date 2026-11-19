@@ -40,9 +40,12 @@ public interface LaunchHeads {
     public fun targets(name: String): List<LaunchHead>
 }
 
-/** The two `[control]` audit lines a launch writes: the argv it answered, and any warning it carried. */
+/** The `[control]` audit lines a launch writes: the argv it answered and any warning it carried, or why it was
+ *  refused. */
 public interface LaunchAudit {
     public fun launched(key: String, argv: List<String>)
 
     public fun warned(message: String)
+
+    public fun refused(key: String, reason: String)
 }

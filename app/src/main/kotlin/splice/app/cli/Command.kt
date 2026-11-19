@@ -78,6 +78,12 @@ public sealed class Command {
         override suspend fun run(): Int = splice.app.cli.desktop.DesktopCommand().run(args)
     }
 
+    /** `splice claude [<verb>]`: put the terminal's `claude` on the door, or back on its head
+     *  (docs/specs/door-default.md). */
+    public data class Claude(val args: List<String>) : Command() {
+        override suspend fun run(): Int = splice.app.cli.claude.ClaudeCommand().run(args)
+    }
+
     /** `splice remote [<verb>]`: run commands another of the person's machines shares (docs/specs/lan-share.md). */
     public data class Remote(val args: List<String>) : Command() {
         override suspend fun run(): Int = splice.app.cli.share.RemoteCommand().run(args)
@@ -118,6 +124,7 @@ public sealed class Command {
             val env = EnvReader(System::getenv)
             val removed = InstallWiring.command().uninstall(target, env)
             if (removed) InstallWiring.retireUnits(target, env)
+            if (removed) InstallWiring.retireLogin(target, env)
             return outcomeExitCode(removed)
         }
     }

@@ -5,15 +5,19 @@
 package splice.app
 
 import splice.app.cli.AdminSupport
+import splice.app.desktop.ClaudeLaneLook
 import splice.app.provider.JdkLocalHttp
 import splice.app.provider.LocalProbeInputs
 import splice.core.config.RunningJar
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
+import splice.core.util.LogSink
+import splice.diagnostics.doctor.ClaudeLaneRead
 import splice.diagnostics.doctor.DaemonAnswers
 import splice.diagnostics.doctor.DoctorCommand
 import splice.diagnostics.doctor.DoctorFixes
 import splice.diagnostics.doctor.LocalRuntimeTransport
+import splice.topology.TopologyStatePaths
 
 internal object DoctorWiring {
     private val probeInputs = LocalProbeInputs()
@@ -27,6 +31,9 @@ internal object DoctorWiring {
         jar = RunningJar(AdminSupport::selfJar),
         local = LocalRuntimeTransport { key, provider, env ->
             JdkLocalHttp(probeInputs.headers(provider, probeInputs.bearer(key, provider, env)))
+        },
+        lane = ClaudeLaneRead { topology, env ->
+            ClaudeLaneLook(topology, TopologyStatePaths(env).of(topology), LogSink { System.err.print(it) }).reading()
         },
     )
 

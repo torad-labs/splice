@@ -23,7 +23,6 @@ private val PORTABLE_WRAPPER_NAME = Regex("[A-Za-z0-9][A-Za-z0-9._-]*")
 internal data class SignInPlan(
     val command: String,
     val label: String,
-    val viaBrowser: Boolean,
     val tokenCapture: TokenCaptureSpec?,
     val credentialFix: String,
 )
@@ -37,11 +36,11 @@ internal class SignInPlanner {
         val command = "$wrapper login"
         return when (val kind = AuthKindRegistry.from(providerCfg.auth.kind)) {
             is AuthKind.OAuth -> oauthSignIn(wrapper, kind.signInLabel)
-            AuthKind.Client -> SignInPlan("", kind.signInLabel, false, tokenCapture = null, credentialFix = "")
+            AuthKind.Client -> SignInPlan("", kind.signInLabel, tokenCapture = null, credentialFix = "")
             null -> if (providerCfg.auth.kind == API_KEY) {
                 apiKeySignIn(providerCfg, head, command, key)
             } else {
-                SignInPlan("", "", viaBrowser = true, tokenCapture = null, credentialFix = "")
+                SignInPlan("", "", tokenCapture = null, credentialFix = "")
             }
         }
     }
@@ -51,7 +50,7 @@ internal class SignInPlanner {
             "OAuth wrapper must be a bare portable command name: '$wrapper'"
         }
         val login = "$wrapper login"
-        return SignInPlan(login, label, viaBrowser = true, tokenCapture = null, credentialFix = login)
+        return SignInPlan(login, label, tokenCapture = null, credentialFix = login)
     }
 
     /** The api-key branch, split out so [signInPlan] stays under detekt's complexity ceiling. */
@@ -70,6 +69,6 @@ internal class SignInPlanner {
         // terminal. Neither spawns anything, because a detached api-key login has no TTY.
         // (ONE PROVIDER AT A TIME applies to CAPTURE patterns — not to whether /login exists.)
         val fix = "splice key set $env"
-        return SignInPlan(command, label, viaBrowser = false, tokenCapture = capture, credentialFix = fix)
+        return SignInPlan(command, label, tokenCapture = capture, credentialFix = fix)
     }
 }

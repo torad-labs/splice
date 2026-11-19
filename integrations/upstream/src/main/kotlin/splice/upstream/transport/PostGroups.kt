@@ -2,6 +2,10 @@
 // from UpstreamAttempt.kt, which keeps the context itself and the attempt's outcome. Same package: no call site changes.
 package splice.upstream.transport
 
+import splice.core.failure.FailureCause
+import splice.core.failure.Moment
+import splice.core.failure.Outlast
+import splice.core.failure.Position
 import splice.core.perf.TurnPerf
 import splice.upstream.BodyAmendment
 import splice.upstream.ClientFrameEmitted
@@ -10,9 +14,11 @@ import splice.upstream.TurnRetry
 import splice.upstream.VendorRoute
 import splice.upstream.retry.HOLD_FLOOR_MS
 import splice.upstream.retry.OtherLoginFree
+import splice.upstream.retry.OtherModelRoom
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.retry.WarmLoginWait
 import splice.upstream.sse.WireObserver
+import java.time.Instant
 
 /** Remaining whole-turn wait budget at the instant retry policy asks. */
 public fun interface RemainingTurnWait {
@@ -61,11 +67,35 @@ public data class PostLimits(
     /** Whether the failure can move to a free login, or, once all are held, to an earlier-reset login. The cause supplies
      *  the just-received reset before it is persisted for account selection. Null preserves a standalone post's policy. */
     val otherLoginFree: OtherLoginFree? = null,
+    /** Whether the turn's re-send goes on under a model with room, so a limit no login can wait out for this model
+     *  ends at once as a re-send instead of a hold (Nov 17, 2026). Null holds as before. */
+    val otherModelRoom: OtherModelRoom? = null,
     /** The model the request asks the upstream for, where the caller knows it: a refusal of one model's week holds
      *  [rateLimitCooldown]'s login for this model alone, and an answer ends this model's week, never another's (Nov 3,
      *  2026). Null holds and ends only what the whole login's windows say. */
     val model: String? = null,
-)
+) {
+    /** The ending of a limit on [held] no login can wait out for this model, where the turn's re-send goes on under a
+     *  model with room ([otherModelRoom]) and no frame reached the client yet, so the client sends it again at once:
+     *  no hold begins, and none is handed to the client. Null where the turn holds or ends as before. [reset] is the
+     *  held cause's own (Nov 17, 2026). */
+    public fun movesFrom(held: FailureCause, reset: Instant?, at: Position): FailureCause.Splice.HoldOutlasted? {
+        val unsent = at.moment != Moment.MID_CONTENT && at.moment != Moment.COMMITTED
+        return if (unsent && otherModelRoom?.invoke(held) == true) {
+            FailureCause.Splice.HoldOutlasted(Outlast.MOVES, held, reset)
+        } else {
+            null
+        }
+    }
+
+    /** [ending] as the turn leaves with it: a hold that could not begin or reached the session's wall is not handed
+     *  to the client where the turn's re-send goes on under a model with room ([movesFrom]); any other as it is. */
+    public fun ending(ending: FailureCause, at: Position): FailureCause {
+        val outlasted = ending as? FailureCause.Splice.HoldOutlasted ?: return ending
+        val handed = outlasted.why == Outlast.WALL || outlasted.why == Outlast.TOO_FAR
+        return (if (handed) movesFrom(outlasted.held, outlasted.nextReset, at) else null) ?: ending
+    }
+}
 
 /** What listens to a post without changing it: the turn's timing row, the wire recorder, the refresh observer and
  *  the retry notice. */

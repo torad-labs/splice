@@ -9,16 +9,14 @@ package splice.dialect.responses
 
 import splice.core.auth.Credentials
 import splice.core.parse.AnthropicTurnBody
-import splice.core.prompt.SystemPromptMode
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
 import splice.dialect.responses.failure.ResponsesReplies
-import splice.dialect.responses.request.ResponsesCompactionTail
 import splice.dialect.responses.request.ResponsesParts
-import splice.dialect.responses.request.ResponsesSystemPrompt
 import splice.dialect.responses.stream.FoldConfig
+import splice.dialect.responses.usertext.ResponsesPlacements
 import splice.dialect.responses.websocket.ResponsesWebSocketPolicy
 import splice.dialect.responses.websocket.ResponsesWsSupport
 import splice.dialect.responses.websocket.WsExtraHeaders
@@ -28,6 +26,7 @@ import splice.upstream.Provider
 import splice.upstream.ProviderIdentity
 import splice.upstream.ProviderTuning
 import splice.upstream.ReanchorPolicy
+import splice.upstream.RequestPlacements
 import splice.upstream.RequestRefusal
 import splice.upstream.StreamTranslator
 import splice.upstream.ToolNameShortener
@@ -55,7 +54,10 @@ public abstract class ResponsesProvider(
      *  here by every head: the base hands it to its parts while it is constructed, before a subclass's own property
      *  would be assigned, so an override read here was null and every such head failed to start. */
     final override val replies: Replies = Replies(ResponsesReplies),
-) : Provider, ProviderIdentity by tuning {
+) : Provider,
+    ProviderIdentity by tuning,
+    // Where splice's own text goes in its requests: the compaction tail, the standing prompt, a capability's text.
+    RequestPlacements by ResponsesPlacements() {
 
     final override val showReasoning: ReasoningDisplay get() = reasoning.now().display
     final override val replayReasoning: Boolean get() = reasoning.now().replay
@@ -63,8 +65,6 @@ public abstract class ResponsesProvider(
     final override val upstreamUrl: String = "${tuning.locations.baseUrl}/responses"
 
     // Collaborator wiring lives in ResponsesParts.kt (concentration, 2026-08-19).
-    private val compactionTail = ResponsesCompactionTail()
-    private val systemPrompt = ResponsesSystemPrompt()
     private val parts = ResponsesParts(tuning, reasoning, quirks, fold, log, toolNames, replies)
     private val locations = tuning.locations
     private val liteShape = ResponsesLiteShape(quirks)
@@ -99,12 +99,6 @@ public abstract class ResponsesProvider(
             toolSearch = built.toolSearch,
         )
     }
-
-    final override fun withCompactionTail(turn: BuiltTurn, instructions: String): BuiltTurn =
-        turn.copy(requestBody = compactionTail.append(turn.requestBody, instructions))
-
-    final override fun withSystemPrompt(turn: BuiltTurn, prompt: String, mode: SystemPromptMode): BuiltTurn =
-        turn.copy(requestBody = systemPrompt.apply(turn.requestBody, prompt, mode))
 
     final override fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator =
         parts.turnSeams.streamTranslator(meta, signals)

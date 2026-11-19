@@ -1,5 +1,142 @@
 # Changelog
 
+## splice v0.6.4: `claude` runs on splice's door, and the door answers on your network - 2026-11-19
+
+### Highlights
+- **The door answers on your network.** Turn on `splice share on` on one machine and any machine on its LAN or
+  tailnet runs plain `claude` on every model that box serves, ChatGPT, Grok, Kimi, Muse, Claude accounts and local
+  servers alike, after one `splice remote add http://<box>`. `/model` lists the box's models, the session runs over
+  the machine's own `~/.claude`, and no credential lands there. A Claude Code without splice, or Claude Desktop's
+  Code tab, runs on it from three Bedrock-style variables that `splice share status` prints. Spec:
+  `docs/specs/door-network.md`.
+- **`claude` on the door is how splice is used.** The terminal's plain `claude` runs on splice's door, the one
+  Claude Desktop's Code tab uses, with a key of its own. Its `/model` picker lists the models of every account you
+  signed in to with a ChatGPT, Grok, Kimi or Muse login, each labelled `splice · <command>`, and a sign-in shows in
+  the next session with no restart. The session runs over your own `~/.claude`; splice writes nothing there.
+- **Claude Desktop's Code tab is a caller of that same door.** There is one door, at one path (`/door`), for the
+  terminal's `claude`, Desktop's Code tab and another machine's `claude`. Desktop keeps a key and an on/off of its
+  own and nothing else: a Code tab session starts on the model `claude` starts on, and
+  `splice claude door --model <selector>` moves both.
+- **`/login` opens splice's accounts page.** In a session on the door, and on every head here, `/login` runs
+  `splice console` and the turn goes no further. Claude Code's own `/login` and `/logout` are off on the door. With
+  no account signed in, a turn is refused with a message that says to type `/login`.
+- **Head commands are deprecated.** `claudex`, `claude-grok`, `claude-kimi`, `claude-muse` and every command
+  `splice add` links keep working, and each says it is deprecated when it starts. `claude` on its own head says
+  nothing: it is your own Claude Code on your own login. No head is removed, and no date is set for removing one.
+- **A capability runs work before a session's first turn.** A `[capabilities.<name>]` table in `splice.toml`
+  names an HTTP worker you write: a policy check, a reviewer, a helper that gathers context. splice holds the turn
+  while it works, and what it returns goes into the session's first user message and stays there, byte for byte,
+  on every later request. A capability that fails lets the turn go on or refuses it, as its table says.
+
+### Upgrading
+- **Claude Desktop starts on the model `claude` starts on.** A default model saved for Desktop by an earlier
+  `splice desktop on --model` is no longer read: after the update a new Code tab session starts where the
+  terminal's `claude` does, which `splice desktop` and `splice claude` both say. To choose it, run
+  `splice claude door --model <selector>`. `splice desktop on --model` is refused with that command's name and
+  changes nothing. The window you set in Desktop is kept. A Code tab session already open follows too, from its
+  next turn: Desktop names only its own models, so the door picks at each turn. A terminal session stays on the
+  model it started on.
+- The door's address is now `http://127.0.0.1:<control_port>/door`, and `splice desktop on` prints it. Nothing has
+  to be set again: the earlier address (`/desktop`) still answers, for a Desktop set up before and for a `claude`
+  session already running.
+- A tailnet peer is now answered by a machine that is itself on a tailnet (100.64/10 and Tailscale's IPv6 range), and
+  by its MagicDNS name. Before, the share listener turned tailnet peers away. A machine on no tailnet still turns
+  those ranges away.
+- `splice remote add http://<box>` on a box that serves a door links `claude` to it and no longer links each
+  command. An address naming one command (`http://<box>:3097/claudex`) still works, and `splice share status` lists
+  those as deprecated.
+- With no choice made, `claude` is on the door unless `splice.toml` has a head whose command is `claude`, so a
+  machine set up with the `claude` head keeps it. `splice claude door [--model <selector>]` moves it to the door,
+  and `splice claude head` moves it back. The choice is kept across restarts and upgrades.
+
+### Added
+- **Capabilities.** A `[capabilities.<name>]` table has `heads`, `call`, `when` (`turn`, `thread`, `mode`,
+  `models`), `place`, `may`, `message`, `color`, `timeout_s`, `on_failure`, `send` and `worker`. splice posts
+  the worker one JSON object holding only the fields `send` names, and never a session's or a provider's
+  credentials. The worker answers with JSON lines: progress, then a result's text or a refusal's reason. The text
+  is placed in each dialect's own shape, on Anthropic, Chat Completions and Responses heads. A table splice cannot
+  read stops the daemon from starting, with every finding listed at once, and `splice status` lists each
+  capability with the heads it is on for and its worker. A turn's row on `/api/perf/turns` carries
+  `capability_text_chars`, `held_on` and `held_ms`. With none declared, every request is the bytes it is today.
+  The design is `docs/specs/harness.md`.
+- **A held turn says what it is doing on the status line.** While a capability holds a turn, the session's status
+  line leads with the capability's `message` in its `color`, then each progress line its worker sends, with how long
+  ago it came (`Checking the request · 4s ago`). A turn waiting on a usage limit, an overload or credit keeps its
+  words and now says how long ago the wait began. With two turns of a session held, the line says `· 2 turns`.
+- **The model can call a capability, a worker can be an MCP tool, and the Context Getter ships.** `call = "agent"`
+  (or `"both"`) with a `tool` offers a capability to the model as a tool on a head that passes Anthropic's Messages
+  through; Claude Code never sees the call, and the answer after it streams as the same message. `worker = { kind =
+  "mcp", server, tool }` calls a tool of a server the MCP hub runs for the session's folder. `[capabilities.context-getter]`
+  with `worker = { kind = "builtin", name = "context-getter" }` runs a print-mode Claude Code on the head's fast model
+  that gathers the files and commands the first message needs, and places them in it. It is off until a head is named.
+- `splice claude [--json]`: the lane, the door, the model a session starts on and why, the picker's models, and
+  each head left out of it and why. `splice status` and `splice doctor` name the lane.
+- `splice setup` links `claude` on the door on a machine with no head for it, and no longer offers the Claude plan
+  in its list; `splice add claude` still adds that head.
+
+### Changed
+- A turn that reaches the share listener's door with Desktop's key or the terminal's is answered as that caller,
+  with its own on/off and window, so a Desktop or a `claude` of the machine itself can use either address.
+- A head's `/login` opens splice's accounts page instead of signing in inside the session. `<command> login` in a
+  terminal still signs in.
+- **Login alerts are two, each said once.** The daemon's `alert_command` and webhook are told when a command's last
+  login that can serve has passed 80% of a limit, and when no login can serve. The warning about the pace below 80%,
+  the repeat at 95% and the notice that a login can serve again are gone: one login running out sent up to five
+  messages, and two of them were acted on.
+- **A session whose model is spent on every login goes on under a model that has room.** Until now only a session
+  given a fallback model moved; every other one waited for the reset, days for a spent week. splice now picks the
+  model: the session's own fallback first, then the head's declared models in their order, then the models the
+  sessions' own turns ask for. A turn that would begin a hold on a spent model ends at once instead, and Claude Code
+  sends it again under the model with room. A turn already held asks every minute and moves the minute one has room.
+  The first turn a login can serve the session's own model goes back to it.
+
+### Fixed
+- **`splice claude head` leaves sessions on the door running.** It retired the terminal's key, so every `claude`
+  session already on the door was refused from its next turn. It now decides only where a new session starts.
+- **A key the door refuses is said in splice's words.** The door answered 401 and 403, which Claude Code reads from
+  a Mantle endpoint as AWS's and words as "AWS credentials expired or invalid". It answers 400 now, and the words
+  shown are splice's, with where each caller's key comes from.
+- **The console's first read no longer grows with every session ever opened.** `GET /api/sessions` sent a row for
+  every session the machine had registered: 3.3 MB and 25 seconds after a restart on a machine with 4,400 of them,
+  past the console's read limit. It sends the sessions still here and the newest 100 ended ones, `gone_older` counts
+  the rest, and `GET /api/sessions/history` pages and searches those.
+- **A login whose token can't be renewed hands the turn to another login.** When every other login was held for
+  the turn's model, the turn ended "login expired and could not be renewed" though other logins were signed in. It
+  now moves to the one whose hold ends soonest, or to a model with room.
+- **`-r NAME` resumes the newest session of that name** when several sessions in the folder carry it and none of
+  them belongs to this command. The name used to go to Claude Code as typed, which could open another command's
+  session and refuse its turns.
+- A model picked with `/model` stays picked across a restart. At each start, and at `splice desktop on` and `off`,
+  splice took any model of its door out of `~/.claude/settings.json` as a leftover of 0.6.0's Desktop door. It now
+  does so only while that older door is in the file, and it leaves a file Claude Code wrote in the meantime as
+  Claude Code wrote it.
+- **Plain `claude` goes through splice or it does not start.** When the launcher could not get a launch for plain
+  `claude` (the daemon refused it in words, stayed busy past the retries, was older than the launcher, or could not
+  be reached), it ran Claude Code directly on its own login and said so in one line. A session started that way
+  stays outside splice for its whole life: no other login takes its turns when its own runs out, and a launch the
+  daemon had refused was opened anyway. The launch now ends with the reason, followed by the command that runs
+  Claude Code without splice, for when that is what you want. A launch the daemon refuses is written to its log.
+- **`claude` on a Claude head sends its small requests on its small model.** Claude Code takes any address but
+  Anthropic's for a gateway's, and behind one it sends its small requests (the usage check at startup, titles,
+  summaries) on the session's main model. Anthropic answers that usage check on most models with a 429, which
+  Claude Code showed as a limit reached. The launch of a head that reaches Anthropic now tells Claude Code that the
+  address is Anthropic's own, and the launch of any other head clears that word if a session passes it down.
+- **A refusal that names no limit is no longer read as every login's limit.** A 429 with no reset, no window and
+  no Retry-After does not say whose it is. On a head with several logins splice moved the turn through every one
+  of them, showed each as limited for 20 seconds and let go of a Use now pin. Now one other login is asked. The
+  same answer there is no login's: the turn waits it out where it is, no login is shown limited and the pin stays.
+  An answer there shows the first login as limited, as before.
+- A request that does not stream and fails no longer carries a login's usage windows. Claude Code read them on a
+  429 as the limit it had hit, and showed the spent week of the last login splice had asked.
+- **A `splice` command's memory has a ceiling.** Every command but the daemon ran with no heap limit, so Java took
+  its default, a quarter of the machine: on a 120 GiB machine one `splice trace --last 4000 --json` grew to 20 GiB.
+  A command's heap now stops at 4 GiB, or at Java's own quarter on a machine under 16 GiB, and `splice trace` asked
+  for more turns than fit says so and what to ask for instead. `SPLICE_CLI_JVM_OPTS` replaces the ceiling.
+- **`claude -r NAME` goes on with another command's session.** A session resumed by name that another command wrote
+  was refused, with the `-r <id>` to type instead. The name now goes on as that id does: the session continues as
+  a copy on this command's model, the original stays as it was, and the launch says both ids. Launched by the same
+  name again, the command goes on with that copy and makes no other.
+
 ## splice v0.6.3: Claude Code's side requests keep their own instruction, a laptop links a team server's commands, and a 1-hour cache write keeps its price - 2026-11-17
 
 ### Highlights

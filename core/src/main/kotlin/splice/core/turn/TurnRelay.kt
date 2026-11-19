@@ -16,6 +16,9 @@ public data class TurnRelay(
     /** The door the turn came through ([DESKTOP_DOOR]), as the listener that relayed it named it; null for every turn
      *  that came straight to the head. */
     val door: String? = null,
+    /** The session a Context Getter's request works for ([GATHERS_FOR_HEADER], docs/specs/harness.md decision 9), so
+     *  its row names it as `worked_for`; null for every request no gatherer sent. */
+    val workedFor: String? = null,
 )
 
 /** The header the server listener names a relayed turn in. The relay sets it itself and never passes on a client's
@@ -26,3 +29,8 @@ public const val SERVED_TURN_HEADER: String = "x-splice-served-turn"
  *  the text it carries, sending nothing upstream: a laptop older than `[server.client] minimum` told what to upgrade
  *  to (server mode, F9). The relay sets it itself and never passes on a client's own (ShareRelay). */
 public const val SERVED_NOTICE_HEADER: String = "x-splice-served-notice"
+
+/** The header a Context Getter's requests name the session they work for in (docs/specs/harness.md, decision 9). splice
+ *  plants it in the gatherer's own custom headers; a request that carries it never calls a capability and has no say in
+ *  the model a command's logins are named for. */
+public const val GATHERS_FOR_HEADER: String = "x-splice-gathers-for"

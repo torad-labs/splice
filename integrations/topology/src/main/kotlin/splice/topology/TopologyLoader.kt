@@ -14,10 +14,13 @@ import kotlinx.serialization.descriptors.SerialKind
 import kotlinx.serialization.descriptors.StructureKind
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
+import splice.core.capability.CapabilityDeclarations
+import splice.core.capability.CapabilityToml
 import splice.core.config.RetiredKnob
 import splice.core.config.UserHome
 import splice.core.config.retiredKnobsByKey
 import splice.core.perf.HISTORY_DEFAULT_DAYS
+import splice.core.topology.Dialect
 import splice.core.topology.Topology
 import splice.core.topology.TopologyFinding
 import splice.core.util.Cancellables
@@ -330,8 +333,15 @@ historyRetentionDays = "$HISTORY_DEFAULT_DAYS"
     public fun parse(text: String): Topology {
         // Structural guards ktoml lacks (duplicate models keys, reopened tables, string rosters)
         // live in TomlStructurePreflight — extracted with its masker, 2026-08-31 concentration.
-        TomlStructurePreflight.check(text)
-        return decode(text)
+        // The capability tables are read apart (CapabilityToml); those found well-formed ride the topology, and a
+        // wrong one is boot's to refuse (ConfigFindings).
+        val split = CapabilityToml.split(text)
+        TomlStructurePreflight.check(split.rest)
+        val topology = decode(split.rest)
+        if (split.tables.isEmpty()) return topology
+        val messages = topology.headsSpeaking(Dialect.ANTHROPIC_PASSTHROUGH)
+        val read = CapabilityDeclarations(topology.heads.keys, messages = messages).read(split.tables)
+        return topology.copy(capabilities = read.capabilities)
     }
 
     /** The decode alone, without the structural guards: ktoml's type failure becomes the safe one-key diagnosis. A

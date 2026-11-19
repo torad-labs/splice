@@ -12,6 +12,7 @@ import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.respondText
 import kotlinx.serialization.json.JsonArray
 import splice.client.wrap.WrappedLaunch
+import splice.core.topology.CLAUDE_COMMAND
 import splice.core.topology.TopologyMessages
 import splice.core.util.JsonScalars
 import splice.http.JsonBody
@@ -46,14 +47,17 @@ public class LaunchRoutes(
 
     public suspend fun launch(call: ApplicationCall) {
         val key = call.parameters["head"].orEmpty()
+        // door-network: a `[remote.claude]` is where the person said `claude` runs, another machine's door or head, so
+        // it is asked before this machine's own door and head.
+        val elsewhere = launchService?.remotes?.takeIf { key == CLAUDE_COMMAND }?.launch(key)
+        if (elsewhere != null) return remoteReply(call, key, elsewhere)
+        // door-default: `claude` on the door runs no head here, whatever splice.toml holds.
+        val door = launchService?.door?.takeIf { key == CLAUDE_COMMAND }?.launch()
+        if (door != null) return doorReply(call, key, door)
         val targets = heads.targets(key)
         if (targets.size > 1) {
-            call.respondText(
-                LaunchReplies.errorJson(TopologyMessages.ambiguousHeadMessage(key, targets.map { it.head.key })),
-                ContentType.Application.Json,
-                HttpStatusCode.Conflict,
-            )
-            return
+            val ambiguous = TopologyMessages.ambiguousHeadMessage(key, targets.map { it.head.key })
+            return refuse(call, key, ambiguous, HttpStatusCode.Conflict)
         }
         val direct = targets.singleOrNull()?.let { Resolved(it, wrapped = ownHome(it)) }
         // LAN share: a name no head here carries may be a command another machine serves. A `[remote.claude]` is
@@ -68,20 +72,11 @@ public class LaunchRoutes(
         val spec = target?.spec
         if (spec == null || launchService == null) {
             val known = heads.all().joinToString(", ") { it.head.label }
-            call.respondText(
-                LaunchReplies.errorJson("no launchable head named '$key' (configured: $known)"),
-                ContentType.Application.Json,
-                HttpStatusCode.NotFound,
-            )
-            return
+            val unknown = "no launchable head named '$key' (configured: $known)"
+            return refuse(call, key, unknown, HttpStatusCode.NotFound)
         }
         if (!target.head.healthSnapshot().running) {
-            call.respondText(
-                LaunchReplies.errorJson("head is not running"),
-                ContentType.Application.Json,
-                HttpStatusCode.ServiceUnavailable,
-            )
-            return
+            return refuse(call, key, "head is not running", HttpStatusCode.ServiceUnavailable)
         }
         val request = receiveLaunchRequest(call)
         reply(call, key, resolved, request)
@@ -93,18 +88,29 @@ public class LaunchRoutes(
         val spec = requireNotNull(target.spec)
         val destination = resolved.wrapped?.configDir ?: spec.trees.own
         val refusal = service.loginGuard?.refusal(destination)
-        if (refusal != null) {
-            call.respondText(LaunchReplies.errorJson(refusal), ContentType.Application.Json, HttpStatusCode.Conflict)
-            return
-        }
+        if (refusal != null) return refuse(call, key, refusal, HttpStatusCode.Conflict)
         // Read both live windows and the native destination hold after body reception has finished.
         val launched = target.catalog?.let(spec::withWindows) ?: spec
-        val outcome = when (val launch = launchFor(target, launched, request, resolved.wrapped, service)) {
+        // door-default, decision 9: `claude` on its head lists the signed-in accounts' models after Claude Code's own.
+        val picker = service.door?.takeIf { key == CLAUDE_COMMAND && resolved.wrapped != null }?.headPicker()
+        val caller = LaunchCaller(request.cwd, resolved.wrapped, request.inheritedConfigDir, request.launch, picker)
+        val outcome = when (val launch = launchFor(target, launched, request, caller, service)) {
             is LaunchOutcome.Ready ->
                 LaunchOutcome.Ready(launchResponse.withAuthWarning(target, launched, launch.recipe))
             is LaunchOutcome.Refused -> launch
         }
         answer(call, key, outcome)
+    }
+
+    /** `claude` on the door (docs/specs/door-default.md, decision 2): the recipe [door] carries, over the person's own
+     *  Claude folder. */
+    private suspend fun doorReply(call: ApplicationCall, key: String, door: DoorLaunchSpec) {
+        val service = requireNotNull(launchService)
+        val request = receiveLaunchRequest(call)
+        val caller = LaunchCaller(request.cwd, null, request.inheritedConfigDir, request.launch)
+        val headDirs = heads.all().mapNotNull { it.spec?.trees?.own }
+        val skip = request.dangerouslySkipPermissions
+        answer(call, key, service.onDoor.outcome(door, request.extraArgs, skip, caller, headDirs))
     }
 
     /** A command another machine serves: refused in that machine's words, or launched from the spec it answered,
@@ -114,34 +120,31 @@ public class LaunchRoutes(
     private suspend fun remoteReply(call: ApplicationCall, key: String, remote: RemoteLaunch) {
         val service = requireNotNull(launchService)
         val spec = when (remote) {
-            is RemoteLaunch.Refused -> {
-                val refused = LaunchReplies.errorJson(remote.reason)
-                call.respondText(refused, ContentType.Application.Json, HttpStatusCode.Conflict)
-                return
-            }
+            is RemoteLaunch.Refused -> return refuse(call, key, remote.reason, HttpStatusCode.Conflict)
+            is RemoteLaunch.Door -> return doorReply(call, key, remote.spec)
             is RemoteLaunch.Ready -> remote.spec
         }
         val request = receiveLaunchRequest(call)
         val wrapped = service.wrap.launchThrough(key)
         val refusal = service.loginGuard?.refusal(wrapped?.configDir ?: spec.trees.own)
-        if (refusal != null) {
-            call.respondText(LaunchReplies.errorJson(refusal), ContentType.Application.Json, HttpStatusCode.Conflict)
-            return
-        }
+        if (refusal != null) return refuse(call, key, refusal, HttpStatusCode.Conflict)
         val caller = LaunchCaller(request.cwd, wrapped, request.inheritedConfigDir, request.launch)
         val skip = request.dangerouslySkipPermissions
         val outcome = service.launchOutcome(spec, request.extraArgs, skip, caller = caller)
         answer(call, key, outcome)
     }
 
+    /** A launch splice does not give, answered [status] in the words the shim prints. It is written to the log too:
+     *  a launch that never started was otherwise nowhere to be found afterwards. */
+    private suspend fun refuse(call: ApplicationCall, key: String, reason: String, status: HttpStatusCode) {
+        audit.refused(key, reason)
+        call.respondText(LaunchReplies.errorJson(reason), ContentType.Application.Json, status)
+    }
+
     /** [outcome] as the shim reads it: a refusal in words, or its recipe, audited. */
     private suspend fun answer(call: ApplicationCall, key: String, outcome: LaunchOutcome) {
         when (outcome) {
-            is LaunchOutcome.Refused -> call.respondText(
-                LaunchReplies.errorJson(outcome.reason),
-                ContentType.Application.Json,
-                HttpStatusCode.Conflict,
-            )
+            is LaunchOutcome.Refused -> refuse(call, key, outcome.reason, HttpStatusCode.Conflict)
             is LaunchOutcome.Ready -> {
                 val recipe = outcome.recipe
                 audit.launched(key, recipe.argv)
@@ -161,7 +164,7 @@ public class LaunchRoutes(
         target: LaunchHead,
         spec: LaunchSpec,
         request: LaunchRequest,
-        wrapped: WrappedLaunch?,
+        caller: LaunchCaller,
         service: LaunchService,
     ): LaunchOutcome = service.launchOutcome(
         spec,
@@ -169,7 +172,7 @@ public class LaunchRoutes(
         request.dangerouslySkipPermissions,
         // DR-81: key presence is read per launch, not from the boot-frozen spec.
         keyPresentNow = target.keyPresence.keyPresentNow(),
-        caller = LaunchCaller(request.cwd, wrapped, request.inheritedConfigDir, request.launch),
+        caller = caller,
     )
 
     /** The Claude head by its own name runs over the person's own Claude home, exactly as a wrapped `claude` does

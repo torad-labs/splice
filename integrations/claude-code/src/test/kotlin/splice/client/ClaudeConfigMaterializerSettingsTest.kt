@@ -24,7 +24,6 @@ class ClaudeConfigMaterializerSettingsTest {
         statuslineCommand = "curl",
         signIn = MaterializeSignIn(
             loginCommand = "claudex login",
-            signInLabel = "Codex",
         ),
     )
 

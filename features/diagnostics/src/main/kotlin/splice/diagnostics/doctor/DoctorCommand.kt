@@ -41,9 +41,11 @@ public class DoctorCommand(
     jar: RunningJar,
     local: LocalRuntimeTransport,
     private val accountPools: AccountPoolRead = JdkAccountPoolRead(),
+    lane: ClaudeLaneRead = ClaudeLaneRead { _, _ -> null },
 ) {
 
     private val probes = DoctorProbes(jar)
+    private val lane = ClaudeLaneCheck(lane)
     private val findingRenderer = DoctorFindingRenderer(output)
 
     // Install integrity is a separate section with separate inputs; it reads back into [probes] for
@@ -239,7 +241,10 @@ public class DoctorCommand(
         val sections = listOf(
             "prerequisites" to guarded { probes.prerequisiteChecks(envReader) },
             "installation" to guarded { installProbes.installationChecks(topo, envReader) },
-            "configuration" to guarded { config.configurationChecks(topo, configPath, live, runningTrace, unmapped) },
+            "configuration" to guarded {
+                config.configurationChecks(topo, configPath, live, runningTrace, unmapped) +
+                    lane.checks(topology, envReader)
+            },
             CHECK_DAEMON to guarded { daemon.daemonChecks(snapshot, envReader, topology, configPath) },
             "auth" to authChecks,
             // v0.4.0 (FEATURES.md §11): which account each pooled head is on, and when every one is out.

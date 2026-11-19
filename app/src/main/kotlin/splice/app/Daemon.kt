@@ -23,7 +23,10 @@ import splice.app.daemon.TopologyWindows
 import splice.app.desktop.DaemonDesktop
 import splice.app.head.HEAD_STOP_BUDGET_MS
 import splice.app.head.HeadBoot
+import splice.app.head.HeadCapabilities
 import splice.app.head.HeadKeptFiles
+import splice.app.head.HeadMcpServers
+import splice.app.head.HeadOthers
 import splice.app.head.HeadProbes
 import splice.app.head.HeadPromptInputs
 import splice.app.head.HeadServerFactory
@@ -214,6 +217,12 @@ public class Daemon(
             it.credentialAccountNames = controlPlane.credentialAccountNames
             it.sentCredentials = controlPlane.sentCredentials
             it.performance = performance
+            it.capabilities = HeadCapabilities(
+                topology.capabilities,
+                statePaths.headsDir,
+                controlPlane.gatherers,
+                HeadMcpServers(launchSpecFactory.headConfigDirs(), statePaths),
+            )
         }
     private val managedHeadFactory = ManagedHeadFactory(
         statePaths = statePaths,
@@ -267,6 +276,8 @@ public class Daemon(
         controlPlane.adopted = adopted
         controlPlane.handOver = handOver
         headServerFactory.adopted = adopted
+        // door-default, decision 9: the head keyed `claude` hands the door's models to their heads once the door opens.
+        headServerFactory.others = HeadOthers(desktop.headLane::forHead)
         val cfg = config.getConfig()
         // TOML feeds ConfigService's topology layer; state/env/runtime override it consistently.
         // Resolved before the head loop so every launch recipe points at the actual listener.
@@ -315,7 +326,8 @@ public class Daemon(
         )
         // The share listener opens before the control plane too: `splice share on` restarts, waits for /health, and
         // reads the share port at once.
-        share.open(heads, controlPort)
+        // door-network: it answers the door too, which opens below, so a turn that comes first is told to wait.
+        share.open(heads, controlPort, desktop.network)
         // And the server listener, with its keys: `splice server key create` asks the control plane for them.
         server.open(heads, controlPort, headServerFactory.served)
         controlPlane.serverMode = server

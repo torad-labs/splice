@@ -24,6 +24,7 @@ package splice.head.turn
 
 import kotlinx.coroutines.Job
 import kotlinx.serialization.json.JsonObject
+import splice.core.head.HeldSaying
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.TurnMeta
@@ -173,6 +174,25 @@ public class LiveTurns(
         /** What the turn is doing: running, or held until its cause lifts (slice 5). */
         @Volatile var state: TurnState = TurnState.Running
 
+        /** What the turn says while it is held, whatever holds it (docs/specs/harness.md, decision 7); null while it
+         *  runs, except a message said to last until the turn's answer begins (decision 9). */
+        @Volatile var saying: HeldSaying? = null
+            private set
+
+        /** Whether [saying] lasts past the hold, until the provider's first byte of the answer. */
+        @Volatile private var untilAnswered = false
+
+        @Synchronized
+        fun say(said: HeldSaying, untilAnswered: Boolean) {
+            saying = said
+            this.untilAnswered = untilAnswered
+        }
+
+        @Synchronized
+        fun quiet() {
+            if (!untilAnswered) saying = null
+        }
+
         /** Set once, on the provider's first byte. Not derived from [lastByte] against [since]: a byte
          *  that lands in the same millisecond as admission would read as no byte at all, and on a fast
          *  provider that is the common case rather than the rare one. */
@@ -182,6 +202,15 @@ public class LiveTurns(
         override fun received() {
             lastByte.set(clock())
             answered.set(true)
+            if (untilAnswered) answering()
+        }
+
+        /** The answer has begun: a message said until then is said no more. */
+        @Synchronized
+        private fun answering() {
+            if (!untilAnswered) return
+            untilAnswered = false
+            saying = null
         }
 
         fun driving(job: Job) {
@@ -266,6 +295,28 @@ public class LiveTurns(
     internal fun state(slot: InflightGate.Slot, state: TurnState) {
         bySlot[slot.countedSlot]?.state = state
     }
+
+    /** The turn on [slot] now says [message] in [color], said at [atEpochMs] on the wall clock: its age starts again.
+     *  Whoever holds the turn says it, and the turn says nothing once it is released or [quiet], except a message said
+     *  [untilAnswered], which stays until the provider's first byte of the turn's answer. */
+    internal fun says(
+        slot: InflightGate.Slot,
+        message: String,
+        color: String,
+        atEpochMs: Long,
+        untilAnswered: Boolean = false,
+    ) {
+        val turn = bySlot[slot.countedSlot] ?: return
+        turn.say(HeldSaying(turn.session, message, color, atEpochMs), untilAnswered)
+    }
+
+    /** The turn on [slot] is no longer held, and says nothing, unless what it says lasts until its answer begins. */
+    internal fun quiet(slot: InflightGate.Slot) {
+        bySlot[slot.countedSlot]?.quiet()
+    }
+
+    /** What each held turn says now, in the order the turns were admitted in. */
+    public fun sayings(): List<HeldSaying> = live.values.sortedBy { it.since }.mapNotNull { it.saying }
 
     /** Oldest first, the order the turns were admitted in. */
     public fun list(): List<LiveTurn> {

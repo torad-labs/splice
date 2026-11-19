@@ -3,11 +3,13 @@
 // (replacing the java process per peer) one peer-host process serves every peer: a start asks it for
 // the peer, and starts the host only when none of this build runs, after asking one of an older build to make way.
 // Under a systemd unit the host runs in its own `systemd-run --user --scope`, because a process left in
-// splice.service's cgroup is killed with the unit (KillMode=mixed); elsewhere it runs under setsid. Every standard
+// splice.service's cgroup is killed with the unit (KillMode=mixed), and that scope goes in the mcpSlice slice with the
+// hub's holders, where splice's processes outside its unit live; elsewhere it runs under setsid. Every standard
 // stream is discarded.
 package splice.app.peer
 
 import splice.app.console.INVOCATION_ID
+import splice.control.mcp.APP_MCP_SLICE
 import splice.core.GATEWAY_VERSION
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
@@ -24,12 +26,14 @@ internal const val HELPER_MAIN_CLASS = "splice.app.MainKt"
 /** The command Main.kt hands to PeerHostRun, the one process that serves every peer; a name no user command takes. */
 internal const val PEER_HOST_COMMAND = "peer-host"
 
-/** Where the daemon keeps peers: the settings and state folders, the registry folders, and the runtime folder. */
+/** Where the daemon keeps peers: the settings and state folders, the registry folders, the runtime folder, and the
+ *  systemd slice the host's scope runs in under a unit (the mcpSlice knob, beside the MCP hub's holders). */
 internal data class PeerPlaces(
     val settingsDir: Path,
     val stateDir: Path,
     val registryDirs: List<Path>,
     val runtimeDir: Path?,
+    val slice: String = APP_MCP_SLICE,
 )
 
 /** The build a daemon or helper runs: the release and the jar it was started from. The release alone stays 0.4.0
@@ -97,10 +101,19 @@ internal class HelperLaunch(
             registries + runtime + listOf(PEER_BUILD_FLAG, current)
     }
 
-    /** Its own systemd scope under a unit, so the unit's restart never reaches it; its own session elsewhere. */
+    /** Its own systemd scope in splice's slice under a unit, so the unit's restart never reaches it and it is not left
+     *  in the session's generic app.slice; its own session elsewhere. */
     private fun detach(): List<String> = when {
         !env(INVOCATION_ID).isNullOrBlank() && onPath("systemd-run") ->
-            listOf("systemd-run", "--user", "--scope", "--quiet", "--unit=splice-peer-host-${System.nanoTime()}", "--")
+            listOf(
+                "systemd-run",
+                "--user",
+                "--scope",
+                "--quiet",
+                "--unit=splice-peer-host-${System.nanoTime()}",
+                "--slice=${places.slice}",
+                "--",
+            )
         onPath("setsid") -> listOf("setsid")
         else -> emptyList()
     }

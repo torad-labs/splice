@@ -58,9 +58,6 @@ private const val OWNER_ORIGIN_INDEX = 5
 // A launch inside tmux adds its pane and the tmux server's socket after the origin (console TMUX.md).
 private const val OWNER_TERMINAL_ARG_COUNT = 8
 
-// pending-login requires its verb, a jar path and at least one head word.
-private const val PENDING_MIN_ARGS = 3
-
 /** `install|uninstall --all`: every head (InstallLinker, UninstallCommand), not models' --all. */
 private const val EVERY_HEAD_FLAG = "--all"
 
@@ -89,13 +86,6 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
                 a[2].isNotBlank() && a[OWNER_KIND_INDEX] in setOf("session", "login") &&
                 a[OWNER_ORIGIN_INDEX] in setOf("hook", "other")
             if (valid) LaunchOwnerCommand(a.drop(1)) else null
-        },
-    ),
-    "pending-login" to CommandRegistration(
-        "<jar> <head>...",
-        CommandFactory { a ->
-            val valid = a.size >= PENDING_MIN_ARGS && a.drop(1).all { it.isNotBlank() }
-            if (valid) PendingLoginCommand(a.drop(1)) else null
         },
     ),
     "check-config" to CommandRegistration("", CommandFactory.Alone(Command.CheckConfig)),
@@ -228,6 +218,11 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
     "desktop" to CommandRegistration(
         splice.app.cli.desktop.DESKTOP_USAGE,
         CommandFactory { a -> Command.Desktop(a.drop(1)) },
+    ),
+    // Nov 17, 2026: the lane the terminal's `claude` runs on (docs/specs/door-default.md).
+    "claude" to CommandRegistration(
+        splice.app.cli.claude.CLAUDE_USAGE,
+        CommandFactory { a -> Command.Claude(a.drop(1)) },
     ),
     "remote" to CommandRegistration(
         splice.app.cli.share.REMOTE_USAGE,

@@ -543,7 +543,10 @@ class ControlServerTest {
         assertFalse(argv.contains("--dangerously-skip-permissions"))
         assertTrue(argv.contains("--verbose"))
         assertFalse(argv.contains("null"), "a JSON null is absence, not an argument: $argv")
-        assertFalse(obj.containsKey("warning"))
+        // door-default (decision 7): a head's launch carries the heads notice, and nothing else on the safe path; this
+        // pinned no warning at all before, and decision 9 rewrote the notice to name what to type in `claude`.
+        val warning = obj["warning"]?.jsonPrimitive?.content.orEmpty()
+        assertTrue(warning.startsWith("this command is deprecated, and `claude` runs this head's models"), warning)
     }
 
     @Test

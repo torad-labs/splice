@@ -1,6 +1,7 @@
 // NEW: client-login model ownership is separate from foreign-head compaction window materialization.
 package splice.launch.recipe
 
+import splice.client.ClaudeTiers
 import splice.launch.LaunchSpec
 
 internal object LaunchModelEnvironment {
@@ -47,10 +48,10 @@ internal object LaunchModelEnvironment {
                     spec.models.discoveryPrefix.isNotBlank() -> spec.models.discoveryPrefix + model
                     else -> model
                 }
-                put("ANTHROPIC_DEFAULT_${slot}_MODEL", spelling)
+                put(ClaudeTiers.model(slot), spelling)
                 val label = spec.models.modelLabels[model] ?: model
-                put("ANTHROPIC_DEFAULT_${slot}_MODEL_NAME", label)
-                put("ANTHROPIC_DEFAULT_${slot}_MODEL_DESCRIPTION", label)
+                put(ClaudeTiers.label(slot), label)
+                put(ClaudeTiers.description(slot), label)
             }
         }
 

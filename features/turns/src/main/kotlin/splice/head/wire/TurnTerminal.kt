@@ -117,6 +117,12 @@ internal interface TurnTerminal : WireSink {
      *  shows one line per recovery episode; the non-stream sink has no incremental wire, so its default says nothing. */
     public suspend fun recovering(wait: WaitLine) {}
 
+    /** splice refuses the open turn on its own word for [cause] (docs/specs/harness.md, decision 6): the line [emitError]
+     *  then writes goes first as a finished notice, so the client prints the error rather than sending the turn again
+     *  without streaming, which it does for an error before any block (inband-invalid-request-before-content,
+     *  inband-signed-notice). The non-stream sink has no incremental wire, so its default says nothing. */
+    public suspend fun noticeRefusal(cause: FailureCause) {}
+
     /** The turn holds for its cause to lift ([on]), or goes on ([on] false) (failure-handling slice 5): its hold line
      *  already says when it continues, so a quiet wire carries only pings while it holds, never a status line. */
     public fun holding(on: Boolean) {}

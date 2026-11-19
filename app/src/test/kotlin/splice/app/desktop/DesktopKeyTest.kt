@@ -1,6 +1,6 @@
-// desktop-door, decision 6: the desktop key a person's settings.json holds is only replaced in silence on a true first
+// desktop-door, decision 6: the desktop key a person set in Claude Desktop is only replaced in silence on a true first
 // run. A key file that is there but blank, or a symlink to nothing, is said in the daemon's log before a new key is
-// made, since that new key refuses the one settings.json holds.
+// made, since that new key refuses the one Desktop holds.
 package splice.app.desktop
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -32,7 +32,7 @@ class DesktopKeyTest {
         val key = DesktopKey(file, logs::add).get()
         assertEquals(1, logs.size, "$logs")
         assertTrue(logs[0].contains("$file present but blank"), logs[0])
-        assertTrue(logs[0].contains("settings.json"), "names the key it refuses: ${logs[0]}")
+        assertTrue(logs[0].contains("the desktop key set in Claude Desktop"), "names the key it refuses: ${logs[0]}")
         assertFalse(logs[0].contains(key), "the key is never written to the log: ${logs[0]}")
     }
 

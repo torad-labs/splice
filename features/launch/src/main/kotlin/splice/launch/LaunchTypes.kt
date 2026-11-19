@@ -11,7 +11,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.client.ClaudePolicy
-import splice.client.login.SignInWay
 import splice.client.login.TokenCaptureSpec
 import splice.core.config.LAUNCH_PROOF_HEADER
 import splice.core.config.TurnKey
@@ -94,6 +93,9 @@ public data class LaunchSpec(
      *  Claude Code's /effort changes it from there, and every adapter sends what Claude Code's request names. Null
      *  for a spec that names none, such as a command another machine serves. */
     val effort: LaunchEffort? = null,
+    /** Whether a team's server serves this command (server mode, F9): its launch then names this laptop's splice to
+     *  that server, so an older one is told what to upgrade to. False for every other command. */
+    val teamServer: Boolean = false,
 ) {
     /** This boot-assembled spec with the current catalog's roster, labels, picker and windows.
      *  Read per launch: provider discoveries and accepted TOML window edits need no daemon restart.
@@ -196,15 +198,15 @@ public fun interface LaunchEffort {
     public fun current(): String?
 }
 
-/** How a head's sign-in is reached from inside a Claude Code session: the command, its label, whether it
- *  opens a browser, and the in-session confirmation channel. One value, read by the /login block, the
+/** How a head's sign-in is reached from inside a Claude Code session: the command, its label, the machine that
+ *  holds its logins when another one serves it, and the in-session confirmation channel. One value, read by the /login block, the
  *  key-missing advertiser and the resume hook alike. */
 public data class LaunchSignIn(
     val loginCommand: String, // shell command that runs THIS head's provider sign-in (e.g. `claudex login`)
     val signInLabel: String, // provider label for the /login UX ("Codex (ChatGPT)", "Grok (xAI)")
-    /** Terminal for api-key heads: the /login block reason points at a masked terminal prompt. Elsewhere for a
-     *  command another machine serves (LAN share): its /login names that machine and starts nothing here. */
-    val signInWay: SignInWay = SignInWay.Browser,
+    /** The machine that holds the logins of a command another machine serves (LAN share): its /login names that
+     *  machine and starts nothing here. Empty for a head on this machine. */
+    val signsInOn: String = "",
     /** api-key heads: capture a bare pasted token into the KeyStore (blocked from model context). */
     val tokenCapture: TokenCaptureSpec? = null,
     /** Install the SessionStart key-missing advertiser (daemon sets it only while unconfigured). */

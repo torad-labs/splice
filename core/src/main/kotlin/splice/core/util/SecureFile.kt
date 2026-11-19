@@ -147,6 +147,15 @@ public object SecureFile {
      * attribute is best-effort (the atomic move still holds).
      */
     public fun writeAtomic0600(path: Path, content: String) {
+        writeAtomic(path, content, OWNER_ONLY)
+    }
+
+    /**
+     * [writeAtomic0600] for a file that is someone else's and keeps a mode of its own (Claude Code's settings file):
+     * [content] is staged owner-only beside [path] and takes [mode] before it is swapped in, so the file is never
+     * seen under its name at any other mode.
+     */
+    public fun writeAtomic(path: Path, content: String, mode: Set<PosixFilePermission>) {
         // V4-284: absolute first, so a bare name (SPLICE_CONFIG=splice.toml) has the working directory
         // as its parent instead of null.
         val parent = path.toAbsolutePath().parent
@@ -159,6 +168,10 @@ public object SecureFile {
                 writeAll(channel, content.toByteArray(Charsets.UTF_8))
                 channel.force(true)
             }
+            Cancellables.discard(
+                Cancellables.runCatchingBestEffort { Files.setPosixFilePermissions(tmp, mode) },
+                "POSIX perms unsupported on this filesystem → the staged file has none to take",
+            )
             Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         }.onFailure {
             Cancellables.discard(
@@ -168,7 +181,7 @@ public object SecureFile {
             throw it
         }
         Cancellables.discard(
-            Cancellables.runCatchingBestEffort { Files.setPosixFilePermissions(path, OWNER_ONLY) },
+            Cancellables.runCatchingBestEffort { Files.setPosixFilePermissions(path, mode) },
             "POSIX perms unsupported on this filesystem → keep the completed write",
         )
     }

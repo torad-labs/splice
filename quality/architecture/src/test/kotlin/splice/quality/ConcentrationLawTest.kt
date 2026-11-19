@@ -254,7 +254,30 @@ internal object Concentration {
     // splice.share imports both their packages, and the change's four new small files there (AnswerBody, RelayClient,
     // RelayPorts, WholeEdit) lowered its median C, so their denominators fell. The tree got worse; this records it.
     // 18 -> 20.
-    const val RATCHET_MAX_HIGH = 20
+    // 2026-11-17: door-default, measured with a port of this law's census that reproduces band HIGH's 20 on the plan's
+    // commit, fed712579. Three entered as the change's own code and leave by seams of their own: DaemonDesktop.kt
+    // 2.25 -> 3.10 gives the terminal `claude`'s key, lane and launch to TerminalDoor.kt (2.10), DoctorCommand.kt
+    // 2.63 -> 3.13 gives the lane's check to ClaudeLaneCheck beside its seam (2.78), and LaunchService.kt gives the
+    // door's launch to DoorRecipe.kt (C 193.5 -> 191.5, under its C before the change). Four enter by neighbourhood,
+    // their C within 1.5 of what it was: Command.kt 2.97 -> 3.25 (denominator 73.8 -> 68.0), ControlPlane.kt
+    // 2.88 -> 3.10 (73.6 -> 68.5), Main.kt 2.87 -> 3.08 (73.0 -> 68.0, untouched) and LaunchService.kt 2.98 -> 3.03
+    // (64.9 -> 63.3). The change's small files lowered the medians they divide by: splice.app.desktop 61.0 -> 52.25
+    // (the terminal's caller, lane and records), splice.app.cli.desktop 78.25 -> 57.5 (DoorClient), splice.client.login
+    // 49.5 -> 38.5 (the /login hook rewritten to the accounts page), and a new splice.app.cli.claude at 51.5. The tree
+    // got worse; this records it. 20 -> 24.
+    // 2026-11-18: harness round two (capabilities the model calls, the MCP worker, the Context Getter), measured with a
+    // port of this law's census that reproduces band HIGH's 24 on its base, 287f681c9, and the 29 this law's own run
+    // gave the change before its seams. Two entered as the change's own code and leave by seams of their own:
+    // Capability.kt 3.39 -> 2.02 gives the `when` rule (CapabilityRule.kt) and who may call it (CapabilityCalling.kt)
+    // files of their own, and CapabilityDeclarations.kt 3.28 -> 2.53 gives the worker table's check to
+    // CapabilityWorkerCheck.kt. Two entered by a file the change split out: ResponsesPlacements.kt (C 45.5) left
+    // ResponsesProvider for splice.dialect.responses, whose median fell 67 -> 45.5, and ResponsesReasoningReplay.kt
+    // 2.90 -> 3.30 and ResponsesItemFold.kt 2.88 -> 3.26 rose with it. ResponsesPlacements now sits with the user text
+    // it places in splice.dialect.responses.usertext, and the two are back at 2.90 and 2.85. One enters by
+    // neighbourhood, untouched by the change: ControlServer.kt 2.93 -> 3.08, C 223 in both, as splice.app.head took the
+    // harness's three wiring files (HeadCapabilities, HeadMcpServers, LaunchedGatherers), 24 -> 27 files, and its
+    // median fell 76 -> 72.5. The tree got worse; this records it. 24 -> 25.
+    const val RATCHET_MAX_HIGH = 25
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

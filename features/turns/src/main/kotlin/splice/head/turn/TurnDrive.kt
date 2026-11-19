@@ -12,6 +12,7 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.noRequestUsage
+import splice.head.perf.PerfHeld
 import splice.head.perf.SourceRowHold
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.RoundUsage
@@ -106,12 +107,42 @@ internal data class TurnDrive(
         fun claimAccountBoundary(): Boolean = accountBoundaryClaim.compareAndSet(false, true)
     }
 
+    /** The request the turn sends once its capabilities placed their text (docs/specs/harness.md, decision 5): set
+     *  once, before the first round, by the drive; null while the built request goes as it was built. */
+    private class PlacedRequest {
+        @Volatile var body: JsonObject? = null
+
+        @Volatile var held: PerfHeld = PerfHeld()
+
+        @Volatile var rounds: RoundInterceptor? = null
+    }
+
+    private val placedRequest = PlacedRequest()
+
+    /** The turn sends [body] in place of the built request, from its first round on. */
+    internal fun place(body: JsonObject) {
+        placedRequest.body = body
+    }
+
+    /** The turn's rounds pass through [rounds], which answers the model's calls of a capability (docs/specs/harness.md,
+     *  decision 12): set once, before the first round, on a head whose provider wraps none of its own rounds. */
+    internal fun answering(rounds: RoundInterceptor) {
+        placedRequest.rounds = rounds
+    }
+
+    /** What the turn's capabilities did, for its perf row (docs/specs/harness.md, decision 10). */
+    internal var held: PerfHeld
+        get() = placedRequest.held
+        set(value) {
+            placedRequest.held = value
+        }
+
     fun interface SourceRoundStarted {
         fun started(job: kotlinx.coroutines.Job)
     }
 
     /** The upstream request, typed: the wire itself, serialized per round by the round strategy. */
-    val requestBody: JsonObject get() = inputs.built.requestBody
+    val requestBody: JsonObject get() = placedRequest.body ?: inputs.built.requestBody
     val meta: TurnMeta get() = inputs.built.meta
     val slot: InflightGate.Slot get() = inputs.slot.held
     val t0: Long get() = inputs.t0
@@ -128,7 +159,7 @@ internal data class TurnDrive(
     val toolSearch: ToolSearchPolicy? get() = inputs.built.toolSearch
 
     /** Optional gateway-local wrapper around each posted round. */
-    val roundInterceptor: RoundInterceptor? get() = inputs.built.roundInterceptor
+    val roundInterceptor: RoundInterceptor? get() = inputs.built.roundInterceptor ?: placedRequest.rounds
 
     /** Current login. Only a pre-accept native refusal can replace it within this turn. */
     var account: AccountSelection? = inputs.accountQuota.account

@@ -287,14 +287,14 @@ const GRADLE_PROCESS = /GradleWrapperMain|gradle-wrapper\.jar|org\.gradle\.launc
 
 /** Whether another gradle process is live on the machine, the evidence an EOF or a missing results file needs before
  *  it is taken for another run's collision. Read from the process list, every process but this one. A list that cannot
- *  be read is no evidence. */
+ *  be read is no evidence. pgrep matches each process's arguments itself and hands back only the pids that match, so the
+ *  read stays small however long other processes' arguments are. Until Nov 18, 2026 the whole `ps -eo pid=,args=` listing
+ *  was read instead; with Claude Code sessions carrying their settings on the command line it passed 1.2 MB, past
+ *  spawnSync's buffer, and every read answered that no gradle ran while one did. */
 export function liveGradleElsewhere(): boolean {
-  const listed = spawnSync("ps", ["-eo", "pid=,args="], { encoding: "utf8" });
+  const listed = spawnSync("pgrep", ["-f", GRADLE_PROCESS.source], { encoding: "utf8" });
   if (listed.status !== 0) return false;
-  return listed.stdout.split("\n").some((line) => {
-    const fields = /^\s*(\d+)\s+(.*)$/.exec(line);
-    return fields !== null && Number(fields[1]) !== process.pid && GRADLE_PROCESS.test(fields[2] ?? "");
-  });
+  return listed.stdout.split("\n").some((pid) => /^\d+$/.test(pid.trim()) && Number(pid) !== process.pid);
 }
 
 /** Whether a red run is a collision: a shared file another gradle run in this checkout held, not a red of the code. A
@@ -1299,7 +1299,12 @@ export function installShims(hooksDir: string, bun: string, gate: string): strin
 
 export async function hook(argv: readonly string[]): Promise<number> {
   const [verb, ...rest] = argv;
-  const lay = layout();
+  // Every worktree runs the main checkout's copy of this script (the shims live in the shared .git/hooks), and git
+  // starts a hook at the top of the tree being committed or pushed. So that tree is the one judged, from where git
+  // started us: read from the script's own place, a worktree that adds a Gradle module had its files judged against
+  // the main checkout's settings.gradle.kts and refused as covered by no check. install writes the shims, so it
+  // stays with the script.
+  const lay = verb === "install" ? layout() : layout(process.cwd());
   try {
     // git passes the hook its own arguments (pre-push gets the remote's name and URL); neither is read.
     if (verb === "pre-commit") return await commitGate(lay);

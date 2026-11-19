@@ -45,13 +45,8 @@ import splice.core.failure.StoppedBy
 import splice.core.parse.AnthropicTurnBody
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
-import splice.core.pool.PREFERRED_UPSTREAM_HEADER
 import splice.core.session.ActivityAction
-import splice.core.turn.DESKTOP_DOOR
 import splice.core.turn.SERVED_NOTICE_HEADER
-import splice.core.turn.SERVED_TURN_HEADER
-import splice.core.turn.TURN_DOOR_HEADER
-import splice.core.turn.TurnRelay
 import splice.core.util.Cancellables
 import splice.core.wire.AnthropicRequest
 import splice.head.ActivityLabel
@@ -61,13 +56,20 @@ import splice.head.BodyRead
 import splice.head.ClientAuth
 import splice.head.HeadDeps
 import splice.head.MessageEdges
+import splice.head.OtherAnswer
+import splice.head.OtherAsk
 import splice.head.ReceivedBody
 import splice.head.RefusedRequest
+import splice.head.RelayHeaders
 import splice.head.RequestBodyReader
 import splice.head.compact.CompactClassifier
 import splice.head.compaction.CompactionReplay
 import splice.head.compaction.HeldReply
+import splice.head.port.HarnessRequest
+import splice.head.port.HarnessRequests
+import splice.head.port.HarnessShape
 import splice.head.turn.fallback.HeldModelFallback
+import splice.head.turn.review.AUTO_MODE_REVIEW
 import splice.head.wire.ClientInbound
 import splice.head.wire.FrameRecording
 import splice.upstream.BuiltTurn
@@ -89,6 +91,8 @@ internal sealed class Preparation {
         /** Whether a session sent this turn itself. A turn Claude Code sends for a subagent is served like any other
          *  and has no say in the model the command's logins are named for (AskedModels, Nov 12, 2026). */
         val own: Boolean = true,
+        /** What the harness's capabilities read of the request (docs/specs/harness.md, decision 2). */
+        val harness: HarnessRequest? = null,
     ) : Preparation() {
         /** Transfers the raw request to its trace without retaining a second post-handoff owner. */
         fun takeInbound(): ClientInbound? = inbound.also { inbound = null }
@@ -141,6 +145,10 @@ internal sealed class Preparation {
         val sessionId: String?,
         val model: String,
     ) : Preparation()
+
+    /** door-default, decision 9: a request that names another head's model, answered by that head ([answer]) and not
+     *  built here. This head sends nothing upstream for it and writes no row of it: the row is the other head's. */
+    data class Relayed(val answer: OtherAnswer) : Preparation()
 }
 
 internal class TurnPreparation(
@@ -159,11 +167,14 @@ internal class TurnPreparation(
     private val providerTurns = ProviderTurnBuild(provider, deps, replay)
 
     /** A session's own fallback model while the one it asks for is held on every login (Nov 13, 2026). */
-    private val heldFallback = HeldModelFallback(deps.quotaBundle, provider.catalog, deps.log)
+    private val heldFallback = HeldModelFallback(deps.quotaBundle, provider.catalog, deps.log, deps.traffic.held)
 
     /** Fix 4 of the Oct 27 Responses fixes: which earlier request of the same Claude Code turn each request
      *  continues, so the turn state its backend returned rides every request of that turn (ToolLoopTurns). */
     private val toolLoop = ToolLoopTurns()
+
+    /** What a capability's rule reads of each request (docs/specs/harness.md, decision 2). */
+    private val harnessRequests = HarnessRequests()
 
     /** [Materialized.TooLarge] rather than a [Preparation] case: the 413 belongs to the admission
      *  gate, which writes it while the lease is still held, exactly where the thrown refusal used
@@ -199,6 +210,10 @@ internal class TurnPreparation(
         // The request names its session in metadata.user_id; the header carries the same id and stands in when the body
         // does not (verified on Claude Code 2.1.257, spec 7 identification).
         val asked = RefusedRequest(parsed.typed.model, parsed.sessionId ?: headerSession, parsed.typed.stream, inbound)
+        // door-default, decision 9: a model of another head is that head's to answer, before this head reads anything
+        // else of the request.
+        val other = OtherAsk(parsed.typed.model, parsed.raw, asked.sessionId, counting = false)
+        deps.traffic.others.claim(other)?.let { return Preparation.Relayed(it) }
         // The pre-drive boundary (2026-11-09 audit): everything from here to a Ready turn runs provider and prompt code
         // (refusal tables, buildTurn, the prompt layers, the tool loop), and a defect thrown there used to answer an
         // empty 500 with no log line, no perf row and no trace. It is now a refusal like any other, recorded as
@@ -229,7 +244,7 @@ internal class TurnPreparation(
             )
         }
         // Before anything reads the model: a refusal past here names the model the turn would have gone upstream as.
-        val parsed = heldFallback.applied(received, named.sessionId)
+        val parsed = heldFallback.applied(received, named.sessionId, RelayHeaders.of(call.request.headers).door)
         val asked = named.copy(model = parsed.typed.model)
         val sessionId = asked.sessionId
         val inbound = asked.inbound
@@ -343,15 +358,7 @@ internal class TurnPreparation(
         val scope = fromProvider.meta.scope.let {
             it.copy(sessionId = it.sessionId ?: sessionId, messagesHash = messagesHash)
         }
-        // The server its person prefers among the provider's upstreams, as the listener that relayed the turn named it.
-        // And the id it named the turn by, so the turn tells it how it went (server mode's ledger, F5), and the
-        // door it came through (desktop-door, decision 7), as the relay in front of the head named it.
-        val headers = call.request.headers
-        val relay = TurnRelay(
-            preferredUpstream = headers[PREFERRED_UPSTREAM_HEADER],
-            servedTurn = headers[SERVED_TURN_HEADER],
-            door = headers[TURN_DOOR_HEADER]?.takeIf { it == DESKTOP_DOOR },
-        )
+        val relay = RelayHeaders.of(call.request.headers)
         val route = fromProvider.meta.route.copy(relay = relay)
         val prepared = fromProvider.copy(meta = fromProvider.meta.copy(scope = scope, route = route))
         toolLoop.join(prepared.meta, parsed, parsed.agentId)
@@ -373,6 +380,7 @@ internal class TurnPreparation(
         // A non-stream turn of any kind is held the same way since 2026-11-09 (CollectTurn): a Claude Code subagent
         // re-sent one stream:false request 228 times in 25 hours, each re-send restarting its five minutes from zero.
         val replayed = heldFor(built, parsed.typed.stream)
+        val answered = parsed.typed.messages.any { it.role == "assistant" }
         // V4-165: a replayed turn is never driven, so what its build holds ends here, not at a drive.
         replayed?.let { built.onEnd?.ended() }
         return replayed ?: Preparation.Ready(
@@ -381,8 +389,24 @@ internal class TurnPreparation(
             arrival.inbound,
             // V4-319: what a stop of this turn marks. A collect is never listed, so only a stream carries it there.
             messagesHash.takeIf { parsed.typed.stream },
-            hasPriorExchange = parsed.typed.messages.any { it.role == "assistant" },
-            own = parsed.agentId == null,
+            hasPriorExchange = answered,
+            // A gatherer's request has no say in the command's usual model either (decision 9).
+            own = parsed.agentId == null && relay.workedFor == null,
+            harness = harnessRequests.of(
+                parsed,
+                sessionId,
+                call.request.headers[HttpHeaders.UserAgent],
+                built.meta.route.upstreamModel,
+                HarnessShape(
+                    streams = parsed.typed.stream,
+                    tools = parsed.typed.tools.isNotEmpty(),
+                    answered = answered,
+                    review = perf.count(AUTO_MODE_REVIEW) > 0L,
+                    slotHeld = built.onEnd != null,
+                    workedFor = relay.workedFor,
+                    door = relay.door,
+                ),
+            ),
         )
     }
 

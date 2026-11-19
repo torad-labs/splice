@@ -14,6 +14,7 @@ import splice.head.HeadHealthCounters
 import splice.upstream.transport.NoPlaceLeft
 import splice.upstream.transport.SseFrameTooLarge
 import splice.upstream.transport.StreamTornBeforeClient
+import splice.upstream.transport.TurnDeclined
 import splice.upstream.transport.UpstreamAuthMissing
 import splice.upstream.transport.UpstreamEnding
 import splice.upstream.transport.UpstreamFailed
@@ -34,6 +35,7 @@ internal class TurnEnding(
             is StreamTornBeforeClient -> connEnd.emitTorn(drive, ending)
             is NoPlaceLeft -> connEnd.emitNoPlace(drive, ending)
             is SseFrameTooLarge -> connEnd.emitOversized(drive, ending)
+            is TurnDeclined -> knownEnd.emitDeclined(drive, ending)
         }
     }
 

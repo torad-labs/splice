@@ -52,6 +52,10 @@ public sealed class FailureCause {
              *  A bare 429 does not establish quota exhaustion. Another pooled login may still answer either kind. */
             public val isExhausted: Boolean
                 get() = window == LimitWindow.BILLING_CYCLE || (lift is Lift.Unstated && window != null)
+
+            /** A limit that states nothing: no reset, no pushback, no window. It does not say whose it is, the
+             *  login's or the request's on any login, so one such answer marks no login (RetryLedger.leftBare). */
+            public val isBare: Boolean get() = lift is Lift.Unstated && window == null
         }
 
         /** The provider is over capacity: a 502, or a code that spells an overload. */
@@ -235,13 +239,12 @@ public sealed class FailureCause {
         public data class HoldOutlasted(val why: Outlast, val held: FailureCause, val nextReset: Instant?) : Splice() {
             override val resumeAt: Instant? get() = nextReset ?: held.resumeAt
 
-            /** A hold that never began, its reset too far or past the session's wall,
+            /** A hold that never began, its reset too far or past the session's wall, or another model with room,
              *  is the held cause's own ending. */
             override val persisted: PersistedCause
-                get() = if (why == Outlast.TOO_FAR || why == Outlast.WALL) {
-                    held.persisted
-                } else {
-                    PersistedCause.HOLD_OUTLASTED
+                get() = when (why) {
+                    Outlast.TOO_FAR, Outlast.WALL, Outlast.MOVES -> held.persisted
+                    Outlast.MISSED_RESETS, Outlast.MAX_HOLD -> PersistedCause.HOLD_OUTLASTED
                 }
             override val providerReported: Boolean get() = held.providerReported
             override val permanent: Boolean get() = held.permanent

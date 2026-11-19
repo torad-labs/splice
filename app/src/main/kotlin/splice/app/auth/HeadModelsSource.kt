@@ -2,6 +2,7 @@
 // presents. Beside StoredModelCredentials, which it asks through; ModelRosters (app.provider) keeps each list.
 package splice.app.auth
 
+import splice.app.auth.claude.AddedLoginHeaders
 import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.topology.ProviderConfig
@@ -29,9 +30,11 @@ internal fun interface HeadModelsSource {
 internal class EndpointModels(
     private val env: EnvReader = EnvReader(System::getenv),
     log: LogSink = LogSink(DaemonLog::write),
+    /** The Claude accounts added to each head: a head that forwards the caller's own login is asked with one. */
+    added: AddedLoginHeaders? = null,
 ) : HeadModelsSource {
     private val stored = StoredCredential(log = log)
-    private val discovery = ModelDiscovery(StoredModelCredentials(stored))
+    private val discovery = ModelDiscovery(StoredModelCredentials(stored, added))
 
     override fun discover(key: String, provider: ProviderConfig): Discovery = discovery.discover(key, provider, env)
 

@@ -110,10 +110,11 @@ internal class SetupCommand(
         // point" menu came first, leaving the list meant "none of these" and the wizard went on to its next question.
         val heads = picker.offer(facts, path) ?: return WizardAnswer.Cancelled("cancelled")
         val choices = headChoices.ask(heads)
-        val lane = lanes.ask(heads)
+        val lane = lanes.ask(path)
         val local = localModel.offer(path)
         val share = mcpShare.ask(path)
-        val summary = menu.summaryLines(path, bin, heads, lanes.summaryLine()) +
+        val laneLine = lanes.summaryLine().takeIf { lane == ClaudeLane.WRAP }
+        val summary = menu.summaryLines(path, bin, heads, laneLine) +
             choices.values.map { it.summary } + localModel.summary(local) + mcpShare.summary(share)
         frame.note("Summary", summary)
         if (!frame.confirm("Install now?", true)) return WizardAnswer.Cancelled("not installing")
@@ -124,7 +125,7 @@ internal class SetupCommand(
     private suspend fun install(plan: WizardAnswer.Plan): Boolean {
         if (!linked()) return false
         val landed = plan.picker.addAll(plan.heads)
-        plan.lanes.apply(plan.lane, landed)?.let { println(it) }
+        plan.lanes.apply(plan.lane)?.let { println(it) }
         localModel.install(plan.local)
         val topology = TopologyLoader.loadOrMaterialize(plan.path)
         mcpShare.save(plan.path, plan.share)

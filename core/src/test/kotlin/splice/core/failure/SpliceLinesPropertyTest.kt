@@ -494,7 +494,9 @@ class SpliceLinesPropertyTest {
             val blocked = (case.cause as? FailureCause.Provider.Forbidden)?.block != null
             val limited = case.cause as? FailureCause.Provider.Limited
             val quotes = (case.cause::class in QUOTED && !blocked) || limited?.isExhausted == true
-            if (!quotes) assertFalse(spoken in line.text, "quoted by a ${case.cause}: ${line.text}")
+            // A hold that ended over a payment refusal may say that refusal's payment line, which quotes it.
+            val payment = (case.cause as? FailureCause.Splice.HoldOutlasted)?.held is FailureCause.Provider.NeedsPayment
+            if (!quotes && !payment) assertFalse(spoken in line.text, "quoted by a ${case.cause}: ${line.text}")
             val subscription = (case.cause as? FailureCause.Provider.NeedsPayment)?.subscription == true
             if (quotes && !subscription) assertTrue(spoken in line.text, "${case.cause} quotes its words: ${line.text}")
             val wait = lines.waiting(WaitLine(case.cause, random.recovery()), case.facts)

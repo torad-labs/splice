@@ -667,6 +667,8 @@ internal class HoldBoundsThroughHeadsTest : HoldRouteFixtures() {
 
             val stream = head.client.open(launched())
             eventually { stream.soFar().notices.isNotEmpty() }
+            // The turn says it waits before it is listed: it is listed once a try-now can reach it.
+            eventually { head.heldTurns().isNotEmpty() }
 
             val held = head.heldTurns().single()
             assertEquals(reset.epochSecond, held.untilEpochSeconds)

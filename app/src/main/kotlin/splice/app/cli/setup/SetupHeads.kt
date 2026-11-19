@@ -70,10 +70,9 @@ internal class SetupHeads(
     }
 
     /** Returns what LANDED, which is a different list from what was ticked: `splice add` refuses a
-     *  command collision or a topology that stops parsing. The Claude lane is applied from that
-     *  list and only after the restart below, because wrapping reads the LIVE `claude`
-     *  head's own spec — a wrap posted before the daemon carries the head it was just handed is
-     *  refused with "the 'claude' head is not configured", which is the daemon being right. */
+     *  command collision or a topology that stops parsing. The daemon restarts once, after the last head, so it boots
+     *  on every head that landed; with none landed nothing restarts, and linking `claude` starts the daemon itself
+     *  (DaemonClaudeWrap). */
     suspend fun addAll(names: List<String>): List<String> {
         if (names.isEmpty()) return emptyList()
         val landed = mutableListOf<String>()
@@ -94,6 +93,9 @@ internal class SetupHeads(
      *  nothing had been tried yet. */
     private fun announceByCommand(catalog: List<AddProfile>) {
         val named = catalog.map { it.name }.toSet()
+        // door-default (docs/specs/door-default.md, decision 8): `claude` runs on the door, so the Claude plan left the
+        // list; the head that runs Claude's models on the person's own plan is still one command away.
+        if (CLAUDE_PROFILE in named) frame.step(CLAUDE_BY_COMMAND)
         val rows = BY_COMMAND.filterKeys { it in named }.values
         if (rows.isEmpty()) return
         frame.step("Two more kinds are added by command, since each needs an address of its own:")
@@ -110,14 +112,13 @@ internal class SetupHeads(
         val tickable = mutableListOf<AddProfile>()
         for (profile in catalog) {
             when {
-                profile.name in BY_COMMAND -> Unit
+                profile.name in BY_COMMAND || profile.name == CLAUDE_PROFILE -> Unit
                 profile.head.key in installed || profile.name in installed ->
                     frame.step("already installed: ${profile.name}")
                 else -> tickable += profile
             }
         }
-        // Claude's own login first: it is what Claude Code runs on before splice, and the list opens the wizard.
-        return tickable.sortedByDescending { it.name == CLAUDE_PROFILE }
+        return tickable
     }
 
     private fun pickFrom(tickable: List<AddProfile>, facts: SetupFacts): List<String>? {
@@ -166,6 +167,12 @@ internal class SetupHeads(
 // choice off the wizard entirely, which is the half of V4-175 the operator asked for. `api-key`
 // and `local` stay excluded: both need a name, base URL and model before they can be added, and
 // the tick list cannot collect those values. Each is said as what it is and the command that adds it.
+// What the wizard says of the Claude plan, which is no row of the list: claude runs on splice's door, and a head keyed
+// claude puts it back on its own Claude login with the signed-in accounts' models beside Claude's (door-default,
+// decision 9), so the wizard no longer calls that head deprecated.
+private const val CLAUDE_BY_COMMAND =
+    "Claude's models on your own Claude plan, beside your signed-in accounts' in claude: splice add claude"
+
 private val BY_COMMAND = mapOf(
     "api-key" to "another service that takes an API key: splice add api-key --name NAME --base-url URL",
     "local" to "a model server you run: splice add local --name NAME --base-url URL --model ID:WINDOW",

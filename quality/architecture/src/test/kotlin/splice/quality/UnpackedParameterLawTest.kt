@@ -130,8 +130,8 @@ internal class UnpackedParameterLawTest {
 
     @Test
     fun `no class copies two or more of its constructor parameters into fields of its own`() {
-        val classes = map.modules.sorted().filter { File(map.dir(it), "src/main").isDirectory }.flatMap {
-            Konsist.scopeFromDirectory("${map.relativeDir(it)}/src/main").classes(includeNested = true)
+        val classes = map.modules.sorted().filter { map.mainSources(it).isDirectory }.flatMap {
+            LawScopes.main(map, it).classes(includeNested = true)
         }
         val found = UnpackedParameters.scan(::relativeOf, classes)
         assertTrue(found.isEmpty()) {

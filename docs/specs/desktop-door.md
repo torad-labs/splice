@@ -6,10 +6,11 @@ Someone who uses Claude Desktop points its Code tab at splice, the way Claude Co
 any other provider it supports.
 
 - `splice desktop on` opens the door and says five variables to set once in Desktop's own environment store
-  (Settings, Claude Code, Environment variables). From the next session, the Code tab runs on the model `on` chose,
-  on that model's head, whichever of Desktop's own models its picker shows.
-- There is one connection, not one per head. `splice desktop on --model <selector>` moves the Code tab to another
-  model with nothing set again in Desktop.
+  (Settings, Claude Code, Environment variables). From the next session, the Code tab runs on the model the
+  terminal's `claude` starts on, on that model's head, whichever of Desktop's own models its picker shows.
+- There is one connection, not one per head, and one door: the Code tab is a caller of the door `claude` runs on
+  (`docs/specs/door-default.md`), with a key and an on/off of its own. `splice claude door --model <selector>` moves
+  both to another model with nothing set again in Desktop. Since 0.6.4 Desktop has no model of its own.
 - The Code tab keeps its sessions where the terminal's `claude` keeps its own, so each lists the other's.
 - Chat and Cowork stay on claude.ai. splice writes nothing into `~/.claude/settings.json`, so the terminal's
   `claude`, every head's command and every session already running stay exactly as they were.
@@ -63,16 +64,21 @@ its settings file:
 
 Not seen: Desktop's own picker. The rows were read in the Code tab's Claude Code run in a terminal. Since 0.6.1
 the variables come from Desktop's store instead of the file, and the picker and the cancelling launch are no part
-of the door. See the live test.
+of the door. See the live test. Since 0.6.4 the door's path is `/door`, the one another machine reaches it at
+(`docs/specs/door-network.md`); `/desktop`, the path in the table above, still answers.
 
 ## Decisions
 
 ### 1. One door
 
-splice answers the Code tab under `/desktop`, at one address that a restart does not move:
+splice answers the Code tab under `/door`, at one address that a restart does not move:
 
-- `POST /desktop/v1/messages`, with or without `?beta=true`
-- `POST /desktop/v1/messages/count_tokens`, with or without `?beta=true`
+- `POST /door/v1/messages`, with or without `?beta=true`
+- `POST /door/v1/messages/count_tokens`, with or without `?beta=true`
+
+It is the door the terminal's `claude` and another machine's `claude` run on, under the same path on the control
+port and on the share listener. Until 0.6.4 the path on the control port was `/desktop`. It still answers there, so
+a Desktop set up before, and a `claude` session started before the update, go on with nothing set again.
 
 A turn through the door is a turn of the head its model names: that head's admission, its choice of login, its
 cooldowns and its honest failures apply unchanged.
@@ -88,8 +94,8 @@ cooldowns and its honest failures apply unchanged.
   (`claude-opus-5-5`) or as the tier's alias (`opus`).
   - In a session that named a selector, a tier runs the model its head names for that tier (`model_slots`), or the
     head's pinned model where it names none.
-  - In any other session, a tier runs the default model (decision 4). Claude Code's small tier (`haiku`), its side
-    calls, runs the model the default model's head names for it, where it names one.
+  - In any other session, a tier runs the door's starting model (decision 4). Claude Code's small tier (`haiku`),
+    its side calls, runs the model that model's head names for it, where it names one.
 - Any other model is refused: a 400 `invalid_request_error` in Anthropic's error shape whose message names
   `splice desktop`, and nothing is sent upstream.
 
@@ -113,33 +119,42 @@ it with the command that signs it in.
 
 splice writes nothing into `~/.claude/settings.json` for Desktop.
 
-`splice desktop on [--model <selector>]` opens the door and says what to set in Desktop's environment store, one
+`splice desktop on` opens the door to Desktop and says what to set in Desktop's environment store, one
 `NAME=value` line each: `CLAUDE_CODE_USE_MANTLE=1`, `ANTHROPIC_BEDROCK_MANTLE_BASE_URL` (the door's address),
 `AWS_BEARER_TOKEN_BEDROCK` (the desktop key), `CLAUDE_CODE_MAX_CONTEXT_TOKENS` (decision 5) and
 `CLAUDE_CODE_AUTO_MODE_SERVER=0`. They stay set until the person removes them, so a later `on` changes nothing there.
 
-- The default model is `--model`, or the one chosen the last time, or the pinned model of the first head in the
-  door. `on` says which it is. Run again, `on` changes it, and the next session runs on it.
-- `on` refuses, changing nothing, when no head is in the door, when `--model` is not in it, or when the settings
-  file would send the Code tab past the door: a provider switch of the person's own, which Claude Code applies over
-  Desktop's environment. It names what it found.
+- A Code tab session starts on the model the terminal's `claude` starts on (`docs/specs/door-default.md`, decision
+  1): the door has one starting model, for Desktop, the terminal and another machine alike. `on` says which it is
+  and why. `splice claude door --model <selector>` names another, for all of them.
+- A terminal session carries the model it started on, so it stays there when another is named. A Code tab session
+  sends only Desktop's own model names, so the door picks its model at each turn (decision 2): a Code tab session
+  already open runs the newly named model from its next turn. Seen on November 19, 2026 with the Code tab's own
+  Claude Code (2.1.325) against a stand-in.
+- `on` takes no `--model` (since 0.6.4): a model named for Desktop would also be the one `claude` starts on. It is
+  refused with a 400 that names `splice claude door --model`, and nothing is changed. A default model an older
+  splice saved for Desktop is no longer read.
+- `on` refuses, changing nothing, when no head is in the door, or when the settings file would send the Code tab
+  past the door: a provider switch of the person's own, which Claude Code applies over Desktop's environment. It
+  names what it found.
 - `splice desktop off` closes the door, and says which variables to remove in Desktop's store. While the door is
-  closed it refuses every turn with a 403 `permission_error` whose message says how to open it or leave it, and
-  nothing is sent upstream.
+  closed it refuses every turn with a 400 whose message says how to open it or leave it, and nothing is sent
+  upstream.
 - What an older splice's `on` wrote into `~/.claude/settings.json` (its `env`, its picker and a selector the Code
   tab picked into `model`) is taken out at each start of the daemon, and by `on` and `off`, with what it replaced
   put back. A file it left readable by its owner alone gets the mode Claude Code gives a file it creates.
-- `splice desktop` says whether Desktop is on, the door's address, the default model, the lineup, each head left
-  out with the reason, and the last turn sent through the door. `--json` gives the same as data: `on`, `door`,
-  `default_model`, `models` (each with `model`, `label`, `head` and `command`), `left_out` (each with
+- `splice desktop` says whether Desktop is on, the door's address, the model a session starts on, the lineup, each
+  head left out with the reason, and the last turn sent through the door. `--json` gives the same as data: `on`,
+  `door`, `default_model` (the model `claude` starts on), `models` (each with `model`, `label`, `head` and `command`), `left_out` (each with
   `head`, `command` and `reason`) and `last_turn` (`at`, `session_id`, `head`, `model_asked` and `model`, or
   null). The last turn is recorded as it is sent, so it says nothing of how the turn ended: the head's requests do.
 
 ### 5. The window
 
 The Code tab's Claude Code has one context window for the whole session and compacts on the share of it a turn's
-token counts fill. The models in the door have windows of their own. The window Desktop is told is the default
-model's at the first `on`, and it is kept, so what the person set stays right. The door reports each turn's counts
+token counts fill. The models in the door have windows of their own. The window Desktop is told is the one the
+terminal's `claude` declares at the first `on`, and it is kept, so what the person set in Desktop stays right: it
+does not follow a later change of model, since only the person can change what Desktop holds. The door reports each turn's counts
 and each `count_tokens` answer as the same share of that window that they are of the model's own, by the scaling a
 head already applies to a session launched with another window. A session compacts before its model's limit,
 whichever model it is on, and after a switch of model.
@@ -148,14 +163,17 @@ whichever model it is on, and after a switch of model.
 
 The door has a key of its own, the desktop key, kept in splice's state folder for its owner only.
 
-- It is presented as `Authorization: Bearer` and opens only `/desktop`. Every other route refuses it.
+- It is presented as `Authorization: Bearer` and opens only the door (`/door`, and `/desktop` as before). Every
+  other route refuses it. Presented at the share listener's door, it is answered as Desktop too, so a Desktop
+  pointed at that address has its own on/off and its own window.
 - The turn key and the management key do not open the door. Desktop's store gives the key to every command in a
   Code tab session, so the one key there opens nothing else.
 - It is a proof, never a credential: it is not forwarded to any provider.
 - `splice rotate-key` leaves it as it is. `splice desktop rotate-key` replaces it and, while Desktop is on, says
   the new one to set in Desktop's store. The replaced key is refused from then.
-- A request with no key, a wrong one or a replaced one is answered 401 with an `authentication_error` in
-  Anthropic's error shape, whose message names `splice desktop`.
+- A request with no key, a wrong one or a replaced one is answered 400 in Anthropic's error shape, whose message
+  says where each caller's key comes from. Until Nov 18, 2026 a missing key was a 401 and a closed door a 403, which
+  Claude Code reads from a Mantle endpoint as AWS's and words as an AWS credentials failure.
 
 ### 7. Recorded
 
@@ -196,9 +214,10 @@ Run on the real Desktop once the checks pass, since no check can open it:
 1. A terminal `claude` session running, then `splice desktop on`: the terminal session stays on its own head, and
    `~/.claude/settings.json` is unchanged.
 2. The five variables set in Desktop's settings as `on` printed them, then a new session in the Code tab: it runs on
-   the default model, whichever of Desktop's models the picker shows. Note where on screen the setting is.
-3. `splice desktop on --model <selector>` of another head, then a new Code tab session: it runs there. Each turn
-   shows on `/api/perf/turns` with `door` `"desktop"` on its head.
+   the model `claude` starts on, whichever of Desktop's models the picker shows. Note where on screen the setting is.
+3. `splice claude door --model <selector>` of another head, then a new Code tab session: it runs there, and so
+   does the next turn of a Code tab session already open. Each turn shows on `/api/perf/turns` with `door`
+   `"desktop"` on its head.
 4. A subagent that names a tier, and a long session that compacts.
 5. A message in Chat and one in Cowork, both on claude.ai.
 6. `splice desktop off`: the Code tab's next turn is refused with the message naming the variables. With them

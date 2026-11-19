@@ -26,11 +26,13 @@ internal object CallerCredential {
     /** LAN share: TRUE when a turn holds another machine's word (SHARE_NODE_TOKEN) and [sender] would forward the
      *  caller's credential, so no login this host holds is there to put in the word's place. The word opens nothing
      *  upstream, and the vendor's 401 would mark this head's own sign-in rejected. */
-    suspend fun unheldNodeWord(turnHeaders: Map<String, String>, sender: AuthProvider): Boolean {
-        val word = turnHeaders.any { (name, value) ->
-            name.lowercase() in STANDARD_CARRIERS && value.trim().substringAfterLast(" ").trim() == SHARE_NODE_TOKEN
-        }
-        return word && sender.credentials() == Credentials.ClientForwarded
+    suspend fun unheldNodeWord(turnHeaders: Map<String, String>, sender: AuthProvider): Boolean =
+        carriesNodeWord(turnHeaders) && sender.credentials() == Credentials.ClientForwarded
+
+    /** Whether a turn holds the node's word (SHARE_NODE_TOKEN) in place of a caller's login: a turn of another
+     *  machine's, or of the door's, which carries no Claude login of anyone's. */
+    fun carriesNodeWord(turnHeaders: Map<String, String>): Boolean = turnHeaders.any { (name, value) ->
+        name.lowercase() in STANDARD_CARRIERS && value.trim().substringAfterLast(" ").trim() == SHARE_NODE_TOKEN
     }
 }
 

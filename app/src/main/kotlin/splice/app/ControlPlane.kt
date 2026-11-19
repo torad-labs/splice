@@ -80,6 +80,10 @@ internal class ControlPlane(
     /** Claude Desktop's door (docs/specs/desktop-door.md), assigned by Daemon before [start]. */
     internal var desktop: splice.app.desktop.DaemonDesktop? = null
 
+    /** The heads the Context Getter starts its gatherer on (docs/specs/harness.md, decision 9): handed to every head's
+     *  harness before [start], and given the launch service [start] makes. */
+    internal val gatherers = splice.app.head.LaunchedGatherers()
+
     /** Captures the owner only at send time, after launch composition has wired the live native places. */
     internal val credentialAccountNames = HeadDeps.CredentialAccountNames { key ->
         // The row records the account's ref, never its email or id (labels only, 2026-10-12).
@@ -236,6 +240,8 @@ internal class ControlPlane(
                     .also {
                         it.remotes = remoteCommands
                         it.speeds = speeds.of(heads)
+                        it.door = desktop?.claude
+                        gatherers.attach(it, heads)
                     },
                 shutdownDaemon = shutdownDaemon,
                 sessions = sessions,

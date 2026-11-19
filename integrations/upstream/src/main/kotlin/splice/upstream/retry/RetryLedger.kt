@@ -66,6 +66,40 @@ public class RetryLedger {
         heldFailure = null
     }
 
+    /** How many logins this turn left on a bare limit (FailureCause.Provider.Limited.isBare) since a send of it was
+     *  last accepted. */
+    internal var bareMoves: Int = 0
+        private set
+
+    private var owedMark: Runnable? = null
+
+    /** The turn left a login on a bare limit, which does not say whose it is. [mark], which marks that login limited,
+     *  is owed until the turn's next answer shows it: a send accepted on another login pays it ([accepted]), since the
+     *  limit was the first login's own; the same limit on the login the turn moved to drops it ([bareMet]). Until
+     *  Nov 17, 2026 the login was marked as the turn left it: one request Anthropic refused on every login that way
+     *  was asked of every login of a pool, marked each limited for 20 s and let go of a Use now pin. */
+    internal fun leftBare(mark: Runnable) {
+        bareMoves += 1
+        owedMark = mark
+    }
+
+    /** The provider accepted a send of this turn, which shows whose a bare limit before it was: the login's the turn
+     *  left on it, which is marked now. */
+    internal fun accepted() {
+        owedMark?.run()
+        owedMark = null
+        bareMoves = 0
+    }
+
+    /** A bare limit met this turn, on a login the turn [stays] on or leaves. True where it is read on its login now:
+     *  the turn's first, on a login the turn stays on. One the turn leaves is owed instead ([leftBare]). The same limit
+     *  on the login the turn moved to is neither login's: nothing is read, and what the first was owed is dropped. */
+    internal fun bareMet(stays: Boolean): Boolean {
+        if (bareMoves == 0) return stays
+        owedMark = null
+        return false
+    }
+
     /** How many times a stated reset passed without its cause lifting. */
     internal var missedResets: Int = 0
         private set

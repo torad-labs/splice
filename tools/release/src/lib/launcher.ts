@@ -62,6 +62,8 @@ interface Daemon {
   lastShutdown?: Exchange;
   /** launches the daemon will answer 529 before it answers one */
   refuseLaunches: number;
+  /** the words every launch is refused in (409), as the daemon refuses a launch it will not give; unset, it gives them */
+  refusal?: string;
   /** the heap-ingress stand-in: a body with a length costs 1, a chunked body costs 4, and what is over the budget is
    *  answered 529. 0 turns it off. */
   ingressBudget: number;
@@ -121,6 +123,7 @@ interface Arm {
 const read = (path: string): string => (existsSync(path) ? readFileSync(path, "utf8").trim() : "");
 
 const SIXTEEN_GIB = 16 * 1024 * 1024 * 1024;
+const FOUR_GIB = 4 * 1024 * 1024 * 1024;
 const THIRTY_TWO_MIB = 32 * 1024 * 1024;
 
 /** The real JDK the heap arm asks, found once, when this module loads and before any rehearsal starts: resolveJdk21 runs
@@ -468,6 +471,40 @@ const ARMS: readonly Arm[] = [
     },
   },
   {
+    // Nov 17, 2026: a command ran with no heap flag, so the JVM took its default quarter of the machine, and on a
+    // 120 GiB machine one `splice trace --last 4000 --json` grew to 20 GiB before the kernel killed another program
+    // for the memory. A command's heap may grow to 4 GiB, or to the JVM's own quarter where that is less, and
+    // SPLICE_CLI_JVM_OPTS replaces the ceiling. The real JVM is asked what it ends up with, as for the daemon above.
+    name: "a command's heap ceiling is 4 GiB, or the JVM's own quarter of the memory where that is less",
+    run: async (ctx) => {
+      const command = async (env: Record<string, string>): Promise<string[] | undefined> => {
+        rmSync(ctx.captures.javaArgv, { force: true });
+        await ctx.launch({ SPLICE_HEAD: "splice", ...env }, ["status"]);
+        return read(ctx.captures.javaArgv).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string[])
+          .find((javaArgv) => javaArgv.includes("status"));
+      };
+      const plain = await command({});
+      if (plain === undefined) return "java never ran the command";
+      if ("error" in REAL_JDK) return REAL_JDK.error;
+      const java = join(REAL_JDK.javaHome, "bin", "java");
+      const given = await finalFlags(java, plain.slice(0, plain.indexOf("-jar")), []);
+      const own = await finalFlags(java, [], []);
+      if (given.MaxHeapSize === undefined || own.MaxHeapSize === undefined) {
+        return `the JVM did not report MaxHeapSize: ${JSON.stringify({ given, own })}`;
+      }
+      const ceiling = Math.min(FOUR_GIB, own.MaxHeapSize);
+      if (given.MaxHeapSize !== ceiling) {
+        return `a command's heap ceiling is ${given.MaxHeapSize} bytes, want ${ceiling} (4 GiB, or the JVM's own: ${own.MaxHeapSize})`;
+      }
+      const custom = await command({ SPLICE_CLI_JVM_OPTS: "-Xmx96m -Xss2m" });
+      const flags = custom?.slice(0, custom.indexOf("-jar")) ?? [];
+      if (!flags.includes("-Xmx96m") || !flags.includes("-Xss2m") || flags.includes("-Xmx4g")) {
+        return `SPLICE_CLI_JVM_OPTS must replace the ceiling, one flag per word: ${JSON.stringify(custom)}`;
+      }
+      return null;
+    },
+  },
+  {
     // V4-218: the jar resolves ~ from HOME first (splice.core.config.UserHome), and every JVM the shim
     // starts is given that same home as -Duser.home, so the JDK and any library that reads user.home agree
     // with it instead of naming the passwd entry's home. All three paths: a CLI verb, `<head> login`, and
@@ -592,6 +629,51 @@ const ARMS: readonly Arm[] = [
       const same = await ctx.launch({ SPLICE_HEAD: undefined }, [], wrapped);
       if (same.code !== 0 || ctx.daemon.lastLaunch?.url !== `http://127.0.0.1:${ctx.daemon.toml}/launch/claude` ||
           existsSync(capture)) return "same-HOME wrapped Claude must still route through splice";
+      return null;
+    },
+  },
+  {
+    // A session started around splice never comes back through it: it stays on the caller's own login for its whole
+    // life, and no other login can take its turns. So a plain `claude` that gets no launch is never run without
+    // splice, whether the daemon refused the launch in words or never answered. The reason is printed, then the one
+    // line that runs Claude Code that way for the person who wants it. A named head is told the reason alone.
+    name: "plain claude that gets no launch says why and how to run without splice, and is not run that way",
+    run: async (ctx) => {
+      const state = join(ctx.dir, "home", ".splice", "state", "claude-head-wrap.json");
+      const binary = join(ctx.dir, "plain-real-claude");
+      const ran = join(ctx.dir, "plain-real-claude-ran");
+      const wrapped = join(ctx.dir, "plain", "claude");
+      mkdirSync(join(ctx.dir, "plain"), { recursive: true });
+      symlinkSync(ctx.shim, wrapped);
+      writeStub(binary, `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(ran)}, "ran");\n`);
+      writeFileSync(state, JSON.stringify({ real_binary_path: binary, shim_path: ctx.shim }));
+      const refusal = "this -r names a session another command wrote, so it was not opened here";
+
+      ctx.daemon.forget();
+      writeFileSync(ctx.daemonState, "up\n");
+      ctx.daemon.refusal = refusal;
+      const refused = await ctx.launch({ SPLICE_HEAD: undefined }, ["-r", "a session's name"], wrapped);
+      const asked = ctx.daemon.launches;
+      if (existsSync(ran)) return "a launch the daemon refused was run without splice";
+      if (refused.code !== 1) return `a refused launch must end the launch, got exit ${refused.code}: ${refused.output}`;
+      if (!refused.stderr.includes(refusal)) return `a refused launch must say the daemon's words: ${refused.stderr}`;
+      if (!refused.stderr.includes(binary)) return `a refused plain claude must be told how to run without splice: ${refused.stderr}`;
+      if (asked !== 1) return `a launch refused in words must not be asked again, got ${asked} requests`;
+
+      const named = await ctx.launch({}, ["-r", "a session's name"]);
+      if (named.code !== 1 || !named.stderr.includes(refusal)) return `a refused named head must say the daemon's words: ${named.output}`;
+      if (named.stderr.includes(binary)) return `a named head has no way to run without splice to be told: ${named.stderr}`;
+
+      ctx.cold();
+      const down = await ctx.launch({ SPLICE_HEAD: undefined, LAUNCHER_UNIT_BOOTS: "0", SPLICE_UNIT_WAIT_SECONDS: "1" }, [], wrapped);
+      if (existsSync(ran)) return "a plain claude whose daemon never answered was run without splice";
+      if (down.code !== 1 || !down.stderr.includes("did not answer /health")) {
+        return `a daemon that never answers must end the launch with its reason, got exit ${down.code}: ${down.output}`;
+      }
+      if (!down.stderr.includes(binary)) return `an unreachable splice must tell plain claude how to run without it: ${down.stderr}`;
+      rmSync(state, { force: true });
+      ctx.cold();
+      writeFileSync(ctx.daemonState, "up\n");
       return null;
     },
   },
@@ -1132,6 +1214,10 @@ function startDaemon(statePath: string, gateway: string, shimVersion: string, pw
         daemon.refuseLaunches -= 1;
         return busy();
       }
+      if (daemon.refusal !== undefined) {
+        // the daemon's own refusal body (LaunchReplies.errorJson)
+        return new Response(JSON.stringify({ error: daemon.refusal }), { status: 409, headers: { "content-type": "application/json" } });
+      }
       const cost = contentLength === "" ? 4 : 1;
       if (daemon.ingressBudget > 0) {
         if (daemon.charged + cost > daemon.ingressBudget) return busy();
@@ -1170,6 +1256,7 @@ function startDaemon(statePath: string, gateway: string, shimVersion: string, pw
       daemon.lastLaunch = undefined;
       daemon.lastShutdown = undefined;
       daemon.refuseLaunches = 0;
+      daemon.refusal = undefined;
       daemon.ingressBudget = 0;
       daemon.refused = 0;
       daemon.launches = 0;

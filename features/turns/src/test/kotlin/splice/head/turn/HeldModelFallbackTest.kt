@@ -1,7 +1,11 @@
 // NEW (Nov 13, 2026): a session's fallback model, through the real turn preparation over HTTP. That evening every Fable
 // login on one machine ran out for the week and every turn waited until Sunday. A session that named a fallback goes
 // upstream on it while every login is held on Fable and one can serve the fallback; it asks Fable again the first turn
-// a login can serve it; and a session that named none still asks Fable, as before.
+// a login can serve it.
+//
+// Nov 17, 2026: a session that named none goes on under a model with room too, where it used to keep asking for Fable
+// for days (the test that pinned that wait is rewritten here). A login that is signed out keeps no session waiting,
+// and a head whose client picks its own models moves the turn to a model the sessions' own turns ask for.
 package splice.head.turn
 
 import io.ktor.client.request.header
@@ -21,9 +25,12 @@ import splice.core.auth.Credentials
 import splice.core.auth.ForeignHostLog
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.failure.HeadVoice
+import splice.core.model.ClientModelPolicy
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.perf.TurnPerf
+import splice.core.turn.TERMINAL_DOOR
+import splice.core.turn.TURN_DOOR_HEADER
 import splice.core.turn.WatchdogBudget
 import splice.core.usage.PlanLimit
 import splice.core.usage.QuotaSnapshot
@@ -32,6 +39,7 @@ import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.head.AnthropicBodyParse
 import splice.head.ClientAuth
+import splice.head.HeldLogins
 import splice.head.RequestBodyReader
 import splice.head.admission.AdmissionResponses
 import splice.head.headDeps
@@ -53,6 +61,9 @@ private const val OPUS = "claude-opus-5-5"
 private const val SESSION = "a-session"
 private const val WEEK_SECONDS = 5 * 86_400L
 
+/** A turn through door [name], whose logins [held] are the ones it may run on. */
+private data class Door(val name: String, val held: HeldLogins)
+
 private class FallbackLogin(private val token: String) : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer(token, token)
     override suspend fun refresh(): Credentials = credentials()
@@ -61,7 +72,9 @@ private class FallbackLogin(private val token: String) : RefreshableAuthProvider
 
 class HeldModelFallbackTest {
     private val cooldowns = listOf("first", "second").associateWith { RateLimitCooldown(ProcessElapsedNow()) }
-    private val pool = AccountPool(
+
+    /** The head's two logins, [signedOut] among them signed out. */
+    private fun pool(signedOut: Set<String> = emptySet()) = AccountPool(
         cooldowns.map { (label, cooldown) ->
             PoolAccount(
                 label = label,
@@ -72,6 +85,7 @@ class HeldModelFallbackTest {
                     override val held: Boolean get() = false
                 },
                 cooldown = cooldown,
+                credentialPresent = label !in signedOut,
             )
         },
         WallClock(System::currentTimeMillis),
@@ -90,10 +104,36 @@ class HeldModelFallbackTest {
     }
 
     @Test
-    fun `a session that named no fallback still asks for Fable`(@TempDir tmp: Path) {
+    fun `a session that named no fallback goes on under a model with room`(@TempDir tmp: Path) {
         fableSpent("first")
         fableSpent("second")
-        assertEquals(FABLE, sentModel(tmp, emptyMap()))
+        assertEquals(OPUS, sentModel(tmp, emptyMap()))
+    }
+
+    @Test
+    fun `a signed-out login keeps no session waiting for Fable`(@TempDir tmp: Path) {
+        fableSpent("first")
+        assertEquals(OPUS, sentModel(tmp, emptyMap(), pool(signedOut = setOf("second"))))
+    }
+
+    @Test
+    fun `a head whose client picks its models moves the turn to a model the sessions ask for`(@TempDir tmp: Path) {
+        fableSpent("first")
+        fableSpent("second")
+        val pool = pool()
+        repeat(2) { pool.asked.asked(OPUS) }
+        val open = ModelCatalog("claude--", emptyList(), 1_000_000, client = ClientModelPolicy(open = true))
+        assertEquals(OPUS, sentModel(tmp, emptyMap(), pool, open))
+    }
+
+    @Test
+    fun `a door turn moves to a model with room though the person's own login could serve its model`(
+        @TempDir tmp: Path,
+    ) {
+        // "first" is the person's own Claude login, which a door turn never runs on; "second" is the added account.
+        fableSpent("second")
+        val door = Door(TERMINAL_DOOR, HeldLogins { it == "second" })
+        assertEquals(OPUS, sentModel(tmp, emptyMap(), door = door))
     }
 
     @Test
@@ -103,12 +143,20 @@ class HeldModelFallbackTest {
     }
 
     /** The model the prepared turn would ask its upstream for, with [fallbacks] as the sessions' settings. */
-    private fun sentModel(tmp: Path, fallbacks: Map<String, String>): String {
-        val deps = headDeps(tmp).copy(
+    private fun sentModel(
+        tmp: Path,
+        fallbacks: Map<String, String>,
+        pool: AccountPool = pool(),
+        catalog: ModelCatalog = declared,
+        door: Door? = null,
+    ): String {
+        val base = headDeps(tmp)
+        val deps = base.copy(
             quotaBundle = quotaFor(null, pool).copy(sessionFallbacks = SessionFallbacks(fallbacks::get)),
+            traffic = door?.let { base.traffic.copy(held = it.held) } ?: base.traffic,
         )
         val preparation = TurnPreparation(
-            provider(),
+            provider(catalog),
             deps,
             RequestBodyReader(deps.policy.requestReadTimeoutMs),
             AnthropicBodyParse(),
@@ -136,6 +184,7 @@ class HeldModelFallbackTest {
             client.post("/v1/messages") {
                 header(HttpHeaders.ContentType, "application/json")
                 header("x-claude-code-session-id", SESSION)
+                door?.let { header(TURN_DOOR_HEADER, it.name) }
                 setBody(
                     """{"model":"$FABLE","stream":false,"max_tokens":16,""" +
                         """"messages":[{"role":"user","content":"hello"}]}""",
@@ -145,17 +194,19 @@ class HeldModelFallbackTest {
         return requireNotNull(sent)
     }
 
-    private fun provider() = PassthroughProvider(
+    private val declared = ModelCatalog(
+        discoveryPrefix = "claude--",
+        models = listOf(
+            ModelEntry(FABLE, "Fable", contextWindow = 1_000_000),
+            ModelEntry(OPUS, "Opus", contextWindow = 1_000_000),
+        ),
+        defaultContextWindow = 1_000_000,
+    )
+
+    private fun provider(catalog: ModelCatalog) = PassthroughProvider(
         ProviderTuning(
             name = ProviderName(key = "claude", label = "claude"),
-            catalog = ModelCatalog(
-                discoveryPrefix = "claude--",
-                models = listOf(
-                    ModelEntry(FABLE, "Fable", contextWindow = 1_000_000),
-                    ModelEntry(OPUS, "Opus", contextWindow = 1_000_000),
-                ),
-                defaultContextWindow = 1_000_000,
-            ),
+            catalog = catalog,
             pinnedModel = FABLE,
             auth = FallbackLogin("head"),
             locations = ProviderLocations(baseUrl = "http://127.0.0.1"),

@@ -9,7 +9,6 @@ import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderBuild
 import splice.client.ClaudePolicy
 import splice.client.login.LoginOutcomeFile
-import splice.client.login.SignInWay
 import splice.core.config.MgmtKey
 import splice.core.config.SpliceConfig
 import splice.core.config.StatePaths
@@ -84,7 +83,6 @@ internal class LaunchSpecFactory(
                 // start ONLY while the key is unconfigured (re-materialized each launch).
                 loginCommand = signIn.command,
                 signInLabel = signIn.label,
-                signInWay = if (signIn.viaBrowser) SignInWay.Browser else SignInWay.Terminal,
                 // The CAPABILITY rides ungated; whether it materializes is decided per LAUNCH by
                 // LaunchService against ManagedHead.keyPresence (DR-81 — this used to bake the
                 // boot-time key check in, so `splice key set` never disarmed the paste-capture hook:
@@ -179,6 +177,10 @@ internal class LaunchSpecFactory(
      *  vanilla tree; SessionProject walks each real path once. */
     internal fun headProjectsTrees(): List<Path> =
         topology.heads.map { (key, head) -> configDirOf(key, head.claude.configDir).resolve("projects") }
+
+    /** Each served head's CLAUDE_CONFIG_DIR, by head key: the home the servers a session loads are planned under. */
+    internal fun headConfigDirs(): Map<String, Path> =
+        topology.heads.mapValues { (key, head) -> configDirOf(key, head.claude.configDir) }
 
     private fun configDirOf(headKey: String, declared: String?): Path = HeadConfigDirs.of(headKey, declared)
 }

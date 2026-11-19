@@ -6,6 +6,11 @@
 // and the hash of its messages, so a request with no session is never told apart, and never repeated.
 package splice.head.hold
 
+import splice.core.failure.EndingHeard
+import splice.core.failure.HeadVoice
+import splice.core.failure.RequestFacts
+import splice.core.failure.TurnVoice
+import splice.core.turn.TurnScope
 import splice.core.util.ElapsedClock
 import splice.upstream.retry.RESEND_TTL_MS
 
@@ -31,6 +36,23 @@ internal class ResendLedger(private val clock: ElapsedClock, private val capacit
         ended.remove(key)
         ended[key] = clock()
         while (ended.size > capacity) ended.remove(ended.keys.first())
+    }
+
+    /** [voice] for a turn of [scope], told by what admission read of it: its request is the re-send of one that ended
+     *  with an answer Claude Code sends again where it is [repeated], and is marked so itself when it ends that way.
+     *  A hold handed to the client (family L) is not an ending to repeat: its re-send holds anew (slice 5). */
+    fun voiceOf(
+        voice: HeadVoice,
+        scope: TurnScope,
+        compaction: Boolean,
+        firstExchange: Boolean,
+        otherLogin: Boolean,
+    ): TurnVoice {
+        val repeated = repeated(scope.sessionId, scope.messagesHash)
+        val heard = EndingHeard { answer ->
+            if (answer.clientResends && !answer.handedOver) endedForResend(scope.sessionId, scope.messagesHash)
+        }
+        return voice.turn(RequestFacts(compaction, firstExchange, repeated, otherLogin), heard)
     }
 
     private fun forgetExpired() {

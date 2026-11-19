@@ -9,8 +9,6 @@ package splice.head.admission
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import splice.core.auth.CredentialKey
-import splice.core.failure.EndingHeard
-import splice.core.failure.RequestFacts
 import splice.core.memory.HeapCapacityException
 import splice.core.turn.LiveWatchdogBudget
 import splice.core.util.Cancellables
@@ -26,6 +24,7 @@ import splice.head.turn.TurnPreparation
 import splice.head.turn.TurnSlot
 import splice.head.wire.TurnTrace
 import splice.upstream.TurnEnd
+import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.Selection
 
 internal class HeadAdmission(
@@ -123,6 +122,9 @@ internal class HeadAdmission(
             }
             // A non-stream fallback of a streamed compaction: it follows that recording into one body.
             is Preparation.CollectedRecording -> driver.localResponses.collectRecording(call, prepared, admitted.perf)
+            // door-default, decision 9: another head's model, answered by that head; settle already gave back this
+            // head's slot and lease, so the other head's own admission is the only one the turn waits on.
+            is Preparation.Relayed -> prepared.answer.answer(call)
             is Preparation.Ready -> serveReady(call, prepared, admitted)
         }
     }
@@ -191,9 +193,8 @@ internal class HeadAdmission(
         val callerKey = prepared.built.extraHeaders.takeIf { deps.policy.forwardClientAuth }
             ?.let(CredentialKey::fromHeaders)
         val selection = admitted.perf.timed(splice.core.perf.PerfKeys.ACCOUNT_CHECKS_MS) {
-            pool?.awaitingEvidence?.select(
+            pool?.awaitingEvidence?.without(unheld(prepared, pool))?.select(
                 prepared.built.meta.scope.sessionId,
-                excluded = emptySet(),
                 callerCredentialKey = callerKey,
                 // a login whose provider refused another model for the week still serves this one (Nov 3, 2026)
                 model = prepared.built.meta.route.upstreamModel,
@@ -214,6 +215,14 @@ internal class HeadAdmission(
             if (!admitted.wasHandedOff()) account?.releaseCredentialProbe()
         }
     }
+
+    /** The logins of [pool] a turn through a door never runs on (HeldLogins): the person's own Claude login, which is
+     *  never sent for a door turn (Nov 17, 2026). None for any other turn, another machine's included. They
+     *  are left out of the choice, never counted as logins that refused the turn: those limit it to a free login, and
+     *  a door turn whose added accounts were all held for its model ended "has no login yet" instead of waiting for
+     *  the soonest reset or moving to a model with room. */
+    private fun unheld(prepared: Preparation.Ready, pool: AccountPool?): Set<String> =
+        pool?.let { deps.traffic.held.never(it, prepared.built.meta.route.relay.door) }.orEmpty()
 
     /** The login this turn runs on: the account admission chose, its quota, and the key to record when no account
      *  was proved. Assembled here so the drive is handed one value rather than three. */
@@ -241,29 +250,22 @@ internal class HeadAdmission(
         }
         if (oversized) return
         admitted.retainRequest()
-        val scope = prepared.built.meta.scope
-        val facts = RequestFacts(
-            compaction = prepared.built.meta.compact,
-            firstExchange = !prepared.hasPriorExchange,
-            repeated = resends.repeated(scope.sessionId, scope.messagesHash),
-            otherLogin = (deps.quotaBundle.activePool?.members?.size ?: 0) > 1,
-        )
-        // A hold handed to the client (family L) is not an ending to repeat: its re-send holds anew (slice 5).
-        val heard = EndingHeard { answer ->
-            if (answer.clientResends && !answer.handedOver) resends.endedForResend(scope.sessionId, scope.messagesHash)
-        }
+        val meta = prepared.built.meta
+        val otherLogin = (deps.quotaBundle.activePool?.members?.size ?: 0) > 1
+        val voice = resends.voiceOf(driver.voice, meta.scope, meta.compact, !prepared.hasPriorExchange, otherLogin)
         val inputs = TurnInputs(
             prepared.built,
             TurnSlot(
                 admitted.slot,
                 clientWallMs = ClientWallHeader.ms(call),
                 heapLease = admitted.heapLease,
+                harness = prepared.harness,
             ) { admitted.markHandedOff() },
             admitted.t0,
             admitted.perf,
             trace = trace,
             accountQuota = running,
-            voice = driver.voice.turn(facts, heard),
+            voice = voice,
         )
         if (prepared.stream) driver.stream(call, inputs) else driver.collect(call, inputs)
     }

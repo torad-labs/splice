@@ -76,8 +76,9 @@ internal object DiskWrites {
         helpers = listOf(
             Helper(
                 "core/src/main/kotlin/splice/core/util/SecureFile.kt",
-                Regex("""\b(writeAtomic0600|createNew0600)\s*\("""),
-                "the owner-only writes: the atomic replace every credential and state file goes through, and the " +
+                Regex("""\b(writeAtomic0600|writeAtomic|createNew0600)\s*\("""),
+                "the owner-only writes: the atomic replace every credential and state file goes through, the same " +
+                    "replace at a mode the caller names (Claude Code's settings file, which keeps its own), and the " +
                     "exclusive create of the first-run splice.toml",
             ),
             Helper(
@@ -318,9 +319,11 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/mcp/NativeCodexSocketProxy.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeAccountFolders.kt" to mapOf("writeAtomic0600(" to 4),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeCredentialProfiles.kt" to mapOf("writeAtomic0600(" to 1),
-    // Claude Desktop's door: its record, and the env and picker `splice desktop on` writes into settings.json.
-    "app/src/main/kotlin/splice/app/desktop/DesktopRecord.kt" to mapOf("writeAtomic0600(" to 1),
-    "app/src/main/kotlin/splice/app/desktop/DesktopSettingsFile.kt" to mapOf("writeAtomic0600(" to 1),
+    // The door's records (Desktop's and the terminal `claude`'s lane), and settings.json with an older splice's door
+    // taken out of it: at the file's own mode, or owner-only where the filesystem keeps no modes.
+    "app/src/main/kotlin/splice/app/desktop/StateRecords.kt" to mapOf("writeAtomic0600(" to 1),
+    "app/src/main/kotlin/splice/app/desktop/DesktopSettingsFile.kt" to
+        mapOf("writeAtomic0600(" to 1, "writeAtomic(" to 1),
     // The console launch page, 0600, documented in the console-open.html README row.
     "app/src/main/kotlin/splice/app/cli/status/ConsoleCommand.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/config/ConfigService.kt" to mapOf("writeAtomic0600(" to 1),
@@ -492,6 +495,10 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "features/server/src/main/kotlin/splice/server/export/FolderTarget.kt" to mapOf("writeAtomic0600(" to 1),
     "features/turns/src/main/kotlin/splice/head/compact/Compact.kt" to mapOf("JsonlSink.appendLine(" to 1),
     "features/turns/src/main/kotlin/splice/head/compaction/CompactionRecordings.kt" to mapOf("writeAtomic0600(" to 1),
+    // A thread's capability record (Nov 17, 2026), in the README's `heads/<head>/capabilities/` row.
+    "features/harness/src/main/kotlin/splice/harness/ThreadRecords.kt" to mapOf("writeAtomic0600(" to 1),
+    // A session's calls of a capability's tool (Nov 17, 2026), in the README's `capabilities/agent-calls/` row.
+    "features/harness/src/main/kotlin/splice/harness/AgentRecords.kt" to mapOf("writeAtomic0600(" to 1),
     // The history-window cut rewrites the straddling generation in place: a 0600 sibling, the kept rows copied into
     // it, then one atomic move over the original. Three calls, one rewrite.
     // Oct 10, 2026: the row-exact cut over a day store. createNew0600 makes the `.cut` sibling,
@@ -545,6 +552,12 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     ),
     "integrations/claude-code/src/main/kotlin/splice/client/ClaudeLoginFiles.kt" to mapOf("writeAtomic0600(" to 5),
     "integrations/claude-code/src/main/kotlin/splice/client/ClaudeLogins.kt" to mapOf("writeAtomic0600(" to 2),
+    // splice's /login, the one file it lays in the person's Claude folder: created only where nothing is there, and
+    // one of splice's own written again (door-default, decision 5).
+    "integrations/claude-code/src/main/kotlin/splice/client/login/DoorLogin.kt" to mapOf(
+        "createNew0600(" to 1,
+        "writeAtomic0600(" to 1,
+    ),
     "integrations/claude-code/src/main/kotlin/splice/client/login/HookScriptFiles.kt" to mapOf(
         "Files.createTempFile(" to 2,
         "Files.move(" to 1,

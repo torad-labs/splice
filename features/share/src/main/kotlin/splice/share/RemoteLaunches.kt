@@ -10,7 +10,7 @@
 // key in place of the fixed word, so no key sits in the session's environment and a new sign-in reaches a session
 // that is running. A server that refuses the ask for its key (signed out, or the key expired or was revoked) is
 // launched from the last launch it answered, when there is one: Claude Code starts, and its helper or the server says
-// to sign in.
+// to sign in. Every launch of a command on such a server names this laptop's splice to it (F9).
 package splice.share
 
 import kotlinx.coroutines.CoroutineDispatcher
@@ -18,7 +18,6 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import splice.client.ClaudePolicy
-import splice.client.login.SignInWay
 import splice.core.topology.RemoteAddress
 import splice.core.topology.RemoteAddressRead
 import splice.core.topology.RemoteAddresses
@@ -54,14 +53,22 @@ public class RemoteLaunches(
     io: CoroutineDispatcher,
     /** What `splice login` keeps of the servers this laptop signed in to (F2). */
     private val logins: ServerLogins? = null,
+    /** splice's launch mark, which a launch on another machine's door carries as a launch on this one's does. */
+    mark: DoorMark = DoorMark(),
 ) : RemoteCommands {
     private val json = Json { ignoreUnknownKeys = true }
     private val http = ShareHttp(io)
+    private val doors = RemoteDoor(http, mark)
 
     override suspend fun launch(command: String): RemoteLaunch? {
         val remote = remotes[command] ?: return null
         return when (val read = RemoteAddresses.read(remote.url)) {
-            is RemoteAddressRead.Read -> asked(command, read.address, remote.window)
+            // door-network: an address naming another machine's door launches `claude` on it.
+            is RemoteAddressRead.Read -> if (read.address.head == DOOR_SEGMENT) {
+                doors.launch(command, read.address, remote.window)
+            } else {
+                asked(command, read.address, remote.window)
+            }
             is RemoteAddressRead.Refused ->
                 RemoteLaunch.Refused("$command's address in splice.toml is not one it can run on: ${read.why}")
         }
@@ -125,7 +132,7 @@ public class RemoteLaunches(
         val signIn = LaunchSignIn(
             loginCommand = shared.signIn.command,
             signInLabel = "${shared.signIn.label} on ${shared.machine}",
-            signInWay = SignInWay.Elsewhere(shared.machine),
+            signsInOn = shared.machine,
             headKey = command,
         )
         val statusline = "${address.turns}/statusline"
@@ -140,7 +147,8 @@ public class RemoteLaunches(
         )
         val served = shared.models.launchModels()
         val models = window?.let { served.copy(contextWindow = it) } ?: served
-        return LaunchSpec(trees.of(command), models, signIn, gateway, policy)
+        // A command on a team's server this laptop signed in to names this laptop's splice to it (F9).
+        return LaunchSpec(trees.of(command), models, signIn, gateway, policy, teamServer = helper != null)
     }
 
     private fun launchUri(address: RemoteAddress): URI {

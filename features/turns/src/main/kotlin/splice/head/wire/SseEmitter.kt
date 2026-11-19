@@ -196,6 +196,18 @@ internal class SseEmitter(
         }
     }
 
+    override suspend fun noticeRefusal(cause: FailureCause) {
+        if (seal.get() != SealState.OPEN) return
+        ensureStarted()
+        val line = voice.ending(cause, position())
+        progress.lock.withLock {
+            if (seal.get() == SealState.OPEN) {
+                progress.writeEpisodeLocked(line)
+                progress.closeEpisodeLocked()
+            }
+        }
+    }
+
     /** Close the status-line block before a terminal, so nothing of ours sits open across the end.
      *  A no-op for the overwhelming majority of turns, which never went quiet enough to open one. */
     private suspend fun closeProgress() {

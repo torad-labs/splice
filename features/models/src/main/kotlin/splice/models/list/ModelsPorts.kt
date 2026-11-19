@@ -23,4 +23,9 @@ public fun interface ModelCredentialSource {
      *  there is none or it carries no expiry (an api-key). A refusal of an expired token is the head's
      *  refresh not yet run, never a login to redo, and the probe's sentence has to say which. */
     public fun expiresAtMs(provider: ProviderConfig): Long? = null
+
+    /** For a provider that forwards the caller's own Claude login: the headers that present a login splice holds for
+     *  head [key] instead, a Claude account added to it (Nov 17, 2026: the door lists and runs Claude's
+     *  models on those accounts); null when none is added. */
+    public fun heldLogin(key: String): Map<String, String>? = null
 }

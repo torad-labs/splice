@@ -89,9 +89,9 @@ internal class ServerOpenAiPoolTest {
         val key = rig.keyFor("ola@example.com")
         assertEquals("gpu-2", answeredBy(rig.chat(key, CHAT)))
         assertEquals(CHAT, gpu2.asked.single().body)
-        val readings = pool.readings()
-        assertEquals(listOf(false, true), readings.map { it.healthy })
-        assertEquals(listOf(0, 0), readings.map { it.inflight })
+        assertEquals(listOf(false, true), pool.readings().map { it.healthy })
+        // The server counts the completion out once its answer is written, which can be just after the client reads it.
+        rig.await("an ended completion is in flight nowhere") { pool.readings().all { it.inflight == 0 } }
         // The models list is asked where a completion would be.
         assertEquals(BOX_MODELS, rig.models(key).body())
     }

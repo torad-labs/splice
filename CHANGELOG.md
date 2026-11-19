@@ -100,6 +100,20 @@
   every session the machine had registered: 3.3 MB and 25 seconds after a restart on a machine with 4,400 of them,
   past the console's read limit. It sends the sessions still here and the newest 100 ended ones, `gone_older` counts
   the rest, and `GET /api/sessions/history` pages and searches those.
+- **A ChatGPT account signs in from the console without a device code.** The Accounts page used OpenAI's device-code
+  sign-in, which works only after the account turns on device-code authorization in its ChatGPT security settings,
+  so most accounts could not sign in there. It now uses the browser sign-in `claudex login` uses: approve on
+  OpenAI's page and the console finishes by itself. The ChatGPT device-code login and its tests are removed.
+- **A Claude sign-in from the console never asks for a code.** Claude Code offers two links: one it opens itself,
+  which finishes by itself, and one it prints, whose page ends in a code to paste back. The console showed the
+  printed one while Claude Code opened the other on the desktop when it could, so a Claude sign-in asked for a code
+  only sometimes. splice now gives Claude Code's sign-in a browser of its own that hands splice the first link, and
+  the console shows that one with no code field. A Claude Code that opens no link still gets the code field.
+- **A Kimi or Muse sign-in from the console asks for no code.** Kimi and Meta send a sign-in link that already
+  carries the code, and their own CLIs only ask you to approve on that page. The console opened that same link but
+  drew the code beside it with "Enter this code on the sign-in page". It now shows those sign-ins the way it shows
+  ChatGPT, Grok and Claude: Open sign-in, approve, and the console finishes by itself. A provider whose link does not
+  carry the code still shows the code to enter.
 - **A login whose token can't be renewed hands the turn to another login.** When every other login was held for
   the turn's model, the turn ended "login expired and could not be renewed" though other logins were signed in. It
   now moves to the one whose hold ends soonest, or to a model with room.

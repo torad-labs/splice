@@ -572,10 +572,11 @@ records each switch once under `[<head>]`.
 
 ### Sign in to a ChatGPT account from the console or the terminal
 
-In the console's Accounts page, a ChatGPT head's sign-in uses the device code. The daemon starts the
-flow and the page shows a verification address and a code. Open the address on any machine, enter
-the code, and the page finishes when you approve. The code lives 15 minutes. A code not approved in time
-leaves the login Not completed on the page, with Try again. Pick a label when you sign in, or leave it unnamed:
+In the console's Accounts page, a ChatGPT head signs in through the same browser sign-in as
+`claudex login`. The page opens OpenAI's sign-in and finishes by itself once you approve, with no code
+to type and nothing to turn on in your ChatGPT settings. A sign-in not finished within five minutes
+leaves the login Not completed on the page, with Try again. A Claude account signs in the same way:
+the page opens Claude's sign-in, which finishes by itself. Pick a label when you sign in, or leave it unnamed:
 an unnamed login reads as its plan word ("Max"), then "Max 2" and so on, counted per provider in the order splice
 first saw each. "Sign in again" on a head's first account replaces it in place under its own label.
 No page and no API answer shows an email address or an account id: every login is shown by its label, and
@@ -844,6 +845,7 @@ Each of these is password-equivalent. See [credential locations](#credential-loc
 | `~/.claude/sessions/<helper pid>.<sha256 of its socket path>.key` | A running peer helper's `peerToken`, which a sender presents on its socket, minted fresh at each helper start | Only you (0600) | Until the helper exits; a killed helper's file is skipped because its pid is dead | `PeerRegistryRecord.kt` |
 | `~/.splice/state/claude-logins/<label>.credentials.json`, `<label>.account.json` and `selected`, with the same files under `claude-logins/native/` for the default `claude` command | Opaque native credential copies and account identity records. The CLI saves a labelled login; `POST /api/claude-logins/<place>/login` saves the outgoing live login before native browser authentication and the newly live login after completion. The commands have independent selection markers | Only you (0600) | Until removed | `ClaudeLogins.kt`, `ClaudeLoginFiles.kt` |
 | `~/.splice/state/claude-accounts/<head>/<label>/.credentials.json`, `.claude.json` and `.splice-account.json`, with a sign-in in flight under `claude-accounts-pending/<command>/<label>/` | One folder per Claude account you add to a command beyond your own Claude Code sign-in: the credential Claude Code's own sign-in wrote there, the account's id and email, and when splice filed it. splice is the folder's only user, so splice refreshes this credential and saves the rotated pair back, through the same shared renewal step as the Codex, Grok and Kimi sign-ins: a rotated pair whose write fails is kept in memory only and written again at the next use. Your own Claude Code login is never written. A sign-in lands only once its account is read and proven new to that command | Only you (0600) | Until you remove the account | `ClaudeAccountFolders.kt`, `RetainedCredentialWrite.kt` |
+| `browser` and `opened` in a `splice-claude-signin-<random>` folder under the system temporary directory | While a Claude sign-in runs from the console: a two-line script splice names as Claude Code's `BROWSER`, and the sign-in links Claude Code hands it, so the console shows the link that finishes by itself. Not a credential | Only you (the folder is owner-only) | Removed when the sign-in ends; a daemon killed mid-sign-in leaves it for normal temporary-file cleanup | `NativeClaudeAuth.kt` |
 | `~/.splice/state/claude-logins/<place store>/removed/<random id>.credentials.json` | Claude Code's own login, as an earlier splice backed it up before its Remove deleted it. splice no longer removes that login, so it writes no new backup here | Only you (0600) | Kept until you delete the backup | none since Nov 13, 2026 |
 | `<credential file>.lock` and `.login-locks/<label>.lock` | Empty files that keep two refreshes or two labelled sign-ins from overlapping | Your umask | Never removed; always empty | `CredentialLock.kt`, `OAuthLoginReservation.kt` |
 

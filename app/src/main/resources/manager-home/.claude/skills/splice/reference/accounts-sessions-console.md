@@ -154,10 +154,10 @@ Source: `models.js:13-14,139-187,270-330,429-466,654-707,768-916,1096`, `setting
 | Provider | Command | Auth kind | Sign-in | Credential file |
 |---|---|---|---|---|
 | Claude | `claude` | `client` | `/login` inside the command | Claude Code's own config directory for that command |
-| ChatGPT | `claudex` | `chatgpt-oauth` | `claudex login` (browser) or Accounts (device code) | `~/.config/splice/auth/codex.json` |
+| ChatGPT | `claudex` | `chatgpt-oauth` | `claudex login` or Accounts (browser, both) | `~/.config/splice/auth/codex.json` |
 | Grok | `claude-grok` | `grok-oauth` | `claude-grok login` (browser) or Accounts | `auth/grok.json` |
-| Kimi | `claude-kimi` | `kimi-oauth` | `claude-kimi login` (device code) or Accounts | `auth/kimi.json` and a `device_id` |
-| Muse | `claude-muse` | `muse-oauth` | `claude-muse login` (device code) or Accounts | `auth/muse.json` (account token and a minted inference key) |
+| Kimi | `claude-kimi` | `kimi-oauth` | `claude-kimi login` or Accounts (approve on Kimi’s page) | `auth/kimi.json` and a `device_id` |
+| Muse | `claude-muse` | `muse-oauth` | `claude-muse login` or Accounts (approve on Meta’s page) | `auth/muse.json` (account token and a minted inference key) |
 | API key | `claude-openrouter`, `claude-deepseek`, others | `api-key` | `splice key set <ENV_NAME>` or `<command> login` (masked) | `~/.config/splice/keys.toml`, or the environment |
 
 - Sign-in happens on the vendor's page. Splice keeps its own token copy and does not read the vendor CLI's file unless
@@ -181,8 +181,8 @@ claudex login --label work        # the person runs it; adds an account beside t
 - Without `--label` the primary is signed in again in place. `--label auto` derives a name from the plan plus a short hash.
 - Extra accounts live at `~/.config/splice/auth/<kind>/<primary file>/<name>.json` with `<name>-quota.json` beside each.
 - A credential file is used only by the provider whose kind it carries; a mislabeled file is refused at boot.
-- Accounts offers the same: "Add account" (name, then "Sign in"). ChatGPT, Kimi and Muse use a device code (valid 15 minutes);
-  Claude and Grok can also sign in there.
+- Accounts offers the same: "Add account" (name, then "Sign in"), for every provider. "Open sign-in" opens the
+  provider’s page, and the sign-in finishes once the person approves there; nothing is typed or pasted back.
 - Each account shows its name, plan, "5 hours" and "Week" windows ("Month" for Grok) with "Resets <time>", its models, its
   sessions, and "Next". A chosen name wins; else the provider-proved email; else a plan word with a number ("Max", "Max 2").
   No account id is shown.

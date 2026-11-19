@@ -49,6 +49,8 @@ import java.nio.file.Path
 private const val HEAD = "claude-splice"
 private const val OTHER_HEAD = "claude"
 private const val BROWSER = "https://claude.com/cai/oauth/authorize?fixture=allowed\n"
+private const val OPENED =
+    "https://claude.com/cai/oauth/authorize?fixture=allowed&redirect_uri=http%3A%2F%2Flocalhost%3A38947%2Fcallback"
 
 class ClaudeAccountSignInTest {
     @TempDir
@@ -117,10 +119,12 @@ class ClaudeAccountSignInTest {
         owner.poll(status.id)!!
     }
 
-    /** A sign-in store whose sign-ins each run the next of [children], open for [check] and torn down after it. */
+    /** A sign-in store whose sign-ins each run the next of [children], open for [check] and torn down after it.
+     *  [opens] is the link each child hands the browser splice gives it, as Claude Code does, or none. */
     private fun open(
         account: String,
         children: List<NativeLoginTestProcess>,
+        opens: String? = null,
         check: suspend (ClaudeAccountSignIn) -> Unit,
     ) = runBlocking {
         val scope = CoroutineScope(SupervisorJob() + ProcessDispatchers().io())
@@ -131,6 +135,7 @@ class ClaudeAccountSignInTest {
             ProcessDispatchers().io(),
             NativeAuthStart { builder ->
                 write(Path.of(builder.environment().getValue("CLAUDE_CONFIG_DIR")), account)
+                opens?.let { ProcessBuilder(builder.environment().getValue("BROWSER"), it).start().waitFor() }
                 next.next()
             },
         )
@@ -161,10 +166,26 @@ class ClaudeAccountSignInTest {
         }
     }
 
+    // Nov 17, 2026: a Claude sign-in asked for a code only sometimes, by which link was used.
+    @Test
+    fun `a sign-in shows the link Claude Code opens, which finishes by itself, and asks for no code`() {
+        val child = NativeLoginTestProcess(BROWSER)
+        open("uuid-work", listOf(child), opens = OPENED) { owner ->
+            val started = owner.start(HEAD, "work")
+            waiting(owner, started.id)
+
+            val prompt = owner.poll(started.id)!!.prompt
+
+            assertFalse(prompt.pasteBack)
+            assertEquals(OPENED, prompt.browserUrl)
+            owner.cancel(started.id)
+        }
+    }
+
     // Nov 11, 2026: the console showed a sign-in still in progress. The link Claude Code prints ends
     // in a code to paste back, and only a command's own login card had the field for it.
     @Test
-    fun `a sign-in waiting on Claude Code's page says its code is pasted back, whichever card started it`() {
+    fun `a sign-in whose Claude Code opened no link says its code is pasted back, whichever card started it`() {
         val child = NativeLoginTestProcess(BROWSER)
         open("uuid-work", listOf(child)) { owner ->
             val started = owner.start(HEAD, "work")

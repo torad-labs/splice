@@ -32,6 +32,7 @@ import splice.app.control.ManagedHead
 import splice.app.control.RosterAccountNames
 import splice.app.control.api.HeadResolver
 import splice.app.observability.PerfAccountNames
+import splice.configuration.add.AddDaemonRestart
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.usage.QuotaReadFailureSource
@@ -49,11 +50,14 @@ internal class AccountsMount(
     log: LogSink,
     /** Where splice keeps the names a person gave logins (labels only): its own state, never a credential file. */
     stateDir: Path? = null,
+    /** The daemon's own restart, for a sign-in whose login the running command does not hold. */
+    daemonRestart: AddDaemonRestart? = null,
 ) {
     private val names = stateDir?.let { AccountNameStore(it.resolve(ACCOUNT_NAMES_FILE)) }
     private val logins = ClaudeLoginPlacesSource { ports.claudeLogins }
-    private val accountHeads = AccountHeadAdapter.adapt(heads)
-    private val accountResolver = AccountHeadAdapter.resolver(resolver)
+    private val adapter = AccountHeadAdapter(daemonRestart)
+    private val accountHeads = adapter.adapt(heads)
+    private val accountResolver = adapter.resolver(resolver)
     private val authStatusRoutes = AuthStatusRoutes(accountHeads, accountResolver)
 
     // Read at CALL time: ControlPlane assigns [ConsolePorts.accounts] after the server is constructed.

@@ -30,7 +30,9 @@ internal class AddMount(
     shutdown: ShutdownDaemon,
     log: LogSink,
 ) {
-    private val restart = SaveRestart(restarts, shutdown, ports)
+    /** The daemon's restart as a save takes it, which a sign-in to a login the running command does not hold
+     *  takes too (AccountsMount). */
+    internal val restart: AddDaemonRestart = SaveRestart(restarts, shutdown, ports)
     private val routes = AddRoutes(AddConsoleSource { ports.add }, restart, log)
     private val models = AddModelRoutes(AddConsoleSource { ports.add }, restart, log)
 

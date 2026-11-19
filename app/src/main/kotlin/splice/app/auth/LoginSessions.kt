@@ -2,9 +2,15 @@
 // DeviceLoginFlow or OAuthLoginFlow OFF the HTTP request that asked for it (RFC 8628 polling and
 // the OAuth loopback callback both run for minutes; a request handler must not), and this is where
 // GET /api/auth/{head}/login/{id} reads back what the flow has announced so far. On landing (the
-// credential persisted), it calls the caller-supplied HeadRestart so the account joins its pool —
-// the row's "the state reads signed in, live after restart until then". DELETE/PATCH
+// credential persisted), it calls the caller-supplied HeadRestart so the running command serves with the
+// login — the row's "the state reads signed in, live after restart until then". DELETE/PATCH
 // /api/auth/{head}/accounts/{label} are plain OAuthAccountFiles calls, no off-request state.
+//
+// A LOGIN THE HEAD DOES NOT HOLD NEEDS SPLICE'S OWN RESTART ([LoginLanding]). These heads read which logins they have
+// once, when the daemon builds them, and the head's restart starts the same head over the same logins. Until Nov 19,
+// 2026 every landing took the head's restart and read live: a ChatGPT login added from the console was written to
+// disk, the page closed its tile as done, and the command went on with the logins it had, the new one neither listed
+// nor used, until someone restarted splice by hand.
 //
 // ConsoleAccountsImpl owns account mutations and delegates asynchronous sign-in to this store.
 //
@@ -14,12 +20,15 @@
 // or callback port, as a config error or a bare "not completed", for up to five minutes.
 package splice.app.auth
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import splice.accounts.signin.HeadRestart
 import splice.accounts.signin.LoginFailure
 import splice.accounts.signin.LoginPrompt
+import splice.accounts.signin.LoginRestart
 import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
 import splice.app.cli.auth.LoginCommand
@@ -44,6 +53,10 @@ import java.util.concurrent.atomic.AtomicReference
 // access-ordered so the cap only ever evicts attempts nobody has polled in a long time.
 private const val MAX_TRACKED_LOGINS = 256
 
+// why: the page reads a sign-in every second, so one that is open reads "restarting" well inside this. A page that
+// was closed never reads it, and the restart the login needs does not wait on it for longer.
+private const val RESTART_READ_WAIT_MS = 5_000L
+
 /** Off-request orchestration for one head's login attempts. A daemon-lifetime singleton (held by
  *  [ConsoleAccountsImpl]), so every login this daemon starts shares one bounded id space. */
 internal class LoginSessions(
@@ -64,6 +77,9 @@ internal class LoginSessions(
     private class Session(val place: String, val cell: AtomicReference<LoginStatus>) {
         @Volatile
         var job: Job? = null
+
+        /** Done once the page has read that splice is restarting for this sign-in: the read after it finds no one. */
+        val restartRead = CompletableDeferred<Unit>()
 
         /** Ends it when it is still open: it reads cancelled for [said], and its flow is stopped. False for one that
          *  already ended, which keeps its own end and whatever it is still finishing (the head's restart). */
@@ -113,7 +129,7 @@ internal class LoginSessions(
             sessions[id] = session
             scope.launch(start = CoroutineStart.LAZY) {
                 earlier.forEach { it.released() }
-                runAndLand(attempt, observer, restart, session.cell)
+                runAndLand(attempt, observer, restart, session)
             }.also { session.job = it }
         }
         job.invokeOnCompletion { finished(session) }
@@ -123,6 +139,12 @@ internal class LoginSessions(
     }
 
     internal fun poll(id: String): LoginStatus? = synchronized(lock) { sessions[id] }?.cell?.get()
+
+    /** The page read that splice is restarting for the sign-in [id], so its restart begins now ([LoginLanding]). */
+    internal fun restartRead(id: String) {
+        val session = synchronized(lock) { sessions[id] } ?: return
+        if (session.cell.get().state == LoginState.RESTARTING) session.restartRead.complete(Unit)
+    }
 
     /** Ends the sign-in [id] where it stands: its flow is stopped, and its label hold and callback port are free for
      *  the next one by the time this answers. Answers how it ended, which is its own end when it had already
@@ -165,8 +187,9 @@ internal class LoginSessions(
         attempt: LoginAttempt,
         observer: LoginObserver,
         restart: HeadRestart?,
-        cell: AtomicReference<LoginStatus>,
+        session: Session,
     ) {
+        val cell = session.cell
         val result = Cancellables.runCatchingBestEffort {
             LoginCommand().runLoginAttempt(attempt.headKey, attempt.provider, attempt.topology, attempt.label, observer)
         }.getOrElse { e ->
@@ -177,17 +200,7 @@ internal class LoginSessions(
             update(cell) { it.closed(refused(result), result.refusal ?: "login did not complete") }
             return
         }
-        // The credential is on disk, so signed in is what happened, even when a cancel reached it a moment before.
-        update(cell) {
-            it.copy(
-                state = LoginState.SIGNED_IN,
-                failure = null,
-                label = result.account?.persistedLabel(),
-            )
-        }
-        if (restart == null) return
-        val restarted = Cancellables.runCatchingBestEffort { restart.restart() }.isSuccess
-        if (restarted) update(cell) { it.copy(state = LoginState.LIVE_AFTER_RESTART) }
+        LoginLanding(restart, cell, session.restartRead).landed(result.account?.persistedLabel())
     }
 
     /** The kinds SafeFailureText keeps whole: a path for a file, a host or a timeout for the network. */
@@ -226,6 +239,52 @@ internal class LoginSessions(
 
     private fun update(cell: AtomicReference<LoginStatus>, transform: LoginStatusUpdate) {
         cell.getAndUpdate { transform(it) }
+    }
+}
+
+/** How one sign-in whose credential reached disk lands in the running command: its state in [cell], and [read],
+ *  done once the page has read that splice is restarting for it. */
+private class LoginLanding(
+    private val restart: HeadRestart?,
+    private val cell: AtomicReference<LoginStatus>,
+    private val read: CompletableDeferred<Unit>,
+) {
+    /** The credential is on disk, so signed in is what happened, even when a cancel reached it a moment before. The
+     *  head's first login carries no label, or its reserved one, and the head always holds it; a login it holds is
+     *  read again by the head's own restart. One it does not hold goes to [landNew]. */
+    suspend fun landed(label: String?) {
+        val pooled = label?.takeUnless { it == PRIMARY_LABEL }
+        if (pooled != null && restart?.holds(pooled) == false) return landNew(pooled, restart)
+        cell.getAndUpdate { it.copy(state = LoginState.SIGNED_IN, failure = null, label = label) }
+        if (restart == null) return
+        val restarted = Cancellables.runCatchingBestEffort { restart.restart() }.isSuccess
+        if (restarted) cell.getAndUpdate { it.copy(state = LoginState.LIVE_AFTER_RESTART) }
+    }
+
+    /** Brings the login just written as [label], which the running command does not hold, into it. Only splice's
+     *  own restart builds the command with a login it did not have, so this takes that restart on: the sign-in reads
+     *  restarting and never plain signed in, which the page would close its tile on with the login not yet there. The
+     *  page reads it (or a few seconds pass with no page), and then the restart begins. A splice that cannot restart
+     *  itself says so, with what to run. */
+    private suspend fun landNew(label: String, daemon: HeadRestart) {
+        val taken = Cancellables.runCatchingBestEffort { daemon.daemonRestart() }
+            .getOrElse { LoginRestart.Refused(SafeFailureText.render(it)) }
+        when (taken) {
+            is LoginRestart.Refused -> cell.getAndUpdate {
+                it.copy(label = label).failed(
+                    LoginFailure.NEEDS_RESTART,
+                    "signed in as '$label', and splice could not restart itself to use the login (${taken.reason}). " +
+                        "Run splice restart in a terminal.",
+                )
+            }
+            LoginRestart.Waiting ->
+                cell.getAndUpdate { it.copy(state = LoginState.RESTARTING, failure = null, label = label) }
+            LoginRestart.Ready -> {
+                cell.getAndUpdate { it.copy(state = LoginState.RESTARTING, failure = null, label = label) }
+                val _ = withTimeoutOrNull(RESTART_READ_WAIT_MS) { read.await() }
+                daemon.beginDaemonRestart()
+            }
+        }
     }
 }
 

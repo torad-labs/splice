@@ -84,7 +84,7 @@ class PlaygroundProviderAnswerTest {
     @Test
     fun `a single-login roster reports its real 403 and clears it after a newer acceptance`() = runTest {
         val fixture = fixture(backgroundScope)
-        val route = AccountsRoute(AccountHeadAdapter.adapt(mapOf("claudex" to fixture.first)))
+        val route = AccountsRoute(AccountHeadAdapter().adapt(mapOf("claudex" to fixture.first)))
         var refused = true
         HttpClient(
             MockEngine { respond("{}", if (refused) HttpStatusCode.Forbidden else HttpStatusCode.OK) },
@@ -128,7 +128,7 @@ class PlaygroundProviderAnswerTest {
         try {
             assertEquals("kimi-oauth", restarted.first.auth.describe().kind)
             assertEquals(403, restarted.first.head.providerAnswer()?.status)
-            val route = AccountsRoute(AccountHeadAdapter.adapt(mapOf("kimi" to restarted.first)))
+            val route = AccountsRoute(AccountHeadAdapter().adapt(mapOf("kimi" to restarted.first)))
             val row = Json.parseToJsonElement(route.accountsJson()).jsonObject.getValue("accounts").jsonArray.single()
             val refusal = row.jsonObject.getValue("last_refusal")
             assertTrue(refusal is kotlinx.serialization.json.JsonObject, "the last head refusal is not Signed in")
@@ -167,7 +167,7 @@ class PlaygroundProviderAnswerTest {
         val restarted = fixture(backgroundScope)
         try {
             assertEquals(403, restarted.first.head.providerAnswer()?.status, "the head still retains its history")
-            val route = AccountsRoute(AccountHeadAdapter.adapt(mapOf("claudex" to restarted.first)))
+            val route = AccountsRoute(AccountHeadAdapter().adapt(mapOf("claudex" to restarted.first)))
             val row = Json.parseToJsonElement(route.accountsJson()).jsonObject.getValue("accounts").jsonArray.single()
             assertEquals(JsonNull, row.jsonObject.getValue("last_refusal"), "the new credential has never answered")
         } finally {

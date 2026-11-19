@@ -300,7 +300,7 @@ const API = (() => {
 //   how: { start: the POST that begins it, body, poll: the head its status is read under; whether
 //          the sign-in takes a pasted code is splice's to say. An add's sign-in is carried by its add instead:
 //          watch, the GET that answers it as sign_in, and end, the DELETE that ends it }
-//   s:   { how, state: "wait" | "ending" | "fail", id, url, code, by: "code" | "paste" | "browser", swapped, fail, why }
+//   s:   { how, state: "wait" | "ending" | "fail", id, url, code, by: "code" | "paste" | "browser" | "restart", swapped, fail, why }
 //   on:  { held(): the page still shows this sign-in, draw(), done(status), failed(status) }
 const SIGNIN = (() => {
   // A failed sign-in says its kind in a word or two where it was pressed, with splice's own sentence beside the word:
@@ -312,9 +312,17 @@ const SIGNIN = (() => {
     file: { word: "File error" }, config: { word: "Config error" }, expired: { word: "Expired", retry: true },
     stopped: { word: "Stopped", retry: true }, cancelled: { word: "Cancelled", retry: true },
     already_added: { word: "Already added", pulse: true }, other_account: { word: "Other account", retry: true },
+    needs_restart: { word: "Restart splice" }, // signed in, and a Try again would sign in a second time
   };
   // splice holds no sign-in under this id: it restarted since, and the sign-in ended with the daemon that ran it
   const STOPPED = { failure_kind: "stopped", failure_reason: "splice restarted, and this sign-in ended with it" };
+  // A login the running command does not hold is read when splice starts, so splice restarts for it (LoginSessions.kt
+  // landNew) and the sign-in reads restarting. It has landed once the next splice answers, which knows no such sign-in
+  // and so answers 404. Until Nov 19, 2026 a ChatGPT login added here closed its tile as done while the command went on
+  // without it, neither listed nor used, until someone restarted splice by hand. One that has not answered for this
+  // many seconds says so: a restart by hand takes a few.
+  const BACK_WAIT = 90;
+  const NOT_BACK = { failure_kind: "needs_restart", failure_reason: "You are signed in, and splice stopped to restart for the login and has not answered since. Run splice restart in a terminal." };
   const NOT_CANCELLED = "splice did not answer, so the sign-in may still be open. Try again starts a new one in its place.";
   // one sign-in on splice: read with GET, ended with DELETE (LoginRoutes.kt)
   const at = (s, id) => `/api/auth/${encodeURIComponent(s.how.poll)}/login/${encodeURIComponent(id)}`;
@@ -338,7 +346,7 @@ const SIGNIN = (() => {
   /** Starts the sign-in, or starts it again in place after one that failed. */
   async function start(s, on) {
     quiet(s);
-    Object.assign(s, { state: "wait", by: "browser", code: null, url: null, id: null, fail: null, why: "", gen: (s.gen || 0) + 1 });
+    Object.assign(s, { state: "wait", by: "browser", code: null, url: null, id: null, fail: null, why: "", back: null, down: 0, gen: (s.gen || 0) + 1 });
     on.draw();
     const gen = s.gen, res = await API.post(s.how.start, s.how.body || {});
     if (!on.held() || s.gen !== gen) {
@@ -355,14 +363,21 @@ const SIGNIN = (() => {
   }
   /** Takes up a sign-in splice already holds (GET /api/auth/logins), as a page opened after it began. */
   function adopt(s, on, status) {
-    Object.assign(s, { state: "wait", by: "browser", code: null, url: null, id: status.id, gen: (s.gen || 0) + 1 });
+    Object.assign(s, { state: "wait", by: "browser", code: null, url: null, id: status.id, back: null, down: 0, gen: (s.gen || 0) + 1 });
     seen(s, on, status);
   }
   // one status answer: show its step, land, fail, or ask again in a second
   function seen(s, on, st) {
     if (s.state !== "wait") return;
     if (st?.state === "failed") { fail(s, on, st); return; }
-    if (st?.state === "signed_in" || st?.state === "live_after_restart") { quiet(s); s.state = "done"; on.done(st); return; }
+    if (st?.state === "signed_in" || st?.state === "live_after_restart") { land(s, on, st); return; }
+    if (st?.state === "restarting") { // signed in, and splice is restarting for it: nothing is left to open, type or cancel
+      const first = !s.back;
+      Object.assign(s, { back: st, down: 0, by: "restart", url: null, code: null });
+      if (first) on.draw();
+      ask(s, on);
+      return;
+    }
     const url = st?.verification_uri || st?.browser_url || null, code = st?.user_code || null;
     // The step is splice's to say: a code to type on the provider's page, a code that page shows to paste back here
     // (paste_code: Claude Code's own sign-in, whichever card started it), or a page that finishes by itself. Until
@@ -377,6 +392,7 @@ const SIGNIN = (() => {
     if (changed) { on.draw(); s.swapped = false; }
     ask(s, on);
   }
+  function land(s, on, st) { quiet(s); s.state = "done"; on.done(st); }
   // Asks splice how the sign-in stands, a second from now. Only splice's answer ends it here: a read splice does not
   // answer keeps the page waiting, and a splice that restarted, and so knows no such sign-in, says that. Until Nov 11,
   // 2026 one read that failed ended it on the card as "Not completed" with no reason, while splice went on holding it.
@@ -389,7 +405,8 @@ const SIGNIN = (() => {
       const res = await API.get(s.how.watch || at(s, s.id));
       if (gone(s, on, gen) || s.turn !== turn) return;
       if (res.ok) { seen(s, on, read(s, res.body)); return; }
-      if (res.status === 404) { fail(s, on, STOPPED); return; }
+      if (res.status === 404) { if (s.back) land(s, on, s.back); else fail(s, on, STOPPED); return; }
+      if (s.back && ++s.down > BACK_WAIT) { fail(s, on, NOT_BACK); return; }
       ask(s, on);
     }, 1000);
   }

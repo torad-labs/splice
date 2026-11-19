@@ -5,13 +5,19 @@
 // checkout, with what each page threw and whether it spilled past the right edge in report.txt beside them. Run
 // anywhere but a Mac, it sends itself to one through rig and brings the folder back. It never runs Chromium here.
 //
-//   bun .campaign/checks/console-night-deck/capture.ts [page ...] [--full] [--then STEP ...]
+//   bun .campaign/checks/console-night-deck/capture.ts [page ...] [--full] [--locked] [--then STEP ...]
 //
 // A page is a console file without .html, with a query if it takes one: sessions, accounts, activity?win=30d.
 // --full takes the whole page as it scrolls, not only the first screen.
+// --locked answers every /api read with 401, as a daemon does to a console that holds no key or a wrong one.
 // --then runs a step on every page, theme and width after it loads, in the order given:
-//   click:SELECTOR  hover:SELECTOR  fill:SELECTOR|TEXT  press:KEY  wait:MS  shot:NAME (a picture of the state now)
+//   click:SELECTOR  dblclick:SELECTOR  hover:SELECTOR  fill:SELECTOR|TEXT  type:TEXT (keys typed where the focus is)
+//   select:SELECTOR|VALUE  check:SELECTOR  uncheck:SELECTOR  scroll:SELECTOR (into view)  press:KEY  wait:MS
+//   goto:PAGE (another console page, in the same tab)  shot:NAME (a picture of the state now)
 // A step that fails is written in the report and the next width goes on.
+// What a page sends that is not a read (a write: POST, PUT, PATCH, DELETE) is what the stub saw, and each capture
+// lists it in the report, its whole bodies in <picture>-sent.json beside the pictures: a write is judged by what the
+// page sent, never by a Splice that is running.
 
 import { type Page } from "@playwright/test";
 import { spawnSync } from "node:child_process";
@@ -25,6 +31,7 @@ const NOT_STARTED = 75;
 const args = process.argv.slice(2);
 let out = "";
 let full = false;
+let locked = false;
 const steps: string[] = [];
 const pages: string[] = [];
 const passed: string[] = [];
@@ -34,12 +41,15 @@ for (let i = 0; i < args.length; i++) {
   else if (a === "--full") {
     full = true;
     passed.push(a);
+  } else if (a === "--locked") {
+    locked = true;
+    passed.push(a);
   } else if (a === "--then") {
     const step = args[++i] ?? "";
     steps.push(step);
     passed.push(a, step);
   } else if (a === "--help" || a === "-h") {
-    console.log("bun .campaign/checks/console-night-deck/capture.ts [page ...] [--full] [--then STEP ...]");
+    console.log("bun .campaign/checks/console-night-deck/capture.ts [page ...] [--full] [--locked] [--then STEP ...]");
     process.exit(0);
   } else {
     pages.push(a);
@@ -82,32 +92,48 @@ mkdirSync(dir, { recursive: true });
 const names = pages.length ? pages : readdirSync(CONSOLE).filter((f) => f.endsWith(".html")).map((f) => f.slice(0, -5)).sort();
 const slug = (s: string) => s.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
 
-async function act(page: Page, step: string, shot: (name: string) => Promise<void>) {
+async function act(page: Page, step: string, shot: (name: string) => Promise<void>, url: string) {
   const colon = step.indexOf(":");
   const verb = colon < 0 ? step : step.slice(0, colon);
   const rest = colon < 0 ? "" : step.slice(colon + 1);
-  if (verb === "click") await page.locator(rest).first().click({ timeout: 10_000 });
-  else if (verb === "hover") await page.locator(rest).first().hover({ timeout: 10_000 });
+  const at = (sel: string) => page.locator(sel).first();
+  const split = (r: string) => [r.slice(0, r.lastIndexOf("|")), r.slice(r.lastIndexOf("|") + 1)] as const;
+  if (verb === "click") await at(rest).click({ timeout: 10_000 });
+  else if (verb === "dblclick") await at(rest).dblclick({ timeout: 10_000 });
+  else if (verb === "hover") await at(rest).hover({ timeout: 10_000 });
+  else if (verb === "type") await page.keyboard.type(rest);
+  else if (verb === "select") {
+    const [sel, value] = split(rest);
+    await at(sel).selectOption(value, { timeout: 10_000 });
+  } else if (verb === "check") await at(rest).check({ timeout: 10_000 });
+  else if (verb === "uncheck") await at(rest).uncheck({ timeout: 10_000 });
+  else if (verb === "scroll") await at(rest).scrollIntoViewIfNeeded({ timeout: 10_000 });
+  else if (verb === "goto") {
+    const [file, query] = rest.split("?") as [string, string | undefined];
+    await page.goto(`${url}/${file}.html${query ? `?${query}` : ""}`);
+  }
   else if (verb === "fill") {
     const bar = rest.lastIndexOf("|");
     await page.locator(rest.slice(0, bar)).first().fill(rest.slice(bar + 1), { timeout: 10_000 });
   } else if (verb === "press") await page.keyboard.press(rest);
   else if (verb === "wait") await page.waitForTimeout(Number(rest) || 500);
   else if (verb === "shot") await shot(slug(rest) || "step");
-  else throw new Error(`no step called ${verb}: click, hover, fill, press, wait or shot`);
+  else throw new Error(`no step called ${verb}: click, dblclick, hover, fill, type, select, check, uncheck, scroll, press, wait, goto or shot`);
   if (verb !== "shot" && verb !== "wait") await page.waitForTimeout(400);
 }
 
 const report: string[] = [];
 const b = await browser();
-const d = daemon(world());
+// Locked: every read answers 401, as a daemon answers a console with no key or a wrong one.
+const d = daemon(locked ? { "*": () => Response.json({ error: "unauthorized" }, { status: 401 }) } : world());
 try {
   for (const name of names) {
     const [file, query] = name.split("?") as [string, string | undefined];
     const target = `${file}.html${query ? `?${query}` : ""}`;
     for (const theme of ["night", "day"] as const) {
       for (const size of [NARROW, WIDE]) {
-        const base = `${file}${query ? `-${slug(query)}` : ""}-${theme}-${size.width}`;
+        const base = `${file}${query ? `-${slug(query)}` : ""}${locked ? "-locked" : ""}-${theme}-${size.width}`;
+        const from = d.seen.length;
         const o = await open(b, d, target, size, theme);
         const notes: string[] = [];
         try {
@@ -117,7 +143,7 @@ try {
           await shoot("");
           for (const step of steps) {
             try {
-              await act(o.page, step, shoot);
+              await act(o.page, step, shoot, d.url);
             } catch (e) {
               notes.push(`step ${step} failed: ${(e as Error).message.split("\n")[0]}`);
               await shoot("failed").catch(() => {});
@@ -127,6 +153,12 @@ try {
           const f = await frame(o.page);
           if (f.scrollW > f.innerW) notes.push(`spills ${f.scrollW - f.innerW}px past the right edge`);
           notes.push(...o.errors.map((e) => `threw: ${e}`));
+          const writes = d.seen.slice(from).filter((w) => w.method !== "GET" && w.method !== "HEAD");
+          if (writes.length) {
+            writeFileSync(join(dir, `${base}-sent.json`), `${JSON.stringify(writes, null, 2)}\n`);
+            const brief = (v: unknown) => (v === null || v === "" ? "" : ` ${JSON.stringify(v).slice(0, 200)}`);
+            notes.push(...writes.map((w) => `sent ${w.method} ${w.path}${w.query}${brief(w.body)}`));
+          }
         } finally {
           await o.close();
         }

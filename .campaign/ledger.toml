@@ -4667,3 +4667,30 @@ reviews = [
 notes = [
   '2026-11-19 04:30 CT share-door-only/coordinator: added; 1 of 1 checks fail, as they should before the work',
 ]
+
+[[row]]
+id = 'df-managed-launcher'
+title = 'A Code-tab turn answers when Claude Code is started by a managed process wrapper'
+feature = 'desktop-full'
+status = 'todo'
+owner = ''
+blocked_by = [
+  'df-credential',
+]
+guard = false
+spec = '''
+When Claude Code's managed settings name a process wrapper (claudeCodeProcessWrapperEnabled), Claude Desktop starts the Code tab's Claude Code through it, strips ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, CLAUDE_CODE_OAUTH_TOKEN and AWS_BEARER_TOKEN_BEDROCK from the launch, and sets CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1. Claude Code's Mantle client takes its bearer only from AWS_BEARER_TOKEN_BEDROCK, so today every Code-tab turn on the door fails with 'Mantle credentials are managed by the desktop app, but none are available'.
+- `splice desktop launch <command> [args...]` runs the command with its own arguments, and exits with its exit code. When the launch's ANTHROPIC_BEDROCK_MANTLE_BASE_URL is this splice's door (its control address, the path Desktop is given), it sets AWS_BEARER_TOKEN_BEDROCK to the desktop key first. Any other launch, with another Mantle URL or none, runs as it came, with no key of splice's. The command may be another wrapper (seatd's pipe, say) followed by Claude Code's own command line, so splice's launcher can sit in front of a wrapper a machine already uses.
+- It reads the key from splice's state folder itself and needs no running daemon, as the credential helper does (df-credential).
+- `splice desktop on` lays an executable at <state dir>/desktop-launch, mode 0700, that runs `splice desktop launch` with its arguments from Desktop's own environment (no SPLICE_* variable), so a managed processWrapper can name it by path.
+- `splice desktop`'s usage names launch. It is not one of the daemon verbs in DoorVerbs.'''
+checks = [
+  'bun test ./.campaign/checks/desktop-full/managed-launcher.test.ts',
+]
+reviews = [
+  'feature',
+  'code',
+]
+notes = [
+  '2026-11-19 06:22 CT: added; 1 of 1 checks fail, as they should before the work',
+]

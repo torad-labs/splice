@@ -1,0 +1,2 @@
+folders = ["~/scratch/splice-redesign/night-deck", "build/night-deck-captures"]
+scripts = [".campaign/checks/console-night-deck/capture.ts"]

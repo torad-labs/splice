@@ -154,8 +154,11 @@ internal class HostPrefixes(private val log: LogSink) : AttachedPrefixes {
 private const val UNREAD_NETWORKS =
     "this machine could not read its own networks; only loopback is answered until it can"
 
-// Tailscale's IPv6 range, fd7a:115c:a1e0::/48, which it hands every peer an address from.
+// why: Tailscale hands every peer an address from fd7a:115c:a1e0::/48, inside unique local IPv6 (fc00::/7), so a
+// tailnet peer is told from another site's unique local source by this prefix alone.
 private const val TAILNET_IPV6_PREFIX = "fd7a:115c:a1e0::"
+
+// why: the 48 leading bits of that prefix are the tailnet's; the rest is the peer.
 private const val TAILNET_IPV6_BITS = 48
 
 // The domain MagicDNS names a tailnet's machines under: `<machine>.<tailnet>.ts.net`.

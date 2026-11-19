@@ -17,6 +17,7 @@
 import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { availableParallelism, loadavg } from "node:os";
 import { join } from "node:path";
+import { gradleElsewhere } from "./elsewhere.ts";
 import { takeExclusive } from "./flock.ts";
 import type { Layout } from "./repo.ts";
 import { exitForSignal, exitStatusOf } from "./status.ts";
@@ -225,6 +226,10 @@ export async function runUnderSlot(options: SlotOptions): Promise<number> {
     console.error(`gradle-slot: name the tasks, e.g. bun tools/gate slot ${label} -- :app:test :app:detekt`);
     return NO_TASKS_EXIT;
   }
+
+  // Another of the developer's machines builds it when one has room (elsewhere.ts); otherwise it builds here.
+  const elsewhere = await gradleElsewhere({ buildRoot: options.layout.buildRoot, label, args, env });
+  if (elsewhere !== undefined) return elsewhere;
 
   const lock = lockPath(options.layout, env);
   const holderPath = `${lock}.holder`;

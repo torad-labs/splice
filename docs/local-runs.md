@@ -9,6 +9,14 @@ grew, and update this page.
 A peak here is the memory high-water mark of the run's own processes (cgroup `memory.peak`, or what systemd logs as
 "memory peak" when the unit stops), not the machine's.
 
+## Where gradle runs
+
+With `rig` on PATH, the gradle slot sends a run to another of your machines that has room
+(`tools/gate/src/lib/elsewhere.ts`): the pre-push Gradle tier, and any test or check a `./gradlew` asks for, since the
+root wrapper runs every one through the slot. The memory and time of such a run are that machine's. A run stays here
+on CI, when no machine took it, when a task makes a file this machine reads (the jar an install copies, a native
+binary), and when `SPLICE_GRADLE_HERE=1` is set.
+
 ## The pre-push gate
 
 The pre-push hook judges the pushed sha in a build tree checked out clean from it (`bun tools/gate hook`). One push

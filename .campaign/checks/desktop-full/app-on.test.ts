@@ -124,12 +124,14 @@ describe("df-app-on", () => {
     expect(Object.keys(libraryFiles(s)).sort()).toEqual([`${theirs.id}.json`, "_meta.json"].sort());
   });
 
-  test("plain on after on --app takes splice's configuration out and is standard mode again", () => {
+  test("plain on after on --app takes splice's configuration out and opens the standard door; Desktop then reads the person's own configuration, so mode is other", () => {
     const before = libraryFiles(s);
     appOnYes(s);
     turnOn(s, "--model", ASTRA_BIG);
     expect(libraryFiles(s)).toEqual(before);
-    expect(deskJson(s).mode).toBe("standard");
+    const j = deskJson(s);
+    expect(j.on).toBe(true);
+    expect(j.mode).toBe("other");
     expect(existsSync(join(library(s), "_meta.json"))).toBe(true);
   });
 });

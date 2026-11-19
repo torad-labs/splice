@@ -1,4 +1,4 @@
-// Where a gradle run builds once `rig` is on PATH: on another machine when rig says one ran it, and here otherwise.
+// Where a gradle run builds once `rig` is on PATH: on another machine, or nowhere when none takes it.
 import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -77,22 +77,42 @@ describe("a gradle run with rig on PATH", () => {
     ]);
   });
 
-  test("no machine with room: it builds here", async () => {
+  test("no machine with room once the slot's wait is over: the run fails 75, and nothing builds here", async () => {
     const m = machine();
-    const status = await m.run([":app:test"], { RIG_STATUS: '{"exit":null,"why":"no machine"}', RIG_EXIT: "75" });
-    expect(status).toBe(0);
-    expect(m.builtHere()).toBe(true);
+    const status = await m.run([":app:test"], {
+      RIG_STATUS: '{"exit":null,"why":"no machine"}', RIG_EXIT: "75", GRADLE_SLOT_WAIT_S: "0",
+    });
+    expect(status).toBe(75);
+    expect(m.builtHere()).toBe(false);
   });
 
-  test("a rig that says nothing of a run (one that cannot pick a machine itself) leaves it to build here", async () => {
+  test("a tree rig refuses fails at once, and nothing builds here", async () => {
     const m = machine();
-    expect(await m.run([":app:test"], { RIG_EXIT: "64" })).toBe(0);
-    expect(m.builtHere()).toBe(true);
+    const status = await m.run([":app:test"], { RIG_STATUS: '{"exit":null,"why":"scan refused"}', RIG_EXIT: "75" });
+    expect(status).toBe(75);
+    expect(m.builtHere()).toBe(false);
   });
 
-  test("a task that makes a file this machine reads builds here, and rig is never asked", async () => {
+  test("a rig that says nothing of a run (one too old to pick a machine) fails, and nothing builds here", async () => {
     const m = machine();
-    expect(await m.run([":app:shadowJar"], { RIG_STATUS: '{"exit":0}' })).toBe(0);
+    expect(await m.run([":app:test"], { RIG_EXIT: "64" })).toBe(75);
+    expect(m.builtHere()).toBe(false);
+  });
+
+  test("the fat jar is built there and rig is asked to bring it back", async () => {
+    const m = machine();
+    expect(await m.run([":app:shadowJar", "--quiet"], { RIG_STATUS: '{"exit":0}', RIG_EXIT: "0" })).toBe(0);
+    expect(m.builtHere()).toBe(false);
+    const asked = m.rigAsked()!;
+    expect(asked[asked.indexOf("--fetch") + 1]).toBe("app/build/libs/app-all.jar");
+    expect(asked.slice(asked.indexOf("--") + 1)).toEqual([
+      "bun", "tools/gate", "slot", "elsewhere-test", "--", ":app:shadowJar", "--quiet",
+    ]);
+  });
+
+  test("a task that makes a file this machine reads, with no path to bring back, builds here", async () => {
+    const m = machine();
+    expect(await m.run([":app:installDist"], { RIG_STATUS: '{"exit":0}' })).toBe(0);
     expect(m.builtHere()).toBe(true);
     expect(m.rigAsked()).toBeNull();
   });

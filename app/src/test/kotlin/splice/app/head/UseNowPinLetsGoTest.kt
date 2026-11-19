@@ -41,6 +41,7 @@ import splice.accounts.pool.HeadAccountPinSource
 import splice.accounts.pool.HeadAccountPoolSource
 import splice.accounts.pool.SwitchRoute
 import splice.accounts.signin.HeadRestart
+import splice.app.ReadOnlyFolder
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
@@ -326,6 +327,7 @@ class UseNowPinLetsGoTest {
     private fun readOnlyState(block: () -> Unit) {
         state.toFile().setWritable(false)
         try {
+            ReadOnlyFolder.assumeRefuses(state)
             block()
         } finally {
             state.toFile().setWritable(true)

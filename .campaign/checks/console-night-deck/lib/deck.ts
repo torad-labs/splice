@@ -261,6 +261,16 @@ export const perfTurns = (_req: Request, url: URL) => {
   return { heads };
 };
 
+/** GET /api/add/profiles, in the shape the daemon gives (features/configuration/.../add/AddViews.kt, profile()):
+ *  one profile that takes an API key, one that signs in, and one local server that still needs its URL and model. */
+export const ADD_PROFILES = {
+  profiles: [
+    { name: "acme-key", auth_kind: "api-key", requires_key: true, base_url: "https://api.acme.example", head_key: "acme-key", command: "claude-acme-key", asks: [] },
+    { name: "acme-cloud", auth_kind: "acme-oauth", requires_key: false, base_url: "https://cloud.acme.example", head_key: "acme-cloud", command: "claude-acme-cloud", asks: [] },
+    { name: "local", auth_kind: "api-key", requires_key: false, base_url: null, head_key: "", command: "", asks: ["name", "base_url", "models"] },
+  ],
+};
+
 /** The answers every page can share. A check adds or replaces its own. */
 export function world(over: Record<string, Answer> = {}): Record<string, Answer> {
   return {
@@ -273,6 +283,7 @@ export function world(over: Record<string, Answer> = {}): Record<string, Answer>
     "/api/auth/claude-splice/order": ORDER,
     "/api/perf/turns": perfTurns,
     "/api/upgrade": { installed: "9.8.7", latest: "9.8.7", rollback_target: null },
+    "/api/add/profiles": ADD_PROFILES,
     ...over,
   };
 }

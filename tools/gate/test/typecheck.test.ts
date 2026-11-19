@@ -5,7 +5,7 @@
 // grades a mutation it did not make is the failure this wall family exists to catch.
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type TypecheckConfig, WallError, loadConfig, trackedSources, wall } from "../src/lib/typecheck.ts";
@@ -102,6 +102,23 @@ describe("typecheck wall", () => {
       write(root, "src/scratch.ts", BROKEN);
       expect(trackedSources(root)).not.toContain("src/scratch.ts");
       expect(wall(root, config()).problems).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a compiler that ran on another machine lists that machine's copy of the tree, and its files still count", () => {
+    const root = fixture({ "src/a.ts": CLEAN, "other/b.ts": CLEAN });
+    try {
+      // The host's bunx may send tsc to another machine, which lists each file under its own copy of the tree.
+      rmSync(join(root, "node_modules"));
+      const elsewhere = "node_modules/.bin/elsewhere-tsc";
+      write(root, elsewhere, "#!/bin/sh\necho /Users/someone/remote-builds/tree-0123/src/a.ts\n");
+      chmodSync(join(root, elsewhere), 0o755);
+      expect(trackedSources(root)).toEqual(["other/b.ts", "src/a.ts"]);
+      const problems = wall(root, config({ compiler: "elsewhere-tsc" })).problems.join("\n");
+      expect(problems).not.toContain("src/a.ts");
+      expect(problems).toContain("uncovered other/b.ts");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

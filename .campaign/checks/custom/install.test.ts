@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { Splice, until } from "../server/lib/harness.ts";
 import { Upstream } from "../server/lib/upstream.ts";
 import { ask, lane, picker, session, toDoor } from "../door/lib/claude.ts";
+import { Site } from "./lib/site.ts";
 import { MODEL } from "./lib/team.ts";
 
 setDefaultTimeout(180_000);
@@ -19,8 +20,7 @@ setDefaultTimeout(180_000);
 let team: Upstream;
 let s: Splice;
 let dir: string;
-let served: ReturnType<typeof Bun.serve>;
-const published: Record<string, string> = {};
+let served: Site;
 
 /** A team's definition of provider `key`: no port, no discovery prefix, on an API key so it runs with no sign-in. */
 function definition(key: string, label: string, url: string): string {
@@ -52,7 +52,8 @@ const said = (r: { out: string; err: string }) => `${r.out}\n${r.err}`;
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "cp-install-"));
   team = new Upstream("acme", MODEL).start();
-  served = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: (req) => new Response(published[new URL(req.url).pathname] ?? "no", { status: published[new URL(req.url).pathname] ? 200 : 404 }) });
+  // served from a child process: s.cli is spawnSync and blocks this one (lib/site.ts)
+  served = await new Site().start();
   // a machine with only splice on it
   s = await Splice.boot("");
   toDoor(s);
@@ -61,7 +62,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await s?.dispose();
   team?.stop();
-  served?.stop(true);
+  served?.stop();
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -87,8 +88,7 @@ describe("cp-install", () => {
   });
 
   test("a definition from a URL on this machine is installed the same way", async () => {
-    published["/beta.toml"] = definition("beta", "Beta GLM", team.url);
-    const r = s.cli(["add", "provider", `http://127.0.0.1:${served.port}/beta.toml`]);
+    const r = s.cli(["add", "provider", served.publish("beta.toml", definition("beta", "Beta GLM", team.url))]);
     expect(r.code, said(r)).toBe(0);
     await until("the second provider's model is in the picker", async () => (picker(await session(s)) ?? []).some((m) => m.model === `claude-beta--${MODEL}`), 60_000);
   });

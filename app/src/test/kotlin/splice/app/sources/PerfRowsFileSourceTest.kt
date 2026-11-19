@@ -14,7 +14,6 @@ import splice.head.perf.PerfRowMeta
 import splice.head.perf.PerfStats
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.attribute.PosixFilePermission
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -174,8 +173,9 @@ class PerfRowsFileSourceTest {
     }
 
     // The archive: retired generations are read first, oldest first, and one
-    // that ended a full second before the cutoff is never opened (it is unreadable here, so opening it
-    // would be a read error) while its rotation second still counts as retention evidence.
+    // that ended a full second before the cutoff is never opened (its name is a link to itself here, which no one can
+    // open, root included, so opening it would be a read error) while its rotation second still counts as retention
+    // evidence.
     @Test
     fun `archived generations are read oldest first, and one older than the window is not opened`(
         @TempDir dir: Path,
@@ -204,14 +204,15 @@ class PerfRowsFileSourceTest {
         assertEquals(1000L, all.oldestHeldTs)
         assertNull(all.readError)
 
-        Files.setPosixFilePermissions(old, emptySet())
+        Files.delete(old)
+        Files.createSymbolicLink(old, old.fileName)
         val recent = source.window(11_000)
         assertEquals(listOf(12000L, 21000L, 30000L), recent.rows.map { it.ts })
         assertNull(recent.readError, "the generation that ended before the cutoff was never opened")
         assertEquals(10_000L, recent.oldestHeldTs, "its rotation second shows the files reach past the window")
         val inside = source.window(10_500).readError
         assertTrue(inside?.contains(old.fileName.toString()) == true, "inside its last second it is opened: $inside")
-        Files.setPosixFilePermissions(old, setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE))
+        Files.delete(old)
 
         val unarchived = PerfRowsFileSource(file).window(0).rows.map { it.ts }
         assertEquals(listOf(21000L, 30000L), unarchived, "no archive dir, the two live generations")

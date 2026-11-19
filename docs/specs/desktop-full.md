@@ -146,9 +146,42 @@ building on it.
 7. **Diagnostics:** `splice desktop` and `splice doctor` say which mode Desktop is in (standard with the env store,
    3P with splice's configuration, 3P with someone else's or a managed file, or off), whether Desktop has been
    relaunched since the config changed, the picker rows, and the last turn per mode.
-8. **The live test is run on the real app**, both modes, and its findings are written into the spec: picker rows,
-   a turn on a GPT head, on a Grok head and on Claude, a subagent naming a tier, a long session that compacts, Chat
-   and Cowork turns in 3P mode, and `off` restoring the person's login. Captures attached to the PR.
+8. **The campaign runs the live test itself, on the real app in a private sandbox, and drives it the way a person
+   would** (added Nov 18, 2026, at the founder's direction). It is an item of this feature, with its own check, and
+   the feature isn't done until it passes.
+   - **The sandbox wrapper** is repo tooling (Bun/TypeScript, e.g. `tools/desktop-sandbox`). It starts the installed
+     Desktop (`/usr/lib/claude-desktop/claude-desktop`) with everything of its own:
+     - `HOME` and `XDG_CONFIG_HOME` under a sandbox folder, so Desktop's data (`Claude/`, `Claude-3p/configLibrary`)
+       and the Code tab's Claude folder (`~/.claude`, `CLAUDE_CONFIG_DIR`) are fresh and throwaway. Electron's
+       single-instance lock is per data folder, so it runs beside the person's own Desktop.
+     - Its own D-Bus session (`dbus-run-session`) and `--password-store=basic`, so it never reaches the person's
+       keyring, their running Desktop, or their browser's deep links.
+     - A private display (`Xvfb :N`, or `Xephyr` when a person wants to watch), so it never takes over the person's
+       screen.
+     - A splice daemon from the build under test, on its own port and state folder, never the person's running
+       daemon or its state.
+
+     The person's real `~/.config/Claude`, `~/.config/Claude-3p`, `~/.claude`, `~/.config/splice` and keyring are
+     never written. The wrapper refuses to start if any path it would write resolves into them.
+   - **Driving it (computer use):** the seat works the sandbox's display as a person would. It takes screenshots
+     (`ffmpeg -f x11grab` on the private display) and reads them as images, and sends clicks and keys with
+     `xdotool`. Where the app allows it, Chromium's `--remote-debugging-port` can read the DOM for exact text, as a
+     complement and never instead of looking. This machine has no computer-use tool for agent sessions; this is that
+     tool.
+   - **What it covers, in 3P gateway mode with no human step:**
+     - `splice desktop on` (3P), relaunch, and the picker's rows in Chat, Cowork and Code against the lineup.
+     - A turn on a GPT head, on a Grok head and on Claude.
+     - Model switching mid-session, effort levels, the context meter and a session long enough to compact.
+     - A subagent naming a tier, titles, an image attachment, an MCP tool, auto mode (or its named absence) and web
+       search/fetch on a non-Claude head.
+     - Chat and Cowork turns.
+     - `/api/perf/turns` rows for each.
+     - `off` returning the sandbox Desktop to its login screen.
+   - **Standard mode** (the Code tab with Chat on claude.ai) needs a claude.ai sign-in inside the sandbox. The seat
+     covers what runs without one. Where only a sign-in unblocks the rest, it opens the sandbox on a visible
+     `Xephyr` window and asks once, through the lead.
+   - **The record:** findings, including every Unknown above that the run settles, go into this spec. The screenshots
+     judged are attached to the PR, after checking that none shows a key, an account name or a private path.
 
 ## Constraints
 

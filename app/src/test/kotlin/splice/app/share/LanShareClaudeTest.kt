@@ -1,29 +1,45 @@
-// LAN share (docs/specs/lan-share.md), for the head plain `claude` runs on, and what still holds since share-door-only
-// (docs/specs/door-network.md, decision 5): a session on the sharing machine itself, signed in to Claude, names the
-// OAuth beta once. The tests that drove that head at an address of its own (a node's launch and turn on it, the head
-// offered at GET /) are gone with that share; their goals are shown through the door. Driven as it is used: two real
-// daemons, torad (sharing) and mac (the node), in one home of their own, so neither reads this machine's ~/.claude;
-// Anthropic is a stand-in that records what it was sent.
+// The door on the network (docs/specs/door-network.md), for Claude's models, between two real machines. The goal: a
+// node's `claude` on a box's door runs Claude's models on the Claude accounts added to splice there, as it runs any
+// other model on the box's logins. A node's turn reaches Anthropic signed by the box's added account, with the OAuth
+// beta that login needs, carrying no key of either machine's and no launch proof the node sent. A box whose Claude head
+// holds only the person's own sign-in serves its Claude models to no other machine: they are not in the door's
+// launch, and a node's turn naming one is refused in words Claude Code prints, with nothing sent to Anthropic. A
+// session on the box itself, signed in to Claude, names the OAuth beta once. Driven as it is used: two real daemons,
+// torad (sharing) and mac (the node), in one home of their own, so neither reads this machine's ~/.claude; Anthropic
+// is a stand-in that records what it was sent; mac's launch answered through its control port as the launch shim asks
+// it, and each turn sent the way Claude Code's Mantle dialect sends it, to the door the launch planted.
 package splice.app.share
 
 import com.sun.net.httpserver.HttpServer
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
 import splice.app.Daemon
 import splice.core.auth.RefreshAttempt
+import splice.core.config.LAUNCH_PROOF_HEADER
+import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.config.TurnKey
 import splice.core.config.UserHome
 import splice.core.testing.TestPorts
+import splice.share.DOOR_SEGMENT
 import splice.topology.TopologyLoader
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -35,11 +51,23 @@ import java.util.concurrent.locks.LockSupport
 /** The token torad's own Claude sign-in (~/.claude) signs Anthropic requests with. */
 private const val TORAD_LOGIN = "synthetic-torad-login"
 
+/** The token of the Claude account added to splice on torad, which a door turn runs on. */
+private const val ADDED_LOGIN = "synthetic-added-login"
+
+/** The word a node's launch plants as its Mantle bearer: it opens nothing anywhere. */
+private const val NODE_WORD = "splice-lan"
+
+/** A launch proof the node makes up: the box's head must never see it as the box's own. */
+private const val GUESSED_PROOF = "guessed-by-the-node"
+
 /** The beta Anthropic requires beside a Claude subscription's OAuth token. */
 private const val OAUTH_BETA = "oauth-2025-04-20"
 
 private const val OPUS = "claude-opus-5-5"
 private const val HEAD = "claude"
+
+// why: the door opens once torad's heads are up; a loaded machine takes a while to start them.
+private const val DOOR_OPEN_MS = 60_000L
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class LanShareClaudeTest {
@@ -53,9 +81,42 @@ class LanShareClaudeTest {
     }
 
     @Test
+    fun `a node's turn on the door reaches Anthropic on the box's added account, with the OAuth beta, carrying no key`(
+        @TempDir tmp: Path,
+    ) = machines(tmp, added = true) { m ->
+        val rows = m.rows()
+        val claude = rows.firstOrNull { it.str("command") == HEAD }?.str("model")
+        assertTrue(claude != null, "the box's door serves its Claude models on the added account: $rows")
+        val (status, body) = m.nodeTurn(checkNotNull(claude), "node-session-1")
+        assertEquals(200, status, body)
+        assertTrue(body.contains("event: message_stop"), body)
+        val sent = anthropic.requests.last()
+        assertEquals("Bearer $ADDED_LOGIN", sent["authorization"], "the box's added account signs the turn")
+        val betas = sent["anthropic-beta"].orEmpty().split(',').map(String::trim)
+        assertTrue(OAUTH_BETA in betas, "a Claude login's token rides with the OAuth beta: $betas")
+        val keys = listOf(m.toradTurnKey, m.toradMgmtKey, m.macKey, NODE_WORD, GUESSED_PROOF, TORAD_LOGIN)
+        val leaked = sent.filterValues { value -> keys.any { it in value } }.keys
+        assertTrue(leaked.isEmpty(), "no key of either machine, nor what the node sent, reaches Anthropic: $leaked")
+    }
+
+    @Test
+    fun `a box whose Claude head holds only the person's own sign-in serves its Claude models to no other machine`(
+        @TempDir tmp: Path,
+    ) = machines(tmp, added = false) { m ->
+        val rows = m.rows()
+        assertTrue(rows.none { it.str("command") == HEAD }, "the person's own sign-in is not the door's: $rows")
+        val before = anthropic.requests.size
+        val (status, body) = m.nodeTurn(OPUS, "node-session-2")
+        assertNotEquals(200, status, body)
+        val said = Json.parseToJsonElement(body).jsonObject.getValue("error").jsonObject.str("message")
+        assertTrue(said.isNotBlank(), body)
+        assertEquals(before, anthropic.requests.size, "a refused turn reached Anthropic")
+    }
+
+    @Test
     fun `a session on the server itself, signed in to Claude, names the OAuth beta once`(
         @TempDir tmp: Path,
-    ) = machines(tmp) { m ->
+    ) = machines(tmp, added = false) { m ->
         val (status, body) = m.serverTurn("$OAUTH_BETA,claude-code-20250219")
         assertEquals(200, status, body)
         val sent = anthropic.requests.last()
@@ -64,29 +125,24 @@ class LanShareClaudeTest {
         assertEquals(listOf(OAUTH_BETA, "claude-code-20250219"), betas, "the session's own flags, each once")
     }
 
-    /** Both machines, started in [tmp]'s own home: torad signed in to Claude there, and mac's `claude` wrapped, its
-     *  own Claude head beside a `[remote.claude]` on torad's. Stopped before the home is given back. */
-    private fun machines(tmp: Path, body: (Machines) -> Unit) {
+    /** Both machines, started in [tmp]'s own home: torad signed in to Claude there, with a Claude account [added] to
+     *  splice beside that sign-in or none, and mac with a Claude head of its own beside `boxdoor`, torad's door.
+     *  Stopped before the home is given back. */
+    private fun machines(tmp: Path, added: Boolean, body: (Machines) -> Unit) {
         val home = Files.createDirectories(tmp.resolve("home"))
         Files.createDirectories(home.resolve(".claude"))
         Files.writeString(home.resolve(".claude/.credentials.json"), credentials(TORAD_LOGIN))
         val ports = Ports()
         // torad runs as splice does on a machine: its state under the home its Claude sign-in is in, its config a file.
         val toradState = StatePaths(baseOverride = home.resolve(".splice/state"))
+        if (added) {
+            val account = Files.createDirectories(toradState.stateDir.resolve("claude-accounts/$HEAD/work"))
+            Files.writeString(account.resolve(".credentials.json"), credentials(ADDED_LOGIN))
+        }
         val toradConfig = Files.createDirectories(tmp.resolve("torad-config")).resolve("splice.toml")
         Files.writeString(toradConfig, toradToml(ports))
         val macState = StatePaths(baseOverride = tmp.resolve("mac-state"))
-        val realClaude = Files.writeString(Files.createDirectories(tmp.resolve("claude-bin")).resolve("claude"), "")
-        realClaude.toFile().setExecutable(true)
         UserHome.within(home) {
-            // mac's `claude` is wrapped, as on the Mac: the wrap's record sits in the home's default state folder.
-            val wrap = StatePaths().stateDir.resolve("claude-head-wrap.json")
-            check(wrap.startsWith(home)) { "the wrap record must stay in this test's home: $wrap" }
-            Files.createDirectories(wrap.parent)
-            Files.writeString(
-                wrap,
-                """{"real_binary_path":"$realClaude","shadowed_symlink_target":"$realClaude","shim_path":""}""",
-            )
             val torad = daemon(toradToml(ports), toradState, toradConfig)
             val mac = daemon(macToml(ports), macState)
             runBlocking {
@@ -95,7 +151,9 @@ class LanShareClaudeTest {
             }
             try {
                 awaitListening(ports.toradControl, ports.toradClaude, ports.share, ports.macControl, ports.macClaude)
-                body(Machines(ports))
+                val machines = Machines(ports, toradState, macState)
+                machines.awaitDoor()
+                body(machines)
             } finally {
                 runBlocking {
                     mac.stop()
@@ -113,7 +171,56 @@ class LanShareClaudeTest {
         topologyPath = config,
     )
 
-    private inner class Machines(val ports: Ports) {
+    private inner class Machines(val ports: Ports, toradState: StatePaths, macState: StatePaths) {
+        val share = "http://127.0.0.1:${ports.share}"
+        val toradMgmtKey = MgmtKey(toradState).get()
+        val toradTurnKey = TurnKey(MgmtKey(toradState)).get()
+        val macKey = MgmtKey(macState).get()
+
+        /** The rows torad's door launches another machine's `claude` with. */
+        fun rows(): List<JsonObject> = runBlocking {
+            val launch = Json.parseToJsonElement(client.get("$share/$DOOR_SEGMENT/launch").bodyAsText()).jsonObject
+            launch["rows"]?.jsonArray?.map { it.jsonObject }.orEmpty()
+        }
+
+        fun awaitDoor() {
+            val deadline = System.currentTimeMillis() + DOOR_OPEN_MS
+            while (doorStatus() != 200) {
+                check(System.currentTimeMillis() < deadline) { "torad's door did not open" }
+                LockSupport.parkNanos(50_000_000L)
+            }
+        }
+
+        private fun doorStatus(): Int? = runBlocking {
+            runCatching { client.get("$share/$DOOR_SEGMENT/launch").status.value }.getOrNull()
+        }
+
+        /** A turn as Claude Code's Mantle dialect sends one from mac's launch of `boxdoor`: to the door and with the
+         *  bearer that launch planted, naming [model], and with a launch proof the node made up. */
+        fun nodeTurn(model: String, session: String): Pair<Int, String> = runBlocking {
+            val launched = client.post("http://127.0.0.1:${ports.macControl}/launch/boxdoor") {
+                header("Authorization", "Bearer $macKey")
+                header("Content-Type", "application/json")
+                setBody("""{"args":[]}""")
+            }
+            val recipe = Json.parseToJsonElement(launched.bodyAsText()).jsonObject
+            check(launched.status.value == 200) { "mac's launch of boxdoor: $recipe" }
+            val env = recipe.getValue("env").jsonObject
+            val response = client.post("${env.str("ANTHROPIC_BEDROCK_MANTLE_BASE_URL")}/v1/messages?beta=true") {
+                header("Authorization", "Bearer ${env.str("AWS_BEARER_TOKEN_BEDROCK")}")
+                header("anthropic-version", "2023-06-01")
+                header("anthropic-beta", "claude-code-20250219")
+                header(LAUNCH_PROOF_HEADER, GUESSED_PROOF)
+                header("X-Claude-Code-Session-Id", session)
+                header("Content-Type", "application/json")
+                setBody(
+                    """{"model":"$model","stream":true,"max_tokens":64,""" +
+                        """"messages":[{"role":"user","content":"hi from the mac"}]}""",
+                )
+            }
+            response.status.value to response.bodyAsText()
+        }
+
         /** A turn from a session on torad itself, whose Claude Code is signed in to torad's own login. */
         fun serverTurn(betas: String): Pair<Int, String> = runBlocking {
             val response = client.post("http://127.0.0.1:${ports.toradClaude}/v1/messages?beta=true") {
@@ -129,6 +236,8 @@ class LanShareClaudeTest {
             response.status.value to response.bodyAsText()
         }
     }
+
+    private fun JsonObject.str(name: String): String = getValue(name).jsonPrimitive.content
 
     private inner class Ports {
         val toradControl = TestPorts.reserve()
@@ -155,8 +264,8 @@ class LanShareClaudeTest {
 
         ${claudeHead(ports.macClaude)}
 
-        [remote.claude]
-        url = "http://127.0.0.1:${ports.share}/$HEAD"
+        [remote.boxdoor]
+        url = "http://127.0.0.1:${ports.share}/$DOOR_SEGMENT"
     """.trimIndent()
 
     /** A Claude head as splice.example.toml writes one: it forwards its caller's own login. */

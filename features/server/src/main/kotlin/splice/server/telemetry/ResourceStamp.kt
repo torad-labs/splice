@@ -54,7 +54,7 @@ internal class JsonStamp {
 
     /** One of a request's resource entries (a `ResourceLogs`, `ResourceMetrics` or `ResourceSpans`), stamped. */
     private fun stampedOne(entry: JsonObject, stamp: ResourceStamp): JsonObject {
-        val resource = entry[RESOURCE] as? JsonObject ?: JsonObject(emptyMap())
+        val resource = entry[RESOURCE_FIELD] as? JsonObject ?: JsonObject(emptyMap())
         val claimed = (resource[ATTRIBUTES] as? JsonArray).orEmpty()
         val kept = claimed.filterNot { keyOf(it) in stamp.owned }
         val written = stamp.written.map { (key, value) ->
@@ -64,14 +64,14 @@ internal class JsonStamp {
             }
         }
         val stamped = JsonObject(resource + (ATTRIBUTES to JsonArray(kept + written)))
-        return JsonObject(entry + (RESOURCE to stamped))
+        return JsonObject(entry + (RESOURCE_FIELD to stamped))
     }
 
     private fun keyOf(attribute: JsonElement): String? =
         ((attribute as? JsonObject)?.get("key") as? JsonPrimitive)?.takeIf { it.isString }?.content
 }
 
-private const val RESOURCE = "resource"
+private const val RESOURCE_FIELD = "resource"
 private const val ATTRIBUTES = "attributes"
 
 /** Who sent the telemetry, as the server knows them by their key. */

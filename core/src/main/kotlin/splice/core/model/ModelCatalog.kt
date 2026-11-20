@@ -182,7 +182,12 @@ public data class ModelCatalog(
 
     public fun wrap(id: String): String = discoveryPrefix + id
 
-    public fun unwrap(id: String): String = id.removePrefix(discoveryPrefix)
+    /** The upstream id [id] names: a selector without this head's prefix, or the model a readable name stands for
+     *  ([ReadableIds]), its window hint kept. */
+    public fun unwrap(id: String): String {
+        val names = client.readable?.takeIf { id.startsWith(it.prefix) } ?: return id.removePrefix(discoveryPrefix)
+        return names.upstreamOf(id, live().models)
+    }
 
     /** True for a picker model owned by this head (wrapped or upstream id), and for any id on an
      *  [ClientModelPolicy.open] one. */
@@ -365,6 +370,9 @@ public data class ClientModelPolicy(
      *  Claude sessions whose actual divisor was learned from a status-line post. [ModelCatalog.models] holds
      *  only labels and rate cards, and may be empty. */
     val open: Boolean = false,
+    /** The head's readable model names, or null when it has none: what a client that refuses another lab's name
+     *  in a model id sends instead of a selector ([ReadableIds]). */
+    val readable: ReadableIds? = null,
 )
 
 /** V4-232: a catalog's rows the CLIENT resolves as a Claude model it knows ([ModelEntry.clientModel]),
@@ -408,3 +416,29 @@ public data class DiscoveryRow(
     val type: String = "model",
     val created: Long = 0,
 )
+
+/** A head's model names for a client that refuses a model id naming another lab. Claude Desktop and the Claude Code it
+ *  starts in gateway mode (5.11492 / 2.1.325) drop any id with gpt, grok, kimi, codex, deepseek, glm and the like in it
+ *  before reading any other field, and a session or subagent on one falls back to the default model; a selector such as
+ *  `claude-grok--grok-4.7` is one of those. The readable name is [prefix] and the model without [strip]
+ *  (`claude-xai--4.7`), and the head takes it wherever it takes a selector. splice.toml sets both per head
+ *  (`readable = { prefix = "claude-xai--", strip = "grok-" }`); the list Desktop is given is written from them. */
+@Serializable
+public data class ReadableIds(val prefix: String, val strip: String = "") {
+    /** The readable name of upstream [model], without [prefix]. */
+    public fun nameOf(model: String): String =
+        if (strip.isNotEmpty() && model.startsWith(strip, ignoreCase = true)) model.substring(strip.length) else model
+
+    /** The upstream id readable name [id] stands for among [models], its window hint kept; the name itself when no
+     *  model has it. */
+    public fun upstreamOf(id: String, models: List<ModelEntry>): String {
+        val asked = id.removePrefix(prefix)
+        val name = ModelTierSuffix.strip(asked)
+        val model = models.firstOrNull { nameOf(ModelTierSuffix.strip(it.id)) == name }
+        return (model?.let { ModelTierSuffix.strip(it.id) } ?: name) + asked.removePrefix(name)
+    }
+
+    /** The selector readable name [id] stands for on [catalog]'s head, or null when [id] is none of its names. */
+    public fun selectorOf(id: String, catalog: ModelCatalog): String? =
+        if (id.startsWith(prefix)) catalog.wrap(catalog.unwrap(id)) else null
+}

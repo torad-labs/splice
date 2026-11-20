@@ -48,12 +48,15 @@ internal class ClaudeHeadLane(private val topology: Topology) {
         }
     }
 
-    /** The head whose selectors [model] starts as, other than the one whose prefix is [own]; null for an Anthropic ID
-     *  or any other name, which stays on the head. */
+    /** The head whose selectors or readable names [model] starts as, other than the one whose prefix is [own]; null
+     *  for an Anthropic ID or any other name, which stays on the head. */
     private fun prefixOf(model: String, own: String): String? {
         if (tiers.tierOf(model) != null) return null
         return topology.heads.entries
-            .filter { (_, head) -> head.discoveryPrefix.let { it.isNotEmpty() && it != own && model.startsWith(it) } }
+            .filter { (_, head) ->
+                head.discoveryPrefix.let { it.isNotEmpty() && it != own && model.startsWith(it) } ||
+                    head.claude.readable?.prefix.orEmpty().let { it.isNotEmpty() && model.startsWith(it) }
+            }
             .maxByOrNull { (_, head) -> head.discoveryPrefix.length }?.key
     }
 
@@ -63,7 +66,10 @@ internal class ClaudeHeadLane(private val topology: Topology) {
         /** [ask] relayed to the head that serves its model, or refused by name when none does. */
         suspend fun answer(call: ApplicationCall, ask: OtherAsk) {
             val lineup = heads.lineup()
-            val (head, model) = lineup.find(ask.model)
+            val selector = lineup.heads.firstNotNullOfOrNull { head ->
+                head.catalog.client.readable?.selectorOf(ask.model, head.catalog)
+            } ?: ask.model
+            val (head, model) = lineup.find(selector)
                 ?: return voice.refuse(call, HttpStatus.BAD_REQUEST, notServed(lineup, ask.model))
             val caller = HeadLaneCaller(relay, held(model.model))
             val asked = DoorAsk(ask.request, ask.model, ask.session)

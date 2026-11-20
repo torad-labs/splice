@@ -13,6 +13,7 @@
 package splice.app.desktop
 
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -22,6 +23,7 @@ import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.core.util.WallClock
 import splice.core.wire.HttpStatus
+import splice.http.JsonReply
 import splice.share.RefusalVoice
 
 /** What a door turn asks: its body, the model it names and the session it is a turn of. */
@@ -51,12 +53,20 @@ internal class DesktopDoor(
     private val json = Json { ignoreUnknownKeys = true }
     private val routing = DoorRouting()
     private val toHead = DoorRelay(clock)
+    private val doorModels = DoorModels()
 
     /** `POST /door/v1/messages`, with or without `?beta=true`. */
     suspend fun messages(call: ApplicationCall) = answer(call, counting = false)
 
     /** `POST /door/v1/messages/count_tokens`, with or without `?beta=true`. */
     suspend fun countTokens(call: ApplicationCall) = answer(call, counting = true)
+
+    /** `GET /door/v1/models`: the door's models as Claude Desktop's gateway discovery reads them (DoorModels), for a
+     *  caller whose key it presents. */
+    suspend fun models(call: ApplicationCall) {
+        admitted(call) ?: return
+        JsonReply(HttpStatusCode.OK, doorModels.json(heads.lineup()).toString()).send(call)
+    }
 
     /** [call] answered for the caller whose key it presents; refused in Anthropic's shape, with nothing sent upstream,
      *  when it presents none, a wrong one or one that was replaced. */

@@ -3,6 +3,8 @@
 //
 //   POST /door/v1/messages[?beta=true]                  a turn, behind Desktop's key or the terminal's and no other
 //   POST /door/v1/messages/count_tokens[?beta=true]     a count, behind the same two keys
+//   GET  /door/v1/models                                the door's models as Claude Desktop's gateway discovery reads
+//                                                       them (DoorModels), behind the same two keys
 //   POST /desktop/v1/messages[...]                      the same two routes at the door's path before 0.6.4, for a
 //                                                       Desktop set up then and a `claude` session started then
 //   GET  /api/desktop                                   what `splice desktop` says, behind the management key
@@ -61,6 +63,10 @@ internal class DesktopRoutes(
             route.post("$at/v1/messages/count_tokens") {
                 val desktop = atDoor(call) ?: return@post
                 desktop.door.countTokens(call)
+            }
+            route.get("$at/v1/models") {
+                val desktop = atDoor(call) ?: return@get
+                desktop.door.models(call)
             }
         }
         route.get("/api/desktop") { guard.guarded(call) { state(call) } }

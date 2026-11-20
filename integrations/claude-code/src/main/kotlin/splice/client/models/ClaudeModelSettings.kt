@@ -16,13 +16,16 @@ internal object ClaudeModelSettings {
     private const val MODEL_OPTIONS_CACHE = "additionalModelOptionsCache"
     private val desktop = DesktopSettings()
 
-    fun base(global: JsonObject, saved: String?, spec: MaterializeSpec): JsonObject {
+    /** What a head takes from the person's [global] settings. desktop-door: a head with a folder of its own carries
+     *  nothing of the door the person's file may hold. */
+    fun inherited(global: JsonObject, spec: MaterializeSpec): JsonObject =
+        JsonObject(desktop.inherited(global).filterKeys { carried(it, clientPicks = spec.availableModelIds == null) })
+
+    /** [fromGlobal] with the head's [own] keys over it, which no more send its sessions past it than global's do. */
+    fun base(fromGlobal: JsonObject, own: JsonObject, saved: String?, spec: MaterializeSpec): JsonObject {
         val allow = spec.availableModelIds
         return buildJsonObject {
-            // desktop-door: a head with a folder of its own carries nothing of the door the person's file may hold
-            desktop.inherited(global).forEach { (key, value) ->
-                if (carried(key, clientPicks = allow == null)) put(key, value)
-            }
+            (fromGlobal + desktop.inherited(own)).forEach { (key, value) -> put(key, value) }
             if (allow != null) {
                 putJsonArray(Keys.AVAILABLE_MODELS) { allow.forEach { add(it) } }
                 put("enforceAvailableModels", true)

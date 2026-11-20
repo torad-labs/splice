@@ -27,7 +27,8 @@ internal class DoorModels {
 
     /** [lineup]'s picker as Desktop's `/v1/models` answer, every row on one page. */
     fun json(lineup: DesktopLineup): JsonObject {
-        val rows = rows(lineup)
+        // One row per id: two heads serving one Claude model list it once, on the first.
+        val rows = rows(lineup).distinctBy { JsonScalars.str(it, "id") }
         val ids = rows.map { JsonScalars.str(it, "id") }
         return buildJsonObject {
             put("data", JsonArray(rows))
@@ -64,7 +65,11 @@ internal class DoorModels {
         val familyDefault = claude != null && claude == tier?.let(claudeOfTier::get)
         return buildJsonObject {
             put("type", "model")
-            put("id", head.catalog.names.nameOf(model))
+            // Claude's own models go under their own ids: Desktop finds a model's effort levels by its id alone
+            // (its catalog and the levels it ships, keyed `claude-opus-5-5`), and reads no other field for it from
+            // this list, so `claude--claude-opus-5-5` had none. The door runs a named Claude id on the head that serves
+            // it (DoorRouting.served).
+            put("id", claude ?: head.catalog.names.nameOf(model))
             put("display_name", variants.first().label.ifEmpty { model })
             tier?.let { put("anthropic_family_tier", it) }
             if (familyDefault) put("is_family_default", true)

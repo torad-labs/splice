@@ -3,8 +3,9 @@
 // the door's picker under the id Claude's clients keep (ReadableNames: `claude-xai--4.7` for `claude-grok--grok-4.7`,
 // which they would drop), with the fields Desktop reads beside it: `display_name`, the Claude tier it stands for
 // (`anthropic_family_tier`, `is_family_default`), its 1M variant (`supports_1m`, `prefer_1m`), its highest effort
-// (`max_effort_level`), the Claude model whose effort levels and limits it takes (`behaves_as`) and its window
-// (`max_input_tokens`). Rows of one model with and without a `[1m]` hint are one row with its 1M variant.
+// (`max_effort_level`), the Claude model whose effort levels and limits it takes (`behaves_as`: its tier's newest
+// Claude model, Opus's for a model with no tier) and its window (`max_input_tokens`). Rows of one model with and
+// without a `[1m]` hint are one row with its 1M variant.
 package splice.app.desktop
 
 import kotlinx.serialization.json.JsonArray
@@ -21,7 +22,8 @@ internal class DoorModels {
     private val tiers = AnthropicTiers()
 
     /** The tiers Desktop reads in `anthropic_family_tier`. */
-    private val desktopTiers = setOf("opus", "sonnet", "haiku", "fable", "mythos")
+    private val desktopTiers = setOf(OPUS, "sonnet", "haiku", "fable", "mythos")
+    private val digits = Regex("\\d+")
 
     /** [lineup]'s picker as Desktop's `/v1/models` answer, every row on one page. */
     fun json(lineup: DesktopLineup): JsonObject {
@@ -37,14 +39,15 @@ internal class DoorModels {
 
     private fun rows(lineup: DesktopLineup): List<JsonObject> {
         val grouped = lineup.picker.groupBy { it.head to ModelTierSuffix.strip(it.upstream) }
-        val claudeOfTier = LinkedHashMap<String, String>()
-        grouped.keys.mapNotNull { (_, model) -> tiers.modelOf(model) }.forEach { claude ->
-            tiers.tierOf(claude)?.let { claudeOfTier.putIfAbsent(it, claude) }
-        }
-        val firstOfTier = HashSet<String>()
+        // Each tier's newest Claude model in the door: the one its alias runs, and the one another lab's model of that
+        // tier behaves as.
+        val claudeOfTier = grouped.keys.mapNotNull { (_, model) -> tiers.modelOf(model) }.distinct()
+            .groupBy { tiers.tierOf(it) }
+            .mapNotNull { (tier, ids) -> tier?.let { it to ids.maxWith(::newer) } }
+            .toMap()
         return grouped.mapNotNull { (key, models) ->
             lineup.heads.firstOrNull { it.key == key.first }?.let { head ->
-                row(head, key.second, models, claudeOfTier, firstOfTier)
+                row(head, key.second, models, claudeOfTier)
             }
         }
     }
@@ -55,12 +58,10 @@ internal class DoorModels {
         model: String,
         variants: List<DoorModel>,
         claudeOfTier: Map<String, String>,
-        firstOfTier: MutableSet<String>,
     ): JsonObject {
         val claude = tiers.modelOf(model)
         val tier = tierOf(head, model, claude)
-        // The first of Claude's own models for a tier is the one the tier's alias runs.
-        val familyDefault = claude?.let { tier }?.let(firstOfTier::add) == true
+        val familyDefault = claude != null && claude == tier?.let(claudeOfTier::get)
         return buildJsonObject {
             put("type", "model")
             put("id", head.catalog.names.nameOf(model))
@@ -69,9 +70,18 @@ internal class DoorModels {
             if (familyDefault) put("is_family_default", true)
             windows(this, head, variants, claude == null)
             put("max_effort_level", if (claude != null) CLAUDE_EFFORT else OTHER_EFFORT)
-            (claude ?: tier?.let(claudeOfTier::get))?.let { put("behaves_as", it) }
+            (claude ?: claudeOfTier[tier ?: OPUS])?.let { put("behaves_as", it) }
         }
     }
+
+    /** Which of two of Claude's models of one tier is newer, by the version numbers in their ids (`claude-opus-5-5`
+     *  after `claude-opus-5`, `claude-opus-4-8`). */
+    private fun newer(a: String, b: String): Int {
+        val (x, y) = version(a) to version(b)
+        return x.zip(y).firstOrNull { (p, q) -> p != q }?.let { (p, q) -> p.compareTo(q) } ?: x.size.compareTo(y.size)
+    }
+
+    private fun version(claude: String): List<Int> = digits.findAll(claude).map { it.value.toInt() }.toList()
 
     /** The Claude tier [model] stands for: its own, for Claude's, else the tier its head names it for. */
     private fun tierOf(head: DoorHead, model: String, claude: String?): String? =
@@ -93,6 +103,9 @@ internal class DoorModels {
 }
 
 private const val ONE_MILLION = "[1m]"
+
+/** The tier another lab's model with none of its own behaves as: Claude's most capable. */
+private const val OPUS = "opus"
 
 /** Claude's own models take every effort level Desktop offers; another lab's model, the highest but one, which splice
  *  maps onto what that model's dialect takes. */

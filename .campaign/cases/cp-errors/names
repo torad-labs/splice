@@ -1,0 +1,2 @@
+a 529 with Retry-After reaches the session as an overload sent upstream once
+a 529 with Retry-After 9 reaches the session as an overload sent upstream once

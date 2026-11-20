@@ -86,6 +86,27 @@ test("code blocks are highlighted by language, and the copy button copies exactl
   }
 }, 60_000);
 
+// "Copied" holds for 1.5 s after the LAST press: a second press starts the 1.5 s again (round 1's feature review found
+// the first press's timer turning it back early; this was its handed-over case, moved here so it runs on the Mac with
+// the rest of the item's check).
+test("a second press of Copy starts its 1.5 s again, and the label returns to Copy after it", async () => {
+  const o = await host(b, st);
+  try {
+    await mount(o.page, [{ index: 1, role: "assistant", text: "```ts\nconst a = 1;\n```", ts: 1, model: "claude-opus-5-5", message: "msg_copy1" }]);
+    const btn = o.page.locator(".rv .rv-code button.rv-copy").first();
+    await btn.click();
+    await o.page.waitForTimeout(1000);
+    await btn.click();
+    await o.page.waitForTimeout(800);
+    expect((await btn.innerText()).trim(), "0.8 s after a second press (1.8 s after the first)").toBe("Copied");
+    await o.page.waitForTimeout(1200);
+    expect((await btn.innerText()).trim(), "2.0 s after the last press").toBe("Copy");
+    expect(o.errors).toEqual([]);
+  } finally {
+    await o.close();
+  }
+}, 60_000);
+
 for (const theme of THEMES) {
   test(`at 375 and 1440 px (${theme}) a long code line scrolls inside its block and nothing spills sideways`, async () => {
     for (const size of [PHONE, DESK]) {

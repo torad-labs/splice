@@ -19,13 +19,16 @@
     ".campaign/cases/tsconfig.json",
     ".campaign/checks/muse/tsconfig.json",
     ".campaign/checks/door/tsconfig.json",
+    ".campaign/checks/catalog/tsconfig.json",
     ".campaign/checks/custom/tsconfig.json",
     ".campaign/checks/desktop-full/tsconfig.json",
     ".campaign/checks/console-night-deck/tsconfig.json",
     ".campaign/checks/door-sessions/tsconfig.json",
     ".campaign/checks/harness/tsconfig.json",
     ".campaign/checks/modes/tsconfig.json",
-    ".campaign/checks/reply-stream/tsconfig.json"
+    ".campaign/checks/reply-stream/tsconfig.json",
+    ".campaign/checks/reply-view/tsconfig.json",
+    ".campaign/checks/signin-e2e/tsconfig.json"
   ],
   "excused": {},
   "baseline": {}

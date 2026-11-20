@@ -103,7 +103,8 @@ describe("df-diagnostics", () => {
     expect(w.doctor).toMatch(/picker changed since Claude Desktop last read it; quit and reopen Claude Desktop/i);
     const p = await modelsPage(base(s), { key: runHelper(s).out, headers: customHeaders(s) });
     expect(p.status).toBe(200);
-    expect(p.data.map((r) => r.id)).toContain("claude-vega--grok-vega");
+    // a row's id is splice's own (df-models), so the new head's row is found by the command its description names
+    expect(p.data.some((r) => (r.description ?? "").includes("claude-vega"))).toBe(true);
     expect(deskJson(s).picker_current).toBe(true);
     w = said();
     expect(w.desktop).not.toMatch(/picker changed/i);

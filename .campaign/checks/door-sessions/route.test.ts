@@ -74,7 +74,7 @@ describe("door-session-route", () => {
     expect([before.route, before.head]).toEqual(["door", "door"]);
     expect(before.door).toEqual({ command: "claude", address: door, machine: null });
 
-    const t = await doorTurn(door, { key: local.env.AWS_BEARER_TOKEN_BEDROCK, model: "claude-astra--astra-large", session: local.session });
+    const t = await doorTurn(door, { key: local.env.AWS_BEARER_TOKEN_BEDROCK ?? local.env.ANTHROPIC_AUTH_TOKEN, model: "claude-astra--astra-large", session: local.session });
     expect(t.status).toBe(200);
     // the turn names the head that ran it; the session is still the door's, on the model splice served it
     await until("the turn is counted", async () => (await row(s, local.session))?.served_model === "astra-large");

@@ -26,6 +26,7 @@ import kotlinx.serialization.Transient
 import splice.core.capability.Capability
 import splice.core.compaction.CompactionConfig
 import splice.core.config.Knob
+import splice.core.mode.ModeSetting
 import splice.core.model.CatalogWindows
 import splice.core.model.ClientModelPolicy
 import splice.core.model.CodexCompactionReserves
@@ -59,6 +60,9 @@ public data class Topology(
     /** The harness (docs/specs/harness.md): capabilities splice.toml declares, read apart from the schema decode
      *  (CapabilityToml) and attached once found well-formed. Not part of the canonical tree the console edits. */
     @Transient val capabilities: List<Capability> = emptyList(),
+    /** The modes (modes/README.md): each `[modes.<name>]` table splice.toml writes, read apart from the schema decode
+     *  (ModeSettingsReader) and attached once found well-formed, by mode name. */
+    @Transient val modes: Map<String, ModeSetting> = emptyMap(),
 ) {
     /** Resolve a user-supplied head name — the topology key or the installed wrapper command
      *  (starter: head `openrouter`, command `claude-openrouter`) — to matching topology keys. A topology-KEY

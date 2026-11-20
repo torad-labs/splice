@@ -329,8 +329,20 @@ agent's call.
 - **Failure.** With `on_failure = "open"` the tool result says the capability failed and why, and the model goes on.
   With `"closed"` the turn is refused as decision 6 says. A refusal from a worker that `may` refuse refuses the turn.
   Esc, the client leaving, a drain: decision 6.
-- **Dialects.** The Anthropic Messages dialect in this change. A capability with `call = "agent"` or `"both"` on a
-  head whose dialect is another is a config finding.
+- **Dialects.** A capability's agent's call runs on the Anthropic Messages dialect only: a capability with
+  `call = "agent"` or `"both"` on a head whose dialect is another is a config finding. A mode's tools run on every
+  dialect (Modes, below).
+- **Modes.** A door mode (modes/README.md) is offered and answered through this same path, many tools a mode: each
+  mode that is on for the session's head and caller adds its tools after the client's (modes in name order, each
+  mode's tools in its manifest's order), its `prompt.md` is placed once at the end of the system text, and a call of
+  one of its tools is answered by the mode's handler while the turn is held, the status line saying
+  `<mode>: <tool>`. The harness reaches modes through a port of its own, which `:app` adapts the catalog onto per head.
+  On a head whose provider speaks another dialect (Chat Completions, Responses) the harness makes the same edits to
+  the client's request, which arrives in Messages shape, and the turn builds it again through the provider
+  (`HarnessTurn.built`), as it built the turn's own request. So the dialect's own translator offers the tools in its
+  shape, carries the prompt where it carries the system text, and turns an answered call into its call and result
+  (Chat's `role:"tool"` message, Responses' `function_call_output`). The model's message is put together from the
+  sink's typed writes where the dialect streams no Anthropic frames, and no shared file learns a vendor's format.
 
 ### 13. The MCP worker
 
@@ -354,7 +366,8 @@ server is sent `notifications/cancelled`. An MCP worker with no `server` or `too
 - Results placed anywhere but the first user message.
 - A capability called by rule that holds a turn the model has already started to answer (the agent's call is the
   one capability that does, decision 12).
-- The agent's call in a dialect other than Anthropic's Messages.
+- A capability's agent's call in a dialect other than Anthropic's Messages. A mode's tools are offered and answered
+  on every dialect; capabilities stay Anthropic-only.
 - Keeping a session's cache warm during a long hold.
 
 ## Seen with Claude Code

@@ -133,3 +133,9 @@ internal class TomlPatch(private val text: String, private val wanted: JsonObjec
         return out.append(tail).toString()
     }
 }
+
+/** A change to splice.toml's text: the file as it is now in, the text to write out (the same text when nothing
+ *  changes). */
+internal fun interface TomlTextPatch {
+    fun of(text: String): String
+}

@@ -9,6 +9,11 @@
       "subsystems": 2,
       "reason": "model_slots, V4-254, 2026-09-30: tier map split from the models allowlist"
     },
+    "core/src/main/kotlin/splice/core/topology/Topology.kt Topology": {
+      "params": 13,
+      "subsystems": 4,
+      "reason": "modes, 2026-11-19: modes, splice.toml's [modes.<name>] tables read apart from the schema decode and attached once well-formed, as capabilities are (modes/README.md); the class mirrors splice.toml's top-level tables, the outside-format exception to LongParameterList (2026-10-09)"
+    },
     "core/src/main/kotlin/splice/core/topology/Topology.kt ProviderConfig": {
       "params": 17,
       "subsystems": 1,

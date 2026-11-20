@@ -40,6 +40,7 @@ internal class StatusCommand(
 
     private val signIn = CliSignIn()
     private val extras = StatusExtras(accountPools)
+    private val modeLines = ModeLines()
 
     internal fun status(envReader: EnvReader = EnvReader(System::getenv)) {
         val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath())
@@ -83,6 +84,8 @@ internal class StatusCommand(
         println("  " + palette.paint(palette.live, lane.line()))
         if (up) extras.printAccounts(port, envReader)
         extras.printCapabilities(topology)
+        // The modes the door adds (modes/README.md), as the running daemon has them.
+        if (up) modeLines.lines(port, envReader).also { if (it.isNotEmpty()) println() }.forEach(::println)
         println()
         // Paths sink below the table: they are reference, not the answer, and an operator who wants
         // them knows they are here. Above the heads they read as though something were wrong.

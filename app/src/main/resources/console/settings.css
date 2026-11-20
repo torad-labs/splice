@@ -1273,3 +1273,14 @@ a.nsess:hover { color: var(--text); text-decoration: underline; }
 .krow:is([data-ghost="maxInflight"], [data-ghost="maxQueued"], [data-ghost="maxRequestBytes"]) { row-gap: .5rem; }
 .krow:is([data-ghost="maxInflight"], [data-ghost="maxQueued"], [data-ghost="maxRequestBytes"]) > .kdraw { grid-column: 2 / -1; grid-row: 2; }
 .krow:is([data-ghost="maxInflight"], [data-ghost="maxQueued"], [data-ghost="maxRequestBytes"]) > .lbl { grid-row: 1 / span 2; align-self: start; padding-top: .4rem; }
+
+/* Modes (modes/README.md): one section a mode, in the parts this page has: its name and kind on the section head, its
+   tools as chips that wrap, the callers it leaves out in the quiet ink, and each command's switch in the capture rows'
+   grid. A refused save says the daemon's words in the limit red. */
+.dmore.mode { display: grid; gap: .6rem; padding: 1rem 0; border-top: 1px solid var(--track-line); }
+.dmore.mode:first-child { border-top: 0; padding-top: 0; }
+.dmore.mode .sechead { display: flex; align-items: baseline; gap: 1rem; white-space: nowrap; }
+.dmore.mode > p { margin: 0; color: var(--text); }
+.dmore.mode > p.fixed { color: var(--text-mute); white-space: nowrap; }
+.dmore.mode .kchips .chip { white-space: nowrap; }
+.dmore.mode > .said.limit { color: var(--limit); font: 500 .9rem/1.2 var(--font-name); }

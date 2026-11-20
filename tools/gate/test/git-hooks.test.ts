@@ -11,6 +11,7 @@ import { basename, dirname, join } from "node:path";
 import {
   checksFor,
   commitGate,
+  fallbackGate,
   type GateRunner,
   failedTasks,
   failureLines,
@@ -1721,6 +1722,50 @@ describe("hook install", () => {
   });
 
   test("a bun or gate path with a single quote stays one shell word", () => {
-    expect(shimText("/opt/bun's/bun", "/r/index.ts", "pre-push")).toContain(`exec '/opt/bun'\\''s/bun' '/r/index.ts' hook pre-push "$@"`);
+    const shim = shimText("/opt/bun's/bun", "/r/it's/index.ts", "pre-push");
+    expect(shim).toContain(`exec '/opt/bun'\\''s/bun' "$gate" hook pre-push "$@"`);
+    expect(shim).toContain(`gate='/r/it'\\''s/index.ts'`);
+  });
+
+  // The shim run as git runs it, with a stand-in for bun that says which gate it was handed and what it was asked.
+  const ran = (shim: string, cwd: string): string => {
+    const hooks = dir("splice-shim-");
+    writeFileSync(join(hooks, "pre-commit"), shim);
+    return Bun.spawnSync(["/bin/sh", join(hooks, "pre-commit")], { cwd, stdout: "pipe", stderr: "pipe" }).stdout.toString().trim();
+  };
+  const sayer = (): string => {
+    const bin = dir("splice-bun-");
+    writeFileSync(join(bin, "bun"), '#!/bin/sh\necho "$@"\n');
+    Bun.spawnSync(["chmod", "+x", join(bin, "bun")]);
+    return join(bin, "bun");
+  };
+
+  test("a tree that carries tools/gate is judged by its own gate", () => {
+    const tree = dir("splice-tree-");
+    git(tree, ["init", "-q"]);
+    mkdirSync(join(tree, "tools", "gate"), { recursive: true });
+    writeFileSync(join(tree, "tools", "gate", "index.ts"), "");
+    const top = Bun.spawnSync(["git", "rev-parse", "--show-toplevel"], { cwd: tree, stdout: "pipe" }).stdout.toString().trim();
+    const own = join(top, "tools", "gate", "index.ts");
+    expect(ran(shimText(sayer(), "/main/tools/gate/index.ts", "pre-commit"), tree)).toBe(`${own} hook pre-commit`);
+  });
+
+  test("a tree without tools/gate, or no tree at all, is judged by the installed gate", () => {
+    const tree = dir("splice-tree-");
+    git(tree, ["init", "-q"]);
+    const bun = sayer();
+    expect(ran(shimText(bun, "/main/tools/gate/index.ts", "pre-push"), tree)).toBe("/main/tools/gate/index.ts hook pre-push");
+    expect(ran(shimText(bun, "/main/tools/gate/index.ts", "pre-push"), dir("splice-bare-"))).toBe("/main/tools/gate/index.ts hook pre-push");
+  });
+
+  test("install falls back to the main checkout's gate, even when it runs in a worktree", () => {
+    const main = dir("splice-main-");
+    git(main, ["init", "-q"]);
+    git(main, ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "base"]);
+    const worktree = join(dir("splice-wt-"), "wt");
+    git(main, ["worktree", "add", "-q", worktree]);
+    const top = Bun.spawnSync(["git", "rev-parse", "--show-toplevel"], { cwd: main, stdout: "pipe" }).stdout.toString().trim();
+    expect(fallbackGate(worktree)).toBe(join(top, "tools", "gate", "index.ts"));
+    expect(fallbackGate(main)).toBe(join(top, "tools", "gate", "index.ts"));
   });
 });

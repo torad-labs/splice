@@ -9,12 +9,13 @@
 package splice.harness
 
 import kotlinx.serialization.json.JsonObject
-import splice.core.capability.Capability
 import splice.core.failure.FailureCause
 import splice.core.parse.lenientJson
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.JsonScalars
+import splice.harness.agent.AgentAsk
+import splice.harness.agent.AgentTool
 import splice.upstream.InterceptedRoundPost
 import splice.upstream.RedirectableRoundPost
 import splice.upstream.RoundBody
@@ -25,14 +26,16 @@ import splice.upstream.RoundResult
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.TurnDeclined
 
-/** The rounds of one request of [session], whose capabilities' tools are [tools] by name, sent as [offered]. */
+/** The rounds of one request of [session], whose tools splice answers are [tools] by name, sent as [offered]. */
 internal class AgentRounds(
     private val session: String,
-    private val tools: Map<String, Capability>,
+    private val tools: Map<String, AgentTool>,
     private val offered: List<JsonObject>,
     private val on: CallFor,
     private val answers: AgentAnswers,
     private val keep: AgentKeep,
+    /** Where the request after an answered call comes from. */
+    private val next: AgentAsk,
 ) : RoundInterceptor, RoundBodyInterceptor {
     private val wire = AgentWire()
     private val marks = CacheMarks()
@@ -54,7 +57,7 @@ internal class AgentRounds(
     /** One round of the turn: it ends the turn, or its calls are answered and the provider is asked again. */
     private suspend fun round(turn: SoFar, body: RoundBody, sink: WireSink, postRound: InterceptedRoundPost): Step {
         val seen = AgentSink(sink, tools.keys)
-        val posted = post(postRound, body, seen)
+        val posted = post(postRound, body, AgentTyped(seen, seen.message))
         val outcome = (posted as? RoundResult.Outcome)?.outcome as? TurnOutcome.Success
             ?: return Step.Ended(failed(turn, posted))
         val made = Made(seen.message.blocks(), outcome, posted)
@@ -63,8 +66,7 @@ internal class AgentRounds(
         return when {
             asked.isEmpty() || outcome.incomplete -> Step.Ended(ended(turn, made))
             made.message.any(::clients) -> Step.Ended(beside(turn, made, asked))
-            else -> request(body)?.let { answered(turn, it, made.message, answers.answer(asked, on)) }
-                ?: Step.Ended(ended(turn, made))
+            else -> answered(turn, body, made.message, answers.answer(asked, on)) ?: Step.Ended(ended(turn, made))
         }
     }
 
@@ -75,8 +77,9 @@ internal class AgentRounds(
     /** Whether [block] is a call of one of the client's own tools. */
     private fun clients(block: JsonObject): Boolean = wire.isCall(block) && wire.callName(block) !in tools
 
-    /** The calls' results go to the provider with the model's message, as the same request again; a refusal ends it. */
-    private fun answered(turn: SoFar, request: JsonObject, message: List<JsonObject>, answered: Answered): Step =
+    /** The calls' results go to the provider with the model's message, as the same request again; a refusal ends it.
+     *  Null when the next request cannot be made, and the round ends the turn. */
+    private fun answered(turn: SoFar, body: RoundBody, message: List<JsonObject>, answered: Answered): Step? =
         when (answered) {
             is Answered.Refused ->
                 Step.Ended(RoundResult.Ended(TurnDeclined(FailureCause.Splice.Declined(answered.why))))
@@ -85,8 +88,10 @@ internal class AgentRounds(
                     wire.message(wire.assistant, message),
                     wire.message(USER, answered.blocks),
                 )
-                turn.produced += made
-                Step.Again(RoundBody.Tree(wire.withMessages(request, wire.messages(request) + made)))
+                next.next(request(body), turn.produced + made, made)?.let { request ->
+                    turn.produced += made
+                    Step.Again(RoundBody.Tree(request))
+                }
             }
         }
 
@@ -103,9 +108,9 @@ internal class AgentRounds(
 
     /** The calls of [message] of the capabilities' tools, in the order the model made them. */
     private fun asked(message: List<JsonObject>): List<ModelCall> = message.filter(wire::isCall).mapNotNull { block ->
-        val capability = tools[wire.callName(block)] ?: return@mapNotNull null
+        val tool = tools[wire.callName(block)] ?: return@mapNotNull null
         val id = wire.callId(block) ?: return@mapNotNull null
-        ModelCall(id, capability, block[INPUT] ?: JsonObject(emptyMap()))
+        ModelCall(id, tool, block[INPUT] ?: JsonObject(emptyMap()))
     }
 
     /** The last round ended the turn. When a call was answered on the way, what the provider produced is kept first. */
@@ -122,7 +127,7 @@ internal class AgentRounds(
             marks.key(turn.client),
             turn.produced + wire.message(wire.assistant, made.message),
             offered,
-            beside = asked.map { KeptResult(it.id, it.capability.name) },
+            beside = asked.map { KeptResult(it.id, it.tool.name) },
         )
         keep.beside(session, call, asked, on)
         return RoundResult.Outcome(made.outcome.copy(usage = turn.usage(made.outcome.usage)))

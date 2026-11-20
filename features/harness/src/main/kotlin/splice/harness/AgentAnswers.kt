@@ -7,6 +7,7 @@ package splice.harness
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.capability.Capability
@@ -14,14 +15,19 @@ import splice.core.capability.CapabilityFailure
 import splice.core.failure.Decline
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
+import splice.harness.agent.AgentTool
 import splice.head.port.Held
+import splice.upstream.codemode.ProcessDispatchers
 
-/** One call of a capability's tool the model made: its id, the capability, and the input it gave the tool. */
-internal data class ModelCall(val id: String, val capability: Capability, val input: JsonElement)
+/** One call the model made of a tool splice answers: its id, the tool, and the input it gave the tool. */
+internal data class ModelCall(val id: String, val tool: AgentTool, val input: JsonElement)
 
 /** What one call's work came to. */
 internal sealed class Settled {
     data class Text(val text: String) : Settled()
+
+    /** A port's tool answered with an error the model reads as it is. */
+    data class Error(val text: String) : Settled()
 
     /** The work could not finish: [why] never holds a key. */
     data class Failed(val why: String) : Settled()
@@ -57,7 +63,12 @@ internal class AgentAnswers(
 
     /** What each call of [asked] says through, on the turn that holds it: its capability's message, then its worker's
      *  progress (decision 7). */
-    fun voices(asked: List<ModelCall>, on: CallFor): List<HeldVoice> = asked.map { calls.voice(it.capability, on) }
+    fun voices(asked: List<ModelCall>, on: CallFor): List<HeldVoice> = asked.map { call ->
+        when (val tool = call.tool) {
+            is AgentTool.OfCapability -> calls.voice(tool.capability, on)
+            is AgentTool.OfPort -> HeldVoice(tool.label, PORT_COLOR)
+        }
+    }
 
     /** Runs [work] with [on]'s turn held, where it can be, saying the capabilities of [asked] held it; while it holds,
      *  the turn says what [voices] say. */
@@ -69,7 +80,7 @@ internal class AgentAnswers(
         try {
             return work()
         } finally {
-            on.turn.release(Held(asked.map { it.capability.name }.distinct(), clock() - startedMs))
+            on.turn.release(Held(asked.map { it.tool.label }.distinct(), clock() - startedMs))
         }
     }
 
@@ -86,17 +97,35 @@ internal class AgentAnswers(
         }
     } ?: asked.map { Settled.Stopped }
 
-    private suspend fun settled(asked: ModelCall, on: CallFor, voice: HeldVoice, posted: WorkerPosted): Settled {
-        val capability = asked.capability
-        return when (val end = calls.work(capability, on.copy(input = asked.input), posted, voice)) {
-            is WorkerEnd.Result -> Settled.Text(end.text)
-            is WorkerEnd.Refusal -> if (capability.result.mayRefuse) {
-                Settled.Refused(end.reason)
-            } else {
-                Settled.Failed("it refused the turn, which it may not")
-            }
-            is WorkerEnd.Failed -> Settled.Failed(end.why)
+    private suspend fun settled(asked: ModelCall, on: CallFor, voice: HeldVoice, posted: WorkerPosted): Settled =
+        when (val tool = asked.tool) {
+            is AgentTool.OfPort -> ported(tool, asked.input, posted)
+            is AgentTool.OfCapability -> worked(tool.capability, asked, on, voice, posted)
         }
+
+    /** A port's tool answers in the daemon's own thread pool; its answer is the call's result. */
+    private suspend fun ported(tool: AgentTool.OfPort, input: JsonElement, posted: WorkerPosted): Settled {
+        posted.posted()
+        val answer = withContext(ProcessDispatchers().io()) {
+            tool.port.answer(tool.offered.name, input as? JsonObject ?: JsonObject(emptyMap()), tool.session)
+        }
+        return if (answer.error) Settled.Error(answer.text) else Settled.Text(answer.text)
+    }
+
+    private suspend fun worked(
+        capability: Capability,
+        asked: ModelCall,
+        on: CallFor,
+        voice: HeldVoice,
+        posted: WorkerPosted,
+    ): Settled = when (val end = calls.work(capability, on.copy(input = asked.input), posted, voice)) {
+        is WorkerEnd.Result -> Settled.Text(end.text)
+        is WorkerEnd.Refusal -> if (capability.result.mayRefuse) {
+            Settled.Refused(end.reason)
+        } else {
+            Settled.Failed("it refused the turn, which it may not")
+        }
+        is WorkerEnd.Failed -> Settled.Failed(end.why)
     }
 
     /** The results of [asked], each one's from [settled] at the same place, or the first refusal among them. */
@@ -111,9 +140,10 @@ internal class AgentAnswers(
     }
 
     private fun result(asked: ModelCall, end: Settled): Answer {
-        val name = asked.capability.name
+        val name = asked.tool.label
         return when (end) {
             is Settled.Text -> Answer.Block(wire.result(asked.id, end.text, error = false))
+            is Settled.Error -> Answer.Block(wire.result(asked.id, end.text, error = true))
             is Settled.Refused -> Answer.Refusal(Decline.CapabilityRefused(name, end.reason)).also {
                 log("[$head] capability $name refused the turn the model called it in: ${end.reason}\n")
             }
@@ -127,8 +157,9 @@ internal class AgentAnswers(
 
     /** Closed, the turn is refused; open, the model is told the capability failed and why, and goes on. */
     private fun failed(asked: ModelCall, why: String): Answer {
-        val name = asked.capability.name
-        if (asked.capability.limits.onFailure == CapabilityFailure.CLOSED) {
+        val name = asked.tool.label
+        val closed = (asked.tool as? AgentTool.OfCapability)?.capability?.limits?.onFailure == CapabilityFailure.CLOSED
+        if (closed) {
             log("[$head] capability $name failed: $why; the turn is refused\n")
             return Answer.Refusal(Decline.CapabilityFailed(name, why))
         }
@@ -146,3 +177,6 @@ internal class AgentAnswers(
 
 /** why: what the model and the log are told of a call whose work the head's stop ended. */
 private const val DRAIN_STOPPED = "splice stopped its work while the head drained"
+
+/** why: a port's tool names no colour of its own; a held turn on one says its label in the capabilities' default. */
+private const val PORT_COLOR = "cyan"

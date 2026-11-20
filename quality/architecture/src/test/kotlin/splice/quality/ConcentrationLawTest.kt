@@ -277,7 +277,11 @@ internal object Concentration {
     // neighbourhood, untouched by the change: ControlServer.kt 2.93 -> 3.08, C 223 in both, as splice.app.head took the
     // harness's three wiring files (HeadCapabilities, HeadMcpServers, LaunchedGatherers), 24 -> 27 files, and its
     // median fell 76 -> 72.5. The tree got worse; this records it. 24 -> 25.
-    const val RATCHET_MAX_HIGH = 25
+    // 2026-11-19: the modes feature's base, a9534b342, already measures 26 before any of its own code, so this records
+    // what landed between, not a mode. Of the band's files only two sit near the line and changed since the record
+    // above: ContextGetter.kt at 3.01 (harness-says, a1dd8f540, +25 lines) and RestartCommand.kt at 3.02
+    // (telemetry-relay, c9b0dd2af, +12 lines). The modes code adds no file to band HIGH. 25 -> 26.
+    const val RATCHET_MAX_HIGH = 26
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

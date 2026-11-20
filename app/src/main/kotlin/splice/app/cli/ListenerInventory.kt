@@ -16,6 +16,7 @@ import splice.core.util.SafeFailureText
 import splice.core.util.TopologyRefusal
 import splice.daemonclient.DaemonSettings
 import splice.http.listen.DescriptorAdoption
+import splice.topology.BootSettings
 import splice.topology.ConfigFindings
 import splice.topology.ConfigRead
 import splice.topology.RetiredSettings
@@ -51,7 +52,8 @@ internal class ListenerInventory(
             null
         } else {
             val dir = path.toAbsolutePath().parent ?: path
-            when (val read = ConfigFindings.read(text, dir, configDir = dir, retired = RetiredSettings(env))) {
+            val beside = BootSettings(retired = RetiredSettings(env))
+            when (val read = ConfigFindings.read(text, dir, configDir = dir, beside = beside)) {
                 is ConfigRead.Ready -> read.topology
                 is ConfigRead.Refused -> {
                     errors.line("splice: ${SafeFailureText.render(TopologyRefusal(read.findings))}")

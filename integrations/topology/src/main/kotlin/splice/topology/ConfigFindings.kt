@@ -11,6 +11,8 @@ import kotlinx.serialization.SerializationException
 import splice.core.capability.CapabilityDeclarations
 import splice.core.capability.CapabilityToml
 import splice.core.config.retiredKnobsByKey
+import splice.core.mode.FoundModes
+import splice.core.mode.ModeSettingsReader
 import splice.core.model.HeadDiscoveredModels
 import splice.core.topology.Dialect
 import splice.core.topology.Topology
@@ -36,6 +38,11 @@ public fun interface LocalRowFindings {
     public fun of(topology: Topology): List<TopologyFinding>
 }
 
+/** What boot reads beside splice.toml's own text: each retired knob splice's environment or saved settings still set
+ *  ([retired]), and the modes splice carries ([modes]: their names, which a `[modes.<name>]` table must name, and the
+ *  findings of any that are broken). Null leaves each out. */
+public data class BootSettings(val retired: RetiredSettings? = null, val modes: FoundModes? = null)
+
 /** Reads splice.toml text the way boot does and collects EVERY finding instead of throwing the first.
  *
  *  Three layers, in the order a reader meets them: the structural guards ktoml lacks (all of them), then the
@@ -56,20 +63,29 @@ public object ConfigFindings {
         stateBase: Path,
         configDir: Path? = null,
         runtimes: LocalRowFindings = LocalRowFindings { emptyList() },
-        retired: RetiredSettings? = null,
+        beside: BootSettings = BootSettings(),
     ): ConfigRead {
         // The capability tables are read apart, so each wrong one is its own finding beside the schema's
-        // (docs/specs/harness.md, decision 1); every other layer reads the file with them blanked out.
+        // (docs/specs/harness.md, decision 1); every other layer reads the file with them blanked out. The
+        // `[modes.<name>]` tables are read apart the same way (modes/README.md).
         val split = CapabilityToml.split(source)
-        val text = split.rest
+        val modeTables = ModeTables.split(split.rest)
+        val text = modeTables.rest
         val declared = { topology: Topology? ->
             val messages = topology?.headsSpeaking(Dialect.ANTHROPIC_PASSTHROUGH)
             CapabilityDeclarations(topology?.heads?.keys, messages = messages).read(split.tables)
         }
+        val modes = { topology: Topology? ->
+            ModeSettingsReader(topology?.heads?.keys, beside.modes?.names).read(modeTables.tables)
+        }
+        val retired = beside.retired
         // A structural finding is answered BEFORE any decode: a head roster written as an array of strings sends the
         // decoder into the loop the preflight exists to prevent, so the decoder never sees such a file.
         val structural = TomlStructurePreflight.failures(text).map { finding(it) }
-        val elsewhere = { topology: Topology? -> declared(topology).findings + retired?.findings(topology).orEmpty() }
+        val elsewhere = { topology: Topology? ->
+            declared(topology).findings + modes(topology).findings + retired?.findings(topology).orEmpty() +
+                beside.modes?.findings.orEmpty()
+        }
         if (structural.isNotEmpty()) return refused(structural + TopologyTypeMismatch.all(text) + elsewhere(null))
         val decoded = decode(text)
         val topology = decoded.getOrNull()
@@ -84,7 +100,7 @@ public object ConfigFindings {
             .map { it.copy(message = withFix(it), line = lineOf(text, it.path)) }
         val local = runtimes.of(topology).distinct()
             .map { it.copy(line = rows.of(text, it.path) ?: lineOf(text, it.path)) }
-        val ready = topology.copy(capabilities = declared(topology).capabilities)
+        val ready = topology.copy(capabilities = declared(topology).capabilities, modes = modes(topology).settings)
         return refused(checks + OperatorTelemetryFindings.of(topology) + local + elsewhere(topology), ready)
     }
 

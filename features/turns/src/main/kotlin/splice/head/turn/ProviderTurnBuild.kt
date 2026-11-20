@@ -3,15 +3,21 @@
 // compaction tail, the compaction request hash and the system/slot prompt layers moved verbatim;
 // what is new is the guard: a provider's turn can now hold something (BuiltTurn.onEnd, a llama-server
 // slot lease), and a build that throws between the provider and the drive must give it back.
+// A door mode on every dialect (docs/specs/harness.md, decision 12, Modes): the harness edits a request in
+// Anthropic's Messages shape, and on a head whose provider sends another dialect the edited request is built again
+// here the way the turn's own was, so the dialect's own translator shapes what splice added.
 package splice.head.turn
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.compaction.EffectiveCompactionInstructions
 import splice.core.parse.AnthropicTurnBody
+import splice.core.parse.lenientJson
 import splice.core.perf.TurnPerf
 import splice.core.turn.TurnCompaction
+import splice.core.wire.AnthropicRequest
 import splice.head.HeadDeps
 import splice.head.compaction.CompactionReplay
+import splice.head.port.HarnessRequest
 import splice.head.turn.review.AutoModeReview
 import splice.head.turn.review.SideRequest
 import splice.upstream.BuiltTurn
@@ -89,5 +95,33 @@ internal class ProviderTurnBuild(
                 ),
             )
         } ?: tailed.copy(meta = tailed.meta.copy(compaction = tailed.meta.compaction.copy(requestHash = hash)))
+    }
+}
+
+/** What the harness reads of one request, and how a request it edits is built for the turn's provider: null where the
+ *  provider sends Messages. */
+internal data class HarnessAsked(val request: HarnessRequest, val rebuild: TurnRebuild? = null)
+
+/** The request the provider builds for a Messages request of the turn [parsed] began, built as [build] built the
+ *  turn's own: with [compact], for [sessionId], counted on [perf], for the client [client] names. */
+internal class TurnRebuild(
+    private val build: ProviderTurnBuild,
+    private val parsed: AnthropicTurnBody,
+    private val compact: Boolean,
+    private val sessionId: String?,
+    private val perf: TurnPerf,
+    private val client: String?,
+) {
+    /** The client's request, in the Messages shape it arrived in. */
+    val asked: JsonObject get() = parsed.raw
+
+    /** The provider's request for [body], with what routes [first] (its routing fields) kept as [first] has it. A
+     *  build that leased something gives it back at once: the turn already holds what [first] leased. */
+    fun built(body: JsonObject, first: BuiltTurn): BuiltTurn {
+        val typed = lenientJson.decodeFromJsonElement(AnthropicRequest.serializer(), body)
+        val again = build.build(AnthropicTurnBody(body, typed, parsed.agentId), compact, sessionId, perf, client)
+        again.onEnd?.ended()
+        val routed = first.routingFields.mapNotNull { field -> first.requestBody[field]?.let { field to it } }
+        return first.sending(JsonObject(again.requestBody + routed))
     }
 }

@@ -108,6 +108,10 @@ internal object ConstSingleSource {
         "${NUM_TOKEN.pattern}(?:\\s*(?:[-+*/]|shl|shr|ushr)\\s*${NUM_TOKEN.pattern})*",
     )
 
+    /** A file inside one mode's folder, its name captured. */
+    private val MODE_FOLDER = Regex("modes/([a-z][a-z0-9]*)/.*")
+    private const val MODES_API = "api"
+
     /** An equality obligation written in prose — a sentence a human wrote instead of a wall. The
      *  detector needs one of these AND a named counterpart before it fires, and the finding quotes
      *  the PATTERN back, so re-wording one would change the message. */
@@ -477,14 +481,32 @@ internal object ConstSingleSource {
         return out
     }
 
-    /** Every name declared in 2+ FILES, classed COPY (one normalised value) or COLLISION. */
+    /** Every name declared in 2+ FILES, classed COPY (one normalised value) or COLLISION. Two modes are independent
+     *  (modes/README.md): the module law lets no mode reach another, so one declaration and an import is no remedy
+     *  between them, and a mode copied from the template carries the template's names by design. A name only modes
+     *  declare is a finding only where one mode declares it in two files. */
     fun duplicates(consts: List<Konst>): List<Group> {
         val byName = consts.groupBy { it.name }
         return byName.keys.sorted().mapNotNull { name ->
             val members = byName.getValue(name)
             val kind = if (members.distinctBy { it.value }.size == 1) "COPY" else "COLLISION"
-            if (members.distinctBy { it.rel }.size < 2) null else Group(kind, name, members)
+            when {
+                members.distinctBy { it.rel }.size < 2 -> null
+                apartInModes(members) -> null
+                else -> Group(kind, name, members)
+            }
         }
+    }
+
+    /** The mode folder [rel] is in (`modes/<name>/`, never the contract's `modes/api/`), or null outside one. */
+    fun modeOf(rel: String): String? =
+        MODE_FOLDER.matchEntire(rel)?.groupValues?.get(1)?.takeIf { it != MODES_API }
+
+    /** Whether every one of [members] is in a mode and no mode declares the name in two files. */
+    private fun apartInModes(members: List<Konst>): Boolean {
+        val homes = members.map { modeOf(it.rel) to it.rel }
+        if (homes.any { it.first == null }) return false
+        return homes.groupBy({ it.first }, { it.second }).values.all { it.distinct().size < 2 }
     }
 
     /** Declarations whose adjacent comment ASSERTS an equality with another const in the census. */
@@ -784,6 +806,20 @@ class ConstSingleSourceLawTest {
                 assertHit(audit(baseline()), "GROWTH (COPY)", "SEAM_MASK") { "$spelling are one value" }
             }
         }
+    }
+
+    @Test
+    fun `two modes declaring one name are apart, and a mode beside other code is not`() {
+        fun konst(rel: String, value: String) = ConstSingleSource.Konst("SAY_BACK", rel, 1, value, "")
+        val template = konst("modes/template/src/main/kotlin/splice/modes/template/TemplateMode.kt", "\"say_back\"")
+        val echo = konst("modes/echo/src/main/kotlin/splice/modes/echo/EchoMode.kt", "\"say_back\"")
+        val echoAgain = konst("modes/echo/src/main/kotlin/splice/modes/echo/EchoSaid.kt", "\"say_back\"")
+        val app = konst(A_KT, "\"say_back\"")
+        val api = konst("modes/api/src/main/kotlin/splice/modes/api/ModeNames.kt", "\"say_back\"")
+        assertEquals(emptyList<ConstSingleSource.Group>(), ConstSingleSource.duplicates(listOf(template, echo)))
+        assertEquals(1, ConstSingleSource.duplicates(listOf(template, echo, echoAgain)).size, "one mode, two files")
+        assertEquals(1, ConstSingleSource.duplicates(listOf(template, app)).size, "a mode can import what core holds")
+        assertEquals(1, ConstSingleSource.duplicates(listOf(template, api)).size, "every mode reaches the contract")
     }
 
     @Test

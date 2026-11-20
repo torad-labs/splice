@@ -1,7 +1,9 @@
 // NEW: the agent's call (docs/specs/harness.md, decision 12). The model's message as the provider streamed it, put
 // together from its own frames the way a client puts it together: each block as it started, its deltas applied, a
 // tool call's input parsed. Its blocks go back to the provider byte for byte (thinking and its signature included),
-// and the ones the client was shown are the client's copy, which a later request is matched by.
+// and the ones the client was shown are the client's copy, which a later request is matched by. A dialect that does
+// not stream Anthropic's frames (Chat Completions, Responses) writes the same blocks through the sink's typed verbs,
+// and the message is put together from those (decision 12, Modes).
 package splice.harness
 
 import kotlinx.serialization.json.JsonArray
@@ -15,6 +17,9 @@ import splice.core.util.JsonScalars
 internal class MessageAssembly(private val hidden: Set<String>) {
     private val blocks = sortedMapOf<Int, Building>()
 
+    /** The blocks the typed verbs wrote, in the order they opened; a block written whole has a key of its own. */
+    private val typed = LinkedHashMap<Any, Building>()
+
     /** Takes one frame of the provider's stream. */
     fun accept(event: JsonObject) {
         val index = JsonScalars.int(event, INDEX) ?: return
@@ -25,11 +30,29 @@ internal class MessageAssembly(private val hidden: Set<String>) {
         }
     }
 
-    /** The message's blocks, in the order the provider numbered them. */
-    fun blocks(): List<JsonObject> = blocks.values.map(Building::block)
+    /** A block the sink's typed verbs opened under [index], as its start would say it. */
+    fun opened(index: Int, start: JsonObject) {
+        typed[index] = Building(start, hidden)
+    }
+
+    /** A delta the typed verbs wrote into [index], as Anthropic's delta would say it. */
+    fun added(index: Int, delta: JsonObject) {
+        typed[index]?.delta(delta)
+    }
+
+    /** A block the typed verbs wrote whole. */
+    fun whole(block: JsonObject) {
+        typed[Any()] = Building(block, hidden)
+    }
+
+    /** The message's blocks, in the order the provider numbered them: its frames' when it streamed Anthropic's, else
+     *  what the typed verbs wrote. */
+    fun blocks(): List<JsonObject> = built().map(Building::block)
 
     /** The blocks the client was shown: every one but the capability's calls. */
-    fun shown(): List<JsonObject> = blocks.values.filterNot(Building::hidden).map(Building::block)
+    fun shown(): List<JsonObject> = built().filterNot(Building::hidden).map(Building::block)
+
+    private fun built(): Collection<Building> = blocks.values.ifEmpty { typed.values }
 
     /** One block: what its start said, and what its deltas added to each field. */
     private class Building(private val start: JsonObject, hidden: Set<String>) {

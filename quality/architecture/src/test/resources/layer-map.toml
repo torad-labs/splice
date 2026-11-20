@@ -13,6 +13,8 @@
 #                composition root above them. They import domain, adapter and feature code.
 #   composition  :app, the one process entry. It may import everything.
 #   tooling      the quality modules. They are not product code. Their main sources are graded: they may import no product module.
+#   mode         :modes-api and every mode (modes/README.md), a leaf layer of its own: a mode imports the domain and the
+#                contract, and nothing imports a mode but the composition root, which finds it through the ServiceLoader.
 #
 # A MODULE IS CLASSIFIED BY ITS DEPENDENCIES, NOT BY ITS NAME. A module that depends on a feature is a
 # feature, because an adapter may not reach up into a feature. integrations-claude-code depends on
@@ -70,6 +72,11 @@ modules = [":app"]
 
 [tooling]
 modules = [":quality-architecture", ":quality-compiler-plugin"]
+
+# A module that ends in `*` is a pattern: it classifies every module whose path starts with what comes before it, except
+# one this map names exactly. Every mode is classified by it, so a new mode sits in a layer the moment its folder exists.
+[mode]
+modules = [":modes-api", ":modes-*"]
 
 # THE COMPOSITION ROOT is one named role held to one file. LayerMapLawTest proves the file exists and is the
 # only main-source file that declares a process entry in :app.

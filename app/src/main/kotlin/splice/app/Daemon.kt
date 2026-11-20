@@ -22,6 +22,7 @@ import splice.app.daemon.HeadCatalogs
 import splice.app.daemon.TopologyWindows
 import splice.app.desktop.DaemonDesktop
 import splice.app.head.HEAD_STOP_BUDGET_MS
+import splice.app.head.HeadAgentTools
 import splice.app.head.HeadBoot
 import splice.app.head.HeadCapabilities
 import splice.app.head.HeadKeptFiles
@@ -35,6 +36,9 @@ import splice.app.head.HeadShutdown
 import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
 import splice.app.head.QuotaPollSeams
+import splice.app.modes.DaemonModes
+import splice.app.modes.ModeBoot
+import splice.app.modes.ModeTools
 import splice.app.probe.LocalWindowRefresh
 import splice.app.server.DaemonServer
 import splice.app.share.DaemonShare
@@ -58,6 +62,7 @@ import splice.head.compaction.CompactionTail
 import splice.lifecycle.restart.ShutdownDaemon
 import splice.models.roster.DeclaredHead
 import splice.models.roster.DeclaredHeads
+import splice.modes.api.ModeKind
 import splice.oauth.codex.CodexRefresh
 import splice.share.RemoteTrees
 import splice.topology.TopologyLoader
@@ -90,6 +95,19 @@ public class Daemon(
      *  asks the launcher for one, assigned by Main before [start]. Null, every daemon a test builds, answers that
      *  route with a named 503. */
     internal var handOver: HandOver? = null
+
+    /** The modes this jar carries, as boot read them (modes/README.md), assigned by Main before [start]: the daemon
+     *  then holds them with splice.toml's switches, for the control plane's routes and every head's door. */
+    internal var modeBoot: ModeBoot? = null
+        set(boot) {
+            field = boot
+            controlPlane.modes = boot?.let {
+                DaemonModes(it.catalog, topology.modes, topology.heads.keys.toList(), statePaths.stateDir)
+            }
+        }
+
+    /** The modes as this daemon holds them; null until Main assigns [modeBoot], and in a daemon a test builds. */
+    internal val modes: DaemonModes? get() = controlPlane.modes
 
     // Topology TOML ([daemon] + [defaults]) feeds the headOverrides layer so reasoning
     // display is operator-editable without recompiling. Env and runtime PATCH still win.
@@ -222,6 +240,10 @@ public class Daemon(
                 statePaths.headsDir,
                 controlPlane.gatherers,
                 HeadMcpServers(launchSpecFactory.headConfigDirs(), statePaths),
+                HeadAgentTools { key ->
+                    controlPlane.modes?.takeIf { m -> m.catalog.modes.any { it.manifest.kind == ModeKind.DOOR } }
+                        ?.let { ModeTools(it, key) }
+                },
             )
         }
     private val managedHeadFactory = ManagedHeadFactory(

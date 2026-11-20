@@ -26,6 +26,8 @@ const SV = {
   plus: G('<path d="M12 5v14M5 12h14"/>'),  // the kit's own PLUS lives inside its closure
   version: G('<path d="M12 19V5M6 11l6-6 6 6"/>'),
   trash: ICON.trash,   // the kit's own glyph
+  // a tool beside the model's own: a wrench, the mark for what the door adds to a session
+  modes: G('<path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L4 16.8V20h3.2l5.3-5.3a4 4 0 0 0 5.2-5.4l-2.4 2.4-2.6-.6-.6-2.6z"/>'),
   data: G('<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/>'),
 };
 const MiB = 1048576;
@@ -54,6 +56,7 @@ const TOPICS = [
   { id: "plan", name: "Plan limits", also: "quota usage warning budget spend limit" },
   { id: "mcp", name: "MCP servers", also: "tools servers model context protocol" },
   { id: "projects", name: "Projects", also: "folder folders group grouping workspace monorepo sessions by project" },
+  { id: "modes", name: "Modes", also: "tools door mcp mode modes added offered" },
   { id: "data", name: "Your data", also: "privacy prompts saved keep delete disk history logs" },
   { id: "version", name: "Version", also: "update upgrade new release roll back restart" },
 ];
@@ -73,7 +76,7 @@ const inertWhy = (key) => key === "quotaPollIntervalMs" && val("quotaPoll") === 
   : key === "stallReanchorMs" && !KNOB.stallReanchorMs.only.length ? "No command resumes stalled answers"
   : key === "mcpMaxServers" && ui.hubOn ? "Unlimited" : null;
 /** The jobs on the rail: Your data always, the others once one of their settings is live. */
-const jobs = () => TOPICS.filter((x) => x.id === "data" || x.id === "version" || liveKnobs().some((k) => topicOf(k.key) === x.id));
+const jobs = () => TOPICS.filter((x) => ["modes", "data", "version"].includes(x.id) || liveKnobs().some((k) => topicOf(k.key) === x.id));
 /** A job's live settings, in the order knobs.js lists them (the first two of Many agents at once are its own section). */
 const keysOf = (id, skip = []) => liveKnobs().filter((k) => topicOf(k.key) === id && !k.adv && !skip.includes(k.key)).map((k) => k.key);
 // A job's Advanced disclosure (v0.4.0 section 9, Resolved: advanced settings sit behind a per-section "Advanced"): the
@@ -154,7 +157,7 @@ function groupRows(xs) {
 }
 
 // A figure not read yet is undefined and draws its own shape, striped; one asked for and not answered is null and draws "Not read", its reason warned to the console.
-const ui = { advEdit: {}, adv: {}, said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, mcp: undefined, mtest: {}, mtestAt: {}, topo: undefined, mmem: undefined, shareSaving: false, shareSaid: null, exSaid: {}, accts: undefined, projects: undefined, addPath: null, checking: false, checkSaid: null, restarting: false, restartSaid: null, restartWait: 0, mmore: {}, pmore: {}, grown: new Set(), shook: null, err: null, legendSaid: new Set(), gates: {}, chosen: false, dzero: false };
+const ui = { advEdit: {}, adv: {}, said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, mcp: undefined, mtest: {}, mtestAt: {}, topo: undefined, mmem: undefined, shareSaving: false, shareSaid: null, exSaid: {}, accts: undefined, projects: undefined, addPath: null, checking: false, checkSaid: null, restarting: false, restartSaid: null, restartWait: 0, mmore: {}, pmore: {}, grown: new Set(), shook: null, err: null, legendSaid: new Set(), gates: {}, chosen: false, dzero: false, modes: undefined, modeSaving: {}, modeSaid: {} };
 let drawLater = 0;
 /** Many answers arrive in a burst; one drawing a moment later takes them all. */
 /** The per-command reads and the week's counts are over a hundred requests, and a browser sends six at a time to one address: left to
@@ -212,6 +215,8 @@ function readKept() {
   get("/api/accounts", (r) => { ui.accts = r.ok ? (r.body?.accounts ?? []) : null; if (r.ok) keepShape("logins", planLogins().length); });
   // the projects the saved folders actually make, and whether each folder is still on disk (ProjectsRoutes.kt): the
   // row under each path is the daemon's own answer, never a listing this page takes itself
+  // the modes splice carries and whether each is on per command (modes/README.md), as GET /api/modes lists them
+  get("/api/modes", (r) => { ui.modes = r.ok ? (r.body?.modes ?? []) : null; });
   get("/api/projects", (r) => { ui.projects = r.ok ? r.body : null; if (r.ok) keepShape("projects", (r.body?.projects || []).filter(projectName).length); });
   // a rollback already running (started elsewhere) is picked up once the version is known: it names the release it goes back to
   get("/api/upgrade", (r) => { ui.ver = r.ok ? r.body : null; }).then(async () => {
@@ -2263,9 +2268,47 @@ const PANES = {
   plan: planHtml,
   mcp: mcpHtml,
   projects: projectsHtml,
+  modes: modesHtml,
   data: dataHtml,
   version: versionHtml,
 };
+
+// ---------- Modes ----------
+// WHAT THE DOOR ADDS TO A SESSION, ONE CARD A MODE (modes/README.md): its name, what it does, how it is answered, the
+// tools it adds as the model sees them (each description on hover), the callers it leaves out, and a switch per command
+// that saves at once. A command the mode's manifest leaves out has no switch to press, and says so.
+const MODE_KIND = { door: "Answered inside splice", mcp: "MCP server" };
+const MODE_LEFT_OUT = {
+  desktop: "Not offered to Claude Desktop's own sessions",
+  door: "Not offered to claude on the door",
+  head: "Not offered to a head's own command",
+};
+function modesSummary() {
+  if (ui.modes === undefined) return ["Reading"];
+  if (ui.modes === null) return ["Not read"];
+  const on = ui.modes.filter((m) => Object.values(m.heads || {}).some((h) => h.on)).length;
+  return [`${fmt(on)} of ${fmt(ui.modes.length)} on`];
+}
+function modeHead(m, head, st) {
+  const saving = !!ui.modeSaving[`${m.name}@${head}`], never = st.from === "never";
+  const off = saving || never ? " disabled" : "";
+  const btn = (v, w) => `<button data-act="modehead" data-name="${esc(m.name)}" data-head="${esc(head)}" data-v="${v}" aria-pressed="${st.on === v}"${off}>${w}</button>`;
+  return `<div class="cs${st.on ? "" : " off"}">${cmdChip(head)}<span class="switch" data-mode-head="${esc(head)}">${btn(true, "On")}${btn(false, "Off")}</span>`
+    + `${never ? `<span class="said">Never offered on ${esc(head)}</span>` : ""}</div>`;
+}
+function modeCard(m) {
+  const tools = (m.tools || []).map((t) => `<span class="chip" title="${esc(t.description || "")}">${esc(t.offered_as)}</span>`).join("");
+  const left = (m.callers_off || []).map((c) => MODE_LEFT_OUT[c]).filter(Boolean).map((w) => `<p class="fixed">${esc(w)}</p>`).join("");
+  const said = ui.modeSaid[m.name] ? `<span class="said limit">${esc(ui.modeSaid[m.name])}</span>` : "";
+  const heads = Object.entries(m.heads || {}).map(([h, st]) => modeHead(m, h, st)).join("");
+  return `<section class="dmore mode" data-mode="${esc(m.name)}"><div class="sechead"><b>${esc(m.name)}</b><span class="fixed">${esc(MODE_KIND[m.kind] || m.kind)}</span></div>`
+    + `<p>${esc(m.summary)}</p><div class="kchips">${tools}</div>${left}${said}<div class="cmdsw">${heads}</div></section>`;
+}
+function modesHtml() {
+  if (ui.modes === undefined) return GHOST.row([GHOST.bar(9)]);
+  if (ui.modes === null) return `<p class="rfig"><span class="state limit">Not read</span><button class="act quiet small" data-act="again">Read again</button></p>`;
+  return ui.modes.map(modeCard).join("");
+}
 
 // ---------- the rail ----------
 // A TOPIC THAT HOLDS A LIMIT HIT OR A FAILURE SAYS SO ON ITS CARD, AND OPENS FIRST: the limit red is for limits and
@@ -2294,6 +2337,7 @@ function summary(id) {
       : [`${fmt(early[0] + early[1])} ended early this week`, `${fmt(waited)} waited out`];
   }
   if (id === "version") return [ui.ver === undefined ? "Reading" : ui.ver ? ui.ver.installed : "Not read"];
+  if (id === "modes") return modesSummary();
   if (id === "reasoning") return [KNOB.showReasoning && !needsRestart("showReasoning") ? (val("showReasoning") === "off" ? "Reasoning hidden" : `Shows it ${word(KNOB.showReasoning, val("showReasoning")).toLowerCase()}`) : `Progress line ${val("progressLine") ? "on" : "off"}`];
   if (id === "plan") return [`Warns at ${word(KNOB.usageWarnPct, val("usageWarnPct"))}`];
   if (id === "mcp") return [ui.mcp === undefined ? "Reading" : ui.mcp === false ? "Not hosted" : !ui.mcp ? "Not read" : `${word(KNOB.mcpMaxServers, val("mcpMaxServers"))} at most`];
@@ -2535,6 +2579,22 @@ async function setCapture(head, on) {
   ui.said[id] = res.body?.restart_required ? "Saves after splice restarts" : "Applied";
   render();
 }
+/** A press on a mode's switch for one command: saved at once with PUT /api/modes/<name>. Pressing back to the mode's
+ *  every-command value clears the command's own entry instead of pinning it. The switch then shows the row the daemon
+ *  answered, never a guess; a refusal says the daemon's words on the card and leaves the switch where it was. */
+async function setModeHead(name, head, on) {
+  const row = (ui.modes || []).find((m) => m.name === name);
+  if (!row) return;
+  const key = `${name}@${head}`;
+  ui.modeSaving[key] = true;
+  delete ui.modeSaid[name];
+  render();
+  const res = await API.put(`/api/modes/${encodeURIComponent(name)}`, { heads: { [head]: on === row.on.value ? null : on } });
+  delete ui.modeSaving[key];
+  if (res.ok && res.body?.name === name) ui.modes = ui.modes.map((m) => (m.name === name ? res.body : m));
+  else ui.modeSaid[name] = res.body?.error || `Not saved (HTTP ${res.status})`;
+  render();
+}
 async function remove(id) {
   const key = id.slice(4), bad = () => { ui.bad[id] = "Not deleted"; };
   const store = DATA_ROWS.find((r) => r.id === key)?.store;
@@ -2594,6 +2654,7 @@ document.addEventListener("click", (e) => {
     // the week's counts asked again, each drawing as its own ghost until it answers
     case "reread": ui.week = {}; ui.peaks = undefined; render(); readWeek(); return;
     case "capture": setCapture(d.head, d.v === "true"); return;
+    case "modehead": setModeHead(d.name, d.head, d.v === "true"); return;
     case "saving": ui.saving = ui.saving === "trace" ? null : "trace"; break;
     case "arm": ui.armed = d.id; delete ui.bad[d.id]; break;
     case "disarm": ui.armed = null; break;

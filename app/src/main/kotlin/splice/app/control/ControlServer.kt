@@ -66,6 +66,7 @@ import splice.app.control.peer.PeersMount
 import splice.app.control.server.ServerMount
 import splice.app.control.usage.UsageMount
 import splice.app.head.HeadRemovalAssembly
+import splice.app.modes.ModesMount
 import splice.app.peer.PeersWiring
 import splice.core.config.ConfigService
 import splice.core.util.LogSink
@@ -203,6 +204,9 @@ internal class ControlServer(
     // Oct 16, 2026: what `splice console <action>` hands the open console to do, and the page's answer (ConsolePilot).
     private val consolePilot = ConsolePilotMount(guard)
 
+    // Nov 19, 2026: the modes (modes/README.md): what each adds to a session, and its switches.
+    private val modes = ModesMount(ports, guard)
+
     // The order the rows register in: MCP last, and only when the daemon hosts MCP at all (null keeps the control
     // plane exactly as before). The MCP host is the one bound resource: the server starts it after the bind.
     private val mcp: McpMount? = runtime.mcpHost?.let { host ->
@@ -230,10 +234,11 @@ internal class ControlServer(
         ControlMount(models::register),
         ControlMount(launch::register),
         ControlMount(consolePilot::register),
+        ControlMount(modes::register),
         ControlMount(serverMode::register),
         ControlMount(desktop::register),
         ControlMount(console::register),
-    ) + listOfNotNull(peers?.let { ControlMount(it::register) }, mcp)
+    ) + listOfNotNull(peers?.let { ControlMount(it::register) }, mcp) + ControlMount(modes::registerRoutes)
     private val resources: List<BoundResource> = listOfNotNull(mcp, sessionWake)
 
     @Volatile

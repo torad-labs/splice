@@ -50,6 +50,7 @@ import { resolveJdk21 } from "../lib/jdk.ts";
 import { type Layout, layout } from "../lib/repo.ts";
 import { acquireRunSentinel, describeOpenRun } from "../lib/sentinel.ts";
 import { type ModuleGraph, parseModuleGraph } from "../lib/selector.ts";
+import { modeFolders } from "../lib/modes.ts";
 import { ktlintOver, type LintVerdict, lintable, type StagedLint, stagedLinters } from "../lib/lint-staged.ts";
 import { preparePrePushTree, type PrePushTree, takePrePushTreeNow } from "../lib/prepush-tree.ts";
 import { type Lane, type LaneOptions, type LaneOutcome, openLane } from "../lib/push-lane.ts";
@@ -234,7 +235,7 @@ export function scanMirror(root: string, dir: string, targets: readonly string[]
   return parseScan(proc.status ?? -1, proc.stdout ?? "", proc.stderr ?? "");
 }
 
-/** The gradle projects of settings.gradle.kts, each with its directory. */
+/** The gradle projects of settings.gradle.kts, each with its directory, the modes its folder listing includes among them. */
 export function gradleModules(root: string): GradleModule[] {
   const settings = join(root, "settings.gradle.kts");
   if (!existsSync(settings)) return [];
@@ -243,6 +244,7 @@ export function gradleModules(root: string): GradleModule[] {
   for (const m of readFileSync(settings, "utf8").matchAll(re)) {
     modules.push({ path: m[1] ?? "", dir: (m[2] ?? "").replace(/\/$/, "") });
   }
+  for (const folder of modeFolders(root)) modules.push({ path: `:modes-${folder}`, dir: `modes/${folder}` });
   return modules;
 }
 
@@ -1272,9 +1274,27 @@ function shellQuote(text: string): string {
   return `'${text.replace(/'/g, `'\\''`)}'`;
 }
 
-/** One hook shim: an exec of this CLI, so the verdict and the exit code are the CLI's own. */
-export function shimText(bun: string, gate: string, verb: string): string {
-  return ["#!/bin/sh", SHIM_BEGIN, `exec ${shellQuote(bun)} ${shellQuote(gate)} hook ${verb} "$@"`, SHIM_END, ""].join("\n");
+/** One hook shim: an exec of this CLI, so the verdict and the exit code are the CLI's own. A tree is judged by the gate it
+ *  carries: the shim runs the tools/gate of the tree git started it in, so a module that tree adds (a mode found by its
+ *  folder listing) is known to the hook that judges it, as CI judges a PR head with that head's gate. [fallback], the
+ *  main checkout's gate, judges a tree that carries none (one older than tools/gate, or a `rev-parse` that fails). */
+export function shimText(bun: string, fallback: string, verb: string): string {
+  return [
+    "#!/bin/sh",
+    SHIM_BEGIN,
+    `gate="$(git rev-parse --show-toplevel 2>/dev/null)/tools/gate/index.ts"`,
+    `[ -f "$gate" ] || gate=${shellQuote(fallback)}`,
+    `exec ${shellQuote(bun)} "$gate" hook ${verb} "$@"`,
+    SHIM_END,
+    "",
+  ].join("\n");
+}
+
+/** The gate a shim falls back to: the main checkout's, the folder above git's common directory, wherever install runs, so
+ *  removing the worktree it ran from never leaves the shim pointing at nothing. */
+export function fallbackGate(root: string): string {
+  const common = gitText(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  return join(dirname(common), "tools", "gate", "index.ts");
 }
 
 /** Writes both shims into [hooksDir]. Idempotent. Refuses to replace a hook that is not a splice shim, and leaves every
@@ -1299,11 +1319,10 @@ export function installShims(hooksDir: string, bun: string, gate: string): strin
 
 export async function hook(argv: readonly string[]): Promise<number> {
   const [verb, ...rest] = argv;
-  // Every worktree runs the main checkout's copy of this script (the shims live in the shared .git/hooks), and git
-  // starts a hook at the top of the tree being committed or pushed. So that tree is the one judged, from where git
-  // started us: read from the script's own place, a worktree that adds a Gradle module had its files judged against
-  // the main checkout's settings.gradle.kts and refused as covered by no check. install writes the shims, so it
-  // stays with the script.
+  // The shims live in the shared .git/hooks and run the gate of the tree git starts them in (shimText), at the top of
+  // the tree being committed or pushed. So that tree is the one judged, from where git started us: read from the
+  // script's own place, a worktree that adds a Gradle module had its files judged against the main checkout's
+  // settings.gradle.kts and refused as covered by no check. install writes the shims, so it stays with the script.
   const lay = verb === "install" ? layout() : layout(process.cwd());
   try {
     // git passes the hook its own arguments (pre-push gets the remote's name and URL); neither is read.
@@ -1311,7 +1330,7 @@ export async function hook(argv: readonly string[]): Promise<number> {
     if (verb === "pre-push") return await prePush(lay, await Bun.stdin.text(), { timings: appendPushTiming, ktlint: ktlintOver }, rest[0] ?? "origin");
     if (verb === "install" && rest.length === 0) {
       const hooksDir = resolve(lay.repoRoot, gitText(lay.repoRoot, ["rev-parse", "--git-path", "hooks"]));
-      for (const path of installShims(hooksDir, process.execPath, join(lay.repoRoot, "tools", "gate", "index.ts"))) {
+      for (const path of installShims(hooksDir, process.execPath, fallbackGate(lay.repoRoot))) {
         console.log(`installed ${path}`);
       }
       return 0;

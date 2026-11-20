@@ -8,6 +8,7 @@ import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 import splice.core.util.TopologyRefusal
+import splice.topology.BootSettings
 import splice.topology.LocalRowFindings
 import splice.topology.RetiredSettings
 import splice.topology.TopologyLoader
@@ -28,7 +29,7 @@ internal class RestartTopology(
 ) {
     /** A retired knob this command's environment or splice's saved settings still set: the daemon this restart
      *  starts would refuse it as boot does. */
-    private val retired = RetiredSettings(env)
+    private val retired = BootSettings(RetiredSettings(env))
 
     /** The topology, or null when the restart must not proceed. The daemon that comes back reads this same file
      *  before it boots, so a file this CLI cannot read is one no successor can boot on: nothing is stopped. A

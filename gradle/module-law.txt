@@ -4,6 +4,8 @@
 # after the arrow may depend on no project. A module absent from this file is unrestricted (:app). Changing a
 # line is changing the architecture: do it deliberately, and say why in the commit.
 # splice.module-law.gradle.kts reads this file to fail the build, and ModuleLawsTest reads it to grade the edges.
+# A line whose module ends in `*` is a pattern: it governs every module whose path starts with what comes before the
+# `*`, except one this file names exactly (an exact line wins over a pattern).
 
 :core ->
 # the Claude Code side: isolated client state plus the concrete transcript reader. It speaks core
@@ -85,6 +87,11 @@
 # through the share module's own writers, so the other machine reads a server as it reads a sharing machine. It builds
 # the clock its relay's keepalives go by on the upstream runtime's Waiter.
 :features-server -> :core :integrations-http :features-share :integrations-upstream
+# the modes (modes/README.md): the contract and catalog every mode builds on, which speaks core only, and every mode.
+# A mode is one folder, governed by one rule: it reaches core and the contract, never another mode or a feature, and
+# a new mode is governed the moment its folder exists, with no line added for it.
+:modes-api -> :core
+:modes-* -> :core :modes-api
 :quality-architecture ->
 # :quality-compiler-plugin is a Kotlin-compiler plugin: zero project deps in main (it talks to the compiler,
 # not our modules), wired into every build only via the -Xplugin classpath (see gateway/build.gradle.kts).

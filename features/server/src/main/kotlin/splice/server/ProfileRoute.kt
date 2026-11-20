@@ -40,7 +40,7 @@ internal class ProfileRoute(
     private val io: CoroutineDispatcher,
     /** Whose word on how a laptop reached the server is taken: the proxies `[server] trusted_proxies` names. */
     private val addresses: ClientAddresses,
-    /** Whether the listener speaks HTTPS itself. */
+    /** Whether the listener speaks SCHEME_HTTPS itself. */
     private val secure: Boolean,
 ) {
     private val json = Json { encodeDefaults = true }
@@ -74,8 +74,8 @@ internal class ProfileRoute(
         val peer = call.request.origin.remoteAddress
         val headers = call.request.headers
         val scheme = addresses.proxied(peer, headers[HttpHeaders.XForwardedProto])?.lowercase()
-            ?.takeIf { it == HTTP || it == HTTPS }
-            ?: if (secure) HTTPS else HTTP
+            ?.takeIf { it == SCHEME_HTTP || it == SCHEME_HTTPS }
+            ?: if (secure) SCHEME_HTTPS else SCHEME_HTTP
         val host = (addresses.proxied(peer, headers[HttpHeaders.XForwardedHost]) ?: headers[HttpHeaders.Host])
             ?.takeIf(AUTHORITY::matches)
             ?: "${call.request.origin.localAddress}:${call.request.origin.localPort}"
@@ -83,8 +83,8 @@ internal class ProfileRoute(
     }
 }
 
-private const val HTTP = "http"
-private const val HTTPS = "https"
+private const val SCHEME_HTTP = "http"
+private const val SCHEME_HTTPS = "https"
 
 // A host and an optional port, as a Host header names them: a name, an IPv4 address or a bracketed IPv6 one.
 private val AUTHORITY = Regex("""^(\[[0-9A-Fa-f:.]+]|[A-Za-z0-9.-]+)(:\d{1,5})?$""")

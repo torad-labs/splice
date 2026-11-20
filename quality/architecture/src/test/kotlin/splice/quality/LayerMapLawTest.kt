@@ -18,6 +18,7 @@ internal enum class Layer(val key: String) {
     FEATURE("feature"),
     COMPOSITION("composition"),
     TOOLING("tooling"),
+    MODE("mode"),
 }
 
 /** The layers a file in [layer] may import from, read off the direction of the module graph. */
@@ -28,6 +29,7 @@ internal fun mayImport(layer: Layer): Set<Layer> = when (layer) {
     Layer.COMPOSITION -> Layer.entries.toSet()
     // Tooling is graded like every layer: it may import tooling, and no product module.
     Layer.TOOLING -> setOf(Layer.TOOLING)
+    Layer.MODE -> setOf(Layer.DOMAIN, Layer.MODE)
 }
 
 /** The parsed layer-map.toml: each layer's Gradle module paths, and the composition root's file. */
@@ -56,6 +58,22 @@ internal fun parseLayerMap(text: String): LayerMap {
         "layer-map.toml has no [composition-root] file"
     }
     return LayerMap(modulesOf, root)
+}
+
+/** [map] with each pattern entry (`:modes-*`) replaced by the [declared] modules it matches, leaving out a module the map
+ *  names exactly: an exact entry wins over a pattern, as in the module law. */
+internal fun expandPatterns(map: LayerMap, declared: Set<String>): LayerMap {
+    val exact = map.modulesOf.values.flatten().filterNot { it.endsWith("*") }.toSet()
+    val expanded = map.modulesOf.mapValues { (_, modules) ->
+        modules.flatMap { entry ->
+            if (!entry.endsWith("*")) {
+                listOf(entry)
+            } else {
+                declared.filter { it.startsWith(entry.dropLast(1)) && it !in exact }.sorted()
+            }
+        }
+    }
+    return map.copy(modulesOf = expanded)
 }
 
 /** Every module the build declares must play exactly one layer, and the map may name no other module. */
@@ -132,7 +150,7 @@ class LayerMapLawTest {
         val stream = checkNotNull(LayerMapLawTest::class.java.getResourceAsStream(LAYER_MAP_RESOURCE)) {
             "no $LAYER_MAP_RESOURCE on the test classpath — the layer law has no map to read"
         }
-        parseLayerMap(stream.use { it.readBytes().decodeToString() })
+        expandPatterns(parseLayerMap(stream.use { it.readBytes().decodeToString() }), map.modules)
     }
 
     private fun scanned(): List<ScannedFile> = layerMap.modulesOf
@@ -265,5 +283,20 @@ class LayerMapLawTest {
         assertEquals(Layer.DOMAIN, ownerOf("splice.core.util.Json", owners))
         assertEquals(Layer.ADAPTER, ownerOf("splice.up.Client", owners))
         assertEquals(null, ownerOf("kotlinx.coroutines.Job", owners))
+    }
+
+    @Test
+    fun `a pattern entry classifies every module it matches, and an exact entry wins over it`() {
+        val declared = setOf(":core", ":modes-api", ":modes-echo", ":modes-template")
+        val map = LayerMap(
+            modulesOf = mapOf(Layer.DOMAIN to listOf(":core"), Layer.MODE to listOf(":modes-api", ":modes-*")),
+            compositionRootFile = "app/Main.kt",
+        )
+        val expanded = expandPatterns(map, declared)
+        assertEquals(listOf(":modes-api", ":modes-echo", ":modes-template"), expanded.modulesOf[Layer.MODE])
+        assertEquals(emptyList<String>(), classificationProblems(expanded, declared))
+        val modeImportsFeature =
+            ScannedFile(":modes-echo", Layer.MODE, "E.kt", "splice.modes.echo", listOf("splice.head.X"))
+        assertEquals(1, importBreaches(listOf(modeImportsFeature), mapOf("splice.head" to Layer.FEATURE)).size)
     }
 }

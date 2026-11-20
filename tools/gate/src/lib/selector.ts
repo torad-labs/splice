@@ -15,9 +15,27 @@ import { catalogRule, docsRule, fullRule, type ScopeRules, repoScope } from "./s
 /** The module law as a graph: each module to the project modules its main configurations may depend on. */
 export type ModuleGraph = ReadonlyMap<string, readonly string[]>;
 
+/**
+ * The module law as read: a line whose module ends in `*` (`:modes-*`) governs every module whose path starts with what
+ * comes before it, unless the law names that module exactly. Every lookup resolves that rule, so a mode is a module of
+ * the law the moment its folder exists, with no line of its own.
+ */
+class LawGraph extends Map<string, readonly string[]> {
+  override get(module: string): readonly string[] | undefined {
+    const exact = super.get(module);
+    if (exact !== undefined) return exact;
+    for (const [key, deps] of this) if (key.endsWith("*") && module.startsWith(key.slice(0, -1))) return deps;
+    return undefined;
+  }
+
+  override has(module: string): boolean {
+    return this.get(module) !== undefined;
+  }
+}
+
 /** Parses gradle/module-law.txt, whose lines are `<module> -> <dep> <dep>`; `#` lines and blanks are skipped. */
 export function parseModuleGraph(text: string): ModuleGraph {
-  const graph = new Map<string, string[]>();
+  const graph = new LawGraph();
   for (const raw of text.split("\n")) {
     const line = raw.trim();
     if (line === "" || line.startsWith("#")) continue;

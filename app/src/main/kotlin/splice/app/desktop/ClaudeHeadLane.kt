@@ -13,7 +13,9 @@ package splice.app.desktop
 
 import io.ktor.server.application.ApplicationCall
 import splice.client.models.AnthropicTiers
+import splice.core.model.ClientModelNames
 import splice.core.topology.CLAUDE_COMMAND
+import splice.core.topology.HeadConfig
 import splice.core.topology.Topology
 import splice.core.turn.CLAUDE_DOOR
 import splice.core.util.WallClock
@@ -55,10 +57,17 @@ internal class ClaudeHeadLane(private val topology: Topology) {
         return topology.heads.entries
             .filter { (_, head) ->
                 head.discoveryPrefix.let { it.isNotEmpty() && it != own && model.startsWith(it) } ||
-                    head.claude.readable?.prefix.orEmpty().let { it.isNotEmpty() && model.startsWith(it) }
+                    readablePrefixes(head).any { it.isNotEmpty() && model.startsWith(it) }
             }
             .maxByOrNull { (_, head) -> head.discoveryPrefix.length }?.key
     }
+
+    /** The prefixes [head]'s readable names start with: the one splice.toml gives it, and the one ClientModelNames
+     *  makes from its selectors' prefix when that names another lab. */
+    private fun readablePrefixes(head: HeadConfig): List<String> = listOfNotNull(
+        head.claude.readable?.prefix,
+        ClientModelNames.prefixOf(head.discoveryPrefix).takeIf { it != head.discoveryPrefix },
+    )
 
     private inner class Opened(private val relay: ShareRelay, private val heads: DesktopHeads) {
         private val voice = RefusalVoice(CLAUDE_ERROR_PREFIX)
@@ -66,10 +75,7 @@ internal class ClaudeHeadLane(private val topology: Topology) {
         /** [ask] relayed to the head that serves its model, or refused by name when none does. */
         suspend fun answer(call: ApplicationCall, ask: OtherAsk) {
             val lineup = heads.lineup()
-            val selector = lineup.heads.firstNotNullOfOrNull { head ->
-                head.catalog.client.readable?.selectorOf(ask.model, head.catalog)
-            } ?: ask.model
-            val (head, model) = lineup.find(selector)
+            val (head, model) = lineup.find(ask.model)
                 ?: return voice.refuse(call, HttpStatus.BAD_REQUEST, notServed(lineup, ask.model))
             val caller = HeadLaneCaller(relay, held(model.model))
             val asked = DoorAsk(ask.request, ask.model, ask.session)

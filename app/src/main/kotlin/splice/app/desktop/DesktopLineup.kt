@@ -74,11 +74,12 @@ internal data class DesktopLineup(val heads: List<DoorHead>, val models: List<Do
     /** The head and model of [selector], or null when no head in the door lists it. A row the picker spells with a
      *  window hint (`[1m]`) is found by its name without the hint too, since Claude Code strips the hint from the name
      *  a request carries (ClientWindowWitness): until Nov 19, 2026 every turn on such a row, each Muse model among
-     *  them, was refused as not in the door. A row spelled exactly as asked wins. */
+     *  them, was refused as not in the door. A row spelled exactly as asked wins. A readable name (ReadableNames,
+     *  `claude-xai--4.7`) finds the row of the selector it stands for. */
     fun find(selector: String): Pair<DoorHead, DoorModel>? {
         val model = models.firstOrNull { it.model == selector }
             ?: models.firstOrNull { ModelTierSuffix.strip(it.model) == selector }
-            ?: return null
+            ?: return heads.firstNotNullOfOrNull { it.catalog.names.selectorOf(selector) }?.let(::find)
         return heads.firstOrNull { it.key == model.head }?.let { it to model }
     }
 }

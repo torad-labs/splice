@@ -23,6 +23,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.model.CLIENT_WINDOW_HEADER
 import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -91,12 +92,14 @@ class ClientWindowBetaTest {
         mock.stop()
     }
 
-    /** The `input_tokens` the client is told for one non-streaming turn on the bare id, given [betas]. */
-    private fun reportedInput(betas: String, session: String? = null): Long = runBlocking {
+    /** The `input_tokens` the client is told for one non-streaming turn on the bare id, given [betas], from a process
+     *  whose launch named [launchWindow]. */
+    private fun reportedInput(betas: String, session: String? = null, launchWindow: Long? = null): Long = runBlocking {
         val reply = client.post("http://127.0.0.1:${head.port}/v1/messages") {
             header("Content-Type", "application/json")
             header("anthropic-beta", betas)
             session?.let { header("x-claude-code-session-id", it) }
+            launchWindow?.let { header(CLIENT_WINDOW_HEADER, it.toString()) }
             setBody(
                 """{"model":"gpt-6-sol","stream":false,"max_tokens":1000,"system":"SCENARIO:multipart",""" +
                     """"messages":[{"role":"user","content":"go"}]}""",
@@ -124,5 +127,24 @@ class ClientWindowBetaTest {
         // 1e6 / 500k = 2.0 from the beta; the post alone would say 300k / 500k = 0.6
         assertEquals(UPSTREAM_INPUT_TOKENS * 2, reportedInput(ONE_MILLION_BETA, session = "s1"))
         assertEquals(UPSTREAM_INPUT_TOKENS * 6 / 10, reportedInput(OTHER_BETAS, session = "s1"), "no witness: the post")
+    }
+
+    // #706: a session first launched when the row declared 229,376 kept that window under its id. Resumed by a
+    // process launched on today's 500k, its main thread on `[1m]` never posted again, and a subagent without the 1M
+    // beta was shown 0.46x its real count, so it never compacted and the backend refused it at its slot.
+    @Test
+    fun `a resumed session's subagent is counted against the window its own process was launched with`() {
+        windows.record("resumed", 229_376L)
+
+        assertEquals(
+            UPSTREAM_INPUT_TOKENS,
+            reportedInput(OTHER_BETAS, session = "resumed", launchWindow = ROW_WINDOW),
+            "500k / 500k: the real count, not the earlier launch's 229,376 / 500k",
+        )
+        // the main thread on `[1m]` in the same process is still counted against the client's 1M
+        assertEquals(
+            UPSTREAM_INPUT_TOKENS * 2,
+            reportedInput(ONE_MILLION_BETA, session = "resumed", launchWindow = ROW_WINDOW),
+        )
     }
 }

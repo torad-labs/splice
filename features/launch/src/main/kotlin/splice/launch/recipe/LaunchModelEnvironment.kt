@@ -2,6 +2,7 @@
 package splice.launch.recipe
 
 import splice.client.ClaudeTiers
+import splice.core.model.CLIENT_WINDOW_HEADER
 import splice.launch.LaunchSpec
 
 internal object LaunchModelEnvironment {
@@ -54,6 +55,11 @@ internal object LaunchModelEnvironment {
                 put(ClaudeTiers.description(slot), label)
             }
         }
+
+    /** The custom header naming the window [windows] plants, or none when it plants none. #706: a session id outlives
+     *  its process, so the head reads the window from the request the process sent, never from the id. */
+    fun windowHeader(spec: LaunchSpec): List<String> =
+        if (spec.gateway.clientModels) emptyList() else listOf("$CLIENT_WINDOW_HEADER: ${spec.models.contextWindow}")
 
     fun windows(spec: LaunchSpec): Map<String, String> {
         if (spec.gateway.clientModels) return emptyMap()

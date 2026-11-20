@@ -28,7 +28,8 @@
     ".campaign/checks/modes/tsconfig.json",
     ".campaign/checks/reply-stream/tsconfig.json",
     ".campaign/checks/reply-view/tsconfig.json",
-    ".campaign/checks/signin-e2e/tsconfig.json"
+    ".campaign/checks/signin-e2e/tsconfig.json",
+    ".campaign/checks/gateway-no-heads/tsconfig.json"
   ],
   "excused": {},
   "baseline": {}

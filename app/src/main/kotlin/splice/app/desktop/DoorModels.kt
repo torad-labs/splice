@@ -13,6 +13,7 @@ import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.client.models.AnthropicTiers
+import splice.core.model.CLAUDE_CODE_ONE_MILLION
 import splice.core.model.ModelTierSuffix
 import splice.core.util.JsonScalars
 
@@ -83,7 +84,7 @@ internal class DoorModels {
     private fun windows(into: JsonObjectBuilder, head: DoorHead, variants: List<DoorModel>, other: Boolean) {
         val windows = variants.map { head.catalog.contextWindowFor(it.upstream) }
         val tagged = variants.map { it.upstream.endsWith(ONE_MILLION, ignoreCase = true) }
-        val million = variants.indices.map { tagged[it] || windows[it] >= ONE_MILLION_TOKENS }
+        val million = variants.indices.map { tagged[it] || windows[it] >= CLAUDE_CODE_ONE_MILLION }
         into.put("supports_1m", million.any { it })
         val onlyMillion = if (other) million.all { it } else tagged.all { it }
         if (onlyMillion) into.put("prefer_1m", true)
@@ -92,7 +93,6 @@ internal class DoorModels {
 }
 
 private const val ONE_MILLION = "[1m]"
-private const val ONE_MILLION_TOKENS = 1_000_000L
 
 /** Claude's own models take every effort level Desktop offers; another lab's model, the highest but one, which splice
  *  maps onto what that model's dialect takes. */

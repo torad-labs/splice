@@ -399,7 +399,7 @@ function askAgainSoon() {
   againTimer = setTimeout(async () => { await load(); render({ flip: true }); }, 5000);
 }
 const FRESH_UI = () => ({ lane: {}, signin: {}, editor: null, addProv: null, menu: null, armed: null, removeErr: null, rename: null, renameErr: null, renameDraft: null, replace: null, pulse: null, naming: null,
-  moving: null, slotErr: null, orderErr: null, keyErr: null, orderSaving: null, removing: null, resets: null, offerFb: null, offerBusy: null, offerSaid: null });
+  slotErr: null, orderErr: null, keyErr: null, orderSaving: null, removing: null, resets: null, offerFb: null, offerBusy: null, offerSaid: null });
 // why: the Day rows whose Not read reason is open; reasons: the refusals whose reason splice gave is open under their
 // word; doors: the logins whose every session door is out; enter: the one form or menu just opened, which rises into
 // place once and never again on a later redraw; shook: the refusal just drawn, which shakes once and then stands still
@@ -1011,9 +1011,7 @@ function slotHtml(p, c, a, serves) {
   // One already waiting to be asked (asking) has nothing left to press: its line says its next turn asks.
   if (held(a)) return `${err}${pin}${a.blocked && !a.asking && c ? tryAct(p, c, a) : ""}${locked(false, "")}`;
   if (p.kind === "plan" && c) {
-    // armed, Use now waits in the row under the card's head, beside the sessions it would cut (armRow)
-    const armed = ui.moving && ui.moving.a === a.id && ui.moving.c === c.cmd;
-    return `${err}${chips}${armed ? "" : useAct(p, c, a, "quiet")}`;
+    return `${err}${chips}${useAct(p, c, a, "quiet")}`;
   }
   return "";
 }
@@ -1032,14 +1030,6 @@ const modelsHeld = (weeks) => (Array.isArray(weeks) ? weeks : [])
 // where the turns go, or the models it cannot serve yet; nothing when the pin serves every model
 const pinWhy = (pool) => pool?.pin_refusal || modelsHeld(pool?.pin_models_held);
 const useAct = (p, c, a, cls) => `<button class="act ${cls}" data-act="use" data-p="${p.id}" data-c="${esc(c.cmd)}" data-a="${a.id}">Use now</button>`;
-// Use now asked once: the sessions with a request in flight on the command, each a chip to its session, then the act
-// that switches and the way out, on a row of its own under the card's head. The confirming act fills in the text's own
-// ink, never the limit red, which is for limits and failures.
-function armRow(p, c, a) {
-  const mv = ui.moving;
-  if (!c || !mv || mv.a !== a.id || mv.c !== c.cmd) return "";
-  return `<div class="armrow${ui.enter === "arm" ? " unfold" : ""}">${armedAsk("Switches at its next request", mv.cut, useAct(p, c, a, "danger"), '<button class="act quiet" data-act="keep-use">Cancel</button>')}</div>`;
-}
 // A key in the environment or a key file shadows the stored copy (KeyRoutes.kt:7-9): saving one there changes nothing.
 const keyActs = (a) => a.from === "store";
 function menuItems(p, a) {
@@ -1397,7 +1387,7 @@ function cardHtml(p, c, a, i, serves) {
   const pinNote = c && !slotErr && c.pin === a.id && c.pinWhy ? { why: c.pinWhy } : null;
   return `<article class="${cls}" data-key="card:${spot}" data-p="${p.id}" data-a="${a.id}">${socket}<div class="top">${grip}`
     + `${nameHtml(p, a, spot)}${nameIt}${sub}${src}<div class="slot${slotErr && ui.shook === slotKey(a, c) ? " failed" : ""}">${slotHtml(p, c, a, serves)}</div>${more}</div>`
-    + `${slotErr ? reasonHtml(slotErr, slotKey(a, c), "onslot") : pinNote ? reasonHtml(pinNote, null, "onslot") : ""}${armRow(p, c, a)}`
+    + `${slotErr ? reasonHtml(slotErr, slotKey(a, c), "onslot") : pinNote ? reasonHtml(pinNote, null, "onslot") : ""}`
     + `${mail}${renameErr ? `<div class="rename-err${ui.shook === "rename" ? " failed" : ""}" id="rename-err">${refusalHtml(renameErr, "rename")}${reasonHtml(renameErr, "rename")}</div>` : ""}`
     + `${ui.menu === spot ? menuHtml(p, a, spot) : ""}${resetsHtml(p, a, spot)}${body}${sessionsHtml(p, a, i + 1, !!live)}</article>`;
 }
@@ -1782,7 +1772,7 @@ function shapeOf(L) {
     doors: Object.fromEntries(data.flatMap((p) => p.accounts).map((a) => [a.id, doors(a)]).filter(([, k]) => k > 0)) };
 }
 // the board at rest: an open form, menu, reason or list of doors is not the shape the next visit lands on
-const atRest = () => !(ui.menu || ui.rename || ui.replace || ui.editor || ui.naming || ui.addProv || ui.moving || ui.resets || Object.keys(ui.signin).length || ui.why.size || ui.doors.size || ui.moves.size);
+const atRest = () => !(ui.menu || ui.rename || ui.replace || ui.editor || ui.naming || ui.addProv || ui.resets || Object.keys(ui.signin).length || ui.why.size || ui.doors.size || ui.moves.size);
 const tall = (h) => (h ? `;min-height:${h}rem` : "");
 const ghostDoors = (n) => (n ? `<div class="onlogin" aria-hidden="true">${Array.from({ length: n }, (_, j) => `<span class="sdoor gdoor"><i class="ghost lampg"></i>${GHOST.bar(4.2 + (j % 3) * 1.3)}</span>`).join("")}</div>` : "");
 function ghostCard(kind, [rows, doors, h, over = 0, moves = 0], k) {
@@ -2491,12 +2481,9 @@ document.addEventListener("click", async (e) => {
     // provider holds for one model's week pins, and the line under it names that model and when it comes back, so its
     // turns still going to another login is no surprise (Nov 3, 2026: "clicking 'use now' also didnt work"). That line
     // is the pool's word on its pin, which every load reads (pinWhy), so it outlives the page and the daemon alike.
-    case "keep-use": ui.moving = null; render(); break;
+    // It acts on its one press (Nov 19, 2026): a request already in flight finishes on the login it started on, so a
+    // second press to confirm the sessions mid-request guarded nothing.
     case "use": {
-      const armed = ui.moving?.a === a.id && ui.moving?.c === k.cmd;
-      ui.moving = null;
-      const cut = armed ? [] : await midRequest([k.head]);
-      if (cut.length) { ui.moving = { a: a.id, c: k.cmd, cut }; ui.enter = "arm"; render(); break; }
       k.pin = a.id; render({ flip: true });
       const res = await API.post(headPath(k, "switch"), { label: labelOn(a, k.head) });
       await refresh(null, res.ok ? null : () => { ui.slotErr = { a: a.id, c: k.cmd, ...mutationError(res, "Not switched") }; refused(slotKey(a, k)); });

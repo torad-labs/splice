@@ -36,6 +36,7 @@ import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
 import splice.core.model.ModelTierSuffix
 import splice.core.model.PublishedRates
+import splice.core.model.ReadableIds
 import splice.core.model.WindowRule
 import splice.core.topology.telemetry.TelemetryConfig
 
@@ -386,7 +387,11 @@ public data class ProviderConfig(
                 compactionReserveDefaults = CodexCompactionReserves
                     .takeIf { auth.kind == AuthKind.ChatgptOAuth.wire },
             ),
-            client = ClientModelPolicy(tierModels = head.tierModels(), open = clientPicksModels),
+            client = ClientModelPolicy(
+                tierModels = head.tierModels(),
+                open = clientPicksModels,
+                readable = head.readablePrefix.takeIf { it.isNotEmpty() }?.let { ReadableIds(it, head.readableStrip) },
+            ),
             // A head whose client picks its own models takes a turn on an id no row names (this provider
             // accepts it, [clientPicksModels]), and splice ships that id's published card: the catalog
             // carries the host so the pricer can read it (TurnPrice.ratesFor).

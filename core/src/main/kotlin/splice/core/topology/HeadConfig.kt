@@ -23,6 +23,11 @@ public data class HeadConfig(
     val provider: String,
     val port: Int,
     @SerialName("discovery_prefix") val discoveryPrefix: String,
+    /** The prefix of this head's readable model names (`claude-xai--`), taken wherever a selector is, for a client
+     *  that refuses an id naming another lab (ReadableIds). Empty: the head has none. */
+    @SerialName("readable_prefix") val readablePrefix: String = "",
+    /** The start of each model id its readable name leaves out (`grok-`, any case); empty leaves the id whole. */
+    @SerialName("readable_strip") val readableStrip: String = "",
     /** Required on every head except one whose provider forwards the client's own Claude login, where
      *  the client picks its models; a pin there selects only the launch default, never the roster. */
     @SerialName("pinned_model") val pinnedModel: String = "",

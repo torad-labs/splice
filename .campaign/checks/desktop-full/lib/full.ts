@@ -171,6 +171,14 @@ export async function allModels(url: string, key: string, limit = 1000): Promise
   throw new Error("GET /v1/models never stopped paging");
 }
 
+/** The id discovery gives the row of [selector] (df-models): `claude-splice-` and 12 decimal digits of the selector's
+ *  SHA-256, its first 8 bytes read as one big-endian unsigned number, modulo 10^12, zero-padded. */
+export function rowId(selector: string): string {
+  const sum = new Bun.CryptoHasher("sha256").update(selector).digest();
+  const n = new DataView(sum.buffer, sum.byteOffset, 8).getBigUint64(0, false) % 1_000_000_000_000n;
+  return `claude-splice-${n.toString().padStart(12, "0")}`;
+}
+
 // Desktop's own rule for which rows a gateway lists (index.chunk-DOKiptke.js, Desktop 5.11492.5): an ID that reads as
 // Claude. The code also reads a tier it knows, but the live run on the real Desktop (Nov 19, sandbox) saw every row
 // whose id names another vendor dropped whatever its tier, so a row is kept here only when its id reads as Claude.

@@ -8855,7 +8855,7 @@ A turn through the Splice gateway naming `claude-<provider>--<model id>` (from `
 
 Try it: two mock providers with different windows and keys, no head; a turn on each reaches only its mock, with its own key; the input it reports differs by the windows' ratio; stop one mock: an error naming it, the other still answers; start it: it answers again.
 Proven by: CAMPAIGN_HERE=1 rig remote run --to build@buildbox -- bun test ./.campaign/checks/gateway-no-heads/turns.test.ts
-Tests that pinned door turns being relayed to running heads are rewritten in the same change, and the commit says so. Reasoning effort stays part of the prompt-cache key and is never varied by turn type; mirror_reasoning stays false.'''
+Tests that pinned door turns being relayed to running heads are rewritten in the same change, and the commit says so. Vendor facts stay in their provider module: the lane reads a provider's dialect and quirks from where a head reads them today, and a shared file (DesktopDoor, DoorRouting, the lane wiring) carries at most one dispatch line per dialect, never a provider's name or a vendor's rule. Reasoning effort stays part of the prompt-cache key and is never varied by turn type; mirror_reasoning stays false.'''
 checks = [
   'CAMPAIGN_HERE=1 rig remote run --to build@buildbox -- bun test ./.campaign/checks/gateway-no-heads/turns.test.ts',
 ]
@@ -8892,6 +8892,7 @@ The selectors callers use today keep working with no head, through `[gateway] al
 
 Try it: two providers, heads `rock` (prefix `claude-rock--`) and `zeta` (prefix `zeta--`) on them, and `[gateway] aliases` mapping both prefixes; all four spellings run on the right mock; remove the heads and restart: the same list, all four still run.
 Proven by: CAMPAIGN_HERE=1 rig remote run --to build@buildbox -- bun test ./.campaign/checks/gateway-no-heads/aliases.test.ts
+A gateway turn reads its provider alone even where a head on that provider holds a value of its own: the check's heads hold a `context_window` (16384) their providers do not share (each provider sets its own, so this is no boot finding, decision 9), and every spelling, aliased or canonical, with the heads there or removed, reports the same usage, scaled by the provider's window and never the head's. So no gateway turn is relayed through a head or reads a head block.
 Files: DoorRouting/DesktopLineup.find and the door's selector test in app/src/main/kotlin/splice/app/desktop/, the lane launch's model check (`splice claude door --model`).'''
 checks = [
   'CAMPAIGN_HERE=1 rig remote run --to build@buildbox -- bun test ./.campaign/checks/gateway-no-heads/aliases.test.ts',
@@ -8918,6 +8919,7 @@ status = 'todo'
 owner = ''
 blocked_by = [
   'gnh-turns',
+  'gnh-aliases',
 ]
 guard = false
 spec = '''
@@ -8925,7 +8927,7 @@ A provider that runs on added Claude accounts (`auth = { kind = "client" }`, dia
 
 Try it: an anthropic-passthrough provider on `kind = "client"` with one account written under claude-accounts/<provider>/, no head: the list shows claude-opus-5-5 and claude-haiku-5-5; turns by both spellings carry the added account's token; a second daemon with the account under head `claude` finds it under the provider after start and keeps serving once the head is removed.
 Proven by: CAMPAIGN_HERE=1 rig remote run --to build@buildbox -- bun test ./.campaign/checks/gateway-no-heads/claude.test.ts
-Files: app/src/main/kotlin/splice/app/auth/claude/ (ClaudeAccountFolders and AddedClaudeLogins), the lane's account pool (app/src/main/kotlin/splice/app/head/HeadAccountPools.kt and the Claude account wiring in app/src/main/kotlin/splice/app/provider/), the lineup's added-accounts read.'''
+It waits on gnh-aliases because both change DesktopLineup.kt (its find and its added-accounts read). Files: app/src/main/kotlin/splice/app/auth/claude/ (ClaudeAccountFolders and AddedClaudeLogins), the lane's account pool (app/src/main/kotlin/splice/app/head/HeadAccountPools.kt and the Claude account wiring in app/src/main/kotlin/splice/app/provider/), the lineup's added-accounts read.'''
 checks = [
   'CAMPAIGN_HERE=1 rig remote run --to build@buildbox -- bun test ./.campaign/checks/gateway-no-heads/claude.test.ts',
 ]

@@ -9,7 +9,7 @@ import { Provider } from "../harness/lib/capability.ts";
 import { Splice, freePort, json, mockHead } from "../server/lib/harness.ts";
 import { Upstream } from "../server/lib/upstream.ts";
 import { type Door, doorTurn, slottedHead, turnOn } from "../desktop/lib/desktop.ts";
-import { type ModelRow, addClaudeAccount, allModels, claudeHeadToml, desktopKeeps, modelsPage } from "./lib/full.ts";
+import { type ModelRow, addClaudeAccount, allModels, claudeHeadToml, desktopKeeps, modelsPage, rowId } from "./lib/full.ts";
 
 setDefaultTimeout(120_000);
 
@@ -92,6 +92,21 @@ describe("df-models", () => {
     }
   });
 
+  test("a session that starts on a row's id is on that row's head, so its tier aliases run there, and the Claude row's id runs Claude on the added account", async () => {
+    const rows = bySelector(await allModels(d.url, d.key));
+    const session = crypto.randomUUID();
+    const big = rows["claude-astra--gpt-astra-large"]?.id ?? "(no row)";
+    expect((await doorTurn(d.url, { key: d.key, model: big, content: "hi", session })).status).toBe(200);
+    const atAstra = astra.completions().length;
+    expect((await doorTurn(d.url, { key: d.key, model: "haiku", content: "hi", session })).status).toBe(200);
+    expect(astra.completions()[atAstra]?.body?.model).toBe("gpt-astra-small");
+    const opus = rows["claude--claude-opus-5-5"]?.id ?? "(no row)";
+    const atAnthropic = anthropic.turns.length;
+    expect((await doorTurn(d.url, { key: d.key, model: opus, content: "hi", session: crypto.randomUUID() })).status).toBe(200);
+    expect(anthropic.turns[atAnthropic]?.body?.model).toBe("claude-opus-5-5");
+    expect(JSON.stringify(anthropic.turns[atAnthropic]?.headers ?? {})).toContain("sk-ant-oat01-models-check");
+  });
+
   test("each row says which command serves it", async () => {
     const rows = bySelector(await allModels(d.url, d.key));
     for (const p of terminalPicker()) expect([p.model, rows[p.model]?.description ?? ""]).toEqual([p.model, expect.stringContaining(p.command)]);
@@ -103,6 +118,11 @@ describe("df-models", () => {
       expect(r.id).toMatch(/^claude-splice-\d{12}$/);
       expect([r.id, ["opus", "sonnet", "haiku", "fable"].includes(String(r.anthropic_family_tier))]).toEqual([r.id, true]);
     }
+  });
+
+  test("a row's id comes from its selector alone, so it is the same at every launch: claude-splice- and 12 digits of the selector's SHA-256", async () => {
+    const rows = bySelector(await allModels(d.url, d.key));
+    for (const p of terminalPicker()) expect([p.model, rows[p.model]?.id]).toEqual([p.model, rowId(p.model)]);
   });
 
   test("a row's tier is the one its head names it for, its own for a Claude model, and opus for a model no tier names", async () => {

@@ -14,6 +14,14 @@
 // one rode its first turn after the restart on the launch env's window instead of its own (the
 // "one raw turn after a restart" residual, measured on 5 of 8 sessions that afternoon). The file
 // is a warm start, not a source of truth: a session keeps posting, and a post always wins over it.
+//
+// NOT THE PROCESS (#706, 2026-11-20): a session id outlives the process that posted for it. A resume (`-r`,
+// `--continue`, `/resume` inside another process) carries the id into a process launched with another env window,
+// and a session whose main thread runs a `[1m]` row never posts an env-governed window, so the old process's
+// number stayed and scaled the new process's subagents: 229,376 on a row moved to 491,520, a subagent shown 0.47x
+// its real count, never compacted, refused by the backend at its slot. So a launch names its window on every
+// request ([CLIENT_WINDOW_HEADER]) and that request's own word outranks this registry, which still answers for a
+// process splice did not launch.
 package splice.core.model
 
 import kotlinx.serialization.SerializationException
@@ -33,6 +41,10 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 
 private const val DEFAULT_CAPACITY = 512
+
+/** The header a launched session names its CLAUDE_CODE_MAX_CONTEXT_TOKENS in (ANTHROPIC_CUSTOM_HEADERS carries it), so
+ *  every request says the window the process that sent it divides an env-governed id's count by. */
+public const val CLIENT_WINDOW_HEADER: String = "x-splice-client-window"
 
 /** Session id -> the window Claude Code computed for an env-governed id in that process. Bounded
  *  (least-recently-touched eviction) since sessions come and go for the daemon's whole life. */

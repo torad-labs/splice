@@ -120,8 +120,11 @@ class LaunchSpecClientAuthTest {
 
         val timeout = env.getValue("API_TIMEOUT_MS").toLong()
         assertTrue(timeout > 600_000L + 7.days.inWholeMilliseconds, "timeout $timeout")
+        // #706: every request also names the window this process was launched with, since a resumed session id
+        // can carry another launch's window in the head's registry.
+        val window = env.getValue("CLAUDE_CODE_MAX_CONTEXT_TOKENS")
         assertEquals(
-            listOf("x-team: blue", "x-splice-client-wall-ms: $timeout"),
+            listOf("x-team: blue", "x-splice-client-wall-ms: $timeout", "x-splice-client-window: $window"),
             env.getValue("ANTHROPIC_CUSTOM_HEADERS").lines(),
         )
     }

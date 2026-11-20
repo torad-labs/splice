@@ -396,16 +396,18 @@ public class LaunchService(
         }
     }
 
-    /** The ambient ANTHROPIC_CUSTOM_HEADERS without splice's own headers, the session's client wall, and on a head here
-     *  that forwards the client's login, the launch's proof. An outer session's splice headers
-     *  never ride along: its proof would reach a head it was not planted for, or another machine. */
+    /** The ambient ANTHROPIC_CUSTOM_HEADERS without splice's own headers, the session's client wall and window, and
+     *  on a head here that forwards the client's login, the launch's proof. An outer session's splice headers never
+     *  ride along: its proof would reach a head it was not planted for, or another machine, and its window is not
+     *  this launch's. */
     private fun customHeaders(spec: LaunchSpec): String {
-        // Every header splice plants for a session starts "x-splice-" (the client wall, the launch proof).
+        // Every header splice plants for a session starts "x-splice-" (the client wall, the window, the launch proof).
         val ambient = envReader("ANTHROPIC_CUSTOM_HEADERS").orEmpty().lines()
             .filter { it.isNotBlank() && !it.trim().startsWith("x-splice-", ignoreCase = true) }
         // Server mode (F9): a team server's command names this laptop's splice, so an older one is told to upgrade.
         val client = listOfNotNull(spec.teamServer?.let { "$SPLICE_CLIENT_HEADER: $GATEWAY_VERSION" })
-        return (ambient + "$CLIENT_WALL_HEADER: ${spec.gateway.apiTimeoutMs}" + spec.gateway.proofLines + client)
+        val wall = "$CLIENT_WALL_HEADER: ${spec.gateway.apiTimeoutMs}"
+        return (ambient + wall + LaunchModelEnvironment.windowHeader(spec) + spec.gateway.proofLines + client)
             .joinToString("\n")
     }
 

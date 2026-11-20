@@ -104,7 +104,7 @@ internal class TurnStreamer(
             usagePayload = wiring.usagePayloadBuilder(
                 provider.catalog,
                 meta,
-                clientWindow.of(call, meta.scope.sessionId),
+                clientWindow.of(call, provider.catalog, meta),
             ),
             voice = inputs.voice,
         )

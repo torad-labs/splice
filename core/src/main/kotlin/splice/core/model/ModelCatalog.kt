@@ -422,7 +422,8 @@ public data class DiscoveryRow(
  *  before reading any other field, and a session or subagent on one falls back to the default model; a selector such as
  *  `claude-grok--grok-4.7` is one of those. The readable name is [prefix] and the model without [strip]
  *  (`claude-xai--4.7`), and the head takes it wherever it takes a selector. splice.toml sets both per head
- *  (`readable_prefix`, `readable_strip`); the list Desktop is given is written from the same two values. */
+ *  (`readable = { prefix = "claude-xai--", strip = "grok-" }`); the list Desktop is given is written from them. */
+@Serializable
 public data class ReadableIds(val prefix: String, val strip: String = "") {
     /** The readable name of upstream [model], without [prefix]. */
     public fun nameOf(model: String): String =

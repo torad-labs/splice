@@ -12,6 +12,7 @@ package splice.core.topology
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import splice.core.GATEWAY_VERSION
+import splice.core.model.ReadableIds
 import splice.core.prompt.SystemPromptMode
 
 /** V4-124: a `[projects."ROOT"]` table — standing instructions for every session whose working
@@ -81,6 +82,10 @@ public data class ClaudeWrapperConfig(
     val command: String? = null,
     @SerialName("config_dir") val configDir: String? = null,
     val isolate: List<String> = emptyList(),
+    /** The names a Claude client may give this head's models besides its selectors
+     *  (`readable = { prefix = "claude-xai--", strip = "grok-" }`), for one that refuses an id naming another lab
+     *  ([ReadableIds]). Null: the head has none. */
+    val readable: ReadableIds? = null,
 )
 
 @Serializable

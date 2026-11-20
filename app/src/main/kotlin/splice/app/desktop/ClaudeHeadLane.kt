@@ -55,7 +55,7 @@ internal class ClaudeHeadLane(private val topology: Topology) {
         return topology.heads.entries
             .filter { (_, head) ->
                 head.discoveryPrefix.let { it.isNotEmpty() && it != own && model.startsWith(it) } ||
-                    head.readablePrefix.let { it.isNotEmpty() && model.startsWith(it) }
+                    head.claude.readable?.prefix.orEmpty().let { it.isNotEmpty() && model.startsWith(it) }
             }
             .maxByOrNull { (_, head) -> head.discoveryPrefix.length }?.key
     }

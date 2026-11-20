@@ -18,12 +18,6 @@ import splice.launch.recipe.LaunchLoginGuard
 import java.nio.file.Path
 import java.util.UUID
 
-// why: what a Remove on Claude Code's own login is answered with. That file is the login every `claude` session on the
-// machine runs on: on Nov 13, 2026 a Remove on it deleted it and every session said "Not logged in" until a /login.
-private const val OWN_LOGIN_KEPT =
-    "This is Claude Code's own login, the one every claude session on this machine runs on, so splice never removes " +
-        "it. To sign it out, run /logout in Claude Code."
-
 internal class ClaudeLoginOwner(
     private val locations: List<ClaudeLoginLocation>,
     private val reads: ClaudeLoginRead,
@@ -33,13 +27,16 @@ internal class ClaudeLoginOwner(
 ) : ClaudeLoginPlaces, LaunchLoginGuard, ClaudeCarrying by carried {
     private val lock = Any()
     private val logins = locations.associate { it.id to ClaudeLogins(it.storeDir) }
+    private val removed = locations.associate { it.id to ClaudeRemovedOwnLogins(it.storeDir) }
     private val mutating = mutableSetOf<ClaudeLoginPlaceId>()
     private val edits = ClaudeLoginEdits(reads)
     private val dirs = ConfigDirs()
 
     private val names = ClaudeLoginNames { place, key -> logins[place]?.labelForCredential(key) }
 
-    override fun places(): List<ClaudeLoginPlaceView> = reads.places(locations, names)
+    /** Every place's login, but the ones the person removed from splice ([ClaudeRemovedOwnLogins]). */
+    override fun places(): List<ClaudeLoginPlaceView> =
+        reads.places(locations, names).filterNot { removed[it.id]?.removed(it) == true }
 
     internal fun accountForCredential(key: String): ClaudeAccountIdentity? = reads.accountForCredential(locations, key)
 
@@ -67,9 +64,14 @@ internal class ClaudeLoginOwner(
         return signIn.start(head, label)
     }
 
-    /** Never removes it: a place is Claude Code's own login, which splice neither writes nor refreshes (see
-     *  ClaudeAccountFolders), and every session of its command runs on it. Added accounts are removed in the pool. */
-    override suspend fun remove(place: ClaudeLoginPlaceId): AccountMutation = AccountMutation.Refused(OWN_LOGIN_KEPT)
+    /** Takes [place]'s login out of splice, whatever state it is in: splice stops serving and listing it. Claude Code's
+     *  own file is left as it is ([ClaudeRemovedOwnLogins]). */
+    override suspend fun remove(place: ClaudeLoginPlaceId): AccountMutation {
+        val location = locations.singleOrNull { it.id == place } ?: return AccountMutation.Ok
+        reads.places(listOf(location), names).forEach { removed.getValue(place).remove(it) }
+        changes?.publish(location.target.head.key)
+        return AccountMutation.Ok
+    }
 
     override suspend fun relabel(place: ClaudeLoginPlaceId, label: String): AccountMutation {
         val location = synchronized(lock) {

@@ -74,6 +74,8 @@ heads.*.rates.*.ultrafast_cache_read
 heads.*.rates.*.ultrafast_cache_write	
 heads.*.rates.*.ultrafast_input	
 heads.*.rates.*.ultrafast_output	
+heads.*.readable_prefix	
+heads.*.readable_strip	
 heads.*.system_prompt	
 heads.*.system_prompt_file	
 heads.*.system_prompt_mode	append,replace,strip

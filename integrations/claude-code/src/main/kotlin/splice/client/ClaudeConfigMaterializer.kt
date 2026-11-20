@@ -13,7 +13,8 @@
 //     transcripts are shared session state, not head configuration. A head whose policy ISOLATES
 //     projects keeps a real tree and reaches foreign sessions by explicit COPY (ResumeAcrossHeads);
 //   - settings.json is ALWAYS a real merged file (never a symlink through which we'd clobber the
-//     operator's global): global settings + availableModels allowlist + enforceAvailableModels +
+//     operator's global): global settings, under the keys the head's own file sets itself (OwnSettings)
+//     + availableModels allowlist + enforceAvailableModels +
 //     preserved model choice (when still allowed) + the statusline command. A pre-existing symlink
 //     there is NOT pre-deleted (DR-11 redo): the saved model is read only from a REAL file, and the
 //     atomic temp + ATOMIC_MOVE write replaces the symlink NAME without following it — one step, no
@@ -351,7 +352,9 @@ public class ClaudeConfigMaterializer(
         // rebuild, and then throws from here — the half-built config dir the header forbids.
         // JsonScalars is the sanctioned throw-free read (and filters JsonNull, which this chain
         // used to leak as the literal string "null"; both shapes now fall back to the default).
-        val base = ClaudeModelSettings.base(global, JsonScalars.str(existing[Keys.MODEL]), spec)
+        val fromGlobal = ClaudeModelSettings.inherited(global, spec)
+        val own = OwnSettings.own(existing, fromGlobal, hookOrigins)
+        val base = ClaudeModelSettings.base(fromGlobal, own, JsonScalars.str(existing[Keys.MODEL]), spec)
         val inherited = HookSettings.inherited(hookOrigins, existing[Keys.HOOKS])
         val hooks = HookSettings.merge(
             global[Keys.HOOKS],
@@ -377,7 +380,11 @@ public class ClaudeConfigMaterializer(
         }
         // The one atomic-write primitive (DR-11b): a LIVE Claude Code re-reads this file, and the
         // old truncate-then-write let it observe a torn settings.json mid-launch.
-        val origins = HookSettings.origins(inherited, existing[Keys.HOOKS], hooks.inherited, hooks.hooks)
+        val origins = OwnSettings.recorded(
+            HookSettings.origins(inherited, existing[Keys.HOOKS], hooks.inherited, hooks.hooks),
+            fromGlobal,
+            own,
+        )
         SecureFile.writeAtomic0600(
             spec.configDir.resolve(HookSettings.ORIGINS),
             json.encodeToString(JsonObject.serializer(), origins) + "\n",

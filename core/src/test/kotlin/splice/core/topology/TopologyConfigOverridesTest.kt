@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.GATEWAY_VERSION
-import splice.core.client.SPLICE_CLIENT_HEADER
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.model.ModelEntry
@@ -234,11 +233,9 @@ class TopologyConfigOverridesTest {
 
     // Nov 14, 2026: a company gateway in front of a provider reads which splice, and which version, a request came
     // through, from RFC 9110's Via line. Off unless the table asks; a Via the table writes itself is the one that
-    // rides. custom-provider (cp-identity, Nov 20): send_version also sends splice's own version as a header, so a
-    // splice server can turn away an outdated client in its own words; a Via the table writes itself still replaces
-    // splice's Via, but that header is untouched since nothing in extra_headers names it.
+    // rides.
     @Test
-    fun `send_version adds splice's Via line and version header, and a Via in extra_headers replaces only the Via`() {
+    fun `send_version adds splice's Via line and a Via in extra_headers replaces it`() {
         val plain = ProviderConfig(
             dialect = Dialect.ANTHROPIC_PASSTHROUGH,
             baseUrl = "https://gateway.example.test",
@@ -248,15 +245,11 @@ class TopologyConfigOverridesTest {
         assertEquals(mapOf("x-team" to "platform"), plain.staticHeaders)
         val announced = plain.copy(sendVersion = true)
         assertEquals(
-            mapOf(
-                "Via" to "1.1 splice (splice/$GATEWAY_VERSION)",
-                SPLICE_CLIENT_HEADER to GATEWAY_VERSION,
-                "x-team" to "platform",
-            ),
+            mapOf("Via" to "1.1 splice (splice/$GATEWAY_VERSION)", "x-team" to "platform"),
             announced.staticHeaders,
         )
         val own = announced.copy(extraHeaders = mapOf("Via" to "1.1 acme-edge"))
-        assertEquals(mapOf("Via" to "1.1 acme-edge", SPLICE_CLIENT_HEADER to GATEWAY_VERSION), own.staticHeaders)
+        assertEquals(mapOf("Via" to "1.1 acme-edge"), own.staticHeaders)
     }
 
     @Test

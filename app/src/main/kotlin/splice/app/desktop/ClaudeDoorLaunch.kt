@@ -11,6 +11,7 @@ import splice.client.desktop.DoorPicker
 import splice.client.desktop.DoorPickerRow
 import splice.client.desktop.DoorSession
 import splice.client.login.DoorLogin
+import splice.core.topology.DoorCommandConfig
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
@@ -25,8 +26,24 @@ internal class ClaudeDoorLaunch(
     suspend fun launch(): DoorLaunchSpec? {
         if (!lane.onDoor()) return null
         val lineup = lane.lineup()
-        val rows = rowsOf(lineup)
-        val session = DoorSession(lane.door, lane.key.get(), lane.window(lineup), lane.starting(lineup).first, rows)
+        return spec(lineup, lane.starting(lineup).first, rowsOf(lineup))
+    }
+
+    /** custom-provider (cp-command): a launch of the door command [command], on the door whatever lane `claude` is on.
+     *  A session starts on its head's pinned model, and its picker is that head's rows or, where it says `models =
+     *  "door"`, the door's whole picker, from the same catalog. It declares the terminal's window, which every turn
+     *  the terminal's key sends is scaled to. With its head out of the door it starts on no model, as `claude` does with
+     *  no head in the door. */
+    suspend fun launchCommand(command: DoorCommandConfig): DoorLaunchSpec {
+        val lineup = lane.lineup()
+        val head = lineup.heads.firstOrNull { it.key == command.head }
+        val all = rowsOf(lineup)
+        val rows = if (command.listsDoor) all else all.filter { lineup.find(it.model)?.first?.key == command.head }
+        return spec(lineup, head?.let(lineup::pinnedOf)?.ifEmpty { null }, rows)
+    }
+
+    private fun spec(lineup: DesktopLineup, model: String?, rows: List<DoorPickerRow>): DoorLaunchSpec {
+        val session = DoorSession(lane.door, lane.key.get(), lane.window(lineup), model, rows)
         return DoorLaunchSpec(
             session.env(),
             session.unset(),

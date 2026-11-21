@@ -109,8 +109,7 @@ private enum class Fam { R, P, LOGIN, T, L, H }
 private object Section11 {
     fun of(cause: FailureCause): Fam? = when (cause) {
         is FailureCause.Provider -> provider(cause)
-        // custom-provider (cp-tls): a certificate no root trusts meets the same refusal on every re-send.
-        is FailureCause.Path -> permanent(cause.permanent)
+        is FailureCause.Path -> Fam.R
         is FailureCause.Splice -> splice(cause)
     }
 

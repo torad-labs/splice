@@ -15,7 +15,11 @@ import splice.launch.recipe.ClaudeDoor
 import splice.launch.recipe.DoorLaunchSpec
 import splice.share.ShareRelay
 
-internal class TerminalDoor(topology: Topology, statePaths: StatePaths, private val log: LogSink) : ClaudeDoor {
+internal class TerminalDoor(
+    private val topology: Topology,
+    statePaths: StatePaths,
+    private val log: LogSink,
+) : ClaudeDoor {
     private val key = FileHeldKey(
         file = statePaths.terminalKeyFile,
         prefix = TERMINAL_KEY_PREFIX,
@@ -40,6 +44,11 @@ internal class TerminalDoor(topology: Topology, statePaths: StatePaths, private 
 
     /** `claude`'s launch on the door; null before [open] and on the head lane. */
     override suspend fun launch(): DoorLaunchSpec? = launched?.launch()
+
+    /** A launch of `[door.commands.<name>]` on the door; null for a name splice.toml gives no door command, and before
+     *  [open]. */
+    override suspend fun launchCommand(name: String): DoorLaunchSpec? =
+        topology.door.commands[name]?.let { command -> launched?.launchCommand(command) }
 
     /** Whether `claude` is on the door: read from the lane record, so it holds before [open] too. */
     override fun onDoor(): Boolean = records.lane(claudeHead) == DOOR_LANE

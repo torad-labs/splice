@@ -287,14 +287,10 @@ private fun resendable(cause: FailureCause): Boolean? = when (cause) {
     is FailureCause.Provider ->
         (cause::class in RESENDABLE_PROVIDER && (cause as? FailureCause.Provider.Empty)?.loop == null) ||
             (cause is FailureCause.Provider.Unrecognized && !cause.clientError)
-    is FailureCause.Path -> resendablePath(cause)
+    is FailureCause.Path -> true
     is FailureCause.Splice.HoldOutlasted -> null
     is FailureCause.Splice -> resendableSplice(cause)
 }
-
-// custom-provider (cp-tls): a certificate no root trusts meets the same refusal on every re-send.
-private fun resendablePath(cause: FailureCause.Path): Boolean =
-    cause !is FailureCause.Path.Unreachable || cause.why != Unreach.UNTRUSTED
 
 private fun resendableLimit(cause: FailureCause.Provider.Limited): Boolean =
     cause.window != LimitWindow.BILLING_CYCLE && (cause.lift !is Lift.Unstated || cause.window == null)

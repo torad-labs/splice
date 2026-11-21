@@ -3,7 +3,8 @@
 // table, so what a head alone says (an older selector prefix, a window, the tiers' models, the standing prompt, an
 // override) would be lost the day the head goes. Each finding says where the value moves to (GatewayMove), and the fix
 // session offers the move. A head whose values the provider already carries the same way is no finding; a pin is where
-// the head's own command starts, and capture and console knobs stay with the head.
+// the head's own command starts, and capture and console knobs stay with the head. The values a provider carries for
+// the gateway are checked here too, at the provider's own path.
 package splice.core.topology
 
 import splice.core.config.Knob
@@ -11,8 +12,21 @@ import splice.core.config.Knob
 internal class GatewayMoveChecks(private val topology: Topology) {
     private val keys = TomlKeys()
 
-    fun findings(): List<TopologyFinding> = topology.heads.flatMap { (key, head) ->
+    fun findings(): List<TopologyFinding> = heads() + providers()
+
+    private fun heads(): List<TopologyFinding> = topology.heads.flatMap { (key, head) ->
         topology.providers[head.provider]?.let { provider -> of(key, head, provider) }.orEmpty()
+    }
+
+    /** The values a provider carries for the gateway, each checked at its own path: a window the catalog could not serve
+     *  and a standing prompt named twice would refuse the provider when the gateway builds it. */
+    private fun providers(): List<TopologyFinding> = topology.providers.flatMap { (key, provider) ->
+        listOfNotNull(
+            TopologyFinding("providers.$key.context_window", "must be positive")
+                .takeIf { (provider.contextWindow ?: 1L) <= 0L },
+            TopologyFinding("providers.$key.system_prompt", "set system_prompt or system_prompt_file, not both")
+                .takeIf { provider.systemPrompt != null && provider.systemPromptFile != null },
+        )
     }
 
     private fun of(key: String, head: HeadConfig, provider: ProviderConfig): List<TopologyFinding> =

@@ -257,4 +257,27 @@ class ProviderRuntimeTest {
             assertTrue(provider.requests.isNotEmpty(), "the turn never reached the provider")
         }
     }
+
+    @Test
+    fun `a forwarded header the gateway found carrying its key is not sent upstream, and a clean one is`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(reply { chatAnswer("answered") })
+            val runtime = headless.chat(forwarded = ForwardHeaders(listOf("x-team-key", "x-trace-id"))).runtime
+            val turn = GatewayTurn(
+                body("claude-scripted-headless-chat--scripted-model").toByteArray(),
+                "terminal",
+                null,
+                withheldHeaders = setOf("x-team-key"),
+            )
+
+            val answer = post(runtime, turn, mapOf("x-team-key" to gatewayKey, "x-trace-id" to "trace-1"))
+
+            assertEquals(200, answer.status, answer.text)
+            assertSawNoGatewayKey(provider.requests)
+            val sent = provider.requests.single().headers
+            assertEquals("trace-1", sent["x-trace-id"], "a header with no key was dropped")
+        }
+    }
 }

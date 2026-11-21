@@ -20,8 +20,9 @@ internal class GatewayUpstreamHeaders(
     private val forwardsCallerLogin: Boolean,
 ) : UpstreamHeaders {
     override fun upstreamHeaders(call: ApplicationCall): Map<String, String> {
+        val withheld = GatewayTurns.of(call)?.withheldHeaders.orEmpty()
         val rest = callers.upstreamHeaders(call).filterKeys { name ->
-            credentialHeaders.none { carrier -> carrier.equals(name, ignoreCase = true) }
+            (credentialHeaders + withheld).none { carrier -> carrier.equals(name, ignoreCase = true) }
         }
         return if (forwardsCallerLogin) rest + (HttpHeaders.Authorization to "Bearer $SHARE_NODE_TOKEN") else rest
     }

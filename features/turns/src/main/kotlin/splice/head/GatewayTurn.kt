@@ -16,7 +16,10 @@ import io.ktor.util.AttributeKey
  *  The three that follow are what an authenticated listener in front of the gateway (the team server) says of a turn it
  *  relays: the server its person prefers, the id it named the turn by, and the notice it sends in place of the turn.
  *  They are typed values the gateway fills, never read from the call's headers: a header on a gateway call is the
- *  caller's, and a caller must not name a ledger row it does not own or pick the upstream. A plain door turn has none. */
+ *  caller's, and a caller must not name a ledger row it does not own or pick the upstream. A plain door turn has none.
+ *
+ *  [withheldHeaders] are the lowercase names of the caller's headers the gateway found carrying one of its own keys: a
+ *  provider's `forward_headers` may name them, and they must never ride upstream with a key in them. */
 public class GatewayTurn(
     public val body: ByteArray,
     public val door: String,
@@ -24,6 +27,7 @@ public class GatewayTurn(
     public val preferredUpstream: String? = null,
     public val servedTurn: String? = null,
     public val notice: String? = null,
+    public val withheldHeaders: Set<String> = emptySet(),
 ) {
     /** [body] as a bounded read of it, the same answer a head's own read of a call's body gives: the body, or the cap
      *  it exceeded. */

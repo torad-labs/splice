@@ -308,6 +308,25 @@ class UsageTest {
     }
 
     @Test
+    fun `payload - the cache write is split into its five-minute and hour parts, which add up to the write`() {
+        fun split(usage: TurnUsage): List<String?> {
+            val payload = hud.buildUsagePayload(usage, contextWindow = 272_000)
+            val parts = payload["cache_creation"]?.jsonObject
+            return listOf(
+                payload["cache_creation_input_tokens"]?.jsonPrimitive?.content,
+                parts?.get("ephemeral_5m_input_tokens")?.jsonPrimitive?.content,
+                parts?.get("ephemeral_1h_input_tokens")?.jsonPrimitive?.content,
+            )
+        }
+        // Anthropic's own split, passed on (desktop-full, df-wire-answers)
+        assertEquals(listOf("100", "60", "40"), split(TurnUsage(10, 2, 100, 0, cacheCreationHourlyTokens = 40)))
+        // a provider that does not split its writes: all five-minute, as splice charges it
+        assertEquals(listOf("100", "100", "0"), split(TurnUsage(10, 2, 100, 0)))
+        // no write at all still says both parts, as zeros
+        assertEquals(listOf("0", "0", "0"), split(TurnUsage(10, 2, 0, 0)))
+    }
+
+    @Test
     fun `payload - integral used_percentage serializes bare, JS-number parity`() {
         // The migration oracle byte-compares our SSE against the legacy Node reference, and
         // JSON.stringify prints an integral double bare ("0", never "0.0"). CX-19 replay

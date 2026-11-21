@@ -88,6 +88,7 @@ class ListedRatesCatalogTest {
     fun `a listing with no card leaves a declared row exactly as it was`() {
         val catalog = provider.catalogFor(head, discovered = listOf(DiscoveredModel("acme/bare")))
         assertNull(ratesOf(catalog, "acme/bare"))
-        assertEquals(provider.catalogFor(head).models, catalog.models)
+        // The row now also carries what its provider lists of it; everything splice.toml declared is as it was.
+        assertEquals(provider.catalogFor(head).models, catalog.models.map { it.copy(listed = null) })
     }
 }

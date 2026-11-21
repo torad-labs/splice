@@ -43,7 +43,7 @@ internal data class JoinedSession(val entry: SessionHistoryEntry?, val live: Ses
     private fun overlay(current: SessionRecord, historical: SessionRecord?): SessionRecord = current.copy(
         name = current.name ?: historical?.name,
         route = when (current.route) {
-            is SessionRoute.Head, SessionRoute.Direct -> current.route
+            is SessionRoute.Head, is SessionRoute.Door, SessionRoute.Direct -> current.route
             SessionRoute.Unknown -> historical?.route ?: SessionRoute.Unknown
         },
         process = current.process.copy(

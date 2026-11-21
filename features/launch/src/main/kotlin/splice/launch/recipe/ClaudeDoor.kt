@@ -22,6 +22,10 @@ public interface ClaudeDoor {
     /** What a launch of `claude` carries while it is on the door, or null while it is on its head. */
     public suspend fun launch(): DoorLaunchSpec?
 
+    /** custom-provider (cp-command): a launch of the door command [name] (`[door.commands.<name>]`), on the door
+     *  whatever lane `claude` is on; null when [name] is no door command. */
+    public suspend fun launchCommand(name: String): DoorLaunchSpec? = null
+
     /** Whether `claude` is on the door now, which is what a wrapped `claude` launches when no head is keyed `claude`. */
     public fun onDoor(): Boolean
 

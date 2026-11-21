@@ -1,61 +1,29 @@
-// NEW: desktop-door (docs/specs/desktop-door.md, decisions 5 and 7). A door turn on its way to its head.
+// NEW: desktop-door (docs/specs/desktop-door.md, decisions 5 and 7); gateway-no-heads. A door turn on its way to its
+// provider.
 //
-// The turn goes to its head through the same relay LAN share uses, with the head's own turn key in place of the
-// caller's door key, so the head's admission, logins, cooldowns and honest failures all apply unchanged, and the head
-// is told the turn came through this door and from which caller, which its row says.
+// The turn is handed to the provider's own serving (ServedProvider), with the body the door read to route it, as the
+// provider runs the model, the name of the door it came through, which its row says, and the window the caller's
+// sessions hold: the provider's admission, logins, cooldowns and honest failures all apply, and nothing is relayed to a
+// head's server. The caller's own key stays at the door and goes no further.
 //
 // The window (decision 5): a caller's Claude Code holds one window for the whole session, the one its door declared.
-// The head already scales a session's counts to the window that session says it holds (ClientWindows), so the door
-// says it for each session it relays; a `count_tokens` answer, which a head counts raw, is scaled here by the same
-// factor.
+// The provider scales a turn's counts, and a `count_tokens` answer, to the window the turn names.
 package splice.app.desktop
 
 import io.ktor.server.application.ApplicationCall
-import io.ktor.server.request.queryString
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import splice.core.turn.TURN_DOOR_HEADER
-import splice.core.util.JsonScalars
-import splice.core.util.JsonWire
+import splice.app.desktop.record.DesktopLastTurn
 import splice.core.util.WallClock
-import splice.share.HeadTurn
-import splice.share.WholeAnswer
-import splice.share.WholeEdit
+import splice.head.GatewayTurn
 import java.time.Instant
 
 internal class DoorRelay(private val clock: WallClock) {
-    private val json = Json { ignoreUnknownKeys = true }
-
-    /** [ask] relayed for [caller] to [route]'s head as the model it runs there, and a count scaled to the window the
+    /** [ask] served for [caller] on [route]'s provider as the model it runs there, or counted, to the window the
      *  caller's sessions hold. */
     suspend fun send(call: ApplicationCall, caller: DoorCaller, route: DoorRoute, ask: DoorAsk, counting: Boolean) {
-        val window = caller.window()
-        if (!counting) {
-            if (window != null) route.head.windows?.record(ask.session, window)
-            val at = Instant.ofEpochMilli(clock()).toString()
-            caller.sending(DesktopLastTurn(at, ask.session, route.head.key, ask.model, route.upstream))
-        }
-        val query = call.request.queryString().let { if (it.isEmpty()) "" else "?$it" }
-        val path = (if (counting) COUNT_PATH else MESSAGES_PATH) + query
-        val turn = HeadTurn(route.head.relay, path, named = mapOf(TURN_DOOR_HEADER to caller.named))
-        val factor = window?.takeIf { counting }?.let { route.head.catalog.usageScale(route.upstream, it) }
-        caller.relay.turn(call, turn, ask.asking(route.upstream), factor?.let(::Scaled))
-    }
-
-    /** A `count_tokens` answer as the same share of the declared window that its count is of the model's own. An
-     *  answer with no count is given as it came. */
-    private inner class Scaled(private val factor: Double) : WholeEdit {
-        override fun read(body: ByteArray): WholeAnswer {
-            val answer = JsonScalars.objectOrNull(json, body.decodeToString())
-            val counted = JsonScalars.long(answer, INPUT_TOKENS)?.takeIf { factor != 1.0 }
-            if (answer == null || counted == null) return WholeAnswer.Given(body)
-            val scaled = JsonPrimitive((counted * factor).toLong())
-            return WholeAnswer.Given(JsonWire.bytes(JsonObject(answer + (INPUT_TOKENS to scaled))))
-        }
+        val turn = GatewayTurn(ask.asking(route.upstream), caller.named, caller.windowOf(ask))
+        if (counting) return route.provider.countTokens(call, turn)
+        val at = Instant.ofEpochMilli(clock()).toString()
+        caller.sending(DesktopLastTurn(at, ask.session, route.provider.key, ask.model, route.upstream))
+        route.provider.serve(call, turn)
     }
 }
-
-private const val INPUT_TOKENS = "input_tokens"
-private const val MESSAGES_PATH = "/v1/messages"
-private const val COUNT_PATH = "/v1/messages/count_tokens"

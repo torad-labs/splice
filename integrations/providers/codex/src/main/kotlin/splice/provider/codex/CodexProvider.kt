@@ -72,6 +72,10 @@ public class CodexProvider(
         return speed.applied(built, sessionId, body.agentId)
     }
 
+    override fun onRouteStart() {
+        codeMode.onStart()
+    }
+
     override fun cancelTurnResources() {
         codeMode.onHeadStop()
     }

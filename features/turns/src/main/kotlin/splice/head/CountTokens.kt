@@ -41,7 +41,7 @@ internal class CountTokens(
         // door-default, decision 9: a count of another head's model is that head's, scaled as its turns are.
         var other: OtherAnswer? = null
         val prepared = admission.materializeBodyOrRespond(call, Materializing(fastFail = true)) {
-            when (val read = bodyReader.receiveBodyBounded(call, deps.policy.maxRequestBytes())) {
+            when (val read = GatewayBody.read(call, deps.policy.maxRequestBytes(), bodyReader)) {
                 // The 413 is the gate's to write, so the cap travels back as the case it is.
                 is BodyRead.TooLarge -> Materialized.TooLarge(read.limit)
                 is BodyRead.Received -> {
@@ -49,7 +49,7 @@ internal class CountTokens(
                     Materialized.Done(
                         bodyParse.parse(read.body.text).map { body ->
                             other = deps.traffic.others.claim(counted(call, body))
-                            PromptTokenEstimate.forRequest(readBytes, body.typed)
+                            scaled(call, body.typed.model, PromptTokenEstimate.forRequest(readBytes, body.typed))
                         },
                     )
                 }
@@ -70,6 +70,14 @@ internal class CountTokens(
             JsonWire.string(buildJsonObject { put("input_tokens", estimate) }),
             ContentType.Application.Json,
         )
+    }
+
+    /** [estimate] as the same share of the declared window that it is of the model's own, when the gateway handed this
+     *  count over with the window its session's client holds, by the factor that scales a turn's usage; a head's own
+     *  count carries none and stays raw. */
+    private fun scaled(call: ApplicationCall, model: String, estimate: Long): Long {
+        val window = GatewayTurns.of(call)?.clientWindow?.takeIf { it > 0L } ?: return estimate
+        return (estimate * provider.catalog.usageScale(model, window)).toLong()
     }
 
     /** [body], a `count_tokens` of [call]'s, as another head is asked to count it. */

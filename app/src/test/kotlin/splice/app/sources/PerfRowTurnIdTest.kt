@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.turn.TurnAgent
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -56,5 +57,22 @@ class PerfRowTurnIdTest {
         assertEquals("msg_42", row.transcript.responseMessageId)
         assertFalse("session_id" in row.fields)
         assertFalse("response_message_id" in row.fields)
+    }
+
+    @Test
+    fun `a subagent's row reads its agent and parent agent, and a session's own row reads neither`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            file,
+            """{"ts":1000,"outcome":"ok","session_id":"s1","total":5}""" + "\n" +
+                """{"ts":2000,"outcome":"ok","session_id":"s1","agent_id":"agent-7",""" +
+                """"parent_agent_id":"agent-1","total":5}""" + "\n",
+        )
+
+        val (own, sub) = PerfRowsFileSource(file).window(0).rows
+
+        assertEquals(TurnAgent(), own.transcript.agent)
+        assertEquals(TurnAgent("agent-7", "agent-1"), sub.transcript.agent)
+        assertFalse("agent_id" in sub.fields)
     }
 }

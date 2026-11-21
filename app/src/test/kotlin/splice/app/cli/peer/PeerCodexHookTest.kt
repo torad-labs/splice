@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.hook.StdinKind
-import splice.app.cli.hook.StdinTerminal
+import splice.app.cli.hook.StreamTerminal
 import splice.core.terminal.TerminalOutput
 import splice.core.testing.TestPorts
 import splice.core.util.EnvReader
@@ -148,7 +148,7 @@ class PeerCodexHookTest {
                     read = true
                     ""
                 },
-                terminal = StdinTerminal { true },
+                terminal = StreamTerminal { true },
             ).run(verb(ATTACH))
         }
         assertEquals(PeerExit.BAD_USAGE, code)
@@ -170,7 +170,7 @@ class PeerCodexHookTest {
                     read = true
                     ""
                 },
-                terminal = StdinTerminal { true },
+                terminal = StreamTerminal { true },
             ).run(verb(ATTACH, "--hook"))
         }
         assertEquals(PeerExit.DONE, code)
@@ -230,7 +230,7 @@ private fun run(args: List<String>, stdin: String, env: Map<String, String>): Ra
             err = TerminalOutput { err.appendLine(it) },
             env = EnvReader { env[it] },
             stdin = PeerStdin { stdin },
-            terminal = StdinTerminal { false },
+            terminal = StreamTerminal { false },
         ).run(args)
     }
     return Ran(code, out.toString(), err.toString())

@@ -4,6 +4,7 @@
 package splice.app
 
 import splice.app.cli.AdminSupport
+import splice.app.desktop.setup.DesktopRetire
 import splice.app.manager.ManagerHome
 import splice.client.login.DoorLogin
 import splice.core.config.InstallPaths
@@ -34,7 +35,7 @@ internal object InstallWiring {
      *  installed units (SpliceUnits). The daemon's runs the `splice` link this install made on the JDK it ran on, and
      *  the MCP hub's are laid when its front is installed beside the jar. */
     fun layUnits(target: String?, env: EnvReader) {
-        if (target != null && target != "--all") return
+        if (target != null && target != ALL_OF_SPLICE) return
         if (!linux()) return
         val output = TerminalOutput(::println)
         val folder = unitFolder(env, output)
@@ -52,7 +53,7 @@ internal object InstallWiring {
      *  so neither the daemon nor the MCP hub starts again from the jar left on disk, and no socket holds splice's ports.
      *  Uninstalling one head's command leaves them, since splice.toml still names that head. */
     fun retireUnits(target: String?, env: EnvReader) {
-        if (target != null && target != "--all") return
+        if (target != null && target != ALL_OF_SPLICE) return
         if (!linux()) return
         val output = TerminalOutput(::println)
         UninstallUnits(unitFolder(env, output), output).retire()
@@ -61,13 +62,20 @@ internal object InstallWiring {
     /** After `splice uninstall --all`: splice's /login taken out of the person's Claude folder, and only splice's
      *  (docs/specs/door-default.md, decision 5). A /login they wrote stays. */
     fun retireLogin(target: String?, env: EnvReader) {
-        if (target != null && target != "--all") return
+        if (target != null && target != ALL_OF_SPLICE) return
         val login = DoorLogin(UserHome.claudeDir(env), StatePaths(envReader = env).doorLoginDir)
         val output = TerminalOutput(::println)
         Cancellables.runCatchingCancellable { login.remove() }.fold(
             onSuccess = { if (it) output.line("splice: removed splice's /login from ${UserHome.claudeDir(env)}") },
             onFailure = { output.line("splice: failed to remove splice's /login: ${SafeFailureText.render(it)}") },
         )
+    }
+
+    /** After `splice uninstall --all`: Claude Desktop put back as it was before `splice desktop on` (DesktopRetire),
+     *  and only what splice changed there. The daemon is stopped by then, so this needs none. */
+    fun retireDesktop(target: String?, env: EnvReader) {
+        if (target != null && target != ALL_OF_SPLICE) return
+        DesktopRetire(env, TerminalOutput(::println)).retire()
     }
 
     /** The daemon's listening sockets as systemd units, which `splice restart` lays and starts so systemd holds
@@ -125,3 +133,6 @@ internal object InstallWiring {
         }
     }
 }
+
+// The target `splice install` and `uninstall` take for the whole of splice, not one head's command.
+private const val ALL_OF_SPLICE = "--all"

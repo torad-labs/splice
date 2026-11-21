@@ -6,6 +6,7 @@ package splice.core.topology
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import splice.core.model.ModelRates
 import splice.core.prompt.HeadSystemPrompt
 import splice.core.prompt.SystemPromptMode
@@ -55,6 +56,13 @@ public data class HeadConfig(
      *  catalog is what the statusline already receives: the head's card then reaches the cost
      *  segment without a new field on the runtime head handle or a second wiring path. */
     val rates: Map<String, ModelRates>? = null,
+    /** custom-provider (issue #680): whether this head is in the door's /model. Wins over its provider's `picker`;
+     *  absent on both = the door's own rule. */
+    val picker: Boolean? = null,
+    /** gateway-no-heads: this head is the stand-in a provider is built under when the gateway serves it with no head block
+     *  (never read from splice.toml). A real head must name its pinned model and carry a picker model; the gateway's
+     *  provider takes its pin from its own config, else its first row, and a roster that is empty boots and says so. */
+    @Transient val servedByGateway: Boolean = false,
 ) {
     init {
         val slots = modelSlots.keys.map { it.trim('"', '\'').lowercase() }
@@ -64,6 +72,26 @@ public data class HeadConfig(
         if (modelSlots.isNotEmpty() && models.orEmpty().any { it.slot != null }) {
             throw TopologySlotsFailure(TopologySlotsFailure.Problem.COMPETING)
         }
+    }
+
+    /** custom-provider (cp-picker): whether this head lists every model its endpoint lists beside the declared ones, by
+     *  its own `picker = true`, else its [provider]'s. */
+    public fun listsEvery(provider: ProviderConfig): Boolean = (picker ?: provider.picker) == true
+
+    /** This head as it is served, with what its [provider] says where the head says nothing: the window, the tiers'
+     *  models and the standing prompt (the same values the gateway serves the provider with), so a value written once
+     *  on the provider serves the head too and one the head states wins. A head that names its tiers on its models
+     *  carries its own. */
+    public fun servedOn(provider: ProviderConfig): HeadConfig {
+        val ownTiers = modelSlots.isNotEmpty() || models.orEmpty().any { it.slot != null }
+        val ownPrompt = systemPrompt != null || systemPromptFile != null
+        return copy(
+            contextWindow = contextWindow ?: provider.contextWindow,
+            modelSlots = if (ownTiers) modelSlots else provider.modelSlots,
+            systemPrompt = if (ownPrompt) systemPrompt else provider.systemPrompt,
+            systemPromptFile = if (ownPrompt) systemPromptFile else provider.systemPromptFile,
+            systemPromptMode = systemPromptMode ?: provider.systemPromptMode,
+        )
     }
 
     /** The tier-to-id map the launcher consumes, independent of the provider's discovered roster.

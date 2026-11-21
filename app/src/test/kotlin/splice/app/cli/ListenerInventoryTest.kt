@@ -22,6 +22,9 @@ class ListenerInventoryTest {
         dialect = "openai-chat"
         base_url = "https://demo.invalid"
         auth = { kind = "api-key", env = "DEMO_KEY_SECRET_NAME" }
+        [door.selector_aliases]
+        "claude-one--" = "demo"
+        "claude-two--" = "demo"
         [heads.one]
         provider = "demo"
         port = 3101

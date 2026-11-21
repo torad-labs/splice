@@ -41,6 +41,7 @@ internal class CodexResponsesArm(
 
     private val quirksOverlay = QuirksOverlay()
     private val accountFiles = OAuthAccountFiles()
+    private val owners = LoginOwners()
 
     internal fun codexOAuthProvider(ctx: ProviderBuild, label: String): Wired {
         val key = ctx.key
@@ -103,6 +104,9 @@ internal class CodexResponsesArm(
     }
 
     private fun codexAuth(ctx: ProviderBuild, path: Path, tokenUrl: String): RefreshableAuthProvider =
+        owners.held(AuthKind.ChatgptOAuth.wire, path) { newCodexAuth(ctx, path, tokenUrl) }
+
+    private fun newCodexAuth(ctx: ProviderBuild, path: Path, tokenUrl: String): RefreshableAuthProvider =
         CodexAuthProvider(
             authPath = path,
             authCacheMs = ctx.cfg.authCacheMs,

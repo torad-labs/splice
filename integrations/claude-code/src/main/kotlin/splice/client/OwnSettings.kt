@@ -18,6 +18,7 @@ internal object OwnSettings {
         Keys.STATUS_LINE,
         Keys.HOOKS,
         Keys.API_KEY_HELPER,
+        Keys.OTEL_HEADERS_HELPER,
         Keys.MODEL_OVERRIDES,
     )
 

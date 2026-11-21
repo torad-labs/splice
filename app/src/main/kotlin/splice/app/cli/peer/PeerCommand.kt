@@ -6,8 +6,8 @@ package splice.app.cli.peer
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.app.cli.hook.HarnessHook
-import splice.app.cli.hook.StdinDevice
-import splice.app.cli.hook.StdinTerminal
+import splice.app.cli.hook.StreamDevice
+import splice.app.cli.hook.StreamTerminal
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
@@ -19,7 +19,7 @@ internal class PeerCommand(
     private val err: TerminalOutput = TerminalOutput(System.err::println),
     private val env: EnvReader = EnvReader(System::getenv),
     private val stdin: PeerStdin = PeerStdin { System.`in`.readBytes().decodeToString() },
-    private val terminal: StdinTerminal = StdinDevice(),
+    private val terminal: StreamTerminal = StreamDevice(),
 ) {
     private val call = PeerCall(env, err)
     private val ask = PeerAsk(call, out)

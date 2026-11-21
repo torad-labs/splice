@@ -91,11 +91,12 @@ public class EconomicsStore(
         account: String? = null,
         outcome: String = OutcomeTag.OK.wire,
         atMs: Long? = null,
+        pricedBy: TurnPrice = price,
     ) {
         val now = atMs ?: clock()
         val hour = now / HOUR_MS * HOUR_MS
         val localStep = turn.localStep
-        val usd = price.usd(turn.model, turn.counters(), now)
+        val usd = pricedBy.usd(turn.model, turn.counters(), now)
         val failed = OutcomeTags.isFailedWithoutUsage(outcome, turn.counters())
         synchronized(lock) {
             loadUnderLock()

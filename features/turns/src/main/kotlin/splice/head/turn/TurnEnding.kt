@@ -30,7 +30,7 @@ internal class TurnEnding(
      *  list. */
     suspend fun emitEnding(drive: TurnDrive, ending: UpstreamEnding) {
         when (ending) {
-            is UpstreamAuthMissing -> knownEnd.emitAuthMissing(drive)
+            is UpstreamAuthMissing -> knownEnd.emitAuthMissing(drive, ending.why)
             is UpstreamFailed -> knownEnd.emitFailed(drive, ending)
             is StreamTornBeforeClient -> connEnd.emitTorn(drive, ending)
             is NoPlaceLeft -> connEnd.emitNoPlace(drive, ending)

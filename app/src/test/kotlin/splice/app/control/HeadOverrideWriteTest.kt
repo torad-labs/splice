@@ -1,6 +1,9 @@
 // PATCH /api/config?head=<key> THROUGH A REAL ControlServer, on a real splice.toml read by the real topology
-// loader: a command's own value is set, changed and cleared, the operator's comments survive each write, a
-// value the daemon would ignore refuses the whole write, and the response says which knobs act now.
+// loader: the value a command runs with is set, changed and cleared where splice reads it (its provider's table for a
+// knob a turn is served by, so every command on that provider runs with it; the command's own table for a display or
+// trace knob), the operator's comments survive each write, a value the daemon would ignore refuses the whole write, and
+// the response says which knobs act now. Until Nov 21, 2026 this pinned every value to the command's own table, which
+// gateway-no-heads made a boot finding, so the write it pinned was refused.
 package splice.app.control
 
 import io.ktor.client.HttpClient
@@ -54,6 +57,14 @@ private val TOML = """
     port = 3102
     discovery_prefix = "claude-local--"
     pinned_model = "m"  # the model I chose
+
+    [heads.second]
+    provider = "local"
+    port = 3103
+    discovery_prefix = "claude-local--"
+    pinned_model = "m"
+    [heads.second.claude]
+    command = "claude-second"
 """.trimIndent() + "\n"
 
 class HeadOverrideWriteTest {
@@ -97,27 +108,53 @@ class HeadOverrideWriteTest {
         }
     }
 
-    private fun overrides(): Map<String, String> =
+    /** The command's own table, and its provider's, as splice.toml holds them now. */
+    private fun own(): Map<String, String> =
         TopologyLoader.parse(Files.readString(file)).heads.getValue("local").overrides
 
+    private fun provider(): Map<String, String> =
+        TopologyLoader.parse(Files.readString(file)).providers.getValue("local").overrides
+
     @Test
-    fun `a command's value is set, changed and cleared, with the operator's comments kept`() {
+    fun `a value a turn is served by is set, changed and cleared on the provider, for every command on it`() {
         serve { patch, config ->
             val set = patch(ROUTE, """{"maxInflight":"3"}""")
-            assertEquals(200, set.status.value)
-            assertEquals("3", overrides()["maxInflight"])
+            assertEquals(200, set.status.value, set.bodyAsText())
+            assertEquals("3", provider()["maxInflight"], "the provider holds it, where the gateway reads it")
+            assertEquals(null, own()["maxInflight"], "the command's own table holds no second copy")
             assertEquals(3, config.getConfig("local").maxInflight, "the command follows the write")
+            assertEquals(3, config.getConfig("second").maxInflight, "and so does the other command on that provider")
             assertFalse(config.getConfig().maxInflight == 3, "the global value is untouched")
+            val told = json(set.bodyAsText()).getValue("provider").jsonObject
+            assertEquals("local", told.getValue("key").jsonPrimitive.content)
+            assertEquals(listOf("maxInflight"), told.getValue("knobs").jsonArray.map { it.jsonPrimitive.content })
+            val commands = told.getValue("commands").jsonArray.map { it.jsonPrimitive.content }
+            assertEquals(listOf("local", "second"), commands, "every command that reads it from there")
             val text = Files.readString(file)
             assertTrue(text.contains("# my own note, above the provider") && text.contains("# the model I chose"))
 
             assertEquals(200, patch(ROUTE, """{"maxInflight":"5"}""").status.value)
-            assertEquals("5", overrides()["maxInflight"])
+            assertEquals("5", provider()["maxInflight"])
             assertEquals(5, config.getConfig("local").maxInflight)
 
             assertEquals(200, patch(ROUTE, """{"maxInflight":null}""").status.value)
-            assertEquals(null, overrides()["maxInflight"])
+            assertEquals(null, provider()["maxInflight"])
             assertEquals(config.getConfig().maxInflight, config.getConfig("local").maxInflight, "falls back to global")
+            assertEquals(config.getConfig().maxInflight, config.getConfig("second").maxInflight)
+        }
+    }
+
+    @Test
+    fun `a trace setting stays the command's own, and the answer says it waits for a restart`() {
+        serve { patch, _ ->
+            val set = patch(ROUTE, """{"traceRetentionDays":"3"}""")
+            assertEquals(200, set.status.value, set.bodyAsText())
+            assertEquals("3", own()["traceRetentionDays"])
+            assertEquals(null, provider()["traceRetentionDays"], "the other command on the provider keeps its own")
+            val reply = json(set.bodyAsText())
+            assertTrue(reply.getValue("provider").jsonObject.getValue("knobs").jsonArray.isEmpty())
+            val restart = reply.getValue("restart_required").jsonArray.map { it.jsonPrimitive.content }
+            assertEquals(listOf("traceRetentionDays"), restart)
         }
     }
 

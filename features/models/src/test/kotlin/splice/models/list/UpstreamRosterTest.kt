@@ -6,6 +6,8 @@
 // `data[]` with `display_name`, DeepSeek's `data[]` with neither, llama-server's `models[]`.
 package splice.models.list
 
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -37,6 +39,41 @@ class UpstreamRosterTest {
     }
 
     private fun entry(id: String, window: Long) = ModelEntry(id = id, label = id, contextWindow = window)
+
+    @Test
+    fun `gateway model properties and effort options survive the shared roster parser`() {
+        val model = published(
+            """{"data":[{"id":"m","supports_reasoning":true,"max_input_tokens":1048576,"extra":{"flag":false},
+              "thinking":{"type":"effort","effort_options":[{"id":"low","name":"Low"},
+              {"id":"high","name":"High"}]},"runtime":{"default_effort":"high"}}]}""",
+        ).single()
+        val listing = model.runtimeMetadata.listing
+        assertEquals(listOf("low", "high"), listing.efforts)
+        assertEquals("high", listing.defaultEffort)
+        assertTrue(listing.reasons)
+        assertEquals(1_048_576L, model.window.maxContext)
+        assertEquals("false", listing.source!!.getValue("extra").jsonObject.getValue("flag").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `the effort supported flag counts even without published levels`() {
+        val model = published("""{"data":[{"id":"m","capabilities":{"effort":{"supported":true}}}]}""")
+            .single()
+        assertTrue(model.runtimeMetadata.listing.reasons)
+        assertTrue(model.runtimeMetadata.listing.efforts.isEmpty())
+    }
+
+    @Test
+    fun `provider instructions stay in runtime metadata and do not become model-list properties`() {
+        val model = published(
+            """{"data":[{"id":"m","model_messages":{"instructions_template":"fixture instructions"}}]}""",
+        ).single()
+        assertEquals(
+            "fixture instructions",
+            model.modelMessages!!.getValue("instructions_template").jsonPrimitive.content,
+        )
+        assertFalse(model.runtimeMetadata.listing.source!!.containsKey("model_messages"))
+    }
 
     private fun verdict(rows: List<RosterRow>, id: String): RosterVerdict =
         rows.first { it.id == id }.verdict
@@ -120,6 +157,13 @@ class UpstreamRosterTest {
         val local = published("""{"models":[{"id":"/packs/bonsai.gguf"}]}""")
         assertEquals("/packs/bonsai.gguf", local.single().id)
         assertEquals(null, local.single().window.context)
+    }
+
+    @Test
+    fun `a blank display name does not hide a provider's name`() {
+        val model = published("""{"data":[{"id":"m","display_name":" ","name":"Readable Model"}]}""")
+            .single()
+        assertEquals("Readable Model", model.label)
     }
 
     @Test

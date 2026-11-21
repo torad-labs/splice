@@ -21,6 +21,7 @@ import splice.app.daemon.BootedTopology
 import splice.app.daemon.HeadCatalogs
 import splice.app.daemon.TopologyWindows
 import splice.app.desktop.DaemonDesktop
+import splice.app.desktop.setup.DesktopAppLibrary
 import splice.app.head.HEAD_STOP_BUDGET_MS
 import splice.app.head.HeadBoot
 import splice.app.head.HeadCapabilities
@@ -35,9 +36,12 @@ import splice.app.head.HeadShutdown
 import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
 import splice.app.head.QuotaPollSeams
+import splice.app.head.ServedProviderAssembly
+import splice.app.head.books.BooksKeys
 import splice.app.probe.LocalWindowRefresh
 import splice.app.server.DaemonServer
 import splice.app.share.DaemonShare
+import splice.client.desktop.DesktopAppConfig
 import splice.client.mcp.McpShareChoice
 import splice.client.resume.originals.TranscriptOriginals
 import splice.codemode.WorkerArtifacts
@@ -49,6 +53,7 @@ import splice.core.config.StatePaths
 import splice.core.config.TurnKey
 import splice.core.retired.RetiredHeads
 import splice.core.topology.HeadModel
+import splice.core.topology.ProviderConfig
 import splice.core.topology.ProviderFamilyRule
 import splice.core.topology.Topology
 import splice.core.topology.TopologyKnobLayer
@@ -96,10 +101,12 @@ public class Daemon(
     // [heads.<key>.overrides] rides the per-head layer: heads share ONE ConfigService (one JVM,
     // unlike the Node lineage's process-per-head), so without this a knob tuned for one upstream
     // hit all of them — e.g. kimi's 40-min upstreamTimeoutMs also gave codex a 40-min ceiling.
+    private val overrideLayers = TopologyKnobLayer(topology).layers()
     private val config = ConfigService(
         statePaths,
         headOverrides = TopologyKnobLayer(topology).configOverrides(),
-        perHeadOverrides = topology.heads.mapValues { (_, head) -> head.overrides },
+        perHeadOverrides = overrideLayers.own,
+        inheritedOverrides = overrideLayers.inherited,
     ).also { it.observeSnapshots(splice.upstream.memory.JvmHeap.budget) }
     private val mgmtKey = MgmtKey(statePaths)
     private val clientVersions = ClientVersionTracker()
@@ -157,6 +164,7 @@ public class Daemon(
             running = topologyWindows,
             alertCommand = topology.daemon.alertCommand.orEmpty(),
             reservedPeerNames = topology.daemon.reservedPeerNames.orEmpty().toSet(),
+            remote = topology.remote,
         ),
         refreshCall,
         mcpHosting = McpHostingSettings(share = McpShareChoice { topologyWindows.mcpShare }).with(topology.daemon),
@@ -248,6 +256,9 @@ public class Daemon(
         compareBy<String> { headOrder[it] ?: Int.MAX_VALUE }.thenBy { it },
     )
 
+    /** Every provider in splice.toml, served by the gateway on its own, with no head (gateway-no-heads). */
+    private val providers = ServedProviderAssembly(topology, buildInputs, managedHeadFactory, log)
+
     /** LAN share: the commands this machine runs on another's heads, and the listener that offers its own. */
     private val share = DaemonShare(topology, config, TurnKey(mgmtKey), log, statePaths.stateDir)
 
@@ -263,7 +274,12 @@ public class Daemon(
     )
 
     /** Claude Desktop's Code tab (docs/specs/desktop-door.md): its door on the control port, and `splice desktop`. */
-    private val desktop = DaemonDesktop(topology, config, TurnKey(mgmtKey), statePaths, log)
+    private val desktop = DaemonDesktop(
+        topology,
+        statePaths,
+        log,
+        DesktopAppLibrary(DesktopAppConfig(statePaths.envReader)),
+    )
     private val stopLock = Mutex()
     private var stopped = false
 
@@ -297,23 +313,21 @@ public class Daemon(
         // A command added back is no longer retired: its history joins it again, once.
         retiredHeads.all().filter { it.key in topology.heads }.forEach { retiredHeads.rejoin(it.key) }
         val retired = retiredHeads.all().map { it.key }
-        HeadKeptFiles(statePaths, log).ofRemovedHeads(topology.heads.keys + retired)
+        // The providers a gateway turn runs on keep their state under their own keys, which no head of that name held.
+        HeadKeptFiles(statePaths, log).ofRemovedHeads(topology.heads.keys + retired + BooksKeys(topology).all())
         TranscriptOriginals(statePaths).sweep(log)
         // 2026-09-22: every head's endpoint is asked what it serves — all at once, bounded, before any
         // catalog exists — so each picker is its declared rows plus what its provider lists.
-        // #525 (Nov 13, 2026): a head whose list was kept within two hours begins with it and is asked in the
-        // background, so a restart no longer holds new requests while every provider answers.
-        val rosterProviders = topology.heads.mapNotNull { (key, head) ->
-            val declared = topology.providers[head.provider] ?: return@mapNotNull null
-            key to buildInputs.effectiveProvider(key, declared, legacyKnobsGovern = key in legacySolo)
-        }.toMap()
-        controlPlane.modelRosters.begin(rosterProviders)
+        val rosterProviders = rosterProviders(legacySolo)
+        controlPlane.modelRosters.resolve(rosterProviders)
         controlPlane.modelRosters.start(controlPlane.probeScope, rosterProviders)
         // Start heads BEFORE opening the control plane so a launch-shim that sees /health and
         // immediately POSTs /launch/<head> does not race a still-binding head (503 head is not
         // running) — the assembly starts each head through headProbes.startDaemonHeads, which binds
         // that head's port; controlPlane.start below binds the control port, so it must run after.
         val failed = assembleHeads(controlPort, legacySolo)
+        // After the heads, which build the shared books first: one runtime per provider, serving the gateway.
+        providers.open()
         headProbes.startRuntimeWatch(
             topology,
             controlPlane.probeScope,
@@ -329,10 +343,10 @@ public class Daemon(
         // door-network: it answers the door too, which opens below, so a turn that comes first is told to wait.
         share.open(heads, controlPort, desktop.network)
         // And the server listener, with its keys: `splice server key create` asks the control plane for them.
-        server.open(heads, controlPort, headServerFactory.served)
+        server.open(heads, controlPort, headServerFactory.served, desktop.team)
         controlPlane.serverMode = server
         // The desktop door, on the control port, choosing among these heads.
-        desktop.open(heads, controlPort)
+        desktop.open(providers, controlPort, controlPlane.modelRosters)
         controlPlane.desktop = desktop
         controlPlane.start(
             controlPort = controlPort,
@@ -354,6 +368,15 @@ public class Daemon(
 
     /** Assembles every head and starts each one as it is built (HeadBoot). #525: the first heads serve before the
      *  last is assembled, and no re-read of splice.toml runs until every head has attached to it. */
+
+    /** Every endpoint asked what it serves: each head's provider by head key, and each provider the gateway serves with
+     *  no head by the key its books live under. */
+    private fun rosterProviders(legacySolo: Set<String>): Map<String, ProviderConfig> =
+        topology.heads.mapNotNull { (key, head) ->
+            val declared = topology.providers[head.provider] ?: return@mapNotNull null
+            key to buildInputs.effectiveProvider(key, declared, legacyKnobsGovern = key in legacySolo)
+        }.toMap() + providers.rosterProviders()
+
     private suspend fun assembleHeads(controlPort: Int, legacySolo: Set<String>): Map<String, String> {
         topologyWindows.assembling = true
         try {
@@ -391,7 +414,8 @@ public class Daemon(
         controlPlane.ownership.fence()
         closeListeners()
         headProbes.closeStarts()
-        val kept = headShutdown.retireHeads(heads.values.map { it.head }, HEAD_STOP_BUDGET_MS, log) {
+        val routes = heads.values.map { it.head } + providers.running()
+        val kept = headShutdown.retireHeads(routes, HEAD_STOP_BUDGET_MS, log) {
             controlPlane.ownership.leave()
         }
         val handedOver = System.nanoTime()
@@ -406,11 +430,10 @@ public class Daemon(
         kept
     }
 
-    /** #523: waits up to [withinMs] for the turns [retire] kept, and stops each head when its last one ends. The
-     *  control server's engine, which [retire] left running with its listener handed on, stops beside them. It holds
-     *  no lock, so a [stop] that arrives meanwhile is not held behind it and cuts what is still running. */
+    /** Finish retained replies before closing the old control engine. No daemon lock is held while they end. */
     public suspend fun finish(withinMs: Long) {
-        headShutdown.finishHeads(heads.values.map { it.head }, withinMs, log) { controlPlane.ownership.close() }
+        val routes = heads.values.map { it.head } + providers.running()
+        headShutdown.finishHeads(routes, withinMs, log) { controlPlane.ownership.close() }
     }
 
     public suspend fun stop(): Unit = stopLock.withLock {
@@ -430,11 +453,8 @@ public class Daemon(
             // stderr/daemon.log instead of the JVM default, a black hole once production redirects
             // stderr to /dev/null.
             headProbes.closeStarts()
-            headShutdown.stopHeads(
-                heads.values.map { it.head },
-                HEAD_STOP_BUDGET_MS,
-                log,
-            ) { controlPlane.ownership.close() }
+            val routes = heads.values.map { it.head } + providers.running()
+            headShutdown.stopHeads(routes, HEAD_STOP_BUDGET_MS, log) { controlPlane.ownership.close() }
 
             // A daemon that handed over closed these then, before the next daemon opened its own.
             if (!retired) closeBackground()

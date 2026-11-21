@@ -121,7 +121,7 @@ class AccountPoolFailoverTest {
         spendFable(one)
         assertEquals("two", pool.chosenFor(FABLE, "first"), "one's Fable week is used up until tomorrow")
         val heard = mutableListOf<String>()
-        pool.joins.onEarlyReset = EarlyResetHeard { label, ended -> heard += "$label: $ended" }
+        pool.joins.whenEarlyReset(EarlyResetHeard { label, ended -> heard += "$label: $ended" })
         val joinsBefore = pool.joins.count
 
         // The person resets the login at the provider: its next reading shows the week at nothing.

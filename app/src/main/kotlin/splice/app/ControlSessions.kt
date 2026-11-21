@@ -5,6 +5,7 @@ package splice.app
 
 import splice.app.control.ManagedHead
 import splice.core.config.UserHome
+import splice.core.topology.LaunchDoors
 import splice.sessions.http.SessionDriver
 import splice.sessions.registry.ArrivalJoinedSessions
 import splice.sessions.registry.ForegroundTools
@@ -21,16 +22,18 @@ internal class ControlSessions(
 ) {
     private val environment = ProcessEnvironment()
 
-    /** The registry of Claude Code sessions under [home], each joined with the head its arrivals named. */
+    /** The registry of Claude Code sessions under [home], each placed on its head or its door (one of [doors]) by its
+     *  launch, and joined with the head its arrivals named when its launch placed it on neither. */
     fun source(
         home: Path,
         heads: Map<String, ManagedHead>,
+        doors: LaunchDoors,
         console: ConsoleEventPublisher,
         foreground: ForegroundTools,
     ): ArrivalJoinedSessions = ArrivalJoinedSessions(
         SessionRegistry(
             home.resolve(UserHome.CLAUDE_DIR).resolve("sessions"),
-            RouteOfPid { pid -> environment.route(pid) { port -> headOfPort(heads, port) } },
+            RouteOfPid { pid -> environment.route(pid, doors) { port -> headOfPort(heads, port) } },
             heard = console.sessionsHeard,
             foreground = foreground,
         ),

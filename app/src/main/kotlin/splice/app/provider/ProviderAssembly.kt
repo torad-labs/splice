@@ -7,6 +7,8 @@ package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
 import splice.app.TokenUrlRefreshCall
+import splice.app.provider.local.JdkHealthHttp
+import splice.app.provider.muse.MuseResponsesArm
 import splice.app.server.UpstreamPools
 import splice.core.config.StatePaths
 import splice.core.topology.AuthCompatibility
@@ -35,17 +37,18 @@ internal class ProviderAssembly(
 
     private val kimiArm = KimiPassthroughArm(statePaths, probeScope, log)
     private val grokRefresh = GrokRefresh(log)
+    private val grokAccounts = GrokAccountWiring(probeScope, log, grokRefresh)
     private val passthroughAssembly = PassthroughAssembly()
 
     /** Server mode (F4): the pools of the providers that list upstreams, which server mode reads. */
     internal val upstreamPools = UpstreamPools(probeScope, log, JdkHealthHttp())
-    private val chatArm = ChatArm(probeScope, log, grokRefresh, upstreamPools)
+    private val chatArm = ChatArm(probeScope, log, grokRefresh, upstreamPools, grokAccounts)
     internal val claudePoolChanges = claudeChanges
     private val passthroughArm = PassthroughArm(passthroughAssembly, claudeAccounts, claudePoolChanges)
 
     internal fun claudeAccounts(head: String, auth: splice.core.auth.RefreshableAuthProvider): List<WiredAccount> =
         claudeAccounts.accounts(head, auth)
-    private val grokResponsesArm = GrokResponsesArm(probeScope, log, grokRefresh, statePaths)
+    private val grokResponsesArm = GrokResponsesArm(probeScope, log, grokRefresh, statePaths, grokAccounts)
     private val apiKeyResponsesArm = ApiKeyResponsesArm(statePaths)
     private val codexResponsesArm = CodexResponsesArm(statePaths, probeScope, log, refreshCall, sessionSpeeds)
     internal var performance: splice.app.observability.PerfTelemetry? = null

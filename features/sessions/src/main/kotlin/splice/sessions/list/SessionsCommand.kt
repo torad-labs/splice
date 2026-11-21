@@ -84,12 +84,10 @@ public class SessionsCommand(
         return on + pin
     }
 
-    /** V4-293: a session that never went through splice is "direct", not a routing fault. */
-    private fun headLabel(route: SessionRoute): String = when (route) {
-        is SessionRoute.Head -> clean(route.key)
-        SessionRoute.Direct -> "direct"
-        SessionRoute.Unknown -> "unknown head"
-    }
+    /** V4-293: a session that never went through splice is "direct", not a routing fault. A door session reads `door`
+     *  on this machine's door and `door on <machine>` on another's (door-sessions). */
+    private fun headLabel(route: SessionRoute): String =
+        local.placed(route) ?: if (route == SessionRoute.Direct) "direct" else "unknown head"
 
     private fun glyph(availability: SessionAvailability): String = when (availability) {
         SessionAvailability.LIVE -> "$GREEN●$RESET"

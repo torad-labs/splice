@@ -34,7 +34,7 @@ internal class HeadModels(private val provider: ProviderConfig) {
     // the roster does not spell, a start it missed.
     private fun pinRefusal(head: HeadConfig): String? =
         "pinned_model is required on a head whose provider is not your own Claude login"
-            .takeIf { head.pinnedModel.isBlank() }
+            .takeIf { head.pinnedModel.isBlank() && !head.servedByGateway }
 
     /** The first model slot of [head] that names a model its allowlist or its provider does not carry. */
     private fun slotRefusal(head: HeadConfig, roster: List<ModelEntry>): String? {

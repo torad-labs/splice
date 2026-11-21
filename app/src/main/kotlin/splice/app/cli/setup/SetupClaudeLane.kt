@@ -24,7 +24,7 @@ import splice.app.LifecycleWiring
 import splice.app.cli.AdminSupport
 import splice.app.cli.desktop.DaemonUp
 import splice.app.cli.desktop.DoorOpening
-import splice.app.desktop.TopologyClaudeHead
+import splice.app.desktop.lane.TopologyClaudeHead
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.daemonclient.ControlPlaneClient

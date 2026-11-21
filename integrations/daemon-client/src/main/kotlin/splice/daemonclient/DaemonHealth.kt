@@ -37,6 +37,36 @@ public class DaemonHealth {
             // uncertain signal never green-lights a racing cold start.
             true
         }
+
+    /** custom-provider (cp-ready): what [port]'s listener is doing right now, one /health probe's worth: already
+     *  [BoundDaemon.Up] as [expected], bound by [BoundDaemon.OtherVersion] (today's handling: wait no further),
+     *  [BoundDaemon.Starting] (bound, not yet answering — a daemon beginning up looks the same as one mid-shutdown
+     *  until it either answers or releases the port), or [BoundDaemon.Free]. */
+    private fun boundDaemon(port: Int, expected: String): BoundDaemon =
+        when (val probe = DaemonProbe.healthProbe(port)) {
+            is DaemonProbe.HealthProbe.Up ->
+                if (probe.view.version == expected) BoundDaemon.Up else BoundDaemon.OtherVersion
+            DaemonProbe.HealthProbe.Down -> BoundDaemon.Free
+            is DaemonProbe.HealthProbe.Slow, is DaemonProbe.HealthProbe.Odd -> BoundDaemon.Starting
+        }
+
+    /** custom-provider (cp-ready): a bound port may hold a daemon that is up but has not yet answered its first
+     *  /health (found cutting custom-provider, Nov 18, 2026) rather than one stuck mid-shutdown; the two look
+     *  identical from one probe. Polls up to [polls] times, [intervalMs] apart — the same cold-start budget a
+     *  daemon this CLI spawned itself gets — so a slow first answer is waited out instead of refused. Stops the
+     *  moment the listener answers at all: [BoundDaemon.OtherVersion] is never waited on further, since no amount
+     *  of waiting turns it into [expected]. */
+    public fun waitForBoundDaemon(port: Int, expected: String, polls: Int, intervalMs: Long): BoundDaemon {
+        repeat(polls) {
+            val outcome = boundDaemon(port, expected)
+            if (outcome != BoundDaemon.Starting) return outcome
+            Thread.sleep(intervalMs)
+        }
+        return boundDaemon(port, expected)
+    }
 }
+
+/** custom-provider (cp-ready): see [DaemonHealth.waitForBoundDaemon]. */
+public enum class BoundDaemon { Up, OtherVersion, Starting, Free }
 
 private const val PROBE_TIMEOUT_MS = 400

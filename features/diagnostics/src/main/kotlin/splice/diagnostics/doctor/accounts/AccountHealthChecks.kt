@@ -5,7 +5,6 @@ package splice.diagnostics.doctor.accounts
 
 import splice.core.head.ProviderAnswer
 import splice.core.wire.HttpStatus
-import splice.diagnostics.doctor.AccountPoolText
 import splice.diagnostics.doctor.AccountPoolsRead
 import splice.diagnostics.doctor.CheckCause
 import splice.diagnostics.doctor.CheckStatus

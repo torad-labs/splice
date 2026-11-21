@@ -142,7 +142,13 @@ class InstructionWriteCheckTest {
     fun `a valid file writes and the inline prompt it replaces is gone`() {
         Files.writeString(tmp.resolve("good.md"), "Good instructions.\n")
         val routes = routes(BASE)
-        val reply = routes.write(body(routes, pointedAt("good.md")))
+        val request = Json.parseToJsonElement(body(routes, pointedAt("good.md"))).jsonObject
+        val topology = request.getValue("topology").jsonObject
+        val providers = topology.getValue("providers").jsonObject
+        val provider =
+            JsonObject(providers.getValue("ex").jsonObject + (SYSTEM_PROMPT_FILE to JsonPrimitive("good.md")))
+        val updated = JsonObject(topology + ("providers" to JsonObject(providers + ("ex" to provider))))
+        val reply = routes.write(buildJsonObject { put("topology", updated) }.toString())
         val answer = Json.parseToJsonElement(reply.body).jsonObject
         assertTrue(answer.getValue("ok").jsonPrimitive.boolean, reply.body)
         val written = Files.readString(file)

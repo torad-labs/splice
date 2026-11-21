@@ -169,6 +169,9 @@ public interface Provider : ProviderIdentity, RequestPlacements {
      *  never add a failure mode the SSE path did not already have. */
     public val wsRunner: WsRoundRunner? get() = null
 
+    /** A listener or the gateway is about to admit turns on this route. */
+    public fun onRouteStart() {}
+
     /** Cancel provider-owned per-turn resources when a head stops; the provider remains restartable. */
     public fun onHeadStop() {}
 

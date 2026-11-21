@@ -18,7 +18,7 @@ import splice.app.diagnostics.CodeModeParityProbe
 import splice.app.manager.ManagerHome
 import splice.app.peer.PEER_HOST_COMMAND
 import splice.app.peer.PeerHostRun
-import splice.app.provider.LocalRowBootFindings
+import splice.app.provider.local.LocalRowBootFindings
 import splice.client.wrap.WrapGuard
 import splice.client.wrap.WrappedHead
 import splice.core.config.InstallPaths

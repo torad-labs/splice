@@ -13,7 +13,7 @@ internal class SpliceSentences(private val spoken: Spoken) {
     private val holds = HoldSentences(spoken)
 
     fun said(cause: FailureCause.Splice, facts: LineFacts): Said = when (cause) {
-        is FailureCause.Splice.NoLogin -> noLogin(cause.loginCommand ?: facts.loginCommand, facts.head)
+        is FailureCause.Splice.NoLogin -> noLogin(cause, facts)
         is FailureCause.Splice.AtCapacity -> Said(
             "${facts.head} is already running ${spoken.count(cause.limit.toLong(), "turn")}, its limit",
             next = Next.Resend("Send the message again in a moment."),
@@ -26,8 +26,16 @@ internal class SpliceSentences(private val spoken: Spoken) {
         -> stopped(cause, facts)
     }
 
+    /** A head with nothing to sign its turns with: a provider whose key a command supplies says why it has none
+     *  (custom-provider, cp-credential), any other was never signed in. */
+    private fun noLogin(cause: FailureCause.Splice.NoLogin, facts: LineFacts): Said {
+        val command = cause.loginCommand ?: facts.loginCommand
+        return cause.why?.let { why -> CommandKeySentences.noKey(why, command, facts) }
+            ?: neverSignedIn(command, facts.head)
+    }
+
     /** A head that was never signed in names the command that signs it in, where the head has one. */
-    private fun noLogin(command: String?, head: String): Said = Said(
+    private fun neverSignedIn(command: String?, head: String): Said = Said(
         "$head has no login yet",
         next = Next.Then(
             command?.takeIf(String::isNotBlank)?.let { "Run $it, then send the message again." }

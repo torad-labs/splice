@@ -27,7 +27,8 @@ public class AuthStatusRoutes(
      *  the answer, and a field a provider adds later stays out until it is named here. The key appears only masked.
      *  A read failure keeps its place with fixed words in place of the provider's text, so a login that cannot be
      *  read still says so without quoting where. */
-    private val shown = setOf("display_name", "refusal", "env_var", "api_key_masked")
+    // custom-provider (cp-login): a command credential's state (held, none, failed), its expiry and its command's words.
+    private val shown = setOf("display_name", "refusal", "env_var", "api_key_masked", "state", "expires_at", "error")
 
     // Keyed by head, value = {present, verdict, ...the shown describe fields}: what Compare, Teams, Accounts and the
     // doctor read, and no more. V4-220 item 6b: verdict = {state, at_epoch_ms?}; state is `held` for a credential splice holds,

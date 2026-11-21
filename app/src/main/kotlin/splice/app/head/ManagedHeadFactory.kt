@@ -16,6 +16,9 @@ import splice.app.control.ManagedHead
 import splice.app.control.StatuslineContext
 import splice.app.control.UsageWarning
 import splice.app.control.UsageWarningSource
+import splice.app.head.books.AssembledRoute
+import splice.app.head.books.BooksQuota
+import splice.app.head.books.ProviderBooks
 import splice.app.probe.PlaygroundProviders
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
@@ -36,6 +39,7 @@ import splice.core.topology.DialectWires
 import splice.core.usage.QuotaReadFailures
 import splice.core.util.LogSink
 import splice.diagnostics.logs.LogFileSource
+import splice.head.ProviderRuntime
 import splice.head.compact.CompactStats
 import splice.head.compaction.FileCompactionRecordings
 import splice.head.compaction.KeepingRecordings
@@ -152,6 +156,12 @@ internal class HeadServing(
         recordings: FileCompactionRecordings,
     ) = headServerFactory.headServerFor(ctx, wired.provider, stores, forwardClientAuth, recordings)
         .also { playgroundProviders.bind(ctx.key, wired, stores.accounts.pool, it.providerReplies, it.compareSends) }
+
+    /** gateway-no-heads: [ctx]'s provider as the gateway serves it, over [books]' stores. It reads the global config layer
+     *  (it holds no head block) and registers with the console's per-key registries only where [registers] says no head
+     *  already has. It is not bound into the Playground, which is a head's. */
+    fun runtimeFor(ctx: ProviderBuild, wired: Wired, books: ProviderBooks, scope: RouteScope): ProviderRuntime =
+        headServerFactory.runtimeFor(ctx, wired.provider, books.stores, books.recordings, scope)
 }
 
 internal class ManagedHeadFactory(
@@ -180,17 +190,27 @@ internal class ManagedHeadFactory(
     /** Pool evidence owns only the daemon lifetime, and is settled after every head has drained. */
     fun closeEvidenceLoads() = quotaSeams.closeEvidenceLoads()
 
-    // Common assembly shared by every provider: stores, the generic HeadServer, launch spec.
-    internal fun assembleHead(ctx: ProviderBuild, controlPort: Int): ManagedHead {
+    /** The books each persisted key accounts into, built for the first route that asks and the same books for every
+     *  other: a legacy head and the gateway's runtime for the same provider are two routes over one set (ProviderBooks). */
+    private val books = java.util.concurrent.ConcurrentHashMap<String, ProviderBooks>()
+
+    /** The keys whose kept files have been swept this daemon life, once each, before the first provider is built. */
+    private val swept = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /** The books of [ctx]'s persisted identity. A key asked for under another provider than the one its books belong to
+     *  is another identity, and answering it with these books would write two providers' hours into one file. */
+    internal fun booksOf(ctx: ProviderBuild, wired: Wired): ProviderBooks {
+        val found = books.computeIfAbsent(ctx.key) { buildBooks(ctx, wired) }
+        check(found.provider == ctx.head.provider) {
+            "the books of ${ctx.key} belong to ${found.provider}, not ${ctx.head.provider}"
+        }
+        return found
+    }
+
+    /** The books [ctx]'s first route builds: the quota trackers (one per account, and the primary), the stores that read
+     *  them, the pollers that fill them and the kept compaction answers. */
+    private fun buildBooks(ctx: ProviderBuild, wired: Wired): ProviderBooks {
         val key = ctx.key
-        val cfg = ctx.cfg
-        keptFiles.atStart(
-            key,
-            codeMode = ctx.providerCfg.codeModeEnabled,
-            trace = cfg.trace,
-            traceWritten = ctx.head.overrides[Knob.TRACE.key],
-        )
-        val wired = providerAssembly.buildProvider(ctx)
         val accountQuotas = accountQuotas(key, wired)
         val primaryQuota = wired.accounts.singleOrNull { it.primary && it.nativePlace == null }
             ?.let { accountQuotas.getValue(it.label) }
@@ -198,7 +218,55 @@ internal class ManagedHeadFactory(
         quotaSeams.primaryWired(primaryQuota)
         val stores = headStores(ctx, wired, primaryQuota, accountQuotas)
         val polling = quotaSeams.pollingFor(ctx, quotaProbes, accountOrders)
-        val quotaPollers = polling.start(wired, stores, accountQuotas, providerAssembly, providerHolds)
+        val pollers = polling.start(wired, stores, accountQuotas, providerAssembly, providerHolds)
+        if (wired.auth is ClientAuthProvider) {
+            primaryQuota.credentialListener = CredentialQuotaFiles(statePaths.quotaFile(key), log)
+        }
+        return ProviderBooks(
+            ctx.head.provider,
+            stores,
+            BooksQuota(primaryQuota, accountQuotas, pollers, polling),
+            recordings(ctx),
+        )
+    }
+
+    /** gateway-no-heads: [ctx]'s provider assembled for the gateway, with no head to serve it: the provider and its
+     *  credential, the books it accounts into (the same books a head of the same identity has), and the runtime a gateway
+     *  turn runs through. [layer] is the config layer it reads (the provider's own overrides), and [registers] is whether the runtime takes the console's per-key registries, which a head of
+     *  the same key already holds. */
+    internal fun assembleRoute(ctx: ProviderBuild, layer: String, registers: Boolean): AssembledRoute {
+        val key = ctx.key
+        if (swept.add(key)) {
+            keptFiles.atStart(
+                key,
+                codeMode = ctx.providerCfg.codeModeEnabled,
+                trace = ctx.cfg.trace,
+                traceWritten = null,
+            )
+        }
+        val wired = providerAssembly.buildProvider(ctx)
+        val shared = booksOf(ctx, wired)
+        val scope = RouteScope(layer, registers, forwardClientAuth = wired.auth is ClientAuthProvider)
+        return AssembledRoute(wired, shared, serving.runtimeFor(ctx, wired, shared, scope))
+    }
+
+    // Common assembly shared by every provider: stores, the generic HeadServer, launch spec.
+    internal fun assembleHead(ctx: ProviderBuild, controlPort: Int): ManagedHead {
+        val key = ctx.key
+        val cfg = ctx.cfg
+        if (swept.add(key)) {
+            keptFiles.atStart(
+                key,
+                codeMode = ctx.providerCfg.codeModeEnabled,
+                trace = cfg.trace,
+                traceWritten = ctx.head.overrides[Knob.TRACE.key],
+            )
+        }
+        val wired = providerAssembly.buildProvider(ctx)
+        val shared = booksOf(ctx, wired)
+        val stores = shared.stores
+        val polling = shared.quota.polling
+        val quotaPollers = shared.quota.pollers
         // Derived from the CREDENTIAL, never from the declared string. The bypass is safe only
         // because splice holds nothing for this head, so it reads the artifact that IS that fact:
         // `wired.auth`. ProviderAssembly rejects registered client auth on non-passthrough dialects
@@ -206,8 +274,7 @@ internal class ManagedHeadFactory(
         // no bypass. Caller auth rides upstream only on heads that do get it; every other head keeps
         // enforcing the management key.
         val forwardClientAuth = wired.auth is ClientAuthProvider
-        if (forwardClientAuth) primaryQuota.credentialListener = CredentialQuotaFiles(statePaths.quotaFile(key), log)
-        val server = serving.observedHead(ctx, wired, stores, forwardClientAuth, recordings(ctx))
+        val server = serving.observedHead(ctx, wired, stores, forwardClientAuth, shared.recordings)
         // DR-81: key presence is NOT baked into the spec — it is a per-launch read of the SAME
         // wired credential, so `splice key set`/unset changes the very next launch. Non-api-key
         // auth reads true: capture/advertiser stay disarmed, which is the safe side.

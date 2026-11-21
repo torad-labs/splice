@@ -48,7 +48,7 @@ internal const val SPLICE_STATE_HOME: String = ".splice"
 internal const val LEGACY_STATE_HOME: String = ".claude-codex"
 
 /** Points the state dir anywhere; wins over everything but an explicit `baseOverride`. */
-internal const val STATE_DIR_ENV: String = "SPLICE_STATE_DIR"
+public const val STATE_DIR_ENV: String = "SPLICE_STATE_DIR"
 
 /** The pre-0.4 spelling of [STATE_DIR_ENV]. Still honoured — hermetic tests, `splice-launch` and
  *  anyone scripting it set it — but [STATE_DIR_ENV] is the name that will outlive it. */
@@ -158,7 +158,9 @@ internal sealed class RootProbe {
 
 public class StatePaths(
     baseOverride: Path? = null,
-    envReader: EnvReader = EnvReader(System::getenv),
+    /** The environment these paths were resolved under: the daemon's, read again by what lives beside splice's state,
+     *  such as Claude Desktop's configuration. */
+    public val envReader: EnvReader = EnvReader(System::getenv),
     homeDir: Path = UserHome.dir(envReader),
 ) {
     private val fromEnv: Path? =
@@ -270,7 +272,7 @@ public class StatePaths(
     public val daemonLockFile: Path = stateDir.resolve("daemon.lock")
 
     /** desktop-door: the key Claude Desktop's door opens to, owner-only, and the door's own record (whether it is on,
-     *  the window Desktop was told, what `splice desktop on` replaced in the settings file, and its last turn). */
+     *  its default model and window, what `splice desktop on` replaced in the settings file, and its last turn). */
     public val desktopKeyFile: Path = stateDir.resolve("desktop-key")
 
     public val desktopFile: Path = stateDir.resolve("desktop.json")
@@ -280,6 +282,11 @@ public class StatePaths(
     public val terminalKeyFile: Path = stateDir.resolve("terminal-key")
 
     public val claudeLaneFile: Path = stateDir.resolve("claude-lane.json")
+
+    /** The model catalog: every model a signed-in, configured provider's own list publishes, credential-free,
+     *  rewritten at daemon start/restart and on a sign-in, sign-out or provider-list change (CatalogFile). One
+     *  spelling for the writer and every reader. */
+    public val modelCatalogFile: Path = stateDir.resolve("model-catalog.json")
 
     /** door-default: the hook that answers splice's /login in a `claude` session on the door (DoorLogin). */
     public val doorLoginDir: Path = stateDir.resolve("door-login")

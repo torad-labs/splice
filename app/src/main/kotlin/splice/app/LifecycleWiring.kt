@@ -6,7 +6,7 @@ package splice.app
 
 import splice.app.cli.AdminSupport
 import splice.app.cli.ConfigFixOffer
-import splice.app.provider.LocalRowBootFindings
+import splice.app.provider.local.LocalRowBootFindings
 import splice.core.GATEWAY_VERSION
 import splice.core.config.RunningJar
 import splice.core.config.StatePaths

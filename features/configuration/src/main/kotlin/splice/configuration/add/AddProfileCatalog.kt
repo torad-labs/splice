@@ -300,9 +300,6 @@ internal class AddProfileCatalog {
             labels = AddLabels(
                 summary = "OpenRouter API-key route (many vendors, one key)",
             ),
-            policy = AddModelPolicy(
-                discoverRoster = true,
-            ),
             models = listOf(
                 AddModel(
                     "anthropic/claude-sonnet-5",

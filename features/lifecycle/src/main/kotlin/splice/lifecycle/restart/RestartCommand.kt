@@ -116,7 +116,7 @@ public class RestartCommand(
     // and its message are drivable against a temp CLAUDEX_STATE_DIR — DR-174's arms drive THIS
     // function, not the helper under it.
     internal fun stopIfRunning(port: Int, tomlPorts: List<Int>, waitForCompactions: Boolean = true): Boolean {
-        val running = DaemonProbe.healthVersion(port) ?: return true
+        val running = running(port) ?: return true
         val key = stopKeyOrExplain() ?: return false
         if (waitForCompactions) CompactionWait(output, JdkUpgradeInflight(env, port)).await()
         val scope = stopScope(DaemonProbe.headPorts(port, key), tomlPorts)
@@ -131,6 +131,17 @@ public class RestartCommand(
         return daemonStop.stopDaemon(port, key, scope.ports).also { stopped ->
             if (!stopped) output.line("splice: the daemon did not stop; terminate it manually and retry")
         }
+    }
+
+    /** How the daemon on [port] is named as it is stopped: its version, or that it is slow to answer; null when there
+     *  is no splice daemon there to stop. A daemon too busy to answer /health in the probe's window is still one to
+     *  stop: taken for none, the cold start after it found the port held, and the restart failed with the old daemon
+     *  still serving. */
+    private fun running(port: Int): String? = when (val probe = DaemonProbe.healthProbe(port)) {
+        is DaemonProbe.HealthProbe.Up -> probe.view.version
+        is DaemonProbe.HealthProbe.Slow -> "(slow to answer)"
+        // Nothing listens, or what listens is no splice daemon: there is nothing of ours to stop.
+        DaemonProbe.HealthProbe.Down, is DaemonProbe.HealthProbe.Odd -> null
     }
 
     /** DR-174: the stop key, or null having SAID which of the two states it is.

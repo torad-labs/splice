@@ -38,7 +38,14 @@ internal class AddCommand(
     private val settings = DaemonSettings(errors)
     private val texts = AddRefusalText()
 
-    suspend fun add(args: List<String>, env: EnvReader): Boolean {
+    /** custom-provider (cp-install): `splice add provider <file|url>`, a team's published definition. */
+    private val definitions = AddProviderCommand(output, errors, ports, bindable)
+
+    suspend fun add(args: List<String>, env: EnvReader): Boolean =
+        if (args.firstOrNull() == PROVIDER_WORD) definitions.add(args.drop(1), env) else profile(args, env)
+
+    /** `splice add <profile>`: a head from one of splice's own profiles. */
+    private suspend fun profile(args: List<String>, env: EnvReader): Boolean {
         val parsed = AddArgParser().parse(args) ?: return AddArgParser().usage(output)
         val candidate = prepare.candidate(parsed, env) ?: return false
         return added(candidate, env)
@@ -172,3 +179,6 @@ internal class AddCommand(
         return answer.lowercase().startsWith("y")
     }
 }
+
+/** The `add` word that installs a published provider definition rather than a profile. */
+private const val PROVIDER_WORD = "provider"

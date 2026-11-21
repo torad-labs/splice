@@ -176,7 +176,7 @@ internal class TurnTelemetry(
                 outcomeTag,
                 drive.meta.compact,
                 session,
-                PerfAccount(accountLabel, account?.cacheCold == true),
+                PerfAccount(accountLabel, account?.cacheCold == true, spend.price),
                 // V4-117: the cause and the loop's own attempt count ride the row beside the tag. The
                 // outcome TAG is not replaced — it is what the operator already greps — so this is an
                 // addition to the row, never a change to the string that identifies it.
@@ -272,7 +272,7 @@ internal class TurnTelemetry(
             tag,
             meta.compact,
             session,
-            account = PerfAccount(refusal.account),
+            account = PerfAccount(refusal.account, price = spend.price),
             transcript = PerfTranscriptIds(
                 turns = PerfTurnIds(trace = trace?.turnId),
                 sessionId = meta.scope.sessionId,

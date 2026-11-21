@@ -31,6 +31,7 @@ import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
 import splice.core.wire.ErrorEnvelope
 import splice.core.wire.HttpStatus
+import splice.core.wire.SHOULD_RETRY_HEADER
 import splice.head.turn.delivery.CollectedReply
 import splice.http.ingress.IngressErrorBody
 
@@ -174,4 +175,3 @@ internal class AdmissionResponses(private val voice: HeadVoice) {
 }
 
 /** The header Claude Code reads before re-sending a refused request. */
-private const val SHOULD_RETRY_HEADER = "x-should-retry"

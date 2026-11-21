@@ -195,7 +195,8 @@ private fun modelNamed(c: Case): String = (c.said as? Said.Model)?.name?.takeIf 
 
 /** The rows about the provider's own side; a capacity code is an overload on any 5xx. */
 private fun serverRow(c: Case, words: ProviderWords?): FailureCause.Provider = when {
-    c.status == 503 || CAPACITY.any { names(c, it) } -> FailureCause.Provider.Overloaded(retry(c), false, words)
+    c.status == 503 || CAPACITY.any { names(c, it) } || (c.status == 529 && c.retryAfterS != null) ->
+        FailureCause.Provider.Overloaded(retry(c), false, words)
     c.status == 500 -> FailureCause.Provider.ServerError(ServerFault.INTERNAL, words)
     c.status == 502 -> FailureCause.Provider.ServerError(ServerFault.BAD_GATEWAY, words)
     c.status == 504 -> FailureCause.Provider.ServerError(ServerFault.GATEWAY_TIMEOUT, words)
@@ -356,7 +357,11 @@ class ResponsesRepliesPropertyTest {
             }
             val words = ProviderWordsFilter.of(if (c.json) c.said.text else c.body)
             assertEquals(
-                FailureCause.Provider.Unrecognized(c.status in 400..499, words),
+                if (c.status == 529 && c.retryAfterS != null) {
+                    FailureCause.Provider.Overloaded(retry(c), false, words)
+                } else {
+                    FailureCause.Provider.Unrecognized(c.status in 400..499, words)
+                },
                 ResponsesReplies.http(c.reply()),
                 c.toString(),
             )

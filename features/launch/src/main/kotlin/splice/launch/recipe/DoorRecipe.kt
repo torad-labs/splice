@@ -4,6 +4,7 @@
 // wrap and binary it reads.
 package splice.launch.recipe
 
+import splice.client.desktop.DoorOverlayMerge
 import splice.client.wrap.ClaudeToRun
 import splice.client.wrap.WrapStateRead
 import splice.client.wrap.WrappedHead
@@ -28,11 +29,16 @@ internal class DoorRecipe(
     ): LaunchOutcome {
         val chosen = wrapState.claude()
         if (chosen is ClaudeToRun.Refused) return LaunchOutcome.Refused(chosen.reason)
+        // custom-provider (cp-overlay): the person's own --settings are merged into the one overlay, never a second one.
+        val merged = when (val m = DoorOverlayMerge(door.overlay, caller.cwd).merge(extraArgs)) {
+            is DoorOverlayMerge.Merged.Refused -> return LaunchOutcome.Refused(m.reason)
+            is DoorOverlayMerge.Merged.Ready -> m
+        }
         val argv = buildList {
             add((chosen as? ClaudeToRun.Wrapped)?.path ?: claudeBinary)
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
-            addAll(LaunchMarker.settingsArgs(door.overlay))
-            addAll(extraArgs)
+            addAll(LaunchMarker.settingsArgs(merged.overlay))
+            addAll(merged.args)
         }
         val config = wrap.ownHome().configRootUnsets(caller.inheritedConfigDir, headDirs)
         val warning = "dangerouslySkipPermissions engaged: $DANGER".takeIf { dangerouslySkipPermissions }

@@ -14,6 +14,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonUnquotedLiteral
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 
 private const val FULL_PCT = 100.0
 
@@ -32,6 +33,13 @@ internal class UsageHud {
             put("input_tokens", usage.inputTokens)
             put(OUTPUT_TOKENS, usage.outputTokens)
             put("cache_creation_input_tokens", usage.cacheCreationInputTokens)
+            // desktop-full (df-wire-answers): the write split as a gateway answers it, the two parts adding up to the
+            // total above after any window scaling. A write no provider split is a five-minute one, as splice charges it.
+            putJsonObject("cache_creation") {
+                val hourly = usage.cacheCreationHourlyTokens.coerceIn(0L, usage.cacheCreationInputTokens)
+                put("ephemeral_5m_input_tokens", usage.cacheCreationInputTokens - hourly)
+                put("ephemeral_1h_input_tokens", hourly)
+            }
             put("cache_read_input_tokens", usage.cacheReadInputTokens)
             if (contextWindow != null && contextWindow > 0) {
                 put("context_window", contextWindow)

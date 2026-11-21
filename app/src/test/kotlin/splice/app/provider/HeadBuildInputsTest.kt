@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.function.Executable
 import org.junit.jupiter.api.io.TempDir
 import splice.app.auth.SignInPlanner
+import splice.app.provider.local.LocalProbeInputs
+import splice.app.provider.local.LocalRowsCheck
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.model.ExtraWindow

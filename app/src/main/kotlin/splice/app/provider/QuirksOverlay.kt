@@ -98,7 +98,10 @@ internal class QuirksOverlay {
         // unknown tolerance still gets nothing, because strict ones 400 on unrecognized
         // stream_options members. TOML wins over both, and null keeps the base — which is what
         // leaves grok-oauth's own `true` and every other head's request bytes untouched.
-        val usage = providerCfg.quirks.streamUsage ?: true.takeIf { providerCfg.isLocal }
+        // custom-provider (issue #680): a team's own gateway on command auth asks too. It serves the team's people on
+        // the door, whose sessions compact on the counts it reports, and a team that publishes a splice definition
+        // answers the field; one that refuses it sets stream_usage = false.
+        val usage = providerCfg.quirks.streamUsage ?: true.takeIf { providerCfg.isLocal || providerCfg.auth.isCommand }
         // A self-served runtime gets each earlier turn's reasoning back: its template renders it
         // in that turn's think block. A hosted vendor keeps its bytes, since some refuse reasoning_content in input.
         val replay = true.takeIf { providerCfg.isLocal }

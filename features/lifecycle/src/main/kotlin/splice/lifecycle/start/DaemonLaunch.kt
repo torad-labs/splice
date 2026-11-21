@@ -10,6 +10,7 @@ package splice.lifecycle.start
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
 import splice.core.terminal.TerminalOutput
+import splice.daemonclient.BoundDaemon
 import splice.daemonclient.DaemonHealth
 import java.nio.file.Path
 import java.time.Duration
@@ -60,9 +61,28 @@ internal class DaemonLaunch(
      *  [expectedVersion] (this CLI's own, or the one an upgrade just activated). */
     internal fun ensureDaemon(port: Int, expectedVersion: String = GATEWAY_VERSION): Boolean {
         if (health.daemonUp(port, expectedVersion)) return true
-        return when (val route = supervised.route()) {
-            is ColdStartRoute.Unit -> startUnit(route.unit, port, expectedVersion)
-            is ColdStartRoute.Raw -> spawnHere(route.reason, port, expectedVersion)
+        // custom-provider (cp-ready): one miss on a BOUND port is not "nothing is listening" — it may be a daemon
+        // up but slow to answer its first /health. Wait it out on the same budget a daemon this CLI starts itself
+        // gets, rather than concluding "still shutting down" or spawning a second one beside it.
+        val bound = if (health.controlPortBound(port)) {
+            health.waitForBoundDaemon(port, expectedVersion, startupPolls, POLL_INTERVAL_MS)
+        } else {
+            BoundDaemon.Free
+        }
+        return when (bound) {
+            BoundDaemon.Up -> true
+            BoundDaemon.Starting -> {
+                output.line(
+                    "splice: control port $port is still bound (a daemon is still shutting down); " +
+                        "retry in a moment",
+                )
+                false
+            }
+            // OtherVersion keeps today's handling: never waited on further, just the normal start/spawn below.
+            BoundDaemon.OtherVersion, BoundDaemon.Free -> when (val route = supervised.route()) {
+                is ColdStartRoute.Unit -> startUnit(route.unit, port, expectedVersion)
+                is ColdStartRoute.Raw -> spawnHere(route.reason, port, expectedVersion)
+            }
         }
     }
 

@@ -10,6 +10,7 @@ package splice.app.control.mount
 
 import io.ktor.http.CacheControl
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receiveText
@@ -17,8 +18,10 @@ import io.ktor.server.response.cacheControl
 import io.ktor.server.response.header
 import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondRedirect
+import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
+import io.ktor.server.routing.head
 import io.ktor.server.routing.post
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
@@ -32,6 +35,12 @@ import java.nio.file.Path
 // why: the page the bare address opens. Accounts is where a person signs in and where a limit sends them.
 private const val FIRST_PAGE = "accounts.html"
 
+// What a client that is not a browser reads at the root: that it reached splice, and nothing more.
+private const val ROOT_ANSWER = "splice"
+
+// What a browser names in Accept.
+private const val HTML = "text/html"
+
 internal class ConsoleMount(
     private val guard: ControlGuard,
     private val env: EnvReader = EnvReader(System::getenv),
@@ -42,8 +51,17 @@ internal class ConsoleMount(
     private val asset = Regex("""((fonts|brand)/)?[a-z0-9][a-z0-9-]*\.(html|css|js|woff2|svg|png)""")
     private val json = Json { ignoreUnknownKeys = true }
 
+    /** The control port's root: a browser (it asks for HTML) lands on the console's first page; any other client gets
+     *  a short answer that says it reached splice. Claude Desktop asks its gateway's root before it uses it
+     *  (desktop-full, df-wire-door), and a redirect to a page there failed that check. Nothing in it needs a key. */
+    private suspend fun root(call: ApplicationCall) {
+        val browser = call.request.headers[HttpHeaders.Accept].orEmpty().contains(HTML, ignoreCase = true)
+        if (browser) call.respondRedirect("/$FIRST_PAGE") else call.respondText(ROOT_ANSWER, ContentType.Text.Plain)
+    }
+
     fun register(route: Route) {
-        route.get("/") { call.respondRedirect("/$FIRST_PAGE") }
+        route.get("/") { root(call) }
+        route.head("/") { root(call) }
         route.post("/api/console/code") {
             guard.guarded(call) { secret(call, HttpStatusCode.OK, "code", guard.console.code()) }
         }

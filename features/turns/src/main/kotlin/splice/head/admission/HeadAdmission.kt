@@ -12,6 +12,7 @@ import splice.core.auth.CredentialKey
 import splice.core.memory.HeapCapacityException
 import splice.core.turn.LiveWatchdogBudget
 import splice.core.util.Cancellables
+import splice.head.GatewayTurns
 import splice.head.HeadDeps
 import splice.head.hold.ClientWallHeader
 import splice.head.hold.ResendLedger
@@ -258,6 +259,7 @@ internal class HeadAdmission(
             TurnSlot(
                 admitted.slot,
                 clientWallMs = ClientWallHeader.ms(call),
+                clientPingMs = GatewayTurns.clientPingMs(call),
                 heapLease = admitted.heapLease,
                 harness = prepared.harness,
             ) { admitted.markHandedOff() },

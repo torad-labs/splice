@@ -8,11 +8,11 @@ import splice.core.terminal.CYAN
 import splice.core.terminal.DIM
 import splice.core.terminal.RESET
 import splice.core.terminal.TerminalOutput
+import splice.core.topology.DOOR_SEGMENT
 import splice.core.topology.RemoteAddress
 import splice.core.topology.RemoteAddressRead
 import splice.core.topology.RemoteAddresses
 import splice.share.Asked
-import splice.share.DOOR_SEGMENT
 import splice.share.ShareDirectory
 import splice.share.ShareInfo
 

@@ -12,13 +12,13 @@ import splice.core.terminal.DIM
 import splice.core.terminal.GREEN
 import splice.core.terminal.RESET
 import splice.core.terminal.TerminalOutput
+import splice.core.topology.DOOR_SEGMENT
 import splice.core.topology.SHARE_NODE_TOKEN
 import splice.core.topology.ShareConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.share.Asked
-import splice.share.DOOR_SEGMENT
 import splice.share.ShareAddresses
 import splice.share.ShareDirectory
 import splice.share.ShareInfo

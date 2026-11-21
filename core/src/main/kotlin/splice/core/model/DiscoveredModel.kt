@@ -4,6 +4,9 @@
 // .catalogFor), so every reader of a catalog sees one roster and no reader asks the network.
 package splice.core.model
 
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
 /** One published model, before splice decides its window. [contextWindow] is null when the endpoint
  *  publishes none, never zero. [aliases] are the other spellings the endpoint says resolve to [id]:
  *  a declared row under any of them already covers this model, so it is not offered twice. [rates] is the
@@ -25,6 +28,7 @@ public data class DiscoveredModel(
     public val modelMessages: kotlinx.serialization.json.JsonObject? get() = runtimeMetadata.modelMessages
     public val useResponsesLite: Boolean get() = runtimeMetadata.useResponsesLite
     public val serviceTiers: List<ServiceTier> get() = runtimeMetadata.serviceTiers
+    public val listing: ModelListing get() = runtimeMetadata.listing
 
     /** Whether the endpoint runs this model on the one-`exec` code-mode surface (V4-441): its `tool_mode`
      *  is `code_mode_only`, which is how the Codex backend marks the models it trained on that surface. */
@@ -42,6 +46,22 @@ public data class ModelRuntimeMetadata(
     val toolMode: String? = null,
     /** gpt-speed: the speed tiers the endpoint lists for the model (`service_tiers`), in its own words. */
     val serviceTiers: List<ServiceTier> = emptyList(),
+    val listing: ModelListing = ModelListing(),
+)
+
+/** What a provider's list says about a model in its own words, beside its id, name and window: its [description], the
+ *  reasoning levels it takes ([efforts], in the provider's order and spelling; empty when it names none), the level it
+ *  runs at when a request names none ([defaultEffort]), and whether it says the model takes a reasoning setting at all
+ *  ([reasons]: true with levels, and for a list that names the setting and no levels, as OpenRouter's does). Every
+ *  reader of a model's reasoning levels takes them from here, so none is written down in splice. */
+@Serializable
+public data class ModelListing(
+    val description: String = "",
+    val efforts: List<String> = emptyList(),
+    @SerialName("default_effort") val defaultEffort: String? = null,
+    val reasons: Boolean = false,
+    /** The provider's model row, retained for clients that understand properties splice does not interpret. */
+    val source: kotlinx.serialization.json.JsonObject? = null,
 )
 
 /** The `tool_mode` the Codex backend publishes for a model it runs on the code-mode surface alone. */

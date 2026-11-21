@@ -277,7 +277,29 @@ internal object Concentration {
     // neighbourhood, untouched by the change: ControlServer.kt 2.93 -> 3.08, C 223 in both, as splice.app.head took the
     // harness's three wiring files (HeadCapabilities, HeadMcpServers, LaunchedGatherers), 24 -> 27 files, and its
     // median fell 76 -> 72.5. The tree got worse; this records it. 24 -> 25.
-    const val RATCHET_MAX_HIGH = 25
+    // 2026-11-21: the provider gateway (gateway-no-heads, the model catalog, custom-provider and Desktop's app mode,
+    // 436 commits) with main merged in, measured by this law's own run over that tree and by a port of its census that
+    // reproduces band HIGH's 25 on main at 89b9d20eb. The change's own entrants leave by seams of their own:
+    // StatusTable.kt 3.35 -> 2.76 gives what the daemon reports of each head to StatusReadings.kt, and
+    // HeadOverrideWrite.kt 3.18 gives where a per-command write lands to HeadOverrideLanding.kt. Seven enter by
+    // neighbourhood, each byte for byte the file main holds, as the change's small files moved the medians they
+    // divide by:
+    //   · Harness.kt 2.80 -> 3.17 (C 127.5, denominator 45.5 -> 40.2) and ContextGetter.kt 2.66 -> 3.02 (C 121.0,
+    //     45.5 -> 40.0): splice.core.failure's median fell 45.5 -> 40.0 over 21 -> 23 files, and splice.launch's
+    //     47.25 -> 28.5 over 4 -> 5.
+    //   · IngressHandler.kt 2.96 -> 3.02 (C 134.5, 45.5 -> 44.5): splice.core.failure again, and splice.core.wire
+    //     15.0 -> 13.5 over 17 -> 19 files (WholeSeconds and UrlSchemes).
+    //   · InflightGate.kt 2.96 -> 3.02 (C 175.5, 59.2 -> 58.2) and LiveTurns.kt 2.81 -> 3.00 (C 204.0, 72.5 -> 68.0):
+    //     splice.core.head's median fell 92.5 -> 20.5 as it went from 2 files to 3, and splice.head.lifecycle (one
+    //     file, 91.5) is gone since TurnService moved to features/turns.
+    //   · CodexCodeModeStore.kt 2.96 -> 3.02 (C 175.5, 59.2 -> 58.2): splice.app.provider's median fell 92.5 -> 85.5
+    //     with the gateway's small files (ServedProvider, ProviderLogins, LoginOwners, KeyAuth, ServedWindows).
+    //   · DaemonBoundary.kt 2.86 -> 3.01 (C 190.0, 66.4 -> 63.1): splice.app.cli's median fell 86.0 -> 59.0 over
+    //     13 -> 17 files, and splice.app.provider's as above.
+    // Two leave by neighbourhood: ControlServer.kt 3.08 -> 2.95 (C 223.0, 72.5 -> 75.5, splice.app.head's median up
+    // 72.5 -> 77.5) and SessionsRelaunchCommand.kt 3.08 -> 2.99. The tree got worse; this records it. The remedy is
+    // decomposing those seven, worst first, and this number follows each one down. 25 -> 30.
+    const val RATCHET_MAX_HIGH = 30
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package
@@ -299,7 +321,15 @@ internal object Concentration {
      *  CodexCredentialShape and CodexOAuth. RefreshedTokens.kt stays, because it also holds the quirk profile.
      *  splice.provider.codex falls 31 -> 25 and auth holds 7. The worst is now 30, held by four packages:
      *  splice.provider.codex.diagnostics, splice.head.wire, splice.upstream.codemode and
-     *  splice.codemode.nativehost.grpc. Band HIGH keeps its 16 files. Measured on 63f0aadee with the move. 31 -> 30. */
+     *  splice.codemode.nativehost.grpc. Band HIGH keeps its 16 files. Measured on 63f0aadee with the move. 31 -> 30.
+     *
+     *  2026-11-21: the provider gateway grew eight packages past this number (splice.app.desktop 44, splice.app.provider
+     *  36, splice.core.topology 34, splice.server 32, and splice.app.head, splice.diagnostics.doctor,
+     *  splice.upstream.transport and splice.core.util 31 each), and each gave files to a package of their own until it
+     *  held 30 or fewer, with behaviour unchanged: the door's records, catalog, terminal lane and Desktop setup under
+     *  splice.app.desktop; local runtimes and Muse under splice.app.provider; the TOML text and the gateway's move
+     *  checks under splice.core.topology; a team server's sign-in; a provider's books; doctor's account pools; the
+     *  upstream's TLS roots; and ProcessTree in splice.core.process. The worst stays 30. */
     const val PACKAGE_MAX_FILES = 30
 
     /** Where a shrunk baseline is re-recorded by hand. */

@@ -13,8 +13,8 @@ import splice.core.GATEWAY_VERSION
 import splice.core.config.UserHome
 import splice.core.util.EnvReader
 import splice.daemonclient.DaemonProbe
-import splice.diagnostics.doctor.AccountPoolRead
 import splice.diagnostics.doctor.AccountPoolsRead
+import splice.diagnostics.doctor.accounts.AccountPoolRead
 import splice.upstream.transport.LocalHttp
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream

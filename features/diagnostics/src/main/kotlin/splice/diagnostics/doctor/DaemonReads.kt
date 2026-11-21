@@ -18,6 +18,7 @@ import splice.daemonclient.MgmtKeyFile
 import splice.daemonclient.MgmtKeyRead
 import splice.daemonclient.Reading
 import splice.daemonclient.TraceConfigProbe
+import splice.diagnostics.doctor.accounts.AccountPoolRead
 import splice.diagnostics.doctor.accounts.AccountRosterProjection
 import java.nio.file.Path
 

@@ -8,6 +8,7 @@ import com.fasterxml.jackson.core.JsonToken
 import com.fasterxml.jackson.core.util.JsonRecyclerPools
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfTurnIds
+import splice.core.turn.TurnAgent
 import splice.core.util.Cancellables
 import splice.usage.perf.PerfHeldLink
 import splice.usage.perf.PerfRow
@@ -91,6 +92,8 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
         private var skipped: String? = null
         private var failed: String? = null
         private var workedFor: String? = null
+        private var agentId: String? = null
+        private var parentAgentId: String? = null
         var drops: Long? = null
             private set
 
@@ -131,6 +134,8 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
                 "capability_skipped" -> skipped = text(parser)
                 "capability_failed" -> failed = text(parser)
                 "worked_for" -> workedFor = text(parser)
+                "agent_id" -> agentId = text(parser)
+                "parent_agent_id" -> parentAgentId = text(parser)
             }
         }
 
@@ -158,6 +163,7 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
                     door,
                     PerfHeldLink(heldOn, skipped, failed),
                     workedFor,
+                    TurnAgent(agentId, parentAgentId),
                 ),
                 turns = PerfTurnIds(trace = turn, request = turnId),
             )

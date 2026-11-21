@@ -21,13 +21,14 @@ class DaemonLaunchTest {
     /** The raw-spawn route on every machine: this systemctl knows no unit, so `cat` answers non-zero.
      *  The arm used to reach the real one through AdminSupport, and on a box with splice.service it
      *  took the unit route — starting the operator's unit and waiting out the whole startup budget
-     *  instead of testing the refusal it names. */
-    private fun launch(): DaemonLaunch {
+     *  instead of testing the refusal it names. [startupPolls] is the cold-start budget (custom-provider,
+     *  cp-ready): small here so a port that never answers is still a fast test, not the real ~62s wait. */
+    private fun launch(startupPolls: Int = 4): DaemonLaunch {
         val out = TerminalOutput(::println)
         val health = DaemonHealth()
         val settings = DaemonSettings(TerminalOutput(System.err::println))
         val noUnit = SupervisedStart(Systemctl { 1 }, EnvReader { null }, settings)
-        return DaemonLaunch(out, health, DaemonSpawn(out, health, RunningJar { null }), noUnit)
+        return DaemonLaunch(out, health, DaemonSpawn(out, health, RunningJar { null }), noUnit, startupPolls)
     }
 
     // The restart-refuses-while-bound wall: ensureDaemon must NOT cold-start into a still-bound control

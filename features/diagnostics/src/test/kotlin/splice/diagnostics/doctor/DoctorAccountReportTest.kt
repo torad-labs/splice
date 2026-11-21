@@ -15,6 +15,7 @@ import splice.accounts.pool.HeadAccountCredential
 import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.pool.HeadAccountView
 import splice.core.config.StatePaths
+import splice.diagnostics.doctor.accounts.AccountPoolProjection
 import splice.diagnostics.doctor.report.DoctorJsonReport
 import splice.diagnostics.doctor.report.DoctorRun
 import splice.topology.TopologyLoader

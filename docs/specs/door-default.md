@@ -54,9 +54,10 @@ What `POST /launch/claude` answers the launch shim while `claude` is on the door
 
 ### 3. The terminal has a key of its own
 
-The door admits two callers, Claude Desktop's Code tab and the terminal's `claude`, each with its own key. Both
-start on the one model decision 1 names: since 0.6.4 Desktop has no default model of its own, and
-`splice desktop on` takes no `--model`.
+The door admits two callers, Claude Desktop's Code tab and the terminal's `claude`, each with its own key. The
+terminal's `claude` starts on the model decision 1 names. Claude Desktop starts on one of its own, the model
+`splice desktop on --model` names and its picker lists first (docs/specs/desktop-full.md); 0.6.4 had folded it into
+the terminal's, and Desktop's app mode gave it back on Nov 21, 2026.
 `splice desktop off` closes the door to Desktop and leaves `claude` running. `splice desktop rotate-key` changes
 Desktop's key only. `splice claude head` moves only the sessions started after it: the terminal's key stays, and a
 session already on the door keeps running there (until Nov 18, 2026 the move retired the key and refused them). A
@@ -69,8 +70,15 @@ recorded as a door turn of the head that ran it.
 The door's grammar is unchanged (`docs/specs/desktop-door.md`, decisions 1 to 3): a selector runs its model on its
 head, an Anthropic ID is a tier of the session's head, anything else is refused by name with nothing sent upstream.
 
-The picker of a terminal session lists every model of every head whose provider is called with a login splice holds
-(a ChatGPT, Grok, Kimi or Muse sign-in), while that login is good. A head called with an API key, or a local model
+On startup and restart, splice asks its configured providers for their models and replaces `model-catalog.json` in
+its state directory (normally `~/.splice/state`). The catalog contains one row per provider and model, without
+credentials. It records the descriptions, context windows and reasoning options the provider publishes, with explicit
+configuration for models that do not publish those facts. An unreported reasoning level is not guessed. The door's
+model discovery and picker read this catalog; they do not rebuild it when a client asks. Signing in or out updates
+which providers' models the door serves without a restart.
+
+The picker of a terminal session lists every model of every provider that is called with a login splice holds
+(a ChatGPT, Grok, Kimi or Muse sign-in), while that login is good. A provider called with an API key, or a local model
 server, is in the picker with the models splice.toml declares for it (`splice add api-key --model`), or with every
 model it lists when it declares none; the rest of what its endpoint lists still runs when named
 (`/model <selector>`). Until Nov 18, 2026 a head on a key was not in the picker at all, which kept OpenRouter's
@@ -147,6 +155,47 @@ No head is removed, renamed or refused by this change, and no date is set for re
 `splice setup` on a machine with no splice.toml links `claude` to splice on the door and adds no head keyed
 `claude`. The Claude plan leaves its tick list; `splice add claude` still adds that head for someone who runs Claude
 models on their plan. An upgrade changes no lane.
+
+### 10. The gateway serves every provider, and needs no head
+
+Heads are going away, so the gateway no longer reads one. Every provider splice.toml declares is in the door, read from
+the provider alone (its models, its login, its quirks), and a turn through the door is handed to that provider's own
+serving: no head block is read, no head server is started or relayed to, and a splice.toml with no `[heads.*]` at all
+serves exactly the models it served with them.
+
+- **Selectors.** A provider's models are `claude-<provider>--<model id>`, each once. The selectors callers hold today
+  (`claude-codex--gpt-6.2-sol`, `claude-grok--grok-4.7`, `claude-muse--muse-spark-1.3[1m]`) keep working: the gateway
+  owns a table that reads an old prefix as the provider it stood for (SelectorAliases), made of its own built-in legacy
+  prefixes, the person's `[door.selector_aliases]` for a custom one (`"claude-ollama--" = "ollama"`) and, while a
+  head block is still in splice.toml, that head's `discovery_prefix`. A selector of a provider splice.toml does not
+  declare names nothing.
+- **What a provider carries.** What a head's block held that a turn needs moves to the provider: `pinned_model` and
+  `model_slots` (the model each of Claude Code's tiers runs), beside the declared `context_window`, the quirks
+  (`chat_effort_vocabulary` among them) and the credential it already had. A provider that declares neither starts a
+  session on its first model and runs a tier as the session's own model.
+- **A door command** names the `provider` it runs on, `[door.commands.<name>] = { provider = "<key>" }`. A file that
+  names a `head` is read as that head's provider and never rewritten.
+- **Who is in the door.** A provider is in it while splice holds the credential it is called with (decision 4). One that
+  is not stays listed in `splice claude --json` and `splice desktop` with the reason, and a turn to a provider whose
+  endpoint is down answers an honest error naming it; neither stops splice from booting.
+- **Credentials.** The caller's door key is admitted at the door and goes no further: a turn reaches its provider on
+  that provider's credential only. A provider that forwards the caller's own Claude login runs a door turn on the
+  accounts added to splice, and with none added is left out.
+- **Native Anthropic IDs.** A Claude model keeps its own Anthropic id (`claude-opus-5-5`) in the picker and in a request, and runs on the provider
+  that supplied that discovery row, the Claude accounts added to splice, even when the session last used another provider;
+  a full name no provider serves is refused by name rather than run as the old provider's pinned model. A tier alias
+  (`opus`, `sonnet`, `haiku`, `fable`) with no model named runs on the session's current provider, as that provider's
+  `model_slots` map it, else on the session's own model.
+- **A provider's own prompt and knobs.** What a head's block carried that a turn needs (`pinned_model`, `model_slots`,
+  `context_window`, the quirks, the credential) lives on the provider, and so does its standing prompt: `system_prompt`,
+  `system_prompt_file` and `system_prompt_mode`. A head's `overrides` table still lives on the head block: a provider
+  served with no head runs on the daemon-wide settings until provider-level `overrides` land, and boot says nothing is
+  moved silently.
+- **Status and doctor.** `splice status` lists each provider no head runs on a row of its own (`the door`), ready while
+  splice holds its credential; `splice claude --json` and `splice desktop` list every provider with `listed` and, where
+  one is left out, the `reason`; `splice doctor` reads each provider no head runs for its credential, as it does a head.
+- **Legacy heads** keep working for their own commands, and a head's name still reads in `splice claude --json` as the
+  `head` and `command` of its provider, for a script that reads them.
 
 ## Not in this change
 

@@ -21,6 +21,8 @@ import java.net.UnknownHostException
 import java.net.http.HttpConnectTimeoutException
 import java.nio.channels.ClosedChannelException
 import java.nio.channels.UnresolvedAddressException
+import java.security.cert.CertPathBuilderException
+import java.security.cert.CertPathValidatorException
 import javax.net.ssl.SSLException
 
 /** Reads a failure the transport raised: no answer came, so the path broke, and [Unreach] says how. */
@@ -30,8 +32,18 @@ public object TransportFaults {
      *
      *  Narrower than the design's sketch on purpose: every failure raised instead of an answer is [Unreach]able, and
      *  the callers that ask "was this refused" then need no cast. */
-    public fun of(error: Throwable, local: Boolean): FailureCause.Path.Unreachable =
-        FailureCause.Path.Unreachable(why(FailureChain.links(error).toList()), local)
+    public fun of(error: Throwable, local: Boolean): FailureCause.Path.Unreachable {
+        val chain = FailureChain.links(error).toList()
+        val why = why(chain)
+        val reason = if (why == Unreach.UNTRUSTED) untrusted(chain) else null
+        return FailureCause.Path.Unreachable(why, local, reason = reason)
+    }
+
+    /** cp-tls: what the handshake said of the certificate, short: the deepest message in the chain, its last clause. */
+    private fun untrusted(chain: List<Throwable>): String {
+        val said = chain.mapNotNull { it.message?.trim()?.takeIf(String::isNotEmpty) }.lastOrNull().orEmpty()
+        return said.substringAfterLast(": ").take(UNTRUSTED_REASON_CHARS).ifEmpty { "no trusted root signed it" }
+    }
 
     /**
      * The one reading, in the order the chain answers it: a name that did not resolve wherever it sits (the JDK buries
@@ -43,13 +55,21 @@ public object TransportFaults {
     private fun why(chain: List<Throwable>): Unreach = when {
         chain.any { it is UnresolvedAddressException || it is UnknownHostException } -> Unreach.DNS
         chain.any { it is RequestWriteStalled } -> Unreach.WRITE_STALLED
-        chain.any { it is SSLException } -> Unreach.TLS
+        chain.any(::secureFailed) -> secureWhy(chain)
         // Before the refusal: ktor's own connect timeout IS a ConnectException, and a timeout is no refusal — the
         // remedy would be the opposite, since nothing says the server is down.
         chain.any { it is ConnectTimeoutException || it is HttpConnectTimeoutException } -> Unreach.RESET_BEFORE_REPLY
         chain.any { refused(it, chain) } -> Unreach.REFUSED
         else -> Unreach.RESET_BEFORE_REPLY
     }
+
+    // cp-tls: a certificate no trusted root signed is the person's to fix, named apart from a handshake that broke
+    private fun secureWhy(chain: List<Throwable>): Unreach =
+        if (chain.any(::uncertified)) Unreach.UNTRUSTED else Unreach.TLS
+
+    private fun secureFailed(t: Throwable): Boolean = t is SSLException || uncertified(t)
+
+    private fun uncertified(t: Throwable): Boolean = t is CertPathBuilderException || t is CertPathValidatorException
 
     /** A refusal: the JDK's own signature (a ConnectException over a closed channel), or an engine that says so in
      *  the OS's words. A ConnectException over anything else failed for its own reason, which is not a refusal. */
@@ -62,3 +82,6 @@ public object TransportFaults {
 
 /** How an engine that does not use the JDK's signature says a refusal: the OS's text, relayed. */
 private const val REFUSED_WORDS = "Connection refused"
+
+// why: a TLS reason is a clause, not a stack trace; the line that quotes it stays readable.
+private const val UNTRUSTED_REASON_CHARS = 100

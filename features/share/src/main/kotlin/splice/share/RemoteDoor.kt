@@ -8,6 +8,7 @@ package splice.share
 
 import splice.client.desktop.DoorPickerRow
 import splice.client.desktop.DoorSession
+import splice.core.topology.DOOR_SEGMENT
 import splice.core.topology.RemoteAddress
 import splice.core.topology.SHARE_NODE_TOKEN
 import splice.core.wire.HttpStatus

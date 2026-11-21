@@ -4,10 +4,12 @@ package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import splice.app.provider.codex.CodeModeBridgeRoutes
 import splice.app.provider.codex.CodeModeMcpCatalogs
 import splice.app.provider.codex.CodeModeMcpReplies
 import splice.app.provider.codex.CodeModeNativeRuntimes
 import splice.app.provider.codex.CodeModeSessionLiveness
+import splice.app.provider.codex.CodeModeStoragePolicy
 import splice.app.provider.codex.HeadCodeModeControls
 import splice.codemode.DEFAULT_HEAP_MB
 import splice.codemode.DEFAULT_MAX_WORKERS
@@ -57,34 +59,40 @@ internal class CodexCodeModeAssembly(
     internal var performance: splice.app.observability.PerfTelemetry? = null
     internal val catalogs: CodeModeMcpCatalogs = CodeModeMcpCatalogs()
 
-    fun wiring(ctx: ProviderBuild): CodexCodeModeWiring = CodexCodeModeWiring(
-        // A provider's `code_mode = false` is the operator's off switch (V4-11): no bridge, so its turns keep direct
-        // tools. Only an enabled provider whose native host is missing takes the unavailable, fail-closed path.
-        bridge = if (ctx.providerCfg.codeModeEnabled) {
-            codeModeBridge(ctx).also { codeModeHeads += ctx.key }
-        } else {
-            controls.register(ctx.key, null)
-            null
-        },
-        models = ctx.providerCfg.quirks.codeModeModels,
-        onlyModels = backendCodeModeOnly(ctx),
-        originalImageModels = CodeModeOriginalImageModels {
-            ctx.roster.discovered.metadataForHead(ctx.key).filter { it.supportsImageDetailOriginal }
-                .flatMap { it.spellings }
-        },
-        settings = CodexCodeModeConfiguration.read(ctx.cfg).copy(
-            modelCatalog = CodeModeModelCatalog {
-                ctx.roster.discovered.metadataForHead(ctx.key).flatMap { model ->
-                    val metadata = CodeModeModelMetadata(
-                        model.modelMessages,
-                        model.supportsImageDetailOriginal,
-                        model.useResponsesLite,
-                    )
-                    model.spellings.map { it to metadata }
-                }.toMap()
+    private val owners = ConcurrentHashMap<String, CodeModeBridgeRoutes>()
+
+    fun wiring(ctx: ProviderBuild): CodexCodeModeWiring {
+        val owner = if (ctx.providerCfg.codeModeEnabled) owners.computeIfAbsent(ctx.key) { own(ctx) } else null
+        return CodexCodeModeWiring(
+            bridge = owner?.bridge,
+            models = ctx.providerCfg.quirks.codeModeModels,
+            onlyModels = backendCodeModeOnly(ctx),
+            originalImageModels = CodeModeOriginalImageModels {
+                ctx.roster.discovered.metadataForHead(ctx.key).filter { it.supportsImageDetailOriginal }
+                    .flatMap { it.spellings }
             },
-        ),
-    )
+            settings = CodexCodeModeConfiguration.read(ctx.cfg).copy(
+                modelCatalog = CodeModeModelCatalog {
+                    ctx.roster.discovered.metadataForHead(ctx.key).flatMap { model ->
+                        val metadata = CodeModeModelMetadata(
+                            model.modelMessages,
+                            model.supportsImageDetailOriginal,
+                            model.useResponsesLite,
+                        )
+                        model.spellings.map { it to metadata }
+                    }.toMap()
+                },
+            ),
+            lifetime = owner?.route(ctx.cfg),
+        )
+    }
+
+    private fun own(ctx: ProviderBuild): CodeModeBridgeRoutes {
+        val storage = CodeModeStoragePolicy(ctx.cfg)
+        val bridge = codeModeBridge(ctx, storage)
+        codeModeHeads += ctx.key
+        return CodeModeBridgeRoutes(bridge, storage)
+    }
 
     /** V4-441: the models the backend marks `code_mode_only`, read from the head's roster at each turn so a
      *  refresh while the daemon runs reaches the next one. With none known at start (no answer and no kept
@@ -102,7 +110,7 @@ internal class CodexCodeModeAssembly(
         return port
     }
 
-    private fun codeModeBridge(ctx: ProviderBuild): CodexCodeModeBridge =
+    private fun codeModeBridge(ctx: ProviderBuild, storage: CodeModeStoragePolicy): CodexCodeModeBridge =
         CodexCodeModeBridge(
             CodeModeBridgeConfig(
                 runtimes = CodeModeNativeRuntimes(
@@ -116,8 +124,8 @@ internal class CodexCodeModeAssembly(
                 state = CodeModeStateLocation(
                     dir = statePaths.headsDir.resolve(ctx.key).resolve(CODE_MODE_DIR),
                     legacyFile = statePaths.stateDir.resolve("${ctx.key}$CODE_MODE_STATE_SUFFIX"),
-                    journaling = CodeModeJournaling { ctx.cfg.current().keepCodeModeWork },
-                    replayReasoning = CodeModeReplayReasoning { ctx.cfg.current().replayReasoning },
+                    journaling = CodeModeJournaling(storage::keepWork),
+                    replayReasoning = CodeModeReplayReasoning(storage::replayReasoning),
                     mcpResults = CodeModeMcpReplies(
                         McpToolResultStore(statePaths),
                         HeadScopedLogs.headScopedLog(ctx.key, log),

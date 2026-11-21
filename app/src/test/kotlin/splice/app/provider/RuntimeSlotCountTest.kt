@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTimeoutPreemptively
 import org.junit.jupiter.api.Test
+import splice.app.provider.local.RuntimeSlotCount
+import splice.app.provider.local.SlotTables
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.upstream.local.LlamaServerSlots

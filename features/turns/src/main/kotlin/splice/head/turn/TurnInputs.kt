@@ -9,6 +9,7 @@ import splice.core.perf.TurnPerf
 import splice.head.admission.KeyNaming
 import splice.head.port.HarnessRequest
 import splice.head.usage.QuotaTracker
+import splice.head.wire.NATIVE_CLIENT_PING_MS
 import splice.head.wire.TurnTrace
 import splice.upstream.BuiltTurn
 import splice.upstream.credentials.AccountSelection
@@ -61,6 +62,9 @@ internal data class TurnSlot(
     val held: InflightGate.Slot,
     /** The client deadline and retained request travel with this admission slot until it is released. */
     val clientWallMs: Long = OLD_CLIENT_WALL_MS,
+    /** How often the client is pinged while it waits: the native disconnect probe, unless a listener in front of the
+     *  gateway asked for a shorter keepalive (GatewayTurns.clientPingMs). */
+    val clientPingMs: Long = NATIVE_CLIENT_PING_MS,
     val heapLease: HeapLease? = null,
     /** What the harness's capabilities read of the request this slot was admitted for (docs/specs/harness.md,
      *  decision 2); null reads nothing. It travels with the slot as the client deadline and the retained request do. */

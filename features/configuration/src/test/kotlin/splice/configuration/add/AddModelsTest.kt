@@ -56,14 +56,15 @@ class AddModelsTest {
         val profile = requireNotNull(profiles.find("openrouter"))
         val emitted = profiles.toml(profile, "openrouter", OPENROUTER_PORT)
         Files.writeString(path, withoutProviderRow(emitted, LUNA))
-        val original = TopologyLoader.parse(Files.readString(path)).heads.getValue("openrouter")
+        val original = TopologyLoader.parse(Files.readString(path)).providers.getValue("openrouter")
         assertTrue(addFirstRemaining(path))
         val topology = TopologyLoader.loadOrMaterialize(path)
         val head = topology.heads.getValue("openrouter")
         assertEquals(null, head.models)
-        assertEquals(original.modelSlots, head.modelSlots)
+        val provider = topology.providers.getValue(head.provider)
+        assertEquals(original.tierModels, provider.tierModels)
         val discovered = DiscoveredModel("fixture/extra-model", contextWindow = 64_000)
-        val catalog = topology.providers.getValue(head.provider).catalogFor(head, discovered = listOf(discovered))
+        val catalog = provider.catalogFor(head, discovered = listOf(discovered))
         assertTrue(catalog.contains(LUNA))
         assertTrue(catalog.contains(discovered.id))
         assertEquals(profile.models.first { it.id == LUNA }.rates, catalog.models.first { it.id == LUNA }.rates)
@@ -281,7 +282,7 @@ class AddModelsTest {
         text.substringBefore(ROSTER_OPEN) + text.substringAfter(ROSTER_OPEN).substringAfter("]")
 
     /** An existing explicit allowlist, derived from the shipped profile's tier declarations.
-     *  Fresh profiles instead use model_slots; those unrestricted heads are tested separately. */
+     *  Fresh profiles instead put their tier map on the provider; unrestricted heads are tested separately. */
     private fun seed(dir: Path): Path {
         val path = dir.resolve("splice.toml")
         TopologyLoader.loadOrMaterialize(path)
@@ -293,7 +294,8 @@ class AddModelsTest {
             model.slots.map { slot -> "  { id = \"${model.id}\", slot = \"$slot\" }," }
         }
         val multiline = (listOf(ROSTER_OPEN) + entries + "]").joinToString("\n")
-        Files.writeString(path, Files.readString(path) + emitted.replace(oneLine, multiline))
+        val legacy = emitted.replace("$oneLine\n", "").replace(HEADER, "$HEADER\n$multiline")
+        Files.writeString(path, Files.readString(path) + legacy)
         return path
     }
 

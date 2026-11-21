@@ -210,7 +210,8 @@ public class SessionContinue(
         fun relaunch(session: String): Plan {
             val record = live(session)
                 ?: return Plan.Refused(Refusals.reply(HttpStatusCode.NotFound, "no running session: $session"))
-            val head = record.head
+            // a door session is relaunched as a head's is, and comes back on the door it ran on (door-sessions)
+            val head = record.launchedOn
             return draftHeld(record) ?: when {
                 head == null -> refused(RELAUNCH_NO_HEAD, Refusal.HEAD_UNKNOWN)
                 record.status.state in busy -> refused(RELAUNCH_WORKING, Refusal.WORKING)

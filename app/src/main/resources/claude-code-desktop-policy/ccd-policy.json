@@ -1,0 +1,34 @@
+{
+  "desktopHome": "standard",
+  "isDesktopExtensionEnabled": true,
+  "modelPrefer1mContext": true,
+  "defaultModelEffort": "high",
+  "inferenceModelPricingEnabled": false,
+  "inferenceStreamIdleTimeoutSec": 900,
+  "allowedPluginMarketplaces": [
+    {
+      "source": "github",
+      "repo": "anthropics/claude-plugins-official"
+    }
+  ],
+  "userPluginMarketplacesEnabled": true,
+  "userPluginUploadsEnabled": true,
+  "isLocalDevMcpEnabled": true,
+  "mcpToolTimeoutSec": 1800,
+  "projectsEnabled": true,
+  "scheduledTasksEnabled": true,
+  "skillCreationEnabled": true,
+  "keepAwakeEnabled": true,
+  "developerModeEnabled": true,
+  "toolSearchEnabled": true,
+  "skipWebFetchPreflight": true,
+  "coworkEgressAllowedHosts": [
+    "*"
+  ],
+  "builtinBrowserEnabled": true,
+  "deploymentDisplayName": "Splice",
+  "claudeAiImport": {
+    "enabled": true,
+    "bannerBehavior": "detect"
+  }
+}

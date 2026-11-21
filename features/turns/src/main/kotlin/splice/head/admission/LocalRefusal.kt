@@ -18,6 +18,7 @@ import splice.core.failure.FailureCause
 import splice.core.failure.PreflightKind
 import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
+import splice.head.GatewayTurns
 import splice.head.HeadDeps
 import splice.head.HeldLoginVerdict
 import splice.head.RefusedRequest
@@ -234,7 +235,9 @@ internal class PreDriveRefusals(
 
     /** LAN share: another machine's turn holds its word, which opens nothing, and runs on a login this head holds. When
      *  the login admission settled on, [sender], would forward the caller's credential instead, the word is answered
-     *  here and never sent: the vendor's 401 would mark this head's own sign-in rejected for every session. */
+     *  here and never sent: the vendor's 401 would mark this head's own sign-in rejected for every session. A gateway's
+     *  turn is the same (GatewayUpstreamHeaders) but its caller is on this machine and can sign in, so it is told
+     *  that, not that the turn was shared from another machine. */
     suspend fun refuseIfNodeWordUnheld(
         call: ApplicationCall,
         prepared: Preparation.Ready,
@@ -243,7 +246,11 @@ internal class PreDriveRefusals(
         sender: AuthProvider,
     ): Boolean {
         if (!CallerCredential.unheldNodeWord(prepared.built.extraHeaders, sender)) return false
-        val cause = FailureCause.Splice.Declined(Decline.NoSharedLogin)
+        val cause = if (GatewayTurns.of(call) != null) {
+            FailureCause.Splice.NoLogin(loginCommand)
+        } else {
+            FailureCause.Splice.Declined(Decline.NoSharedLogin)
+        }
         val sentence = responses.lineOf(cause).sentence
         trace?.failureSentence(sentence)
         driver.recordLocalRefusal(

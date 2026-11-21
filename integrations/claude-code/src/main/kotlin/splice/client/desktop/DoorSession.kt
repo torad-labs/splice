@@ -20,8 +20,18 @@ import kotlinx.serialization.json.putJsonArray
 import splice.client.ClaudeTiers
 import splice.client.Keys
 
-/** One row of a terminal session's picker: the selector it sends, the model's own label, and the head's command. */
-public data class DoorPickerRow(val model: String, val label: String, val command: String)
+/** One row of a terminal session's picker: the selector it sends, the model's own label, the head's command, and the
+ *  model's own description in splice.toml (empty when it has none), shown before `splice · <command>`. */
+public data class DoorPickerRow(
+    val model: String,
+    val label: String,
+    val command: String,
+    val description: String = "",
+) {
+    /** What /model shows under the label: the model's own description, then where it runs. */
+    public val described: String
+        get() = listOf(description.trim(), "splice · $command").filter(String::isNotEmpty).joinToString(" · ")
+}
 
 /** A launch of `claude` on the door: [door] its address, [key] the terminal's key, [window] the window it declares,
  *  [model] the selector a session starts on (null with no head in the door), and [rows] its picker, empty when no
@@ -76,7 +86,7 @@ public class DoorPicker(private val rows: List<DoorPickerRow>) {
                     addJsonObject {
                         put("model", row.model)
                         put("label", row.label)
-                        put("description", "splice · ${row.command}")
+                        put("description", row.described)
                     }
                 }
             }
@@ -93,8 +103,8 @@ public class DoorPicker(private val rows: List<DoorPickerRow>) {
 }
 
 /** Claude Code's own /login and /logout, which sign in to Anthropic alone: off on the door, where /login is splice's. */
-private const val LOGIN_OFF = "DISABLE_LOGIN_COMMAND"
-private const val LOGOUT_OFF = "DISABLE_LOGOUT_COMMAND"
+internal const val LOGIN_OFF: String = "DISABLE_LOGIN_COMMAND"
+internal const val LOGOUT_OFF: String = "DISABLE_LOGOUT_COMMAND"
 
 private const val REPLACE_BUILT_IN = "replaceBuiltInOptions"
 

@@ -53,10 +53,15 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.core.compaction.CompactionInstructions
 import splice.core.config.ConfigService
+import splice.core.config.PROVIDER_LAYER_PREFIX
 import splice.core.config.StatePaths
 import splice.core.model.HeadDiscoveredModels
 import splice.core.prompt.HeadSystemPrompt
 import splice.core.prompt.SystemPromptLayers
+import splice.core.topology.gateway.GatewayMoveChecks
+import splice.core.topology.gateway.GatewayProviderRoute
+import splice.core.topology.toml.TomlKeys
+import splice.core.topology.toml.TomlPatch
 import splice.core.util.Cancellables
 import splice.core.util.DirectoryListing
 import splice.core.util.FilesListing
@@ -188,6 +193,8 @@ public data class TopologyFinding(
     val message: String,
     val line: Int? = null,
     val origin: Origin = Origin.File,
+    /** Where the value a finding names can be moved to, when the fix is a move; the fix session offers it. */
+    val move: GatewayMove? = null,
 ) {
     /** Where a finding was read, which says where it is fixed. Until the retry and fold knobs retired in 0.4.0, every
      *  finding was splice.toml's; a retired knob can also be set in splice's environment or in the settings splice
@@ -209,6 +216,16 @@ public data class TopologyFinding(
     /** The finding as one line for a person: the key path, the line it sits on when known, and the reason. */
     public fun text(): String = "$path${line?.let { " (line $it)" }.orEmpty()}: $message"
 }
+
+/** Where a value goes to when a finding is fixed by moving it: [key] in the table [table] (both spelled as TOML), with
+ *  [value] as written there, or, when it is null, the value of the line the finding names. [keepsSource] leaves that
+ *  line where it is; every other move takes it out of where it was. */
+public data class GatewayMove(
+    val table: String,
+    val key: String,
+    val value: String?,
+    val keepsSource: Boolean,
+)
 
 /** What a write did. A refusal is a value, never a throw: the route answers it as findings. */
 public sealed class TopologyWriteResult {
@@ -373,7 +390,9 @@ private class TopologyChecks(
             compaction() + daemon() + remotes() + relays() + ServerChecks(topology, configDir).findings() +
             UpstreamChecks(topology.providers).findings() + HourlyPrices(topology.providers).findings() +
             topology.telemetry.operator.findings() +
-            topology.providers.mapNotNull { (key, provider) -> provider.forwarded.finding(key) }
+            topology.providers.mapNotNull { (key, provider) -> provider.forwarded.finding(key) } +
+            CustomProviderChecks(topology, configDir).findings() + DoorChecks(topology).findings() +
+            GatewayMoveChecks(topology).findings()
 
     /** An auth kind its provider's dialect cannot carry, asked the way head assembly asks it ([AuthCompatibility]), so
      *  the pairing refuses boot with every other finding instead of skipping that head behind a running daemon. */
@@ -523,14 +542,18 @@ private class TopologyChecks(
         }
     }
 
-    private fun rosters(): List<TopologyFinding> = topology.heads.mapNotNull { (key, head) ->
-        topology.providers[head.provider]?.let { provider ->
-            provider.catalogRefusal(head, discovered.forHead(key))?.let { refusal ->
-                val field = if (head.modelSlots.isEmpty()) "models" else "model_slots"
-                TopologyFinding("heads.$key.$field", refusal)
+    private fun rosters(): List<TopologyFinding> =
+        topology.providers.mapNotNull { (key, provider) ->
+            val refusal = GatewayProviderRoute(key, provider).rosterRefusal()
+            refusal?.let { TopologyFinding("providers.$key.model_slots", it) }
+        } + topology.heads.mapNotNull { (key, head) ->
+            topology.providers[head.provider]?.let { provider ->
+                provider.catalogRefusal(head, discovered.forHead(key))?.let { refusal ->
+                    val field = if (head.modelSlots.isEmpty()) "models" else "model_slots"
+                    TopologyFinding("heads.$key.$field", refusal)
+                }
             }
         }
-    }
 
     /** V4-376: an override the daemon would ignore at boot. The daemon's own [ConfigService] is asked
      *  what it ignores ([ConfigService.coerceRejects], the call the boot log and the doctor make), so
@@ -539,11 +562,13 @@ private class TopologyChecks(
      *  [stateBase] only satisfies the constructor: nothing here reads state, and an explicit base keeps
      *  the check off the filesystem. */
     private fun knobs(): List<TopologyFinding> {
+        val layers = TopologyKnobLayer(topology).layers()
         val ignored = ConfigService(
             StatePaths(baseOverride = stateBase),
             headOverrides = TopologyKnobLayer(topology).configOverrides(),
-            perHeadOverrides = topology.heads.mapValues { (_, head) -> head.overrides },
+            perHeadOverrides = layers.own,
             log = LogSink {},
+            inheritedOverrides = layers.inherited,
         ).coerceRejects()
         val daemon = daemonKnobs()
         val global = topology.defaults.keys.mapNotNull { key ->
@@ -558,7 +583,14 @@ private class TopologyChecks(
                 ignored["heads.$head.$key"]?.let { TopologyFinding("heads.$head.overrides.$key", it) }
             }
         }
-        return global + fromDaemon + perHead
+        val perProvider = topology.providers.flatMap { (provider, config) ->
+            config.overrides.keys.mapNotNull { key ->
+                ignored["$PROVIDER_LAYER_PREFIX$provider.overrides.$key"]?.let {
+                    TopologyFinding("providers.$provider.overrides.$key", it)
+                }
+            }
+        }
+        return global + fromDaemon + perHead + perProvider
     }
 
     /** The word-valued [daemon] fields the knob layer copies under a knob's key (TopologyKnobLayer), knob key to TOML

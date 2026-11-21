@@ -1,7 +1,6 @@
-// A gradle run on another of the developer's machines, when `rig` is on this machine's PATH.
+// Gradle runs locally by default. Set SPLICE_GRADLE_REMOTE=1 for a run you want rig to place elsewhere.
 //
-// Nov 19, 2026: builds, checks and tests leave a developer's main machine for others of theirs, so it stays
-// responsive while they run. `rig remote run`, given no machine, picks the first of the developer's machines with
+// `rig remote run`, given no machine, picks the first of the developer's machines with
 // room, copies this work tree to it as it is on disk, runs the command there with its output here as it comes, and
 // exits with the command's own status. The command is this same slot, under the same label and tasks, so the build
 // there takes its own lock, resolves its own JDK 21 and sizes its own workers. Every `./gradlew` in the tree reaches
@@ -20,6 +19,7 @@
 // when rig refused or could not copy the tree, the run fails with rig's 75 and says why: nothing ran here in its place.
 //
 // The run stays here when:
+//   - SPLICE_GRADLE_REMOTE=1 was not requested;
 //   - rig is not on PATH, or this is CI: nothing to send it with;
 //   - SPLICE_GRADLE_HERE is set: the run that rig started on the other machine has it, so it builds where it stands,
 //     and a person sets it for a run that needs this machine;
@@ -34,6 +34,7 @@ import { exitForSignal, exitStatusOf } from "./status.ts";
 
 /** Set on a run that must build on the machine it is on: the run rig starts elsewhere, or one a person keeps here. */
 export const BUILD_HERE = "SPLICE_GRADLE_HERE";
+const BUILD_REMOTE = "SPLICE_GRADLE_REMOTE";
 
 /** rig's status, and the slot's, for a run that was not started: EX_TEMPFAIL. */
 export const NOT_STARTED_EXIT = 75;
@@ -79,7 +80,8 @@ type Try =
 
 /** The status of the run when rig took it, or undefined when it is this machine's to run. */
 export async function gradleElsewhere(run: GradleRun): Promise<number | undefined> {
-  const rig = run.env.CI || run.env[BUILD_HERE] ? null : Bun.which("rig", { PATH: run.env.PATH ?? "" });
+  if (run.env[BUILD_REMOTE] !== "1" || run.env.CI || run.env[BUILD_HERE]) return undefined;
+  const rig = Bun.which("rig", { PATH: run.env.PATH ?? "" });
   if (rig === null || !existsSync(join(run.buildRoot, "tools", "gate", "index.ts"))) return undefined;
   const fetched = run.args.flatMap((arg) => FETCHED.find((it) => it.task.test(arg))?.paths ?? []);
   const made = run.args.find((arg) => MADE_HERE.test(arg));

@@ -19,6 +19,19 @@ public data class VoiceFacts(
     val providerName: String? = null,
     val local: Boolean = false,
     val zone: ZoneId = ZoneId.systemDefault(),
+    /** custom-provider (issue #680): what a line says of the provider itself (ProviderVoice). */
+    val provider: ProviderVoice = ProviderVoice(),
+)
+
+/** custom-provider (issue #680): what a line says of a head's provider. [wholeWords] (cp-errors): its table sets
+ *  `error_messages = "whole"`, so a line quotes its own words as it wrote them, whole, after splice's sentence,
+ *  however long. [key] (cp-tls): its key in splice.toml, which a line about a certificate splice does not trust
+ *  names as the table to fix; null where the daemon names none. [commandLogin] (cp-credential): its key comes from
+ *  its own credential command, signed in with /login or `splice login`. */
+public data class ProviderVoice(
+    val key: String? = null,
+    val wholeWords: Boolean = false,
+    val commandLogin: Boolean = false,
 )
 
 /** One head's voice: its launch command, the command that signs it in, and [facts]. [clock] is read when a line about
@@ -45,6 +58,7 @@ public class HeadVoice(
         local = facts.local,
         request = request,
         now = clock.instant(),
+        provider = facts.provider,
     )
 }
 

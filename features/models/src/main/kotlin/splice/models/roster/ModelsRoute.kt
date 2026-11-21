@@ -51,7 +51,7 @@ public class ModelsRoute(private val heads: List<RosterHead>) {
      *  against a daemon that wired it a moment later) and this route holds nothing to capture. It was
      *  a `() -> DeclaredHeads?` constructor seam first, which is the unnamed transposable shape
      *  kt-no-lambda-seam forbids; the fix is the argument, not a new role named for the lambda. */
-    public suspend fun models(call: ApplicationCall, declared: DeclaredHeads?) {
+    public suspend fun models(call: ApplicationCall, declared: DeclaredHeads?, catalog: JsonObject?) {
         val roster = declared?.invoke()
         if (roster == null) {
             refuse(call, MODELS_UNWIRED, HttpStatusCode.ServiceUnavailable)
@@ -66,10 +66,13 @@ public class ModelsRoute(private val heads: List<RosterHead>) {
             refuse(call, "$MODELS_UNWIRED (no entry for head '$unnamed')", HttpStatusCode.ServiceUnavailable)
             return
         }
-        call.respondText(modelsJson(roster), ContentType.Application.Json)
+        call.respondText(modelsJson(roster, catalog), ContentType.Application.Json)
     }
 
-    internal fun modelsJson(roster: Map<String, DeclaredHead>): String = buildJsonObject {
+    /** [catalog] is the model catalog of the signed-in providers as the daemon published it last (`models`), written
+     *  first: it is what every client lists. `heads` is what the console's pages read. */
+    internal fun modelsJson(roster: Map<String, DeclaredHead>, catalog: JsonObject?): String = buildJsonObject {
+        catalog?.forEach { (key, value) -> put(key, value) }
         putJsonArray("heads") {
             heads.forEach { head -> add(row(head, roster.getValue(head.key))) }
         }

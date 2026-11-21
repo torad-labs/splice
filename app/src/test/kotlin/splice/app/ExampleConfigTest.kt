@@ -60,8 +60,7 @@ class ExampleConfigTest {
     @Test
     fun `an explicit empty head model list is rejected rather than exposing the provider`() {
         val toml = exampleToml().replace(
-            "models = [{ id = \"grok-4.7\", slot = \"opus\" }, { id = \"grok-4.6\", slot = \"sonnet\" }, " +
-                "{ id = \"grok-build-0.1\", slot = \"haiku\" }]",
+            "models = [{ id = \"grok-4.7\" }, { id = \"grok-4.6\" }, { id = \"grok-build-0.1\" }]",
             "models = []",
         )
         val topology = TopologyLoader.parse(toml)
@@ -95,8 +94,7 @@ class ExampleConfigTest {
     fun `a duplicated models key in one head fails loud instead of silently unioning`() {
         val valid = exampleToml()
         val roster =
-            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6",""" +
-                """ slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]"""
+            """models = [{ id = "grok-4.7" }, { id = "grok-4.6" }, { id = "grok-build-0.1" }]"""
         val malformed = valid.replace(roster, roster + "\n" + """models = [{ id = "grok-4.3", slot = "haiku" }]""")
         assertTrue(malformed != valid, "test must duplicate the shipped inline roster")
 
@@ -109,8 +107,7 @@ class ExampleConfigTest {
     fun `a braces-dropped inline model roster fails promptly before ktoml`() {
         val valid = exampleToml()
         val malformed = valid.replace(
-            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6",""" +
-                """ slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]""",
+            """models = [{ id = "grok-4.7" }, { id = "grok-4.6" }, { id = "grok-build-0.1" }]""",
             """models = ["grok-4.6", "grok-4.5"]""",
         )
         assertTrue(malformed != valid, "test must mutate the shipped inline roster")
@@ -126,8 +123,7 @@ class ExampleConfigTest {
     fun `a quoted models key with a bare roster also fails promptly before ktoml`() {
         val valid = exampleToml()
         val malformed = valid.replace(
-            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6",""" +
-                """ slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]""",
+            """models = [{ id = "grok-4.7" }, { id = "grok-4.6" }, { id = "grok-build-0.1" }]""",
             """"models" = ["grok-4.6", "grok-4.5"]""",
         )
         assertTrue(malformed != valid, "test must mutate the shipped inline roster")
@@ -147,8 +143,7 @@ class ExampleConfigTest {
         )
         assertEquals("claude-grok--\"", TopologyLoader.parse(valid).heads.getValue("claude-grok").discoveryPrefix)
         val malformed = valid.replace(
-            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6",""" +
-                """ slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]""",
+            """models = [{ id = "grok-4.7" }, { id = "grok-4.6" }, { id = "grok-build-0.1" }]""",
             """models = ["grok-4.6", "grok-4.5"]""",
         )
 
@@ -167,14 +162,13 @@ class ExampleConfigTest {
             port = 3100
             discovery_prefix = "claude-grok--"
             pinned_model = "grok-4.7"
-            models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6", slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]
+            models = [{ id = "grok-4.7" }, { id = "grok-4.6" }, { id = "grok-build-0.1" }]
             [heads.claude-grok.claude]
             command = "claude-grok"
             isolate = ["commands"]         # this head gets its own commands/, everything else shared
         """.trimIndent()
         val inlineRoster =
-            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6",""" +
-                """ slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]"""
+            """models = [{ id = "grok-4.7" }, { id = "grok-4.6" }, { id = "grok-build-0.1" }]"""
         val inlineHead = """
             [heads]
             claude-grok = { provider = "xai", port = 3100, discovery_prefix = "claude-grok--", pinned_model = "grok-4.7", $inlineRoster, claude = { command = "claude-grok", isolate = ["commands"] } }
@@ -194,8 +188,7 @@ class ExampleConfigTest {
     @Test
     fun `valid multiline model rosters ignore comments and quoted text`() {
         val inlineRoster =
-            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6",""" +
-                """ slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]"""
+            """models = [{ id = "grok-4.7" }, { id = "grok-4.6" }, { id = "grok-build-0.1" }]"""
         val multilineRoster = """
             models = [
                 # models = ["comment", "text"]
@@ -222,9 +215,12 @@ class ExampleConfigTest {
         val toml = exampleToml()
         val topology = TopologyLoader.parse(toml)
 
-        // 1. Live [heads.<key>.overrides] tables — a typo here ships a silently-ignored knob.
-        val used = topology.heads.values.flatMap { it.overrides.keys }.toSet()
-        assertTrue(used.isNotEmpty(), "the example must keep demonstrating per-head overrides")
+        // 1. Provider and head overrides — a typo here ships a silently-ignored knob.
+        val used = (
+            topology.providers.values.flatMap { it.overrides.keys } +
+                topology.heads.values.flatMap { it.overrides.keys }
+            ).toSet()
+        assertTrue(used.isNotEmpty(), "the example must keep demonstrating overrides")
         used.forEach { assertTrue(knobsByKey.containsKey(it), "example sets unknown knob '$it'") }
 
         // 2. Knob names the COMMENTS teach. Anything camelCase-and-backticked-or-listed in the

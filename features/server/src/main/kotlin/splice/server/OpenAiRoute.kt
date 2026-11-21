@@ -68,7 +68,7 @@ internal class OpenAiRoute(
     /** How this route refuses, the 401 of a request that names it included. */
     val voice = RefusalVoice(SERVER_ERROR_PREFIX, RefusalShape.OPENAI)
     private val catalog = ShareCatalog(parts.heads, io, voice)
-    private val relay = parts.relay.speaking(voice)
+    private val relay = parts.carriers.relay.speaking(voice)
     private val bound = ProviderBound(parts.keys, log)
     private val watched = WatchedRelay()
     private val admission = TurnAdmission(parts, voice, catalog, watched)
@@ -100,7 +100,9 @@ internal class OpenAiRoute(
     private suspend fun answer(call: ApplicationCall, asked: Asked, api: Api) {
         when {
             api.path == CHAT_API ->
-                admission.served(call, asked.key, asked.head, ROUTE_CHAT) { turn -> relayed(call, asked, api, turn) }
+                admission.served(call, asked.key, HeadCommand(asked.head), ROUTE_CHAT) { turn ->
+                    relayed(call, asked, api, turn)
+                }
             !asked.head.running() -> catalog.notRunning(call, asked.head)
             else -> watched.turn(call, slot = null) { relayed(call, asked, api) }
         }

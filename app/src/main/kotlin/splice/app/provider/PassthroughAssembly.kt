@@ -60,6 +60,6 @@ internal class PassthroughAssembly(
         identityHeaders = headers.identity,
         // PT-002/v27: same session-stable effort proxy ResponsesProvider threads as configEffort.
         configEffort = ctx.cfg.effort,
-        replies = replies,
+        replies = replies.words(ctx.providerCfg.errorMessages).recording(ctx.head.provider),
     )
 }

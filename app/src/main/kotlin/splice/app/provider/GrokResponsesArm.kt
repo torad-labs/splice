@@ -22,9 +22,10 @@ internal class GrokResponsesArm(
     private val grokRefresh: GrokRefresh,
     /** Names the head's own directory (V4-334: its reasoning outlives a restart). */
     private val statePaths: StatePaths,
+    /** The Grok sign-ins, held once for every arm that serves Grok (ChatArm asks the same owner). */
+    private val grokAccounts: GrokAccountWiring = GrokAccountWiring(probeScope, log, grokRefresh),
 ) {
     private val quirksOverlay = QuirksOverlay()
-    private val grokAccounts = GrokAccountWiring(probeScope, log, grokRefresh)
 
     // grok via the SuperGrok/X-Premium+ browser OAuth (~/.grok/auth.json, Bearer + refresh) — the
     // same Responses dialect + grok quirks, only the auth differs from the api-key path.

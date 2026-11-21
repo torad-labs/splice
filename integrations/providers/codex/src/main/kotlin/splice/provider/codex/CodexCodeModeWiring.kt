@@ -36,15 +36,27 @@ public class CodexCodeModeWiring(
     private val onlyModels: CodeModeOnlyModels = NoCodeModeOnlyModels,
     private val originalImageModels: CodeModeOriginalImageModels = NoCodeModeOriginalImageModels,
     private val settings: CodexCodeModeSettings = CodexCodeModeSettings(),
+    private val lifetime: CodeModeRouteLifetime? = null,
 ) {
     internal fun turnBuilder(media: ResponsesToolResultMedia): CodexCodeModeTurnBuilder =
         CodexCodeModeTurnBuilder(bridge, media, models, onlyModels, originalImageModels, settings)
 
+    internal fun onStart() {
+        lifetime?.onStart()
+    }
+
     internal fun onHeadRetire() {
-        bridge?.onHeadRetire()
+        if (lifetime == null) bridge?.onHeadRetire() else lifetime.onRetire()
     }
 
     internal fun onHeadStop() {
-        bridge?.onHeadStop()
+        if (lifetime == null) bridge?.onHeadStop() else lifetime.onStop()
     }
+}
+
+/** One route borrowing a bridge that also serves another route over the same persisted conversations. */
+public interface CodeModeRouteLifetime {
+    public fun onStart()
+    public fun onRetire()
+    public fun onStop()
 }

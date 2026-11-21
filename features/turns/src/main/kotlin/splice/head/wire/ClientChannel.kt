@@ -78,7 +78,7 @@ internal interface StatusGate {
 
 // HEAD-008: 10s left a dead-without-FIN client (and the paid upstream stream + inflight
 // slot behind it) undetected for up to 10s; tightened to 2s. Same mechanism, smaller tick.
-private const val CLIENT_PING_INTERVAL_MS = 2_000L
+internal const val NATIVE_CLIENT_PING_MS = 2_000L
 
 // "the turn", not "compaction": since Nov 9, 2026 an ordinary non-stream turn detaches the same way, and its line in
 // the log read "compaction continues detached" for a turn that compacted nothing.
@@ -86,8 +86,16 @@ private const val DETACHED_NOTE = "the turn continues detached; its answer is he
 private const val KEEPALIVE_FAILURE = "client connection closed while writing a keepalive"
 private const val PACED_FAILURE = "client connection closed while writing a paced delta"
 
-/** Who a background write names when it finds the client gone: the head, its log, the session if known. */
-internal data class LostClient(val headKey: String, val log: LogSink, val session: String? = null)
+/** Who a background write names when it finds the client gone: the head, its log, the session if known; and how often
+ *  the pinger that writes it ticks. */
+internal data class LostClient(
+    val headKey: String,
+    val log: LogSink,
+    val session: String? = null,
+    /** The tick its pinger keeps: the native disconnect probe, or a shorter one a listener asked for. The heartbeat and
+     *  its progress line stay at their own cadence, so a shorter tick only writes more keepalive comments. */
+    val pingMs: Long = NATIVE_CLIENT_PING_MS,
+)
 
 /** Model accounting for a frame committed to the client: written, or held by the pacer. */
 private object ModelAccounting {
@@ -366,13 +374,15 @@ internal class ClientChannel(
         heartbeat: Heartbeat = Heartbeat {},
     ): Job =
         scope.launch {
+            val pingMs = lost.pingMs
+            val heartbeatEvery = (HEARTBEAT_EVERY_TICKS * NATIVE_CLIENT_PING_MS + pingMs - 1) / pingMs
             var seenFrames = socketFrames.get()
             var silentTicks = 0
             while (isActive) {
                 // HD-19: the ping cadence is a named Ticker, not a bare delay. ProcessTicker always
                 // returns true, so this loop is exactly as unbounded as before; a test can wire a
                 // ticker that paces N pings instantly and then stops the loop.
-                if (!ticker.awaitTick(CLIENT_PING_INTERVAL_MS)) return@launch
+                if (!ticker.awaitTick(pingMs)) return@launch
                 if (detached.get()) {
                     // A frame write detached the channel before this tick: the one log line for it.
                     val note = "client gone (${who(lost.session)}a frame write failed); $DETACHED_NOTE"
@@ -391,7 +401,7 @@ internal class ClientChannel(
                 // runCatchingCleanup rethrows cancellation by contract, so a cancelled pinger is
                 // never misread as a dead client.
                 val pingFailure = Cancellables.runCatchingCleanup {
-                    if (silentTicks >= HEARTBEAT_EVERY_TICKS) {
+                    if (silentTicks >= heartbeatEvery) {
                         // Outside writeMutex: the heartbeat is an emitter frame and takes the lock
                         // itself on the way through timedClientWrite (a non-reentrant Mutex).
                         silentTicks = 0

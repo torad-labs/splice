@@ -121,6 +121,11 @@ public interface Provider : ProviderIdentity, RequestPlacements {
     public val showReasoning: ReasoningDisplay
     public val replayReasoning: Boolean
 
+    /** Whether the request this provider sends upstream is Anthropic's Messages, the shape a client's request arrives
+     *  in. The harness edits a request in that shape (docs/specs/harness.md, decision 12, Modes): on a head that sends
+     *  it, the edit is the request; on any other the provider builds its own request from the edited one. */
+    public val sendsMessages: Boolean get() = false
+
     /** How this head reads a failure of its own: its API type's standard reader, this provider's declared deviation
      *  before it, and the foreign-key rule every API type shares before both (failure-handling slice 3). Every
      *  failure a reply, an event or the websocket carries is read once, here, so one head's reading never depends on

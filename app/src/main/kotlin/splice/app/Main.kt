@@ -7,6 +7,7 @@ package splice.app
 import kotlinx.coroutines.CompletableDeferred
 import splice.app.control.HandOver
 import splice.app.control.NextDaemon
+import splice.app.daemon.BootRead
 import splice.app.daemon.DaemonLock
 import splice.app.daemon.DaemonLockWait
 import splice.app.daemon.HeapFlags
@@ -18,7 +19,6 @@ import splice.app.diagnostics.CodeModeParityProbe
 import splice.app.manager.ManagerHome
 import splice.app.peer.PEER_HOST_COMMAND
 import splice.app.peer.PeerHostRun
-import splice.app.provider.local.LocalRowBootFindings
 import splice.client.wrap.WrapGuard
 import splice.client.wrap.WrappedHead
 import splice.core.config.InstallPaths
@@ -31,7 +31,6 @@ import splice.core.util.LogSink
 import splice.launch.install.InstallShim
 import splice.lifecycle.restart.ShutdownDaemon
 import splice.lifecycle.start.BOOT_LOG_FLAG
-import splice.topology.RetiredSettings
 import splice.topology.TopologyLoader
 import splice.topology.TopologyStatePaths
 import java.nio.file.Path
@@ -156,11 +155,9 @@ internal class DaemonProcess(
             topologyPath = start.topologyPath,
         ).also {
             it.adopted = AdoptedServing((handoff as? Handoff.Adopted)?.listeners)
-            // #523: only under the launcher's supervisor is there a next daemon to hand over to.
-            val launcher = Launcher()
-            if (launcher.supervises) {
-                it.handOver = HandOver(ShutdownDaemon { retireSignal.complete(Unit) }, NextDaemon(launcher::startNext))
-            }
+            // The one catalog of the modes this jar carries, read before boot checked them (modes/README.md).
+            it.modeBoot = start.boot.modes
+            it.handOver = handOver(retireSignal)
         }
 
         // V4-445: keeps a wrapped plain `claude` wrapped across Claude Code's own updates. Production only: it
@@ -275,7 +272,10 @@ internal class DaemonProcess(
         val topologyPath = TopologyLoader.configPath(env)
         // v0.4.0 section 10: what a local runtime that is up refuses is a finding beside the file's own.
         // Failure-handling slice 4: so is a retired knob splice's environment or its saved settings still set.
-        val loaded = TopologyLoader.loadForBoot(topologyPath, LocalRowBootFindings(env), RetiredSettings(env))
+        // The modes the jar carries are read once, here: a broken one, or a `[modes.<name>]` table naming none, is a
+        // finding beside the file's own (modes/README.md), and the daemon keeps this one reading for its life.
+        val boot = BootRead(env)
+        val loaded = TopologyLoader.loadForBoot(topologyPath, boot.runtimes(), boot.beside())
         // V4-109: [daemon].state_dir is HONOURED from here on. It could not be applied before this
         // point: the boot-failure net is armed at the top with a StatePaths because it must exist
         // before anything that can throw (JW-01), and the state dir is what the lock, config.json
@@ -290,8 +290,12 @@ internal class DaemonProcess(
         // (V4-278) so are splice.toml and its backups, which can hold header secrets and which an older
         // splice left at the umask. What they say is logged once the logger exists.
         val ownerOnlyLines = secureStateDirs(statePaths) + secureConfig(topologyPath)
-        return StartState(topologyPath, loaded, statePaths, ownerOnlyLines)
+        return StartState(topologyPath, loaded, statePaths, ownerOnlyLines, boot)
     }
+
+    /** #523: only under the launcher's supervisor is there a next daemon to hand over to. */
+    private fun handOver(retire: CompletableDeferred<Unit>): HandOver? = Launcher().takeIf { it.supervises }
+        ?.let { launcher -> HandOver(ShutdownDaemon { retire.complete(Unit) }, NextDaemon(launcher::startNext)) }
 
     internal fun secureStateDirs(statePaths: StatePaths): List<String> = boundary.secureStateDirs(statePaths)
 
@@ -309,6 +313,7 @@ internal data class StartState(
     val loaded: TopologyLoader.LoadedTopology,
     val statePaths: StatePaths,
     val ownerOnlyLines: List<String>,
+    val boot: BootRead,
 )
 
 // The cooperative cap. Its floor — this + TEARDOWN_TAIL_GRACE_MS = 57s — must stay BELOW the CLI's

@@ -38,4 +38,13 @@ class ModuleLawTableTest {
         }
         assertTrue(repeated.message.orEmpty().contains("table:2: :core is listed twice"), repeated.message)
     }
+
+    @Test
+    fun `a pattern line governs every module it matches, and an exact line wins over it`() {
+        val table = ModuleLawTable.parse(":core ->\n:modes-api -> :core\n:modes-* -> :core :modes-api\n", "table")
+        assertEquals(setOf(":core", ":modes-api"), ModuleLawTable.allowed(table, ":modes-echo"))
+        assertEquals(setOf(":core"), ModuleLawTable.allowed(table, ":modes-api"))
+        assertEquals(emptySet<String>(), ModuleLawTable.allowed(table, ":core"))
+        assertEquals(null, ModuleLawTable.allowed(table, ":app"))
+    }
 }

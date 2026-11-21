@@ -14,7 +14,8 @@
 // LAYOUT-01: each capability owns one MOUNT in splice.app.control.mount or splice.app.control.usage.
 // Each mount owns its feature's route objects and registers its rows behind the one ControlGuard. This file keeps
 // construction, lifecycle and the order the mounts register in. The table had reached 68 rows importing
-// 37 slice packages, which made this one file every feature's edit.
+// 37 slice packages, which made this one file every feature's edit. Nov 21, 2026: a capability that needs only the
+// ports and the guard is built in StandaloneMounts, beside the mount shape, for the same reason.
 package splice.app.control
 
 import io.ktor.http.ContentType
@@ -43,7 +44,6 @@ import splice.app.control.mount.AddMount
 import splice.app.control.mount.BoundResource
 import splice.app.control.mount.ConfigurationMount
 import splice.app.control.mount.ConsoleMount
-import splice.app.control.mount.ConsolePilotMount
 import splice.app.control.mount.ControlGuard
 import splice.app.control.mount.ControlMount
 import splice.app.control.mount.DaemonSelfAnswers
@@ -58,12 +58,12 @@ import splice.app.control.mount.ModelsMount
 import splice.app.control.mount.ProjectsMount
 import splice.app.control.mount.SessionsMount
 import splice.app.control.mount.SessionsWiring
+import splice.app.control.mount.StandaloneMounts
 import splice.app.control.mount.TeamsMount
 import splice.app.control.mount.TraceMount
 import splice.app.control.mount.TurnsMount
 import splice.app.control.peer.PeerServices
 import splice.app.control.peer.PeersMount
-import splice.app.control.server.ServerMount
 import splice.app.control.usage.UsageMount
 import splice.app.head.HeadRemovalAssembly
 import splice.app.peer.PeersWiring
@@ -193,15 +193,12 @@ internal class ControlServer(
     @Volatile
     internal var peerServices: PeerServices = PeerServices()
 
-    // Nov 15, 2026: a server's keys, people, usage ledger and budgets (docs/specs/server-mode.md), which
-    // `splice server` asks for.
-    private val serverMode = ServerMount(ports, guard)
-
     // Nov 16, 2026: Claude Desktop's Code tab (docs/specs/desktop-door.md): its door and `splice desktop`.
     private val desktop = DesktopRoutes(ports, guard, ClaudeLink { launchService?.wrap })
 
-    // Oct 16, 2026: what `splice console <action>` hands the open console to do, and the page's answer (ConsolePilot).
-    private val consolePilot = ConsolePilotMount(guard)
+    // Nov 21, 2026: the capabilities that need only the ports and the guard (the console's pilot, the modes, a
+    // server's keys and budgets) are built beside the mount shape, so adding one is not an edit of this file.
+    private val standalone = StandaloneMounts(ports, guard)
 
     // The order the rows register in: MCP last, and only when the daemon hosts MCP at all (null keeps the control
     // plane exactly as before). The MCP host is the one bound resource: the server starts it after the bind.
@@ -229,11 +226,8 @@ internal class ControlServer(
         ControlMount(diagnostics::register),
         ControlMount(models::register),
         ControlMount(launch::register),
-        ControlMount(consolePilot::register),
-        ControlMount(serverMode::register),
-        ControlMount(desktop::register),
-        ControlMount(console::register),
-    ) + listOfNotNull(peers?.let { ControlMount(it::register) }, mcp)
+    ) + standalone.rows + listOf(ControlMount(desktop::register), ControlMount(console::register)) +
+        listOfNotNull(peers?.let { ControlMount(it::register) }, mcp) + standalone.last
     private val resources: List<BoundResource> = listOfNotNull(mcp, sessionWake)
 
     @Volatile

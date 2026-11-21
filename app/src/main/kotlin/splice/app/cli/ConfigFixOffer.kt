@@ -2,6 +2,7 @@
 // prints the whole list and exits non-zero, and nothing is changed.
 package splice.app.cli
 
+import splice.app.modes.ModeBoot
 import splice.app.provider.local.LocalRowBootFindings
 import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
@@ -9,6 +10,7 @@ import splice.core.topology.TopologyBackupName
 import splice.core.util.EnvReader
 import splice.core.util.SecureFile
 import splice.core.util.TopologyRefusal
+import splice.topology.BootSettings
 import splice.topology.ConfigFindings
 import splice.topology.ConfigRead
 import splice.topology.RetiredSettings
@@ -29,7 +31,7 @@ internal class ConfigFixOffer(
     private val output: TerminalOutput = TerminalOutput(System.err::println),
 ) {
     private val runtimes = LocalRowBootFindings(env)
-    private val retired = RetiredSettings(env)
+    private val beside by lazy { BootSettings(RetiredSettings(env), ModeBoot().found()) }
 
     /** [broken] as the refusal listing every finding of splice.toml, when the file has findings; null otherwise. */
     fun refusalOf(broken: Throwable): TopologyRefusal? {
@@ -39,7 +41,7 @@ internal class ConfigFixOffer(
         } catch (_: java.io.IOException) {
             return null
         }
-        val read = ConfigFindings.read(text, backups, configDir(), runtimes, retired) as? ConfigRead.Refused
+        val read = ConfigFindings.read(text, backups, configDir(), runtimes, beside) as? ConfigRead.Refused
         return read?.let { TopologyRefusal(it.findings) }
     }
 
@@ -53,7 +55,7 @@ internal class ConfigFixOffer(
             output,
             prompter,
             { text ->
-                val read = ConfigFindings.read(text, backups, configDir(), runtimes, retired)
+                val read = ConfigFindings.read(text, backups, configDir(), runtimes, beside)
                 (read as? ConfigRead.Refused)?.findings.orEmpty()
             },
             { source -> backup(source) },

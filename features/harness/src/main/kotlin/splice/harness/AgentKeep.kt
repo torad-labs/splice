@@ -2,6 +2,8 @@
 // once the provider has made them, and where the capability calls made beside the client's tools start.
 package splice.harness
 
+import splice.harness.agent.ModelCall
+
 /** Where the provider's messages are kept, and the calls made beside the client's are started. */
 internal class AgentKeep(private val records: AgentRecords, private val besides: AgentBeside) {
     fun put(session: String, call: KeptCall) {

@@ -299,6 +299,19 @@ internal object Concentration {
     // Two leave by neighbourhood: ControlServer.kt 3.08 -> 2.95 (C 223.0, 72.5 -> 75.5, splice.app.head's median up
     // 72.5 -> 77.5) and SessionsRelaunchCommand.kt 3.08 -> 2.99. The tree got worse; this records it. The remedy is
     // decomposing those seven, worst first, and this number follows each one down. 25 -> 30.
+    // 2026-11-21, later: Splice mods (modes/README.md: the modes' api, the daemon's modes, a mode's tools through the
+    // agent-tool port), measured by a port of this law's census that reproduces band HIGH's 30 on its base, f8564df7a,
+    // and the 34 this law's own run gave the change before its seams. Two entered as the change's own code and leave
+    // by seams of their own: AgentAnswers.kt 3.49 -> 1.98 gives what a message's settled calls read as to
+    // AgentResults.kt, which sits with the agent tool's wire shape in splice.harness.agent, and ControlServer.kt
+    // 2.88 -> 3.14 -> 2.88 (C 223 -> 232 -> 213) gives the capabilities that need only the ports and the guard, the
+    // modes among them, to StandaloneMounts beside the mount shape. Two entered by neighbourhood, untouched by the
+    // change, as ModeTables.kt (C 36) joined splice.topology and its median fell 47.0 -> 44.5:
+    // RestartCommand.kt 2.96 -> 3.03 and SessionsRelaunchCommand.kt 2.99 -> 3.07 (C 153.0, 51.1 -> 49.9). The first
+    // leaves by a seam, 2.75 (C 150.5 -> 136.5): which ports a stop must see freed derives itself beside the ladder
+    // that reads it (StopScope, DaemonStop.kt). The second stays. One of the seven above is decomposed:
+    // LiveTurns.kt 3.11 -> 2.55 (C 204.0 -> 166.5) gives what a live turn reads as to splice.head.turn.listing and
+    // the by-head registry to the routes that read it. One in, one out. 30 -> 30.
     const val RATCHET_MAX_HIGH = 30
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so

@@ -27,7 +27,7 @@ public class DesktopSettings {
      *  read. Null when it sends it nowhere. An older splice's door in it is no reason: it is taken out
      *  ([withoutDoor]). */
     public fun refusal(file: JsonObject): String? {
-        val env = file[ENV] ?: return null
+        val env = file[Keys.ENV] ?: return null
         if (env !is JsonObject) return "its \"env\" is not an object"
         val other = otherProviders.firstOrNull { switched(env, it) }
         val mantle = JsonScalars.str(env, DESKTOP_MANTLE_URL) ?: "(unset)"
@@ -43,7 +43,7 @@ public class DesktopSettings {
     /** Whether [file] holds what an older splice's `splice desktop on` wrote there: Mantle switched on with a desktop
      *  key, at whatever address that splice's door had. */
     public fun holdsDoor(file: JsonObject): Boolean {
-        val env = file[ENV] as? JsonObject ?: return false
+        val env = file[Keys.ENV] as? JsonObject ?: return false
         val key = JsonScalars.str(env, DESKTOP_BEARER).orEmpty()
         return switched(env, DESKTOP_USE_MANTLE) && key.startsWith(DESKTOP_KEY_PREFIX)
     }
@@ -56,9 +56,13 @@ public class DesktopSettings {
         val out = LinkedHashMap<String, JsonElement>(file)
         if (pickedFromDoor(file, replaced, selectors)) out.remove(DESKTOP_FILE_MODEL)
         if (!holdsDoor(file)) return JsonObject(out)
-        (file[ENV] as? JsonObject)?.let { env ->
-            val restored = restoredEnv(env, replaced?.get(ENV) as? JsonObject)
-            if (restored.isEmpty() && !existed(replaced, ENV_EXISTED)) out.remove(ENV) else out[ENV] = restored
+        (file[Keys.ENV] as? JsonObject)?.let { env ->
+            val restored = restoredEnv(env, replaced?.get(Keys.ENV) as? JsonObject)
+            if (restored.isEmpty() && !existed(replaced, ENV_EXISTED)) {
+                out.remove(Keys.ENV)
+            } else {
+                out[Keys.ENV] = restored
+            }
         }
         val picker = replaced?.get(PICKER)?.takeIf { it !is JsonNull }
         if (picker == null) out.remove(PICKER) else out[PICKER] = picker
@@ -99,10 +103,10 @@ public class DesktopSettings {
      *  sessions past it, and while the door is in it, nothing `on` wrote there, its picker included, nor a `model` that
      *  is one of the picker's rows, picked in the Code tab. */
     public fun inherited(file: JsonObject): JsonObject {
-        val env = file[ENV] as? JsonObject ?: return file
+        val env = file[Keys.ENV] as? JsonObject ?: return file
         val door = holdsDoor(file)
         val dropped = if (door) providerSwitches + desktopEnv else providerSwitches
-        val out = JsonObject(file + (ENV to JsonObject(env - dropped.toSet())))
+        val out = JsonObject(file + (Keys.ENV to JsonObject(env - dropped.toSet())))
         if (!door) return out
         val picked = JsonScalars.str(file, DESKTOP_FILE_MODEL) in rows(file)
         return JsonObject(if (picked) out - PICKER - DESKTOP_FILE_MODEL else out - PICKER)
@@ -151,7 +155,6 @@ internal const val DESKTOP_PICKER: String = "modelPicker"
 /** The file's key for the model the person picked, in the Code tab or in Claude Code. */
 internal const val DESKTOP_FILE_MODEL: String = Keys.MODEL
 
-private const val ENV = "env"
 private const val PICKER = DESKTOP_PICKER
 
 // The key of the picker's rows inside [DESKTOP_PICKER].

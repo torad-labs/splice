@@ -65,7 +65,6 @@ import splice.head.UpstreamHeaders
 import splice.head.compact.CompactClassifier
 import splice.head.compaction.CompactionReplay
 import splice.head.compaction.HeldReply
-import splice.head.port.HarnessRequest
 import splice.head.port.HarnessRequests
 import splice.head.port.HarnessShape
 import splice.head.turn.fallback.HeldModelFallback
@@ -92,7 +91,7 @@ internal sealed class Preparation {
          *  and has no say in the model the command's logins are named for (AskedModels, Nov 12, 2026). */
         val own: Boolean = true,
         /** What the harness's capabilities read of the request (docs/specs/harness.md, decision 2). */
-        val harness: HarnessRequest? = null,
+        val harness: HarnessAsked? = null,
     ) : Preparation() {
         /** Transfers the raw request to its trace without retaining a second post-handoff owner. */
         fun takeInbound(): ClientInbound? = inbound.also { inbound = null }
@@ -341,7 +340,14 @@ internal class TurnPreparation(
         perf.mark(PerfKeys.PARSE)
         val client = call.request.headers[HttpHeaders.UserAgent]
         val fromProvider = providerTurns.build(parsed, compactProbe.compact, arrival.sessionId, perf, client)
-        return providerTurns.endingOnFailure(fromProvider) { handedOn(call, parsed, arrival, perf, fromProvider) }
+        val rebuild = TurnRebuild(providerTurns, parsed, compactProbe.compact, arrival.sessionId, perf, client)
+            .takeUnless { provider.sendsMessages }
+        return providerTurns.endingOnFailure(fromProvider) {
+            handedOn(call, parsed, arrival, perf, fromProvider)
+        }.let { prepared ->
+            val harness = (prepared as? Preparation.Ready)?.harness ?: return@let prepared
+            prepared.copy(harness = harness.copy(rebuild = rebuild))
+        }
     }
 
     private fun handedOn(
@@ -394,19 +400,21 @@ internal class TurnPreparation(
             hasPriorExchange = answered,
             // A gatherer's request has no say in the command's usual model either (decision 9).
             own = parsed.agentId == null && relay.workedFor == null,
-            harness = harnessRequests.of(
-                parsed,
-                sessionId,
-                call.request.headers[HttpHeaders.UserAgent],
-                built.meta.route.upstreamModel,
-                HarnessShape(
-                    streams = parsed.typed.stream,
-                    tools = parsed.typed.tools.isNotEmpty(),
-                    answered = answered,
-                    review = perf.count(AUTO_MODE_REVIEW) > 0L,
-                    slotHeld = built.onEnd != null,
-                    workedFor = relay.workedFor,
-                    door = relay.door,
+            harness = HarnessAsked(
+                harnessRequests.of(
+                    parsed,
+                    sessionId,
+                    call.request.headers[HttpHeaders.UserAgent],
+                    built.meta.route.upstreamModel,
+                    HarnessShape(
+                        streams = parsed.typed.stream,
+                        tools = parsed.typed.tools.isNotEmpty(),
+                        answered = answered,
+                        review = perf.count(AUTO_MODE_REVIEW) > 0L,
+                        slotHeld = built.onEnd != null,
+                        workedFor = relay.workedFor,
+                        door = relay.door,
+                    ),
                 ),
             ),
         )

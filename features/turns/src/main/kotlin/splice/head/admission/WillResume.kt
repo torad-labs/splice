@@ -6,7 +6,7 @@ package splice.head.admission
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.LiveWatchdogBudget
-import splice.head.turn.ResumeReading
+import splice.head.turn.listing.ResumeReading
 import splice.upstream.LiveRound
 import splice.upstream.ReanchorPolicy
 

@@ -13,6 +13,7 @@ import splice.core.wire.HttpStatus
 import splice.daemonclient.ControlPlaneClient
 import splice.daemonclient.DaemonHealth
 import splice.daemonclient.DaemonProbe
+import splice.daemonclient.Reading
 
 /** Stopping the daemon: ask over the control plane, then escalate through OS signals until every
  *  port it owned is free. Constructed by the `restart` verb (Kotlin style law, 2026-08-15: main
@@ -105,6 +106,27 @@ internal class DaemonStop(private val output: TerminalOutput, errors: TerminalOu
         DaemonProbe.healthVersion(port) == null &&
             !health.controlPortBound(port) &&
             headPorts.none { health.controlPortBound(it) }
+}
+
+/** Which ports a stop must see FREED, and whether that list can be trusted, from the running daemon's own list
+ *  ([live], its /api/heads) and the ports splice.toml names ([tomlPorts]). Here since Nov 21, 2026, beside the ladder
+ *  that reads it; the restart verb derived it before.
+ *
+ *  The union is deliberate: the running daemon's own list is authoritative, and the toml's ports are
+ *  kept alongside it so a head the daemon failed to start — and therefore never lists — is still
+ *  checked. Extra ports only ever make the stop check stricter. A refused /api/heads leaves the toml's ports to
+ *  stand alone. [unseen] names why the list cannot be trusted: neither source named a port, where an empty list
+ *  makes `headPorts.none {}` vacuously true, or the daemon answered with a list this CLI could not read, which is a
+ *  running daemon whose heads cannot be listed, so the scope stays degraded whatever the toml names. The caller
+ *  announces the weakened check rather than let it pass as a clean stop. */
+internal class StopScope(live: Reading<List<Int>>, tomlPorts: List<Int>) {
+    val ports: List<Int> = ((live as? Reading.Answered)?.value.orEmpty() + tomlPorts).distinct()
+    val unseen: String? = when {
+        live is Reading.Malformed -> "/api/heads answered with a list this CLI cannot read"
+        ports.isEmpty() -> "splice.toml names no head and /api/heads named none or was unreachable"
+        else -> null
+    }
+    val degraded: Boolean get() = unseen != null
 }
 
 // 60s: the daemon's cooperative cap is STOP_DEADLINE_MS (55s) and its halt(0) floor sits at

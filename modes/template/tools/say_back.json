@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "properties": {
+    "text": {
+      "type": "string",
+      "description": "The text to say back, exactly as the person gave it."
+    }
+  },
+  "required": ["text"]
+}

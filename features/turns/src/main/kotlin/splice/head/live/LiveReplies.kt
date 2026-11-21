@@ -32,7 +32,7 @@ public class LiveReplies(
         return begin(
             LiveTurnFacts(
                 session = session,
-                agent = prepared.harness?.agentId,
+                agent = prepared.harness?.request?.agentId,
                 // a door turn asks for the provider's own id; the door names what Claude Code asked for
                 model = meta.route.relay.askedModel ?: meta.route.originalModel,
                 head = head,

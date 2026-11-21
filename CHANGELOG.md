@@ -50,6 +50,17 @@
   as they come, each tool call as it starts, and how the turn ended. Joining in the middle of a reply shows all of it.
   It needs the management key, answers only on this machine, is read-only, and sends nothing but what Claude Code
   was sent as reply text, thinking and tool-call starts. `docs/live-reply.md` has the events.
+- **Modes: one folder gives the model a set of tools that splice answers.** A mode is a folder under `modes/`: its
+  manifest, each tool's schema and description, optional guidance, and the code that answers its calls. It is built
+  into the jar, and adding one changes no file outside its folder. splice offers a mode's tools to the model of every
+  session the mode is on for, places its guidance once per session, and answers each call itself, on Anthropic, Chat
+  Completions and Responses providers alike; Claude Code never sees the call. A mode is on or off by default in its
+  manifest and per head in `[modes.<name>]` of `splice.toml`; `GET /api/modes`, `splice status` and the console's
+  Settings list each mode with what it adds, and a switch per head writes the table, followed by the next request
+  with no restart. A mode keeps text per session that survives a restart and can answer management routes of its
+  own. A broken mode, or a `[modes.<name>]` table naming no mode, stops the daemon from starting with every finding
+  listed, as `splice check-config` lists it. `modes/template` is a working mode to copy, shipped off;
+  `modes/README.md` has the folder, every manifest key and the steps.
 - **The keyed team listener serves the door.** `/door/v1` answers on a team's server from the gateway's providers,
   with each person's allowlist applied to the provider a model resolves to, and a streamed turn's client is pinged
   at `[server] keepalive_seconds` when that is shorter than splice's own probe.

@@ -34,16 +34,18 @@ internal class HarnessStep(
     suspend fun before(drive: TurnDrive, holdable: Boolean): TurnDeclined? {
         val harness = harness ?: return null
         val request = drive.inputs.harness ?: return null
+        val holding = Holding(drive, holdable, held, folders, liveTurns, wall, provider)
         val end = try {
-            harness.around(request, Holding(drive, holdable, held, folders, liveTurns, wall))
+            harness.around(request, holding)
         } finally {
             held -= drive.slot
         }
         return when (end) {
             is HarnessEnd.Refused -> TurnDeclined(FailureCause.Splice.Declined(end.why))
             is HarnessEnd.Go -> {
-                val built = end.sending?.let { drive.inputs.built.sending(it) } ?: drive.inputs.built
-                val placing = placed(built, end.texts)
+                val built = end.sending?.let(holding::rebuilt) ?: drive.inputs.built
+                val placing = holding.placed(built, end.texts)
+                holding.texts = end.texts
                 if (placing.chars > 0 || end.sending != null) drive.place(placing.turn.requestBody)
                 end.rounds?.let(drive::answering)
                 drive.held = drive.held.copy(
@@ -69,19 +71,6 @@ internal class HarnessStep(
         harness?.started()
     }
 
-    /** The one function every request of a thread gets its capabilities' texts through, in the order they ran, in
-     *  the dialect's own shape. */
-    private fun placed(built: BuiltTurn, texts: List<String>): Placing =
-        texts.fold(Placing(built)) { placing, text ->
-            val next = provider.withFirstUserText(placing.turn, text)
-            // The same instance back says the dialect could not place it: the body goes as it is, and the row says so.
-            if (next === placing.turn) {
-                placing.copy(unplaced = true)
-            } else {
-                Placing(next, placing.chars + text.length, placing.unplaced)
-            }
-        }
-
     /** The request with the texts placed so far, their size, and whether one could not be placed. */
     private data class Placing(val turn: BuiltTurn, val chars: Long = 0L, val unplaced: Boolean = false)
 
@@ -95,10 +84,38 @@ internal class HarnessStep(
         private val folders: SessionProjectLookup,
         private val liveTurns: LiveTurns,
         private val wall: WallClock,
+        private val provider: Provider,
     ) : HarnessTurn {
         override val id: String = drive.sentTurnId()
 
-        override val sending: JsonObject get() = drive.inputs.built.requestBody
+        override val sending: JsonObject get() = drive.inputs.rebuild?.asked ?: drive.inputs.built.requestBody
+
+        /** The texts the turn's capabilities placed, set once they ran, for every later round's request. */
+        @Volatile var texts: List<String> = emptyList()
+
+        /** The turn sending [body], a request in Messages shape: as it is where the provider sends Messages, else the
+         *  provider's own request for it. */
+        fun rebuilt(body: JsonObject): BuiltTurn =
+            drive.inputs.rebuild?.built(body, drive.inputs.built) ?: drive.inputs.built.sending(body)
+
+        override fun built(body: JsonObject): JsonObject? {
+            drive.inputs.rebuild ?: return null
+            return placed(rebuilt(body), texts).turn.requestBody
+        }
+
+        /** The one function every request of a thread gets its capabilities' texts through, in the order they ran,
+         *  in the dialect's own shape. */
+        fun placed(built: BuiltTurn, texts: List<String>): Placing =
+            texts.fold(Placing(built)) { placing, text ->
+                val next = provider.withFirstUserText(placing.turn, text)
+                // The same instance back says the dialect could not place it: the body goes as it is, and the row
+                // says so.
+                if (next === placing.turn) {
+                    placing.copy(unplaced = true)
+                } else {
+                    Placing(next, placing.chars + text.length, placing.unplaced)
+                }
+            }
 
         override fun folder(session: String?): Path? = folders(session)
 

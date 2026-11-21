@@ -37,7 +37,11 @@ export function withBuildDeps(
 ): ModuleGraph {
   const next = new Map<string, readonly string[]>(graph);
   for (const module of modules) {
-    if (next.has(module.path)) continue;
+    const law = graph.get(module.path);
+    if (law !== undefined) {
+      next.set(module.path, law);
+      continue;
+    }
     const text = scriptOf(module);
     next.set(module.path, text === undefined ? [] : declaredProjectDeps(text));
   }

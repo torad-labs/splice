@@ -132,6 +132,10 @@ public class ConsolePorts {
      *  answers its routes with a named 503. */
     internal var desktop: splice.app.desktop.DaemonDesktop? = null
 
+    /** The modes the daemon carries and their switches (modes/README.md), assigned by ControlPlane and asked at each
+     *  request; null answers the modes routes with a named 503. */
+    internal var modes: splice.app.modes.DaemonModes? = null
+
     /** Each login's last failed limits read, assigned by ControlPlane; null reads as no failure on any login. */
     public var quotaReadFailures: QuotaReadFailureSource? = null
 

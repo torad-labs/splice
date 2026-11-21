@@ -5,10 +5,11 @@
 // POST /api/heads/{head}/turns/{id}/stop -> {}
 // POST /api/heads/{head}/holds/try-now[?login=] -> {probed} (slice 5: a held login probed at once)
 //
-// Read in process from the registry HeadServerFactory fills as it builds each head (LiveTurnsByHead),
-// as the wire tap's route reads its ring. An unknown head is a 400 naming it, never a 404: the console
-// reads 404 on a route as a route this daemon does not serve. A turn that is not live, because it
-// ended or never ran here, IS a 404 on the stop: the turn is what is not found, and the console says so.
+// Read in process from the registry HeadServerFactory fills as it builds each head (LiveTurnsByHead, declared here
+// since Nov 21, 2026: it is what these routes read), as the wire tap's route reads its ring. An unknown head is a
+// 400 naming it, never a 404: the console reads 404 on a route as a route this daemon does not serve. A turn that is
+// not live, because it ended or never ran here, IS a 404 on the stop: the turn is what is not found, and the console
+// says so.
 package splice.head.turn
 
 import io.ktor.http.HttpStatusCode
@@ -19,10 +20,28 @@ import kotlinx.serialization.json.putJsonArray
 import splice.core.head.GateHealth
 import splice.core.util.JsonWire
 import splice.head.TurnsHeadLookup
+import splice.head.turn.listing.LiveTurn
 import splice.http.JsonReply
+import java.util.concurrent.ConcurrentHashMap
 
 internal const val LIVE_TURNS_UNWIRED =
     "the daemon wired no live-turn registry; a head's turns cannot be read or stopped"
+
+/** Every head's live turns, by head key: the daemon's ONE registry, filled as each head is built
+ *  (HeadServerFactory) and read by the console's turn routes, the way [splice.head.wire.WireTaps] is. */
+public class LiveTurnsByHead {
+    private val heads = ConcurrentHashMap<String, LiveTurns>()
+
+    public fun put(head: String, turns: LiveTurns) {
+        heads[head] = turns
+    }
+
+    public fun of(head: String): LiveTurns? = heads[head]
+
+    /** The session of every turn live on any head now, for the console to hear those sessions from. */
+    public fun sessions(): Set<String> =
+        heads.values.flatMapTo(HashSet()) { turns -> turns.list().mapNotNull(LiveTurn::session) }
+}
 
 /** The registry, read per request because the control plane is handed it after construction. */
 public fun interface LiveTurnsSource {

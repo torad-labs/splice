@@ -47,7 +47,8 @@ class DaemonTimingBootTest {
         Files.writeString(saved, timing.joinToString(",", "{", "}") { "\"$it\":60000" })
         val env = EnvReader { key -> if (key == "SPLICE_STATE_DIR") dir.toString() else null }
         val defaults = timing.joinToString("\n") { "$it = \"60000\"" }
-        val read = ConfigFindings.read("[defaults]\n$defaults\n$topology", dir, retired = RetiredSettings(env))
+        val beside = BootSettings(retired = RetiredSettings(env))
+        val read = ConfigFindings.read("[defaults]\n$defaults\n$topology", dir, beside = beside)
         assertTrue(read is ConfigRead.Refused)
         val findings = (read as ConfigRead.Refused).findings
         assertEquals(timing.map { "heads.test.overrides.$it" }.toSet(), findings.map { it.path }.toSet())

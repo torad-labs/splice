@@ -99,6 +99,11 @@ internal class ConfigFixSession(
             skip(finding)
         }
         is TopologyFinding.Origin.Saved -> clearOffered(finding, origin)
+        is TopologyFinding.Origin.Mode -> {
+            output.line("  mode ${origin.name} is part of splice's own build: it is fixed in its folder,")
+            output.line("  modes/${origin.name}, and a new build of splice.")
+            skip(finding)
+        }
         TopologyFinding.Origin.File -> fixInFile(finding)
     }
 

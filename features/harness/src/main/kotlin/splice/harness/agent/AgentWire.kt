@@ -1,6 +1,6 @@
 // NEW: the agent's call (docs/specs/harness.md, decision 12) in Anthropic's Messages shape, the one dialect it runs on:
 // a request's messages and tools, and a tool call and its result.
-package splice.harness
+package splice.harness.agent
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull

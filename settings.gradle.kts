@@ -59,6 +59,7 @@ include(
     ":app",
     ":quality-architecture",
     ":quality-compiler-plugin",
+    ":modes-api",
 )
 
 project(":core").projectDir = file("core")
@@ -103,3 +104,14 @@ project(":features-server").projectDir = file("features/server")
 project(":app").projectDir = file("app")
 project(":quality-architecture").projectDir = file("quality/architecture")
 project(":quality-compiler-plugin").projectDir = file("quality/compiler-plugin")
+// The modes (modes/README.md): the contract and catalog every mode builds on, and every folder under modes/ that
+// holds a mode.toml, found by listing the folder. A mode is never listed here by hand: dropping its folder in is
+// adding it.
+project(":modes-api").projectDir = file("modes/api")
+file("modes").listFiles().orEmpty()
+    .filter { it.resolve("mode.toml").isFile }
+    .sortedBy { it.name }
+    .forEach { folder ->
+        include(":modes-${folder.name}")
+        project(":modes-${folder.name}").projectDir = folder
+    }

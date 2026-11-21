@@ -12,6 +12,12 @@ import kotlinx.coroutines.async
 import kotlinx.serialization.json.JsonObject
 import splice.core.capability.Capability
 import splice.core.failure.Decline
+import splice.harness.agent.AgentTool
+import splice.harness.agent.AgentToolPort
+import splice.harness.agent.AgentWire
+import splice.harness.agent.Answered
+import splice.harness.agent.ModelCall
+import splice.harness.agent.Settled
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -24,6 +30,8 @@ internal sealed class Owed {
 
 internal class AgentBeside(
     private val capabilities: List<Capability>,
+    /** The tools beside the capabilities, which a kept call of one of them is answered by. */
+    private val port: AgentToolPort,
     private val records: AgentRecords,
     private val answers: AgentAnswers,
     /** The scope a worker runs in once the turn that called it has ended: the head's harness's own. */
@@ -58,7 +66,8 @@ internal class AgentBeside(
         val paid = matches.mapNotNull { match ->
             val call = match.call
             if (!call.waiting) return@mapNotNull match
-            val asked = asked(call) ?: return@mapNotNull null.also { records.put(session, call.copy(leftOut = true)) }
+            val asked = asked(call, on)
+                ?: return@mapNotNull null.also { records.put(session, call.copy(leftOut = true)) }
             val work = working[call.key]
             val settled = if (work == null) {
                 asked.map { Settled.Failed(LOST) }
@@ -84,12 +93,18 @@ internal class AgentBeside(
 
     /** The calls [call] made beside the client's, as the model made them; null when a capability among them is no
      *  longer declared. */
-    private fun asked(call: KeptCall): List<ModelCall>? {
+    private fun asked(call: KeptCall, on: CallFor): List<ModelCall>? {
         val made = call.messages.lastOrNull()?.let(wire::content).orEmpty().filter(wire::isCall)
             .associateBy { wire.callId(it) }
+        val session = on.agentSession()
+        val ported = session?.let { port.offer(it).tools }.orEmpty()
         return call.beside.map { result ->
-            val capability = capabilities.firstOrNull { it.name == result.capability } ?: return null
-            ModelCall(result.id, capability, made[result.id]?.get(INPUT) ?: JsonObject(emptyMap()))
+            val capability = capabilities.firstOrNull { it.name == result.capability }
+            val offered = ported.firstOrNull { it.name == result.capability }
+            val tool = capability?.let { AgentTool.OfCapability(it) }
+                ?: offered?.let { AgentTool.OfPort(it, port, checkNotNull(session)) }
+                ?: return null
+            ModelCall(result.id, tool, made[result.id]?.get(INPUT) ?: JsonObject(emptyMap()))
         }
     }
 }

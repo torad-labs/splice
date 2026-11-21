@@ -6,6 +6,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { includedBuildDirs } from "./gradle-settings.ts";
+import { modeFolders } from "./modes.ts";
 
 export interface GradleModule {
   readonly id: string;
@@ -78,6 +79,12 @@ export function readGradleModules(repoRoot: string, buildRoot: string): GradleMo
       throw new Error(`gate: module :${id} is included by ${settings} but has no build.gradle.kts at ${abs}`);
     }
     modules.push({ id, dir: relative(repoRoot, abs) });
+  }
+  for (const folder of modeFolders(buildRoot)) {
+    const id = `modes-${folder}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    modules.push({ id, dir: relative(repoRoot, join(buildRoot, "modes", folder)) });
   }
   return modules;
 }

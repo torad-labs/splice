@@ -41,6 +41,7 @@ import splice.core.model.ModelTierSuffix
 import splice.core.model.PublishedRates
 import splice.core.model.WindowRule
 import splice.core.topology.telemetry.TelemetryConfig
+import splice.core.util.TopologySlotsFailure
 
 @Serializable
 public data class Topology(
@@ -244,6 +245,15 @@ public data class ProviderConfig(
     @SerialName("error_messages") val errorMessages: String? = null,
     /** custom-provider: where this provider reports the window it serves, read when the daemon starts. */
     @SerialName("served_window") val servedWindow: ServedWindowConfig? = null,
+    /** gateway-no-heads: the model a session that names none runs on when the gateway serves this provider with no
+     *  head. Absent = this provider's first declared model, or its first discovered one with none declared. Mirrors
+     *  HeadConfig.pinnedModel, but never required: a headless provider always has a usable default. */
+    @SerialName("pinned_model") val pinnedModel: String? = null,
+    /** gateway-no-heads: which model an Anthropic tier (opus, sonnet, haiku, fable) runs on when the gateway serves
+     *  this provider with no head. Mirrors HeadConfig.modelSlots; absent = no tier map, so a tier runs the session's
+     *  current model. [ModelEntry] carries no slot of its own, so the COMPETING check HeadConfig.init runs does not
+     *  apply here. */
+    @SerialName("model_slots") val modelSlots: Map<String, String> = emptyMap(),
 ) {
     /** Whether this provider is a local runtime: what the operator said, else the loopback rule. */
     public val isLocal: Boolean
@@ -295,7 +305,15 @@ public data class ProviderConfig(
                 "code_mode_models must list at least one non-blank model id"
             }
         }
+        val slots = modelSlots.keys.map { it.trim('"', '\'').lowercase() }
+        if (slots.any { it !in headModelSlots }) throw TopologySlotsFailure(TopologySlotsFailure.Problem.UNKNOWN)
+        if (slots.distinct().size != slots.size) throw TopologySlotsFailure(TopologySlotsFailure.Problem.DUPLICATE)
+        if (modelSlots.values.any(String::isBlank)) throw TopologySlotsFailure(TopologySlotsFailure.Problem.BLANK_ID)
     }
+
+    /** gateway-no-heads: the tier-to-id map a headless gateway turn consumes, mirroring HeadConfig.tierModels(). */
+    public val tierModels: Map<String, String>
+        get() = modelSlots.entries.associate { (slot, id) -> slot.trim('"', '\'').lowercase() to id }
 
     /** True when this provider's auth kind declares code mode on this dialect in the registry. */
     private val codeModeShape: Boolean

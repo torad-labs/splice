@@ -119,6 +119,8 @@ providers.*.forward_headers
 providers.*.health_seconds	
 providers.*.hourly_usd	
 providers.*.local	
+providers.*.model_slots	
+providers.*.model_slots.*	
 providers.*.models	
 providers.*.models[].client_model	
 providers.*.models[].compaction_reserve_tokens	
@@ -149,6 +151,7 @@ providers.*.models[].rates.ultrafast_input
 providers.*.models[].rates.ultrafast_output	
 providers.*.models_url	
 providers.*.picker	
+providers.*.pinned_model	
 providers.*.quirks	
 providers.*.quirks.account_id_header	
 providers.*.quirks.block_allowlist	

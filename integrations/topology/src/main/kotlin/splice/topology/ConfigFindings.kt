@@ -13,6 +13,7 @@ import splice.core.capability.CapabilityToml
 import splice.core.config.retiredKnobsByKey
 import splice.core.model.HeadDiscoveredModels
 import splice.core.topology.Dialect
+import splice.core.topology.ServingBoundMove
 import splice.core.topology.Topology
 import splice.core.topology.TopologyFinding
 import splice.core.topology.TopologyFindings
@@ -74,6 +75,7 @@ public object ConfigFindings {
         val decoded = decode(text)
         val topology = decoded.getOrNull()
             ?: return refused(undecodable(text, requireNotNull(decoded.exceptionOrNull())) + elsewhere(null))
+        val moves = ServingBoundMove(topology)
         val checks = TopologyFindings.of(
             topology,
             HeadDiscoveredModels { emptyList() },
@@ -81,7 +83,7 @@ public object ConfigFindings {
             rosters = false,
             configDir = configDir,
         )
-            .map { it.copy(message = withFix(it), line = lineOf(text, it.path)) }
+            .map { it.copy(message = withFix(it), line = lineOf(text, it.path), move = it.move ?: moves.of(it)) }
         val local = runtimes.of(topology).distinct()
             .map { it.copy(line = rows.of(text, it.path) ?: lineOf(text, it.path)) }
         val ready = topology.copy(capabilities = declared(topology).capabilities)

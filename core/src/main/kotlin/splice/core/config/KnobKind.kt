@@ -61,5 +61,15 @@ public val daemonWideKnobs: Set<Knob> = setOf(
     Knob.ACTIVITY_STORE_HEADS,
 )
 
+/** The daemon-wide knobs a provider's own overrides may still set: the bounds a turn on that provider is held to (how long
+ *  it waits for a first byte, between stream events, before a stall is re-anchored, and without progress). A head's own
+ *  overrides stay refused them, but a head on the provider reads the provider's, so one value serves both. */
+public val providerServingKnobs: Set<Knob> = setOf(
+    Knob.UPSTREAM_TIMEOUT_MS,
+    Knob.FIRST_BYTE_TIMEOUT_MS,
+    Knob.STREAM_IDLE_MS,
+    Knob.STALL_REANCHOR_MS,
+)
+
 /** Per-head values for these knobs cannot create a different timing or daemon policy. */
 internal const val DAEMON_WIDE_OVERRIDE: String = "is daemon-wide; set it under [defaults] instead"

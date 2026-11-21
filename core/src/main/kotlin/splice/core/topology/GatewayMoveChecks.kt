@@ -8,6 +8,7 @@
 package splice.core.topology
 
 import splice.core.config.Knob
+import splice.core.config.daemonWideKnobs
 
 internal class GatewayMoveChecks(private val topology: Topology) {
     private val keys = TomlKeys()
@@ -94,12 +95,17 @@ internal class GatewayMoveChecks(private val topology: Topology) {
     /** [text] as a TOML string, which a value is and a key need not be. */
     private fun quoted(text: String): String = "\"${keys.escape(text)}\""
 
+    /** Whether [knob] is a finding of this check: not a capture or console knob (those
+     *  stay with a head), and not a daemon-wide one, which a head already cannot set and whose finding offers the move
+     *  for the serving bounds a provider may carry (TopologyChecks.knobs). */
+    private fun servedByProvider(knob: Knob): Boolean = !knob.headOnly && knob !in daemonWideKnobs
+
     private fun unserved(why: String): String = "$why, so the gateway would serve the provider without it"
 
     /** Each override the gateway reads that the head sets and its provider does not say the same. */
     private fun overrides(key: String, head: HeadConfig, provider: ProviderConfig): List<TopologyFinding> =
         head.overrides.mapNotNull { (knob, value) ->
-            val known = Knob.entries.firstOrNull { it.key == knob }?.takeUnless { it.headOnly }
+            val known = Knob.entries.firstOrNull { it.key == knob }?.takeIf(::servedByProvider)
             if (known == null || provider.overrides[knob] == value) return@mapNotNull null
             val free = knob !in provider.overrides
             val why = if (free) "only this head says it" else "the provider says another"

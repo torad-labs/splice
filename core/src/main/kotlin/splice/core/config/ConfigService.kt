@@ -235,7 +235,7 @@ public class ConfigService(
         }
         val perHead = inputs.heads.filterValues { it.isNotEmpty() }.mapValues { (head, raw) ->
             previous?.global?.layers?.perHead?.get(head)?.takeIf { previous.inputs.heads[head] == raw }
-                ?: coerceAll(raw).accepted.filterKeys { knobsByKey[it] !in daemonWideKnobs }
+                ?: coerceAll(raw).accepted
         }.let(Collections::unmodifiableMap)
         val layers = ConfigLayers(defaults, globalKnobs, inputs.file, env.accepted, inputs.runtime, perHead)
         // Most-specific head values are LAST, above every shared layer, including runtime PATCH.
@@ -270,7 +270,7 @@ public class ConfigService(
             // a provider's layer is written under its own table, a head's under the head's
             val where = if (head.startsWith(PROVIDER_LAYER_PREFIX)) "$head.overrides" else "heads.$head"
             coerceAll(raw).rejected.forEach { (key, why) -> rejects["$where.$key"] = why }
-            raw.keys.filter { knobsByKey[it] in daemonWideKnobs }.forEach { key ->
+            raw.keys.filter { headLayer.refuses(head, it) }.forEach { key ->
                 rejects["$where.$key"] = DAEMON_WIDE_OVERRIDE
             }
         }

@@ -27,11 +27,23 @@ public class HeadOverrideLayer(
         changed = listener
     }
 
-    /** Every layer as it is read: its own knobs over what it inherits. */
+    /** Every layer as it is read: its own knobs over what it inherits, without the daemon-wide knobs a layer may not set
+     *  (a head's own overrides never carry one, a provider's carry its serving bounds, and a head reads those of its
+     *  provider). */
     public fun all(): Map<String, Map<String, String>> {
         val own = held.get()
-        if (inherited.isEmpty()) return own
-        return (inherited.keys + own.keys).associateWith { inherited[it].orEmpty() + own[it].orEmpty() }
+        return (inherited.keys + own.keys).associateWith { layer ->
+            inherited[layer].orEmpty().filterKeys { !refuses(PROVIDER_LAYER_PREFIX, it) } +
+                own[layer].orEmpty().filterKeys { !refuses(layer, it) }
+        }
+    }
+
+    /** Whether the layer named [layer] may not set the knob [key]: a daemon-wide one, unless [layer] is a provider's and
+     *  the knob one of its serving bounds. An unknown key is left to be rejected as one. */
+    internal fun refuses(layer: String, key: String): Boolean {
+        val knob = knobsByKey[key]
+        val serving = layer.startsWith(PROVIDER_LAYER_PREFIX) && knob in providerServingKnobs
+        return knob in daemonWideKnobs && !serving
     }
 
     /** Every layer's own knob values, as last read or written, without what it inherits. */

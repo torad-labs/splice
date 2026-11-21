@@ -86,7 +86,7 @@ class FailClosedBootTest {
             [heads.one]
             provider = "demo"
             port = 3101
-            discovery_prefix = "claude-one--"
+            discovery_prefix = "claude-demo--"
             pinned_model = "m"
             [heads.one.overrides]
             """
@@ -106,7 +106,7 @@ class FailClosedBootTest {
             [heads.one]
             provider = "demo"
             port = 3101
-            discovery_prefix = "claude-one--"
+            discovery_prefix = "claude-demo--"
             pinned_model = "m"
             """,
         )

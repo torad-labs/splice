@@ -98,7 +98,8 @@ internal class GatewayMoveChecks(private val topology: Topology) {
     /** Whether [knob] is a finding of this check: not a capture or console knob (those
      *  stay with a head), and not a daemon-wide one, which a head already cannot set and whose finding offers the move
      *  for the serving bounds a provider may carry (TopologyChecks.knobs). */
-    private fun servedByProvider(knob: Knob): Boolean = !knob.headOnly && knob !in daemonWideKnobs
+    private fun servedByProvider(knob: Knob): Boolean =
+        !knob.headOnly && knob !in daemonWideKnobs && knob !in headLocalKnobs
 
     private fun unserved(why: String): String = "$why, so the gateway would serve the provider without it"
 
@@ -114,3 +115,11 @@ internal class GatewayMoveChecks(private val topology: Topology) {
             TopologyFinding("heads.$key.overrides.$knob", unserved(why), move = move)
         }
 }
+
+/** These configure a head's display or trace files, not how the gateway serves a provider. */
+private val headLocalKnobs = setOf(
+    Knob.PROJECTS_FOLDERS,
+    Knob.STATUSLINE_GIT_ROOTS,
+    Knob.TRACE_RETENTION_DAYS,
+    Knob.TRACE_MAX_BODY_CHARS,
+)

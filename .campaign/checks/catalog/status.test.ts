@@ -4,7 +4,8 @@
 // Splice gateway.
 
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { rmSync } from "node:fs";
+import { existsSync, lstatSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { lane, toDoor } from "../door/lib/claude.ts";
 import { Provider } from "../harness/lib/capability.ts";
 import { Splice, freePort, mockHead } from "../server/lib/harness.ts";
@@ -25,6 +26,7 @@ let backend: CodexBackend;
 let borealis: Upstream;
 let anthropic: Provider;
 let s: Splice;
+let bin: string;
 
 beforeAll(async () => {
   backend = CodexBackend.start([{ slug: "gpt-6-astra", tiers: [] }]);
@@ -37,6 +39,12 @@ beforeAll(async () => {
     gptEnv(backend.url),
   );
   await s.start();
+  // A head the install still has: its command link splice laid in the install's bin folder. `splice install` lays
+  // both heads' links in the home's .local/bin, as it does on a machine; no head is launched, so no head folder holds
+  // a settings.json of splice's, and the link alone is what makes each head one the install still has.
+  bin = join(s.home, ".local", "bin");
+  expect(s.cli(["install"]).code).toBe(0);
+  for (const h of HEADS) expect([h.command, lstatSync(join(bin, h.command)).isSymbolicLink()]).toEqual([h.command, true]);
 }, 300_000);
 
 afterAll(async () => {
@@ -74,6 +82,20 @@ describe("gw-status", () => {
     for (const verb of ["status", "doctor"]) {
       const line = lineOf(verb, "claude-astra");
       expect([verb, line.includes("splice claude door")]).toEqual([verb, true]);
+    }
+  });
+
+  test("a head whose command link is gone and whose folder holds no settings of splice's is not listed", () => {
+    toDoor(s);
+    rmSync(join(bin, "claude-borealis"), { force: true });
+    expect(existsSync(join(s.home, ".claude-borealis", "settings.json"))).toBe(false);
+    for (const verb of ["status", "doctor"]) {
+      expect([verb, "claude-borealis", lineOf(verb, "claude-borealis")]).toEqual([verb, "claude-borealis", ""]);
+      expect([verb, "claude-astra", lineOf(verb, "claude-astra") !== ""]).toEqual([verb, "claude-astra", true]);
+    }
+    rmSync(join(bin, "claude-astra"), { force: true });
+    for (const verb of ["status", "doctor"]) {
+      for (const h of HEADS) expect([verb, h.command, lineOf(verb, h.command)]).toEqual([verb, h.command, ""]);
     }
   });
 });

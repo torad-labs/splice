@@ -70,9 +70,10 @@ internal data class DesktopLineup(
     /** The door as it stands for a caller that may use only the providers [allowed] says: those providers, their models,
      *  and the catalog rows of those models, so every list and every route read from it serves no other. */
     fun serving(allowed: ProviderSelection): DesktopLineup {
-        val kept = providers.filter(allowed).mapTo(HashSet()) { it.key }
+        val serving = providers.filter { allowed(it) }
+        val kept = serving.mapTo(HashSet()) { it.key }
         return copy(
-            providers = providers.filter { it.key in kept },
+            providers = serving,
             models = models.filter { it.provider in kept },
             leftOut = leftOut.filter { it.provider in kept },
             catalog = ProviderCatalog(catalog.models.filter { it.provider in kept }),

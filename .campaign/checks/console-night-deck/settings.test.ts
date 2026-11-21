@@ -32,7 +32,8 @@ test("the parts show live figures, and the gates' glass holds Queue size at its 
     try {
       for (const p of ["cc", "watch", "reasoning", "limits", "mcp", "storage", "projects", "splice"]) await expect(o.page.locator(`[data-part="${p}"]`)).toHaveCount(1, { timeout: 10_000 });
       await expect(o.page.locator('[data-part="splice"]')).toContainText("9.8.7");
-      await expect(o.page.locator("#gates")).toContainText("claude-acme");
+      // a gate names its provider alone, as the approved page does; the command is added only where two commands share one
+      await expect(o.page.locator("#gates")).toContainText("ChatGPT");
       await o.page.locator('[data-part="gates"]').first().click();
       const l = await lens(o.page);
       await expect(l.locator(".lr", { hasText: "Queue size" }).first()).toContainText("777");

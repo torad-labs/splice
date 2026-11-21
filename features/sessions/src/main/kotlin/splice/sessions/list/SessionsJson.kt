@@ -3,7 +3,8 @@
 // registry. One
 // document on one line: every readable registration with its identity (session id, name, pid and kernel start, socket),
 // its state as Claude Code wrote it, and how Splice judged it (live, stale or gone, and the head it talks to). Registry
-// text is passed through as written, since JSON carries it safely; a program decides what to show.
+// text is passed through as written, since JSON carries it safely; a program decides what to show. A door session's
+// route is `door`, with its `door` object (command, address and machine), door-sessions, Nov 20, 2026.
 package splice.sessions.list
 
 import kotlinx.serialization.json.JsonObject
@@ -14,6 +15,7 @@ import splice.core.terminal.TerminalOutput
 import splice.core.util.JsonWire
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRoute
+import splice.sessions.registry.SessionRouteWire
 import splice.sessions.registry.SessionSource
 
 /** `splice sessions --json`: [output] takes the one document. */
@@ -43,19 +45,15 @@ public class SessionsJson(private val output: TerminalOutput) {
         put("statusUpdatedAt", session.status.updatedAt)
         put("waitingFor", session.status.waitingFor)
         put("availability", session.availability.name.lowercase())
-        put("route", routeOf(session.route))
+        put("route", SessionRouteWire.name(session.route))
         put("head", session.head)
+        // a door row's door, left off every other row; its head stays null, as for every row that is no head's
+        (session.route as? SessionRoute.Door)?.let { put("door", SessionRouteWire.door(it.door)) }
         put("address", session.address)
         put("socket", process.messagingSocketPath)
         put("kind", session.client.kind)
         put("version", session.client.version)
         put("peerProtocol", session.client.peerProtocol)
         put("registryDir", process.registryDir)
-    }
-
-    private fun routeOf(route: SessionRoute): String = when (route) {
-        is SessionRoute.Head -> "head"
-        SessionRoute.Direct -> "direct"
-        SessionRoute.Unknown -> "unknown"
     }
 }

@@ -1,10 +1,11 @@
 // GET /api/sessions?gone=: a reader that sends the mark of the gone sessions' rows it holds is sent the sessions still
-// here alone, and every row again once a gone row is added.
+// here alone, and every row again once a gone row is added. The listing sends the newest gone sessions alone.
 package splice.sessions.http
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.sessions.listing.GONE_ROWS_SENT
 import splice.sessions.registry.SessionRegistry
 import splice.sessions.registry.SessionRoute
 import java.nio.file.Files
@@ -60,5 +62,28 @@ class SessionsGoneRowsTest {
         assertEquals(listOf("s-11", "s-12"), ids(changed))
         assertEquals(null, changed["gone_held"])
         assertNotEquals(mark(whole), mark(changed))
+    }
+
+    @Test
+    fun `the listing sends the newest gone sessions and says how many older ones history has`(@TempDir dir: Path) {
+        Files.writeString(dir.resolve("1.json"), """{"pid":1,"sessionId":"here","updatedAt":${now - 1_000}}""")
+        val gone = GONE_ROWS_SENT + 5
+        for (age in 1..gone) {
+            Files.writeString(
+                dir.resolve("${1_000 + age}.json"),
+                """{"pid":${1_000 + age},"sessionId":"gone-$age","updatedAt":${now - age * 60_000L}}""",
+            )
+        }
+        val registry = SessionRegistry(
+            sessionsDir = dir,
+            routeOf = { SessionRoute.Unknown },
+            pidAlive = { it == 1L },
+            clock = { now },
+        )
+        val body = Json.parseToJsonElement(SessionsRoutes(registry, TestTranscripts()).sessionsJson(null)).jsonObject
+        val ids = body["sessions"]!!.jsonArray.map { it.jsonObject["session_id"]!!.jsonPrimitive.content }.toSet()
+
+        assertEquals(setOf("here") + (1..GONE_ROWS_SENT).map { "gone-$it" }, ids)
+        assertEquals(5, body["gone_older"]?.jsonPrimitive?.int)
     }
 }

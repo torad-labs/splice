@@ -1,6 +1,9 @@
 // A registered session joins a head by the LAUNCH splice made: the launcher's roster record (pid, birth, head,
 // base URL), checked against the head that owns the declared port. Nothing is inferred from a process environment;
-// it is read only to tell a session splice never launched (DIRECT) from one it cannot place (UNKNOWN).
+// it is read only to tell a session splice never launched (DIRECT) from one it cannot place (UNKNOWN). door-sessions
+// (Nov 20, 2026): a launch recorded at a door, this machine's control port at /door or /desktop or another machine's
+// door a `[remote.<command>]` names, places the session on that door, which is no head's. Before it such a session
+// read as UNKNOWN; the tests that pinned that now see the door.
 package splice.sessions.registry
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -9,6 +12,9 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.process.LaunchOwners
 import splice.core.process.LaunchProcess
 import splice.core.process.LaunchProcessIdentity
+import splice.core.topology.LaunchDoor
+import splice.core.topology.LaunchDoors
+import splice.core.topology.RemoteConfig
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
@@ -16,6 +22,13 @@ import kotlin.random.Random
 
 class ProcessEnvironmentTest {
     private val heads = HeadOfPort { port -> mapOf(3099 to "codex", 3101 to "claudex")[port] }
+    private val doors = LaunchDoors(
+        mapOf(
+            "boxdoor" to RemoteConfig("http://devbox.lan:3097/door"),
+            "claudex-box" to RemoteConfig("http://devbox.lan:3097/claudex"),
+        ),
+        CONTROL_PORT,
+    )
     private val birth = Instant.parse("2026-01-01T00:00:00Z")
 
     private fun roster(root: Path, born: Instant = birth) =
@@ -34,7 +47,7 @@ class ProcessEnvironmentTest {
         val owners = roster(root)
         owners.write(41, "claudex", "http://127.0.0.1:3101", "session", "other")
         environ(root, 41, "HOME=/home/me")
-        assertEquals(SessionRoute.Head("claudex"), environment(root, owners).route(41, heads))
+        assertEquals(SessionRoute.Head("claudex"), environment(root, owners).route(41, doors, heads))
     }
 
     @Test
@@ -44,9 +57,51 @@ class ProcessEnvironmentTest {
         owners.write(42, "claudex", "http://127.0.0.1:4000", "session", "other")
         owners.write(43, "claudex", "https://api.example.com", "session", "other")
         val env = environment(root, owners)
-        assertEquals(SessionRoute.Unknown, env.route(41, heads), "the declared head is not the one on that port")
-        assertEquals(SessionRoute.Unknown, env.route(42, heads), "no head owns the port")
-        assertEquals(SessionRoute.Unknown, env.route(43, heads), "not a local head")
+        assertEquals(SessionRoute.Unknown, env.route(41, doors, heads), "the declared head is not the one on that port")
+        assertEquals(SessionRoute.Unknown, env.route(42, doors, heads), "no head owns the port")
+        assertEquals(SessionRoute.Unknown, env.route(43, doors, heads), "not a local head")
+    }
+
+    @Test
+    fun `a session launched on a door is placed on that door, this machine's or another machine's`(
+        @TempDir root: Path,
+    ) {
+        val owners = roster(root)
+        owners.write(71, "claude", "http://127.0.0.1:$CONTROL_PORT/door", "session", "other")
+        owners.write(72, "claude", "http://127.0.0.1:$CONTROL_PORT/desktop", "session", "other")
+        owners.write(73, "boxdoor", "http://devbox.lan:3097/door", "session", "other")
+        val env = environment(root, owners)
+        assertEquals(
+            SessionRoute.Door(LaunchDoor("claude", "http://127.0.0.1:$CONTROL_PORT/door", null)),
+            env.route(71, doors, heads),
+        )
+        assertEquals(
+            SessionRoute.Door(LaunchDoor("claude", "http://127.0.0.1:$CONTROL_PORT/desktop", null)),
+            env.route(72, doors, heads),
+            "the door's older path is the same door",
+        )
+        assertEquals(
+            SessionRoute.Door(LaunchDoor("boxdoor", "http://devbox.lan:3097/door", "devbox.lan")),
+            env.route(73, doors, heads),
+        )
+    }
+
+    @Test
+    fun `a launch that names no door, or a door the topology does not know, is not placed on one`(
+        @TempDir root: Path,
+    ) {
+        val owners = roster(root)
+        owners.write(81, "claude", "http://127.0.0.1:${CONTROL_PORT + 1}/door", "session", "other")
+        owners.write(82, "claude", "http://devbox.lan:3097/door", "session", "other")
+        owners.write(83, "claudex-box", "http://devbox.lan:3097/claudex", "session", "other")
+        owners.write(84, "claude", "http://127.0.0.1:$CONTROL_PORT/door", "login", "other")
+        owners.write(85, "claude", "http://127.0.0.1:$CONTROL_PORT/door", "session", "other")
+        val env = environment(root, owners)
+        assertEquals(SessionRoute.Unknown, env.route(81, doors, heads), "another port is not this machine's door")
+        assertEquals(SessionRoute.Unknown, env.route(82, doors, heads), "no [remote.claude] names that door")
+        assertEquals(SessionRoute.Unknown, env.route(83, doors, heads), "another machine's command is no door")
+        assertEquals(SessionRoute.Unknown, env.route(84, doors, heads), "a login is not a session")
+        assertEquals(SessionRoute.Unknown, env.route(85, null, heads), "an unread topology places no door")
     }
 
     @Test
@@ -54,14 +109,14 @@ class ProcessEnvironmentTest {
         roster(root).write(51, "claudex", "http://127.0.0.1:3101", "login", "other")
         roster(root).write(52, "claudex", "http://127.0.0.1:3101", "session", "other")
         val reused = environment(root, roster(root, born = Instant.parse("2026-02-02T00:00:00Z")))
-        assertEquals(SessionRoute.Unknown, environment(root).route(51, heads), "a login is not a session")
-        assertEquals(SessionRoute.Unknown, reused.route(52, heads), "a reused pid has another birth")
+        assertEquals(SessionRoute.Unknown, environment(root).route(51, doors, heads), "a login is not a session")
+        assertEquals(SessionRoute.Unknown, reused.route(52, doors, heads), "a reused pid has another birth")
     }
 
     @Test
     fun `a splice marker without a launch record is not placed on a head`(@TempDir root: Path) {
         environ(root, 11, "SPLICE=1", "ANTHROPIC_BASE_URL=http://127.0.0.1:3099", "SECRET_TOKEN=never-read")
-        assertEquals(SessionRoute.Unknown, environment(root).route(11, heads), "the environment is no launch")
+        assertEquals(SessionRoute.Unknown, environment(root).route(11, doors, heads), "the environment is no launch")
     }
 
     @Test
@@ -78,13 +133,13 @@ class ProcessEnvironmentTest {
         Files.setPosixFilePermissions(unreadable, emptySet())
         Files.createDirectories(root.resolve("proc").resolve("35").resolve("environ"))
         val env = environment(root)
-        assertEquals(SessionRoute.Direct, env.route(21, heads), "a look-alike key is not the marker")
-        assertEquals(SessionRoute.Direct, env.route(31, heads), "read, no SPLICE=1: talks to its provider directly")
-        assertEquals(SessionRoute.Direct, env.route(32, heads), "SPLICE=0 is not SPLICE=1")
-        assertEquals(SessionRoute.Unknown, env.route(33, heads), "an empty environment is no evidence of anything")
-        assertEquals(SessionRoute.Unknown, env.route(34, heads), "another user's process: permission denied")
-        assertEquals(SessionRoute.Unknown, env.route(35, heads), "a read that fails is not a read")
-        assertEquals(SessionRoute.Unknown, env.route(99, heads), "no such process reads as no environment")
+        assertEquals(SessionRoute.Direct, env.route(21, doors, heads), "a look-alike key is not the marker")
+        assertEquals(SessionRoute.Direct, env.route(31, doors, heads), "read, no SPLICE=1: talks to its provider")
+        assertEquals(SessionRoute.Direct, env.route(32, doors, heads), "SPLICE=0 is not SPLICE=1")
+        assertEquals(SessionRoute.Unknown, env.route(33, doors, heads), "an empty environment is no evidence")
+        assertEquals(SessionRoute.Unknown, env.route(34, doors, heads), "another user's process: permission denied")
+        assertEquals(SessionRoute.Unknown, env.route(35, doors, heads), "a read that fails is not a read")
+        assertEquals(SessionRoute.Unknown, env.route(99, doors, heads), "no such process reads as no environment")
     }
 
     // Key rotation (Oct 26, 2026): a session launched before the key helper holds one of splice's keys in
@@ -156,3 +211,6 @@ private const val MAX_ENTRIES = 6
 
 // why: an `=` inside a value, and a character UTF-8 spells in two bytes
 private const val VALUE_CHARS = "ab=c\u00e9 "
+
+// The control port this machine's door is answered on in these tests.
+private const val CONTROL_PORT = 3096

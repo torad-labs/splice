@@ -8,9 +8,11 @@
 //   team   the id of the first unarchived team the session is bound in, by created time then id
 //          (V4-131, TeamStore.bindingsOf), or null when it is bound in none or the team store is
 //          unwired. Always present, so the console groups every row.
-//   route  `head` | `direct` | `unknown`: the registry's SessionRoute, decided where the process
-//          environment is read. `head` itself is unchanged and still folds the last two into
-//          "unknown head".
+//   route  `head` | `door` | `direct` | `unknown`: the registry's SessionRoute, decided where the launch record and
+//          the process environment are read. `head` folds the last two into "unknown head", and reads `door` on a
+//          door row, whose turns run on whichever head their model names.
+//   door   on a `door` row only (door-sessions, Nov 20, 2026), as `repo` is left off others: the command its launch
+//          recorded, the door's address it runs on, and the machine that serves it (null for this machine's door).
 //   last   V4-444: the last main-thread message's role, tool, one-line redacted text and epoch-ms ts;
 //          null without an available transcript message, session id, or enabled transcript view.
 //   turns  how many turns the session has run, from the daemon's per-session accumulator, with
@@ -42,6 +44,7 @@ import splice.sessions.registry.RepoRoot
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRoute
+import splice.sessions.registry.SessionRouteWire
 import splice.sessions.registry.SessionSource
 import splice.sessions.teams.Team
 import splice.sessions.teams.TeamStore
@@ -185,11 +188,17 @@ public class SessionsRoutes(
         // An unreadable directory is not an empty one: the error rides beside the (empty) list.
         listing.error?.let { put("error", it) }
         val rows = GoneSessionRows(
-            listing.sessions.map { ListedRow(it.availability == SessionAvailability.GONE, row(it, rowFacts, bound)) },
+            listing.sessions.map { record ->
+                val gone = record.availability == SessionAvailability.GONE
+                val updatedAt = record.process.updatedAt ?: record.status.updatedAt ?: 0L
+                ListedRow(gone, updatedAt) { row(record, rowFacts, bound) }
+            },
         )
         // A reader that holds the gone sessions' rows under this mark is sent the sessions still here alone.
         put("gone_mark", rows.mark)
         if (rows.heldBy(held)) put("gone_held", true)
+        // The gone sessions older than the newest sent: GET /api/sessions/history pages and searches them.
+        if (rows.older > 0) put("gone_older", rows.older)
         put("sessions", buildJsonArray { rows.owed(held).forEach { add(it) } })
     }.toString()
 
@@ -248,23 +257,15 @@ public class SessionsRoutes(
         put("started_at", s.process.startedAt)
         put("updated_at", s.process.updatedAt)
         put("address", s.address)
-        put("head", s.head ?: UNKNOWN_HEAD)
-        put("route", routeName(s.route))
+        put("head", s.launchedOn ?: UNKNOWN_HEAD)
+        put("route", SessionRouteWire.name(s.route))
+        (s.route as? SessionRoute.Door)?.let { put("door", SessionRouteWire.door(it.door)) }
         put("availability", JsonPrimitive(s.availability.name.lowercase()))
         repoOf(s)?.let { put("repo", repoJson(it)) }
         projects.put(this, s)
         // the card names the team a person reads, never its id; no reader joins a row to its team by id
         put("team_name", s.sessionId?.let(teamOf::of)?.name)
         rowFacts.write(s, this)
-    }
-
-    /** The wire name of the route the registry carried: `head` beside a real `head` key, `direct` for a
-     *  session that never went through splice, `unknown` for one splice cannot place. `head` keeps
-     *  printing "unknown head" for both of the last two; `route` is what tells them apart. */
-    private fun routeName(route: SessionRoute): String = when (route) {
-        is SessionRoute.Head -> "head"
-        SessionRoute.Direct -> "direct"
-        SessionRoute.Unknown -> "unknown"
     }
 
     /** The model [record] runs on as its row reports it: what Continue on keeps as the model a move left. With

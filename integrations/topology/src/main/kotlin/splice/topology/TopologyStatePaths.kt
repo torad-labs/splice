@@ -5,9 +5,11 @@
 // directory the daemon had never written.
 package splice.topology
 
+import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
 import splice.core.topology.Topology
+import splice.core.topology.TopologyKnobLayer
 import splice.core.util.EnvReader
 import java.io.IOException
 import java.nio.file.Files
@@ -48,6 +50,19 @@ public class TopologyStatePaths(
      *  unparseable file declares no override, and that is the daemon's answer too: it cannot boot
      *  on a file it cannot parse, and on an absent one it writes the starter, which declares none. */
     public fun current(): StatePaths = of(onDisk())
+
+    /** The effective control port for [topology] (null: no file, or one that could not be read), by the daemon's exact
+     *  TOML < state < env precedence: the CLI's DaemonSettings asks it, and so does `splice sessions`, which names this
+     *  machine's door on that port (LaunchDoors) without reaching the daemon. No topology still resolves through the
+     *  layered config: the old null-branch returned the hardcoded default, silently IGNORING the state config.json and
+     *  SPLICE_CONTROL_PORT layers, which broke hermetic test rigs and diverged from the launch shim's own resolution
+     *  (JW-05 discovery, 2026-08-07). */
+    public fun controlPort(topology: Topology?): Int = ConfigService(
+        // V4-109: the state config layer lives in the daemon's RESOLVED state dir.
+        of(topology),
+        headOverrides = topology?.let { TopologyKnobLayer(it).configOverrides() } ?: emptyMap(),
+        envReader = envReader,
+    ).getConfig().controlPort
 
     private fun onDisk(): Topology? {
         val path = TopologyLoader.configPath(envReader)

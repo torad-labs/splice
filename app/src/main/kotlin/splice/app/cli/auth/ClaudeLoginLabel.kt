@@ -7,6 +7,7 @@
 package splice.app.cli.auth
 
 import splice.accounts.claude.CLAUDE_LOGIN_HEAD
+import splice.app.cli.AdminSupport
 import splice.app.head.HeadConfigDirs
 import splice.client.ClaudeHead
 import splice.client.ClaudeLoginResult
@@ -14,6 +15,7 @@ import splice.client.ClaudeLogins
 import splice.client.HeadSessions
 import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
+import splice.core.topology.LaunchDoors
 import splice.core.topology.Topology
 import splice.sessions.registry.ProcessEnvironment
 import splice.sessions.registry.RouteOfPid
@@ -57,10 +59,14 @@ internal class ClaudeLoginLabel(
 
     /** The head's running sessions, read fresh from the registry at the moment of the switch. */
     internal fun sessions(headKey: String, topology: Topology): HeadSessions {
+        // a session on a door is placed there, never read as one whose head splice cannot tell
+        val doors = LaunchDoors(topology.remote, AdminSupport.controlPort(topology))
         val registry = SessionRegistry(
             sessionsDir,
             RouteOfPid { pid ->
-                processes.route(pid) { port -> topology.heads.entries.firstOrNull { it.value.port == port }?.key }
+                processes.route(pid, doors) { port ->
+                    topology.heads.entries.firstOrNull { it.value.port == port }?.key
+                }
             },
         )
         return live(registry.list(), headKey)

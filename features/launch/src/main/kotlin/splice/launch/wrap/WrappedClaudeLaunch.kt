@@ -17,6 +17,11 @@ public class WrappedClaudeLaunch(private val wrap: WrappedHead) {
      *  not wrapped, and for every other head. */
     public fun of(head: String): Path? = wrap.command()?.takeIf { head == CLAUDE_HEAD_KEY }
 
+    /** Where `splice install` links the person's `claude`, while it is wrapped, whatever lane it is on: a session on a
+     *  door was started through it and is started by it again, which goes to the same door (door-sessions). Null while
+     *  it is not wrapped. */
+    public fun door(): Path? = wrap.command()
+
     /** Whether [head]'s own command runs Claude Code in the person's own folder, as his wrapped `claude` does: the
      *  Claude head does under either name, wrapped or not (Nov 12, 2026), and no other head does. */
     public fun ownHome(head: String): Boolean = head == CLAUDE_HEAD_KEY

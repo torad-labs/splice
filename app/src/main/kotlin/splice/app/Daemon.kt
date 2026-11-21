@@ -164,6 +164,7 @@ public class Daemon(
             running = topologyWindows,
             alertCommand = topology.daemon.alertCommand.orEmpty(),
             reservedPeerNames = topology.daemon.reservedPeerNames.orEmpty().toSet(),
+            remote = topology.remote,
         ),
         refreshCall,
         mcpHosting = McpHostingSettings(share = McpShareChoice { topologyWindows.mcpShare }).with(topology.daemon),

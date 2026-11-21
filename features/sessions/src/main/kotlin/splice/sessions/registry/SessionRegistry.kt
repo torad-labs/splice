@@ -10,6 +10,7 @@
 package splice.sessions.registry
 
 import kotlinx.serialization.json.Json
+import splice.core.topology.DOOR_SEGMENT
 import splice.core.util.JsonScalars
 import splice.core.util.PathProbe
 import splice.core.util.SafeFailureText
@@ -88,11 +89,18 @@ public data class SessionRecord(
     /** The cross-session address a SendMessage can use when the session carries no name. */
     public val address: String? get() = process.messagingSocketPath?.let { "uds:$it" }
 
-    /** The splice head this session talks to, or null when [route] names none (direct or unknown). */
+    /** The splice head this session talks to, or null when [route] names none (a door, direct or unknown). */
     public val head: String? get() = (route as? SessionRoute.Head)?.key
 
-    /** A live session no head is known for yet: the only kind a head is joined to from what its requests showed. */
-    internal fun wantsHead(): Boolean = availability != SessionAvailability.GONE && route !is SessionRoute.Head
+    /** What this session was launched on, as one word: its head's key, or `door` for a session on a door; null when
+     *  splice launched it on neither (direct or unknown). */
+    public val launchedOn: String? get() = head ?: DOOR_SEGMENT.takeIf { route is SessionRoute.Door }
+
+    /** A live session no head is known for yet: the only kind a head is joined to from what its requests showed. A door
+     *  session is placed already: its turns run on whichever head their model names, so its last turn's head is not
+     *  its own. */
+    internal fun wantsHead(): Boolean = availability != SessionAvailability.GONE &&
+        route !is SessionRoute.Head && route !is SessionRoute.Door
 }
 
 /** The registry view consumed by session queries. Implementations read on every call so callers never

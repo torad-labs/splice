@@ -3,6 +3,9 @@
 // a machine that runs one of them. A remote command holds the server's address and nothing else: no credential, no
 // token and no copy of the server's models. What the address names (the head, which of the server's logins, which
 // models) the server reads back from it and applies.
+// door-sessions (Nov 20, 2026): LaunchDoors reads which door a launch's base URL names, this machine's or the one a
+// `[remote.<command>]` address names, in one place, so the launch record (`splice record-launch`) and the session's row
+// (ProcessEnvironment.route) can never disagree. This machine's door is the control port at /door or /desktop.
 package splice.core.topology
 
 import kotlinx.serialization.Serializable
@@ -35,6 +38,12 @@ public data class RemoteAddress(val server: String, val head: String, val auth: 
     /** Where the server takes this command's turns, as a base URL Claude Code can be given: Claude Code appends its own
      *  paths to it as text, so the login rides in the path (`/claudex/@work`), never in a query. */
     val turns: String get() = "$server/$head" + auth?.let { "/@$it" }.orEmpty()
+
+    /** The machine [server] names (`devbox.lan`, `192.168.1.50`), as said to the person. */
+    val host: String get() = RemoteAddresses.hostOf(server)
+
+    /** Whether this address names another machine's door rather than one of its commands. */
+    val door: Boolean get() = head == DOOR_SEGMENT
 }
 
 /** What reading a remote command's address came to. */
@@ -54,6 +63,10 @@ public object RemoteAddresses {
     // The login label shape `splice login --label` accepts (AccountSelection).
     private val loginLabel = Regex("^[a-z0-9][a-z0-9._-]{0,47}$")
     private val modelId = Regex("^[^\\s,]+$")
+
+    /** The machine a [server] that [read] produced (`http://devbox.lan:3097`) names, without the brackets of an IPv6
+     *  literal. */
+    public fun hostOf(server: String): String = URI.create(server).host?.removeSurrounding("[", "]") ?: server
 
     public fun read(text: String): RemoteAddressRead {
         // URI.create, not the constructor: its parse failure is an IllegalArgumentException, which is caught here.
@@ -152,3 +165,38 @@ private const val EXAMPLE = "http://devbox.lan:3097/claudex"
 
 /** The port `[share]` listens on when the file names none. */
 internal const val SHARE_DEFAULT_PORT: Int = 3097
+
+/** The two paths this machine's door is answered at on the control port, one door either way: `/door`, the one every
+ *  launch is given, and `/desktop`, which a Claude Desktop or a `claude` session set up before it still holds. They
+ *  mirror DaemonDesktop's DOOR_PATH and DESKTOP_PATH, which core cannot import: change them together. */
+private val LOCAL_DOOR_PATHS = listOf("/door", "/desktop")
+
+/** The word a machine's door is named by: the head a `[remote.<command>]` address names when it points at another
+ *  machine's door, and the route a session on a door has. No head key may take it. */
+public const val DOOR_SEGMENT: String = "door"
+
+/** A launch on a door: the [command] it was started as, the door's [address] its Claude Code sends its turns to, and
+ *  the [machine] that serves it, as its address names it; null for this machine's own door. */
+public data class LaunchDoor(val command: String, val address: String, val machine: String?)
+
+/** The doors a splice.toml knows: this machine's own, on [controlPort] (resolved as the CLI resolves it), and each of
+ *  its [remote] commands whose address is another machine's door. */
+public class LaunchDoors(private val remote: Map<String, RemoteConfig>, private val controlPort: Int) {
+    /** This machine's door at each path it is answered on: a launch holds one of them, and either is the door. */
+    private val local: Set<String> = LOCAL_DOOR_PATHS.mapTo(HashSet()) { "http://127.0.0.1:$controlPort$it" }
+
+    /** The door [baseUrl] names for a launch started as [command], or null when it names none. This machine's door is
+     *  the door whatever the command; another machine's is only the one [command]'s `[remote.<command>]` names. */
+    public fun of(command: String, baseUrl: String): LaunchDoor? = when {
+        command.isBlank() -> null
+        baseUrl.trimEnd('/') in local -> LaunchDoor(command, baseUrl.trimEnd('/'), null)
+        else -> remote(command, baseUrl)?.takeIf { it.door }?.let { LaunchDoor(command, baseUrl, it.host) }
+    }
+
+    /** [command]'s `[remote.<command>]` address, read, when it sends its turns to [baseUrl] (the one its launch
+     *  planted): another machine's door or one of its commands. The one reader of such an address at a base URL. */
+    public fun remote(command: String, baseUrl: String): RemoteAddress? {
+        val read = remote[command]?.let { RemoteAddresses.read(it.url) } as? RemoteAddressRead.Read
+        return read?.address?.takeIf { it.turns == baseUrl }
+    }
+}

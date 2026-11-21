@@ -9,6 +9,7 @@
 // (TerminalDoor). Decision 9: `claude` on its head hands the door's models to the door (ClaudeHeadLane).
 package splice.app.desktop
 
+import kotlinx.coroutines.withContext
 import splice.app.provider.CredentialChanged
 import splice.app.provider.ModelRosters
 import splice.app.provider.ServingProviders
@@ -16,7 +17,9 @@ import splice.client.desktop.DoorSelectors
 import splice.client.models.AnthropicTiers
 import splice.core.config.StatePaths
 import splice.core.topology.Topology
+import splice.core.util.Cancellables
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.share.ShareMachine
 import splice.upstream.codemode.ProcessDispatchers
 
@@ -58,11 +61,14 @@ internal class DaemonDesktop(
     @Volatile
     private var lineups: DesktopProviders? = null
 
+    @Volatile
+    private var door: String? = null
+    private val io = ProcessDispatchers().io()
+
     /** The door on [controlPort], serving [providers], with the model catalog of the providers signed in now published
      *  before any route serves it, and again whenever [rosters] ask a provider's list with a new credential. */
     suspend fun open(providers: ServingProviders, controlPort: Int, rosters: ModelRosters) {
         val machine = ShareMachine(log).name()
-        val io = ProcessDispatchers().io()
         val catalog = PublishedCatalog(CatalogBuild(), CatalogFile(statePaths.modelCatalogFile, log), io)
         val lineups = DesktopProviders(providers, aliases, catalog)
         this.lineups = lineups
@@ -76,6 +82,8 @@ internal class DaemonDesktop(
         val tidy = DesktopSettingsTidy(DesktopSettingsFile(), records, selectors, log)
         val switch = DesktopSwitch(lineups, records, key, door, app, tidy, log)
         switch.tidy()
+        this.door = door
+        publishModels(door, lineups.lineup())
         val (lane, terminal) = claude.open(lineups, door)
         headLane.open(lineups)
         val callers = listOf(DesktopCaller(key, records, log), terminal)
@@ -88,7 +96,19 @@ internal class DaemonDesktop(
     /** The model catalog built again from the providers signed in now and served from here on: a provider's credential
      *  changed (a sign-in, a sign-out, a key set). Nothing before [open]. */
     suspend fun republish() {
-        lineups?.publish()
+        val source = lineups ?: return
+        source.publish()
+        door?.let { publishModels(it, source.lineup()) }
+    }
+
+    private suspend fun publishModels(door: String, lineup: DesktopLineup) {
+        val models = DoorCatalog(lineup).inferenceModels(records.get().defaultModel)
+        withContext(io) {
+            (listOf(library) + library.beside()).forEach { desktop ->
+                Cancellables.runCatchingCancellable { desktop.publishModels(door, models) }
+                    .onFailure { log("[desktop] the model list was not written: ${SafeFailureText.render(it)}\n") }
+            }
+        }
     }
 }
 

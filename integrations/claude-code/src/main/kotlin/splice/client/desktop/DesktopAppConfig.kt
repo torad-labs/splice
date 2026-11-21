@@ -19,17 +19,39 @@ import kotlinx.serialization.json.putJsonObject
 import splice.core.config.UserHome
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
+import java.nio.file.Files
 import java.nio.file.Path
 
 /** Where Desktop keeps its 3P configuration, and what splice's own configuration and its `_meta.json` entry hold. */
 public class DesktopAppConfig(private val env: EnvReader = EnvReader(System::getenv)) {
+    /** The config folder Desktop keeps its data under: `$XDG_CONFIG_HOME`, `~/.config` when that is unset. */
+    private val home: Path
+        get() = env(XDG_CONFIG_HOME)?.takeIf(String::isNotBlank)?.let(Path::of)
+            ?: UserHome.dir(env).resolve(DOT_CONFIG)
+
     /** The library folder: `$XDG_CONFIG_HOME/Claude-3p/configLibrary`, `~/.config` when that is unset. */
-    public val library: Path
-        get() {
-            val config = env(XDG_CONFIG_HOME)?.takeIf(String::isNotBlank)?.let(Path::of)
-                ?: UserHome.dir(env).resolve(DOT_CONFIG)
-            return config.resolve(APP_DATA).resolve(LIBRARY)
+    public val library: Path get() = home.resolve(APP_DATA).resolve(LIBRARY)
+
+    /** The configuration of each Claude Desktop started on a config folder of its own one folder below this one's
+     *  (`XDG_CONFIG_HOME=~/.config/<name>`): a second Desktop run beside the person's own, which keeps its claude.ai
+     *  account, has its library there. Only a folder that holds a library is one. */
+    public fun beside(): List<DesktopAppConfig> {
+        if (!Files.isDirectory(home)) return emptyList()
+        val folders = Files.newDirectoryStream(home) { Files.isDirectory(it.resolve(APP_DATA).resolve(LIBRARY)) }
+            .use { it.toList() }
+        return folders.sorted().map { folder ->
+            DesktopAppConfig(EnvReader { key -> if (key == XDG_CONFIG_HOME) folder.toString() else env(key) })
         }
+    }
+
+    /** [config] with [models] as its model list (`inferenceModels`), which is where Desktop reads the Claude model
+     *  another lab's model takes its Effort control from (`behavesAs`) and the highest level it offers (`maxEffort`):
+     *  its gateway discovery reads neither. Discovery is kept on where [config] says nothing of it, so the gateway's
+     *  `/v1/models` still gives each listed model its description. */
+    public fun withModels(config: JsonObject, models: JsonArray): JsonObject {
+        val discovery = if (MODEL_DISCOVERY in config) emptyMap() else mapOf(MODEL_DISCOVERY to JsonPrimitive(true))
+        return JsonObject(config + (INFERENCE_MODELS to models) + discovery)
+    }
 
     /** The library's `_meta.json`. */
     public val meta: Path get() = library.resolve(META_FILE)
@@ -42,9 +64,9 @@ public class DesktopAppConfig(private val env: EnvReader = EnvReader(System::get
     public val managed: Path get() = DesktopManagedPolicy.file
 
     /** splice's configuration: Desktop's gateway provider at [door], the credential from the executable [helper]
-     *  (an absolute path), every request carrying [APP_MODE_HEADER], discovery filling the picker, and auto mode on
-     *  with Claude Code's own check, which the door runs as a model call on every head. No model list (discovery
-     *  fills the picker, and a list would replace it) and no key. */
+     *  (an absolute path), every request carrying [APP_MODE_HEADER], discovery on, and auto mode on with Claude
+     *  Code's own check, which the door runs as a model call on every head. No key, and no model list here: the door's
+     *  models are written into it as they stand ([withModels]). */
     public fun config(door: String, helper: String): JsonObject = buildJsonObject {
         put("inferenceProvider", "gateway")
         // The live test (Nov 19, 2026, Desktop 5.11492.5): unset, Desktop first shows its chooser (Continue, or sign in
@@ -55,7 +77,7 @@ public class DesktopAppConfig(private val env: EnvReader = EnvReader(System::get
         put("inferenceCredentialHelper", helper)
         put("inferenceCredentialHelperTtlSec", HELPER_TTL_SEC)
         putJsonObject("inferenceCustomHeaders") { put(APP_MODE_HEADER, APP_MODE) }
-        put("modelDiscoveryEnabled", true)
+        put(MODEL_DISCOVERY, true)
         put("autoModeEnabled", true)
         put("inferenceGatewayAutoModeServerChecks", false)
     }
@@ -150,6 +172,8 @@ private const val LIBRARY = "configLibrary"
 private const val JSON_SUFFIX = ".json"
 private const val MANAGED = "/etc/claude-desktop/managed-settings.json"
 private const val GATEWAY_BASE_URL = "inferenceGatewayBaseUrl"
+private const val INFERENCE_MODELS = "inferenceModels"
+private const val MODEL_DISCOVERY = "modelDiscoveryEnabled"
 private const val APPLIED_ID = "appliedId"
 private const val ENTRIES = "entries"
 private const val ID = "id"

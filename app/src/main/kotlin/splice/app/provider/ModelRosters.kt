@@ -69,8 +69,7 @@ private const val CREDENTIAL_RECHECK_MS = 2_000L
 private const val NO_CREDENTIAL = "none"
 private const val CREDENTIAL_UNREADABLE = "unreadable"
 
-/** What a head's new credential is told to (a sign-in, a sign-out, another account, a key set or replaced), once its
- *  list has been asked with it. */
+/** What a head's changed credential or model list is told to once its list has been published. */
 internal fun interface CredentialChanged {
     suspend fun changed(head: String)
 }
@@ -102,8 +101,7 @@ internal class ModelRosters(
     /** One ask per head at a time, so an hourly refresh and a recheck never publish out of order. */
     private val asking = ConcurrentHashMap<String, Mutex>()
 
-    /** Told once a head's list has been asked again with a credential that changed since its last ask; null until the
-     *  daemon wires it. */
+    /** Told when a head's credential or the roster it published changes; null until the daemon wires it. */
     @Volatile
     var credentialChanged: CredentialChanged? = null
 
@@ -157,11 +155,12 @@ internal class ModelRosters(
         val changed = asking.computeIfAbsent(key) { Mutex() }.withLock {
             val now = credentialOf(key, provider)
             val before = askedWith[key]
+            val previous = byHead[key]
             if (always || before != now) {
                 byHead[key] = modelsFor(key, provider)
                 askedWith[key] = now
             }
-            before != null && before != now
+            before != null && (before != now || previous != byHead[key])
         }
         // Told after the lock, with the new credential's list published: what it rebuilds reads that list.
         if (changed) credentialChanged?.changed(key)

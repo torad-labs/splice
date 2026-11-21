@@ -8,6 +8,7 @@
 // the managed file, the keyring or any of Desktop's encrypted stores.
 package splice.app.desktop
 
+import kotlinx.serialization.json.JsonArray
 import splice.client.desktop.DesktopAppConfig
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
@@ -77,6 +78,30 @@ internal class DesktopAppLibrary(private val config: DesktopAppConfig = DesktopA
 
     /** The door address splice's configuration [id] gives Desktop, or null when it gives none. */
     fun doorOf(id: String): String? = files.read(config.file(id))?.let(config::door)
+
+    /** The library of each Claude Desktop started on a config folder of its own beside this one
+     *  (DesktopAppConfig.beside). */
+    fun beside(): List<DesktopAppLibrary> = config.beside().map(::DesktopAppLibrary)
+
+    /** [models] written as the model list of the configuration this library applies, when that configuration points
+     *  Desktop at [door]; whether anything was written. A library that applies none, or one that points elsewhere, is
+     *  left as it is: this never applies a configuration, and never opens the managed file. Desktop reads the list at
+     *  its next launch. */
+    fun publishModels(door: String, models: JsonArray): Boolean {
+        val id = files.read(config.meta)?.let(config::applied) ?: return false
+        val file = config.file(id).normalize()
+        val current = file.takeIf { it.parent == config.library.normalize() }
+            ?.takeIf { Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) }
+            ?.let(files::read)
+            ?.takeIf { config.door(it)?.trimEnd('/') == door.trimEnd('/') } ?: return false
+        val updated = config.withModels(current, models)
+        return if (updated == current) {
+            false
+        } else {
+            files.write(file, updated)
+            true
+        }
+    }
 
     /** splice's configuration [id] written for [door] and [helper]. */
     fun rewrite(id: String, door: String, helper: Path) =

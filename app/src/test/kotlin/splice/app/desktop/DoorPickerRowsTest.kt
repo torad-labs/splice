@@ -170,6 +170,31 @@ internal class DoorPickerRowsTest {
     }
 
     @Test
+    fun `Desktop settings and discovery use the same models while reasoning reaches the picker`() {
+        val opus = "claude-opus-5-5"
+        val muse = "muse-spark-1.3"
+        val lineup = catalogued(
+            lineupOf(
+                provider("claude", rows = listOf(ModelEntry(opus, "Opus", contextWindow = 200_000))) to
+                    listOf(model("claude", opus)),
+                provider(
+                    "muse",
+                    rows = listOf(ModelEntry(muse, contextWindow = 1_000_000)),
+                    baseUrl = "https://api.meta.ai/v1",
+                ) to listOf(model("muse", muse)),
+            ),
+        )
+        val catalog = DoorCatalog(lineup)
+        val discovery = catalog.discovery(surface = ModelDiscovery.DESKTOP).getValue("data").jsonArray
+        val configured = catalog.inferenceModels(null).map { it.jsonObject }
+
+        assertEquals(discovery.map { it.jsonObject.getValue("id") }, configured.map { it.getValue("name") })
+        val row = configured.single { it.getValue("name").jsonPrimitive.content.endsWith(muse) }
+        assertEquals("claude-opus-5-5", row.getValue("behavesAs").jsonPrimitive.content)
+        assertEquals("max", row.getValue("maxEffort").jsonPrimitive.content)
+    }
+
+    @Test
     fun `reasoning without named effort levels does not invent an effort selector`() {
         val fact = CatalogModel(provider = "work", id = "model", label = "Model", reasons = true)
         val model = ServedModel(fact, provider("work"), listOf(model("work", "model")), claude = null)

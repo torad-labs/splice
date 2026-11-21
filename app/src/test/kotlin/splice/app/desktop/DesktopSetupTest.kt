@@ -3,6 +3,13 @@
 // prints the desktop key to the program that runs it and never to a terminal.
 package splice.app.desktop
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -67,6 +74,22 @@ class DesktopSetupTest {
         assertEquals("""{"appliedId":"$theirs","entries":[{"id":"$theirs","name":"Vertex"}]}""", compact(meta))
         assertTrue(Files.exists(library.resolve("$theirs.json")))
         assertFalse(Files.exists(library.resolve("$ours.json")))
+    }
+
+    @Test
+    fun `publishing catalog models keeps discovery and only updates the applied gateway configuration`() = managedHere {
+        val door = "http://127.0.0.1:3096/door"
+        app.putIn(door)
+        val desktop = DesktopAppLibrary(DesktopAppConfig(env))
+        val models = buildJsonArray { add(buildJsonObject { put("name", "claude-oai--6.2-sol") }) }
+
+        assertTrue(desktop.publishModels(door, models))
+        val file = library.resolve("${records.get().appId}.json")
+        val updated = Json.parseToJsonElement(Files.readString(file)).jsonObject
+        assertEquals("true", updated.getValue("modelDiscoveryEnabled").jsonPrimitive.content)
+        assertEquals(models, updated.getValue("inferenceModels").jsonArray)
+        assertFalse(desktop.publishModels(door, models))
+        assertFalse(desktop.publishModels("http://127.0.0.1:3096/other", models))
     }
 
     @Test

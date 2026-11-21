@@ -8,6 +8,7 @@
 // and, with no daemon, by `splice uninstall`.
 package splice.app.desktop
 
+import kotlinx.serialization.json.JsonArray
 import splice.core.util.WallClockIso
 import java.time.Instant
 import java.util.UUID
@@ -38,6 +39,9 @@ internal class DesktopAppMode(
 ) {
     /** Why splice's configuration can't be put in now, with nothing changed, or null when it can. */
     fun refusal(): String? = library.refusal()
+
+    /** Keep the applied gateway configuration aligned with the provider catalog. */
+    fun publishModels(door: String, models: JsonArray): Boolean = library.publishModels(door, models)
 
     /** splice's configuration put in for [door] and applied, and the helper laid. Answers the words for what it now
      *  stands in for: empty, or " It replaces <name> while splice is on; …." with a space before it. */

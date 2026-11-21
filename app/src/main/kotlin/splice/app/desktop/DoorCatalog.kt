@@ -100,6 +100,10 @@ internal class DoorCatalog(private val lineup: DesktopLineup) {
     fun desktopRead(first: String? = null): List<DesktopPickerRow> =
         ordered(first).map { DesktopPickerRow(it.desktopId, it.fact.label) }
 
+    /** Desktop's model settings are a projection of this same gateway catalog. Desktop reads effort controls from
+     *  these settings while discovery supplies descriptions; the names and order must match discovery exactly. */
+    fun inferenceModels(first: String?): JsonArray = DesktopModelSettings(tiers, newest).models(ordered(first))
+
     /** Desktop's list: Claude's models first, newest to oldest, then the model whose rows hold [first] (Desktop's own
      *  default, `splice desktop on --model`) when it is another lab's, then the rest in their order. Desktop opens a
      *  new session on the first model it lists, so with a Claude model in the door that is the newest one. */

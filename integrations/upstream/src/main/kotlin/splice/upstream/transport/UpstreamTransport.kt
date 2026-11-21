@@ -57,7 +57,9 @@ import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.X509TrustManager
 import kotlin.random.Random
 
-public class UpstreamTransport {
+/** [trust]: custom-provider (cp-tls), whom a provider's certificate may be signed by (TrustRoots); null keeps the
+ *  platform's. */
+public class UpstreamTransport(private val trust: X509TrustManager? = null) {
     public fun defaultClient(
         totalTimeoutMs: Long,
         log: LogSink = LogSink {},
@@ -73,7 +75,7 @@ public class UpstreamTransport {
         log,
         noDelayGuard,
         requestWriteBound ?: WriteBoundMs { requestWriteTimeoutMs },
-        UpstreamSockets(),
+        UpstreamSockets(trust = trust),
     )
 
     /** [defaultClient] over [sockets], whose TLS trust and send buffer a test sets (V4-289). */

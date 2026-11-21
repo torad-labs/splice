@@ -492,6 +492,7 @@ id = "k3-256k"                 # same K3, fixed 256k window; Kimi meters k3 (1M)
 label = "Kimi K3 (256k)"
 context_window = 262144
 [providers.kimi.overrides]
+# Earlier Kimi measurement: 0.3% turn failure at inflight<=14, 11% at 38, 67% at 100.
 maxInflight = "8"
 
 [[providers.kimi.models]]
@@ -1024,6 +1025,11 @@ discovery_prefix = "claude--"
 #   SPLICE_HISTORY_RETENTION_DAYS historyRetentionDays
 #
 # Seam reads, no TOML spelling — a path or endpoint the daemon reads directly:
+#   ANTHROPIC_BASE_URL and ANTHROPIC_BEDROCK_MANTLE_BASE_URL
+#                           Desktop's launcher reads these to recognize this splice's gateway or Mantle door.
+#   CLAUDE_CODE_HOST_AUTH_ENV_VAR
+#                           The credential variable Desktop's gateway launcher names for Claude Code.
+#   SSL_CERT_FILE           an OS trust-bundle path used when extending the JVM's trusted roots.
 #   ANTHROPIC_CUSTOM_HEADERS newline-separated headers inherited by a launched Claude Code client.
 #                           splice keeps ambient headers, replaces any x-splice-client-wall-ms header with
 #                           the session's computed client timeout, and adds that header when none was set.

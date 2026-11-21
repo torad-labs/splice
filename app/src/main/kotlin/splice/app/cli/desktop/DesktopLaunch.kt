@@ -47,7 +47,7 @@ internal class DesktopLaunch(private val env: EnvReader, private val err: Termin
             Runtime.getRuntime().addShutdownHook(stop)
             child.waitFor().also { Runtime.getRuntime().removeShutdownHook(stop) }
         } catch (e: IOException) {
-            err.line("splice desktop launch: ${command.first()} could not be started: ${e.message}")
+            err.line("splice desktop launch: ${command.first()} could not be started: ${SafeFailureText.render(e)}")
             NOT_STARTED_EXIT
         }
     }
@@ -106,6 +106,7 @@ private const val HOST_AUTH_VAR = "CLAUDE_CODE_HOST_AUTH_ENV_VAR"
 
 private val LOOPBACK = setOf("127.0.0.1", "localhost", "[::1]")
 
+// Shell convention for invalid command arguments.
 private const val USAGE_EXIT = 2
 
 // A shell's exit for a command it could not run.

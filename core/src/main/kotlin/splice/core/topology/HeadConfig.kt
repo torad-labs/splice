@@ -6,6 +6,7 @@ package splice.core.topology
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import splice.core.model.ModelRates
 import splice.core.prompt.HeadSystemPrompt
 import splice.core.prompt.SystemPromptMode
@@ -58,6 +59,10 @@ public data class HeadConfig(
     /** custom-provider (issue #680): whether this head is in the door's /model. Wins over its provider's `picker`;
      *  absent on both = the door's own rule. */
     val picker: Boolean? = null,
+    /** gateway-no-heads: this head is the stand-in a provider is built under when the gateway serves it with no head block
+     *  (never read from splice.toml). A real head must name its pinned model and carry a picker model; the gateway's
+     *  provider takes its pin from its own config, else its first row, and a roster that is empty boots and says so. */
+    @Transient val servedByGateway: Boolean = false,
 ) {
     init {
         val slots = modelSlots.keys.map { it.trim('"', '\'').lowercase() }

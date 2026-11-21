@@ -448,7 +448,8 @@ public data class ProviderConfig(
         if (roster is HeadModels.Roster.Refused) return roster.detail
         HeadCatalogStatics.refusal(head)?.let { return it.detail }
         return when {
-            !clientPicksModels && rowsFor(head, discovered).isEmpty() -> "a catalog needs at least one picker model"
+            !clientPicksModels && !head.servedByGateway && rowsFor(head, discovered).isEmpty() ->
+                "a catalog needs at least one picker model"
             else -> null
         }
     }
@@ -549,6 +550,7 @@ public data class ProviderConfig(
      *  lists no models keeps the pre-discovery rule: its declared rows are the catalog, and only an
      *  empty one gains the pinned row. */
     internal fun withPinned(roster: List<ModelEntry>, pinned: String): List<ModelEntry> {
+        if (pinned.isBlank()) return roster
         val bare = ModelTierSuffix.strip(pinned)
         val served = roster.any { ModelTierSuffix.strip(it.id) == bare }
         val declaredOnly = roster.isNotEmpty() && !listsModels

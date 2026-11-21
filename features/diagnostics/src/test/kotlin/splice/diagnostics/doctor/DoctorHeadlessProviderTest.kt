@@ -36,7 +36,7 @@ class DoctorHeadlessProviderTest {
     fun `a provider with no head and no key is a missing credential, named, as a head would be`() {
         val topology = Topology(daemon = DaemonConfig(controlPort = 4123), providers = mapOf("inkling" to inkling))
         val checks = authChecks(topology)
-        assertTrue(checks.any { it.status == CheckStatus.FAIL && "inkling" in it.detail }, checks.toString())
+        assertTrue(checks.any { it.status == CheckStatus.FAIL && it.name == "inkling" }, checks.toString())
     }
 
     @Test

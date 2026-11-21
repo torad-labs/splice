@@ -27,6 +27,8 @@ class ConfigPreflightTest {
         dialect = "openai-chat"
         base_url = "https://demo.invalid"
         auth = { kind = "api-key", env = "DEMO_KEY" }
+        [door.selector_aliases]
+        "claude-one--" = "demo"
         [providers.demo.extra_headers]
         x_probe = "$SECRET"
         [heads.one]

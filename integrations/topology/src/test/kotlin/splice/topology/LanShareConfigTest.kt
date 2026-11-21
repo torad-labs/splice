@@ -26,6 +26,8 @@ class LanShareConfigTest {
         dialect = "openai-chat"
         base_url = "https://demo.invalid"
         auth = { kind = "api-key", env = "DEMO_KEY" }
+        [door.selector_aliases]
+        "claude-local--" = "demo"
         [[providers.demo.models]]
         id = "m"
         context_window = 128000

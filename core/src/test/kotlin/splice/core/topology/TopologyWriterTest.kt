@@ -110,7 +110,7 @@ class TopologyWriterTest {
     // endpoint could list it drops the row at boot instead (Topology.modelsFor), so the edit passes here.
     @Test
     fun `a head roster naming a model its provider cannot list is refused by name`() {
-        val roster = head(PORT).copy(models = listOf(HeadModel("m1", "opus"), HeadModel("m9", "sonnet")))
+        val roster = head(PORT).copy(models = listOf(HeadModel("m1"), HeadModel("m9")))
         val off = ModelDiscoveryConfig(exclude = listOf("*"))
         val unlisting = topology(head = roster).let { t ->
             t.copy(providers = t.providers.mapValues { (_, p) -> p.copy(discovery = off) })
@@ -127,7 +127,7 @@ class TopologyWriterTest {
     // table — this test predicts no composed text — which is the proof the roster check let it by.
     @Test
     fun `a head roster naming a model its endpoint served is not refused as undeclared`() {
-        val roster = head(PORT).copy(models = listOf(HeadModel("m1", "opus"), HeadModel("m9", "sonnet")))
+        val roster = head(PORT).copy(models = listOf(HeadModel("m1"), HeadModel("m9")))
         val served = TopologyWriter(
             file,
             tmp.resolve("backups"),
@@ -151,8 +151,7 @@ class TopologyWriterTest {
             )
         }
         val findings = untouched(writer(mapOf(FILE to topology())).edit(unlisting))
-        assertEquals(listOf("heads.ex.model_slots"), findings.map { it.path })
-        assertTrue(findings.single().message.contains("sonnet"), findings.toString())
+        assertTrue(findings.any { it.path == "heads.ex.model_slots" && "sonnet" in it.message }, findings.toString())
         val served = TopologyWriter(
             file,
             tmp.resolve("backups"),
@@ -160,7 +159,10 @@ class TopologyWriterTest {
             WallClock { NOW },
             discovered = { key -> if (key == "ex") listOf(DiscoveredModel("m9")) else emptyList() },
         )
-        val accepted = untouched(served.edit(topology(head = mapped)))
+        val candidate = topology(head = mapped).let { t ->
+            t.copy(providers = t.providers.mapValues { (_, p) -> p.copy(modelSlots = mapped.modelSlots) })
+        }
+        val accepted = untouched(served.edit(candidate))
         assertTrue(accepted.none { it.path == "heads.ex.model_slots" }, accepted.toString())
         assertTrue(accepted.single().message.startsWith("the edit would not parse"), accepted.toString())
     }

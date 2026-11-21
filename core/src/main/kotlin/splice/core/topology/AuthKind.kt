@@ -25,6 +25,12 @@ package splice.core.topology
  *  is in hand. */
 public const val API_KEY_WIRE: String = "api-key"
 
+/** The wire spelling of the command scheme (custom-provider, issue #680): no file and no OAuth flow splice runs, but a
+ *  team's own `credential_command` that prints the key and a `login_command` that signs a person in. Generic, no
+ *  vendor in it, allowed on every dialect, and unregistered like [API_KEY_WIRE]: the key it yields rides where an
+ *  api-key's rides. Compare through [AuthConfig.isCommand]. */
+public const val COMMAND_AUTH_WIRE: String = "command"
+
 public sealed class AuthKind(
     public val wire: String,
     public val defaultAuthFile: String?,

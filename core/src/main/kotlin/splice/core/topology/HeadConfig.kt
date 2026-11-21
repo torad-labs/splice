@@ -55,6 +55,9 @@ public data class HeadConfig(
      *  catalog is what the statusline already receives: the head's card then reaches the cost
      *  segment without a new field on the runtime head handle or a second wiring path. */
     val rates: Map<String, ModelRates>? = null,
+    /** custom-provider (issue #680): whether this head is in the door's /model. Wins over its provider's `picker`;
+     *  absent on both = the door's own rule. */
+    val picker: Boolean? = null,
 ) {
     init {
         val slots = modelSlots.keys.map { it.trim('"', '\'').lowercase() }
@@ -65,6 +68,10 @@ public data class HeadConfig(
             throw TopologySlotsFailure(TopologySlotsFailure.Problem.COMPETING)
         }
     }
+
+    /** custom-provider (cp-picker): whether this head lists every model its endpoint lists beside the declared ones, by
+     *  its own `picker = true`, else its [provider]'s. */
+    public fun listsEvery(provider: ProviderConfig): Boolean = (picker ?: provider.picker) == true
 
     /** The tier-to-id map the launcher consumes, independent of the provider's discovered roster.
      *  Several tiers may name one model; each keeps the same allowlisted client selector. */

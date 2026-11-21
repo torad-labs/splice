@@ -23,7 +23,10 @@ package splice.core.topology
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import splice.core.GATEWAY_VERSION
 import splice.core.capability.Capability
+import splice.core.client.SPLICE_CLIENT_HEADER
+import splice.core.client.SPLICE_WRAPPER_HEADER
 import splice.core.compaction.CompactionConfig
 import splice.core.config.Knob
 import splice.core.model.CatalogWindows
@@ -56,6 +59,8 @@ public data class Topology(
     val remote: Map<String, RemoteConfig> = emptyMap(),
     /** Server mode (docs/specs/server-mode.md): this machine as a team's front door, answering only keys. */
     val server: ServerConfig = ServerConfig(),
+    /** custom-provider (issue #680): the door's own settings, today its named commands. */
+    val door: DoorConfig = DoorConfig(),
     /** The harness (docs/specs/harness.md): capabilities splice.toml declares, read apart from the schema decode
      *  (CapabilityToml) and attached once found well-formed. Not part of the canonical tree the console edits. */
     @Transient val capabilities: List<Capability> = emptyList(),
@@ -228,6 +233,17 @@ public data class ProviderConfig(
      *  hour whatever its traffic. A usage report meters it over the hours the host was up in its window. Absent =
      *  priced by the token alone. */
     @Serializable(with = TomlDollars::class) @SerialName("hourly_usd") val hourlyUsd: Double? = null,
+    /** custom-provider (issue #680): whether this provider's heads are in the door's /model. Absent = the door's own
+     *  rule; a head's own `picker` wins over this. */
+    val picker: Boolean? = null,
+    /** custom-provider: a PEM bundle this provider's server is trusted by, on top of Java's roots and the OS store. `~`
+     *  expands; a relative path is under splice.toml's folder ([ProviderCaFile]). */
+    @SerialName("ca_file") val caFile: String? = null,
+    /** custom-provider: "whole" shows this provider's own error words as it wrote them; "filtered" (absent) keeps
+     *  splice's filter. Read as a string and checked ([CustomProviderChecks]), so one bad value hides nothing. */
+    @SerialName("error_messages") val errorMessages: String? = null,
+    /** custom-provider: where this provider reports the window it serves, read when the daemon starts. */
+    @SerialName("served_window") val servedWindow: ServedWindowConfig? = null,
 ) {
     /** Whether this provider is a local runtime: what the operator said, else the loopback rule. */
     public val isLocal: Boolean
@@ -305,11 +321,19 @@ public data class ProviderConfig(
     public val staticHeaders: Map<String, String>
         get() = via + extraHeaders.mapKeys { (key, _) -> key.trim('"') }
 
-    /** [forwardHeaders] as the list a head forwards from. */
-    public val forwarded: ForwardHeaders get() = ForwardHeaders(forwardHeaders)
+    /** [forwardHeaders] as the list a head forwards from. custom-provider (cp-identity): with [sendVersion] the
+     *  session's wrapper header rides too ([SPLICE_WRAPPER_HEADER]); without it that header never does, whatever the
+     *  list names. */
+    public val forwarded: ForwardHeaders
+        get() = ForwardHeaders(
+            forwardHeaders.filterNot { it.trim().equals(SPLICE_WRAPPER_HEADER, ignoreCase = true) } +
+                listOfNotNull(SPLICE_WRAPPER_HEADER.takeIf { sendVersion }),
+        )
 
-    /** The Via line [sendVersion] adds, or nothing. */
-    private val via: Map<String, String> get() = if (sendVersion) mapOf("Via" to SPLICE_VIA) else emptyMap()
+    /** What [sendVersion] adds, or nothing: the Via line, and (cp-identity) splice's version as the client header sends
+     *  it to a splice server, so a gateway can turn away an outdated client in words of its own. */
+    private val via: Map<String, String>
+        get() = if (sendVersion) mapOf("Via" to SPLICE_VIA, SPLICE_CLIENT_HEADER to GATEWAY_VERSION) else emptyMap()
 
     /** V4-162: this provider without its windows (see [Topology.withoutWindows]). extra_windows and
      *  window_rules declare windows and nothing else, so they are dropped whole: a row added to or
@@ -402,7 +426,7 @@ public data class ProviderConfig(
      *  one. The same decisions [catalogFor] takes, asked as a value: a writer that validates a topology names the
      *  refusal itself and catches nothing. */
     public fun catalogRefusal(head: HeadConfig, discovered: List<DiscoveredModel> = emptyList()): String? {
-        val roster = HeadModels(this).select(head, rosterWith(discovered))
+        val roster = HeadModels(this).select(head, rosterWith(discovered, head))
         if (roster is HeadModels.Roster.Refused) return roster.detail
         HeadCatalogStatics.refusal(head)?.let { return it.detail }
         return when {
@@ -413,7 +437,7 @@ public data class ProviderConfig(
 
     /** The rows [modelsFor] selected, once [catalogRefusal] has found no reason against them. */
     private fun rowsFor(head: HeadConfig, discovered: List<DiscoveredModel>): List<ModelEntry> =
-        when (val roster = HeadModels(this).select(head, rosterWith(discovered))) {
+        when (val roster = HeadModels(this).select(head, rosterWith(discovered, head))) {
             is HeadModels.Roster.Rows -> roster.entries
             is HeadModels.Roster.Refused -> emptyList()
         }
@@ -457,8 +481,10 @@ public data class ProviderConfig(
      *  spellings (a `[1m]` row covers its bare id, an alias row covers the model it aliases) and that
      *  [discovery] admits, in the endpoint's order. A declared row always wins its model: its window,
      *  label, rates and place carry decisions no endpoint can supply. */
-    private fun rosterWith(discovered: List<DiscoveredModel>): List<ModelEntry> {
-        if (isLocal) return models // Local metadata supplies windows, not new picker rows.
+    private fun rosterWith(discovered: List<DiscoveredModel>, head: HeadConfig): List<ModelEntry> {
+        // Local metadata supplies windows, not new picker rows, unless the head or its provider asks for every model
+        // its endpoint lists (custom-provider, cp-picker: `picker = true`).
+        if (isLocal && !head.listsEvery(this)) return models
         val extra = undeclared(discovered)
             .filter { discovery.admits(it.id) }
             .map { ModelEntry(id = it.id, label = it.label, contextWindow = windowFor(it), discovered = true) }

@@ -373,7 +373,8 @@ private class TopologyChecks(
             compaction() + daemon() + remotes() + relays() + ServerChecks(topology, configDir).findings() +
             UpstreamChecks(topology.providers).findings() + HourlyPrices(topology.providers).findings() +
             topology.telemetry.operator.findings() +
-            topology.providers.mapNotNull { (key, provider) -> provider.forwarded.finding(key) }
+            topology.providers.mapNotNull { (key, provider) -> provider.forwarded.finding(key) } +
+            CustomProviderChecks(topology, configDir).findings() + DoorChecks(topology).findings()
 
     /** An auth kind its provider's dialect cannot carry, asked the way head assembly asks it ([AuthCompatibility]), so
      *  the pairing refuses boot with every other finding instead of skipping that head behind a running daemon. */

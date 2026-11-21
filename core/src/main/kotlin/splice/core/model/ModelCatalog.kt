@@ -69,6 +69,9 @@ public data class ModelEntry(
      *  row only splice.toml declares. Never read from TOML: provenance is [DiscoveredModel]'s to carry, same as
      *  [discovered]. */
     @Transient val listed: DiscoveredModel? = null,
+    /** custom-provider (issue #680): the most this model is asked to write in one turn. A turn asking more is asked
+     *  for this; absent = what the turn asked. Positive; boot names any other value. */
+    @SerialName("max_output_tokens") val maxOutputTokens: Long? = null,
 ) {
 
     init {

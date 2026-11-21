@@ -45,4 +45,7 @@ internal data class TurnUsage(
     val outputTokens: Long,
     val cacheCreationInputTokens: Long,
     val cacheReadInputTokens: Long,
+    /** The share of [cacheCreationInputTokens] the backend held for an hour; the rest was held for five minutes, which is
+     *  how a provider that does not split its writes is read (and charged). */
+    val cacheCreationHourlyTokens: Long = 0,
 )

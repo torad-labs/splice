@@ -83,6 +83,7 @@ internal class TurnWiring(
                     usage?.outputTokens ?: 0,
                     scale(written, scale),
                     scale(cached, scale),
+                    scale(context?.cacheWrite?.hourlyTokens ?: 0, scale),
                 ),
                 clientWindow,
             )

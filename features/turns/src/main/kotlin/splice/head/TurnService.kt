@@ -18,7 +18,6 @@ import splice.head.compaction.CompactionReplay
 import splice.head.turn.TurnDriver
 import splice.head.turn.TurnPreparation
 import splice.upstream.Provider
-import splice.upstream.credentials.EarlyResetHeard
 import java.util.concurrent.TimeUnit
 
 internal class TurnService(
@@ -51,12 +50,12 @@ internal class TurnService(
         // The journal says when it happened: on Nov 12, 2026 a login was added while eleven turns waited, and no line
         // told whether any of them had heard it.
         val joins = deps.quotaBundle.accountPool?.joins
-        joins?.onJoined = Runnable {
+        joins?.whenJoined {
             val waiting = holds.joined()
             if (waiting > 0) deps.log("[${provider.key}] a login joined: $waiting waiting turn(s) asked to move\n")
         }
         // A login reset at its provider comes back at once, and the journal says which one and why.
-        joins?.onEarlyReset = EarlyResetHeard { label, ended ->
+        joins?.whenEarlyReset { label, ended ->
             val windows = ended.joinToString(" and ")
             deps.log("[${provider.key}] login $label reads $windows reset before its time: its hold ended\n")
         }

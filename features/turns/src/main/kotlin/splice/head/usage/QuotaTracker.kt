@@ -21,6 +21,7 @@ import splice.upstream.retry.QuotaHeaderFamily
 import splice.upstream.transport.CredentialQuotaReceiver
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -55,10 +56,15 @@ public class QuotaTracker(
     @Volatile
     public var credentialListener: CredentialQuotaListener? = null
 
+    // One tracker can feed more than one route (a legacy head and the gateway's runtime for the same provider share it),
+    // and each wakes its own held turns, so each registers here and none replaces another's.
+    private val allowedListeners = CopyOnWriteArrayList<Runnable>()
+
     /** Hears a reading turn allowed, one naming no spent window after one that did or after none: a limit a turn holds
      *  for may have lifted (failure-handling slice 5). */
-    @Volatile
-    public var onAllowed: Runnable? = null
+    public fun whenAllowed(listener: Runnable) {
+        allowedListeners += listener
+    }
 
     /** Hears each reading once it is kept: the login it belongs to weighs it against its plan holds, which a reading
      *  that shows a window reset before its time ends (PlanHold.weigh). */
@@ -82,7 +88,7 @@ public class QuotaTracker(
         val wasFull = before?.currentAt(now) == null || before.fullAt(now) != null
         val nowAllowed = !reading.isEmpty && reading.currentAt(now) != null && reading.fullAt(now) == null
         if (wasFull && nowAllowed) {
-            onAllowed?.run()
+            allowedListeners.forEach(Runnable::run)
         }
         onRecorded?.run()
     }

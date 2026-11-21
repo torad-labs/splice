@@ -237,7 +237,7 @@ public data class HeadDeps(
         /** Every tracker of this head hears a reading turn allowed through [listener]: the head's held turns may go on
          *  (failure-handling slice 5). */
         internal fun onAllowed(listener: Runnable) {
-            (listOfNotNull(quota) + accountQuotas.values).forEach { it.onAllowed = listener }
+            (listOfNotNull(quota) + accountQuotas.values).forEach { it.whenAllowed(listener) }
         }
     }
 

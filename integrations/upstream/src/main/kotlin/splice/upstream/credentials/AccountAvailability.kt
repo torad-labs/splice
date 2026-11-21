@@ -5,6 +5,7 @@ package splice.upstream.credentials
 import splice.core.failure.AccountBlock
 import splice.core.usage.QuotaWindow
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
@@ -217,13 +218,21 @@ public fun interface EarlyResetHeard {
  *  Nov 12, 2026, when a fourth way for that to happen arrived: a usage reading that shows a held window reset before
  *  its time (PlanHold.weigh). */
 public class PoolJoins internal constructor() {
-    /** Hears a login join the pool: the head's held turns may move to it (failure-handling slice 5). */
-    @Volatile
-    public var onJoined: Runnable? = null
+    // One pool's books can be served by more than one route (a legacy head and the gateway's runtime for the same
+    // provider), and each wakes its own held turns, so each registers here and none replaces another's.
+    private val joinedListeners = CopyOnWriteArrayList<Runnable>()
+    private val earlyResetListeners = CopyOnWriteArrayList<EarlyResetHeard>()
 
-    /** Hears a login's hold end on a reading that shows its window reset before its time, before [onJoined] does. */
-    @Volatile
-    public var onEarlyReset: EarlyResetHeard? = null
+    /** Hears a login join the pool: the route's held turns may move to it (failure-handling slice 5). */
+    public fun whenJoined(listener: Runnable) {
+        joinedListeners += listener
+    }
+
+    /** Hears a login's hold end on a reading that shows its window reset before its time, before [whenJoined]'s
+     *  listeners do. */
+    public fun whenEarlyReset(listener: EarlyResetHeard) {
+        earlyResetListeners += listener
+    }
 
     private val times = AtomicLong(0L)
 
@@ -236,14 +245,14 @@ public class PoolJoins internal constructor() {
 
     private val reset = EarlyResetHeard { label, ended ->
         times.incrementAndGet()
-        onEarlyReset?.heard(label, ended)
-        onJoined?.run()
+        earlyResetListeners.forEach { it.heard(label, ended) }
+        joinedListeners.forEach(Runnable::run)
     }
 
     /** A login joined, sends another credential under its label, or was asked again. */
     internal fun joined() {
         times.incrementAndGet()
-        onJoined?.run()
+        joinedListeners.forEach(Runnable::run)
     }
 
     /** Each of [accounts] says here when a reading ends one of its holds. */

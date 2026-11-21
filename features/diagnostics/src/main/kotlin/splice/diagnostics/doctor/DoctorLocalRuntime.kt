@@ -37,7 +37,8 @@ internal class ConfigHeadWindowOverride(private val env: EnvReader) : HeadWindow
     override fun invoke(topology: Topology, headKey: String): Long? = ConfigService(
         TopologyStatePaths(env).of(topology),
         headOverrides = TopologyKnobLayer(topology).configOverrides(),
-        perHeadOverrides = topology.heads.mapValues { (_, head) -> head.overrides },
+        perHeadOverrides = TopologyKnobLayer(topology).layers().own,
+        inheritedOverrides = TopologyKnobLayer(topology).layers().inherited,
         envReader = env,
     ).getConfig(headKey).contextWindowOverride
 }

@@ -101,10 +101,12 @@ public class Daemon(
     // [heads.<key>.overrides] rides the per-head layer: heads share ONE ConfigService (one JVM,
     // unlike the Node lineage's process-per-head), so without this a knob tuned for one upstream
     // hit all of them — e.g. kimi's 40-min upstreamTimeoutMs also gave codex a 40-min ceiling.
+    private val overrideLayers = TopologyKnobLayer(topology).layers()
     private val config = ConfigService(
         statePaths,
         headOverrides = TopologyKnobLayer(topology).configOverrides(),
-        perHeadOverrides = topology.heads.mapValues { (_, head) -> head.overrides },
+        perHeadOverrides = overrideLayers.own,
+        inheritedOverrides = overrideLayers.inherited,
     ).also { it.observeSnapshots(splice.upstream.memory.JvmHeap.budget) }
     private val mgmtKey = MgmtKey(statePaths)
     private val clientVersions = ClientVersionTracker()

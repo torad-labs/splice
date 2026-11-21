@@ -8,6 +8,7 @@ import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderLogins
 import splice.app.provider.ServedProvider
 import splice.app.provider.ServingProviders
+import splice.core.config.PROVIDER_LAYER_PREFIX
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
@@ -60,14 +61,16 @@ internal class ServedProviderAssembly(
             log("[$provider] left to its head: its Code Mode bridge is registered under the head's key\n")
             return
         }
+        // the provider's own overrides, apart from every head key: the gateway reads no head block
+        val layer = "$PROVIDER_LAYER_PREFIX$provider"
         val ctx = buildInputs.providerContext(
             key,
             headlessHead(provider, config),
             config,
             legacyKnobsGovern = false,
-            configKey = null,
+            configKey = layer,
         )
-        val route = managedHeadFactory.assembleRoute(ctx, registers = key !in topology.heads)
+        val route = managedHeadFactory.assembleRoute(ctx, layer, registers = key !in topology.heads)
         route.runtime.start()
         runtimes += route.runtime
         served += ServedProviderRoute(provider, ctx, route, logins)

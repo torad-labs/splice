@@ -123,7 +123,8 @@ internal class HeadBuildInputs(
         configKey: String? = key,
     ): ProviderBuild {
         val headCfg = config.getConfig(configKey)
-        val resolvedHead = if (legacyKnobsGovern) resolveHeadConfig(head, providerCfg, headCfg) else head
+        val resolvedHead = (if (legacyKnobsGovern) resolveHeadConfig(head, providerCfg, headCfg) else head)
+            .servedOn(providerCfg)
         val resolvedProvider = if (legacyKnobsGovern) resolveProviderConfig(providerCfg, headCfg) else providerCfg
         val localRows = if (resolvedProvider.isLocal) {
             askRuntime(key, resolvedHead, resolvedProvider, headCfg).also { found ->
@@ -182,7 +183,8 @@ internal class HeadBuildInputs(
         configKey: String? = key,
     ): ModelCatalog {
         val headCfg = config.getConfig(configKey)
-        val resolvedHead = if (legacyKnobsGovern) resolveHeadConfig(head, providerCfg, headCfg) else head
+        val resolvedHead = (if (legacyKnobsGovern) resolveHeadConfig(head, providerCfg, headCfg) else head)
+            .servedOn(providerCfg)
         val effective = effectiveProvider(key, providerCfg, legacyKnobsGovern)
         val resolvedProvider = servedWindows.applied(head.provider, key, effective)
         return resolvedProvider.catalogFor(resolvedHead, headCfg.contextWindowOverride, headModels.forHead(key))

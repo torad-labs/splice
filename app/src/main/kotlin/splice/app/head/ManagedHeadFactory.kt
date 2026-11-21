@@ -157,14 +157,8 @@ internal class HeadServing(
     /** gateway-no-heads: [ctx]'s provider as the gateway serves it, over [books]' stores. It reads the global config layer
      *  (it holds no head block) and registers with the console's per-key registries only where [registers] says no head
      *  already has. It is not bound into the Playground, which is a head's. */
-    fun runtimeFor(ctx: ProviderBuild, wired: Wired, books: ProviderBooks, registers: Boolean): ProviderRuntime =
-        headServerFactory.runtimeFor(
-            ctx,
-            wired.provider,
-            books.stores,
-            books.recordings,
-            RouteScope(configKey = null, registers = registers, forwardClientAuth = wired.auth is ClientAuthProvider),
-        )
+    fun runtimeFor(ctx: ProviderBuild, wired: Wired, books: ProviderBooks, scope: RouteScope): ProviderRuntime =
+        headServerFactory.runtimeFor(ctx, wired.provider, books.stores, books.recordings, scope)
 }
 
 internal class ManagedHeadFactory(
@@ -235,9 +229,9 @@ internal class ManagedHeadFactory(
 
     /** gateway-no-heads: [ctx]'s provider assembled for the gateway, with no head to serve it: the provider and its
      *  credential, the books it accounts into (the same books a head of the same identity has), and the runtime a gateway
-     *  turn runs through. [registers] is whether the runtime takes the console's per-key registries, which a head of
+     *  turn runs through. [layer] is the config layer it reads (the provider's own overrides), and [registers] is whether the runtime takes the console's per-key registries, which a head of
      *  the same key already holds. */
-    internal fun assembleRoute(ctx: ProviderBuild, registers: Boolean): AssembledRoute {
+    internal fun assembleRoute(ctx: ProviderBuild, layer: String, registers: Boolean): AssembledRoute {
         val key = ctx.key
         if (swept.add(key)) {
             keptFiles.atStart(
@@ -249,7 +243,8 @@ internal class ManagedHeadFactory(
         }
         val wired = providerAssembly.buildProvider(ctx)
         val shared = booksOf(ctx, wired)
-        return AssembledRoute(wired, shared, serving.runtimeFor(ctx, wired, shared, registers))
+        val scope = RouteScope(layer, registers, forwardClientAuth = wired.auth is ClientAuthProvider)
+        return AssembledRoute(wired, shared, serving.runtimeFor(ctx, wired, shared, scope))
     }
 
     // Common assembly shared by every provider: stores, the generic HeadServer, launch spec.

@@ -174,7 +174,7 @@ public class PerfStats(
                 )
                 Cancellables.discard(
                     Cancellables.runCatchingCancellable {
-                        meta.model?.let { totals?.add(session, it, snap.counters, ts) }
+                        meta.model?.let { totals?.add(session, it, snap.counters, ts, meta.account.price) }
                     },
                     "telemetry is best-effort; a turn must never fail on its session's running total",
                 )

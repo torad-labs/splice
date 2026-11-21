@@ -2,6 +2,7 @@ package splice.head.perf
 
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.put
+import splice.core.model.TurnPrice
 import splice.core.perf.PerfTurnIds
 import splice.core.turn.TurnAgent
 import splice.core.turn.TurnRelay
@@ -71,11 +72,14 @@ public data class PerfRowMeta(
     }
 }
 
-/** The login that carried a turn and whether its prompt cache started cold. [label] null means no account was
- *  proved for the turn, and then the row carries neither fact. */
+/** The login that carried a turn, whether its prompt cache started cold, and the card its spend is priced at. [label]
+ *  null means no account was proved for the turn, and then the row carries neither of the first two facts. [price] is the
+ *  serving route's own card, for the books it counts into (its session totals): a route over books another route built
+ *  never inherits that route's rates. Null leaves it to the books' own. */
 public data class PerfAccount(
     val label: String? = null,
     val cacheCold: Boolean = false,
+    val price: TurnPrice? = null,
 )
 
 /** Why a turn failed and how hard the retry loop tried, beside the outcome tag on its perf row. */

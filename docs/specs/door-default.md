@@ -176,15 +176,16 @@ serves exactly the models it served with them.
 - **Credentials.** The caller's door key is admitted at the door and goes no further: a turn reaches its provider on
   that provider's credential only. A provider that forwards the caller's own Claude login runs a door turn on the
   accounts added to splice, and with none added is left out.
-- **Native Anthropic IDs.** A Claude model's own ID (`claude-opus-5-5`) in the picker or in a request runs on the provider
+- **Native Anthropic IDs.** A Claude model keeps its own Anthropic id (`claude-opus-5-5`) in the picker and in a request, and runs on the provider
   that supplied that discovery row, the Claude accounts added to splice, even when the session last used another provider;
   a full name no provider serves is refused by name rather than run as the old provider's pinned model. A tier alias
   (`opus`, `sonnet`, `haiku`, `fable`) with no model named runs on the session's current provider, as that provider's
   `model_slots` map it, else on the session's own model.
 - **A provider's own prompt and knobs.** What a head's block carried that a turn needs (`pinned_model`, `model_slots`,
-  `context_window`, the quirks, the credential) lives on the provider. A head's `system_prompt` and its `overrides` still
-  live on the head block: a provider served with no head runs on splice's defaults and the daemon-wide settings until
-  provider-level overrides land, and boot says nothing is moved silently.
+  `context_window`, the quirks, the credential) lives on the provider, and so does its standing prompt: `system_prompt`,
+  `system_prompt_file` and `system_prompt_mode`. A head's `overrides` table still lives on the head block: a provider
+  served with no head runs on the daemon-wide settings until provider-level `overrides` land, and boot says nothing is
+  moved silently.
 - **Status and doctor.** `splice status` lists each provider no head runs on a row of its own (`the door`), ready while
   splice holds its credential; `splice claude --json` and `splice desktop` list every provider with `listed` and, where
   one is left out, the `reason`; `splice doctor` reads each provider no head runs for its credential, as it does a head.

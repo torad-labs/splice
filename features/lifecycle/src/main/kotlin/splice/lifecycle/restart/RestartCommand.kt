@@ -14,7 +14,6 @@ import splice.daemonclient.DaemonProbe
 import splice.daemonclient.DaemonSettings
 import splice.daemonclient.MgmtKeyFile
 import splice.daemonclient.MgmtKeyRead
-import splice.daemonclient.Reading
 import splice.lifecycle.start.DaemonColdStart
 import splice.lifecycle.units.RestartSockets
 import splice.lifecycle.upgrade.CompactionWait
@@ -119,7 +118,7 @@ public class RestartCommand(
         val running = running(port) ?: return true
         val key = stopKeyOrExplain() ?: return false
         if (waitForCompactions) CompactionWait(output, JdkUpgradeInflight(env, port)).await()
-        val scope = stopScope(DaemonProbe.headPorts(port, key), tomlPorts)
+        val scope = StopScope(DaemonProbe.headPorts(port, key), tomlPorts)
         scope.unseen?.let { why ->
             output.line(
                 "splice: WARNING: could not enumerate this daemon's head ports ($why). The stop check " +
@@ -166,28 +165,4 @@ public class RestartCommand(
             }
         }
     }
-
-    /** A refused /api/heads leaves the toml's ports to stand alone. A malformed one is a running daemon whose
-     *  heads cannot be listed, so the scope stays degraded whatever the toml names. */
-    internal fun stopScope(live: Reading<List<Int>>, tomlPorts: List<Int>): StopScope {
-        val ports = ((live as? Reading.Answered)?.value.orEmpty() + tomlPorts).distinct()
-        val unseen = when {
-            live is Reading.Malformed -> "/api/heads answered with a list this CLI cannot read"
-            ports.isEmpty() -> "splice.toml names no head and /api/heads named none or was unreachable"
-            else -> null
-        }
-        return StopScope(ports, unseen)
-    }
-}
-
-/** Which ports a stop must see FREED, and whether that list can be trusted.
- *
- *  The union is deliberate: the running daemon's own list is authoritative, and the toml's ports are
- *  kept alongside it so a head the daemon failed to start — and therefore never lists — is still
- *  checked. Extra ports only ever make the stop check stricter. [unseen] names why the list cannot be
- *  trusted: neither source named a port, where an empty list makes `headPorts.none {}` vacuously true, or the
- *  daemon answered with a list it could not read. The caller announces the weakened check rather than
- *  let it pass as a clean stop. */
-internal data class StopScope(val ports: List<Int>, val unseen: String?) {
-    val degraded: Boolean get() = unseen != null
 }

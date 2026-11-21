@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.util.JsonWire
+import splice.harness.agent.AgentWire
 import java.security.MessageDigest
 import java.util.HexFormat
 

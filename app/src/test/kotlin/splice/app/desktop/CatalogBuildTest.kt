@@ -15,6 +15,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.model.ModelListing
 import splice.core.model.ModelRuntimeMetadata
+import splice.core.topology.ChatEffortVocabularyConfig
 import splice.core.util.LogSink
 import java.nio.file.Path
 
@@ -62,6 +63,62 @@ internal class CatalogBuildTest {
         assertEquals(emptyList<String>(), model.reasoningLevels)
         assertEquals(null, model.defaultReasoningLevel)
         assertEquals(false, model.reasons)
+    }
+
+    @Test
+    fun `a provider's declared effort vocabulary names the levels of a model its endpoint says nothing about`() {
+        val entry = ModelEntry(id = "GLM-5.3-Flash", label = "GLM-5.3-Flash (real-infer)", contextWindow = 491_520)
+        val other = ModelEntry(id = "GLM-other", contextWindow = 491_520)
+        val vocabulary = ChatEffortVocabularyConfig(
+            default = "high",
+            levels = mapOf(
+                "none" to "low",
+                "minimal" to "low",
+                "light" to "low",
+                "low" to "low",
+                "medium" to "high",
+                "high" to "high",
+                "xhigh" to "max",
+                "max" to "max",
+                "ultra" to "max",
+            ),
+            modelPattern = "^GLM-5[.]3-Flash",
+        )
+
+        val built = CatalogBuild().of(
+            listOf(CatalogSource("realinfer", catalogOf(entry, other), vocabulary)),
+        )
+
+        val glm = built.models.single { it.id == "GLM-5.3-Flash" }
+        assertEquals(listOf("low", "high", "max"), glm.reasoningLevels)
+        assertEquals("high", glm.defaultReasoningLevel)
+        assertTrue(glm.reasons)
+        assertEquals(emptyList<String>(), built.models.single { it.id == "GLM-other" }.reasoningLevels)
+    }
+
+    @Test
+    fun `the endpoint's own effort list wins over a provider's declared vocabulary`() {
+        val listed = DiscoveredModel(
+            id = "GLM-5.3-Flash",
+            runtimeMetadata = ModelRuntimeMetadata(
+                listing = ModelListing(
+                    efforts = listOf("low", "medium", "high"),
+                    defaultEffort = "medium",
+                    reasons = true,
+                ),
+            ),
+        )
+        val entry = ModelEntry(id = "GLM-5.3-Flash", contextWindow = 491_520, listed = listed)
+        val vocabulary = ChatEffortVocabularyConfig(
+            default = "high",
+            levels = mapOf("low" to "low", "high" to "high", "max" to "max"),
+        )
+
+        val built = CatalogBuild().of(listOf(CatalogSource("realinfer", catalogOf(entry), vocabulary)))
+
+        val model = built.models.single()
+        assertEquals(listOf("low", "medium", "high"), model.reasoningLevels)
+        assertEquals("medium", model.defaultReasoningLevel)
     }
 
     @Test

@@ -183,9 +183,24 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
         ":features-launch",
         ":integrations-upstream",
     ),
+    // the modes (modes/README.md): the contract and catalog speak core only, and every mode, by one pattern line, reaches
+    // core and the contract and nothing else. An exact line wins over the pattern, as in gradle/module-law.txt.
+    ":modes-api" to setOf(":core"),
+    ":modes-*" to setOf(":core", ":modes-api"),
     // the management plane reads the domain, the client side it assembles a launch spec for, and
     // the head-start slice it delegates starting a head to.
 )
+
+/** What [module] may depend on under [law]: its own entry, else the first pattern entry (`:modes-*`) it matches. */
+private fun lawFor(law: Map<String, Set<String>>, module: String): Set<String>? =
+    law[module] ?: law.entries.firstOrNull { (key, _) -> matches(key, module) }?.value
+
+/** Whether the pattern entry [key] (`:modes-*`) governs [module]. */
+private fun matches(key: String, module: String): Boolean = key.endsWith("*") && module.startsWith(key.dropLast(1))
+
+/** [law] with each pattern entry replaced by an entry for every one of [modules] it governs. */
+private fun expandedLaw(law: Map<String, Set<String>>, modules: Set<String>): Map<String, Set<String>> =
+    law.filterKeys { !it.endsWith("*") } + modules.mapNotNull { module -> lawFor(law, module)?.let { module to it } }
 
 /** Exempt from the direction law: :app is the composition root and may wire anything, and the rest are
  *  harnesses rather than product layers — the same set splice.module-law.gradle.kts calls `nonLibrary`. */
@@ -722,7 +737,13 @@ class ModuleLawsTest {
                 .filter { it.first in law.lawChecked }
                 .map { module to it.second }
         }.toSet()
-        val violations = staleAllowanceViolations(law.mainLaw, mainEdges)
+        // A pattern line (`:modes-*`) is a rule for every module it matches, today's and the next one's, and the edge each
+        // mode has is laid by its convention plugin (splice.mode), never by its one-line build file. So a pattern is stale
+        // when it governs no module at all, and its allowances are not read edge by edge.
+        val (patterns, exact) = law.mainLaw.entries.partition { it.key.endsWith("*") }
+        val idlePatterns = patterns.filter { (key, _) -> map.modules.none { it.startsWith(key.dropLast(1)) } }
+            .map { "${it.key} governs no module in the project map — drop the pattern, or add the modules it is for." }
+        val violations = staleAllowanceViolations(exact.associate { it.key to it.value }, mainEdges) + idlePatterns
         org.junit.jupiter.api.Assertions.assertTrue(violations.isEmpty()) {
             violations.joinToString(
                 separator = "\n  - ",
@@ -832,7 +853,8 @@ class ModuleLawsTest {
         unrestricted: Set<String>,
         ratchet: Set<Pair<String, String>>,
     ): List<String> {
-        val violations = unaccountedModuleViolations(map.modules, testPlane, unrestricted)
+        val plane = expandedLaw(testPlane, map.modules)
+        val violations = unaccountedModuleViolations(map.modules, plane, unrestricted)
         val edges = map.modules.flatMap { module ->
             configuredEdges(map, module).map { (configuration, dep) -> Triple(module, configuration, dep) }
         }
@@ -840,7 +862,7 @@ class ModuleLawsTest {
         val testEdges = edges.filterNot { it.second in law.lawChecked }.map { it.first to it.third }.toSet()
         return violations +
             mainPlaneEdgeViolations(law, mainEdges) +
-            testPlaneEdgeViolations(testEdges, testPlane, ratchet) +
+            testPlaneEdgeViolations(testEdges, plane, ratchet) +
             staleRatchetViolations(mainEdges, testEdges, ratchet)
     }
 
@@ -865,7 +887,7 @@ class ModuleLawsTest {
         law: ModuleLawFile,
         mainEdges: Set<Pair<String, String>>,
     ): List<String> = mainEdges.sortedBy { it.first + it.second }.mapNotNull { (module, dep) ->
-        val allowed = law.mainLaw[module] ?: return@mapNotNull null
+        val allowed = lawFor(law.mainLaw, module) ?: return@mapNotNull null
         if (dep in allowed) return@mapNotNull null
         "$module may not depend on $dep in a MAIN configuration (the build's map " +
             "allows ${allowed.sorted()}). This is also a configuration-time build error; the " +

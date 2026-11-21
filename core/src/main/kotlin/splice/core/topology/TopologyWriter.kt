@@ -62,6 +62,7 @@ import splice.core.topology.gateway.GatewayMoveChecks
 import splice.core.topology.gateway.GatewayProviderRoute
 import splice.core.topology.toml.TomlKeys
 import splice.core.topology.toml.TomlPatch
+import splice.core.topology.toml.TomlTextPatch
 import splice.core.util.Cancellables
 import splice.core.util.DirectoryListing
 import splice.core.util.FilesListing
@@ -208,6 +209,9 @@ public data class TopologyFinding(
 
         /** The setting [key] saved in [file], the state folder's config.json, which the fix session can clear. */
         public data class Saved(val file: Path, val key: String) : Origin()
+
+        /** The mode [name] splice carries (modes/README.md): fixed in its folder, modes/<name>, and the build. */
+        public data class Mode(val name: String) : Origin()
     }
 
     /** True when the finding is splice.toml's own, which the fix session can change in the file. */
@@ -281,6 +285,14 @@ public class TopologyWriter(
             findings.isNotEmpty() -> TopologyWriteResult.Refused(findings)
             else -> tree(requested).let { wanted -> land(existing, TomlPatch(existing, wanted).compose(held), wanted) }
         }
+    }
+
+    /** splice.toml as [patch] makes it from the file as it is now, under the same lock and backup as [write]: a table
+     *  read apart from the schema (`[modes.<name>]`, ModeTableWrite) is written this way, every other line kept. */
+    internal fun patched(patch: TomlTextPatch): TopologyWriteResult {
+        val existing = Files.readString(path)
+        val composed = patch.of(existing)
+        return if (composed == existing) TopologyWriteResult.Written(null) else commit(existing, composed)
     }
 
     private fun land(existing: String, composed: String, wanted: JsonObject): TopologyWriteResult {

@@ -2,6 +2,7 @@ import { copyFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { files, hash, json, safePath, save } from "../ci/files.ts";
 import { coveragePlan } from "./plan.ts";
+import { modeFolders } from "../lib/modes.ts";
 
 interface Receipt {
   candidate: string;
@@ -11,9 +12,11 @@ interface Receipt {
 }
 function inventory(root: string) {
   const settings = readFileSync(join(root, "settings.gradle.kts"), "utf8");
-  const plan = coveragePlan(settings);
+  const folders = modeFolders(root);
+  const plan = coveragePlan(settings, folders.map(folder => "modes-" + folder));
   const dirs = new Map([...settings.matchAll(/project\("(:[^"]+)"\)\.projectDir = file\("([^"]+)"\)/g)]
     .map(match => [match[1]!, match[2]!]));
+  for (const folder of folders) dirs.set(":modes-" + folder, "modes/" + folder);
   const reports = plan.map(shard => shard.reports.map(task => {
     const dir = dirs.get(task.slice(0, task.lastIndexOf(":")));
     if (!dir) throw new Error("No project directory for " + task);

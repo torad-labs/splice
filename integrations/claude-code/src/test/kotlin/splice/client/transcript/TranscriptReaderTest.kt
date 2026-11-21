@@ -18,6 +18,7 @@ import splice.sessions.transcript.TranscriptLookup
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptPage
 import splice.sessions.transcript.TranscriptRole
+import splice.sessions.transcript.TranscriptSource
 import splice.sessions.transcript.TranscriptToolUse
 import java.nio.file.Files
 import java.nio.file.Path
@@ -74,7 +75,14 @@ class TranscriptReaderTest {
         assertEquals(
             listOf(
                 TranscriptMessage(0, TranscriptRole.USER, TS_MS, "read the config"),
-                TranscriptMessage(1, TranscriptRole.ASSISTANT, TS_MS, "Reading it now.", messageId = "msg_1"),
+                TranscriptMessage(
+                    1,
+                    TranscriptRole.ASSISTANT,
+                    TS_MS,
+                    "Reading it now.",
+                    messageId = "msg_1",
+                    source = TranscriptSource(thinking = "private"),
+                ),
                 TranscriptMessage(
                     2,
                     TranscriptRole.ASSISTANT,

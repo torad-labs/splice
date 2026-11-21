@@ -189,7 +189,7 @@
       "features/turns/src/main/kotlin/splice/head/compaction/RecordedAnswer.kt"
     ],
     "COPY CONTENT": [
-      "features/harness/src/main/kotlin/splice/harness/AgentWire.kt",
+      "features/harness/src/main/kotlin/splice/harness/agent/AgentWire.kt",
       "integrations/claude-code/src/main/kotlin/splice/client/transcript/TranscriptTypes.kt",
       "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",
       "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt",
@@ -367,7 +367,7 @@
     ],
     "COPY ID": [
       "app/src/main/kotlin/splice/app/peer/codex/CodexRpc.kt",
-      "features/harness/src/main/kotlin/splice/harness/AgentWire.kt",
+      "features/harness/src/main/kotlin/splice/harness/agent/AgentWire.kt",
       "features/harness/src/main/kotlin/splice/harness/McpConversation.kt",
       "integrations/mcp/src/main/kotlin/splice/control/mcp/JsonRpcCodec.kt"
     ],
@@ -424,7 +424,7 @@
       "features/turns/src/main/kotlin/splice/head/wire/SseEmitter.kt"
     ],
     "COPY MESSAGES": [
-      "features/harness/src/main/kotlin/splice/harness/AgentWire.kt",
+      "features/harness/src/main/kotlin/splice/harness/agent/AgentWire.kt",
       "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",
       "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/usertext/ChatFirstUserText.kt"
     ],
@@ -483,7 +483,7 @@
       "integrations/upstream/src/main/kotlin/splice/upstream/retry/Watchdog.kt"
     ],
     "COPY NAME": [
-      "features/harness/src/main/kotlin/splice/harness/AgentWire.kt",
+      "features/harness/src/main/kotlin/splice/harness/agent/AgentWire.kt",
       "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",
       "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt"
     ],
@@ -554,7 +554,7 @@
       "features/harness/src/main/kotlin/splice/harness/McpConversation.kt"
     ],
     "COPY ROLE": [
-      "features/harness/src/main/kotlin/splice/harness/AgentWire.kt",
+      "features/harness/src/main/kotlin/splice/harness/agent/AgentWire.kt",
       "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughFirstUserText.kt",
       "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/usertext/ChatFirstUserText.kt",
       "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatSystemPrompt.kt",
@@ -602,7 +602,7 @@
       "core/src/main/kotlin/splice/core/media/WebpChunks.kt"
     ],
     "COPY TEXT": [
-      "features/harness/src/main/kotlin/splice/harness/AgentWire.kt",
+      "features/harness/src/main/kotlin/splice/harness/agent/AgentWire.kt",
       "features/turns/src/main/kotlin/splice/head/port/HarnessRequest.kt",
       "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",
       "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt"
@@ -612,7 +612,7 @@
       "integrations/oauth/src/main/kotlin/splice/oauth/grok/LoginGrok.kt"
     ],
     "COPY TOOLS": [
-      "features/harness/src/main/kotlin/splice/harness/AgentWire.kt",
+      "features/harness/src/main/kotlin/splice/harness/agent/AgentWire.kt",
       "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt"
     ],
     "COPY TTL_MS": [
@@ -625,7 +625,7 @@
     ],
     "COPY TYPE": [
       "app/src/main/kotlin/splice/app/peer/codex/CodexAppServer.kt",
-      "features/harness/src/main/kotlin/splice/harness/AgentWire.kt",
+      "features/harness/src/main/kotlin/splice/harness/agent/AgentWire.kt",
       "features/harness/src/main/kotlin/splice/harness/MessageAssembly.kt",
       "features/share/src/main/kotlin/splice/share/ShareErrors.kt",
       "features/turns/src/main/kotlin/splice/head/port/HarnessRequest.kt",
@@ -663,7 +663,7 @@
       "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
     ],
     "COPY USER": [
-      "features/harness/src/main/kotlin/splice/harness/AgentWire.kt",
+      "features/harness/src/main/kotlin/splice/harness/agent/AgentWire.kt",
       "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughFirstUserText.kt",
       "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/usertext/ChatFirstUserText.kt",
       "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatSystemPrompt.kt",

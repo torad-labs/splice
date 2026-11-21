@@ -16,6 +16,8 @@ import splice.app.control.RelaunchCommands
 import splice.app.control.mount.fallback.SessionFallbackRoute
 import splice.core.config.ConfigService
 import splice.core.config.UserHome
+import splice.head.live.LiveRepliesSource
+import splice.head.live.LiveRoute
 import splice.launch.recipe.LaunchService
 import splice.launch.wrap.WrappedClaudeLaunch
 import splice.sessions.end.SessionEnd
@@ -40,7 +42,7 @@ internal class SessionsMount(
     heads: Map<String, ManagedHead>,
     config: ConfigService,
     private val guard: ControlGuard,
-    ports: ConsolePorts,
+    private val ports: ConsolePorts,
     /** Where the wrapped `claude` is, which a session started through it is relaunched on. */
     launch: LaunchService?,
 ) {
@@ -85,8 +87,16 @@ internal class SessionsMount(
     /** Nov 13, 2026: the model a session falls back to while the one it asks for is held on every login. */
     private val fallbackRoute = sessions?.let { SessionFallbackRoute(it, heads, ports) }
 
+    /** reply-stream: one session's reply as it streams to Claude Code, read off the hub the daemon wires after boot. */
+    private val liveRoute = LiveRoute(LiveRepliesSource { ports.turns.replies })
+
     fun register(route: Route) {
         wiring.routes?.let { sessionRoutes(route, it) }
+        // reply-stream: beside the transcript, but registered with or without a session registry: it reads only what
+        // the heads stream. GET alone, so nothing can be sent to a session through it.
+        route.get("/api/sessions/{id}/live") {
+            guard.guarded(call) { liveRoute.follow(call, call.parameters["id"].orEmpty()) }
+        }
     }
 
     /** v0.4.0 /api/sessions and V4-130's three session reads beside it. */

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en" data-theme="night">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Splice · Providers</title>
+<link rel="icon" href="brand/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="brand/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="brand/splice-app-256.png">
+<link rel="stylesheet" href="deck.css">
+<link rel="stylesheet" href="deck-providers.css">
+</head>
+<body class="no-rail-l no-rail-r no-comp">
+<main class="field" id="field">
+  <section class="centre" aria-label="Providers">
+  <div class="pv" id="pv">
+    <header class="pv-head">
+      <div>
+        <div class="eyebrow" id="pvEyebrow"></div>
+        <h1>Providers</h1>
+      </div>
+      <div class="status"><span class="lamp live pv-live"></span><span id="pvRunning"></span><span class="faint">·</span><span id="pvClock"></span></div>
+    </header>
+
+    <div class="pv-hero" id="hero"></div>
+
+    <div class="pv-sec">
+      <div class="eyebrow pv-sec-h">Cloud providers</div>
+      <div class="pv-grid" id="cloud"></div>
+    </div>
+
+    <div class="pv-sec" id="localSec">
+      <div class="eyebrow pv-sec-h">Local models</div>
+      <div class="pv-grid pv-local" id="local"></div>
+    </div>
+
+    <div class="pv-tools">
+      <button class="pt pt-tool press" data-part="add" type="button"></button>
+      <button class="pt pt-tool press" data-part="compare" type="button"></button>
+    </div>
+  </div>
+  </section>
+</main>
+<script src="api.js"></script>
+<script src="deck-lens.js"></script>
+<script src="deck.js"></script>
+<script src="deck-common.js"></script>
+<script src="pilot.js"></script>
+<script src="deck-providers-command.js"></script>
+<script src="deck-providers-setup.js"></script>
+<script src="request-words.js"></script>
+<script src="deck-providers-compare.js"></script>
+<script src="deck-providers.js"></script>
+</body>
+</html>

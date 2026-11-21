@@ -82,6 +82,11 @@ dependencies {
     implementation(project(":features-share"))
     implementation(project(":features-server"))
     implementation(project(":integrations-http"))
+    // The modes: the catalog that finds them, and every mode settings.gradle.kts found under modes/, by the same
+    // listing, so a mode ships in the jar the moment its folder is there (modes/README.md).
+    implementation(project(":modes-api"))
+    rootProject.subprojects.map { it.path }.filter { it.startsWith(":modes-") && it != ":modes-api" }.sorted()
+        .forEach { implementation(project(it)) }
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.jackson.core)
     implementation(libs.kotlinx.coroutines.core)
@@ -183,9 +188,9 @@ splice.lawsuite.ReadSet.declare(
     project,
     tasks.named<Test>("lawTest"),
     listOf(
-        "app", "core", "features", "integrations", "quality/architecture", "quality/compiler-plugin", "build-logic",
-        "quality/detekt", "gradle", "settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew",
-        "gradlew.bat", "install.sh", ".gitignore",
+        "app", "core", "features", "integrations", "modes", "quality/architecture", "quality/compiler-plugin",
+        "build-logic", "quality/detekt", "gradle", "settings.gradle.kts", "build.gradle.kts", "gradle.properties",
+        "gradlew", "gradlew.bat", "install.sh", ".gitignore",
     ),
 )
 
@@ -788,6 +793,9 @@ tasks.withType<ShadowJar>().configureEach {
     // Dependency notices may share this path. The generated sidecar also retains each full text.
     filesMatching("META-INF/NOTICE") { duplicatesStrategy = DuplicatesStrategy.INCLUDE }
     append("META-INF/NOTICE")
+    // Each mode names its folder in this index (splice.mode), so the catalog finds a mode whose handler does not load.
+    filesMatching("splice-modes/index") { duplicatesStrategy = DuplicatesStrategy.INCLUDE }
+    append("splice-modes/index")
     doLast {
         ZipFile(archiveFile.get().asFile).use { archive ->
             val entries = archive.entries().asSequence().filter { it.name == "META-INF/LICENSE" }.toList()

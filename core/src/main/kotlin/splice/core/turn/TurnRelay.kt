@@ -23,6 +23,11 @@ public data class TurnRelay(
      *  headers; null on a session's main thread. Its perf row carries them, so a subagent's turns are told apart from
      *  the session's own (desktop-full, df-turn-headers). */
     val agent: TurnAgent = TurnAgent(),
+    /** The model Claude Code named in a turn the door handed on: the door asks for the model under the id its
+     *  provider runs it as, so this is the only place the turn's reader can find what was asked. A gateway turn says it
+     *  itself; a turn a relay hands to a head says it in [ASKED_MODEL_HEADER]. The live route's turn names it
+     *  (reply-stream). Null for every turn that came straight to its head. */
+    val askedModel: String? = null,
 )
 
 /** The Claude Code agent a turn came from: [id] the subagent (x-claude-code-agent-id) and [parent] the agent that
@@ -42,3 +47,8 @@ public const val SERVED_NOTICE_HEADER: String = "x-splice-served-notice"
  *  plants it in the gatherer's own custom headers; a request that carries it never calls a capability and has no say in
  *  the model a command's logins are named for. */
 public const val GATHERS_FOR_HEADER: String = "x-splice-gathers-for"
+
+/** The header the door names the model Claude Code asked for in, beside [TURN_DOOR_HEADER], when it hands the turn to
+ *  its head under the head's own id (reply-stream). The relay sets it itself and never passes on a client's own
+ *  (ShareRelay). */
+public const val ASKED_MODEL_HEADER: String = "x-splice-asked-model"

@@ -92,3 +92,5 @@ credentials.json
 # the downloads website, built by tools/release/downloads/website/build.ts; never committed
 tools/release/downloads/site/
 .campaign/.lock
+# the campaign's ledger stays on the machine that runs the campaign: it names that machine and its accounts
+.campaign/ledger.toml

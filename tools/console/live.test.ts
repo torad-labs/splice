@@ -14,7 +14,7 @@ const QUIET_MS = 200;
 let browser: Browser;
 let page: Page;
 beforeAll(async () => {
-  browser = await chromium.launch();
+  browser = await chromium.launch({ executablePath: process.env.SCREEN_REVIEW_BROWSER || undefined });
   page = await browser.newPage();
   // a page that redraws the way a console page does when reads land, only far more often: bursts of back-to-back
   // replacements of the measured element's markup, each burst followed by a short quiet spell. A page that never holds

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en" data-theme="night">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Splice · Activity</title>
+<link rel="icon" href="brand/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="brand/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="brand/splice-app-256.png">
+<link rel="stylesheet" href="deck.css">
+<link rel="stylesheet" href="deck-activity.css">
+<link rel="stylesheet" href="deck-request.css">
+</head>
+<body class="no-rail-l no-rail-r no-comp">
+<main class="field" id="field">
+  <section class="centre" aria-label="Activity">
+  <div class="ac" id="ac">
+    <header class="ac-head">
+      <div>
+        <div class="eyebrow" id="acRange"></div>
+        <h1>Activity</h1>
+      </div>
+      <div class="status"><span class="lamp live ac-live"></span><span id="acRunning"></span><span class="faint">·</span><span id="acClock"></span></div>
+    </header>
+
+    <div class="ac-figs" id="figs"></div>
+
+    <div class="ac-strip" id="strip">
+      <div class="ac-strip-top"><span class="ac-read" id="read"></span><span class="ac-keys" id="keys"></span></div>
+      <div class="ac-cols" id="cols" role="img" aria-label="Requests over the window"></div>
+      <div class="ac-days" id="days"></div>
+    </div>
+
+    <section class="ac-sec" aria-labelledby="whereH">
+      <h2 class="ac-h2" id="whereH">Where it went</h2>
+      <div class="ac-where" id="where"></div>
+    </section>
+
+    <section class="ac-sec" aria-labelledby="latestH">
+      <div class="ac-latest-head">
+        <h2 class="ac-h2" id="latestH">Latest requests</h2>
+        <span class="ac-count" id="count"></span>
+        <span class="ac-tools" id="tools"></span>
+      </div>
+      <div class="ac-rows" id="rows" role="list"></div>
+    </section>
+  </div>
+  </section>
+</main>
+<script src="api.js"></script>
+<script src="deck-lens.js"></script>
+<script src="deck.js"></script>
+<script src="deck-common.js"></script>
+<script src="pilot.js"></script>
+<script src="request-words.js"></script>
+<script src="deck-request.js"></script>
+<script src="deck-activity.js"></script>
+</body>
+</html>

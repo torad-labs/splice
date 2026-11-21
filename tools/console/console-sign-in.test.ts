@@ -82,13 +82,13 @@ test("a page handed a code clears it from the address, trades it once, and reads
     expect(bearers.length).toBeGreaterThan(0);
     expect(bearers.filter((b) => b !== `Bearer ${consoleKey}`)).toEqual([]);
     expect(refused).toBe(0);
-    expect(await page.locator(".lockedby").count()).toBe(0);
+    expect(await page.locator("body.locked").count()).toBe(0);
     // Reloaded, the page is still signed in by the key this browser kept, and trades nothing.
     await page.reload();
     await page.waitForLoadState("networkidle");
     expect(traded).toEqual([code]);
     expect(refused).toBe(0);
-    expect(await page.locator(".lockedby").count()).toBe(0);
+    expect(await page.locator("body.locked").count()).toBe(0);
   } finally {
     await context.close();
   }
@@ -105,7 +105,7 @@ test("a spent code signs nothing in: a browser that holds no key shows Locked an
     // The same address again, in a browser holding no key: a tool that printed it, or a history entry reopened.
     const late = await second.newPage();
     await late.goto(`${origin}/#c=${code}`);
-    await late.locator(".lockedby").waitFor({ timeout: 15_000 });
+    await late.locator("body.locked").waitFor({ timeout: 15_000 });
     expect(late.url()).toBe(`${origin}/accounts.html`);
     expect(await late.evaluate((store) => localStorage.getItem(store), STORE)).toBeNull();
     expect(traded).toEqual([code, code]);
@@ -120,7 +120,7 @@ test("an address that carries the management key, as pages before Oct 26 did, is
   const page = await context.newPage();
   try {
     await page.goto(`${origin}/#k=${managementKey}`);
-    await page.locator(".lockedby").waitFor({ timeout: 15_000 });
+    await page.locator("body.locked").waitFor({ timeout: 15_000 });
     expect(page.url()).toBe(`${origin}/accounts.html`);
     expect(await page.evaluate((store) => localStorage.getItem(store), STORE)).toBeNull();
     expect(bearers.filter((b) => b.includes(managementKey))).toEqual([]);
@@ -138,7 +138,7 @@ test("a browser that kept the management key before Oct 26 forgets it when a pag
     await page.goto(`${origin}/no-page-here`);
     await page.evaluate(([store, key]) => localStorage.setItem(store, key), [LEGACY_STORE, managementKey] as const);
     await page.goto(`${origin}/accounts.html`);
-    await page.locator(".lockedby").waitFor({ timeout: 15_000 });
+    await page.locator("body.locked").waitFor({ timeout: 15_000 });
     expect(await page.evaluate((store) => localStorage.getItem(store), LEGACY_STORE)).toBeNull();
     expect(bearers.length).toBeGreaterThan(0);
     expect(bearers.filter((b) => b.includes(managementKey))).toEqual([]);

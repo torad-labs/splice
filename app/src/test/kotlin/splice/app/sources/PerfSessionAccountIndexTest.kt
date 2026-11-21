@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.testing.ChangeClock
 import splice.core.util.AsyncFileIo
 import splice.core.util.JsonlAppendProof
 import splice.core.util.JsonlSink
@@ -101,6 +102,8 @@ class PerfSessionAccountIndexTest {
         val source = PerfRowsFileSource(file)
         assertEquals("before", source.account("session"))
         val stamp = Files.getLastModifiedTime(file)
+        // a same-size repair shows only in the file's change time, which two changes inside one tick share
+        ChangeClock.tickAfter(file)
         Files.writeString(file, row(10, "session", "after!") + "\n")
         Files.setLastModifiedTime(file, stamp)
         assertEquals("after!", source.account("session"), "stamp restoration is not an append proof")

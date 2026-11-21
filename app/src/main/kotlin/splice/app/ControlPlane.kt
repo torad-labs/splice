@@ -29,6 +29,7 @@ import splice.app.control.ServerModeSource
 import splice.app.daemon.BootedTopology
 import splice.app.head.HeadProbeReadings
 import splice.app.head.LaunchSpeedWiring
+import splice.app.modes.DaemonModes
 import splice.app.provider.ClaudeAccountWiring
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ModelRosters
@@ -76,6 +77,9 @@ internal class ControlPlane(
     /** LAN share: the commands this machine runs on another's heads, assigned by Daemon before [start] (the launch
      *  service asks them for a name no head here has). Null runs none. */
     internal var remoteCommands: RemoteCommands? = null
+
+    /** The modes the daemon carries (modes/README.md), assigned by Daemon before [start]. Null serves none. */
+    internal var modes: DaemonModes? = null
 
     /** Server mode (docs/specs/server-mode.md), assigned by Daemon before [start]; null answers its routes 409. */
     internal var serverMode: ServerModeSource? = null
@@ -289,6 +293,7 @@ internal class ControlPlane(
         srv.ports.claudeLogins = claudeLogin.owner
         srv.ports.serverMode = serverMode
         srv.ports.desktop = desktop
+        srv.ports.modes = modes
         srv.ports.quotaReadFailures = quotaReadFailures
         srv.ports.sessionFallbacks = sessionFallbacks
         srv.ports.lifecycle.keyRotation = KeyRotation(daemon.mgmtKey, daemon.mcpAccess, statePaths, log)

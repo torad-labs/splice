@@ -1,0 +1,4 @@
+:root { --ground: rgb(0 0 0); --probe-own: 2rem; }
+.probe-a { padding: 12px; }
+.probe-b { color: #ff0000; }
+.probe-c { gap: var(--probe-own); }

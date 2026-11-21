@@ -1,0 +1,45 @@
+on makes the settings file when there is none
+on writes CLAUDE_CODE_USE_MANTLE=1 into the file's env
+on writes the door's address as ANTHROPIC_BEDROCK_MANTLE_BASE_URL
+on writes the desktop key as AWS_BEARER_TOKEN_BEDROCK
+on declares a window as CLAUDE_CODE_MAX_CONTEXT_TOKENS
+on writes CLAUDE_CODE_AUTO_MODE_SERVER=0
+on writes the default model's selector as ANTHROPIC_MODEL
+on writes modelPicker with replaceBuiltInOptions true
+with no --model and none chosen before, the default model is the pinned model of the first head in the door
+on says which model is the default
+on writes no model into a file that has none
+splice desktop --json gives on, door, default_model, models, left_out and last_turn
+splice desktop --json says Desktop is on after on
+splice desktop --json gives the door the file names
+splice desktop says the door
+splice desktop says the lineup
+off takes out what on put in
+a file that was not there before on holds nothing after off
+splice desktop --json says Desktop is not on after off
+on keeps everything else in the file
+on leaves the person's own model as it is
+what on replaced is kept in splice's state folder
+nothing on replaced is kept beside the settings file
+off puts the file back as it was before on
+on with --model names the default model
+on run with no --model keeps the model chosen the last time
+on run again with another --model changes the default model
+off after on was run more than once puts the file back as it was before the first
+on refuses a --model that is not in the door
+on changes nothing when it refuses a --model that is not in the door
+on names what it found when it refuses a --model that is not in the door
+on refuses a file that sets CLAUDE_CODE_USE_BEDROCK
+on changes nothing when it refuses a file that sets CLAUDE_CODE_USE_BEDROCK
+on names what it found when it refuses a file that sets CLAUDE_CODE_USE_BEDROCK
+on refuses a file that sets CLAUDE_CODE_USE_VERTEX
+on changes nothing when it refuses a file that sets CLAUDE_CODE_USE_VERTEX
+on names what it found when it refuses a file that sets CLAUDE_CODE_USE_VERTEX
+on refuses a file that sets CLAUDE_CODE_USE_FOUNDRY
+on changes nothing when it refuses a file that sets CLAUDE_CODE_USE_FOUNDRY
+on names what it found when it refuses a file that sets CLAUDE_CODE_USE_FOUNDRY
+on refuses a file that sets CLAUDE_CODE_USE_MANTLE with an address that is not the door
+on changes nothing when it refuses a file that sets CLAUDE_CODE_USE_MANTLE with an address that is not the door
+on names what it found when it refuses a file that sets CLAUDE_CODE_USE_MANTLE with an address that is not the door
+on refuses when no head is in the door
+on changes nothing when no head is in the door

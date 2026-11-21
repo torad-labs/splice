@@ -66,6 +66,7 @@ Source: `gateway/control/src/main/kotlin/splice/control/ControlServer.kt` on `fe
 | `POST /launch/{head}`, `/statusline/{head}` | used by the shim and the status line, not by the console | n/a |
 | `GET /mcp/{name}`, `POST /mcp/{name}`, `DELETE /mcp/{name}` | the hosted MCP servers' streamable-HTTP transport for clients (open, post, close a stream), not an operator surface | n/a (excluded: client transport) |
 | `GET /`, `GET /dashboard` | the console itself (dist/index.html) | n/a (excluded: it is the console) |
+| `GET /reply-view/<file>`, `GET /reply-view/` | the session reader, open like the console's files (they carry no data): `reply-view.js` (the module any host embeds), `reply-view.css`, `connect.js` (its connector for this API) and the reader's own page `index.html` (`page.js`, `page.css`), which `/reply-view/` opens; versioned with splice so a client loads the reader matching the feed it reads (added 2026-11-19, reply-view; its README says how to embed it) | `ConsoleMount`, `console/reply-view/` |
 
 ### 2.2 Runtime knobs
 
@@ -586,7 +587,7 @@ Small, mostly read-only, all under the existing bearer guard.
 | `GET /api/upgrade` | installed, latest, rollback available | `upgrade` command |
 | `POST /api/upgrade/check` | one tap reads the newest published release (sums, then launch shim); 409 while a read runs, 429 within 10 s of the last | `upgrade` command |
 | ~~`GET /api/upgrade/check`~~ (deleted 2026-10-12: no page read it; the Check tap reads the POST's answer) | nothing | — |
-| `GET /api/sessions/{id}/transcript` | the session's local transcript from its head's `CLAUDE_CONFIG_DIR/projects`, paginated, redacted | `SessionRegistry`, `ProjectsLink` (note: `compaction/SessionProject.kt:24` still hardcodes the vanilla path for its headless fallback; fix in the same campaign) |
+| `GET /api/sessions/{id}/transcript` | the session's local transcript from its head's `CLAUDE_CONFIG_DIR/projects`, paginated, redacted; a reply's messages carry `message` (its `msg_` id) and `model`, its first message its `thinking`, and a compaction's summary `compact: true` | `SessionRegistry`, `ProjectsLink` (note: `compaction/SessionProject.kt:24` still hardcodes the vanilla path for its headless fallback; fix in the same campaign) |
 | ~~`GET /api/sessions/{id}/edges`, `GET /api/teams/{id}/edges`~~ (deleted 2026-10-12: no page read them) | the edges stay on the wire observation and in the store; a team's chat is where a person reads them | `/api/teams/{id}/chat` |
 | `GET /api/teams/{id}/chat?day=` | the team's group chat: edges joined to the message text read from each member's transcript on demand | edges plus the transcript reader |
 | `GET /api/teams/{id}/activity?day=` | per member activity labels in time order, metadata only | `ActivityLabel` history, new store |
@@ -634,7 +635,7 @@ weighing SQLite (sqlite-jdbc) against the daemon's existing pattern:
   WAL files that a plain `cp` backup gets wrong, and buys indexed queries the volume does not
   need. Revisit only if a query cannot be served by scanning a day's files.
 
-Optional, later: `GET /api/codemode` for the worker pool; remote provider catalog listing for the Models page (today the catalog is declared models only).
+Optional, later: `GET /api/codemode` for the worker pool; remote provider catalog listing for Providers (today the catalog is declared models only).
 
 ## 7. How "complete" is proven
 

@@ -129,6 +129,8 @@ internal class TurnStreamer(
             // Structural message_start/ping are staged, not counted as sent.
             val pending = pending(inputs, recording)
             val channel = pending.channel
+            // reply-stream: before the drive writes its first frame, the channel taps every frame into the live turn.
+            channel.live = inputs.live
             val emitter = streamingEmitter(call, inputs, pending)
             val drive = driveFactory.assembleDrive(inputs, emitter, channel)
             // Ktor's SseResponse body previously ran blocking Writer calls on its IO bridge.

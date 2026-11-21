@@ -1,8 +1,9 @@
 // EVERY CONSOLE PAGE LOADS ITS SCRIPTS AND RUNS THEM, so no page is dead on arrival. The pages share one global scope:
-// each loads kit.js and seven more as classic scripts before its own, so a top-level name declared in two of them is a
-// SyntaxError that stops the later script before its first line, and the page never draws (kit.js's textOf beside
-// models.js's own, c5203799a, Nov 2 2026: the Models page died while every file passed `node --check`). The pages are
-// listed from the folder, so a page added later is covered the day it lands. Through the real pages in Chromium against
+// each loads api.js, the Night Deck kit's scripts and pilot.js as classic scripts before its own, so a top-level name
+// declared in two of them is a SyntaxError that stops the later script before its first line, and the page never draws
+// (the old kit's textOf beside the old Models page's own, c5203799a, Nov 2 2026: the page died while every file passed
+// `node --check`). The pages are listed from the folder, so a page added later is covered the day it lands, and the
+// folder holds the six Night Deck pages and no other. Through the real pages in Chromium against
 // a stub daemon that answers every read empty, the way nav-current.test.ts reads them.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser } from "@playwright/test";
@@ -31,8 +32,8 @@ afterAll(async () => {
   server.stop(true);
 });
 
-test("the console folder holds pages to load", () => {
-  expect(pages.length).toBeGreaterThan(0);
+test("the console folder holds the six pages and no other", () => {
+  expect(pages).toEqual(["accounts.html", "activity.html", "providers.html", "sessions.html", "settings.html", "teams.html"]);
 });
 
 // AN ADDRESS NAMES ONLY THE PAGE'S OWN TOPICS. Settings' topic table inherits Object.prototype, so an address naming an

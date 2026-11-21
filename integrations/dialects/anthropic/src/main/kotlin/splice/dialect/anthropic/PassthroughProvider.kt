@@ -56,6 +56,8 @@ public class PassthroughProvider(
     /** #523: a passthrough turn is one request streamed back as it arrives, with no state of its own on disk. */
     override val finishesTurnsWhenRetired: Boolean get() = true
 
+    override val sendsMessages: Boolean get() = true
+
     override val showReasoning: ReasoningDisplay = ReasoningDisplay.OFF
     override val replayReasoning: Boolean = false
 

@@ -29,6 +29,7 @@ package splice.sessions.http
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -76,6 +77,16 @@ private object MessageWire {
         m.toolUse.id?.let { put("tool_use_id", it) }
         m.source.kind?.let { put("kind", it) }
         m.source.from?.let { put("from", it) }
+        reply(this, m)
+    }
+
+    /** The reply a message belongs to (the id the live feed's `turn` event names, so a reader can settle a live reply
+     *  into it), the model that wrote it and its thinking, and the mark of a compaction's summary. */
+    private fun reply(into: JsonObjectBuilder, m: TranscriptMessage) {
+        m.messageId?.let { into.put("message", it) }
+        m.source.model?.let { into.put("model", it) }
+        m.source.thinking?.let { into.put("thinking", it) }
+        if (m.source.compact) into.put("compact", true)
     }
 }
 

@@ -11,6 +11,7 @@ import splice.app.provider.ServedProvider
 import splice.app.sources.UsageStoreSource
 import splice.core.auth.ClientAuthProvider
 import splice.core.model.ModelCatalog
+import splice.core.topology.ChatEffortVocabularyConfig
 import splice.core.topology.DialectWires
 import splice.core.usage.QuotaFull
 import splice.head.GatewayTurn
@@ -30,6 +31,8 @@ internal class ServedProviderRoute(
         get() = ctx.providerCfg.pinnedModel ?: ctx.catalog.live().models.firstOrNull()?.id
 
     override val dialect: String? get() = DialectWires.name(ctx.providerCfg.dialect)
+
+    override val effortVocabulary: ChatEffortVocabularyConfig? get() = ctx.providerCfg.quirks.chatEffortVocabulary
 
     override val usage: HeadUsageSource =
         UsageStoreSource(route.books.stores.usageStore, route.books.stores.quota, route.books.quota.pollers)

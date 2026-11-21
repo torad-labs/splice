@@ -1,0 +1,150 @@
+/* The reader's own page: a plain one-column reading page in the console's dress. Every colour, face and size comes from
+   the Night Deck kit (/deck.css, night and day through its [data-theme] blocks, and its type that grows with the
+   screen); this file sets the reader's --rv-* properties from the kit's tokens and lays out the page's own few parts.
+   Nov 21, 2026: it was dressed from /tokens.css, the stylesheet the Night Deck replaced. Its classes carry rvp- so
+   that none meets a kit class of the same name (the kit's .bar is the nav, its .picker the model picker). */
+
+:root { overflow-anchor: none; }
+
+body {
+  /* the page is its own ground in both themes, whatever stands behind it */
+  background: var(--ground);
+  color: var(--ink);
+  -webkit-text-size-adjust: 100%;
+
+  --rv-text: var(--ink);
+  --rv-muted: var(--ink-quiet);
+  --rv-border: var(--hairline);
+  --rv-bubble: var(--fill);
+  --rv-hover: var(--fill-hover);
+  --rv-code-bg: var(--fill);
+  --rv-code-text: var(--ink);
+  --rv-link: var(--ink);
+  --rv-focus: var(--focus-ring);
+  --rv-error: var(--vermilion);
+  /* code is coloured with the kit's four pigments and its inks, never a provider's colour */
+  --rv-code-keyword: var(--prussian);
+  --rv-code-string: var(--verdigris);
+  --rv-code-number: var(--ormolu);
+  --rv-code-comment: var(--ink-faint);
+  --rv-code-title: var(--ink);
+  --rv-code-type: var(--ormolu);
+  --rv-code-attr: var(--verdigris);
+  --rv-diff-del: color-mix(in srgb, var(--vermilion) 18%, transparent);
+  --rv-diff-add: color-mix(in srgb, var(--verdigris) 18%, transparent);
+  --rv-mono: var(--font-data);
+  --rv-radius: var(--r-menu);
+}
+
+a { color: inherit; }
+
+/* the slim header: the session, its project and head, and the way back */
+.rvp-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  max-width: var(--rvp-col);
+  margin: 0 auto;
+  padding: var(--sp-3) var(--sp-5);
+  background: var(--ground);
+  border-bottom: var(--hair) solid var(--hairline);
+}
+.rvp-back {
+  flex: none;
+  font-family: var(--font-data);
+  font-size: var(--fs-small);
+  color: var(--ink-quiet);
+  text-decoration: none;
+}
+.rvp-back::before { content: "‹ "; }
+.rvp-back:hover, .rvp-back:focus-visible { color: var(--ink); }
+.rvp-who { min-width: 0; }
+.rvp-name {
+  margin: 0;
+  font-size: var(--fs-name);
+  font-weight: var(--w-med);
+  line-height: var(--lh);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rvp-meta {
+  margin: 0;
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--ink-quiet);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* with no session the line under the title is a sentence, and a phone gives it a second line where it needs one */
+.is-picker .rvp-meta { white-space: normal; }
+
+/* the column: wide enough for a line of code, narrow enough to read, in the kit's own measure */
+:root { --rvp-col: 52rem; }
+.rvp-column {
+  max-width: var(--rvp-col);
+  margin: 0 auto;
+  padding: var(--sp-4) var(--sp-5) var(--sp-7);
+}
+.rvp-edge {
+  margin: 0 0 var(--sp-5);
+  text-align: center;
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--ink-quiet);
+}
+
+.rvp-jump {
+  position: fixed;
+  bottom: var(--sp-4);
+  left: 50%;
+  transform: translateX(-50%);
+  min-height: var(--btn-h);
+  padding: 0 var(--sp-4);
+  border: var(--hair) solid var(--hairline);
+  border-radius: var(--r-btn);
+  background: var(--opaque-glass);
+  color: var(--ink);
+  font-family: var(--font-data);
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+.rvp-jump[hidden] { display: none; }
+
+/* with no session: the sessions to open */
+.rvp-list { list-style: none; margin: 0; padding: 0; }
+.rvp-list li + li { border-top: var(--hair) solid var(--hairline); }
+.rvp-list a {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-3) var(--sp-2);
+  text-decoration: none;
+  border-radius: var(--r-inner);
+}
+.rvp-list a:hover { background: var(--fill); }
+.pick-name { font-size: var(--fs-name); overflow-wrap: anywhere; }
+.pick-meta { font-family: var(--font-data); font-size: var(--fs-micro); color: var(--ink-quiet); }
+
+/* not signed in: only how to sign in */
+.rvp-locked {
+  max-width: 34rem;
+  margin: 20vh auto 0;
+  padding: 0 var(--sp-5);
+  font-size: var(--fs-nav);
+  line-height: var(--lh);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.rvp-locked code {
+  padding: 0.1em 0.4em;
+  border-radius: var(--r-item);
+  background: var(--fill);
+  font-family: var(--font-data);
+  font-size: 0.9em;
+  white-space: nowrap;
+}

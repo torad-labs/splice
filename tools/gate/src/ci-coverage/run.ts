@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { coveragePlan, gradleArgumentsForShard } from "./plan.ts";
 import { collectCoverage, retainCoverage } from "./artifacts.ts";
 import { layout } from "../lib/repo.ts";
+import { modeFolders } from "../lib/modes.ts";
 import { runUnderSlot } from "../lib/slot.ts";
 
 const [requested, ...extra] = process.argv.slice(2);
@@ -28,8 +29,9 @@ if (requested === "report") {
   args = ["--no-build-cache", "--no-configuration-cache", ":koverXmlReport", ":koverHtmlReport"];
 } else {
   const settings = readFileSync(join(root, "settings.gradle.kts"), "utf8");
-  console.error("coverage shard " + requested + ": " + coveragePlan(settings)[Number(requested)]!.reports.join(" "));
-  args = gradleArgumentsForShard(Number(requested), settings);
+  const modes = modeFolders(root).map((folder) => "modes-" + folder);
+  console.error("coverage shard " + requested + ": " + coveragePlan(settings, modes)[Number(requested)]!.reports.join(" "));
+  args = gradleArgumentsForShard(Number(requested), settings, modes);
 }
 const rc = await runUnderSlot({ layout: paths, label: "ci-coverage", args, env });
 if (rc === 0 && requested !== "report") retainCoverage(root, join(root, ".ci/coverage", requested), Number(requested), candidate);

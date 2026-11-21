@@ -1,49 +1,31 @@
-// Every page marks its own nav item whatever address it was opened at ("No project"
-// retake: Requests opened with ?project=- marked Accounts). Through the real pages against a stub daemon that answers
-// every read empty: a query, and a page served at a bare address, still mark the page's own item and only that one.
-import { afterAll, beforeAll, expect, test } from "bun:test";
-import { chromium, type Browser } from "@playwright/test";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { layout } from "../gate/src/lib/repo.ts";
+// Every page marks its own nav item whatever address it was opened at (a query, a fragment, or a filter in the address):
+// Night Deck pages draw the nav from deck.js's one list, and only the page's own item reads aria-current="page". Through
+// the real pages against a stub daemon that answers every read empty. (Rewritten from the old pages' nav-current.)
+import { afterAll, beforeAll, test } from "bun:test";
+import { expect, type Browser } from "@playwright/test";
+import { launch, stub, type Stub } from "./deck-stub.ts";
 
-const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
-const server = Bun.serve({
-  port: 0,
-  fetch(req) {
-    const path = new URL(req.url).pathname;
-    if (path.startsWith("/api/")) return Response.json({});
-    if (path === "/bare/") return new Response(Bun.file(join(consoleDir, "requests.html"))); // a page at no file name
-    const name = path.replace(/^\/bare\//, "/").slice(1);
-    const file = join(consoleDir, name);
-    return existsSync(file) && file.startsWith(consoleDir) ? new Response(Bun.file(file)) : new Response("no", { status: 404 });
-  },
-});
-
+let s: Stub;
 let browser: Browser;
-beforeAll(async () => {
-  browser = await chromium.launch({ executablePath: process.env.SCREEN_REVIEW_BROWSER || undefined, args: ["--no-sandbox"] });
-}, 20_000);
-afterAll(async () => {
-  await browser.close();
-  server.stop(true);
-});
+beforeAll(async () => { s = stub({}); browser = await launch(); }, 30_000);
+afterAll(async () => { await browser?.close(); s?.stop(); });
 
-for (const [address, item] of [
-  ["requests.html?project=-", "Requests"],
-  ["requests.html?project=splice&why=gaveup", "Requests"],
-  ["sessions.html?project=-#0c3b07d2", "Sessions"],
-  ["usage.html?range=7d", "Usage"],
-  ["bare/?project=-", "Requests"],
-] as const) {
-  test(`${address} marks ${item} and nothing else`, async () => {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+const OPENED: [string, string][] = [
+  ["sessions.html#s-made-up", "Sessions"], ["accounts.html?x=1", "Accounts"], ["teams.html", "Teams"],
+  ["activity.html?project=-&win=30d", "Activity"], ["activity.html#request=t-1", "Activity"],
+  ["providers.html?cmd=claude-acme", "Providers"], ["providers.html?open=compare", "Providers"], ["settings.html#gates", "Settings"],
+];
+
+test("each page marks its own nav item and only that one, whatever its address carries", async () => {
+  for (const [address, name] of OPENED) {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     try {
-      await page.goto(`http://127.0.0.1:${server.port}/${address}`);
-      await page.locator(".nav a").first().waitFor({ timeout: 15_000 });
-      expect(await page.locator('.nav a[aria-current="page"]').allTextContents()).toEqual([item]);
+      await page.goto(`${s.url}/${address}`);
+      const current = page.locator('.nav [aria-current="page"]');
+      await expect(current).toHaveCount(1, { timeout: 10_000 });
+      await expect(current).toHaveText(name);
     } finally {
       await page.close();
     }
-  }, 30_000);
-}
+  }
+}, 60_000);

@@ -242,7 +242,7 @@ Source: `README.md` "Pin a head or a session to an account", "More than one Clau
   model, which the head rejects, so a subagent on it fails. Map every tier you can, even to a cheap model.
 - A head serves only its own models. `discovery_prefix` (such as `claude-codex--`) wraps ids so Claude Code keeps them; it is
   stripped before the request leaves.
-- The Models page shows the rows; "Not served" means the provider no longer lists a declared row. `splice models` is the CLI view.
+- Providers shows the rows (each command's glass); "Not served" means the provider no longer lists a declared row. `splice models` is the CLI view.
 
 Source: `features/launch/.../recipe/LaunchService.kt:1-12,340-352`, `LaunchModelEnvironment.kt:12-60`, `core/.../model/ModelCatalog.kt:183-202`,
 `README.md` "API-key starter: OpenRouter", `models.js:13-14,429,438,920`. Row and slot fields: toml-reference.md.

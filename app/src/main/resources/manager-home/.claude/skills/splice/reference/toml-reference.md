@@ -523,7 +523,7 @@ features/harness/src/main/kotlin/splice/harness/; docs/specs/harness.md.
 |---|---|---|
 | accounts and logins | `auth.file`; extra accounts are files beside it, with no TOML key | `accounts-sessions-console.md` |
 | models and routing | rows, `models`, `model_slots`, `pinned_model`, `client_model`, discovery | `accounts-sessions-console.md` |
-| console | no table; the Settings and Models pages write this file | `accounts-sessions-console.md` |
+| console | no table; the Settings and Providers pages write this file | `accounts-sessions-console.md` |
 | MCP | `[daemon] mcp_hosting`, `mcp_hosting_exclude`, `mcp_share`; `mcp*` knobs | `reliability-mcp-install.md` |
 | code mode | the `code_mode*` quirks | `reliability-mcp-install.md` |
 | usage and cost | `rates`, `usageWarn*`, `quotaPoll*`, `budgetDefaultAction`, `historyRetentionDays` | `accounts-sessions-console.md` |

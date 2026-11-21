@@ -95,14 +95,114 @@ Forked at upstream commit `d66dd54d7baed0059d2fc34280b409ee6c6730df`
 
 ## Console fonts
 The fonts the console's pages load (`app/src/main/resources/console/fonts/`), by family, each with its license text beside the font files.
+- Barlow (`barlow-300.woff2`, `barlow-400.woff2`, `barlow-500.woff2`)
+  - Copyright 2017 The Barlow Project Authors (https://github.com/jpt/barlow)
+  - License: SIL Open Font License, Version 1.1
+  - Full license text: `app/src/main/resources/console/fonts/OFL-Barlow.txt`
+- DM Mono (`dm-mono-400.woff2`, `dm-mono-500.woff2`)
+  - Copyright 2020 The DM Mono Project Authors (https://www.github.com/googlefonts/dm-mono)
+  - License: SIL Open Font License, Version 1.1
+  - Full license text: `app/src/main/resources/console/fonts/OFL-DM-Mono.txt`
+- The session reader at `/reply-view/` keeps the three faces it was set in, which the Night Deck pages do not load:
+  - Fraunces (`fraunces-400.woff2`): Copyright 2018 The Fraunces Project Authors (https://github.com/undercasetype/Fraunces); SIL Open Font License, Version 1.1; full license text `app/src/main/resources/console/fonts/OFL-Fraunces.txt`
+  - IBM Plex Mono (`ibm-plex-mono-400.woff2`, `ibm-plex-mono-500.woff2`, `ibm-plex-mono-600.woff2`): SIL Open Font License, Version 1.1; full license text `app/src/main/resources/console/fonts/OFL-IBM-Plex.txt`
+  - Source Serif 4 (`source-serif-4-400.woff2`): Copyright 2014 - 2023 Adobe (http://www.adobe.com/), with Reserved Font Name ‘Source’. All Rights Reserved.; SIL Open Font License, Version 1.1; full license text `app/src/main/resources/console/fonts/OFL-Source-Serif-4.txt`
+
+## Downloads website fonts
+The fonts the splice.torad.ai page loads (`tools/release/downloads/website/console/fonts/`), the console's faces before
+the Night Deck kit, by family, each with its license text beside the font files.
 - Fraunces (`fraunces-400.woff2`)
   - Copyright 2018 The Fraunces Project Authors (https://github.com/undercasetype/Fraunces)
   - License: SIL Open Font License, Version 1.1
-  - Full license text: `app/src/main/resources/console/fonts/OFL-Fraunces.txt`
+  - Full license text: `tools/release/downloads/website/console/fonts/OFL-Fraunces.txt`
 - IBM Plex Mono (`ibm-plex-mono-400.woff2`, `ibm-plex-mono-500.woff2`, `ibm-plex-mono-600.woff2`)
   - License: SIL Open Font License, Version 1.1
-  - Full license text: `app/src/main/resources/console/fonts/OFL-IBM-Plex.txt`
+  - Full license text: `tools/release/downloads/website/console/fonts/OFL-IBM-Plex.txt`
 - Source Serif 4 (`source-serif-4-400.woff2`)
   - Copyright 2014 - 2023 Adobe (http://www.adobe.com/), with Reserved Font Name ‘Source’. All Rights Reserved.
   - License: SIL Open Font License, Version 1.1
-  - Full license text: `app/src/main/resources/console/fonts/OFL-Source-Serif-4.txt`
+  - Full license text: `tools/release/downloads/website/console/fonts/OFL-Source-Serif-4.txt`
+
+## reply-view (console reader)
+The session reader splice serves at `/reply-view/` pastes two libraries whole, each inside a function scope of its own, into `app/src/main/resources/console/reply-view/reply-view.js`, with their license banners kept.
+- marked 18.2.1, a Markdown parser (`lib/marked.umd.js` from the npm package `marked@18.2.1`)
+  - Copyright (c) 2018+, MarkedJS (https://github.com/markedjs/); Copyright (c) 2011-2018, Christopher Jeffrey (https://github.com/chjj/)
+  - Source: https://github.com/markedjs/marked
+  - License: MIT
+- highlight.js 11.12.0, a syntax highlighter (`highlight.min.js`, the common-languages build, from the npm package `@highlightjs/cdn-assets@11.12.0`)
+  - Copyright (c) 2006, Ivan Sagalaev
+  - Source: https://github.com/highlightjs/highlight.js
+  - License: BSD-3-Clause
+
+marked, MIT License:
+
+```text
+Copyright (c) 2018+, MarkedJS (https://github.com/markedjs/)
+Copyright (c) 2011-2018, Christopher Jeffrey (https://github.com/chjj/)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+marked derives from Markdown, whose notice its license file carries:
+
+Copyright © 2004, John Gruber
+http://daringfireball.net/
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+* Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+* Neither the name “Markdown” nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+
+This software is provided by the copyright holders and contributors “as is” and any express or implied warranties, including, but not limited to, the implied warranties of merchantability and fitness for a particular purpose are disclaimed. In no event shall the copyright owner or contributors be liable for any direct, indirect, incidental, special, exemplary, or consequential damages (including, but not limited to, procurement of substitute goods or services; loss of use, data, or profits; or business interruption) however caused and on any theory of liability, whether in contract, strict liability, or tort (including negligence or otherwise) arising in any way out of the use of this software, even if advised of the possibility of such damage.
+```
+
+highlight.js, BSD 3-Clause License:
+
+```text
+BSD 3-Clause License
+
+Copyright (c) 2006, Ivan Sagalaev.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+* Neither the name of the copyright holder nor the names of its
+  contributors may be used to endorse or promote products derived from
+  this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```

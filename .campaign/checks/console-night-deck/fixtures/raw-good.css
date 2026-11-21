@@ -1,0 +1,2 @@
+:root { --probe-own: 2rem; }
+.probe-c { gap: var(--probe-own); width: 100%; }

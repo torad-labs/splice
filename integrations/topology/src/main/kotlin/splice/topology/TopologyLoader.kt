@@ -275,17 +275,19 @@ historyRetentionDays = "$HISTORY_DEFAULT_DAYS"
     }
 
     /** Boot and restart: the topology, or a [TopologyRefusal] listing EVERY problem in the file at once, with what each
-     *  local runtime that is up refuses ([runtimes]) among them, and each retired knob splice's environment or saved
-     *  settings still set ([retired]). */
+     *  local runtime that is up refuses ([runtimes]) among them, and what boot reads [beside] the file: each retired
+     *  knob splice's environment or saved settings still set, and each mode splice carries that is broken, or a
+     *  `[modes.<name>]` table naming none of them. */
     public fun loadForBoot(
         path: Path,
         runtimes: LocalRowFindings = LocalRowFindings { emptyList() },
-        retired: RetiredSettings? = null,
+        beside: BootSettings = BootSettings(),
     ): LoadedTopology {
         val bytes = readOrMaterialize(path, ExclusiveStarterWrite)
         val stateBase = path.toAbsolutePath().parent ?: path
         val text = bytes.toString(Charsets.UTF_8)
-        return when (val read = ConfigFindings.read(text, stateBase, stateBase, runtimes, retired)) {
+        val read = ConfigFindings.read(text, stateBase, stateBase, runtimes, beside)
+        return when (read) {
             is ConfigRead.Ready -> LoadedTopology(read.topology, sha256Hex(bytes))
             is ConfigRead.Refused -> throw TopologyRefusal(read.findings)
         }
@@ -335,9 +337,11 @@ historyRetentionDays = "$HISTORY_DEFAULT_DAYS"
         // live in TomlStructurePreflight — extracted with its masker, 2026-08-31 concentration.
         // The capability tables are read apart (CapabilityToml); those found well-formed ride the topology, and a
         // wrong one is boot's to refuse (ConfigFindings).
+        // The `[modes.<name>]` tables are read apart the same way (modes/README.md).
         val split = CapabilityToml.split(text)
-        TomlStructurePreflight.check(split.rest)
-        val topology = decode(split.rest)
+        val modes = ModeTables.split(split.rest)
+        TomlStructurePreflight.check(modes.rest)
+        val topology = ModeTables.attached(decode(modes.rest), modes.tables)
         if (split.tables.isEmpty()) return topology
         val messages = topology.headsSpeaking(Dialect.ANTHROPIC_PASSTHROUGH)
         val read = CapabilityDeclarations(topology.heads.keys, messages = messages).read(split.tables)

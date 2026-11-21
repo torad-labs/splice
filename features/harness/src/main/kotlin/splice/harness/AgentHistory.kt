@@ -6,6 +6,8 @@
 package splice.harness
 
 import kotlinx.serialization.json.JsonObject
+import splice.harness.agent.AgentWire
+import splice.harness.agent.USER
 
 /** One assistant message of a request that a kept call matches: its place among the messages, and the call. */
 internal data class Match(val at: Int, val call: KeptCall)

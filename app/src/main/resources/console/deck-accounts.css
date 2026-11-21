@@ -1,0 +1,68 @@
+/* Accounts: the approved Night Deck time axis (prototype accounts/final), the page's own rules on the kit (deck.css). */
+.marks { position: absolute; inset: 0; pointer-events: none; overflow: hidden; filter: blur(var(--marks-blur));
+  mask-image: linear-gradient(to bottom, transparent calc(var(--fade-top) - var(--fade-len)), black var(--fade-top), black var(--fade-bot), transparent calc(var(--fade-bot) + var(--fade-len))),
+    linear-gradient(to right, var(--side-mask) calc(var(--c-left) - var(--fade-len)), black var(--c-left), black var(--c-right), var(--side-mask) calc(var(--c-right) + var(--fade-len)));
+  mask-composite: intersect; }
+.mk { position: absolute; top: 0; bottom: 0; width: var(--hair); left: var(--x); background: var(--mark-hour); }
+.mk.day { background: var(--mark-day); }
+.mk.now { background: var(--mark-now); }
+.zone { position: absolute; top: 0; bottom: 0; left: var(--x); right: 0; background: var(--mark-zone); }
+.laneline { position: absolute; left: 0; right: 0; height: var(--hair); top: var(--y); background: var(--mark-lane); }
+.past { position: absolute; left: var(--x); width: var(--w); top: var(--y); height: calc(var(--v) * var(--past-h)); transform: translateY(calc(-1 * 100%)); background: var(--mark-past); border-radius: var(--hair) var(--hair) 0 0; }
+.scale { position: relative; height: var(--scale-h); }
+.scale span { position: absolute; left: calc(var(--t) * 100%); bottom: var(--sp-2); font-family: var(--font-data); font-size: var(--fs-micro); letter-spacing: var(--track-eyebrow); text-transform: uppercase; color: var(--ink-faint); white-space: nowrap; transform: translateX(var(--sp-2)); }
+.scale span.zone-label { color: var(--ormolu); }
+.lanes { position: relative; }
+.lane { position: relative; height: var(--lane-h); outline: none; transition: transform var(--dur) var(--ease); }
+.lane.is-dragging { transition: none; z-index: var(--z-drag); }
+.lane.is-dim { opacity: var(--dim); }
+.mark { position: absolute; width: max-content; top: 50%; left: calc(var(--t) * 100%); transform: translateY(calc(-1 * 50%)); display: flex; align-items: center; gap: var(--label-gap); cursor: pointer; border-radius: var(--r-btn); padding: var(--sp-1) var(--sp-3) var(--sp-1) 0; margin-left: calc(-1 * var(--lamp-half)); }
+.mark.flip { flex-direction: row-reverse; transform: translate(calc(var(--lamp) - 100%), calc(-1 * 50%)); padding: var(--sp-1) 0 var(--sp-1) var(--sp-3); }
+.mark { filter: drop-shadow(0 var(--float-y) var(--float-blur) var(--float-shadow)); }
+.mark .lamp { position: relative; }
+/* each lamp lights the floor under it: a wide, low ellipse reads as a plane below the account */
+.mark .lamp::before, .mark .lamp::after { content: ""; position: absolute; left: 50%; top: 50%; transform: translate(calc(-1 * 50%), calc(-1 * 50%)); pointer-events: none; z-index: -1; }
+.mark .lamp::before { width: var(--pool-w); height: var(--pool-h); border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(from var(--c) r g b / var(--pool-a)) 0, rgb(from var(--c) r g b / calc(var(--pool-a) * var(--ease-1))) var(--stop-1), rgb(from var(--c) r g b / calc(var(--pool-a) * var(--ease-2))) var(--stop-2), rgb(from var(--c) r g b / calc(var(--pool-a) * var(--ease-3))) var(--stop-3), rgb(from var(--c) r g b / calc(var(--pool-a) * var(--ease-4))) var(--stop-4), transparent); }
+/* where the light meets the lane line, the line catches it */
+.mark .lamp::after { width: var(--glint-w); height: var(--hair);
+  background: linear-gradient(to right, transparent, rgb(from var(--c) r g b / calc(var(--glint-a) * var(--ease-3))) var(--stop-2), rgb(from var(--c) r g b / var(--glint-a)) 50%, rgb(from var(--c) r g b / calc(var(--glint-a) * var(--ease-3))) calc(100% - var(--stop-2)), transparent); }
+.lane.is-dim .mark .lamp::after { opacity: 0; }
+.lane.is-dim .mark .lamp::before { opacity: 0; }
+.who { display: grid; gap: 0; min-width: 0; }
+.who .nm { font-size: var(--fs-name); font-weight: var(--w-med); line-height: var(--lh-tight); white-space: nowrap; }
+.who .st { font-family: var(--font-data); font-size: var(--fs-small); color: var(--c); white-space: nowrap; }
+.mark:hover .nm, .lane.is-open .nm { text-decoration: underline; text-decoration-color: var(--ink-faint); text-underline-offset: var(--underline-off); }
+.figs { display: grid; gap: var(--sp-1); align-content: center; }
+.fig { display: grid; }
+.fig .lbl { width: var(--lbl-w); font-family: var(--font-data); font-size: var(--fs-micro); color: var(--ink-faint); letter-spacing: var(--track-eyebrow); text-transform: uppercase; }
+.fig .row { display: flex; align-items: center; gap: var(--sp-2); }
+.fig .pct { font-family: var(--font-data); font-size: var(--fs-small); min-width: var(--pct-w); }
+.fig.full .pct { color: var(--vermilion); }
+.fig.full .meter i { background: var(--vermilion); }
+.lane-tools { position: absolute; right: 0; top: 50%; transform: translateY(calc(-1 * 50%)); display: flex; gap: var(--sp-1); opacity: 0; transition: opacity var(--dur-fast); }
+.lane:hover .lane-tools, .lane:focus-within .lane-tools, .lane.is-open .lane-tools { opacity: 1; }
+.grip { cursor: grab; touch-action: none; }
+.grip:active { cursor: grabbing; }
+.back { list-style: none; margin: 0; padding: 0; display: grid; }
+.back li { display: grid; grid-template-columns: var(--lamp) 1fr auto; align-items: center; gap: var(--sp-2); min-height: var(--btn-h); border-radius: var(--r-inner); padding: 0 var(--sp-2); margin: 0 calc(var(--sp-2) * -1); cursor: pointer; }
+.back li:hover { background: var(--fill); }
+.back .when { font-family: var(--font-data); font-size: var(--fs-small); color: var(--ink-quiet); }
+/* a change on a lane says what it did, at the lane's end, for a moment */
+.lane:not(.is-saving) .lane-sv { display: none; }
+.lane.is-saving .lane-tools { opacity: 1; }
+.lane-tools { align-items: center; }
+
+/* the header's lamps: Claude's colour beside its name, and the live lamp, vermilion once splice stops answering */
+.kick-lamp { display: inline-block; --c: var(--p-claude); }
+.status-lamp { --c: var(--verdigris); }
+.status.is-off .status-lamp { --c: var(--vermilion); }
+/* the add part under the lanes, and a sign-in drawn in an account's glass */
+.lanes-foot { display: flex; justify-content: flex-start; padding: var(--sp-4) 0 var(--sp-6); }
+/* the other providers' logins: each opens its glass, as an account's mark does, and a provider that signs in with a
+   login takes another one from the foot of its part */
+.rail-r .acct[data-id] { align-items: center; min-height: var(--btn-h); border-radius: var(--r-inner); padding: 0 var(--sp-2); margin: 0 calc(var(--sp-2) * -1); cursor: pointer; }
+.rail-r .acct[data-id]:hover, .rail-r .acct[data-id].is-open { background: var(--fill); }
+.rail-add { justify-self: start; margin-left: calc(var(--sp-4) * -1); }
+/* the glass never runs under the composer: a tall one scrolls inside itself */
+.lens[data-id] { max-height: var(--lens-room); overflow-y: auto; overscroll-behavior: contain; }

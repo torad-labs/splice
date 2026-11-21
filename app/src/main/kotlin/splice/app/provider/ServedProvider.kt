@@ -6,6 +6,7 @@ package splice.app.provider
 
 import io.ktor.server.application.ApplicationCall
 import splice.core.model.ModelCatalog
+import splice.core.topology.ChatEffortVocabularyConfig
 import splice.core.usage.QuotaFull
 import splice.head.GatewayTurn
 import splice.usage.quota.HeadUsageSource
@@ -26,6 +27,11 @@ internal interface ServedProvider {
 
     /** The wire dialect as splice.toml spells it, which Desktop's web search, fetch and files read. */
     val dialect: String?
+
+    /** The effort vocabulary the provider declares for the chat dialect: the levels its models are sent and the one
+     *  they run at when none is asked. A model catalog row whose endpoint names no reasoning of its own publishes
+     *  these as the row's reasoning levels, so a client's picker offers the effort the wire actually takes. */
+    val effortVocabulary: ChatEffortVocabularyConfig? get() = null
 
     /** Where the provider's plan windows are read, which the usage meter reads. */
     val usage: HeadUsageSource

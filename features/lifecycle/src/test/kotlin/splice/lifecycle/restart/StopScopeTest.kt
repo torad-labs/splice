@@ -7,17 +7,12 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.config.RunningJar
-import splice.core.terminal.TerminalOutput
-import splice.core.util.EnvReader
 import splice.daemonclient.Reading
 
 class StopScopeTest {
-    private val restart = RestartCommand(TerminalOutput {}, TerminalOutput {}, EnvReader { null }, RunningJar { null })
-
     @Test
     fun `a head list the daemon answered but the CLI cannot read keeps the stop degraded beside toml ports`() {
-        val scope = restart.stopScope(Reading.Malformed, listOf(TOML_PORT))
+        val scope = StopScope(Reading.Malformed, listOf(TOML_PORT))
 
         assertEquals(listOf(TOML_PORT), scope.ports)
         assertTrue(scope.degraded, "an unreadable list hides heads the toml cannot name")
@@ -26,7 +21,7 @@ class StopScopeTest {
 
     @Test
     fun `a refused head list leaves the toml ports to stand alone`() {
-        val scope = restart.stopScope(Reading.Refused, listOf(TOML_PORT))
+        val scope = StopScope(Reading.Refused, listOf(TOML_PORT))
 
         assertEquals(listOf(TOML_PORT), scope.ports)
         assertNull(scope.unseen)
@@ -34,7 +29,7 @@ class StopScopeTest {
 
     @Test
     fun `no ports from either source is degraded and says both failed`() {
-        val scope = restart.stopScope(Reading.Answered(emptyList()), emptyList())
+        val scope = StopScope(Reading.Answered(emptyList()), emptyList())
 
         assertTrue(scope.degraded)
         assertTrue(scope.unseen.orEmpty().contains("unreachable"), scope.unseen)
@@ -42,7 +37,7 @@ class StopScopeTest {
 
     @Test
     fun `the daemon's own list and the toml are stopped together`() {
-        val scope = restart.stopScope(Reading.Answered(listOf(LIVE_PORT, TOML_PORT)), listOf(TOML_PORT, OTHER_PORT))
+        val scope = StopScope(Reading.Answered(listOf(LIVE_PORT, TOML_PORT)), listOf(TOML_PORT, OTHER_PORT))
 
         assertEquals(listOf(LIVE_PORT, TOML_PORT, OTHER_PORT), scope.ports)
         assertNull(scope.unseen)

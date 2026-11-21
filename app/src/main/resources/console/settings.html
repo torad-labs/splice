@@ -3,43 +3,51 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Settings · splice</title>
+<title>Splice · Settings</title>
 <link rel="icon" href="brand/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="brand/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="brand/splice-app-256.png">
-<link rel="stylesheet" href="tokens.css">
-<link rel="stylesheet" href="console.css">
-<link rel="stylesheet" href="sessions.css">
-<link rel="stylesheet" href="knobs.css">
-<link rel="stylesheet" href="settings.css">
-<link rel="stylesheet" href="composer.css">
+<link rel="stylesheet" href="deck.css">
+<link rel="stylesheet" href="deck-settings.css">
 </head>
-<body>
-<div class="app">
-  <aside class="side">
-    <div class="mark"><img class="lockup night" src="brand/splice-horizontal-night.svg" alt="splice" width="380" height="128"><img class="lockup day" src="brand/splice-horizontal-day.svg" alt="splice" width="380" height="128"></div>
-    <div class="foot">
-      <button class="icon" data-act="theme" aria-label="Day or night">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
-      </button>
-    </div>
-  </aside>
-  <main class="page">
-    <header class="head">
-      <h1>Settings</h1>
-      <div class="finder"><span id="qn" class="qn" aria-live="polite"></span><label class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input id="q" class="field" placeholder="Search every setting" aria-label="Search settings" autocomplete="off"><button class="clr" type="button" data-act="clear" aria-label="Clear the search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></label></div>
+<body class="no-rail-l no-rail-r no-comp">
+<main class="field" id="field">
+  <section class="centre" aria-label="Settings">
+  <div class="mc" id="mc">
+    <header class="mc-head">
+      <div>
+        <div class="eyebrow" id="mcEyebrow"></div>
+        <h1>Settings</h1>
+      </div>
+      <div class="status"><span class="lamp live mc-live"></span><span id="mcRunning"></span><span class="faint">·</span><span id="mcClock"></span></div>
     </header>
-    <div id="st" aria-live="polite"></div>
-  </main>
-</div>
-<script src="kit.js"></script>
+
+    <div class="mc-flow" id="flow">
+      <svg class="wires" id="wires" aria-hidden="true"></svg>
+      <button class="pt pt-cc press" data-part="cc" type="button"></button>
+      <div class="pt-gates" id="gates"></div>
+      <button class="pt pt-watch press" data-part="watch" type="button"></button>
+      <button class="pt pt-back press" data-part="reasoning" type="button"></button>
+    </div>
+
+    <div class="mc-sys" id="sys">
+      <button class="pt pt-sys press" data-part="limits" type="button"></button>
+      <button class="pt pt-sys press" data-part="mcp" type="button"></button>
+      <button class="pt pt-sys press" data-part="modes" type="button"></button>
+      <button class="pt pt-sys press" data-part="storage" type="button"></button>
+      <button class="pt pt-sys press" data-part="projects" type="button"></button>
+      <button class="pt pt-sys press" data-part="splice" type="button"></button>
+      <button class="pt pt-sys press" data-part="internals" type="button"></button>
+    </div>
+  </div>
+  </section>
+</main>
 <script src="api.js"></script>
-<script src="reqview.js"></script>
-<script src="knobs.js"></script>
-<script src="perf-heads.js"></script>
-<script src="console.js"></script>
-<script src="composer.js"></script>
+<script src="deck-lens.js"></script>
+<script src="deck.js"></script>
+<script src="deck-common.js"></script>
 <script src="pilot.js"></script>
-<script src="settings.js"></script>
+<script src="deck-settings-model.js"></script>
+<script src="deck-settings.js"></script>
 </body>
 </html>

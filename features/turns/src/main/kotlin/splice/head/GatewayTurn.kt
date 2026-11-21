@@ -20,13 +20,17 @@ import splice.head.wire.NATIVE_CLIENT_PING_MS
  *  says nothing.
  *
  *  [withheldHeaders] are the lowercase names of the caller's headers the gateway found carrying one of its own keys: a
- *  provider's `forward_headers` may name them, and they must never ride upstream with a key in them. */
+ *  provider's `forward_headers` may name them, and they must never ride upstream with a key in them.
+ *
+ *  [asked] is the model Claude Code named, which [body] no longer says once it asks for the provider's own id; the live
+ *  route's turn names it (reply-stream). Null where the gateway was not told. */
 public class GatewayTurn(
     public val body: ByteArray,
     public val door: String,
     public val clientWindow: Long?,
     public val listener: ListenerSays = ListenerSays(),
     public val withheldHeaders: Set<String> = emptySet(),
+    public val asked: String? = null,
 ) {
     /** [body] as a bounded read of it, the same answer a head's own read of a call's body gives: the body, or the cap
      *  it exceeded. */

@@ -1,7 +1,7 @@
 // One unnamed login carries one name on every page (console-wide naming: a login nobody named reads
 // "Account", told apart from the others by one ordinal from one order). The order is the daemon's accounts list, counted over
 // every unnamed login in it, whatever page names them and however that page groups them; where only one login is unnamed it
-// reads plain "Account"; a login a person named keeps its name. Through the real Accounts and Usage pages against one stub
+// reads plain "Account"; a login a person named keeps its name. Through the real Accounts page (its Night Deck lanes and right rail; the Usage cases went with the Usage page) against one stub
 // daemon, which holds two unnamed logins on one command and a third on another provider, so a page that numbers per provider
 // or per list reads differently from one that numbers over the whole roster.
 import { afterAll, beforeAll, test } from "bun:test";
@@ -82,23 +82,16 @@ async function namesOn(open: (page: Page) => Promise<string[]>) {
 }
 
 const EXPECTED = ["Account 1", "Account 2", "Account 3", "Work"];
+/** the names Accounts gives: its Claude lanes, and the other providers' logins in its right rail (Night Deck) */
+async function accountsNames(page: Page) {
+  await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
+  await expect(page.locator(".lane .mark .nm")).toHaveCount(3, { timeout: 15_000 });
+  await expect(page.locator(".rail-r .acct")).toHaveCount(1, { timeout: 15_000 });
+  return [...(await page.locator(".lane .mark .nm").allInnerTexts()), ...(await page.locator(".rail-r .acct > span:first-child").allInnerTexts())];
+}
 
 test("Accounts reads each unnamed login by one ordinal from the whole roster, a named one by its name", async () => {
-  const names = await namesOn(async (page) => {
-    await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
-    await expect(page.locator("article.card .name").first()).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator("article.card .name")).toHaveCount(4, { timeout: 15_000 });
-    return page.locator("article.card .name").allInnerTexts();
-  });
-  expect(names).toEqual(EXPECTED);
-}, 40_000);
-
-test("Usage reads the same logins by the same names as Accounts", async () => {
-  const names = await namesOn(async (page) => {
-    await page.goto(`http://127.0.0.1:${server.port}/usage.html`);
-    await expect(page.locator(".nm").first()).toBeVisible({ timeout: 20_000 });
-    return [...new Set(await page.locator(".nm").allInnerTexts())];
-  });
+  const names = await namesOn(accountsNames);
   expect(names).toEqual(EXPECTED);
 }, 40_000);
 
@@ -107,34 +100,10 @@ test("where only one login is unnamed it reads plain Account, never an ordinal",
   const saved = answers["/api/accounts"];
   answers["/api/accounts"] = { accounts: lone, head_pools: {} };
   try {
-    const names = await namesOn(async (page) => {
-      await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
-      await expect(page.locator("article.card .name")).toHaveCount(4, { timeout: 15_000 });
-      return page.locator("article.card .name").allInnerTexts();
-    });
+    const names = await namesOn(accountsNames);
     expect(names).toEqual(["Account", "Home", "Home", "Work"]);
   } finally {
     answers["/api/accounts"] = saved;
   }
 }, 40_000);
 
-test("logins the roster no longer holds are numbered on after its logins, and no two share a name", async () => {
-  goneRefs = ["eeee5555", "ffff6666"];
-  try {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 1600 } });
-    try {
-      await page.goto(`http://127.0.0.1:${server.port}/usage.html`);
-      // goal changed Oct 29: such a login reads "No longer in splice", never Signed out
-      await expect(page.getByText("No longer in splice").first()).toBeVisible({ timeout: 20_000 });
-      const read = () => page.evaluate(() => [...document.querySelectorAll("article.pcard.gone .nm")].map((n) => (n.textContent ?? "").replace(/\s+/g, " ").trim()));
-      await expect.poll(async () => (await read()).length, { timeout: 20_000 }).toBeGreaterThanOrEqual(2);
-      const names = (await read()).sort();
-      expect(new Set(names).size).toBe(names.length);
-      expect(names).toEqual(["Account 4", "Account 5"]);
-    } finally {
-      await page.close();
-    }
-  } finally {
-    goneRefs = null;
-  }
-}, 60_000);

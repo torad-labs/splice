@@ -33,6 +33,7 @@ import splice.app.provider.ServedProvider
 import splice.client.models.AnthropicTiers
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.topology.ChatEffortVocabularyConfig
 import splice.core.usage.QuotaFull
 import splice.head.GatewayTurn
 import splice.usage.quota.HeadUsageSource
@@ -237,6 +238,41 @@ internal class DoorPickerRowsTest {
         assertNull(settings["maxEffort"])
     }
 
+    @Test
+    fun `a provider's declared effort vocabulary reaches Desktop's reasoning control and discovery`() {
+        val glm = "GLM-5.3-Flash"
+        val opus = "claude-opus-5-5"
+        val vocabulary = ChatEffortVocabularyConfig(
+            default = "high",
+            levels = mapOf("low" to "low", "medium" to "high", "high" to "high", "xhigh" to "max", "max" to "max"),
+            modelPattern = "^GLM-5[.]3-Flash",
+        )
+        val lineup = catalogued(
+            lineupOf(
+                provider("claude", rows = listOf(ModelEntry(opus, "Opus", contextWindow = 200_000))) to
+                    listOf(model("claude", opus)),
+                provider(
+                    "realinfer",
+                    rows = listOf(ModelEntry(glm, contextWindow = 491_520)),
+                    vocabulary = vocabulary,
+                ) to listOf(model("realinfer", glm)),
+            ),
+        )
+        val catalog = DoorCatalog(lineup)
+        val row = catalog.discovery().getValue("data").jsonArray
+            .single { it.jsonObject.getValue("id").jsonPrimitive.content.endsWith(glm) }.jsonObject
+        val options = row.getValue("thinking").jsonObject.getValue("effort_options").jsonArray.map { it.jsonObject }
+
+        assertEquals(listOf("low", "high", "max"), options.map { it.getValue("id").jsonPrimitive.content })
+        val recommended = options.single { it.getValue("id").jsonPrimitive.content == "high" }
+        assertEquals("true", recommended.getValue("recommended").jsonPrimitive.content)
+        val settings = catalog.inferenceModels(null).map { it.jsonObject }
+            // Desktop receives the row under its readable name: the lab's word put another way (ClientModelNames).
+            .single { it.getValue("name").jsonPrimitive.content.endsWith("zai-5.3-Flash") }
+        assertEquals("claude-opus-5-5", settings.getValue("behavesAs").jsonPrimitive.content)
+        assertEquals("max", settings.getValue("maxEffort").jsonPrimitive.content)
+    }
+
     private fun ask(model: String): DoorAsk = DoorAsk(
         buildJsonObject {
             put("model", model)
@@ -266,6 +302,7 @@ internal class DoorPickerRowsTest {
         login: Boolean = false,
         rows: List<ModelEntry> = listOf(ModelEntry("m", "M", contextWindow = 200_000)),
         baseUrl: String = "",
+        vocabulary: ChatEffortVocabularyConfig? = null,
     ): ServedProvider = FakeProvider(
         key,
         ModelCatalog(
@@ -275,6 +312,7 @@ internal class DoorPickerRowsTest {
             vendorBaseUrl = baseUrl,
         ),
         login,
+        vocabulary,
     )
 
     private fun model(provider: String, id: String, discovered: Boolean = false): DoorModel =
@@ -286,6 +324,7 @@ private class FakeProvider(
     override val key: String,
     override val catalog: ModelCatalog,
     override val usesLogin: Boolean,
+    override val effortVocabulary: ChatEffortVocabularyConfig? = null,
 ) :
     ServedProvider {
     override val tiers: Map<String, String> = emptyMap()

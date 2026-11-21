@@ -26,8 +26,11 @@ public data class CapabilityText(val rest: String, val tables: List<CapabilityTa
 
 public object CapabilityToml {
     /** Splits [text] into what the schema decodes and the capability tables; a file without any comes back as it is. */
-    public fun split(text: String): CapabilityText {
-        val entries = TomlScan(text).entries().filter { it.path.firstOrNull() == ROOT }
+    public fun split(text: String): CapabilityText = split(text, ROOT)
+
+    /** The same split for another family of tables named `[<root>.<name>]` (splice.toml's `[modes.<name>]`). */
+    public fun split(text: String, root: String): CapabilityText {
+        val entries = TomlScan(text).entries().filter { it.path.firstOrNull() == root }
         if (entries.isEmpty()) return CapabilityText(text, emptyList())
         val blanked = text.toCharArray()
         val tables = LinkedHashMap<String, Building>()

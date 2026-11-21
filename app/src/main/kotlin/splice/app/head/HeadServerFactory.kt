@@ -239,6 +239,8 @@ internal class HeadServerFactory(
             wireTap = cfg.wireTap.takeIf { it > 0 }?.let { WireTap(it) }
                 .also { tap -> if (scope.registers) console?.wires?.put(key, tap) },
             trace = stores.trace,
+            // reply-stream: the console's one hub, which this head's turns tap and the live route reads.
+            replies = console?.replies,
         ).let { captures -> performance?.let { captures.copy(observations = it.recorder) } ?: captures },
     )
 

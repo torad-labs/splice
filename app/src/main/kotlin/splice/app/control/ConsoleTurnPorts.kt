@@ -2,6 +2,7 @@ package splice.app.control
 
 import splice.app.provider.codex.HeadCodeModeControls
 import splice.core.client.ForegroundToolActivity
+import splice.head.live.LiveReplies
 import splice.head.turn.LiveTurnsByHead
 
 /** Running turn capabilities are assigned before serving and read at request time. */
@@ -14,4 +15,7 @@ internal class ConsoleTurnPorts {
 
     /** The same live registry HeadServerFactory fills; an unwired route reports a named 503. */
     internal var live: LiveTurnsByHead? = null
+
+    /** reply-stream: the same hub every head taps (ConsoleEventPublisher.replies); GET /api/sessions/{id}/live reads it. */
+    internal var replies: LiveReplies? = null
 }

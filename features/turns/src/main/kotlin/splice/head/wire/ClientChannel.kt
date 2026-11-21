@@ -39,6 +39,7 @@ import splice.core.perf.TurnPerf
 import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
+import splice.head.live.LiveReply
 import splice.head.wire.observation.ClientDeliveryObservation
 import splice.upstream.Ticker
 import java.util.concurrent.atomic.AtomicBoolean
@@ -134,6 +135,11 @@ internal class ClientChannel(
     /** The HTTP status gate this channel sits behind; null for a channel whose status is already committed. */
     val statusGate: StatusGate? = null,
 ) {
+    /** reply-stream (2026-11-19): the turn as its session's followers see it, when the head has the daemon's hub and
+     *  the turn names a session; null taps nothing. Set once, before the first frame, by the one that builds the
+     *  channel for its turn. Every frame bound for the client is handed to it beside [trace], detached or not. */
+    var live: LiveReply? = null
+
     /** Frames that reached the socket: the pinger's silence gauge (unchanged tick after tick =
      *  a silent wire, time for a heartbeat). */
     val socketFrames = AtomicLong(0)
@@ -184,6 +190,7 @@ internal class ClientChannel(
     ) {
         recording?.append(frame)
         trace?.clientFrame(frame)
+        live?.frame(frame)
         if (detached.get()) return
         // Read once, from the writer's own [shape] when it handed one over: burst accounting and the pacer's hold
         // used to decode the same frame twice, under the write mutex, for every delta.

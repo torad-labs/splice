@@ -42,7 +42,7 @@ internal class ProfileRoute(
     private val io: CoroutineDispatcher,
     /** Whose word on how a laptop reached the server is taken: the proxies `[server] trusted_proxies` names. */
     private val addresses: ClientAddresses,
-    /** Whether the listener speaks HTTPS itself. */
+    /** Whether the listener speaks SCHEME_HTTPS itself. */
     private val secure: Boolean,
 ) {
     private val json = Json { encodeDefaults = true }

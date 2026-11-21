@@ -26,6 +26,15 @@
   `splice add provider` installs a definition a team publishes, and `[door.commands.<name>]` gives a team's wrapper
   a command of its own on the door.
 
+- **The console is rebuilt: six pages on one design.** Sessions shows teams as columns of their sessions, and a
+  session opens into its conversation. Accounts sets each Claude account on a time axis at the moment it is usable
+  again, with the order splice moves through them; the other providers' logins stand beside it, and each opens the
+  same glass to use it now, rename it, sign it out or sign it in, with Add login for a provider that signs in with
+  one. Teams draws each team as its goal and members. Providers holds every provider, each command's own settings
+  and sign-in, and Compare models. Activity holds the window's requests and where they went, and a request opens
+  whole. Settings draws splice as what it is, each part opening its own controls, Modes among them. It has a night
+  and a day look, and its type and layout grow with the screen up to a 3840 px desk screen.
+
 ### Upgrading
 - **A value only a head holds stops the daemon from starting, and the fix session offers the move.** A head's
   window, tier models, standing prompt, an older selector prefix or an override that its provider does not say the
@@ -44,7 +53,36 @@
 - Another lab's model is listed under an id Claude's clients keep, such as `claude-xai--4.7`. The selectors of
   today keep working.
 
+- **Four console pages moved into others, and their addresses follow.** Requests and Usage are in Activity, Models
+  is in Providers, and Compare is Providers' Compare models. An old link or bookmark lands on the page that took its
+  content with its query kept: `requests.html` and `usage.html` on `activity.html`, `models.html` on
+  `providers.html`, `compare.html` on `providers.html?open=compare`.
+
 ### Added
+- **A session's reply can be followed while it is being written.** `GET /api/sessions/{id}/live` on the control
+  plane streams a session's reply as splice writes it to Claude Code, on every head: each turn, its text and thinking
+  as they come, each tool call as it starts, and how the turn ended. Joining in the middle of a reply shows all of it.
+  It needs the management key, answers only on this machine, is read-only, and sends nothing but what Claude Code
+  was sent as reply text, thinking and tool-call starts. `docs/live-reply.md` has the events.
+- **A reader for a session's conversation.** `/reply-view/` on the control plane opens a page that reads one session
+  the way a chat app does: the person's messages, each reply as Markdown with highlighted code and a copy button,
+  each tool call as one line that opens to its input and result, thinking behind a toggle, and a reply still being
+  written growing in place a whole block at a time. It shows none of what the harness wraps around a message for the
+  model. `GET /api/sessions/{id}/transcript` now gives a reply's messages their `message` id and `model`, a reply's
+  first message its `thinking`, and a compaction's summary `compact: true`. The reader is one ES module and one
+  stylesheet with no build step (`/reply-view/reply-view.js`, `/reply-view/reply-view.css`), which any page can embed
+  and dress through `--rv-*` custom properties; `app/src/main/resources/console/reply-view/README.md` says how.
+- **Modes: one folder gives the model a set of tools that splice answers.** A mode is a folder under `modes/`: its
+  manifest, each tool's schema and description, optional guidance, and the code that answers its calls. It is built
+  into the jar, and adding one changes no file outside its folder. splice offers a mode's tools to the model of every
+  session the mode is on for, places its guidance once per session, and answers each call itself, on Anthropic, Chat
+  Completions and Responses providers alike; Claude Code never sees the call. A mode is on or off by default in its
+  manifest and per head in `[modes.<name>]` of `splice.toml`; `GET /api/modes`, `splice status` and the console's
+  Settings list each mode with what it adds, and a switch per head writes the table, followed by the next request
+  with no restart. A mode keeps text per session that survives a restart and can answer management routes of its
+  own. A broken mode, or a `[modes.<name>]` table naming no mode, stops the daemon from starting with every finding
+  listed, as `splice check-config` lists it. `modes/template` is a working mode to copy, shipped off;
+  `modes/README.md` has the folder, every manifest key and the steps.
 - **The keyed team listener serves the door.** `/door/v1` answers on a team's server from the gateway's providers,
   with each person's allowlist applied to the provider a model resolves to, and a streamed turn's client is pinged
   at `[server] keepalive_seconds` when that is shorter than splice's own probe.
@@ -58,6 +96,13 @@
 - **`splice desktop launch`** is what a managed `processWrapper` starts the Code tab through, and `splice desktop`
   says each Desktop feature that depends on the backend, working or why not.
 - **A command-auth provider signs in from the terminal or the console**, and `splice doctor` reports on it.
+- **A provider's declared effort vocabulary names its models' reasoning levels.** An openai-chat provider whose
+  endpoint lists nothing about reasoning (a team gateway, a llama.cpp server) had no effort control in Claude Desktop's
+  picker: the catalog reads levels from the endpoint's own list and from the built-in vendor facts, and a gateway that
+  publishes neither left the row without any. The levels the provider's `[providers.*.quirks.chat_effort_vocabulary]`
+  maps to — the words the wire actually sends — now stand in when the endpoint names none, with the vocabulary's
+  default as the recommended one, so Desktop's reasoning control and the door's `thinking` options follow what the
+  model takes.
 
 ### Fixed
 - **A provider keyed by a lab's other name no longer repeats the lab in its model ids.** A provider called `xai`

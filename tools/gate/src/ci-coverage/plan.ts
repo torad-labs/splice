@@ -46,6 +46,7 @@ export const JVM_COVERAGE_MODULES = [
   "app",
   "quality-architecture",
   "quality-compiler-plugin",
+  "modes-api",
 ] as const;
 
 const NATIVE_ONLY_MODULES = ["integrations-mcp-hub"] as const;
@@ -89,8 +90,12 @@ const SHARD_MODULES = [
     "features-share",
     "features-server",
     "quality-compiler-plugin",
+    "modes-api",
   ],
 ] as const;
+
+/** The shard every mode settings.gradle.kts finds under modes/ joins (modes/README.md): the one of small modules. */
+const MODE_SHARD = 3;
 
 function binaryReportTask(module: string): string {
   return ":" + module + ":koverBinaryReport";
@@ -127,13 +132,18 @@ function assertSettingsOwnership(settingsSource: string): void {
   if (undecided.length > 0) throw new Error("no coverage ownership for " + undecided.join(", "));
 }
 
-export function coveragePlan(settingsSource: string): readonly CoverageShard[] {
+/**
+ * The four shards. [modes] are the mode modules settings.gradle.kts includes by listing modes/ (`modes-<folder>`, as
+ * lib/modes.ts reads them), which no include() names: each joins the shard of small modules, so a new mode is covered
+ * the moment its folder exists, with no line added for it here.
+ */
+export function coveragePlan(settingsSource: string, modes: readonly string[] = []): readonly CoverageShard[] {
   assertShardOwnership();
   assertSettingsOwnership(settingsSource);
 
   return SHARD_MODULES.map((modules, id) => ({
     id,
-    reports: modules.map(binaryReportTask),
+    reports: [...modules, ...(id === MODE_SHARD ? modes : [])].map(binaryReportTask),
   }));
 }
 
@@ -144,14 +154,14 @@ export function coveragePlan(settingsSource: string): readonly CoverageShard[] {
  */
 export function coverageReportForTestTask(testTask: string): string {
   const module = testTask.match(/^:(.+):[^:]+$/)?.[1];
-  if (!module || !JVM_COVERAGE_MODULES.includes(module as never)) {
+  if (!module || (!JVM_COVERAGE_MODULES.includes(module as never) && !module.startsWith("modes-"))) {
     throw new Error("no JVM Kover coverage report owns " + testTask);
   }
   return binaryReportTask(module);
 }
 
-export function gradleArgumentsForShard(shard: number, settingsSource: string): readonly string[] {
-  const selected = coveragePlan(settingsSource)[shard];
+export function gradleArgumentsForShard(shard: number, settingsSource: string, modes: readonly string[] = []): readonly string[] {
+  const selected = coveragePlan(settingsSource, modes)[shard];
   if (!selected) throw new Error("coverage shard must be 0 through 3 (got " + shard + ")");
 
   return ["--no-build-cache", "--console=plain", "--continue", ...selected.reports];

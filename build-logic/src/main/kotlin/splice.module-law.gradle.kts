@@ -36,7 +36,7 @@ if (project.path !in nonLibrary) {
 }
 
 afterEvaluate {
-    val allowed = moduleLaw[project.path]
+    val allowed = ModuleLawTable.allowed(moduleLaw, project.path)
     if (allowed != null) {
         configurations
             .filter { it.name in lawChecked }

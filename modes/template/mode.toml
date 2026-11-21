@@ -1,0 +1,15 @@
+# The template mode: copy this folder to modes/<name> and rename it (modes/README.md, "Adding a mode").
+name = "template"
+summary = "Says back the text it is given: a mode to copy."
+server = "template"
+handler = "splice.modes.template.TemplateMode"
+tools = ["say_back"]
+kind = "door"
+on = false
+
+[heads]
+only = []
+off = []
+
+[callers]
+off = ["desktop"]

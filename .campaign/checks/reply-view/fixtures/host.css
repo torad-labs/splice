@@ -1,0 +1,6 @@
+/* A host as plain as one can be: it follows the browser's colour scheme, owns its own scroll, and gives the reader a
+   container. Nothing here styles the reader; its defaults are what this fixture shows. */
+:root { color-scheme: light dark; }
+body { margin: 0; }
+#scroller { height: 100vh; overflow-y: auto; }
+#host { max-width: 860px; margin: 0 auto; padding: 16px; box-sizing: border-box; }

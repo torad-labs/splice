@@ -11,7 +11,10 @@ import io.ktor.http.headersOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -75,6 +78,21 @@ class PlaygroundCompareRecordTest {
             assertNull(row.facts.session)
             fixture.first.head.stop()
         }
+
+    @Test
+    fun `a Compare send's reply names the id its Requests row carries, so the console opens that row`() = runTest {
+        val fixture = fixture(backgroundScope)
+        val sent = sseClient(sse(completed())).use { client ->
+            UpstreamPlaygroundProbe(fixture.second, client).run(playgroundHead("claudex"), "synthetic prompt", null)
+        }
+        val reply = assertInstanceOf(PlaygroundResult::class.java, sent)
+        val named = reply.request.jsonObject["turn_id"]?.jsonPrimitive?.content
+        val row = rowsOf(fixture.first).single()
+        assertNotNull(named)
+        assertEquals(named, row.turnId)
+        assertNull(row.turn)
+        fixture.first.head.stop()
+    }
 
     @Test
     fun `a Compare stream that reported no usage leaves a row with no token counts, never zeros`() = runTest {

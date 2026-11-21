@@ -52,6 +52,7 @@ describe("speed-switch", () => {
     expect(said.blocked).toBe(true);
     expect(said.reason).toContain("Fast");
     expect(said.reason).toContain(FAST.description);
+    expect(said.reason).toContain("2.5x");
     expect(await tierOf(astra, one)).toBe("priority");
     expect(await tierOf(astra, other)).toBeNull();
   });
@@ -87,6 +88,7 @@ describe("speed-switch", () => {
     expect(said.blocked).toBe(true);
     expect(said.reason).toContain("Ultrafast");
     expect(said.reason).toContain(ULTRAFAST.description);
+    expect(said.reason).toContain("8x");
     expect(await tierOf(astra, one)).toBe("ultrafast");
     prompt(astra, one, "/fast");
     expect(await tierOf(astra, one)).toBe("priority");

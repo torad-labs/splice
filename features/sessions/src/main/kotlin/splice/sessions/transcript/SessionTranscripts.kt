@@ -67,6 +67,12 @@ public data class TranscriptSource(
     val from: String? = null,
     /** On an assistant message, the model that wrote it, as the client recorded it. */
     val model: String? = null,
+    /** On the first message an assistant reply made (its text, else its first call), the reply's thinking: its thinking
+     *  blocks' text in order, joined by a blank line, clipped and redacted like every text. Null when it had none. It
+     *  rides here, not as a message of its own, so the conversation's text stays what the model said. */
+    val thinking: String? = null,
+    /** True on the system line made from the summary Claude Code writes when it compacts the conversation. */
+    val compact: Boolean = false,
 )
 
 /** The tool facts a message carries; every field is null on a message that is neither a call nor a result. */

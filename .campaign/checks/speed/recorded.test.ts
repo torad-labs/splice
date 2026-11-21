@@ -53,13 +53,13 @@ async function turnRow(l: Launched, key: string, session: string): Promise<Row> 
   expect(r.status).toBe(200);
   for (let i = 0; i < 50; i++) {
     const now = await rows(key, session);
-    if (now.length > before) return now[0]!;
+    if (now.length > before) return now.at(-1)!;
     await Bun.sleep(200);
   }
   throw new Error(`no row for the turn of session ${session}`);
 }
 
-/** The rows of `session` on head `key`, newest first. */
+/** The rows of `session` on head `key`, oldest first, as the route answers them. */
 async function rows(key: string, session: string): Promise<Row[]> {
   const j = (await (await s.api(`/api/perf/turns?head=${key}`)).json()) as { heads: { key: string; rows: Row[] }[] };
   return (j.heads.find((h) => h.key === key)?.rows ?? []).filter((r) => r.session_id === session);

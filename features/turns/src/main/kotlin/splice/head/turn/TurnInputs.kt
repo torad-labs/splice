@@ -7,6 +7,7 @@ import splice.core.failure.TurnVoice
 import splice.core.memory.HeapLease
 import splice.core.perf.TurnPerf
 import splice.head.admission.KeyNaming
+import splice.head.live.LiveReply
 import splice.head.port.HarnessRequest
 import splice.head.usage.QuotaTracker
 import splice.head.wire.NATIVE_CLIENT_PING_MS
@@ -53,7 +54,9 @@ internal data class TurnInputs(
 ) {
     val clientWallMs: Long get() = slot.clientWallMs
     val heapLease: HeapLease? get() = slot.heapLease
-    val harness: HarnessRequest? get() = slot.harness
+    val harness: HarnessRequest? get() = slot.harness?.request
+    val rebuild: TurnRebuild? get() = slot.harness?.rebuild
+    val live: LiveReply? get() = slot.live
 }
 
 /** The admission slot a turn holds, the admission-time facts that travel with it, and the mark its drive calls when
@@ -68,7 +71,10 @@ internal data class TurnSlot(
     val heapLease: HeapLease? = null,
     /** What the harness's capabilities read of the request this slot was admitted for (docs/specs/harness.md,
      *  decision 2); null reads nothing. It travels with the slot as the client deadline and the retained request do. */
-    val harness: HarnessRequest? = null,
+    val harness: HarnessAsked? = null,
+    /** reply-stream: the turn as its session's followers see it (LiveReplies), begun at admission beside the trace and
+     *  settled when this slot is released; null for a turn no one can follow (no session, or no hub). */
+    val live: LiveReply? = null,
     /** Called by TurnStreamer when a detached compaction takes [held] with it: the drive releases
      *  the slot when the upstream turn ends, and HeadAdmission's finally must then leave it alone.
      *

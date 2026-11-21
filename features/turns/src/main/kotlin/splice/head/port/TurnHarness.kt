@@ -34,9 +34,14 @@ public interface HarnessTurn : TurnHolding {
     /** The folder session [session] works in, or null when the session is unknown. */
     public fun folder(session: String?): Path?
 
-    /** The request the turn sends upstream, as its provider built it: Anthropic's Messages shape on a head the model
-     *  may call a capability on (decision 12). */
+    /** The request the turn sends, in Anthropic's Messages shape: as its provider built it on a head whose provider
+     *  sends Messages, the client's own on any other (decision 12, Modes). */
     public val sending: JsonObject
+
+    /** The request the provider sends for [body], a request in Anthropic's Messages shape that follows [sending]:
+     *  built the way the turn's own was, with the texts the turn's capabilities placed. Null on a head whose provider
+     *  sends Messages, where a round's own request is the one the harness builds on (decision 12, Modes). */
+    public fun built(body: JsonObject): JsonObject? = null
 }
 
 /** Holds a turn while its capabilities work: the response opens and is pinged, the turn's notice is off and its

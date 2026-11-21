@@ -13,6 +13,8 @@ import splice.core.capability.Capability
 import splice.core.capability.CapabilityBuiltins
 import splice.core.capability.CapabilityField
 import splice.core.capability.CapabilityWorker
+import splice.core.turn.DESKTOP_DOOR
+import splice.harness.agent.AgentSession
 import splice.head.port.HarnessRequest
 import splice.head.port.HarnessTurn
 import java.util.concurrent.TimeUnit
@@ -40,7 +42,24 @@ internal data class CallFor(
     val turn: HarnessTurn,
     val request: HarnessRequest,
     val input: JsonElement? = null,
-)
+) {
+    /** The session this request is of, as the agent-tool port takes it: who sends it is read off the door the turn
+     *  came through (none: a head's own command; Claude Desktop's door: its own sessions; any other: the door). Null
+     *  when the request names no session. */
+    fun agentSession(): AgentSession? {
+        val id = request.sessionId ?: return null
+        val caller = when (request.shape.door) {
+            null -> CALLER_HEAD
+            DESKTOP_DOOR -> CALLER_DESKTOP
+            else -> CALLER_DOOR
+        }
+        return AgentSession(id, turn.folder(id)?.toString(), head, request.model, caller)
+    }
+}
+
+private const val CALLER_HEAD = "head"
+private const val CALLER_DESKTOP = "desktop"
+private const val CALLER_DOOR = "door"
 
 internal class CapabilityCall(
     private val http: HttpWorker,

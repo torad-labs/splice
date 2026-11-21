@@ -1,0 +1,103 @@
+:root {
+  --tm-max: 100rem;
+  --band-gap: 4.8rem;
+  --band-cols: 24rem minmax(0, 1fr);
+  --band-col-gap: 3.6rem;
+  --map-cols: 21rem minmax(6rem, 1fr) minmax(0, 24rem) 4.5rem;
+  --map-row-gap: 1rem;
+  --mb-min-h: 5.6rem;
+  --lead-min-h: 9rem;
+  --fig-gap: 2.4rem;
+  --mtr-h: 0.32rem;
+  --mtr-w: 9rem;
+  --msg-w: 3.4rem;
+  --msg-h: 1.9rem;
+  --tchip-h: 1.9rem;
+  --sys-cols: 3;
+  --sys-gap: 2.4rem;
+  --msgs-max: 22rem;
+  --pick-s: 1.1rem;
+  --one: 1;
+  --two: 2;
+  --three: 3;
+  --dim-a: 0.55;
+  --wire-out: 1.87rem;
+}
+
+/* the frame: a wide screen draws the same page larger */
+.tm { position: relative; max-width: var(--tm-max); margin: 0 auto; display: grid; gap: var(--sp-7); }
+.tm-head { padding-top: var(--sp-5); display: flex; justify-content: space-between; align-items: flex-end; gap: var(--sp-4); }
+.tm-head h1 { margin: var(--sp-2) 0 0; font-size: var(--fs-title); font-weight: var(--w-med); line-height: var(--lh-tight); }
+
+/* a pressable part: content on the field, with a resting fill, an open mark and a lift on hover */
+.pt { position: relative; display: grid; align-content: start; gap: var(--sp-2); min-width: 0; padding: var(--pt-pad); border: 0; border-radius: var(--r-inner); background: var(--pt-rest); color: var(--ink); text-align: left; font: inherit; cursor: pointer; transition: background var(--dur-fast), transform var(--dur) var(--spring), box-shadow var(--dur) var(--ease); }
+.pt:hover > .pt-go, .pt[aria-expanded="true"] > .pt-go { opacity: 1; transform: translate(var(--hair), calc(-1 * var(--hair))); }
+.pt-name { display: flex; align-items: center; gap: var(--sp-2); padding-right: var(--go-s); font-family: var(--font-data); font-size: var(--fs-micro); letter-spacing: var(--track-eyebrow); text-transform: uppercase; color: var(--ink-faint); white-space: nowrap; overflow: hidden; }
+.pt-cap { font-size: var(--fs-small); color: var(--ink-quiet); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* a team: the team on the left, its members as a map on the right */
+.tm-bands { display: grid; gap: var(--band-gap); }
+.band { display: grid; grid-template-columns: var(--band-cols); column-gap: var(--band-col-gap); align-items: start; }
+.band.is-new { animation: band-in var(--dur-mat) var(--spring) both; }
+@keyframes band-in { from { opacity: 0; transform: translateY(var(--sp-5)); } }
+.tc { gap: var(--sp-3); }
+.tc-title { font-size: var(--fs-figure); font-weight: var(--w-med); line-height: var(--lh-tight); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: var(--go-s); }
+.tc-goal { font-size: var(--fs-small); color: var(--ink-quiet); line-height: var(--lh); }
+.tc-figs { display: grid; grid-template-columns: repeat(var(--two), minmax(0, 1fr)); column-gap: var(--fig-gap); row-gap: var(--sp-4); margin-top: var(--sp-2); }
+.tc-fig { display: grid; gap: var(--sp-1); }
+.tc-fig b { font-family: var(--font-data); font-weight: var(--w-reg); font-size: var(--fs-figure); line-height: var(--lh-figure); }
+.tc-fig span { font-size: var(--fs-micro); font-family: var(--font-data); letter-spacing: var(--track-eyebrow); text-transform: uppercase; color: var(--ink-faint); white-space: nowrap; }
+.tc-login { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--sp-2) var(--sp-3); margin-top: var(--sp-2); font-size: var(--fs-small); color: var(--ink-quiet); }
+.tc-login b { font-family: var(--font-data); font-weight: var(--w-reg); color: var(--ink); }
+.tc-login .mtr { grid-column: 1 / -1; }
+.tc-repo { font-family: var(--font-data); font-size: var(--fs-micro); color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mtr { position: relative; height: var(--mtr-h); border-radius: var(--mtr-h); background: var(--hairline); }
+.mtr i { position: absolute; inset: 0 auto 0 0; width: calc(var(--u) * 100%); border-radius: inherit; background: var(--c, var(--prussian)); transition: width var(--dur) var(--spring); }
+
+/* the member map: the lead, a wire to each member, and the message count on the wire */
+.map { position: relative; display: grid; grid-template-columns: var(--map-cols); row-gap: var(--map-row-gap); align-items: center; min-width: 0; }
+.map > .lead { grid-column: var(--one); grid-row: 1 / span var(--rows); align-self: center; min-height: var(--lead-min-h); }
+.map > .mb:not(.lead) { grid-column: var(--three); min-height: var(--mb-min-h); }
+.mb { gap: var(--sp-1); }
+.mb-top { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding-right: var(--go-s); }
+.mb-name { font-family: var(--font-data); font-size: var(--fs-small); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mb-role { font-family: var(--font-data); font-size: var(--fs-micro); letter-spacing: var(--track-eyebrow); text-transform: uppercase; color: var(--ink-faint); white-space: nowrap; }
+.mb-meta { display: flex; justify-content: space-between; gap: var(--sp-3); font-size: var(--fs-small); color: var(--ink-quiet); white-space: nowrap; }
+.mb-meta b { font-family: var(--font-data); font-weight: var(--w-reg); color: var(--ink); }
+.mb-last { font-size: var(--fs-small); color: var(--ink-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mb.is-needs { box-shadow: inset 0 0 0 var(--hair) var(--vermilion); }
+.mb.is-needs .mb-last { color: var(--vermilion); }
+.lead .mb-name { font-size: var(--fs-body); }
+.msg { position: absolute; left: var(--x); top: var(--y); transform: translate(calc(-1 * 50%), calc(-1 * 50%)); display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-1); min-width: var(--msg-w); height: var(--msg-h); padding: 0 var(--sp-2); border: 0; border-radius: var(--r-btn); background: var(--ground); color: var(--ink-quiet); font: inherit; font-family: var(--font-data); font-size: var(--fs-micro); cursor: pointer; transition: color var(--dur-fast), background var(--dur-fast); }
+.msg:hover, .msg[aria-expanded="true"] { color: var(--ink); background: var(--fill-hover); }
+.msg .ico { width: var(--pick-s); height: var(--pick-s); }
+
+/* under the teams: running sessions on no team, a new team, the ended teams */
+.tm-more { display: grid; grid-template-columns: repeat(var(--sys-cols), minmax(0, 1fr)); gap: var(--sys-gap); padding-top: var(--sp-5); border-top: var(--hair) solid var(--hairline); }
+.chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-top: var(--sp-2); }
+.chips span { display: inline-flex; align-items: center; gap: var(--sp-1); height: var(--tchip-h); padding: 0 var(--sp-2); border-radius: var(--r-item); background: var(--fill); font-family: var(--font-data); font-size: var(--fs-micro); color: var(--ink-quiet); white-space: nowrap; }
+.chips span i { width: var(--dot-s); height: var(--dot-s); border-radius: 50%; background: var(--pc, var(--ink-faint)); }
+
+/* inside a lens: rows of name, state and control */
+.lens .lr-cons .warn { color: var(--vermilion); }
+.lens .lr-in { flex: 1; min-width: 0; min-height: var(--btn-h); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-btn); background: var(--fill); color: var(--ink); font: inherit; font-size: var(--fs-small); outline: none; }
+.lens .figs { display: flex; flex-wrap: wrap; column-gap: var(--fig-gap); row-gap: var(--sp-3); }
+.lens .figs div { display: grid; gap: var(--sp-1); }
+.lens .figs b { font-family: var(--font-data); font-weight: var(--w-reg); font-size: var(--fs-figure); line-height: var(--lh-figure); }
+.lens .figs span { font-family: var(--font-data); font-size: var(--fs-micro); letter-spacing: var(--track-eyebrow); text-transform: uppercase; color: var(--ink-faint); }
+.lens .last { grid-column: 1 / -1; font-size: var(--fs-small); color: var(--ink-quiet); line-height: var(--lh); }
+.lens .msgs { display: grid; gap: var(--sp-3); max-height: var(--msgs-max); overflow-y: auto; }
+.lens .msgs div { display: grid; gap: var(--sp-1); font-size: var(--fs-small); line-height: var(--lh); color: var(--ink-quiet); }
+.lens .msgs b { font-family: var(--font-data); font-weight: var(--w-reg); font-size: var(--fs-micro); color: var(--ink-faint); }
+.lens .pick-list { grid-column: 1 / -1; display: grid; gap: var(--sp-1); max-height: var(--msgs-max); overflow-y: auto; }
+.lens .pick { display: grid; grid-template-columns: var(--pick-s) minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3); min-height: var(--btn-h); padding: 0 var(--sp-2); border: 0; border-radius: var(--r-item); background: transparent; color: var(--ink); font: inherit; font-size: var(--fs-small); text-align: left; cursor: pointer; }
+.lens .pick:hover { background: var(--fill-hover); }
+.lens .pick i { width: var(--pick-s); height: var(--pick-s); border-radius: var(--r-item); box-shadow: inset 0 0 0 var(--hair) var(--ink-faint); }
+.lens .pick[aria-pressed="true"] i { background: var(--ink); box-shadow: none; }
+.lens .pick b { font-family: var(--font-data); font-weight: var(--w-reg); font-size: var(--fs-micro); color: var(--ink-faint); }
+.lens .rows { grid-column: 1 / -1; display: grid; gap: var(--sp-2); }
+.lens .rows > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3); font-size: var(--fs-small); color: var(--ink-quiet); }
+.lens .rows b { font-family: var(--font-data); font-weight: var(--w-reg); color: var(--ink); }
+.lens .ask { grid-column: 1 / -1; }
+.dimmed { opacity: var(--dim-a); }
+.lens .lr-ctl.auto-col { grid-column: auto; }

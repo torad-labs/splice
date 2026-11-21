@@ -14,7 +14,8 @@ const PILOT = (() => {
     "[role=button]", "[role=link]", "[role=tab]", "[role=switch]", "[role=checkbox]", "[role=radio]", "[role=menuitem]",
     "[role=option]", "[role=slider]", "[role=combobox]", "[data-act]", "[tabindex]:not([tabindex='-1'])",
   ].join(",");
-  const OWN = ".cmp, .cmp-tab, .cmp-dim, .pilot-ring, .pilot-note";
+  // the composer is the agent's own door: the old console's (.cmp) and the Night Deck's (.comp-wrap)
+  const OWN = ".cmp, .cmp-tab, .cmp-dim, .comp-wrap, .pilot-ring, .pilot-note";
   const ROW = "tr, li, [role=row], [role=listitem], article";
   const HEADING = "h1, h2, h3, h4, h5, h6, legend, caption, [role=heading]";
   const SECRET = /key|token|secret|passw|credential/i;
@@ -41,18 +42,20 @@ const PILOT = (() => {
   const refuse = (sentence) => new Error(sentence);
 
   // ---- where we are -------------------------------------------------------------------------------------------
+  // The pages this console has, as [file, name], from the kit's one list (deck.js).
+  const pages = () => (typeof Deck !== "undefined" && Deck.PAGES ? Deck.PAGES.map((p) => [p.file, p.name]) : []);
   function here() {
-    const file = PAGES.find(([f]) => location.pathname.endsWith(`/${f}`))?.[0] || "accounts.html";
-    return { file, name: PAGES.find(([f]) => f === file)?.[1] || file };
+    const file = pages().find(([f]) => location.pathname.endsWith(`/${f}`))?.[0] || "accounts.html";
+    return { file, name: pages().find(([f]) => f === file)?.[1] || file };
   }
-  const mainNode = () => document.querySelector("main.page");
+  const mainNode = () => document.querySelector("main.field");
   function modal() {
     try { return [...document.querySelectorAll("dialog")].find((d) => d.matches(":modal")) || null; } catch { return null; }
   }
   const scope = () => modal() || document;
   const composerOpen = () => Boolean(document.querySelector(".cmp .cmp-sheet")?.getClientRects().length);
   // The person may be typing to the agent in the composer: an agent's act never pulls the focus out of it.
-  const typing = () => Boolean(document.activeElement?.closest?.(".cmp"));
+  const typing = () => Boolean(document.activeElement?.closest?.(".cmp, .comp-wrap"));
   const take = (el) => { if (!typing()) el.focus?.({ preventScroll: true }); };
   // a page that did not open says so under its own link in the top bar (console.js routeFailed), or atop the page
   const routeError = () => squash(document.querySelector(".route-error")?.innerText);
@@ -562,17 +565,14 @@ const PILOT = (() => {
       if (failed) throw refuse(`The page could not open: ${failed}`);
       return { text: `Went back. Now on ${here().name}.` };
     }
-    const page = PAGES.find(([f, name]) => f === want || f === `${want}.html` || name.toLowerCase() === want)
-      || PAGES.find(([, name]) => name.toLowerCase().startsWith(want));
-    if (!page) throw refuse(`There is no page called "${where}". The pages are: ${PAGES.map(([f]) => f.replace(".html", "")).join(", ")}.`);
+    const list = pages();
+    const page = list.find(([f, name]) => f === want || f === `${want}.html` || name.toLowerCase() === want)
+      || list.find(([, name]) => name.toLowerCase().startsWith(want));
+    if (!page) throw refuse(`There is no page called "${where}". The pages are: ${list.map(([f]) => f.replace(".html", "")).join(", ")}.`);
     if (here().file === page[0]) return { text: `Already on ${page[1]}.` };
     clearRings();
-    await CONSOLE.navigate(page[0], { focus: !typing() });
-    const failed = routeError();
-    if (failed) throw refuse(`${page[1]} could not open: ${failed}`);
-    if (here().file !== page[0]) throw refuse(`${page[1]} did not open, and the page gave no reason.`);
-    await settled();
-    return { text: `Now on ${page[1]}.` };
+    // a page moves by plain navigation: the answer goes first, since this page goes with it
+    return { text: `Opening ${page[1]}. Run \`splice console snapshot\` once it has loaded.`, open: page[0] };
   }
   function read([target]) {
     const el = target ? find(target, false).el : modal() || mainNode() || document.body;
@@ -610,6 +610,7 @@ const PILOT = (() => {
       const act = ACTIONS[order.action];
       if (!act) throw refuse(`The console has no action called "${order.action}".`);
       said = { ok: true, ...(await act(order.words || [], order)) };
+      if (said.open) { const open = said.open; delete said.open; await API.post("/api/console/pilot/answer", { ...said, page: here().file, id: order.id }); location.assign(open); return; }
     } catch (error) {
       said = { ok: false, error: String(error?.message || error) };
     }

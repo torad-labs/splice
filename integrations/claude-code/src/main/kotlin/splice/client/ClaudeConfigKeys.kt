@@ -51,6 +51,8 @@ internal object Keys {
     // whose turn waits on a limit could not say so; a half-minute timer costs one small local request a tick.
     const val STATUS_LINE_REFRESH_S = 30
 
+    // The settings file's environment table, which a managed file and an older splice's Desktop entry both write.
+    const val ENV = "env"
     const val API_KEY_HELPER = "apiKeyHelper"
     const val OTEL_HEADERS_HELPER = "otelHeadersHelper"
     const val MCP_SERVERS = "mcpServers"

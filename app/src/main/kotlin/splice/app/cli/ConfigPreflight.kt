@@ -4,11 +4,13 @@
 // the design rule). It reads and reports; it never writes, never starts a daemon and never offers a fix.
 package splice.app.cli
 
+import splice.app.modes.ModeBoot
 import splice.app.provider.local.LocalRowBootFindings
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 import splice.core.util.TopologyRefusal
+import splice.topology.BootSettings
 import splice.topology.ConfigFindings
 import splice.topology.ConfigRead
 import splice.topology.RetiredSettings
@@ -41,7 +43,9 @@ internal class ConfigPreflight(
             return unreadable(failure)
         }
         val dir = path.toAbsolutePath().parent ?: path
-        val read = ConfigFindings.read(text, dir, dir, LocalRowBootFindings(env), RetiredSettings(env))
+        // The modes this jar carries are boot's findings too (modes/README.md), read from the same jar.
+        val beside = BootSettings(RetiredSettings(env), ModeBoot().found())
+        val read = ConfigFindings.read(text, dir, dir, LocalRowBootFindings(env), beside)
         return if (read is ConfigRead.Refused) refused(read) else 0
     }
 

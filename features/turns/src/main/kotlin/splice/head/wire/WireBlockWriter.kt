@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger
 private const val TYPE = "type"
 private const val INDEX = "index"
 internal const val BLOCK_START = "content_block_start"
-private const val BLOCK_DELTA = "content_block_delta"
+internal const val BLOCK_DELTA: String = "content_block_delta"
 private const val BLOCK_STOP = "content_block_stop"
 
 /** The content-block half of an Anthropic SSE stream, in the three parts the SPI grammar splits into:

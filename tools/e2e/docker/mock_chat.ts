@@ -16,6 +16,8 @@
  *                tool actually returned inside its head
  *    runbash     if the request offers a `Bash` tool, answer with one call to it (a harmless echo), the first action
  *                an interactive auto-mode session checks; once its result comes back, answer "BASH DONE: <result>"
+ *    ratelimit   answer 429 in OpenAI's rate-limit shape, as a provider whose rate is spent does (tools/console-own
+ *                sends one so the console has a refused request to show)
  *  Anything else answers the fixed reply. The server serves requests CONCURRENTLY:
  *  a `hold` must not block the other head's turn.
  *
@@ -195,6 +197,9 @@ async function handle(req: Request): Promise<Response> {
   if (scen === "hold") {
     // AWAIT, never block: this is the whole threading property the docstring asks for.
     await Bun.sleep(HOLD_SECONDS * 1000);
+  }
+  if (scen === "ratelimit") {
+    return jsonResponse(429, obj([["error", obj([["message", "Rate limit reached for requests"], ["type", "rate_limit_error"], ["code", "rate_limit_exceeded"]])]]));
   }
   if (scen === "listagents") {
     const messages = objGet(reqObj, "messages");

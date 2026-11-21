@@ -281,6 +281,11 @@ public class StatePaths(
 
     public val claudeLaneFile: Path = stateDir.resolve("claude-lane.json")
 
+    /** The model catalog: every model a signed-in, configured provider's own list publishes, credential-free,
+     *  rewritten at daemon start/restart and on a sign-in, sign-out or provider-list change (CatalogFile). One
+     *  spelling for the writer and every reader. */
+    public val modelCatalogFile: Path = stateDir.resolve("model-catalog.json")
+
     /** door-default: the hook that answers splice's /login in a `claude` session on the door (DoorLogin). */
     public val doorLoginDir: Path = stateDir.resolve("door-login")
 

@@ -65,6 +65,13 @@ recorded as a door turn of the head that ran it.
 The door's grammar is unchanged (`docs/specs/desktop-door.md`, decisions 1 to 3): a selector runs its model on its
 head, an Anthropic ID is a tier of the session's head, anything else is refused by name with nothing sent upstream.
 
+On startup and restart, splice asks its configured providers for their models and replaces `model-catalog.json` in
+its state directory (normally `~/.splice/state`). The catalog contains one row per provider and model, without
+credentials. It records the descriptions, context windows and reasoning options the provider publishes, with explicit
+configuration for models that do not publish those facts. An unreported reasoning level is not guessed. The door's
+model discovery and picker read this catalog; they do not rebuild it when a client asks. Signing in or out updates
+which providers' models the door serves without a restart.
+
 The picker of a terminal session lists every model of every head whose provider is called with a login splice holds
 (a ChatGPT, Grok, Kimi or Muse sign-in), while that login is good. A head called with an API key, or a local model
 server, is in the picker with the models splice.toml declares for it (`splice add api-key --model`), or with every

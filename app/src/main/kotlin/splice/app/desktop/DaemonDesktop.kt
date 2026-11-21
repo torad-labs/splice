@@ -9,6 +9,8 @@
 package splice.app.desktop
 
 import splice.app.control.ManagedHead
+import splice.app.provider.CredentialChanged
+import splice.app.provider.ModelRosters
 import splice.app.share.ManagedSharedHeads
 import splice.client.desktop.DoorSelectors
 import splice.client.models.AnthropicTiers
@@ -44,8 +46,13 @@ internal class DaemonDesktop(
     var opened: DesktopService? = null
         private set
 
-    /** The door on [controlPort], choosing among [heads]. */
-    fun open(heads: Map<String, ManagedHead>, controlPort: Int) {
+    /** The door's heads once [open] has run; null before. */
+    @Volatile
+    private var lineups: DesktopHeads? = null
+
+    /** The door on [controlPort], choosing among [heads], with the model catalog of the providers signed in now
+     *  published before any route serves it, and again whenever [rosters] ask a head's list with a new credential. */
+    suspend fun open(heads: Map<String, ManagedHead>, controlPort: Int, rosters: ModelRosters) {
         val machine = ShareMachine(log).name()
         val running = RunningHeads {
             val relays = ManagedSharedHeads(heads, topology, config, machine).every()
@@ -56,8 +63,12 @@ internal class DaemonDesktop(
         val relay = ShareRelay(turnKey, controlPort, machine, io, log, RelaySpeaker(voice, DESKTOP_TAG))
         val terminalVoice = RelaySpeaker(RefusalVoice(CLAUDE_ERROR_PREFIX), TERMINAL_TAG)
         val terminalRelay = ShareRelay(turnKey, controlPort, machine, io, log, terminalVoice)
-        val lineups = DesktopHeads(running)
-        val door = "http://127.0.0.1:$controlPort$DESKTOP_PATH"
+        val catalog = PublishedCatalog(CatalogBuild(), CatalogFile(statePaths.modelCatalogFile, log), io)
+        val lineups = DesktopHeads(running, topology.heads.mapValues { it.value.provider }, catalog)
+        this.lineups = lineups
+        rosters.credentialChanged = CredentialChanged { republish() }
+        lineups.publish()
+        val door = "http://127.0.0.1:$controlPort$DOOR_PATH"
         // A selector, by the discovery prefixes of the heads in splice.toml; an Anthropic ID never is one, whatever a
         // prefix looks like, since it is the person's own pick.
         val tiers = AnthropicTiers()
@@ -73,9 +84,18 @@ internal class DaemonDesktop(
         val callers = listOf(DesktopCaller(relay, key, records, log), terminal)
         opened = DesktopService(DesktopDoor(callers, lineups), switch, lane, lineups, records)
     }
+
+    /** The model catalog built again from the providers signed in now and served from here on: a head's credential
+     *  changed (a sign-in, a sign-out, a key set). Nothing before [open]. */
+    suspend fun republish() {
+        lineups?.publish()
+    }
 }
 
 /** Where the door is answered on the control port. */
+internal const val DOOR_PATH = "/door"
+
+/** Where the door was answered before it had two callers; it still is, for a Desktop set up then. */
 internal const val DESKTOP_PATH = "/desktop"
 
 // The tag the relay's log lines carry for a door turn.

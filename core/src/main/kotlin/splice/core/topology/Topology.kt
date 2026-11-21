@@ -449,7 +449,7 @@ public data class ProviderConfig(
                 entry.contextWindow
             }
             val rates = entry.rates ?: model?.rates ?: PublishedRates.of(baseUrl, entry.id)
-            entry.copy(contextWindow = window, rates = rates, maxContextWindow = ceiling)
+            entry.copy(contextWindow = window, rates = rates, maxContextWindow = ceiling, listed = model)
         }
     }
 

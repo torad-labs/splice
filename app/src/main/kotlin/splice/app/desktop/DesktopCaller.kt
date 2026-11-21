@@ -33,7 +33,7 @@ internal class DesktopCaller(
 
     override val notInDoor: String = "is not in the door; `splice desktop` lists the models it serves"
 
-    // Desktop's picker is the door's own list (DoorModels), Claude's models under their own ids, so a Claude id it
+    // Desktop's picker is the door's own list (DoorCatalog), Claude's models under their own ids, so a Claude id it
     // sends is a model picked from that list: it runs where a head serves it, as the terminal's `claude` does, and
     // Claude Code's own side calls still run the small tier.
     override val runsNamedModels: Boolean = true

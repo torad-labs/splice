@@ -1,5 +1,6 @@
 // NEW: desktop-door (docs/specs/desktop-door.md, decisions 1, 2, 5 and 7). A turn of Claude Code in Mantle mode,
-// answered under /desktop on the control port, which a restart does not move.
+// answered under /door on the control port, which a restart does not move (and under /desktop, its path before the
+// door had two callers, for a Desktop set up then).
 //
 // door-default (docs/specs/door-default.md, decision 3): the door admits two callers, Claude Desktop's Code tab and the
 // terminal's `claude`, each by its own key (DoorCaller), and no other key opens it. While a caller's switch is off the
@@ -10,6 +11,7 @@
 package splice.app.desktop
 
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -19,6 +21,7 @@ import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.core.util.WallClock
 import splice.core.wire.HttpStatus
+import splice.http.JsonReply
 import splice.share.RefusalVoice
 
 /** What a door turn asks: its body, the model it names and the session it is a turn of. */
@@ -44,11 +47,18 @@ internal class DesktopDoor(
     private val routing = DoorRouting()
     private val toHead = DoorRelay(clock)
 
-    /** `POST /desktop/v1/messages`, with or without `?beta=true`. */
+    /** `POST /door/v1/messages`, with or without `?beta=true`. */
     suspend fun messages(call: ApplicationCall) = answer(call, counting = false)
 
-    /** `POST /desktop/v1/messages/count_tokens`, with or without `?beta=true`. */
+    /** `POST /door/v1/messages/count_tokens`, with or without `?beta=true`. */
     suspend fun countTokens(call: ApplicationCall) = answer(call, counting = true)
+
+    /** `GET /door/v1/models`: the door's models as Claude Desktop's gateway discovery reads them, from the model
+     *  catalog published last (DoorCatalog), for a caller whose key it presents. */
+    suspend fun models(call: ApplicationCall) {
+        admitted(call) ?: return
+        JsonReply(HttpStatusCode.OK, DoorCatalog(heads.lineup()).discovery().toString()).send(call)
+    }
 
     /** [call] answered for the caller whose key it presents; refused 401 in Anthropic's shape, with nothing sent
      *  upstream, when it presents none, a wrong one or one that was replaced. */

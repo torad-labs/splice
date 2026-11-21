@@ -50,7 +50,19 @@ internal data class DoorHead(
     val login: Boolean = false,
 )
 
-internal data class DesktopLineup(val heads: List<DoorHead>, val models: List<DoorModel>, val leftOut: List<LeftOut>) {
+/** The door now: the heads in it and their models, the heads left out, the provider splice.toml runs each head on
+ *  ([providers], by head key), and the model catalog published last ([catalog]), whose facts every list the door gives
+ *  reads (DoorCatalog). */
+internal data class DesktopLineup(
+    val heads: List<DoorHead>,
+    val models: List<DoorModel>,
+    val leftOut: List<LeftOut>,
+    val providers: Map<String, String>,
+    val catalog: ProviderCatalog = ProviderCatalog(),
+) {
+    /** The provider [head] runs on. */
+    fun providerOf(head: DoorHead): String = providers.getValue(head.key)
+
     /** The rows of a terminal session's picker (docs/specs/door-default.md, decision 4): every model of a head called
      *  with a login splice holds, and of a head on an API key or a local server the models splice.toml declares for
      *  it, or every model it lists when it declares none. Until Nov 18, 2026 the picker left every key head out, to
@@ -70,9 +82,13 @@ internal data class DesktopLineup(val heads: List<DoorHead>, val models: List<Do
         head.catalog.wrap(head.pinned).takeIf { find(it) != null }
             ?: models.firstOrNull { it.head == head.key }?.model.orEmpty()
 
-    /** The head and model of [selector], or null when no head in the door lists it. */
+    /** The head and model of [selector], or null when no head in the door lists it. A readable name (ReadableNames,
+     *  `claude-xai--4.7`), the id Claude Desktop lists another lab's model under, finds the row of the selector it
+     *  stands for. */
     fun find(selector: String): Pair<DoorHead, DoorModel>? {
-        val model = models.firstOrNull { it.model == selector } ?: return null
+        val model = models.firstOrNull { it.model == selector }
+            ?: return heads.firstNotNullOfOrNull { it.catalog.names.selectorOf(selector) }
+                ?.takeIf { it != selector }?.let(::find)
         return heads.firstOrNull { it.key == model.head }?.let { it to model }
     }
 }
@@ -82,10 +98,28 @@ internal fun interface RunningHeads {
     operator fun invoke(): List<Pair<ManagedHead, SharedHead>>
 }
 
-internal class DesktopHeads(private val running: RunningHeads) {
+/** The door's heads, read from the [running] heads at each use, and the model catalog [published] for them: built
+ *  from the providers signed in at the daemon's start and again when a head's credential changes ([publish]), never
+ *  at a request. [providers] is the provider each of splice.toml's heads runs on. */
+internal class DesktopHeads(
+    private val running: RunningHeads,
+    private val providers: Map<String, String>,
+    private val published: PublishedCatalog,
+) {
     private val addedLogins = AddedClaudeLogins()
 
-    suspend fun lineup(): DesktopLineup {
+    /** The door now, with the catalog published last. */
+    suspend fun lineup(): DesktopLineup = read().copy(catalog = catalog())
+
+    /** The catalog published last; empty before the first [publish]. */
+    fun catalog(): ProviderCatalog = published.current
+
+    /** The catalog of the providers signed in now, built, written and served from here on. */
+    suspend fun publish() {
+        published.publish(read())
+    }
+
+    private suspend fun read(): DesktopLineup {
         val heads = mutableListOf<DoorHead>()
         val models = mutableListOf<DoorModel>()
         val leftOut = mutableListOf<LeftOut>()
@@ -110,7 +144,7 @@ internal class DesktopHeads(private val running: RunningHeads) {
                 models += DoorModel(row.id, row.displayName, relay.key, relay.command, upstream, full, discovered)
             }
         }
-        return DesktopLineup(heads, models, leftOut)
+        return DesktopLineup(heads, models, leftOut, providers.filterKeys { key -> heads.any { it.key == key } })
     }
 
     /** A head's login as the door reads it: a login splice holds (a sign-in it keeps, not a key), and why the head is

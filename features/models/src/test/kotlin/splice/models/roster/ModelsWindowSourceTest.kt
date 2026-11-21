@@ -42,7 +42,7 @@ class ModelsWindowSourceTest {
         val head = HeadConfig("native", 4104, "native--", "native-wide", contextWindow = 1_000_000)
         val catalog = native.catalogFor(head)
         val payload = ModelsRoute(listOf(RosterHead("native", catalog)))
-            .modelsJson(mapOf("native" to DeclaredHead("native", null)))
+            .modelsJson(mapOf("native" to DeclaredHead("native", null)), null)
         val rows = Json.parseToJsonElement(payload).jsonObject.getValue("heads").jsonArray.single().jsonObject
             .getValue("models").jsonArray.associate { row ->
                 row.jsonObject.getValue("id").jsonPrimitive.content to row.jsonObject
@@ -56,7 +56,7 @@ class ModelsWindowSourceTest {
         val head = HeadConfig("xai", 4104, "claude-grok--", "grok-4.6", contextWindow = 300_000)
         val discovered = listOf(DiscoveredModel("grok-4.7", contextWindow = 128_000, maxContextWindow = 1_048_576))
         val payload = ModelsRoute(listOf(RosterHead("xai", provider.catalogFor(head, discovered = discovered))))
-            .modelsJson(declared)
+            .modelsJson(declared, null)
         val rows = Json.parseToJsonElement(payload).jsonObject.getValue("heads").jsonArray.single().jsonObject
             .getValue("models").jsonArray.associate { row ->
                 row.jsonObject.getValue("id").jsonPrimitive.content to row.jsonObject

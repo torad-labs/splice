@@ -3,9 +3,11 @@
 // (docs/specs/door-default.md) the terminal's lane on the same door and what `splice claude` says.
 package splice.app.desktop
 
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import splice.core.topology.CLAUDE_COMMAND
@@ -19,6 +21,7 @@ internal class DesktopService(
     private val records: DesktopRecords,
 ) {
     private val lineupJson = LineupJson()
+    private val catalogJson = Json { explicitNulls = false }
 
     /** What `splice desktop --json` says: whether Desktop is on, the door, the default model, the lineup, each head
      *  left out with the reason, and the last turn through the door. */
@@ -29,7 +32,7 @@ internal class DesktopService(
             put("on", record.on)
             put("door", switch.door)
             put("default_model", switch.defaultOf(lineup))
-            put("models", lineupJson.models(lineup.models))
+            put("models", DoorCatalog(lineup).desktopJson())
             put("left_out", lineupJson.leftOut(lineup.leftOut))
             val last = record.lastTurn
             if (last == null) {
@@ -55,7 +58,7 @@ internal class DesktopService(
             val lineup = heads.lineup()
             return buildJsonObject {
                 put("lane", lane)
-                put("models", lineupJson.models(lineup.picker))
+                put("models", DoorCatalog(lineup).pickerJson())
                 put("left_out", lineupJson.leftOut(lineup.leftOut.filterNot { it.command == CLAUDE_COMMAND }))
             }
         }
@@ -66,9 +69,13 @@ internal class DesktopService(
             put("door", claude.door)
             put("default_model", starting)
             put("default_from", why)
-            put("models", lineupJson.models(lineup.picker))
+            put("models", DoorCatalog(lineup).pickerJson())
             put("left_out", lineupJson.leftOut(lineup.leftOut))
             claude.login.theirs()?.let { put("own_login", it.toString()) }
         }
     }
+
+    /** The model catalog published last, as `model-catalog.json` holds it, for `/api/models`. */
+    fun catalog(): JsonObject =
+        catalogJson.encodeToJsonElement(ProviderCatalog.serializer(), heads.catalog()).jsonObject
 }

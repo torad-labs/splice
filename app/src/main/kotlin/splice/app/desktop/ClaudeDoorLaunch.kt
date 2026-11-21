@@ -11,7 +11,6 @@ import splice.client.desktop.DoorPicker
 import splice.client.desktop.DoorPickerRow
 import splice.client.desktop.DoorSession
 import splice.client.login.DoorLogin
-import splice.core.usage.QuotaFullWindow
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
@@ -43,18 +42,8 @@ internal class ClaudeDoorLaunch(
         return rowsOf(lane.lineup()).takeIf { it.isNotEmpty() }?.let(::DoorPicker)
     }
 
-    /** The picker's rows ([DesktopLineup.picker]), in splice.toml's order of heads. A model whose account
-     *  reads a plan window fully used stays listed, with the window marked beside its name (Nov 17, 2026): the
-     *  head still serves it, and the person sees before picking it that the account is spent. */
-    private fun rowsOf(lineup: DesktopLineup): List<DoorPickerRow> =
-        lineup.picker.map { DoorPickerRow(it.model, labelOf(it), it.command) }
-
-    /** [model]'s label, with its account's full window beside it as `splice status` writes it (`7d 100%`). */
-    private fun labelOf(model: DoorModel): String {
-        val full = model.full ?: return model.label
-        val window = if (full.window == QuotaFullWindow.FIVE_HOUR) FIVE_HOUR_MARK else SEVEN_DAY_MARK
-        return "${model.label} · $window 100%"
-    }
+    /** The picker's rows: the model catalog's, as the door serves them now (DoorCatalog.picker). */
+    fun rowsOf(lineup: DesktopLineup): List<DoorPickerRow> = DoorCatalog(lineup).picker()
 
     /** splice's /login laid, and the hooks that answer it; none when the disk refuses, said in the log: the session
      *  starts without splice's /login rather than not at all. A /login of the person's in the way is left as it is,
@@ -66,7 +55,3 @@ internal class ClaudeDoorLaunch(
         emptyMap()
     }
 }
-
-// The windows a picker row names as fully used, as `splice status` names them on its accounts lines.
-private const val FIVE_HOUR_MARK = "5h"
-private const val SEVEN_DAY_MARK = "7d"

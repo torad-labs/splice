@@ -301,13 +301,11 @@ public class Daemon(
         TranscriptOriginals(statePaths).sweep(log)
         // 2026-09-22: every head's endpoint is asked what it serves — all at once, bounded, before any
         // catalog exists — so each picker is its declared rows plus what its provider lists.
-        // #525 (Nov 13, 2026): a head whose list was kept within two hours begins with it and is asked in the
-        // background, so a restart no longer holds new requests while every provider answers.
         val rosterProviders = topology.heads.mapNotNull { (key, head) ->
             val declared = topology.providers[head.provider] ?: return@mapNotNull null
             key to buildInputs.effectiveProvider(key, declared, legacyKnobsGovern = key in legacySolo)
         }.toMap()
-        controlPlane.modelRosters.begin(rosterProviders)
+        controlPlane.modelRosters.resolve(rosterProviders)
         controlPlane.modelRosters.start(controlPlane.probeScope, rosterProviders)
         // Start heads BEFORE opening the control plane so a launch-shim that sees /health and
         // immediately POSTs /launch/<head> does not race a still-binding head (503 head is not
@@ -331,7 +329,7 @@ public class Daemon(
         server.open(heads, controlPort, headServerFactory.served)
         controlPlane.serverMode = server
         // The desktop door, on the control port, choosing among these heads.
-        desktop.open(heads, controlPort)
+        desktop.open(heads, controlPort, controlPlane.modelRosters)
         controlPlane.desktop = desktop
         controlPlane.start(
             controlPort = controlPort,

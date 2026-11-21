@@ -33,6 +33,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.model.ModelEntry
+import splice.core.model.ModelListing
 import splice.core.model.ModelRates
 import splice.core.model.ModelRuntimeMetadata
 import splice.core.model.ModelTierSuffix
@@ -143,8 +144,35 @@ internal class UpstreamRosterParser(private val json: Json = Json { ignoreUnknow
             useResponsesLite = row["use_responses_lite"] == JsonPrimitive(true),
             toolMode = JsonScalars.str(row, "tool_mode"),
             serviceTiers = serviceTiers(row),
+            listing = listing(row),
         ),
     )
+
+    /** What the row says of the model in words and of its reasoning, in the forms endpoints use (measured
+     *  2026-11-20): the ChatGPT backend's `supported_reasoning_levels: [{ effort }]` beside `default_reasoning_level`,
+     *  Anthropic's `capabilities.effort.<level>.supported`, the plain lists of [LEVEL_LISTS], and a row that says it
+     *  reasons and names no level (Moonshot's `supports_reasoning`, OpenRouter's `supported_parameters` naming
+     *  `reasoning`). A row that says nothing lists no levels: none is presumed. */
+    private fun listing(row: JsonObject): ModelListing {
+        val named = (row["supported_reasoning_levels"] as? JsonArray).orEmpty()
+            .mapNotNull { JsonScalars.str(it as? JsonObject, "effort") ?: JsonScalars.str(it) }
+        val capable = (under(row, "capabilities.effort") as? JsonObject).orEmpty()
+            .filterValues { (it as? JsonObject)?.get("supported") == JsonPrimitive(true) }.keys.toList()
+        val efforts = (listOf(named, capable) + LEVEL_LISTS.map { strings(under(row, it)) })
+            .firstOrNull { it.isNotEmpty() }.orEmpty()
+        val says = row["supports_reasoning"] == JsonPrimitive(true) ||
+            "reasoning" in strings(row["supported_parameters"])
+        return ModelListing(
+            description = JsonScalars.str(row, "description").orEmpty(),
+            efforts = efforts,
+            defaultEffort = DEFAULT_LEVELS.firstNotNullOfOrNull { JsonScalars.str(under(row, it)) },
+            reasons = efforts.isNotEmpty() || says,
+        )
+    }
+
+    /** The element at a dotted [path] of [row], or null where any step of it is missing. */
+    private fun under(row: JsonObject, path: String): JsonElement? =
+        path.split('.').fold<String, JsonElement?>(row) { at, key -> (at as? JsonObject)?.get(key) }
 
     /** gpt-speed: the speed tiers a row lists (`service_tiers: [{ id, name, description }]`, the ChatGPT backend's
      *  shape). A tier with no id cannot be asked for, so it is left out. */
@@ -344,3 +372,14 @@ internal class RosterDiff {
 
 /** The verdict for a model whose `supported_parameters` omit tools. */
 private const val NO_TOOLS = "it takes no tools, and every Claude Code turn sends them"
+
+/** Where a row lists its reasoning levels as plain strings: xAI, Moonshot (Kimi) and DeepSeek, in that order. */
+private val LEVEL_LISTS = listOf("capabilities.reasoning_effort", "reasoning.effort.valid", "effort.supported_levels")
+
+/** Where a row names the level it runs at when none is asked for: the ChatGPT backend, then the same three. */
+private val DEFAULT_LEVELS = listOf(
+    "default_reasoning_level",
+    "capabilities.default_reasoning_effort",
+    "reasoning.effort.default",
+    "effort.default_level",
+)

@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.Daemon
+import splice.client.desktop.DesktopManagedPolicy
 import splice.core.auth.RefreshAttempt
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
@@ -87,11 +88,10 @@ class DesktopSetupDaemonTest {
         // The daemon's environment: Desktop's configuration under the fixture home, never the person's.
         val fixture = mapOf(
             "XDG_CONFIG_HOME" to xdg,
-            "SPLICE_DESKTOP_MANAGED_FILE" to tmp.resolve("etc/managed-settings.json").toString(),
         )
         val fixtureEnv = EnvReader { fixture[it] }
         val provider = OneModelProvider()
-        UserHome.within(home) {
+        fixtureHome(home, tmp) {
             runBlocking {
                 val statePaths = StatePaths(baseOverride = tmp.resolve("state"), envReader = fixtureEnv)
                 val mgmt = MgmtKey(statePaths).get()
@@ -194,6 +194,11 @@ class DesktopSetupDaemonTest {
     }
 
     private fun JsonObject.str(key: String): String = getValue(key).jsonPrimitive.content
+
+    /** [block] over the fixture home [home], with Claude Desktop's managed configuration looked for under [tmp], never
+     *  the machine's. */
+    private fun fixtureHome(home: Path, tmp: Path, block: () -> Unit) =
+        UserHome.within(home) { DesktopManagedPolicy.within(tmp.resolve("etc/managed-settings.json"), block) }
 
     private fun toml(base: String, key: Path): String = """
         [daemon]

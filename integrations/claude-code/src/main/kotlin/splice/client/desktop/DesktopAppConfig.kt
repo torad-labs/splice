@@ -39,7 +39,7 @@ public class DesktopAppConfig(private val env: EnvReader = EnvReader(System::get
 
     /** The managed configuration, root's, which decides Desktop's provider over any local one. splice only asks
      *  whether it exists, and never opens it. */
-    public val managed: Path = env(MANAGED_ENV)?.takeIf(String::isNotBlank)?.let(Path::of) ?: Path.of(MANAGED)
+    public val managed: Path get() = DesktopManagedPolicy.file
 
     /** splice's configuration: Desktop's gateway provider at [door], the credential from the executable [helper]
      *  (an absolute path), every request carrying [APP_MODE_HEADER], discovery filling the picker, and auto mode on
@@ -104,6 +104,29 @@ public class DesktopAppConfig(private val env: EnvReader = EnvReader(System::get
         (meta[ENTRIES] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
 }
 
+/** Where Claude Desktop's managed configuration is, the platform's one place: root's, read by Desktop over any local
+ *  configuration. Nothing in the environment moves it. [within] is the test seam: a test lends the process a fixture
+ *  path for one block, since the machine running it may have a managed file of its own. */
+public object DesktopManagedPolicy {
+    @PublishedApi
+    @Volatile
+    internal var redirected: Path? = null
+
+    /** The managed configuration's path. */
+    public val file: Path get() = redirected ?: Path.of(MANAGED)
+
+    /** [block] run with [fixture] as the managed configuration's path, then the platform's again. */
+    public inline fun <T> within(fixture: Path, block: () -> T): T {
+        val previous = redirected
+        redirected = fixture
+        try {
+            return block()
+        } finally {
+            redirected = previous
+        }
+    }
+}
+
 /** The header every request Desktop sends in app mode carries, which splice writes into its configuration's custom
  *  headers: how the door tells an app-mode request from a standard one. */
 public const val APP_MODE_HEADER: String = "x-splice-desktop"
@@ -126,9 +149,6 @@ private const val APP_DATA = "Claude-3p"
 private const val LIBRARY = "configLibrary"
 private const val JSON_SUFFIX = ".json"
 private const val MANAGED = "/etc/claude-desktop/managed-settings.json"
-
-// Where splice looks for the managed file instead, when set: a test's fixture home, whose machine may have one of its own.
-private const val MANAGED_ENV = "SPLICE_DESKTOP_MANAGED_FILE"
 private const val GATEWAY_BASE_URL = "inferenceGatewayBaseUrl"
 private const val APPLIED_ID = "appliedId"
 private const val ENTRIES = "entries"

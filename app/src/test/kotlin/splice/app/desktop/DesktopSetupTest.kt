@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.desktop.DesktopCredential
 import splice.client.desktop.DesktopAppConfig
+import splice.client.desktop.DesktopManagedPolicy
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import java.nio.file.Files
@@ -24,7 +25,6 @@ class DesktopSetupTest {
             "XDG_CONFIG_HOME" to tmp.resolve("config").toString(),
             "HOME" to tmp.resolve("home").toString(),
             "SPLICE_STATE_DIR" to tmp.resolve("state").toString(),
-            "SPLICE_DESKTOP_MANAGED_FILE" to tmp.resolve("etc/managed-settings.json").toString(),
         )
         EnvReader { vars[it] }
     }
@@ -35,7 +35,7 @@ class DesktopSetupTest {
     }
 
     @Test
-    fun `on in a Desktop that never had a library makes one, and off leaves no trace of it`() {
+    fun `on in a Desktop that never had a library makes one, and off leaves no trace of it`() = managedHere {
         app.putIn("http://127.0.0.1:3096/door")
         records.update { it.copy(on = true) }
         assertEquals(DesktopMode.APP, app.mode())
@@ -47,7 +47,7 @@ class DesktopSetupTest {
     }
 
     @Test
-    fun `a configuration the person applied in Desktop meanwhile stays applied when splice's comes out`() {
+    fun `a configuration the person applied meanwhile stays applied when splice's comes out`() = managedHere {
         app.putIn("http://127.0.0.1:3096/door")
         records.update { it.copy(on = true) }
         val theirs = "5a5a5a5a-2222-4c2d-9e8f-123456789abc"
@@ -66,7 +66,7 @@ class DesktopSetupTest {
     }
 
     @Test
-    fun `a managed configuration refuses splice's, which then changes nothing`() {
+    fun `a managed configuration refuses splice's, which then changes nothing`() = managedHere {
         Files.createDirectories(tmp.resolve("etc"))
         Files.writeString(tmp.resolve("etc/managed-settings.json"), "{}")
         assertTrue(app.refusal().orEmpty().contains("a managed configuration decides"), app.refusal())
@@ -74,7 +74,7 @@ class DesktopSetupTest {
     }
 
     @Test
-    fun `splice uninstall takes splice's configuration out of Desktop with no daemon`() {
+    fun `splice uninstall takes splice's configuration out of Desktop with no daemon`() = managedHere {
         app.putIn("http://127.0.0.1:3096/door")
         records.update { it.copy(on = true) }
         val said = mutableListOf<String>()
@@ -94,6 +94,10 @@ class DesktopSetupTest {
         assertEquals(0, DesktopCredential({ out += it }, { err += it }, { false }).run(keyFile))
         assertEquals(listOf(DesktopKey(keyFile) {}.get()), out)
     }
+
+    /** [block] with the managed configuration looked for in this test's fixture home, never the machine's. */
+    private fun managedHere(block: () -> Unit) =
+        DesktopManagedPolicy.within(tmp.resolve("etc/managed-settings.json"), block)
 
     private fun compact(file: Path): String = Files.readString(file).replace(Regex("\\s"), "")
 }

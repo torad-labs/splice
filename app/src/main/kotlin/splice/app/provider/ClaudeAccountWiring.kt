@@ -34,6 +34,7 @@ internal class ClaudeAccountWiring(
     nativePlaces: ClaudeLoginPlacesSource = ClaudeLoginPlacesSource { null },
 ) {
     private val native = ClaudeNativeAccountWiring(statePaths, nativePlaces, log, identities)
+    private val owners = LoginOwners()
 
     /** Native places provide read-only selectable credentials. Without one, [caller] remains the forwarded primary;
      *  managed folders are always separate members, never a replacement for the native login owner. */
@@ -55,13 +56,15 @@ internal class ClaudeAccountWiring(
             WiredAccount(
                 label = account.label,
                 primary = false,
-                auth = ClaudeFolderAuth(
-                    account.directory,
-                    refresh = refresh,
-                    log = log,
-                    profiles = splice.app.auth.claude.ClaudeCredentialProfiles(statePaths.stateDir, log),
-                    identities = identities,
-                ),
+                auth = owners.held(CLAUDE_FOLDER_LOGIN, account.directory) {
+                    ClaudeFolderAuth(
+                        account.directory,
+                        refresh = refresh,
+                        log = log,
+                        profiles = splice.app.auth.claude.ClaudeCredentialProfiles(statePaths.stateDir, log),
+                        identities = identities,
+                    )
+                },
                 quota = WiredAccountQuota(file = account.directory.resolve(QUOTA_FILE)),
                 credential = WiredAccountCredential(present = account.refusal == null, refusal = account.refusal),
                 extraHeaders = ClaudeLoginHeaders,
@@ -82,3 +85,6 @@ internal object ClaudeLoginHeaders : CredentialHeaders {
 // why: each added account's quota snapshot lives beside its own credential, so no two logins share a window and
 // removing an account takes its usage with it. The primary's stays in the per-head file every install already has.
 private const val QUOTA_FILE = "quota.json"
+
+// why: the kind a Claude login added to splice is held under (LoginOwners), beside the OAuth kinds that name their own.
+private const val CLAUDE_FOLDER_LOGIN = "claude-folder"

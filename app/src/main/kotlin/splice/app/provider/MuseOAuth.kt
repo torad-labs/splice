@@ -32,6 +32,7 @@ internal class MuseOAuth(
     private val mintCall: MuseKeyMintCall,
 ) {
     private val accountFiles = OAuthAccountFiles()
+    private val owners = LoginOwners()
 
     internal fun museOauthAccounts(ctx: ProviderBuild): List<MuseOAuthAccount> {
         val primaryPath = Paths.get(
@@ -45,13 +46,15 @@ internal class MuseOAuth(
             MuseOAuthAccount(
                 label = file.label,
                 primary = file.primary,
-                auth = MuseAuthProvider(
-                    authPath = file.credentialFile,
-                    log = HeadScopedLogs.headScopedLog(ctx.key, log),
-                    mintCall = mintCall,
-                    authCacheMs = ctx.cfg.authCacheMs,
-                    prefetchScope = probeScope,
-                ),
+                auth = owners.held(AuthKind.MuseOAuth.wire, file.credentialFile) {
+                    MuseAuthProvider(
+                        authPath = file.credentialFile,
+                        log = HeadScopedLogs.headScopedLog(ctx.key, log),
+                        mintCall = mintCall,
+                        authCacheMs = ctx.cfg.authCacheMs,
+                        prefetchScope = probeScope,
+                    )
+                },
                 quotaFile = file.quotaFile,
                 credentialPresent = file.credentialPresent,
                 refusal = file.refusal,

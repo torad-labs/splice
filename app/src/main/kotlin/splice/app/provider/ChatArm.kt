@@ -30,10 +30,11 @@ internal class ChatArm(
     private val grokRefresh: GrokRefresh,
     /** Server mode (F4): the pools of the providers that list upstreams, shared by every head of each. */
     private val pools: UpstreamPools = UpstreamPools(probeScope, log, JdkHealthHttp()),
+    /** The Grok sign-ins, held once for every arm that serves Grok (GrokResponsesArm asks the same owner). */
+    private val grokAccounts: GrokAccountWiring = GrokAccountWiring(probeScope, log, grokRefresh),
 ) {
     private val overlay = QuirksOverlay()
     private val probeInputs = LocalProbeInputs()
-    private val grokAccounts = GrokAccountWiring(probeScope, log, grokRefresh)
     private val slotTables = SlotTables(RuntimeSlotCount.Background(probeScope, log))
 
     // After compatibility validation: Grok OAuth uses refresh-capable auth; unregistered

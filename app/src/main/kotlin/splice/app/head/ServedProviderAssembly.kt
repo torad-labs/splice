@@ -8,8 +8,6 @@ import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderLogins
 import splice.app.provider.ServedProvider
 import splice.app.provider.ServingProviders
-import splice.core.topology.AuthKind
-import splice.core.topology.AuthKindRegistry
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
@@ -56,10 +54,10 @@ internal class ServedProviderAssembly(
 
     private fun serve(provider: String, config: ProviderConfig) {
         val key = keys.forProvider(provider)
-        // Until the credential owner is held above the dialect arms, a login a legacy head of the same identity also
-        // refreshes would be refreshed twice, so the gateway leaves it to that head.
-        if (topology.heads[key]?.provider == provider && holdsLogin(config)) {
-            log("[$provider] left to its head: its login is refreshed there, and one owner holds it\n")
+        // A Code Mode bridge is registered with the console under the key, one per key, so a provider a head of the
+        // same key serves with it on keeps its bridge there. Its sign-in is shared either way (LoginOwners).
+        if (topology.heads[key]?.provider == provider && config.codeModeEnabled) {
+            log("[$provider] left to its head: its Code Mode bridge is registered under the head's key\n")
             return
         }
         val ctx = buildInputs.providerContext(
@@ -74,10 +72,6 @@ internal class ServedProviderAssembly(
         runtimes += route.runtime
         served += ServedProviderRoute(provider, ctx, route, logins)
     }
-
-    /** Whether the provider's credential is a login splice keeps and refreshes, or accounts added to splice. */
-    private fun holdsLogin(config: ProviderConfig): Boolean =
-        AuthKindRegistry.from(config.auth.kind) == AuthKind.Client || AuthKindRegistry.isOAuth(config.auth.kind)
 
     /** The head a provider's build needs, from the provider's own config alone: it names the selector prefix the gateway
      *  serves the provider under and carries the pin (its declared one, else its first declared row, else none, which

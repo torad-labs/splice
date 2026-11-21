@@ -19,6 +19,7 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import splice.client.ClaudePolicy
+import splice.core.topology.DOOR_SEGMENT
 import splice.core.topology.RemoteAddress
 import splice.core.topology.RemoteAddressRead
 import splice.core.topology.RemoteAddresses

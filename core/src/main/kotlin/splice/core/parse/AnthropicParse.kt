@@ -41,11 +41,11 @@ public data class AnthropicTurnBody(
         if (cap == null) return this
         val asked = typed.maxTokens?.takeIf { it > 0 }
         if (asked != null && asked <= cap) return this
-        return copy(raw = JsonObject(raw + (MAX_TOKENS to JsonPrimitive(cap))), typed = typed.copy(maxTokens = cap))
+        return copy(raw = JsonObject(raw + (MAX_TOKENS_KEY to JsonPrimitive(cap))), typed = typed.copy(maxTokens = cap))
     }
 }
 
-private const val MAX_TOKENS = "max_tokens"
+private const val MAX_TOKENS_KEY = "max_tokens"
 
 /** The two-view parse, as a named object since the 2026-08-16 style migration (HD-M8): it is a
  *  FACTORY for [AnthropicTurnBody] over a raw request string, so it cannot be a member of the type

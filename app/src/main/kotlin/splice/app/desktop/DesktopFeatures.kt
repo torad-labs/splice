@@ -39,17 +39,17 @@ internal class DesktopFeatures(private val lineup: DesktopLineup) {
      *  of Desktop left open; null for a feature the providers decide. */
     private fun desktopRule(name: String, app: Boolean): Pair<String, String?>? = when {
         name == SSH -> UNAVAILABLE to SSH_WHY
-        name in APP_OFF -> if (app) UNAVAILABLE to APP_OFF.getValue(name) else UNKNOWN to UNSETTLED
-        name == TITLES -> if (app) WORKS to null else UNKNOWN to UNSETTLED
+        name in APP_OFF -> if (app) UNAVAILABLE to APP_OFF.getValue(name) else STATE_UNKNOWN to UNSETTLED
+        name == TITLES -> if (app) WORKS to null else STATE_UNKNOWN to UNSETTLED
         else -> null
     }
 
     /** What the providers in the door decide. */
     private fun providerRule(name: String): Pair<String, String?> = when (name) {
-        EFFORT -> effort()
+        FEATURE_EFFORT -> effort()
         WEB -> web()
         FILES -> files()
-        USAGE -> usage()
+        FEATURE_USAGE -> usage()
         else -> WORKS to null
     }
 
@@ -102,14 +102,14 @@ internal const val APP = "app"
 private val MODES = listOf(STANDARD, APP)
 
 private const val TITLES = "titles"
-private const val EFFORT = "effort"
+private const val FEATURE_EFFORT = "effort"
 private const val WEB = "web search and fetch"
 private const val FILES = "images and files"
 private const val FAST = "fast mode"
 private const val REMOTE = "Remote Control and cloud environments"
 private const val CONNECTORS = "claude.ai connectors"
 private const val SSH = "SSH sessions"
-private const val USAGE = "usage display"
+private const val FEATURE_USAGE = "usage display"
 
 // What Claude Desktop turns off in third-party mode, and how each is said.
 private val APP_OFF = mapOf(
@@ -122,14 +122,14 @@ private const val SSH_WHY = "the door listens on 127.0.0.1 only, which a session
 
 // The features, in the order the spec names them (desktop-full, df-features).
 private val NAMES = listOf(
-    "auto mode", EFFORT, "context window and compaction", TITLES, "subagents", WEB, FILES, "MCP",
-    "scheduled tasks", FAST, REMOTE, CONNECTORS, SSH, USAGE,
+    "auto mode", FEATURE_EFFORT, "context window and compaction", TITLES, "subagents", WEB, FILES, "MCP",
+    "scheduled tasks", FAST, REMOTE, CONNECTORS, SSH, FEATURE_USAGE,
 )
 
 private const val WORKS = "works"
 private const val PARTLY = "partly"
 private const val UNAVAILABLE = "unavailable"
-private const val UNKNOWN = "unknown"
+private const val STATE_UNKNOWN = "unknown"
 
 // Why a standard-mode feature is unknown: the app study left it open, and only the live test settles it.
 private const val UNSETTLED = "the study of Desktop left it open with the Code tab alone on splice, and the live " +

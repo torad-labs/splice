@@ -64,9 +64,9 @@ internal class DesktopCommand(
     /** `on` without `--yes`: what it costs said first, then asked on a terminal. With no terminal to ask on, nothing
      *  changes and the person is told to say `--yes`. */
     private fun asked(args: List<String>): Int {
-        out.line("splice: $COSTS")
-        if (!stdin.isTerminal()) return client.refused(NO_TERMINAL)
-        if (!confirm.yes(QUESTION)) {
+        out.line("splice: $APP_COSTS")
+        if (!stdin.isTerminal()) return client.refused(NO_TERMINAL_TO_ASK)
+        if (!confirm.yes(DESKTOP_QUESTION)) {
             out.line("splice: nothing was changed.")
             return 1
         }
@@ -75,12 +75,12 @@ internal class DesktopCommand(
 }
 
 // What putting Desktop on splice costs, said before it changes anything (desktop-full, outcome 1).
-private const val COSTS = "all of Claude Desktop will run on splice: Chat and Cowork too, not only the Code tab. " +
+private const val APP_COSTS = "all of Claude Desktop will run on splice: Chat and Cowork too, not only the Code tab. " +
     "Your conversations are kept on this computer, not in your claude.ai account. Remote Control and Anthropic's " +
     "cloud environments are not offered, and SSH sessions can't reach splice, which listens on this computer only. " +
     "`splice desktop off` puts it back."
 
-private const val QUESTION = "Put Claude Desktop on splice? [y/N] "
+private const val DESKTOP_QUESTION = "Put Claude Desktop on splice? [y/N] "
 
-private const val NO_TERMINAL = "there is no terminal to ask on, so nothing was changed; run " +
+private const val NO_TERMINAL_TO_ASK = "there is no terminal to ask on, so nothing was changed; run " +
     "`splice desktop on --yes` to go on"

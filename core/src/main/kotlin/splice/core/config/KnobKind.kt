@@ -64,7 +64,7 @@ public val daemonWideKnobs: Set<Knob> = setOf(
 /** The daemon-wide knobs a provider's own overrides may still set: the bounds a turn on that provider is held to (how long
  *  it waits for a first byte, between stream events, before a stall is re-anchored, and without progress). A head's own
  *  overrides stay refused them, but a head on the provider reads the provider's, so one value serves both. */
-public val providerServingKnobs: Set<Knob> = setOf(
+internal val providerServingKnobs: Set<Knob> = setOf(
     Knob.UPSTREAM_TIMEOUT_MS,
     Knob.FIRST_BYTE_TIMEOUT_MS,
     Knob.STREAM_IDLE_MS,

@@ -21,8 +21,8 @@ internal class DesktopLook(statePaths: StatePaths, env: EnvReader, log: LogSink)
         val record = records.get()
         val reopen = app.relaunched(record) == false
         val said = app.mode().said(app.other(record))
-        return DesktopReading("Claude Desktop: $said", warn = reopen, fix = REOPEN.takeIf { reopen })
+        return DesktopReading("Claude Desktop: $said", warn = reopen, fix = REOPEN_TO_APPLY.takeIf { reopen })
     }
 }
 
-private const val REOPEN = "quit and reopen Claude Desktop to apply splice's configuration"
+private const val REOPEN_TO_APPLY = "quit and reopen Claude Desktop to apply splice's configuration"

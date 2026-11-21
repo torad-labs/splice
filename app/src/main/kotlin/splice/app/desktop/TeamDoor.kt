@@ -116,4 +116,3 @@ internal class TeamDoor : TeamGateway {
 }
 
 private const val STARTING = "this server's door opens once its providers are up"
-private const val REQUEST_MODEL = "model"

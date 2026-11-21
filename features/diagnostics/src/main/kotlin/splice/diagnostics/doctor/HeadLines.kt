@@ -11,7 +11,7 @@ import splice.core.util.LocalTimeText
 import java.time.Instant
 
 /** Phrases both commands say about a head: whether it is listed, its credential, and the last error it was answered. */
-public class HeadLines {
+internal class HeadLines {
     /** `listed`, or `left out: <reason>`, as `splice claude` writes one head. */
     public fun listed(head: JsonObject): String =
         if (leftOut(head)) "left out: ${reason(head)}" else "listed"

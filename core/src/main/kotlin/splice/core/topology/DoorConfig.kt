@@ -43,13 +43,13 @@ public data class DoorCommandConfig(
 }
 
 /** The [DoorCommandConfig.models] word for the head's own rows, the default. */
-public const val DOOR_MODELS_HEAD: String = "head"
+internal const val DOOR_MODELS_HEAD: String = "head"
 
 /** The [DoorCommandConfig.models] word for the door's whole picker. */
-public const val DOOR_MODELS_DOOR: String = "door"
+internal const val DOOR_MODELS_DOOR: String = "door"
 
 /** Why a `[door.commands.*]` table cannot run: its provider, its word, its name. Each finding names its dotted path. */
-public class DoorChecks(private val topology: Topology) {
+internal class DoorChecks(private val topology: Topology) {
     public fun findings(): List<TopologyFinding> = commandFindings() + aliasFindings()
 
     private fun commandFindings(): List<TopologyFinding> = topology.door.commands.flatMap { (name, command) ->

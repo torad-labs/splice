@@ -3,16 +3,15 @@
 // life of the process (in memory alone). A provider whose command changed gets a new one.
 package splice.core.auth
 
-import kotlinx.coroutines.CoroutineDispatcher
 import java.util.concurrent.ConcurrentHashMap
 
 public object CommandCredentials {
     private val held = ConcurrentHashMap<String, Pair<String, CommandCredential>>()
 
-    /** The credential of provider [providerKey], whose `credential_command` is [command]; its runs wait on [io]. */
-    public fun of(providerKey: String, command: String, io: CoroutineDispatcher): CommandCredential {
+    /** The credential of provider [providerKey], whose `credential_command` is [command], run by [runs]. */
+    public fun of(providerKey: String, command: String, runs: CredentialRuns): CommandCredential {
         val entry = held.compute(providerKey) { _, previous ->
-            previous?.takeIf { it.first == command } ?: (command to CommandCredential(CredentialCommand(command, io)))
+            previous?.takeIf { it.first == command } ?: (command to CommandCredential(runs.of(command)))
         }
         return checkNotNull(entry).second
     }

@@ -46,7 +46,7 @@ internal class ProtoStamp {
         val any = UnknownFieldSet.newBuilder().addField(LISTED, string).build()
         return UnknownFieldSet.newBuilder()
             .addField(LISTED, bytes(listOf(ByteString.copyFromUtf8(key))))
-            .addField(VALUE, bytes(listOf(any.toByteString())))
+            .addField(KEY_VALUE_VALUE, bytes(listOf(any.toByteString())))
             .build()
             .toByteString()
     }
@@ -63,5 +63,5 @@ internal class ProtoStamp {
 // Resource's attributes, a KeyValue's key, an AnyValue's string.
 private const val LISTED = 1
 
-// A KeyValue's value.
-private const val VALUE = 2
+// why: OTLP's protobuf schema numbers a KeyValue's value field 2, after its key.
+private const val KEY_VALUE_VALUE = 2

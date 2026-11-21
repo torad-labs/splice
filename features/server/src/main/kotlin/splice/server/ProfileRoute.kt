@@ -19,6 +19,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import splice.core.topology.ServerConfig
+import splice.core.wire.HTTPS_SCHEME
+import splice.core.wire.HTTP_SCHEME
 import splice.server.caller.ClientAddresses
 import splice.server.telemetry.OTLP_ROUTE
 import splice.share.PROFILE_PATH
@@ -74,17 +76,14 @@ internal class ProfileRoute(
         val peer = call.request.origin.remoteAddress
         val headers = call.request.headers
         val scheme = addresses.proxied(peer, headers[HttpHeaders.XForwardedProto])?.lowercase()
-            ?.takeIf { it == HTTP || it == HTTPS }
-            ?: if (secure) HTTPS else HTTP
+            ?.takeIf { it == HTTP_SCHEME || it == HTTPS_SCHEME }
+            ?: if (secure) HTTPS_SCHEME else HTTP_SCHEME
         val host = (addresses.proxied(peer, headers[HttpHeaders.XForwardedHost]) ?: headers[HttpHeaders.Host])
             ?.takeIf(AUTHORITY::matches)
             ?: "${call.request.origin.localAddress}:${call.request.origin.localPort}"
         return "$scheme://$host"
     }
 }
-
-private const val HTTP = "http"
-private const val HTTPS = "https"
 
 // A host and an optional port, as a Host header names them: a name, an IPv4 address or a bracketed IPv6 one.
 private val AUTHORITY = Regex("""^(\[[0-9A-Fa-f:.]+]|[A-Za-z0-9.-]+)(:\d{1,5})?$""")

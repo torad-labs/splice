@@ -69,6 +69,7 @@ import io.ktor.server.request.httpMethod
 import io.ktor.server.response.respondText
 import kotlinx.coroutines.CoroutineDispatcher
 import splice.core.pool.PREFERRED_UPSTREAM_HEADER
+import splice.core.topology.DOOR_SEGMENT
 import splice.core.topology.ServerAddress
 import splice.core.topology.ServerConfig
 import splice.core.util.LogSink
@@ -80,7 +81,6 @@ import splice.server.ledger.ROUTE_MESSAGES
 import splice.server.telemetry.OTLP_ROUTE
 import splice.server.telemetry.ResourceStamp
 import splice.server.telemetry.TelemetryRelay
-import splice.share.DOOR_SEGMENT
 import splice.share.HEAD_API_ROOT
 import splice.share.HEAD_LAUNCH_ROUTE
 import splice.share.HeadTurn

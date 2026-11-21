@@ -15,7 +15,9 @@ internal class KeyAuth {
     fun of(ctx: ProviderBuild): RefreshableAuthProvider {
         val auth = ctx.providerCfg.auth
         val command = auth.credentialCommand?.takeIf { auth.isCommand }
-        if (command != null) return CommandCredentials.of(ctx.head.provider, command, ProcessDispatchers().io())
+        if (command != null) {
+            return CommandCredentials.of(ctx.head.provider, command, CredentialCommands(ProcessDispatchers().io()))
+        }
         return ApiKeyAuthProvider(
             envVar = auth.effectiveApiKeyEnv(ctx.key),
             keyFile = auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },

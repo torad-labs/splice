@@ -15,18 +15,20 @@ public class DesktopAppWindow {
     public fun of(header: String?, beta: String?, model: String): Long? {
         if (!app(header)) return null
         val million = model.endsWith(ONE_MILLION_HINT, ignoreCase = true) ||
-            beta.orEmpty().split(',').any { it.trim().startsWith(ONE_MILLION_BETA) }
-        return if (million) MILLION else STANDARD
+            beta.orEmpty().split(',').any { it.trim().startsWith(MILLION_WINDOW_BETA) }
+        return if (million) MILLION_WINDOW else STANDARD_WINDOW
     }
 }
 
 /** The request header Claude Code names its betas in. */
 public const val ANTHROPIC_BETA_HEADER: String = "anthropic-beta"
 
-// Desktop's window for the Code tab, and for a model picked as its 1M variant.
-private const val STANDARD = 200_000L
-private const val MILLION = 1_000_000L
+// why: the window Desktop gives the Code tab's Claude Code for a model picked as itself.
+private const val STANDARD_WINDOW = 200_000L
+
+// why: the window Desktop gives it for a model picked as its 1M variant.
+private const val MILLION_WINDOW = 1_000_000L
 
 // How a model's 1M variant is named, and the beta Claude Code asks for it with.
 private const val ONE_MILLION_HINT = "[1m]"
-private const val ONE_MILLION_BETA = "context-1m-"
+private const val MILLION_WINDOW_BETA = "context-1m-"

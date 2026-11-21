@@ -65,6 +65,9 @@ import java.nio.file.Paths
 private const val DAEMON_REL = "app/src/main/kotlin/splice/app/Daemon.kt"
 private const val HEAD_SERVER_REL = "features/turns/src/main/kotlin/splice/head/HeadServer.kt"
 private const val HEAD_LIFECYCLE_REL = "features/turns/src/main/kotlin/splice/head/lifecycle/HeadLifecycle.kt"
+
+// The drain itself, since Nov 2026: one for a head's own stop and for a gateway's provider runtime.
+private const val TURN_SERVICE_REL = "features/turns/src/main/kotlin/splice/head/TurnService.kt"
 private const val DAEMON_RUN_REL = "app/src/main/kotlin/splice/app/DaemonRun.kt"
 private const val TURN_STREAMER_REL = "features/turns/src/main/kotlin/splice/head/turn/TurnStreamer.kt"
 
@@ -111,12 +114,14 @@ class DaemonStopOrderTest {
         val head = code(HEAD_SERVER_REL)
         requireOnce(head, "private val lifecycle = HeadLifecycle(", HEAD_SERVER_REL)
         requireOnce(head, "override suspend fun stop(): Unit = lifecycle.stop()", HEAD_SERVER_REL)
-        val source = code(HEAD_LIFECYCLE_REL)
-        val drainLoop = requireOnce(source, "while (inflight > 0", HEAD_LIFECYCLE_REL)
-        val stopDetached = requireOnce(source, "driver.stopDetached()", HEAD_LIFECYCLE_REL)
+        // The lifecycle hands the drain to the turn service, which a gateway's provider runtime drains through too.
+        requireOnce(code(HEAD_LIFECYCLE_REL), "turns.settle(engine)", HEAD_LIFECYCLE_REL)
+        val source = code(TURN_SERVICE_REL)
+        val drainLoop = requireOnce(source, "while (inflight > 0", TURN_SERVICE_REL)
+        val stopDetached = requireOnce(source, "driver.stopDetached()", TURN_SERVICE_REL)
         assertTrue(
             drainLoop < stopDetached,
-            "$HEAD_LIFECYCLE_REL: driver.stopDetached() runs at offset $stopDetached, BEFORE the in-flight " +
+            "$TURN_SERVICE_REL: driver.stopDetached() runs at offset $stopDetached, BEFORE the in-flight " +
                 "drain loop at $drainLoop. A detached compaction OUTLIVES its client: its handed-off " +
                 "slot travels with the drive and the drain budget belongs to that feature — a detached " +
                 "compaction that finishes inside the budget releases its slot and keeps its recording " +

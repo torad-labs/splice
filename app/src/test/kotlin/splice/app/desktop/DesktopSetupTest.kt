@@ -17,7 +17,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.desktop.DesktopCredential
 import splice.client.desktop.DesktopAppConfig
-import splice.client.desktop.DesktopManagedPolicy
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import java.nio.file.Files

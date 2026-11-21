@@ -48,7 +48,7 @@ internal const val SPLICE_STATE_HOME: String = ".splice"
 internal const val LEGACY_STATE_HOME: String = ".claude-codex"
 
 /** Points the state dir anywhere; wins over everything but an explicit `baseOverride`. */
-internal const val STATE_DIR_ENV: String = "SPLICE_STATE_DIR"
+public const val STATE_DIR_ENV: String = "SPLICE_STATE_DIR"
 
 /** The pre-0.4 spelling of [STATE_DIR_ENV]. Still honoured — hermetic tests, `splice-launch` and
  *  anyone scripting it set it — but [STATE_DIR_ENV] is the name that will outlive it. */

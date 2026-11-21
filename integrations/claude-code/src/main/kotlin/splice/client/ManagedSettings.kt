@@ -16,7 +16,7 @@ public class ManagedSettings {
      *  in their `env`, or a headers helper of their own. */
     public fun setsTelemetry(configDir: Path): Boolean {
         val managed = read(configDir.resolve(REMOTE_SETTINGS)) ?: return false
-        val env = (managed[ENV] as? JsonObject).orEmpty().keys
+        val env = (managed[MANAGED_ENV] as? JsonObject).orEmpty().keys
         return Keys.OTEL_HEADERS_HELPER in managed ||
             env.any { it == TELEMETRY_SWITCH || it.startsWith(OTEL_PREFIX) }
     }
@@ -32,7 +32,7 @@ public class ManagedSettings {
 
 /** The file Claude Code keeps an organisation's managed settings in, inside a config tree. */
 private const val REMOTE_SETTINGS = "remote-settings.json"
-private const val ENV = "env"
+private const val MANAGED_ENV = "env"
 
 /** The variable that turns Claude Code's telemetry on. */
 public const val TELEMETRY_SWITCH: String = "CLAUDE_CODE_ENABLE_TELEMETRY"

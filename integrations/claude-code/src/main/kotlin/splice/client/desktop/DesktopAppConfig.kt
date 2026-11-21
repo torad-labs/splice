@@ -4,7 +4,7 @@
 // `$XDG_CONFIG_HOME/Claude-3p/configLibrary/` (Electron's appData on Linux, `~/.config` when unset), that holds one
 // `<id>.json` per configuration and `_meta.json`, which lists them (`entries`, each `{id, name}`) and names the one
 // Desktop applies (`appliedId`). Desktop reads it at launch and opens in 3P mode when the applied
-// configuration names a provider. A managed configuration in `/etc/claude-desktop/managed-settings.json` decides the
+// configuration names a provider. A managed configuration ([DESKTOP_MANAGED_FILE]) decides the
 // provider over any local one. splice writes one configuration of its own there, at the person's command, pointing
 // Desktop at its door as a gateway; the credential is a helper Desktop runs, so no key is ever in the library.
 package splice.client.desktop
@@ -60,11 +60,7 @@ public class DesktopAppConfig(private val env: EnvReader = EnvReader(System::get
     public val meta: Path get() = library.resolve(META_FILE)
 
     /** Configuration [id]'s file in the library. */
-    public fun file(id: String): Path = library.resolve("$id$JSON_SUFFIX")
-
-    /** The managed configuration, root's, which decides Desktop's provider over any local one. splice only asks
-     *  whether it exists, and never opens it. */
-    public val managed: Path get() = DesktopManagedPolicy.file
+    public fun file(id: String): Path = library.resolve("$id$LIBRARY_FILE_SUFFIX")
 
     /** splice's configuration: the [policy] it was made with, and over that Desktop's gateway provider at [door], the
      *  credential from the executable [helper] (an absolute path), every request carrying [APP_MODE_HEADER], and what
@@ -100,16 +96,16 @@ public class DesktopAppConfig(private val env: EnvReader = EnvReader(System::get
 
     /** The name [meta]'s entry [id] has, or null when it lists no such entry. */
     public fun nameOf(meta: JsonObject, id: String): String? =
-        entries(meta).firstOrNull { JsonScalars.str(it, ID) == id }?.let { JsonScalars.str(it, NAME) }
+        entries(meta).firstOrNull { JsonScalars.str(it, ENTRY_ID) == id }?.let { JsonScalars.str(it, ENTRY_NAME) }
 
     /** [meta] (or a new one, when there is none) with splice's entry [id] listed once and applied. Every other entry
      *  and field is kept as it was. */
     public fun withSplice(meta: JsonObject?, id: String): JsonObject {
         val before = meta ?: JsonObject(emptyMap())
-        val listed = entries(before).any { JsonScalars.str(it, ID) == id }
+        val listed = entries(before).any { JsonScalars.str(it, ENTRY_ID) == id }
         val entry = buildJsonObject {
-            put(ID, id)
-            put(NAME, SPLICE_NAME)
+            put(ENTRY_ID, id)
+            put(ENTRY_NAME, SPLICE_NAME)
         }
         val entries = if (listed) before[ENTRIES] ?: JsonArray(listOf(entry)) else JsonArray(entries(before) + entry)
         return JsonObject(applying(before, id) + (ENTRIES to entries))
@@ -117,7 +113,7 @@ public class DesktopAppConfig(private val env: EnvReader = EnvReader(System::get
 
     /** [meta] without splice's entry [id]. Where [meta] still applies it, [previous] is applied again, or none. */
     public fun withoutSplice(meta: JsonObject, id: String, previous: String?): JsonObject {
-        val entries = JsonArray(entries(meta).filterNot { JsonScalars.str(it, ID) == id })
+        val entries = JsonArray(entries(meta).filterNot { JsonScalars.str(it, ENTRY_ID) == id })
         val kept = if (applied(meta) == id) applying(meta, previous) else meta
         return JsonObject(kept + (ENTRIES to entries))
     }
@@ -137,40 +133,21 @@ public class DesktopAppConfig(private val env: EnvReader = EnvReader(System::get
 }
 
 /** Where Claude Desktop's managed configuration is, the platform's one place: root's, read by Desktop over any local
- *  configuration. Nothing in the environment moves it. [within] is the test seam: a test lends the process a fixture
- *  path for one block, since the machine running it may have a managed file of its own. */
-public object DesktopManagedPolicy {
-    @PublishedApi
-    @Volatile
-    internal var redirected: Path? = null
-
-    /** The managed configuration's path. */
-    public val file: Path get() = redirected ?: Path.of(MANAGED)
-
-    /** [block] run with [fixture] as the managed configuration's path, then the platform's again. */
-    public inline fun <T> within(fixture: Path, block: () -> T): T {
-        val previous = redirected
-        redirected = fixture
-        try {
-            return block()
-        } finally {
-            redirected = previous
-        }
-    }
-}
+ *  configuration. Nothing in the environment moves it. splice only asks whether it exists, and never opens it. */
+public const val DESKTOP_MANAGED_FILE: String = "/etc/claude-desktop/managed-settings.json"
 
 /** The header every request Desktop sends in app mode carries, which splice writes into its configuration's custom
  *  headers: how the door tells an app-mode request from a standard one. */
 public const val APP_MODE_HEADER: String = "x-splice-desktop"
 
 /** [APP_MODE_HEADER]'s value. */
-public const val APP_MODE: String = "app"
+internal const val APP_MODE: String = "app"
 
 /** The name splice's entry has in `_meta.json`, which Desktop shows in its configuration window. */
-public const val SPLICE_NAME: String = "splice"
+internal const val SPLICE_NAME: String = "splice"
 
 /** The library's index file. */
-public const val META_FILE: String = "_meta.json"
+internal const val META_FILE: String = "_meta.json"
 
 // why: Desktop runs the helper again once its credential is this old, so a rotated key reaches it within five minutes.
 private const val HELPER_TTL_SEC = 300
@@ -179,8 +156,7 @@ private const val XDG_CONFIG_HOME = "XDG_CONFIG_HOME"
 private const val DOT_CONFIG = ".config"
 private const val APP_DATA = "Claude-3p"
 private const val LIBRARY = "configLibrary"
-private const val JSON_SUFFIX = ".json"
-private const val MANAGED = "/etc/claude-desktop/managed-settings.json"
+private const val LIBRARY_FILE_SUFFIX = ".json"
 private const val GATEWAY_BASE_URL = "inferenceGatewayBaseUrl"
 
 /** Desktop's key for the headers every request of its carries, [APP_MODE_HEADER] among them. */
@@ -189,5 +165,5 @@ private const val INFERENCE_MODELS = "inferenceModels"
 internal const val MODEL_DISCOVERY: String = "modelDiscoveryEnabled"
 private const val APPLIED_ID = "appliedId"
 private const val ENTRIES = "entries"
-private const val ID = "id"
-private const val NAME = "name"
+private const val ENTRY_ID = "id"
+private const val ENTRY_NAME = "name"

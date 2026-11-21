@@ -36,7 +36,9 @@ public class DoorOverlayMerge(private val overlay: String, private val cwd: Stri
     public fun merge(args: List<String>): Merged {
         val given = SettingsArgs(args)
         if (given.missing) {
-            return Merged.Refused("$SETTINGS_FLAG names no settings; give it a JSON object or a file holding one")
+            return Merged.Refused(
+                "${LaunchMarker.SETTINGS_FLAG} names no settings; give it a JSON object or a file holding one",
+            )
         }
         val theirs = given.values.map { value -> readOrNull(value) ?: return Merged.Refused(refusal(value)) }
         val own = Json.parseToJsonElement(overlay) as JsonObject
@@ -57,7 +59,7 @@ public class DoorOverlayMerge(private val overlay: String, private val cwd: Stri
             while (i < args.size) {
                 val arg = args[i]
                 when {
-                    arg == SETTINGS_FLAG -> args.getOrNull(++i)?.let(values::add) ?: run { missing = true }
+                    arg == LaunchMarker.SETTINGS_FLAG -> args.getOrNull(++i)?.let(values::add) ?: run { missing = true }
                     arg.startsWith(SETTINGS_EQUALS) -> values += arg.removePrefix(SETTINGS_EQUALS)
                     else -> rest += arg
                 }
@@ -84,9 +86,10 @@ public class DoorOverlayMerge(private val overlay: String, private val cwd: Stri
 
     /** Says what is wrong and where, as boot does, without repeating inline JSON, which can hold a wrapper's secrets. */
     private fun refusal(value: String): String = if (value.trimStart().startsWith("{")) {
-        "the inline JSON after $SETTINGS_FLAG is not a JSON object; nothing was launched"
+        "the inline JSON after ${LaunchMarker.SETTINGS_FLAG} is not a JSON object; nothing was launched"
     } else {
-        "$SETTINGS_FLAG $value is neither a JSON object nor a readable file holding one; nothing was launched"
+        "${LaunchMarker.SETTINGS_FLAG} $value is neither a JSON object nor a readable file holding one; " +
+            "nothing was launched"
     }
 
     /** [over] merged into [base]: objects key by key with [over]'s values winning, and hooks concatenated per event. */
@@ -138,8 +141,7 @@ public class DoorOverlayMerge(private val overlay: String, private val cwd: Stri
     }
 }
 
-private const val SETTINGS_FLAG = LaunchMarker.SETTINGS_FLAG
-private const val SETTINGS_EQUALS = "$SETTINGS_FLAG="
+private const val SETTINGS_EQUALS = "${LaunchMarker.SETTINGS_FLAG}="
 private const val ENV_KEY = "env"
 
 /** What keeps a session on the door: the variables a person's settings may never move. */

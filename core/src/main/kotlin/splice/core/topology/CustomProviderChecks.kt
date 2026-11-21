@@ -27,7 +27,7 @@ public data class ServedWindowConfig(
 public const val ERROR_MESSAGES_WHOLE: String = "whole"
 
 /** The `error_messages` word for splice's filter, the default. */
-public const val ERROR_MESSAGES_FILTERED: String = "filtered"
+internal const val ERROR_MESSAGES_FILTERED: String = "filtered"
 
 private const val NO_CERTIFICATE = "holds no PEM certificate"
 
@@ -74,7 +74,7 @@ public class ProviderCaFile(private val raw: String, private val configDir: Path
 
 /** The findings of the custom-provider keys, provider by provider. [configDir] resolves a relative `ca_file`; null
  *  leaves a relative one unchecked, since against any other folder it would refuse a file the daemon reads fine. */
-public class CustomProviderChecks(private val topology: Topology, private val configDir: Path?) {
+internal class CustomProviderChecks(private val topology: Topology, private val configDir: Path?) {
     public fun findings(): List<TopologyFinding> = topology.providers.flatMap { (key, provider) ->
         listOfNotNull(
             auth(key, provider.auth),

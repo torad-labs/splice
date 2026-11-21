@@ -84,22 +84,22 @@ internal class TelemetryRelay(
 
     /** [call]'s body, inflated when it came gzipped, or null once refused. */
     private suspend fun sent(call: ApplicationCall): ByteArray? {
-        val raw = bodies.read(call, MAX_BODY_BYTES, BODY_READ_MS) ?: return null
+        val raw = bodies.read(call, MAX_RELAY_BODY_BYTES, BODY_READ_MS) ?: return null
         val encoding = call.request.headers[HttpHeaders.ContentEncoding]?.trim()?.lowercase()
         if (encoding.isNullOrEmpty() || encoding == IDENTITY) return raw
         val inflated = if (encoding == GZIP) inflated(raw) else null
         when {
             inflated == null ->
                 voice.refuse(call, HttpStatus.BAD_REQUEST, "an OTLP request is sent as it is or gzipped")
-            inflated.size > MAX_BODY_BYTES ->
-                voice.refuse(call, HttpStatus.CONTENT_TOO_LARGE, "request body exceeds $MAX_BODY_BYTES bytes")
+            inflated.size > MAX_RELAY_BODY_BYTES ->
+                voice.refuse(call, HttpStatus.CONTENT_TOO_LARGE, "request body exceeds $MAX_RELAY_BODY_BYTES bytes")
         }
-        return inflated?.takeIf { it.size <= MAX_BODY_BYTES }
+        return inflated?.takeIf { it.size <= MAX_RELAY_BODY_BYTES }
     }
 
     /** [raw] gunzipped, one byte past the cap at most; null when it is not gzip. */
     private fun inflated(raw: ByteArray): ByteArray? = try {
-        GZIPInputStream(raw.inputStream()).use { it.readNBytes(MAX_BODY_BYTES + 1) }
+        GZIPInputStream(raw.inputStream()).use { it.readNBytes(MAX_RELAY_BODY_BYTES + 1) }
     } catch (_: IOException) {
         null
     }
@@ -151,7 +151,7 @@ private const val IDENTITY = "identity"
 
 // why: Claude Code exports a batch every few seconds of at most a few hundred records; 8 MiB is far past any batch it
 // sends and bounds what one request can make the server hold.
-private const val MAX_BODY_BYTES = 8 * 1024 * 1024
+private const val MAX_RELAY_BODY_BYTES = 8 * 1024 * 1024
 
 // why: a batch is sent whole in well under a second on any link; a body still arriving after 30 s is a stalled client.
 private const val BODY_READ_MS = 30_000L

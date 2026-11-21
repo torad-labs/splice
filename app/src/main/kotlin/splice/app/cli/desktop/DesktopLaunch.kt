@@ -15,6 +15,7 @@ import splice.app.cli.AdminSupport
 import splice.app.desktop.DESKTOP_PATH
 import splice.app.desktop.DOOR_PATH
 import splice.app.desktop.DesktopKey
+import splice.core.config.STATE_DIR_ENV
 import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.Topology
@@ -35,7 +36,7 @@ internal class DesktopLaunch(private val env: EnvReader, private val err: Termin
         val command = if (state != null) args.drop(2) else args
         if (command.isEmpty()) {
             err.line("usage: splice desktop launch <command> [args...]")
-            return USAGE_EXIT
+            return LAUNCH_USAGE_EXIT
         }
         val here = state?.let { dir -> EnvReader { if (it == STATE_DIR_ENV) dir else env(it) } } ?: env
         val process = ProcessBuilder(command).inheritIO()
@@ -89,8 +90,6 @@ internal class DesktopLaunch(private val env: EnvReader, private val err: Termin
 // How `<state dir>/desktop-launch` names splice's state folder, ahead of the command.
 internal const val STATE_DIR_FLAG = "--state-dir"
 
-private const val STATE_DIR_ENV = "SPLICE_STATE_DIR"
-
 // The door's paths on the control port: today's, and the one a Desktop set up before it had two callers.
 private val DOOR_PATHS = setOf(DOOR_PATH, DESKTOP_PATH)
 
@@ -107,7 +106,7 @@ private const val HOST_AUTH_VAR = "CLAUDE_CODE_HOST_AUTH_ENV_VAR"
 private val LOOPBACK = setOf("127.0.0.1", "localhost", "[::1]")
 
 // Shell convention for invalid command arguments.
-private const val USAGE_EXIT = 2
+private const val LAUNCH_USAGE_EXIT = 2
 
 // A shell's exit for a command it could not run.
 private const val NOT_STARTED_EXIT = 127

@@ -38,8 +38,10 @@ internal fun interface HookStdin {
     operator fun invoke(): String
 }
 
-/** The file descriptors of stdin and stdout. */
+/** The file descriptors of stdin and stdout, as POSIX numbers them for every process. */
 internal const val STDIN_FD = 0
+
+// why: POSIX numbers a process's standard output 1, as it numbers its standard input 0.
 internal const val STDOUT_FD = 1
 
 /** `/proc/self/fd/<n>` names a terminal; anything else, including a pipe, does not. */

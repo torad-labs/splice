@@ -153,6 +153,8 @@ internal class TurnService(
     }
 }
 
+// why: how often a stop looks again for calls still inside a handler: short against the drain budget it waits within,
+// long enough that waiting costs nothing.
 private const val STOP_DRAIN_POLL_MS = 50L
 
 // The cut turn's seal AND its reply must land before the listener is torn down: a collect turn writes its 529 only

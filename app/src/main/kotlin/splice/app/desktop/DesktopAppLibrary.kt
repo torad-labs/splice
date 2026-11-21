@@ -14,6 +14,7 @@ package splice.app.desktop
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import splice.client.desktop.DESKTOP_MANAGED_FILE
 import splice.client.desktop.DesktopAppConfig
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
@@ -32,7 +33,7 @@ internal class DesktopAppLibrary(
      *  decides Desktop's provider over any local one; only its existence is asked), the library holds a file splice
      *  can't read, or the library can't be written. */
     fun refusal(): String? = when {
-        managed() -> "${config.managed} $MANAGED_DECIDES"
+        managed() -> "${DesktopManagedPolicy.file} $MANAGED_DECIDES"
         !Files.isDirectory(config.library) -> files.unwritable(config.library)
         else -> unreadable(config.library) ?: files.unwritable(config.library)
     }
@@ -83,7 +84,7 @@ internal class DesktopAppLibrary(
     }
 
     /** Whether a managed configuration exists, asked of its existence alone. */
-    fun managed(): Boolean = Files.exists(config.managed, LinkOption.NOFOLLOW_LINKS)
+    fun managed(): Boolean = Files.exists(DesktopManagedPolicy.file, LinkOption.NOFOLLOW_LINKS)
 
     /** The door address splice's configuration [id] gives Desktop, or null when it gives none. */
     fun doorOf(id: String): String? = files.read(config.file(id))?.let(config::door)
@@ -131,6 +132,28 @@ internal class DesktopAppLibrary(
             unread != null -> "$unread can't be read"
             Files.exists(config.meta) && meta == null -> "${config.meta} can't be read as a JSON object"
             else -> null
+        }
+    }
+}
+
+/** The managed configuration's path as this process reads it: the platform's ([DESKTOP_MANAGED_FILE]), root's, which
+ *  decides Desktop's provider over any local one. [within] is the test seam: a test lends the process a fixture path
+ *  for one block, since the machine running it may have a managed file of its own. */
+internal object DesktopManagedPolicy {
+    @Volatile
+    var redirected: Path? = null
+
+    /** The managed configuration's path. */
+    val file: Path get() = redirected ?: Path.of(DESKTOP_MANAGED_FILE)
+
+    /** [block] run with [fixture] as the managed configuration's path, then the platform's again. */
+    inline fun <T> within(fixture: Path, block: () -> T): T {
+        val previous = redirected
+        redirected = fixture
+        try {
+            return block()
+        } finally {
+            redirected = previous
         }
     }
 }

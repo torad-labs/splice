@@ -103,7 +103,7 @@ internal class DesktopDoor(
      *  Authorization decides when both are there. */
     private fun keyed(call: ApplicationCall): DoorCaller? {
         val headers = call.request.headers
-        val presented = headers[HttpHeaders.Authorization] ?: headers[API_KEY_HEADER]?.let { "Bearer $it" }
+        val presented = headers[HttpHeaders.Authorization] ?: headers[DOOR_API_KEY_HEADER]?.let { "Bearer $it" }
         return callers.firstOrNull { it.presents(presented) }
     }
 
@@ -161,10 +161,10 @@ private const val NO_DOOR_KEY =
         "carries the terminal's, and `splice desktop on` gives Claude Desktop its own"
 
 // The header a gateway client may present its key in, in place of Authorization.
-private const val API_KEY_HEADER = "x-api-key"
+private const val DOOR_API_KEY_HEADER = "x-api-key"
 
 private const val NOT_JSON = "the request body is not a JSON object"
 
-private const val REQUEST_MODEL = "model"
+internal const val REQUEST_MODEL: String = "model"
 private const val REQUEST_MAX_TOKENS = "max_tokens"
 private const val REQUEST_STREAM = "stream"

@@ -41,10 +41,10 @@ internal class AddProviderCommand(
 
     /** [args] are the words after `provider`. True when the definition is good (and, without --check, installed). */
     suspend fun add(args: List<String>, env: EnvReader): Boolean {
-        val source = args.filterNot { it == CHECK }.singleOrNull() ?: return usage()
+        val source = args.filterNot { it == CHECK_FLAG }.singleOrNull() ?: return usage()
         return when (val read = DefinitionSource(source).read()) {
             is DefinitionRead.Refused -> refused(source, listOf(TopologyFinding(SOURCE, read.why)))
-            is DefinitionRead.Text -> definition(source, read.text, check = CHECK in args, env)
+            is DefinitionRead.Text -> definition(source, read.text, check = CHECK_FLAG in args, env)
         }
     }
 
@@ -149,7 +149,7 @@ internal class AddProviderCommand(
             return true
         }
         val ok = ports.restart()
-        val said = if (ok) RESTARTED else "  $RED✗$RESET daemon restart failed: run ${CYAN}splice restart$RESET"
+        val said = if (ok) DAEMON_RESTARTED else "  $RED✗$RESET daemon restart failed: run ${CYAN}splice restart$RESET"
         output.line(said)
         return ok
     }
@@ -185,6 +185,6 @@ internal class AddProviderCommand(
     }
 }
 
-private const val CHECK = "--check"
+private const val CHECK_FLAG = "--check"
 private const val SOURCE = "definition"
-private const val RESTARTED = "  daemon     restarted; the next session's /model lists the provider"
+private const val DAEMON_RESTARTED = "  daemon     restarted; the next session's /model lists the provider"

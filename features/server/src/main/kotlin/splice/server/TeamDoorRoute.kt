@@ -28,11 +28,11 @@ internal class TeamDoorRoute(
     private val modelsPath = listOf(HEAD_API_ROOT, "models")
 
     /** `[server] keepalive_seconds` as the cadence a streamed turn's client is pinged at; none when it is 0. */
-    private val keepaliveMs = server.keepaliveSeconds.takeIf { it > 0 }?.let { it * MILLIS }
+    private val keepaliveMs = server.keepaliveSeconds.takeIf { it > 0 }?.let { it * KEEPALIVE_MS_PER_SECOND }
 
     /** [rest], the path after `/door`, asked by [key]'s person. */
     suspend fun answer(call: ApplicationCall, key: ServerKey, rest: List<String>) {
-        val gateway = parts.carriers.gateway ?: return voice.refuse(call, HttpStatus.NOT_FOUND, NO_DOOR)
+        val gateway = parts.carriers.gateway ?: return voice.refuse(call, HttpStatus.NOT_FOUND, TEAM_DOOR_SHUT)
         val method = call.request.httpMethod
         when {
             method == HttpMethod.Post && rest == turnPath -> turn(call, key, gateway)
@@ -77,6 +77,7 @@ internal class TeamDoorRoute(
     private fun served(): ProviderFilter = ProviderFilter { _, names -> names.any { it in server.commands } }
 }
 
-private const val MILLIS = 1_000L
+// why: `[server] keepalive_seconds` is written in seconds and a turn's keepalive is counted in milliseconds.
+private const val KEEPALIVE_MS_PER_SECOND = 1_000L
 
-private const val NO_DOOR = "this server's door is not open: no provider is up to serve it"
+private const val TEAM_DOOR_SHUT = "this server's door is not open: no provider is up to serve it"

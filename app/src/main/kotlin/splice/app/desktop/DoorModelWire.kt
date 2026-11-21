@@ -46,8 +46,8 @@ internal class DoorModelWire(private val tiers: AnthropicTiers, private val newe
     private fun selector(into: JsonObjectBuilder, fact: CatalogModel) {
         if (fact.reasons && fact.source?.containsKey("supports_reasoning") != true) into.put("supports_reasoning", true)
         capabilities(fact)?.let { into.put("capabilities", it) }
-        if (fact.reasoningLevels.isNotEmpty() && fact.source?.containsKey(THINKING) != true) {
-            into.put(THINKING, thinking(fact))
+        if (fact.reasoningLevels.isNotEmpty() && fact.source?.containsKey(THINKING_KEY) != true) {
+            into.put(THINKING_KEY, thinking(fact))
         }
         if (fact.source?.get(RUNTIME) == null || fact.source[RUNTIME] is JsonObject) into.put(RUNTIME, runtime(fact))
     }
@@ -112,7 +112,7 @@ internal object DesktopEffort {
     fun max(model: ServedModel): String? = levels.lastOrNull { it in model.fact.reasoningLevels }
 }
 
-private const val THINKING = "thinking"
+private const val THINKING_KEY = "thinking"
 private const val RUNTIME = "runtime"
 private const val EFFORT = "effort"
 private const val SUPPORTED = "supported"

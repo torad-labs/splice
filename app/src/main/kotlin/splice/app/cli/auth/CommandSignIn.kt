@@ -17,6 +17,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import splice.app.cli.AdminSupport
+import splice.app.provider.COMMAND_SHELL
+import splice.app.provider.CredentialCommands
+import splice.app.provider.NO_INPUT
+import splice.core.auth.COMMAND_NOT_SIGNED_IN
 import splice.core.auth.CommandCredentialState
 import splice.core.auth.CommandCredentials
 import splice.core.terminal.TerminalOutput
@@ -50,7 +54,7 @@ internal class CommandSignIn(
     suspend fun inTerminal(env: EnvReader = EnvReader(System::getenv)): LoginCommand.LoginResult {
         val login = command ?: return refused(NO_LOGIN_COMMAND)
         val exit = withContext(io) {
-            ProcessBuilder(SHELL, "-c", login).inheritIO().start().waitFor()
+            ProcessBuilder(COMMAND_SHELL, "-c", login).inheritIO().start().waitFor()
         }
         if (exit != 0) return refused("login_command exited $exit")
         return when (val read = renewedByDaemon(env)) {
@@ -71,27 +75,28 @@ internal class CommandSignIn(
         val credential = config.auth.credentialCommand
         return when {
             ran.exit != 0 -> LoginCommand.LoginResult(false, refusal = ran.why(), unfinished = true)
-            credential == null -> LoginCommand.LoginResult(false, refusal = NO_CREDENTIAL)
+            credential == null -> LoginCommand.LoginResult(false, refusal = NO_CREDENTIAL_COMMAND)
             else -> renewed(credential)
         }
     }
 
     /** The key [credential] mints now the person has signed in, or why there is none. */
     private suspend fun renewed(credential: String): LoginCommand.LoginResult =
-        when (val state = CommandCredentials.of(provider, credential, io).renewNow()) {
+        when (val state = CommandCredentials.of(provider, credential, CredentialCommands(io)).renewNow()) {
             is CommandCredentialState.Held -> LoginCommand.LoginResult(true)
             is CommandCredentialState.Failed -> LoginCommand.LoginResult(
                 false,
                 refusal = state.error,
                 unfinished = true,
             )
-            CommandCredentialState.None -> LoginCommand.LoginResult(false, refusal = NOT_SIGNED_IN, unfinished = true)
+            CommandCredentialState.None ->
+                LoginCommand.LoginResult(false, refusal = COMMAND_NOT_SIGNED_IN, unfinished = true)
         }
 
-    /** What a run in the daemon did: its exit (or [TIMED_OUT]) and the last line it wrote on stderr. */
+    /** What a run in the daemon did: its exit (or [LOGIN_TIMED_OUT]) and the last line it wrote on stderr. */
     private data class Ran(val exit: Int, val lastError: String?) {
         /** Why a run that did not exit 0 signed nobody in, in the words its stderr ended on. */
-        fun why(): String = if (exit == TIMED_OUT) {
+        fun why(): String = if (exit == LOGIN_TIMED_OUT) {
             TIMED_OUT_WORDS
         } else {
             "login_command exited $exit" + lastError?.let { ": $it" }.orEmpty()
@@ -99,14 +104,14 @@ internal class CommandSignIn(
     }
 
     private fun detached(login: String, observer: LoginObserver?): Ran {
-        val process = ProcessBuilder(SHELL, "-c", login).redirectInput(File(NULL_DEVICE)).start()
+        val process = ProcessBuilder(COMMAND_SHELL, "-c", login).redirectInput(File(NO_INPUT)).start()
         val heard = Heard(observer)
         val out = CompletableFuture.runAsync { process.inputReader().forEachLine { heard.line(it, stderr = false) } }
         val err = CompletableFuture.runAsync { process.errorReader().forEachLine { heard.line(it, stderr = true) } }
         try {
             if (!process.waitFor(LOGIN_TIMEOUT_MIN, TimeUnit.MINUTES)) {
                 ProcessTree(process).kill()
-                return Ran(TIMED_OUT, heard.lastError.get())
+                return Ran(LOGIN_TIMED_OUT, heard.lastError.get())
             }
             CompletableFuture.allOf(out, err).get(READ_DRAIN_S, TimeUnit.SECONDS)
             return Ran(process.exitValue(), heard.lastError.get())
@@ -141,7 +146,7 @@ internal class CommandSignIn(
         val base = "http://127.0.0.1:${AdminSupport.controlPort(env)}/api/auth"
         val reply = ControlPlaneClient.send("$base/$head/refresh", "POST", key, RENEW_TIMEOUT_MS)
             ?.let { ControlPlaneClient.send(base, "GET", key) }
-            ?: return Renewed.NotSignedIn(NO_ANSWER)
+            ?: return Renewed.NotSignedIn(DAEMON_NO_ANSWER)
         return stateOf(reply.body)
     }
 
@@ -156,7 +161,7 @@ internal class CommandSignIn(
             }
             return Renewed.SignedIn(expires)
         }
-        return Renewed.NotSignedIn(JsonScalars.str(auth, "error")?.takeIf(String::isNotBlank) ?: NOT_SIGNED_IN)
+        return Renewed.NotSignedIn(JsonScalars.str(auth, "error")?.takeIf(String::isNotBlank) ?: COMMAND_NOT_SIGNED_IN)
     }
 
     private fun signedIn(expiresAt: Instant?): String {
@@ -170,22 +175,21 @@ internal class CommandSignIn(
     }
 }
 
-private const val SHELL = "/bin/sh"
-private const val NULL_DEVICE = "/dev/null"
 private const val NO_LOGIN_COMMAND =
     "its provider names no login_command, so splice cannot sign you in; sign in with your team's own tool"
-private const val NO_CREDENTIAL = "its provider names no credential_command"
-private const val NOT_SIGNED_IN = "you are not signed in"
+private const val NO_CREDENTIAL_COMMAND = "its provider names no credential_command"
 private const val TIMED_OUT_WORDS = "login_command timed out after 10 minutes"
 private const val NO_DAEMON = "splice's daemon is not running, so it holds no key; start it and run this again"
-private const val NO_ANSWER = "splice's daemon did not answer"
+private const val DAEMON_NO_ANSWER = "splice's daemon did not answer"
 
 /** The first http(s) address a line holds. */
 private val ADDRESS = Regex("""https?://[^\s"'<>]+""")
 
 // why: a browser or device sign-in a person has not finished in ten minutes was abandoned; the item decided the bound.
 private const val LOGIN_TIMEOUT_MIN = 10L
-private const val TIMED_OUT = -1
+
+// why: no command exits with it, so it tells a run that was ended at the bound from every exit the command chose.
+private const val LOGIN_TIMED_OUT = -1
 
 // why: once the command exits its pipes close; this only bounds a child that kept them open.
 private const val READ_DRAIN_S = 5L

@@ -5,14 +5,14 @@
   "law": "V4-93 ratchet. One entry per primary constructor already over a width on the recorded date, with the numbers MEASURED that day. The gate fails when an unrecorded constructor crosses 12 parameters or 6 subsystems, when a recorded one gets WIDER than its entry, when an entry is recorded ABOVE the measurement (padding), and when an entry stops offending or names a class that is gone. The entry is edited by hand and graded by ConstructorWidthLawTest; the diff is the record of what moved.",
   "offenders": {
     "core/src/main/kotlin/splice/core/topology/HeadConfig.kt HeadConfig": {
-      "params": 13,
+      "params": 15,
       "subsystems": 2,
-      "reason": "model_slots, V4-254, 2026-09-30: tier map split from the models allowlist"
+      "reason": "the gateway serves a provider with no head, 2026-11-21: served_by_gateway, whether the gateway serves this head's provider itself; and a team's own provider, 2026-11-19: picker. Before that: model_slots, V4-254, 2026-09-30: tier map split from the models allowlist"
     },
     "core/src/main/kotlin/splice/core/topology/Topology.kt ProviderConfig": {
-      "params": 17,
-      "subsystems": 1,
-      "reason": "server mode fixed-cost providers, 2026-11-16: hourly_usd, what a box rented by the hour costs, metered in usage reports. Before that, server mode upstream pools, 2026-11-15: upstreams and health_seconds, the [[providers.<key>.upstreams]] servers a provider balances over and how often each is asked /health. Before that, provider headers for a gateway, 2026-11-14: forward_headers and send_version; the class mirrors splice.toml's [providers.<key>] table field by field, the outside-format exception to LongParameterList (2026-10-09)"
+      "params": 28,
+      "subsystems": 2,
+      "reason": "the gateway serves a provider with no head, 2026-11-21: pinned_model, model_slots, context_window, system_prompt, system_prompt_file, system_prompt_mode and overrides, the keys a head carried for its provider, are the provider's own; and a team's own provider, 2026-11-19: picker, ca_file, error_messages and served_window. Before that: server mode fixed-cost providers, 2026-11-16: hourly_usd, what a box rented by the hour costs, metered in usage reports. Before that, server mode upstream pools, 2026-11-15: upstreams and health_seconds, the [[providers.<key>.upstreams]] servers a provider balances over and how often each is asked /health. Before that, provider headers for a gateway, 2026-11-14: forward_headers and send_version; the class mirrors splice.toml's [providers.<key>] table field by field, the outside-format exception to LongParameterList (2026-10-09)"
     },
     "core/src/main/kotlin/splice/core/topology/QuirksConfig.kt QuirksConfig": {
       "params": 33,
@@ -104,6 +104,11 @@
       "params": 18,
       "subsystems": 0,
       "reason": "server ledger, 2026-11-16: @Serializable mirror of one usage ledger row (docs/specs/server-mode.md F5), the line written to usage.jsonl and exported field by field; grouping its fields would change the format"
+    },
+    "core/src/main/kotlin/splice/core/topology/Topology.kt Topology": {
+      "params": 13,
+      "subsystems": 3,
+      "reason": "the door's own table, 2026-11-21: door, splice.toml's [door] (the selector aliases the gateway reads and its named commands); the class mirrors splice.toml's top-level tables one field each, the outside-format exception to LongParameterList (2026-10-09)"
     }
   }
 }

@@ -21,10 +21,11 @@ internal class ProviderDefinition(private val text: String) {
 
     /** The provider it defines: the key of its first [providers.<key>] table, or null when it holds none. */
     val providerKey: String? =
-        tables.firstOrNull { it.path.firstOrNull() == PROVIDERS && it.path.size >= 2 }?.path?.get(1)
+        tables.firstOrNull { it.path.firstOrNull() == DEFINITION_PROVIDERS && it.path.size >= 2 }?.path?.get(1)
 
     /** The heads it holds, in its order. */
-    val heads: List<String> = tables.filter { it.path.size == 2 && it.path[0] == HEADS }.map { it.path[1] }.distinct()
+    val heads: List<String> =
+        tables.filter { it.path.size == 2 && it.path[0] == DEFINITION_HEADS }.map { it.path[1] }.distinct()
 
     /** What the definition holds that a definition may not, each named by its table, before anything is decoded. */
     fun findings(): List<TopologyFinding> {
@@ -34,8 +35,8 @@ internal class ProviderDefinition(private val text: String) {
                 KEY.find(raw.substringBefore('#'))?.let { TopologyFinding(it.groupValues[1], only(key), i + 1) }
             }
         val foreign = tables.filterNot { allowed(it.path, key) }.map { table ->
-            val other = table.path.getOrNull(1)?.takeIf { table.path.first() == PROVIDERS }
-            val path = if (other != null) "$PROVIDERS.$other" else table.path.first()
+            val other = table.path.getOrNull(1)?.takeIf { table.path.first() == DEFINITION_PROVIDERS }
+            val path = if (other != null) "$DEFINITION_PROVIDERS.$other" else table.path.first()
             val why = if (other != null) "a provider definition holds one provider, $key" else only(key)
             TopologyFinding(path, why, table.line)
         }
@@ -83,15 +84,15 @@ internal class ProviderDefinition(private val text: String) {
      *  end of the text. Filling only adds lines after a header, and heads are filled last to first, so the span read
      *  from the definition as written is the span in the text being filled. */
     private fun span(head: String): Pair<Int, Int> {
-        val header = tables.first { it.path == listOf(HEADS, head) }.line - 1
+        val header = tables.first { it.path == listOf(DEFINITION_HEADS, head) }.line - 1
         val end = tables.firstOrNull { it.line - 1 > header }?.let { it.line - 1 } ?: lines.size
         return header to end
     }
 
     private fun allowed(path: List<String>, key: String): Boolean = when (path.firstOrNull()) {
-        PROVIDERS -> path.getOrNull(1) == key
-        HEADS -> path.size >= 2
-        DOOR -> path.getOrNull(1) == COMMANDS && path.size >= DOOR_COMMAND_DEPTH
+        DEFINITION_PROVIDERS -> path.getOrNull(1) == key
+        DEFINITION_HEADS -> path.size >= 2
+        DOOR -> path.getOrNull(1) == DEFINITION_COMMANDS && path.size >= DOOR_COMMAND_DEPTH
         else -> false
     }
 
@@ -100,10 +101,10 @@ internal class ProviderDefinition(private val text: String) {
             "their [door.commands.*]; remove it"
 }
 
-private const val PROVIDERS = "providers"
-private const val HEADS = "heads"
+private const val DEFINITION_PROVIDERS = "providers"
+private const val DEFINITION_HEADS = "heads"
 private const val DOOR = "door"
-private const val COMMANDS = "commands"
+private const val DEFINITION_COMMANDS = "commands"
 private const val DEFINITION = "definition"
 
 private val HEADER = Regex("""^\[\[?\s*(.+?)\s*]]?$""")

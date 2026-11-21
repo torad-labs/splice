@@ -27,7 +27,7 @@ public sealed class CommandCredentialState {
             expiresAt?.let { put(COMMAND_EXPIRES_FIELD, it.toString()) }
         }
         None -> mapOf(COMMAND_STATE_FIELD to COMMAND_STATE_NONE)
-        is Failed -> mapOf(COMMAND_STATE_FIELD to COMMAND_STATE_FAILED, ERROR_FIELD to error)
+        is Failed -> mapOf(COMMAND_STATE_FIELD to COMMAND_STATE_FAILED, COMMAND_ERROR_FIELD to error)
     }
 
     public data class Held(val expiresAt: Instant?) : CommandCredentialState()
@@ -56,7 +56,13 @@ public fun interface CredentialRun {
     public suspend operator fun invoke(): CredentialRunResult
 }
 
-/** One provider's credential, from [run] (CredentialCommand over its `credential_command`). Shared by every head of
+/** What runs a provider's credential command: core starts no process, so the daemon gives it the one that does. */
+public fun interface CredentialRuns {
+    /** The run of [command], a provider's `credential_command`. */
+    public fun of(command: String): CredentialRun
+}
+
+/** One provider's credential, from [run] (a CredentialRuns run of its `credential_command`). Shared by every head of
  *  the provider. */
 public class CommandCredential(
     private val run: CredentialRun,
@@ -131,8 +137,8 @@ public class CommandCredential(
     /** The command's own words, or that the person is not signed in when the command printed nothing. Splice's own
      *  `exited <code>` stays on the failed state for doctor and `splice claude`; it is not what a turn is told. */
     private fun why(): String {
-        val failed = last as? CommandCredentialState.Failed ?: return NOT_SIGNED_IN
-        return failed.error.takeIf { failed.said && it.isNotBlank() } ?: NOT_SIGNED_IN
+        val failed = last as? CommandCredentialState.Failed ?: return COMMAND_NOT_SIGNED_IN
+        return failed.error.takeIf { failed.said && it.isNotBlank() } ?: COMMAND_NOT_SIGNED_IN
     }
 
     /** The key itself, kept out of every rendering. */
@@ -142,19 +148,20 @@ public class CommandCredential(
 }
 
 /** The `state` field [CommandCredential.describe] names its state by, and the three words that field carries. */
-public const val COMMAND_STATE_FIELD: String = "state"
+internal const val COMMAND_STATE_FIELD: String = "state"
 public const val COMMAND_STATE_HELD: String = "held"
-public const val COMMAND_STATE_NONE: String = "none"
+internal const val COMMAND_STATE_NONE: String = "none"
 public const val COMMAND_STATE_FAILED: String = "failed"
 
 private const val COMMAND_KIND = COMMAND_AUTH_WIRE
 
 /** The field the expiry rides under, and the key a credential command prints it by. */
-internal const val COMMAND_EXPIRES_FIELD: String = "expires_at"
-private const val ERROR_FIELD = "error"
+public const val COMMAND_EXPIRES_FIELD: String = "expires_at"
+private const val COMMAND_ERROR_FIELD = "error"
 
-/** Why a turn has no key when the command failed and said nothing. */
-private const val NOT_SIGNED_IN = "you are not signed in"
+/** What a provider on a credential command says of a person it holds no key for, which is also why a turn has no
+ *  key when the command failed and said nothing. */
+public const val COMMAND_NOT_SIGNED_IN: String = "you are not signed in"
 
 // why: the window the ChatGPT sign-in renews in (CodexAuthProvider's proactive window): a key this close to its expiry
 // could lapse mid-turn, so it is renewed before the turn is sent.

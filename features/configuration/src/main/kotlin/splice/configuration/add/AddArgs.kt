@@ -84,7 +84,7 @@ internal class AddArgParser {
     fun usage(output: TerminalOutput): Boolean {
         output.line(
             "usage: splice add <profile> [--name NAME] [--base-url URL] [--model ID[:WINDOW]]... [--command CMD] " +
-                "[--key provider|new] [--live] [--yes]",
+                "[--key provider|new] [--live] [--yes]\n       splice add provider <file|https-url> [--check]",
         )
         return false
     }

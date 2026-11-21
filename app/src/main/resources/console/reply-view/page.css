@@ -80,6 +80,8 @@ a { color: inherit; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* with no session the line under the title is a sentence, and a phone gives it a second line where it needs one */
+.is-picker .rvp-meta { white-space: normal; }
 
 /* the column: wide enough for a line of code, narrow enough to read, in the kit's own measure */
 :root { --rvp-col: 52rem; }
